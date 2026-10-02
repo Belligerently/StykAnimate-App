@@ -57,6 +57,22 @@ impl Engine {
         taken
     }
 
+    /// Queues every image of the open document for decoding again. The renderer asks
+    /// for this when it had to allocate a larger atlas, which starts empty.
+    pub fn redecode_images(&self) {
+        {
+            let mut state = self.inner.state.lock();
+            let Some(generation) = state.current.clone() else { return };
+            let count = generation.prepared.doc.images.len();
+            state.images.reset(generation.lineage, count);
+            for index in 0..count {
+                let generation = generation.clone();
+                state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_image(&generation, index)));
+            }
+        }
+        self.inner.state.notify_all();
+    }
+
     /// Images of the open document still being decoded or waiting for upload.
     pub fn images_pending(&self) -> usize {
         let state = self.inner.state.lock();

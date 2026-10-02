@@ -29,7 +29,8 @@ import {segmentPaint, parseColor, hexColor, backgroundPaint, paintBackground, pa
 import {resolveInstanceFigure, polygonIdentity} from './animation-style.mjs';
 import { applicationMenuItems } from "./application-menu.mjs";
 import { Editor } from "./editor.mjs";
-import { createRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
+import { createRenderer as createScriptRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
+import { createStageRenderer } from "./engine/engine-stage.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
@@ -597,6 +598,8 @@ function syncShell() {
   // A workspace change runs this directly (builder onModeChange), outside the invalidator: the stage header follows.
   syncStageHead();
 }
+// The stage: the engine draws the documents it can, the JavaScript renderer the others (docs/RUST-ENGINE-PORT.md).
+const createRenderer = (surface, options) => createStageRenderer(surface, options, createScriptRenderer);
 const playback = new PlaybackCache({
   gpuIsolation: true,
   diagnostics:telemetry.performance,
@@ -1955,6 +1958,7 @@ function loop(now) {
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
         selectedUid: null,
         showHandles: false,
+        revision: editor.revision,
         liveEditing: Boolean(editor.dragging || state.drag || keyboardHandleGesture),
         playing: state.playing,
         artworkRevision: editor.definitionRevision,
@@ -1978,7 +1982,7 @@ function loop(now) {
     if(pendingColorSample && !state.editablePreparing && (!state.playing || !state.buffering || preparedPresented)){
       const sample=pendingColorSample;
       try{
-        const result=sampleCanvasRegion(canvas,sample.clientX,sample.clientY,sample.radius);
+        const result=sampleCanvasRegion(state.renderer.canvas??canvas,sample.clientX,sample.clientY,sample.radius);
         sample.finish(null,sample.radius?result:result.color);
       }catch(error){sample.finish(error);}
       requestRender(); // Restore GPU handles after sampling the artwork before presentation.
@@ -3580,6 +3584,8 @@ function stagePicture() {
   if (!state.renderer || document.hidden) return null;
   const box = viewport.getBoundingClientRect(), board = $("artboard").getBoundingClientRect();
   if (!(box.width > 0) || state.view.rotation || state.view.flip) return null;
+  // The surface the last frame was drawn on (the engine's while it draws the scene).
+  const canvas = state.renderer.canvas ?? $("scene");
   const ratio = canvas.width / box.width;
   const left = Math.max(0, board.left - box.left), top = Math.max(0, board.top - box.top),
     right = Math.min(box.width, board.right - box.left), bottom = Math.min(box.height, board.bottom - box.top);
@@ -5812,6 +5818,8 @@ editor.addEventListener("change", (e) => {
   if ((['toggle-selection', 'duplicate-pending'].includes(state.drag?.kind) || state.drag?.kind === 'tweener' && state.drag.press) &&
       ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
   if(['edit','history','document','preview','frame-draft'].includes(kind))playback.discardNativeSnapshot();
+  // The engine's copy of the document follows the records each change names.
+  if (kind !== 'seek' && kind !== 'selection' && kind !== 'saved') state.renderer?.documentChanged?.(kind === 'history' && !e.detail?.frameIndices && !e.detail?.figureIndices ? {structural: true, definition: true} : e.detail);
   const joining = state.figureJoin;
   if (joining && (joining.token !== editor._documentToken || joining.uid !== editor.selectedUid ||
       joining.frameIndex !== editor.frameIndex || joining.tick !== editor.tick ||

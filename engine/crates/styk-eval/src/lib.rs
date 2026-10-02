@@ -49,7 +49,11 @@ pub fn open_bytes(bytes: &[u8], ext: &str, name: &str) -> Result<Document, Error
             let kind = styk_formats::Kind::from_extension(ext).expect("matched above");
             let decoded = styk_formats::container::decode(bytes, kind).map_err(|e| Error::Format(e.to_string()))?;
             let document = styk_formats::native::normalize_decoded(decoded.document, kind).map_err(|e| Error::Format(e.to_string()))?;
-            from_value(&document, name)
+            let document = from_value(&document, name)?;
+            if document.keyframes.is_empty() {
+                return Err(Error::Format("The scene has no keyframes".into()));
+            }
+            Ok(document)
         }
         other => Err(Error::Unsupported(format!("Unsupported file type .{other}"))),
     }

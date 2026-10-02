@@ -45,7 +45,7 @@ run('cargo', [`+${TOOLCHAIN}`, 'build', '--profile', profile, '-p', 'styk-wasm',
 
 mkdirSync(out, {recursive: true});
 const built = path.join(engine, 'target/wasm-threads/wasm32-unknown-unknown', profile, 'styk_wasm.wasm');
-run('wasm-bindgen', ['--target', 'web', '--out-dir', out, '--out-name', 'styk_engine', '--no-typescript', built]);
+run('wasm-bindgen', ['--target', 'web', '--out-dir', out, '--out-name', 'styk_engine', '--no-typescript', ...(dev ? ['--keep-debug'] : ['--remove-name-section', '--remove-producers-section']), built]);
 const wasm = path.join(out, 'styk_engine_bg.wasm');
 const before = statSync(wasm).size;
 if (!dev && has('wasm-opt')) {

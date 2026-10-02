@@ -2,6 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use styk_engine::mirror::{Change, Committed, Record, Table};
 use styk_engine::{Budgets, Engine, Opened};
 use wasm_bindgen::prelude::*;
 
@@ -13,6 +14,12 @@ pub struct EngineHandle {
     pub(crate) engine: Engine,
     /// The outcome of the last [`EngineHandle::open`], until JavaScript takes it.
     opened: Arc<Mutex<Option<Result<Opened, String>>>>,
+    /// Outcomes of commits, oldest first, until JavaScript takes them.
+    committed: Arc<Mutex<Vec<Result<Committed, (u64, String)>>>>,
+}
+
+fn table(code: u32) -> Result<Table, JsError> {
+    Table::from_code(code).ok_or_else(|| js_error(format!("unknown document table {code}")))
 }
 
 fn opened_json(opened: &Opened) -> String {
@@ -39,7 +46,7 @@ impl EngineHandle {
     /// `device_memory_gib` is `navigator.deviceMemory` where the browser has it.
     #[wasm_bindgen(constructor)]
     pub fn new(device_memory_gib: Option<f64>) -> EngineHandle {
-        EngineHandle { engine: Engine::new(clock, Budgets::for_device(device_memory_gib)), opened: Default::default() }
+        EngineHandle { engine: Engine::new(clock, Budgets::for_device(device_memory_gib)), opened: Default::default(), committed: Default::default() }
     }
 
     /// An address a worker passes to [`worker_run`]. Each call adds one owner.
@@ -72,6 +79,92 @@ impl EngineHandle {
             Some(Ok(opened)) => Ok(Some(opened_json(&opened))),
             Some(Err(message)) => Err(js_error(message)),
         }
+    }
+
+    /// Starts describing another document: the mirrored one is forgotten at the next commit.
+    pub fn stage_reset(&self, batch: u32) {
+        self.engine.stage(batch, Change::Reset);
+    }
+
+    /// Stages the document's top-level properties (JSON, without the tables and pose sources).
+    pub fn stage_properties(&self, batch: u32, json: &str) {
+        self.engine.stage(batch, Change::Properties(json.as_bytes().to_vec()));
+    }
+
+    /// Stages the order of a table (0 figures, 1 keyframes, 2 backgrounds): for each
+    /// position the index its record had before, or -1 for a record staged next.
+    pub fn stage_layout(&self, batch: u32, table_code: u32, layout: &[i32]) -> Result<(), JsError> {
+        self.engine.stage(batch, Change::Layout(table(table_code)?, layout.to_vec()));
+        Ok(())
+    }
+
+    /// Stages one record of a table as lifted JSON and its two byte sections.
+    pub fn stage_record(&self, batch: u32, table_code: u32, index: u32, skeleton: &str, arrays: &[u8], payloads: &[u8]) -> Result<(), JsError> {
+        let record = Record { skeleton: skeleton.as_bytes().to_vec(), arrays: arrays.to_vec(), payloads: payloads.to_vec() };
+        self.engine.stage(batch, Change::Set(table(table_code)?, index, record));
+        Ok(())
+    }
+
+    /// Stages a retained pose source, or its removal when `skeleton` is empty.
+    pub fn stage_source(&self, batch: u32, id: &str, skeleton: &str, arrays: &[u8], payloads: &[u8]) {
+        let record = (!skeleton.is_empty()).then(|| Record { skeleton: skeleton.as_bytes().to_vec(), arrays: arrays.to_vec(), payloads: payloads.to_vec() });
+        self.engine.stage(batch, Change::Source(id.to_string(), record));
+    }
+
+    /// Commits everything staged in `batch` as the document of `revision`, in the
+    /// background. Watch the progress counter, then call [`EngineHandle::take_committed`].
+    pub fn commit(&self, revision: f64, batch: u32) {
+        let revision = revision as u64;
+        let slot = self.committed.clone();
+        self.engine.spawn(move |engine| {
+            let result = engine.commit(revision, batch).map_err(|e| (revision, e.to_string()));
+            slot.lock().unwrap_or_else(|e| e.into_inner()).push(result);
+        });
+    }
+
+    /// Commits everything staged in `batch` on this thread and returns the outcome as JSON, as
+    /// [`EngineHandle::take_committed`] does. For small commits the next frame needs
+    /// (figure definitions while editing); documents commit in the background.
+    pub fn commit_now(&self, revision: f64, batch: u32) -> String {
+        match self.engine.commit(revision as u64, batch) {
+            Ok(done) => format!(
+                "{{\"revision\":{},\"generation\":{},\"figures\":{},\"keyframes\":{},\"ms\":{:.3}}}",
+                done.revision, done.generation, done.converted.figures, done.converted.keyframes, done.ms
+            ),
+            Err(error) => format!("{{\"revision\":{},\"error\":{:?}}}", revision as u64, error.to_string()),
+        }
+    }
+
+    /// Features of the open document the engine does not draw yet, as a JSON array.
+    pub fn unsupported(&self) -> String {
+        let features = self.engine.generation().map(|generation| generation.prepared.doc.unsupported.clone()).unwrap_or_default();
+        format!("[{}]", features.iter().map(|feature| format!("{feature:?}")).collect::<Vec<_>>().join(","))
+    }
+
+    /// The outcome of the oldest finished commit as JSON (`{revision, generation, …}`
+    /// or `{revision, error}`), once; `undefined` when none is waiting.
+    pub fn take_committed(&self) -> Option<String> {
+        let mut slot = self.committed.try_lock().ok()?;
+        if slot.is_empty() {
+            return None;
+        }
+        Some(match slot.remove(0) {
+            Ok(done) => format!(
+                "{{\"revision\":{},\"generation\":{},\"figures\":{},\"keyframes\":{},\"ms\":{:.3}}}",
+                done.revision, done.generation, done.converted.figures, done.converted.keyframes, done.ms
+            ),
+            Err((revision, message)) => format!("{{\"revision\":{revision},\"error\":{message:?}}}"),
+        })
+    }
+
+    /// The interface revision of the open document, or -1 when there is none.
+    pub fn revision(&self) -> f64 {
+        self.engine.generation().map_or(-1.0, |generation| generation.revision as f64)
+    }
+
+    /// Length of the open document in ticks (0 when there is none).
+    pub fn total_ticks(&self) -> u32 {
+        self.engine.generation().map_or(0, |generation| generation.playable_ticks())
     }
 
     /// Replaces the ticks wanted in the background, most urgent first.

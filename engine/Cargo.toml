@@ -22,7 +22,9 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 debug = false
-strip = true
+# Symbol names must survive linking: wasm-bindgen finds each thread's stack pointer and
+# thread-local base by name. It drops the name section itself afterwards.
+strip = false
 
 # Dependencies stay fast in debug builds so tests on real files finish in seconds.
 [profile.dev.package."*"]

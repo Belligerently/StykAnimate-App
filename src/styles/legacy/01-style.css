@@ -543,6 +543,7 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 #scene,
+#scene-engine,
 #overlay {
   position: absolute;
   inset: 0;

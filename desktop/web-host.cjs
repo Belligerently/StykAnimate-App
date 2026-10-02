@@ -68,7 +68,9 @@ async function startDesktopHost({appRoot, resourcesPath, packaged=false, onError
       const tags = String(request.headers['if-none-match'] || '').split(',').map(tag=>tag.trim().replace(/^W\//,''));
       const unchanged = tags.includes('*') || tags.includes(etag);
       response.writeHead(unchanged ? 304 : 200, {'Content-Type':type,'Content-Length':String(stat.size),
-        'ETag':etag,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'});
+        'ETag':etag,'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
+        // The engine's worker threads share one WebAssembly memory: the page must be cross-origin isolated.
+        'Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'require-corp','Cross-Origin-Resource-Policy':'same-origin'});
       if (unchanged || request.method==='HEAD') response.end();
       else await pipeline(file.createReadStream({autoClose:false}),response);
     } finally { await file.close(); }

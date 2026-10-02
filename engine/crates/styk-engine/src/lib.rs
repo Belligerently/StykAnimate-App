@@ -68,6 +68,14 @@ pub struct Generation {
     pub open_ms: f64,
 }
 
+impl Generation {
+    /// Ticks that can be evaluated: none while a mirrored document has its figure
+    /// definitions but not yet its frames.
+    pub fn playable_ticks(&self) -> u32 {
+        if self.prepared.doc.keyframes.is_empty() { 0 } else { self.prepared.total_ticks }
+    }
+}
+
 /// What [`Engine::open`] reports.
 #[derive(Clone, Debug)]
 pub struct Opened {
@@ -96,7 +104,7 @@ struct State {
 struct Inner {
     state: Shared<State>,
     /// Changes staged for the next commit.
-    staged: Shared<Vec<mirror::Change>>,
+    staged: Shared<std::collections::HashMap<u32, Vec<mirror::Change>>>,
     mirror: std::sync::Mutex<mirror::Mirror>,
     clock: Clock,
     next_generation: AtomicU64,
@@ -120,7 +128,7 @@ impl Engine {
                     images: images::Store::default(),
                     tasks: Default::default(),
                 }),
-                staged: Shared::new(Vec::new()),
+                staged: Shared::new(Default::default()),
                 mirror: Default::default(),
                 clock,
                 next_generation: AtomicU64::new(1),

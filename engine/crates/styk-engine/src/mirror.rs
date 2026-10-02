@@ -199,18 +199,20 @@ impl Mirror {
 }
 
 impl Engine {
-    /// Stages one change. Cheap: nothing is parsed until [`Engine::commit`].
-    pub fn stage(&self, change: Change) {
-        self.inner.staged.lock().push(change);
+    /// Stages one change in `batch`. Cheap: nothing is parsed until [`Engine::commit`].
+    /// Batches are independent: a long description of the frames can be staged over
+    /// many turns of the interface while small commits of other batches go through.
+    pub fn stage(&self, batch: u32, change: Change) {
+        self.inner.staged.lock().entry(batch).or_default().push(change);
     }
 
-    /// Applies everything staged and publishes the result as the document of
-    /// `revision` (the interface's own revision counter). All or nothing: on an
+    /// Applies everything staged in `batch` and publishes the result as the document
+    /// of `revision` (the interface's own revision counter). All or nothing: on an
     /// error the previous document stays. Runs on the calling thread; hosts call it
-    /// through [`Engine::spawn`].
-    pub fn commit(&self, revision: u64) -> Result<Committed, MirrorError> {
+    /// through [`Engine::spawn`] for anything large.
+    pub fn commit(&self, revision: u64, batch: u32) -> Result<Committed, MirrorError> {
         let started = self.now();
-        let changes = std::mem::take(&mut *self.inner.staged.lock());
+        let changes = self.inner.staged.lock().remove(&batch).unwrap_or_default();
         // Only one commit runs at a time; commits are background tasks, so waiting here is allowed.
         let mut mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let (tree, reset) = mirror.apply(changes)?;

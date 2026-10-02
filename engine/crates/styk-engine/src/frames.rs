@@ -129,7 +129,7 @@ impl Engine {
     pub fn request(&self, playhead: u32, ticks: &[u32]) {
         {
             let mut state = self.inner.state.lock();
-            let total = state.current.as_ref().map_or(1, |g| g.prepared.total_ticks);
+            let total = state.current.as_ref().map_or(1, |g| g.playable_ticks());
             let frames = &mut state.frames;
             frames.playhead = playhead;
             frames.total = total;
@@ -151,7 +151,7 @@ impl Engine {
             return Some(ready);
         }
         let generation = self.generation()?;
-        if tick >= generation.prepared.total_ticks {
+        if tick >= generation.playable_ticks() {
             return None;
         }
         let data = produce(&generation, tick, self.inner.clock);

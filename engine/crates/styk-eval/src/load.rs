@@ -209,9 +209,6 @@ impl Loader {
         for k in d.get("keyframes").and_then(Value::as_arr).into_iter().flatten() {
             keyframes.push(self.cached_keyframe(k)?);
         }
-        if keyframes.is_empty() {
-            return Err(Error::Format("The scene has no keyframes".into()));
-        }
         let mut backgrounds = Vec::new();
         for b in d.get("backgrounds").and_then(Value::as_arr).into_iter().flatten() {
             backgrounds.push(self.background(b));

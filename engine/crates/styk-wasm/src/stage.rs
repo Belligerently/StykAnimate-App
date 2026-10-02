@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use styk_engine::edit::{EditOptions, EditScene};
 use styk_engine::{Engine, Generation};
 use styk_render::{Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
@@ -22,8 +23,9 @@ pub struct Stage {
     queue: wgpu::Queue,
     renderer: Renderer,
     backend: String,
-    /// The document whose sprite atlas is allocated.
-    atlas_of: Option<Arc<Generation>>,
+    /// The document lineage and page count the sprite atlas is allocated for.
+    atlas_of: Option<(u64, u32)>,
+    edit: EditScene,
 }
 
 #[wasm_bindgen]
@@ -64,7 +66,7 @@ impl Stage {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, &queue, format);
-        Ok(Stage { engine: engine.engine.clone(), surface, config, device, queue, renderer, backend: format!("{:?} · {}", info.backend, info.name), atlas_of: None })
+        Ok(Stage { engine: engine.engine.clone(), surface, config, device, queue, renderer, backend: format!("{:?} · {}", info.backend, info.name), atlas_of: None, edit: EditScene::default() })
     }
 
     /// The graphics backend and adapter in use, for the status line and reports.
@@ -92,18 +94,48 @@ impl Stage {
         let Some(generation) = self.engine.generation() else { return Ok(false) };
         let frame = if wait { self.engine.frame_now(tick) } else { self.engine.frame(tick) };
         let Some(frame) = frame else { return Ok(false) };
-        if !self.atlas_of.as_ref().is_some_and(|current| Arc::ptr_eq(current, &generation)) {
+        self.draw(&generation, &frame.list, if camera { frame.camera } else { None }, zoom, [pan_x, pan_y], clip_to_artboard)
+    }
+
+    /// Replaces the frame the editor is showing: keyframe-shaped JSON whose `objects`
+    /// are poses, or `null` for an object unchanged since the last call.
+    pub fn edit_frame(&mut self, json: &str) -> Result<(), JsError> {
+        let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        self.edit.update(&generation, json.as_bytes()).map_err(js_error)
+    }
+
+    /// Draws the edit frame. `hidden` lists object slots not drawn; `translations` holds
+    /// `slot, dx, dy` triples of dragged objects; `background` is an ARGB canvas colour
+    /// replacing the scene background, or a negative number for none.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_edit(&mut self, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool, hidden: &[u32], translations: &[f64], background: f64) -> Result<bool, JsError> {
+        let Some(generation) = self.engine.generation() else { return Ok(false) };
+        let translations: Vec<(u32, [f64; 2])> = translations.chunks_exact(3).map(|t| (t[0] as u32, [t[1], t[2]])).collect();
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32) };
+        let Some(list) = self.edit.draw_list(&generation, &options) else { return Ok(false) };
+        let scene_camera = if camera { self.edit.camera() } else { None };
+        self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)
+    }
+
+    fn draw(&mut self, generation: &Arc<Generation>, list: &Arc<styk_eval::drawlist::DrawList>, camera: Option<styk_eval::doc::Camera>, zoom: f64, pan: [f64; 2], clip_to_artboard: bool) -> Result<bool, JsError> {
+        let layout = (generation.lineage, generation.assets.pages);
+        if self.atlas_of != Some(layout) {
+            // Another project, or more atlas pages than before: the texture is allocated
+            // again and every image decoded so far is uploaded again by the engine.
             self.renderer.prepare_sprites(&generation.assets);
-            self.atlas_of = Some(generation.clone());
+            if self.atlas_of.is_some_and(|(lineage, _)| lineage == layout.0) {
+                self.engine.redecode_images();
+            }
+            self.atlas_of = Some(layout);
         }
         let images = self.engine.take_images(IMAGE_UPLOAD_BYTES);
         if !images.is_empty() {
             self.renderer.upload_images(&generation.assets, images.iter().map(|image| &**image));
         }
         let doc = &generation.prepared.doc;
-        let m = styk_eval::view::camera_matrix(doc, if camera { frame.camera.as_ref() } else { None }, zoom, [pan_x, pan_y]);
+        let m = styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan);
         // The artboard is the scene rectangle under the workspace view alone: the camera moves the scene inside it.
-        let (p0, p1) = ([pan_x, pan_y], [pan_x + doc.canvas[0] as f64 * zoom, pan_y + doc.canvas[1] as f64 * zoom]);
+        let (p0, p1) = (pan, [pan[0] + doc.canvas[0] as f64 * zoom, pan[1] + doc.canvas[1] as f64 * zoom]);
         let view = ViewParams {
             matrix: m,
             artboard: [p0[0].min(p1[0]), p0[1].min(p1[1]), p0[0].max(p1[0]), p0[1].max(p1[1])],
@@ -118,7 +150,7 @@ impl Stage {
                 return Ok(false);
             }
         };
-        self.renderer.set_list(&frame.list);
+        self.renderer.set_list(list);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk frame") });
         self.renderer.render(&mut encoder, &view, [self.config.width, self.config.height]);
         {
