@@ -82,6 +82,9 @@ tolerance the current export tests use.
 | --- | --- |
 | `engine/tools/reference.mjs` + `styk compare` | geometry, primitive by primitive, against the JS editor |
 | `engine/tools/reference-render.mjs` + `styk diff` | pixels against the app's renderer |
+| `engine/tools/container-parity.mjs` | decoded documents (and `styk container roundtrip` the written bytes) against `src/native-container.mjs` |
+| `engine/tools/ik-fixtures.mjs`, `engine/tools/eval-fixtures.mjs` → `cargo test -p styk-eval` | small projects the editor builds with its own commands, and what it evaluates (IK, movieclip replacements); regeneration is byte-stable |
+| `scripts/engine-app-parity.mjs` | the running app with and without the engine (`?engine=off`): stage pixels per tick, with onion skins and after playback |
 | `styk parity formats` (S1) | decoded documents and written bytes against the JS and Python codecs |
 | `scripts/ui-snapshots.mjs --touch --compare … --chrome-only` | the interface, pixel by pixel |
 
@@ -97,19 +100,62 @@ Each gets an ADR under `docs/engine/decisions/` when it lands.
 | # | Decision | Why | Status |
 | --- | --- | --- | --- |
 | D1 | The engine workspace is `engine/` at the repository root, started from `experiments/styk-native` (kept as the measured reference). | One owner per concern; the prototype's numbers stay reproducible. | done |
-| D2 | The document store is a lossless, copy-on-write tree (ordered keys, exact numbers, packed numeric arrays) with typed evaluation views derived per record. | Saves must be byte-identical and unknown fields must survive; the prototype's typed model is read-only and lossy. An edit clones only the records it touches. | planned (S2) |
-| D3 | One WebAssembly module with threads (SharedArrayBuffer, COOP/COEP on the web build, Cloudflare and the Electron host). | One shared document for every worker instead of one copy per worker (today each playback worker holds its own). Synchronous queries from the UI thread. | planned (S0/S3) |
-| D4 | Strangler gate per document for the renderer, per command group for editing. | The app must work at every commit. | planned |
+| D2 | The document store is a lossless, copy-on-write tree (ordered keys, exact numbers, packed numeric arrays) with typed evaluation views derived per record. | Saves must be byte-identical and unknown fields must survive; the prototype's typed model is read-only and lossy. An edit clones only the records it touches. | done (store, typed views per changed record) |
+| D3 | One WebAssembly module with threads (SharedArrayBuffer, COOP/COEP on the web build, Cloudflare and the Electron host). | One shared document for every worker instead of one copy per worker (today each playback worker holds its own). Synchronous queries from the UI thread. | done (headers on every host; playback of supported documents runs on it) |
+| D4 | Strangler gate per document for the renderer (`src/engine/engine-eligibility.mjs` names the first feature the engine lacks), per command group for editing. | The app must work at every commit. | renderer gate in use |
 | D5 | zstd from the C library (`zstd-sys` 1.5.7) compiled to WebAssembly and natively. | Measured: at level 3 it reproduces the bytes of the vendored zstd build on all 448 version 2 files of the corpus. | done |
 | D6 | One threaded WebAssembly build, on a pinned nightly (`nightly-2026-09-15`, `-Z build-std` with atomics, 2 GiB shared memory). A page that is not cross-origin isolated runs the same module without workers, in slices on the interface thread. | Stable Rust ships no atomics-enabled standard library for `wasm32-unknown-unknown`. One build keeps one bundle. | done |
 | D7 | The interface thread never blocks: shared state is taken with a spinning lock (critical sections are a queue push or a pointer swap), and no rayon in WebAssembly (parallelism there is whole frames on the engine's workers). | `Atomics.wait` throws on a browser's interface thread; rayon parks the calling thread. Found the hard way: the first frame prepared on the interface thread trapped. | done |
 | D8 | The renderer uses instance attributes for primitive records and float textures for its lookup tables (gradients, isolation group placements, polyline vertices), one sampler per texture. | WebGL2 has no storage buffers and binds one sampler per texture. One pipeline serves WebGPU, native and WebGL2; output is identical to the storage-buffer pipeline (mean difference 0.000/255 on the compared frames). | done |
 | D9 | The engine build output is `src/engine/pkg/` (git-ignored), built by `node scripts/engine-build.mjs`; CI builds it. | A 4 MiB binary per engine change would bloat history; the web and desktop builds already copy `src/`. | done |
+| D10 | Never strip the WebAssembly profile (`strip = false`); wasm-bindgen removes the name section itself. | wasm-bindgen's thread transform finds each thread's stack pointer and thread-local base by symbol name; a stripped module picked the wrong globals and corrupted memory on the first allocation. | done |
+| D11 | Array textures always have at least two layers. | WebGL2 creates a one-layer array texture as a plain 2D texture; isolation groups and onion composites sampled black. | done |
+| D12 | While commands run in JavaScript, the engine holds a mirror of the document (`src/engine/engine-mirror.mjs`): changed records staged per batch, committed atomically by revision. An edit frame crosses as the pose on screen with `null` for every object whose geometry the editor did not rebuild; onion ghosts are poses kept by an id. | No whole-document transfer on interactive paths; a gesture never waits for a commit. | in use until S5 |
+| D13 | App-level pixel parity (`scripts/engine-app-parity.mjs`) fails a step when any pixel differs by more than 32 levels together with all eight neighbours, or the mean difference exceeds 0.25 levels. | The two renderers cover edge pixels by different rules: differences one or two pixels thick along outlines are expected, a moved, missing or recoloured shape differs over an area. The threshold is fixed; it is not tuned to pass. | done |
 
 ## 5. Baseline (current app, before any engine change)
 
-To be filled by `scripts/engine-benchmark.mjs` on commit `96ebce85` code. The final comparison
-re-runs the baseline from a worktree, interleaved with the candidate.
+Measured on the code of `96ebce85`: a worktree (`tmp/baseline-worktree`, detached at `96ebce85`,
+with this checkout's `node_modules`, `.venv` and native binaries linked in) driven by
+`scripts/engine-bench-matrix.sh baseline-0 tmp/baseline-worktree <first round> <last round>`,
+which runs `scripts/engine-benchmark.mjs` once per configuration and file. Results:
+`artifacts/engine-rust/bench/baseline-0/`; tables: `node scripts/engine-bench-summary.mjs baseline-0`,
+written to [`docs/performance/RUST-ENGINE-BASELINE.md`](performance/RUST-ENGINE-BASELINE.md).
+
+**Protocol.** Each run starts a fresh profile, opens the file once and never saves it; window
+1440×900 (Electron applies its page zoom of 1.25), default settings, light theme, English.
+Before each run the driver waits until the 1-minute load average is below 3 (12 threads),
+for at most 10 minutes, and records the load at start and end and the busiest processes
+(runs that never saw an idle machine are listed as busy). Three rounds; each round runs every
+configuration of every file once, the file order reversed on even rounds, so slow changes in
+machine load spread over all cells. Cells are the median with the range of the three runs.
+Other work on the machine during the rounds ran under `nice -n 19`.
+
+**Configurations:** Electron with WebGPU; Electron without WebGPU (Canvas 2D fallback); the web
+build in Chromium and in WebKit; Electron at 4× CPU throttle (WebGPU and Canvas 2D); the web
+build in Chromium at phone size with touch. **Files:** `TDD2 URIEL NEMESIS 3.styk`,
+`Jay on a new app (repaired).styk`, `svr_uriel.piv`, `tdd2 uriel nemesis.piv` (41 MB).
+**Workloads:** open and first frame, a full playback pass, scrubbing, zoom fit→11× and pan at
+8× as wheel input, a joint drag in the densest frame, brush strokes on a new drawing layer,
+onion skin toggles, PNG sequence, GIF and MP4/WebM export of 120 frames, resident memory of
+the whole process tree and GPU memory; cold start (5 runs) and web build size separately.
+
+**Status (2026-10-02 20:20):** round 1 complete for six configurations of all four files
+(URIEL 3 and Jay measured from this checkout before any change to `src/`, the code being
+identical to `96ebce85`; the other two from the worktree); WebKit round 1 and rounds 2–3 are
+running. Headline numbers from round 1 (Electron with WebGPU, one run each, to be replaced by
+the medians of three):
+
+| File | Open | Playback gaps over 2 intervals | Longest gap | Joint drag p95 | Peak resident |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| TDD2 URIEL NEMESIS 3.styk | 2.71 s | 1 | 146 ms | 10.3 ms | 2,360 MiB |
+| Jay on a new app (repaired).styk | 0.67 s | 1 | 132 ms | 914 ms | 2,046 MiB |
+| svr_uriel.piv | 11.3 s | 0 | 83 ms | 7.1 ms | 3,275 MiB |
+| tdd2 uriel nemesis.piv | 21.4 s | 1 | 1,244 ms | 12.2 ms | 3,632 MiB |
+
+Cold start (Electron, WebGPU, editor view, 5 runs): ready in a median of 4,246 ms (4,122–4,515). Web build:
+64.2 MB raw, 18.2 MB at Brotli 5, of which the Python runtime is 14.0 / 6.1 MB, JavaScript
+24.2 / 4.9 MB and WebAssembly 6.9 / 2.1 MB.
 
 ### Tests at the baseline commit
 
@@ -141,19 +187,102 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
+- **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4). In
+  the corpus of 457 native files, 39 need nothing more; the others use 3D meshes (387), 3D
+  poses (58), 3D surfaces (29), effects (9 with effect clips), text outlines, a follow camera
+  or property channels. Drawings are gated
+  too (both `.styk` files of the benchmark set have drawing layers): the engine draws committed drawing tiles, but a stroke not yet published lives only in
+  the JavaScript drawing resources. Order of work: effects (agent in progress), drawings,
+  meshes and surfaces, 3D poses, text outlines, channels, follow camera, parallax.
+- **Onion skins of figures with custom paints** differ: the editor keeps a segment's custom
+  paint (gradient) under the onion tint and drops only its secondary colour; the engine tints
+  everything. Found by `scripts/engine-app-parity.mjs` on Jay (drawings enabled
+  experimentally). Fix in `drawlist.rs` `Ctx::brush`.
+- **No-WebGPU devices lose the Canvas 2D fallback's seams.** The JavaScript Canvas 2D
+  fallback antialiases each triangle of a polygon fill on its own, so light seams show between
+  adjacent faces (asset-pack backgrounds such as `04-waterfall.styk` fail the web-target parity
+  bar on this alone: 4 solid pixels, mean 0.265). The default WebGPU renderer uses multisampling
+  and has no seams; the engine draws like it on every backend (in Electron the engine's picture
+  of `04-waterfall.styk` is identical, pixel for pixel, to the WebGPU renderer's). Recorded as a
+  deliberate difference: where a device lacks WebGPU the picture now matches what WebGPU
+  devices show.
+- **The JavaScript modules cannot be deleted yet**: commands, history and the editor's own
+  evaluation (handles, picking, the pose it sends to the engine) still run in JavaScript and
+  call the evaluation modules the engine now covers. Deleting them needs stage S5 (the engine
+  owns the document and evaluates for the editor); until then they are the oracle.
 - **First use is slow in WebAssembly.** The first file opened after the module loads takes
   about 2.2 s where the same file then takes 0.66 s (URIEL 3). Suspects: baseline-compiler
   code before the optimizing tier is ready, and growing the shared memory. To measure.
-- **wasm-opt is not installed** on the development machine: the module is 4,024 KiB without
+- **wasm-opt is not installed** on the development machine: the module is 4,376 KiB without
   it. Bundle budget to be set once it is.
 - **The WebGL2 path is only verified on SwiftShader** (headless Chromium). Playwright's
   Chromium does not display a WebGPU canvas here; Electron does.
-- **WebKit cannot launch here** without `libavif.so.16`, `libevent-2.1.so.7` and
-  `libmanette-0.2.so.0` (unpack them beside Playwright's WebKit; see the Linux notes).
 - **The 2 GiB shared memory maximum** is fixed at link time; iOS may refuse to reserve it.
 - **A lone UTF-16 surrogate in a JSON string** is replaced with U+FFFD by the store
   (JavaScript keeps it). No corpus file has one.
-- **Clippy is not clean in `styk-eval`** (code carried over from the prototype).
+- **Clippy is not clean in `styk-eval`**: three `approx_constant` errors in `piv.rs` (code
+  carried over from the prototype; `piv.rs` goes when `styk-piv` lands).
+- **Small features look crisper than in the WebGPU renderer** on `hitoshi vs suzu tomiee ssj.piv`
+  (section 7). Suspected cause: the JavaScript renderer draws figures from cached rasters at
+  bucketed densities and resamples them. To confirm with the raster cache disabled, then
+  record as a deliberate difference or fix.
+- **Edit frames rebuild the whole scene's geometry** when any object changes, and every commit
+  resets the whole frame cache (tick-range invalidation, `playback-retention.mjs`, is not
+  ported). Fine at the sizes measured so far; the dense-drag benchmark will decide.
+
+Resolved since the last update: WebKit runs here (the missing `libavif`, `libevent`,
+`libmanette`, `libgav1`, `libhidapi` and `libyuv` are unpacked from Ubuntu packages into
+`~/.cache/styk-webkit-libs` and linked into Playwright's WebKit `sys/lib`; nothing installed
+system-wide); pinned IK and layer-sheet movieclip replacements (geometry parity is complete on
+URIEL 3).
+
+## 7. Parity results
+
+Current numbers; each milestone that changes them updates this section.
+
+**Containers** (`engine/tools/container-parity.mjs`, `styk container roundtrip`): 461 native
+files decode to the same document as `src/native-container.mjs`; all 448 version 2 files are
+written back byte-identical.
+
+**Pivot codec** (`engine/tools/piv/parity.sh`, replayed by `styk-piv replay` on the final
+binary): 13,369 requests of 679 scenarios answer as the Python codec does: 3,041 imports
+(as documents), 121 `STYKPIV1` frame transports (bytes), 5,935 exports (bytes), 4,056 error
+responses (status, code and message), 3 native containers, 213 other routes.
+
+**Geometry** (`styk compare` against `engine/tools/reference.mjs`, every primitive and joint):
+
+| File | Ticks compared | Primitives | Joints | Mismatches |
+| --- | ---: | ---: | ---: | ---: |
+| TDD2 URIEL NEMESIS 3.styk | all 232 | 113,319 | 111,056 | 0 |
+| Jay on a new app (repaired).styk | all 26 | 17,238 | 22,698 | 0 |
+| hitoshi vs suzu tomiee ssj.piv | 65 (every 4th) | 122,977 | 135,944 | 0 |
+| finisher tdd2.piv | 95 (every 4th) | 150,474 | 174,547 | 0 |
+| Valthim - Yuki.piv | 2 (every 4th) | 1,487 | 1,801 | 0 |
+
+`svr_uriel.piv` cannot be dumped by the reference tool: its decoded JSON (588 MB) exceeds the
+largest string Node can hold. To do: stream the reference from the frame transport.
+
+**Fixtures** (`cargo test -p styk-eval`): 27 IK fixtures built by the editor, 0 mismatches,
+and 122 controller outcomes and 599 solved angles equal to the editor's within 4.5e-11 rad
+with the same iteration counts; each fixture with a pin fails without the solver. 4 movieclip
+replacement fixtures, 0 mismatches, each failing without its replacements.
+
+**In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
+the JavaScript renderer being its Canvas 2D fallback, WebGL2 for the engine), 29 documents
+(the repository's eligible test projects and asset packs, `svr_uriel.piv`, `hitoshi vs suzu
+tomiee ssj.piv`, `finisher tdd2.piv`, `tdd2 uriel nemesis.piv`), each at five ticks, with onion
+skins and after playback: the engine drew 23 documents (6 refused: text outlines 5, follow
+camera 1); 160 of its 189 steps pass. The 29 failing steps are six asset-pack backgrounds
+(the Canvas 2D seams, see section 6) and `hitoshi vs suzu tomiee ssj.piv`. Electron target
+(the WebGPU renderer): the six backgrounds pass (`04-waterfall.styk` identical pixel for
+pixel; the others differ only along the document frame's right edge, at most 25 levels);
+`hitoshi vs suzu tomiee ssj.piv` passes 2 of 5 ticks. Its failures are by the mean rule only
+(no solid areas): edge antialiasing along thousands of spike edges, and small features the
+engine draws crisper than the WebGPU renderer, which presents cached figure rasters (on one
+row at tick 129, a green spot peaks at 63,212,138 in the engine and 51,158,105 in the
+WebGPU renderer; an outline at 255,127,127 against 243,125,124). Not yet classified beyond
+that; open in section 6. The start-up document (Blue, IK controllers) and the IK fixtures
+`startup-pinned` and `joined-stretch` pass every step.
 
 ## Milestone log
 
@@ -162,6 +291,18 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 | 2026-10-02 | S0 | Branch, this plan, inventory (355 engine modules), `engine/` workspace from the prototype, UI snapshot tool with touch layouts and chrome-only comparison, "before" screenshots (292), baseline test results, benchmark driver (`scripts/engine-benchmark.mjs`). | Baseline suites as in section 5. |
 | 2026-10-02 | S1a containers | `styk-doc` (lossless store, JavaScript-exact JSON), `styk-formats` (container reader and writer, native document rules). | 461 native files: Rust and JS readers agree on every document; all 448 version 2 files are written back byte-identical. URIEL 3 (43 MiB skeleton) decodes into the store in 0.40 s natively, 63 MiB resident. |
 | 2026-10-02 | S2 start | `styk-eval` reads the store; `styk-engine` (generations, scheduler, cache, image decoding); threaded WebAssembly build; renderer without storage buffers; `src/engine/engine.mjs`; `engine/viewer`. | In headless Chromium (WebGL2 on SwiftShader, 8 workers) URIEL 3 opens and draws; frames prepare in 3.5 ms on average in WebAssembly. In Node the module opens URIEL 3 in 0.66 s and `svr_uriel.piv` in 0.19 s once warm. Geometry parity unchanged from the prototype (Jay exact, URIEL 3 21 of 24 sampled frames; pinned IK missing). |
+| 2026-10-02 18:32 | S2 incremental views | The `Loader` lives as long as a document lineage and keeps the typed figure, keyframe and pose source of every record whose tree node is unchanged; images interned by payload; style overlays resolved once per base figure. | An edit that replaces one keyframe converts one keyframe (`tests/incremental.rs`). |
+| 2026-10-02 18:37 | S3 mirror | `src/engine/engine-mirror.mjs` and `styk-engine` `mirror.rs`: changed records staged per batch (properties, table layouts by old index, lifted records, pose sources) and committed atomically by revision; an invalid batch changes nothing. `EditScene` draws the pose on screen from the changed objects only (D12). | 8 mirror tests (`cargo test -p styk-engine --test mirror`). |
+| 2026-10-02 19:03 | S3 editing view in the app | `src/engine/engine-stage.mjs` wraps the JavaScript renderer: for a supported document the engine draws into its own canvas, stacked where `#scene` is; the gate (`engine-eligibility.mjs`) names the first missing feature. Cross-origin isolation headers on the dev server, the desktop host and the web build. D10. | Demo document, engine against the Canvas 2D renderer: 3.4–4.4 k differing pixels at 1440×900, mean 0.055/255, largest 53–79, all on edges. A background commit is seen about 10 ms after it lands instead of 253 ms (the engine now calls `Atomics.notify`). |
+| 2026-10-02 19:09 | S3 playback in the app | `src/engine/engine-playback.mjs`: for a supported document a playback packet is a ticket for a tick the engine prepared on its own threads; the playback workers get no copy of the document. | Demo (47 ticks at 24 fps) in headless Chromium (WebGL2 on SwiftShader), measured at 19:50 while the baseline benchmark ran: all 47 ticks presented in order, all by the engine; tick gap median 38.9 ms, largest 77.2 ms (the JavaScript renderer in the same conditions: 49.5 and 101.1 ms). |
+| 2026-10-02 19:22 | S2 inverse kinematics | `styk-eval/src/ik/` (solver, follower and attachment tables, rig projection and refinement, analytic spatial limb, joined assemblies, `interpolateIK`), `parity.rs` shared by `styk compare` and the tests and now comparing joints too, 27 editor-built fixtures (`engine/tools/ik-fixtures.mjs`), [`docs/engine/rigs-ik.md`](engine/rigs-ik.md). Written by a subagent; reviewed, merged and re-verified here. | URIEL 3 frames with differences: 31 → 4 of 232 (every tick). Fixtures: 0 mismatches; 122 controller outcomes and 599 solved angles agree with the editor within 4.5e-11 rad with the same iteration counts. Jay: 0 mismatches. Cost on Jay +0.09 ms per frame (0.75 → 0.84). |
+| 2026-10-02 19:25 | S3 onion skins | Ghost poses kept by id with their geometry; tint, fade and the placement order of `composeSceneGroups` (`onion.rs`). D11. | Demo with onion skins, engine against the JavaScript renderer, ticks 6, 13, 30: 3,634 / 4,373 / 3,734 differing pixels, largest 79 / 65 / 53, mean 0.057 / 0.054 / 0.060, edges only. |
+| 2026-10-02 19:33 | S2 movieclip replacements | Layer keys that replace a movieclip with other figures (capture, break apart, make unique) are applied as `replaceMovieclipFrame` does, tweened along their own pose track; `engine/tools/eval-fixtures.mjs` and the shared `fixture-kit.mjs`. | URIEL 3, every tick: 232 of 232 frames, 113,319 primitives and 111,056 joints, 0 mismatches. Jay: 26 of 26 frames, 17,238 primitives, 22,698 joints, 0. Four fixtures, each failing without its replacements. |
+| 2026-10-02 20:05 | S3 IK in the app; tools | Documents with IK controllers are drawn by the engine (the gate no longer refuses them). `scripts/engine-app-parity.mjs` (D13), `scripts/engine-bench-matrix.sh`, `scripts/engine-bench-summary.mjs`; the inventory gains a **partial** status and coverage shares. WebKit runs here. | App parity: see section 7. Inventory: 3 modules covered by Rust, 32 partly (1 % and 17 % of the engine source), none deleted yet. |
+| 2026-10-02 20:10 | S1 Pivot codec (agent, reviewed and verified) | `styk-piv`: Pivot 2-5 and `.stk` reading into the store, Pivot 5 and `.stk` writing (bit-exact zlib 1.3.1), the codec service (import JSON and `STYKPIV1`, export, source cache, leases, cancellation, Python's errors); `docs/engine/formats-piv.md`. Not wired into the app yet. | Replay of the Python recording: 13,369 of 13,369 requests identical (section 7). One run each under load: `svr_uriel.piv` imports as JSON in 0.96 s (Python 2.54 s), `tdd2 uriel nemesis.piv` in 0.91 s (2.19 s). 37 unit and 59 integration tests. Inventory: 20 modules covered, 35 partly (7 % and 21 % of the engine source), none deleted. |
+| 2026-10-02 20:15 | S3 renderer fixes found by app parity | Under WebGPU the engine presented the pasteboard black (wgpu lists only opaque alpha for WebGPU canvases; the stage now asks for premultiplied). Isolation layers that overflow the atlas are drawn in full-resolution rounds instead of at half resolution (`plan_rounds`, three unit tests). `engine-app-parity.mjs` gains an Electron target. | `04-waterfall.styk` in Electron: identical to the WebGPU renderer. `hitoshi vs suzu tomiee ssj.piv` tick 257: 2 rounds, no downscaling; mean difference 1.71 → 0.70 levels. |
 
-In progress: the Pivot codec port (`styk-piv`, a background agent, with the Python codec as
-oracle); the up-front baseline benchmark matrix.
+In progress: effect evaluation (`styk-eval/src/vfx/`, a background agent, JavaScript as
+oracle); baseline rounds 2–3 (section 5). Next: wire `styk-piv` into the app (WebAssembly on
+the web, the same module in Electron) in place of Pyodide and the Python sidecar; the onion
+paint fix; drawings in the engine; effects rendering once evaluation lands.
