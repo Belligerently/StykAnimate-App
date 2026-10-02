@@ -18,7 +18,7 @@ impl Editor {
             // `Math.round`.
             self.tick = (self.tick + 0.5).floor();
         }
-        let source = self.evaluated(self.tick, true)?;
+        let source = self.shown_frame()?;
         let objects = objects_of(&source);
         if !objects.iter().any(|o| uid(o).is_some_and(|u| self.selection.uids.contains(&u))) {
             return Ok(false);
@@ -49,6 +49,7 @@ impl Editor {
         if same(&drag.before, &after) {
             self.drag = None;
             self.authored = None;
+            self.retained = None;
             return Ok(false);
         }
         let committed = self.finish_authored_drag(&ids, &after);
@@ -84,6 +85,7 @@ impl Editor {
         }
         let drag = self.drag.take();
         self.authored = None;
+        self.retained = None;
         let mut changed = Vec::new();
         if let Some(drag) = drag {
             self.restore_selection(&drag.before_selection)?;

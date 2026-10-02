@@ -86,6 +86,11 @@ pub struct Editor {
     pub(crate) selection: Selection,
     pub(crate) drag: Option<Drag>,
     pub(crate) authored: Option<Authored>,
+    /// The draft of the last committed gesture, which the editor goes on showing as
+    /// the evaluated frame until a seek, an edit or history invalidates it
+    /// (`_authoredCommitPreview` kept in `_evaluated`). Usually equal to evaluating
+    /// again; not after editing a movieclip's replaced frame between its keys.
+    pub(crate) retained: Option<Value>,
     pub(crate) undo: Vec<Command>,
     pub(crate) redo: Vec<Command>,
     pub(crate) revision: u64,
@@ -136,6 +141,7 @@ struct Snapshot {
     selection: Selection,
     drag: Option<Drag>,
     authored: Option<Authored>,
+    retained: Option<Value>,
     undo: Vec<Command>,
     redo: Vec<Command>,
     counters: [u64; 5],
@@ -158,6 +164,7 @@ impl Editor {
             selection: Selection::default(),
             drag: None,
             authored: None,
+            retained: None,
             undo: Vec::new(),
             redo: Vec::new(),
             revision: 0,
@@ -239,6 +246,7 @@ impl Editor {
             selection: self.selection.clone(),
             drag: self.drag.clone(),
             authored: self.authored.clone(),
+            retained: self.retained.clone(),
             undo: self.undo.clone(),
             redo: self.redo.clone(),
             counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity],
@@ -255,6 +263,7 @@ impl Editor {
         self.selection = snapshot.selection;
         self.drag = snapshot.drag;
         self.authored = snapshot.authored;
+        self.retained = snapshot.retained;
         self.undo = snapshot.undo;
         self.redo = snapshot.redo;
         [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity] = snapshot.counters;
@@ -338,9 +347,6 @@ impl Editor {
         let figures = list(self.report.get("figure_types"));
         if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
             return Some("with animation origins");
-        }
-        if sheet.is_some() && figures.iter().any(|figure| figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
-            return Some("with movieclips on a layer sheet");
         }
         let sources = styk.and_then(|s| s.get("frameSources")).and_then(Value::as_obj).map(|table| table.values().to_vec()).unwrap_or_default();
         let controlled = |frame: &Value| list(frame.get("objects")).iter().any(|object| object.get("_stykIK").is_some());

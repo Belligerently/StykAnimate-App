@@ -126,3 +126,34 @@ scenario('locked-sheet', app, [
   ['@seek', 2], ['@select', 3, -1], ['moveSelection', 5, 5], ['@select', 1, -1], ['moveSelection', 5, 5], ['rotateSelection', 0.2], ['undo'],
   ['@select', 3, 0], ['beginDrag', 'Pose figure'], ['poseJoint', 400, 400], ['commitDrag'], ['undo'],
 ], 'sheet-locked.document.json');
+// A movieclip on a layer sheet: figure 3 captured as a clip, so the layer's keys replace it
+// with the clip's instance. Editing other figures bakes the replacement into the new pose;
+// editing the instance re-captures the replacement frame in place.
+{
+  const clipped = open(JSON.parse(JSON.stringify(prune(chain.report))), app);
+  clipped.seek(0); clipped.select(3); clipped.createMovieclip({start: 0, end: 7});
+  clipped.seek(0); clipped.select(1);
+  writeFileSync(`${out}/sheet-movieclip.document.json`, JSON.stringify(clipped.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  const instance = clipped.evaluatedFrame.objects.find(object => clipped.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.movieclip).unique_id;
+  scenario('movieclip-sheet', app, [
+    ['@seek', 3], ['@select', instance, -1], ['moveSelection', 14, 6], ['rotateSelection', 0.3], ['undo'], ['redo'],
+    ['@select', 1, -1], ['moveSelection', -8, 4], ['@seek', 5], ['@select', 2, 1], ['rotateJoint', 0.4], ['selectMany', [1, instance]], ['moveSelection', 3, 3],
+    ['@seek', 0], ['@select', instance, -1], ['scaleSelection', 1.3], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
+}
+// The same with only a loose figure captured: the other figures of the layer stay editable,
+// and editing them bakes the key's replacements into the new pose.
+{
+  const base = open(documentOf([limb(true), limb(), limb()], i => [200 + i * 140, 170]));
+  base.select(2); base.joinTo(1, 33); nextKey(base, 6); base.select(1); base.moveSelection(40, 0);
+  const clipped = open(JSON.parse(JSON.stringify(prune(base.report))), app);
+  clipped.seek(0); clipped.select(3); clipped.createMovieclip({start: 0, end: 7});
+  clipped.seek(0); clipped.select(1);
+  writeFileSync(`${out}/sheet-movieclip-loose.document.json`, JSON.stringify(clipped.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  const instance = clipped.evaluatedFrame.objects.find(object => clipped.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.movieclip).unique_id;
+  scenario('movieclip-loose-sheet', app, [
+    ['@seek', 3], ['@select', 1, -1], ['moveSelection', -8, 4], ['@select', instance, -1], ['moveSelection', 9, 9], ['@seek', 5], ['@select', 2, 1], ['rotateJoint', 0.4],
+    ['selectMany', [1, instance]], ['moveSelection', 3, 3], ['@seek', 0], ['@select', instance, -1], ['scaleSelection', 1.3], ['@select', 2, -1], ['rotateSelection', 0.2],
+    ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+  ], 'sheet-movieclip-loose.document.json');
+}

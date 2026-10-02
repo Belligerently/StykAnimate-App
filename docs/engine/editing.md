@@ -79,16 +79,20 @@ Every ported call runs in both of the editor's modes:
   unless auto key is on) holding a new pose source captured from the draft; imported
   keys whose span changed are frozen as poses first; one `layer-sheet` history entry
   records the sheet, the layers and the sources, and undo, redo and the collection of
-  sources from a dropped redo branch follow the editor. Recorded in move-sheet,
-  gestures-sheet, autokey-sheet, layers-sheet (two layers, a join across them, a held
-  key, a multi-layer selection) and locked-sheet (refusals and their cancel events).
+  sources from a dropped redo branch follow the editor. A movieclip instance, which a
+  key's frame replacement places, is edited in that replacement (re-captured in place);
+  editing other figures of the layer bakes the replacement into the new pose. After a
+  commit the draft stays on show until a seek, an edit or history invalidates it, as in
+  the editor. Recorded in move-sheet, gestures-sheet, autokey-sheet, layers-sheet (two
+  layers, a join across them, a held key, a multi-layer selection), locked-sheet
+  (refusals and their cancel events), movieclip-sheet and movieclip-loose-sheet.
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
 A call answers `Unported`, and changes nothing, on documents with property channels on a
-native timeline, animation origins, a movieclip source, inverse-kinematics controllers
-or movieclips on a layer sheet; for joint gestures on rigged or Stick Nodes figures; for
-poses on a drawing layer or a movieclip's replaced frame; and wherever the engine does
-not evaluate the frame as records yet ([evaluation.md](evaluation.md)).
+native timeline, animation origins, a movieclip source or inverse-kinematics
+controllers; for joint gestures on rigged or Stick Nodes figures; for poses on a drawing
+layer; for a replaced figure joined to one outside its movieclip frame; and wherever the
+engine does not evaluate the frame as records yet ([evaluation.md](evaluation.md)).
 
 What the facade must still account for before it calls the engine (none of it is a
 document difference the harness can see):
@@ -126,8 +130,6 @@ report. Native build, one run each while the machine was busy with other work
 | Undo | 6.1 ms | 5.2 ms |
 
 Not measured: WebAssembly, and the boundary (arguments in, changed records out).
-`TDD2 URIEL NEMESIS 3` and `Jay on a new app (repaired)` contain movieclips, which
-gestures on a layer sheet do not cover yet.
 
 ## Arithmetic
 

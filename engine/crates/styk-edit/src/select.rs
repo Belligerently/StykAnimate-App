@@ -79,6 +79,7 @@ impl Editor {
         let index = rows.partition_point(|r| r.start <= next).saturating_sub(1);
         self.tick = next;
         self.frame_index = index;
+        self.retained = None;
         self.emit("seek", vec![]);
         // `seek` returns the evaluated frame, a view the facade reads from its own copy.
         Ok(Value::Null)

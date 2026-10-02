@@ -259,19 +259,61 @@ impl Editor {
         if ids.is_empty() {
             self.drag = None;
             self.authored = None;
+            self.retained = None;
             return Ok(false);
         }
+        // The draft stays on show after the commit unless a clip's playback changed.
+        let playback = |objects: &[Value], id: u32| json(find(objects, id).as_ref().and_then(|o| o.get("_stykMovieclip")));
+        let retain = changed.iter().all(|&id| find(&old, id).is_some() && find(&current, id).is_some() && playback(&old, id) == playback(&current, id));
         let label = drag.label.clone();
         let selection = drag.before_selection.clone();
         let mut plan = self.planner(&ids)?;
         for id in &ids {
             let keys = plan.keys(id);
             let end = num(&Value::object(plan.track(id).clone()), "end").unwrap_or(0.0);
-            let key = key_at(&keys, tick).map(|i| keys[i].clone());
-            if key.as_ref().is_some_and(|k| k.get("movieclipPatches").is_some() || k.get("patchOnly").is_some()) {
-                return Err(EditError::Unported("posing a movieclip's replaced frame".into()));
-            }
+            let at_key = key_at(&keys, tick);
+            let key = at_key.map(|i| keys[i].clone());
             let hold = key.as_ref().is_some_and(|k| tick < end && matches!(k.get("interpolation").and_then(Value::as_str), Some("constant" | "hold")));
+            // Figures that a key's movieclip replacements placed are edited in the
+            // replacement they came from: the key keeps its pose and its replacements.
+            let patches = items(key.as_ref().and_then(|k| k.get("movieclipPatches")));
+            let changed_here: Vec<u32> = changed.iter().copied().filter(|&u| self.owner(u) == *id).collect();
+            if let (false, Some(index), false) = (self.auto_key, at_key, patches.is_empty()) {
+                let members = |patch: &Value| -> Vec<u32> {
+                    patch.get("frameId").and_then(Value::as_str).and_then(|frame| self.frame_by_id(frame)).map(|frame| objects_of(&frame).iter().filter_map(uid).collect()).unwrap_or_default()
+                };
+                let placed: Vec<u32> = patches.iter().flat_map(&members).collect();
+                if !changed_here.is_empty() && changed_here.iter().all(|u| placed.contains(u)) {
+                    let mut owned = keys[index].as_obj().cloned().unwrap_or_default();
+                    owned.set("empty", Value::Bool(!current.iter().any(|o| uid(o).is_some_and(|u| self.owner(u) == *id))));
+                    let mut replaced = Vec::with_capacity(patches.len());
+                    for patch in &patches {
+                        let uids = members(patch);
+                        if !changed_here.iter().any(|u| uids.contains(u)) {
+                            replaced.push(patch.clone());
+                            continue;
+                        }
+                        let source = patch.get("frameId").and_then(Value::as_str).and_then(|frame| self.frame_by_id(frame)).unwrap_or(Value::Null);
+                        let frame = self.owned_frame(&after, &uids, &continuations(&source))?;
+                        let mut patch = patch.as_obj().cloned().unwrap_or_default();
+                        patch.set("frameId", plan.capture(&frame, id).get("frameId").cloned().unwrap_or(Value::Null));
+                        replaced.push(Value::object(patch));
+                    }
+                    owned.set("movieclipPatches", Value::array(replaced));
+                    let mut keys = keys;
+                    keys[index] = Value::object(owned);
+                    plan.set_keys(id, keys);
+                    continue;
+                }
+            }
+            // A boundary of a broken-apart movieclip frame: the pose after it is fixed first.
+            if key.as_ref().is_some_and(|k| k.get("patchOnly").is_some_and(Value::truthy))
+                && let Some(next) = at_key.and_then(|i| keys.get(i + 1)).cloned()
+            {
+                let until = num(&next, "tick").unwrap_or(tick);
+                let frame = self.evaluated(until, false)?;
+                plan.write(id, until, &frame, &next)?;
+            }
             // A held cell is edited at its key; auto key always keys the playhead.
             let at = match &key {
                 Some(key) if hold && !self.auto_key => num(key, "tick").unwrap_or(tick),
@@ -286,7 +328,68 @@ impl Editor {
         }
         self.drag = None;
         self.authored = None;
-        self.publish(plan, &label, selection)
+        self.publish(plan, &label, selection, retain.then_some(after))
+    }
+
+    /// `getFrameById(report, id)`: a retained pose source, else the keyframe with that id.
+    fn frame_by_id(&self, id: &str) -> Option<Value> {
+        let retained = self.report.path(&["_styk", "frameSources", id]).filter(|frame| frame.truthy()).cloned();
+        retained.or_else(|| items(self.report.get("keyframes")).into_iter().find(|frame| frame.path(&["_styk", "frameId"]).and_then(Value::as_str) == Some(id)))
+    }
+
+    /// `ownedFrame(report, frame, uids)` with `continuations` set: the frame reduced to
+    /// the figures `uids` name, joins among them kept, slots by unique id.
+    fn owned_frame(&self, frame: &Value, uids: &[u32], steps: &[Value]) -> Result<Value, EditError> {
+        let all = objects_of(frame);
+        let selected = |object: &Value| uid(object).is_some_and(|u| uids.contains(&u));
+        let order: Vec<f64> = frame_order(frame).into_iter().filter(|u| uids.contains(&(*u as u32))).collect();
+        let mut members: Vec<Obj> = Vec::new();
+        for object in all.iter().filter(|o| selected(o)) {
+            let mut record = object.as_obj().cloned().unwrap_or_default();
+            if let Some(join) = object.get("join").filter(|j| j.truthy()) {
+                let parent = num(join, "target_object_slot").filter(|s| *s >= 0.0).and_then(|s| all.get(s as usize));
+                match parent.filter(|p| selected(p)).and_then(|p| p.get("unique_id")) {
+                    Some(parent) => {
+                        let mut join = join.as_obj().cloned().unwrap_or_default();
+                        join.set("target_unique_id", parent.clone());
+                        record.set("join", Value::object(join));
+                    }
+                    None => return Err(EditError::Unported("a replaced figure joined to a figure outside its movieclip frame".into())),
+                }
+            }
+            members.push(record);
+        }
+        // `normalizeFrame`: slots follow unique ids, joins follow their figures.
+        let id_of = |record: &Obj| record.get("unique_id").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        members.sort_by_key(|record| id_of(record) as i64 as i32);
+        let slot_of = |target: f64| members.iter().position(|record| id_of(record) == target);
+        let slots: Vec<Option<usize>> = members.iter().map(|record| record.get("join").filter(|j| j.truthy()).and_then(|j| num(j, "target_unique_id")).and_then(slot_of)).collect();
+        let objects: Vec<Value> = members
+            .iter()
+            .enumerate()
+            .map(|(slot, record)| {
+                let mut record = record.clone();
+                record.set("object_slot", Value::Num(slot as f64));
+                if let (Some(target), Some(join)) = (slots[slot], record.get("join").and_then(Value::as_obj).cloned()) {
+                    let mut join = join;
+                    join.set("target_object_slot", Value::Num(target as f64));
+                    record.set("join", Value::object(join));
+                }
+                Value::object(record)
+            })
+            .collect();
+        let mut out = frame.as_obj().cloned().unwrap_or_default();
+        out.set("objects", Value::array(objects));
+        let mut styk = out.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+        if steps.is_empty() {
+            styk.remove("movieclipContinuations");
+        } else {
+            styk.set("movieclipContinuations", Value::array(steps.to_vec()));
+        }
+        out.set("_styk", Value::object(styk));
+        out.set("object_draw_order_unique_ids", Value::array(order.iter().map(|u| Value::Num(*u)).collect()));
+        out.set("object_draw_order", Value::array(order.iter().map(|u| slot_of(*u).map_or(Value::Null, |slot| Value::Num(slot as f64))).collect()));
+        Ok(Value::object(out))
     }
 
     /// `planner(editor, ids)`: `ids` must be layers that exist and are not locked.
@@ -320,7 +423,7 @@ impl Editor {
 
     /// `publish(editor, plan, label, {selection})`: the plan becomes the document's
     /// sheet, with one history entry.
-    fn publish(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
+    fn publish(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>) -> Result<bool, EditError> {
         // Imported spans whose ends changed are frozen as poses: an unchanged
         // imported span keeps evaluating from the import.
         for (id, _) in plan.tracks.clone() {
@@ -364,6 +467,7 @@ impl Editor {
             }
         }
         self.next_frame_identity = plan.next_frame;
+        self.retained = retained;
         self.new_layer_hints = plan.sources.iter().flat_map(|(_, source)| objects_of(source)).filter_map(|o| uid(&o)).map(|u| (u, self.layer_of(u))).collect();
         let after_selection = self.selection_state();
         let source_ids: Vec<Value> = plan.sources.iter().map(|(id, _)| Value::str(id)).collect();
@@ -462,6 +566,7 @@ impl Editor {
             }
         }
         self.layer_revision += 1;
+        self.retained = None;
         self.restore_selection(selection)?;
         self.revision = revision;
         let source_ids = sources.iter().map(|(id, _)| Value::str(id)).collect();

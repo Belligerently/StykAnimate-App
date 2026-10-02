@@ -78,9 +78,10 @@ impl Editor {
     /// `editor.evaluatedFrame`: the draft of the gesture in progress, else the
     /// document at the playhead.
     pub(crate) fn shown_frame(&self) -> Result<Value, EditError> {
-        match &self.authored {
-            Some(edit) => Ok(edit.frame.clone()),
-            None => self.evaluated(self.tick, true),
+        match (&self.authored, &self.retained) {
+            (Some(edit), _) => Ok(edit.frame.clone()),
+            (None, Some(frame)) => Ok(frame.clone()),
+            (None, None) => self.evaluated(self.tick, true),
         }
     }
 

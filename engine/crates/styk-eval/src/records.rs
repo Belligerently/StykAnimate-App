@@ -146,21 +146,36 @@ impl<'a> Records<'a> {
         Ok(self.layer_order(frame))
     }
 
-    /// `sampleMovieclipObjects(report, frame, tick)`: movieclips outside their span
-    /// leave the frame. (The sample time each shown one gets, `_movieclipSample`, is a
-    /// runtime field a snapshot drops.)
+    /// `sampleMovieclipObjects(report, frame, tick)`: every movieclip instance gets its
+    /// local time (`_movieclipSample`, a runtime field a snapshot drops), and instances
+    /// outside their span leave the frame.
     fn sample_clips(&self, frame: Value, tick: f64) -> Result<Value, Error> {
         if !self.prepared.doc.figures.iter().any(|f| f.movieclip.is_some()) {
             return Ok(frame);
         }
-        // Which instances are hidden: the typed evaluator's clocks, by identity.
+        // The clocks are the typed evaluator's, by identity.
         let typed = self.prepared.raw(tick);
-        let hidden: Vec<u32> = typed.objects.iter().filter(|o| self.prepared.clip_local(o, tick) == Some(None)).map(|o| o.uid).collect();
-        if hidden.is_empty() {
+        let times: HashMap<u32, Option<f64>> = typed.objects.iter().filter_map(|o| Some((o.uid, self.prepared.clip_local(o, tick)?))).collect();
+        if times.is_empty() {
             return Ok(frame);
         }
-        let objects = items(frame.get("objects"));
-        let shown = |o: &Value| !uid(o).is_some_and(|id| hidden.contains(&(id as u32)));
+        let objects: Vec<Value> = items(frame.get("objects"))
+            .into_iter()
+            .map(|object| match uid(&object).and_then(|id| times.get(&(id as u32))) {
+                Some(time) => {
+                    let mut sampled = object.as_obj().cloned().unwrap_or_default();
+                    sampled.set("_movieclipSample", time.map_or(Value::Null, Value::Num));
+                    Value::object(sampled)
+                }
+                None => object,
+            })
+            .collect();
+        let shown = |o: &Value| !matches!(o.get("_movieclipSample"), Some(Value::Null));
+        let mut out = frame.as_obj().cloned().unwrap_or_default();
+        if objects.iter().all(shown) {
+            out.set("objects", Value::array(objects));
+            return Ok(Value::object(out));
+        }
         let mut slots: HashMap<usize, usize> = HashMap::new();
         for (slot, object) in objects.iter().enumerate() {
             if shown(object) {
@@ -187,7 +202,6 @@ impl<'a> Records<'a> {
         };
         let order: Vec<usize> = order.iter().filter_map(|slot| slots.get(slot).copied()).collect();
         let ids: Vec<Value> = order.iter().map(|&slot| visible[slot].get("unique_id").cloned().unwrap_or(Value::Null)).collect();
-        let mut out = frame.as_obj().cloned().unwrap_or_default();
         let count = visible.len();
         out.set("objects", Value::array(visible));
         out.set("object_count", Value::Num(count as f64));
