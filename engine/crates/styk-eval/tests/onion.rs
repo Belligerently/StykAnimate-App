@@ -22,7 +22,7 @@ fn a_tinted_ghost_keeps_custom_paints_and_drops_secondary_colours() {
     let prepared = styk_eval::prepare(doc);
     let scene = build(&prepared.doc, &prepared.evaluate(0.0));
     let ghost_scene = build(&prepared.doc, &prepared.evaluate(8.0));
-    let overrides = Overrides { hidden: &[], translations: &[], background: None };
+    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false };
     let plain = encode_composed(&prepared.doc, &assets, &scene, &overrides, &[], None);
     let ghost = Ghost { scene: &ghost_scene, opacity: 0.14, tint: Some(TINT), hidden: &[] };
     // One figure: the ghost under the current pose.

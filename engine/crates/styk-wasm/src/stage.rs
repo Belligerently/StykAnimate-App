@@ -26,6 +26,8 @@ pub struct Stage {
     /// The document lineage and page count the sprite atlas is allocated for.
     atlas_of: Option<(u64, u32)>,
     edit: EditScene,
+    /// Effects are drawn (the editor's effects preview is on).
+    effects: bool,
 }
 
 #[wasm_bindgen]
@@ -73,7 +75,12 @@ impl Stage {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, &queue, format);
-        Ok(Stage { engine: engine.engine.clone(), surface, config, device, queue, renderer, backend: format!("{:?} · {}", info.backend, info.name), atlas_of: None, edit: EditScene::default() })
+        Ok(Stage { engine: engine.engine.clone(), surface, config, device, queue, renderer, backend: format!("{:?} · {}", info.backend, info.name), atlas_of: None, edit: EditScene::default(), effects: true })
+    }
+
+    /// Turns effects on or off (the editor's effects preview).
+    pub fn set_effects(&mut self, on: bool) {
+        self.effects = on;
     }
 
     /// The graphics backend and adapter in use, for the status line and reports.
@@ -157,7 +164,7 @@ impl Stage {
                 hidden: slots,
             })
             .collect();
-        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list };
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects };
         let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
         let scene_camera = if camera { self.edit.camera() } else { None };
         self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)

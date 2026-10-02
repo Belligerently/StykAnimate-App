@@ -989,11 +989,11 @@ mod tests {
     /// A frame of `count` translucent figures, each covering most of a 400×300 view,
     /// with one nested translucent outline each.
     fn crowded(count: usize) -> DrawList {
-        let mut groups = vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0, 0.0, 400.0, 300.0] }];
+        let mut groups = vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0, 0.0, 400.0, 300.0], layer: styk_eval::drawlist::NO_LAYER }];
         for _ in 0..count {
             let top = groups.len() as u32;
-            groups.push(Group { parent: 0, depth: 1, opacity: 0.5, bounds: [10.0, 10.0, 390.0, 290.0] });
-            groups.push(Group { parent: top, depth: 2, opacity: 0.5, bounds: [20.0, 20.0, 380.0, 280.0] });
+            groups.push(Group { parent: 0, depth: 1, opacity: 0.5, bounds: [10.0, 10.0, 390.0, 290.0], layer: styk_eval::drawlist::NO_LAYER });
+            groups.push(Group { parent: top, depth: 2, opacity: 0.5, bounds: [20.0, 20.0, 380.0, 280.0], layer: styk_eval::drawlist::NO_LAYER });
         }
         DrawList { groups, passes: vec![Pass { depth: 0, start: 0, end: 0 }], ..Default::default() }
     }
@@ -1037,10 +1037,10 @@ mod tests {
     /// A single group whose nested layers alone exceed the atlas is the one case drawn smaller.
     #[test]
     fn a_group_too_large_alone_is_downscaled() {
-        let mut groups = vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0, 0.0, 400.0, 300.0] }];
-        groups.push(Group { parent: 0, depth: 1, opacity: 0.5, bounds: [0.0, 0.0, 400.0, 300.0] });
+        let mut groups = vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0, 0.0, 400.0, 300.0], layer: styk_eval::drawlist::NO_LAYER }];
+        groups.push(Group { parent: 0, depth: 1, opacity: 0.5, bounds: [0.0, 0.0, 400.0, 300.0], layer: styk_eval::drawlist::NO_LAYER });
         for _ in 0..(MAX_LAYER_PAGES as usize + 4) {
-            groups.push(Group { parent: 1, depth: 2, opacity: 0.5, bounds: [0.0, 0.0, 400.0, 300.0] });
+            groups.push(Group { parent: 1, depth: 2, opacity: 0.5, bounds: [0.0, 0.0, 400.0, 300.0], layer: styk_eval::drawlist::NO_LAYER });
         }
         let list = DrawList { groups, passes: vec![Pass { depth: 0, start: 0, end: 0 }], ..Default::default() };
         let rounds = plan_rounds(&list, &view(), [400, 300]);

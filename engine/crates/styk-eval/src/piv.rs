@@ -319,6 +319,7 @@ fn decode_v5(payload: &[u8], name: &str) -> Result<Document, Error> {
                 ik: None,
                 vfx: None,
                 vfx_scope: false,
+                vfx_connected: None,
             });
         }
         let mut order = Vec::with_capacity(obj_count);
@@ -796,6 +797,7 @@ fn decode_v4(data: &[u8], name: &str) -> Result<Document, Error> {
                 ik: None,
                 vfx: None,
                 vfx_scope: false,
+                vfx_connected: None,
             });
         }
         let mut order = Vec::with_capacity(object_count);

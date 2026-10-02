@@ -284,6 +284,10 @@ pub struct Object {
     pub vfx: Option<Arc<crate::vfx::Stacks>>,
     /// `_stykVfxScope === 1`: the figure's own stack covers its attached figures.
     pub vfx_scope: bool,
+    /// `_vfxConnectedEffects`: the stack of the connected group this object owns,
+    /// as the editor composed it with its clips. Only edit frames carry it
+    /// ([`crate::vfx::frame::composed`]); documents never save it.
+    pub vfx_connected: Option<Arc<[Arc<crate::vfx::Effect>]>>,
 }
 
 /// `_stykMovieclip` playback settings of one instance.

@@ -81,6 +81,8 @@ pub struct ObjectGeometry {
     pub uid: u32,
     pub figure: u32,
     pub root: [f64; 2],
+    /// The pose's scale.
+    pub scale: f64,
     /// Handle position per segment index (NaN when unresolved).
     pub ends: Vec<[f64; 2]>,
     pub starts: Vec<[f64; 2]>,
@@ -112,8 +114,16 @@ pub struct Scene {
     pub background_color: Option<u32>,
     /// Movieclip owner opacities.
     pub owners: Vec<f64>,
+    /// By owner: the instance's absolute scale, times the scales of the
+    /// instances it is nested in (the scale its container effects apply at).
+    pub owner_scales: Vec<f64>,
     /// Owner chains, outermost first: (owner, child slot inside that clip).
     pub chains: Vec<Vec<(u32, u32)>>,
+    /// The effects of the frame this scene was built from ([`Frame::vfx`]).
+    pub vfx: Option<Arc<crate::vfx::FrameVfx>>,
+    /// By owner (as [`Scene::owners`]): the effects of the clip's own frame,
+    /// which its child slots in [`Scene::chains`] index.
+    pub clip_vfx: Vec<Option<Arc<crate::vfx::FrameVfx>>>,
 }
 
 impl Scene {
@@ -170,7 +180,9 @@ struct Built {
     /// Movieclip content: its own figure table, owners and chains (local ids).
     figures: Vec<Arc<Figure>>,
     owners: Vec<f64>,
+    owner_scales: Vec<f64>,
     chains: Vec<Vec<(u32, u32)>>,
+    clip_vfx: Vec<Option<Arc<crate::vfx::FrameVfx>>>,
 }
 
 /// `ik` is the object's derived pose when a pinned IK controller reaches it:
@@ -402,12 +414,14 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     items.sort_by(|a, b| a.z.total_cmp(&b.z));
     let _ = doc;
     Built {
-        geometry: ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, ends, starts, opacity, resolved: true },
+        geometry: ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true },
         items,
         points,
         figures: Vec::new(),
         owners: Vec::new(),
+        owner_scales: Vec::new(),
         chains: Vec::new(),
+        clip_vfx: Vec::new(),
     }
 }
 
@@ -437,12 +451,14 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
     let mut built = Built {
-        geometry: ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, ends: vec![end], starts: vec![root], opacity, resolved: true },
+        geometry: ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true },
         items: Vec::new(),
         points: Vec::new(),
         figures: Vec::new(),
         owners: Vec::new(),
+        owner_scales: Vec::new(),
         chains: Vec::new(),
+        clip_vfx: Vec::new(),
     };
     let Some(local) = obj.clip_time else { return built };
     let source = clip_scene(clip, local);
@@ -454,6 +470,10 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     built.figures = source.figures.clone();
     built.owners.push(opacity);
     built.owners.extend_from_slice(&source.owners);
+    built.owner_scales.push(scale.abs());
+    built.owner_scales.extend(source.owner_scales.iter().map(|s| s * scale.abs()));
+    built.clip_vfx.push(source.vfx.clone());
+    built.clip_vfx.extend_from_slice(&source.clip_vfx);
     // Chain 0..n of the source shift by one owner and gain this clip as outermost.
     let hidden = clip.document.layers.as_ref().map(|l| l.hidden.clone()).unwrap_or_default();
     let mut chain_ids: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
@@ -504,6 +524,7 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
         camera: frame.camera,
         background: (frame.background, frame.background_b, frame.background_mix),
         background_color: frame.background_color,
+        vfx: frame.vfx.clone(),
         ..Default::default()
     };
     // Join levels: roots first, then children of resolved parents.
@@ -615,6 +636,8 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
             .collect();
         let owner_base = scene.owners.len() as u32;
         scene.owners.extend_from_slice(&b.owners);
+        scene.owner_scales.extend_from_slice(&b.owner_scales);
+        scene.clip_vfx.extend(b.clip_vfx);
         let chain_base = scene.chains.len() as u32;
         for c in &b.chains {
             scene.chains.push(c.iter().map(|&(o, p)| (o + owner_base, p)).collect());

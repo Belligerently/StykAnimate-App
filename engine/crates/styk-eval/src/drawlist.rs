@@ -16,6 +16,8 @@ use std::sync::Arc;
 use crate::assets::Assets;
 use crate::doc::*;
 use crate::geometry::{mix_color, Item, ItemKind, Scene};
+use crate::vfx::layers::{item_extent, rounded, Extent, EMPTY};
+use crate::vfx::{Effect, FrameVfx, ObjectVfx};
 
 pub const K_CAPSULE: u32 = 1;
 pub const K_ARC: u32 = 2;
@@ -60,6 +62,43 @@ pub struct Group {
     pub opacity: f32,
     /// World-space bounds (x0, y0, x1, y1) of everything drawn in the group.
     pub bounds: [f32; 4],
+    /// Index into [`DrawList::layers`] when the group is drawn on a raster of
+    /// its own (effects, or artwork holding effects), or [`NO_LAYER`].
+    pub layer: u32,
+}
+
+pub const NO_LAYER: u32 = u32::MAX;
+
+/// A group drawn the way the editor draws artwork with effects: on its own
+/// raster, filtered by `stack`, then composited. See `docs/engine/vfx.md`.
+#[derive(Clone, Debug)]
+pub struct EffectLayer {
+    /// Active filters in the order they run; empty for a layer that only holds
+    /// filtered artwork.
+    pub stack: Vec<Arc<crate::vfx::Effect>>,
+    pub kind: LayerKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LayerKind {
+    /// Top-level artwork (an object, a movieclip instance or a connected run)
+    /// rasterized on a world-aligned grid anchored at `bounds`, at the editor's
+    /// raster density for the view (`rasterObject`), then resampled.
+    Entry {
+        /// `objectBounds` with every effect's padding: x, y, width, height.
+        bounds: [f64; 4],
+        /// The effects' coordinate domain (`objectBounds` without effect padding).
+        domain: [f64; 4],
+        /// The scale effect sizes are multiplied by (the owner's absolute scale).
+        scale: f64,
+        /// The largest effect padding of one item, which caps the raster density.
+        padding: f64,
+    },
+    /// Artwork inside an entry, filtered on the entry's own pixel grid (`withVfx`).
+    Nested { bounds: [f64; 4], domain: [f64; 4], scale: f64 },
+    /// The camera image: everything but onion skins, drawn through the scene's
+    /// camera at the camera preview's density, filtered, then projected.
+    Camera { canvas: [u32; 2], camera: Option<Camera> },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -80,11 +119,17 @@ pub struct DrawList {
     pub passes: Vec<Pass>,
     /// Number of leading root prims that are background fills (drawn unclipped by figures).
     pub background_prims: u32,
+    /// Raster layers of the groups that have one ([`Group::layer`]).
+    pub layers: Vec<EffectLayer>,
 }
 
 impl DrawList {
     pub fn bytes(&self) -> usize {
-        self.prims.len() * std::mem::size_of::<Prim>() + self.paints.len() * 16 + self.points.len() * 8 + self.groups.len() * 32
+        self.prims.len() * std::mem::size_of::<Prim>()
+            + self.paints.len() * 16
+            + self.points.len() * 8
+            + self.groups.len() * std::mem::size_of::<Group>()
+            + self.layers.iter().map(|l| std::mem::size_of::<EffectLayer>() + l.stack.len() * 8).sum::<usize>()
     }
 }
 
@@ -577,6 +622,46 @@ struct ObjectOut {
     outline_alpha: f64,
     outline: Out,
     items: Out,
+    /// Nodes with a stack of their own, filtered on their own layer, each
+    /// inserted before item primitive `at` of `items`, in order.
+    nodes: Vec<Node>,
+    /// The object's own effects (`figure` stack), over its outline and items.
+    figure: Option<Box<Fx>>,
+    /// Per item: what `objectBounds` reads, and the padding of the object's
+    /// own stacks on it (figure and node), for the layers that enclose the
+    /// object. Empty when the frame has no effects.
+    extents: Vec<(Extent, f64)>,
+    /// The object carries effects of its own (figure or node stacks).
+    has_fx: bool,
+}
+
+/// A node with its own stack.
+struct Node {
+    at: usize,
+    out: Out,
+    fx: Fx,
+}
+
+/// A stack and the rectangles the editor filters it on.
+#[derive(Clone, Debug)]
+struct Fx {
+    stack: Vec<Arc<Effect>>,
+    /// `objectBounds` with effect padding, and without: `[x, y, width, height]`.
+    bounds: [f64; 4],
+    domain: [f64; 4],
+    /// The scale effect sizes are multiplied by.
+    scale: f64,
+    /// The largest padding of one item.
+    padding: f64,
+}
+
+impl Fx {
+    fn translate(&mut self, d: [f64; 2]) {
+        self.bounds[0] += d[0];
+        self.bounds[1] += d[1];
+        self.domain[0] += d[0];
+        self.domain[1] += d[1];
+    }
 }
 
 /// The background layers (`drawBackground`), as view-filling primitives.
@@ -663,6 +748,8 @@ pub struct Overrides<'a> {
     pub translations: &'a [(u32, [f64; 2])],
     /// An ARGB colour replacing the scene background (Build mode's canvas colour).
     pub background: Option<u32>,
+    /// Draw without effects (the editor's effects preview is off).
+    pub bypass_effects: bool,
 }
 
 impl Out {
@@ -746,9 +833,30 @@ struct Encoded {
     objects: Vec<Option<ObjectOut>>,
     /// Run range per object slot.
     of_slot: std::collections::HashMap<u32, (usize, usize)>,
+    /// The scene's effects are drawn.
+    fx: bool,
 }
 
-fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &[(u32, [f64; 2])], tint: Option<[u8; 3]>) -> Encoded {
+/// The effects of the object an item belongs to: the frame's own object, or
+/// the innermost object of a movieclip chain (from that clip's frame).
+fn object_fx<'s>(scene: &'s Scene, it: &Item) -> Option<&'s ObjectVfx> {
+    if it.chain == crate::geometry::NO_CHAIN {
+        return scene.vfx.as_deref()?.object(it.slot);
+    }
+    let &(owner, part) = scene.chains[it.chain as usize].last()?;
+    scene.clip_vfx.get(owner as usize)?.as_deref()?.object(part)
+}
+
+/// A node's own stack (`segmentVfx`): segments have node stacks, polygons do not.
+fn node_stack<'s>(fx: &'s ObjectVfx, fig: &Figure, it: &Item) -> Option<&'s [Arc<Effect>]> {
+    if fx.segments.is_empty() || it.kind == ItemKind::Poly || it.flags & crate::geometry::ITEM_SEG_BRUSH != 0 {
+        return None;
+    }
+    let handle = fig.segments.get(it.index as usize)?.id;
+    fx.segments.iter().find(|(h, _)| *h == handle).map(|(_, stack)| &stack[..]).filter(|s| !s.is_empty())
+}
+
+fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &[(u32, [f64; 2])], tint: Option<[u8; 3]>, bypass: bool) -> Encoded {
     let ctx = Ctx { scene, assets, tint };
     let mut runs: Vec<(usize, usize)> = Vec::new();
     let mut of_slot: std::collections::HashMap<u32, (usize, usize)> = std::collections::HashMap::new();
@@ -764,6 +872,7 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         runs.push((i, j));
         i = j;
     }
+    let fx = !bypass && (scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some));
     let encode_run = |&(a, b): &(usize, usize)| -> Option<ObjectOut> {
         let first = &scene.items[a];
         let opacity = first.opacity;
@@ -783,56 +892,286 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
                 }
             }
         }
+        let own = if fx { object_fx(scene, first) } else { None };
+        let figure_stack = own.map_or(&[][..], |o| &o.figure[..]);
+        let scale = first.scale.abs();
+        let figure_pad = if figure_stack.is_empty() { 0.0 } else { crate::vfx::padding(figure_stack, scale, 0.0) };
         let mut items = Out::new();
+        let mut nodes: Vec<Node> = Vec::new();
+        let mut extents: Vec<(Extent, f64)> = Vec::new();
+        let (mut with, mut without, mut largest) = (EMPTY, EMPTY, 0.0f64);
         for it in &scene.items[a..b] {
-            ctx.item(&mut items, it, 0.0, [0, 0, 0]);
+            let node = own.and_then(|o| node_stack(o, &scene.figures[it.figure as usize], it));
+            let pad = figure_pad + node.map_or(0.0, |stack| crate::vfx::padding(stack, scale, 0.0));
+            let extent = if fx { item_extent(scene, assets, it) } else { None };
+            if let Some(stack) = node {
+                let mut out = Out::new();
+                ctx.item(&mut out, it, 0.0, [0, 0, 0]);
+                let (mut bounds, mut domain) = (EMPTY, EMPTY);
+                if let Some(e) = &extent {
+                    e.include(&mut bounds, pad);
+                    e.include(&mut domain, 0.0);
+                }
+                let fx = Fx { stack: stack.to_vec(), bounds: rounded(bounds), domain: rounded(domain), scale, padding: pad };
+                nodes.push(Node { at: items.prims.len(), out, fx });
+            } else {
+                ctx.item(&mut items, it, 0.0, [0, 0, 0]);
+            }
+            if let Some(e) = extent {
+                e.include(&mut with, pad);
+                e.include(&mut without, 0.0);
+                largest = largest.max(pad);
+                extents.push((e, pad));
+            }
         }
+        let has_fx = !figure_stack.is_empty() || !nodes.is_empty();
+        let mut figure = has_fx.then(|| Box::new(Fx { stack: figure_stack.to_vec(), bounds: rounded(with), domain: rounded(without), scale, padding: largest }));
         if let Some(&(_, delta)) = translations.iter().find(|(slot, _)| *slot == first.slot) {
             outline.translate(delta);
             items.translate(delta);
+            for node in &mut nodes {
+                node.out.translate(delta);
+                node.fx.translate(delta);
+            }
+            if let Some(f) = &mut figure {
+                f.translate(delta);
+            }
+            for (e, _) in &mut extents {
+                e.translate(delta);
+            }
         }
-        Some(ObjectOut { opacity, outline_alpha, outline, items })
+        Some(ObjectOut { opacity, outline_alpha, outline, items, nodes, figure, extents, has_fx })
     };
     let objects: Vec<Option<ObjectOut>> = crate::par::map(&runs, 16, encode_run);
-    Encoded { runs, objects, of_slot }
+    Encoded { runs, objects, of_slot, fx }
 }
 
-/// Places the runs `range` of an encoded scene under `base` (the root, or a ghost's group),
-/// opening and closing the isolation groups of translucent movieclip owners along the way.
-fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize), base: usize) {
-    let mut stack: Vec<Open> = Vec::new();
-    for k in range.0..range.1 {
-        let first = &scene.items[encoded.runs[k].0];
-        // Owner path of this run: one entry per enclosing movieclip.
-        let path: Vec<(u32, u32)> = match first.chain {
-            crate::geometry::NO_CHAIN => vec![],
-            c => {
-                let chain = &scene.chains[c as usize];
-                chain.iter().enumerate().map(|(level, &(owner, _))| (if level == 0 { first.slot } else { chain[level - 1].1 }, owner)).collect()
+/// A frame (the scene's own, `TOP`) or a movieclip owner's frame.
+const TOP: u32 = u32::MAX;
+
+/// One step of the nesting a run of primitives is drawn in, outermost first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Level {
+    /// A movieclip instance: the slot it occupies at its level and its owner.
+    Owner { key: u32, owner: u32 },
+    /// A connected group (`vfxScope`): the frame that holds it (`TOP` or an
+    /// owner) and its root's slot in that frame.
+    Connected { clip: u32, root: u32 },
+}
+
+/// A level with what it applies.
+struct Step<'s> {
+    level: Level,
+    opacity: f64,
+    stack: &'s [Arc<Effect>],
+    scale: f64,
+    /// `vfxPadding` of the stack in world units.
+    pad: f64,
+}
+
+/// Which connected groups each slot of a frame belongs to, outermost first,
+/// built once per frame that has any.
+#[derive(Default)]
+struct Memberships {
+    tables: Vec<(*const FrameVfx, Vec<Vec<u32>>)>,
+    /// Absolute world scale of a clip's root object, by (owner, slot).
+    scales: std::collections::HashMap<(u32, u32), f64>,
+}
+
+impl Memberships {
+    fn of(&mut self, fx: &FrameVfx, slot: u32) -> &[u32] {
+        if fx.roots.is_empty() {
+            return &[];
+        }
+        let key = fx as *const FrameVfx;
+        let at = match self.tables.iter().position(|(k, _)| *k == key) {
+            Some(at) => at,
+            None => {
+                let mut table: Vec<Vec<u32>> = Vec::new();
+                // Roots composite smaller groups first: the reverse is outermost first.
+                for &root in fx.roots.iter().rev() {
+                    let Some(attached) = fx.object(root).and_then(|o| o.attached.as_ref()) else { continue };
+                    for &member in &attached.members {
+                        if table.len() <= member as usize {
+                            table.resize(member as usize + 1, Vec::new());
+                        }
+                        table[member as usize].push(root);
+                    }
+                }
+                self.tables.push((key, table));
+                self.tables.len() - 1
             }
         };
-        let common = stack.iter().zip(path.iter()).take_while(|(o, p)| o.key == p.0 && o.owner == p.1).count();
+        self.tables[at].1.get(slot as usize).map_or(&[], Vec::as_slice)
+    }
+
+    /// The world scale of the object in `slot` of owner `owner`'s clip frame.
+    fn clip_scale(&mut self, scene: &Scene, owner: u32, slot: u32) -> f64 {
+        *self.scales.entry((owner, slot)).or_insert_with(|| {
+            scene
+                .items
+                .iter()
+                .find(|it| it.chain != crate::geometry::NO_CHAIN && scene.chains[it.chain as usize].last() == Some(&(owner, slot)))
+                .map_or(1.0, |it| it.scale.abs())
+        })
+    }
+}
+
+/// The levels a run is drawn in: the connected groups of its frame holding it,
+/// then each movieclip instance of its chain with the connected groups of
+/// that clip's frame holding the next instance (`connectedVfxGeometry` and
+/// `buildMovieclipGeometrySteps`).
+fn path<'s>(scene: &'s Scene, members: &mut Memberships, it: &Item, hidden: &[bool], fx: bool) -> Vec<Step<'s>> {
+    let mut steps: Vec<Step<'s>> = Vec::new();
+    let top = if fx { scene.vfx.as_deref() } else { None };
+    let connected = |steps: &mut Vec<Step<'s>>, members: &mut Memberships, frame: &'s FrameVfx, clip: u32, slot: u32| {
+        let roots: Vec<u32> = members.of(frame, slot).to_vec();
+        for root in roots {
+            // A group whose owner is hidden is not drawn as a group (only the frame's own figures can be hidden here).
+            if clip == TOP && hidden.get(root as usize).copied().unwrap_or(false) {
+                continue;
+            }
+            let Some(attached) = frame.object(root).and_then(|o| o.attached.as_ref()) else { continue };
+            let scale = if clip == TOP { scene.objects.get(root as usize).map_or(1.0, |o| o.scale.abs()) } else { members.clip_scale(scene, clip, root) };
+            let pad = crate::vfx::padding(&attached.stack, scale, 0.0);
+            steps.push(Step { level: Level::Connected { clip, root }, opacity: 1.0, stack: &attached.stack, scale, pad });
+        }
+    };
+    if let Some(frame) = top {
+        connected(&mut steps, members, frame, TOP, it.slot);
+    }
+    if it.chain != crate::geometry::NO_CHAIN {
+        let chain = &scene.chains[it.chain as usize];
+        let (mut above, mut above_slot) = (top, it.slot);
+        for (level, &(owner, part)) in chain.iter().enumerate() {
+            let key = if level == 0 { it.slot } else { chain[level - 1].1 };
+            let stack = above.and_then(|f| f.object(above_slot)).map_or(&[][..], |o| &o.figure[..]);
+            let scale = scene.owner_scales.get(owner as usize).copied().unwrap_or(1.0);
+            let pad = if stack.is_empty() { 0.0 } else { crate::vfx::padding(stack, scale, 0.0) };
+            steps.push(Step { level: Level::Owner { key, owner }, opacity: scene.owners[owner as usize], stack, scale, pad });
+            let inner = if fx { scene.clip_vfx.get(owner as usize).and_then(|v| v.as_deref()) } else { None };
+            if let Some(frame) = inner {
+                connected(&mut steps, members, frame, owner, part);
+            }
+            above = inner;
+            above_slot = part;
+        }
+    }
+    steps
+}
+
+/// An open level while placing.
+struct Open {
+    level: Level,
+    /// Group receiving this level's content (its own group, or the parent's).
+    target: usize,
+    isolated: bool,
+    skipped: bool,
+    opacity: f64,
+    /// The first run inside it, and its position in that run's path.
+    first: usize,
+    index: usize,
+    /// It has a layer whose rectangle is measured when it closes.
+    measured: bool,
+}
+
+/// Places the runs `range` of an encoded scene under `base` (the root, a ghost's
+/// group or the camera image), opening and closing the groups of movieclip
+/// owners and connected effect groups along the way.
+fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize), base: usize, hidden: &[bool]) {
+    let mut members = Memberships::default();
+    let steps: Vec<Vec<Step<'_>>> = (range.0..range.1).map(|k| path(scene, &mut members, &scene.items[encoded.runs[k].0], hidden, encoded.fx)).collect();
+    let steps_of = |k: usize| &steps[k - range.0];
+    // Top-level entries: runs sharing their outermost level, or one object. An
+    // entry holding effects anywhere is drawn on its own raster, like the editor's.
+    let mut entry_fx = vec![false; range.1 - range.0];
+    let mut connected_domains: std::collections::HashMap<Level, [f64; 4]> = std::collections::HashMap::new();
+    if encoded.fx {
+        let mut start = range.0;
+        while start < range.1 {
+            let mut end = start + 1;
+            if let Some(first) = steps_of(start).first() {
+                while end < range.1 && steps_of(end).first().is_some_and(|s| s.level == first.level) {
+                    end += 1;
+                }
+            }
+            let any = (start..end).any(|k| encoded.objects[k].as_ref().is_some_and(|o| o.has_fx || steps_of(k).iter().any(|s| !s.stack.is_empty())));
+            entry_fx[start - range.0..end - range.0].fill(any);
+            start = end;
+        }
+        // Connected runs share one domain: every drawn member's artwork.
+        for k in range.0..range.1 {
+            let Some(o) = encoded.objects[k].as_ref() else { continue };
+            for s in steps_of(k).iter().filter(|s| matches!(s.level, Level::Connected { .. })) {
+                let acc = connected_domains.entry(s.level).or_insert(EMPTY);
+                for (e, _) in &o.extents {
+                    e.include(acc, 0.0);
+                }
+            }
+        }
+    }
+    let measure = |b: &mut Builder, open: &Open, end: usize| {
+        let (mut with, mut without, mut largest) = (EMPTY, EMPTY, 0.0f64);
+        for k in open.first..end {
+            let Some(o) = encoded.objects[k].as_ref() else { continue };
+            let outer: f64 = steps_of(k).get(open.index..).map_or(0.0, |s| s.iter().map(|s| s.pad).sum());
+            for (e, own) in &o.extents {
+                e.include(&mut with, outer + own);
+                e.include(&mut without, 0.0);
+                largest = largest.max(outer + own);
+            }
+        }
+        let domain = match open.level {
+            Level::Connected { .. } => connected_domains.get(&open.level).copied().unwrap_or(without),
+            Level::Owner { .. } => without,
+        };
+        b.measure(open.target, rounded(with), rounded(domain), largest);
+    };
+    let mut stack: Vec<Open> = Vec::new();
+    for k in range.0..range.1 {
+        let path = steps_of(k);
+        let common = stack.iter().zip(path.iter()).take_while(|(o, s)| o.level == s.level).count();
         while stack.len() > common {
             let open = stack.pop().unwrap();
-            b.close(open, stack.last());
+            if open.measured {
+                measure(b, &open, k);
+            }
+            b.close(open.target, open.opacity, open.isolated);
         }
-        for &(key, owner) in &path[common..] {
-            let opacity = scene.owners[owner as usize];
+        for (index, s) in path.iter().enumerate().skip(common) {
             let parent = stack.last().map(|o| o.target).unwrap_or(base);
-            let skipped = stack.last().is_some_and(|o| o.skipped) || opacity <= 0.0;
-            let target = if !skipped && opacity < 1.0 { b.open(parent, opacity) } else { parent };
-            stack.push(Open { key, owner, target, isolated: target != parent, skipped, opacity });
+            let skipped = stack.last().is_some_and(|o| o.skipped) || s.opacity <= 0.0;
+            let entry = index == 0 && entry_fx[k - range.0];
+            let filtered = !s.stack.is_empty();
+            let (target, measured) = if skipped || !(s.opacity < 1.0 || filtered || entry) {
+                (parent, false)
+            } else if entry {
+                (b.open_layer(parent, s.opacity, s.stack.to_vec(), LayerKind::Entry { bounds: [0.0; 4], domain: [0.0; 4], scale: s.scale, padding: 0.0 }), true)
+            } else if filtered {
+                (b.open_layer(parent, s.opacity, s.stack.to_vec(), LayerKind::Nested { bounds: [0.0; 4], domain: [0.0; 4], scale: s.scale }), true)
+            } else {
+                (b.open(parent, s.opacity), false)
+            };
+            stack.push(Open { level: s.level, target, isolated: target != parent, skipped, opacity: s.opacity, first: k, index, measured });
         }
         if stack.last().is_some_and(|o| o.skipped) {
             continue;
         }
         let Some(o) = encoded.objects[k].as_ref() else { continue };
         let parent = stack.last().map(|o| o.target).unwrap_or(base);
-        b.object(parent, o);
+        b.object(parent, o, path.is_empty() && entry_fx[k - range.0]);
     }
     while let Some(open) = stack.pop() {
-        b.close(open, stack.last());
+        if open.measured {
+            measure(b, &open, range.1);
+        }
+        b.close(open.target, open.opacity, open.isolated);
     }
+}
+
+/// The scene's camera as the camera image applies it (`effectiveCamera`).
+fn scene_camera(doc: &Document, scene: &Scene) -> Option<Camera> {
+    if doc.layers.as_ref().is_some_and(|l| !l.camera_visible) { None } else { scene.camera }
 }
 
 /// Encodes the frame being edited together with its onion skins.
@@ -840,61 +1179,95 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
 /// `order` is the painter order (see [`crate::onion::compose`]); `None` draws the
 /// scene alone, in its own order. Consecutive steps of one ghost form one isolation
 /// group, faded once at the ghost's opacity, so a ghost never shows through itself.
+/// With a scene effect stack the camera image is drawn over the frame and the
+/// onion skins over the camera image, as the editor's overlays.
 pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>, ghosts: &[Ghost<'_>], order: Option<&[Layer]>) -> DrawList {
-    let current = encode_scene(assets, scene, overrides.hidden, overrides.translations, None);
-    let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| encode_scene(assets, ghost.scene, ghost.hidden, &[], ghost.tint)).collect();
+    let bypass = overrides.bypass_effects;
+    let current = encode_scene(assets, scene, overrides.hidden, overrides.translations, None, bypass);
+    let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| encode_scene(assets, ghost.scene, ghost.hidden, &[], ghost.tint, bypass)).collect();
     let mut b = Builder::new();
     let mut root = Out::new();
     background(doc, assets, scene, overrides.background, &mut root);
     let background_prims = root.prims.len() as u32;
     b.add(0, root);
+    let camera_stack = if bypass { None } else { scene.vfx.as_ref().map(|v| &v.scene).filter(|s| !s.is_empty()) };
+    let whole = (0, current.runs.len());
+    let mut deferred: Vec<(u32, u32)> = Vec::new();
     match order {
-        None => place(&mut b, scene, &current, (0, current.runs.len()), 0),
+        None => place(&mut b, scene, &current, whole, 0, overrides.hidden),
         Some(order) => {
             // The ghost whose group is open, and that group.
             let mut open: Option<(u32, usize)> = None;
-            let close = |b: &mut Builder, open: &mut Option<(u32, usize)>| {
-                if let Some((ghost, target)) = open.take() {
-                    b.close(Open { key: 0, owner: 0, target, isolated: true, skipped: false, opacity: ghosts[ghost as usize].opacity }, None);
+            // Consecutive steps of the current frame are placed together (a connected run spans them).
+            let mut pending: Option<(usize, usize)> = None;
+            let flush = |b: &mut Builder, pending: &mut Option<(usize, usize)>| {
+                if let Some(range) = pending.take() {
+                    place(b, scene, &current, range, 0, overrides.hidden);
                 }
             };
             for layer in order {
                 match *layer {
                     Layer::Current(slot) => {
-                        close(&mut b, &mut open);
+                        close_ghost(&mut b, &mut open, ghosts);
                         if let Some(&range) = current.of_slot.get(&slot) {
-                            place(&mut b, scene, &current, range, 0);
+                            match &mut pending {
+                                Some((_, end)) if *end == range.0 => *end = range.1,
+                                _ => {
+                                    flush(&mut b, &mut pending);
+                                    pending = Some(range);
+                                }
+                            }
                         }
                     }
                     Layer::Ghost(ghost, slot) => {
-                        let Some(source) = ghosts.get(ghost as usize) else { continue };
-                        if source.opacity <= 0.0 {
+                        if camera_stack.is_some() {
+                            deferred.push((ghost, slot));
                             continue;
                         }
-                        let Some(&range) = ghost_scenes[ghost as usize].of_slot.get(&slot) else { continue };
-                        if open.map(|(index, _)| index) != Some(ghost) {
-                            close(&mut b, &mut open);
-                            open = Some((ghost, b.open(0, source.opacity)));
-                        }
-                        place(&mut b, source.scene, &ghost_scenes[ghost as usize], range, open.expect("opened above").1);
+                        flush(&mut b, &mut pending);
+                        place_ghost(&mut b, &mut open, ghosts, &ghost_scenes, ghost, slot);
                     }
                 }
             }
-            close(&mut b, &mut open);
+            flush(&mut b, &mut pending);
+            close_ghost(&mut b, &mut open, ghosts);
         }
     }
-    let (prims, paints, points, groups, passes) = b.finish();
-    DrawList { prims, paints, points, groups, passes, background_prims }
+    if let Some(stack) = camera_stack {
+        let camera = b.open_layer(0, 1.0, stack.clone(), LayerKind::Camera { canvas: doc.canvas, camera: scene_camera(doc, scene) });
+        let mut fill = Out::new();
+        background(doc, assets, scene, None, &mut fill);
+        b.add(camera, fill);
+        place(&mut b, scene, &current, whole, camera, overrides.hidden);
+        b.close(camera, 1.0, true);
+        let mut open: Option<(u32, usize)> = None;
+        for &(ghost, slot) in &deferred {
+            place_ghost(&mut b, &mut open, ghosts, &ghost_scenes, ghost, slot);
+        }
+        close_ghost(&mut b, &mut open, ghosts);
+    }
+    let (prims, paints, points, groups, passes, layers) = b.finish();
+    DrawList { prims, paints, points, groups, passes, background_prims, layers }
 }
 
-struct Open {
-    key: u32,
-    owner: u32,
-    /// Group receiving this owner's content (its own group, or the parent's when opaque).
-    target: usize,
-    isolated: bool,
-    skipped: bool,
-    opacity: f64,
+fn close_ghost(b: &mut Builder, open: &mut Option<(u32, usize)>, ghosts: &[Ghost<'_>]) {
+    if let Some((ghost, target)) = open.take() {
+        b.close(target, ghosts[ghost as usize].opacity, true);
+    }
+}
+
+/// One ghost object, in the ghost's group (opened when another ghost's was).
+fn place_ghost(b: &mut Builder, open: &mut Option<(u32, usize)>, ghosts: &[Ghost<'_>], scenes: &[Encoded], ghost: u32, slot: u32) {
+    let Some(source) = ghosts.get(ghost as usize) else { return };
+    if source.opacity <= 0.0 {
+        return;
+    }
+    let Some(&range) = scenes[ghost as usize].of_slot.get(&slot) else { return };
+    if open.map(|(index, _)| index) != Some(ghost) {
+        close_ghost(b, open, ghosts);
+        *open = Some((ghost, b.open(0, source.opacity)));
+    }
+    place(b, source.scene, &scenes[ghost as usize], range, open.expect("opened above").1, source.hidden);
 }
 
 /// Collects prims per isolation group, then orders them deepest first.
@@ -903,34 +1276,72 @@ struct Builder {
     prims: Vec<Vec<Prim>>,
     paints: Vec<[f32; 4]>,
     points: Vec<[f32; 2]>,
+    layers: Vec<EffectLayer>,
 }
 
 impl Builder {
     fn new() -> Builder {
         let empty = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
-        Builder { groups: vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: empty }], prims: vec![Vec::new()], paints: Vec::new(), points: Vec::new() }
+        Builder {
+            groups: vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: empty, layer: NO_LAYER }],
+            prims: vec![Vec::new()],
+            paints: Vec::new(),
+            points: Vec::new(),
+            layers: Vec::new(),
+        }
     }
 
     fn open(&mut self, parent: usize, opacity: f64) -> usize {
         let id = self.groups.len();
         let empty = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
-        self.groups.push(Group { parent: parent as u32, depth: self.groups[parent].depth + 1, opacity: opacity as f32, bounds: empty });
+        self.groups.push(Group { parent: parent as u32, depth: self.groups[parent].depth + 1, opacity: opacity as f32, bounds: empty, layer: NO_LAYER });
         self.prims.push(Vec::new());
         id
     }
 
+    /// A group drawn on its own raster and filtered by `stack`.
+    fn open_layer(&mut self, parent: usize, opacity: f64, stack: Vec<Arc<Effect>>, kind: LayerKind) -> usize {
+        let id = self.open(parent, opacity);
+        self.groups[id].layer = self.layers.len() as u32;
+        self.layers.push(EffectLayer { stack, kind });
+        id
+    }
+
+    /// Sets the rectangles of a layer whose content is known only once it closes.
+    fn measure(&mut self, group: usize, bounds: [f64; 4], domain: [f64; 4], largest: f64) {
+        let Some(layer) = self.layers.get_mut(self.groups[group].layer as usize) else { return };
+        match &mut layer.kind {
+            LayerKind::Entry { bounds: b, domain: d, padding, .. } => {
+                *b = bounds;
+                *d = domain;
+                *padding = largest;
+            }
+            LayerKind::Nested { bounds: b, domain: d, .. } => {
+                *b = bounds;
+                *d = domain;
+            }
+            LayerKind::Camera { .. } => {}
+        }
+    }
+
     /// Finishes a group: its composite lands at this point of the parent's order.
-    fn close(&mut self, open: Open, _parent: Option<&Open>) {
-        if !open.isolated {
+    /// A filtered group covers its layer's rectangle, effects reaching beyond its artwork.
+    fn close(&mut self, target: usize, opacity: f64, isolated: bool) {
+        if !isolated {
             return;
         }
-        let g = self.groups[open.target];
-        let bounds = g.bounds;
-        let parent = g.parent as usize;
-        if bounds[0] <= bounds[2] {
-            self.prims[parent].push(composite(open.target as u32, open.opacity, bounds));
-            self.grow(parent, bounds);
+        let g = self.groups[target];
+        if g.bounds[0] > g.bounds[2] {
+            return;
         }
+        let bounds = match self.layers.get(g.layer as usize).map(|l| l.kind) {
+            Some(LayerKind::Entry { bounds: r, .. } | LayerKind::Nested { bounds: r, .. }) => [r[0] as f32, r[1] as f32, (r[0] + r[2]) as f32, (r[1] + r[3]) as f32],
+            _ => g.bounds,
+        };
+        self.groups[target].bounds = bounds;
+        let parent = g.parent as usize;
+        self.prims[parent].push(composite(target as u32, opacity, bounds));
+        self.grow(parent, bounds);
     }
 
     fn grow(&mut self, group: usize, b: [f32; 4]) {
@@ -943,17 +1354,28 @@ impl Builder {
     }
 
     fn add_ref(&mut self, target: usize, out: &Out) {
-        let base = self.paints.len() as u32;
-        let point_base = self.points.len() as u32;
+        let (paint_base, point_base) = self.tables(out);
+        self.add_part(target, out, 0..out.prims.len(), paint_base, point_base);
+    }
+
+    /// Appends the paint and polyline tables of `out`; returns where they start.
+    fn tables(&mut self, out: &Out) -> (u32, u32) {
+        let base = (self.paints.len() as u32, self.points.len() as u32);
         self.paints.extend_from_slice(&out.paints);
         self.points.extend_from_slice(&out.points);
-        if out.bounds[0] <= out.bounds[2] {
+        base
+    }
+
+    /// Adds primitives `range` of `out`, whose tables start at the given bases.
+    fn add_part(&mut self, target: usize, out: &Out, range: std::ops::Range<usize>, paint_base: u32, point_base: u32) {
+        // A part of an object grows its group by the whole object's bounds, which cover it.
+        if (!range.is_empty() || out.prims.is_empty()) && out.bounds[0] <= out.bounds[2] {
             self.grow(target, out.bounds);
         }
-        for p in &out.prims {
+        for p in &out.prims[range] {
             let mut p = *p;
             if p.paint != NO_PAINT {
-                p.paint += base;
+                p.paint += paint_base;
             }
             if p.kind & 255 == K_POLYLINE {
                 p.b[1] = f32::from_bits(p.b[1].to_bits() + point_base);
@@ -962,26 +1384,57 @@ impl Builder {
         }
     }
 
-    /// One figure instance: object opacity layer, outline layer, then its items.
-    fn object(&mut self, parent: usize, o: &ObjectOut) {
-        let isolate = o.opacity < 1.0;
-        let target = if isolate { self.open(parent, o.opacity) } else { parent };
+    /// One figure instance: object opacity layer (with its own effects), outline
+    /// layer, then its items with filtered nodes in their place. An `entry`
+    /// holding effects is drawn on a raster of its own even when opaque.
+    fn object(&mut self, parent: usize, o: &ObjectOut, entry: bool) {
+        let fx = o.figure.as_deref();
+        let filtered = fx.is_some_and(|f| !f.stack.is_empty());
+        let layered = filtered || (entry && fx.is_some());
+        let isolate = o.opacity < 1.0 || layered;
+        let target = match fx {
+            Some(f) if layered => {
+                let kind = if entry {
+                    LayerKind::Entry { bounds: f.bounds, domain: f.domain, scale: f.scale, padding: f.padding }
+                } else {
+                    LayerKind::Nested { bounds: f.bounds, domain: f.domain, scale: f.scale }
+                };
+                self.open_layer(parent, o.opacity, f.stack.clone(), kind)
+            }
+            _ if isolate => self.open(parent, o.opacity),
+            _ => parent,
+        };
         if !o.outline.prims.is_empty() {
             if o.outline_alpha < 1.0 {
                 let id = self.open(target, o.outline_alpha);
                 self.add_ref(id, &o.outline);
-                self.close(Open { key: 0, owner: 0, target: id, isolated: true, skipped: false, opacity: o.outline_alpha }, None);
+                self.close(id, o.outline_alpha, true);
             } else {
                 self.add_ref(target, &o.outline);
             }
         }
-        self.add_ref(target, &o.items);
+        if o.nodes.is_empty() {
+            self.add_ref(target, &o.items);
+        } else {
+            let (paint_base, point_base) = self.tables(&o.items);
+            let mut from = 0;
+            for node in &o.nodes {
+                self.add_part(target, &o.items, from..node.at, paint_base, point_base);
+                let f = &node.fx;
+                let id = self.open_layer(target, 1.0, f.stack.clone(), LayerKind::Nested { bounds: f.bounds, domain: f.domain, scale: f.scale });
+                self.add_ref(id, &node.out);
+                self.close(id, 1.0, true);
+                from = node.at;
+            }
+            self.add_part(target, &o.items, from..o.items.prims.len(), paint_base, point_base);
+        }
         if isolate {
-            self.close(Open { key: 0, owner: 0, target, isolated: true, skipped: false, opacity: o.opacity }, None);
+            self.close(target, o.opacity, true);
         }
     }
 
-    fn finish(mut self) -> (Vec<Prim>, Vec<[f32; 4]>, Vec<[f32; 2]>, Vec<Group>, Vec<Pass>) {
+    #[allow(clippy::type_complexity)]
+    fn finish(mut self) -> (Vec<Prim>, Vec<[f32; 4]>, Vec<[f32; 2]>, Vec<Group>, Vec<Pass>, Vec<EffectLayer>) {
         let max_depth = self.groups.iter().map(|g| g.depth).max().unwrap_or(0);
         let mut prims = Vec::with_capacity(self.prims.iter().map(Vec::len).sum());
         let mut passes = Vec::new();
@@ -998,7 +1451,7 @@ impl Builder {
             }
             passes.push(Pass { depth, start, end: prims.len() as u32 });
         }
-        (prims, self.paints, self.points, self.groups, passes)
+        (prims, self.paints, self.points, self.groups, passes, self.layers)
     }
 }
 

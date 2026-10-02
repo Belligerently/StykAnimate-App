@@ -69,6 +69,8 @@ pub struct EditOptions<'a> {
     pub background: Option<u32>,
     /// Onion skins, far to near.
     pub onions: &'a [Onion<'a>],
+    /// Draw without effects (the editor's effects preview is off).
+    pub bypass_effects: bool,
 }
 
 fn flags(slots: &[u32], count: usize) -> Vec<bool> {
@@ -102,10 +104,18 @@ impl EditScene {
         }
     }
 
+    /// Reads a pose. Its effects are the ones the editor composed into it
+    /// (clips included), never sampled again here: see `docs/engine/vfx.md`.
     fn parse(&mut self, generation: &Generation, text: &[u8], previous: Option<&Frame>) -> Result<Frame, String> {
         let value: Value = styk_doc::json::parse(text).map_err(|e| e.to_string())?;
         let loader = self.loader.as_mut().expect("follow() ran");
-        loader.edit_frame(&value, previous, &generation.prepared.doc).map_err(|e| e.to_string())
+        let doc = &generation.prepared.doc;
+        let mut frame = loader.edit_frame(&value, previous, doc).map_err(|e| e.to_string())?;
+        let fields = frame.pose_vfx.is_some() || frame.objects.iter().any(|o| o.vfx.is_some() || o.vfx_connected.is_some());
+        if fields || generation.prepared.has_vfx {
+            frame.vfx = styk_eval::vfx::frame::composed(doc, &frame);
+        }
+        Ok(frame)
     }
 
     /// Replaces the frame. `text` is a keyframe-shaped JSON record whose `objects`
@@ -146,7 +156,7 @@ impl EditScene {
         let Some(current) = self.current.as_mut() else { return Ok(None) };
         let scene = scene_of(current);
         let hidden = flags(options.hidden, current.frame.objects.len());
-        let overrides = Overrides { hidden: &hidden, translations: options.translations, background: options.background };
+        let overrides = Overrides { hidden: &hidden, translations: options.translations, background: options.background, bypass_effects: options.bypass_effects };
         if options.onions.is_empty() {
             let frame_scene = scene;
             return Ok(Some(Arc::new(encode_composed(doc, &generation.assets, &frame_scene, &overrides, &[], None))));

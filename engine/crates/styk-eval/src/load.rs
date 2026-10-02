@@ -572,6 +572,7 @@ impl Loader {
             ik: crate::ik::parse::table(o.get("_stykIK")).map(Arc::new),
             vfx: crate::vfx::parse::stacks(o.get("_stykVfx"), &mut self.notes),
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
+            vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
         })
     }
 
@@ -614,7 +615,15 @@ impl Loader {
             }
             objects.push(object);
         }
-        let vfx = crate::vfx::parse::stacks(value.get("_stykVfx"), &mut self.notes);
+        // The scene stack the editor composed with its clips (`vfxStack(frame)`)
+        // replaces the frame's own when present.
+        let vfx = match value.get("_vfxTimelineScene") {
+            Some(scene) => {
+                let stack = crate::vfx::parse::stack(scene, &mut self.notes);
+                Some(Arc::new(crate::vfx::Stacks { entries: vec![(crate::vfx::StackKey::Figure, Arc::from(stack))] }))
+            }
+            None => crate::vfx::parse::stacks(value.get("_stykVfx"), &mut self.notes),
+        };
         let key = Self::keyframe_of(value, objects, vfx);
         let count = key.objects.len();
         Ok(crate::eval::Frame {
