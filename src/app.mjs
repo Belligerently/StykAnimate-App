@@ -794,7 +794,7 @@ function prepareEditingFrame() {
   editablePreparation.start(renderer,geometry=>({
     frame:currentFrame(),view:{...state.view},getView:()=>({...state.view}),cameraEnabled:false,
     editorBackgroundColor:builderBackgroundColor(state.settings,state),onionFrames:onionSkins(),
-    geometry,artworkRevision:editor.definitionRevision,
+    geometry,artworkRevision:editor.definitionRevision,revision:editor.revision,
   }));
 }
 
@@ -2167,7 +2167,7 @@ function pause() {
     editablePreparation.start(state.renderer,geometry=>({
       frame:currentFrame(),view:{...state.view},getView:()=>({...state.view}),
       cameraEnabled:false,editorBackgroundColor:builderBackgroundColor(state.settings,state),
-      onionFrames:onionSkins(),geometry,artworkRevision:editor.definitionRevision,
+      onionFrames:onionSkins(),geometry,artworkRevision:editor.definitionRevision,revision:editor.revision,
     }));
   }
   requestRender();

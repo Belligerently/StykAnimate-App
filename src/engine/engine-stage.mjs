@@ -237,6 +237,17 @@ export async function createStageRenderer(canvas, options, create) {
       show(false);
       return result;
     },
+    /**
+     * Returning to the editable canvas in a dense scene: the JavaScript renderer
+     * builds its GPU scene ahead (hundreds of milliseconds on large documents). The
+     * engine draws an edit frame from the pose itself, so for a document it draws
+     * there is nothing to prepare and the edit shows on the next frame.
+     */
+    prepareSceneUpdate(request) {
+      if (refusal(request) !== null) return legacy.prepareSceneUpdate(request);
+      const {report, frame, geometry, view} = request;
+      return Promise.resolve({report, frame, geometry, view, timings: {elapsedMs: 0, engine: true}, dispose() {}, activate() {}});
+    },
     // Prepared playback frames: an engine packet is a ticket for a tick the engine has ready.
     prepareFrame(packet, options) { return packet?.engine ? packet.key : legacy.prepareFrame(packet, options); },
     hasPreparedFrame(key) { return engineTick(key) !== null ? true : legacy.hasPreparedFrame(key); },
