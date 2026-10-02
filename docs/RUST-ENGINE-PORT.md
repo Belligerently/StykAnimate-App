@@ -132,7 +132,7 @@ for at most 10 minutes, and records the load at start and end and the busiest pr
 (runs that never saw an idle machine are listed as busy). Three rounds; each round runs every
 configuration of every file once, the file order reversed on even rounds, so slow changes in
 machine load spread over all cells. Cells are the median with the range of the three runs.
-Other work on the machine during the rounds ran under `nice -n 19`.
+Other work on the machine during round 1 ran under `nice -n 19`.
 
 **Configurations:** Electron with WebGPU; Electron without WebGPU (Canvas 2D fallback); the web
 build in Chromium and in WebKit; Electron at 4× CPU throttle (WebGPU and Canvas 2D); the web
@@ -143,22 +143,23 @@ build in Chromium at phone size with touch. **Files:** `TDD2 URIEL NEMESIS 3.sty
 onion skin toggles, PNG sequence, GIF and MP4/WebM export of 120 frames, resident memory of
 the whole process tree and GPU memory; cold start (5 runs) and web build size separately.
 
-**Status (2026-10-02 20:20):** round 1 complete for six configurations of all four files
-(URIEL 3 and Jay measured from this checkout before any change to `src/`, the code being
-identical to `96ebce85`; the other two from the worktree); WebKit round 1 and rounds 2–3 are
-running. Headline numbers from round 1 (Electron with WebGPU, one run each, to be replaced by
-the medians of three):
+**Status (2026-10-03 00:34):** the three rounds are complete for all seven configurations of
+all four files: [`docs/performance/RUST-ENGINE-BASELINE.md`](performance/RUST-ENGINE-BASELINE.md)
+has every table. The port's builds and two subagents ran on the machine during rounds 2 and
+3 (not under `nice -n 19` throughout, as the protocol intended); each run still waited for
+an idle machine, and the four runs that started busy are listed in the report. Headline
+medians of three runs with their range (Electron with WebGPU):
 
 | File | Open | Playback gaps over 2 intervals | Longest gap | Joint drag p95 | Peak resident |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| TDD2 URIEL NEMESIS 3.styk | 2.71 s | 1 | 146 ms | 10.3 ms | 2,360 MiB |
-| Jay on a new app (repaired).styk | 0.67 s | 1 | 132 ms | 914 ms | 2,046 MiB |
-| svr_uriel.piv | 11.3 s | 0 | 83 ms | 7.1 ms | 3,275 MiB |
-| tdd2 uriel nemesis.piv | 21.4 s | 1 | 1,244 ms | 12.2 ms | 3,632 MiB |
+| TDD2 URIEL NEMESIS 3.styk | 2.71 s (2.71–2.76) | 1 | 146 ms (118–250) | 10.3 ms (10.2–11.4) | 2,330 MiB (2,330–2,360) |
+| Jay on a new app (repaired).styk | 0.62 s (0.57–0.67) | 0 (0–1) | 90 ms (83–132) | 914 ms (47–931) | 1,981 MiB (1,948–2,046) |
+| svr_uriel.piv | 11.3 s (10.9–11.3) | 0 | 83 ms | 7.5 ms (7.1–8.2) | 3,433 MiB (3,275–3,468) |
+| tdd2 uriel nemesis.piv | 21.4 s (20.8–21.6) | 1 | 1,174 ms (1,119–1,244) | 11.5 ms (11.3–12.2) | 3,627 MiB (3,551–3,632) |
 
-Cold start (Electron, WebGPU, editor view, 5 runs): ready in a median of 4,246 ms (4,122–4,515). Web build:
-64.2 MB raw, 18.2 MB at Brotli 5, of which the Python runtime is 14.0 / 6.1 MB, JavaScript
-24.2 / 4.9 MB and WebAssembly 6.9 / 2.1 MB.
+Cold start (Electron, WebGPU, editor view, 5 runs): ready in a median of 4,246 ms (4,122–4,515).
+Web build at the baseline commit: 61.3 MiB raw, 17.4 MiB at Brotli 5, of which the Python
+runtime is 13.3 / 5.8 MiB, JavaScript 23.1 / 4.7 MiB and WebAssembly 6.5 / 2.0 MiB.
 
 ### Tests at the baseline commit
 
@@ -414,9 +415,10 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 00:17 | S3 filter effects on the GPU (agent, reviewed and merged) | Every filter effect drawn by the engine as GPU passes on WebGPU, native and WebGL2: figures, nodes, connected groups, movieclip containers and the scene stack, ported from `VfxWebGPU.run` (`styk-render/src/effects/`, `styk_eval::vfx::layers`). The gate refuses only generated effects. The engine's memory starts at the size its module declares (a hard-coded size stopped the engine from starting once the module grew). Onion skins draw solid paints in the skin's tint. | The agent's runs: Electron (engine WebGPU against the WebGPU renderer) 30 of 30 steps on 8 effect documents, mean ≤ 0.075; web (WebGL2 against Canvas 2D) 23 of 30, the 7 being 6 scene-camera steps where Canvas 2D clears the camera rectangle and one pixelate edge; URIEL 3 in Electron 103 of 109 ticks (41: the old renderer had not shown a cel yet; 46: a drawing layer's onion skin missing; 61–64: a drawing cel under blur, bloom and glow). `styk gpubench` 1440×900: p50 0.36–1.9 ms with effects, 0.11–0.29 ms without; GPU memory for effect atlases up to 160 MiB. Here: 205 Rust tests on the merged tree; app parity not yet rerun after the merge. |
 | 2026-10-03 00:23 | S5 keys and frames of the layer timeline | `styk-edit`: `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame` on the planner (blank cells, inherited easing, clip retiming), and the sheet's validation errors in `publish`. | 22 recordings, 417 steps: the 21 scenarios of ported calls (396 steps) match the editor at every step, refused arguments included; a hand-edited document with a clip on the document's clock checks span and restart retiming. |
 | 2026-10-03 00:29 | S5 commands that draft the whole frame | `styk-edit`: the editor's `transaction` on a layer sheet, with `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`; figure-pose counts (`_layerUidCounts`) so that a figure appearing or disappearing bumps the layer revision as in the editor; new figures take their layer from the hints; the replay state carries the next figure identity. | 24 recordings, 476 steps: the 23 scenarios of ported calls (455 steps) match the editor at every step. |
+| 2026-10-03 00:34 | Baseline complete | Rounds 2 and 3 of the baseline benchmark; [`docs/performance/RUST-ENGINE-BASELINE.md`](performance/RUST-ENGINE-BASELINE.md). | 84 runs (7 configurations × 4 files × 3), 4 flagged busy; medians and ranges in section 5 and the report. |
 
 In progress: the Rust codec in the app in place of Pyodide and the Python sidecar (agent);
-baseline round 3 (section 5). Next in the main
+3D meshes and surfaces (agent). Next in the main
 thread: the facade (the app's gestures run in the engine, `docs/engine/editing.md`), then
 the remaining gesture paths (IK targets, rigs, movieclips on a sheet) and the next command
 groups (frames and keys, layers).
