@@ -310,7 +310,8 @@ impl Renderer {
             from = until;
         }
         let fx = self.executor.as_ref().map(|e| e.stats).unwrap_or_default();
-        let layer_bytes = self.layers.iter().map(|a| a.size[0] as u64 * a.size[1] as u64 * 4 * a.pages as u64).sum();
+        // An atlas always has two layers at least (resources::array_texture).
+        let layer_bytes = self.layers.iter().map(|a| a.size[0] as u64 * a.size[1] as u64 * 4 * a.pages.max(2) as u64).sum();
         self.stats = Stats {
             prims: list.prims.len() as u32,
             groups: n as u32 - 1,
