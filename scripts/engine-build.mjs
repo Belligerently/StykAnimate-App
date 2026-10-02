@@ -1,12 +1,16 @@
 /**
- * Builds the engine's WebAssembly module into src/engine/pkg/ (git-ignored):
+ * Builds the engine's two WebAssembly modules into src/engine/pkg/ (git-ignored):
  *
- *   node scripts/engine-build.mjs            release build (threads, wasm-opt when available)
+ *   node scripts/engine-build.mjs            release build (wasm-opt when available)
  *   node scripts/engine-build.mjs --dev      faster build, no wasm-opt
  *
- * The module uses WebAssembly threads over one shared memory, which needs the
- * standard library rebuilt with atomics: the pinned nightly toolchain below, with
- * `rust-src` and the wasm32 target (see docs/engine/wasm.md for the setup).
+ * - The engine (`styk-wasm`, styk_engine.js) uses WebAssembly threads over one shared
+ *   memory, which needs the standard library rebuilt with atomics: the pinned nightly
+ *   toolchain below, with `rust-src` and the wasm32 target (see docs/engine/wasm.md).
+ * - The Pivot codec (`styk-codec-wasm`, styk_codec.js), which src/codec-web-worker.mjs
+ *   runs, has no threads: stable Rust with the wasm32 target builds it.
+ *
+ * Both need wasm-bindgen-cli at the version below.
  */
 import {spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, statSync, writeFileSync, readFileSync, copyFileSync} from 'node:fs';
@@ -18,6 +22,8 @@ const engine = path.join(root, 'engine');
 const out = path.join(root, 'src/engine/pkg');
 export const TOOLCHAIN = 'nightly-2026-09-15';
 export const WASM_BINDGEN = '0.2.129';
+// The codec needs no atomics, so the stable toolchain builds it.
+export const CODEC_TOOLCHAIN = 'stable';
 // 2 GiB of address space: every thread shares it, and a shared memory's maximum is fixed when it links.
 const MAX_MEMORY = 2147483648;
 const dev = process.argv.includes('--dev');
@@ -51,8 +57,28 @@ const before = statSync(wasm).size;
 if (!dev && has('wasm-opt')) {
   run('wasm-opt', ['-O3', '--enable-threads', '--enable-bulk-memory', '--enable-mutable-globals', '--enable-nontrapping-float-to-int', '--enable-sign-ext', '--enable-simd', '-o', wasm, wasm]);
 }
-const bytes = readFileSync(wasm);
+
+// The codec: no shared memory, no threads. `--experimental-reset-state-function` lets the
+// worker replace an instance that trapped (a panic aborts) with a fresh one.
+run('cargo', [`+${CODEC_TOOLCHAIN}`, 'build', '--profile', profile, '-p', 'styk-codec-wasm', '--target', 'wasm32-unknown-unknown'],
+  {env: {...process.env, CARGO_TARGET_DIR: path.join(engine, 'target/wasm-codec')}});
+const codecBuilt = path.join(engine, 'target/wasm-codec/wasm32-unknown-unknown', profile, 'styk_codec_wasm.wasm');
+run('wasm-bindgen', ['--target', 'web', '--out-dir', out, '--out-name', 'styk_codec', '--no-typescript', '--experimental-reset-state-function',
+  ...(dev ? ['--keep-debug'] : ['--remove-name-section', '--remove-producers-section']), codecBuilt]);
+const codecWasm = path.join(out, 'styk_codec_bg.wasm');
+const codecBefore = statSync(codecWasm).size;
+if (!dev && has('wasm-opt')) {
+  run('wasm-opt', ['-O3', '--enable-bulk-memory', '--enable-mutable-globals', '--enable-nontrapping-float-to-int', '--enable-sign-ext',
+    '--enable-reference-types', '--enable-multivalue', '-o', codecWasm, codecWasm]);
+}
+
+const sha256 = (data) => createHash('sha256').update(data).digest('hex');
+const bytes = readFileSync(wasm), codecBytes = readFileSync(codecWasm);
 const info = {profile, toolchain: TOOLCHAIN, wasmBindgen: WASM_BINDGEN, maxMemory: MAX_MEMORY, wasmBytes: bytes.length, wasmBytesBeforeOpt: before,
-  jsBytes: statSync(path.join(out, 'styk_engine.js')).size, sha256: createHash('sha256').update(bytes).digest('hex')};
+  jsBytes: statSync(path.join(out, 'styk_engine.js')).size, sha256: sha256(bytes),
+  codec: {toolchain: CODEC_TOOLCHAIN, rustc: has('rustc', [`+${CODEC_TOOLCHAIN}`, '--version']), wasmBytes: codecBytes.length,
+    wasmBytesBeforeOpt: codecBefore, jsBytes: statSync(path.join(out, 'styk_codec.js')).size, sha256: sha256(codecBytes)}};
 writeFileSync(path.join(out, 'build-info.json'), JSON.stringify(info, null, 2));
-console.log(`engine: ${path.relative(root, wasm)} ${(bytes.length / 1024).toFixed(0)} KiB (${info.sha256.slice(0, 12)})${!dev && !has('wasm-opt') ? ' — wasm-opt not found, module not size-optimized' : ''}`);
+const unoptimized = !dev && !has('wasm-opt') ? ' — wasm-opt not found, module not size-optimized' : '';
+console.log(`engine: ${path.relative(root, wasm)} ${(bytes.length / 1024).toFixed(0)} KiB (${info.sha256.slice(0, 12)})${unoptimized}`);
+console.log(`codec: ${path.relative(root, codecWasm)} ${(codecBytes.length / 1024).toFixed(0)} KiB (${info.codec.sha256.slice(0, 12)})${unoptimized}`);
