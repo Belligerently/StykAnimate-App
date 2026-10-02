@@ -226,6 +226,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   (section 7). Suspected cause: the JavaScript renderer draws figures from cached rasters at
   bucketed densities and resamples them. To confirm with the raster cache disabled, then
   record as a deliberate difference or fix.
+- **A joint drag on Jay on a new app (repaired) stalls presentation for about 0.7 s** once
+  per drag (benchmark `drag` workload: latency p95 914 ms at the baseline, 651 ms with the
+  engine drawing; median 419 → 50 ms). No long task runs meanwhile: the app holds the frame
+  while asynchronous editor work completes. Not the old renderer's scene preparation (skipped
+  since `1d9e30ad`, unchanged latency). To trace in S5, where the engine evaluates for the
+  editor.
 - **Edit frames rebuild the whole scene's geometry** when any object changes, and every commit
   resets the whole frame cache (tick-range invalidation, `playback-retention.mjs`, is not
   ported). Fine at the sizes measured so far; the dense-drag benchmark will decide.
