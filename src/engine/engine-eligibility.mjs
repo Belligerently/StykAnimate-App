@@ -20,7 +20,6 @@ function figureReason(figure, depth) {
   if (styk?.animationOrigin) return 'animation origins';
   if (figure.polyfills?.some(polygon => polygon._stykSurface)) return '3D surfaces';
   if (figure.segments?.some(segment => segment._stykVfx)) return 'effects';
-  if (figure.text_assets?.length && Number(figure.segment_decode?.global_style?.outline_thickness ?? figure.segment_decode?.global_style?.u28)) return 'text outlines';
   if (styk?.movieclip?.document) return depth > 16 ? 'deeply nested movieclips' : documentReason(styk.movieclip.document, depth + 1);
   return null;
 }

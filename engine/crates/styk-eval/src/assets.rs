@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use lyon_path::math::point;
 use lyon_path::Path;
-use lyon_tessellation::{BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers};
+use lyon_tessellation::{BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers};
 
 use crate::doc::{Document, Glyph, ImageData, PathCmd};
 
@@ -44,6 +44,9 @@ pub struct Assets {
     /// Triangles (glyph space) per glyph, keyed by the glyph's address. The glyph is
     /// held so the address stays its own.
     pub glyphs: HashMap<usize, (Arc<Glyph>, Arc<[[f32; 2]]>)>,
+    /// Triangles of glyph outlines stroked at a glyph-space width (figure outlines
+    /// around text), keyed by the glyph's address and the width's bits.
+    pub glyph_strokes: HashMap<(usize, u32), (Arc<Glyph>, Arc<[[f32; 2]]>)>,
     /// Where the next image goes.
     cursor: Cursor,
 }
@@ -85,7 +88,24 @@ impl Assets {
         for (glyph, triangles) in crate::par::map(&glyph_list, 8, |g| (g.clone(), tessellate(&g.path))) {
             assets.glyphs.insert(Arc::as_ptr(&glyph) as usize, (glyph, triangles));
         }
+        let mut outlined: Vec<(Arc<Glyph>, f32)> = Vec::new();
+        collect_outlined_glyphs(doc, &mut outlined);
+        outlined.retain(|(glyph, width)| !assets.glyph_strokes.contains_key(&(Arc::as_ptr(glyph) as usize, width.to_bits())));
+        outlined.sort_by_key(|(glyph, width)| (Arc::as_ptr(glyph) as usize, width.to_bits()));
+        outlined.dedup_by(|a, b| Arc::ptr_eq(&a.0, &b.0) && a.1 == b.1);
+        for (glyph, width, triangles) in crate::par::map(&outlined, 8, |(g, w)| (g.clone(), *w, stroke(&g.path, *w))) {
+            assets.glyph_strokes.insert((Arc::as_ptr(&glyph) as usize, width.to_bits()), (glyph, triangles));
+        }
         assets
+    }
+
+    /// Triangles of `glyph`'s outline stroked `width` wide in glyph space: prepared
+    /// for every outlined figure of the document, tessellated here for any other.
+    pub fn glyph_stroke(&self, glyph: &Arc<Glyph>, width: f32) -> Arc<[[f32; 2]]> {
+        match self.glyph_strokes.get(&(Arc::as_ptr(glyph) as usize, width.to_bits())) {
+            Some((_, triangles)) => triangles.clone(),
+            None => stroke(&glyph.path, width),
+        }
     }
 
     pub fn image(&self, index: u32) -> Option<&AtlasEntry> {
@@ -104,6 +124,26 @@ fn collect_glyphs(doc: &Document, out: &mut Vec<Arc<Glyph>>) {
         }
         if let Some(m) = &f.movieclip {
             collect_glyphs(&m.document, out);
+        }
+    }
+}
+
+/// The glyph-space width a figure outline strokes text with: twice the outline
+/// width, as a canvas line width (`strokeWidth` in geometry.mjs rounds it to f32).
+pub fn text_outline_width(outline: &crate::doc::Outline) -> f32 {
+    (2.0 * outline.width) as f32
+}
+
+fn collect_outlined_glyphs(doc: &Document, out: &mut Vec<(Arc<Glyph>, f32)>) {
+    for f in &doc.figures {
+        if let Some(outline) = &f.outline {
+            let width = text_outline_width(outline);
+            for t in &f.texts {
+                out.extend(t.glyphs.iter().map(|g| (g.clone(), width)));
+            }
+        }
+        if let Some(m) = &f.movieclip {
+            collect_outlined_glyphs(&m.document, out);
         }
     }
 }
@@ -147,15 +187,16 @@ fn pack(sizes: &[Option<(u32, u32)>], entries: &mut [AtlasEntry], cursor: &mut C
     *cursor = Cursor { layer, x, y, shelf, used };
 }
 
-/// Even-odd fill triangulation of one glyph (glyph space).
-pub fn tessellate(path: &[PathCmd]) -> Arc<[[f32; 2]]> {
+/// The path of a glyph. A subpath is closed only where the glyph says so
+/// (`close_all` closes every one, which a fill does anyway).
+fn glyph_path(path: &[PathCmd], close_all: bool) -> Path {
     let mut builder = Path::builder();
     let mut open = false;
     for cmd in path {
         match *cmd {
             PathCmd::Move(x, y) => {
                 if open {
-                    builder.end(true);
+                    builder.end(close_all);
                 }
                 builder.begin(point(x, y));
                 open = true;
@@ -184,10 +225,29 @@ pub fn tessellate(path: &[PathCmd]) -> Arc<[[f32; 2]]> {
         }
     }
     if open {
-        builder.end(true);
+        builder.end(close_all);
     }
-    let path = builder.build();
-    triangulate(&path, FillRule::EvenOdd, 0.02)
+    builder.build()
+}
+
+/// Even-odd fill triangulation of one glyph (glyph space).
+pub fn tessellate(path: &[PathCmd]) -> Arc<[[f32; 2]]> {
+    triangulate(&glyph_path(path, true), FillRule::EvenOdd, 0.02)
+}
+
+/// A glyph's outline stroked `width` wide with round joins and caps (glyph space),
+/// as the editor strokes text for a figure outline.
+pub fn stroke(path: &[PathCmd], width: f32) -> Arc<[[f32; 2]]> {
+    let path = glyph_path(path, false);
+    let mut buffers: VertexBuffers<[f32; 2], u32> = VertexBuffers::new();
+    let options = StrokeOptions::tolerance(0.02).with_line_width(width).with_line_join(LineJoin::Round).with_line_cap(LineCap::Round);
+    let ok = StrokeTessellator::new()
+        .tessellate_path(&path, &options, &mut BuffersBuilder::new(&mut buffers, |v: StrokeVertex| v.position().to_array()))
+        .is_ok();
+    if !ok {
+        return Arc::from(Vec::new());
+    }
+    buffers.indices.iter().map(|&i| buffers.vertices[i as usize]).collect::<Vec<_>>().into()
 }
 
 pub fn triangulate(path: &Path, rule: FillRule, tolerance: f32) -> Arc<[[f32; 2]]> {

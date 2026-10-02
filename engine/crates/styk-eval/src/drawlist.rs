@@ -352,11 +352,14 @@ impl<'a> Ctx<'a> {
                 self.image(out, it, seg, asset);
             }
             ItemKind::Text => {
-                if outline > 0.0 {
-                    return;
-                }
                 let seg = &fig.segments[it.index as usize];
                 let Some(text) = fig.text(seg.asset) else { return };
+                if outline > 0.0 {
+                    if let Some(figure_outline) = &fig.outline {
+                        self.text_outline(out, it, seg, text, crate::assets::text_outline_width(figure_outline), outline_rgb);
+                    }
+                    return;
+                }
                 self.text(out, it, seg, text);
             }
         }
@@ -460,6 +463,42 @@ impl<'a> Ctx<'a> {
         let Some(e) = self.assets.image(image) else { return };
         let [w, h] = a.display_size.unwrap_or([e.source_w as f64, e.source_h as f64]);
         quad(a.anchor_start, 0.0, 0.0, w, h, image);
+    }
+
+    /// Where a text's glyph-space point lands (the transform of `drawPrimitives`' text branch).
+    fn text_place(it: &Item, seg: &Segment, t: &TextAsset) -> impl Fn(f64, f64) -> [f64; 2] {
+        let mirror = seg.mirror != it.image_text_flags;
+        let start = if seg.reverse { it.end } else { it.start };
+        let theta = it.angle + if seg.reverse { PI } else { 0.0 } - if mirror { PI } else { 0.0 };
+        let xs = (it.end[0] - it.start[0]).hypot(it.end[1] - it.start[1]) / t.width;
+        let sx = if mirror { -xs } else { xs };
+        let sy = it.scale;
+        let (sin, cos) = theta.sin_cos();
+        move |x: f64, y: f64| -> [f64; 2] {
+            let (lx, ly) = (sx * x, sy * y);
+            [start[0] + cos * lx - sin * ly, start[1] + sin * lx + cos * ly]
+        }
+    }
+
+    /// A figure outline around text: every visible glyph stroked `width` wide in
+    /// glyph space with round joins, in the outline colour (the editor strokes the
+    /// glyph paths under the text's transform, so the outline scales with the text).
+    fn text_outline(&self, out: &mut Out, it: &Item, seg: &Segment, t: &TextAsset, width: f32, rgb: [u8; 3]) {
+        if t.width == 0.0 || t.placements.is_empty() || width <= 0.0 {
+            return;
+        }
+        let place = Self::text_place(it, seg, t);
+        let color = rgba8(rgb, 1.0);
+        for &(g, dx, dy) in &t.placements {
+            let Some(glyph) = t.glyphs.get(g as usize) else { continue };
+            let tris = self.assets.glyph_stroke(glyph, width);
+            for tr in tris.chunks_exact(3) {
+                let p = |v: [f32; 2]| place(v[0] as f64 + dx as f64, v[1] as f64 + dy as f64);
+                let (a, b, c) = (p(tr[0]), p(tr[1]), p(tr[2]));
+                let bounds = [a[0].min(b[0]).min(c[0]), a[1].min(b[1]).min(c[1]), a[0].max(b[0]).max(c[0]), a[1].max(b[1]).max(c[1])];
+                out.push(prim(K_TRI, color, NO_PAINT, [a[0], a[1], b[0], b[1]], [c[0], c[1], 0.0, 0.0], [0.0; 4]), bounds);
+            }
+        }
     }
 
     /// Vector text (`drawPrimitives` text branch), even-odd filled glyphs.
