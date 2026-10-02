@@ -57,7 +57,7 @@ export function replay(scenario, base = repo) {
     steps.push({step: index + 1, call, result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});
     previous = text;
   });
-  return {scenario: scenario.name, steps};
+  return {scenario: scenario.name, editor: scenario.editor ?? {}, steps};
 }
 
 const args = process.argv.slice(2);

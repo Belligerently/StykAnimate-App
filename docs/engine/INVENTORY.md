@@ -11,15 +11,15 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 
 | Rust owner | Modules | Source at start | js | partial | ported | verified | removed | Covered by Rust | Partly covered | Deleted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `styk-doc` | 2 | 28 KiB | 2 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
+| `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1212 KiB | 86 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
+| `styk-edit` | 86 | 1212 KiB | 85 | 1 | 0 | 0 | 0 | 0 % | 11 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 56 | 24 | 3 | 0 | 0 | 2 % | 42 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 57 | 728 KiB | 32 | 6 | 19 | 0 | 0 | 38 % | 29 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 46 | 6 | 0 | 0 | 0 | 0 % | 36 % | 0 % |
-| **Total** | 355 | 4057 KiB | 295 | 38 | 22 | 0 | 0 | 7 % | 22 % | 0 % |
+| **Total** | 355 | 4057 KiB | 293 | 40 | 22 | 0 | 0 | 7 % | 25 % | 0 % |
 
 ## Engine modules
 
@@ -28,7 +28,7 @@ Engine logic: ported to Rust.
 | Module | Rust owner | Status | Notes |
 | --- | --- | --- | --- |
 | `src/pivot/model.mjs` | `styk-doc` | js | validation and structure |
-| `src/pivot/structure.mjs` | `styk-doc` | js | validation and structure |
+| `src/pivot/structure.mjs` | `styk-doc` | partial | Rust: resolveJoinSelection (styk-edit); validation and the rest still JS |
 | `src/drawing-brush-textures.mjs` | `styk-drawing` | js |  |
 | `src/drawing-brush.mjs` | `styk-drawing` | js |  |
 | `src/drawing-clipboard.mjs` | `styk-drawing` | js |  |
@@ -127,7 +127,7 @@ Engine logic: ported to Rust.
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx.mjs` | `styk-edit` | js | commands and history |
-| `src/editor.mjs` | `styk-edit` | js | commands and history |
+| `src/editor.mjs` | `styk-edit` | partial | Rust: select, selectMany, seek, beginDrag/commitDrag/cancelDrag, moveSelection, undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
 | `src/frame-draft-animation.mjs` | `styk-edit` | js |  |
 | `src/frame-timing-history.mjs` | `styk-edit` | js |  |

@@ -6,7 +6,7 @@
 //   npm run engine:parity -- --app       # also the app with and without the engine (Chromium)
 //
 // Repository tier: the Rust fixture suites (IK, evaluation, effects, draw lists, the Pivot
-// codec's recorded answers), the container reader and writer against src/native-container.mjs
+// codec's recorded answers, command replays), the container reader and writer against src/native-container.mjs
 // on every native file in the repository, and fixture regeneration (byte-stable: a fixture
 // that changes means the editor's behaviour changed).
 // Corpus tier: geometry of every tick of the benchmark files against the editor
@@ -33,7 +33,7 @@ const nice = process.platform === 'win32' ? [] : ['nice', '-n', '10'];
 const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.length ? ['cargo'] : []), ...rest, '--manifest-path', 'engine/Cargo.toml']];
 
 // Fixture suites (fast: a few seconds once built).
-run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv'));
+run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit'));
 
 // Fixture generators are byte-stable: regenerating changes nothing.
 for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures']) {
@@ -41,6 +41,12 @@ for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures']) {
   run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
     check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-eval/tests/fixtures'], {cwd: root}).status === 0});
 }
+
+// Command recordings are byte-stable too: re-recording them in the JavaScript editor changes
+// nothing (styk-edit's test above replays them in the engine).
+run('edit recordings regenerate unchanged', process.execPath, ['engine/tools/edit-scenarios.mjs'], {quiet: true,
+  check: () => spawnSync(process.execPath, ['engine/tools/edit-replay.mjs', '--all'], {cwd: root}).status === 0
+    && spawnSync('git', ['diff', '--quiet', '--', 'engine/tests/edit'], {cwd: root}).status === 0});
 
 // Containers: every native file in the repository, against the JavaScript reader.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});

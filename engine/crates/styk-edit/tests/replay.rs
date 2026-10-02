@@ -1,0 +1,28 @@
+//! Every command recording in engine/tests/edit (engine/tools/edit-replay.mjs) replays
+//! without a difference, and the scenarios of ported commands run to the end.
+
+use std::path::Path;
+
+const PORTED: &[&str] = &["move-native", "move-joined", "drag-cancel", "selection-native"];
+
+#[test]
+fn recordings_replay() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let mut seen = Vec::new();
+    for entry in std::fs::read_dir(&folder).unwrap() {
+        let path = entry.unwrap().path();
+        if !path.to_string_lossy().ends_with(".reference.json") {
+            continue;
+        }
+        let reference = styk_doc::json::parse(&std::fs::read(&path).unwrap()).unwrap();
+        let outcome = styk_edit::replay::replay(&reference).unwrap();
+        assert!(outcome.passed(), "{}: {:#?}", outcome.scenario, outcome.mismatches);
+        if PORTED.contains(&outcome.scenario.as_str()) {
+            assert_eq!((outcome.matched, &outcome.unported), (outcome.steps, &None), "{}", outcome.scenario);
+        }
+        seen.push(outcome.scenario);
+    }
+    for name in PORTED {
+        assert!(seen.iter().any(|s| s == name), "{name} has no recording");
+    }
+}
