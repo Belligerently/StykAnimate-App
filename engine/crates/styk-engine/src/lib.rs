@@ -35,6 +35,10 @@ use sync::Shared;
 /// platform (WebAssembly has none), so the host supplies it.
 pub type Clock = fn() -> f64;
 
+/// Called after the progress counter advanced, with the counter. A host that waits
+/// on the counter's memory (`Atomics.waitAsync` in a browser) wakes its waiters here.
+pub type Notifier = fn(&std::sync::atomic::AtomicU32);
+
 /// Memory the frame cache may hold, by device class. Draw lists are small (tens
 /// to hundreds of KiB), so even the smallest budget holds seconds of animation.
 #[derive(Clone, Copy, Debug)]
@@ -110,6 +114,7 @@ struct Inner {
     next_generation: AtomicU64,
     stopping: AtomicBool,
     progress: std::sync::atomic::AtomicU32,
+    notifier: Option<Notifier>,
 }
 
 /// The engine. Cheap to clone; every clone is the same engine.
@@ -120,6 +125,11 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(clock: Clock, budgets: Budgets) -> Engine {
+        Engine::with_notifier(clock, budgets, None)
+    }
+
+    /// An engine that calls `notifier` whenever background work finishes.
+    pub fn with_notifier(clock: Clock, budgets: Budgets, notifier: Option<Notifier>) -> Engine {
         Engine {
             inner: Arc::new(Inner {
                 state: Shared::new(State {
@@ -134,6 +144,7 @@ impl Engine {
                 next_generation: AtomicU64::new(1),
                 stopping: AtomicBool::new(false),
                 progress: std::sync::atomic::AtomicU32::new(0),
+                notifier,
             }),
         }
     }
@@ -247,24 +258,30 @@ impl Engine {
                 Job::Task(task)
             } else {
                 match (state.current.clone(), state.frames.take_wanted()) {
-                    (Some(generation), Some(tick)) => Job::Frame(generation, tick),
+                    (Some(generation), Some(tick)) => Job::Frame(generation, tick, state.frames.hidden.clone()),
                     _ => return false,
                 }
             }
         };
         match job {
             Job::Task(task) => task(self),
-            Job::Frame(generation, tick) => {
-                let data = frames::produce(&generation, tick, self.inner.clock);
-                self.inner.state.lock().frames.finish(generation.id, tick, Some(data));
+            Job::Frame(generation, tick, hidden) => {
+                let data = frames::produce(&generation, tick, &hidden, self.inner.clock);
+                let mut state = self.inner.state.lock();
+                // A frame prepared for another set of hidden figures is not shown.
+                let current = std::sync::Arc::ptr_eq(&state.frames.hidden, &hidden);
+                state.frames.finish(generation.id, tick, current.then_some(data));
             }
         }
         self.inner.progress.fetch_add(1, Ordering::SeqCst);
+        if let Some(notify) = self.inner.notifier {
+            notify(&self.inner.progress);
+        }
         true
     }
 }
 
 enum Job {
     Task(Box<dyn FnOnce(&Engine) + Send>),
-    Frame(Arc<Generation>, u32),
+    Frame(Arc<Generation>, u32, Arc<[u32]>),
 }

@@ -14,6 +14,7 @@
 import {loadEngine} from './engine.mjs';
 import {EngineMirror} from './engine-mirror.mjs';
 import {EngineEligibility} from './engine-eligibility.mjs';
+import {engineTick} from './engine-playback.mjs';
 
 /** The engine side of the stage, shared by every renderer the app creates (it survives a device loss of the other). */
 let shared = null;
@@ -158,6 +159,27 @@ export async function createStageRenderer(canvas, options, create) {
       show(false);
       return result;
     },
+    // Prepared playback frames: an engine packet is a ticket for a tick the engine has ready.
+    prepareFrame(packet, options) { return packet?.engine ? packet.key : legacy.prepareFrame(packet, options); },
+    hasPreparedFrame(key) { return engineTick(key) !== null ? true : legacy.hasPreparedFrame(key); },
+    canWarm: (...args) => legacy.canWarm?.(...args),
+    renderPrepared(key, options = {}) {
+      const tick = engineTick(key);
+      if (tick === null) { const result = legacy.renderPrepared(key, options); if (result) show(false); return result; }
+      const dpr = legacy.dpr || 1, view = options.view ?? {};
+      const drawn = side.stage.render(tick, (view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, options.cameraEnabled !== false, true, false);
+      if (drawn) show(true);
+      return drawn;
+    },
+    // The engine decodes and uploads its own pictures; a frame it prepared never waits for the other renderer's.
+    backgroundsReady(report, frame) { return frame?.engine ? true : legacy.backgroundsReady?.(report, frame) ?? true; },
+    prepareBackgrounds(report, frame) { return frame?.engine ? Promise.resolve() : legacy.prepareBackgrounds?.(report, frame) ?? Promise.resolve(); },
+    retainPreparedFrames(report, packets) { if (!side.playbackEngine?.()) return legacy.retainPreparedFrames?.(report, packets); },
+    clearPreparedFrames() { if (!side.playbackEngine?.()) return legacy.clearPreparedFrames?.(); },
+    /** The JavaScript renderer's packet cache; none while the engine prepares playback (nothing is uploaded ahead). */
+    get preparedFrames() { return side.playbackEngine?.() ? undefined : legacy.preparedFrames; },
+    /** While the engine prepares playback, what is hidden is part of each prepared frame (as for software frames). */
+    get softwarePlayback() { return side.playbackEngine?.() ? true : legacy.softwarePlayback; },
     resize(width, height, dpr = 1) {
       legacy.resize(width, height, dpr);
       const w = Math.max(1, Math.round(width * dpr)), h = Math.max(1, Math.round(height * dpr));
@@ -182,7 +204,7 @@ export async function createStageRenderer(canvas, options, create) {
   // Everything else is the JavaScript renderer's, bound to it.
   return new Proxy(renderer, {
     get(target, property) {
-      if (Object.hasOwn(target, property) || property === 'engineActive' || property === 'engineStats' || property === 'canvas' || property === 'engineSide') return Reflect.get(target, property);
+      if (Object.hasOwn(target, property) || property === 'engineActive' || property === 'engineStats' || property === 'canvas' || property === 'engineSide' || property === 'softwarePlayback' || property === 'preparedFrames') return Reflect.get(target, property);
       // Handles are drawn on the overlay while the engine draws the scene.
       if (property === 'handleRenderer' && engineShown) return undefined;
       const value = legacy[property];

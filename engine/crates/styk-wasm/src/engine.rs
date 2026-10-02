@@ -46,7 +46,7 @@ impl EngineHandle {
     /// `device_memory_gib` is `navigator.deviceMemory` where the browser has it.
     #[wasm_bindgen(constructor)]
     pub fn new(device_memory_gib: Option<f64>) -> EngineHandle {
-        EngineHandle { engine: Engine::new(clock, Budgets::for_device(device_memory_gib)), opened: Default::default(), committed: Default::default() }
+        EngineHandle { engine: Engine::with_notifier(clock, Budgets::for_device(device_memory_gib), Some(notify_progress)), opened: Default::default(), committed: Default::default() }
     }
 
     /// An address a worker passes to [`worker_run`]. Each call adds one owner.
@@ -176,6 +176,30 @@ impl EngineHandle {
         self.engine.frame(tick).is_some()
     }
 
+    /// What the interface draws around a prepared frame (the camera outline, the
+    /// background being shown), as the JSON of a keyframe without objects;
+    /// `undefined` while the frame is not ready.
+    pub fn frame_meta(&self, tick: u32) -> Option<String> {
+        let frame = self.engine.frame(tick)?;
+        let camera = match frame.camera {
+            Some(c) => format!("{{\"x\":{},\"y\":{},\"scale\":{},\"angle_rad\":{},\"is_default\":{}}}", c.x, c.y, c.scale, c.angle, c.is_default),
+            None => "null".to_string(),
+        };
+        let (a, b, mix) = frame.background;
+        Some(format!("{{\"tick\":{tick},\"camera\":{camera},\"background_id\":{a},\"background_id_b\":{b},\"background_mix\":{mix},\"objects\":[]}}"))
+    }
+
+    /// Sets the figures hidden for this session, by identity. Hidden layers come from the document.
+    pub fn set_hidden(&self, uids: &[u32]) {
+        self.engine.set_hidden(uids);
+    }
+
+    /// The id of the open document generation (0 when there is none). Prepared frames
+    /// belong to one generation.
+    pub fn generation(&self) -> f64 {
+        self.engine.generation().map_or(0.0, |generation| generation.id as f64)
+    }
+
     /// Runs one unit of background work here. For hosts without worker threads.
     pub fn step(&self) -> bool {
         self.engine.step()
@@ -209,4 +233,25 @@ pub fn worker_run(address: usize) {
     // SAFETY: `address` was produced by `EngineHandle::address` in this memory and is used once.
     let engine = unsafe { Box::from_raw(address as *mut Engine) };
     engine.work();
+}
+
+/// Wakes `Atomics.waitAsync` waiters on the progress counter. Runs on whichever
+/// thread finished the work.
+fn notify_progress(counter: &std::sync::atomic::AtomicU32) {
+    thread_local! {
+        /// This thread's view of the shared memory (a view cannot cross threads).
+        static MEMORY: std::cell::RefCell<Option<js_sys::Int32Array>> = const { std::cell::RefCell::new(None) };
+    }
+    let index = counter.as_ptr() as u32 / 4;
+    MEMORY.with(|cell| {
+        let mut view = cell.borrow_mut();
+        // A grown memory has a new buffer; the old view no longer covers it.
+        if view.as_ref().is_none_or(|view| view.length() <= index) {
+            let memory: js_sys::WebAssembly::Memory = wasm_bindgen::memory().unchecked_into();
+            *view = Some(js_sys::Int32Array::new(&memory.buffer()));
+        }
+        if let Some(view) = view.as_ref() {
+            let _ = js_sys::Atomics::notify(view, index);
+        }
+    });
 }

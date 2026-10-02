@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use styk_eval::doc::Camera;
-use styk_eval::drawlist::{DrawList, encode};
+use styk_eval::drawlist::{DrawList, Overrides, encode_with};
 use styk_eval::geometry::build;
 
 use crate::{Clock, Engine, Generation};
@@ -16,6 +16,8 @@ pub struct FrameData {
     pub list: Arc<DrawList>,
     /// The scene's camera at this tick.
     pub camera: Option<Camera>,
+    /// The scene's backgrounds at this tick: both ids and the mix between them (0 to 255).
+    pub background: (u32, u32, f64),
     /// Time spent preparing it.
     pub ms: f32,
 }
@@ -32,13 +34,35 @@ pub struct FrameStats {
     pub cached_bytes: usize,
 }
 
-pub(crate) fn produce(generation: &Generation, tick: u32, clock: Clock) -> FrameData {
+/// Figures the session hides: by identity, and by the layers the document hides.
+pub(crate) fn hidden_slots(generation: &Generation, frame: &styk_eval::eval::Frame, hidden_uids: &[u32]) -> Vec<bool> {
+    let layers = generation.prepared.doc.layers.as_ref().filter(|layers| !layers.hidden.is_empty());
+    if hidden_uids.is_empty() && layers.is_none() {
+        return Vec::new();
+    }
+    frame
+        .objects
+        .iter()
+        .map(|object| hidden_uids.contains(&object.uid) || layers.is_some_and(|layers| layers.hidden.iter().any(|id| id == layers.layer_of(object.uid))))
+        .collect()
+}
+
+pub(crate) fn produce(generation: &Generation, tick: u32, hidden_uids: &[u32], clock: Clock) -> FrameData {
     let started = clock();
     let prepared = &generation.prepared;
     let frame = prepared.evaluate(tick as f64);
     let scene = build(&prepared.doc, &frame);
-    let list = Arc::new(encode(&prepared.doc, &generation.assets, &scene));
-    FrameData { generation: generation.id, tick, list, camera: scene.camera, ms: (clock() - started) as f32 }
+    let hidden = hidden_slots(generation, &frame, hidden_uids);
+    let overrides = Overrides { hidden: &hidden, ..Default::default() };
+    let list = Arc::new(encode_with(&prepared.doc, &generation.assets, &scene, &overrides));
+    FrameData {
+        generation: generation.id,
+        tick,
+        list,
+        camera: scene.camera,
+        background: scene.background,
+        ms: (clock() - started) as f32,
+    }
 }
 
 struct Entry {
@@ -56,13 +80,15 @@ pub(crate) struct Cache {
     inflight: HashSet<u32>,
     /// The tick playback is at: the cache evicts what is farthest ahead of it.
     playhead: u32,
+    /// Figures hidden for this session, by identity. Prepared frames leave them out.
+    pub(crate) hidden: Arc<[u32]>,
     total: u32,
     stats: FrameStats,
 }
 
 impl Cache {
     pub fn new(budget: usize) -> Cache {
-        Cache { generation: 0, entries: HashMap::new(), bytes: 0, budget, wanted: Vec::new(), inflight: HashSet::new(), playhead: 0, total: 1, stats: FrameStats::default() }
+        Cache { generation: 0, entries: HashMap::new(), bytes: 0, budget, wanted: Vec::new(), inflight: HashSet::new(), playhead: 0, hidden: Arc::from(Vec::new()), total: 1, stats: FrameStats::default() }
     }
 
     pub fn reset(&mut self, generation: u64) {
@@ -154,10 +180,26 @@ impl Engine {
         if tick >= generation.playable_ticks() {
             return None;
         }
-        let data = produce(&generation, tick, self.inner.clock);
+        let hidden = self.inner.state.lock().frames.hidden.clone();
+        let data = produce(&generation, tick, &hidden, self.inner.clock);
         let mut state = self.inner.state.lock();
+        if !Arc::ptr_eq(&state.frames.hidden, &hidden) {
+            return None;
+        }
         state.frames.stats.inline += 1;
         state.frames.finish(generation.id, tick, Some(data))
+    }
+
+    /// Sets the figures hidden for this session (by identity). Prepared frames that
+    /// showed them are dropped; hidden layers come from the document itself.
+    pub fn set_hidden(&self, uids: &[u32]) {
+        let mut state = self.inner.state.lock();
+        if &*state.frames.hidden == uids {
+            return;
+        }
+        state.frames.hidden = Arc::from(uids);
+        let generation = state.frames.generation;
+        state.frames.reset(generation);
     }
 
     pub fn frame_stats(&self) -> FrameStats {

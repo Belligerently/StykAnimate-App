@@ -31,6 +31,7 @@ import { applicationMenuItems } from "./application-menu.mjs";
 import { Editor } from "./editor.mjs";
 import { createRenderer as createScriptRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
 import { createStageRenderer } from "./engine/engine-stage.mjs";
+import { createStagePlayback } from "./engine/engine-playback.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
@@ -600,7 +601,7 @@ function syncShell() {
 }
 // The stage: the engine draws the documents it can, the JavaScript renderer the others (docs/RUST-ENGINE-PORT.md).
 const createRenderer = (surface, options) => createStageRenderer(surface, options, createScriptRenderer);
-const playback = new PlaybackCache({
+const playback = createStagePlayback(new PlaybackCache({
   gpuIsolation: true,
   diagnostics:telemetry.performance,
   onReady: (packet) => {
@@ -616,7 +617,7 @@ const playback = new PlaybackCache({
       fail(error);
     }
   },
-});
+}), {stage: () => state.renderer});
 const playbackUploadWarmup = new PlaybackUploadWarmup(requestRender);
 const playbackUploadAhead = new PlaybackUploadAhead();
 let playbackImageTicks=[];
