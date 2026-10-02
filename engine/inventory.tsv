@@ -1,0 +1,608 @@
+path	kind	owner	status	note
+src/animation-channels.mjs	engine	styk-eval	js	
+src/animation-history.mjs	engine	styk-edit	js	
+src/animation-origin-support.mjs	engine	styk-eval	js	
+src/animation-origin-validation.mjs	engine	styk-eval	js	
+src/animation-origin.mjs	engine	styk-eval	js	
+src/animation-pose.mjs	engine	styk-eval	js	
+src/animation-properties.mjs	engine	styk-eval	js	
+src/animation-property-state.mjs	engine	styk-eval	js	
+src/animation-style.mjs	engine	styk-eval	js	
+src/app-dialogs.mjs	ui	-	stays	
+src/app.mjs	ui	-	stays	
+src/application-menu.mjs	ui	-	stays	
+src/asset-library.mjs	ui	-	stays	
+src/audio-encode.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/audio-engine.mjs	platform	styk-export::audio	js	Web Audio preview
+src/audio-model.mjs	engine	styk-export::audio	js	audio model and offline mix
+src/audio-pcm.mjs	engine	styk-export::audio	js	audio model and offline mix
+src/audio-timeline.mjs	ui	-	stays	
+src/audio-worker.mjs	platform	styk-export::audio	js	Web Audio preview
+src/background-dialog.mjs	ui	-	stays	
+src/base64.mjs	engine	styk-formats::container	js	
+src/browser-recovery.mjs	platform	-	stays	file, storage and network services
+src/builder-aids.mjs	ui	-	stays	
+src/builder-appearance.mjs	engine	styk-edit	js	
+src/builder-construction.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
+src/builder-context-menu.mjs	ui	-	stays	
+src/builder-duplicate-preview.mjs	ui	-	stays	
+src/builder-fill.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
+src/builder-mode.mjs	ui	-	stays	
+src/builder-outliner.mjs	ui	-	stays	
+src/builder-session.mjs	engine	styk-edit	js	
+src/builder-surface-ui.mjs	ui	-	stays	
+src/camera-bake-authored.mjs	engine	styk-eval::camera	js	
+src/camera-follow.mjs	engine	styk-eval::camera	js	
+src/camera-monitor.mjs	ui	-	stays	
+src/camera-motion-bake-client.mjs	engine	styk-eval::camera	js	
+src/camera-motion-bake-worker.mjs	engine	styk-eval::camera	js	
+src/camera-motion-bake.mjs	engine	styk-eval::camera	js	
+src/camera-motion-graph.mjs	ui	-	stays	
+src/camera-motion-localization.mjs	ui	-	stays	
+src/camera-motion-timeline.mjs	ui	-	stays	
+src/camera-motion-ui.mjs	ui	-	stays	
+src/camera-motion.mjs	engine	styk-eval::camera	js	
+src/camera-overlay.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
+src/canvas-artwork-pick.mjs	engine	styk-render	js	
+src/canvas-color-sample.mjs	engine	styk-render	js	
+src/canvas-guides.mjs	ui	-	stays	
+src/canvas-handle-overlay.mjs	ui	-	stays	
+src/canvas-interactions.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
+src/canvas-pinch.mjs	ui	-	stays	
+src/canvas-pose-input.mjs	ui	-	stays	
+src/canvas-raster-refinement.mjs	engine	styk-render	js	
+src/canvas-wheel-zoom.mjs	ui	-	stays	
+src/clipboard-asset-plan.mjs	engine	styk-edit	js	
+src/clipboard-assets.mjs	engine	styk-edit	js	
+src/clipboard-legacy-upgrade.mjs	engine	styk-edit	js	
+src/clipboard-wire.mjs	engine	styk-edit	js	
+src/clipboard-worker-client.mjs	engine	styk-edit	js	
+src/clipboard-worker-plan.mjs	engine	styk-edit	js	
+src/clipboard-worker.mjs	engine	styk-edit	js	
+src/codec-job.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-request.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-web-engine.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-web-host.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-web-shell.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-web-worker.mjs	engine	styk-formats::service	js	import/export transport
+src/color-palette.mjs	engine	styk-eval	js	
+src/color-picker-magnifier.mjs	ui	-	stays	
+src/color-picker.mjs	ui	-	stays	
+src/community-library.mjs	platform	-	stays	file, storage and network services
+src/connected-timeline.mjs	engine	styk-eval	js	
+src/content-hash.mjs	engine	styk-render::images	js	image decoding and variants
+src/demo.mjs	engine	styk-edit	js	
+src/document-export-worker.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/document-export.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/document-normalize.mjs	engine	styk-formats::service	js	import/export transport
+src/document-save.mjs	platform	-	stays	file, storage and network services
+src/document-transport.mjs	engine	styk-formats::service	js	import/export transport
+src/drawing-brush-labels.mjs	ui	-	stays	
+src/drawing-brush-textures.mjs	engine	styk-drawing	js	
+src/drawing-brush.mjs	engine	styk-drawing	js	
+src/drawing-clipboard.mjs	engine	styk-drawing	js	
+src/drawing-composite-transport.mjs	engine	styk-drawing	js	
+src/drawing-composite-worker.mjs	engine	styk-drawing	js	
+src/drawing-composite.mjs	engine	styk-drawing	js	
+src/drawing-controller.mjs	ui	-	stays	
+src/drawing-fill.mjs	engine	styk-drawing	js	
+src/drawing-flatten.mjs	engine	styk-drawing	js	
+src/drawing-gpu.mjs	engine	styk-render::drawing	js	GPU tiles and GPU brush
+src/drawing-history-codec.mjs	engine	styk-drawing	js	
+src/drawing-history-database.mjs	engine	styk-drawing	js	
+src/drawing-history-worker.mjs	engine	styk-drawing	js	
+src/drawing-history.mjs	engine	styk-drawing	js	
+src/drawing-lasso.mjs	engine	styk-drawing	js	
+src/drawing-model.mjs	engine	styk-drawing	js	
+src/drawing-pixels.mjs	engine	styk-drawing	js	
+src/drawing-png.mjs	engine	styk-drawing	js	
+src/drawing-preparation.mjs	engine	styk-drawing	js	
+src/drawing-pressure-curve.mjs	ui	-	stays	
+src/drawing-preview-cache.mjs	engine	styk-drawing	js	
+src/drawing-provider.mjs	engine	styk-drawing	js	
+src/drawing-raster.mjs	engine	styk-drawing	js	
+src/drawing-render-dependencies.mjs	engine	styk-drawing	js	
+src/drawing-resources.mjs	engine	styk-drawing	js	
+src/drawing-selection.mjs	engine	styk-drawing	js	
+src/drawing-sliders.mjs	ui	-	stays	
+src/drawing-smoother.mjs	engine	styk-drawing	js	
+src/drawing-stroke-engine.mjs	engine	styk-drawing	js	
+src/drawing-stroke-region.mjs	engine	styk-drawing	js	
+src/drawing-stroke-worker.mjs	engine	styk-drawing	js	
+src/drawing-tile-codec.mjs	engine	styk-drawing	js	
+src/drawing-tile-memory.mjs	engine	styk-drawing	js	
+src/drawing-tiles.mjs	engine	styk-drawing	js	
+src/drawing-transform.mjs	engine	styk-drawing	js	
+src/drawing-view.mjs	ui	-	stays	
+src/drawing-wet-ink.mjs	engine	styk-drawing	js	
+src/drawing-worker-client.mjs	engine	styk-drawing	js	
+src/drawing-worker-operations.mjs	engine	styk-drawing	js	
+src/drawing-worker-preview.mjs	engine	styk-drawing	js	
+src/drawing-worker.mjs	engine	styk-drawing	js	
+src/editable-scene-preparation.mjs	engine	styk-render	js	
+src/editor-animation.mjs	engine	styk-edit	js	commands and history
+src/editor-audio.mjs	engine	styk-edit	js	commands and history
+src/editor-authored-pose.mjs	engine	styk-edit	js	commands and history
+src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
+src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
+src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
+src/editor-builder-topology.mjs	engine	styk-edit	js	commands and history
+src/editor-builder.mjs	engine	styk-edit	js	commands and history
+src/editor-camera-motion.mjs	engine	styk-edit	js	commands and history
+src/editor-camera.mjs	engine	styk-edit	js	commands and history
+src/editor-clipboard-async.mjs	engine	styk-edit	js	commands and history
+src/editor-clipboard-sparse.mjs	engine	styk-edit	js	commands and history
+src/editor-colors.mjs	engine	styk-edit	js	commands and history
+src/editor-combine.mjs	engine	styk-edit	js	commands and history
+src/editor-disconnect.mjs	engine	styk-edit	js	commands and history
+src/editor-drawing.mjs	engine	styk-edit	js	commands and history
+src/editor-duplicate-drag.mjs	engine	styk-edit	js	commands and history
+src/editor-figure-transform.mjs	engine	styk-edit	js	commands and history
+src/editor-frame-clipboard.mjs	engine	styk-edit	js	commands and history
+src/editor-frame-draft.mjs	engine	styk-edit	js	commands and history
+src/editor-frames.mjs	engine	styk-edit	js	commands and history
+src/editor-handle-commands.mjs	engine	styk-edit	js	commands and history
+src/editor-handle-edit.mjs	engine	styk-edit	js	commands and history
+src/editor-ik.mjs	engine	styk-edit	js	commands and history
+src/editor-inbetween-async.mjs	engine	styk-edit	js	commands and history
+src/editor-inbetween.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-focus.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-folders.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-migration.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-sheet.mjs	engine	styk-edit	js	commands and history
+src/editor-layers.mjs	engine	styk-edit	js	commands and history
+src/editor-load.mjs	engine	styk-edit	js	commands and history
+src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
+src/editor-movieclips.mjs	engine	styk-edit	js	commands and history
+src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
+src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
+src/editor-range-commands.mjs	engine	styk-edit	js	commands and history
+src/editor-ranges.mjs	engine	styk-edit	js	commands and history
+src/editor-rig-constraints.mjs	engine	styk-edit	js	commands and history
+src/editor-rig.mjs	engine	styk-edit	js	commands and history
+src/editor-scene.mjs	engine	styk-edit	js	commands and history
+src/editor-selection.mjs	engine	styk-edit	js	commands and history
+src/editor-sessions.mjs	engine	styk-edit	js	commands and history
+src/editor-spatial-shape.mjs	engine	styk-edit	js	commands and history
+src/editor-spatial.mjs	engine	styk-edit	js	commands and history
+src/editor-sprite-segment.mjs	engine	styk-edit	js	commands and history
+src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
+src/editor-tweener.mjs	engine	styk-edit	js	commands and history
+src/editor-vfx-clips.mjs	engine	styk-edit	js	commands and history
+src/editor-vfx.mjs	engine	styk-edit	js	commands and history
+src/editor.mjs	engine	styk-edit	js	commands and history
+src/error-presentation.mjs	ui	-	stays	
+src/even-odd-fill.mjs	engine	styk-render	js	
+src/export-canvas.mjs	engine	styk-export	js	
+src/export-capabilities.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/export-crisp.mjs	engine	styk-export	js	
+src/export-flow.mjs	ui	-	stays	export dialog and request
+src/export-frame-core.mjs	engine	styk-export	js	
+src/export-frame-renderer.mjs	engine	styk-export	js	
+src/export-frame-worker.mjs	engine	styk-export	js	
+src/export-memory.mjs	engine	styk-export	js	
+src/export-presets.mjs	ui	-	stays	export dialog and request
+src/export-progress.mjs	ui	-	stays	export dialog and request
+src/export-request.mjs	ui	-	stays	export dialog and request
+src/export-sampling.mjs	engine	styk-export	js	
+src/export-sheet.mjs	ui	-	stays	export dialog and request
+src/export-sink.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/export-video-quality.mjs	ui	-	stays	export dialog and request
+src/feedback-ui.mjs	app	-	stays	telemetry, support, updates
+src/figure-colors.mjs	engine	styk-eval	js	
+src/figure-join-action.mjs	ui	-	stays	
+src/frame-clipboard-authored.mjs	engine	styk-edit	js	
+src/frame-clipboard-storage.mjs	platform	-	stays	file, storage and network services
+src/frame-draft-animation.mjs	engine	styk-edit	js	
+src/frame-ids.mjs	engine	styk-eval	js	
+src/frame-timing-history.mjs	engine	styk-edit	js	
+src/gif-options.mjs	engine	styk-export	js	
+src/gif-quantize.mjs	engine	styk-export	js	
+src/gpu-startup.mjs	engine	styk-render	js	
+src/gpu-timing.mjs	engine	styk-render	js	
+src/home/home-model.mjs	ui	-	stays	
+src/home/home-view.mjs	ui	-	stays	
+src/home/home.mjs	ui	-	stays	
+src/hotkey-hints.mjs	ui	-	stays	
+src/hotkey-labels.mjs	ui	-	stays	
+src/hotkey-settings.mjs	ui	-	stays	
+src/hotkeys.mjs	ui	-	stays	
+src/icons.mjs	ui	-	stays	
+src/ik-evaluation.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/ik-joined.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/ik-rig.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/ik-spatial.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/ik-topology.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/ik-view.mjs	ui	-	stays	
+src/ik.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/image-codecs.mjs	engine	styk-export	js	
+src/image-export-worker.mjs	engine	styk-export	js	
+src/image-export.mjs	engine	styk-export	js	
+src/image-resources.mjs	engine	styk-render::images	js	image decoding and variants
+src/import-client.mjs	engine	styk-formats::service	js	import/export transport
+src/import-notes-localization.mjs	ui	-	stays	
+src/import-wire.mjs	engine	styk-formats::piv	js	native frame table materialization
+src/import-worker.mjs	engine	styk-formats::service	js	import/export transport
+src/insert-inbetween-dialog.mjs	ui	-	stays	
+src/inspector-bindings.mjs	ui	-	stays	
+src/inspector-dom.mjs	ui	-	stays	
+src/inspector-header.mjs	ui	-	stays	
+src/inspector-kit.mjs	ui	-	stays	
+src/inspector-legacy.mjs	ui	-	stays	
+src/inspector-view.mjs	ui	-	stays	
+src/keyframe-easing-popover.mjs	ui	-	stays	
+src/keyframe-easing-view.mjs	ui	-	stays	
+src/keyframe-easing.mjs	engine	styk-eval	js	
+src/layer-folders.mjs	engine	styk-eval	js	
+src/layer-parallax.mjs	engine	styk-eval	js	
+src/layer-sheet.mjs	engine	styk-eval	js	
+src/layer-timeline.mjs	ui	-	stays	
+src/layers.mjs	engine	styk-eval	js	
+src/library-drag.mjs	ui	-	stays	
+src/library-files.mjs	platform	-	stays	file, storage and network services
+src/library-hover-preview.mjs	ui	-	stays	
+src/library-preview-core.mjs	engine	styk-engine::thumbnails	js	
+src/library-preview-worker.mjs	engine	styk-engine::thumbnails	js	
+src/localization-bindings.mjs	ui	-	stays	
+src/localization.mjs	ui	-	stays	
+src/localized-error.mjs	ui	-	stays	
+src/media-authoring.mjs	engine	styk-edit	js	
+src/media-image-worker.mjs	engine	styk-edit	js	
+src/message-error-core.mjs	ui	-	stays	
+src/motion-path-controls.mjs	ui	-	stays	
+src/motion-path-falloff.mjs	engine	styk-eval	js	onion sampling and motion-path projection
+src/motion-path.mjs	engine	styk-eval	js	onion sampling and motion-path projection
+src/movieclip-drawings-view.mjs	ui	-	stays	
+src/movieclip-drawings.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-geometry.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-materialize.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-membership.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-mesh-materialize.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-mesh.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-presence.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-ui.mjs	ui	-	stays	
+src/movieclips.mjs	engine	styk-eval::movieclips	js	
+src/mp4-muxer.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/native-container.mjs	engine	styk-formats::container	js	
+src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/native-files.mjs	platform	-	stays	file, storage and network services
+src/native-pose-projection.mjs	engine	styk-eval	js	
+src/native-property-curve.mjs	engine	styk-eval	js	
+src/native-property-edit.mjs	engine	styk-edit	js	
+src/native-property-projection.mjs	engine	styk-eval	js	
+src/native-property-ranges.mjs	engine	styk-edit	js	
+src/native-text-authoring.mjs	engine	styk-edit	js	
+src/native-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/native-video-frame-worker.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/object-identity.mjs	engine	styk-eval	js	
+src/onion-controller.mjs	ui	-	stays	
+src/onion-controls.mjs	ui	-	stays	
+src/onion-frame-field.mjs	ui	-	stays	
+src/onion-range-drag.mjs	ui	-	stays	
+src/onion-range.mjs	engine	styk-eval	js	onion sampling and motion-path projection
+src/onion-skin.mjs	engine	styk-eval	js	onion sampling and motion-path projection
+src/onion-surface-cache.mjs	engine	styk-render	js	
+src/onion-timeline-range.mjs	ui	-	stays	
+src/paint.mjs	engine	styk-eval	js	
+src/parallax-draw.mjs	engine	styk-render	js	
+src/pen-input.mjs	ui	-	stays	
+src/pivot-export-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/pivot-frame-draft.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/pivot-style-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/pivot/background.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/geometry-definition.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/geometry-order.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/geometry.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/model.mjs	engine	styk-doc	js	validation and structure
+src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/structure.mjs	engine	styk-doc	js	validation and structure
+src/pivot/surfaces.mjs	engine	styk-eval	js	evaluation and world geometry
+src/playback-bitmap-pool.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-budget.mjs	engine	styk-engine::playback	js	scheduling, budgets
+src/playback-cadence.mjs	engine	styk-engine::playback	js	scheduling, budgets
+src/playback-geometry-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-metrics.mjs	engine	styk-engine::playback	js	scheduling, budgets
+src/playback-native.mjs	engine	styk-formats::piv	js	native frame table materialization
+src/playback-patch.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-planning.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-raster-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-resources.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-retention.mjs	engine	styk-engine::playback	js	scheduling, budgets
+src/playback-software-painter.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-software-size.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-tween-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-upload.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-vector-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-window.mjs	engine	styk-engine::playback	js	scheduling, budgets
+src/playback-worker.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/polygon-draft.mjs	engine	styk-edit	js	
+src/polygon-preview.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
+src/pose-property-split.mjs	engine	styk-edit	js	
+src/pose-sequence-storage.mjs	engine	styk-formats::container	js	
+src/pose-sequences.mjs	engine	styk-formats::container	js	
+src/pose-snapshot.mjs	engine	styk-eval	js	
+src/prepared-frames.mjs	engine	styk-render	js	
+src/preview-image-worker.mjs	engine	styk-render::images	js	image decoding and variants
+src/preview-image.mjs	engine	styk-render::images	js	image decoding and variants
+src/preview-images.mjs	engine	styk-render::images	js	image decoding and variants
+src/preview-quality.mjs	engine	styk-engine::playback	js	quality governor
+src/privacy-ui.mjs	app	-	stays	telemetry, support, updates
+src/project-tabs-host.mjs	ui	-	stays	
+src/project-tabs.mjs	engine	styk-edit	js	
+src/property-controls.mjs	ui	-	stays	
+src/property-toggle.mjs	ui	-	stays	
+src/range-figure-operations.mjs	engine	styk-edit	js	
+src/raster-surfaces.mjs	engine	styk-render	js	
+src/raster-view.mjs	engine	styk-render	js	
+src/release-notes.mjs	app	-	stays	telemetry, support, updates
+src/render-artwork.mjs	engine	styk-render	js	
+src/renderer-camera-scene.mjs	engine	styk-render	js	
+src/renderer-canvas-plan.mjs	engine	styk-render	js	
+src/renderer-geometry.mjs	engine	styk-render	js	
+src/renderer-glyphs.mjs	engine	styk-render	js	
+src/renderer-handles.mjs	engine	styk-render	js	
+src/renderer-mesh-raster.mjs	engine	styk-render	js	
+src/renderer-onion-composite.mjs	engine	styk-render	js	
+src/renderer-opacity.mjs	engine	styk-render	js	
+src/renderer-preview-drawing-resources.mjs	engine	styk-render	js	
+src/renderer-preview-drawings.mjs	engine	styk-render	js	
+src/renderer-raster-cache.mjs	engine	styk-render	js	
+src/renderer-raster-capture.mjs	engine	styk-render	js	
+src/renderer-upload.mjs	engine	styk-render	js	
+src/renderer-vector-raster.mjs	engine	styk-render	js	
+src/renderer-vfx-vector.mjs	engine	styk-render	js	
+src/renderer.mjs	engine	styk-render	js	
+src/rig-angle-path.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/rig-constraints.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/rig-control-details.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/rig-controls.mjs	ui	-	stays	
+src/rig-examples-3d.mjs	engine	styk-edit	js	
+src/rig-examples.mjs	engine	styk-edit	js	
+src/rig-mechanism-examples.mjs	engine	styk-edit	js	
+src/rig-pose-choices.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/rig-solids.mjs	engine	styk-edit	js	
+src/rig-spatial.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/rig-test-ui.mjs	ui	-	stays	
+src/rig-weighted.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/scene-order.mjs	engine	styk-render	js	
+src/scene-preparation.mjs	engine	styk-render	js	
+src/segment-values-dialog.mjs	ui	-	stays	
+src/settings.mjs	ui	-	stays	
+src/shared-clipboard.mjs	engine	styk-edit	js	
+src/sheet-filmstrip.mjs	ui	-	stays	
+src/shell/dock-host.mjs	ui	-	stays	
+src/shell/dock-keyboard.mjs	ui	-	stays	
+src/shell/dock-tabs.mjs	ui	-	stays	
+src/shell/layout-popover.mjs	ui	-	stays	
+src/shell/layout-schema.mjs	ui	-	stays	
+src/shell/layout-solver.mjs	ui	-	stays	
+src/shell/layout-store.mjs	ui	-	stays	
+src/shell/panel-registry.mjs	ui	-	stays	
+src/shell/project-switcher.mjs	ui	-	stays	
+src/shell/project-tabs-view.mjs	ui	-	stays	
+src/shell/rail.mjs	ui	-	stays	
+src/shell/shell-commands.mjs	ui	-	stays	
+src/shell/stage-head.mjs	ui	-	stays	
+src/shell/topbar.mjs	ui	-	stays	
+src/simple-timeline.mjs	ui	-	stays	
+src/source-record.mjs	engine	styk-formats::container	js	
+src/spatial-controls.mjs	ui	-	stays	
+src/spatial-gizmo.mjs	ui	-	stays	
+src/spatial-mesh-legacy.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/spatial-mesh.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/spatial-projection.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/sprite-placement-dialog.mjs	ui	-	stays	
+src/startup-blue-data.mjs	engine	styk-edit	js	
+src/startup-document.mjs	engine	styk-edit	js	
+src/sticknodes/adapter.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/archive.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/binary.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/decoder.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/geometry.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/png-browser.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/project-layout.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/project.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/decoder/renderer.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/geometry.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/validation.mjs	engine	styk-formats::sticknodes	js	
+src/structural-equality.mjs	engine	styk-eval	js	
+src/studio-shell.mjs	ui	-	stays	
+src/support-center.mjs	app	-	stays	telemetry, support, updates
+src/support-contract.mjs	app	-	stays	telemetry, support, updates
+src/support-desktop-ui.mjs	app	-	stays	telemetry, support, updates
+src/support-live-client.mjs	app	-	stays	telemetry, support, updates
+src/support-localization.mjs	app	-	stays	telemetry, support, updates
+src/support-media.mjs	app	-	stays	telemetry, support, updates
+src/support-ui.mjs	app	-	stays	telemetry, support, updates
+src/surface-raster.mjs	engine	styk-render	js	
+src/svg-export.mjs	engine	styk-export	js	
+src/telemetry-core.mjs	app	-	stays	telemetry, support, updates
+src/telemetry-measurements.mjs	app	-	stays	telemetry, support, updates
+src/telemetry-performance-schema.mjs	app	-	stays	telemetry, support, updates
+src/telemetry-performance.mjs	app	-	stays	telemetry, support, updates
+src/telemetry-schema.mjs	app	-	stays	telemetry, support, updates
+src/telemetry-workload.mjs	app	-	stays	telemetry, support, updates
+src/text-authoring-worker.mjs	engine	styk-edit	js	
+src/text-authoring.mjs	engine	styk-edit	js	
+src/text-dialog.mjs	ui	-	stays	
+src/text-font-compat.mjs	engine	styk-edit	js	
+src/text-preview.mjs	ui	-	stays	
+src/theme-bootstrap.js	ui	-	stays	
+src/theme.mjs	ui	-	stays	
+src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	js	
+src/thumbnail-validity.mjs	engine	styk-engine::thumbnails	js	
+src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	js	
+src/timeline-header.mjs	ui	-	stays	
+src/timeline-host.mjs	ui	-	stays	
+src/timeline-hotkeys.mjs	ui	-	stays	
+src/timeline-layer-drag.mjs	ui	-	stays	
+src/timeline-layer-filter.mjs	ui	-	stays	
+src/timeline-layer-folders.mjs	ui	-	stays	
+src/timeline-layer-view.mjs	ui	-	stays	
+src/timeline-layers-popover.mjs	ui	-	stays	
+src/timeline-menu.mjs	ui	-	stays	
+src/timeline-navigation.mjs	ui	-	stays	
+src/timeline-organization.mjs	ui	-	stays	
+src/timeline-rows.mjs	ui	-	stays	
+src/timeline.mjs	ui	-	stays	
+src/topology-history.mjs	engine	styk-edit	js	
+src/touch/canvas-touch.mjs	ui	-	stays	
+src/touch/long-press.mjs	ui	-	stays	
+src/touch/modifier-dock.mjs	ui	-	stays	
+src/touch/timeline-scrubber.mjs	ui	-	stays	
+src/touch/timeline-touch.mjs	ui	-	stays	
+src/touch/touch-gestures.mjs	ui	-	stays	
+src/touch/touch-mode.mjs	ui	-	stays	
+src/touch/touch-shell.mjs	ui	-	stays	
+src/tutorials/tutorial-catalog.mjs	ui	-	stays	
+src/tutorials/tutorial-engine.mjs	ui	-	stays	
+src/tutorials/tutorial-presenter.mjs	ui	-	stays	
+src/tutorials/tutorial-probe.mjs	ui	-	stays	
+src/tutorials/tutorial-targets.mjs	ui	-	stays	
+src/tutorials/tutorials.mjs	ui	-	stays	
+src/tweener-controls.mjs	ui	-	stays	
+src/ui-scale.mjs	ui	-	stays	
+src/ui/anchor-position.mjs	ui	-	stays	
+src/ui/command-catalog.mjs	ui	-	stays	
+src/ui/command-palette.mjs	ui	-	stays	
+src/ui/command-registry.mjs	ui	-	stays	
+src/ui/dom-write.mjs	ui	-	stays	
+src/ui/font-loading.mjs	ui	-	stays	
+src/ui/overlay-manager.mjs	ui	-	stays	
+src/ui/quick-actions.mjs	ui	-	stays	
+src/ui/roving-focus.mjs	ui	-	stays	
+src/ui/tool-options.mjs	ui	-	stays	
+src/ui/toolbar-overflow.mjs	ui	-	stays	
+src/ui/ui-dialog.mjs	ui	-	stays	
+src/ui/ui-invalidation.mjs	ui	-	stays	
+src/ui/ui-menu.mjs	ui	-	stays	
+src/ui/ui-popover.mjs	ui	-	stays	
+src/ui/ui-strings.mjs	ui	-	stays	
+src/ui/ui-toast.mjs	ui	-	stays	
+src/ui/ui-tooltip.mjs	ui	-	stays	
+src/update-ui.mjs	app	-	stays	telemetry, support, updates
+src/user-action-error.mjs	ui	-	stays	
+src/user-library.mjs	ui	-	stays	
+src/validation-labels.mjs	ui	-	stays	
+src/vfw-export-controls.mjs	ui	-	stays	export dialog and request
+src/vfw-frame-worker.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/vfw-pixels.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/vfw-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/vfx-camera-gpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-camera.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-canvas.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-clip-controls.mjs	ui	-	stays	
+src/vfx-clip-inspector.mjs	ui	-	stays	
+src/vfx-clip-timeline.mjs	ui	-	stays	
+src/vfx-clips.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-connected.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-generator-anchors.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	js	
+src/vfx-generator-atlas.mjs	engine	styk-render::generators	js	
+src/vfx-generator-canvas.mjs	engine	styk-render::generators	js	
+src/vfx-generator-frame.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-generator-gpu.mjs	engine	styk-render::generators	js	
+src/vfx-generator-layers.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-generator-styles.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-generators.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-gizmos.mjs	ui	-	stays	
+src/vfx-gpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-icons.mjs	ui	-	stays	
+src/vfx-inspector.mjs	ui	-	stays	
+src/vfx-key-channel-menu.mjs	ui	-	stays	
+src/vfx-key-channels.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-localization.mjs	ui	-	stays	
+src/vfx-paint.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-preset-preview.mjs	ui	-	stays	
+src/vfx-preset-ui.mjs	ui	-	stays	
+src/vfx-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-preview.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-registry.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-scene.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-shaders.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-surface.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-user-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-viewport.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-webgpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
+src/web-library.mjs	platform	-	stays	file, storage and network services
+src/web-offline.mjs	platform	-	stays	file, storage and network services
+src/web-support.js	ui	-	stays	
+src/zlib-sync.mjs	engine	styk-formats::container	js	
+codecs/codec_bridge.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/image_stream.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_asset_writer.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_codec.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_document.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_full_writer.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_legacy.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_legacy_v2.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_legacy_v4.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_migrate.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/piv_side_tables.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/pivot_decoder.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/work_control.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+backend/benchmark.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/benchmark_fast_decode.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/browser_service.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
+backend/fast_decode.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
+backend/import_wire.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
+backend/jobs.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
+backend/native_format.py	engine	styk-formats::container	js	container v1/v2 (service side)
+backend/native_scan.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
+backend/process_metrics.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
+backend/profile_import.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/profile_native_save.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/server.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
+backend/test_browser_roundtrip.mjs	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_browser_service.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_document_digest.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_fast_decode.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_import_wire_review.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_jobs.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_legacy_bitmap_keys.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_legacy_upgrade_export.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_library_format.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_native_format.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_native_layout.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_native_scan.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_parent_watch.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_piv_identities.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_piv_media_recovery.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_piv_type_changes.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_server.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_source_lifetime.py	tool	-	stays	Python test or profiler; removed with the Python codec
+backend/test_stk_topology.py	tool	-	stays	Python test or profiler; removed with the Python codec
+native/piv-frame-scan.cpp	engine	styk-formats::piv	js	C++ frame scanner
+native/vfw-bridge.cpp	platform	-	stays	Windows VFW encoder bridge (stays native)
+desktop/appimage-updater.cjs	platform	-	stays	Electron shell and services
+desktop/audio-service.cjs	platform	-	stays	Electron shell and services
+desktop/backend.cjs	platform	styk-formats::service	js	starts the Python codec; goes away with it
+desktop/file-streams.cjs	platform	-	stays	Electron shell and services
+desktop/font-service.cjs	platform	-	stays	Electron shell and services
+desktop/gpu-switches.cjs	platform	-	stays	Electron shell and services
+desktop/library-store.cjs	platform	-	stays	Electron shell and services
+desktop/localization.cjs	platform	-	stays	Electron shell and services
+desktop/main.cjs	platform	-	stays	Electron shell and services
+desktop/preferences.cjs	platform	-	stays	Electron shell and services
+desktop/preload.cjs	platform	-	stays	Electron shell and services
+desktop/project-files.cjs	platform	-	stays	Electron shell and services
+desktop/project-library.cjs	platform	-	stays	Electron shell and services
+desktop/public-library.cjs	platform	-	stays	Electron shell and services
+desktop/recent-files.cjs	platform	-	stays	Electron shell and services
+desktop/recovery.cjs	platform	-	stays	Electron shell and services
+desktop/release-history.cjs	platform	-	stays	Electron shell and services
+desktop/release-links.cjs	platform	-	stays	Electron shell and services
+desktop/shared-clipboard.cjs	platform	-	stays	Electron shell and services
+desktop/support.cjs	platform	-	stays	Electron shell and services
+desktop/telemetry.cjs	platform	-	stays	Electron shell and services
+desktop/updates.cjs	platform	-	stays	Electron shell and services
+desktop/vfw-export-service.cjs	platform	-	stays	Electron shell and services
+desktop/video-export-service.cjs	platform	-	stays	Electron shell and services
+desktop/web-host.cjs	platform	-	stays	Electron shell and services
+desktop/workspace-instance.cjs	platform	-	stays	Electron shell and services
