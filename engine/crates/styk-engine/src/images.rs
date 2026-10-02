@@ -8,17 +8,23 @@ pub use styk_eval::assets::DecodedImage;
 
 #[derive(Default)]
 pub(crate) struct Store {
-    generation: u64,
+    /// The document lineage these images belong to.
+    lineage: u64,
     /// Decoded and not yet taken by the renderer.
     ready: Vec<Arc<DecodedImage>>,
     remaining: usize,
 }
 
 impl Store {
-    pub fn reset(&mut self, generation: u64, count: usize) {
-        self.generation = generation;
+    pub fn reset(&mut self, lineage: u64, count: usize) {
+        self.lineage = lineage;
         self.ready.clear();
         self.remaining = count;
+    }
+
+    /// A later revision of the same document added `count` images.
+    pub fn grow(&mut self, count: usize) {
+        self.remaining += count;
     }
 }
 
@@ -26,7 +32,7 @@ impl Engine {
     pub(crate) fn decode_image(&self, generation: &Arc<Generation>, index: usize) {
         let decoded = styk_eval::assets::decode_image(&generation.prepared.doc, &generation.assets, index);
         let mut state = self.inner.state.lock();
-        if state.images.generation != generation.id {
+        if state.images.lineage != generation.lineage {
             return;
         }
         state.images.remaining = state.images.remaining.saturating_sub(1);

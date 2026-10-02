@@ -15,8 +15,10 @@
 //! interface thread may not wait on a lock, so every shared structure is taken
 //! with [`sync::Shared::lock`], which spins for the few instructions a holder needs.
 
+pub mod edit;
 mod frames;
 mod images;
+pub mod mirror;
 mod sync;
 
 use std::sync::Arc;
@@ -56,6 +58,11 @@ impl Budgets {
 /// One open document, immutable. A new one replaces it on every change.
 pub struct Generation {
     pub id: u64,
+    /// Generations of one lineage are revisions of the same project: they share an
+    /// image atlas, so an edit never uploads pictures again.
+    pub lineage: u64,
+    /// The interface's revision counter this document corresponds to.
+    pub revision: u64,
     pub prepared: Arc<Prepared>,
     pub assets: Arc<Assets>,
     pub open_ms: f64,
@@ -88,6 +95,9 @@ struct State {
 
 struct Inner {
     state: Shared<State>,
+    /// Changes staged for the next commit.
+    staged: Shared<Vec<mirror::Change>>,
+    mirror: std::sync::Mutex<mirror::Mirror>,
     clock: Clock,
     next_generation: AtomicU64,
     stopping: AtomicBool,
@@ -110,6 +120,8 @@ impl Engine {
                     images: images::Store::default(),
                     tasks: Default::default(),
                 }),
+                staged: Shared::new(Vec::new()),
+                mirror: Default::default(),
                 clock,
                 next_generation: AtomicU64::new(1),
                 stopping: AtomicBool::new(false),
@@ -130,38 +142,55 @@ impl Engine {
         let prepared = Arc::new(Prepared::new(Arc::new(document)));
         let assets = Arc::new(Assets::build(&prepared.doc));
         let open_ms = self.now() - started;
-        let id = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
-        let generation = Arc::new(Generation { id, prepared, assets, open_ms });
-        let doc = &generation.prepared.doc;
-        let opened = Opened {
+        let lineage = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
+        let doc = prepared.doc.clone();
+        let ticks = prepared.total_ticks;
+        let id = self.publish(Generation { id: 0, lineage, revision: 0, prepared, assets, open_ms });
+        Ok(Opened {
             generation: id,
             name: doc.name.clone(),
             version: doc.version,
             canvas: doc.canvas,
             fps: doc.fps,
-            ticks: generation.prepared.total_ticks,
+            ticks,
             figures: doc.figures.len(),
             keyframes: doc.keyframes.len(),
             images: doc.images.len(),
             open_ms,
             unsupported: doc.unsupported.clone(),
-        };
-        let image_count = doc.images.len();
+        })
+    }
+
+    /// Makes `generation` the open document and queues the decoding of its images
+    /// that the previous revision did not already have. Returns its id.
+    pub(crate) fn publish(&self, mut generation: Generation) -> u64 {
+        let id = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
+        generation.id = id;
+        let generation = Arc::new(generation);
+        let image_count = generation.prepared.doc.images.len();
         {
             let mut state = self.inner.state.lock();
+            let known = match &state.current {
+                Some(previous) if previous.lineage == generation.lineage => previous.prepared.doc.images.len().min(image_count),
+                _ => 0,
+            };
             state.frames.reset(id);
-            state.images.reset(id, image_count);
-            state.tasks.clear();
-            // Image pixels are decoded in the background, largest saving first: the frames
-            // drawn before they arrive show the artwork without them.
-            for index in 0..image_count {
+            if known == 0 {
+                state.images.reset(generation.lineage, image_count);
+                state.tasks.clear();
+            } else {
+                state.images.grow(image_count - known);
+            }
+            // Image pixels are decoded in the background: the frames drawn before they
+            // arrive show the artwork without them.
+            for index in known..image_count {
                 let generation = generation.clone();
                 state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_image(&generation, index)));
             }
             state.current = Some(generation);
         }
         self.inner.state.notify_all();
-        Ok(opened)
+        id
     }
 
     /// Runs `task` in the background: on a worker inside [`Engine::work`], or on the

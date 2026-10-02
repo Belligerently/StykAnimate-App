@@ -1145,6 +1145,7 @@ dependencies = [
  "styk-doc",
  "styk-eval",
  "styk-formats",
+ "thiserror",
 ]
 
 [[package]]

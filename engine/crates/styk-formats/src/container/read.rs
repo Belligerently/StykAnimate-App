@@ -49,6 +49,19 @@ pub fn decode(bytes: &[u8], kind: Kind) -> Result<Decoded, ContainerError> {
     Ok(Decoded { document, version: 2, skeleton_bytes })
 }
 
+/// Reads one lifted record: skeleton text whose markers name ranges of the given
+/// numeric-array and payload sections, as [`super::lift`] writes them. The interface
+/// sends changed records to the engine this way, so pose arrays cross as bytes.
+pub fn parse_lifted(skeleton: &[u8], arrays: &[u8], payloads: &[u8]) -> Result<Value, ContainerError> {
+    let sections = [(1u8, arrays.to_vec()), (2u8, payloads.to_vec())];
+    let mut markers = Markers::new(&sections, skeleton.len());
+    let parsed = parse_text(skeleton, Some(&mut markers));
+    if let Some(error) = markers.error.take() {
+        return Err(error);
+    }
+    Ok(parsed?)
+}
+
 /// Verifies a container and returns its uncompressed pieces without building a document.
 pub fn decode_parts(bytes: &[u8], kind: Kind) -> Result<Parts, ContainerError> {
     if bytes.len() > MAX_BYTES {

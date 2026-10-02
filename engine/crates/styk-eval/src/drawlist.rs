@@ -529,10 +529,11 @@ struct ObjectOut {
 }
 
 /// The background layers (`drawBackground`), as view-filling primitives.
-fn background(doc: &Document, assets: &Assets, scene: &Scene, out: &mut Out) {
+fn background(doc: &Document, assets: &Assets, scene: &Scene, editor_color: Option<u32>, out: &mut Out) {
     // `sceneBackgroundColor`: a hidden Scene layer is transparent; a colour key replaces the fill.
+    // The editor's own canvas colour comes before both.
     let scene_hidden = doc.layers.as_ref().is_some_and(|l| !l.scene_visible);
-    let key = if scene_hidden { Some(0) } else { scene.background_color };
+    let key = editor_color.or(if scene_hidden { Some(0) } else { scene.background_color });
     if let Some(argb) = key {
         let everywhere = [f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY];
         out.push(prim(K_FILL_VIEW, argb8(argb), NO_PAINT, [0.0; 4], [0.0; 4], [0.0; 4]), everywhere);
@@ -601,8 +602,69 @@ fn background(doc: &Document, assets: &Assets, scene: &Scene, out: &mut Out) {
     }
 }
 
+/// What the editor changes about a frame without changing the document: figures
+/// hidden for this session, figures being dragged, and its own canvas colour.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Overrides<'a> {
+    /// Object slots that are not drawn (`true` = hidden). Shorter than the frame = the rest are shown.
+    pub hidden: &'a [bool],
+    /// World-space offsets of objects being dragged, by slot.
+    pub translations: &'a [(u32, [f64; 2])],
+    /// An ARGB colour replacing the scene background (Build mode's canvas colour).
+    pub background: Option<u32>,
+}
+
+impl Out {
+    /// Moves every primitive, paint and polyline vertex by `d`.
+    fn translate(&mut self, d: [f64; 2]) {
+        let (dx, dy) = (d[0] as f32, d[1] as f32);
+        for p in &mut self.prims {
+            match p.kind & 255 {
+                K_CAPSULE | K_BOX | K_POLYLINE => {
+                    p.a = [p.a[0] + dx, p.a[1] + dy, p.a[2] + dx, p.a[3] + dy];
+                }
+                K_TRI => {
+                    p.a = [p.a[0] + dx, p.a[1] + dy, p.a[2] + dx, p.a[3] + dy];
+                    p.b[0] += dx;
+                    p.b[1] += dy;
+                }
+                K_ARC | K_DISC | K_RING | K_IMAGE => {
+                    p.a[0] += dx;
+                    p.a[1] += dy;
+                }
+                _ => {}
+            }
+        }
+        for point in &mut self.points {
+            point[0] += dx;
+            point[1] += dy;
+        }
+        // Paint records: [kind, stops, …], geometry, extra, then two rows per stop.
+        let mut at = 0;
+        while at + 2 < self.paints.len() {
+            let (kind, stops) = (self.paints[at][0], self.paints[at][1] as usize);
+            let g = &mut self.paints[at + 1];
+            g[0] += dx;
+            g[1] += dy;
+            if kind == P_LINEAR {
+                g[2] += dx;
+                g[3] += dy;
+            }
+            at += 3 + stops * 2;
+        }
+        if self.bounds[0] <= self.bounds[2] {
+            self.bounds = [self.bounds[0] + dx, self.bounds[1] + dy, self.bounds[2] + dx, self.bounds[3] + dy];
+        }
+    }
+}
+
 /// Encodes a scene. Objects encode in parallel; groups are merged in order.
 pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
+    encode_with(doc, assets, scene, &Overrides::default())
+}
+
+/// [`encode`] with the editor's session overrides applied.
+pub fn encode_with(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>) -> DrawList {
     let ctx = Ctx { scene, assets };
     // Leaf runs: consecutive items of one figure instance (same slot and clip chain).
     let mut runs: Vec<(usize, usize)> = Vec::new();
@@ -619,7 +681,7 @@ pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
     let encode_run = |&(a, b): &(usize, usize)| -> Option<ObjectOut> {
         let first = &scene.items[a];
         let opacity = first.opacity;
-        if opacity <= 0.0 {
+        if opacity <= 0.0 || overrides.hidden.get(first.slot as usize).copied().unwrap_or(false) {
             return None;
         }
         let fig = &scene.figures[first.figure as usize];
@@ -639,13 +701,17 @@ pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
         for it in &scene.items[a..b] {
             ctx.item(&mut items, it, 0.0, [0, 0, 0]);
         }
+        if let Some(&(_, delta)) = overrides.translations.iter().find(|(slot, _)| *slot == first.slot) {
+            outline.translate(delta);
+            items.translate(delta);
+        }
         Some(ObjectOut { opacity, outline_alpha, outline, items })
     };
     let objects: Vec<Option<ObjectOut>> = crate::par::map(&runs, 16, encode_run);
 
     let mut b = Builder::new();
     let mut root = Out::new();
-    background(doc, assets, scene, &mut root);
+    background(doc, assets, scene, overrides.background, &mut root);
     let background_prims = root.prims.len() as u32;
     b.add(0, root);
     // Open movieclip owner groups: (level key, owner, group or pass-through, skipped).

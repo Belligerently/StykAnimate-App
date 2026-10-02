@@ -543,6 +543,53 @@ impl Loader {
             .filter_map(|o| self.object(o))
             .map(Arc::new)
             .collect();
+        Ok(Self::keyframe_of(k, objects))
+    }
+
+    /// The pose the editor is showing, which it evaluated itself: a keyframe-shaped
+    /// record whose `objects` hold either a pose or `null`, meaning "the object in
+    /// this slot is the one `previous` had". Only changed poses cross the boundary
+    /// while a gesture runs. Figures come from `doc`.
+    pub fn edit_frame(&mut self, value: &Value, previous: Option<&crate::eval::Frame>, doc: &Document) -> Result<crate::eval::Frame, Error> {
+        let items = value.get("objects").and_then(Value::as_arr).unwrap_or(&[]);
+        let mut objects = Vec::with_capacity(items.len());
+        for (slot, item) in items.iter().enumerate() {
+            if item.is_null() {
+                let kept = previous.and_then(|frame| frame.objects.get(slot)).ok_or_else(|| Error::Format(format!("the edit frame keeps object {slot}, which the previous frame does not have")))?;
+                objects.push(kept.clone());
+                continue;
+            }
+            let mut object = self.object(item).ok_or_else(|| Error::Format(format!("object {slot} of the edit frame has no identity or figure")))?;
+            // The editor has already chosen each clip's local time.
+            object.clip_time = match item.get("_movieclipSample") {
+                Some(Value::Num(time)) => Some(*time),
+                Some(_) => None,
+                None => Some(object.movieclip.as_ref().map_or(0.0, |playback| playback.offset)),
+            };
+            let mut object = Arc::new(object);
+            if let Some(base) = doc.figure(object.figure) {
+                self.styled_object(base, &mut object);
+            }
+            objects.push(object);
+        }
+        let key = Self::keyframe_of(value, objects);
+        let count = key.objects.len();
+        Ok(crate::eval::Frame {
+            tick: num(value, "tick").unwrap_or(0.0),
+            objects: key.objects,
+            draw_order: key.draw_order,
+            camera: key.camera,
+            background: key.background,
+            background_b: key.background_b,
+            background_mix: key.background_mix,
+            origins: vec![None; count],
+            continuations: key.continuations,
+            background_color: key.background_color,
+        })
+    }
+
+    /// A keyframe around already converted objects.
+    fn keyframe_of(k: &Value, objects: Vec<Arc<Object>>) -> Keyframe {
         let draw_order = k
             .get("object_draw_order")
             .and_then(Value::numbers)
@@ -578,7 +625,7 @@ impl Loader {
                 .collect(),
         };
         frame.reindex();
-        Ok(frame)
+        frame
     }
 
     fn background(&mut self, b: &Value) -> Background {
@@ -735,38 +782,45 @@ fn source_unshared(source: &Value) -> bool {
 }
 
 impl Loader {
-    /// Gives every styled object the figure its style overlay resolves to, sharing
-    /// identical overlays. A frame resolved against figures that have not changed
-    /// since is kept as it is.
+    /// Gives a styled object the figure its style overlay resolves to, sharing
+    /// identical overlays. Returns whether the object changed.
+    fn styled_object(&mut self, base: &Arc<Figure>, object: &mut Arc<Object>) -> bool {
+        let Some(style) = object.style.clone() else { return false };
+        if object.figure_override.as_ref().is_some_and(|resolved| resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base))) {
+            return false;
+        }
+        let resolved = self
+            .styled
+            .entry((Arc::as_ptr(base) as usize, style.key.clone()))
+            .or_insert_with(|| {
+                let mut figure = crate::style::resolve(base, &style);
+                figure.base = Some(base.clone());
+                (base.clone(), Arc::new(figure))
+            })
+            .1
+            .clone();
+        Arc::make_mut(object).figure_override = Some(resolved);
+        true
+    }
+
+    /// Resolves the style overlays of every frame of `doc`. A frame resolved against
+    /// figures that have not changed since is kept as it is.
     fn resolve_styles(&mut self, doc: &mut Document) {
         let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
         let mut fix = |frame: &mut Arc<Keyframe>| {
-            let current = |object: &Arc<Object>| match (&object.style, &object.figure_override, figures.get(&object.figure)) {
-                (None, _, _) | (Some(_), _, None) => true,
-                (Some(_), Some(resolved), Some(base)) => resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
-                (Some(_), None, Some(_)) => false,
+            let stale = |object: &Arc<Object>| match (&object.style, &object.figure_override, figures.get(&object.figure)) {
+                (None, _, _) | (Some(_), _, None) => false,
+                (Some(_), Some(resolved), Some(base)) => !resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
+                (Some(_), None, Some(_)) => true,
             };
-            if frame.objects.iter().all(current) {
+            if !frame.objects.iter().any(stale) {
                 return;
             }
             let frame = Arc::make_mut(frame);
             for object in frame.objects.iter_mut() {
-                if current(object) {
-                    continue;
+                if let Some(base) = figures.get(&object.figure) {
+                    self.styled_object(base, object);
                 }
-                let Some(style) = object.style.clone() else { continue };
-                let Some(base) = figures.get(&object.figure) else { continue };
-                let resolved = self
-                    .styled
-                    .entry((Arc::as_ptr(base) as usize, style.key.clone()))
-                    .or_insert_with(|| {
-                        let mut figure = crate::style::resolve(base, &style);
-                        figure.base = Some(base.clone());
-                        (base.clone(), Arc::new(figure))
-                    })
-                    .1
-                    .clone();
-                Arc::make_mut(object).figure_override = Some(resolved);
             }
         };
         for k in doc.keyframes.iter_mut() {

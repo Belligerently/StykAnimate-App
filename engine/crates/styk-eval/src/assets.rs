@@ -3,7 +3,7 @@
 //! for pixel decoding) and triangulated glyph outlines.
 
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::Cursor as Cursor2;
 use std::sync::Arc;
 
 use lyon_path::math::point;
@@ -37,26 +37,55 @@ impl AtlasEntry {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Assets {
     pub atlas: Vec<AtlasEntry>,
     pub pages: u32,
-    /// Triangles (glyph space) per glyph, keyed by the glyph's address.
-    pub glyphs: HashMap<usize, Arc<[[f32; 2]]>>,
+    /// Triangles (glyph space) per glyph, keyed by the glyph's address. The glyph is
+    /// held so the address stays its own.
+    pub glyphs: HashMap<usize, (Arc<Glyph>, Arc<[[f32; 2]]>)>,
+    /// Where the next image goes.
+    cursor: Cursor,
+}
+
+/// The packer's position: images are only ever appended, so a rectangle handed
+/// out stays valid for every later revision of the document.
+#[derive(Default, Clone, Copy)]
+struct Cursor {
+    layer: u32,
+    x: u32,
+    y: u32,
+    shelf: u32,
+    used: bool,
 }
 
 fn dimensions(data: &ImageData) -> Option<(u32, u32)> {
-    image::ImageReader::new(Cursor::new(&data.bytes[..])).with_guessed_format().ok()?.into_dimensions().ok()
+    image::ImageReader::new(Cursor2::new(&data.bytes[..])).with_guessed_format().ok()?.into_dimensions().ok()
 }
 
 impl Assets {
     pub fn build(doc: &Document) -> Assets {
-        let sizes: Vec<Option<(u32, u32)>> = crate::par::map(&doc.images, 8, dimensions);
-        let (atlas, pages) = pack(&sizes);
+        Assets::default().extended(doc)
+    }
+
+    /// The assets of a later revision of the same document: images the previous
+    /// revision placed keep their rectangles, new ones are packed after them, and
+    /// only new glyphs are tessellated.
+    pub fn extended(&self, doc: &Document) -> Assets {
+        let mut assets = self.clone();
+        let known = assets.atlas.len().min(doc.images.len());
+        let sizes: Vec<Option<(u32, u32)>> = crate::par::map(&doc.images[known..], 8, dimensions);
+        assets.atlas.resize(doc.images.len(), AtlasEntry::default());
+        pack(&sizes, &mut assets.atlas[known..], &mut assets.cursor);
+        assets.pages = if assets.cursor.used { assets.cursor.layer + 1 } else { 0 };
         let mut glyph_list: Vec<Arc<Glyph>> = Vec::new();
         collect_glyphs(doc, &mut glyph_list);
-        let glyphs = crate::par::map(&glyph_list, 8, |g| (Arc::as_ptr(g) as usize, tessellate(&g.path))).into_iter().collect();
-        Assets { atlas, pages, glyphs }
+        glyph_list.retain(|glyph| !assets.glyphs.contains_key(&(Arc::as_ptr(glyph) as usize)));
+        glyph_list.dedup_by(|a, b| Arc::ptr_eq(a, b));
+        for (glyph, triangles) in crate::par::map(&glyph_list, 8, |g| (g.clone(), tessellate(&g.path))) {
+            assets.glyphs.insert(Arc::as_ptr(&glyph) as usize, (glyph, triangles));
+        }
+        assets
     }
 
     pub fn image(&self, index: u32) -> Option<&AtlasEntry> {
@@ -64,7 +93,7 @@ impl Assets {
     }
 
     pub fn glyph(&self, glyph: &Arc<Glyph>) -> Option<&Arc<[[f32; 2]]>> {
-        self.glyphs.get(&(Arc::as_ptr(glyph) as usize))
+        self.glyphs.get(&(Arc::as_ptr(glyph) as usize)).map(|(_, triangles)| triangles)
     }
 }
 
@@ -79,9 +108,8 @@ fn collect_glyphs(doc: &Document, out: &mut Vec<Arc<Glyph>>) {
     }
 }
 
-/// Shelf packing into `PAGE`-sized layers, tallest images first.
-fn pack(sizes: &[Option<(u32, u32)>]) -> (Vec<AtlasEntry>, u32) {
-    let mut entries = vec![AtlasEntry::default(); sizes.len()];
+/// Shelf packing into `PAGE`-sized layers, tallest images first, continuing at `cursor`.
+fn pack(sizes: &[Option<(u32, u32)>], entries: &mut [AtlasEntry], cursor: &mut Cursor) {
     let max = PAGE - 2 * GUTTER;
     let mut order: Vec<usize> = (0..sizes.len()).filter(|&i| sizes[i].is_some()).collect();
     let fit = |w: u32, h: u32| -> (u32, u32) {
@@ -95,8 +123,7 @@ fn pack(sizes: &[Option<(u32, u32)>]) -> (Vec<AtlasEntry>, u32) {
         let (w, h) = sizes[i].unwrap();
         std::cmp::Reverse(fit(w, h).1)
     });
-    let (mut layer, mut x, mut y, mut shelf) = (0u32, 0u32, 0u32, 0u32);
-    let mut used = false;
+    let Cursor { mut layer, mut x, mut y, mut shelf, mut used } = *cursor;
     for i in order {
         let (sw, sh) = sizes[i].unwrap();
         let (w, h) = fit(sw, sh);
@@ -117,7 +144,7 @@ fn pack(sizes: &[Option<(u32, u32)>]) -> (Vec<AtlasEntry>, u32) {
         x += cw;
         shelf = shelf.max(ch);
     }
-    (entries, if used { layer + 1 } else { 0 })
+    *cursor = Cursor { layer, x, y, shelf, used };
 }
 
 /// Even-odd fill triangulation of one glyph (glyph space).

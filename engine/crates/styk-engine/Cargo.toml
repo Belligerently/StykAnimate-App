@@ -10,3 +10,4 @@ publish.workspace = true
 styk-doc = { path = "../styk-doc" }
 styk-formats = { path = "../styk-formats" }
 styk-eval = { path = "../styk-eval" }
+thiserror = "2"
