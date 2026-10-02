@@ -53,10 +53,19 @@ impl Prim {
 /// Multi-stop gradient paint (`paint.mjs`), normalized at load time.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Paint {
-    pub radial: bool,
+    pub kind: PaintKind,
     /// Degrees, for linear paints.
     pub angle: f64,
     pub stops: Vec<PaintStop>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaintKind {
+    Solid,
+    Linear,
+    Radial,
+    Angular,
+    Diamond,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -102,6 +111,8 @@ pub struct StickNodesShape {
 
 #[derive(Clone, Debug)]
 pub struct Polyfill {
+    /// `polyfill_id` (or index + 1): the identity style overlays address.
+    pub id: u32,
     /// Joint handle ids (segment ids, `0` = root) around the polygon.
     pub joints: Vec<u32>,
     pub rgb: [u8; 3],
@@ -252,6 +263,9 @@ pub struct Object {
     pub join: Option<Join>,
     pub movieclip: Option<Arc<MovieclipPlayback>>,
     pub z_index: f64,
+    /// Per-instance style overlay and the figure it resolves to.
+    pub style: Option<Arc<crate::style::ObjectStyle>>,
+    pub figure_override: Option<Arc<Figure>>,
 }
 
 /// `_stykMovieclip` playback settings of one instance.

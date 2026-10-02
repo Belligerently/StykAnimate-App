@@ -82,8 +82,16 @@ pub fn paint(v: Option<&Value>) -> Option<Arc<Paint>> {
     if stops.is_empty() {
         return None;
     }
+    let mut stops = stops;
+    stops.sort_by(|a, b| a.offset.total_cmp(&b.offset));
     Some(Arc::new(Paint {
-        radial: v.get("type").and_then(Value::as_str) == Some("radial"),
+        kind: match v.get("type").and_then(Value::as_str) {
+            Some("solid") => PaintKind::Solid,
+            Some("radial") => PaintKind::Radial,
+            Some("angular") => PaintKind::Angular,
+            Some("diamond") => PaintKind::Diamond,
+            _ => PaintKind::Linear,
+        },
         angle: num(v, "angle").unwrap_or(0.0),
         stops,
     }))
@@ -188,6 +196,7 @@ impl<'a> Loader<'a> {
             figure_index: HashMap::new(),
         };
         doc.reindex_figures();
+        resolve_styles(&mut doc);
         Ok(doc)
     }
 
@@ -213,6 +222,7 @@ impl<'a> Loader<'a> {
                 .map(|v| v as u32)
                 .collect();
             polyfills.push(Polyfill {
+                id: int(p, "polyfill_id").map(|v| v as u32).unwrap_or(polyfills.len() as u32 + 1),
                 joints,
                 rgb: rgb(p.get("color_rgb")).unwrap_or([0, 0, 0]),
                 alpha: match num(p, "alpha_raw") {
@@ -430,6 +440,8 @@ impl<'a> Loader<'a> {
             join,
             movieclip,
             z_index: num(o, "_stykZIndex").unwrap_or(0.0),
+            style: crate::style::parse(o.get("_stykStyle"), o.get("_styk").and_then(|s| s.get("colorMode"))),
+            figure_override: None,
         })
     }
 
@@ -622,5 +634,32 @@ pub fn object_map(v: Option<&Value>) -> Map<String, Value> {
     match v {
         Some(Value::Object(m)) => m.clone(),
         _ => Map::new(),
+    }
+}
+
+/// Resolves every styled object's figure once, sharing identical overlays.
+fn resolve_styles(doc: &mut Document) {
+    let mut cache: HashMap<(u32, String), Arc<Figure>> = HashMap::new();
+    let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
+    let mut fix = |frame: &mut Arc<Keyframe>| {
+        if !frame.objects.iter().any(|o| o.style.is_some()) {
+            return;
+        }
+        let frame = Arc::make_mut(frame);
+        for object in frame.objects.iter_mut() {
+            let Some(style) = object.style.clone() else { continue };
+            let Some(base) = figures.get(&object.figure) else { continue };
+            let resolved = cache
+                .entry((object.figure, style.key.clone()))
+                .or_insert_with(|| Arc::new(crate::style::resolve(base, &style)))
+                .clone();
+            Arc::make_mut(object).figure_override = Some(resolved);
+        }
+    };
+    for k in doc.keyframes.iter_mut() {
+        fix(k);
+    }
+    for k in doc.frame_sources.values_mut() {
+        fix(k);
     }
 }

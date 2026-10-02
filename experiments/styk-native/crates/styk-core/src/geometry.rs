@@ -349,13 +349,17 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
             break;
         }
     }
-    // Figure table for items.
+    // Figure table for items (styled instances resolve to their own figure).
     let mut figure_slot = std::collections::HashMap::new();
     let mut fig_of = vec![u32::MAX; count];
     for (i, o) in frame.objects.iter().enumerate() {
-        if let Some(fig) = doc.figure(o.figure) {
+        let fig = match &o.figure_override {
+            Some(f) => Some(f),
+            None => doc.figure(o.figure),
+        };
+        if let Some(fig) = fig {
             let len = scene.figures.len() as u32;
-            let s = *figure_slot.entry(o.figure).or_insert_with(|| {
+            let s = *figure_slot.entry(Arc::as_ptr(fig) as usize).or_insert_with(|| {
                 scene.figures.push(fig.clone());
                 len
             });

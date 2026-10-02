@@ -2,14 +2,19 @@
 //! evaluation and world-space geometry. No UI and no GPU code lives here, so the
 //! same crate serves desktop, mobile and WebAssembly front ends.
 
+pub mod assets;
 pub mod container;
 pub mod doc;
 pub mod drawing;
+pub mod drawlist;
+pub mod edit;
 pub mod eval;
 pub mod geometry;
 pub mod load;
 pub mod piv;
+pub mod style;
 pub mod text;
+pub mod view;
 
 use std::path::Path;
 use std::sync::Arc;

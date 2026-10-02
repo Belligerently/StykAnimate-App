@@ -310,6 +310,8 @@ fn decode_v5(payload: &[u8], name: &str) -> Result<Document, Error> {
                 join,
                 movieclip: None,
                 z_index: 0.0,
+                style: None,
+                figure_override: None,
             });
         }
         let mut order = Vec::with_capacity(obj_count);
@@ -527,7 +529,7 @@ fn read_figure_v5(r: &mut Reader, figure_id: u32, images: &mut Vec<ImageData>) -
             }
             joints.push(v);
         }
-        polyfills.push(Polyfill { joints, rgb, alpha: 1.0 - alpha_raw as f64 / 255.0, z: 0.0 });
+        polyfills.push(Polyfill { id: polyfills.len() as u32 + 1, joints, rgb, alpha: 1.0 - alpha_raw as f64 / 255.0, z: 0.0 });
     }
     if flags & 16 == 0 {
         for s in segments.iter_mut() {
@@ -776,6 +778,8 @@ fn decode_v4(data: &[u8], name: &str) -> Result<Document, Error> {
                 join,
                 movieclip: None,
                 z_index: 0.0,
+                style: None,
+                figure_override: None,
             });
         }
         let mut order = Vec::with_capacity(object_count);

@@ -18,8 +18,10 @@ fn main() {
         Some("info") if args.len() >= 2 => info(&args[1]),
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
+        Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
+        Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N]");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y]");
             2
         }
     };
@@ -223,4 +225,132 @@ fn compare(path: &str, reference: &str, rest: &[String]) -> i32 {
         Path::new(path).file_name().unwrap().to_string_lossy()
     );
     if bad_frames == 0 { 0 } else { 3 }
+}
+
+fn option<'a>(rest: &'a [String], name: &str) -> Option<&'a str> {
+    rest.iter().position(|a| a == name).and_then(|i| rest.get(i + 1)).map(String::as_str)
+}
+
+/// Renders one tick headlessly through the GPU renderer and writes a PNG.
+fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
+    use styk_core::assets::Assets;
+    use styk_core::drawlist::encode;
+    use styk_core::view::camera_matrix;
+    use styk_render::{wgpu, Renderer, ViewParams};
+    let (p, ms) = match load(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let tick: f64 = tick.parse().unwrap_or(0.0);
+    let (w, h) = option(rest, "--size")
+        .and_then(|s| s.split_once('x'))
+        .and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?)))
+        .unwrap_or((p.doc.canvas[0] + 80, p.doc.canvas[1] + 80));
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("No GPU adapter: {e}");
+            return 1;
+        }
+    };
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("styk cli"),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("device");
+    let started = Instant::now();
+    let assets = Assets::build(&p.doc);
+    let images = styk_render::decode_images(&p.doc, &assets);
+    let assets_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let mut renderer = Renderer::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
+    renderer.prepare_sprites(&assets);
+    renderer.upload_images(&assets, &images);
+    let started = Instant::now();
+    let frame = p.evaluate(tick);
+    let scene = build(&p.doc, &frame);
+    let list = std::sync::Arc::new(encode(&p.doc, &assets, &scene));
+    let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
+    let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
+    let center = option(rest, "--center")
+        .and_then(|s| s.split_once(','))
+        .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
+        .unwrap_or([cw / 2.0, ch / 2.0]);
+    let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
+    let matrix = camera_matrix(&p.doc, scene.camera.as_ref(), zoom, pan);
+    let view = ViewParams {
+        matrix,
+        artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
+        clip_to_artboard: !rest.iter().any(|a| a == "--no-clip"),
+        clear: [0.16, 0.16, 0.17, 1.0],
+    };
+    renderer.set_list(&list);
+    let mut encoder = device.create_command_encoder(&Default::default());
+    renderer.render(&mut encoder, &view, [w, h]);
+    queue.submit([encoder.finish()]);
+    let (fw, fh, pixels) = styk_render::read_frame(&device, &queue, renderer.frame_texture().unwrap());
+    image::save_buffer(out, &pixels, fw, fh, image::ColorType::Rgba8).expect("write png");
+    println!(
+        "{}: tick {tick}, {} prims, {} groups, {} passes, opened {ms:.0} ms, assets {assets_ms:.0} ms, frame {encode_ms:.2} ms → {out} ({})",
+        p.doc.name,
+        renderer.stats.prims,
+        renderer.stats.groups,
+        renderer.stats.passes,
+        adapter.get_info().name
+    );
+    0
+}
+
+/// Compares two renders inside an optional rectangle (`--rect x0,y0,x1,y1`).
+fn diff(a: &str, b: &str, out: &str, rest: &[String]) -> i32 {
+    let (Ok(ia), Ok(ib)) = (image::open(a), image::open(b)) else {
+        eprintln!("cannot read inputs");
+        return 1;
+    };
+    let (ia, ib) = (ia.to_rgba8(), ib.to_rgba8());
+    let (w, h) = (ia.width().min(ib.width()), ia.height().min(ib.height()));
+    let rect: [u32; 4] = option(rest, "--rect")
+        .and_then(|s| {
+            let v: Vec<u32> = s.split(',').filter_map(|x| x.parse().ok()).collect();
+            (v.len() == 4).then(|| [v[0], v[1], v[2].min(w), v[3].min(h)])
+        })
+        .unwrap_or([0, 0, w, h]);
+    let mut img = image::RgbaImage::new(w, h);
+    let (mut total, mut count, mut over8, mut over32) = (0f64, 0u64, 0u64, 0u64);
+    for y in rect[1]..rect[3] {
+        for x in rect[0]..rect[2] {
+            let (pa, pb) = (ia.get_pixel(x, y).0, ib.get_pixel(x, y).0);
+            let d = (0..3).map(|c| (pa[c] as i32 - pb[c] as i32).abs()).max().unwrap();
+            total += d as f64;
+            count += 1;
+            if d > 8 {
+                over8 += 1;
+            }
+            if d > 32 {
+                over32 += 1;
+            }
+            let g = (pa[0] as u32 + pa[1] as u32 + pa[2] as u32) / 12;
+            img.put_pixel(x, y, if d > 32 { image::Rgba([255, 0, 64, 255]) } else if d > 8 { image::Rgba([255, 170, 0, 255]) } else { image::Rgba([g as u8, g as u8, g as u8, 255]) });
+        }
+    }
+    img.save(out).expect("write diff");
+    let n = count.max(1) as f64;
+    println!(
+        "mean |Δ| {:.3}/255, {:.3}% pixels differ by >8, {:.3}% by >32 ({} px compared) → {out}",
+        total / n,
+        over8 as f64 * 100.0 / n,
+        over32 as f64 * 100.0 / n,
+        count
+    );
+    0
 }
