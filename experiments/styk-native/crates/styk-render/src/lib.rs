@@ -166,6 +166,7 @@ pub struct Renderer {
     prims: wgpu::Buffer,
     paints: wgpu::Buffer,
     groups: wgpu::Buffer,
+    points: wgpu::Buffer,
     bind0: Option<wgpu::BindGroup>,
     sprites: wgpu::Texture,
     sprite_bind: wgpu::BindGroup,
@@ -294,6 +295,7 @@ impl Renderer {
                 storage_entry(1),
                 storage_entry(2),
                 storage_entry(3),
+                storage_entry(4),
             ],
         });
         let layout1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -381,6 +383,7 @@ impl Renderer {
             prims: buffer(&device, "styk prims", 64 * 1024, storage),
             paints: buffer(&device, "styk paints", 4096, storage),
             groups: buffer(&device, "styk groups", 4096, storage),
+            points: buffer(&device, "styk polyline points", 4096, storage),
             bind0: None,
             device,
             queue,
@@ -479,6 +482,14 @@ impl Renderer {
         if !paints.is_empty() {
             self.queue.write_buffer(&self.paints, 0, paints);
         }
+        let points: &[u8] = bytemuck::cast_slice(&list.points);
+        if points.len() as u64 > self.points.size() {
+            self.points = buffer(&self.device, "styk polyline points", (points.len() as u64).next_power_of_two(), storage);
+            rebind = true;
+        }
+        if !points.is_empty() {
+            self.queue.write_buffer(&self.points, 0, points);
+        }
         let groups_need = (list.groups.len() * std::mem::size_of::<GpuGroup>()) as u64;
         if groups_need > self.groups.size() {
             self.groups = buffer(&self.device, "styk groups", groups_need.next_power_of_two(), storage);
@@ -507,6 +518,7 @@ impl Renderer {
                 wgpu::BindGroupEntry { binding: 1, resource: self.prims.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 2, resource: self.paints.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 3, resource: self.groups.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: self.points.as_entire_binding() },
             ],
         }));
     }

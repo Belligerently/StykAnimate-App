@@ -29,6 +29,9 @@ pub const K_COMPOSITE: u32 = 7;
 pub const K_FILL_VIEW: u32 = 8;
 pub const K_BG_IMAGE: u32 = 9;
 pub const K_BOX: u32 = 10;
+/// A whole open or closed polyline, shaded once per pixel (no joint overlap).
+pub const K_POLYLINE: u32 = 11;
+pub const F_CLOSED: u32 = 1 << 10;
 
 pub const F_SMOOTH: u32 = 1 << 8;
 pub const F_RING_FILL: u32 = 1 << 9;
@@ -70,6 +73,8 @@ pub struct Pass {
 pub struct DrawList {
     pub prims: Vec<Prim>,
     pub paints: Vec<[f32; 4]>,
+    /// Polyline vertices referenced by `K_POLYLINE` records.
+    pub points: Vec<[f32; 2]>,
     pub groups: Vec<Group>,
     /// Prim ranges per depth, deepest first; the last pass (depth 0) is the frame.
     pub passes: Vec<Pass>,
@@ -79,7 +84,7 @@ pub struct DrawList {
 
 impl DrawList {
     pub fn bytes(&self) -> usize {
-        self.prims.len() * std::mem::size_of::<Prim>() + self.paints.len() * 16 + self.groups.len() * 32
+        self.prims.len() * std::mem::size_of::<Prim>() + self.paints.len() * 16 + self.points.len() * 8 + self.groups.len() * 32
     }
 }
 
@@ -105,12 +110,13 @@ const P_RADIAL_RING: f32 = 4.0;
 struct Out {
     prims: Vec<Prim>,
     paints: Vec<[f32; 4]>,
+    points: Vec<[f32; 2]>,
     bounds: [f32; 4],
 }
 
 impl Out {
     fn new() -> Out {
-        Out { prims: Vec::new(), paints: Vec::new(), bounds: [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY] }
+        Out { prims: Vec::new(), paints: Vec::new(), points: Vec::new(), bounds: [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY] }
     }
     fn grow(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) {
         self.bounds[0] = self.bounds[0].min(x0 as f32);
@@ -122,6 +128,47 @@ impl Out {
         self.grow(bounds[0], bounds[1], bounds[2], bounds[3]);
         self.prims.push(p);
     }
+    /// One polyline record (vertex offsets are local and fixed up when merged).
+    fn polyline(&mut self, pts: &[[f64; 2]], hw: f64, closed: bool, color: u32, paint: u32) {
+        if pts.len() < 2 {
+            return;
+        }
+        // Very long polylines split into overlapping-free runs of 512 vertices.
+        let mut start = 0;
+        while start + 1 < pts.len() {
+            let end = (start + 512).min(pts.len());
+            let run = &pts[start..end];
+            let at = self.points.len() as u32;
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+            for p in run {
+                self.points.push([p[0] as f32, p[1] as f32]);
+                x0 = x0.min(p[0]);
+                y0 = y0.min(p[1]);
+                x1 = x1.max(p[0]);
+                y1 = y1.max(p[1]);
+            }
+            let whole = closed && start == 0 && end == pts.len();
+            let flags = if whole { F_CLOSED } else { 0 };
+            let b = [x0 - hw, y0 - hw, x1 + hw, y1 + hw];
+            self.push(
+                Prim {
+                    kind: K_POLYLINE | flags,
+                    group: 0,
+                    color,
+                    paint,
+                    a: [x0 as f32, y0 as f32, x1 as f32, y1 as f32],
+                    b: [hw as f32, f32::from_bits(at), f32::from_bits(run.len() as u32), 0.0],
+                    c: [0.0; 4],
+                },
+                b,
+            );
+            if end == pts.len() {
+                break;
+            }
+            start = end - 1;
+        }
+    }
+
     /// Stores a paint record; offsets are local and fixed up when merged.
     fn paint(&mut self, kind: f32, geom: [f32; 4], extra: [f32; 4], stops: &[(f32, [f32; 4])]) -> u32 {
         let at = self.paints.len() as u32;
@@ -180,7 +227,7 @@ impl<'a> Ctx<'a> {
     fn brush(&self, out: &mut Out, it: &Item, outline: bool) -> (u32, u32) {
         let seg = &self.figure(it).segments[it.index as usize];
         let solid = rgba8(it.rgb, it.alpha);
-        if outline || it.color >> 24 == 255 {
+        if outline || it.color >> 24 == 255 || it.flags & crate::geometry::ITEM_SOLID != 0 {
             return (solid, NO_PAINT);
         }
         if let Some(paint) = &seg.paint {
@@ -242,7 +289,11 @@ impl<'a> Ctx<'a> {
                 let (color, paint) = if outline > 0.0 { (rgba8(outline_rgb, 1.0), NO_PAINT) } else { self.brush(out, it, false) };
                 let hw = width / 2.0;
                 let square = it.kind == ItemKind::SquareLine;
-                if it.bend.abs() > 1e-7 {
+                if it.flags & crate::geometry::ITEM_POLYLINE != 0 {
+                    // Curved Stick Nodes strokes: one polyline, round caps and joins.
+                    let pts = self.scene.points_of(it);
+                    out.polyline(pts, hw, false, color, paint);
+                } else if it.bend.abs() > 1e-7 {
                     self.arc(out, it, hw, color, paint);
                 } else {
                     let (s, e) = (it.start, it.end);
@@ -330,19 +381,13 @@ impl<'a> Ctx<'a> {
         }
         if outline > 0.0 {
             // Stroke of the closed outline path, width 2*outline, round joins.
-            let color = rgba8(outline_rgb, 1.0);
-            let hw = outline;
-            for k in 0..pts.len() {
-                let (s, e) = (pts[k], pts[(k + 1) % pts.len()]);
-                let b = [s[0].min(e[0]) - hw, s[1].min(e[1]) - hw, s[0].max(e[0]) + hw, s[1].max(e[1]) + hw];
-                out.push(prim(K_CAPSULE, color, NO_PAINT, [s[0], s[1], e[0], e[1]], [hw, 0.0, 0.0, 0.0], [0.0; 4]), b);
-            }
+            out.polyline(pts, outline, true, rgba8(outline_rgb, 1.0), NO_PAINT);
             return;
         }
-        let color = rgba8(it.rgb, it.alpha);
+        let (color, paint) = if it.flags & crate::geometry::ITEM_SEG_BRUSH != 0 { self.brush(out, it, false) } else { (rgba8(it.rgb, it.alpha), NO_PAINT) };
         if convex(pts) {
             for k in 1..pts.len() - 1 {
-                tri(out, color, pts[0], pts[k], pts[k + 1]);
+                tri(out, color, paint, pts[0], pts[k], pts[k + 1]);
             }
             return;
         }
@@ -355,7 +400,7 @@ impl<'a> Ctx<'a> {
         let tris = crate::assets::triangulate(&builder.build(), lyon_tessellation::FillRule::EvenOdd, 0.05);
         for t in tris.chunks_exact(3) {
             let f = |v: [f32; 2]| [v[0] as f64, v[1] as f64];
-            tri(out, color, f(t[0]), f(t[1]), f(t[2]));
+            tri(out, color, paint, f(t[0]), f(t[1]), f(t[2]));
         }
     }
 
@@ -447,9 +492,9 @@ impl<'a> Ctx<'a> {
     }
 }
 
-fn tri(out: &mut Out, color: u32, a: [f64; 2], b: [f64; 2], c: [f64; 2]) {
+fn tri(out: &mut Out, color: u32, paint: u32, a: [f64; 2], b: [f64; 2], c: [f64; 2]) {
     let bounds = [a[0].min(b[0]).min(c[0]), a[1].min(b[1]).min(c[1]), a[0].max(b[0]).max(c[0]), a[1].max(b[1]).max(c[1])];
-    out.push(prim(K_TRI, color, NO_PAINT, [a[0], a[1], b[0], b[1]], [c[0], c[1], 0.0, 0.0], [0.0; 4]), bounds);
+    out.push(prim(K_TRI, color, paint, [a[0], a[1], b[0], b[1]], [c[0], c[1], 0.0, 0.0], [0.0; 4]), bounds);
 }
 
 /// Strictly convex simple polygon (same turn direction everywhere, one winding).
@@ -487,6 +532,14 @@ struct ObjectOut {
 
 /// The background layers (`drawBackground`), as view-filling primitives.
 fn background(doc: &Document, assets: &Assets, scene: &Scene, out: &mut Out) {
+    // `sceneBackgroundColor`: a hidden Scene layer is transparent; a colour key replaces the fill.
+    let scene_hidden = doc.layers.as_ref().is_some_and(|l| !l.scene_visible);
+    let key = if scene_hidden { Some(0) } else { scene.background_color };
+    if let Some(argb) = key {
+        let everywhere = [f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY];
+        out.push(prim(K_FILL_VIEW, argb8(argb), NO_PAINT, [0.0; 4], [0.0; 4], [0.0; 4]), everywhere);
+        return;
+    }
     let (a, b, mix) = scene.background;
     let (w, h) = (doc.canvas[0] as f64, doc.canvas[1] as f64);
     let mut layer = |id: u32, alpha: f64| {
@@ -631,8 +684,8 @@ pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
     while let Some(open) = stack.pop() {
         b.close(open, stack.last());
     }
-    let (prims, paints, groups, passes) = b.finish();
-    DrawList { prims, paints, groups, passes, background_prims }
+    let (prims, paints, points, groups, passes) = b.finish();
+    DrawList { prims, paints, points, groups, passes, background_prims }
 }
 
 struct Open {
@@ -650,12 +703,13 @@ struct Builder {
     groups: Vec<Group>,
     prims: Vec<Vec<Prim>>,
     paints: Vec<[f32; 4]>,
+    points: Vec<[f32; 2]>,
 }
 
 impl Builder {
     fn new() -> Builder {
         let empty = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
-        Builder { groups: vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: empty }], prims: vec![Vec::new()], paints: Vec::new() }
+        Builder { groups: vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: empty }], prims: vec![Vec::new()], paints: Vec::new(), points: Vec::new() }
     }
 
     fn open(&mut self, parent: usize, opacity: f64) -> usize {
@@ -686,22 +740,14 @@ impl Builder {
     }
 
     fn add(&mut self, target: usize, out: Out) {
-        let base = self.paints.len() as u32;
-        self.paints.extend_from_slice(&out.paints);
-        if out.bounds[0] <= out.bounds[2] {
-            self.grow(target, out.bounds);
-        }
-        for mut p in out.prims {
-            if p.paint != NO_PAINT {
-                p.paint += base;
-            }
-            self.prims[target].push(p);
-        }
+        self.add_ref(target, &out);
     }
 
     fn add_ref(&mut self, target: usize, out: &Out) {
         let base = self.paints.len() as u32;
+        let point_base = self.points.len() as u32;
         self.paints.extend_from_slice(&out.paints);
+        self.points.extend_from_slice(&out.points);
         if out.bounds[0] <= out.bounds[2] {
             self.grow(target, out.bounds);
         }
@@ -709,6 +755,9 @@ impl Builder {
             let mut p = *p;
             if p.paint != NO_PAINT {
                 p.paint += base;
+            }
+            if p.kind & 255 == K_POLYLINE {
+                p.b[1] = f32::from_bits(p.b[1].to_bits() + point_base);
             }
             self.prims[target].push(p);
         }
@@ -733,7 +782,7 @@ impl Builder {
         }
     }
 
-    fn finish(mut self) -> (Vec<Prim>, Vec<[f32; 4]>, Vec<Group>, Vec<Pass>) {
+    fn finish(mut self) -> (Vec<Prim>, Vec<[f32; 4]>, Vec<[f32; 2]>, Vec<Group>, Vec<Pass>) {
         let max_depth = self.groups.iter().map(|g| g.depth).max().unwrap_or(0);
         let mut prims = Vec::with_capacity(self.prims.iter().map(Vec::len).sum());
         let mut passes = Vec::new();
@@ -750,7 +799,7 @@ impl Builder {
             }
             passes.push(Pass { depth, start, end: prims.len() as u32 });
         }
-        (prims, self.paints, self.groups, passes)
+        (prims, self.paints, self.points, self.groups, passes)
     }
 }
 

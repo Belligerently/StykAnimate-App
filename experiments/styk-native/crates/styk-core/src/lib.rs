@@ -3,6 +3,7 @@
 //! same crate serves desktop, mobile and WebAssembly front ends.
 
 pub mod assets;
+pub mod camera;
 pub mod container;
 pub mod doc;
 pub mod drawing;
@@ -13,6 +14,7 @@ pub mod geometry;
 pub mod load;
 pub mod piv;
 pub mod rig;
+pub mod sticknodes;
 pub mod style;
 pub mod text;
 pub mod view;

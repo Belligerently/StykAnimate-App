@@ -64,9 +64,17 @@ pub struct Item {
     pub image_text_flags: bool,
     /// Movieclip nesting: index into [`Scene::chains`], or `NO_CHAIN`.
     pub chain: u32,
+    /// `ITEM_*` drawing flags.
+    pub flags: u8,
 }
 
 pub const NO_CHAIN: u32 = u32::MAX;
+/// A polygon expanded from a shaped segment: paint it with the segment's brush.
+pub const ITEM_SEG_BRUSH: u8 = 1;
+/// A fixed colour: ignore the segment's paint and gradient.
+pub const ITEM_SOLID: u8 = 2;
+/// Stroke `points` as an open polyline (curved Stick Nodes segments).
+pub const ITEM_POLYLINE: u8 = 4;
 
 #[derive(Clone, Debug, Default)]
 pub struct ObjectGeometry {
@@ -101,6 +109,8 @@ pub struct Scene {
     pub camera: Option<Camera>,
     pub background: (u32, u32, f64),
     pub warnings: Vec<String>,
+    /// Scene colour key (ARGB) replacing the native background, if any.
+    pub background_color: Option<u32>,
     /// Movieclip owner opacities.
     pub owners: Vec<f64>,
     /// Owner chains, outermost first: (owner, child slot inside that clip).
@@ -288,7 +298,20 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
+            flags: 0,
         });
+        // A curved Stick Nodes segment draws along its sagitta curve.
+        if let Some(shape) = crate::sticknodes::shape_for(seg, obj)
+            && shape.sagitta != 0.0
+            && bend.abs() < 1e-7
+        {
+            let item = segment_items.last_mut().unwrap();
+            let q0 = points.len() as u32;
+            crate::sticknodes::curve(shape, shape.reversed, item.start, item.angle, item.length, scale, &mut points);
+            item.points = (q0, points.len() as u32);
+            item.bend = 1e-6;
+            item.flags |= ITEM_POLYLINE;
+        }
     }
     let joint = |handle: u32| -> Option<[f64; 2]> {
         if handle == 0 {
@@ -355,13 +378,22 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
+            flags: 0,
         });
     }
     // Drawables: polygons, then visible segments in record order, stably by z.
     segment_items.sort_by_key(|it| it.index);
     for it in segment_items {
-        if fig.segments[it.index as usize].visible {
-            items.push(it);
+        let seg = &fig.segments[it.index as usize];
+        if !seg.visible {
+            continue;
+        }
+        match crate::sticknodes::shape_for(seg, obj) {
+            Some(shape) => {
+                let own: Vec<[f64; 2]> = points[it.points.0 as usize..it.points.1 as usize].to_vec();
+                crate::sticknodes::expand(&it, shape, &own, &mut points, &mut items);
+            }
+            None => items.push(it),
         }
     }
     items.sort_by(|a, b| a.z.total_cmp(&b.z));
@@ -468,6 +500,7 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
         objects: vec![ObjectGeometry::default(); count],
         camera: frame.camera,
         background: (frame.background, frame.background_b, frame.background_mix),
+        background_color: frame.background_color,
         ..Default::default()
     };
     // Join levels: roots first, then children of resolved parents.

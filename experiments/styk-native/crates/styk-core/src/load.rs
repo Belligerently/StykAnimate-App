@@ -317,9 +317,7 @@ impl<'a> Loader<'a> {
         let reverse = num(s, "extra_u8_a").or_else(|| extra_at(1)).unwrap_or(0.0) != 0.0;
         let mirror = num(s, "extra_u8_b").or_else(|| extra_at(2)).unwrap_or(0.0) != 0.0;
         let thickness = num(s, "thickness").unwrap_or(0.0);
-        let sticknodes = s.get("_sticknodes").filter(|v| v.is_object()).map(|v| {
-            Arc::new(StickNodesShape { sagitta: num(v, "sagitta").unwrap_or(0.0), raw: Some(Arc::new(v.clone())) })
-        });
+        let sticknodes = s.get("_sticknodes").and_then(crate::sticknodes::parse);
         Segment {
             id: int(s, "segment_id").unwrap_or(i as i64 + 1) as u32,
             parent: int(s, "parent_id").unwrap_or(0) as u32,
@@ -344,7 +342,7 @@ impl<'a> Loader<'a> {
             reverse,
             mirror,
             paint: paint(s.get("paint")),
-            sticknodes,
+            sticknodes_shape: sticknodes,
             name: s.get("name").and_then(Value::as_str).map(str::to_string),
             rig: s.get("_stykRig").and_then(crate::rig::parse).map(Arc::new),
         }
@@ -403,7 +401,6 @@ impl<'a> Loader<'a> {
             ("_stykIK", "inverse kinematics"),
             ("_stykSpatial", "3D poses"),
             ("_stykAnimationOrigin", "animation origins"),
-            ("_sticknodesShapes", "Stick Nodes per-figure shapes"),
             ("_sticknodesSprite", "Stick Nodes sprites"),
             ("_stykVfx", "visual effects (blur, glow…)"),
         ] {
@@ -428,6 +425,12 @@ impl<'a> Loader<'a> {
             clip_time: None,
             z_index: num(o, "_stykZIndex").unwrap_or(0.0),
             style: crate::style::parse(o.get("_stykStyle"), o.get("_styk").and_then(|s| s.get("colorMode"))),
+            sticknodes_shapes: match o.get("_sticknodesShapes") {
+                Some(Value::Object(map)) => Some(Arc::new(
+                    map.iter().filter_map(|(k, v)| Some((k.parse::<u32>().ok()?, crate::sticknodes::parse(v)?))).collect(),
+                )),
+                _ => None,
+            },
             figure_override: None,
         })
     }
@@ -466,6 +469,7 @@ impl<'a> Loader<'a> {
             easing: styk.and_then(|s| easing(s.get("easing"))),
             frame_id: styk.and_then(|s| s.get("frameId")).and_then(Value::as_str).map(Arc::from),
             slot_of: HashMap::new(),
+            background_color: num(k, "_stykBackgroundColor").map(|v| v as i64 as u32),
             continuations: styk
                 .and_then(|s| s.get("movieclipContinuations"))
                 .and_then(Value::as_array)

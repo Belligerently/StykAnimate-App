@@ -58,6 +58,8 @@ pub struct Frame {
     pub origins: Vec<Option<(FrameRef, u32)>>,
     /// Presence-clock movieclips carried by the pose (`movieclipContinuations`).
     pub continuations: Vec<(u32, Arc<MovieclipPlayback>)>,
+    /// Scene colour key (ARGB), if any.
+    pub background_color: Option<u32>,
 }
 
 /// A document plus the timing tables evaluation needs, built once per revision.
@@ -373,6 +375,7 @@ fn frame_of(key: &KeyRef) -> Frame {
             None => vec![None; k.objects.len()],
         },
         continuations: k.continuations.clone(),
+        background_color: k.background_color,
     }
 }
 
@@ -431,6 +434,7 @@ pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame
         tick: 0.0,
         origins: vec![None; objects.len()],
         continuations: a.frame.continuations.clone(),
+        background_color: a.frame.background_color,
         objects,
         draw_order: a.frame.draw_order.clone(),
         camera,
@@ -695,6 +699,9 @@ impl Prepared {
         let mut frame = self.evaluate_raw(tick, fractional);
         self.apply_movieclips(&mut frame, tick);
         apply_layer_order(&self.doc, &mut frame);
+        if !self.doc.camera_motion.is_empty() {
+            frame.camera = crate::camera::at_time(frame.camera, &self.doc.camera_motion, tick, self.doc.fps);
+        }
         frame
     }
 
@@ -822,6 +829,7 @@ impl Prepared {
             Some(s) => (s.background, s.background_b, s.background_mix),
             None => (0, 0, 0.0),
         };
+        let background_color = scene.as_ref().and_then(|s| s.background_color);
         Frame {
             tick,
             draw_order: (0..objects.len() as u32).collect(),
@@ -832,6 +840,7 @@ impl Prepared {
             background_mix,
             origins,
             continuations,
+            background_color,
         }
     }
 }
@@ -905,6 +914,7 @@ fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
         frame_id: None,
         slot_of: HashMap::new(),
         continuations: Vec::new(),
+        background_color: None,
     });
     let refs = keys
         .iter()

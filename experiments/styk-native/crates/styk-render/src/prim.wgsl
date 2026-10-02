@@ -36,6 +36,7 @@ struct Group {
 @group(0) @binding(1) var<storage, read> prims: array<Prim>;
 @group(0) @binding(2) var<storage, read> paints: array<vec4<f32>>;
 @group(0) @binding(3) var<storage, read> groups: array<Group>;
+@group(0) @binding(4) var<storage, read> polyline_points: array<vec2<f32>>;
 @group(1) @binding(0) var sprites: texture_2d_array<f32>;
 @group(1) @binding(1) var nearest_sampler: sampler;
 @group(1) @binding(2) var linear_sampler: sampler;
@@ -51,6 +52,8 @@ const K_COMPOSITE: u32 = 7u;
 const K_FILL_VIEW: u32 = 8u;
 const K_BG_IMAGE: u32 = 9u;
 const K_BOX: u32 = 10u;
+const K_POLYLINE: u32 = 11u;
+const F_CLOSED: u32 = 1024u;
 const F_SMOOTH: u32 = 256u;
 const F_RING_FILL: u32 = 512u;
 const NO_PAINT: u32 = 0xffffffffu;
@@ -159,6 +162,9 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
         }
         let e = hw + margin;
         world = mix(lo - vec2<f32>(e), hi + vec2<f32>(e), c);
+    } else if (kind == K_POLYLINE) {
+        let e = max(p.b.x, aa * 0.5) + margin;
+        world = mix(p.a.xy - vec2<f32>(e), p.a.zw + vec2<f32>(e), c);
     } else if (kind == K_DISC) {
         let e = p.a.z + margin;
         world = p.a.xy + mix(vec2<f32>(-e), vec2<f32>(e), c);
@@ -288,7 +294,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (p.paint != NO_PAINT) {
         base = paint_at(p.paint, w);
     }
-    if (kind == K_CAPSULE || kind == K_BOX || kind == K_ARC) {
+    if (kind == K_CAPSULE || kind == K_BOX || kind == K_ARC || kind == K_POLYLINE) {
         var hw = p.b.x;
         if (kind == K_ARC) { hw = p.a.w; }
         // Hairlines keep a one-pixel footprint and fade with their width.
@@ -302,6 +308,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             d = sd_segment(w, p.a.xy, p.a.zw) - hw;
         } else if (kind == K_BOX) {
             d = sd_box(w, p.a.xy, p.a.zw, hw);
+        } else if (kind == K_POLYLINE) {
+            let start = bitcast<u32>(p.b.y);
+            let count = bitcast<u32>(p.b.z);
+            var best = 1e30;
+            for (var k = 0u; k + 1u < count; k = k + 1u) {
+                best = min(best, sd_segment(w, polyline_points[start + k], polyline_points[start + k + 1u]));
+            }
+            if ((p.kind & F_CLOSED) != 0u && count > 2u) {
+                best = min(best, sd_segment(w, polyline_points[start + count - 1u], polyline_points[start]));
+            }
+            d = best - hw;
         } else {
             d = sd_arc(w, p.a.xy, p.a.z, p.b.x, p.b.y) - hw;
         }

@@ -98,17 +98,10 @@ pub struct Segment {
     pub mirror: bool,
     pub paint: Option<Arc<Paint>>,
     /// Stick Nodes source shape, if this segment came from a Stick Nodes import.
-    pub sticknodes: Option<Arc<StickNodesShape>>,
+    pub sticknodes_shape: Option<Arc<crate::sticknodes::Shape>>,
     pub name: Option<String>,
     /// Rig relationship (`_stykRig`).
     pub rig: Option<Arc<crate::rig::Rig>>,
-}
-
-/// The subset of an imported Stick Nodes shape that changes drawing.
-#[derive(Clone, Debug, Default)]
-pub struct StickNodesShape {
-    pub sagitta: f64,
-    pub raw: Option<Arc<serde_json::Value>>,
 }
 
 #[derive(Clone, Debug)]
@@ -278,6 +271,8 @@ pub struct Object {
     /// Local clip time chosen by evaluation (`_movieclipSample`).
     pub clip_time: Option<f64>,
     pub z_index: f64,
+    /// Per-instance Stick Nodes shapes by segment id (`_sticknodesShapes`).
+    pub sticknodes_shapes: Option<Arc<HashMap<u32, Arc<crate::sticknodes::Shape>>>>,
     /// Per-instance style overlay and the figure it resolves to.
     pub style: Option<Arc<crate::style::ObjectStyle>>,
     pub figure_override: Option<Arc<Figure>>,
@@ -356,6 +351,8 @@ pub struct Keyframe {
     pub slot_of: HashMap<u32, u32>,
     /// Presence-clock movieclips carried by this pose without an instance.
     pub continuations: Vec<(u32, Arc<MovieclipPlayback>)>,
+    /// Scene colour key (`_stykBackgroundColor`, ARGB) replacing the native fill.
+    pub background_color: Option<u32>,
 }
 
 impl Keyframe {
