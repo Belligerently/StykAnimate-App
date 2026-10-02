@@ -62,7 +62,11 @@ pub struct Item {
     pub color: u32,
     pub scale: f64,
     pub image_text_flags: bool,
+    /// Movieclip nesting: index into [`Scene::chains`], or `NO_CHAIN`.
+    pub chain: u32,
 }
+
+pub const NO_CHAIN: u32 = u32::MAX;
 
 #[derive(Clone, Debug, Default)]
 pub struct ObjectGeometry {
@@ -97,6 +101,10 @@ pub struct Scene {
     pub camera: Option<Camera>,
     pub background: (u32, u32, f64),
     pub warnings: Vec<String>,
+    /// Movieclip owner opacities.
+    pub owners: Vec<f64>,
+    /// Owner chains, outermost first: (owner, child slot inside that clip).
+    pub chains: Vec<Vec<(u32, u32)>>,
 }
 
 impl Scene {
@@ -150,6 +158,10 @@ struct Built {
     geometry: ObjectGeometry,
     items: Vec<Item>,
     points: Vec<[f64; 2]>,
+    /// Movieclip content: its own figure table, owners and chains (local ids).
+    figures: Vec<Arc<Figure>>,
+    owners: Vec<f64>,
+    chains: Vec<Vec<(u32, u32)>>,
 }
 
 fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2]) -> Built {
@@ -167,24 +179,64 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let plan = &fig.plan;
     let black_override = version < 5 && !fig.segment_colors;
     let mut segment_items: Vec<Item> = Vec::with_capacity(n);
-    for &i in &plan.order {
+    // Rigged figures evaluate in dependency order with their rig context.
+    let rig_plan = plan.rig.clone();
+    let mut rig_states: Vec<Option<crate::rig::State>> = if rig_plan.is_some() { vec![None; n] } else { Vec::new() };
+    let figure_angle = obj.angles.first().copied().unwrap_or(0.0) - fig.segments.first().map(|s| s.angle).unwrap_or(0.0);
+    let order: &[u32] = match &rig_plan {
+        Some(r) => &r.order,
+        None => &plan.order,
+    };
+    for &i in order {
         let i = i as usize;
         let seg = &fig.segments[i];
         let parent = plan.parent[i];
         let start = if parent == u32::MAX { root } else { ends[parent as usize] };
-        let start = if start[0].is_nan() { root } else { start };
-        let angle = obj.angles.get(i).copied().unwrap_or(seg.angle);
-        let bend = match &obj.bends {
+        let mut start = if start[0].is_nan() { root } else { start };
+        let mut angle = obj.angles.get(i).copied().unwrap_or(seg.angle);
+        let mut bend = match &obj.bends {
             Some(b) => b.get(i).copied().unwrap_or(0.0),
             None => seg.bend,
         };
-        let length = match &obj.lengths {
+        let mut length = match &obj.lengths {
             Some(l) => l.get(i).copied().unwrap_or(seg.length),
             None => seg.length,
         } * scale;
+        let mut width = 1.0;
+        let mut rig_handle: Option<([f64; 2], bool)> = None;
+        if let Some(rp) = &rig_plan {
+            let ctx = crate::rig::Context {
+                segments: &fig.segments,
+                index_of: &plan.index_of,
+                plan: rp,
+                root,
+                scale,
+                figure_angle,
+                mirror: obj.image_text_flags,
+                len_flag: obj.lengths.is_some(),
+                lengths: obj.lengths.as_deref(),
+            };
+            let joint = |id: u32| -> Option<[f64; 2]> {
+                if id == 0 {
+                    return Some(root);
+                }
+                let k = *plan.index_of.get(&id)? as usize;
+                (!ends[k][0].is_nan()).then_some(ends[k])
+            };
+            let st = crate::rig::evaluate(&ctx, &mut rig_states, i, crate::rig::Input { start, angle, length, bend }, &joint);
+            start = st.start;
+            angle = st.angle;
+            length = st.length;
+            bend = st.bend;
+            width = st.width;
+            let derived = seg.rig.as_ref().is_some_and(|r| r.spatial.is_some() || r.weighted.is_some());
+            rig_handle = st.handle.map(|h| (h, derived));
+        }
         let p0 = points.len() as u32;
         let end;
-        if bend.abs() < 1e-7 && start[0].is_finite() && start[1].is_finite() && angle.is_finite() && length.is_finite() {
+        if let Some((h, true)) = rig_handle {
+            end = [fround(h[0]), fround(h[1])];
+        } else if bend.abs() < 1e-7 && start[0].is_finite() && start[1].is_finite() && angle.is_finite() && length.is_finite() {
             end = [fround(start[0] + length * angle.cos()), fround(start[1] + length * angle.sin())];
         } else {
             arc_points(start, angle, length, bend, &mut points);
@@ -195,7 +247,11 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             }
         }
         let p1 = points.len() as u32;
-        ends[i] = end;
+        // Children and joins attach at the rig handle (a connector's slider), drawing ends at `end`.
+        ends[i] = match rig_handle {
+            Some((h, false)) => [fround(h[0]), fround(h[1])],
+            _ => end,
+        };
         starts[i] = start;
         let rgb = if black_override {
             if (obj.color as i32) < 0 { [0, 0, 0] } else { [(obj.color & 255) as u8, (obj.color >> 8 & 255) as u8, (obj.color >> 16 & 255) as u8] }
@@ -222,7 +278,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             angle,
             bend,
             length,
-            thickness: seg.thickness * scale.abs(),
+            thickness: seg.thickness * scale.abs() * width,
             rgb,
             alpha: seg.alpha,
             opacity,
@@ -231,6 +287,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             color: obj.color,
             scale,
             image_text_flags: obj.image_text_flags,
+            chain: NO_CHAIN,
         });
     }
     let joint = |handle: u32| -> Option<[f64; 2]> {
@@ -297,6 +354,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             color: obj.color,
             scale,
             image_text_flags: obj.image_text_flags,
+            chain: NO_CHAIN,
         });
     }
     // Drawables: polygons, then visible segments in record order, stably by z.
@@ -312,7 +370,95 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         geometry: ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, ends, starts, opacity, resolved: true },
         items,
         points,
+        figures: Vec::new(),
+        owners: Vec::new(),
+        chains: Vec::new(),
     }
+}
+
+/// The clip's own scene at a local time, shared by every instance.
+fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
+    let key = local.to_bits();
+    if let Some(s) = clip.cache.lock().unwrap().get(&key) {
+        return s.clone();
+    }
+    let frame = clip.prepared.evaluate_clip(clip.source_start + local);
+    let scene = Arc::new(build(&clip.document, &frame));
+    let mut cache = clip.cache.lock().unwrap();
+    if cache.len() >= 64 {
+        cache.clear();
+    }
+    cache.insert(key, scene.clone());
+    scene
+}
+
+/// `buildMovieclipGeometrySteps`: the clip's scene placed at its pivot.
+fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: [f64; 2]) -> Built {
+    let obj = &frame.objects[slot];
+    let angle = obj.angles.first().copied().unwrap_or(0.0);
+    let scale = obj.scale;
+    let flip = if obj.image_text_flags { -1.0 } else { 1.0 };
+    let (a, b) = (angle.cos() * scale, angle.sin() * scale);
+    let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
+    let opacity = 1.0 - obj.transparency / 255.0;
+    let mut built = Built {
+        geometry: ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, ends: vec![end], starts: vec![root], opacity, resolved: true },
+        items: Vec::new(),
+        points: Vec::new(),
+        figures: Vec::new(),
+        owners: Vec::new(),
+        chains: Vec::new(),
+    };
+    let Some(local) = obj.clip_time else { return built };
+    let source = clip_scene(clip, local);
+    let pivot = clip.pivot;
+    let point = |p: [f64; 2]| {
+        let (dx, dy) = (p[0] - pivot[0], (p[1] - pivot[1]) * flip);
+        [root[0] + a * dx - b * dy, root[1] + b * dx + a * dy]
+    };
+    built.figures = source.figures.clone();
+    built.owners.push(opacity);
+    built.owners.extend_from_slice(&source.owners);
+    // Chain 0..n of the source shift by one owner and gain this clip as outermost.
+    let hidden = clip.document.layers.as_ref().map(|l| l.hidden.clone()).unwrap_or_default();
+    let mut chain_ids: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
+    for it in &source.items {
+        let child = &source.objects[it.slot as usize];
+        if !hidden.is_empty()
+            && let Some(layers) = &clip.document.layers
+            && hidden.iter().any(|h| h == layers.layer_of(child.uid))
+        {
+            continue;
+        }
+        let chain = *chain_ids.entry((it.slot, it.chain)).or_insert_with(|| {
+            let mut c = vec![(0u32, it.slot)];
+            if it.chain != NO_CHAIN {
+                c.extend(source.chains[it.chain as usize].iter().map(|&(o, p)| (o + 1, p)));
+            }
+            built.chains.push(c);
+            built.chains.len() as u32 - 1
+        });
+        let p0 = built.points.len() as u32;
+        for p in source.points_of(it) {
+            built.points.push(point(*p));
+        }
+        let p1 = built.points.len() as u32;
+        built.items.push(Item {
+            slot: slot as u32,
+            points: (p0, p1),
+            start: point(it.start),
+            end: point(it.end),
+            angle: it.angle * flip + angle,
+            bend: it.bend * flip,
+            length: it.length * scale,
+            thickness: it.thickness * scale.abs(),
+            scale: it.scale * scale,
+            image_text_flags: it.image_text_flags != obj.image_text_flags,
+            chain,
+            ..it.clone()
+        });
+    }
+    built
 }
 
 /// Builds the scene for an evaluated frame.
@@ -383,9 +529,8 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
         let make = |&i: &usize| -> Option<(usize, Built)> {
             let fig = &scene.figures[*fig_of.get(i)? as usize];
             let root = resolve_root(i, &built).unwrap_or(frame.objects[i].root);
-            if fig.movieclip.is_some() {
-                // Movieclip instances are expanded by the movieclip module.
-                return None;
+            if let Some(clip) = &fig.movieclip {
+                return Some((i, build_clip(frame, i, fig, clip, root)));
             }
             Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root)))
         };
@@ -412,8 +557,33 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
         let Some(b) = built[slot as usize].take() else { continue };
         let base = scene.points.len() as u32;
         scene.points.extend_from_slice(&b.points);
+        // Movieclip content brings its own figures, owners and chains.
+        let figure_map: Vec<u32> = b
+            .figures
+            .iter()
+            .map(|f| {
+                let key = Arc::as_ptr(f) as usize;
+                let len = scene.figures.len() as u32;
+                *figure_slot.entry(key).or_insert_with(|| {
+                    scene.figures.push(f.clone());
+                    len
+                })
+            })
+            .collect();
+        let owner_base = scene.owners.len() as u32;
+        scene.owners.extend_from_slice(&b.owners);
+        let chain_base = scene.chains.len() as u32;
+        for c in &b.chains {
+            scene.chains.push(c.iter().map(|&(o, p)| (o + owner_base, p)).collect());
+        }
         for mut it in b.items {
             it.points = (it.points.0 + base, it.points.1 + base);
+            if !figure_map.is_empty() {
+                it.figure = figure_map[it.figure as usize];
+            }
+            if it.chain != NO_CHAIN {
+                it.chain += chain_base;
+            }
             scene.items.push(it);
         }
         scene.objects[slot as usize] = b.geometry;

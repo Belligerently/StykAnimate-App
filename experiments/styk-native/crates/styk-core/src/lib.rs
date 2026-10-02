@@ -12,6 +12,7 @@ pub mod eval;
 pub mod geometry;
 pub mod load;
 pub mod piv;
+pub mod rig;
 pub mod style;
 pub mod text;
 pub mod view;

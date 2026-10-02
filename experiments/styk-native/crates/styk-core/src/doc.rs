@@ -100,6 +100,8 @@ pub struct Segment {
     /// Stick Nodes source shape, if this segment came from a Stick Nodes import.
     pub sticknodes: Option<Arc<StickNodesShape>>,
     pub name: Option<String>,
+    /// Rig relationship (`_stykRig`).
+    pub rig: Option<Arc<crate::rig::Rig>>,
 }
 
 /// The subset of an imported Stick Nodes shape that changes drawing.
@@ -189,6 +191,8 @@ pub struct FigurePlan {
     pub children: Vec<u32>,
     /// Per polygon: the edges joining consecutive handles.
     pub polygons: Vec<PolygonPlan>,
+    /// Rig evaluation plan when any segment has a rig relationship.
+    pub rig: Option<Arc<crate::rig::RigPlan>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -233,12 +237,21 @@ impl Figure {
     }
 }
 
-#[derive(Clone, Debug)]
 pub struct Movieclip {
     pub duration: f64,
     pub source_start: f64,
     pub pivot: [f64; 2],
     pub document: Arc<Document>,
+    /// The clip's own timeline, prepared once.
+    pub prepared: Arc<crate::eval::Prepared>,
+    /// Evaluated local frames shared by every instance (bounded).
+    pub cache: std::sync::Mutex<HashMap<u64, Arc<crate::geometry::Scene>>>,
+}
+
+impl std::fmt::Debug for Movieclip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Movieclip").field("duration", &self.duration).field("pivot", &self.pivot).finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -262,6 +275,8 @@ pub struct Object {
     pub bends: Option<Arc<[f64]>>,
     pub join: Option<Join>,
     pub movieclip: Option<Arc<MovieclipPlayback>>,
+    /// Local clip time chosen by evaluation (`_movieclipSample`).
+    pub clip_time: Option<f64>,
     pub z_index: f64,
     /// Per-instance style overlay and the figure it resolves to.
     pub style: Option<Arc<crate::style::ObjectStyle>>,
@@ -277,14 +292,16 @@ pub struct MovieclipPlayback {
     pub speed: f64,
     pub mode: MovieclipMode,
     pub presence: bool,
+    /// Restart keys: (tick, offset).
+    pub restarts: Vec<(f64, f64)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MovieclipMode {
     Loop,
     Once,
-    PingPong,
     Hold,
+    Single,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -337,6 +354,8 @@ pub struct Keyframe {
     pub frame_id: Option<Arc<str>>,
     /// Object slot by unique id.
     pub slot_of: HashMap<u32, u32>,
+    /// Presence-clock movieclips carried by this pose without an instance.
+    pub continuations: Vec<(u32, Arc<MovieclipPlayback>)>,
 }
 
 impl Keyframe {
@@ -538,5 +557,6 @@ pub fn plan_figure(segments: &[Segment], polyfills: &[Polyfill]) -> FigurePlan {
             plan
         })
         .collect();
-    FigurePlan { parent, order, index_of, child_start, children, polygons }
+    let rig = crate::rig::plan(segments, &index_of).map(Arc::new);
+    FigurePlan { parent, order, index_of, child_start, children, polygons, rig }
 }

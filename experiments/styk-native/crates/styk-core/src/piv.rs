@@ -177,6 +177,7 @@ fn segment(id: u32, parent: u32, length: f64, angle: f64, thickness: f64, prim: 
         paint: None,
         sticknodes: None,
         name: None,
+        rig: None,
     }
 }
 
@@ -309,6 +310,7 @@ fn decode_v5(payload: &[u8], name: &str) -> Result<Document, Error> {
                 bends,
                 join,
                 movieclip: None,
+                clip_time: None,
                 z_index: 0.0,
                 style: None,
                 figure_override: None,
@@ -339,6 +341,7 @@ fn decode_v5(payload: &[u8], name: &str) -> Result<Document, Error> {
             easing: None,
             frame_id: None,
             slot_of: HashMap::new(),
+            continuations: Vec::new(),
         });
     }
     recover_object_ids(&mut keyframes);
@@ -777,6 +780,7 @@ fn decode_v4(data: &[u8], name: &str) -> Result<Document, Error> {
                 bends: None,
                 join,
                 movieclip: None,
+                clip_time: None,
                 z_index: 0.0,
                 style: None,
                 figure_override: None,
@@ -805,6 +809,7 @@ fn decode_v4(data: &[u8], name: &str) -> Result<Document, Error> {
             easing: None,
             frame_id: None,
             slot_of: HashMap::new(),
+            continuations: Vec::new(),
         });
     }
     for k in keyframes.iter_mut() {

@@ -283,7 +283,7 @@ impl<'a> Loader<'a> {
         })
     }
 
-    fn segment(&mut self, s: &Value, i: usize, unsupported: &mut Vec<&'static str>) -> Segment {
+    fn segment(&mut self, s: &Value, i: usize, _unsupported: &mut Vec<&'static str>) -> Segment {
         let prim = int(s, "primitive_code")
             .and_then(|c| Prim::from_code(c as u8))
             .or_else(|| match s.get("segment_kind").and_then(Value::as_str) {
@@ -320,9 +320,6 @@ impl<'a> Loader<'a> {
         let sticknodes = s.get("_sticknodes").filter(|v| v.is_object()).map(|v| {
             Arc::new(StickNodesShape { sagitta: num(v, "sagitta").unwrap_or(0.0), raw: Some(Arc::new(v.clone())) })
         });
-        if s.get("_stykRig").is_some() && !unsupported.contains(&"rig constraints") {
-            unsupported.push("rig constraints");
-        }
         Segment {
             id: int(s, "segment_id").unwrap_or(i as i64 + 1) as u32,
             parent: int(s, "parent_id").unwrap_or(0) as u32,
@@ -349,6 +346,7 @@ impl<'a> Loader<'a> {
             paint: paint(s.get("paint")),
             sticknodes,
             name: s.get("name").and_then(Value::as_str).map(str::to_string),
+            rig: s.get("_stykRig").and_then(crate::rig::parse).map(Arc::new),
         }
     }
 
@@ -382,12 +380,14 @@ impl<'a> Loader<'a> {
 
     fn movieclip(&mut self, m: &Value) -> Result<Option<Arc<Movieclip>>, Error> {
         let Some(doc) = m.get("document").filter(|v| v.is_object()) else { return Ok(None) };
-        let document = self.document(doc, "movieclip")?;
+        let document = Arc::new(self.document(doc, "movieclip")?);
         Ok(Some(Arc::new(Movieclip {
             duration: num(m, "duration").unwrap_or(1.0),
             source_start: num(m, "sourceStart").unwrap_or(0.0),
             pivot: point(m.get("pivot")).unwrap_or([0.0, 0.0]),
-            document: Arc::new(document),
+            prepared: Arc::new(crate::eval::Prepared::new(document.clone())),
+            document,
+            cache: Default::default(),
         })))
     }
 
@@ -411,21 +411,7 @@ impl<'a> Loader<'a> {
                 self.note(feature);
             }
         }
-        let movieclip = o.get("_stykMovieclip").filter(|v| v.is_object()).map(|p| {
-            Arc::new(MovieclipPlayback {
-                start: num(p, "start").unwrap_or(0.0),
-                end: num(p, "end"),
-                offset: num(p, "offset").unwrap_or(0.0),
-                speed: num(p, "speed").unwrap_or(1.0),
-                mode: match p.get("mode").and_then(Value::as_str) {
-                    Some("once") => MovieclipMode::Once,
-                    Some("pingpong") | Some("ping-pong") => MovieclipMode::PingPong,
-                    Some("hold") => MovieclipMode::Hold,
-                    _ => MovieclipMode::Loop,
-                },
-                presence: p.get("clock").and_then(Value::as_str) == Some("presence"),
-            })
-        });
+        let movieclip = o.get("_stykMovieclip").filter(|v| v.is_object()).map(playback);
         Some(Object {
             uid,
             figure,
@@ -439,6 +425,7 @@ impl<'a> Loader<'a> {
             bends,
             join,
             movieclip,
+            clip_time: None,
             z_index: num(o, "_stykZIndex").unwrap_or(0.0),
             style: crate::style::parse(o.get("_stykStyle"), o.get("_styk").and_then(|s| s.get("colorMode"))),
             figure_override: None,
@@ -479,6 +466,13 @@ impl<'a> Loader<'a> {
             easing: styk.and_then(|s| easing(s.get("easing"))),
             frame_id: styk.and_then(|s| s.get("frameId")).and_then(Value::as_str).map(Arc::from),
             slot_of: HashMap::new(),
+            continuations: styk
+                .and_then(|s| s.get("movieclipContinuations"))
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|c| Some((int(c, "uid")? as u32, playback(c.get("playback")?))))
+                .collect(),
         };
         frame.reindex();
         Ok(frame)
@@ -662,4 +656,28 @@ fn resolve_styles(doc: &mut Document) {
     for k in doc.frame_sources.values_mut() {
         fix(k);
     }
+}
+
+/// `_stykMovieclip` playback settings (`playbackSettings`).
+pub fn playback(p: &Value) -> Arc<MovieclipPlayback> {
+    Arc::new(MovieclipPlayback {
+        start: num(p, "start").unwrap_or(0.0),
+        end: num(p, "end"),
+        offset: num(p, "offset").unwrap_or(0.0),
+        speed: num(p, "speed").unwrap_or(1.0),
+        mode: match p.get("mode").and_then(Value::as_str) {
+            Some("once") => MovieclipMode::Once,
+            Some("hold") => MovieclipMode::Hold,
+            Some("single") => MovieclipMode::Single,
+            _ => MovieclipMode::Loop,
+        },
+        presence: p.get("clock").and_then(Value::as_str) == Some("presence"),
+        restarts: p
+            .get("restarts")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|k| Some((num(k, "tick")?, num(k, "offset")?)))
+            .collect(),
+    })
 }

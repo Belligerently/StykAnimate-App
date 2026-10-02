@@ -56,6 +56,8 @@ pub struct Frame {
     pub background_mix: f64,
     /// Exactly authored poses: their key and slot (None while tweening).
     pub origins: Vec<Option<(FrameRef, u32)>>,
+    /// Presence-clock movieclips carried by the pose (`movieclipContinuations`).
+    pub continuations: Vec<(u32, Arc<MovieclipPlayback>)>,
 }
 
 /// A document plus the timing tables evaluation needs, built once per revision.
@@ -66,6 +68,8 @@ pub struct Prepared {
     pub total_ticks: u32,
     tracks: HashMap<String, Arc<Seq>>,
     imported: HashMap<String, bool>,
+    /// Presence-clock spans per movieclip instance: (start, end, elapsed, rate).
+    presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
 }
 
 pub fn shortest(a: f64) -> f64 {
@@ -368,6 +372,7 @@ fn frame_of(key: &KeyRef) -> Frame {
             Some(o) => (0..k.objects.len() as u32).map(|slot| Some((o.clone(), slot))).collect(),
             None => vec![None; k.objects.len()],
         },
+        continuations: k.continuations.clone(),
     }
 }
 
@@ -425,6 +430,7 @@ pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame
     Frame {
         tick: 0.0,
         origins: vec![None; objects.len()],
+        continuations: a.frame.continuations.clone(),
         objects,
         draw_order: a.frame.draw_order.clone(),
         camera,
@@ -552,14 +558,156 @@ impl Prepared {
             last.count = last.count.max(clip_end.saturating_sub(last.start));
         }
         let total_ticks = rows.last().map(|r| r.start + r.count).unwrap_or(0).max(1);
-        Prepared { doc, native, rows, total_ticks, tracks, imported }
+        let mut prepared = Prepared { doc, native, rows, total_ticks, tracks, imported, presence: HashMap::new() };
+        prepared.presence = prepared.presence_index();
+        prepared
+    }
+
+    fn has_clips(&self) -> bool {
+        self.doc.figures.iter().any(|f| f.movieclip.is_some())
+    }
+
+    /// `presenceIndex`: membership is sampled once per interval between keys.
+    fn presence_index(&self) -> HashMap<u32, Vec<(f64, f64, f64, f64)>> {
+        let mut out: HashMap<u32, Vec<(f64, f64, f64, f64)>> = HashMap::new();
+        if !self.has_clips() {
+            return out;
+        }
+        let mut times: Vec<u32> = vec![0];
+        match &self.doc.sheet {
+            Some(sheet) => {
+                times.push(sheet.duration);
+                for t in sheet.tracks.values() {
+                    times.push(t.end);
+                    times.extend(t.keys.iter().map(|k| k.tick));
+                }
+            }
+            None => {
+                for r in &self.rows {
+                    times.push(r.start);
+                    times.push(r.start + r.count);
+                }
+            }
+        }
+        times.sort_unstable();
+        times.dedup();
+        let mut elapsed: HashMap<u32, f64> = HashMap::new();
+        for w in times.windows(2) {
+            let (start, end) = (w[0] as f64, w[1] as f64);
+            if end <= start {
+                continue;
+            }
+            let frame = self.evaluate_raw(start, false);
+            let mut members: Vec<(u32, Arc<MovieclipPlayback>)> = frame.continuations.clone();
+            for o in &frame.objects {
+                if let Some(p) = o.movieclip.as_ref().filter(|p| p.presence) {
+                    members.retain(|(uid, _)| *uid != o.uid);
+                    members.push((o.uid, p.clone()));
+                }
+            }
+            for (uid, settings) in members {
+                let rate = if settings.mode == MovieclipMode::Single { 0.0 } else { settings.speed };
+                let spans = out.entry(uid).or_default();
+                let e = elapsed.entry(uid).or_insert(0.0);
+                match spans.last_mut() {
+                    Some(last) if last.1 == start && last.3 == rate => last.1 = end,
+                    _ => spans.push((start, end, *e, rate)),
+                }
+                *e += (end - start) * rate;
+            }
+        }
+        out
+    }
+
+    fn presence_elapsed(&self, uid: u32, tick: f64) -> f64 {
+        let Some(spans) = self.presence.get(&uid) else { return 0.0 };
+        let i = spans.partition_point(|s| s.0 <= tick);
+        match i.checked_sub(1).map(|i| spans[i]) {
+            Some((start, end, elapsed, rate)) => elapsed + (tick.min(end) - start).max(0.0) * rate,
+            None => 0.0,
+        }
+    }
+
+    /// `sampleMovieclipObjects`: chooses each instance's local clip time and
+    /// removes instances that are not playing at this tick.
+    fn apply_movieclips(&self, frame: &mut Frame, tick: f64) {
+        if !self.has_clips() {
+            return;
+        }
+        let doc = &self.doc;
+        let mut hidden = false;
+        for object in frame.objects.iter_mut() {
+            let Some(clip) = doc.figure(object.figure).and_then(|f| f.movieclip.clone()) else { continue };
+            let default = MovieclipPlayback { start: 0.0, end: None, offset: 0.0, speed: 1.0, mode: MovieclipMode::Loop, presence: false, restarts: vec![] };
+            let settings = object.movieclip.as_deref().cloned().unwrap_or(default);
+            let local = if settings.presence {
+                let time = if settings.mode == MovieclipMode::Single { 0.0 } else { self.presence_elapsed(object.uid, tick) };
+                let s = MovieclipPlayback { start: 0.0, end: None, speed: 1.0, ..settings };
+                movieclip_time(&clip, &s, time, doc.fps)
+            } else {
+                movieclip_time(&clip, &settings, tick, doc.fps)
+            };
+            hidden |= local.is_none();
+            Arc::make_mut(object).clip_time = local;
+        }
+        if !hidden {
+            return;
+        }
+        let keep: Vec<bool> = frame.objects.iter().map(|o| doc.figure(o.figure).and_then(|f| f.movieclip.as_ref()).is_none() || o.clip_time.is_some()).collect();
+        let mut remap = vec![u32::MAX; keep.len()];
+        let mut next = 0u32;
+        for (i, &k) in keep.iter().enumerate() {
+            if k {
+                remap[i] = next;
+                next += 1;
+            }
+        }
+        let mut objects = Vec::with_capacity(next as usize);
+        let mut origins = Vec::with_capacity(next as usize);
+        for (i, o) in frame.objects.iter().enumerate() {
+            if !keep[i] {
+                continue;
+            }
+            let mut o = o.clone();
+            if let Some(j) = o.join {
+                let target = remap[j.slot as usize];
+                Arc::make_mut(&mut o).join = (target != u32::MAX).then_some(Join { slot: target, handle: j.handle });
+            }
+            objects.push(o);
+            origins.push(frame.origins.get(i).cloned().flatten());
+        }
+        frame.draw_order = frame.draw_order.iter().filter(|&&s| keep[s as usize]).map(|&s| remap[s as usize]).collect();
+        frame.objects = objects;
+        frame.origins = origins;
     }
 
     /// The editor's frame at an integer (or fractional) tick.
     pub fn evaluate(&self, tick: f64) -> Frame {
-        let mut frame = if self.doc.sheet.is_some() { self.sample_sheet(tick) } else { self.native_at(tick) };
-        frame.tick = tick;
+        self.evaluate_with(tick, false)
+    }
+
+    /// Movieclip sources sample their rows at fractional local times.
+    pub fn evaluate_clip(&self, tick: f64) -> Frame {
+        self.evaluate_with(tick, true)
+    }
+
+    fn evaluate_with(&self, tick: f64, fractional: bool) -> Frame {
+        let mut frame = self.evaluate_raw(tick, fractional);
+        self.apply_movieclips(&mut frame, tick);
         apply_layer_order(&self.doc, &mut frame);
+        frame
+    }
+
+    fn evaluate_raw(&self, tick: f64, fractional: bool) -> Frame {
+        let mut frame = if self.doc.sheet.is_some() {
+            self.sample_sheet(tick)
+        } else if fractional {
+            let (index, t) = row_at_fraction(&self.rows, tick);
+            evaluate_native(&self.doc, &self.native, index, t)
+        } else {
+            self.native_at(tick)
+        };
+        frame.tick = tick;
         frame
     }
 
@@ -644,8 +792,10 @@ impl Prepared {
         let mut objects: Vec<Arc<Object>> = Vec::new();
         let mut origins = Vec::new();
         let mut parents: Vec<Option<u32>> = Vec::new();
+        let mut continuations = Vec::new();
         for id in &layers.order {
             let Some(frame) = self.sample_track(id, tick) else { continue };
+            continuations.extend(frame.continuations.iter().filter(|(uid, _)| layers.layer_of(*uid) == id).cloned());
             for &slot in &frame.draw_order {
                 let object = &frame.objects[slot as usize];
                 if layers.layer_of(object.uid) != id {
@@ -681,6 +831,7 @@ impl Prepared {
             background_b,
             background_mix,
             origins,
+            continuations,
         }
     }
 }
@@ -710,6 +861,33 @@ pub fn row_at(rows: &[Row], tick: f64) -> (usize, f64) {
     (index, t)
 }
 
+/// Row and fraction without the editor's single-tick rule (movieclip sampling).
+pub fn row_at_fraction(rows: &[Row], tick: f64) -> (usize, f64) {
+    let index = rows.partition_point(|r| r.start as f64 <= tick).saturating_sub(1);
+    let row = rows.get(index).copied().unwrap_or(Row { start: 0, count: 0 });
+    let t = if row.count > 0 { (tick - row.start as f64) / row.count as f64 } else { 0.0 };
+    (index, t)
+}
+
+/// `movieclipTime`: local clip time, or None when the clip is not shown.
+pub fn movieclip_time(clip: &Movieclip, s: &MovieclipPlayback, tick: f64, fps: f64) -> Option<f64> {
+    if tick < s.start || s.end.is_some_and(|e| tick >= e) {
+        return None;
+    }
+    let duration = clip.duration;
+    let at = s.restarts.partition_point(|r| r.0 <= tick);
+    let (phase_tick, phase_offset) = match at.checked_sub(1) {
+        Some(i) => s.restarts[i],
+        None => (s.start, s.offset),
+    };
+    let raw = if s.mode == MovieclipMode::Single { phase_offset } else { phase_offset + (tick - phase_tick) * s.speed * clip.document.fps / fps };
+    match s.mode {
+        MovieclipMode::Loop => Some(((raw % duration) + duration) % duration),
+        MovieclipMode::Once if raw >= duration => None,
+        _ => Some(raw.clamp(0.0, (duration - 1.0).max(0.0))),
+    }
+}
+
 /// `buildVirtualPoseTrack`: keys become a native timeline of their source poses.
 fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
     let fixed = FIXED.contains(&id);
@@ -726,6 +904,7 @@ fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
         easing: None,
         frame_id: None,
         slot_of: HashMap::new(),
+        continuations: Vec::new(),
     });
     let refs = keys
         .iter()

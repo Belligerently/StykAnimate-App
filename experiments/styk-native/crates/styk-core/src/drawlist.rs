@@ -553,13 +553,13 @@ fn background(doc: &Document, assets: &Assets, scene: &Scene, out: &mut Out) {
 /// Encodes a scene. Objects encode in parallel; groups are merged in order.
 pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
     let ctx = Ctx { scene, assets };
-    // Contiguous item runs per object (items are already in painter order).
+    // Leaf runs: consecutive items of one figure instance (same slot and clip chain).
     let mut runs: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
     while i < scene.items.len() {
-        let slot = scene.items[i].slot;
+        let (slot, chain) = (scene.items[i].slot, scene.items[i].chain);
         let mut j = i + 1;
-        while j < scene.items.len() && scene.items[j].slot == slot {
+        while j < scene.items.len() && scene.items[j].slot == slot && scene.items[j].chain == chain {
             j += 1;
         }
         runs.push((i, j));
@@ -592,68 +592,166 @@ pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
     };
     let objects: Vec<Option<ObjectOut>> = if runs.len() >= 16 { runs.par_iter().map(encode_run).collect() } else { runs.iter().map(encode_run).collect() };
 
-    // Merge into groups: group 0 is the frame.
-    let mut groups = vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0; 4] }];
-    let mut group_prims: Vec<Vec<Prim>> = vec![Vec::new()];
-    let mut paints: Vec<[f32; 4]> = Vec::new();
+    let mut b = Builder::new();
     let mut root = Out::new();
     background(doc, assets, scene, &mut root);
     let background_prims = root.prims.len() as u32;
-    let add = |target: usize, out: Out, paints: &mut Vec<[f32; 4]>, group_prims: &mut Vec<Vec<Prim>>| {
-        let base = paints.len() as u32;
-        paints.extend_from_slice(&out.paints);
+    b.add(0, root);
+    // Open movieclip owner groups: (level key, owner, group or pass-through, skipped).
+    let mut stack: Vec<Open> = Vec::new();
+    for (k, &(a, _)) in runs.iter().enumerate() {
+        let first = &scene.items[a];
+        // Owner path of this run: one entry per enclosing movieclip.
+        let path: Vec<(u32, u32)> = match first.chain {
+            crate::geometry::NO_CHAIN => vec![],
+            c => {
+                let chain = &scene.chains[c as usize];
+                chain.iter().enumerate().map(|(level, &(owner, _))| (if level == 0 { first.slot } else { chain[level - 1].1 }, owner)).collect()
+            }
+        };
+        let common = stack.iter().zip(path.iter()).take_while(|(o, p)| o.key == p.0 && o.owner == p.1).count();
+        while stack.len() > common {
+            let open = stack.pop().unwrap();
+            b.close(open, stack.last());
+        }
+        for &(key, owner) in &path[common..] {
+            let opacity = scene.owners[owner as usize];
+            let parent = stack.last().map(|o| o.target).unwrap_or(0);
+            let skipped = stack.last().is_some_and(|o| o.skipped) || opacity <= 0.0;
+            let target = if !skipped && opacity < 1.0 { b.open(parent, opacity) } else { parent };
+            stack.push(Open { key, owner, target, isolated: target != parent, skipped, opacity });
+        }
+        if stack.last().is_some_and(|o| o.skipped) {
+            continue;
+        }
+        let Some(o) = objects[k].as_ref() else { continue };
+        let parent = stack.last().map(|o| o.target).unwrap_or(0);
+        b.object(parent, o);
+    }
+    while let Some(open) = stack.pop() {
+        b.close(open, stack.last());
+    }
+    let (prims, paints, groups, passes) = b.finish();
+    DrawList { prims, paints, groups, passes, background_prims }
+}
+
+struct Open {
+    key: u32,
+    owner: u32,
+    /// Group receiving this owner's content (its own group, or the parent's when opaque).
+    target: usize,
+    isolated: bool,
+    skipped: bool,
+    opacity: f64,
+}
+
+/// Collects prims per isolation group, then orders them deepest first.
+struct Builder {
+    groups: Vec<Group>,
+    prims: Vec<Vec<Prim>>,
+    paints: Vec<[f32; 4]>,
+}
+
+impl Builder {
+    fn new() -> Builder {
+        let empty = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
+        Builder { groups: vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: empty }], prims: vec![Vec::new()], paints: Vec::new() }
+    }
+
+    fn open(&mut self, parent: usize, opacity: f64) -> usize {
+        let id = self.groups.len();
+        let empty = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
+        self.groups.push(Group { parent: parent as u32, depth: self.groups[parent].depth + 1, opacity: opacity as f32, bounds: empty });
+        self.prims.push(Vec::new());
+        id
+    }
+
+    /// Finishes a group: its composite lands at this point of the parent's order.
+    fn close(&mut self, open: Open, _parent: Option<&Open>) {
+        if !open.isolated {
+            return;
+        }
+        let g = self.groups[open.target];
+        let bounds = g.bounds;
+        let parent = g.parent as usize;
+        if bounds[0] <= bounds[2] {
+            self.prims[parent].push(composite(open.target as u32, open.opacity, bounds));
+            self.grow(parent, bounds);
+        }
+    }
+
+    fn grow(&mut self, group: usize, b: [f32; 4]) {
+        let g = &mut self.groups[group].bounds;
+        *g = union(*g, b);
+    }
+
+    fn add(&mut self, target: usize, out: Out) {
+        let base = self.paints.len() as u32;
+        self.paints.extend_from_slice(&out.paints);
+        if out.bounds[0] <= out.bounds[2] {
+            self.grow(target, out.bounds);
+        }
         for mut p in out.prims {
             if p.paint != NO_PAINT {
                 p.paint += base;
             }
-            group_prims[target].push(p);
+            self.prims[target].push(p);
         }
-    };
-    add(0, root, &mut paints, &mut group_prims);
-    for o in objects.into_iter().flatten() {
+    }
+
+    fn add_ref(&mut self, target: usize, out: &Out) {
+        let base = self.paints.len() as u32;
+        self.paints.extend_from_slice(&out.paints);
+        if out.bounds[0] <= out.bounds[2] {
+            self.grow(target, out.bounds);
+        }
+        for p in &out.prims {
+            let mut p = *p;
+            if p.paint != NO_PAINT {
+                p.paint += base;
+            }
+            self.prims[target].push(p);
+        }
+    }
+
+    /// One figure instance: object opacity layer, outline layer, then its items.
+    fn object(&mut self, parent: usize, o: &ObjectOut) {
         let isolate = o.opacity < 1.0;
-        let parent = if isolate {
-            let id = groups.len();
-            let bounds = union(o.outline.bounds, o.items.bounds);
-            groups.push(Group { parent: 0, depth: 1, opacity: o.opacity as f32, bounds });
-            group_prims.push(Vec::new());
-            group_prims[0].push(composite(id as u32, o.opacity, bounds));
-            id
-        } else {
-            0
-        };
+        let target = if isolate { self.open(parent, o.opacity) } else { parent };
         if !o.outline.prims.is_empty() {
             if o.outline_alpha < 1.0 {
-                let id = groups.len();
-                let depth = groups[parent].depth + 1;
-                groups.push(Group { parent: parent as u32, depth, opacity: o.outline_alpha as f32, bounds: o.outline.bounds });
-                group_prims.push(Vec::new());
-                group_prims[parent].push(composite(id as u32, o.outline_alpha, o.outline.bounds));
-                add(id, o.outline, &mut paints, &mut group_prims);
+                let id = self.open(target, o.outline_alpha);
+                self.add_ref(id, &o.outline);
+                self.close(Open { key: 0, owner: 0, target: id, isolated: true, skipped: false, opacity: o.outline_alpha }, None);
             } else {
-                add(parent, o.outline, &mut paints, &mut group_prims);
+                self.add_ref(target, &o.outline);
             }
         }
-        add(parent, o.items, &mut paints, &mut group_prims);
-    }
-    // Order prims deepest group first so each depth is one contiguous draw.
-    let max_depth = groups.iter().map(|g| g.depth).max().unwrap_or(0);
-    let mut prims = Vec::with_capacity(group_prims.iter().map(Vec::len).sum());
-    let mut passes = Vec::new();
-    for depth in (0..=max_depth).rev() {
-        let start = prims.len() as u32;
-        for (gi, list) in group_prims.iter_mut().enumerate() {
-            if groups[gi].depth != depth {
-                continue;
-            }
-            for mut p in list.drain(..) {
-                p.group = gi as u32;
-                prims.push(p);
-            }
+        self.add_ref(target, &o.items);
+        if isolate {
+            self.close(Open { key: 0, owner: 0, target, isolated: true, skipped: false, opacity: o.opacity }, None);
         }
-        passes.push(Pass { depth, start, end: prims.len() as u32 });
     }
-    DrawList { prims, paints, groups, passes, background_prims }
+
+    fn finish(mut self) -> (Vec<Prim>, Vec<[f32; 4]>, Vec<Group>, Vec<Pass>) {
+        let max_depth = self.groups.iter().map(|g| g.depth).max().unwrap_or(0);
+        let mut prims = Vec::with_capacity(self.prims.iter().map(Vec::len).sum());
+        let mut passes = Vec::new();
+        for depth in (0..=max_depth).rev() {
+            let start = prims.len() as u32;
+            for (gi, list) in self.prims.iter_mut().enumerate() {
+                if self.groups[gi].depth != depth {
+                    continue;
+                }
+                for mut p in list.drain(..) {
+                    p.group = gi as u32;
+                    prims.push(p);
+                }
+            }
+            passes.push(Pass { depth, start, end: prims.len() as u32 });
+        }
+        (prims, self.paints, self.groups, passes)
+    }
 }
 
 fn union(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
