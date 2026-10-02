@@ -1,6 +1,6 @@
 // What the engine's fixture generators share: the real JavaScript editor, small
 // documents to start from, and the dump of what the editor evaluates
-// (tools/reference.mjs). Used by ik-fixtures.mjs and eval-fixtures.mjs.
+// (tools/reference.mjs). Used by ik-fixtures.mjs, eval-fixtures.mjs and vfx-fixtures.mjs.
 import {execFileSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -61,11 +61,12 @@ export function prune(document) {
  * Writes `<out>/<name>.json` (the project) and returns the editor's evaluation of
  * it at `ticks`, without the timings that differ on every run: the caller adds
  * what it needs and writes `<name>.reference.json` with writeReference().
+ * `vfx` adds the effects the editor resolves (reference.mjs --vfx).
  */
-export function writeProject(out, name, document, ticks) {
+export function writeProject(out, name, document, ticks, {vfx = false} = {}) {
   const file = `${out}/${name}.json`, reference = `${out}/${name}.reference.json`;
   writeFileSync(file, JSON.stringify(prune(document)) + '\n');
-  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(',')], {stdio: ['ignore', 'ignore', 'ignore']});
+  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
   const dump = JSON.parse(readFileSync(reference, 'utf8'));
   delete dump.loadMs; delete dump.evalMsPerFrame;
   return {file, reference, dump};
