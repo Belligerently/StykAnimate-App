@@ -112,6 +112,9 @@ Each gets an ADR under `docs/engine/decisions/` when it lands.
 | D11 | Array textures always have at least two layers. | WebGL2 creates a one-layer array texture as a plain 2D texture; isolation groups and onion composites sampled black. | done |
 | D12 | While commands run in JavaScript, the engine holds a mirror of the document (`src/engine/engine-mirror.mjs`): changed records staged per batch, committed atomically by revision. An edit frame crosses as the pose on screen with `null` for every object whose geometry the editor did not rebuild; onion ghosts are poses kept by an id. | No whole-document transfer on interactive paths; a gesture never waits for a commit. | in use until S5 |
 | D13 | App-level pixel parity (`scripts/engine-app-parity.mjs`) fails a step when any pixel differs by more than 32 levels together with all eight neighbours, or the mean difference exceeds 0.25 levels. | The two renderers cover edge pixels by different rules: differences one or two pixels thick along outlines are expected, a moved, missing or recoloured shape differs over an area. The threshold is fixed; it is not tuned to pass. | done |
+| D14 | The page creates the engine's shared memory with the largest maximum the browser reserves (2 GiB, else 1 GiB, else 512 MiB; override `stykanimate.engine.memory`), and budgets caches to it. | Mobile WebKit may refuse a 2 GiB reservation. Desktop Chromium and WebKit accept 2 GiB and grow it; the fallback path is exercised by refusing the larger maxima. Real iOS devices are unverified. | done |
+| D15 | Editing moves to the engine command by command (`docs/engine/editing.md`): a ported facade method runs in `styk-edit` and returns the changed records and event detail, which the JavaScript document and history adopt; unported commands run in JavaScript and reach the engine through the mirror. Every port is checked by the command-replay harness (`engine/tools/edit-replay.mjs`): documents byte for byte, selection, history and events after every step. | The app keeps working at every commit while about 800 editor methods move; the harness turns each port into a mechanical comparison. | in use: selection, seeking, moving and transforming figures ported ([ADR](engine/decisions/0015-commands-record-for-record.md)) |
+| D16 | Engine arithmetic whose results are stored in documents uses `styk-math`: V8's fdlibm 5.3 `sin`, `cos`, `atan2` and its `hypot`, bit for bit. | Rust's `f64::sin` differed from V8 in the last bit for 2.7 % of two million inputs, `f64::atan2` 17 %, the `libm` crate 0.7–0.8 % for `sin` and `cos`; `styk-math` matched on 2.8 million. Byte-identical editing (D15) needs it. | in use ([ADR](engine/decisions/0016-v8-exact-math.md)) |
 
 ## 5. Baseline (current app, before any engine change)
 
@@ -210,6 +213,23 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   evaluation (handles, picking, the pose it sends to the engine) still run in JavaScript and
   call the evaluation modules the engine now covers. Deleting them needs stage S5 (the engine
   owns the document and evaluates for the editor); until then they are the oracle.
+- **The document is held twice until S5** (D12): the editor's JavaScript objects and the
+  engine's store and typed views. Measured 2026-10-02 in Electron (WebGPU), one run each after
+  opening the file and letting the mirror commit, machine load 4–5 from the baseline rounds
+  (`node scripts/engine-memory.mjs <file>`):
+
+  | File | Engine | WebAssembly memory | JS heap | Renderer process | All processes |
+  | --- | --- | ---: | ---: | ---: | ---: |
+  | Jay on a new app (repaired).styk | on | 153 MiB | 86 MiB | 523 MiB | 1,161 MiB |
+  | Jay on a new app (repaired).styk | off | — | 92 MiB | 568 MiB | 1,182 MiB |
+  | svr_uriel.piv | on | 268 MiB | 248 MiB | 762 MiB | 1,390 MiB |
+  | svr_uriel.piv | off | — | 262 MiB | 1,255 MiB | 1,866 MiB |
+
+  The engine's own memory (store, typed views, assets, decoded images awaiting upload, frame
+  cache) is the cost of the mirror; the totals are already lower with the engine because the
+  JavaScript renderer's raster caches and the playback workers' document copies are not used
+  for documents the engine draws. The JS heap's copy goes when the engine owns the document
+  (S5); the final report tracks the trajectory with the same measurement.
 - **First use is slow in WebAssembly.** The first file opened after the module loads takes
   about 2.2 s where the same file then takes 0.66 s (URIEL 3). Suspects: baseline-compiler
   code before the optimizing tier is ready, and growing the shared memory. To measure.
@@ -217,7 +237,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   it. Bundle budget to be set once it is.
 - **The WebGL2 path is only verified on SwiftShader** (headless Chromium). Playwright's
   Chromium does not display a WebGPU canvas here; Electron does.
-- **The 2 GiB shared memory maximum** is fixed at link time; iOS may refuse to reserve it.
+- **Real iOS and iPadOS devices are unverified** for the engine's shared memory: the page now falls back from 2 GiB to 1 GiB and 512 MiB maxima (D14), but the actual limits of Apple devices were not measured.
+- **Evaluation trigonometry is the platform's** (D16): `styk-eval` uses `f64::sin`,
+  `cos` and `atan2`, which differ from V8 in the last bit for a few percent of inputs. Drawn
+  geometry is rounded to single precision and matches; before the engine stores evaluated
+  values in documents (baking IK poses, S5), those paths move to `styk-math`.
+- **Running out of engine memory is not recovered**: an allocation beyond the reserved maximum traps the module, and the stage does not yet drop the engine for the session safely (a trap inside a held spin lock would block the interface).
 - **A lone UTF-16 surrogate in a JSON string** is replaced with U+FFFD by the store
   (JavaScript keeps it). No corpus file has one.
 - **Clippy is not clean in `styk-eval`**: three `approx_constant` errors in `piv.rs` (code
@@ -353,8 +378,25 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-02 20:05 | S3 IK in the app; tools | Documents with IK controllers are drawn by the engine (the gate no longer refuses them). `scripts/engine-app-parity.mjs` (D13), `scripts/engine-bench-matrix.sh`, `scripts/engine-bench-summary.mjs`; the inventory gains a **partial** status and coverage shares. WebKit runs here. | App parity: see section 7. Inventory: 3 modules covered by Rust, 32 partly (1 % and 17 % of the engine source), none deleted yet. |
 | 2026-10-02 20:10 | S1 Pivot codec (agent, reviewed and verified) | `styk-piv`: Pivot 2-5 and `.stk` reading into the store, Pivot 5 and `.stk` writing (bit-exact zlib 1.3.1), the codec service (import JSON and `STYKPIV1`, export, source cache, leases, cancellation, Python's errors); `docs/engine/formats-piv.md`. Not wired into the app yet. | Replay of the Python recording: 13,369 of 13,369 requests identical (section 7). One run each under load: `svr_uriel.piv` imports as JSON in 0.96 s (Python 2.54 s), `tdd2 uriel nemesis.piv` in 0.91 s (2.19 s). 37 unit and 59 integration tests. Inventory: 20 modules covered, 35 partly (7 % and 21 % of the engine source), none deleted. |
 | 2026-10-02 20:15 | S3 renderer fixes found by app parity | Under WebGPU the engine presented the pasteboard black (wgpu lists only opaque alpha for WebGPU canvases; the stage now asks for premultiplied). Isolation layers that overflow the atlas are drawn in full-resolution rounds instead of at half resolution (`plan_rounds`, three unit tests). `engine-app-parity.mjs` gains an Electron target. | `04-waterfall.styk` in Electron: identical to the WebGPU renderer. `hitoshi vs suzu tomiee ssj.piv` tick 257: 2 rounds, no downscaling; mean difference 1.71 → 0.70 levels. |
+| 2026-10-02 20:24 | S3 onion paints | Onion skins keep a segment's custom paint under the tint, as the editor's do (found by app parity). | `tests/onion.rs` fails without the fix; a painted test figure matches the editor's renderer with onion skins, edges only. |
+| 2026-10-02 20:30 | S3 text outlines | Figure outlines around text: each visible glyph stroked with round joins, tessellated once per glyph and width. The last feature that kept the large Pivot files of the corpus on the JavaScript renderer. | `finisher tdd2.piv` matches the WebGPU renderer at five ticks; `tests/text.rs`. |
+| 2026-10-02 20:33 | S2 effect evaluation (agent, reviewed and verified) | `styk-eval/src/vfx/`: per-pose stacks, effect clips, movieclip container stacks, connected groups, generated effects as resolved parameters; `reference.mjs --vfx`; nine editor-built fixtures; [`docs/engine/vfx.md`](engine/vfx.md). | URIEL 3: 232 of 232 ticks, effects included, 0 mismatches; the nine fixtures match. |
+| 2026-10-02 20:36 | S3 edit-frame fields; parity rule | A frame whose own fields change (background, camera, order) is resent even with no changed object. The app-parity mean ignores differences of two levels or less (D13). | `svr_uriel.piv`'s last tick now shows the background alone, as the editor does. |
+| 2026-10-02 20:53 | S3 drawing layers | Drawing cels: exact box-reduced levels 1–8, per-frame level choice, premultiplied bilinear filtering across tiles with halo tiles, view-independent draw lists; cels decode in the background. Unpublished strokes and drawing previews stay with the JavaScript renderer. `engine-app-parity.mjs --zoom`. | Electron, WebGPU: Jay on a new app (repaired) passes at every compared tick, with onion skins and at 0.3× and 3×; its largest cel alone is identical at 1×, 2× and 4×. |
+| 2026-10-02 21:04 | S3 return-to-canvas preparation | The stage no longer asks the JavaScript renderer to prepare a scene for documents the engine draws. | Same frame as before on return from playback; the ~0.7 s joint-drag stall is unchanged and recorded in section 6. |
+| 2026-10-02 21:22 | Structure; S1 Pivot in the engine; CPU raster | `styk-draw` (the draw-list format, shared); `styk-render` split into pipeline, frame, isolation, images, resources, present, view and effects; `styk_eval::open` reads `.piv`/`.stk` through `styk-piv` and the prototype reader is deleted; `styk-raster` (tiny-skia) draws draw lists on the CPU (`styk raster`). | Geometry parity unchanged on hitoshi, finisher and Valthim (0 mismatches). CPU against GPU: Jay's largest cel identical; URIEL 3 tick 60 0.17/255 mean, Jay tick 13 0.03, hitoshi tick 129 0.18, along edges. `svr_uriel.piv` opens in the CLI in 461 ms (prototype reader ~190 ms). |
+| 2026-10-02 21:28 | Scaffold and docs | ADRs D1–D13 in `docs/engine/decisions/`, subsystem pages, `AGENTS.md` and `docs/ARCHITECTURE.md` updated; `npm run engine:build`, `engine:test`, `engine:parity`, `engine:bench`. | `engine:parity` repository tier passes. |
+| 2026-10-02 21:31 | CI | `.github/actions/engine-build` (pinned nightly, wasm-bindgen 0.2.129, caches) before the web build, packaging and releases; an engine job runs the Rust tests on Windows and Linux; `web:build`, `pack` and `dist:*` refuse to run without `src/engine/pkg`. | Not run on GitHub Actions from here. |
+| 2026-10-02 21:34 | Mobile memory (D14) | The page reserves the engine's shared memory itself: 2 GiB, else 1 GiB, else 512 MiB; `stykanimate.engine.memory` forces one. | Playwright Chromium and WebKit, isolated and not: all three maxima accepted and growable; refusal falls back to 512 MiB. Real Apple devices unverified (section 6). |
+| 2026-10-02 21:36 | Mirror memory | `scripts/engine-memory.mjs`; the doubled document (D12) measured with the engine on and off (section 6). | Jay: engine WebAssembly memory 153 MiB; all processes 1,161 MiB on, 1,182 off. `svr_uriel.piv`: 268 MiB; 1,390 on, 1,866 off. |
+| 2026-10-02 21:41 | S5 design and JavaScript harness | [`docs/engine/editing.md`](engine/editing.md) (D15): commands ported one at a time record for record, then engine queries, then the engine owns the document. `engine/tools/edit-replay.mjs` and `edit-scenarios.mjs` record the editor's report, state, results and change events after every step. | Recordings are byte-stable. |
+| 2026-10-02 21:55 | S5 phase 1 start | `styk-edit`: selection (with add, toggle and `selectMany`), seeking, gestures (begin, commit, cancel, translation scope), moving figures (`fromStart`, `detachExternal`, joined roots refreshed from the engine's geometry), undo and redo; `styk edit-replay`; a cargo test replays every recording. | 7 recordings, 81 steps: the four scenarios of ported calls (61 steps) match the editor at every step (document bytes, state, results, events); the other three match up to their first unported call. Inventory: 22 modules covered, 40 partly (7 % and 25 % of the engine source), none deleted. |
+| 2026-10-02 22:07 | S5 transforms; V8-exact maths | `styk-edit`: `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`, pivots from the engine's geometry. `styk-math` (D16): V8's fdlibm `sin`, `cos`, `atan2` and `hypot`, now also the IK solver's `hypot`. ADRs D15 and D16. | 9 recordings, 122 steps: six fully ported scenarios (87 steps) match at every step; transform-native matches 20 of 21 steps, up to its deliberately unported branch flip; the other two up to their first unported call. `styk-math` against V8: 0 of 2.8 million inputs differ (Rust's `f64::sin` 2.7 %, `f64::atan2` 17 %). |
+| 2026-10-02 22:13 | S5 joint gestures | `styk-edit`: `poseJoint`, `rotateJoint`, `bendJoint` with stretching, isolation and snapping back to the definition; rotations carried into joined figures (`rotationEdits`); `styk_eval::geometry::segment_pose` shared by the geometry and the editor. Rigs, IK, 3D bones and Stick Nodes curves answer `Unported`. | 12 recordings, 188 steps: ten fully ported scenarios (159 steps) match at every step, including every snap branch; transform-native matches 20 of 21 steps up to its unported branch flip; move-sheet waits for layer sheets. |
 
-In progress: effect evaluation (`styk-eval/src/vfx/`, a background agent, JavaScript as
-oracle); baseline rounds 2–3 (section 5). Next: wire `styk-piv` into the app (WebAssembly on
-the web, the same module in Electron) in place of Pyodide and the Python sidecar; the onion
-paint fix; drawings in the engine; effects rendering once evaluation lands.
+In progress: the Rust codec in the app in place of Pyodide and the Python sidecar (agent);
+effects rendering as GPU passes (agent); baseline rounds 2–3 (section 5). Next in the main
+thread: the evaluated frame as records (byte-identical to `editor.evaluatedFrame`), then the
+authored gesture lifecycle and the layer-sheet planner, then the facade (`docs/engine/editing.md`:
+the app edits every document through a layer sheet, so the native-timeline ports are building
+blocks, not yet what the app runs).

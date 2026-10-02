@@ -1,0 +1,23 @@
+# Engine documentation
+
+The Rust engine that replaces StykAnimate's JavaScript engine. The living plan
+is [`../RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md); decisions are in
+[`decisions/`](decisions/README.md); what is ported module by module is
+[`INVENTORY.md`](INVENTORY.md).
+
+| Page | Subsystem |
+| --- | --- |
+| [document.md](document.md) | the document store, typed views, the mirror |
+| [formats.md](formats.md) | native containers, opening files |
+| [formats-piv.md](formats-piv.md) | the Pivot codec and its service |
+| [evaluation.md](evaluation.md) | timelines, layer sheets, movieclips, geometry, draw-list encoding |
+| [rigs-ik.md](rigs-ik.md) | rig constraints and inverse kinematics |
+| [vfx.md](vfx.md) | visual effects |
+| [rendering.md](rendering.md) | the draw-list format, GPU renderer, CPU rasterizer, the stage |
+| [threading.md](threading.md) | WebAssembly, workers, scheduling, budgets |
+| [editing.md](editing.md) | moving the editor's commands into the engine (S5, in design) |
+
+Commands: `npm run engine:build`, `npm run engine:test` (seconds once built),
+`npm run engine:parity` (`-- --corpus`, `-- --app`), `npm run engine:bench`
+(one benchmark run; `scripts/engine-bench-matrix.sh` for rounds) and
+`npm run engine:bench:summary <label>`.

@@ -5,6 +5,7 @@
 //!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
+//!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
 
 use std::path::Path;
 use std::time::Instant;
@@ -37,13 +38,38 @@ fn main() {
         Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
         Some("raster") if args.len() >= 4 => raster(&args[1], &args[2], &args[3], &args[4..]),
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
+        Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] | gpubench <file> <tick> [--no-effects] | layers <file> <tick>");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
             2
         }
     };
     std::process::exit(code);
+}
+
+/// Replays command recordings (engine/tools/edit-replay.mjs) in styk-edit. Exit code 1
+/// when any step the engine runs differs from the editor's.
+fn edit_replay(files: &[String]) -> i32 {
+    let mut failed = false;
+    for file in files {
+        let outcome = std::fs::read(file).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())).and_then(|reference| styk_edit::replay::replay(&reference));
+        match outcome {
+            Ok(outcome) => {
+                let unported = outcome.unported.as_ref().map(|(step, what)| format!(", step {step} not ported ({what})")).unwrap_or_default();
+                println!("{}: {}/{} steps match{unported}", outcome.scenario, outcome.matched, outcome.steps);
+                for mismatch in &outcome.mismatches {
+                    println!("  {mismatch}");
+                }
+                failed |= !outcome.passed();
+            }
+            Err(error) => {
+                println!("{file}: {error}");
+                failed = true;
+            }
+        }
+    }
+    i32::from(failed)
 }
 
 fn load(path: &str) -> Result<(Prepared, f64), String> {

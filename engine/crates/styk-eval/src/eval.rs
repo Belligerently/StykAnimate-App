@@ -990,14 +990,18 @@ impl Prepared {
 
 /// `nativeTimeline`: start and tick count of each keyframe.
 pub fn native_timeline(doc: &Document) -> Vec<Row> {
+    timeline_rows(doc.version, doc.keyframes.iter().map(|k| k.duration))
+}
+
+/// The native timeline from a document's version and keyframe durations (`duration_raw`).
+pub fn timeline_rows(version: u32, durations: impl ExactSizeIterator<Item = u32>) -> Vec<Row> {
     let mut tick = 0;
-    let n = doc.keyframes.len();
-    doc.keyframes
-        .iter()
+    let n = durations.len();
+    durations
         .enumerate()
-        .map(|(i, k)| {
-            let ticks = frame_ticks(k.duration);
-            let count = if doc.version >= 5 && i == n - 1 { ticks.min(1) } else { ticks };
+        .map(|(i, duration)| {
+            let ticks = frame_ticks(duration);
+            let count = if version >= 5 && i == n - 1 { ticks.min(1) } else { ticks };
             let row = Row { start: tick, count };
             tick += count;
             row

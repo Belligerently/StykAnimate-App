@@ -1110,6 +1110,7 @@ dependencies = [
  "pollster",
  "rayon",
  "styk-doc",
+ "styk-edit",
  "styk-eval",
  "styk-formats",
  "styk-raster",
@@ -1128,6 +1129,16 @@ dependencies = [
 [[package]]
 name = "styk-draw"
 version = "0.1.0"
+
+[[package]]
+name = "styk-edit"
+version = "0.1.0"
+dependencies = [
+ "styk-doc",
+ "styk-eval",
+ "styk-math",
+ "thiserror",
+]
 
 [[package]]
 name = "styk-engine"
@@ -1152,6 +1163,7 @@ dependencies = [
  "styk-doc",
  "styk-draw",
  "styk-formats",
+ "styk-math",
  "styk-piv",
  "thiserror",
 ]
@@ -1165,6 +1177,13 @@ dependencies = [
  "styk-doc",
  "thiserror",
  "zstd",
+]
+
+[[package]]
+name = "styk-math"
+version = "0.1.0"
+dependencies = [
+ "libm",
 ]
 
 [[package]]
