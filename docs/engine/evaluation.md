@@ -65,13 +65,18 @@ the reason.
 
 - Covered: imported layers (the native timeline, exact and tweened), layers with authored
   pose keys (virtual pose tracks), the whole-pose shortcut and the per-layer composition,
+  tweened IK controllers (`interpolateIK`), figure and scene effect stacks
+  (`interpolateVfx`, parameters resolved in the registry's order, paints normalized),
+  movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
   movieclips leaving the frame outside their span, layer order.
-- Not yet: IK controllers, figure effects and scene effects between keys (their tweened
-  records), movieclip frame replacements, layers mixing imported and authored keys,
-  figures joined to a hidden movieclip, camera parallax offsets, 3D poses, animation
-  origins, property channels, a movieclip's own document.
+- Not yet (each answers `Unported`): layers mixing imported and authored keys, figures
+  joined to a hidden movieclip, camera parallax offsets, 3D poses between keys, animation
+  origins, property channels, hidden pose keys, a movieclip's own document.
+- Angles are tweened through `styk_math::shortest`: with the platform's `sin` and `atan2`
+  an IK target rotation came out as `-0.06` where the editor stores
+  `-0.05999999999999999` (D16).
 - Harness: `engine/tools/records-reference.mjs <file> <folder>` records the editor's loaded
   report and, per tick, the snapshot (SHA-256, and the JSON for small documents);
   `styk records <folder> [--write]` compares. `engine/tools/records-fixtures.mjs` records
   every editor-built fixture into `tests/fixtures/records/`; `tests/records.rs` requires
-  every produced frame to be identical and pins the number of unported ones per reason.
+  every recorded frame to be produced and identical.

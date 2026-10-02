@@ -231,13 +231,13 @@ impl<'a> Records<'a> {
         let next: HashMap<u64, Value> = items(b.get("objects")).into_iter().filter_map(|o| Some((uid(&o)?.to_bits(), o))).collect();
         let mut objects = Vec::new();
         for (slot, o) in items(a.get("objects")).into_iter().enumerate() {
-            let tweened = typed.objects.get(slot).zip(before.get(slot)).filter(|(out, source)| !Arc::ptr_eq(out, source)).map(|(out, _)| out);
-            let Some(out) = tweened else {
+            let tweened = typed.objects.get(slot).zip(before.get(slot)).filter(|(out, source)| !Arc::ptr_eq(out, source));
+            let Some((out, source)) = tweened else {
                 objects.push(o);
                 continue;
             };
             let other = uid(&o).and_then(|id| next.get(&id.to_bits())).ok_or_else(|| Error::Invalid("a tweened figure has no next pose".into()))?;
-            objects.push(tween_record(&o, other, out)?);
+            objects.push(tween_record(&o, other, source, out)?);
         }
         let mut frame = a.as_obj().cloned().unwrap_or_default();
         frame.set("objects", Value::array(objects));
@@ -258,8 +258,8 @@ impl<'a> Records<'a> {
         frame.set("background_id", Value::Num(typed.background as f64));
         frame.set("background_id_b", Value::Num(typed.background_b as f64));
         frame.set("background_mix", Value::Num(typed.background_mix));
-        if truthy(a.get("_stykVfx")) {
-            return unported("scene effects between keys");
+        if let Some(stacks) = a.get("_stykVfx").filter(|v| v.truthy()) {
+            frame.set("_stykVfx", vfx_record(stacks, b.get("_stykVfx"), key.frame.vfx.as_deref(), typed.pose_vfx.as_deref())?);
         }
         Ok(Value::object(frame))
     }
@@ -330,6 +330,11 @@ impl<'a> Records<'a> {
     fn pose_track(&self, id: &str, keys: &[Value], tick: f64) -> Result<Option<Sample>, Error> {
         let fixed = id == "scene" || id == "camera";
         let Some(seq) = self.prepared.track(id) else { return Err(Error::Invalid(format!("no pose track {id}"))) };
+        Ok(self.sample_keys(seq, keys, fixed, tick)?.map(|frame| Sample { frame, identity: Identity::Track(id.to_string()) }))
+    }
+
+    /// `samplePoseTrack` on keys and the typed sequence built from the same keys.
+    fn sample_keys(&self, seq: &Seq, keys: &[Value], fixed: bool, tick: f64) -> Result<Option<Value>, Error> {
         if keys.iter().any(|k| truthy(k.get("hidden"))) {
             return unported("hidden pose keys");
         }
@@ -342,8 +347,7 @@ impl<'a> Records<'a> {
             Some(&next) if next > ticks[low] => ((tick - ticks[low]) / (next - ticks[low])).clamp(0.0, 1.0),
             _ => 0.0,
         };
-        let frame = self.interval(seq, &|i| self.virtual_frame(keys, i, fixed), low, fraction)?;
-        Ok(Some(Sample { frame, identity: Identity::Track(id.to_string()) }))
+        Ok(Some(self.interval(seq, &|i| self.virtual_frame(keys, i, fixed), low, fraction)?))
     }
 
     /// `layerIdForUid(report, uid)`.
@@ -448,13 +452,163 @@ impl<'a> Records<'a> {
     /// `sample(id)`: the base pose, then the movieclip frames its key replaces.
     fn sample(&self, sheet: &Value, id: &str, tick: f64) -> Result<Option<Sample>, Error> {
         let Some(track) = sheet.path(&["tracks", id]) else { return Ok(None) };
+        let mut sample = self.base_sample(id, track, tick)?;
         let keys = items(track.get("keys"));
         let at = keys.partition_point(|k| num(k, "tick").unwrap_or(0.0) <= tick);
-        let patched = at.checked_sub(1).is_some_and(|i| keys[i].get("movieclipPatches").and_then(Value::array_len).unwrap_or(0) > 0);
-        if patched && tick < num(track, "end").unwrap_or(0.0) {
-            return unported("movieclip frame replacements");
+        let Some(key) = at.checked_sub(1).map(|i| &keys[i]) else { return Ok(sample) };
+        let patches = items(key.get("movieclipPatches"));
+        if patches.is_empty() || tick >= num(track, "end").unwrap_or(0.0) {
+            return Ok(sample);
         }
-        self.base_sample(id, track, tick)
+        let next = keys.get(at);
+        let held = matches!(key.get("interpolation").and_then(Value::as_str), Some("constant" | "hold"));
+        // Roots of figures a replacement leaves without a parent come from the geometry
+        // of the frame being replaced: the typed evaluator's result for this layer.
+        let typed = self.prepared.layer_frame(id, tick);
+        let root_of = |uid: f64| typed.as_ref().and_then(|frame| frame.objects.iter().find(|o| o.uid as f64 == uid)).map(|o| o.root);
+        for patch in &patches {
+            let removed = num(patch, "uid").unwrap_or(f64::NAN);
+            let continues = next.is_some_and(|n| items(n.get("movieclipPatches")).iter().any(|other| num(other, "uid") == Some(removed)));
+            let replacement = if continues && !held {
+                // Consecutive replacements of one movieclip tween like any pose track.
+                let mapped: Vec<Value> = keys
+                    .iter()
+                    .map(|entry| {
+                        let frame_id = items(entry.get("movieclipPatches")).iter().find(|other| num(other, "uid") == Some(removed)).and_then(|other| other.get("frameId").cloned());
+                        let mut value = Obj::new();
+                        value.set("frameId", frame_id.unwrap_or(Value::Null));
+                        let mut entry = entry.as_obj().cloned().unwrap_or_default();
+                        entry.set("value", Value::object(value));
+                        Value::object(entry)
+                    })
+                    .collect();
+                let Some(seq) = self.prepared.patch_track(id, removed as u32) else { return Err(Error::Invalid(format!("no replacement track for {removed} on {id}"))) };
+                self.sample_keys(seq, &mapped, false, tick)?
+            } else {
+                patch.get("frameId").and_then(Value::as_str).and_then(|frame_id| self.source(frame_id))
+            };
+            let Some(replacement) = replacement else { return Err(Error::Invalid("a movieclip replacement has no frame".into())) };
+            let base = match sample.take() {
+                Some(sample) => sample.frame,
+                None => {
+                    let mut blank = self.tree.get("keyframes").and_then(|k| k.item(0)).and_then(|f| f.as_obj().cloned()).unwrap_or_default();
+                    blank.set("objects", Value::array(Vec::new()));
+                    blank.set("object_draw_order", Value::array(Vec::new()));
+                    blank.set("object_draw_order_unique_ids", Value::array(Vec::new()));
+                    Value::object(blank)
+                }
+            };
+            sample = Some(Sample { frame: self.replace_movieclip_frame(&base, patch, &replacement, &root_of), identity: Identity::Track(id.to_string()) });
+        }
+        Ok(sample)
+    }
+
+    /// `replaceMovieclipFrame(report, base, patch, …, replacement)`: the figures of
+    /// `replacement` take the place of movieclip `patch.uid` in `base`.
+    fn replace_movieclip_frame(&self, base: &Value, patch: &Value, replacement: &Value, root_of: &dyn Fn(f64) -> Option<[f64; 2]>) -> Value {
+        let removed = num(patch, "uid");
+        let base_objects = items(base.get("objects"));
+        let new_objects = items(replacement.get("objects"));
+        let added: Vec<f64> = new_objects.iter().filter_map(uid).collect();
+        let join_of = |object: &Value| object.get("join").filter(|j| j.truthy()).cloned();
+        let target_uid = |objects: &[Value], join: &Value| num(join, "target_object_slot").filter(|s| *s >= 0.0).and_then(|s| objects.get(s as usize)).and_then(uid);
+        let with_target = |join: &Value, target: Option<f64>| {
+            let mut join = join.as_obj().cloned().unwrap_or_default();
+            match target {
+                Some(target) => join.set("target_unique_id", Value::Num(target)),
+                None => {
+                    join.remove("target_unique_id");
+                }
+            }
+            join
+        };
+        // (record, the unique id it joins)
+        let mut members: Vec<(Obj, Option<Obj>)> = Vec::new();
+        for object in base_objects.iter().filter(|o| uid(o) != removed && !uid(o).is_some_and(|u| added.contains(&u))) {
+            let mut record = object.as_obj().cloned().unwrap_or_default();
+            let mut joined = None;
+            if let Some(join) = join_of(object) {
+                let parent = target_uid(&base_objects, &join);
+                let replacement_uid = num(patch, "replacementUid");
+                if parent == removed && parent.is_some() && replacement_uid.is_some() {
+                    joined = Some(with_target(&join, replacement_uid));
+                } else if parent == removed && parent.is_some() {
+                    if let Some(root) = uid(object).and_then(root_of) {
+                        record.set("root_x", Value::Num(root[0]));
+                        record.set("root_y", Value::Num(root[1]));
+                    }
+                    record.set("join", Value::Null);
+                } else {
+                    joined = Some(with_target(&join, parent));
+                }
+            }
+            members.push((record, joined));
+        }
+        for object in &new_objects {
+            let record = object.as_obj().cloned().unwrap_or_default();
+            let joined = join_of(object).map(|join| with_target(&join, target_uid(&new_objects, &join)));
+            members.push((record, joined));
+        }
+        let order_of = |frame: &Value, objects: &[Value]| -> Vec<f64> {
+            match frame.get("object_draw_order").filter(|o| o.truthy()) {
+                Some(order) => order.numbers().unwrap_or_default().into_iter().filter_map(|slot| objects.get(slot as usize).filter(|_| slot >= 0.0).and_then(uid)).collect(),
+                None => objects.iter().filter_map(uid).collect(),
+            }
+        };
+        let previous = order_of(base, &base_objects);
+        let anchor = previous.iter().position(|u| Some(*u) == removed);
+        let mut order: Vec<f64> = previous.iter().copied().filter(|u| Some(*u) != removed && !added.contains(u)).collect();
+        let mut insertion = anchor.map_or(order.len(), |anchor| anchor.min(order.len()));
+        if let (None, Some(index)) = (anchor, num(patch, "orderIndex")) {
+            let layer = self.layer_of(removed.unwrap_or(f64::NAN));
+            let siblings: Vec<usize> = order.iter().enumerate().filter(|(_, u)| self.layer_of(**u) == layer).map(|(at, _)| at).collect();
+            insertion = match (siblings.get(index as usize), siblings.last()) {
+                (Some(&at), _) => at,
+                (None, Some(&last)) => last + 1,
+                (None, None) => order.len(),
+            };
+        }
+        let replacement_order = order_of(replacement, &new_objects);
+        order.splice(insertion..insertion, replacement_order);
+        // `normalizeFrame`: slots follow unique ids; joins follow their figures.
+        let id_of = |record: &Obj| record.get("unique_id").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        members.sort_by_key(|(record, _)| id_of(record) as i64 as i32);
+        let slots: HashMap<u64, usize> = members.iter().enumerate().map(|(slot, (record, _))| (id_of(record).to_bits(), slot)).collect();
+        let objects: Vec<Value> = members
+            .into_iter()
+            .enumerate()
+            .map(|(slot, (mut record, joined))| {
+                record.set("object_slot", Value::Num(slot as f64));
+                if let Some(mut join) = joined {
+                    let target = join.get("target_unique_id").and_then(Value::as_f64).and_then(|u| slots.get(&u.to_bits()));
+                    match target {
+                        Some(&target) => join.set("target_object_slot", Value::Num(target as f64)),
+                        None => {
+                            join.remove("target_object_slot");
+                            join.remove("target_unique_id");
+                        }
+                    }
+                    record.set("join", Value::object(join));
+                }
+                Value::object(record)
+            })
+            .collect();
+        let mut frame = base.as_obj().cloned().unwrap_or_default();
+        frame.set("objects", Value::array(objects));
+        frame.set("object_draw_order_unique_ids", numbers(order.iter().copied()));
+        frame.set("object_draw_order", Value::array(order.iter().map(|u| slots.get(&u.to_bits()).map_or(Value::Null, |&slot| Value::Num(slot as f64))).collect()));
+        let continuations = |frame: &Value| items(frame.path(&["_styk", "movieclipContinuations"]));
+        let incoming = continuations(replacement);
+        let mut steps: Vec<Value> = continuations(base).into_iter().filter(|step| num(step, "uid") != removed && !incoming.iter().any(|other| num(other, "uid") == num(step, "uid"))).collect();
+        steps.extend(incoming);
+        let mut styk = frame.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+        if steps.is_empty() {
+            styk.remove("movieclipContinuations");
+        } else {
+            styk.set("movieclipContinuations", Value::array(steps));
+        }
+        frame.set("_styk", Value::object(styk));
+        Value::object(frame)
     }
 
     /// `sampleLayerSheet(report, tick)`.
@@ -610,14 +764,18 @@ fn empty_objects(frame: &mut Obj) {
 
 /// The record of a tweened figure: `out` in `evaluatedNativeFrame`, with the keys
 /// in the order the editor writes them and the typed evaluator's values.
-fn tween_record(o: &Value, next: &Value, out: &crate::doc::Object) -> Result<Value, Error> {
-    for (key, what) in [("_stykSpatial", "3D poses between keys"), ("_stykVfx", "figure effects between keys"), ("_stykIK", "inverse kinematics between keys")] {
-        if truthy(o.get(key)) || (key == "_stykSpatial" && truthy(next.get(key))) {
-            return unported(what);
-        }
+fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crate::doc::Object) -> Result<Value, Error> {
+    if truthy(o.get("_stykSpatial")) || truthy(next.get("_stykSpatial")) {
+        return unported("3D poses between keys");
     }
     let mut record = o.as_obj().cloned().unwrap_or_default();
     record.remove("runtime_segments");
+    if let Some(stacks) = o.get("_stykVfx").filter(|v| v.truthy()) {
+        record.set("_stykVfx", vfx_record(stacks, next.get("_stykVfx"), source.vfx.as_deref(), out.vfx.as_deref())?);
+    }
+    if let (Some(table), Some(typed)) = (o.get("_stykIK").filter(|t| t.truthy()), &out.ik) {
+        record.set("_stykIK", ik_record(table, next.get("_stykIK"), typed));
+    }
     record.set("root_x", Value::Num(out.root[0]));
     record.set("root_y", Value::Num(out.root[1]));
     record.set("scale", Value::Num(out.scale));
@@ -633,6 +791,143 @@ fn tween_record(o: &Value, next: &Value, out: &crate::doc::Object) -> Result<Val
     record.set("angles", numbers(out.angles.iter().copied()));
     record.set("color_override_raw", Value::Num(out.color as f64));
     Ok(Value::object(record))
+}
+
+/// `interpolateVfx(a, b, t)` as a record: every effect of `stacks` whose identity and
+/// type the next pose also has gets all its parameters, resolved and tweened, in the
+/// registry's order; every other effect stays the record it is. `before` and `after`
+/// are the typed stacks of the pose and of the tween.
+fn vfx_record(stacks: &Value, next: Option<&Value>, before: Option<&crate::vfx::Stacks>, after: Option<&crate::vfx::Stacks>) -> Result<Value, Error> {
+    if !truthy(next) {
+        return Ok(stacks.clone());
+    }
+    let (Some(entries), Some(before), Some(after)) = (stacks.as_obj(), before, after) else { return unported("effect stacks the engine did not read") };
+    if entries.len() != before.entries.len() || entries.len() != after.entries.len() {
+        return unported("effect stacks the engine did not read");
+    }
+    let mut out = Obj::new();
+    for (at, (key, stack)) in entries.iter().enumerate() {
+        let (from, to) = (&before.entries[at].1, &after.entries[at].1);
+        let effects = items(Some(stack));
+        if effects.len() != from.len() || effects.len() != to.len() {
+            return unported("effect records the engine did not read");
+        }
+        let tweened = effects.iter().enumerate().map(|(i, effect)| {
+            if Arc::ptr_eq(&from[i], &to[i]) {
+                return effect.clone();
+            }
+            let mut params = Obj::new();
+            for (index, spec) in to[i].kind().specs().iter().enumerate() {
+                params.set(spec.name, match to[i].params.get(index) {
+                    crate::vfx::ParamValue::Num(value) => Value::Num(value),
+                    crate::vfx::ParamValue::Paint(paint) => paint_record(&paint),
+                });
+            }
+            let mut record = effect.as_obj().cloned().unwrap_or_default();
+            record.set("params", Value::object(params));
+            Value::object(record)
+        });
+        out.set(key, Value::array(tweened.collect()));
+    }
+    Ok(Value::object(out))
+}
+
+/// `normalizePaint`'s record: `{type, angle, stops: [{offset, color, opacity}]}`.
+fn paint_record(paint: &crate::doc::Paint) -> Value {
+    let mut record = Obj::new();
+    record.set("type", Value::str(crate::vfx::paint::kind_name(paint.kind)));
+    record.set("angle", Value::Num(paint.angle));
+    let stops = paint.stops.iter().map(|stop| {
+        let mut record = Obj::new();
+        record.set("offset", Value::Num(stop.offset));
+        record.set("color", numbers(stop.rgb.iter().map(|&c| c as f64)));
+        record.set("opacity", Value::Num(stop.opacity));
+        Value::object(record)
+    });
+    record.set("stops", Value::array(stops.collect()));
+    Value::object(record)
+}
+
+/// `interpolateIK(a, b, t, sample)` as a record: the controllers of `table` on their
+/// way to `next`'s, with the typed tween's values in the editor's key layout.
+fn ik_record(table: &Value, next: Option<&Value>, typed: &crate::ik::Table) -> Value {
+    let Some(controllers) = table.as_obj() else { return table.clone() };
+    let mut out = Obj::new();
+    for (id, c) in controllers.iter() {
+        let other = next.and_then(|n| n.get(id));
+        let handle = id.parse::<u32>().ok();
+        let compatible = other.is_some_and(|n| truthy(n.get("enabled")) && truthy(c.get("enabled")) && n.get("pinned") == c.get("pinned"));
+        let (Some(other), Some(tweened)) = (other.filter(|_| compatible), handle.and_then(|h| typed.get(h))) else {
+            out.set(id, c.clone());
+            continue;
+        };
+        let finite = |v: Option<&Value>| v.and_then(Value::as_f64).is_some_and(f64::is_finite);
+        // `{...c.target}` with its three channels; `{...c.followers}` with the ones `next` has.
+        let mut target = c.get("target").and_then(Value::as_obj).cloned().unwrap_or_default();
+        target.set("x", Value::Num(tweened.target.x));
+        target.set("y", Value::Num(tweened.target.y));
+        target.set("rotation", Value::Num(tweened.target.rotation));
+        let mut followers = c.get("followers").and_then(Value::as_obj).cloned().unwrap_or_default();
+        let children: Vec<Arc<str>> = followers.keys().cloned().collect();
+        for child in children {
+            if finite(other.get("followers").and_then(|f| f.get(&child)))
+                && let Some(angle) = child.parse::<u32>().ok().and_then(|h| tweened.followers.get(&h))
+            {
+                followers.set(&child, Value::Num(*angle));
+            }
+        }
+        let mut record = c.as_obj().cloned().unwrap_or_default();
+        record.set("target", Value::object(target));
+        record.set("followers", Value::object(followers));
+        let quaternions = |from: &Obj, typed: Option<&crate::ik::Quaternions>| -> Value {
+            Value::object(from.iter().map(|(id, q)| (id.clone(), id.parse::<u32>().ok().and_then(|h| typed?.get(&h)).map_or_else(|| q.clone(), |q| numbers(q.iter().copied())))).collect())
+        };
+        if let Some(from) = c.get("spatialFollowers").filter(|v| v.truthy()).and_then(Value::as_obj) {
+            record.set("spatialFollowers", quaternions(from, tweened.spatial_followers.as_ref()));
+        }
+        if let Some(from) = c.get("joinedSpatialFollowers").filter(|v| v.truthy()).and_then(Value::as_obj) {
+            let joined = from.iter().map(|(uid, children)| {
+                let typed = uid.parse::<u32>().ok().and_then(|u| tweened.joined_spatial_followers.as_ref()?.get(&u));
+                (uid.clone(), children.as_obj().map_or_else(|| children.clone(), |children| quaternions(children, typed)))
+            });
+            record.set("joinedSpatialFollowers", Value::object(joined.collect()));
+        }
+        if let Some(from) = c.get("spatialTarget").filter(|v| v.truthy()) {
+            let mut spatial = from.as_obj().cloned().unwrap_or_default();
+            if let (true, Some(value)) = (truthy(other.get("spatialTarget")), &tweened.spatial_target) {
+                spatial.set("depth", Value::Num(value.depth));
+                spatial.set("swivel", Value::Num(value.swivel));
+                spatial.set("pole", numbers(value.pole));
+                if let (true, true, Some(normals)) = (truthy(from.get("normals")), truthy(other.path(&["spatialTarget", "normals"])), &value.normals) {
+                    spatial.set("normals", Value::array(normals.iter().map(|v| numbers(*v)).collect()));
+                }
+            }
+            record.set("spatialTarget", Value::object(spatial));
+        }
+        if let Some(from) = c.get("joinedFollowers").filter(|v| v.truthy()).and_then(Value::as_obj) {
+            let joined = from.iter().map(|(uid, children)| {
+                let typed = uid.parse::<u32>().ok().and_then(|u| tweened.joined_followers.as_ref()?.get(&u));
+                let angles = children.as_obj().map(|children| {
+                    Value::object(children.iter().map(|(child, angle)| (child.clone(), child.parse::<u32>().ok().and_then(|h| typed?.get(&h)).map_or_else(|| angle.clone(), |a| Value::Num(*a)))).collect())
+                });
+                (uid.clone(), angles.unwrap_or_else(|| children.clone()))
+            });
+            record.set("joinedFollowers", Value::object(joined.collect()));
+        }
+        if let Some(from) = c.get("bendReference").filter(|v| v.truthy()) {
+            let mut reference = from.as_obj().cloned().unwrap_or_default();
+            let length = |v: Option<&Value>| v.and_then(|r| r.get("shape")).and_then(Value::array_len).unwrap_or(0);
+            if length(Some(from)) > 0
+                && length(Some(from)) == length(other.get("bendReference"))
+                && let Some(shape) = tweened.bend_reference.as_ref().and_then(|r| r.shape.as_ref())
+            {
+                reference.set("shape", numbers(shape.iter().copied()));
+            }
+            record.set("bendReference", Value::object(reference));
+        }
+        out.set(id, Value::object(record));
+    }
+    Value::object(out)
 }
 
 /// `snapshotPoseFrame(frame)` for every figure of the frame.

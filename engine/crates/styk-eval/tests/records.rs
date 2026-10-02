@@ -9,7 +9,7 @@ use styk_eval::records::{Error, Records};
 
 /// Recorded ticks the engine does not produce yet, by reason. Lower these as
 /// frames are ported; they may never rise.
-const UNPORTED: &[(&str, usize)] = &[("inverse kinematics between keys", 108), ("movieclip frame replacements", 28), ("figure effects between keys", 21), ("scene effects between keys", 7)];
+const UNPORTED: &[(&str, usize)] = &[];
 
 #[test]
 fn recorded_frames_match() {
@@ -41,5 +41,5 @@ fn recorded_frames_match() {
     }
     let expected: std::collections::BTreeMap<String, usize> = UNPORTED.iter().map(|(what, count)| (what.to_string(), *count)).collect();
     assert_eq!(unported, expected, "{identical} of {total} recorded ticks identical");
-    assert!(identical > 150);
+    assert!(identical >= 322);
 }

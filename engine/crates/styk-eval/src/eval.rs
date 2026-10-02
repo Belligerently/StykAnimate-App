@@ -85,8 +85,10 @@ pub struct Prepared {
     presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
 }
 
+/// `shortest(a)`: the angle in (-π, π], with V8's rounding (tweened angles are stored
+/// when a gesture commits, D16).
 pub fn shortest(a: f64) -> f64 {
-    a.sin().atan2(a.cos())
+    styk_math::shortest(a)
 }
 
 pub fn frame_ticks(duration: u32) -> u32 {
@@ -681,6 +683,16 @@ impl Prepared {
         } else {
             movieclip_time(&clip, &settings, tick, doc.fps)
         })
+    }
+
+    /// The pose track of what replaces movieclip `uid` on layer `id` (`patchChannels`).
+    pub(crate) fn patch_track(&self, id: &str, uid: u32) -> Option<&Seq> {
+        self.patches.get(&(id.to_string(), uid)).map(|seq| &**seq)
+    }
+
+    /// One layer's own frame at `tick`, movieclip replacements applied (`sample(id)`).
+    pub(crate) fn layer_frame(&self, id: &str, tick: f64) -> Option<Frame> {
+        self.sample_track(id, tick)
     }
 
     /// The frame before movieclips are sampled and layers ordered (`sampleLayerSheet`
