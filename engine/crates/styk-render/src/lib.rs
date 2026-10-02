@@ -1,6 +1,9 @@
 //! wgpu renderer for StykAnimate draw lists.
 //!
-//! * One instanced draw per pass, whatever the primitive mix.
+//! * One instanced draw per pass, whatever the primitive mix. Primitive records are
+//!   instance attributes and the tables shaders look up (gradients, isolation group
+//!   placements, polyline vertices) are float textures, so the same pipeline runs on
+//!   WebGPU, Vulkan/Metal/DX12 and WebGL2, which has no storage buffers.
 //! * Draw lists are view independent: pan/zoom only rewrites a 96-byte uniform.
 //! * Translucent figures are isolated in an atlas: one pass per nesting depth
 //!   (ping-ponging between two atlases), not one pass per figure.
@@ -11,7 +14,6 @@
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
-use rayon::prelude::*;
 use styk_eval::assets::{Assets, PAGE};
 use styk_eval::doc::Document;
 use styk_eval::drawlist::{DrawList, Prim};
@@ -89,53 +91,12 @@ impl ViewParams {
     }
 }
 
-/// Decoded, premultiplied RGBA pixels for one atlas entry (gutter included).
-pub struct DecodedImage {
-    pub index: u32,
-    pub width: u32,
-    pub height: u32,
-    pub rgba: Vec<u8>,
-}
+pub use styk_eval::assets::DecodedImage;
 
-/// Decodes every image of a document into atlas-ready pixels, in parallel.
+/// Decodes every image of a document into atlas-ready pixels (tools; the engine
+/// decodes in the background instead).
 pub fn decode_images(doc: &Document, assets: &Assets) -> Vec<DecodedImage> {
-    doc.images
-        .par_iter()
-        .enumerate()
-        .filter_map(|(i, data)| {
-            let entry = assets.atlas.get(i).filter(|e| e.valid)?;
-            let img = image::load_from_memory(&data.bytes).ok()?;
-            let mut rgba = img.to_rgba8();
-            if let Some(key) = data.color_key {
-                for px in rgba.pixels_mut() {
-                    if px[0] == key[0] && px[1] == key[1] && px[2] == key[2] {
-                        px[3] = 0;
-                    }
-                }
-            }
-            if rgba.width() != entry.w || rgba.height() != entry.h {
-                rgba = image::imageops::resize(&rgba, entry.w, entry.h, image::imageops::FilterType::Triangle);
-            }
-            // Premultiply, then add a one-pixel gutter that repeats the edges.
-            let (w, h) = (entry.w as usize, entry.h as usize);
-            let (gw, gh) = (w + 2, h + 2);
-            let mut out = vec![0u8; gw * gh * 4];
-            for gy in 0..gh {
-                let sy = gy.saturating_sub(1).min(h - 1);
-                for gx in 0..gw {
-                    let sx = gx.saturating_sub(1).min(w - 1);
-                    let p = rgba.get_pixel(sx as u32, sy as u32).0;
-                    let a = p[3] as u32;
-                    let o = (gy * gw + gx) * 4;
-                    out[o] = ((p[0] as u32 * a + 127) / 255) as u8;
-                    out[o + 1] = ((p[1] as u32 * a + 127) / 255) as u8;
-                    out[o + 2] = ((p[2] as u32 * a + 127) / 255) as u8;
-                    out[o + 3] = a as u8;
-                }
-            }
-            Some(DecodedImage { index: i as u32, width: gw as u32, height: gh as u32, rgba: out })
-        })
-        .collect()
+    (0..doc.images.len()).filter_map(|index| styk_eval::assets::decode_image(doc, assets, index)).collect()
 }
 
 struct LayerAtlas {
@@ -164,9 +125,9 @@ pub struct Renderer {
     uniforms: wgpu::Buffer,
     uniform_slots: u64,
     prims: wgpu::Buffer,
-    paints: wgpu::Buffer,
-    groups: wgpu::Buffer,
-    points: wgpu::Buffer,
+    paints: Table,
+    groups: Table,
+    points: Table,
     bind0: Option<wgpu::BindGroup>,
     sprites: wgpu::Texture,
     sprite_bind: wgpu::BindGroup,
@@ -182,12 +143,85 @@ pub struct Renderer {
     pub stats: Stats,
 }
 
-fn storage_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+/// Texels per row of a lookup table (`TABLE_WIDTH` in prim.wgsl).
+const TABLE_WIDTH: u32 = 1024;
+
+fn table_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+        ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
         count: None,
+    }
+}
+
+/// A table shaders index with `textureLoad`: `TABLE_WIDTH` texels per row, one record
+/// (or half a record) per texel.
+struct Table {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    rows: u32,
+    format: wgpu::TextureFormat,
+    texel_bytes: u32,
+    label: &'static str,
+    scratch: Vec<u8>,
+}
+
+impl Table {
+    fn new(device: &wgpu::Device, label: &'static str, format: wgpu::TextureFormat, texel_bytes: u32) -> Table {
+        let (texture, view) = Table::allocate(device, label, format, 1);
+        Table { texture, view, rows: 1, format, texel_bytes, label, scratch: Vec::new() }
+    }
+
+    fn allocate(device: &wgpu::Device, label: &str, format: wgpu::TextureFormat, rows: u32) -> (wgpu::Texture, wgpu::TextureView) {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d { width: TABLE_WIDTH, height: rows, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        (texture, view)
+    }
+
+    /// Uploads `data` (whole texels). Returns whether the texture was replaced by a
+    /// larger one, in which case bind groups that hold its view must be rebuilt.
+    fn write(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, data: &[u8]) -> bool {
+        let row_bytes = (TABLE_WIDTH * self.texel_bytes) as usize;
+        let rows = data.len().div_ceil(row_bytes).max(1) as u32;
+        let mut replaced = false;
+        if rows > self.rows {
+            self.rows = rows.next_power_of_two();
+            (self.texture, self.view) = Table::allocate(device, self.label, self.format, self.rows);
+            replaced = true;
+        }
+        if data.is_empty() {
+            return replaced;
+        }
+        // The last row is padded: a texture write covers whole rows.
+        let whole = data.len() / row_bytes * row_bytes;
+        let copy = |bytes: &[u8], y: u32, height: u32| {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo { texture: &self.texture, mip_level: 0, origin: wgpu::Origin3d { x: 0, y, z: 0 }, aspect: wgpu::TextureAspect::All },
+                bytes,
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row_bytes as u32), rows_per_image: Some(height) },
+                wgpu::Extent3d { width: TABLE_WIDTH, height, depth_or_array_layers: 1 },
+            );
+        };
+        if whole > 0 {
+            copy(&data[..whole], 0, (whole / row_bytes) as u32);
+        }
+        if whole < data.len() {
+            self.scratch.clear();
+            self.scratch.extend_from_slice(&data[whole..]);
+            self.scratch.resize(row_bytes, 0);
+            copy(&self.scratch, (whole / row_bytes) as u32, 1);
+        }
+        replaced
     }
 }
 
@@ -292,15 +326,14 @@ impl Renderer {
                     },
                     count: None,
                 },
-                storage_entry(1),
-                storage_entry(2),
-                storage_entry(3),
-                storage_entry(4),
+                table_entry(1),
+                table_entry(2),
+                table_entry(3),
             ],
         });
         let layout1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk sprites"),
-            entries: &[texture_entry(0, wgpu::TextureViewDimension::D2Array), sampler_entry(1), sampler_entry(2)],
+            entries: &[texture_entry(0, wgpu::TextureViewDimension::D2Array), sampler_entry(1)],
         });
         let layout2 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk layers"),
@@ -318,7 +351,16 @@ impl Renderer {
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("styk prims"),
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<GpuPrim>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array![0 => Uint32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4],
+                })],
+            },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState { count: SAMPLES, mask: !0, alpha_to_coverage_enabled: false },
@@ -369,21 +411,20 @@ impl Renderer {
             ..Default::default()
         });
         let (sprites, sprite_view) = array_texture(&device, "styk sprites", [1, 1], 1, false);
-        let sprite_bind = Self::sprite_bind(&device, &layout1, &sprite_view, &nearest, &linear);
+        let sprite_bind = Self::sprite_bind(&device, &layout1, &sprite_view, &linear);
         let make_layers = |label: &str| {
             let (texture, view) = array_texture(&device, label, [1, 1], 1, true);
             LayerAtlas { texture, view, size: [1, 1], pages: 1 }
         };
         let layers = [make_layers("styk layers 0"), make_layers("styk layers 1")];
         let layer_binds = [Self::layer_bind(&device, &layout2, &layers[0].view), Self::layer_bind(&device, &layout2, &layers[1].view)];
-        let storage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
         Renderer {
             uniforms: buffer(&device, "styk views", UNIFORM_STRIDE * 8, wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
             uniform_slots: 8,
-            prims: buffer(&device, "styk prims", 64 * 1024, storage),
-            paints: buffer(&device, "styk paints", 4096, storage),
-            groups: buffer(&device, "styk groups", 4096, storage),
-            points: buffer(&device, "styk polyline points", 4096, storage),
+            prims: buffer(&device, "styk prims", 64 * 1024, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST),
+            paints: Table::new(&device, "styk paints", wgpu::TextureFormat::Rgba32Float, 16),
+            groups: Table::new(&device, "styk groups", wgpu::TextureFormat::Rgba32Float, 16),
+            points: Table::new(&device, "styk polyline points", wgpu::TextureFormat::Rg32Float, 8),
             bind0: None,
             device,
             queue,
@@ -408,14 +449,13 @@ impl Renderer {
         }
     }
 
-    fn sprite_bind(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, view: &wgpu::TextureView, nearest: &wgpu::Sampler, linear: &wgpu::Sampler) -> wgpu::BindGroup {
+    fn sprite_bind(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, view: &wgpu::TextureView, linear: &wgpu::Sampler) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("styk sprites"),
             layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(nearest) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(linear) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(linear) },
             ],
         })
     }
@@ -434,11 +474,11 @@ impl Renderer {
         let size = if assets.pages == 0 { [1, 1] } else { [PAGE, PAGE] };
         let (texture, view) = array_texture(&self.device, "styk sprites", size, pages, false);
         self.sprites = texture;
-        self.sprite_bind = Self::sprite_bind(&self.device, &self.layout1, &view, &self.nearest, &self.linear);
+        self.sprite_bind = Self::sprite_bind(&self.device, &self.layout1, &view, &self.linear);
     }
 
     /// Uploads decoded images into the atlas prepared by [`prepare_sprites`].
-    pub fn upload_images(&mut self, assets: &Assets, images: &[DecodedImage]) {
+    pub fn upload_images<'a>(&mut self, assets: &Assets, images: impl IntoIterator<Item = &'a DecodedImage>) {
         if assets.pages == 0 {
             return;
         }
@@ -464,37 +504,16 @@ impl Renderer {
             return;
         }
         let prims: &[GpuPrim] = bytemuck::cast_slice(prims_bytes(&list.prims));
-        let storage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST;
-        let mut rebind = self.bind0.is_none();
         let need = std::mem::size_of_val(prims) as u64;
         if need > self.prims.size() {
-            self.prims = buffer(&self.device, "styk prims", need.next_power_of_two(), storage);
-            rebind = true;
+            self.prims = buffer(&self.device, "styk prims", need.next_power_of_two(), wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
         }
         if !prims.is_empty() {
             self.queue.write_buffer(&self.prims, 0, bytemuck::cast_slice(prims));
         }
-        let paints: &[u8] = bytemuck::cast_slice(&list.paints);
-        if paints.len() as u64 > self.paints.size() {
-            self.paints = buffer(&self.device, "styk paints", (paints.len() as u64).next_power_of_two(), storage);
-            rebind = true;
-        }
-        if !paints.is_empty() {
-            self.queue.write_buffer(&self.paints, 0, paints);
-        }
-        let points: &[u8] = bytemuck::cast_slice(&list.points);
-        if points.len() as u64 > self.points.size() {
-            self.points = buffer(&self.device, "styk polyline points", (points.len() as u64).next_power_of_two(), storage);
-            rebind = true;
-        }
-        if !points.is_empty() {
-            self.queue.write_buffer(&self.points, 0, points);
-        }
-        let groups_need = (list.groups.len() * std::mem::size_of::<GpuGroup>()) as u64;
-        if groups_need > self.groups.size() {
-            self.groups = buffer(&self.device, "styk groups", groups_need.next_power_of_two(), storage);
-            rebind = true;
-        }
+        let mut rebind = self.bind0.is_none();
+        rebind |= self.paints.write(&self.device, &self.queue, bytemuck::cast_slice(&list.paints));
+        rebind |= self.points.write(&self.device, &self.queue, bytemuck::cast_slice(&list.points));
         if rebind {
             self.rebind();
         }
@@ -515,10 +534,9 @@ impl Renderer {
                         size: wgpu::BufferSize::new(std::mem::size_of::<GpuView>() as u64),
                     }),
                 },
-                wgpu::BindGroupEntry { binding: 1, resource: self.prims.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: self.paints.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: self.groups.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: self.points.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&self.paints.view) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.groups.view) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&self.points.view) },
             ],
         }));
     }
@@ -649,8 +667,8 @@ impl Renderer {
                 downscaled = true;
             }
         }
-        if !placed.is_empty() {
-            self.queue.write_buffer(&self.groups, 0, bytemuck::cast_slice(&placed));
+        if self.groups.write(&self.device, &self.queue, bytemuck::cast_slice(&placed)) {
+            self.rebind();
         }
         // One uniform slot per pass: every (depth, page) and the frame.
         let mut passes: Vec<(u32, u32, u32, u32)> = Vec::new(); // depth, page, start, end
@@ -716,6 +734,7 @@ impl Renderer {
             pass.set_bind_group(0, &bind0, &[(i as u64 * UNIFORM_STRIDE) as u32]);
             pass.set_bind_group(1, &self.sprite_bind, &[]);
             pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
+            pass.set_vertex_buffer(0, self.prims.slice(..));
             pass.draw(0..6, start..end);
         }
         // The frame.
@@ -741,6 +760,7 @@ impl Renderer {
         pass.set_bind_group(0, &bind0, &[(passes.len() as u64 * UNIFORM_STRIDE) as u32]);
         pass.set_bind_group(1, &self.sprite_bind, &[]);
         pass.set_bind_group(2, &self.layer_binds[1], &[]);
+        pass.set_vertex_buffer(0, self.prims.slice(..));
         let bg = list.background_prims.min(root.1 - root.0);
         if bg > 0 {
             pass.draw(0..6, root.0..root.0 + bg);

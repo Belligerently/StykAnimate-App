@@ -33,14 +33,34 @@ struct Group {
 };
 
 @group(0) @binding(0) var<uniform> view: View;
-@group(0) @binding(1) var<storage, read> prims: array<Prim>;
-@group(0) @binding(2) var<storage, read> paints: array<vec4<f32>>;
-@group(0) @binding(3) var<storage, read> groups: array<Group>;
-@group(0) @binding(4) var<storage, read> polyline_points: array<vec2<f32>>;
+// Tables read with textureLoad, so the same shader runs where storage buffers do
+// not exist (WebGL2): gradient records, isolation group placements, polyline vertices.
+@group(0) @binding(1) var paint_table: texture_2d<f32>;
+@group(0) @binding(2) var group_table: texture_2d<f32>;
+@group(0) @binding(3) var point_table: texture_2d<f32>;
 @group(1) @binding(0) var sprites: texture_2d_array<f32>;
-@group(1) @binding(1) var nearest_sampler: sampler;
-@group(1) @binding(2) var linear_sampler: sampler;
+@group(1) @binding(1) var linear_sampler: sampler;
 @group(2) @binding(0) var layers: texture_2d_array<f32>;
+
+const TABLE_WIDTH: u32 = 1024u;
+
+fn table_at(i: u32) -> vec2<i32> {
+    return vec2<i32>(i32(i % TABLE_WIDTH), i32(i / TABLE_WIDTH));
+}
+
+fn paint_row(i: u32) -> vec4<f32> {
+    return textureLoad(paint_table, table_at(i), 0);
+}
+
+fn polyline_point(i: u32) -> vec2<f32> {
+    return textureLoad(point_table, table_at(i), 0).xy;
+}
+
+fn group_at(g: u32) -> Group {
+    let head = textureLoad(group_table, table_at(g * 2u), 0);
+    let tail = textureLoad(group_table, table_at(g * 2u + 1u), 0);
+    return Group(head.xy, head.z, head.w, tail.xy, tail.zw);
+}
 
 const K_CAPSULE: u32 = 1u;
 const K_ARC: u32 = 2u;
@@ -59,13 +79,25 @@ const F_RING_FILL: u32 = 512u;
 const NO_PAINT: u32 = 0xffffffffu;
 const PI: f32 = 3.14159265358979;
 
+struct VsIn {
+    @builtin(vertex_index) vertex: u32,
+    // One record per instance: (kind, group, colour, paint), then three vec4 of parameters.
+    @location(0) head: vec4<u32>,
+    @location(1) a: vec4<f32>,
+    @location(2) b: vec4<f32>,
+    @location(3) c: vec4<f32>,
+};
+
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) world: vec2<f32>,
     @location(1) uv: vec2<f32>,
-    @location(2) @interpolate(flat) index: u32,
-    @location(3) @interpolate(flat) aa: f32,
-    @location(4) @interpolate(flat) clip: vec4<f32>,
+    @location(2) @interpolate(flat) aa: f32,
+    @location(3) @interpolate(flat) clip: vec4<f32>,
+    @location(4) @interpolate(flat) head: vec4<u32>,
+    @location(5) @interpolate(flat) a: vec4<f32>,
+    @location(6) @interpolate(flat) b: vec4<f32>,
+    @location(7) @interpolate(flat) c: vec4<f32>,
 };
 
 fn to_screen(p: vec2<f32>) -> vec2<f32> {
@@ -79,7 +111,7 @@ fn to_world(s: vec2<f32>) -> vec2<f32> {
 // Screen space -> this pass's target space (identity for the frame itself).
 fn to_target(s: vec2<f32>, g: u32) -> vec2<f32> {
     if (g == 0u) { return s; }
-    let gr = groups[g];
+    let gr = group_at(g);
     return (s - gr.origin) * gr.scale + gr.offset;
 }
 
@@ -105,17 +137,21 @@ fn in_sweep(angle: f32, start: f32, sweep: f32) -> bool {
 }
 
 @vertex
-fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VsOut {
+fn vs_main(in: VsIn) -> VsOut {
     var out: VsOut;
-    let p = prims[ii];
+    let vi = in.vertex;
+    let p = Prim(in.head.x, in.head.y, in.head.z, in.head.w, in.a, in.b, in.c);
     let kind = p.kind & 255u;
-    out.index = ii;
+    out.head = in.head;
+    out.a = in.a;
+    out.b = in.b;
+    out.c = in.c;
     out.uv = vec2<f32>(0.0, 0.0);
     let g = p.group;
     var gscale = 1.0;
     out.clip = vec4<f32>(-1e9, -1e9, 1e9, 1e9);
     if (g != 0u) {
-        let gr = groups[g];
+        let gr = group_at(g);
         if (gr.page != view.dest.z) {
             out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
             return out;
@@ -177,7 +213,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
         world = p.a.xy + p.a.zw * c.x + p.b.xy * c.y;
         out.uv = c;
     } else if (kind == K_COMPOSITE) {
-        let child = groups[bitcast<u32>(p.b.x)];
+        let child = group_at(bitcast<u32>(p.b.x));
         if (child.page < 0.0) {
             out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
             return out;
@@ -208,8 +244,8 @@ fn unpack(c: u32) -> vec4<f32> {
 
 // Straight-alpha colour of a paint record at a world position.
 fn paint_at(offset: u32, w: vec2<f32>) -> vec4<f32> {
-    let head = paints[offset];
-    let g = paints[offset + 1u];
+    let head = paint_row(offset);
+    let g = paint_row(offset + 1u);
     let kind = u32(head.x);
     let count = u32(head.y);
     var t = 0.0;
@@ -232,12 +268,12 @@ fn paint_at(offset: u32, w: vec2<f32>) -> vec4<f32> {
     }
     t = clamp(t, 0.0, 1.0);
     let base = offset + 3u;
-    var prev_offset = paints[base].x;
-    var prev = paints[base + 1u];
+    var prev_offset = paint_row(base).x;
+    var prev = paint_row(base + 1u);
     if (t <= prev_offset) { return prev; }
     for (var i = 1u; i < count; i = i + 1u) {
-        let o = paints[base + i * 2u].x;
-        let col = paints[base + i * 2u + 1u];
+        let o = paint_row(base + i * 2u).x;
+        let col = paint_row(base + i * 2u + 1u);
         if (t < o) {
             let f = (t - prev_offset) / max(o - prev_offset, 1e-12);
             return mix(prev, col, f);
@@ -246,6 +282,13 @@ fn paint_at(offset: u32, w: vec2<f32>) -> vec4<f32> {
         prev = col;
     }
     return prev;
+}
+
+// Nearest-neighbour sampling through the linear sampler: at a texel's centre the
+// filter returns that texel alone. WebGL2 binds one sampler per texture, so the
+// sprite atlas cannot have a second, nearest one.
+fn texel_centre(uv: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
+    return (floor(uv * size) + vec2<f32>(0.5)) / size;
 }
 
 fn premul(c: vec4<f32>) -> vec4<f32> {
@@ -286,7 +329,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (pos.x < in.clip.x || pos.y < in.clip.y || pos.x > in.clip.z || pos.y > in.clip.w) {
         discard;
     }
-    let p = prims[in.index];
+    let p = Prim(in.head.x, in.head.y, in.head.z, in.head.w, in.a, in.b, in.c);
     let kind = p.kind & 255u;
     let w = in.world;
     let aa = in.aa;
@@ -313,10 +356,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let count = bitcast<u32>(p.b.z);
             var best = 1e30;
             for (var k = 0u; k + 1u < count; k = k + 1u) {
-                best = min(best, sd_segment(w, polyline_points[start + k], polyline_points[start + k + 1u]));
+                best = min(best, sd_segment(w, polyline_point(start + k), polyline_point(start + k + 1u)));
             }
             if ((p.kind & F_CLOSED) != 0u && count > 2u) {
-                best = min(best, sd_segment(w, polyline_points[start + count - 1u], polyline_points[start]));
+                best = min(best, sd_segment(w, polyline_point(start + count - 1u), polyline_point(start)));
             }
             d = best - hw;
         } else {
@@ -361,7 +404,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             tex = textureSampleLevel(sprites, linear_sampler, raw, i32(p.b.z), 0.0);
         } else {
             let q = clamp(raw, rect.xy + texel * 0.5, rect.zw - texel * 0.5);
-            tex = textureSampleLevel(sprites, nearest_sampler, q, i32(p.b.z), 0.0);
+            tex = textureSampleLevel(sprites, linear_sampler, texel_centre(q, size), i32(p.b.z), 0.0);
         }
         return tex * base.a;
     }
@@ -371,10 +414,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let texel = 1.0 / size;
         let uv = clamp(w / p.a.xy, vec2<f32>(0.0), vec2<f32>(1.0));
         let q = clamp(mix(rect.xy, rect.zw, uv), rect.xy + texel * 0.5, rect.zw - texel * 0.5);
-        return textureSampleLevel(sprites, nearest_sampler, q, i32(p.a.z), 0.0) * base.a;
+        return textureSampleLevel(sprites, linear_sampler, texel_centre(q, size), i32(p.a.z), 0.0) * base.a;
     }
     if (kind == K_COMPOSITE) {
-        let child = groups[bitcast<u32>(p.b.x)];
+        let child = group_at(bitcast<u32>(p.b.x));
         let size = vec2<f32>(textureDimensions(layers).xy);
         let tex = textureSampleLevel(layers, linear_sampler, in.uv / size, i32(child.page), 0.0);
         return tex * base.a;

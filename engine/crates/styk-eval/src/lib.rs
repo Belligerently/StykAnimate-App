@@ -11,6 +11,7 @@ pub mod edit;
 pub mod eval;
 pub mod geometry;
 pub mod load;
+pub mod par;
 pub mod piv;
 pub mod rig;
 pub mod sticknodes;

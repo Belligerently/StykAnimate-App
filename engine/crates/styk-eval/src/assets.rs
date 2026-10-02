@@ -9,7 +9,6 @@ use std::sync::Arc;
 use lyon_path::math::point;
 use lyon_path::Path;
 use lyon_tessellation::{BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers};
-use rayon::prelude::*;
 
 use crate::doc::{Document, Glyph, ImageData, PathCmd};
 
@@ -52,16 +51,11 @@ fn dimensions(data: &ImageData) -> Option<(u32, u32)> {
 
 impl Assets {
     pub fn build(doc: &Document) -> Assets {
-        let sizes: Vec<Option<(u32, u32)>> = doc.images.par_iter().map(dimensions).collect();
+        let sizes: Vec<Option<(u32, u32)>> = crate::par::map(&doc.images, 8, dimensions);
         let (atlas, pages) = pack(&sizes);
         let mut glyph_list: Vec<Arc<Glyph>> = Vec::new();
         collect_glyphs(doc, &mut glyph_list);
-        let glyphs = glyph_list
-            .par_iter()
-            .map(|g| (Arc::as_ptr(g) as usize, tessellate(&g.path)))
-            .collect::<Vec<_>>()
-            .into_iter()
-            .collect();
+        let glyphs = crate::par::map(&glyph_list, 8, |g| (Arc::as_ptr(g) as usize, tessellate(&g.path))).into_iter().collect();
         Assets { atlas, pages, glyphs }
     }
 
@@ -180,4 +174,49 @@ pub fn triangulate(path: &Path, rule: FillRule, tolerance: f32) -> Arc<[[f32; 2]
         return Arc::from(Vec::new());
     }
     buffers.indices.iter().map(|&i| buffers.vertices[i as usize]).collect::<Vec<_>>().into()
+}
+
+/// Premultiplied RGBA pixels of one image, sized for its atlas rectangle with a
+/// one-pixel gutter that repeats its edges (so filtering never reads a neighbour).
+pub struct DecodedImage {
+    pub index: u32,
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+/// Decodes image `index` of `doc` for the atlas `assets` laid out. `None` when the
+/// image has no place in the atlas or cannot be decoded.
+pub fn decode_image(doc: &Document, assets: &Assets, index: usize) -> Option<DecodedImage> {
+    let data = doc.images.get(index)?;
+    let entry = assets.atlas.get(index).filter(|entry| entry.valid)?;
+    let mut rgba = image::load_from_memory(&data.bytes).ok()?.to_rgba8();
+    if let Some(key) = data.color_key {
+        for pixel in rgba.pixels_mut() {
+            if pixel[0] == key[0] && pixel[1] == key[1] && pixel[2] == key[2] {
+                pixel[3] = 0;
+            }
+        }
+    }
+    if rgba.width() != entry.w || rgba.height() != entry.h {
+        rgba = image::imageops::resize(&rgba, entry.w, entry.h, image::imageops::FilterType::Triangle);
+    }
+    let (w, h) = (entry.w as usize, entry.h as usize);
+    let (gw, gh) = (w + 2, h + 2);
+    let mut out = vec![0u8; gw * gh * 4];
+    let source = rgba.as_raw();
+    for gy in 0..gh {
+        let sy = gy.saturating_sub(1).min(h - 1);
+        for gx in 0..gw {
+            let sx = gx.saturating_sub(1).min(w - 1);
+            let p = &source[(sy * w + sx) * 4..(sy * w + sx) * 4 + 4];
+            let a = p[3] as u32;
+            let o = (gy * gw + gx) * 4;
+            out[o] = ((p[0] as u32 * a + 127) / 255) as u8;
+            out[o + 1] = ((p[1] as u32 * a + 127) / 255) as u8;
+            out[o + 2] = ((p[2] as u32 * a + 127) / 255) as u8;
+            out[o + 3] = a as u8;
+        }
+    }
+    Some(DecodedImage { index: index as u32, width: gw as u32, height: gh as u32, rgba: out })
 }

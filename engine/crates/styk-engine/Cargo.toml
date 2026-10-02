@@ -1,0 +1,12 @@
+[package]
+name = "styk-engine"
+description = "The StykAnimate engine facade: the open document, background frame preparation and its cache."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+styk-doc = { path = "../styk-doc" }
+styk-formats = { path = "../styk-formats" }
+styk-eval = { path = "../styk-eval" }

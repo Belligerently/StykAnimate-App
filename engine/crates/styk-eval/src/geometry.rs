@@ -8,7 +8,6 @@
 
 use std::sync::Arc;
 
-use rayon::prelude::*;
 
 use crate::doc::*;
 use crate::eval::Frame;
@@ -567,11 +566,7 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
             }
             Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root)))
         };
-        let results: Vec<(usize, Built)> = if slots.len() >= 32 {
-            slots.par_iter().filter_map(make).collect()
-        } else {
-            slots.iter().filter_map(make).collect()
-        };
+        let results: Vec<(usize, Built)> = crate::par::map(&slots, 32, make).into_iter().flatten().collect();
         for (i, b) in results {
             built[i] = Some(b);
         }

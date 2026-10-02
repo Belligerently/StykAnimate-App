@@ -13,8 +13,6 @@
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use rayon::prelude::*;
-
 use crate::assets::Assets;
 use crate::doc::*;
 use crate::geometry::{mix_color, Item, ItemKind, Scene};
@@ -643,7 +641,7 @@ pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
         }
         Some(ObjectOut { opacity, outline_alpha, outline, items })
     };
-    let objects: Vec<Option<ObjectOut>> = if runs.len() >= 16 { runs.par_iter().map(encode_run).collect() } else { runs.iter().map(encode_run).collect() };
+    let objects: Vec<Option<ObjectOut>> = crate::par::map(&runs, 16, encode_run);
 
     let mut b = Builder::new();
     let mut root = Out::new();

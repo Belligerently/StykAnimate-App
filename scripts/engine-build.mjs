@@ -1,5 +1,5 @@
 /**
- * Builds the engine's WebAssembly module into build/engine/ (git-ignored):
+ * Builds the engine's WebAssembly module into src/engine/pkg/ (git-ignored):
  *
  *   node scripts/engine-build.mjs            release build (threads, wasm-opt when available)
  *   node scripts/engine-build.mjs --dev      faster build, no wasm-opt
@@ -15,7 +15,7 @@ import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const engine = path.join(root, 'engine');
-const out = path.join(root, 'build/engine');
+const out = path.join(root, 'src/engine/pkg');
 export const TOOLCHAIN = 'nightly-2026-09-15';
 export const WASM_BINDGEN = '0.2.129';
 // 2 GiB of address space: every thread shares it, and a shared memory's maximum is fixed when it links.

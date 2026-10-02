@@ -1,7 +1,17 @@
 //! The engine's WebAssembly boundary.
 //!
-//! Everything JavaScript can call is declared in this crate and nowhere else.
+//! Everything JavaScript can call is declared in this crate and nowhere else;
 //! `src/engine/` is its only caller on the JavaScript side.
+//!
+//! - [`engine::EngineHandle`]: the document and background preparation. One per
+//!   page, shared with the worker threads by address.
+//! - [`stage::Stage`]: the GPU surface of one canvas. Interface thread only.
+//!
+//! The module is instantiated once per thread over one shared memory. Workers
+//! call [`engine::worker_run`] and stay inside it.
+
+pub mod engine;
+pub mod stage;
 
 use wasm_bindgen::prelude::*;
 
@@ -9,10 +19,16 @@ use wasm_bindgen::prelude::*;
 extern "C" {
     #[wasm_bindgen(js_namespace = console, js_name = error)]
     fn console_error(message: &str);
+    #[wasm_bindgen(js_namespace = performance, js_name = now)]
+    fn performance_now() -> f64;
 }
 
-/// Runs once per instance (main thread and every worker): engine panics reach the
-/// console with their message and location before the module aborts.
+pub(crate) fn clock() -> f64 {
+    performance_now()
+}
+
+/// Runs once per instance (the interface thread and every worker): engine panics
+/// reach the console with their message and location before the module aborts.
 #[wasm_bindgen(start)]
 fn start() {
     std::panic::set_hook(Box::new(|info| console_error(&format!("StykAnimate engine panic: {info}"))));
@@ -25,23 +41,6 @@ pub fn api_version() -> u32 {
     1
 }
 
-/// Opens a native file and reports what it holds, as JSON. A first end-to-end
-/// path through formats, the document store and the typed views.
-#[wasm_bindgen]
-pub fn describe_file(bytes: &[u8], extension: &str, name: &str) -> Result<String, JsError> {
-    let started = js_sys::Date::now();
-    let document = styk_eval::open_bytes(bytes, extension, name).map_err(|e| JsError::new(&e.to_string()))?;
-    let prepared = styk_eval::prepare(document);
-    Ok(format!(
-        "{{\"name\":{:?},\"version\":{},\"canvas\":[{},{}],\"fps\":{},\"ticks\":{},\"figures\":{},\"keyframes\":{},\"openMs\":{}}}",
-        prepared.doc.name,
-        prepared.doc.version,
-        prepared.doc.canvas[0],
-        prepared.doc.canvas[1],
-        prepared.doc.fps,
-        prepared.total_ticks,
-        prepared.doc.figures.len(),
-        prepared.doc.keyframes.len(),
-        js_sys::Date::now() - started
-    ))
+pub(crate) fn js_error(error: impl std::fmt::Display) -> JsError {
+    JsError::new(&error.to_string())
 }
