@@ -32,13 +32,37 @@ export function loadEngine(options = {}) {
   return loading ??= load(options).catch(error => { loading = null; throw error; });
 }
 
+/** WebAssembly pages (64 KiB) the engine's shared memory may grow to: 2 GiB, then smaller. */
+const MEMORY_MAXIMA = [32768, 16384, 8192];
+
+/**
+ * The engine's shared memory. Its maximum is reserved when it is created and can
+ * never change (docs/engine/decisions/0014-shared-memory-maximum.md): a device that
+ * cannot reserve 2 GiB of address space (mobile WebKit is the risk) gets the largest
+ * maximum it accepts. `stykanimate.engine.memory` (MiB) overrides it for testing.
+ */
+export function createEngineMemory(maxima = MEMORY_MAXIMA) {
+  let override = null;
+  try { override = Number(globalThis.localStorage?.getItem('stykanimate.engine.memory')) || null; } catch { /* storage unavailable */ }
+  const candidates = override ? [Math.min(32768, Math.max(256, Math.round(override * 16)))] : maxima;
+  let failure;
+  for (const maximum of candidates) {
+    try { return Object.assign(new WebAssembly.Memory({initial: 25, maximum, shared: true}), {maximumBytes: maximum * 65536}); }
+    catch (error) { failure = error; }
+  }
+  throw new Error(`The engine could not reserve its memory: ${failure?.message ?? failure}`);
+}
+
 async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.navigator?.deviceMemory} = {}) {
   const source = new URL('./pkg/styk_engine_bg.wasm', import.meta.url);
   const module = await compile(source);
-  const wasm = await init({module_or_path: module});
+  const reserved = createEngineMemory();
+  const wasm = await init({module_or_path: module, memory: reserved});
   if (api_version() !== API_VERSION) throw new Error(`The engine module has API ${api_version()}, this page expects ${API_VERSION}. Reload the page.`);
   const memory = wasm.memory;
-  const handle = new EngineHandle(deviceMemory ?? undefined);
+  // Caches are budgeted by device memory; a memory that could reserve 1 GiB or less budgets like a 2 GiB device.
+  const budget = reserved.maximumBytes <= 2 ** 30 ? Math.min(deviceMemory ?? 2, 2) : deviceMemory;
+  const handle = new EngineHandle(budget ?? undefined);
   // Threads need the memory to be shareable with workers, which a page that is not cross-origin isolated cannot do.
   const threaded = workers > 0 && globalThis.crossOriginIsolated !== false && typeof Worker === 'function';
   const pool = [];
@@ -80,6 +104,9 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
   };
   return {
     handle, workers: pool.length, threaded, pump, whenProgress,
+    /** The engine's memory now, and the most it may grow to (chosen by createEngineMemory). */
+    get memoryBytes() { return memory.buffer.byteLength; },
+    memoryMaximumBytes: reserved.maximumBytes,
     createStage: canvas => Stage.create(canvas, handle),
     /** Opens a file in the background and resolves with its description. */
     async open(bytes, extension, name) {

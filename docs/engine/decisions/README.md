@@ -15,3 +15,4 @@ Architecture decision records of the Rust engine port. Each states the context, 
 - [D11: Array textures always have at least two layers](0011-array-textures-two-layers.md)
 - [D12: A mirror of the document in the engine until the engine owns it](0012-document-mirror.md)
 - [D13: What counts as the same picture in the app](0013-app-parity-rule.md)
+- [D14: The shared memory's maximum adapts to what the device can reserve](0014-shared-memory-maximum.md)
