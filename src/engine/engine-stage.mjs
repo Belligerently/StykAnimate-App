@@ -99,7 +99,7 @@ export async function createStageRenderer(canvas, options, create) {
     const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
       {figureIndices: dirty?.figureIndices ?? [], allFigures: side.resendFigures || Boolean(dirty?.definition && !dirty.figureIndices?.length)});
     side.definitions = key; side.resendFigures = false;
-    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
+    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
     const unsupported = JSON.parse(side.engine.handle.unsupported());
     if (unsupported.length) throw new Error(`the engine does not draw ${unsupported.join(', ')} yet`);
     return result;
@@ -108,6 +108,8 @@ export async function createStageRenderer(canvas, options, create) {
   /**
    * A pose as the engine reads it: the frame's own fields, and per object either its
    * pose or `null` when the editor has not rebuilt its geometry since `known` last saw it.
+   * `null` when nothing changed since `known` last saw the frame (its fields included:
+   * a frame without objects still changes the background and camera).
    */
   const frameJSON = (frame, geometry, known) => {
     const objects = frame.objects ?? [], groups = geometry?.objects, same = known.count === objects.length && groups;
@@ -120,8 +122,11 @@ export async function createStageRenderer(canvas, options, create) {
     });
     known.groups.length = known.count = objects.length;
     const {objects: _objects, ...header} = frame;
+    const fields = JSON.stringify(header);
+    if (!sent && known.fields === fields) return null;
+    known.fields = fields;
     side.stats.objectsSent += sent;
-    return `${JSON.stringify(header).slice(0, -1)}${Object.keys(header).length ? ',' : ''}"objects":[${items.join(',')}]}`;
+    return `${fields.slice(0, -1)}${Object.keys(header).length ? ',' : ''}"objects":[${items.join(',')}]}`;
   };
 
   /** Sends the onion skins that changed and describes all of them for this frame. */
@@ -130,9 +135,8 @@ export async function createStageRenderer(canvas, options, create) {
     for (const onion of request.onionFrames ?? []) {
       let known = side.ghosts.get(onion.frame);
       if (!known || !side.stage.has_ghost(known.id)) side.ghosts.set(onion.frame, known = {id: known?.id ?? side.nextGhost++, groups: [], count: -1});
-      const before = side.stats.objectsSent;
       const json = frameJSON(onion.frame, onion.geometry, known);
-      if (side.stats.objectsSent !== before) side.stage.edit_ghost(known.id, json);
+      if (json !== null) side.stage.edit_ghost(known.id, json);
       // The skin shows the objects its geometry lists (scope, hidden figures and layers are already applied to it).
       const shown = new Set(), ordered = onion.geometry.orderedObjects ?? [...onion.geometry.objects.values()];
       let tint = -1;
@@ -151,10 +155,9 @@ export async function createStageRenderer(canvas, options, create) {
     const started = performance.now();
     syncDefinitions(request);
     const {frame, geometry} = request, objects = frame.objects ?? [];
-    const before = side.stats.objectsSent;
     const json = frameJSON(frame, geometry, side);
-    // An unchanged pose is not parsed again; the first frame and every changed one are.
-    if (side.stats.objectsSent !== before || !side.frameSent) { side.stage.edit_frame(json); side.frameSent = true; }
+    // An unchanged frame is not parsed again; the first frame and every changed one are.
+    if (json !== null) { side.stage.edit_frame(json); side.frameSent = true; }
     const onions = onionList(request);
     const sendMs = performance.now() - started;
     const hidden = [], translations = [];
