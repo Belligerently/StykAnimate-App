@@ -31,7 +31,7 @@ fn main() {
             }
         },
         Some("info") if args.len() >= 2 => info(&args[1]),
-        Some("layers") if args.len() >= 3 => layers(&args[1], &args[2]),
+        Some("layers") if args.len() >= 3 => layers(&args[1], &args[2], args[3..].iter().any(|a| a == "--all")),
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
         Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
@@ -39,7 +39,7 @@ fn main() {
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] | gpubench <file> <tick> [--no-effects] | layers <file> <tick>");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] | gpubench <file> <tick> [--no-effects] | layers <file> <tick>");
             2
         }
     };
@@ -58,7 +58,7 @@ fn load(path: &str) -> Result<(Prepared, f64), String> {
 }
 
 /// The raster layers of one frame's draw list: kind, rectangles, scale and effects.
-fn layers(path: &str, tick: &str) -> i32 {
+fn layers(path: &str, tick: &str, all: bool) -> i32 {
     let (p, _) = match load(path) {
         Ok(v) => v,
         Err(e) => {
@@ -70,9 +70,15 @@ fn layers(path: &str, tick: &str) -> i32 {
     let scene = build(&p.doc, &p.evaluate(tick.parse().unwrap_or(0.0)));
     let list = styk_eval::drawlist::encode(&p.doc, &assets, &scene);
     for (g, group) in list.groups.iter().enumerate() {
-        let Some(layer) = list.layers.get(group.layer as usize) else { continue };
+        let prims = list.prims.iter().filter(|p| p.group as usize == g).count();
+        let Some(layer) = list.layers.get(group.layer as usize) else {
+            if all {
+                println!("group {g} (parent {}, depth {}, opacity {}): {prims} prims, bounds {:?}", group.parent, group.depth, group.opacity, group.bounds);
+            }
+            continue;
+        };
         let effects: Vec<&str> = styk_eval::drawlist::layer_effects(layer).iter().map(|e| e.kind().name()).collect();
-        println!("group {g} (parent {}, depth {}, opacity {}): {:?} [{}]", group.parent, group.depth, group.opacity, layer.kind, effects.join(", "));
+        println!("group {g} (parent {}, depth {}, opacity {}): {prims} prims, {:?} [{}]", group.parent, group.depth, group.opacity, layer.kind, effects.join(", "));
     }
     0
 }
@@ -314,7 +320,9 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
         .unwrap_or([cw / 2.0, ch / 2.0]);
     let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
-    let matrix = camera_matrix(&p.doc, scene.camera.as_ref(), zoom, pan);
+    // --neutral: the editor's workspace (no scene camera in the view; the camera image sits on the camera rectangle).
+    let neutral = rest.iter().any(|a| a == "--neutral");
+    let matrix = camera_matrix(&p.doc, if neutral { None } else { scene.camera.as_ref() }, zoom, pan);
     let view = ViewParams {
         matrix,
         artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
@@ -322,7 +330,7 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         clear: [0.16, 0.16, 0.17, 1.0],
         zoom,
         pan,
-        camera_view: true,
+        camera_view: !neutral,
     };
     renderer.set_list(&list);
     let mut encoder = device.create_command_encoder(&Default::default());
