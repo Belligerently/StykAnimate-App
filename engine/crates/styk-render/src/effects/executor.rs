@@ -1,7 +1,7 @@
 //! Effect executor: runs an effect stack on one layer of the isolation atlas,
 //! pass for pass as the editor's WebGPU executor does (`VfxWebGPU.run` in
 //! src/vfx-webgpu.mjs). The layer is copied into a working slot, filtered
-//! through fragment passes (`vfx.wgsl`) and copied back in place.
+//! through fragment passes (`passes.wgsl`) and copied back in place.
 //!
 //! Working slots are pooled: eight textures of one size, grown to the largest
 //! layer a frame filters and kept across frames, so a steady animation creates
@@ -17,7 +17,7 @@ use styk_eval::vfx::registry::{BlurMode, GlowPlacement, OutlinePlacement, Params
 use styk_eval::vfx::{Color, Effect};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-/// Uniform record of one pass (`Params` in vfx.wgsl), padded to the binding alignment.
+/// Uniform record of one pass (`Params` in passes.wgsl), padded to the binding alignment.
 const UNIFORM_SIZE: u64 = 736;
 const UNIFORM_STRIDE: u64 = 768;
 /// Slots: 0 input, 1–3 ping-pong, 4 saved artwork, 5 inner outline, 6 spare, 7 strength source.
@@ -121,7 +121,7 @@ fn round(x: f64) -> f64 {
 
 impl Executor {
     pub fn new(device: &wgpu::Device) -> Executor {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("styk effects"), source: wgpu::ShaderSource::Wgsl(include_str!("vfx.wgsl").into()) });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("styk effects"), source: wgpu::ShaderSource::Wgsl(include_str!("passes.wgsl").into()) });
         let texture = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -463,7 +463,7 @@ impl Recorder<'_> {
     /// `morph(radius, rounded)`: alpha dilation (rounded in 16 directions, doubling).
     fn morph(&mut self, radius: f64, rounded: bool) {
         let mut radius = radius.ceil();
-        let mut step = 1.0;
+        let mut step = 1.0f64;
         while radius > 0.0 {
             let amount = (if rounded { step } else { 128.0 }).min(radius);
             if rounded {

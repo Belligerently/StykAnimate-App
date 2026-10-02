@@ -20,7 +20,7 @@ struct Params {
   paintAngle: f32,
   operation: i32,
   // This pass's own size, and 1 / the pooled slot texture size.
-  target: vec2f,
+  targetSize: vec2f,
   texel: vec2f,
   unused: vec2f,
   p: vec4f,
@@ -54,8 +54,8 @@ fn sampleAt(at: vec2f) -> vec4f {
   if (at.x < 0. || at.y < 0. || at.x > 1. || at.y > 1.) { return vec4f(0.); }
   return textureSampleLevel(sourceImage, smp, slotAt(at, params.dimensions), 0.);
 }
-fn sampleOrig(at: vec2f) -> vec4f { return textureSampleLevel(originalImage, smp, slotAt(at, params.target), 0.); }
-fn sampleMask(at: vec2f) -> vec4f { return textureSampleLevel(maskImage, smp, slotAt(at, params.target), 0.); }
+fn sampleOrig(at: vec2f) -> vec4f { return textureSampleLevel(originalImage, smp, slotAt(at, params.targetSize), 0.); }
+fn sampleMask(at: vec2f) -> vec4f { return textureSampleLevel(maskImage, smp, slotAt(at, params.targetSize), 0.); }
 fn globalPixel(uv: vec2f) -> vec2f { return vec2f(uv.x, 1. - uv.y) * params.dimensions + params.origin; }
 fn sampleGlobal(at: vec2f) -> vec4f { let pos = (at - params.origin) / params.dimensions; return sampleAt(vec2f(pos.x, 1. - pos.y)); }
 fn brush(uv: vec2f) -> vec4f {
@@ -94,7 +94,7 @@ fn noiseAt(pos: vec2f, seed: f32, smoothness: f32) -> f32 {
 
 @fragment
 fn fragment(@builtin(position) fragPos: vec4f) -> @location(0) vec4f {
-  let uv = vec2f(fragPos.x / params.target.x, 1. - fragPos.y / params.target.y);
+  let uv = vec2f(fragPos.x / params.targetSize.x, 1. - fragPos.y / params.targetSize.y);
   let operation = params.operation;
   let p = params.p;
   let q = params.q;
