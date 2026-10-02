@@ -2,26 +2,27 @@
 
 Repository contributors and agents: start with [AGENTS.md](AGENTS.md), track completed changes in [CHANGELOG.md](CHANGELOG.md), and follow [the shipping procedure](docs/RELEASING.md) when preparing a release.
 
-A local desktop animation editor with a custom WebGPU canvas, Figma-style controls, and an Animate-style timeline. It opens real `.piv` and `.stk` files through the supplied Pivot parsers and writers. Editing, decoding, saving, and rendering stay on the machine.
+A local desktop animation editor with a custom WebGPU canvas, Figma-style controls, and an Animate-style timeline. It opens real `.piv` and `.stk` files through its own Pivot codec, compiled to WebAssembly. Editing, decoding, saving, and rendering stay on the machine.
 
 ## Run
 
-Download Windows Setup or Portable and the Linux AppImage from the [public releases](https://github.com/filippocalippo/styk-animate-releases). Desktop packages include their codec runtime and need no separate Python or Node installation. The browser editor runs at [app.stykanimate.com](https://app.stykanimate.com).
+Download Windows Setup or Portable and the Linux AppImage from the [public releases](https://github.com/filippocalippo/styk-animate-releases). Desktop packages need no separate Python or Node installation. The browser editor runs at [app.stykanimate.com](https://app.stykanimate.com).
 
 See [release preparation](docs/RELEASING.md) and [package verification](docs/DESKTOP-RELEASE.md) for current candidate checks; historical reports certify only their original builds. For source development:
 
 ```sh
 npm ci
-python -m pip install -r backend/requirements-fast.txt
+node scripts/engine-build.mjs   # the engine and the Pivot codec, into src/engine/pkg/
 npm start
 ```
 
-Development requires Node.js 22+ and Python 3.11+ (CI runs Node 24.11 and Python 3.12). The optional compiled JSON encoder and C++ native frame scanner accelerate large imports; validated Python fallbacks remain available. Build the scanner with `npm run build:frame-scan` on supported hosts. Set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
+Development requires Node.js 22+ (CI runs Node 24.11) and Rust: the pinned nightly with `rust-src` and stable, both with the `wasm32-unknown-unknown` target, and `wasm-bindgen-cli` at the version `scripts/engine-build.mjs` names. The Pivot codec runs in a worker of the editor page on every platform; Python is not needed to run or build the app. Python 3.11+ runs only the codec's development test oracle (`codecs/`, `backend/`) and the packaging scripts that stage the video encoder and the Windows codec helpers; set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
 
-Windows and Linux are supported platforms and both are exercised on every change (`.github/workflows/ci.yml`); see [Linux support](docs/LINUX.md). macOS has a build target in `package.json` that has not been executed. Build the sidecar and distribution on each target OS (the build scripts find Python themselves; see `scripts/run-python.mjs`):
+Windows and Linux are supported platforms and both are exercised on every change (`.github/workflows/ci.yml`); see [Linux support](docs/LINUX.md). macOS has a build target in `package.json` that has not been executed. Build the distribution on each target OS (the packaging scripts find Python themselves; see `scripts/run-python.mjs`):
 
 ```sh
-npm run build:sidecar
+node scripts/engine-build.mjs
+npm run build:video-encoder
 npm run pack
 npm run verify:package
 # Installers, on the matching host:
@@ -30,7 +31,7 @@ npm run dist:mac
 npm run dist:linux
 ```
 
-The editor also runs as a website, with the Pivot codec in WebAssembly and nothing sent to a server: `npm run web:build`, then `npm run web:deploy` for Cloudflare. See [Web build](docs/WEB.md). On phones and tablets it opens its touch interface; see [Touch interface](docs/TOUCH.md).
+The editor also runs as a website, with the same Pivot codec and nothing sent to a server: `npm run web:build`, then `npm run web:deploy` for Cloudflare. See [Web build](docs/WEB.md). On phones and tablets it opens its touch interface; see [Touch interface](docs/TOUCH.md).
 
 ## Editing
 
@@ -54,7 +55,7 @@ See [implementation coverage](docs/IMPLEMENTATION.md) and the [Pivot acceptance 
 
 ## Performance evidence
 
-The architecture separates document/history, visible gesture previews, retained GPU resources and worker jobs. Whole-figure dragging updates GPU transforms; affected joint branches are reevaluated as needed. Prepared playback reuses GPU packets. The C++ frame scanner and binary import transport avoid expanding full native pose JSON; editor validation/indexing yields between bounded work slices. Imports, export snapshots, recovery, native file transfer and asynchronous layer migration use bounded, acknowledged chunks. [Architecture details](docs/ARCHITECTURE.md) describe the separate document, CPU, and GPU caches.
+The architecture separates document/history, visible gesture previews, retained GPU resources and worker jobs. Whole-figure dragging updates GPU transforms; affected joint branches are reevaluated as needed. Prepared playback reuses GPU packets. The binary import transport avoids expanding full native pose JSON; editor validation/indexing yields between bounded work slices. Imports, export snapshots, recovery, native file transfer and asynchronous layer migration use bounded, acknowledged chunks. [Architecture details](docs/ARCHITECTURE.md) describe the separate document, CPU, and GPU caches.
 
 Historical development snapshots recorded on the available Windows / NVIDIA Lovelace machine, with the exact run boundaries in each artifact. These are not measurements of the final combined build:
 
@@ -78,9 +79,11 @@ Run core checks from this directory:
 ```sh
 npm run check
 npm test
-python -m unittest discover -s backend -p "test_*.py"
+python -m unittest discover -s backend -p "test_*.py"   # the Python codec oracle
 node scripts/test-reference.mjs
 ```
+
+The Rust codec answers as the Python codec did: `engine/tools/piv/parity.sh` replays the oracle's recorded answers against it (see [Pivot files and the codec service](docs/engine/formats-piv.md)).
 
 `.github/workflows/ci.yml` runs the syntax, stylesheet lint, changelog, unit, codec and website tests on every push to `main` and every pull request; the release workflow runs the same unit and codec tests before building. Cases that read the Pivot corpus beside the repository, generated `artifacts/` inventories or built encoders skip in a clean checkout and name the missing file. Set `STYK_REQUIRE_FIXTURES=1` locally to make a missing fixture fail instead.
 
@@ -103,7 +106,7 @@ npm run test:desktop
 npm run test:desktop:packaged
 ```
 
-The native round-trip tests include saving a 207.95 MB Akane project, restarting the codec service, reopening it, and exporting the original PIV SHA exactly. The GPU corpus compares 101 sampled frames from all 37 supplied PIV files against the established Canvas renderer. Prepared rendering matches the normal GPU path for those samples; antialiasing differences against the reference remain. Test reports live in `artifacts/`; package smoke evidence applies to the package snapshot actually tested.
+The native round-trip tests include saving a 207.95 MB Akane project, restarting the codec, reopening it, and exporting the original PIV SHA exactly. The GPU corpus compares 101 sampled frames from all 37 supplied PIV files against the established Canvas renderer. Prepared rendering matches the normal GPU path for those samples; antialiasing differences against the reference remain. Test reports live in `artifacts/`; package smoke evidence applies to the package snapshot actually tested.
 
 ## Code map
 
@@ -112,20 +115,22 @@ The native round-trip tests include saving a 207.95 MB Akane project, restarting
 | `src/editor*.mjs`, `src/pivot/` | Document commands/history, rig construction, native evaluation and validation |
 | `src/renderer*.mjs`, `src/prepared-frames.mjs` | WebGPU primitives, incremental edits, bounded GPU playback packets |
 | `src/playback*.mjs`, `src/document-transport.mjs` | Worker evaluation, CPU packet cache, bounded document/frame snapshots |
-| `src/import-*.mjs`, `src/editor-load.mjs`, `backend/`, `native/piv-frame-scan.cpp` | Native/Python decoding, binary frame transport, source preservation and cooperative editor preparation |
+| `src/import-*.mjs`, `src/codec-*.mjs`, `src/editor-load.mjs`, `engine/crates/styk-piv` | Pivot decoding in the codec worker, binary frame transport, source preservation and cooperative editor preparation |
 | `src/document-export*.mjs`, `src/native-files.mjs` | Worker save/recovery snapshots and native Blob streaming |
 | `src/image-*.mjs`, `src/svg-export.mjs`, `src/video-export.mjs` | Image/vector/video encoding and containers |
 | `src/text-authoring.mjs`, `src/media-authoring.mjs` | Portable glyph outlines, sprites and backgrounds |
 | `src/app.mjs`, `src/timeline.mjs`, `src/simple-timeline.mjs`, `src/workspace-*.mjs` | Custom interaction, two timeline modes and movable workspace |
 | `src/settings.mjs`, `src/localization*.mjs`, `src/locales/` | Persistent editor preferences and explicit language bindings |
-| `desktop/`, `scripts/`, `native/vfw-bridge.cpp` | Isolated Electron bridge, Recent Files/clipboard/preferences, native encoders, sidecar and packaging |
+| `desktop/`, `scripts/`, `native/vfw-bridge.cpp` | Isolated Electron bridge, Recent Files/clipboard/preferences, sample list, native encoders and packaging |
 
 ## Repository layout
 
 | Folder | Contents |
 | --- | --- |
 | `src/`, `index.html`, `vendor/` | Editor web client and vendored libraries |
-| `desktop/`, `backend/`, `codecs/`, `native/` | Electron shell, Python import/codec services, native helpers |
+| `desktop/`, `native/` | Electron shell, native helpers |
+| `engine/` | The Rust engine and the Pivot codec (built to `src/engine/pkg/`) |
+| `backend/`, `codecs/` | The Python Pivot codec: the development test oracle, not shipped |
 | `cloud/`, `website/` | Public website, catalogue, and support services |
 | `tests/`, `scripts/`, `artifacts/` | Tests, smoke/benchmark/build scripts, recorded measurement evidence |
 | `docs/` | Feature contracts; `docs/performance/`, `docs/audits/`, `docs/releases/` and `docs/research/` hold dated reports and evidence |

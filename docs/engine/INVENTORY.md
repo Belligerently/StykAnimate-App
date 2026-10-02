@@ -17,9 +17,9 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 61 | 21 | 1 | 0 | 0 | 0 % | 39 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-formats` | 57 | 728 KiB | 32 | 6 | 19 | 0 | 0 | 38 % | 29 % | 0 % |
+| `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 46 | 6 | 0 | 0 | 0 | 0 % | 36 % | 0 % |
-| **Total** | 355 | 4057 KiB | 300 | 35 | 20 | 0 | 0 | 7 % | 21 % | 0 % |
+| **Total** | 356 | 4062 KiB | 299 | 31 | 3 | 22 | 1 | 12 % | 17 % | 0 % |
 
 ## Engine modules
 
@@ -273,30 +273,30 @@ Engine logic: ported to Rust.
 | `src/svg-export.mjs` | `styk-export` | js |  |
 | `src/audio-model.mjs` | `styk-export::audio` | js | audio model and offline mix |
 | `src/audio-pcm.mjs` | `styk-export::audio` | js | audio model and offline mix |
-| `backend/native_format.py` | `styk-formats::container` | partial | container v1/v2 (service side). Rust: reading every version |
+| `backend/native_format.py` | `styk-formats::container` | verified | the app reads containers in src/native-container.mjs and, as the codec fallback, styk-piv over styk-formats; kept only as the development test oracle (not shipped) |
 | `src/base64.mjs` | `styk-formats::container` | ported | Rust: styk-doc JSON base64 |
 | `src/native-container.mjs` | `styk-formats::container` | ported | Rust: reader and writer (v0–v2, lifted records); 461 corpus files decode to the same document, 448 v2 files rewrite byte-identical |
 | `src/pose-sequence-storage.mjs` | `styk-formats::container` | js |  |
 | `src/pose-sequences.mjs` | `styk-formats::container` | js |  |
 | `src/source-record.mjs` | `styk-formats::container` | js |  |
 | `src/zlib-sync.mjs` | `styk-formats::container` | partial | Rust: inflate of drawing tiles (PNG decoder); deflate still JS |
-| `backend/fast_decode.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/frames.rs |
-| `backend/import_wire.py` | `styk-formats::piv` | ported | Rust: styk-piv wire.rs (STYKPIV1) |
-| `backend/native_scan.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/frames.rs scan mode |
-| `codecs/codec_bridge.py` | `styk-formats::piv` | ported | Rust: styk-piv bridge.rs |
-| `codecs/image_stream.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/image_stream.rs |
-| `codecs/piv_asset_writer.py` | `styk-formats::piv` | ported | Rust: styk-piv write/assets.rs |
-| `codecs/piv_codec.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/v5.rs; replays the Python recording identically (13,369 requests) |
-| `codecs/piv_document.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/v5.rs |
-| `codecs/piv_full_writer.py` | `styk-formats::piv` | ported | Rust: styk-piv write/full.rs |
-| `codecs/piv_legacy_v2.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/legacy_v2.rs |
-| `codecs/piv_legacy_v4.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/legacy_v4.rs |
-| `codecs/piv_legacy.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/legacy.rs |
-| `codecs/piv_migrate.py` | `styk-formats::piv` | ported | Rust: styk-piv write/migrate.rs |
-| `codecs/piv_side_tables.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/side_tables.rs |
-| `codecs/pivot_decoder.py` | `styk-formats::piv` | partial | Rust: legacy layout detection; its v5 guessing decoders are unreachable |
-| `codecs/work_control.py` | `styk-formats::piv` | ported | Rust: cooperative cancellation (styk-piv ctx.rs) |
-| `native/piv-frame-scan.cpp` | `styk-formats::piv` | ported | Rust: styk-piv piv/frames.rs scan mode (errors worded as the portable scanner) |
+| `backend/fast_decode.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/frames.rs); kept only as the development test oracle (not shipped) |
+| `backend/import_wire.py` | `styk-formats::piv` | verified | the app runs styk-piv (wire.rs, STYKPIV1); kept only as the development test oracle (not shipped) |
+| `backend/native_scan.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/frames.rs scan mode); kept only as the development test oracle (not shipped) |
+| `codecs/codec_bridge.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv bridge.rs); kept only as the development test oracle (not shipped) |
+| `codecs/image_stream.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/image_stream.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_asset_writer.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv write/assets.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_codec.py` | `styk-formats::piv` | verified | the app runs styk-piv (piv/v5.rs; replays the Python recording identically, 13,369 requests); kept only as the development test oracle (not shipped) |
+| `codecs/piv_document.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/v5.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_full_writer.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv write/full.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_legacy_v2.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/legacy_v2.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_legacy_v4.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/legacy_v4.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_legacy.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/legacy.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_migrate.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv write/migrate.rs); kept only as the development test oracle (not shipped) |
+| `codecs/piv_side_tables.py` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/side_tables.rs); kept only as the development test oracle (not shipped) |
+| `codecs/pivot_decoder.py` | `styk-formats::piv` | verified | the app runs styk-piv (legacy layout detection; its v5 guessing decoders are unreachable); kept only as the development test oracle (not shipped) |
+| `codecs/work_control.py` | `styk-formats::piv` | verified | the app runs styk-piv (cooperative cancellation: ctx.rs, polled through a shared flag); kept only as the development test oracle (not shipped) |
+| `native/piv-frame-scan.cpp` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)); kept only as the development test oracle (not shipped) |
 | `src/import-wire.mjs` | `styk-formats::piv` | js | native frame table materialization |
 | `src/playback-native.mjs` | `styk-formats::piv` | js | native frame table materialization |
 | `src/document-export-worker.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
@@ -305,16 +305,17 @@ Engine logic: ported to Rust.
 | `src/pivot-export-materialize.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
 | `src/pivot-frame-draft.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
 | `src/pivot-style-materialize.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
-| `backend/browser_service.py` | `styk-formats::service` | ported | Rust: styk-piv service.rs |
-| `backend/jobs.py` | `styk-formats::service` | partial | Rust: cancelled requests answer 499; the job queue still Python |
-| `backend/process_metrics.py` | `styk-formats::service` | js | codec service routes, source cache, cancellation |
-| `backend/server.py` | `styk-formats::service` | partial | codec service routes, source cache, cancellation. Rust: project store, fingerprints, error responses, request parsing, limits (styk-piv store.rs, digest.rs); the HTTP handler still Python |
+| `backend/browser_service.py` | `styk-formats::service` | verified | the app runs styk-piv (styk-piv service.rs); kept only as the development test oracle (not shipped) |
+| `backend/jobs.py` | `styk-formats::service` | verified | the app runs styk-piv (cancelled requests answer 499) behind the codec worker queue (src/codec-web-shell.mjs); kept only as the development test oracle (not shipped) |
+| `backend/process_metrics.py` | `styk-formats::service` | verified | measured the codec service process; the codec runs in the page now, so the app has nothing to measure; kept only as the development test oracle (not shipped) |
+| `backend/server.py` | `styk-formats::service` | verified | the app runs styk-piv (project store, fingerprints, error responses, request parsing, limits: store.rs, digest.rs, service.rs) in the codec worker; no HTTP handler ships; kept only as the development test oracle (not shipped) |
+| `src/codec-engine.mjs` | `styk-formats::service` | js | import/export transport: loads the Rust codec module (styk-codec-wasm) and answers one request |
 | `src/codec-job.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/codec-request.mjs` | `styk-formats::service` | js | import/export transport |
-| `src/codec-web-engine.mjs` | `styk-formats::service` | js | import/export transport |
-| `src/codec-web-host.mjs` | `styk-formats::service` | js | import/export transport |
+| `src/codec-web-engine.mjs` | `styk-formats::service` | removed | ran the Python codec in Pyodide; the codec worker runs styk-codec-wasm (3300 bytes) |
+| `src/codec-web-host.mjs` | `styk-formats::service` | js | import/export transport: the codec worker, its codec profile and shared cancellation flags |
 | `src/codec-web-shell.mjs` | `styk-formats::service` | js | import/export transport |
-| `src/codec-web-worker.mjs` | `styk-formats::service` | js | import/export transport |
+| `src/codec-web-worker.mjs` | `styk-formats::service` | js | import/export transport: the worker running the Rust codec module (styk-codec-wasm) |
 | `src/document-normalize.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/document-transport.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/import-client.mjs` | `styk-formats::service` | js | import/export transport |
@@ -406,6 +407,7 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `desktop/recovery.cjs` |  | stays | Electron shell and services |
 | `desktop/release-history.cjs` |  | stays | Electron shell and services |
 | `desktop/release-links.cjs` |  | stays | Electron shell and services |
+| `desktop/samples.cjs` |  | stays | the desktop sample list and sample bytes, under the Python codec service's samples/open rules |
 | `desktop/shared-clipboard.cjs` |  | stays | Electron shell and services |
 | `desktop/support.cjs` |  | stays | Electron shell and services |
 | `desktop/telemetry.cjs` |  | stays | Electron shell and services |
@@ -435,7 +437,7 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `src/video-export.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |
 | `src/audio-engine.mjs` | `styk-export::audio` | js | Web Audio preview |
 | `src/audio-worker.mjs` | `styk-export::audio` | js | Web Audio preview |
-| `desktop/backend.cjs` | `styk-formats::service` | js | starts the Python codec; goes away with it |
+| `desktop/backend.cjs` | `styk-formats::service` | removed | started the Python codec sidecar; the desktop runs styk-codec-wasm in the page (6079 bytes) |
 
 ## Interface
 
@@ -639,26 +641,26 @@ Test or profiling tool of a removed subsystem.
 
 | Module | Rust owner | Status | Notes |
 | --- | --- | --- | --- |
-| `backend/benchmark_fast_decode.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/benchmark.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/profile_import.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/profile_native_save.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_browser_roundtrip.mjs` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_browser_service.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_document_digest.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_fast_decode.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_import_wire_review.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_jobs.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_legacy_bitmap_keys.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_legacy_upgrade_export.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_library_format.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_native_format.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_native_layout.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_native_scan.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_parent_watch.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_piv_identities.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_piv_media_recovery.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_piv_type_changes.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_server.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_source_lifetime.py` |  | stays | Python test or profiler; removed with the Python codec |
-| `backend/test_stk_topology.py` |  | stays | Python test or profiler; removed with the Python codec |
+| `backend/benchmark_fast_decode.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/benchmark.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/profile_import.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/profile_native_save.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_browser_roundtrip.mjs` |  | stays | browser test of the Python codec service, the development oracle |
+| `backend/test_browser_service.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_document_digest.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_fast_decode.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_import_wire_review.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_jobs.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_legacy_bitmap_keys.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_legacy_upgrade_export.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_library_format.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_native_format.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_native_layout.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_native_scan.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_parent_watch.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_piv_identities.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_piv_media_recovery.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_piv_type_changes.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_server.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_source_lifetime.py` |  | stays | test or profiler of the Python codec, the development oracle |
+| `backend/test_stk_topology.py` |  | stays | test or profiler of the Python codec, the development oracle |
