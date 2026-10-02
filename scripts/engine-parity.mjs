@@ -33,7 +33,7 @@ const nice = process.platform === 'win32' ? [] : ['nice', '-n', '10'];
 const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.length ? ['cargo'] : []), ...rest, '--manifest-path', 'engine/Cargo.toml']];
 
 // Fixture suites (fast: a few seconds once built).
-run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit'));
+run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit', '-p', 'styk-math'));
 
 // Fixture generators are byte-stable: regenerating changes nothing.
 for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures']) {
@@ -41,6 +41,10 @@ for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures']) {
   run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
     check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-eval/tests/fixtures'], {cwd: root}).status === 0});
 }
+
+// V8's Math results for styk-math are byte-stable unless V8 changes.
+run('math fixtures regenerate unchanged', process.execPath, ['engine/tools/math-fixtures.mjs'], {quiet: true,
+  check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-math/tests'], {cwd: root}).status === 0});
 
 // Command recordings are byte-stable too: re-recording them in the JavaScript editor changes
 // nothing (styk-edit's test above replays them in the engine).

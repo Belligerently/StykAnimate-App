@@ -53,8 +53,9 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `seek(tick)` (its return value, the evaluated frame, is read by the facade from its own copy) | yes | selection-native, move-joined |
 | `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel |
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel |
+| `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined |
 | `undo`, `redo` of what those record | yes | all of the above |
-| `rotateSelection`, `poseJoint`, everything else | no: `Unported` | rotate-native, pose-native |
+| `poseJoint`, flipping a branch, everything else | no: `Unported` | pose-native, transform-native |
 
 Every call answers `Unported` on documents with a layer sheet, property channels, animation
 origins, a movieclip source or inverse-kinematics controllers; those run in JavaScript.
@@ -71,6 +72,17 @@ document difference the harness can see):
 - **The history byte budget** (`historyBytes`) is not ported; the engine's history trims
   by count (80 entries) only.
 - **`validateObjectChanges`** on commit is not ported; moves only change finite roots.
+
+## Arithmetic
+
+A ported command must round every stored result as the editor does. The platform's
+maths library does not: against V8 on two million inputs, Rust's `f64::sin` differed in
+the last bit 2.7 % of the time and `f64::atan2` 17 %; even the `libm` crate (musl)
+differed for 0.8 % of sines and 0.7 % of cosines, in fdlibm's cosine kernel, and for `atan2` beyond
+|y/x| = 2^60. `styk-math` ports V8's fdlibm 5.3 `sin`, `cos` and `atan2` and its
+`hypot`; on 2.8 million inputs (random angles, tiny and huge values up to 1e308, every
+n·π/2 up to 64 and its neighbours, special values) it returned V8's bits every time.
+`engine/tools/math-fixtures.mjs` records the regression set its tests use.
 
 ## Phase 2: queries from the engine
 

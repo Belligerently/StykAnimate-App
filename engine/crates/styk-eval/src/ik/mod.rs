@@ -61,43 +61,9 @@ pub(crate) fn sign(v: f64) -> f64 {
     }
 }
 
-/// `Math.hypot` as V8 computes it: scaled by the largest magnitude and summed
-/// with Kahan compensation. `sqrt(x² + y²)` and libm's `hypot` differ from it in
-/// the last bit often enough to move a solver's accept/reject decisions.
-pub(crate) fn norm(values: &[f64]) -> f64 {
-    let mut max = 0.0f64;
-    let mut nan = false;
-    for v in values {
-        let a = v.abs();
-        if a == f64::INFINITY {
-            return f64::INFINITY;
-        }
-        nan |= a.is_nan();
-        if a > max {
-            max = a;
-        }
-    }
-    if nan {
-        return f64::NAN;
-    }
-    if max == 0.0 {
-        return 0.0;
-    }
-    let (mut sum, mut compensation) = (0.0f64, 0.0f64);
-    for v in values {
-        let n = v.abs() / max;
-        let summand = n * n - compensation;
-        let preliminary = sum + summand;
-        compensation = (preliminary - sum) - summand;
-        sum = preliminary;
-    }
-    sum.sqrt() * max
-}
-
-/// `Math.hypot(x, y)`.
-pub(crate) fn hypot(x: f64, y: f64) -> f64 {
-    norm(&[x, y])
-}
+/// `Math.hypot` as V8 computes it (styk-math): `sqrt(x² + y²)` and libm's `hypot`
+/// differ from it in the last bit often enough to move a solver's accept/reject decisions.
+pub(crate) use styk_math::{hypot, norm};
 
 /// Angles by handle id, in the order JavaScript enumerates integer keys.
 pub type Angles = BTreeMap<u32, f64>;

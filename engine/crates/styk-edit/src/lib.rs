@@ -148,6 +148,8 @@ impl Editor {
     /// the JavaScript method returns.
     pub fn call(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
+        // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
+        let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
         if let Some(reason) = self.unported_document() {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
@@ -172,6 +174,13 @@ impl Editor {
             "cancelDrag" => self.cancel_drag().map(Value::Bool),
             "beginTranslationDrag" => self.begin_drag(arg(0).as_str().unwrap_or("Move figures"), true).map(Value::Bool),
             "moveSelection" => self.move_selection(arg(0).as_f64().unwrap_or(f64::NAN), arg(1).as_f64().unwrap_or(f64::NAN), &arg(2)).map(Value::Bool),
+            "rotateSelection" => self.rotate_selection(number(0), &arg(1)).map(Value::Bool),
+            "scaleSelection" => self.scale_selection(number(0), &arg(1), false).map(Value::Bool),
+            "scaleSelected" => self.scale_selection(number(0), &arg(1), true).map(Value::Bool),
+            "mirrorSelection" => self.mirror_selection(&arg(0), &arg(1)).map(Value::Bool),
+            "rotateFigure" => self.rotate_figure(number(0)).map(Value::Bool),
+            "centerFigure" => self.center_figure().map(Value::Bool),
+            "resetPose" => self.reset_pose().map(Value::Bool),
             "undo" => self.undo().map(Value::Bool),
             "redo" => self.redo().map(Value::Bool),
             other => Err(EditError::Unported(other.to_string())),

@@ -1136,6 +1136,7 @@ version = "0.1.0"
 dependencies = [
  "styk-doc",
  "styk-eval",
+ "styk-math",
  "thiserror",
 ]
 
@@ -1162,6 +1163,7 @@ dependencies = [
  "styk-doc",
  "styk-draw",
  "styk-formats",
+ "styk-math",
  "styk-piv",
  "thiserror",
 ]
@@ -1175,6 +1177,13 @@ dependencies = [
  "styk-doc",
  "thiserror",
  "zstd",
+]
+
+[[package]]
+name = "styk-math"
+version = "0.1.0"
+dependencies = [
+ "libm",
 ]
 
 [[package]]

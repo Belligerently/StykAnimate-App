@@ -16,3 +16,5 @@ Architecture decision records of the Rust engine port. Each states the context, 
 - [D12: A mirror of the document in the engine until the engine owns it](0012-document-mirror.md)
 - [D13: What counts as the same picture in the app](0013-app-parity-rule.md)
 - [D14: The shared memory's maximum adapts to what the device can reserve](0014-shared-memory-maximum.md)
+- [D15: Editing moves to the engine command by command, record for record](0015-commands-record-for-record.md)
+- [D16: Stored arithmetic uses V8's Math functions bit for bit](0016-v8-exact-math.md)

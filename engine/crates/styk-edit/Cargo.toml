@@ -9,4 +9,5 @@ publish.workspace = true
 [dependencies]
 styk-doc = { path = "../styk-doc" }
 styk-eval = { path = "../styk-eval" }
+styk-math = { path = "../styk-math" }
 thiserror = "2"
