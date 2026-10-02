@@ -4,8 +4,8 @@ import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-const {startBackend}=createRequire(import.meta.url)('../desktop/backend.cjs');
-const backend=await startBackend({appRoot:process.cwd()}),errors=[],checks=[];let browser;
+const {startDesktopHost}=createRequire(import.meta.url)('../desktop/web-host.cjs');
+const backend=await startDesktopHost({appRoot:process.cwd()}),errors=[],checks=[];let browser;
 try{
   browser=await chromium.launch({channel:'chrome',headless:true});
   const page=await browser.newPage({viewport:{width:1400,height:900}});

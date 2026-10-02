@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {chromium} from './support/playwright.mjs';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 
-const server = await backend.startBackend({appRoot: fileURLToPath(new URL('..', import.meta.url))});
+const server = await backend.startDesktopHost({appRoot: fileURLToPath(new URL('..', import.meta.url))});
 const browser = await chromium.launch({channel: 'chrome', headless: true});
 const output = 'artifacts/feedback-editing';
 await mkdir(output, {recursive: true});

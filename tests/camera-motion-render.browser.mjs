@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const out='artifacts/camera-motion';await mkdir(out,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true}),page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
 try{
-  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47831'}/api/health`);
+  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result=await page.evaluate(async()=>{
     const [{Editor},{createRenderer},{defaultFigure,createObject,createFrame,emptyDocument},{buildGeometry,evaluatedFrame},{drawExportScene,drawExportSceneSequential,drawExportSceneTiled},{exportSVG},{compilePlaybackPacket},{PlaybackResources},{drawCameraMonitor},{createVfx}]=await Promise.all([
       import('/src/editor.mjs'),import('/src/renderer.mjs'),import('/src/demo.mjs'),import('/src/pivot/geometry.mjs'),import('/src/export-frame-core.mjs'),import('/src/svg-export.mjs'),import('/src/playback-worker.mjs'),import('/src/playback-resources.mjs'),import('/src/camera-monitor.mjs'),import('/src/vfx.mjs')]);

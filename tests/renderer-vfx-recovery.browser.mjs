@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try {
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47843'}/api/health`);
+  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47843'}/tests/fixtures/blank.html`);
   const result=await page.evaluate(async()=>{
     const [{createRenderer},{emptyDocument,createObject,createFrame},{buildGeometry},{createVfx}]=await Promise.all([import('/src/renderer.mjs'),import('/src/demo.mjs'),import('/src/pivot/geometry.mjs'),import('/src/vfx.mjs')]);
     const rows=[];

@@ -5,13 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url), appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const { startBackend } = require('../desktop/backend.cjs');
-const backend = await startBackend({ appRoot }); let browser;
+const { startDesktopHost } = require('../desktop/web-host.cjs');
+const backend = await startDesktopHost({ appRoot }); let browser;
 try {
   try { browser = await chromium.launch({ headless: true }); }
   catch { browser = await chromium.launch({ channel: 'chrome', headless: true }); }
   const page = await browser.newPage(), errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`${backend.origin}/api/health`);
+  await page.goto(`${backend.origin}/tests/fixtures/blank.html`);
   const result = await page.evaluate(async () => {
     const { PlaybackCache } = await import('/src/playback.mjs');
     const { defaultFigure, createObject, createFrame, emptyDocument } = await import('/src/demo.mjs');

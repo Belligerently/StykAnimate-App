@@ -1,5 +1,5 @@
 import {chromium} from './support/playwright.mjs';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
@@ -13,7 +13,7 @@ const fingerprints=async root=>Object.fromEntries(await Promise.all(sourceFiles.
   catch(error){if(error.code==='ENOENT')return [file,null];throw error;}
 })));
 const sources={current:await fingerprints(process.cwd()),...(baseline?{baseline:await fingerprints(baseline)}:{})};
-const service=await backend.startBackend({appRoot:process.cwd()});let browser;
+const service=await backend.startDesktopHost({appRoot:process.cwd()});let browser;
 await mkdir(output,{recursive:true});
 try{
   browser=await chromium.launch({channel:'chrome',headless:true});
@@ -23,7 +23,7 @@ try{
     const file=new URL(route.request().url()).pathname.split('/__zoom_baseline/')[1];
     await route.fulfill({body:await readFile(path.join(baseline,file)),contentType:'text/javascript'});
   });
-  await page.goto(service.origin+'/api/health');
+  await page.goto(service.origin+'/tests/fixtures/blank.html');
   const result=await page.evaluate(async({baseline,benchmark})=>{
     const {zoomDetailQuality,zoomDetailBenchmark,zoomDetailState}=await import('/tests/renderer-zoom-detail-fixture.mjs');
     const results=[];

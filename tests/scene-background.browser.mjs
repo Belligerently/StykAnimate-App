@@ -11,7 +11,7 @@ try {
   const page = await browser.newPage({viewport: {width: 760, height: 540}}), errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (request.url().includes('missing-background')) requests.push(request.url()); });
-  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/api/health`);
+  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result = await page.evaluate(async () => {
     const [{createRenderer}, {emptyDocument, createObject}, {buildGeometry, drawGeometry}, {drawBackground, backgroundBounds},
       {cameraMatrix}, {exportSVG}, {compilePlaybackPacket}] = await Promise.all([

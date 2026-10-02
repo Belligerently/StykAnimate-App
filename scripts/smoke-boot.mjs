@@ -40,7 +40,7 @@ try {
     platform: window.stykDesktop?.platform,
     nodeExposed: typeof window.require !== 'undefined' || typeof window.process !== 'undefined',
     renderer: window.styk.state.renderer?.stats?.backend,
-    health: await (await fetch('/api/health')).json(),
+    health: await (await (async (path, init) => { const [{codecJob}, {codecRequest}] = await Promise.all([import('/src/codec-job.mjs'), import('/src/codec-request.mjs')]); const job = codecJob(); try { return await codecRequest(job.link().fields, path, init); } finally { job.finish(); } })('/api/health')).json(),
     video: await window.stykDesktop.getVideoCapabilities({ width: 320, height: 240 }),
     vfw: (await window.stykDesktop.getVfwCapabilities({ width: 320, height: 240 })).available === true,
     updates: (await window.stykDesktop.getUpdateState()).status,
@@ -51,9 +51,8 @@ try {
   expect('The bridge reports this platform', facts.platform === process.platform, facts.platform);
   expect('The renderer started', ['WebGPU', 'Canvas 2D fallback'].includes(facts.renderer), facts.renderer);
   expect('The codec answers', facts.health?.ok === true, `${facts.health?.jsonEncoder}, scanner ${facts.health?.nativeFrameScanner}`);
+  expect('The codec runs its WebAssembly module with the desktop limits', facts.health?.jsonEncoder === 'rust' && facts.health?.maxImportBytes === 128 * 1024 * 1024);
   if (packaged) {
-    expect('The frozen codec uses the compiled JSON encoder', facts.health.jsonEncoder === 'orjson');
-    expect('The frozen codec loaded its native scanner', facts.health.nativeFrameScanner === 'cpp');
     for (const id of ['webm', 'mp4', 'avi', 'wmv']) expect(`The bundled encoder exports ${id}`, facts.video.formats?.some((format) => format.id === id && format.supported));
   }
   expect('Installed Windows codecs are offered only on Windows', process.platform === 'win32' || facts.vfw === false);

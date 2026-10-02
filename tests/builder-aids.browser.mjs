@@ -2,9 +2,9 @@ import {chromium} from './support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import backendService from '../desktop/backend.cjs';
+import backendService from '../desktop/web-host.cjs';
 const root=path.resolve(import.meta.dirname,'..'),output=path.join(root,'artifacts','builder-aids');
-await mkdir(output,{recursive:true});const backend=await backendService.startBackend({appRoot:root});let browser;
+await mkdir(output,{recursive:true});const backend=await backendService.startDesktopHost({appRoot:root});let browser;
 const checks=[],check=(value,label)=>{assert.ok(value,label);checks.push(label);};
 try{
  browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1100,height:850}}),errors=[];

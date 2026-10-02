@@ -80,12 +80,8 @@ jobs:
           # Ubuntu 24.04 runners restrict unprivileged user namespaces, which
           # Chromium's sandbox needs; the app itself never disables the sandbox.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: Build the native scanner, codec and video encoder
-        run: |
-          npm run build:frame-scan
-          npm run build:sidecar
-          npm run verify:sidecar
-          npm run build:video-encoder
+      - name: Stage the video encoder
+        run: npm run build:video-encoder
       - name: Package the AppImage
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -110,7 +106,6 @@ jobs:
           path: |
             release/*.AppImage
             release/latest-linux.yml
-            artifacts/sidecar-smoke.json
             artifacts/updates/smoke.json
             artifacts/updates/appimage-smoke.json
           retention-days: 7

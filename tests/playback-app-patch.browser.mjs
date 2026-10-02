@@ -7,13 +7,13 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
-const {startBackend} = createRequire(import.meta.url)('../desktop/backend.cjs');
+const {startDesktopHost} = createRequire(import.meta.url)('../desktop/web-host.cjs');
 const appRoot = fileURLToPath(new URL('..', import.meta.url)), artifacts = path.join(appRoot, 'artifacts');
 await mkdir(artifacts, {recursive: true});
 const report = emptyDocument(); report.keyframes = [100, 200, 300].map(x => createFrame([createObject(report.figure_types[0], 1, x, 250)], 100));
 const fixture = new Editor({demo: false}).load(report), fixturePath = path.join(artifacts, 'playback-patch-source.styk');
 await writeFile(fixturePath, JSON.stringify(fixture.serialize()));
-const backend = await startBackend({appRoot}), checks = [], errors = []; let browser;
+const backend = await startDesktopHost({appRoot}), checks = [], errors = []; let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const page = await browser.newPage({viewport: {width: 1400, height: 900}});

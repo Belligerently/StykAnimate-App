@@ -4,19 +4,19 @@ import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 import {performanceSourceHashes} from '../scripts/performance-source-hashes.mjs';
 
 const root=process.cwd(),sources=process.argv.slice(2);
 if(!sources.length)sources.push('../Pivot Animator v5/Animations/tween_camera.piv');
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
-const sourceHashes=await performanceSourceHashes(),service=await backend.startBackend({appRoot:root});
+const sourceHashes=await performanceSourceHashes(),service=await backend.startDesktopHost({appRoot:root});
 const results=[];let browser;
 try {
   browser=await chromium.launch({channel:'chrome',headless:true});
   const page=await browser.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(`${service.origin}/api/health`);
+  await page.goto(`${service.origin}/tests/fixtures/blank.html`);
   await page.setContent('<input id="source" type="file">');
   for(const source of sources){
     const filename=path.resolve(source),before=sha(await readFile(filename));

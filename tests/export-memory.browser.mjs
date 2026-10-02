@@ -2,15 +2,15 @@ import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 const output = path.resolve('artifacts/export-memory');
 await mkdir(output, {recursive: true});
-const service = await backend.startBackend({appRoot: process.cwd()}); let browser;
+const service = await backend.startDesktopHost({appRoot: process.cwd()}); let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const page = await browser.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(service.origin + '/api/health');
+  await page.goto(service.origin + '/tests/fixtures/blank.html');
   const result = await page.evaluate(async () => {
     const {ExportFrameRenderer} = await import('/src/export-frame-renderer.mjs');
     const {samplingFixture} = await import('/tests/export-sampling-fixture.mjs');

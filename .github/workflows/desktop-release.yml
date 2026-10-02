@@ -72,12 +72,9 @@ jobs:
           npm test
           python -m unittest discover -s backend -p 'test_*.py'
           node --test website/tests/*.test.mjs cloud/tests/*.test.mjs
-      - name: Build standalone codecs and video encoder
+      - name: Build the installed-codec helpers and video encoder
         run: |
-          npm run build:frame-scan
           if [ "$RUNNER_OS" = Windows ]; then npm run build:vfw; fi
-          npm run build:sidecar
-          npm run verify:sidecar
           npm run build:video-encoder
       - name: Package the release
         env:
@@ -126,7 +123,6 @@ jobs:
         with:
           name: release-evidence-${{ matrix.platform }}
           path: |
-            artifacts/sidecar-smoke.json
             artifacts/package-manifest.json
             artifacts/updates/smoke.json
             artifacts/updates/appimage-smoke.json

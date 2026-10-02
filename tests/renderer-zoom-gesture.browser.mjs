@@ -1,5 +1,5 @@
 import {chromium} from './support/playwright.mjs';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -41,7 +41,7 @@ if(drawingReferenceURL){
 const fingerprints=async()=>Object.fromEntries(await Promise.all(files.map(async file=>[file,createHash('sha256').update(await readFile(file)).digest('hex')])));
 const sources=await fingerprints(),service=process.env.STYK_ZOOM_GESTURE_ORIGIN
   ?{origin:process.env.STYK_ZOOM_GESTURE_ORIGIN,stop(){}}
-  :await backend.startBackend({appRoot:process.cwd()});
+  :await backend.startDesktopHost({appRoot:process.cwd()});
 let browser;
 const errors=[],networkFailures=[],progress=[];
 try{
@@ -50,7 +50,7 @@ try{
   page.on('pageerror',error=>errors.push(error.message));
   page.on('requestfailed',request=>networkFailures.push({url:request.url(),error:request.failure()?.errorText}));
   await page.exposeFunction('zoomCheckProgress',update=>{progress.push(update);console.log(JSON.stringify(update));});
-  await page.goto(service.origin+'/api/health');
+  await page.goto(service.origin+'/tests/fixtures/blank.html');
   const result=await withDeadline(page.evaluate(async({stateOnly,refinementSmall,drawingCPUOnly,cameraOnly,cameraDrawingOnly,cameraGPUOnly,sceneCaptureOnly,drawingReferenceURL})=>{
     const reports=[];
     try{
@@ -103,7 +103,7 @@ try{
     cpuPage.on('pageerror',error=>errors.push(error.message));
     cpuPage.on('requestfailed',request=>networkFailures.push({url:request.url(),error:request.failure()?.errorText}));
     await cpuPage.exposeFunction('zoomCheckProgress',update=>{progress.push(update);console.log(JSON.stringify(update));});
-    await cpuPage.goto(service.origin+'/api/health');
+    await cpuPage.goto(service.origin+'/tests/fixtures/blank.html');
     const cpuResult=await withDeadline(cpuPage.evaluate(async({drawingCPUOnly,sceneCaptureOnly,sceneCPUOnly,sceneDrawingCaptureOnly})=>{
       try{
         const {zoomDrawingCaptureNative,zoomSceneCaptureNative,zoomSceneDrawingCaptureNative}=await import('/tests/renderer-zoom-gesture-fixture.mjs'),reports=[];
