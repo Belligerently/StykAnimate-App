@@ -214,7 +214,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 - **The document is held twice until S5** (D12): the editor's JavaScript objects and the
   engine's store and typed views. Measured 2026-10-02 in Electron (WebGPU), one run each after
   opening the file and letting the mirror commit, machine load 4–5 from the baseline rounds
-  (`tmp/engine-port/mirror-memory.mjs`):
+  (`node scripts/engine-memory.mjs <file>`):
 
   | File | Engine | WebAssembly memory | JS heap | Renderer process | All processes |
   | --- | --- | ---: | ---: | ---: | ---: |
