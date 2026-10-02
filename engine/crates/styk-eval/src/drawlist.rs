@@ -226,21 +226,23 @@ impl<'a> Ctx<'a> {
     }
 
     /// Brush of a segment: paint, two-colour gradient, or solid colour.
+    ///
+    /// An onion skin's tint replaces the item's colour and drops its secondary
+    /// colour, but a custom paint keeps its own colours, as the editor's styled
+    /// onion drawables do (`onion-skin.mjs` sets `rgb` and clears `secondary` only).
     fn brush(&self, out: &mut Out, it: &Item, outline: bool) -> (u32, u32) {
         let seg = &self.figure(it).segments[it.index as usize];
-        if let Some(tint) = self.tint {
-            return (rgba8(tint, it.alpha), NO_PAINT);
-        }
-        let solid = rgba8(it.rgb, it.alpha);
+        let solid = rgba8(self.tint.unwrap_or(it.rgb), it.alpha);
         if outline || it.color >> 24 == 255 || it.flags & crate::geometry::ITEM_SOLID != 0 {
             return (solid, NO_PAINT);
         }
+        let secondary = if self.tint.is_some() { None } else { seg.secondary };
         if let Some(paint) = &seg.paint {
             let mut stops: Vec<(f32, [f32; 4])> =
                 paint.stops.iter().map(|s| (s.offset as f32, stop_color(object_color(s.rgb, it.color), s.opacity))).collect();
             stops.sort_by(|a, b| a.0.total_cmp(&b.0));
             stops[0].1 = stop_color(object_color(seg.rgb, it.color), seg.alpha);
-            if let Some((rgb, a)) = seg.secondary
+            if let Some((rgb, a)) = secondary
                 && stops.len() > 1
             {
                 let last = stops.len() - 1;
@@ -252,7 +254,7 @@ impl<'a> Ctx<'a> {
             }
             return (solid, paint_record(out, paint, &stops, it.start, it.end));
         }
-        if let Some((rgb, a)) = seg.secondary {
+        if let Some((rgb, a)) = secondary {
             let mut end = it.end;
             let (dx, dy) = (it.end[0] - it.start[0], it.end[1] - it.start[1]);
             if it.bend.abs() > 1e-7 && matches!(it.kind, ItemKind::Line | ItemKind::SquareLine) {
