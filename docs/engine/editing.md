@@ -68,6 +68,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
 | `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, inverse kinematics, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
+| `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
 | flipping a branch, everything else | no: `Unported` | transform-native |
 
@@ -110,9 +111,12 @@ document difference the harness can see):
   the engine. On a layer sheet a commit compares poses without them, as the engine does.
 - **The history byte budget** (`historyBytes`) is not ported; the engine's history trims
   by count (80 entries) only. Phase 1 keeps the app's history in JavaScript.
-- **Validation** (`validateObjectChanges`, `validateLayerState`,
-  `validateLayerSheetChanges`) is not ported; the ported commands only write finite poses
-  and keys the planner builds.
+- **Validation**: a published sheet is checked as `validateLayerSheetChanges` checks it
+  (keys in order inside their layer's length, valid easing, poses that exist, the key
+  counter), with the editor's errors; movieclip replacement records, the million-key
+  limits, `validateObjectChanges` and `validateLayerState` are not ported.
+- **Audio ripple** (`editor.audioRipple`): inserting or removing frames on every track
+  also shifts audio in the editor; the facade runs those in JavaScript while it is on.
 
 ## What a gesture costs in the engine
 

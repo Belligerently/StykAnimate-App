@@ -13,17 +13,17 @@ use crate::history::{Command, CommandKind, Direction};
 use crate::record::uid;
 use crate::{EditError, Editor};
 
-const MAX_SHEET_TICKS: f64 = 10_000_000.0;
+pub(crate) const MAX_SHEET_TICKS: f64 = 10_000_000.0;
 
-fn fixed(id: &str) -> bool {
+pub(crate) fn fixed(id: &str) -> bool {
     id == "scene" || id == "camera"
 }
 
-fn num(value: &Value, key: &str) -> Option<f64> {
+pub(crate) fn num(value: &Value, key: &str) -> Option<f64> {
     value.get(key).and_then(Value::as_f64)
 }
 
-fn items(value: Option<&Value>) -> Vec<Value> {
+pub(crate) fn items(value: Option<&Value>) -> Vec<Value> {
     value.and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default()
 }
 
@@ -32,7 +32,7 @@ fn json(value: Option<&Value>) -> String {
 }
 
 /// `continuations(frame)`.
-fn continuations(frame: &Value) -> Vec<Value> {
+pub(crate) fn continuations(frame: &Value) -> Vec<Value> {
     items(frame.path(&["_styk", "movieclipContinuations"]))
 }
 
@@ -67,7 +67,7 @@ fn signature(object: &Value, frame_objects: &[Value]) -> String {
 }
 
 /// `keyEasing(key)`: `{interpolation, bezier?}`, `hold` read as `constant`.
-fn key_easing(easing: &Value) -> Vec<(&'static str, Value)> {
+pub(crate) fn key_easing(easing: &Value) -> Vec<(&'static str, Value)> {
     let mode = match easing.get("interpolation").and_then(Value::as_str) {
         Some("hold") => "constant",
         Some(mode) => mode,
@@ -81,17 +81,34 @@ fn key_easing(easing: &Value) -> Vec<(&'static str, Value)> {
 }
 
 /// `sheetKeyAt(track, tick)`: the index of the last key at or before `tick`.
-fn key_at(keys: &[Value], tick: f64) -> Option<usize> {
+pub(crate) fn key_at(keys: &[Value], tick: f64) -> Option<usize> {
     keys.partition_point(|k| num(k, "tick").unwrap_or(0.0) <= tick).checked_sub(1)
 }
 
+/// `write`'s options: an empty cell, the easing the key takes (else the one of the
+/// key before it), and whether a key past the layer's end extends the last exposure
+/// instead of leaving an empty cell before it.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Write<'a> {
+    pub blank: bool,
+    pub easing: Option<&'a Value>,
+    pub extend: bool,
+}
+
+/// `{interpolation: 'constant'}`: the easing of a key with no key before it.
+pub(crate) fn constant() -> Value {
+    let mut easing = Obj::new();
+    easing.set("interpolation", Value::str("constant"));
+    Value::object(easing)
+}
+
 /// The planner of one command: the tracks it replaces, the pose sources it captures.
-struct Plan {
-    before: Value,
+pub(crate) struct Plan {
+    pub before: Value,
     /// Replaced tracks, in the order the command first touched them.
     tracks: Vec<(String, Obj)>,
     next_id: f64,
-    duration: f64,
+    pub duration: f64,
     sources: Vec<(String, Value)>,
     layers: Value,
     next_frame: u64,
@@ -99,7 +116,7 @@ struct Plan {
 
 impl Plan {
     /// `get(id)`: the command's own copy of a track.
-    fn track(&mut self, id: &str) -> &mut Obj {
+    pub(crate) fn track(&mut self, id: &str) -> &mut Obj {
         if let Some(at) = self.tracks.iter().position(|(track, _)| track == id) {
             return &mut self.tracks[at].1;
         }
@@ -113,12 +130,34 @@ impl Plan {
         &mut self.tracks.last_mut().unwrap().1
     }
 
-    fn keys(&mut self, id: &str) -> Vec<Value> {
+    pub(crate) fn keys(&mut self, id: &str) -> Vec<Value> {
         items(self.track(id).get("keys"))
     }
 
-    fn set_keys(&mut self, id: &str, keys: Vec<Value>) {
+    pub(crate) fn set_keys(&mut self, id: &str, keys: Vec<Value>) {
         self.track(id).set("keys", Value::array(keys));
+    }
+
+    /// `track.end`.
+    pub(crate) fn end(&mut self, id: &str) -> f64 {
+        self.track(id).get("end").and_then(Value::as_f64).unwrap_or(0.0)
+    }
+
+    pub(crate) fn set_end(&mut self, id: &str, end: f64) {
+        self.track(id).set("end", Value::Num(end));
+    }
+
+    /// The largest end among the plan's tracks and the untouched ones (`Object.values(state.tracks)`).
+    pub(crate) fn longest(&self) -> f64 {
+        let untouched = self.before.get("tracks").and_then(Value::as_obj).map(|tracks| {
+            tracks.iter().filter(|(id, _)| !self.tracks.iter().any(|(touched, _)| touched.as_str() == &***id)).filter_map(|(_, track)| num(track, "end")).fold(f64::NEG_INFINITY, f64::max)
+        });
+        self.tracks.iter().filter_map(|(_, track)| track.get("end").and_then(Value::as_f64)).fold(untouched.unwrap_or(f64::NEG_INFINITY), f64::max)
+    }
+
+    /// A pose source this plan captured, by id.
+    pub(crate) fn captured(&self, id: &str) -> Option<&Value> {
+        self.sources.iter().find(|(source, _)| source == id).map(|(_, frame)| frame)
     }
 
     fn cell(&mut self) -> String {
@@ -129,7 +168,7 @@ impl Plan {
 
     /// `capture(frame, id)`: the layer's figures of `frame` (and what they are joined
     /// to) as a new pose source.
-    fn capture(&mut self, frame: &Value, id: &str) -> Value {
+    pub(crate) fn capture(&mut self, frame: &Value, id: &str) -> Value {
         let layers = Some(&self.layers);
         let owned = |uid: f64| layer_of(layers, uid as u32) == id;
         let uids: Vec<f64> = if fixed(id) { Vec::new() } else { objects_of(frame).iter().filter_map(|o| num(o, "unique_id")).filter(|u| owned(*u)).collect() };
@@ -151,13 +190,14 @@ impl Plan {
         Value::object(value)
     }
 
-    /// `write(id, tick, frame, {easing})`: a key at `tick` holding the layer's pose in `frame`.
-    fn write(&mut self, id: &str, tick: f64, frame: &Value, easing: &Value) -> Result<(), EditError> {
+    /// `write(id, tick, frame, {blank, easing, extend})`: a key at `tick` holding the
+    /// layer's pose in `frame`.
+    pub(crate) fn write(&mut self, id: &str, tick: f64, frame: &Value, options: Write) -> Result<(), EditError> {
         if tick.fract() != 0.0 || !(0.0..MAX_SHEET_TICKS).contains(&tick) {
             return Err(EditError::Invalid("errors.editorLayerSheet.chooseAValidWholeFrame".into()));
         }
         let mut keys = self.keys(id);
-        let end = num(&Value::object(self.track(id).clone()), "end").unwrap_or(0.0);
+        let end = self.end(id);
         let index = key_at(&keys, tick);
         let existing = index.filter(|&i| num(&keys[i], "tick") == Some(tick));
         let mut key = match existing {
@@ -166,14 +206,18 @@ impl Plan {
                 let mut key = Obj::new();
                 key.set("id", Value::str(&self.cell()));
                 key.set("tick", Value::Num(tick));
-                for (name, value) in key_easing(easing) {
+                let easing = match options.easing {
+                    Some(easing) => key_easing(easing),
+                    None => inherited_easing(&keys, tick),
+                };
+                for (name, value) in easing {
                     key.set(name, value);
                 }
                 key
             }
         };
         // Past the layer's end: an empty cell closes the gap before the new key.
-        if !fixed(id) && tick > end && !keys.is_empty() {
+        if !options.extend && !fixed(id) && tick > end && !keys.is_empty() {
             let mut pad = Obj::new();
             pad.set("id", Value::str(&self.cell()));
             pad.set("tick", Value::Num(end));
@@ -189,7 +233,7 @@ impl Plan {
         if layers.and_then(|l| l.path(&["byId", id, "drawing", "version"])).and_then(Value::as_f64) == Some(1.0) {
             return Err(EditError::Unported("poses on a drawing layer".into()));
         }
-        let empty = !fixed(id) && !objects_of(frame).iter().any(|o| owned(num(o, "unique_id"))) && !continuations(frame).iter().any(|step| owned(num(step, "uid")));
+        let empty = options.blank || (!fixed(id) && !objects_of(frame).iter().any(|o| owned(num(o, "unique_id"))) && !continuations(frame).iter().any(|step| owned(num(step, "uid"))));
         let value = if empty {
             let mut value = Obj::new();
             value.set("frameId", Value::Null);
@@ -200,8 +244,10 @@ impl Plan {
         key.set("value", value);
         key.set("empty", Value::Bool(empty));
         key.remove("sourceTick");
-        for (name, value) in key_easing(easing) {
-            key.set(name, value);
+        if let Some(easing) = options.easing {
+            for (name, value) in key_easing(easing) {
+                key.set(name, value);
+            }
         }
         key.remove("patchOnly");
         key.remove("movieclipPatches");
@@ -212,9 +258,25 @@ impl Plan {
         }
         self.set_keys(id, keys);
         let end = end.max(tick + 1.0);
-        self.track(id).set("end", Value::Num(end));
+        self.set_end(id, end);
         self.duration = self.duration.max(end);
         Ok(())
+    }
+}
+
+/// `inheritedKeyEasing(keys, tick)`: the easing of the nearest earlier key, else a hold.
+fn inherited_easing(keys: &[Value], tick: f64) -> Vec<(&'static str, Value)> {
+    let mut previous: Option<&Value> = None;
+    for key in keys.iter().filter(|k| !k.get("hidden").is_some_and(Value::truthy)) {
+        let at = num(key, "tick").unwrap_or(f64::NAN);
+        if at < tick && previous.is_none_or(|p| at > num(p, "tick").unwrap_or(f64::NAN)) {
+            previous = Some(key);
+        }
+    }
+    match previous {
+        // A key without an interpolation eases linearly.
+        Some(previous) => key_easing(previous),
+        None => key_easing(&constant()),
     }
 }
 
@@ -312,19 +374,15 @@ impl Editor {
             {
                 let until = num(&next, "tick").unwrap_or(tick);
                 let frame = self.evaluated(until, false)?;
-                plan.write(id, until, &frame, &next)?;
+                plan.write(id, until, &frame, Write { easing: Some(&next), ..Write::default() })?;
             }
             // A held cell is edited at its key; auto key always keys the playhead.
             let at = match &key {
                 Some(key) if hold && !self.auto_key => num(key, "tick").unwrap_or(tick),
                 _ => tick,
             };
-            let constant = {
-                let mut easing = Obj::new();
-                easing.set("interpolation", Value::str("constant"));
-                Value::object(easing)
-            };
-            plan.write(id, at, &after, key.as_ref().unwrap_or(&constant))?;
+            let held = constant();
+            plan.write(id, at, &after, Write { easing: Some(key.as_ref().unwrap_or(&held)), ..Write::default() })?;
         }
         self.drag = None;
         self.authored = None;
@@ -332,7 +390,7 @@ impl Editor {
     }
 
     /// `getFrameById(report, id)`: a retained pose source, else the keyframe with that id.
-    fn frame_by_id(&self, id: &str) -> Option<Value> {
+    pub(crate) fn frame_by_id(&self, id: &str) -> Option<Value> {
         let retained = self.report.path(&["_styk", "frameSources", id]).filter(|frame| frame.truthy()).cloned();
         retained.or_else(|| items(self.report.get("keyframes")).into_iter().find(|frame| frame.path(&["_styk", "frameId"]).and_then(Value::as_str) == Some(id)))
     }
@@ -393,7 +451,7 @@ impl Editor {
     }
 
     /// `planner(editor, ids)`: `ids` must be layers that exist and are not locked.
-    fn planner(&self, ids: &[String]) -> Result<Plan, EditError> {
+    pub(crate) fn planner(&self, ids: &[String]) -> Result<Plan, EditError> {
         let styk = self.report.get("_styk");
         let layers = styk.and_then(|s| s.get("layers")).cloned().unwrap_or(Value::Null);
         if ids.is_empty() {
@@ -423,7 +481,7 @@ impl Editor {
 
     /// `publish(editor, plan, label, {selection})`: the plan becomes the document's
     /// sheet, with one history entry.
-    fn publish(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>) -> Result<bool, EditError> {
+    pub(crate) fn publish(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>) -> Result<bool, EditError> {
         // Imported spans whose ends changed are frozen as poses: an unchanged
         // imported span keeps evaluating from the import.
         for (id, _) in plan.tracks.clone() {
@@ -446,6 +504,7 @@ impl Editor {
                 }
             }
         }
+        self.validate_plan(&mut plan)?;
         // The new sheet: the old one with the replaced tracks, counters and length.
         let before = plan.before.clone();
         let before_layers = plan.layers.clone();
@@ -482,6 +541,63 @@ impl Editor {
         self.layer_revision += 1;
         self.emit_sheet("edit", label, source_ids);
         Ok(true)
+    }
+
+    /// `validateLayerSheetChanges`: what the replaced tracks must satisfy, with the
+    /// editor's errors (keys in order inside their layer's length, poses that exist,
+    /// identities not reused).
+    fn validate_plan(&self, plan: &mut Plan) -> Result<(), EditError> {
+        let order = "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered";
+        let duration = plan.duration;
+        if duration.fract() != 0.0 || !(1.0..=MAX_SHEET_TICKS).contains(&duration) {
+            return Err(EditError::Invalid("errors.layerSheet.invalidLayerTimeline".into()));
+        }
+        let ids: Vec<String> = plan.tracks.iter().map(|(id, _)| id.clone()).collect();
+        let mut largest = 0.0f64;
+        for id in &ids {
+            let end = plan.end(id);
+            if end.fract() != 0.0 || end < 0.0 || end > duration {
+                return Err(EditError::Invalid("errors.layerSheet.invalidLayerExposureLength".into()));
+            }
+            let mut previous = -1.0;
+            let mut seen: Vec<String> = Vec::new();
+            for key in plan.keys(id) {
+                let name = key.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                let tick = num(&key, "tick").unwrap_or(f64::NAN);
+                if name.is_empty() || seen.contains(&name) || tick.fract() != 0.0 || tick.is_nan() || tick < 0.0 || tick <= previous || tick >= end {
+                    return Err(EditError::Invalid(order.into()));
+                }
+                previous = tick;
+                crate::sheet_frames::valid_easing(&key)?;
+                if let Some(number) = name.strip_prefix("cell-").filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).and_then(|n| n.parse::<f64>().ok()) {
+                    largest = largest.max(number);
+                }
+                match (key.get("sourceTick"), key.path(&["value", "frameId"])) {
+                    (Some(source), _) => {
+                        if !source.as_f64().is_some_and(|t| t.is_finite() && (0.0..=MAX_SHEET_TICKS).contains(&t)) {
+                            return Err(EditError::Invalid("errors.layerSheet.invalidImportedLayerTiming".into()));
+                        }
+                    }
+                    (None, Some(Value::Null)) => {}
+                    (None, frame) => {
+                        let known = frame.and_then(Value::as_str).is_some_and(|frame| plan.captured(frame).is_some() || self.frame_by_id(frame).is_some());
+                        if !known {
+                            return Err(EditError::Invalid("errors.layerSheet.layerKeyReferencesAMissingPose".into()));
+                        }
+                    }
+                }
+                seen.push(name);
+            }
+        }
+        // An untouched track may not outlast a shortened sheet.
+        let untouched = plan.before.get("tracks").and_then(Value::as_obj).map(|tracks| tracks.iter().filter(|(id, _)| !ids.iter().any(|touched| touched.as_str() == &***id)).filter_map(|(_, track)| num(track, "end")).fold(0.0, f64::max));
+        if untouched.is_some_and(|end| end > duration) {
+            return Err(EditError::Invalid("errors.layerSheet.invalidLayerExposureLength".into()));
+        }
+        if plan.next_id <= largest {
+            return Err(EditError::Invalid("errors.layerSheet.layerKeyIdentityCounterIsInvalid".into()));
+        }
+        Ok(())
     }
 
     /// `materialize(id, key)`: an imported key becomes the pose it showed.

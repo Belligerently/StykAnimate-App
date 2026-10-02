@@ -71,8 +71,8 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
             (Err(EditError::Invalid(key)), None) => differences.push(format!("error {key}, the editor succeeded")),
             (Ok(_), Some(error)) => differences.push(format!("succeeded, the editor failed with {}", error.get("key").and_then(Value::as_str).unwrap_or("an error"))),
             (Ok(value), None) => {
-                // `seek` returns the evaluated frame: a view the facade reads from its own copy.
-                if method != "seek" && method != "@seek" {
+                // These return the evaluated frame: a view the facade reads from its own copy.
+                if !["seek", "@seek", "sheetAppendFrame"].contains(&method.as_str()) {
                     let got = json(&plain(value, 4).unwrap_or(Value::Null));
                     let want = json(step.get("result").unwrap_or(&Value::Null));
                     if got != want {

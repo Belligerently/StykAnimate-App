@@ -20,6 +20,7 @@ mod record;
 pub mod replay;
 mod select;
 mod sheet;
+mod sheet_frames;
 mod timeline;
 mod transform;
 
@@ -310,6 +311,15 @@ impl Editor {
             "poseJoint" => self.pose_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "sheetDuplicateFrameAfter" => self.sheet_duplicate_frame_after(&arg(0), &arg(1)).map(Value::Bool),
+            "sheetSetEasing" => self.sheet_set_easing(&arg(0), number(1), number(2), &arg(3)).map(Value::Bool),
+            "sheetClearKeys" => self.sheet_clear_keys(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetClearFrames" => self.sheet_clear_frames(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetInsertFrames" => self.sheet_insert_frames(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetRemoveFrames" => self.sheet_remove_frames(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetSetDuration" => self.sheet_set_duration(number(0), &arg(1), &arg(2)).map(Value::Bool),
+            "sheetAppendFrame" => self.sheet_append_frame(&arg(0)),
             "undo" => self.undo().map(Value::Bool),
             "redo" => self.redo().map(Value::Bool),
             other => Err(EditError::Unported(other.to_string())),

@@ -7,6 +7,8 @@ const PORTED: &[&str] = &[
     "move-native", "move-joined", "drag-cancel", "selection-native", "rotate-native", "transform-joined", "pose-native", "pose-joints", "pose-joined", "pose-snap",
     // The app's configuration: gestures on a layer sheet.
     "move-sheet", "gestures-sheet", "autokey-sheet", "layers-sheet", "locked-sheet", "movieclip-sheet", "movieclip-loose-sheet",
+    // Keys and frames of the layer timeline.
+    "keys-sheet", "frames-sheet", "frames-movieclip-sheet", "frames-timed-clip-sheet",
 ];
 
 #[test]
