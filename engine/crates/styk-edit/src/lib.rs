@@ -107,6 +107,8 @@ pub struct Editor {
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
     pub(crate) eval: RefCell<frame::Cache>,
+    /// The last document checked for unported features, and the answer.
+    gate: RefCell<Option<(Value, Option<&'static str>)>>,
 }
 
 /// What the interface reads after a call (`engine/tools/edit-replay.mjs` records the same).
@@ -169,6 +171,7 @@ impl Editor {
             new_layer_hints: HashMap::new(),
             events: Vec::new(),
             eval: RefCell::default(),
+            gate: RefCell::new(None),
         }
     }
 
@@ -304,9 +307,21 @@ impl Editor {
         }
     }
 
-    /// Why the document's commands still run in JavaScript, if they do: what phase 1
-    /// has not ported yet.
+    /// Why the document's commands still run in JavaScript, if they do. The answer
+    /// is kept for as long as the document does not change.
     fn unported_document(&self) -> Option<&'static str> {
+        if let Some((report, reason)) = self.gate.borrow().as_ref()
+            && report.same_node(&self.report)
+        {
+            return *reason;
+        }
+        let reason = self.scan_unported();
+        *self.gate.borrow_mut() = Some((self.report.clone(), reason));
+        reason
+    }
+
+    /// What phase 1 has not ported yet, found by reading the whole document.
+    fn scan_unported(&self) -> Option<&'static str> {
         let styk = self.report.get("_styk");
         let sheet = styk.and_then(|s| s.get("layerSheet"));
         let list = |value: Option<&Value>| -> Vec<Value> { value.and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default() };

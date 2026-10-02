@@ -5,6 +5,7 @@
 //!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
 //!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
+//!   styk edit-bench <report.json> <uid> <tick>   what a gesture costs in styk-edit on a document
 //!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
 //!                                         (engine/tools/records-reference.mjs wrote the folder)
 
@@ -40,6 +41,7 @@ fn main() {
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2]),
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
         Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
+        Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y]");
@@ -71,6 +73,51 @@ fn edit_replay(files: &[String]) -> i32 {
         }
     }
     i32::from(failed)
+}
+
+/// Times a gesture in styk-edit on a loaded report (records-reference.mjs writes one):
+/// selecting a figure at a tick, a drag of 30 moves and of 30 joint poses, each committed.
+fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
+    let ms = |since: Instant| since.elapsed().as_secs_f64() * 1000.0;
+    let started = Instant::now();
+    let tree = match std::fs::read(report).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())) {
+        Ok(tree) => tree,
+        Err(error) => {
+            println!("{report}: {error}");
+            return 2;
+        }
+    };
+    println!("parse {:.0} ms", ms(started));
+    let num = |text: &str| styk_doc::Value::Num(text.parse().unwrap_or(0.0));
+    let mut editor = styk_edit::Editor::new(tree, styk_edit::Options { property_channels: true, layer_timeline: true, auto_key: false });
+    let mut call = |name: &str, args: &[styk_doc::Value]| {
+        let started = Instant::now();
+        let result = editor.call(name, args);
+        editor.take_events();
+        (ms(started), result.map(|value| styk_doc::json::to_string(&value).len()).map_err(|e| e.to_string()))
+    };
+    let report = |label: &str, (time, result): (f64, Result<usize, String>)| println!("{label}: {time:.2} ms{}", result.err().map(|e| format!(" ({e})")).unwrap_or_default());
+    report("seek (first evaluation)", call("seek", &[num(tick)]));
+    report("select", call("select", &[num(uid), num("0")]));
+    for (gesture, step) in [("moveSelection", "move"), ("poseJoint", "pose")] {
+        report(&format!("beginDrag for {step}"), call("beginDrag", &[styk_doc::Value::str("Pose figure")]));
+        let mut times = Vec::new();
+        for i in 0..30 {
+            let (time, result) = call(gesture, &[num(&format!("{}", 300 + i)), num(&format!("{}", 250 + i))]);
+            if let Err(error) = result {
+                println!("{gesture}: {error}");
+                break;
+            }
+            times.push(time);
+        }
+        times.sort_by(|a, b| a.total_cmp(b));
+        if !times.is_empty() {
+            println!("{gesture} step: median {:.2} ms, slowest {:.2} ms over {}", times[times.len() / 2], times[times.len() - 1], times.len());
+        }
+        report(&format!("commitDrag after {step}"), call("commitDrag", &[]));
+    }
+    report("undo", call("undo", &[]));
+    0
 }
 
 /// Compares the evaluated frame as records, tick by tick, with what the editor stores

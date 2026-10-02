@@ -110,6 +110,25 @@ document difference the harness can see):
   `validateLayerSheetChanges`) is not ported; the ported commands only write finite poses
   and keys the planner builds.
 
+## What a gesture costs in the engine
+
+`styk edit-bench <report.json> <uid> <tick>` times a gesture in `styk-edit` on a loaded
+report. Native build, one run each while the machine was busy with other work
+(2026-10-03), on Pivot imports of about 100 MB of JSON:
+
+| | hitoshi vs suzu tomiee ssj (256 keys, 75 figures on show) | AyameDemo (617 keys, 2 figures on show) |
+| --- | --- | --- |
+| First call on a document (typed views of all of it) | 102 ms | 68 ms |
+| Begin a gesture (evaluate the frame as records) | 2.5–6.2 ms | 2.6–6.0 ms |
+| A move step | 0.01 ms | under 0.01 ms |
+| A joint-pose step (geometry of the draft) | 0.56 ms | 0.03 ms |
+| Commit (planner, capture, history) | 1.8–2.7 ms | 7.3–7.5 ms |
+| Undo | 6.1 ms | 5.2 ms |
+
+Not measured: WebAssembly, and the boundary (arguments in, changed records out).
+`TDD2 URIEL NEMESIS 3` and `Jay on a new app (repaired)` contain movieclips, which
+gestures on a layer sheet do not cover yet.
+
 ## Arithmetic
 
 A ported command must round every stored result as the editor does. The platform's
