@@ -793,7 +793,7 @@ function prepareEditingFrame() {
   editablePreparation.start(renderer,geometry=>({
     frame:currentFrame(),view:{...state.view},getView:()=>({...state.view}),cameraEnabled:false,
     editorBackgroundColor:builderBackgroundColor(state.settings,state),onionFrames:onionSkins(),
-    geometry,artworkRevision:editor.definitionRevision,
+    geometry,artworkRevision:editor.definitionRevision,revision:editor.revision,
   }));
 }
 
@@ -1950,6 +1950,7 @@ function loop(now) {
             ? editing.packet
             : undefined,
         report: drawingPreview?.report??editor.report,
+        drawingPreview: Boolean(drawingPreview),
         frame,
         geometry,
         view: state.view,
@@ -2165,7 +2166,7 @@ function pause() {
     editablePreparation.start(state.renderer,geometry=>({
       frame:currentFrame(),view:{...state.view},getView:()=>({...state.view}),
       cameraEnabled:false,editorBackgroundColor:builderBackgroundColor(state.settings,state),
-      onionFrames:onionSkins(),geometry,artworkRevision:editor.definitionRevision,
+      onionFrames:onionSkins(),geometry,artworkRevision:editor.definitionRevision,revision:editor.revision,
     }));
   }
   requestRender();

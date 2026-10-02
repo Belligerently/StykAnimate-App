@@ -1,6 +1,7 @@
 //! Parity with the JavaScript editor: compares what this engine evaluates with
 //! a reference dump written by `engine/tools/reference.mjs` (every drawable and
-//! every joint of the sampled ticks).
+//! every joint of the sampled ticks, and the effects when the dump has them:
+//! see [`crate::vfx::parity`]).
 //!
 //! `styk compare` and the fixture tests share this one comparison, so a
 //! tolerance cannot drift between them.
@@ -33,6 +34,8 @@ pub struct Report {
     pub mismatched_joints: usize,
     /// `(reference, engine)` when the timeline lengths differ.
     pub total_ticks: Option<(u32, u32)>,
+    /// Effects, for references written with `--vfx`.
+    pub vfx: crate::vfx::parity::Counts,
     /// One entry per tick with differences, in tick order.
     pub bad_frames: Vec<FrameReport>,
 }
@@ -69,11 +72,15 @@ pub fn compare(prepared: &Prepared, reference: &Value) -> Report {
     }
     for frame in items(reference.get("frames")) {
         let tick = frame.get("tick").and_then(Value::as_f64).unwrap_or(0.0);
-        let scene: Scene = build(&prepared.doc, &prepared.evaluate(tick));
+        let evaluated = prepared.evaluate(tick);
+        let scene: Scene = build(&prepared.doc, &evaluated);
         let mut problems: Vec<String> = Vec::new();
         report.frames += 1;
         drawables(&scene, items(frame.get("drawables")), &mut report, &mut problems);
         joints(prepared, &scene, items(frame.get("objects")), &mut report, &mut problems);
+        if let Some(effects) = frame.get("vfx") {
+            crate::vfx::parity::compare(prepared, &evaluated, effects, &mut report.vfx, &mut problems);
+        }
         if !problems.is_empty() {
             report.bad_frames.push(FrameReport { tick, problems });
         }

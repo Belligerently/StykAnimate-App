@@ -76,6 +76,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Windows ]; then npm run build:vfw; fi
           npm run build:video-encoder
+      - uses: ./.github/actions/engine-build
       - name: Package the release
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

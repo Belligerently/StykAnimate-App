@@ -172,7 +172,7 @@ src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx-clips.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx.mjs	engine	styk-edit	js	commands and history
-src/editor.mjs	engine	styk-edit	js	commands and history
+src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
 src/export-canvas.mjs	engine	styk-export	js	
@@ -298,7 +298,7 @@ src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry.mjs	engine	styk-eval	partial	evaluation and world geometry. Rust: evaluatedNativeFrame, buildGeometry, drawPrimitives (draw lists); editing, picking and Canvas paths still JS
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
 src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/structure.mjs	engine	styk-doc	js	validation and structure
+src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS
 src/pivot/surfaces.mjs	engine	styk-eval	js	evaluation and world geometry
 src/playback-bitmap-pool.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-budget.mjs	engine	styk-engine::playback	js	scheduling, budgets
@@ -498,8 +498,8 @@ src/vfx-canvas.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-clip-controls.mjs	ui	-	stays	
 src/vfx-clip-inspector.mjs	ui	-	stays	
 src/vfx-clip-timeline.mjs	ui	-	stays	
-src/vfx-clips.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
-src/vfx-connected.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-clips.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS
+src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
 src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-generator-anchors.mjs	engine	styk-eval::generators	js	particle simulation and looks
 src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	js	
@@ -517,19 +517,19 @@ src/vfx-inspector.mjs	ui	-	stays
 src/vfx-key-channel-menu.mjs	ui	-	stays	
 src/vfx-key-channels.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
 src/vfx-localization.mjs	ui	-	stays	
-src/vfx-paint.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-paint.mjs	engine	styk-eval::vfx	ported	effect model, clips, sampling. Rust: vfx::paint
 src/vfx-preset-preview.mjs	ui	-	stays	
 src/vfx-preset-ui.mjs	ui	-	stays	
 src/vfx-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
 src/vfx-preview.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
-src/vfx-registry.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-registry.mjs	engine	styk-eval::vfx	ported	effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags)
 src/vfx-scene.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-shaders.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-surface.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-user-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
 src/vfx-viewport.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-webgpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
-src/vfx.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS
 src/video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/web-library.mjs	platform	-	stays	file, storage and network services
 src/web-offline.mjs	platform	-	stays	file, storage and network services

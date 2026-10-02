@@ -11,99 +11,15 @@
 //! a `COMPOSITE` record at its place in the parent's painter order.
 
 use std::f64::consts::PI;
-use std::sync::Arc;
 
 use crate::assets::Assets;
 use crate::doc::*;
 use crate::geometry::{mix_color, Item, ItemKind, Scene};
 
-pub const K_CAPSULE: u32 = 1;
-pub const K_ARC: u32 = 2;
-pub const K_DISC: u32 = 3;
-pub const K_RING: u32 = 4;
-pub const K_TRI: u32 = 5;
-pub const K_IMAGE: u32 = 6;
-pub const K_COMPOSITE: u32 = 7;
-pub const K_FILL_VIEW: u32 = 8;
-pub const K_BG_IMAGE: u32 = 9;
-pub const K_BOX: u32 = 10;
-/// A whole open or closed polyline, shaded once per pixel (no joint overlap).
-pub const K_POLYLINE: u32 = 11;
-pub const F_CLOSED: u32 = 1 << 10;
-
-pub const F_SMOOTH: u32 = 1 << 8;
-pub const F_RING_FILL: u32 = 1 << 9;
-/// An image drawn in the record's colour through its own coverage (onion tint).
-pub const F_TINT: u32 = 1 << 11;
-
-pub const NO_PAINT: u32 = u32::MAX;
-
-/// One GPU primitive (std430, 64 bytes).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Prim {
-    pub kind: u32,
-    pub group: u32,
-    /// RGBA8, straight alpha.
-    pub color: u32,
-    /// Offset of a paint record in [`DrawList::paints`] (vec4 units), or `NO_PAINT`.
-    pub paint: u32,
-    pub a: [f32; 4],
-    pub b: [f32; 4],
-    pub c: [f32; 4],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Group {
-    pub parent: u32,
-    pub depth: u32,
-    pub opacity: f32,
-    /// World-space bounds (x0, y0, x1, y1) of everything drawn in the group.
-    pub bounds: [f32; 4],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Pass {
-    pub depth: u32,
-    pub start: u32,
-    pub end: u32,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DrawList {
-    pub prims: Vec<Prim>,
-    pub paints: Vec<[f32; 4]>,
-    /// Polyline vertices referenced by `K_POLYLINE` records.
-    pub points: Vec<[f32; 2]>,
-    pub groups: Vec<Group>,
-    /// Prim ranges per depth, deepest first; the last pass (depth 0) is the frame.
-    pub passes: Vec<Pass>,
-    /// Number of leading root prims that are background fills (drawn unclipped by figures).
-    pub background_prims: u32,
-}
-
-impl DrawList {
-    pub fn bytes(&self) -> usize {
-        self.prims.len() * std::mem::size_of::<Prim>() + self.paints.len() * 16 + self.points.len() * 8 + self.groups.len() * 32
-    }
-}
-
-pub fn rgba8(rgb: [u8; 3], alpha: f64) -> u32 {
-    let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u32;
-    rgb[0] as u32 | (rgb[1] as u32) << 8 | (rgb[2] as u32) << 16 | a << 24
-}
-
-fn argb8(raw: u32) -> u32 {
-    let (a, r, g, b) = (raw >> 24, raw >> 16 & 255, raw >> 8 & 255, raw & 255);
-    r | g << 8 | b << 16 | a << 24
-}
-
-/// Paint record kinds understood by the shader.
-const P_LINEAR: f32 = 0.0;
-const P_RADIAL: f32 = 1.0;
-const P_ANGULAR: f32 = 2.0;
-const P_DIAMOND: f32 = 3.0;
-const P_RADIAL_RING: f32 = 4.0;
+pub use styk_draw::{
+    argb8, rgba8, sample_paint, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
+    K_COMPOSITE, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING,
+};
 
 /// A local primitive list with world bounds, before groups are assigned.
 #[derive(Default)]
@@ -226,21 +142,23 @@ impl<'a> Ctx<'a> {
     }
 
     /// Brush of a segment: paint, two-colour gradient, or solid colour.
+    ///
+    /// An onion skin's tint replaces the item's colour and drops its secondary
+    /// colour, but a custom paint keeps its own colours, as the editor's styled
+    /// onion drawables do (`onion-skin.mjs` sets `rgb` and clears `secondary` only).
     fn brush(&self, out: &mut Out, it: &Item, outline: bool) -> (u32, u32) {
         let seg = &self.figure(it).segments[it.index as usize];
-        if let Some(tint) = self.tint {
-            return (rgba8(tint, it.alpha), NO_PAINT);
-        }
-        let solid = rgba8(it.rgb, it.alpha);
+        let solid = rgba8(self.tint.unwrap_or(it.rgb), it.alpha);
         if outline || it.color >> 24 == 255 || it.flags & crate::geometry::ITEM_SOLID != 0 {
             return (solid, NO_PAINT);
         }
+        let secondary = if self.tint.is_some() { None } else { seg.secondary };
         if let Some(paint) = &seg.paint {
             let mut stops: Vec<(f32, [f32; 4])> =
                 paint.stops.iter().map(|s| (s.offset as f32, stop_color(object_color(s.rgb, it.color), s.opacity))).collect();
             stops.sort_by(|a, b| a.0.total_cmp(&b.0));
             stops[0].1 = stop_color(object_color(seg.rgb, it.color), seg.alpha);
-            if let Some((rgb, a)) = seg.secondary
+            if let Some((rgb, a)) = secondary
                 && stops.len() > 1
             {
                 let last = stops.len() - 1;
@@ -252,7 +170,7 @@ impl<'a> Ctx<'a> {
             }
             return (solid, paint_record(out, paint, &stops, it.start, it.end));
         }
-        if let Some((rgb, a)) = seg.secondary {
+        if let Some((rgb, a)) = secondary {
             let mut end = it.end;
             let (dx, dy) = (it.end[0] - it.start[0], it.end[1] - it.start[1]);
             if it.bend.abs() > 1e-7 && matches!(it.kind, ItemKind::Line | ItemKind::SquareLine) {
@@ -350,11 +268,14 @@ impl<'a> Ctx<'a> {
                 self.image(out, it, seg, asset);
             }
             ItemKind::Text => {
-                if outline > 0.0 {
-                    return;
-                }
                 let seg = &fig.segments[it.index as usize];
                 let Some(text) = fig.text(seg.asset) else { return };
+                if outline > 0.0 {
+                    if let Some(figure_outline) = &fig.outline {
+                        self.text_outline(out, it, seg, text, crate::assets::text_outline_width(figure_outline), outline_rgb);
+                    }
+                    return;
+                }
                 self.text(out, it, seg, text);
             }
         }
@@ -426,9 +347,10 @@ impl<'a> Ctx<'a> {
         };
         // A tinted sprite keeps its coverage and takes the tint as its colour.
         let color = rgba8(self.tint.unwrap_or([255, 255, 255]), it.alpha);
-        let flags = if a.smooth { F_SMOOTH } else { 0 } | if self.tint.is_some() { F_TINT } else { 0 };
-        let mut quad = |anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, image: u32| {
-            let Some(e) = self.assets.image(image) else { return };
+        let tint = if self.tint.is_some() { F_TINT } else { 0 };
+        let flags = if a.smooth { F_SMOOTH } else { 0 } | tint;
+        // One atlas rectangle drawn over the cel-space rectangle (x, y, w, h); `extra` is the record's last parameter.
+        let quad = |out: &mut Out, kind: u32, e: &crate::assets::AtlasEntry, anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, extra: f64| {
             let o = place(anchor, x, y);
             let u = place(anchor, x + w, y);
             let v = place(anchor, x, y + h);
@@ -443,21 +365,60 @@ impl<'a> Ctx<'a> {
                 ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             ];
             let uv = e.uv();
-            out.push(
-                prim(K_IMAGE | flags, color, NO_PAINT, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, 0.0], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]),
-                b,
-            );
+            out.push(prim(kind, color, NO_PAINT, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, extra], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]), b);
         };
         if let Some(tiles) = &a.tiles {
-            for &(x, y, image) in &tiles.tiles {
-                quad(tiles.anchor, x, y, crate::drawing::TILE as f64, crate::drawing::TILE as f64, image);
+            // Every level's tiles; the shader keeps the level the view calls for (`crate::drawing`).
+            let Some(starts) = self.assets.cel_levels(tiles) else { return };
+            for (level, drawn) in tiles.levels.iter().enumerate() {
+                let span = (crate::drawing::TILE << level) as f64;
+                for (i, &(tx, ty)) in drawn.iter().enumerate() {
+                    let Some(e) = self.assets.drawing.get((starts[level] + i as u32) as usize).filter(|e| e.valid) else { continue };
+                    quad(out, K_IMAGE | F_DRAWING | tint, e, tiles.anchor, tx as f64 * span, ty as f64 * span, span, span, level as f64);
+                }
             }
             return;
         }
         let Some(image) = a.image else { return };
         let Some(e) = self.assets.image(image) else { return };
         let [w, h] = a.display_size.unwrap_or([e.source_w as f64, e.source_h as f64]);
-        quad(a.anchor_start, 0.0, 0.0, w, h, image);
+        quad(out, K_IMAGE | flags, e, a.anchor_start, 0.0, 0.0, w, h, 0.0);
+    }
+
+    /// Where a text's glyph-space point lands (the transform of `drawPrimitives`' text branch).
+    fn text_place(it: &Item, seg: &Segment, t: &TextAsset) -> impl Fn(f64, f64) -> [f64; 2] {
+        let mirror = seg.mirror != it.image_text_flags;
+        let start = if seg.reverse { it.end } else { it.start };
+        let theta = it.angle + if seg.reverse { PI } else { 0.0 } - if mirror { PI } else { 0.0 };
+        let xs = (it.end[0] - it.start[0]).hypot(it.end[1] - it.start[1]) / t.width;
+        let sx = if mirror { -xs } else { xs };
+        let sy = it.scale;
+        let (sin, cos) = theta.sin_cos();
+        move |x: f64, y: f64| -> [f64; 2] {
+            let (lx, ly) = (sx * x, sy * y);
+            [start[0] + cos * lx - sin * ly, start[1] + sin * lx + cos * ly]
+        }
+    }
+
+    /// A figure outline around text: every visible glyph stroked `width` wide in
+    /// glyph space with round joins, in the outline colour (the editor strokes the
+    /// glyph paths under the text's transform, so the outline scales with the text).
+    fn text_outline(&self, out: &mut Out, it: &Item, seg: &Segment, t: &TextAsset, width: f32, rgb: [u8; 3]) {
+        if t.width == 0.0 || t.placements.is_empty() || width <= 0.0 {
+            return;
+        }
+        let place = Self::text_place(it, seg, t);
+        let color = rgba8(rgb, 1.0);
+        for &(g, dx, dy) in &t.placements {
+            let Some(glyph) = t.glyphs.get(g as usize) else { continue };
+            let tris = self.assets.glyph_stroke(glyph, width);
+            for tr in tris.chunks_exact(3) {
+                let p = |v: [f32; 2]| place(v[0] as f64 + dx as f64, v[1] as f64 + dy as f64);
+                let (a, b, c) = (p(tr[0]), p(tr[1]), p(tr[2]));
+                let bounds = [a[0].min(b[0]).min(c[0]), a[1].min(b[1]).min(c[1]), a[0].max(b[0]).max(c[0]), a[1].max(b[1]).max(c[1])];
+                out.push(prim(K_TRI, color, NO_PAINT, [a[0], a[1], b[0], b[1]], [c[0], c[1], 0.0, 0.0], [0.0; 4]), bounds);
+            }
+        }
     }
 
     /// Vector text (`drawPrimitives` text branch), even-odd filled glyphs.
@@ -977,5 +938,3 @@ fn composite(group: u32, opacity: f64, bounds: [f32; 4]) -> Prim {
     }
 }
 
-/// Shared handle for a draw list produced on a worker thread.
-pub type SharedDrawList = Arc<DrawList>;

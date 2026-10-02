@@ -1,0 +1,299 @@
+//! `Math.sin`, `Math.cos`, `Math.atan2` and `Math.hypot` exactly as V8 computes them.
+//!
+//! The editor stores the results of its arithmetic in documents, so an engine command
+//! that is to change the same records into the same bytes must round every result the
+//! same way. The platform's maths library does not: against V8 on two million inputs,
+//! Rust's `f64::sin` (glibc on Linux) differed in the last bit 2.7 % of the time and
+//! `f64::atan2` 17 %. V8 computes sine and cosine with fdlibm 5.3 (`src/base/ieee754.cc`),
+//! ported here with its `atan2` (over the `libm` crate's `atan`, which is fdlibm's), and
+//! `hypot` is V8's own scaled, compensated sum. `tests/v8.rs` checks all four against recorded V8 results.
+
+// Vendored as it is upstream.
+#[allow(clippy::all)]
+mod rem_pio2_large;
+
+const fn word(bits: u64) -> f64 {
+    f64::from_bits(bits)
+}
+
+fn high(x: f64) -> u32 {
+    (x.to_bits() >> 32) as u32
+}
+
+const S1: f64 = word(0xBFC5555555555549);
+const S2: f64 = word(0x3F8111111110F8A6);
+const S3: f64 = word(0xBF2A01A019C161D5);
+const S4: f64 = word(0x3EC71DE357B1FE7D);
+const S5: f64 = word(0xBE5AE5E68A2B9CEB);
+const S6: f64 = word(0x3DE5D93A5ACFD57C);
+
+/// fdlibm's `__kernel_sin` on [-π/4, π/4]; `y` is the tail of `x`, used when `iy` is set.
+fn kernel_sin(x: f64, y: f64, iy: bool) -> f64 {
+    if high(x) & 0x7fffffff < 0x3e400000 && x as i32 == 0 {
+        return x;
+    }
+    let z = x * x;
+    let v = z * x;
+    let r = S2 + z * (S3 + z * (S4 + z * (S5 + z * S6)));
+    if !iy { x + v * (S1 + z * r) } else { x - ((z * (0.5 * y - v * r) - y) - v * S1) }
+}
+
+const C1: f64 = word(0x3FA555555555554C);
+const C2: f64 = word(0xBF56C16C16C15177);
+const C3: f64 = word(0x3EFA01A019CB1590);
+const C4: f64 = word(0xBE927E4F809C52AD);
+const C5: f64 = word(0x3E21EE9EBDB4B1C4);
+const C6: f64 = word(0xBDA8FAE9BE8838D4);
+
+/// fdlibm 5.3's `__kernel_cos` on [-π/4, π/4], with the `qx` correction later
+/// versions (FreeBSD, musl, the `libm` crate) replaced: that is where they differ from V8.
+fn kernel_cos(x: f64, y: f64) -> f64 {
+    let ix = high(x) & 0x7fffffff;
+    if ix < 0x3e400000 && x as i32 == 0 {
+        return 1.0;
+    }
+    let z = x * x;
+    let r = z * (C1 + z * (C2 + z * (C3 + z * (C4 + z * (C5 + z * C6)))));
+    if ix < 0x3FD33333 {
+        return 1.0 - (0.5 * z - (z * r - x * y));
+    }
+    let qx = if ix > 0x3fe90000 { 0.28125 } else { f64::from_bits(((ix - 0x00200000) as u64) << 32) };
+    let hz = 0.5 * z - qx;
+    let a = 1.0 - qx;
+    a - (hz - (z * r - x * y))
+}
+
+const INVPIO2: f64 = word(0x3FE45F306DC9C883);
+const PIO2_1: f64 = word(0x3FF921FB54400000);
+const PIO2_1T: f64 = word(0x3DD0B4611A626331);
+const PIO2_2: f64 = word(0x3DD0B4611A600000);
+const PIO2_2T: f64 = word(0x3BA3198A2E037073);
+const PIO2_3: f64 = word(0x3BA3198A2E000000);
+const PIO2_3T: f64 = word(0x397B839A252049C1);
+
+/// High words of n·π/2 for n = 1..32 (fdlibm's `npio2_hw`).
+const NPIO2_HW: [u32; 32] = [
+    0x3FF921FB, 0x400921FB, 0x4012D97C, 0x401921FB, 0x401F6A7A, 0x4022D97C, 0x4025FDBB, 0x402921FB, 0x402C463A, 0x402F6A7A, 0x4031475C, 0x4032D97C, 0x40346B9C, 0x4035FDBB, 0x40378FDB, 0x403921FB,
+    0x403AB41B, 0x403C463A, 0x403DD85A, 0x403F6A7A, 0x40407E4C, 0x4041475C, 0x4042106C, 0x4042D97C, 0x4043A28C, 0x40446B9C, 0x404534AC, 0x4045FDBB, 0x4046C6CB, 0x40478FDB, 0x404858EB, 0x404921FB,
+];
+
+/// fdlibm 5.3's `__ieee754_rem_pio2`: `x` = n·π/2 + (y0 + y1), |y0 + y1| ≤ π/4.
+fn rem_pio2(x: f64) -> (i32, f64, f64) {
+    let hx = high(x) as i32;
+    let ix = (hx & 0x7fffffff) as u32;
+    if ix <= 0x3fe921fb {
+        return (0, x, 0.0);
+    }
+    if ix < 0x4002d97c {
+        // |x| < 3π/4: n = ±1.
+        let (sign, t) = if hx > 0 { (1.0, x) } else { (-1.0, -x) };
+        let z = t - PIO2_1;
+        let (y0, y1) = if ix != 0x3ff921fb {
+            let y0 = z - PIO2_1T;
+            (y0, (z - y0) - PIO2_1T)
+        } else {
+            let z = z - PIO2_2;
+            let y0 = z - PIO2_2T;
+            (y0, (z - y0) - PIO2_2T)
+        };
+        return (sign as i32, sign * y0, sign * y1);
+    }
+    if ix <= 0x413921fb {
+        // |x| ≤ 2^19·π/2: two or three steps of Cody and Waite.
+        let t = x.abs();
+        let n = (t * INVPIO2 + 0.5) as i32;
+        let f = n as f64;
+        let mut r = t - f * PIO2_1;
+        let mut w = f * PIO2_1T;
+        let mut y0;
+        if n < 32 && ix != NPIO2_HW[n as usize - 1] {
+            y0 = r - w;
+        } else {
+            let j = ix >> 20;
+            y0 = r - w;
+            let i = j as i32 - ((high(y0) >> 20) & 0x7ff) as i32;
+            if i > 16 {
+                let t = r;
+                w = f * PIO2_2;
+                r = t - w;
+                w = f * PIO2_2T - ((t - r) - w);
+                y0 = r - w;
+                let i = j as i32 - ((high(y0) >> 20) & 0x7ff) as i32;
+                if i > 49 {
+                    let t = r;
+                    w = f * PIO2_3;
+                    r = t - w;
+                    w = f * PIO2_3T - ((t - r) - w);
+                    y0 = r - w;
+                }
+            }
+        }
+        let y1 = (r - y0) - w;
+        return if hx < 0 { (-n, -y0, -y1) } else { (n, y0, y1) };
+    }
+    if ix >= 0x7ff00000 {
+        return (0, f64::NAN, f64::NAN);
+    }
+    // Huge arguments: z = |x| scaled to [2^23, 2^24), split into 24-bit pieces.
+    let e0 = (ix >> 20) as i32 - 1046;
+    let mut z = f64::from_bits((((ix as i64 - ((e0 as i64) << 20)) as u64) << 32) | (x.to_bits() & 0xffffffff));
+    let mut tx = [0.0; 3];
+    for item in tx.iter_mut().take(2) {
+        *item = z as i32 as f64;
+        z = (z - *item) * word(0x4170000000000000);
+    }
+    tx[2] = z;
+    let mut nx = 3;
+    while nx > 1 && tx[nx - 1] == 0.0 {
+        nx -= 1;
+    }
+    let mut ty = [0.0; 3];
+    // Precision 2, as fdlibm 5.3 and V8 ask (the same reduction as precision 1).
+    let n = rem_pio2_large::rem_pio2_large(&tx[..nx], &mut ty, e0, 2);
+    if hx < 0 { (-n, -ty[0], -ty[1]) } else { (n, ty[0], ty[1]) }
+}
+
+/// `Math.sin`.
+pub fn sin(x: f64) -> f64 {
+    let ix = high(x) & 0x7fffffff;
+    if ix <= 0x3fe921fb {
+        return kernel_sin(x, 0.0, false);
+    }
+    if ix >= 0x7ff00000 {
+        return f64::NAN;
+    }
+    let (n, y0, y1) = rem_pio2(x);
+    match n & 3 {
+        0 => kernel_sin(y0, y1, true),
+        1 => kernel_cos(y0, y1),
+        2 => -kernel_sin(y0, y1, true),
+        _ => -kernel_cos(y0, y1),
+    }
+}
+
+/// `Math.cos`.
+pub fn cos(x: f64) -> f64 {
+    let ix = high(x) & 0x7fffffff;
+    if ix <= 0x3fe921fb {
+        return kernel_cos(x, 0.0);
+    }
+    if ix >= 0x7ff00000 {
+        return f64::NAN;
+    }
+    let (n, y0, y1) = rem_pio2(x);
+    match n & 3 {
+        0 => kernel_cos(y0, y1),
+        1 => -kernel_sin(y0, y1, true),
+        2 => -kernel_cos(y0, y1),
+        _ => kernel_sin(y0, y1, true),
+    }
+}
+
+const PI_O_4: f64 = word(0x3FE921FB54442D18);
+const PI_O_2: f64 = word(0x3FF921FB54442D18);
+const PI: f64 = word(0x400921FB54442D18);
+const PI_LO: f64 = word(0x3CA1A62633145C07);
+const TINY: f64 = 1.0e-300;
+
+/// `Math.atan2(y, x)`: fdlibm 5.3's `__ieee754_atan2`, as V8 has it. FreeBSD and musl
+/// changed its handling of |y/x| beyond 2^60; their `atan` (from `libm`) is fdlibm's.
+pub fn atan2(y: f64, x: f64) -> f64 {
+    if x.is_nan() || y.is_nan() {
+        return x + y;
+    }
+    let (hx, lx) = ((x.to_bits() >> 32) as i32, x.to_bits() as u32);
+    let (hy, ly) = ((y.to_bits() >> 32) as i32, y.to_bits() as u32);
+    let (ix, iy) = (hx & 0x7fffffff, hy & 0x7fffffff);
+    if x == 1.0 {
+        return libm::atan(y);
+    }
+    let mut m = ((hy >> 31) & 1) | ((hx >> 30) & 2);
+    if iy as u32 | ly == 0 {
+        return match m {
+            0 | 1 => y,
+            2 => PI + TINY,
+            _ => -PI - TINY,
+        };
+    }
+    if ix as u32 | lx == 0 {
+        return if hy < 0 { -PI_O_2 - TINY } else { PI_O_2 + TINY };
+    }
+    if ix == 0x7ff00000 {
+        return if iy == 0x7ff00000 {
+            match m {
+                0 => PI_O_4 + TINY,
+                1 => -PI_O_4 - TINY,
+                2 => 3.0 * PI_O_4 + TINY,
+                _ => -3.0 * PI_O_4 - TINY,
+            }
+        } else {
+            match m {
+                0 => 0.0,
+                1 => -0.0,
+                2 => PI + TINY,
+                _ => -PI - TINY,
+            }
+        };
+    }
+    if iy == 0x7ff00000 {
+        return if hy < 0 { -PI_O_2 - TINY } else { PI_O_2 + TINY };
+    }
+    let k = (iy - ix) >> 20;
+    let z = if k > 60 {
+        m &= 1;
+        PI_O_2 + 0.5 * PI_LO
+    } else if hx < 0 && k < -60 {
+        0.0
+    } else {
+        libm::atan((y / x).abs())
+    };
+    match m {
+        0 => z,
+        1 => -z,
+        2 => PI - (z - PI_LO),
+        _ => (z - PI_LO) - PI,
+    }
+}
+
+/// `Math.hypot(...values)` as V8 computes it: scaled by the largest magnitude and
+/// summed with Kahan compensation. `sqrt(x² + y²)` and libm's `hypot` differ from it in
+/// the last bit often enough to move a solver's accept/reject decisions.
+pub fn norm(values: &[f64]) -> f64 {
+    let mut max = 0.0f64;
+    let mut nan = false;
+    for v in values {
+        let a = v.abs();
+        if a == f64::INFINITY {
+            return f64::INFINITY;
+        }
+        nan |= a.is_nan();
+        if a > max {
+            max = a;
+        }
+    }
+    if nan {
+        return f64::NAN;
+    }
+    if max == 0.0 {
+        return 0.0;
+    }
+    let (mut sum, mut compensation) = (0.0f64, 0.0f64);
+    for v in values {
+        let n = v.abs() / max;
+        let summand = n * n - compensation;
+        let preliminary = sum + summand;
+        compensation = (preliminary - sum) - summand;
+        sum = preliminary;
+    }
+    sum.sqrt() * max
+}
+
+/// `Math.hypot(x, y)`.
+pub fn hypot(x: f64, y: f64) -> f64 {
+    norm(&[x, y])
+}
+
+/// The editor's `shortest(a)`: `Math.atan2(Math.sin(a), Math.cos(a))`, the angle in (-π, π].
+pub fn shortest(a: f64) -> f64 {
+    atan2(sin(a), cos(a))
+}

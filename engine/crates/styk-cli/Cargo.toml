@@ -13,8 +13,10 @@ path = "src/main.rs"
 [dependencies]
 styk-eval = { path = "../styk-eval" }
 styk-doc = { path = "../styk-doc" }
+styk-edit = { path = "../styk-edit" }
 styk-formats = { path = "../styk-formats" }
 rayon = "1"
 styk-render = { path = "../styk-render" }
+styk-raster = { path = "../styk-raster" }
 pollster = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }

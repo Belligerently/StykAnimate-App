@@ -1,0 +1,12 @@
+[package]
+name = "styk-raster"
+description = "CPU rasterizer for StykAnimate draw lists (tiny-skia): exports, thumbnails and devices without a GPU."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+styk-draw = { path = "../styk-draw" }
+styk-eval = { path = "../styk-eval" }
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }

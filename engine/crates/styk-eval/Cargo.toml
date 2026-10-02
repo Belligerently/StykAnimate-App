@@ -7,7 +7,10 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+styk-piv = { path = "../styk-piv" }
+styk-draw = { path = "../styk-draw" }
 styk-doc = { path = "../styk-doc" }
+styk-math = { path = "../styk-math" }
 styk-formats = { path = "../styk-formats" }
 base64 = "0.22"
 flate2 = "1"

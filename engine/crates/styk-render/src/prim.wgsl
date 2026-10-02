@@ -77,6 +77,7 @@ const F_CLOSED: u32 = 1024u;
 const F_SMOOTH: u32 = 256u;
 const F_RING_FILL: u32 = 512u;
 const F_TINT: u32 = 2048u;
+const F_DRAWING: u32 = 4096u;
 const NO_PAINT: u32 = 0xffffffffu;
 const PI: f32 = 3.14159265358979;
 
@@ -211,6 +212,17 @@ fn vs_main(in: VsIn) -> VsOut {
     } else if (kind == K_TRI) {
         if (vi == 0u) { world = p.a.xy; } else if (vi == 1u) { world = p.a.zw; } else { world = p.b.xy; }
     } else if (kind == K_IMAGE) {
+        if ((p.kind & F_DRAWING) != 0u) {
+            // A drawing tile of display level b.w: the view shows one level per cel,
+            // floor(-log2(target pixels per cel pixel)) clamped to 0..8 (drawing-gpu.mjs).
+            let level = p.b.w;
+            let cel_pixel = length(p.a.zw) / (64.0 * exp2(level));
+            let shown = clamp(floor(-log2(max(cel_pixel * view.t.z * gscale, 1e-30))), 0.0, 8.0);
+            if (shown != level) {
+                out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+                return out;
+            }
+        }
         world = p.a.xy + p.a.zw * c.x + p.b.xy * c.y;
         out.uv = c;
     } else if (kind == K_COMPOSITE) {
@@ -401,7 +413,20 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let texel = 1.0 / size;
         let raw = mix(rect.xy, rect.zw, in.uv);
         var tex: vec4<f32>;
-        if ((p.kind & F_SMOOTH) != 0u) {
+        if ((p.kind & F_DRAWING) != 0u) {
+            // Straight-alpha texels, premultiplied, then filtered bilinearly; the slot's
+            // border holds the neighbouring tiles' texels, so tiles join without seams.
+            let t = in.uv * 64.0 - vec2<f32>(0.5);
+            let cell = floor(t);
+            let f = t - cell;
+            let origin = vec2<i32>(round(rect.xy * size)) + vec2<i32>(cell);
+            let layer = i32(p.b.z);
+            let t00 = premul(textureLoad(sprites, origin, layer, 0));
+            let t10 = premul(textureLoad(sprites, origin + vec2<i32>(1, 0), layer, 0));
+            let t01 = premul(textureLoad(sprites, origin + vec2<i32>(0, 1), layer, 0));
+            let t11 = premul(textureLoad(sprites, origin + vec2<i32>(1, 1), layer, 0));
+            tex = mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
+        } else if ((p.kind & F_SMOOTH) != 0u) {
             tex = textureSampleLevel(sprites, linear_sampler, raw, i32(p.b.z), 0.0);
         } else {
             let q = clamp(raw, rect.xy + texel * 0.5, rect.zw - texel * 0.5);

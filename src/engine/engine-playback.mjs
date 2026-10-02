@@ -32,7 +32,7 @@ export function createStagePlayback(legacy, {stage}) {
     if (!engine) return false;
     // The stage renderer asks whether its prepared frames come from the engine.
     engine.playbackEngine ??= () => engineMode;
-    return !engine.failed && engine.eligibility.check(candidate, candidateRevision, engine.dirty) === null;
+    return !engine.failed && !engine.drawingUnpublished(candidate) && engine.eligibility.check(candidate, candidateRevision, engine.dirty) === null;
   };
   const setHidden = options => {
     if (options?.hiddenKey === undefined || options.hiddenKey === hiddenKey) return;

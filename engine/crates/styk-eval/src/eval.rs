@@ -60,6 +60,12 @@ pub struct Frame {
     pub continuations: Vec<(u32, Arc<MovieclipPlayback>)>,
     /// Scene colour key (ARGB), if any.
     pub background_color: Option<u32>,
+    /// The scene's own per-pose effects (`_stykVfx` of the frame), tweened:
+    /// an input of [`Frame::vfx`].
+    pub pose_vfx: Option<Arc<crate::vfx::Stacks>>,
+    /// Every effect to draw at this tick, resolved ([`crate::vfx::evaluate`]).
+    /// `None` when there is none, and always for a document without effects.
+    pub vfx: Option<Arc<crate::vfx::FrameVfx>>,
 }
 
 /// A document plus the timing tables evaluation needs, built once per revision.
@@ -68,6 +74,9 @@ pub struct Prepared {
     pub native: Seq,
     pub rows: Vec<Row>,
     pub total_ticks: u32,
+    /// Whether evaluation resolves effects: the document or one of its
+    /// movieclips has effect clips or per-pose stacks.
+    pub has_vfx: bool,
     tracks: HashMap<String, Arc<Seq>>,
     imported: HashMap<String, bool>,
     /// The pose track of each replaced movieclip, by layer and replaced uid (`patchChannels`).
@@ -378,6 +387,8 @@ fn frame_of(key: &KeyRef) -> Frame {
         },
         continuations: k.continuations.clone(),
         background_color: k.background_color,
+        pose_vfx: k.vfx.clone(),
+        vfx: None,
     }
 }
 
@@ -434,6 +445,8 @@ pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame
     let (background, background_b, background_mix) = tween_background(&a.frame, &b.frame, a.duration, bg_t);
     Frame {
         tick: 0.0,
+        pose_vfx: a.frame.vfx.as_ref().map(|stacks| crate::vfx::interpolate(stacks, b.frame.vfx.as_ref(), t)),
+        vfx: None,
         origins: vec![None; objects.len()],
         continuations: a.frame.continuations.clone(),
         background_color: a.frame.background_color,
@@ -453,6 +466,10 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
     // IK: controller targets and follower angles tween with the pose (`interpolateIK`).
     if let Some(table) = &o.ik {
         out.ik = Some(Arc::new(crate::ik::tween(table, recs.map(|r| r.and_then(|x| x.ik.as_deref())), t, &|v, angular| s.value(v, angular))));
+    }
+    // Effects: matching identities interpolate toward the next pose's (`interpolateVfx`).
+    if let Some(stacks) = &o.vfx {
+        out.vfx = Some(crate::vfx::interpolate(stacks, next.vfx.as_ref(), t));
     }
     out.root = [s.value(read(&|x| x.root[0]), false), s.value(read(&|x| x.root[1]), false)];
     out.scale = s.value(read(&|x| x.scale), false);
@@ -572,7 +589,8 @@ impl Prepared {
             last.count = last.count.max(clip_end.saturating_sub(last.start));
         }
         let total_ticks = rows.last().map(|r| r.start + r.count).unwrap_or(0).max(1);
-        let mut prepared = Prepared { doc, native, rows, total_ticks, tracks, imported, patches, presence: HashMap::new() };
+        let has_vfx = crate::vfx::has_own_vfx(&doc) || doc.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.prepared.has_vfx));
+        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new() };
         prepared.presence = prepared.presence_index();
         prepared
     }
@@ -711,6 +729,9 @@ impl Prepared {
         apply_layer_order(&self.doc, &mut frame);
         if !self.doc.camera_motion.is_empty() {
             frame.camera = crate::camera::at_time(frame.camera, &self.doc.camera_motion, tick, self.doc.fps);
+        }
+        if self.has_vfx {
+            frame.vfx = crate::vfx::evaluate(&self.doc, &frame);
         }
         frame
     }
@@ -949,6 +970,7 @@ impl Prepared {
             None => (0, 0, 0.0),
         };
         let background_color = scene.as_ref().and_then(|s| s.background_color);
+        let pose_vfx = scene.as_ref().and_then(|s| s.pose_vfx.clone());
         Frame {
             tick,
             draw_order: (0..objects.len() as u32).collect(),
@@ -960,20 +982,26 @@ impl Prepared {
             origins,
             continuations,
             background_color,
+            pose_vfx,
+            vfx: None,
         }
     }
 }
 
 /// `nativeTimeline`: start and tick count of each keyframe.
 pub fn native_timeline(doc: &Document) -> Vec<Row> {
+    timeline_rows(doc.version, doc.keyframes.iter().map(|k| k.duration))
+}
+
+/// The native timeline from a document's version and keyframe durations (`duration_raw`).
+pub fn timeline_rows(version: u32, durations: impl ExactSizeIterator<Item = u32>) -> Vec<Row> {
     let mut tick = 0;
-    let n = doc.keyframes.len();
-    doc.keyframes
-        .iter()
+    let n = durations.len();
+    durations
         .enumerate()
-        .map(|(i, k)| {
-            let ticks = frame_ticks(k.duration);
-            let count = if doc.version >= 5 && i == n - 1 { ticks.min(1) } else { ticks };
+        .map(|(i, duration)| {
+            let ticks = frame_ticks(duration);
+            let count = if version >= 5 && i == n - 1 { ticks.min(1) } else { ticks };
             let row = Row { start: tick, count };
             tick += count;
             row
@@ -1045,6 +1073,7 @@ fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&
         slot_of: HashMap::new(),
         continuations: Vec::new(),
         background_color: None,
+        vfx: None,
     });
     let refs = keys
         .iter()

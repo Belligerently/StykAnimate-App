@@ -21,6 +21,8 @@ pub struct Loader {
     /// Append-only: an index, once handed out, names the same image for good.
     pub images: Vec<ImageData>,
     pub unsupported: Vec<String>,
+    /// Records read leniently or ignored (invalid effect records).
+    pub notes: Vec<String>,
     /// Image index by the address of its payload (a blob's bytes or a string's text).
     image_of: HashMap<usize, u32>,
     /// Typed views by the address of the record they were built from. The source
@@ -29,6 +31,8 @@ pub struct Loader {
     keyframes: HashMap<usize, (Value, Arc<Keyframe>)>,
     /// Resolved style overlays by base figure (address; the figure is held) and overlay key.
     styled: HashMap<(usize, String), (Arc<Figure>, Arc<Figure>)>,
+    /// Effect clips by the address of the `vfxClips` record they were built from.
+    vfx_clips: HashMap<usize, (Value, Option<Arc<crate::vfx::Clips>>)>,
     /// Records converted (not reused) by the last [`Loader::document`] call.
     pub converted: Converted,
 }
@@ -130,7 +134,17 @@ impl Default for Loader {
 
 impl Loader {
     pub fn new() -> Self {
-        Loader { images: Vec::new(), unsupported: Vec::new(), image_of: HashMap::new(), figures: HashMap::new(), keyframes: HashMap::new(), styled: HashMap::new(), converted: Converted::default() }
+        Loader {
+            images: Vec::new(),
+            unsupported: Vec::new(),
+            notes: Vec::new(),
+            image_of: HashMap::new(),
+            figures: HashMap::new(),
+            keyframes: HashMap::new(),
+            styled: HashMap::new(),
+            vfx_clips: HashMap::new(),
+            converted: Converted::default(),
+        }
     }
 
     fn note(&mut self, feature: &str) {
@@ -174,6 +188,15 @@ impl Loader {
         let mut document = self.nested_document(d, name)?;
         document.images = self.images.clone();
         document.unsupported = self.unsupported.clone();
+        // Each distinct note once, and a bounded number of them however many revisions are read.
+        let mut notes: Vec<String> = Vec::new();
+        for note in self.notes.drain(..) {
+            if notes.len() < 64 && !notes.contains(&note) {
+                notes.push(note);
+            }
+        }
+        self.notes = notes;
+        document.notes = self.notes.clone();
         for figure in &document.figures {
             for feature in &figure.unsupported {
                 if !document.unsupported.iter().any(|known| known == feature) {
@@ -198,7 +221,7 @@ impl Loader {
         if version < 5
             && let Some(delay) = num(d, "frame_delay_ms").filter(|&v| v > 0.0)
         {
-            fps = crate::piv::round_half_even(1000.0 / delay);
+            fps = round_half_even(1000.0 / delay);
         }
         let styk = d.get("_styk").cloned().unwrap_or(Value::Null);
         let mut figures = Vec::new();
@@ -227,11 +250,20 @@ impl Loader {
             .and_then(Value::as_arr)
             .map(|clips| clips.iter().filter_map(camera_motion_clip).collect())
             .unwrap_or_default();
-        if styk.get("vfxClips").and_then(|v| v.get("clips")).and_then(Value::as_arr).is_some_and(|c| !c.is_empty()) {
-            self.note("visual effects (blur, glow…)");
+        let vfx_clips = self.cached_vfx_clips(styk.get("vfxClips"));
+        fn channels(animation: Option<&Value>) -> &[Value] {
+            animation.and_then(|a| a.get("channels")).and_then(Value::as_arr).unwrap_or(&[])
         }
-        if styk.get("animation").and_then(|a| a.get("channels")).and_then(Value::as_arr).is_some_and(|c| !c.is_empty()) {
+        if !channels(styk.get("animation")).is_empty() {
             self.note("property channels");
+        }
+        let effect_channels = [styk.get("animation"), styk.path(&["layerSheet", "legacyAnimation"])]
+            .into_iter()
+            .any(|animation| channels(animation).iter().any(|c| c.get("property").and_then(Value::as_str).is_some_and(crate::vfx::parse::is_vfx_property)));
+        // A capture's retained source (`movieclipSource`) is not evaluated: its effect clips would be lost.
+        let source_vfx = styk.path(&["movieclipSource", "document"]).is_some_and(raw_has_vfx);
+        if source_vfx && styk.path(&["movieclipSource", "document", "_styk", "vfxClips", "clips"]).and_then(Value::array_len).is_some_and(|n| n > 0) {
+            self.note("effect clips of a captured movieclip's source");
         }
         let auto_easing = match d.get("auto_easing") {
             Some(v) => truthy(Some(v)),
@@ -251,6 +283,8 @@ impl Loader {
             sheet,
             frame_sources,
             camera_motion,
+            vfx_clips,
+            vfx_elsewhere: effect_channels || source_vfx,
             unsupported: Vec::new(),
             notes: Vec::new(),
             figure_index: HashMap::new(),
@@ -273,6 +307,18 @@ impl Loader {
         Ok(Arc::new(self.figure(f, version)?))
     }
 
+    /// The effect clips of a `vfxClips` record, reused while the record is unchanged.
+    fn cached_vfx_clips(&mut self, v: Option<&Value>) -> Option<Arc<crate::vfx::Clips>> {
+        let v = v?;
+        let Some(address) = node_address(v) else { return crate::vfx::parse::clips(Some(v), &mut self.notes) };
+        if let Some((_, clips)) = self.vfx_clips.get(&address) {
+            return clips.clone();
+        }
+        let clips = crate::vfx::parse::clips(Some(v), &mut self.notes);
+        self.vfx_clips.insert(address, (v.clone(), clips.clone()));
+        clips
+    }
+
     fn cached_keyframe(&mut self, k: &Value) -> Result<Arc<Keyframe>, Error> {
         if let Some(address) = node_address(k) {
             if let Some((_, frame)) = self.keyframes.get(&address) {
@@ -291,6 +337,7 @@ impl Loader {
     pub fn release_unused(&mut self) {
         self.figures.retain(|_, (source, _)| !source_unshared(source));
         self.keyframes.retain(|_, (source, _)| !source_unshared(source));
+        self.vfx_clips.retain(|_, (source, _)| !source_unshared(source));
         let live: std::collections::HashSet<usize> = self.figures.values().map(|(_, figure)| Arc::as_ptr(figure) as usize).collect();
         self.styled.retain(|(base, _), _| live.contains(base));
     }
@@ -466,7 +513,10 @@ impl Loader {
         };
         let tiles = a.get("styk_tiles").and_then(Value::payload_bytes).and_then(|bytes| {
             let anchor = point(a.get("drawing_anchor")).unwrap_or(start);
-            crate::drawing::decode_tiles(&bytes, &mut self.images).map(|tiles| Arc::new(DrawingTiles { anchor, pixels_per_unit, tiles }))
+            crate::drawing::parse_tiles(&bytes).map(|tiles| {
+                let levels = crate::drawing::level_tiles(&tiles);
+                Arc::new(DrawingTiles { anchor, pixels_per_unit, tiles, levels })
+            })
         });
         let image = if tiles.is_some() { None } else { self.image(a, &["data_url", "data_base64", "data_uri"]) };
         ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, image, smooth, tiles }
@@ -493,12 +543,7 @@ impl Loader {
         let join = o.get("join").filter(|j| j.is_object()).and_then(|j| {
             Some(Join { slot: int(j, "target_object_slot")? as u32, handle: int(j, "target_handle_id").unwrap_or(0) as u32 })
         });
-        for (key, feature) in [
-            ("_stykSpatial", "3D poses"),
-            ("_stykAnimationOrigin", "animation origins"),
-            ("_sticknodesSprite", "Stick Nodes sprites"),
-            ("_stykVfx", "visual effects (blur, glow…)"),
-        ] {
+        for (key, feature) in [("_stykSpatial", "3D poses"), ("_stykAnimationOrigin", "animation origins"), ("_sticknodesSprite", "Stick Nodes sprites")] {
             if o.get(key).is_some() {
                 self.note(feature);
             }
@@ -528,6 +573,8 @@ impl Loader {
             },
             figure_override: None,
             ik: crate::ik::parse::table(o.get("_stykIK")).map(Arc::new),
+            vfx: crate::vfx::parse::stacks(o.get("_stykVfx"), &mut self.notes),
+            vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
         })
     }
 
@@ -540,7 +587,8 @@ impl Loader {
             .filter_map(|o| self.object(o))
             .map(Arc::new)
             .collect();
-        Ok(Self::keyframe_of(k, objects))
+        let vfx = crate::vfx::parse::stacks(k.get("_stykVfx"), &mut self.notes);
+        Ok(Self::keyframe_of(k, objects, vfx))
     }
 
     /// The pose the editor is showing, which it evaluated itself: a keyframe-shaped
@@ -569,7 +617,8 @@ impl Loader {
             }
             objects.push(object);
         }
-        let key = Self::keyframe_of(value, objects);
+        let vfx = crate::vfx::parse::stacks(value.get("_stykVfx"), &mut self.notes);
+        let key = Self::keyframe_of(value, objects, vfx);
         let count = key.objects.len();
         Ok(crate::eval::Frame {
             tick: num(value, "tick").unwrap_or(0.0),
@@ -582,11 +631,13 @@ impl Loader {
             origins: vec![None; count],
             continuations: key.continuations,
             background_color: key.background_color,
+            pose_vfx: key.vfx,
+            vfx: None,
         })
     }
 
     /// A keyframe around already converted objects.
-    fn keyframe_of(k: &Value, objects: Vec<Arc<Object>>) -> Keyframe {
+    fn keyframe_of(k: &Value, objects: Vec<Arc<Object>>, vfx: Option<Arc<crate::vfx::Stacks>>) -> Keyframe {
         let draw_order = k
             .get("object_draw_order")
             .and_then(Value::numbers)
@@ -620,6 +671,7 @@ impl Loader {
                 .flatten()
                 .filter_map(|c| Some((int(c, "uid")? as u32, playback(c.get("playback")?))))
                 .collect(),
+            vfx,
         };
         frame.reindex();
         frame
@@ -770,6 +822,29 @@ fn text_asset(a: &Value) -> Option<TextAsset> {
     Some(TextAsset { index, glyphs, placements, width, height })
 }
 
+/// `documentHasVfx` over a document tree the engine does not convert.
+fn raw_has_vfx(d: &Value) -> bool {
+    let styk = d.get("_styk");
+    if styk.and_then(|s| s.path(&["vfxClips", "clips"])).and_then(Value::array_len).is_some_and(|n| n > 0) {
+        return true;
+    }
+    let channels = [styk.and_then(|s| s.get("animation")), styk.and_then(|s| s.path(&["layerSheet", "legacyAnimation"]))];
+    if channels.into_iter().flatten().filter_map(|a| a.get("channels")?.as_arr()).flatten().any(|c| c.get("property").and_then(Value::as_str).is_some_and(crate::vfx::parse::is_vfx_property)) {
+        return true;
+    }
+    let has = |frame: &Value| frame.get("_stykVfx").is_some_and(Value::truthy) || frame.get("objects").and_then(Value::as_arr).is_some_and(|o| o.iter().any(|o| o.get("_stykVfx").is_some_and(Value::truthy)));
+    if d.get("keyframes").and_then(Value::as_arr).is_some_and(|k| k.iter().any(has)) {
+        return true;
+    }
+    if let Some(Value::Obj(sources)) = styk.and_then(|s| s.get("frameSources"))
+        && sources.values().iter().any(has)
+    {
+        return true;
+    }
+    styk.and_then(|s| s.path(&["movieclipSource", "document"])).is_some_and(raw_has_vfx)
+        || d.get("figure_types").and_then(Value::as_arr).is_some_and(|f| f.iter().any(|f| f.path(&["_styk", "movieclip", "document"]).is_some_and(raw_has_vfx)))
+}
+
 /// Whether the loader's cache holds the last reference to a record.
 fn source_unshared(source: &Value) -> bool {
     match source {
@@ -851,4 +926,17 @@ pub fn playback(p: &Value) -> Arc<MovieclipPlayback> {
             .filter_map(|k| Some((num(k, "tick")?, num(k, "offset")?)))
             .collect(),
     })
+}
+
+/// Rounds half to even (Python's `round`, which the Pivot codec uses for frame rates).
+fn round_half_even(v: f64) -> f64 {
+    let floor = v.floor();
+    let fraction = v - floor;
+    if fraction < 0.5 {
+        floor
+    } else if fraction > 0.5 {
+        floor + 1.0
+    } else {
+        floor + (floor % 2.0).abs()
+    }
 }

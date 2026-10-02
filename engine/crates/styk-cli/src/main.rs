@@ -2,7 +2,9 @@
 //!
 //!   styk info <file>                      load timing, contents, unsupported features
 //!   styk compare <file> <reference.json>  primitive-by-primitive parity with the JS editor
+//!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
+//!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
 
 use std::path::Path;
 use std::time::Instant;
@@ -32,7 +34,9 @@ fn main() {
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
         Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
+        Some("raster") if args.len() >= 4 => raster(&args[1], &args[2], &args[3], &args[4..]),
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2]),
+        Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y]");
@@ -40,6 +44,30 @@ fn main() {
         }
     };
     std::process::exit(code);
+}
+
+/// Replays command recordings (engine/tools/edit-replay.mjs) in styk-edit. Exit code 1
+/// when any step the engine runs differs from the editor's.
+fn edit_replay(files: &[String]) -> i32 {
+    let mut failed = false;
+    for file in files {
+        let outcome = std::fs::read(file).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())).and_then(|reference| styk_edit::replay::replay(&reference));
+        match outcome {
+            Ok(outcome) => {
+                let unported = outcome.unported.as_ref().map(|(step, what)| format!(", step {step} not ported ({what})")).unwrap_or_default();
+                println!("{}: {}/{} steps match{unported}", outcome.scenario, outcome.matched, outcome.steps);
+                for mismatch in &outcome.mismatches {
+                    println!("  {mismatch}");
+                }
+                failed |= !outcome.passed();
+            }
+            Err(error) => {
+                println!("{file}: {error}");
+                failed = true;
+            }
+        }
+    }
+    i32::from(failed)
 }
 
 fn load(path: &str) -> Result<(Prepared, f64), String> {
@@ -161,6 +189,13 @@ fn compare(path: &str, reference: &str, rest: &[String]) -> i32 {
         report.mismatched_joints,
         report.bad_frames.len()
     );
+    let effects = &report.vfx;
+    if effects.frames > 0 {
+        println!(
+            "  effects: {} frames, {} stacks, {} reference effects, {} mismatched effects, {} other differences",
+            effects.frames, effects.stacks, effects.effects, effects.mismatched_effects, effects.other
+        );
+    }
     if report.matches() { 0 } else { 3 }
 }
 
@@ -169,6 +204,65 @@ fn option<'a>(rest: &'a [String], name: &str) -> Option<&'a str> {
 }
 
 /// Renders one tick headlessly through the GPU renderer and writes a PNG.
+/// `styk raster`: the same frame as `styk render`, rasterized on the CPU (styk-raster).
+fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
+    use styk_eval::assets::Assets;
+    use styk_eval::drawlist::encode;
+    use styk_eval::view::camera_matrix;
+    let (p, ms) = match load(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let tick: f64 = tick.parse().unwrap_or(0.0);
+    let (w, h) = option(rest, "--size")
+        .and_then(|s| s.split_once('x'))
+        .and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?)))
+        .unwrap_or((p.doc.canvas[0] + 80, p.doc.canvas[1] + 80));
+    let started = Instant::now();
+    let assets = Assets::build(&p.doc);
+    let images = styk_raster::decode_all(&p.doc, &assets);
+    let assets_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let started = Instant::now();
+    let frame = p.evaluate(tick);
+    let scene = build(&p.doc, &frame);
+    let list = encode(&p.doc, &assets, &scene);
+    let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
+    let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
+    let center = option(rest, "--center")
+        .and_then(|s| s.split_once(','))
+        .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
+        .unwrap_or([cw / 2.0, ch / 2.0]);
+    let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
+    let view = styk_raster::View {
+        matrix: camera_matrix(&p.doc, scene.camera.as_ref(), zoom, pan),
+        width: w,
+        height: h,
+        artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
+        clip_to_artboard: !rest.iter().any(|a| a == "--no-clip"),
+        clear: [0.16, 0.16, 0.17, 1.0],
+        anti_alias: !rest.iter().any(|a| a == "--aliased"),
+    };
+    let started = Instant::now();
+    let Some(pixmap) = styk_raster::render(&list, &images, &view) else {
+        eprintln!("cannot rasterize a {w}x{h} frame");
+        return 1;
+    };
+    let raster_ms = started.elapsed().as_secs_f64() * 1000.0;
+    image::save_buffer(out, &styk_raster::straight_rgba(&pixmap), w, h, image::ColorType::Rgba8).expect("write png");
+    println!(
+        "{}: tick {tick}, {} prims, {} groups, opened {ms:.0} ms, assets {assets_ms:.0} ms ({} images), frame {encode_ms:.2} ms, raster {raster_ms:.1} ms → {out}",
+        p.doc.name,
+        list.prims.len(),
+        list.groups.len() - 1,
+        images.len()
+    );
+    0
+}
+
 fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     use styk_eval::assets::Assets;
     use styk_eval::drawlist::encode;

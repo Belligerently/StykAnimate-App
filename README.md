@@ -12,16 +12,18 @@ See [release preparation](docs/RELEASING.md) and [package verification](docs/DES
 
 ```sh
 npm ci
-node scripts/engine-build.mjs   # the engine and the Pivot codec, into src/engine/pkg/
+npm run engine:build   # the engine and the Pivot codec, into src/engine/pkg/
 npm start
 ```
 
-Development requires Node.js 22+ (CI runs Node 24.11) and Rust: the pinned nightly with `rust-src` and stable, both with the `wasm32-unknown-unknown` target, and `wasm-bindgen-cli` at the version `scripts/engine-build.mjs` names. The Pivot codec runs in a worker of the editor page on every platform; Python is not needed to run or build the app. Python 3.11+ runs only the codec's development test oracle (`codecs/`, `backend/`) and the packaging scripts that stage the video encoder and the Windows codec helpers; set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
+`npm run engine:build` builds the Rust engine and the Pivot codec (`engine/`) into `src/engine/pkg/`; it needs `rustup` with the pinned nightly and its source (`rustup toolchain install nightly-2026-09-15 --component rust-src --target wasm32-unknown-unknown`) for the engine, stable Rust with the same target (`rustup toolchain install stable --target wasm32-unknown-unknown`) for the codec, `wasm-bindgen-cli` 0.2.129 (`cargo install wasm-bindgen-cli --version 0.2.129`) and clang for the WebAssembly target. Without the engine module the app keeps the JavaScript renderer; without the codec module it cannot open or export Pivot files. Engine commands: `npm run engine:test`, `npm run engine:parity`, `npm run engine:bench`; see [docs/engine/](docs/engine/README.md).
+
+Development requires Node.js 22+ (CI runs Node 24.11). The Pivot codec runs in a worker of the editor page on every platform; Python is not needed to run or build the app. Python 3.11+ runs only the codec's development test oracle (`codecs/`, `backend/`) and the packaging scripts that stage the video encoder and the Windows codec helpers; set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
 
 Windows and Linux are supported platforms and both are exercised on every change (`.github/workflows/ci.yml`); see [Linux support](docs/LINUX.md). macOS has a build target in `package.json` that has not been executed. Build the distribution on each target OS (the packaging scripts find Python themselves; see `scripts/run-python.mjs`):
 
 ```sh
-node scripts/engine-build.mjs
+npm run engine:build
 npm run build:video-encoder
 npm run pack
 npm run verify:package

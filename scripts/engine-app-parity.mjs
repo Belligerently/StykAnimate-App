@@ -9,7 +9,7 @@
 //
 //   node scripts/engine-app-parity.mjs [--file <project>] [--ticks 0,10,20] [--onion] [--play]
 //        [--target web|electron] [--renderer canvas|gpu] [--label <name>] [--url http://127.0.0.1:47831]
-//        [--out <dir>] [--require-engine] [--width 1440 --height 900]
+//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4]
 //
 // Without --file it uses the document the app starts with. The web target runs
 // headless Chromium, where the JavaScript renderer is its Canvas 2D fallback;
@@ -33,6 +33,8 @@ const flag = name => args.includes(name);
 const file = option('--file'), label = option('--label', file ? path.basename(file).replace(/[^\w.-]+/g, '-').toLowerCase() : 'startup');
 const out = path.resolve(option('--out', `artifacts/engine-rust/parity/app/${label}`));
 const ticks = option('--ticks')?.split(',').map(Number) ?? null;
+/** Zoom levels relative to "fit", each a set of steps (the app's own zoom action, 1.2× per step). */
+const zooms = option('--zoom')?.split(',').map(Number) ?? [1];
 const size = {width: Number(option('--width', 1440)), height: Number(option('--height', 900))};
 const target = option('--target', 'web');
 const SETTINGS = {theme: 'light', locale: 'en', uiScale: 100, showHandles: false};
@@ -40,12 +42,15 @@ const SETTINGS = {theme: 'light', locale: 'en', uiScale: 100, showHandles: false
 /**
  * What counts as "the same picture". Both renderers cover edge pixels by
  * slightly different rules, so differences one or two pixels thick along
- * outlines are expected. A moved, missing or recoloured shape differs over an
- * area. A step fails when any pixel differs by more than `threshold` levels
- * together with all eight of its neighbours (`solid` pixels), or when the mean
- * difference over the stage exceeds `mean` levels (a faint overall change).
+ * outlines are expected; and two correct 8-bit blends of the same translucent
+ * layers may round differently by a level or two. A moved, missing or
+ * recoloured shape differs over an area and by much more. A step fails when any
+ * pixel differs by more than `threshold` levels together with all eight of its
+ * neighbours (`solid` pixels), or when the mean difference over the stage,
+ * not counting differences of `quantum` levels or less, exceeds `mean` levels
+ * (a faint change over a large area). The raw mean is reported too.
  */
-const LIMITS = {threshold: 32, mean: 0.25};
+const LIMITS = {threshold: 32, mean: 0.25, quantum: 2};
 
 async function server() {
   const given = option('--url');
@@ -136,10 +141,19 @@ async function capture(browser, origin, engine) {
     steps.push({name, picture, ...state});
   };
   const list = ticks ?? [...new Set([0, Math.floor(total / 4), Math.floor(total / 2), Math.floor(3 * total / 4), total - 1])].filter(tick => tick >= 0 && tick < total);
-  for (const tick of list) {
-    await page.evaluate(tick => styk.editor.seek(tick), tick);
-    await shoot(`tick-${tick}`);
+  for (const zoom of zooms) {
+    // The zoom action multiplies the scale by 1.2 (zoom-out divides): the nearest whole number of steps.
+    await page.evaluate(async zoom => {
+      styk.fit();
+      const steps = Math.round(Math.log(zoom) / Math.log(1.2));
+      for (let i = 0; i < Math.abs(steps); i++) await styk.actions[steps > 0 ? 'zoom-in' : 'zoom-out']();
+    }, zoom);
+    for (const tick of list) {
+      await page.evaluate(tick => styk.editor.seek(tick), tick);
+      await shoot(zoom === 1 ? `tick-${tick}` : `zoom-${zoom}-tick-${tick}`);
+    }
   }
+  await page.evaluate(() => styk.fit());
   if (flag('--onion')) {
     await page.evaluate(async () => { if (!styk.state.onion) await styk.actions['toggle-onion'](); });
     for (const tick of list) {
@@ -180,10 +194,11 @@ async function compare(page, a, b, limits) {
     const pixels = image => { context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0); return context.getImageData(0, 0, canvas.width, canvas.height); };
     const left = pixels(first).data, shown = pixels(second), right = shown.data;
     const width = first.width, height = first.height, strongAt = new Uint8Array(width * height);
-    let differing = 0, strong = 0, max = 0, sum = 0;
+    let differing = 0, strong = 0, max = 0, sum = 0, beyond = 0;
     for (let i = 0, pixel = 0; i < left.length; i += 4, pixel++) {
       const d = Math.max(Math.abs(left[i] - right[i]), Math.abs(left[i + 1] - right[i + 1]), Math.abs(left[i + 2] - right[i + 2]), Math.abs(left[i + 3] - right[i + 3]));
       sum += d;
+      if (d > limits.quantum) beyond += d;
       if (d) { differing++; if (d > max) max = d; }
       if (d > limits.threshold) { strong++; strongAt[pixel] = 1; }
       // Faded picture with differences in red, stronger for larger ones.
@@ -206,7 +221,7 @@ async function compare(page, a, b, limits) {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     let text = ''; for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     const count = left.length / 4;
-    return {width, height, differing, strong, solid, max, mean: sum / count, picture: btoa(text)};
+    return {width, height, differing, strong, solid, max, rawMean: sum / count, mean: beyond / count, picture: btoa(text)};
   }, {a: a.toString('base64'), b: b.toString('base64'), limits});
 }
 
@@ -231,7 +246,7 @@ try {
     if (!pass) failed++;
     if (!step.engine) engineDrew = false;
     report.steps.push({name: step.name, engine: step.engine, refusal: step.refusal, playedWithEngine: step.playedWithEngine, pass, ...result});
-    console.log(`${pass ? 'ok  ' : 'FAIL'} ${step.name}: engine ${step.engine ? 'drew' : `did not draw (${step.refusal})`}; ${result.error ?? `${result.differing} px differ, ${result.strong} by more than ${LIMITS.threshold}, ${result.solid} solid, max ${result.max}, mean ${result.mean.toFixed(4)}`}`);
+    console.log(`${pass ? 'ok  ' : 'FAIL'} ${step.name}: engine ${step.engine ? 'drew' : `did not draw (${step.refusal})`}; ${result.error ?? `${result.differing} px differ, ${result.strong} by more than ${LIMITS.threshold}, ${result.solid} solid, max ${result.max}, mean beyond ${LIMITS.quantum} ${result.mean.toFixed(4)} (raw ${result.rawMean.toFixed(4)})`}`);
   }
   await writeFile(path.join(out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   for (const [name, problems] of Object.entries(report.problems)) if (problems.length) console.log(`${name} errors:\n  ${problems.slice(0, 5).join('\n  ')}`);
