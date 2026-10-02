@@ -52,6 +52,30 @@ jobs:
       - name: Website and cloud tests
         run: node --test website/tests/*.test.mjs cloud/tests/*.test.mjs
 
+  engine:
+    # The Rust engine: its tests and its WebAssembly build, on both supported platforms.
+    name: Engine (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - uses: ./.github/actions/engine-build
+        with:
+          test: 'true'
+
   web:
     uses: ./.github/workflows/web-verify.yml
 
@@ -86,6 +110,7 @@ jobs:
           npm run build:sidecar
           npm run verify:sidecar
           npm run build:video-encoder
+      - uses: ./.github/actions/engine-build
       - name: Package the AppImage
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
