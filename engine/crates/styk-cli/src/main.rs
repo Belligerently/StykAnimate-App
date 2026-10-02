@@ -19,6 +19,16 @@ fn main() {
     let code = match args.first().map(String::as_str) {
         Some("container") if args.len() >= 3 && args[1] == "roundtrip" => container::roundtrip(&args[2], &args[3..]),
         Some("container") if args.len() >= 4 && args[1] == "json" => container::json(&args[2], &args[3]),
+        Some("describe") if args.len() >= 3 => match load(&args[1]) {
+            Ok((prepared, _)) => {
+                print!("{}", styk_eval::describe_tick(&prepared, args[2].parse().unwrap_or(0)));
+                0
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                2
+            }
+        },
         Some("info") if args.len() >= 2 => info(&args[1]),
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),

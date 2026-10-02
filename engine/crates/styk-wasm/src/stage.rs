@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use styk_engine::edit::{EditOptions, EditScene};
+use styk_engine::edit::{EditOptions, EditScene, Onion};
 use styk_engine::{Engine, Generation};
 use styk_render::{Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
@@ -104,15 +104,54 @@ impl Stage {
         self.edit.update(&generation, json.as_bytes()).map_err(js_error)
     }
 
+    /// Replaces the pose of onion skin `id` (an id the interface chooses), in the same
+    /// form as [`Stage::edit_frame`].
+    pub fn edit_ghost(&mut self, id: u32, json: &str) -> Result<(), JsError> {
+        let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        self.edit.update_ghost(&generation, id, json.as_bytes()).map_err(js_error)
+    }
+
+    /// Whether the pose of onion skin `id` is still kept.
+    pub fn has_ghost(&self, id: u32) -> bool {
+        self.edit.has_ghost(id)
+    }
+
     /// Draws the edit frame. `hidden` lists object slots not drawn; `translations` holds
     /// `slot, dx, dy` triples of dragged objects; `background` is an ARGB canvas colour
-    /// replacing the scene background, or a negative number for none.
+    /// replacing the scene background, or a negative number for none. `onions` describes
+    /// the onion skins far to near, each as `id, opacity, tint (0xRRGGBB or -1), on top
+    /// (0/1), anchor uid (or -1), n, then n hidden slots`.
     #[allow(clippy::too_many_arguments)]
-    pub fn render_edit(&mut self, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool, hidden: &[u32], translations: &[f64], background: f64) -> Result<bool, JsError> {
+    pub fn render_edit(&mut self, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool, hidden: &[u32], translations: &[f64], background: f64, onions: &[f64]) -> Result<bool, JsError> {
         let Some(generation) = self.engine.generation() else { return Ok(false) };
         let translations: Vec<(u32, [f64; 2])> = translations.chunks_exact(3).map(|t| (t[0] as u32, [t[1], t[2]])).collect();
-        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32) };
-        let Some(list) = self.edit.draw_list(&generation, &options) else { return Ok(false) };
+        let mut hidden_slots: Vec<Vec<u32>> = Vec::new();
+        let mut heads: Vec<[f64; 5]> = Vec::new();
+        let mut at = 0;
+        while at + 6 <= onions.len() {
+            let count = onions[at + 5] as usize;
+            let Some(slots) = onions.get(at + 6..at + 6 + count) else { return Err(js_error("the onion skin list is cut short")) };
+            heads.push([onions[at], onions[at + 1], onions[at + 2], onions[at + 3], onions[at + 4]]);
+            hidden_slots.push(slots.iter().map(|&slot| slot as u32).collect());
+            at += 6 + count;
+        }
+        let onion_list: Vec<Onion<'_>> = heads
+            .iter()
+            .zip(&hidden_slots)
+            .map(|(head, slots)| Onion {
+                id: head[0] as u32,
+                opacity: head[1],
+                tint: (head[2] >= 0.0).then(|| {
+                    let rgb = head[2] as u32;
+                    [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8]
+                }),
+                show_on_top: head[3] != 0.0,
+                before_uid: (head[4] >= 0.0).then_some(head[4] as u32),
+                hidden: slots,
+            })
+            .collect();
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list };
+        let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
         let scene_camera = if camera { self.edit.camera() } else { None };
         self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)
     }

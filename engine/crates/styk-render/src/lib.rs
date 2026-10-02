@@ -250,7 +250,9 @@ fn array_texture(device: &wgpu::Device, label: &str, size: [u32; 2], layers: u32
     }
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
-        size: wgpu::Extent3d { width: size[0].max(1), height: size[1].max(1), depth_or_array_layers: layers.max(1) },
+        // At least two layers: the OpenGL backend (WebGL2) creates a one-layer texture as a
+        // plain 2D texture, which a 2D-array sampler then reads as opaque black.
+        size: wgpu::Extent3d { width: size[0].max(1), height: size[1].max(1), depth_or_array_layers: layers.max(2) },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,

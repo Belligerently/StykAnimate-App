@@ -189,6 +189,20 @@ impl EngineHandle {
         Some(format!("{{\"tick\":{tick},\"camera\":{camera},\"background_id\":{a},\"background_id_b\":{b},\"background_mix\":{mix},\"objects\":[]}}"))
     }
 
+    /// Prepares `tick` on the calling thread if needed and describes its draw list as
+    /// JSON (`{prims, groups, passes, ms}`); `undefined` when the tick does not exist.
+    /// For tests and tools: the interface never needs a frame's contents.
+    pub fn frame_info(&self, tick: u32) -> Option<String> {
+        let frame = self.engine.frame_now(tick)?;
+        Some(format!("{{\"prims\":{},\"groups\":{},\"passes\":{},\"ms\":{:.3}}}", frame.list.prims.len(), frame.list.groups.len() - 1, frame.list.passes.len(), frame.ms))
+    }
+
+    /// A per-object description of an evaluated tick, for comparing engine builds.
+    pub fn describe_tick(&self, tick: u32) -> Option<String> {
+        let generation = self.engine.generation()?;
+        Some(styk_eval::describe_tick(&generation.prepared, tick))
+    }
+
     /// Sets the figures hidden for this session, by identity. Hidden layers come from the document.
     pub fn set_hidden(&self, uids: &[u32]) {
         self.engine.set_hidden(uids);

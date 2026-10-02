@@ -33,6 +33,8 @@ pub const F_CLOSED: u32 = 1 << 10;
 
 pub const F_SMOOTH: u32 = 1 << 8;
 pub const F_RING_FILL: u32 = 1 << 9;
+/// An image drawn in the record's colour through its own coverage (onion tint).
+pub const F_TINT: u32 = 1 << 11;
 
 pub const NO_PAINT: u32 = u32::MAX;
 
@@ -214,6 +216,8 @@ fn paint_record(out: &mut Out, p: &Paint, stops: &[(f32, [f32; 4])], start: [f64
 struct Ctx<'a> {
     scene: &'a Scene,
     assets: &'a Assets,
+    /// An onion skin's colour: every primitive is drawn in it, flat.
+    tint: Option<[u8; 3]>,
 }
 
 impl<'a> Ctx<'a> {
@@ -224,6 +228,9 @@ impl<'a> Ctx<'a> {
     /// Brush of a segment: paint, two-colour gradient, or solid colour.
     fn brush(&self, out: &mut Out, it: &Item, outline: bool) -> (u32, u32) {
         let seg = &self.figure(it).segments[it.index as usize];
+        if let Some(tint) = self.tint {
+            return (rgba8(tint, it.alpha), NO_PAINT);
+        }
         let solid = rgba8(it.rgb, it.alpha);
         if outline || it.color >> 24 == 255 || it.flags & crate::geometry::ITEM_SOLID != 0 {
             return (solid, NO_PAINT);
@@ -382,7 +389,7 @@ impl<'a> Ctx<'a> {
             out.polyline(pts, outline, true, rgba8(outline_rgb, 1.0), NO_PAINT);
             return;
         }
-        let (color, paint) = if it.flags & crate::geometry::ITEM_SEG_BRUSH != 0 { self.brush(out, it, false) } else { (rgba8(it.rgb, it.alpha), NO_PAINT) };
+        let (color, paint) = if it.flags & crate::geometry::ITEM_SEG_BRUSH != 0 { self.brush(out, it, false) } else { (rgba8(self.tint.unwrap_or(it.rgb), it.alpha), NO_PAINT) };
         if convex(pts) {
             for k in 1..pts.len() - 1 {
                 tri(out, color, paint, pts[0], pts[k], pts[k + 1]);
@@ -417,8 +424,9 @@ impl<'a> Ctx<'a> {
             let (lx, ly) = (sx * (px - anchor[0]), k * (py - anchor[1]));
             [start[0] + cos * lx - sin * ly, start[1] + sin * lx + cos * ly]
         };
-        let color = rgba8([255, 255, 255], it.alpha);
-        let flags = if a.smooth { F_SMOOTH } else { 0 };
+        // A tinted sprite keeps its coverage and takes the tint as its colour.
+        let color = rgba8(self.tint.unwrap_or([255, 255, 255]), it.alpha);
+        let flags = if a.smooth { F_SMOOTH } else { 0 } | if self.tint.is_some() { F_TINT } else { 0 };
         let mut quad = |anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, image: u32| {
             let Some(e) = self.assets.image(image) else { return };
             let o = place(anchor, x, y);
@@ -468,7 +476,9 @@ impl<'a> Ctx<'a> {
             let (lx, ly) = (sx * x, sy * y);
             [start[0] + cos * lx - sin * ly, start[1] + sin * lx + cos * ly]
         };
-        let (color, paint) = if it.color >> 24 != 255 && seg.secondary.is_some() {
+        let (color, paint) = if let Some(tint) = self.tint {
+            (rgba8(tint, it.alpha), NO_PAINT)
+        } else if it.color >> 24 != 255 && seg.secondary.is_some() {
             // Vertical gradient from the baseline to the top of the text.
             let (rgb, a) = seg.secondary.unwrap();
             let stops = [(0.0, stop_color(it.rgb, it.alpha)), (1.0, stop_color(object_color(rgb, it.color), 1.0 - a as f64 / 255.0))];
@@ -665,9 +675,42 @@ pub fn encode(doc: &Document, assets: &Assets, scene: &Scene) -> DrawList {
 
 /// [`encode`] with the editor's session overrides applied.
 pub fn encode_with(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>) -> DrawList {
-    let ctx = Ctx { scene, assets };
-    // Leaf runs: consecutive items of one figure instance (same slot and clip chain).
+    encode_composed(doc, assets, scene, overrides, &[], None)
+}
+
+/// An onion skin: another tick's scene, drawn faded and optionally in one colour.
+#[derive(Clone, Copy)]
+pub struct Ghost<'a> {
+    pub scene: &'a Scene,
+    /// Opacity of the whole ghost frame, applied once after its figures composite.
+    pub opacity: f64,
+    pub tint: Option<[u8; 3]>,
+    /// Object slots of the ghost scene that are not drawn.
+    pub hidden: &'a [bool],
+}
+
+/// One step of the painter order of a composed frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layer {
+    /// The object in this slot of the frame being edited.
+    Current(u32),
+    /// The object in this slot of a ghost.
+    Ghost(u32, u32),
+}
+
+/// One scene's objects, encoded and ready to be placed in any order.
+struct Encoded {
+    /// Item ranges of consecutive items of one figure instance (same slot and clip chain).
+    runs: Vec<(usize, usize)>,
+    objects: Vec<Option<ObjectOut>>,
+    /// Run range per object slot.
+    of_slot: std::collections::HashMap<u32, (usize, usize)>,
+}
+
+fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &[(u32, [f64; 2])], tint: Option<[u8; 3]>) -> Encoded {
+    let ctx = Ctx { scene, assets, tint };
     let mut runs: Vec<(usize, usize)> = Vec::new();
+    let mut of_slot: std::collections::HashMap<u32, (usize, usize)> = std::collections::HashMap::new();
     let mut i = 0;
     while i < scene.items.len() {
         let (slot, chain) = (scene.items[i].slot, scene.items[i].chain);
@@ -675,13 +718,15 @@ pub fn encode_with(doc: &Document, assets: &Assets, scene: &Scene, overrides: &O
         while j < scene.items.len() && scene.items[j].slot == slot && scene.items[j].chain == chain {
             j += 1;
         }
+        let entry = of_slot.entry(slot).or_insert((runs.len(), runs.len()));
+        entry.1 = runs.len() + 1;
         runs.push((i, j));
         i = j;
     }
     let encode_run = |&(a, b): &(usize, usize)| -> Option<ObjectOut> {
         let first = &scene.items[a];
         let opacity = first.opacity;
-        if opacity <= 0.0 || overrides.hidden.get(first.slot as usize).copied().unwrap_or(false) {
+        if opacity <= 0.0 || hidden.get(first.slot as usize).copied().unwrap_or(false) {
             return None;
         }
         let fig = &scene.figures[first.figure as usize];
@@ -701,23 +746,22 @@ pub fn encode_with(doc: &Document, assets: &Assets, scene: &Scene, overrides: &O
         for it in &scene.items[a..b] {
             ctx.item(&mut items, it, 0.0, [0, 0, 0]);
         }
-        if let Some(&(_, delta)) = overrides.translations.iter().find(|(slot, _)| *slot == first.slot) {
+        if let Some(&(_, delta)) = translations.iter().find(|(slot, _)| *slot == first.slot) {
             outline.translate(delta);
             items.translate(delta);
         }
         Some(ObjectOut { opacity, outline_alpha, outline, items })
     };
     let objects: Vec<Option<ObjectOut>> = crate::par::map(&runs, 16, encode_run);
+    Encoded { runs, objects, of_slot }
+}
 
-    let mut b = Builder::new();
-    let mut root = Out::new();
-    background(doc, assets, scene, overrides.background, &mut root);
-    let background_prims = root.prims.len() as u32;
-    b.add(0, root);
-    // Open movieclip owner groups: (level key, owner, group or pass-through, skipped).
+/// Places the runs `range` of an encoded scene under `base` (the root, or a ghost's group),
+/// opening and closing the isolation groups of translucent movieclip owners along the way.
+fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize), base: usize) {
     let mut stack: Vec<Open> = Vec::new();
-    for (k, &(a, _)) in runs.iter().enumerate() {
-        let first = &scene.items[a];
+    for k in range.0..range.1 {
+        let first = &scene.items[encoded.runs[k].0];
         // Owner path of this run: one entry per enclosing movieclip.
         let path: Vec<(u32, u32)> = match first.chain {
             crate::geometry::NO_CHAIN => vec![],
@@ -733,7 +777,7 @@ pub fn encode_with(doc: &Document, assets: &Assets, scene: &Scene, overrides: &O
         }
         for &(key, owner) in &path[common..] {
             let opacity = scene.owners[owner as usize];
-            let parent = stack.last().map(|o| o.target).unwrap_or(0);
+            let parent = stack.last().map(|o| o.target).unwrap_or(base);
             let skipped = stack.last().is_some_and(|o| o.skipped) || opacity <= 0.0;
             let target = if !skipped && opacity < 1.0 { b.open(parent, opacity) } else { parent };
             stack.push(Open { key, owner, target, isolated: target != parent, skipped, opacity });
@@ -741,12 +785,62 @@ pub fn encode_with(doc: &Document, assets: &Assets, scene: &Scene, overrides: &O
         if stack.last().is_some_and(|o| o.skipped) {
             continue;
         }
-        let Some(o) = objects[k].as_ref() else { continue };
-        let parent = stack.last().map(|o| o.target).unwrap_or(0);
+        let Some(o) = encoded.objects[k].as_ref() else { continue };
+        let parent = stack.last().map(|o| o.target).unwrap_or(base);
         b.object(parent, o);
     }
     while let Some(open) = stack.pop() {
         b.close(open, stack.last());
+    }
+}
+
+/// Encodes the frame being edited together with its onion skins.
+///
+/// `order` is the painter order (see [`crate::onion::compose`]); `None` draws the
+/// scene alone, in its own order. Consecutive steps of one ghost form one isolation
+/// group, faded once at the ghost's opacity, so a ghost never shows through itself.
+pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>, ghosts: &[Ghost<'_>], order: Option<&[Layer]>) -> DrawList {
+    let current = encode_scene(assets, scene, overrides.hidden, overrides.translations, None);
+    let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| encode_scene(assets, ghost.scene, ghost.hidden, &[], ghost.tint)).collect();
+    let mut b = Builder::new();
+    let mut root = Out::new();
+    background(doc, assets, scene, overrides.background, &mut root);
+    let background_prims = root.prims.len() as u32;
+    b.add(0, root);
+    match order {
+        None => place(&mut b, scene, &current, (0, current.runs.len()), 0),
+        Some(order) => {
+            // The ghost whose group is open, and that group.
+            let mut open: Option<(u32, usize)> = None;
+            let close = |b: &mut Builder, open: &mut Option<(u32, usize)>| {
+                if let Some((ghost, target)) = open.take() {
+                    b.close(Open { key: 0, owner: 0, target, isolated: true, skipped: false, opacity: ghosts[ghost as usize].opacity }, None);
+                }
+            };
+            for layer in order {
+                match *layer {
+                    Layer::Current(slot) => {
+                        close(&mut b, &mut open);
+                        if let Some(&range) = current.of_slot.get(&slot) {
+                            place(&mut b, scene, &current, range, 0);
+                        }
+                    }
+                    Layer::Ghost(ghost, slot) => {
+                        let Some(source) = ghosts.get(ghost as usize) else { continue };
+                        if source.opacity <= 0.0 {
+                            continue;
+                        }
+                        let Some(&range) = ghost_scenes[ghost as usize].of_slot.get(&slot) else { continue };
+                        if open.map(|(index, _)| index) != Some(ghost) {
+                            close(&mut b, &mut open);
+                            open = Some((ghost, b.open(0, source.opacity)));
+                        }
+                        place(&mut b, source.scene, &ghost_scenes[ghost as usize], range, open.expect("opened above").1);
+                    }
+                }
+            }
+            close(&mut b, &mut open);
+        }
     }
     let (prims, paints, points, groups, passes) = b.finish();
     DrawList { prims, paints, points, groups, passes, background_prims }

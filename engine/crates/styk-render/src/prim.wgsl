@@ -76,6 +76,7 @@ const K_POLYLINE: u32 = 11u;
 const F_CLOSED: u32 = 1024u;
 const F_SMOOTH: u32 = 256u;
 const F_RING_FILL: u32 = 512u;
+const F_TINT: u32 = 2048u;
 const NO_PAINT: u32 = 0xffffffffu;
 const PI: f32 = 3.14159265358979;
 
@@ -405,6 +406,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         } else {
             let q = clamp(raw, rect.xy + texel * 0.5, rect.zw - texel * 0.5);
             tex = textureSampleLevel(sprites, linear_sampler, texel_centre(q, size), i32(p.b.z), 0.0);
+        }
+        if ((p.kind & F_TINT) != 0u) {
+            // An onion skin's sprite: its coverage in the tint colour.
+            return vec4<f32>(base.rgb * tex.a, tex.a) * base.a;
         }
         return tex * base.a;
     }

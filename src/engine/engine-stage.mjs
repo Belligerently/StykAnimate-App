@@ -40,7 +40,9 @@ async function engineSide(canvas) {
   const stage = await engine.createStage(surface);
   return shared = {engine, stage, surface, mirror: new EngineMirror(engine), eligibility: new EngineEligibility(),
     /** Geometry groups the engine last received, by slot: an unchanged group is not sent again. */
-    groups: [], frameReport: null, count: 0, definitions: null, failed: null, dirty: null, lastRefusal: null,
+    groups: [], frameReport: null, count: -1, definitions: null, failed: null, dirty: null, lastRefusal: null,
+    /** Onion skin poses the engine holds, by the editor's sampled frame. */
+    ghosts: new WeakMap(), nextGhost: 1, frameSent: false,
     stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, fallbacks: 0}};
 }
 
@@ -76,7 +78,6 @@ export async function createStageRenderer(canvas, options, create) {
   /** Why this frame goes to the JavaScript renderer, or null when the engine draws it. */
   const refusal = request => {
     if (side.failed) return side.failed;
-    if (request.onionFrames?.length) return 'onion skins';
     if (request.view?.rotation || request.view?.flip) return 'a rotated or mirrored view';
     if (!request.geometry) return 'no evaluated geometry';
     const reason = side.eligibility.check(request.report, request.revision ?? -1, side.dirty);
@@ -98,29 +99,63 @@ export async function createStageRenderer(canvas, options, create) {
     const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
       {figureIndices: dirty?.figureIndices ?? [], allFigures: side.resendFigures || Boolean(dirty?.definition && !dirty.figureIndices?.length)});
     side.definitions = key; side.resendFigures = false;
-    if (side.frameReport !== request.report) { side.groups = []; side.frameReport = request.report; }
+    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
     const unsupported = JSON.parse(side.engine.handle.unsupported());
     if (unsupported.length) throw new Error(`the engine does not draw ${unsupported.join(', ')} yet`);
     return result;
+  };
+
+  /**
+   * A pose as the engine reads it: the frame's own fields, and per object either its
+   * pose or `null` when the editor has not rebuilt its geometry since `known` last saw it.
+   */
+  const frameJSON = (frame, geometry, known) => {
+    const objects = frame.objects ?? [], groups = geometry?.objects, same = known.count === objects.length && groups;
+    let sent = 0;
+    const items = objects.map((object, slot) => {
+      const group = groups?.get(slot) ?? object;
+      if (same && known.groups[slot] === group) return 'null';
+      known.groups[slot] = group; sent++;
+      return poseJSON(group.obj ?? object);
+    });
+    known.groups.length = known.count = objects.length;
+    const {objects: _objects, ...header} = frame;
+    side.stats.objectsSent += sent;
+    return `${JSON.stringify(header).slice(0, -1)}${Object.keys(header).length ? ',' : ''}"objects":[${items.join(',')}]}`;
+  };
+
+  /** Sends the onion skins that changed and describes all of them for this frame. */
+  const onionList = request => {
+    const list = [];
+    for (const onion of request.onionFrames ?? []) {
+      let known = side.ghosts.get(onion.frame);
+      if (!known || !side.stage.has_ghost(known.id)) side.ghosts.set(onion.frame, known = {id: known?.id ?? side.nextGhost++, groups: [], count: -1});
+      const before = side.stats.objectsSent;
+      const json = frameJSON(onion.frame, onion.geometry, known);
+      if (side.stats.objectsSent !== before) side.stage.edit_ghost(known.id, json);
+      // The skin shows the objects its geometry lists (scope, hidden figures and layers are already applied to it).
+      const shown = new Set(), ordered = onion.geometry.orderedObjects ?? [...onion.geometry.objects.values()];
+      let tint = -1;
+      for (const group of ordered) {
+        shown.add(group.slot);
+        if (tint < 0) { const rgb = group.drawables?.find(item => item.onionTint)?.onionTint; if (rgb) tint = rgb[0] << 16 | rgb[1] << 8 | rgb[2]; }
+      }
+      const hidden = [];
+      for (let slot = 0; slot < (onion.frame.objects?.length ?? 0); slot++) if (!shown.has(slot)) hidden.push(slot);
+      list.push(known.id, onion.opacity ?? .14, tint, onion.showOnTop ? 1 : 0, onion.beforeUid ?? -1, hidden.length, ...hidden);
+    }
+    return list;
   };
 
   const drawEdit = request => {
     const started = performance.now();
     syncDefinitions(request);
     const {frame, geometry} = request, objects = frame.objects ?? [];
-    // An object is sent when the editor rebuilt its geometry (a new group object) or it is a new pose object.
-    const groups = geometry?.objects, same = side.count === objects.length && groups;
-    let sent = 0;
-    const items = objects.map((object, slot) => {
-      const group = groups?.get(slot) ?? object;
-      if (same && side.groups[slot] === group) return 'null';
-      side.groups[slot] = group; sent++;
-      return poseJSON(group.obj ?? object);
-    });
-    side.groups.length = side.count = objects.length;
-    const {objects: _objects, ...header} = frame;
-    const json = `${JSON.stringify(header).slice(0, -1)}${Object.keys(header).length ? ',' : ''}"objects":[${items.join(',')}]}`;
-    side.stage.edit_frame(json);
+    const before = side.stats.objectsSent;
+    const json = frameJSON(frame, geometry, side);
+    // An unchanged pose is not parsed again; the first frame and every changed one are.
+    if (side.stats.objectsSent !== before || !side.frameSent) { side.stage.edit_frame(json); side.frameSent = true; }
+    const onions = onionList(request);
     const sendMs = performance.now() - started;
     const hidden = [], translations = [];
     objects.forEach((object, slot) => {
@@ -132,8 +167,8 @@ export async function createStageRenderer(canvas, options, create) {
     const dpr = legacy.dpr || 1, view = request.view ?? {};
     const drawn = side.stage.render_edit((view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
-      Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1);
-    Object.assign(side.stats, {frames: side.stats.frames + 1, objectsSent: side.stats.objectsSent + sent, lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
+      Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
+    Object.assign(side.stats, {frames: side.stats.frames + 1, lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
     return drawn;
   };
 

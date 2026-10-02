@@ -11,6 +11,7 @@ pub mod edit;
 pub mod eval;
 pub mod geometry;
 pub mod load;
+pub mod onion;
 pub mod par;
 pub mod piv;
 pub mod rig;
@@ -68,4 +69,17 @@ pub fn prepare(doc: Document) -> eval::Prepared {
 /// keeps a [`load::Loader`] instead, which converts only what each change replaced.
 pub fn from_value(document: &styk_doc::Value, name: &str) -> Result<Document, Error> {
     load::Loader::new().document(document, name)
+}
+
+/// A one-line-per-object description of an evaluated tick, for comparing builds of
+/// the engine with each other (native against WebAssembly).
+pub fn describe_tick(prepared: &eval::Prepared, tick: u32) -> String {
+    let frame = prepared.evaluate(tick as f64);
+    let scene = geometry::build(&prepared.doc, &frame);
+    let mut out = format!("tick {tick}: {} objects, {} items, {} points, {} chains\n", frame.objects.len(), scene.items.len(), scene.points.len(), scene.chains.len());
+    for (slot, object) in frame.objects.iter().enumerate() {
+        let items = scene.items.iter().filter(|item| item.slot as usize == slot).count();
+        out.push_str(&format!("  {slot}: uid {} figure {} clip {:?} items {items} root [{:.3}, {:.3}]\n", object.uid, object.figure, object.clip_time, object.root[0], object.root[1]));
+    }
+    out
 }
