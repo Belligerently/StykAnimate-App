@@ -10,8 +10,9 @@
 // A scenario: {"name", "document": <path relative to the scenario | inline document>,
 // "editor": {"propertyChannels", "layerTimeline"}, "steps": [["method", ...arguments], …]}.
 // A step may also be ["@seek", tick] or ["@select", uid, joint] (the same as the method
-// calls, spelled out for readability). Documents are compared as `JSON.stringify` of
-// `editor.serialize()` (what a save writes), which is byte-stable.
+// calls, spelled out for readability). The document recorded is the editor's in-memory
+// report as the engine's mirror receives it (`JSON.stringify(editor.report)` without the
+// `runtime_segments` caches): phase 1 ports start from the loaded report, not the file.
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync} from 'node:fs';
 import path from 'node:path';
@@ -21,6 +22,8 @@ const repo = path.resolve(here, '../..');
 const {Editor} = await import(`${repo}/src/editor.mjs`);
 
 const sha = text => createHash('sha256').update(text).digest('hex');
+/** The report as the mirror sends it (src/engine/engine-mirror.mjs strips the same caches). */
+const reportJSON = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value);
 /** Event details as plain data: numbers, strings, booleans, arrays and objects of them. */
 const plain = (value, depth = 4) => {
   if (value === null || ['number', 'string', 'boolean'].includes(typeof value)) return value;
@@ -41,7 +44,7 @@ export function replay(scenario, base = repo) {
     selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])], selectedJoint: editor.selectedJoint ?? -1,
     canUndo: editor.canUndo, canRedo: editor.canRedo, undoLabel: editor.undoLabel, redoLabel: editor.redoLabel, dirty: editor.dirty,
   });
-  let previous = JSON.stringify(editor.serialize());
+  let previous = reportJSON(editor);
   const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: []}];
   scenario.steps.forEach((call, index) => {
     events.length = 0;
@@ -50,7 +53,7 @@ export function replay(scenario, base = repo) {
     let result, error = null;
     try { result = editor[method](...args); }
     catch (caught) { error = {message: caught.message, key: caught.messageKey ?? null}; }
-    const text = JSON.stringify(editor.serialize());
+    const text = reportJSON(editor);
     steps.push({step: index + 1, call, result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});
     previous = text;
   });
