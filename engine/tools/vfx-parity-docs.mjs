@@ -134,6 +134,18 @@ const docs = {
     // The engine does not read a capture's retained source curves yet (docs/engine/vfx.md).
     delete captured._styk.movieclipSource;
     for (const frame of captured.keyframes) delete frame._styk?.movieclipSourceTick;
+    // The capture keeps the selected figure only: give the clip the ball with its own glow,
+    // and the scene stack (tweened between the clip's two keys) its document had.
+    if (!captured.figure_types.some(f => f.figure_type_id === 3)) captured.figure_types.push(structuredClone(inner.figure_types[2]));
+    captured.keyframes.forEach((frame, i) => {
+      const ball = structuredClone(inner.keyframes[Math.min(i, inner.keyframes.length - 1)].objects[1]);
+      ball.unique_id = Math.max(...frame.objects.map(o => o.unique_id)) + 1;
+      frame.objects.push(ball);
+      frame.object_draw_order = frame.objects.map((_, slot) => slot);
+      frame.object_draw_order_unique_ids = frame.objects.map(o => o.unique_id);
+      frame.objects.forEach((o, slot) => { o.object_slot = slot; });
+      frame._stykVfx = structuredClone(inner.keyframes[Math.min(i, inner.keyframes.length - 1)]._stykVfx);
+    });
     const types = figures();
     const instance = (uid, x, y, extra = {}) => createObject(clip, uid, x, y, {angles: [0], _stykMovieclip: {start: 0, end: 20, offset: 0, speed: 1, mode: 'loop'}, ...extra});
     const document = {...emptyDocument(), figure_types: [...types, {...clip, figure_type_id: 4}]};

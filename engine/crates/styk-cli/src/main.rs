@@ -298,6 +298,9 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
         clip_to_artboard: !rest.iter().any(|a| a == "--no-clip"),
         clear: [0.16, 0.16, 0.17, 1.0],
+        zoom,
+        pan,
+        camera_view: true,
     };
     renderer.set_list(&list);
     let mut encoder = device.create_command_encoder(&Default::default());
@@ -400,6 +403,9 @@ fn gpubench(path: &str, tick: &str) -> i32 {
             artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
             clip_to_artboard: true,
             clear: [0.07, 0.07, 0.09, 1.0],
+            zoom,
+            pan,
+            camera_view: true,
         };
         let start = Instant::now();
         let mut encoder = device.create_command_encoder(&Default::default());

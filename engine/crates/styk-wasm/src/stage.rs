@@ -194,6 +194,9 @@ impl Stage {
             artboard: [p0[0].min(p1[0]), p0[1].min(p1[1]), p0[0].max(p1[0]), p0[1].max(p1[1])],
             clip_to_artboard,
             clear: [0.0; 4],
+            zoom,
+            pan,
+            camera_view: camera.is_some(),
         };
         let target = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,

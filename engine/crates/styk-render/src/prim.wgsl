@@ -23,13 +23,18 @@ struct Prim {
     c: vec4<f32>,
 };
 
-// Per-render placement of an isolation group: screen rect -> atlas rect.
+// Per-render placement of an isolation group (effects::record): six texels.
+// A group is drawn in a space of its own (the screen's, an effect layer's grid,
+// the camera image's) at a place in the atlas, then composited into its parent.
 struct Group {
-    origin: vec2<f32>,  // screen-space top-left of the captured rect
-    scale: f32,         // atlas pixels per screen pixel (1, or less when downscaled)
-    page: f32,          // atlas layer, or -1 when the group is empty/off-screen
-    offset: vec2<f32>,  // atlas-space top-left
-    size: vec2<f32>,    // atlas-space size
+    m: vec4<f32>,       // world -> this group's atlas pixels, linear part (a, b, c, d)
+    t: vec2<f32>,       // and its translation
+    page: f32,          // atlas layer, or -1 when the group is not drawn
+    aa: f32,            // world units per atlas pixel
+    clip: vec4<f32>,    // the group's atlas rectangle (x0, y0, x1, y1)
+    p: vec4<f32>,       // this group's atlas pixels -> its parent's target, linear part
+    pt: vec2<f32>,      // and its translation
+    show: vec4<f32>,    // the part of the atlas rectangle its composite shows
 };
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -57,9 +62,22 @@ fn polyline_point(i: u32) -> vec2<f32> {
 }
 
 fn group_at(g: u32) -> Group {
-    let head = textureLoad(group_table, table_at(g * 2u), 0);
-    let tail = textureLoad(group_table, table_at(g * 2u + 1u), 0);
-    return Group(head.xy, head.z, head.w, tail.xy, tail.zw);
+    let r0 = textureLoad(group_table, table_at(g * 6u), 0);
+    let r1 = textureLoad(group_table, table_at(g * 6u + 1u), 0);
+    let r2 = textureLoad(group_table, table_at(g * 6u + 2u), 0);
+    let r3 = textureLoad(group_table, table_at(g * 6u + 3u), 0);
+    let r4 = textureLoad(group_table, table_at(g * 6u + 4u), 0);
+    let r5 = textureLoad(group_table, table_at(g * 6u + 5u), 0);
+    return Group(r0, r1.xy, r1.z, r1.w, r2, r3, r4.xy, r5);
+}
+
+fn affine(m: vec4<f32>, t: vec2<f32>, q: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(m.x * q.x + m.z * q.y + t.x, m.y * q.x + m.w * q.y + t.y);
+}
+
+fn affine_inverse(m: vec4<f32>, t: vec2<f32>, q: vec2<f32>) -> vec2<f32> {
+    let d = q - t;
+    return vec2<f32>(m.w * d.x - m.z * d.y, -m.y * d.x + m.x * d.y) / (m.x * m.w - m.y * m.z);
 }
 
 const K_CAPSULE: u32 = 1u;
@@ -110,11 +128,10 @@ fn to_world(s: vec2<f32>) -> vec2<f32> {
     return vec2<f32>(view.inv.x * s.x + view.inv.z * s.y + view.inv_t.x, view.inv.y * s.x + view.inv.w * s.y + view.inv_t.y);
 }
 
-// Screen space -> this pass's target space (identity for the frame itself).
-fn to_target(s: vec2<f32>, g: u32) -> vec2<f32> {
-    if (g == 0u) { return s; }
-    let gr = group_at(g);
-    return (s - gr.origin) * gr.scale + gr.offset;
+// World -> this pass's target: the screen for the frame, the group's atlas space otherwise.
+fn to_target(world: vec2<f32>, g: u32, gr: Group) -> vec2<f32> {
+    if (g == 0u) { return to_screen(world); }
+    return affine(gr.m, gr.t, world);
 }
 
 fn clip_pos(t: vec2<f32>) -> vec4<f32> {
@@ -150,19 +167,19 @@ fn vs_main(in: VsIn) -> VsOut {
     out.c = in.c;
     out.uv = vec2<f32>(0.0, 0.0);
     let g = p.group;
-    var gscale = 1.0;
     out.clip = vec4<f32>(-1e9, -1e9, 1e9, 1e9);
+    // World units per target pixel.
+    var aa = 1.0 / max(view.t.z, 1e-12);
+    var gr: Group;
     if (g != 0u) {
-        let gr = group_at(g);
+        gr = group_at(g);
         if (gr.page != view.dest.z) {
             out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
             return out;
         }
-        gscale = gr.scale;
-        out.clip = vec4<f32>(gr.offset, gr.offset + gr.size);
+        aa = gr.aa;
+        out.clip = gr.clip;
     }
-    // World units per target pixel.
-    let aa = 1.0 / max(view.t.z * gscale, 1e-12);
     out.aa = aa;
     let margin = aa * 1.5;
     let c = corner(vi);
@@ -217,7 +234,7 @@ fn vs_main(in: VsIn) -> VsOut {
             // floor(-log2(target pixels per cel pixel)) clamped to 0..8 (drawing-gpu.mjs).
             let level = p.b.w;
             let cel_pixel = length(p.a.zw) / (64.0 * exp2(level));
-            let shown = clamp(floor(-log2(max(cel_pixel * view.t.z * gscale, 1e-30))), 0.0, 8.0);
+            let shown = clamp(floor(-log2(max(cel_pixel / aa, 1e-30))), 0.0, 8.0);
             if (shown != level) {
                 out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
                 return out;
@@ -226,24 +243,31 @@ fn vs_main(in: VsIn) -> VsOut {
         world = p.a.xy + p.a.zw * c.x + p.b.xy * c.y;
         out.uv = c;
     } else if (kind == K_COMPOSITE) {
+        // The child's shown rectangle, carried into this target by the child's own map.
         let child = group_at(bitcast<u32>(p.b.x));
         if (child.page < 0.0) {
             out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
             return out;
         }
-        let s = child.origin + c * child.size / child.scale;
-        out.uv = child.offset + c * child.size;
-        out.world = to_world(s);
-        out.pos = clip_pos(to_target(s, g));
+        let a = mix(child.show.xy, child.show.zw, c);
+        out.uv = a;
+        out.pos = clip_pos(affine(child.p, child.pt, a));
         return out;
     } else if (kind == K_FILL_VIEW || kind == K_BG_IMAGE) {
-        let s = mix(view.artboard.xy, view.artboard.zw, c);
-        out.world = to_world(s);
-        out.pos = clip_pos(to_target(s, g));
+        // The artboard on screen; a group's whole layer (the camera image's background).
+        if (g == 0u) {
+            let s = mix(view.artboard.xy, view.artboard.zw, c);
+            out.world = to_world(s);
+            out.pos = clip_pos(s);
+        } else {
+            let s = mix(gr.clip.xy, gr.clip.zw, c);
+            out.world = affine_inverse(gr.m, gr.t, s);
+            out.pos = clip_pos(s);
+        }
         return out;
     }
     out.world = world;
-    out.pos = clip_pos(to_target(to_screen(world), g));
+    out.pos = clip_pos(to_target(world, g, gr));
     return out;
 }
 
@@ -447,9 +471,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return textureSampleLevel(sprites, linear_sampler, texel_centre(q, size), i32(p.a.z), 0.0) * base.a;
     }
     if (kind == K_COMPOSITE) {
+        // Bilinear, clamped to the child's own rectangle as an exact texture's edge would be.
         let child = group_at(bitcast<u32>(p.b.x));
         let size = vec2<f32>(textureDimensions(layers).xy);
-        let tex = textureSampleLevel(layers, linear_sampler, in.uv / size, i32(child.page), 0.0);
+        let uv = clamp(in.uv, child.clip.xy + vec2<f32>(0.5), child.clip.zw - vec2<f32>(0.5));
+        let tex = textureSampleLevel(layers, linear_sampler, uv / size, i32(child.page), 0.0);
         return tex * base.a;
     }
     if (kind == K_FILL_VIEW) {

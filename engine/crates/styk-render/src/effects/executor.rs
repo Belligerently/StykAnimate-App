@@ -207,7 +207,7 @@ impl Executor {
         run
     }
 
-    /// Prepares slots for the runs of a frame: every slot at least `largest`.
+    /// Prepares the frame's recorded runs: slots of at least `largest`, uniforms written.
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, largest: [u32; 2]) {
         if largest[0] == 0 || largest[1] == 0 {
             // No effect this frame: release the slots after a while (a quiet period).
@@ -228,6 +228,10 @@ impl Executor {
             self.slot_size = size;
             self.idle = 0;
         }
+        let texel = [1.0 / self.slot_size[0].max(1) as f32, 1.0 / self.slot_size[1].max(1) as f32];
+        for record in &mut self.records {
+            record.texel = texel;
+        }
         let need = self.records.len() as u64;
         if need > self.uniform_slots {
             self.uniform_slots = need.next_power_of_two();
@@ -247,7 +251,6 @@ impl Executor {
             }
             queue.write_buffer(&self.uniforms, 0, &bytes);
         }
-        let _ = device;
     }
 
     fn release(&mut self) {
@@ -317,7 +320,6 @@ impl Executor {
 
     /// Encodes the steps of `run` (after [`Executor::prepare`]).
     pub fn encode(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, run: &Run) {
-        let texel = [1.0 / self.slot_size[0] as f32, 1.0 / self.slot_size[1] as f32];
         for step in &run.steps {
             match *step {
                 Step::Copy { from, to, size } => {
@@ -327,7 +329,6 @@ impl Executor {
                     encoder.copy_texture_to_texture(a.as_image_copy(), b.as_image_copy(), wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 });
                 }
                 Step::Pass { operation: _, source, source_size: _, target, size, original, mask, uniform } => {
-                    let _ = texel;
                     let bind = self.bind(device, source, original, mask);
                     let view = self.slot(device, target).clone();
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -351,14 +352,6 @@ impl Executor {
                     self.stats.passes += 1;
                 }
             }
-        }
-    }
-
-    /// Writes the slot size into the recorded uniforms (known once every layer of the frame is recorded).
-    pub fn finish_records(&mut self) {
-        let texel = [1.0 / self.slot_size[0].max(1) as f32, 1.0 / self.slot_size[1].max(1) as f32];
-        for record in &mut self.records {
-            record.texel = texel;
         }
     }
 }

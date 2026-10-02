@@ -10,6 +10,12 @@ pub struct ViewParams {
     pub artboard: [f64; 4],
     pub clip_to_artboard: bool,
     pub clear: [f64; 4],
+    /// Workspace zoom (output pixels per world unit) and pan, before any scene
+    /// camera: the camera image of scene effects is sized and placed from them.
+    pub zoom: f64,
+    pub pan: [f64; 2],
+    /// `matrix` shows the scene through its camera (playback), not the neutral workspace.
+    pub camera_view: bool,
 }
 
 impl ViewParams {
@@ -27,11 +33,6 @@ impl ViewParams {
             target,
             artboard: self.artboard.map(|v| v as f32),
         }
-    }
-
-    pub(crate) fn to_screen(&self, x: f64, y: f64) -> [f64; 2] {
-        let [a, b, c, d, e, f] = self.matrix;
-        [a * x + c * y + e, b * x + d * y + f]
     }
 }
 
