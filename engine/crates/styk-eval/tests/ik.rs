@@ -101,6 +101,70 @@ fn fixtures_with_pins_depend_on_the_solver() {
     }
 }
 
+/// Positions are compared within `parity::TOLERANCE`, which would hide a wrong
+/// convergence threshold or an iteration too few. The references also record
+/// what the editor's solver derived, unrounded: the same angles and lengths
+/// to nine digits, and the same number of iterations per controller.
+#[test]
+fn solved_poses_match_the_editor_closely() {
+    let mut controllers = 0;
+    for name in fixtures() {
+        if NESTED.contains(&name.as_str()) {
+            continue;
+        }
+        let prepared = styk_eval::prepare(open(&name));
+        let reference = json(&folder().join(format!("{name}.reference.json")));
+        for frame in reference.get("frames").and_then(Value::as_arr).expect("frames") {
+            let tick = number(frame, "tick");
+            let evaluated = prepared.evaluate(tick);
+            let figure = |slot: usize| {
+                let object = evaluated.objects.get(slot)?;
+                object.figure_override.as_ref().or_else(|| prepared.doc.figure(object.figure))
+            };
+            let joined = ik::joined::solve(&evaluated, &figure);
+            // As geometry does: the assembly's solution, or the object's own.
+            let solve = |slot: usize| {
+                joined.get(&slot).cloned().or_else(|| {
+                    let object = evaluated.objects.get(slot)?;
+                    assert!(object.join.is_none(), "{name}: a joined object outside a solved assembly");
+                    ik::solve_local(figure(slot)?, object, object.root)
+                })
+            };
+            let expected = frame.get("ik").and_then(Value::as_arr).unwrap_or(&[]);
+            let solved = (0..evaluated.objects.len()).filter(|&slot| solve(slot).is_some()).count();
+            assert_eq!(solved, expected.len(), "{name} tick {tick}: objects with a derived pose");
+            for object in expected {
+                let slot = number(object, "slot") as usize;
+                let what = format!("{name} tick {tick} uid {}", number(object, "uid"));
+                let ours = solve(slot).unwrap_or_else(|| panic!("{what}: no derived pose"));
+                let angles = object.get("angles").and_then(Value::numbers).expect("angles");
+                assert_eq!(ours.angles.len(), angles.len(), "{what}: angles");
+                for (a, b) in ours.angles.iter().zip(&angles) {
+                    near(*a, *b, &what);
+                }
+                let lengths = object.get("lengths").and_then(Value::numbers);
+                assert_eq!(ours.lengths.is_some(), lengths.is_some(), "{what}: stretched lengths");
+                for (a, b) in ours.lengths.iter().flatten().zip(lengths.iter().flatten()) {
+                    near(*a, *b, &what);
+                }
+                let outcomes = object.get("controllers").and_then(Value::as_arr).unwrap_or(&[]);
+                assert_eq!(ours.results.len(), outcomes.len(), "{what}: controllers");
+                for outcome in outcomes {
+                    let handle = number(outcome, "handle") as u32;
+                    let what = format!("{what} handle {handle}");
+                    let (_, result) = ours.results.iter().find(|(id, _)| *id == handle).unwrap_or_else(|| panic!("{what}: missing"));
+                    assert_eq!(Some(result.conflict), outcome.get("conflict").and_then(Value::as_bool), "{what}: conflict");
+                    assert_eq!(result.iterations as f64, number(outcome, "iterations"), "{what}: iterations");
+                    near(result.stretch, number(outcome, "stretch"), &what);
+                    assert!((result.error - number(outcome, "error")).abs() <= 1e-7, "{what}: error {} != {}", result.error, number(outcome, "error"));
+                    controllers += 1;
+                }
+            }
+        }
+    }
+    assert!(controllers >= 80, "only {controllers} controller outcomes were compared");
+}
+
 #[test]
 fn the_startup_document_has_four_two_bone_controllers() {
     let document = open("startup");

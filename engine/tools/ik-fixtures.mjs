@@ -469,7 +469,19 @@ for (const name of (names.length ? names : Object.keys(fixtures)).filter(name =>
   // Timings differ on every run; without them a regenerated fixture is byte-stable.
   const dump = JSON.parse(readFileSync(reference, 'utf8'));
   delete dump.loadMs; delete dump.evalMsPerFrame;
+  // What the solver derived, unrounded (the dump above rounds positions to
+  // 1e-6): the angles and stretched lengths of every object a pinned
+  // controller reaches, and each controller's outcome. Same editor
+  // configuration as tools/reference.mjs.
+  const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true});
+  editor.load(JSON.parse(readFileSync(file, 'utf8')), `${name}.json`);
+  for (const frame of dump.frames) {
+    editor.seek(frame.tick);
+    frame.ik = [...editor.geometry.objects].filter(([, g]) => g?.solvedAngles).map(([slot, g]) => ({slot, uid: g.obj.unique_id,
+      angles: [...g.solvedAngles], lengths: g.solvedLengths ? [...g.solvedLengths] : null,
+      controllers: [...g.ik].map(([handle, r]) => ({handle, conflict: Boolean(r.conflict), iterations: r.iterations ?? 0, error: r.error ?? 0, stretch: r.stretch ?? 1}))}));
+  }
   writeFileSync(reference, JSON.stringify(dump) + '\n');
-  const pinned = dump.frames.length, size = n => `${(n / 1024).toFixed(1)} KiB`;
-  console.log(`${name}: ${size(JSON.stringify(document).length)} project, ${pinned} ticks, ${size(JSON.stringify(dump).length)} reference`);
+  const size = n => `${(n / 1024).toFixed(1)} KiB`;
+  console.log(`${name}: ${size(JSON.stringify(document).length)} project, ${dump.frames.length} ticks, ${size(JSON.stringify(dump).length)} reference`);
 }
