@@ -11,102 +11,15 @@
 //! a `COMPOSITE` record at its place in the parent's painter order.
 
 use std::f64::consts::PI;
-use std::sync::Arc;
 
 use crate::assets::Assets;
 use crate::doc::*;
 use crate::geometry::{mix_color, Item, ItemKind, Scene};
 
-pub const K_CAPSULE: u32 = 1;
-pub const K_ARC: u32 = 2;
-pub const K_DISC: u32 = 3;
-pub const K_RING: u32 = 4;
-pub const K_TRI: u32 = 5;
-pub const K_IMAGE: u32 = 6;
-pub const K_COMPOSITE: u32 = 7;
-pub const K_FILL_VIEW: u32 = 8;
-pub const K_BG_IMAGE: u32 = 9;
-pub const K_BOX: u32 = 10;
-/// A whole open or closed polyline, shaded once per pixel (no joint overlap).
-pub const K_POLYLINE: u32 = 11;
-pub const F_CLOSED: u32 = 1 << 10;
-
-pub const F_SMOOTH: u32 = 1 << 8;
-pub const F_RING_FILL: u32 = 1 << 9;
-/// An image drawn in the record's colour through its own coverage (onion tint).
-pub const F_TINT: u32 = 1 << 11;
-/// A drawing cel tile (`crate::drawing`): straight-alpha texels with a border, filtered
-/// by the shader; the record's `b[3]` is its display level.
-pub const F_DRAWING: u32 = 1 << 12;
-
-pub const NO_PAINT: u32 = u32::MAX;
-
-/// One GPU primitive (std430, 64 bytes).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Prim {
-    pub kind: u32,
-    pub group: u32,
-    /// RGBA8, straight alpha.
-    pub color: u32,
-    /// Offset of a paint record in [`DrawList::paints`] (vec4 units), or `NO_PAINT`.
-    pub paint: u32,
-    pub a: [f32; 4],
-    pub b: [f32; 4],
-    pub c: [f32; 4],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Group {
-    pub parent: u32,
-    pub depth: u32,
-    pub opacity: f32,
-    /// World-space bounds (x0, y0, x1, y1) of everything drawn in the group.
-    pub bounds: [f32; 4],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Pass {
-    pub depth: u32,
-    pub start: u32,
-    pub end: u32,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DrawList {
-    pub prims: Vec<Prim>,
-    pub paints: Vec<[f32; 4]>,
-    /// Polyline vertices referenced by `K_POLYLINE` records.
-    pub points: Vec<[f32; 2]>,
-    pub groups: Vec<Group>,
-    /// Prim ranges per depth, deepest first; the last pass (depth 0) is the frame.
-    pub passes: Vec<Pass>,
-    /// Number of leading root prims that are background fills (drawn unclipped by figures).
-    pub background_prims: u32,
-}
-
-impl DrawList {
-    pub fn bytes(&self) -> usize {
-        self.prims.len() * std::mem::size_of::<Prim>() + self.paints.len() * 16 + self.points.len() * 8 + self.groups.len() * 32
-    }
-}
-
-pub fn rgba8(rgb: [u8; 3], alpha: f64) -> u32 {
-    let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u32;
-    rgb[0] as u32 | (rgb[1] as u32) << 8 | (rgb[2] as u32) << 16 | a << 24
-}
-
-fn argb8(raw: u32) -> u32 {
-    let (a, r, g, b) = (raw >> 24, raw >> 16 & 255, raw >> 8 & 255, raw & 255);
-    r | g << 8 | b << 16 | a << 24
-}
-
-/// Paint record kinds understood by the shader.
-const P_LINEAR: f32 = 0.0;
-const P_RADIAL: f32 = 1.0;
-const P_ANGULAR: f32 = 2.0;
-const P_DIAMOND: f32 = 3.0;
-const P_RADIAL_RING: f32 = 4.0;
+pub use styk_draw::{
+    argb8, rgba8, sample_paint, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
+    K_COMPOSITE, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING,
+};
 
 /// A local primitive list with world bounds, before groups are assigned.
 #[derive(Default)]
@@ -1025,5 +938,3 @@ fn composite(group: u32, opacity: f64, bounds: [f32; 4]) -> Prim {
     }
 }
 
-/// Shared handle for a draw list produced on a worker thread.
-pub type SharedDrawList = Arc<DrawList>;

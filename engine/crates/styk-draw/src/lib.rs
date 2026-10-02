@@ -1,0 +1,198 @@
+//! The draw-list format: the one representation of a frame that evaluation
+//! produces (`styk_eval::drawlist` encodes a scene into it) and every renderer
+//! draws (`styk-render` on the GPU, `styk-raster` on the CPU).
+//!
+//! A [`DrawList`] is view independent: every record is in world units, so
+//! panning and zooming change only the renderer's view transform.
+//!
+//! * [`Prim`]: one fixed-size record (64 bytes, `#[repr(C)]`, the GPU's instance
+//!   layout). `kind & 255` is one of the `K_` kinds; the higher bits are `F_`
+//!   flags. `color` is RGBA8 with straight alpha; `paint` is the offset of a
+//!   paint record in [`DrawList::paints`] or [`NO_PAINT`]. The meaning of `a`,
+//!   `b` and `c` per kind is documented on each `K_` constant.
+//! * [`Group`]: an isolation layer (a translucent figure, outline or onion skin):
+//!   its prims draw into a layer that a [`K_COMPOSITE`] record of the parent
+//!   group composites with the group's opacity, at its place in painter order.
+//!   Group 0 is the frame. Group ids are given depth first, so a group's
+//!   descendants have the ids right after it.
+//! * Prims are stored by depth, deepest first ([`Pass`]); within a depth, each
+//!   group's prims are one contiguous run, in painter order.
+//! * Paint records (`paints`, rows of four `f32`): a head row
+//!   `[kind, stop count, 0, 0]`, a geometry row, an extra row, then two rows per
+//!   stop: `[offset, 0, 0, 0]` and straight RGBA. [`sample_paint`] is the
+//!   reference evaluation every renderer reproduces.
+
+/// A stroked segment with round caps: `a` = (x0, y0, x1, y1), `b.x` = half width.
+pub const K_CAPSULE: u32 = 1;
+/// A stroked circular arc: `a` = (cx, cy, radius, half width), `b` = (start angle, sweep).
+pub const K_ARC: u32 = 2;
+/// A filled circle: `a` = (cx, cy, radius).
+pub const K_DISC: u32 = 3;
+/// A stroked circle: `a` = (cx, cy, radius, half width); with [`F_RING_FILL`], `b.x` holds
+/// the bits of an RGBA8 interior drawn under the ring.
+pub const K_RING: u32 = 4;
+/// A filled triangle: `a` = (x0, y0, x1, y1), `b.xy` = (x2, y2).
+pub const K_TRI: u32 = 5;
+/// An image over the world quad `o + s·u + t·v`: `a` = (ox, oy, ux, uy), `b` = (vx, vy,
+/// atlas layer, drawing level), `c` = atlas uv rectangle (u0, v0, u1, v1).
+pub const K_IMAGE: u32 = 6;
+/// Composites a child group: `a` = its world bounds, `b.x` = the bits of its id, `color`'s
+/// alpha = its opacity.
+pub const K_COMPOSITE: u32 = 7;
+/// Fills the artboard with `color` or `paint` (a background colour or gradient).
+pub const K_FILL_VIEW: u32 = 8;
+/// A background picture covering the canvas rectangle [0, a.x] × [0, a.y] (world),
+/// edges extended: `a.z` = atlas layer, `c` = atlas uv rectangle.
+pub const K_BG_IMAGE: u32 = 9;
+/// A stroked segment with square caps (same fields as [`K_CAPSULE`]).
+pub const K_BOX: u32 = 10;
+/// A whole open or closed polyline, shaded once per pixel (no joint overlap): `b.x` = half
+/// width, `b.y`/`b.z` = the bits of its first vertex and vertex count in
+/// [`DrawList::points`]; [`F_CLOSED`] closes it.
+pub const K_POLYLINE: u32 = 11;
+/// A closed [`K_POLYLINE`].
+pub const F_CLOSED: u32 = 1 << 10;
+
+/// An image sampled bilinearly (drawings); Pivot sprites sample their nearest texel.
+pub const F_SMOOTH: u32 = 1 << 8;
+/// A [`K_RING`] with an interior colour.
+pub const F_RING_FILL: u32 = 1 << 9;
+/// An image drawn in the record's colour through its own coverage (onion tint).
+pub const F_TINT: u32 = 1 << 11;
+/// A drawing cel tile (`styk_eval::drawing`): straight-alpha texels with a border, filtered
+/// by the shader; the record's `b[3]` is its display level.
+pub const F_DRAWING: u32 = 1 << 12;
+
+/// `Prim::paint` of a record drawn in its `color`.
+pub const NO_PAINT: u32 = u32::MAX;
+
+/// One GPU primitive (std430, 64 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Prim {
+    pub kind: u32,
+    pub group: u32,
+    /// RGBA8, straight alpha.
+    pub color: u32,
+    /// Offset of a paint record in [`DrawList::paints`] (vec4 units), or `NO_PAINT`.
+    pub paint: u32,
+    pub a: [f32; 4],
+    pub b: [f32; 4],
+    pub c: [f32; 4],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Group {
+    pub parent: u32,
+    pub depth: u32,
+    pub opacity: f32,
+    /// World-space bounds (x0, y0, x1, y1) of everything drawn in the group.
+    pub bounds: [f32; 4],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Pass {
+    pub depth: u32,
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DrawList {
+    pub prims: Vec<Prim>,
+    pub paints: Vec<[f32; 4]>,
+    /// Polyline vertices referenced by `K_POLYLINE` records.
+    pub points: Vec<[f32; 2]>,
+    pub groups: Vec<Group>,
+    /// Prim ranges per depth, deepest first; the last pass (depth 0) is the frame.
+    pub passes: Vec<Pass>,
+    /// Number of leading root prims that are background fills (drawn unclipped by figures).
+    pub background_prims: u32,
+}
+
+impl DrawList {
+    pub fn bytes(&self) -> usize {
+        self.prims.len() * std::mem::size_of::<Prim>() + self.paints.len() * 16 + self.points.len() * 8 + self.groups.len() * 32
+    }
+}
+
+pub fn rgba8(rgb: [u8; 3], alpha: f64) -> u32 {
+    let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u32;
+    rgb[0] as u32 | (rgb[1] as u32) << 8 | (rgb[2] as u32) << 16 | a << 24
+}
+
+/// RGBA8 (straight) from a Pivot ARGB integer.
+pub fn argb8(raw: u32) -> u32 {
+    let (a, r, g, b) = (raw >> 24, raw >> 16 & 255, raw >> 8 & 255, raw & 255);
+    r | g << 8 | b << 16 | a << 24
+}
+
+/// Paint record kinds (the first value of a record's head row).
+pub const P_LINEAR: f32 = 0.0;
+pub const P_RADIAL: f32 = 1.0;
+pub const P_ANGULAR: f32 = 2.0;
+pub const P_DIAMOND: f32 = 3.0;
+pub const P_RADIAL_RING: f32 = 4.0;
+
+
+/// Shared handle for a draw list produced on a worker thread.
+pub type SharedDrawList = std::sync::Arc<DrawList>;
+
+/// The straight RGBA of paint record `offset` at world point `w`: the reference
+/// evaluation (`paint_at` in styk-render's prim.wgsl does the same in `f32`).
+pub fn sample_paint(paints: &[[f32; 4]], offset: u32, w: [f32; 2]) -> [f32; 4] {
+    let row = |i: u32| paints.get(i as usize).copied().unwrap_or([0.0; 4]);
+    let head = row(offset);
+    let g = row(offset + 1);
+    let (kind, count) = (head[0], head[1] as u32);
+    let t = if kind == P_LINEAR {
+        let d = [g[2] - g[0], g[3] - g[1]];
+        ((w[0] - g[0]) * d[0] + (w[1] - g[1]) * d[1]) / (d[0] * d[0] + d[1] * d[1]).max(1e-12)
+    } else if kind == P_RADIAL {
+        (w[0] - g[0]).hypot(w[1] - g[1]) / g[2].max(1e-12)
+    } else if kind == P_ANGULAR {
+        let turns = ((w[1] - g[1]).atan2(w[0] - g[0]) - g[2]) / (2.0 * std::f32::consts::PI);
+        turns - turns.floor()
+    } else if kind == P_DIAMOND {
+        let (u, v) = ((w[0] - g[0]) / g[3].max(1e-12), (w[1] - g[1]) / g[3].max(1e-12));
+        let (cs, sn) = (g[2].cos(), g[2].sin());
+        (u * cs + v * sn).abs() + (-u * sn + v * cs).abs()
+    } else {
+        ((w[0] - g[0]).hypot(w[1] - g[1]) - g[2]) / (g[3] - g[2]).max(1e-12)
+    }
+    .clamp(0.0, 1.0);
+    let base = offset + 3;
+    let (mut prev_offset, mut prev) = (row(base)[0], row(base + 1));
+    if t <= prev_offset {
+        return prev;
+    }
+    for i in 1..count {
+        let (o, col) = (row(base + i * 2)[0], row(base + i * 2 + 1));
+        if t < o {
+            let f = (t - prev_offset) / (o - prev_offset).max(1e-12);
+            return [0, 1, 2, 3].map(|k| prev[k] + (col[k] - prev[k]) * f);
+        }
+        prev_offset = o;
+        prev = col;
+    }
+    prev
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_linear_paint_interpolates_between_its_stops() {
+        let paints = vec![[P_LINEAR, 2.0, 0.0, 0.0], [0.0, 0.0, 10.0, 0.0], [0.0; 4], [0.0; 4], [1.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 1.0]];
+        assert_eq!(sample_paint(&paints, 0, [-5.0, 0.0]), [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(sample_paint(&paints, 0, [5.0, 3.0]), [0.5, 0.0, 0.5, 1.0]);
+        assert_eq!(sample_paint(&paints, 0, [20.0, 0.0]), [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn colours_pack_as_straight_rgba8() {
+        assert_eq!(rgba8([1, 2, 3], 1.0), 0xff03_0201);
+        assert_eq!(argb8(0x80_102030), 0x80_302010);
+    }
+}
