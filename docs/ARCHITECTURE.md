@@ -2,6 +2,54 @@
 
 StykAnimate separates the editable Pivot document, background work, and presentation. Changing the renderer or transport should not change file semantics or editor commands.
 
+## Engine and interface (Rust port in progress)
+
+StykAnimate is moving its engine from JavaScript and Python to Rust
+(`engine/`, plan in [RUST-ENGINE-PORT.md](RUST-ENGINE-PORT.md), subsystem pages
+in [engine/](engine/README.md)). The target: the engine owns the document and
+everything between a file and pixels; JavaScript is the interface. Today the
+editor still owns the document and runs commands; the engine mirrors it and
+draws every document it supports.
+
+```mermaid
+flowchart LR
+  subgraph UI["Interface thread (JavaScript)"]
+    Editor["Editor: document, commands, history"]
+    Stage["engine-stage.mjs (one renderer interface)"]
+    Legacy["JavaScript renderer (documents the engine cannot draw yet)"]
+    Overlay["Overlay: handles, guides"]
+  end
+  subgraph Engine["Engine (Rust, WebAssembly + shared memory)"]
+    Mirror["Mirror: store + typed views (styk-doc, styk-eval)"]
+    Eval["Evaluation and draw lists (styk-eval, styk-draw)"]
+    Workers["Worker pool: frames, images, cels"]
+    GPU["Renderer (styk-render: WebGPU / WebGL2)"]
+  end
+  Editor -- "changed records, by revision" --> Mirror
+  Editor -- "pose on screen (changed objects only)" --> Stage
+  Stage -- "edit frames, ghosts" --> GPU
+  Stage --> Legacy
+  Mirror --> Eval --> Workers --> GPU
+  GPU -- "#scene-engine canvas" --> UI
+```
+
+- File → pixels for a supported document: the editor loads the file (the
+  Pivot codec still runs in Python/Pyodide until the Rust codec, `styk-piv`, is
+  wired in); the mirror sends the document to the engine; edit frames are drawn
+  from the pose on screen; playback frames are evaluated and encoded on the
+  engine's workers and presented by tick.
+- Boundary: commands and changed records go in (batched, by revision); small
+  results come out (frame metadata, statistics). The whole document never
+  crosses on interactive paths.
+- Threads: the interface thread never blocks on the engine; results carry the
+  generation they were computed for and stale ones are dropped
+  ([engine/threading.md](engine/threading.md)).
+- Memory: until the engine owns the document it exists twice (the editor's
+  objects and the engine's store, [D12](engine/decisions/0012-document-mirror.md)).
+
+The sections below describe the JavaScript editor and services, which remain
+the interface (and, for unported subsystems, the engine) during the port.
+
 ## Document and commands
 
 `startup-document.mjs` supplies Blue for application startup and File → New. Camera, Scene and Layer 1 each contain one constant key at frame 1, held through frame 10. Blue is an ordinary 2D stick figure with ten named joints, a filled circular head, symmetric limbs and slightly bent elbows/knees. Four independent two-bone hand/foot IK controllers start enabled and unpinned, without stretching. `scripts/build-startup-blue.mjs` builds the native lines/circle and configures IK through the editor, generating a synchronous data factory; every new document owns independent editable data without rig setup at startup. STYK/STKZ retain the editable IK controls; Pivot STK/PIV retain ordinary 2D artwork and baked poses, without IK controllers. The Bubble helper and `demo.mjs` remain separate legacy tutorial/test fixtures.

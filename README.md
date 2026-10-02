@@ -13,8 +13,11 @@ See [release preparation](docs/RELEASING.md) and [package verification](docs/DES
 ```sh
 npm ci
 python -m pip install -r backend/requirements-fast.txt
+npm run engine:build
 npm start
 ```
+
+`npm run engine:build` builds the Rust engine (`engine/`) into `src/engine/pkg/`; it needs `rustup` with the pinned nightly and its source (`rustup toolchain install nightly-2026-09-15 --component rust-src --target wasm32-unknown-unknown`), `wasm-bindgen-cli` 0.2.129 (`cargo install wasm-bindgen-cli --version 0.2.129`) and clang for the WebAssembly target. Without it the app keeps the JavaScript renderer. Engine commands: `npm run engine:test`, `npm run engine:parity`, `npm run engine:bench`; see [docs/engine/](docs/engine/README.md).
 
 Development requires Node.js 22+ and Python 3.11+ (CI runs Node 24.11 and Python 3.12). The optional compiled JSON encoder and C++ native frame scanner accelerate large imports; validated Python fallbacks remain available. Build the scanner with `npm run build:frame-scan` on supported hosts. Set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
 
