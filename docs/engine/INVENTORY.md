@@ -17,9 +17,9 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 61 | 21 | 1 | 0 | 0 | 0 % | 39 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-formats` | 57 | 728 KiB | 52 | 3 | 2 | 0 | 0 | 5 % | 5 % | 0 % |
+| `styk-formats` | 57 | 728 KiB | 32 | 6 | 19 | 0 | 0 | 38 % | 29 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 46 | 6 | 0 | 0 | 0 | 0 % | 36 % | 0 % |
-| **Total** | 355 | 4057 KiB | 320 | 32 | 3 | 0 | 0 | 1 % | 17 % | 0 % |
+| **Total** | 355 | 4057 KiB | 300 | 35 | 20 | 0 | 0 | 7 % | 21 % | 0 % |
 
 ## Engine modules
 
@@ -280,23 +280,23 @@ Engine logic: ported to Rust.
 | `src/pose-sequences.mjs` | `styk-formats::container` | js |  |
 | `src/source-record.mjs` | `styk-formats::container` | js |  |
 | `src/zlib-sync.mjs` | `styk-formats::container` | partial | Rust: inflate of drawing tiles (PNG decoder); deflate still JS |
-| `backend/fast_decode.py` | `styk-formats::piv` | js | native v5 frame table validation and transfer |
-| `backend/import_wire.py` | `styk-formats::piv` | js | native v5 frame table validation and transfer |
-| `backend/native_scan.py` | `styk-formats::piv` | js | native v5 frame table validation and transfer |
-| `codecs/codec_bridge.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/image_stream.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_asset_writer.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_codec.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_document.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_full_writer.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_legacy_v2.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_legacy_v4.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_legacy.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_migrate.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/piv_side_tables.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/pivot_decoder.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `codecs/work_control.py` | `styk-formats::piv` | js | Pivot PIV/STK codec (Python) |
-| `native/piv-frame-scan.cpp` | `styk-formats::piv` | js | C++ frame scanner |
+| `backend/fast_decode.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/frames.rs |
+| `backend/import_wire.py` | `styk-formats::piv` | ported | Rust: styk-piv wire.rs (STYKPIV1) |
+| `backend/native_scan.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/frames.rs scan mode |
+| `codecs/codec_bridge.py` | `styk-formats::piv` | ported | Rust: styk-piv bridge.rs |
+| `codecs/image_stream.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/image_stream.rs |
+| `codecs/piv_asset_writer.py` | `styk-formats::piv` | ported | Rust: styk-piv write/assets.rs |
+| `codecs/piv_codec.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/v5.rs; replays the Python recording identically (13,369 requests) |
+| `codecs/piv_document.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/v5.rs |
+| `codecs/piv_full_writer.py` | `styk-formats::piv` | ported | Rust: styk-piv write/full.rs |
+| `codecs/piv_legacy_v2.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/legacy_v2.rs |
+| `codecs/piv_legacy_v4.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/legacy_v4.rs |
+| `codecs/piv_legacy.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/legacy.rs |
+| `codecs/piv_migrate.py` | `styk-formats::piv` | ported | Rust: styk-piv write/migrate.rs |
+| `codecs/piv_side_tables.py` | `styk-formats::piv` | ported | Rust: styk-piv piv/side_tables.rs |
+| `codecs/pivot_decoder.py` | `styk-formats::piv` | partial | Rust: legacy layout detection; its v5 guessing decoders are unreachable |
+| `codecs/work_control.py` | `styk-formats::piv` | ported | Rust: cooperative cancellation (styk-piv ctx.rs) |
+| `native/piv-frame-scan.cpp` | `styk-formats::piv` | ported | Rust: styk-piv piv/frames.rs scan mode (errors worded as the portable scanner) |
 | `src/import-wire.mjs` | `styk-formats::piv` | js | native frame table materialization |
 | `src/playback-native.mjs` | `styk-formats::piv` | js | native frame table materialization |
 | `src/document-export-worker.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
@@ -305,10 +305,10 @@ Engine logic: ported to Rust.
 | `src/pivot-export-materialize.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
 | `src/pivot-frame-draft.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
 | `src/pivot-style-materialize.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
-| `backend/browser_service.py` | `styk-formats::service` | js | codec service routes, source cache, cancellation |
-| `backend/jobs.py` | `styk-formats::service` | js | codec service routes, source cache, cancellation |
+| `backend/browser_service.py` | `styk-formats::service` | ported | Rust: styk-piv service.rs |
+| `backend/jobs.py` | `styk-formats::service` | partial | Rust: cancelled requests answer 499; the job queue still Python |
 | `backend/process_metrics.py` | `styk-formats::service` | js | codec service routes, source cache, cancellation |
-| `backend/server.py` | `styk-formats::service` | js | codec service routes, source cache, cancellation |
+| `backend/server.py` | `styk-formats::service` | partial | codec service routes, source cache, cancellation. Rust: project store, fingerprints, error responses, request parsing, limits (styk-piv store.rs, digest.rs); the HTTP handler still Python |
 | `src/codec-job.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/codec-request.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/codec-web-engine.mjs` | `styk-formats::service` | js | import/export transport |

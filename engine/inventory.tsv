@@ -534,31 +534,31 @@ src/web-library.mjs	platform	-	stays	file, storage and network services
 src/web-offline.mjs	platform	-	stays	file, storage and network services
 src/web-support.js	ui	-	stays	
 src/zlib-sync.mjs	engine	styk-formats::container	partial	Rust: inflate of drawing tiles (PNG decoder); deflate still JS
-codecs/codec_bridge.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/image_stream.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_asset_writer.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_codec.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_document.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_full_writer.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_legacy.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_legacy_v2.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_legacy_v4.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_migrate.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/piv_side_tables.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/pivot_decoder.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
-codecs/work_control.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
+codecs/codec_bridge.py	engine	styk-formats::piv	ported	Rust: styk-piv bridge.rs
+codecs/image_stream.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/image_stream.rs
+codecs/piv_asset_writer.py	engine	styk-formats::piv	ported	Rust: styk-piv write/assets.rs
+codecs/piv_codec.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/v5.rs; replays the Python recording identically (13,369 requests)
+codecs/piv_document.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/v5.rs
+codecs/piv_full_writer.py	engine	styk-formats::piv	ported	Rust: styk-piv write/full.rs
+codecs/piv_legacy.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/legacy.rs
+codecs/piv_legacy_v2.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/legacy_v2.rs
+codecs/piv_legacy_v4.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/legacy_v4.rs
+codecs/piv_migrate.py	engine	styk-formats::piv	ported	Rust: styk-piv write/migrate.rs
+codecs/piv_side_tables.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/side_tables.rs
+codecs/pivot_decoder.py	engine	styk-formats::piv	partial	Rust: legacy layout detection; its v5 guessing decoders are unreachable
+codecs/work_control.py	engine	styk-formats::piv	ported	Rust: cooperative cancellation (styk-piv ctx.rs)
 backend/benchmark.py	tool	-	stays	Python test or profiler; removed with the Python codec
 backend/benchmark_fast_decode.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/browser_service.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
-backend/fast_decode.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
-backend/import_wire.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
-backend/jobs.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
+backend/browser_service.py	engine	styk-formats::service	ported	Rust: styk-piv service.rs
+backend/fast_decode.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/frames.rs
+backend/import_wire.py	engine	styk-formats::piv	ported	Rust: styk-piv wire.rs (STYKPIV1)
+backend/jobs.py	engine	styk-formats::service	partial	Rust: cancelled requests answer 499; the job queue still Python
 backend/native_format.py	engine	styk-formats::container	partial	container v1/v2 (service side). Rust: reading every version
-backend/native_scan.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
+backend/native_scan.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/frames.rs scan mode
 backend/process_metrics.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
 backend/profile_import.py	tool	-	stays	Python test or profiler; removed with the Python codec
 backend/profile_native_save.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/server.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
+backend/server.py	engine	styk-formats::service	partial	codec service routes, source cache, cancellation. Rust: project store, fingerprints, error responses, request parsing, limits (styk-piv store.rs, digest.rs); the HTTP handler still Python
 backend/test_browser_roundtrip.mjs	tool	-	stays	Python test or profiler; removed with the Python codec
 backend/test_browser_service.py	tool	-	stays	Python test or profiler; removed with the Python codec
 backend/test_document_digest.py	tool	-	stays	Python test or profiler; removed with the Python codec
@@ -578,7 +578,7 @@ backend/test_piv_type_changes.py	tool	-	stays	Python test or profiler; removed w
 backend/test_server.py	tool	-	stays	Python test or profiler; removed with the Python codec
 backend/test_source_lifetime.py	tool	-	stays	Python test or profiler; removed with the Python codec
 backend/test_stk_topology.py	tool	-	stays	Python test or profiler; removed with the Python codec
-native/piv-frame-scan.cpp	engine	styk-formats::piv	js	C++ frame scanner
+native/piv-frame-scan.cpp	engine	styk-formats::piv	ported	Rust: styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)
 native/vfw-bridge.cpp	platform	-	stays	Windows VFW encoder bridge (stays native)
 desktop/appimage-updater.cjs	platform	-	stays	Electron shell and services
 desktop/audio-service.cjs	platform	-	stays	Electron shell and services
