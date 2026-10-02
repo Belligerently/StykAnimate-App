@@ -448,6 +448,10 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
     let t = s.t;
     let read = |f: &dyn Fn(&Object) -> f64| recs.map(|r| r.map(f));
     let mut out = o.clone();
+    // IK: controller targets and follower angles tween with the pose (`interpolateIK`).
+    if let Some(table) = &o.ik {
+        out.ik = Some(Arc::new(crate::ik::tween(table, recs.map(|r| r.and_then(|x| x.ik.as_deref())), t, &|v, angular| s.value(v, angular))));
+    }
     out.root = [s.value(read(&|x| x.root[0]), false), s.value(read(&|x| x.root[1]), false)];
     out.scale = s.value(read(&|x| x.scale), false);
     out.transparency = if auto {

@@ -316,6 +316,7 @@ fn decode_v5(payload: &[u8], name: &str) -> Result<Document, Error> {
                 style: None,
                 sticknodes_shapes: None,
                 figure_override: None,
+                ik: None,
             });
         }
         let mut order = Vec::with_capacity(obj_count);
@@ -789,6 +790,7 @@ fn decode_v4(data: &[u8], name: &str) -> Result<Document, Error> {
                 style: None,
                 sticknodes_shapes: None,
                 figure_override: None,
+                ik: None,
             });
         }
         let mut order = Vec::with_capacity(object_count);

@@ -173,7 +173,10 @@ struct Built {
     chains: Vec<Vec<(u32, u32)>>,
 }
 
-fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2]) -> Built {
+/// `ik` is the object's derived pose when a pinned IK controller reaches it:
+/// its angles (and stretched lengths) replace the authored channels.
+#[allow(clippy::too_many_arguments)]
+fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>) -> Built {
     let obj = &frame.objects[slot];
     let n = fig.segments.len();
     let scale = obj.scale;
@@ -202,14 +205,15 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         let parent = plan.parent[i];
         let start = if parent == u32::MAX { root } else { ends[parent as usize] };
         let mut start = if start[0].is_nan() { root } else { start };
-        let mut angle = obj.angles.get(i).copied().unwrap_or(seg.angle);
+        let mut angle = ik.map(|s| s.angles[i]).unwrap_or_else(|| obj.angles.get(i).copied().unwrap_or(seg.angle));
         let mut bend = match &obj.bends {
             Some(b) => b.get(i).copied().unwrap_or(0.0),
             None => seg.bend,
         };
-        let mut length = match &obj.lengths {
-            Some(l) => l.get(i).copied().unwrap_or(seg.length),
-            None => seg.length,
+        let mut length = match (ik.and_then(|s| s.lengths.as_ref()), &obj.lengths) {
+            (Some(l), _) => l[i],
+            (None, Some(l)) => l.get(i).copied().unwrap_or(seg.length),
+            (None, None) => seg.length,
         } * scale;
         let mut width = 1.0;
         let mut rig_handle: Option<([f64; 2], bool)> = None;
@@ -544,6 +548,8 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
             fig_of[i] = s;
         }
     }
+    // IK across joined figures solves once per assembly, before its objects build (`solveJoinedIK`).
+    let joined_ik = crate::ik::joined::solve(frame, &|slot| fig_of.get(slot).filter(|&&s| s != u32::MAX).map(|&s| &scene.figures[s as usize]));
     let mut built: Vec<Option<Built>> = (0..count).map(|_| None).collect();
     for slots in &order {
         let resolve_root = |i: usize, built: &[Option<Built>]| -> Option<[f64; 2]> {
@@ -564,7 +570,16 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
             if let Some(clip) = &fig.movieclip {
                 return Some((i, build_clip(frame, i, fig, clip, root)));
             }
-            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root)))
+            // IK: a pinned object draws its derived pose, from its assembly or solved on its own (`evaluateIKPose`).
+            let local;
+            let ik = match joined_ik.get(&i) {
+                Some(solution) => Some(solution),
+                None => {
+                    local = crate::ik::solve_local(fig, &frame.objects[i], root);
+                    local.as_ref()
+                }
+            };
+            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik)))
         };
         let results: Vec<(usize, Built)> = crate::par::map(&slots, 32, make).into_iter().flatten().collect();
         for (i, b) in results {

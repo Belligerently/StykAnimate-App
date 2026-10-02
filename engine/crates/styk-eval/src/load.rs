@@ -494,7 +494,6 @@ impl Loader {
             Some(Join { slot: int(j, "target_object_slot")? as u32, handle: int(j, "target_handle_id").unwrap_or(0) as u32 })
         });
         for (key, feature) in [
-            ("_stykIK", "inverse kinematics"),
             ("_stykSpatial", "3D poses"),
             ("_stykAnimationOrigin", "animation origins"),
             ("_sticknodesSprite", "Stick Nodes sprites"),
@@ -528,6 +527,7 @@ impl Loader {
                 _ => None,
             },
             figure_override: None,
+            ik: crate::ik::parse::table(o.get("_stykIK")).map(Arc::new),
         })
     }
 

@@ -10,6 +10,7 @@ pub mod drawlist;
 pub mod edit;
 pub mod eval;
 pub mod geometry;
+pub mod ik;
 pub mod load;
 pub mod onion;
 pub mod par;

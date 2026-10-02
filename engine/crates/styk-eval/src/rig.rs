@@ -270,6 +270,8 @@ pub struct Impulse {
 pub struct RigPlan {
     pub order: Vec<u32>,
     pub inputs: Vec<Option<Impulse>>,
+    /// Segment indices each joint reads (`plan.dependencies`), for IK (`crate::ik::rig`).
+    pub dependencies: Vec<Vec<u32>>,
 }
 
 /// `rigConstraintPlanSteps`: dependency order and resolved impulses.
@@ -281,6 +283,7 @@ pub fn plan(segments: &[crate::doc::Segment], index_of: &std::collections::HashM
     let idx = |id: u32| index_of.get(&id).map(|&i| i as usize);
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut indegree = vec![0u32; n];
+    let mut dependencies: Vec<Vec<u32>> = vec![Vec::new(); n];
     for (i, s) in segments.iter().enumerate() {
         let mut deps: Vec<u32> = vec![s.parent];
         if let Some(r) = &s.rig {
@@ -336,6 +339,7 @@ pub fn plan(segments: &[crate::doc::Segment], index_of: &std::collections::HashM
             if let Some(p) = idx(d) {
                 outgoing[p].push(i);
                 indegree[i] += 1;
+                dependencies[i].push(p as u32);
             }
         }
     }
@@ -397,7 +401,7 @@ pub fn plan(segments: &[crate::doc::Segment], index_of: &std::collections::HashM
             source
         };
     }
-    Some(RigPlan { order, inputs })
+    Some(RigPlan { order, inputs, dependencies })
 }
 
 // ------------------------------------------------------------ evaluation
@@ -415,6 +419,15 @@ pub struct SpatialFrame {
     pub stretch: f64,
 }
 
+/// The derived local space of a rig joint (`space` in rig-constraints.mjs): what
+/// `authoredRigTarget` inverts when IK poses the joint (`crate::ik::rig`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Space {
+    pub rotation: f64,
+    /// Axis and amount of the stretch the joint follows, if it follows one.
+    pub follow: Option<(f64, f64)>,
+}
+
 /// One evaluated rig joint.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct State {
@@ -430,6 +443,7 @@ pub struct State {
     pub impulse_angle: f64,
     pub spatial: Option<SpatialFrame>,
     pub path: Option<([f64; 2], f64, f64)>,
+    pub space: Option<Space>,
 }
 
 pub struct Input {
@@ -455,7 +469,7 @@ pub fn quat_rotate(q: [f64; 4], p: [f64; 3]) -> [f64; 3] {
     [a + w * tx + y * tz - z * ty, b + w * ty + z * tx - x * tz, c + w * tz + x * ty - y * tx]
 }
 
-fn spatial_quaternion(bend: f64, turn: f64, pitch: f64) -> [f64; 4] {
+pub fn spatial_quaternion(bend: f64, turn: f64, pitch: f64) -> [f64; 4] {
     let (x, y, z) = (pitch / 2.0, turn / 2.0, bend / 2.0);
     let (cx, sx, cy, sy, cz, sz) = (x.cos(), x.sin(), y.cos(), y.sin(), z.cos(), z.sin());
     [sx * cy * cz - cx * sy * sz, cx * sy * cz + sx * cy * sz, cx * cy * sz - sx * sy * cz, cx * cy * cz + sx * sy * sz]
@@ -651,6 +665,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             impulse_angle: angle,
             spatial: None,
             path: None,
+            space: Some(Space { rotation: angle - input.angle, follow: None }),
         };
         states[i] = Some(s);
         return s;
@@ -699,6 +714,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             impulse_angle: angle,
             spatial: None,
             path: Some((origin, delta, z)),
+            space: Some(Space { rotation: delta, follow: None }),
         };
         states[i] = Some(st);
         return st;
@@ -740,6 +756,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
     let raw_angle = angle;
     let incoming = driver.map(|d| d.ratio).unwrap_or(1.0);
     let mut follow_scale = None;
+    let mut follow_axis_used = 0.0;
     let response = r.response.as_ref();
     if let Some(c) = &r.connector {
         start = joint(c.start).unwrap_or(root);
@@ -778,6 +795,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             };
             let follow_axis = if response.is_some_and(|x| x.reset) { angle } else { states[src.axis].map(|s| s.impulse_angle).unwrap_or(angle) };
             follow_scale = Some(amount);
+            follow_axis_used = follow_axis;
             let relative = angle - follow_axis;
             let (x, y) = (relative.cos() * amount, relative.sin());
             let factor = x.hypot(y);
@@ -815,7 +833,9 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
     }
     let c = r.connector.is_some();
     let authored_angle = if c || r.lock.as_ref().is_some_and(|l| !l.authored) { angle } else { raw_angle };
-    let _ = follow_scale;
+    // `rotation || followScale !== undefined || lock`: NaN and zero rotations are falsy.
+    let space = (rotation != 0.0 && !rotation.is_nan() || follow_scale.is_some() || r.lock.is_some())
+        .then(|| Space { rotation, follow: follow_scale.map(|amount| (follow_axis_used, amount)) });
     let st = State {
         start,
         angle,
@@ -835,6 +855,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         },
         spatial: None,
         path: None,
+        space,
     };
     states[i] = Some(st);
     st
@@ -930,5 +951,6 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
         impulse_angle: angle,
         spatial,
         path: None,
+        space: Some(Space { rotation: angle - input.angle, follow: None }),
     }
 }

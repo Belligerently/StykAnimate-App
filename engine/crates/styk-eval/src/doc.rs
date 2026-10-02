@@ -278,6 +278,8 @@ pub struct Object {
     /// Per-instance style overlay and the figure it resolves to.
     pub style: Option<Arc<crate::style::ObjectStyle>>,
     pub figure_override: Option<Arc<Figure>>,
+    /// Inverse-kinematics controllers of this pose (`_stykIK`), see [`crate::ik`].
+    pub ik: Option<Arc<crate::ik::Table>>,
 }
 
 /// `_stykMovieclip` playback settings of one instance.
