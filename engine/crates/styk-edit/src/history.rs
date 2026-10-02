@@ -12,10 +12,14 @@ use crate::{EditError, Editor};
 
 const HISTORY_LIMIT: usize = 80;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What a history entry changed.
+#[derive(Clone, Debug)]
 pub enum CommandKind {
-    /// Whole records of one keyframe's objects, replaced by unique id.
-    Objects,
+    /// Whole records of one native keyframe's objects, replaced by unique id.
+    Objects { index: usize, before: Vec<Value>, after: Vec<Value> },
+    /// The layer sheet and layer state before and after, and the pose sources the
+    /// command captured (`kind: 'layer-sheet'`).
+    LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)> },
 }
 
 /// One history entry.
@@ -23,9 +27,6 @@ pub enum CommandKind {
 pub struct Command {
     pub kind: CommandKind,
     pub label: String,
-    pub index: usize,
-    pub before: Vec<Value>,
-    pub after: Vec<Value>,
     pub(crate) before_selection: SelectionState,
     pub(crate) after_selection: SelectionState,
     pub before_revision: u64,
@@ -33,22 +34,36 @@ pub struct Command {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Direction {
+pub(crate) enum Direction {
     Before,
     After,
 }
 
 impl Editor {
-    /// `_record`: a new revision, pushed to undo; redo is cleared.
+    /// `_record`: a new revision, pushed to undo; redo is cleared, and pose sources
+    /// only a dropped redo branch used are collected.
     pub(crate) fn record(&mut self, mut command: Command) {
+        if let CommandKind::LayerSheet { sources, .. } = &command.kind {
+            for (id, _) in sources {
+                if !self.generated_sources.contains(id) {
+                    self.generated_sources.push(id.clone());
+                }
+            }
+        }
+        let collect = !self.redo.is_empty();
         command.before_revision = self.revision;
         self.revision_serial += 1;
         command.after_revision = self.revision_serial;
         self.revision = command.after_revision;
         self.undo.push(command);
         self.redo.clear();
+        let mut trimmed = false;
         while self.undo.len() > HISTORY_LIMIT {
             self.undo.remove(0);
+            trimmed = true;
+        }
+        if collect || trimmed {
+            self.prune_frame_sources();
         }
     }
 
@@ -57,39 +72,44 @@ impl Editor {
             self.cancel_drag()?;
         }
         let Some(command) = self.undo.pop() else { return Ok(false) };
-        self.apply(&command, Direction::Before);
+        self.apply(&command, Direction::Before)?;
         self.redo.push(command);
         Ok(true)
     }
 
     pub(crate) fn redo(&mut self) -> Result<bool, EditError> {
         let Some(command) = self.redo.pop() else { return Ok(false) };
-        self.apply(&command, Direction::After);
+        self.apply(&command, Direction::After)?;
         self.undo.push(command);
         Ok(true)
     }
 
-    fn apply(&mut self, command: &Command, direction: Direction) {
-        let (value, selection, revision) = match direction {
-            Direction::Before => (&command.before, &command.before_selection, command.before_revision),
-            Direction::After => (&command.after, &command.after_selection, command.after_revision),
+    fn apply(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
+        let (selection, revision) = match direction {
+            Direction::Before => (&command.before_selection, command.before_revision),
+            Direction::After => (&command.after_selection, command.after_revision),
         };
-        match command.kind {
-            CommandKind::Objects => self.replace_objects(command.index, value),
+        match &command.kind {
+            CommandKind::Objects { index, before, after } => {
+                let value = if direction == Direction::Before { before } else { after };
+                self.replace_objects(*index, value);
+                self.restore_selection(selection)?;
+                self.revision = revision;
+                let uids = Value::array(value.iter().filter_map(uid).map(|u| Value::Num(u as f64)).collect());
+                self.emit(
+                    "history",
+                    vec![
+                        ("label", Value::str(&command.label)),
+                        ("definition", Value::Bool(false)),
+                        ("animation", Value::Bool(false)),
+                        ("frameIndices", Value::array(vec![Value::Num(*index as f64)])),
+                        ("changedUids", uids),
+                    ],
+                );
+            }
+            CommandKind::LayerSheet { .. } => self.apply_sheet_command(command, direction)?,
         }
-        self.restore_selection(selection);
-        self.revision = revision;
-        let uids = Value::array(value.iter().filter_map(uid).map(|u| Value::Num(u as f64)).collect());
-        self.emit(
-            "history",
-            vec![
-                ("label", Value::str(&command.label)),
-                ("definition", Value::Bool(false)),
-                ("animation", Value::Bool(false)),
-                ("frameIndices", Value::array(vec![Value::Num(command.index as f64)])),
-                ("changedUids", uids),
-            ],
-        );
+        Ok(())
     }
 
     /// `_replaceObjects`: puts `objects` in place of the records with the same unique ids.

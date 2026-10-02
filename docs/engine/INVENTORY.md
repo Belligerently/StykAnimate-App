@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1212 KiB | 85 | 1 | 0 | 0 | 0 | 0 % | 11 % | 0 % |
+| `styk-edit` | 86 | 1212 KiB | 83 | 3 | 0 | 0 | 0 | 0 % | 17 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
-| `styk-eval` | 83 | 774 KiB | 56 | 24 | 3 | 0 | 0 | 2 % | 42 % | 0 % |
+| `styk-eval` | 83 | 774 KiB | 55 | 25 | 3 | 0 | 0 | 2 % | 42 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 57 | 728 KiB | 32 | 6 | 19 | 0 | 0 | 38 % | 29 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 46 | 6 | 0 | 0 | 0 | 0 % | 36 % | 0 % |
-| **Total** | 355 | 4057 KiB | 293 | 40 | 22 | 0 | 0 | 7 % | 25 % | 0 % |
+| **Total** | 355 | 4057 KiB | 290 | 43 | 22 | 0 | 0 | 7 % | 27 % | 0 % |
 
 ## Engine modules
 
@@ -78,7 +78,7 @@ Engine logic: ported to Rust.
 | `src/demo.mjs` | `styk-edit` | js |  |
 | `src/editor-animation.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-audio.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-authored-pose.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); transactions and property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
@@ -106,7 +106,7 @@ Engine logic: ported to Rust.
 | `src/editor-layer-focus.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-folders.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-migration.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-layer-sheet.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose, the planner (write, capture, materialize), publish and undo/redo of layer-sheet commands for gestures on existing figures (styk-edit); every other sheet command still JS |
 | `src/editor-layers.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-motion-path.mjs` | `styk-edit` | js | commands and history |
@@ -190,7 +190,7 @@ Engine logic: ported to Rust.
 | `src/keyframe-easing.mjs` | `styk-eval` | partial | Rust: easing curves (linear, eased, bezier, constant, Auto); validation still JS |
 | `src/layer-folders.mjs` | `styk-eval` | js |  |
 | `src/layer-parallax.mjs` | `styk-eval` | js |  |
-| `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements; validation still JS |
+| `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS |
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
 | `src/motion-path-falloff.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/motion-path.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
@@ -205,10 +205,10 @@ Engine logic: ported to Rust.
 | `src/pivot/geometry-definition.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-order.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-pose.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pivot/geometry.mjs` | `styk-eval` | partial | evaluation and world geometry. Rust: evaluatedNativeFrame, buildGeometry, drawPrimitives (draw lists); editing, picking and Canvas paths still JS |
+| `src/pivot/geometry.mjs` | `styk-eval` | partial | evaluation and world geometry. Rust: evaluatedNativeFrame, evaluatedFrame as records, buildGeometry, drawPrimitives (draw lists); picking and Canvas paths still JS |
 | `src/pivot/raster-clip.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/surfaces.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pose-snapshot.mjs` | `styk-eval` | js |  |
+| `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
 | `src/structural-equality.mjs` | `styk-eval` | js |  |
 | `src/camera-bake-authored.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-follow.mjs` | `styk-eval::camera` | js |  |

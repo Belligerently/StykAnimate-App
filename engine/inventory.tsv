@@ -122,7 +122,7 @@ src/drawing-worker.mjs	engine	styk-drawing	js
 src/editable-scene-preparation.mjs	engine	styk-render	js	
 src/editor-animation.mjs	engine	styk-edit	js	commands and history
 src/editor-audio.mjs	engine	styk-edit	js	commands and history
-src/editor-authored-pose.mjs	engine	styk-edit	js	commands and history
+src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); transactions and property-channel commits still JS
 src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
@@ -150,7 +150,7 @@ src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-focus.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-folders.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-migration.mjs	engine	styk-edit	js	commands and history
-src/editor-layer-sheet.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose, the planner (write, capture, materialize), publish and undo/redo of layer-sheet commands for gestures on existing figures (styk-edit); every other sheet command still JS
 src/editor-layers.mjs	engine	styk-edit	js	commands and history
 src/editor-load.mjs	engine	styk-edit	js	commands and history
 src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
@@ -236,7 +236,7 @@ src/keyframe-easing-view.mjs	ui	-	stays
 src/keyframe-easing.mjs	engine	styk-eval	partial	Rust: easing curves (linear, eased, bezier, constant, Auto); validation still JS
 src/layer-folders.mjs	engine	styk-eval	js	
 src/layer-parallax.mjs	engine	styk-eval	js	
-src/layer-sheet.mjs	engine	styk-eval	partial	Rust: sampleLayerSheet incl. movieclip replacements; validation still JS
+src/layer-sheet.mjs	engine	styk-eval	partial	Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS
 src/layer-timeline.mjs	ui	-	stays	
 src/layers.mjs	engine	styk-eval	partial	Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS
 src/library-drag.mjs	ui	-	stays	
@@ -294,7 +294,7 @@ src/pivot/background.mjs	engine	styk-eval	partial	Rust: background tween and col
 src/pivot/geometry-definition.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-order.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/geometry.mjs	engine	styk-eval	partial	evaluation and world geometry. Rust: evaluatedNativeFrame, buildGeometry, drawPrimitives (draw lists); editing, picking and Canvas paths still JS
+src/pivot/geometry.mjs	engine	styk-eval	partial	evaluation and world geometry. Rust: evaluatedNativeFrame, evaluatedFrame as records, buildGeometry, drawPrimitives (draw lists); picking and Canvas paths still JS
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
 src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS
@@ -323,7 +323,7 @@ src/polygon-preview.mjs	engine	styk-eval::picking	js	handles, picking, snapping 
 src/pose-property-split.mjs	engine	styk-edit	js	
 src/pose-sequence-storage.mjs	engine	styk-formats::container	js	
 src/pose-sequences.mjs	engine	styk-formats::container	js	
-src/pose-snapshot.mjs	engine	styk-eval	js	
+src/pose-snapshot.mjs	engine	styk-eval	partial	Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS
 src/prepared-frames.mjs	engine	styk-render	partial	Rust: prepared frames for supported documents
 src/preview-image-worker.mjs	engine	styk-render::images	js	image decoding and variants
 src/preview-image.mjs	engine	styk-render::images	js	image decoding and variants

@@ -132,11 +132,17 @@ impl<'a> Records<'a> {
 
     /// `evaluatedFrame(report, …, tick)` without the runtime clock fields.
     pub fn evaluated(&self, tick: f64) -> Result<Value, Error> {
+        self.evaluated_with(tick, true)
+    }
+
+    /// `evaluatedFrame(report, …, tick, {skipMovieclips: !clips})`: with `clips` off,
+    /// movieclips outside their span stay in the frame (what a key's pose is captured from).
+    pub fn evaluated_with(&self, tick: f64, clips: bool) -> Result<Value, Error> {
         let frame = match self.tree.path(&["_styk", "layerSheet"]) {
             Some(sheet) => self.sample_sheet(sheet, tick)?,
             None => self.native_at(tick)?,
         };
-        let frame = self.sample_clips(frame, tick)?;
+        let frame = if clips { self.sample_clips(frame, tick)? } else { frame };
         Ok(self.layer_order(frame))
     }
 

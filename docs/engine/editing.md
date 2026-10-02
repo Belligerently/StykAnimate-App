@@ -44,9 +44,10 @@ and after), and emit change events the interface listens to.
   ported first are those mutations, checked on native frames; the app needs, in order:
   1. **The evaluated frame as records**: `editor.evaluatedFrame` reproduced as JSON byte for
      byte (layer sheets, tweens, movieclips, layer order), because a commit stores it.
-     In progress: `styk_eval::records` ([evaluation.md](evaluation.md)).
+     Done: `styk_eval::records` ([evaluation.md](evaluation.md)).
   2. **The authored lifecycle and the sheet planner**: drafts, ownership, key writing,
-     pose-source capture and the history entry `publish` records.
+     pose-source capture and the history entry `publish` records. Done for gestures on
+     existing figures (see the status below).
   3. **The facade**: the app's gestures run in the engine.
   Then frames and keys, layers and the layer sheet, figures and the builder, movieclips,
   effects and clips, camera, drawings' metadata, clipboard, sessions.
@@ -61,32 +62,53 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 
 | Call | Ported | Recorded in |
 | --- | --- | --- |
-| `select(uid, joint, {toggle, add})`, `selectMany(uids)` | yes | selection-native |
-| `seek(tick)` (its return value, the evaluated frame, is read by the facade from its own copy) | yes | selection-native, move-joined |
-| `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel |
-| `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel |
-| `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined |
-| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, inverse kinematics, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap |
+| `select(uid, joint, {toggle, add})`, `selectMany(uids)` | yes | selection-native, every sheet scenario |
+| `seek(tick)` (its return value, the evaluated frame, is read by the facade from its own copy) | yes | selection-native, move-joined, gestures-sheet |
+| `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel, gestures-sheet |
+| `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
+| `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
+| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, inverse kinematics, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
 | flipping a branch, everything else | no: `Unported` | transform-native |
 
-Every call answers `Unported` on documents with a layer sheet, property channels, animation
-origins, a movieclip source or inverse-kinematics controllers, joint gestures on rigged or
-Stick Nodes figures, and geometry on documents with features the engine does not evaluate
-yet; those run in JavaScript.
+Every ported call runs in both of the editor's modes:
+
+- **On a layer sheet** (the app: every document): a gesture drafts the frame on show
+  (`styk_eval::records`), changes the draft, and commits through the sheet planner: the
+  layers whose figures changed get a key at the playhead (at the key of a held cell,
+  unless auto key is on) holding a new pose source captured from the draft; imported
+  keys whose span changed are frozen as poses first; one `layer-sheet` history entry
+  records the sheet, the layers and the sources, and undo, redo and the collection of
+  sources from a dropped redo branch follow the editor. Recorded in move-sheet,
+  gestures-sheet, autokey-sheet, layers-sheet (two layers, a join across them, a held
+  key, a multi-layer selection) and locked-sheet (refusals and their cancel events).
+- **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
+
+A call answers `Unported`, and changes nothing, on documents with property channels on a
+native timeline, animation origins, a movieclip source, inverse-kinematics controllers
+or movieclips on a layer sheet; for joint gestures on rigged or Stick Nodes figures; for
+poses on a drawing layer or a movieclip's replaced frame; and wherever the engine does
+not evaluate the frame as records yet ([evaluation.md](evaluation.md)).
 
 What the facade must still account for before it calls the engine (none of it is a
 document difference the harness can see):
 
-- **Layer focus locks** are runtime state of the JavaScript editor, not of the document;
-  the facade runs selection in JavaScript while a focus lock is on.
+- **Counters and settings the document does not carry**: the layer revision named by
+  events, the number of the next pose source, auto key, and the layer hints of the last
+  published poses. The engine keeps them across its own calls; the facade hands them over
+  when it starts from the editor's state (`set_counters`, `Options::auto_key`).
+- **Layer focus locks and the timeline's layer selection** (`_sheetSelection`) are
+  runtime state of the JavaScript editor; the facade runs selection and seeking in
+  JavaScript while either is on.
 - **`runtime_segments`** are not in the engine's copy (the mirror strips them). The
-  editor's history snapshots keep them, so a gesture that moves a figure with
-  `runtime_segments` and puts it back is a change in JavaScript and none in the engine.
-  Phase 1 keeps the app's history in JavaScript, so the facade's decision stands.
+  editor's history snapshots keep them, so on a native timeline a gesture that moves a
+  figure with `runtime_segments` and puts it back is a change in JavaScript and none in
+  the engine. On a layer sheet a commit compares poses without them, as the engine does.
 - **The history byte budget** (`historyBytes`) is not ported; the engine's history trims
-  by count (80 entries) only.
-- **`validateObjectChanges`** on commit is not ported; moves only change finite roots.
+  by count (80 entries) only. Phase 1 keeps the app's history in JavaScript.
+- **Validation** (`validateObjectChanges`, `validateLayerState`,
+  `validateLayerSheetChanges`) is not ported; the ported commands only write finite poses
+  and keys the planner builds.
 
 ## Arithmetic
 

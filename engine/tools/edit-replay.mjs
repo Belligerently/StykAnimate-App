@@ -8,7 +8,7 @@
 //   node engine/tools/edit-replay.mjs --all [--out <folder>]   # every scenario in engine/tests/edit/
 //
 // A scenario: {"name", "document": <path relative to the scenario | inline document>,
-// "editor": {"propertyChannels", "layerTimeline"}, "steps": [["method", ...arguments], …]}.
+// "editor": {"propertyChannels", "layerTimeline", "autoKey"}, "steps": [["method", ...arguments], …]}.
 // A step may also be ["@seek", tick] or ["@select", uid, joint] (the same as the method
 // calls, spelled out for readability). The document recorded is the editor's in-memory
 // report as the engine's mirror receives it (`JSON.stringify(editor.report)` without the
@@ -35,7 +35,10 @@ const plain = (value, depth = 4) => {
 
 export function replay(scenario, base = repo) {
   const document = typeof scenario.document === 'string' ? JSON.parse(readFileSync(path.resolve(base, scenario.document), 'utf8')) : structuredClone(scenario.document);
-  const editor = new Editor({demo: false, ...(scenario.editor ?? {})}).load(document, scenario.name ?? 'Scenario');
+  const {autoKey = false, ...options} = scenario.editor ?? {};
+  const editor = new Editor({demo: false, ...options}).load(document, scenario.name ?? 'Scenario');
+  // The app sets this from its settings (src/app.mjs): every edited track keys the playhead.
+  editor.autoKey = autoKey;
   const events = [];
   // The editor dispatches every change as one 'change' event whose detail names its kind.
   editor.addEventListener('change', event => events.push(plain(event.detail ?? null)));
@@ -43,6 +46,9 @@ export function replay(scenario, base = repo) {
     tick: editor.tick, frameIndex: editor.frameIndex,
     selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])], selectedJoint: editor.selectedJoint ?? -1,
     canUndo: editor.canUndo, canRedo: editor.canRedo, undoLabel: editor.undoLabel, redoLabel: editor.redoLabel, dirty: editor.dirty,
+    // Runtime counters the document does not carry: events name the layer revision, and
+    // new pose sources take the next frame identity.
+    layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity,
   });
   let previous = reportJSON(editor);
   const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: []}];

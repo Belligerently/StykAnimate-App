@@ -12,20 +12,27 @@
 //! timelines (docs/engine/editing.md lists the calls). Every other call
 //! answers [`EditError::Unported`], so a facade knows to run it in JavaScript.
 
+mod authored;
+mod frame;
 mod history;
 mod pose;
 mod record;
 pub mod replay;
 mod select;
+mod sheet;
 mod timeline;
 mod transform;
+
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use styk_doc::Value;
 
 pub use history::{Command, CommandKind};
 pub use select::Selection;
 
-/// What a failed call says. `Unported` means "run this in JavaScript".
+/// What a failed call says. `Unported` means "run this in JavaScript": the call
+/// changed nothing.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
     #[error("{0} is not ported to the engine yet")]
@@ -34,11 +41,14 @@ pub enum EditError {
     Invalid(String),
 }
 
-/// The editor's construction options (`new Editor({propertyChannels, layerTimeline})`).
+/// The editor's construction options (`new Editor({propertyChannels, layerTimeline})`)
+/// and the settings the app gives it.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
     pub property_channels: bool,
     pub layer_timeline: bool,
+    /// `editor.autoKey`: every edited track keys the playhead, held cells included.
+    pub auto_key: bool,
 }
 
 /// A gesture in progress (`editor._drag`).
@@ -53,7 +63,19 @@ pub(crate) struct Drag {
     pub before_selection: select::SelectionState,
     pub changed: bool,
     /// Where figures detached from a parent outside the gesture were (`detachedOrigins`).
-    pub detached: std::collections::HashMap<u32, [f64; 2]>,
+    pub detached: HashMap<u32, [f64; 2]>,
+    /// The gesture edits a draft of the frame on show (a layer sheet), not a keyframe.
+    pub authored: bool,
+}
+
+/// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
+#[derive(Clone, Debug)]
+pub(crate) struct Authored {
+    /// The frame being edited: the evaluated frame with the gesture's changes.
+    pub frame: Value,
+    /// The evaluated frame the gesture started from.
+    pub source: Value,
+    pub tick: f64,
 }
 
 pub struct Editor {
@@ -63,15 +85,28 @@ pub struct Editor {
     pub(crate) frame_index: usize,
     pub(crate) selection: Selection,
     pub(crate) drag: Option<Drag>,
+    pub(crate) authored: Option<Authored>,
     pub(crate) undo: Vec<Command>,
     pub(crate) redo: Vec<Command>,
     pub(crate) revision: u64,
     pub(crate) saved_revision: u64,
     pub(crate) revision_serial: u64,
+    /// `editor.layerRevision`: named by the events of layer-sheet commands.
+    pub(crate) layer_revision: u64,
+    /// `editor._nextFrameIdentity`: the number of the next pose source (`frame-N`).
+    pub(crate) next_frame_identity: u64,
+    /// `auto_key` of [`Options`], which the app may change between calls.
+    pub(crate) auto_key: bool,
+    /// Pose sources this session captured, in order (`_generatedFrameSources`).
+    pub(crate) generated_sources: Vec<String>,
+    /// Whether the document came with a pose-source table (`_sourceTableWasPresent`).
+    pub(crate) source_table_was_present: bool,
+    /// The layer of each figure in the last published poses (`_newLayerHints`).
+    pub(crate) new_layer_hints: HashMap<u32, String>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
-    /// Typed views of the report for geometry, converted again only where records changed.
-    pub(crate) loader: styk_eval::load::Loader,
+    /// Typed views and evaluated frames of the current document.
+    pub(crate) eval: RefCell<frame::Cache>,
 }
 
 /// What the interface reads after a call (`engine/tools/edit-replay.mjs` records the same).
@@ -87,12 +122,32 @@ pub struct State {
     pub undo_label: String,
     pub redo_label: String,
     pub dirty: bool,
+    pub layer_revision: u64,
+    pub next_frame_identity: u64,
+}
+
+/// Everything a call may change, to put back when it turns out not to be ported.
+struct Snapshot {
+    report: Value,
+    tick: f64,
+    frame_index: usize,
+    selection: Selection,
+    drag: Option<Drag>,
+    authored: Option<Authored>,
+    undo: Vec<Command>,
+    redo: Vec<Command>,
+    counters: [u64; 5],
+    generated_sources: Vec<String>,
+    new_layer_hints: HashMap<u32, String>,
+    events: usize,
 }
 
 impl Editor {
     /// An editor over `report`, a document the JavaScript editor has loaded (its
     /// normalization on load is not ported: phase 1 starts from the loaded report).
     pub fn new(report: Value, options: Options) -> Editor {
+        let source_table_was_present = report.path(&["_styk", "frameSources"]).is_some();
+        let next_frame_identity = next_frame_identity(&report);
         Editor {
             report,
             options,
@@ -100,13 +155,20 @@ impl Editor {
             frame_index: 0,
             selection: Selection::default(),
             drag: None,
+            authored: None,
             undo: Vec::new(),
             redo: Vec::new(),
             revision: 0,
             saved_revision: 0,
             revision_serial: 0,
+            layer_revision: 0,
+            next_frame_identity,
+            auto_key: options.auto_key,
+            generated_sources: Vec::new(),
+            source_table_was_present,
+            new_layer_hints: HashMap::new(),
             events: Vec::new(),
-            loader: styk_eval::load::Loader::new(),
+            eval: RefCell::default(),
         }
     }
 
@@ -116,6 +178,13 @@ impl Editor {
         self.tick = tick;
         self.frame_index = frame_index;
         self.selection = selection;
+    }
+
+    /// The editor's counters that the document does not carry: the layer revision
+    /// its events name and the number of the next pose source.
+    pub fn set_counters(&mut self, layer_revision: u64, next_frame_identity: u64) {
+        self.layer_revision = layer_revision;
+        self.next_frame_identity = next_frame_identity;
     }
 
     pub fn report(&self) -> &Value {
@@ -143,12 +212,55 @@ impl Editor {
             undo_label: self.undo.last().map(|c| c.label.clone()).unwrap_or_default(),
             redo_label: self.redo.last().map(|c| c.label.clone()).unwrap_or_default(),
             dirty: self.revision != self.saved_revision || self.drag.as_ref().is_some_and(|d| d.changed),
+            layer_revision: self.layer_revision,
+            next_frame_identity: self.next_frame_identity,
         }
     }
 
     /// Runs one editor call by its JavaScript name, with JSON arguments; returns what
     /// the JavaScript method returns.
     pub fn call(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
+        let snapshot = self.snapshot();
+        let result = self.dispatch(method, args);
+        if matches!(result, Err(EditError::Unported(_))) {
+            self.restore(snapshot);
+        }
+        result
+    }
+
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            report: self.report.clone(),
+            tick: self.tick,
+            frame_index: self.frame_index,
+            selection: self.selection.clone(),
+            drag: self.drag.clone(),
+            authored: self.authored.clone(),
+            undo: self.undo.clone(),
+            redo: self.redo.clone(),
+            counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity],
+            generated_sources: self.generated_sources.clone(),
+            new_layer_hints: self.new_layer_hints.clone(),
+            events: self.events.len(),
+        }
+    }
+
+    fn restore(&mut self, snapshot: Snapshot) {
+        self.report = snapshot.report;
+        self.tick = snapshot.tick;
+        self.frame_index = snapshot.frame_index;
+        self.selection = snapshot.selection;
+        self.drag = snapshot.drag;
+        self.authored = snapshot.authored;
+        self.undo = snapshot.undo;
+        self.redo = snapshot.redo;
+        [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity] = snapshot.counters;
+        self.generated_sources = snapshot.generated_sources;
+        self.new_layer_hints = snapshot.new_layer_hints;
+        self.events.truncate(snapshot.events);
+    }
+
+    fn dispatch(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
         // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
         let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
@@ -193,25 +305,31 @@ impl Editor {
     }
 
     /// Why the document's commands still run in JavaScript, if they do: what phase 1
-    /// has not ported yet (layer sheets, property channels, animation origins,
-    /// movieclip sources, inverse kinematics).
+    /// has not ported yet.
     fn unported_document(&self) -> Option<&'static str> {
         let styk = self.report.get("_styk");
-        if self.options.layer_timeline || styk.and_then(|s| s.get("layerSheet")).is_some() {
-            return Some("on a layer sheet");
+        let sheet = styk.and_then(|s| s.get("layerSheet"));
+        let list = |value: Option<&Value>| -> Vec<Value> { value.and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default() };
+        if sheet.is_none() && (self.options.property_channels || self.options.layer_timeline) {
+            // The app's editor gives every document a layer sheet when it loads it.
+            return Some("with property channels on a native timeline");
         }
-        if self.options.property_channels || styk.and_then(|s| s.path(&["animation", "channels"])).and_then(Value::array_len).unwrap_or(0) > 0 {
+        if styk.and_then(|s| s.path(&["animation", "channels"])).and_then(Value::array_len).unwrap_or(0) > 0 {
             return Some("with property channels");
         }
         if styk.and_then(|s| s.get("movieclipSource")).is_some() {
             return Some("inside a movieclip");
         }
-        let figures = self.report.get("figure_types").and_then(Value::elements);
-        if figures.is_some_and(|f| f.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy))) {
+        let figures = list(self.report.get("figure_types"));
+        if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
             return Some("with animation origins");
         }
-        let frames = self.report.get("keyframes").and_then(Value::elements);
-        if frames.is_some_and(|f| f.iter().any(|frame| frame.get("objects").and_then(Value::elements).is_some_and(|o| o.iter().any(|object| object.get("_stykIK").is_some())))) {
+        if sheet.is_some() && figures.iter().any(|figure| figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
+            return Some("with movieclips on a layer sheet");
+        }
+        let sources = styk.and_then(|s| s.get("frameSources")).and_then(Value::as_obj).map(|table| table.values().to_vec()).unwrap_or_default();
+        let controlled = |frame: &Value| list(frame.get("objects")).iter().any(|object| object.get("_stykIK").is_some());
+        if list(self.report.get("keyframes")).iter().chain(&sources).any(controlled) {
             return Some("with inverse kinematics");
         }
         None
@@ -230,4 +348,14 @@ impl Editor {
         }
         self.events.push(Value::object(object));
     }
+}
+
+/// `validateFrameIdentitySteps`: one past the largest `frame-N` among the keyframes
+/// and the pose sources.
+fn next_frame_identity(report: &Value) -> u64 {
+    let number = |id: Option<&str>| id.and_then(|id| id.strip_prefix("frame-")).filter(|n| !n.starts_with('0')).and_then(|n| n.parse::<u64>().ok());
+    let frames = report.get("keyframes").and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default();
+    let keyed = frames.iter().filter_map(|frame| number(frame.path(&["_styk", "frameId"]).and_then(Value::as_str)));
+    let sources = report.path(&["_styk", "frameSources"]).and_then(Value::as_obj).map(|table| table.keys().filter_map(|id| number(Some(id))).collect::<Vec<_>>()).unwrap_or_default();
+    keyed.chain(sources).max().map_or(1, |largest| largest + 1)
 }

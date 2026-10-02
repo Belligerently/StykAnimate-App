@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use styk_doc::{Obj, Value};
 use styk_math::{atan2, hypot, shortest, sin, cos};
 
-use crate::record::{frame_objects, join_target, num, object_mut, uid};
+use crate::record::{join_target, num, uid};
 use crate::transform::{field, finite};
 use crate::{EditError, Editor};
 
@@ -172,7 +172,7 @@ impl Editor {
     /// The selected figure's record and definition, and the selected segment, when a
     /// joint gesture can run here; `Unported` for the parts it cannot run yet.
     fn joint_context(&self) -> Result<Option<Joint>, EditError> {
-        let Some((slot, object)) = self.object() else { return Ok(None) };
+        let Some((slot, object)) = self.object()? else { return Ok(None) };
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let figure = figures.iter().find(|f| num(f, "figure_type_id") == num(&object, "figure_type_id")).cloned().unwrap_or(Value::Null);
         let segments = segments_of(&figure);
@@ -192,7 +192,7 @@ impl Editor {
     }
 
     /// The selected segment as the geometry at the playhead draws it.
-    fn shape(&mut self, object: &Value, joint: usize) -> Result<Option<Shape>, EditError> {
+    fn shape(&self, object: &Value, joint: usize) -> Result<Option<Shape>, EditError> {
         let (prepared, frame, scene) = self.evaluate()?;
         let Some(id) = uid(object) else { return Ok(None) };
         let Some(evaluated) = frame.objects.iter().find(|o| o.uid == id) else { return Ok(None) };
@@ -222,12 +222,11 @@ impl Editor {
 
     /// `_rotateJoint(delta, includeJoint, {isolate})` on the native frame at the playhead.
     fn rotate_joint_by(&mut self, slot: usize, joint: usize, delta: f64, include_joint: bool, isolate: bool) {
-        let index = self.frame_index;
-        let objects = frame_objects(&self.report, index);
+        let objects = self.frame_objects();
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         for (object_slot, segment) in rotation_targets(&objects, &figures, slot, joint, isolate) {
             if (include_joint || object_slot != slot || segment != joint)
-                && let Some(record) = object_mut(&mut self.report, index, object_slot)
+                && let Some(record) = self.frame_object_mut(object_slot)
             {
                 add_angle(record, segment, delta);
             }
@@ -267,8 +266,7 @@ impl Editor {
         self.object_edit("Pose joint", |editor| {
             let defaults = editor.snap_state(&segments, joint);
             editor.rotate_joint_by(slot, joint, shortest(angle - shape.angle), true, options.isolate);
-            let index = editor.frame_index;
-            let record = object_mut(&mut editor.report, index, slot).unwrap();
+            let record = editor.frame_object_mut(slot).unwrap();
             let scale = field(record, "scale");
             if options.stretch && scale.abs() > 1e-8 {
                 if !record.get("len_flag").is_some_and(Value::truthy) {
@@ -311,10 +309,9 @@ impl Editor {
         let segment_length = segment.get("length").and_then(Value::as_f64).unwrap_or(f64::NAN);
         self.object_edit("Bend joint", |editor| {
             let defaults = editor.snap_state(&segments, joint);
-            let index = editor.frame_index;
             let chord = |value: f64| if value.abs() < 1e-7 { 1.0 } else { (2.0 * sin(value / 2.0) / value).abs() };
             {
-                let record = object_mut(&mut editor.report, index, slot).unwrap();
+                let record = editor.frame_object_mut(slot).unwrap();
                 let scale = field(record, "scale").abs();
                 let mut length = if record.get("len_flag").is_some_and(Value::truthy) {
                     record.get("lengths").and_then(|l| l.item(joint)).and_then(|v| v.as_f64()).unwrap_or(f64::NAN)
@@ -345,7 +342,7 @@ impl Editor {
                 }
             }
             editor.rotate_joint_by(slot, joint, bend - shape.bend, false, options.isolate);
-            let record = object_mut(&mut editor.report, index, slot).unwrap();
+            let record = editor.frame_object_mut(slot).unwrap();
             if !record.get("bend_flag").is_some_and(Value::truthy) {
                 record.set("bends", Value::array(segments.iter().map(|s| Value::Num(s.get("bend_rad").and_then(Value::as_f64).unwrap_or(0.0))).collect()));
             }
