@@ -4,10 +4,10 @@ src/animation-history.mjs	engine	styk-edit	js
 src/animation-origin-support.mjs	engine	styk-eval	js	
 src/animation-origin-validation.mjs	engine	styk-eval	js	
 src/animation-origin.mjs	engine	styk-eval	js	
-src/animation-pose.mjs	engine	styk-eval	js	
+src/animation-pose.mjs	engine	styk-eval	partial	Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS
 src/animation-properties.mjs	engine	styk-eval	js	
 src/animation-property-state.mjs	engine	styk-eval	js	
-src/animation-style.mjs	engine	styk-eval	js	
+src/animation-style.mjs	engine	styk-eval	partial	Rust: per-instance style overlays (resolveInstanceFigure); style channels still JS
 src/app-dialogs.mjs	ui	-	stays	
 src/app.mjs	ui	-	stays	
 src/application-menu.mjs	ui	-	stays	
@@ -19,7 +19,7 @@ src/audio-pcm.mjs	engine	styk-export::audio	js	audio model and offline mix
 src/audio-timeline.mjs	ui	-	stays	
 src/audio-worker.mjs	platform	styk-export::audio	js	Web Audio preview
 src/background-dialog.mjs	ui	-	stays	
-src/base64.mjs	engine	styk-formats::container	js	
+src/base64.mjs	engine	styk-formats::container	ported	Rust: styk-doc JSON base64
 src/browser-recovery.mjs	platform	-	stays	file, storage and network services
 src/builder-aids.mjs	ui	-	stays	
 src/builder-appearance.mjs	engine	styk-edit	js	
@@ -41,7 +41,7 @@ src/camera-motion-graph.mjs	ui	-	stays
 src/camera-motion-localization.mjs	ui	-	stays	
 src/camera-motion-timeline.mjs	ui	-	stays	
 src/camera-motion-ui.mjs	ui	-	stays	
-src/camera-motion.mjs	engine	styk-eval::camera	js	
+src/camera-motion.mjs	engine	styk-eval::camera	partial	Rust: camera presets (shake, handheld, wobble, impact, zoom pulse); follow camera still JS
 src/camera-overlay.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/canvas-artwork-pick.mjs	engine	styk-render	js	
 src/canvas-color-sample.mjs	engine	styk-render	js	
@@ -209,17 +209,17 @@ src/hotkey-labels.mjs	ui	-	stays
 src/hotkey-settings.mjs	ui	-	stays	
 src/hotkeys.mjs	ui	-	stays	
 src/icons.mjs	ui	-	stays	
-src/ik-evaluation.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
-src/ik-joined.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
-src/ik-rig.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
-src/ik-spatial.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/ik-evaluation.mjs	engine	styk-eval::rig	ported	Rust: not needed (memoization; the engine caches whole frames)
+src/ik-joined.mjs	engine	styk-eval::rig	partial	Rust: joined assemblies and solve; validation of joins still JS
+src/ik-rig.mjs	engine	styk-eval::rig	partial	Rust: rig projection, refinement, analytic spatial limb; editing helpers still JS
+src/ik-spatial.mjs	engine	styk-eval::rig	partial	Rust: evaluation; pole and capture helpers for editing still JS
 src/ik-topology.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
 src/ik-view.mjs	ui	-	stays	
-src/ik.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/ik.mjs	engine	styk-eval::rig	partial	Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK); editing helpers still JS
 src/image-codecs.mjs	engine	styk-export	js	
 src/image-export-worker.mjs	engine	styk-export	js	
 src/image-export.mjs	engine	styk-export	js	
-src/image-resources.mjs	engine	styk-render::images	js	image decoding and variants
+src/image-resources.mjs	engine	styk-render::images	partial	image decoding and variants. Rust: decoding and atlas upload for supported documents
 src/import-client.mjs	engine	styk-formats::service	js	import/export transport
 src/import-notes-localization.mjs	ui	-	stays	
 src/import-wire.mjs	engine	styk-formats::piv	js	native frame table materialization
@@ -233,12 +233,12 @@ src/inspector-legacy.mjs	ui	-	stays
 src/inspector-view.mjs	ui	-	stays	
 src/keyframe-easing-popover.mjs	ui	-	stays	
 src/keyframe-easing-view.mjs	ui	-	stays	
-src/keyframe-easing.mjs	engine	styk-eval	js	
+src/keyframe-easing.mjs	engine	styk-eval	partial	Rust: easing curves (linear, eased, bezier, constant, Auto); validation still JS
 src/layer-folders.mjs	engine	styk-eval	js	
 src/layer-parallax.mjs	engine	styk-eval	js	
-src/layer-sheet.mjs	engine	styk-eval	js	
+src/layer-sheet.mjs	engine	styk-eval	partial	Rust: sampleLayerSheet incl. movieclip replacements; validation still JS
 src/layer-timeline.mjs	ui	-	stays	
-src/layers.mjs	engine	styk-eval	js	
+src/layers.mjs	engine	styk-eval	partial	Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS
 src/library-drag.mjs	ui	-	stays	
 src/library-files.mjs	platform	-	stays	file, storage and network services
 src/library-hover-preview.mjs	ui	-	stays	
@@ -255,16 +255,16 @@ src/motion-path-falloff.mjs	engine	styk-eval	js	onion sampling and motion-path p
 src/motion-path.mjs	engine	styk-eval	js	onion sampling and motion-path projection
 src/movieclip-drawings-view.mjs	ui	-	stays	
 src/movieclip-drawings.mjs	engine	styk-eval::movieclips	js	
-src/movieclip-geometry.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-geometry.mjs	engine	styk-eval::movieclips	partial	Rust: nested clip geometry; clip effects and drawings still JS
 src/movieclip-materialize.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-membership.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-mesh-materialize.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-mesh.mjs	engine	styk-eval::movieclips	js	
-src/movieclip-presence.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-presence.mjs	engine	styk-eval::movieclips	partial	Rust: presence clock and continuations; editing still JS
 src/movieclip-ui.mjs	ui	-	stays	
-src/movieclips.mjs	engine	styk-eval::movieclips	js	
+src/movieclips.mjs	engine	styk-eval::movieclips	partial	Rust: movieclipTime and clip sampling; capture and editing still JS
 src/mp4-muxer.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
-src/native-container.mjs	engine	styk-formats::container	js	
+src/native-container.mjs	engine	styk-formats::container	ported	Rust: reader and writer (v0–v2, lifted records); 461 corpus files decode to the same document, 448 v2 files rewrite byte-identical
 src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
@@ -281,20 +281,20 @@ src/onion-controls.mjs	ui	-	stays
 src/onion-frame-field.mjs	ui	-	stays	
 src/onion-range-drag.mjs	ui	-	stays	
 src/onion-range.mjs	engine	styk-eval	js	onion sampling and motion-path projection
-src/onion-skin.mjs	engine	styk-eval	js	onion sampling and motion-path projection
+src/onion-skin.mjs	engine	styk-eval	partial	onion sampling and motion-path projection. Rust: ghost drawing, tint and order; sampling still JS
 src/onion-surface-cache.mjs	engine	styk-render	js	
 src/onion-timeline-range.mjs	ui	-	stays	
-src/paint.mjs	engine	styk-eval	js	
+src/paint.mjs	engine	styk-eval	partial	Rust: segment paints and gradients in draw lists; CSS and SVG helpers still JS
 src/parallax-draw.mjs	engine	styk-render	js	
 src/pen-input.mjs	ui	-	stays	
 src/pivot-export-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/pivot-frame-draft.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/pivot-style-materialize.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
-src/pivot/background.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/background.mjs	engine	styk-eval	partial	Rust: background tween and colour key; painting still JS
 src/pivot/geometry-definition.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-order.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/geometry.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/geometry.mjs	engine	styk-eval	partial	evaluation and world geometry. Rust: evaluatedNativeFrame, buildGeometry, drawPrimitives (draw lists); editing, picking and Canvas paths still JS
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
 src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/structure.mjs	engine	styk-doc	js	validation and structure
@@ -316,15 +316,15 @@ src/playback-tween-cache.mjs	engine	styk-engine::playback	js	worker preparation,
 src/playback-upload.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-vector-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-window.mjs	engine	styk-engine::playback	js	scheduling, budgets
-src/playback-worker.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
-src/playback.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-worker.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy)
+src/playback.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: playback preparation on the engine thread pool for supported documents
 src/polygon-draft.mjs	engine	styk-edit	js	
 src/polygon-preview.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/pose-property-split.mjs	engine	styk-edit	js	
 src/pose-sequence-storage.mjs	engine	styk-formats::container	js	
 src/pose-sequences.mjs	engine	styk-formats::container	js	
 src/pose-snapshot.mjs	engine	styk-eval	js	
-src/prepared-frames.mjs	engine	styk-render	js	
+src/prepared-frames.mjs	engine	styk-render	partial	Rust: prepared frames for supported documents
 src/preview-image-worker.mjs	engine	styk-render::images	js	image decoding and variants
 src/preview-image.mjs	engine	styk-render::images	js	image decoding and variants
 src/preview-images.mjs	engine	styk-render::images	js	image decoding and variants
@@ -341,11 +341,11 @@ src/release-notes.mjs	app	-	stays	telemetry, support, updates
 src/render-artwork.mjs	engine	styk-render	js	
 src/renderer-camera-scene.mjs	engine	styk-render	js	
 src/renderer-canvas-plan.mjs	engine	styk-render	js	
-src/renderer-geometry.mjs	engine	styk-render	js	
+src/renderer-geometry.mjs	engine	styk-render	partial	Rust: draw lists for supported documents
 src/renderer-glyphs.mjs	engine	styk-render	js	
 src/renderer-handles.mjs	engine	styk-render	js	
 src/renderer-mesh-raster.mjs	engine	styk-render	js	
-src/renderer-onion-composite.mjs	engine	styk-render	js	
+src/renderer-onion-composite.mjs	engine	styk-render	partial	Rust: onion composites for supported documents
 src/renderer-opacity.mjs	engine	styk-render	js	
 src/renderer-preview-drawing-resources.mjs	engine	styk-render	js	
 src/renderer-preview-drawings.mjs	engine	styk-render	js	
@@ -354,9 +354,9 @@ src/renderer-raster-capture.mjs	engine	styk-render	js
 src/renderer-upload.mjs	engine	styk-render	js	
 src/renderer-vector-raster.mjs	engine	styk-render	js	
 src/renderer-vfx-vector.mjs	engine	styk-render	js	
-src/renderer.mjs	engine	styk-render	js	
-src/rig-angle-path.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
-src/rig-constraints.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/renderer.mjs	engine	styk-render	partial	Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs); every other document still JS
+src/rig-angle-path.mjs	engine	styk-eval::rig	partial	Rust: angle path sampling; authoring still JS
+src/rig-constraints.mjs	engine	styk-eval::rig	partial	Rust: plan and evaluation; authoring helpers still JS
 src/rig-control-details.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
 src/rig-controls.mjs	ui	-	stays	
 src/rig-examples-3d.mjs	engine	styk-edit	js	
@@ -364,10 +364,10 @@ src/rig-examples.mjs	engine	styk-edit	js
 src/rig-mechanism-examples.mjs	engine	styk-edit	js	
 src/rig-pose-choices.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
 src/rig-solids.mjs	engine	styk-edit	js	
-src/rig-spatial.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/rig-spatial.mjs	engine	styk-eval::rig	partial	Rust: spatial joints (quaternion frames); authoring still JS
 src/rig-test-ui.mjs	ui	-	stays	
-src/rig-weighted.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
-src/scene-order.mjs	engine	styk-render	js	
+src/rig-weighted.mjs	engine	styk-eval::rig	partial	Rust: weighted joints and bindings; authoring still JS
+src/scene-order.mjs	engine	styk-render	partial	Rust: composeSceneGroups for onion skins; other scene grouping still JS
 src/scene-preparation.mjs	engine	styk-render	js	
 src/segment-values-dialog.mjs	ui	-	stays	
 src/settings.mjs	ui	-	stays	
@@ -406,7 +406,7 @@ src/sticknodes/decoder/png-browser.mjs	engine	styk-formats::sticknodes	js
 src/sticknodes/decoder/project-layout.mjs	engine	styk-formats::sticknodes	js	
 src/sticknodes/decoder/project.mjs	engine	styk-formats::sticknodes	js	
 src/sticknodes/decoder/renderer.mjs	engine	styk-formats::sticknodes	js	
-src/sticknodes/geometry.mjs	engine	styk-formats::sticknodes	js	
+src/sticknodes/geometry.mjs	engine	styk-formats::sticknodes	partial	Rust: curved segments and shaped drawables (sticknodes.rs); import still JS
 src/sticknodes/validation.mjs	engine	styk-formats::sticknodes	js	
 src/structural-equality.mjs	engine	styk-eval	js	
 src/studio-shell.mjs	ui	-	stays	
@@ -533,7 +533,7 @@ src/video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmp
 src/web-library.mjs	platform	-	stays	file, storage and network services
 src/web-offline.mjs	platform	-	stays	file, storage and network services
 src/web-support.js	ui	-	stays	
-src/zlib-sync.mjs	engine	styk-formats::container	js	
+src/zlib-sync.mjs	engine	styk-formats::container	partial	Rust: inflate of drawing tiles (PNG decoder); deflate still JS
 codecs/codec_bridge.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
 codecs/image_stream.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
 codecs/piv_asset_writer.py	engine	styk-formats::piv	js	Pivot PIV/STK codec (Python)
@@ -553,7 +553,7 @@ backend/browser_service.py	engine	styk-formats::service	js	codec service routes,
 backend/fast_decode.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
 backend/import_wire.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
 backend/jobs.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
-backend/native_format.py	engine	styk-formats::container	js	container v1/v2 (service side)
+backend/native_format.py	engine	styk-formats::container	partial	container v1/v2 (service side). Rust: reading every version
 backend/native_scan.py	engine	styk-formats::piv	js	native v5 frame table validation and transfer
 backend/process_metrics.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
 backend/profile_import.py	tool	-	stays	Python test or profiler; removed with the Python codec
