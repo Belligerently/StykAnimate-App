@@ -2,6 +2,7 @@
 //!
 //!   styk info <file>                      load timing, contents, unsupported features
 //!   styk compare <file> <reference.json>  primitive-by-primitive parity with the JS editor
+//!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
 
 use std::path::Path;
@@ -161,6 +162,13 @@ fn compare(path: &str, reference: &str, rest: &[String]) -> i32 {
         report.mismatched_joints,
         report.bad_frames.len()
     );
+    let effects = &report.vfx;
+    if effects.frames > 0 {
+        println!(
+            "  effects: {} frames, {} stacks, {} reference effects, {} mismatched effects, {} other differences",
+            effects.frames, effects.stacks, effects.effects, effects.mismatched_effects, effects.other
+        );
+    }
     if report.matches() { 0 } else { 3 }
 }
 

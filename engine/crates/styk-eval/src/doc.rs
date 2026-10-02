@@ -280,6 +280,10 @@ pub struct Object {
     pub figure_override: Option<Arc<Figure>>,
     /// Inverse-kinematics controllers of this pose (`_stykIK`), see [`crate::ik`].
     pub ik: Option<Arc<crate::ik::Table>>,
+    /// Per-pose effect stacks of the figure and its nodes (`_stykVfx`), see [`crate::vfx`].
+    pub vfx: Option<Arc<crate::vfx::Stacks>>,
+    /// `_stykVfxScope === 1`: the figure's own stack covers its attached figures.
+    pub vfx_scope: bool,
 }
 
 /// `_stykMovieclip` playback settings of one instance.
@@ -357,6 +361,8 @@ pub struct Keyframe {
     pub continuations: Vec<(u32, Arc<MovieclipPlayback>)>,
     /// Scene colour key (`_stykBackgroundColor`, ARGB) replacing the native fill.
     pub background_color: Option<u32>,
+    /// The scene's per-pose effect stack (`_stykVfx` of the frame), see [`crate::vfx`].
+    pub vfx: Option<Arc<crate::vfx::Stacks>>,
 }
 
 impl Keyframe {
@@ -463,6 +469,11 @@ pub struct Document {
     pub sheet: Option<Arc<LayerSheet>>,
     pub frame_sources: HashMap<Arc<str>, Arc<Keyframe>>,
     pub camera_motion: Vec<CameraMotionClip>,
+    /// Effect clips (`_styk.vfxClips`), see [`crate::vfx`]; `None` when there are none.
+    pub vfx_clips: Option<Arc<crate::vfx::Clips>>,
+    /// Effects the typed model does not hold (property channels of effects,
+    /// clips of a captured movieclip's source), for [`crate::vfx::document_has_vfx`].
+    pub vfx_elsewhere: bool,
     /// Features present in the file that this engine does not evaluate yet.
     pub unsupported: Vec<String>,
     /// Non-fatal notes from loading.

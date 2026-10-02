@@ -20,6 +20,7 @@ pub mod rig;
 pub mod sticknodes;
 pub mod style;
 pub mod text;
+pub mod vfx;
 pub mod view;
 
 use std::path::Path;

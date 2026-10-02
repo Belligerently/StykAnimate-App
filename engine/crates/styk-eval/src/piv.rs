@@ -317,6 +317,8 @@ fn decode_v5(payload: &[u8], name: &str) -> Result<Document, Error> {
                 sticknodes_shapes: None,
                 figure_override: None,
                 ik: None,
+                vfx: None,
+                vfx_scope: false,
             });
         }
         let mut order = Vec::with_capacity(obj_count);
@@ -346,6 +348,7 @@ fn decode_v5(payload: &[u8], name: &str) -> Result<Document, Error> {
             slot_of: HashMap::new(),
             continuations: Vec::new(),
             background_color: None,
+            vfx: None,
         });
     }
     recover_object_ids(&mut keyframes);
@@ -791,6 +794,8 @@ fn decode_v4(data: &[u8], name: &str) -> Result<Document, Error> {
                 sticknodes_shapes: None,
                 figure_override: None,
                 ik: None,
+                vfx: None,
+                vfx_scope: false,
             });
         }
         let mut order = Vec::with_capacity(object_count);
@@ -818,6 +823,7 @@ fn decode_v4(data: &[u8], name: &str) -> Result<Document, Error> {
             slot_of: HashMap::new(),
             continuations: Vec::new(),
             background_color: None,
+            vfx: None,
         });
     }
     for k in keyframes.iter_mut() {
