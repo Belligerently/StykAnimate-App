@@ -423,7 +423,7 @@ mod tests {
         let camera = CameraPose { x: 40.0, y: -10.0, scale: 0.8, angle: 0.1, is_default: false };
         let c = camera_plan(&stack, [960, 540], Some(camera), &view());
         // The workspace zoom times the camera's scale, below the 2048-pixel cap.
-        let resolution = 1.25 * 0.8;
+        let resolution: f64 = 1.25 * 0.8;
         assert_eq!(c.filter.output_size, [(960.0 * resolution).ceil(), (540.0 * resolution).ceil()]);
         let pad = c.filter.origin[0].abs();
         assert_eq!(c.size[0] as f64, c.filter.output_size[0] + 2.0 * pad);
