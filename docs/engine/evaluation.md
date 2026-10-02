@@ -72,6 +72,11 @@ the reason.
 - Not yet (each answers `Unported`): layers mixing imported and authored keys, figures
   joined to a hidden movieclip, camera parallax offsets, 3D poses between keys, animation
   origins, property channels, hidden pose keys, a movieclip's own document.
+- Pivot's own easing unwraps each angle along the whole run of tweened keys before the
+  interval. The drawing path unwraps from the previous key only (constant time, the same
+  picture); records follow the editor's chain (`evaluate_native_exact`), or a stored
+  angle would sit whole turns away (found on `hitoshi vs suzu tomiee ssj.piv`, tick 182;
+  the `eval-legacy-winding` fixture fails without it).
 - Angles are tweened through `styk_math::shortest`: with the platform's `sin` and `atan2`
   an IK target rotation came out as `-0.06` where the editor stores
   `-0.05999999999999999` (D16).

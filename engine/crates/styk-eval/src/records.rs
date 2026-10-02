@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use styk_doc::{Obj, Value};
 
-use crate::eval::{Prepared, Row, Seq, evaluate_native, timeline_rows};
+use crate::eval::{Prepared, Row, Seq, evaluate_native_exact, timeline_rows};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -226,7 +226,7 @@ impl<'a> Records<'a> {
             return Ok(b);
         }
         // The numbers: the typed evaluator's tween of the same interval.
-        let typed = evaluate_native(&self.prepared.doc, seq, index, t);
+        let typed = evaluate_native_exact(&self.prepared.doc, seq, index, t);
         let before = &key.frame.objects;
         let next: HashMap<u64, Value> = items(b.get("objects")).into_iter().filter_map(|o| Some((uid(&o)?.to_bits(), o))).collect();
         let mut objects = Vec::new();

@@ -207,7 +207,11 @@ pub fn auto_value(a: f64, b: f64, fraction: f64, duration: f64, previous: Option
 
 /// The interpolation context of one keyframe interval: channel values are
 /// read at keys index-1, index, index+1 and index+2.
-struct Sampler {
+struct Sampler<'a> {
+    seq: &'a Seq,
+    index: usize,
+    /// Unwrap angles along the whole run of keys, as the editor does (see [`Sampler::angle`]).
+    exact: bool,
     t: f64,
     auto: bool,
     auto_prev: bool,
@@ -221,12 +225,15 @@ struct Sampler {
     can_extend_right: bool,
 }
 
-impl Sampler {
-    fn new(seq: &Seq, index: usize, t: f64) -> Sampler {
+impl<'a> Sampler<'a> {
+    fn new(seq: &'a Seq, index: usize, t: f64, exact: bool) -> Sampler<'a> {
         let keys = &seq.keys;
         let mode = |k: usize| keys.get(k).and_then(|f| f.easing).map(|e| e.mode);
         let ticks = |k: Option<usize>| k.and_then(|k| keys.get(k)).map(|f| frame_ticks(f.duration) as f64).unwrap_or(0.0);
         Sampler {
+            seq,
+            index,
+            exact,
             t,
             auto: mode(index) == Some(EasingMode::Auto),
             auto_prev: index > 0 && mode(index - 1) == Some(EasingMode::Auto),
@@ -241,6 +248,36 @@ impl Sampler {
 
     /// `v` = values at keys [index-1, index, index+1, index+2].
     fn value(&self, v: [Option<f64>; 4], angular: bool) -> f64 {
+        self.value_from(v, angular, None)
+    }
+
+    /// An angle, with `far(k)` reading the channel at any key `k`. Pivot's own easing
+    /// unwraps an angle along the whole run of tweened keys before the interval, so
+    /// the value the editor stores can sit whole turns away from the one unwrapped
+    /// from the previous key alone. Both draw the same; when records are produced
+    /// (`exact`) the editor's chain is followed, at a cost that grows with the run.
+    fn angle(&self, v: [Option<f64>; 4], far: &dyn Fn(usize) -> Option<f64>) -> f64 {
+        self.value_from(v, true, self.unwrapped_before(&v, far))
+    }
+
+    /// The unwrapped angle at key index-1 when the run starts before it.
+    fn unwrapped_before(&self, v: &[Option<f64>; 4], far: &dyn Fn(usize) -> Option<f64>) -> Option<f64> {
+        if !self.exact || self.auto || !self.legacy || !(self.has_prev && self.ticks[0] > 1.0 && v[0].is_some()) {
+            return None;
+        }
+        let ticks = |k: usize| frame_ticks(self.seq.keys[k].duration) as f64;
+        let mut left = self.index - 1;
+        while left > 0 && ticks(left - 1) > 1.0 && far(left - 1).is_some() {
+            left -= 1;
+        }
+        let mut value = far(left)?;
+        for k in left + 1..self.index {
+            value += shortest(far(k)? - value);
+        }
+        Some(value)
+    }
+
+    fn value_from(&self, v: [Option<f64>; 4], angular: bool, before: Option<f64>) -> f64 {
         let (Some(a), Some(b)) = (v[1], v[2]) else { return v[1].unwrap_or(0.0) };
         let t = self.t;
         if self.auto {
@@ -263,7 +300,7 @@ impl Sampler {
         let left = self.has_prev && self.ticks[0] > 1.0 && v[0].is_some();
         let right = self.can_extend_right && self.ticks[2] > 1.0 && v[3].is_some();
         let unwrap = |prev: f64, value: f64| if angular { prev + shortest(value - prev) } else { value };
-        let u0 = if left { v[0].unwrap() } else { 0.0 };
+        let u0 = if left { before.unwrap_or_else(|| v[0].unwrap()) } else { 0.0 };
         let u1 = if left { unwrap(u0, a) } else { a };
         let u2 = unwrap(u1, b);
         if !left && !right {
@@ -396,6 +433,16 @@ fn frame_of(key: &KeyRef) -> Frame {
 
 /// `evaluatedNativeFrame`: one interval of a native or virtual timeline.
 pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame {
+    evaluate_interval(doc, seq, index, t, false)
+}
+
+/// [`evaluate_native`] with every stored value as the editor computes it, for
+/// records (see [`Sampler::angle`]).
+pub(crate) fn evaluate_native_exact(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame {
+    evaluate_interval(doc, seq, index, t, true)
+}
+
+fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
     let keys = &seq.keys;
     let Some(a) = keys.get(index) else { return Frame::default() };
     let Some(b) = keys.get(index + 1) else { return frame_of(a) };
@@ -413,7 +460,7 @@ pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame
     if t >= 1.0 {
         return frame_of(b);
     }
-    let sampler = Sampler::new(seq, index, t);
+    let sampler = Sampler::new(seq, index, t, exact);
     let around = |k: Option<usize>| k.and_then(|k| keys.get(k)).map(|f| &f.frame);
     let frames = [around(index.checked_sub(1)), Some(&a.frame), Some(&b.frame), around(Some(index + 2))];
     let mut objects = Vec::with_capacity(a.frame.objects.len());
@@ -437,7 +484,7 @@ pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame
                 x: sampler.value(get(|c| c.x), false),
                 y: sampler.value(get(|c| c.y), false),
                 scale: sampler.value(get(|c| c.scale), false),
-                angle: sampler.value(get(|c| c.angle), true),
+                angle: sampler.angle(get(|c| c.angle), &|k| keys.get(k).map(|f| f.frame.camera.unwrap_or_default().angle)),
                 is_default: false,
             })
         }
@@ -467,7 +514,9 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
     let mut out = o.clone();
     // IK: controller targets and follower angles tween with the pose (`interpolateIK`).
     if let Some(table) = &o.ik {
-        out.ik = Some(Arc::new(crate::ik::tween(table, recs.map(|r| r.and_then(|x| x.ik.as_deref())), t, &|v, angular| s.value(v, angular))));
+        let at = |k: usize| s.seq.keys.get(k).and_then(|f| f.frame.object(o.uid)).filter(|x| x.figure == o.figure).and_then(|x| x.ik.as_deref());
+        let value = |v: [Option<f64>; 4], angular: bool, far: &dyn Fn(usize) -> Option<f64>| if angular { s.angle(v, far) } else { s.value(v, false) };
+        out.ik = Some(Arc::new(crate::ik::tween(table, recs.map(|r| r.and_then(|x| x.ik.as_deref())), t, &value, &at)));
     }
     // Effects: matching identities interpolate toward the next pose's (`interpolateVfx`).
     if let Some(stacks) = &o.vfx {
@@ -518,7 +567,7 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
             }
             value
         };
-        let relative = s.value(recs.map(|r| r.map(relative_of)), true);
+        let relative = s.angle(recs.map(|r| r.map(relative_of)), &|k| s.seq.keys.get(k).and_then(|f| f.frame.object(o.uid)).filter(|x| x.figure == o.figure).map(|x| relative_of(x)));
         angles[i] = if parent == u32::MAX {
             relative
         } else {
