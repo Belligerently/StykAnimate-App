@@ -11,7 +11,7 @@
  */
 
 /** Per-pose fields the engine does not evaluate yet. */
-const POSE_FIELDS = ['_stykIK', '_stykSpatial', '_stykAnimationOrigin', '_sticknodesSprite', '_stykVfx', '_stykVfxScope', 'color_transition'];
+const POSE_FIELDS = ['_stykSpatial', '_stykAnimationOrigin', '_sticknodesSprite', '_stykVfx', '_stykVfxScope', 'color_transition'];
 
 function figureReason(figure, depth) {
   const styk = figure._styk;

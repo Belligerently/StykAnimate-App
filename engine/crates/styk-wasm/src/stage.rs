@@ -52,7 +52,14 @@ impl Stage {
             .map_err(js_error)?;
         let capabilities = surface.get_capabilities(&adapter);
         let format = capabilities.formats.iter().copied().find(|f| !f.is_srgb()).or(capabilities.formats.first().copied()).ok_or_else(|| js_error("the canvas has no surface format"))?;
-        let alpha_mode = if capabilities.alpha_modes.contains(&wgpu::CompositeAlphaMode::PreMultiplied) { wgpu::CompositeAlphaMode::PreMultiplied } else { capabilities.alpha_modes[0] };
+        // The pasteboard around the document is the page showing through. Every WebGPU canvas
+        // supports premultiplied alpha, but wgpu's WebGPU backend lists only opaque (which
+        // presented the pasteboard black).
+        let alpha_mode = if info.backend == wgpu::Backend::BrowserWebGpu || capabilities.alpha_modes.contains(&wgpu::CompositeAlphaMode::PreMultiplied) {
+            wgpu::CompositeAlphaMode::PreMultiplied
+        } else {
+            capabilities.alpha_modes[0]
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
