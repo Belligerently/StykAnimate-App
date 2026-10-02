@@ -9,7 +9,7 @@
 //
 //   node scripts/engine-app-parity.mjs [--file <project>] [--ticks 0,10,20] [--onion] [--play]
 //        [--target web|electron] [--renderer canvas|gpu] [--label <name>] [--url http://127.0.0.1:47831]
-//        [--out <dir>] [--require-engine] [--width 1440 --height 900]
+//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4]
 //
 // Without --file it uses the document the app starts with. The web target runs
 // headless Chromium, where the JavaScript renderer is its Canvas 2D fallback;
@@ -33,6 +33,8 @@ const flag = name => args.includes(name);
 const file = option('--file'), label = option('--label', file ? path.basename(file).replace(/[^\w.-]+/g, '-').toLowerCase() : 'startup');
 const out = path.resolve(option('--out', `artifacts/engine-rust/parity/app/${label}`));
 const ticks = option('--ticks')?.split(',').map(Number) ?? null;
+/** Zoom levels relative to "fit", each a set of steps (the app's own zoom action, 1.2× per step). */
+const zooms = option('--zoom')?.split(',').map(Number) ?? [1];
 const size = {width: Number(option('--width', 1440)), height: Number(option('--height', 900))};
 const target = option('--target', 'web');
 const SETTINGS = {theme: 'light', locale: 'en', uiScale: 100, showHandles: false};
@@ -139,10 +141,19 @@ async function capture(browser, origin, engine) {
     steps.push({name, picture, ...state});
   };
   const list = ticks ?? [...new Set([0, Math.floor(total / 4), Math.floor(total / 2), Math.floor(3 * total / 4), total - 1])].filter(tick => tick >= 0 && tick < total);
-  for (const tick of list) {
-    await page.evaluate(tick => styk.editor.seek(tick), tick);
-    await shoot(`tick-${tick}`);
+  for (const zoom of zooms) {
+    // The zoom action multiplies the scale by 1.2 (zoom-out divides): the nearest whole number of steps.
+    await page.evaluate(async zoom => {
+      styk.fit();
+      const steps = Math.round(Math.log(zoom) / Math.log(1.2));
+      for (let i = 0; i < Math.abs(steps); i++) await styk.actions[steps > 0 ? 'zoom-in' : 'zoom-out']();
+    }, zoom);
+    for (const tick of list) {
+      await page.evaluate(tick => styk.editor.seek(tick), tick);
+      await shoot(zoom === 1 ? `tick-${tick}` : `zoom-${zoom}-tick-${tick}`);
+    }
   }
+  await page.evaluate(() => styk.fit());
   if (flag('--onion')) {
     await page.evaluate(async () => { if (!styk.state.onion) await styk.actions['toggle-onion'](); });
     for (const tick of list) {
