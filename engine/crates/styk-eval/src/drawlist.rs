@@ -147,12 +147,16 @@ impl<'a> Ctx<'a> {
     /// Brush of a segment: paint, two-colour gradient, or solid colour.
     ///
     /// An onion skin's tint replaces the item's colour and drops its secondary
-    /// colour, but a custom paint keeps its own colours, as the editor's styled
-    /// onion drawables do (`onion-skin.mjs` sets `rgb` and clears `secondary` only).
+    /// colour, but a custom gradient keeps its own colours, as the editor's styled
+    /// onion drawables do (`onion-skin.mjs` sets `rgb` and clears `secondary` only;
+    /// a solid paint is drawn in `rgb`, `paintFor` in renderer-geometry.mjs).
     fn brush(&self, out: &mut Out, it: &Item, outline: bool) -> (u32, u32) {
         let seg = &self.figure(it).segments[it.index as usize];
         let solid = rgba8(self.tint.unwrap_or(it.rgb), it.alpha);
         if outline || it.color >> 24 == 255 || it.flags & crate::geometry::ITEM_SOLID != 0 {
+            return (solid, NO_PAINT);
+        }
+        if self.tint.is_some() && seg.paint.as_ref().is_some_and(|paint| paint.kind == PaintKind::Solid || paint.stops.len() == 1) {
             return (solid, NO_PAINT);
         }
         let secondary = if self.tint.is_some() { None } else { seg.secondary };
