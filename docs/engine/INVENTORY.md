@@ -78,7 +78,7 @@ Engine logic: ported to Rust.
 | `src/demo.mjs` | `styk-edit` | js |  |
 | `src/editor-animation.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-audio.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); transactions and property-channel commits still JS |
+| `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |

@@ -69,6 +69,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
 | `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, inverse kinematics, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
+| `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go | yes, on a layer sheet; not for movieclip instances or several figures at once | figures-sheet, figures-layers-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
 | flipping a branch, everything else | no: `Unported` | transform-native |
 
@@ -99,9 +100,14 @@ What the facade must still account for before it calls the engine (none of it is
 document difference the harness can see):
 
 - **Counters and settings the document does not carry**: the layer revision named by
-  events, the number of the next pose source, auto key, and the layer hints of the last
-  published poses. The engine keeps them across its own calls; the facade hands them over
-  when it starts from the editor's state (`set_counters`, `Options::auto_key`).
+  events, the number of the next pose source, the next figure identity, auto key, and
+  the layer hints of the last published poses. The engine keeps them across its own
+  calls; the facade hands them over when it starts from the editor's state
+  (`set_counters`, `Options::auto_key`).
+- **How many poses hold each figure** (`_layerUidCounts`, `_layerSeenUids`) decides
+  whether a command adds one more layer revision (a figure appears or disappears
+  altogether). The engine counts them from the document when first needed; the editor's
+  set of figures *ever seen* can be larger after figures were deleted and collected.
 - **Layer focus locks and the timeline's layer selection** (`_sheetSelection`) are
   runtime state of the JavaScript editor; the facade runs selection and seeking in
   JavaScript while either is on.

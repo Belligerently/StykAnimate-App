@@ -44,7 +44,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         Selection { uid: selected, uids, joint: state.get("selectedJoint").and_then(Value::as_f64).unwrap_or(-1.0) as i64 },
     );
     let counter = |key: &str| state.get(key).and_then(Value::as_f64).unwrap_or(0.0) as u64;
-    editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"));
+    editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"), counter("nextUid"));
     let mut outcome = Outcome { scenario: reference.get("scenario").and_then(Value::as_str).unwrap_or("").to_string(), steps: steps.len() - 1, ..Outcome::default() };
     if editor.report_json() != expected {
         outcome.mismatches.push("step 0: the loaded document does not survive the engine's store byte for byte".into());
@@ -123,6 +123,7 @@ fn state_value(editor: &Editor) -> Value {
     object.set("dirty", Value::Bool(state.dirty));
     object.set("layerRevision", Value::Num(state.layer_revision as f64));
     object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
+    object.set("nextUid", Value::Num(state.next_uid as f64));
     Value::object(object)
 }
 

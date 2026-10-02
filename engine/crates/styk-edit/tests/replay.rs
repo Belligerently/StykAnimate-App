@@ -9,6 +9,8 @@ const PORTED: &[&str] = &[
     "move-sheet", "gestures-sheet", "autokey-sheet", "layers-sheet", "locked-sheet", "movieclip-sheet", "movieclip-loose-sheet",
     // Keys and frames of the layer timeline.
     "keys-sheet", "frames-sheet", "frames-movieclip-sheet", "frames-timed-clip-sheet",
+    // Commands that draft the whole frame.
+    "figures-sheet", "figures-layers-sheet",
 ];
 
 #[test]

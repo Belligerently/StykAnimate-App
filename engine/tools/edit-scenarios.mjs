@@ -189,3 +189,14 @@ scenario('frames-movieclip-sheet', app, [
     ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'],
   ], 'sheet-movieclip-timed.document.json');
 }
+// Commands that draft the whole frame on a sheet: joins, duplicates and deletions.
+scenario('figures-sheet', app, [
+  ['@seek', 2], ['@select', 3, -1], ['unjoinFigure'], ['joinTo', 1, 22], ['joinFigure', null], ['joinTo', 3, 0], ['joinTo', 2, 99], ['joinTo', 2, 11],
+  ['@select', 2, -1], ['joinTo', 3, 0], ['duplicateFigure'], ['moveSelection', 10, -30], ['duplicateFigure'], ['undo'], ['@seek', 4], ['@select', 1, -1], ['rotateSelection', 0.2],
+  ['@select', 2, -1], ['deleteSelection'], ['undo'], ['@select', 1, -1], ['deleteFigure'], ['selectMany', [2, 3]], ['deleteSelection'], ['deleteSelection'],
+  ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'], ['redo'], ['redo'],
+], 'joined-chain.document.json');
+scenario('figures-layers-sheet', app, [
+  ['@seek', 3], ['@select', 3, -1], ['duplicateFigure'], ['@select', 3, -1], ['unjoinFigure'], ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 3, 11],
+  ['selectMany', [1, 3]], ['deleteSelection'], ['undo'], ['undo'], ['@seek', 5], ['@select', 2, 1], ['rotateJoint', 0.3], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+], 'sheet-layers.document.json');

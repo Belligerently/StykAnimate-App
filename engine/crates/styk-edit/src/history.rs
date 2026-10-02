@@ -42,13 +42,15 @@ pub(crate) enum Direction {
 impl Editor {
     /// `_record`: a new revision, pushed to undo; redo is cleared, and pose sources
     /// only a dropped redo branch used are collected.
-    pub(crate) fn record(&mut self, mut command: Command) {
+    pub(crate) fn record(&mut self, mut command: Command) -> Result<(), EditError> {
         if let CommandKind::LayerSheet { sources, .. } = &command.kind {
             for (id, _) in sources {
                 if !self.generated_sources.contains(id) {
                     self.generated_sources.push(id.clone());
                 }
             }
+            let frames: Vec<Value> = sources.iter().map(|(_, frame)| frame.clone()).collect();
+            self.track_frames(&[], &frames, true)?;
         }
         let collect = !self.redo.is_empty();
         command.before_revision = self.revision;
@@ -65,6 +67,7 @@ impl Editor {
         if collect || trimmed {
             self.prune_frame_sources();
         }
+        Ok(())
     }
 
     pub(crate) fn undo(&mut self) -> Result<bool, EditError> {

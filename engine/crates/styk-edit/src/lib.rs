@@ -13,6 +13,7 @@
 //! answers [`EditError::Unported`], so a facade knows to run it in JavaScript.
 
 mod authored;
+mod figures;
 mod frame;
 mod history;
 mod pose;
@@ -77,6 +78,8 @@ pub(crate) struct Authored {
     /// The evaluated frame the gesture started from.
     pub source: Value,
     pub tick: f64,
+    /// A command's draft of the whole frame (`transaction`): figures may come and go.
+    pub transaction: bool,
 }
 
 pub struct Editor {
@@ -101,6 +104,12 @@ pub struct Editor {
     pub(crate) layer_revision: u64,
     /// `editor._nextFrameIdentity`: the number of the next pose source (`frame-N`).
     pub(crate) next_frame_identity: u64,
+    /// `editor._nextUid`: the unique id of the next new figure.
+    pub(crate) next_uid: u64,
+    /// How many poses hold each figure, over the keyframes and the pose sources
+    /// (`_layerUidCounts`), and every figure seen so far (`_layerSeenUids`). Read
+    /// from the document when first needed, then kept with every command.
+    pub(crate) uid_counts: Option<(HashMap<u32, i64>, std::collections::HashSet<u32>)>,
     /// `auto_key` of [`Options`], which the app may change between calls.
     pub(crate) auto_key: bool,
     /// Pose sources this session captured, in order (`_generatedFrameSources`).
@@ -132,6 +141,7 @@ pub struct State {
     pub dirty: bool,
     pub layer_revision: u64,
     pub next_frame_identity: u64,
+    pub next_uid: u64,
 }
 
 /// Everything a call may change, to put back when it turns out not to be ported.
@@ -145,7 +155,8 @@ struct Snapshot {
     retained: Option<Value>,
     undo: Vec<Command>,
     redo: Vec<Command>,
-    counters: [u64; 5],
+    counters: [u64; 6],
+    uid_counts: Option<(HashMap<u32, i64>, std::collections::HashSet<u32>)>,
     generated_sources: Vec<String>,
     new_layer_hints: HashMap<u32, String>,
     events: usize,
@@ -173,6 +184,8 @@ impl Editor {
             revision_serial: 0,
             layer_revision: 0,
             next_frame_identity,
+            next_uid: 1,
+            uid_counts: None,
             auto_key: options.auto_key,
             generated_sources: Vec::new(),
             source_table_was_present,
@@ -192,10 +205,11 @@ impl Editor {
     }
 
     /// The editor's counters that the document does not carry: the layer revision
-    /// its events name and the number of the next pose source.
-    pub fn set_counters(&mut self, layer_revision: u64, next_frame_identity: u64) {
+    /// its events name, the number of the next pose source and the next figure identity.
+    pub fn set_counters(&mut self, layer_revision: u64, next_frame_identity: u64, next_uid: u64) {
         self.layer_revision = layer_revision;
         self.next_frame_identity = next_frame_identity;
+        self.next_uid = next_uid;
     }
 
     pub fn report(&self) -> &Value {
@@ -225,6 +239,7 @@ impl Editor {
             dirty: self.revision != self.saved_revision || self.drag.as_ref().is_some_and(|d| d.changed),
             layer_revision: self.layer_revision,
             next_frame_identity: self.next_frame_identity,
+            next_uid: self.next_uid,
         }
     }
 
@@ -250,7 +265,8 @@ impl Editor {
             retained: self.retained.clone(),
             undo: self.undo.clone(),
             redo: self.redo.clone(),
-            counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity],
+            counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid],
+            uid_counts: self.uid_counts.clone(),
             generated_sources: self.generated_sources.clone(),
             new_layer_hints: self.new_layer_hints.clone(),
             events: self.events.len(),
@@ -267,7 +283,8 @@ impl Editor {
         self.retained = snapshot.retained;
         self.undo = snapshot.undo;
         self.redo = snapshot.redo;
-        [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity] = snapshot.counters;
+        [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid] = snapshot.counters;
+        self.uid_counts = snapshot.uid_counts;
         self.generated_sources = snapshot.generated_sources;
         self.new_layer_hints = snapshot.new_layer_hints;
         self.events.truncate(snapshot.events);
@@ -320,6 +337,11 @@ impl Editor {
             "sheetRemoveFrames" => self.sheet_remove_frames(&arg(0), number(1), &arg(2)).map(Value::Bool),
             "sheetSetDuration" => self.sheet_set_duration(number(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetAppendFrame" => self.sheet_append_frame(&arg(0)),
+            "joinTo" => self.join_to(arg(0).as_f64(), &arg(1)).map(Value::Bool),
+            "unjoinFigure" => self.unjoin_figure().map(Value::Bool),
+            "joinFigure" => if arg(0).is_null() { self.unjoin_figure() } else { self.join_to(arg(0).as_f64(), &arg(1)) }.map(Value::Bool),
+            "deleteSelection" | "deleteFigure" => self.delete_selection().map(Value::Bool),
+            "duplicateFigure" => self.duplicate_figure(),
             "undo" => self.undo().map(Value::Bool),
             "redo" => self.redo().map(Value::Bool),
             other => Err(EditError::Unported(other.to_string())),

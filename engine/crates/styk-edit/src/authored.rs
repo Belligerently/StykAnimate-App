@@ -27,7 +27,7 @@ impl Editor {
         // what is joined to them, and leaves what they are joined to in place.
         let connected = resolve_join_selection(&objects, &self.selection.uids, true)?;
         let slots = if translation { connected } else { resolve_join_selection(&objects, &self.selection.uids, false)? };
-        self.authored = Some(Authored { frame: source.clone(), source, tick: self.tick });
+        self.authored = Some(Authored { frame: source.clone(), source, tick: self.tick, transaction: false });
         self.drag = Some(Drag {
             label: label.to_string(),
             translation,
@@ -44,9 +44,14 @@ impl Editor {
     /// `commitAuthoredPoseDrag`: nothing changed, or the draft goes to the layer sheet.
     pub(crate) fn commit_authored_drag(&mut self) -> Result<bool, EditError> {
         let (Some(drag), Some(edit)) = (self.drag.as_ref(), self.authored.as_ref()) else { return Ok(false) };
-        let ids: Vec<u32> = drag.before.iter().filter_map(uid).collect();
+        let mut ids: Vec<u32> = drag.before.iter().filter_map(uid).collect();
+        if edit.transaction {
+            ids.extend(objects_of(&edit.frame).iter().filter_map(uid).filter(|u| !ids.contains(u)).collect::<Vec<_>>());
+        }
         let after: Vec<Value> = objects_of(&edit.frame).into_iter().filter(|o| uid(o).is_some_and(|u| ids.contains(&u))).collect();
-        if same(&drag.before, &after) {
+        // A gesture compares the figures it took; a command's draft, the whole frame.
+        let unchanged = if edit.transaction { same(std::slice::from_ref(&edit.source), std::slice::from_ref(&edit.frame)) } else { same(&drag.before, &after) };
+        if unchanged {
             self.drag = None;
             self.authored = None;
             self.retained = None;
@@ -76,6 +81,43 @@ impl Editor {
             }
         }
         self.commit_sheet_pose()
+    }
+
+    /// `transaction(label, mutate)` on a layer sheet (`_authoredTransaction`): `mutate`
+    /// changes a draft of the whole frame on show, figures included, which commits
+    /// through the sheet like a gesture.
+    pub(crate) fn transaction(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        if !self.sheet() {
+            return Err(EditError::Unported(format!("{label} on a native timeline")));
+        }
+        if self.tick.fract() != 0.0 {
+            self.tick = (self.tick + 0.5).floor();
+        }
+        let source = self.shown_frame()?;
+        self.authored = Some(Authored { frame: source.clone(), source: source.clone(), tick: self.tick, transaction: true });
+        self.drag = Some(Drag {
+            label: label.to_string(),
+            translation: false,
+            index: self.frame_index,
+            before: objects_of(&source),
+            before_selection: self.selection_state(),
+            changed: false,
+            detached: HashMap::new(),
+            authored: true,
+        });
+        let result = mutate(self).and_then(|()| self.commit_authored_drag());
+        if result.is_err() {
+            self.cancel_authored_drag()?;
+        }
+        result
+    }
+
+    /// The draft's frame record, to change (`this.frame` inside a transaction).
+    pub(crate) fn draft_mut(&mut self) -> Option<&mut styk_doc::Obj> {
+        self.authored.as_mut()?.frame.make_obj()
     }
 
     /// `cancelAuthoredPoseDrag`: the draft is dropped; the document was never touched.
