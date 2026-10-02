@@ -88,6 +88,65 @@ pub struct Group {
     pub opacity: f32,
     /// World-space bounds (x0, y0, x1, y1) of everything drawn in the group.
     pub bounds: [f32; 4],
+    /// Index into [`DrawList::layers`] when the group is drawn on a raster of its own
+    /// (effects, or artwork holding effects), or [`NO_LAYER`].
+    pub layer: u32,
+}
+
+/// [`Group::layer`] of a group without a raster of its own.
+pub const NO_LAYER: u32 = u32::MAX;
+
+/// The effects a layer runs, as the encoder resolved them (`styk_eval`'s
+/// `Vec<Arc<vfx::Effect>>`). The format does not interpret them: a renderer that
+/// filters downcasts them, one that does not ignores them.
+pub type Effects = std::sync::Arc<dyn std::any::Any + Send + Sync>;
+
+/// A group drawn the way the editor draws artwork with effects: on its own
+/// raster, filtered, then composited (docs/engine/vfx.md, Rendering).
+#[derive(Clone)]
+pub struct EffectLayer {
+    /// Filters run in order; `None` for a layer that only holds filtered artwork.
+    pub effects: Option<Effects>,
+    pub kind: LayerKind,
+}
+
+impl std::fmt::Debug for EffectLayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EffectLayer").field("filtered", &self.effects.is_some()).field("kind", &self.kind).finish()
+    }
+}
+
+/// The scene camera as the camera image applies it (`Camera` in styk_eval::doc).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CameraPose {
+    pub x: f64,
+    pub y: f64,
+    pub scale: f64,
+    pub angle: f64,
+    pub is_default: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LayerKind {
+    /// Top-level artwork (an object, a movieclip instance or a connected run)
+    /// rasterized on a world-aligned grid anchored at `bounds`, at the editor's
+    /// raster density for the view (`rasterObject`), then resampled.
+    Entry {
+        /// `objectBounds` with every effect's padding: x, y, width, height (world units).
+        bounds: [f64; 4],
+        /// The effects' coordinate domain: `objectBounds` without effect padding.
+        domain: [f64; 4],
+        /// What effect sizes are multiplied by (the owner's absolute scale).
+        scale: f64,
+        /// The largest effect padding of one item, which caps the raster density.
+        padding: f64,
+    },
+    /// Artwork inside an entry, filtered on the entry's own pixel grid (`withVfx`).
+    Nested { bounds: [f64; 4], domain: [f64; 4], scale: f64 },
+    /// The camera image: everything but onion skins, drawn through the scene's
+    /// camera at the camera preview's density, filtered, then projected onto the
+    /// camera rectangle (`CameraVfx`). `canvas` is the scene's size.
+    Camera { canvas: [u32; 2], camera: Option<CameraPose> },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -108,11 +167,17 @@ pub struct DrawList {
     pub passes: Vec<Pass>,
     /// Number of leading root prims that are background fills (drawn unclipped by figures).
     pub background_prims: u32,
+    /// Raster layers of the groups that have one ([`Group::layer`]).
+    pub layers: Vec<EffectLayer>,
 }
 
 impl DrawList {
     pub fn bytes(&self) -> usize {
-        self.prims.len() * std::mem::size_of::<Prim>() + self.paints.len() * 16 + self.points.len() * 8 + self.groups.len() * 32
+        self.prims.len() * std::mem::size_of::<Prim>()
+            + self.paints.len() * 16
+            + self.points.len() * 8
+            + self.groups.len() * std::mem::size_of::<Group>()
+            + self.layers.len() * (std::mem::size_of::<EffectLayer>() + 64)
     }
 }
 

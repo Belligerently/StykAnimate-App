@@ -1,10 +1,23 @@
 //! One frame: isolation layer passes by round and depth, then the frame pass.
 
 use styk_draw::K_COMPOSITE;
+use styk_eval::drawlist::layer_effects;
 
-use crate::isolation::plan_rounds;
+use crate::effects::executor::{Executor, Frame, Run};
+use crate::effects::{self, plan, Slot};
+use crate::isolation::{page_size, plan_rounds};
 use crate::resources::{buffer, GpuGroup, GpuView};
 use crate::{Renderer, Stats, ViewParams, FORMAT, SAMPLES, UNIFORM_STRIDE};
+
+/// One effect run of a frame: a filtered group's layer at `at` on `page` of its depth's atlas.
+struct Work {
+    round: usize,
+    depth: u32,
+    page: u32,
+    at: [u32; 2],
+    size: [u32; 2],
+    run: Run,
+}
 
 impl Renderer {
     pub(crate) fn ensure_output(&mut self, size: [u32; 2]) {
@@ -63,16 +76,71 @@ impl Renderer {
         }
         let n = list.groups.len();
         let max_depth = list.groups.iter().map(|g| g.depth).max().unwrap_or(0);
-        let rounds = plan_rounds(&list, view, size);
-        let mut placed = vec![GpuGroup::default(); n];
+        // Where every group is drawn for this view (effects::plan), then where it lands in the atlas.
+        let planned = plan::plan(&list, &plan::View {
+            matrix: view.matrix,
+            size,
+            zoom: view.zoom,
+            pan: view.pan,
+            camera_view: view.camera_view,
+            max_texture: self.device.limits().max_texture_dimension_2d,
+        });
+        let sizes: Vec<[u32; 2]> = planned.iter().map(plan::Placement::size).collect();
+        let largest = sizes.iter().skip(1).fold([0u32, 0u32], |a, s| [a[0].max(s[0]), a[1].max(s[1])]);
+        // Pages hold the frame and grow for larger layers (effect layers at the editor's density, the
+        // camera image); after 240 frames that all fit the frame they shrink back to it.
+        let wanted = page_size(size, largest);
+        self.page_small = if wanted == size { self.page_small + 1 } else { 0 };
+        if self.page_frame != size || self.page_small > 240 {
+            self.page_frame = size;
+            self.page = size;
+            self.page_small = 0;
+        }
+        self.page = [self.page[0].max(wanted[0]), self.page[1].max(wanted[1])];
+        let page = self.page;
+        let rounds = plan_rounds(&list, &sizes, page);
+        let mut slots: Vec<Option<Slot>> = vec![None; n];
         for round in &rounds {
-            for &(g, entry) in &round.placed {
-                placed[g] = entry;
+            for &(g, slot) in &round.placed {
+                slots[g] = Some(slot);
             }
+        }
+        let mut placed = vec![GpuGroup::default(); n];
+        let mut matrices: Vec<plan::Affine> = vec![view.matrix; n];
+        for g in 1..n {
+            let (record, matrix) = effects::record(&planned[g], matrices[list.groups[g].parent as usize], slots[g]);
+            placed[g] = GpuGroup(record);
+            matrices[g] = matrix;
         }
         let downscaled = rounds.iter().any(|round| round.downscaled);
         if self.groups.write(&self.device, &self.queue, bytemuck::cast_slice(&placed)) {
             self.rebind();
+        }
+        // Effect runs: recorded now (their uniforms are written once), encoded after their depth's layer pass.
+        let mut work: Vec<Work> = Vec::new();
+        if list.layers.iter().any(|layer| layer.effects.is_some()) {
+            let executor = self.executor.get_or_insert_with(|| Executor::new(&self.device));
+            executor.begin();
+            let mut biggest = [0u32, 0u32];
+            for (r, round) in rounds.iter().enumerate() {
+                for &(g, slot) in &round.placed {
+                    let Some(filter) = planned[g].filter else { continue };
+                    let stack = list.layers.get(list.groups[g].layer as usize).map_or(&[][..], layer_effects);
+                    if stack.is_empty() {
+                        continue;
+                    }
+                    let s = sizes[g];
+                    let at = [(s[0] as f64 * slot.scale).ceil().max(1.0) as u32, (s[1] as f64 * slot.scale).ceil().max(1.0) as u32];
+                    let f = effects::scaled(filter, slot.scale);
+                    let run = executor.record(stack, Frame { scale: f.scale, origin: f.origin, output_size: f.output_size }, at);
+                    biggest = [biggest[0].max(at[0]), biggest[1].max(at[1])];
+                    work.push(Work { round: r, depth: list.groups[g].depth, page: slot.page, at: [slot.offset[0] as u32, slot.offset[1] as u32], size: at, run });
+                }
+            }
+            executor.prepare(&self.device, &self.queue, biggest);
+        } else if let Some(executor) = &mut self.executor {
+            executor.begin();
+            executor.prepare(&self.device, &self.queue, [0, 0]);
         }
         // Each group's prims are one run inside its depth's pass (the encoder emits them by group).
         let mut runs = vec![(u32::MAX, 0u32); n];
@@ -101,15 +169,15 @@ impl Renderer {
             }
         }
         let root = list.passes.iter().find(|p| p.depth == 0).map(|p| (p.start, p.end)).unwrap_or((0, 0));
-        let slots = passes.len() as u64 + 1;
-        if slots > self.uniform_slots {
-            self.uniform_slots = slots.next_power_of_two();
+        let slots_needed = passes.len() as u64 + 1;
+        if slots_needed > self.uniform_slots {
+            self.uniform_slots = slots_needed.next_power_of_two();
             self.uniforms = buffer(&self.device, "styk views", UNIFORM_STRIDE * self.uniform_slots, wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
             self.rebind();
         }
-        let mut uniform_data = vec![0u8; (UNIFORM_STRIDE * slots) as usize];
-        for (i, &(_, depth, page, _, _)) in passes.iter().enumerate() {
-            let v = view.gpu([size[0] as f32, size[1] as f32, page as f32, depth as f32]);
+        let mut uniform_data = vec![0u8; (UNIFORM_STRIDE * slots_needed) as usize];
+        for (i, &(_, depth, page_index, _, _)) in passes.iter().enumerate() {
+            let v = view.gpu([page[0] as f32, page[1] as f32, page_index as f32, depth as f32]);
             let o = i * UNIFORM_STRIDE as usize;
             uniform_data[o..o + std::mem::size_of::<GpuView>()].copy_from_slice(bytemuck::bytes_of(&v));
         }
@@ -121,7 +189,7 @@ impl Renderer {
         for depth in 1..=max_depth {
             let pages = rounds.iter().map(|round| round.pages_per_depth[depth as usize]).max().unwrap_or(0);
             if pages > 0 {
-                self.ensure_layers(depth as usize % 2, size, pages);
+                self.ensure_layers(depth as usize % 2, page, pages);
             }
         }
         // Where the frame stops for the next round: before the first composite of a group the next round draws.
@@ -146,37 +214,50 @@ impl Renderer {
         let bind0 = self.bind0.clone().unwrap();
         let mut from = root.0 + bg;
         for (r, _) in rounds.iter().enumerate() {
-            for (i, &(round, depth, page, start, end)) in passes.iter().enumerate() {
-                if round != r {
-                    continue;
+            for depth in (1..=max_depth).rev() {
+                for (i, &(round, pass_depth, page_index, start, end)) in passes.iter().enumerate() {
+                    if round != r || pass_depth != depth {
+                        continue;
+                    }
+                    let parity = depth as usize % 2;
+                    let target = self.layers[parity].texture.create_view(&wgpu::TextureViewDescriptor {
+                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        base_array_layer: page_index,
+                        array_layer_count: Some(1),
+                        ..Default::default()
+                    });
+                    let msaa = Self::msaa(&self.device, &mut self.msaa_layer, page);
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("styk layer pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &msaa,
+                            depth_slice: None,
+                            resolve_target: Some(&target),
+                            ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Discard },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    pass.set_pipeline(&self.pipeline);
+                    pass.set_bind_group(0, &bind0, &[(i as u64 * UNIFORM_STRIDE) as u32]);
+                    pass.set_bind_group(1, &self.sprite_bind, &[]);
+                    pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
+                    pass.set_vertex_buffer(0, self.prims.slice(..));
+                    pass.draw(0..6, start..end);
                 }
-                let parity = depth as usize % 2;
-                let target = self.layers[parity].texture.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    base_array_layer: page,
-                    array_layer_count: Some(1),
-                    ..Default::default()
-                });
-                let msaa = Self::msaa(&self.device, &mut self.msaa_layer, size);
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("styk layer pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &msaa,
-                        depth_slice: None,
-                        resolve_target: Some(&target),
-                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Discard },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(0, &bind0, &[(i as u64 * UNIFORM_STRIDE) as u32]);
-                pass.set_bind_group(1, &self.sprite_bind, &[]);
-                pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
-                pass.set_vertex_buffer(0, self.prims.slice(..));
-                pass.draw(0..6, start..end);
+                // The filtered groups of this depth, before the next depth composites them.
+                if let Some(executor) = &mut self.executor {
+                    let atlas = &self.layers[depth as usize % 2].texture;
+                    for w in work.iter().filter(|w| w.round == r && w.depth == depth) {
+                        let extent = wgpu::Extent3d { width: w.size[0], height: w.size[1], depth_or_array_layers: 1 };
+                        let place = wgpu::TexelCopyTextureInfo { texture: atlas, mip_level: 0, origin: wgpu::Origin3d { x: w.at[0], y: w.at[1], z: w.page }, aspect: wgpu::TextureAspect::All };
+                        encoder.copy_texture_to_texture(place, executor.slot_texture(&self.device, 0).as_image_copy(), extent);
+                        executor.encode(&self.device, encoder, &w.run);
+                        encoder.copy_texture_to_texture(executor.slot_texture(&self.device, w.run.result).as_image_copy(), place, extent);
+                    }
+                }
             }
             // The frame, up to the next round's first composite. The multisampled frame is kept between rounds.
             let last = r + 1 == rounds.len();
@@ -228,7 +309,20 @@ impl Renderer {
             }
             from = until;
         }
-        self.stats = Stats { prims: list.prims.len() as u32, groups: n as u32 - 1, passes: passes.len() as u32 + rounds.len() as u32, downscaled, rounds: rounds.len() as u32 };
+        let fx = self.executor.as_ref().map(|e| e.stats).unwrap_or_default();
+        // An atlas always has two layers at least (resources::array_texture).
+        let layer_bytes = self.layers.iter().map(|a| a.size[0] as u64 * a.size[1] as u64 * 4 * a.pages.max(2) as u64).sum();
+        self.stats = Stats {
+            prims: list.prims.len() as u32,
+            groups: n as u32 - 1,
+            passes: passes.len() as u32 + rounds.len() as u32,
+            downscaled,
+            rounds: rounds.len() as u32,
+            effect_layers: fx.layers,
+            effect_passes: fx.passes,
+            effect_bytes: fx.slot_bytes,
+            layer_bytes,
+        };
     }
 
     fn clear_only(&mut self, encoder: &mut wgpu::CommandEncoder, view: &ViewParams) {

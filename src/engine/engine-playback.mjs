@@ -128,7 +128,12 @@ export function createStagePlayback(legacy, {stage}) {
       return packetFor(tick) !== null;
     },
     setInteractionActive(active) { return legacy.setInteractionActive(active); },
-    setVfxEnabled(enabled) { return legacy.setVfxEnabled(enabled); },
+    setVfxEnabled(enabled) {
+      // The engine's prepared frames are kept with or without effects, as the editor's preview shows them.
+      const engine = side();
+      if (engine) { engine.engine.handle.set_effects(enabled !== false); if (engineMode) dropPackets(); }
+      return legacy.setVfxEnabled(enabled);
+    },
     stageNativeSnapshot(...args) { return engineMode ? false : legacy.stageNativeSnapshot(...args); },
     discardNativeSnapshot() { return legacy.discardNativeSnapshot(); },
     // Planning jobs still run on the JavaScript mirror: load it only when one is asked for.

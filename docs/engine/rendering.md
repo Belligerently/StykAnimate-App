@@ -11,6 +11,9 @@ independent: pan and zoom change one uniform. Kinds (`K_*`) and flags (`F_*`)
 are documented on their constants. Isolation `Group`s (translucent figures,
 outlines, onion skins) draw into layers composited by a `K_COMPOSITE` record
 at their place in the parent's painter order; group ids are given depth first.
+A group whose artwork is filtered has a raster **layer** (`Group::layer` into
+`DrawList::layers`, an `EffectLayer`): the rectangles the editor filters on and
+the effect stack, opaque to the format ([vfx.md](vfx.md#rendering)).
 Paint records live in `DrawList::paints`; `sample_paint` is the reference
 evaluation every renderer reproduces.
 
@@ -19,13 +22,13 @@ evaluation every renderer reproduces.
 | Module | Holds |
 | --- | --- |
 | `pipeline.rs` | the one WGSL pipeline (`prim.wgsl`) for every kind, bind layouts ([D8](decisions/0008-renderer-without-storage-buffers.md)) |
-| `frame.rs` | one frame: isolation layer passes by round and depth, then the frame pass (MSAA ×4, resolved once) |
-| `isolation.rs` | the layer atlas (8 pages of frame size, two for depth parity) and `plan_rounds`: layers that do not fit render in full-resolution rounds, the frame drawn between rounds |
+| `frame.rs` | one frame: isolation layer passes by round and depth, each depth's effect stacks after its passes, then the frame pass (MSAA ×4, resolved once) |
+| `isolation.rs` | the layer atlas (8 pages of at least the frame's size, grown for larger effect layers, two for depth parity) and `plan_rounds`: layers that do not fit render in full-resolution rounds, the frame drawn between rounds |
 | `images.rs` | the sprite atlas (texture array of 4,096² pages laid out by `styk_eval::assets`), uploads of decoded images and drawing tiles |
 | `resources.rs` | GPU record layouts, lookup tables in float textures, buffers |
 | `present.rs` | copy into the host's surface, read-back |
 | `view.rs` | world → output transform, artboard |
-| `effects/` | effect passes (in progress, [vfx.md](vfx.md)) |
+| `effects/` | effect layers ([vfx.md](vfx.md#rendering)): `plan.rs` places each group for the view (density, crop, composite), `mod.rs` writes its group record, `executor.rs` and `passes.wgsl` run effect stacks on pooled slots |
 
 Drawing cels: every display level's tiles are in the list; the vertex shader
 keeps the level `floor(-log2(pixels per cel pixel))` (0–8) and the fragment
@@ -34,7 +37,7 @@ borders (each atlas slot carries its neighbours' edge texels; halo tiles fade
 past the last tile), as the editor's GPU drawing display does.
 
 Invariants: no per-frame allocation in steady state; the no-effect path draws
-one pass per depth and round; WebGL2 limits (no storage buffers, one sampler
+one pass per depth and round and creates no effect resource; WebGL2 limits (no storage buffers, one sampler
 per texture, array textures of at least two layers, [D11](decisions/0011-array-textures-two-layers.md)).
 
 ## CPU (`styk-raster`)
@@ -53,7 +56,10 @@ on the CPU yet.
 where the JavaScript renderer's is and draws the edit frame, onion skins and
 prepared playback frames for documents the engine supports
 ([D4](decisions/0004-strangler-gate.md)). The WebGPU surface is configured with
-premultiplied alpha so the page shows through the pasteboard.
+premultiplied alpha so the page shows through the pasteboard. Filter effects are
+drawn by the engine; the effects preview switch reaches it through
+`Stage::set_effects` and `EngineHandle::set_effects`. Documents with generated
+effects keep the JavaScript renderer.
 
 ## Testing
 

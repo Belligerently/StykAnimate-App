@@ -9,7 +9,7 @@
 //
 //   node scripts/engine-app-parity.mjs [--file <project>] [--ticks 0,10,20] [--onion] [--play]
 //        [--target web|electron] [--renderer canvas|gpu] [--label <name>] [--url http://127.0.0.1:47831]
-//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4]
+//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4] [--no-effects] [--no-onion]
 //
 // Without --file it uses the document the app starts with. The web target runs
 // headless Chromium, where the JavaScript renderer is its Canvas 2D fallback;
@@ -141,6 +141,10 @@ async function capture(browser, origin, engine) {
     steps.push({name, picture, ...state});
   };
   const list = ticks ?? [...new Set([0, Math.floor(total / 4), Math.floor(total / 2), Math.floor(3 * total / 4), total - 1])].filter(tick => tick >= 0 && tick < total);
+  // --no-effects: the effects preview off in both runs (what differs without effects is not theirs).
+  if (flag('--no-effects')) await page.evaluate(() => { if (styk.state.vfxEnabled) document.getElementById('vfx-preview').click(); });
+  // --no-onion: onion skins (on when the app starts) off in both runs.
+  if (flag('--no-onion')) await page.evaluate(async () => { if (styk.state.onion) await styk.actions['toggle-onion'](); });
   for (const zoom of zooms) {
     // The zoom action multiplies the scale by 1.2 (zoom-out divides): the nearest whole number of steps.
     await page.evaluate(async zoom => {
