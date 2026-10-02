@@ -221,7 +221,7 @@ impl Loader {
         if version < 5
             && let Some(delay) = num(d, "frame_delay_ms").filter(|&v| v > 0.0)
         {
-            fps = crate::piv::round_half_even(1000.0 / delay);
+            fps = round_half_even(1000.0 / delay);
         }
         let styk = d.get("_styk").cloned().unwrap_or(Value::Null);
         let mut figures = Vec::new();
@@ -926,4 +926,17 @@ pub fn playback(p: &Value) -> Arc<MovieclipPlayback> {
             .filter_map(|k| Some((num(k, "tick")?, num(k, "offset")?)))
             .collect(),
     })
+}
+
+/// Rounds half to even (Python's `round`, which the Pivot codec uses for frame rates).
+fn round_half_even(v: f64) -> f64 {
+    let floor = v.floor();
+    let fraction = v - floor;
+    if fraction < 0.5 {
+        floor
+    } else if fraction > 0.5 {
+        floor + 1.0
+    } else {
+        floor + (floor % 2.0).abs()
+    }
 }

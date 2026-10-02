@@ -15,7 +15,6 @@ pub mod load;
 pub mod onion;
 pub mod par;
 pub mod parity;
-pub mod piv;
 pub mod rig;
 pub mod sticknodes;
 pub mod style;
@@ -38,7 +37,7 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-/// Opens any supported file by extension: `.piv`, `.styk`, `.stkz`, `.stykmov`.
+/// Opens any supported file by extension: `.piv`, `.stk`, `.styk`, `.stkz`, `.stykmov`, `.json`.
 pub fn open(path: &Path) -> Result<Document, Error> {
     let bytes = std::fs::read(path)?;
     let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Untitled").to_string();
@@ -48,7 +47,11 @@ pub fn open(path: &Path) -> Result<Document, Error> {
 
 pub fn open_bytes(bytes: &[u8], ext: &str, name: &str) -> Result<Document, Error> {
     match ext {
-        "piv" => piv::decode(bytes, name),
+        // Pivot files decode exactly as the editor imports them (the Rust codec, styk-piv).
+        "piv" | "stk" => {
+            let decoded = styk_piv::decode_document(bytes, &format!("{name}.{ext}"), &|| false).map_err(|e| Error::Format(e.to_string()))?;
+            from_value(&decoded.document, name)
+        }
         "styk" | "stkz" | "stykmov" | "json" => {
             let kind = styk_formats::Kind::from_extension(ext).expect("matched above");
             let decoded = styk_formats::container::decode(bytes, kind).map_err(|e| Error::Format(e.to_string()))?;
