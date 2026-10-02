@@ -353,7 +353,7 @@ src/renderer-raster-cache.mjs	engine	styk-render	js
 src/renderer-raster-capture.mjs	engine	styk-render	js	
 src/renderer-upload.mjs	engine	styk-render	js	
 src/renderer-vector-raster.mjs	engine	styk-render	js	
-src/renderer-vfx-vector.mjs	engine	styk-render	js	
+src/renderer-vfx-vector.mjs	engine	styk-render	partial	Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it
 src/renderer.mjs	engine	styk-render	partial	Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs); every other document still JS
 src/rig-angle-path.mjs	engine	styk-eval::rig	partial	Rust: angle path sampling; authoring still JS
 src/rig-constraints.mjs	engine	styk-eval::rig	partial	Rust: plan and evaluation; authoring helpers still JS
@@ -510,7 +510,7 @@ src/vfx-generator-layers.mjs	engine	styk-eval::generators	js	particle simulation
 src/vfx-generator-styles.mjs	engine	styk-eval::generators	js	particle simulation and looks
 src/vfx-generators.mjs	engine	styk-eval::generators	js	particle simulation and looks
 src/vfx-gizmos.mjs	ui	-	stays	
-src/vfx-gpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-gpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer
 src/vfx-icons.mjs	ui	-	stays	
 src/vfx-inspector.mjs	ui	-	stays	
 src/vfx-key-channel-menu.mjs	ui	-	stays	
@@ -522,12 +522,12 @@ src/vfx-preset-ui.mjs	ui	-	stays
 src/vfx-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
 src/vfx-preview.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
 src/vfx-registry.mjs	engine	styk-eval::vfx	ported	effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags)
-src/vfx-scene.mjs	engine	styk-render::vfx	js	effect executors and surfaces
-src/vfx-shaders.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-scene.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: scene stack over the camera image (effects); Canvas 2D path still JS
+src/vfx-shaders.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: the filter shaders (effects/passes.wgsl); generated effects still JS
 src/vfx-surface.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-user-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
-src/vfx-viewport.mjs	engine	styk-render::vfx	js	effect executors and surfaces
-src/vfx-webgpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
+src/vfx-viewport.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: layer density, crops and resolution caps per view (effects/plan.rs)
+src/vfx-webgpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: every filter pass (styk-render effects/executor.rs, passes.wgsl) on WebGPU, native and WebGL2; still the oracle and the renderer of gated documents
 src/vfx.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS
 src/video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/web-library.mjs	platform	-	stays	file, storage and network services

@@ -238,6 +238,14 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 - **The WebGL2 path is only verified on SwiftShader** (headless Chromium). Playwright's
   Chromium does not display a WebGPU canvas here; Electron does.
 - **Real iOS and iPadOS devices are unverified** for the engine's shared memory: the page now falls back from 2 GiB to 1 GiB and 512 MiB maxima (D14), but the actual limits of Apple devices were not measured.
+- **Effects, open after the GPU port**: generated effects (particles, aura, beams, smoke,
+  explosions) are not drawn by the engine and gate their documents; drawing cels inside
+  an effect layer are sampled bilinearly where the editor uses Canvas 2D smoothing (URIEL 3
+  ticks 61–64 differ by 4–26 solid pixels under blur, bloom and glow); a drawing layer's
+  onion skin is missing in the engine (tick 46); `styk-raster` ignores effect layers (and
+  would draw a scene stack's frame twice); `previewRasterScale` is not followed; effect
+  layers may reach 3,968 px (60 MiB) with two to eight pages per atlas; a still frame can
+  lack a drawing cel until the next redraw because nothing redraws while images decode.
 - **Some evaluation trigonometry is still the platform's** (D16): tweens now go through
   `styk_math::shortest`, but geometry, the IK solver and 3D quaternions use `f64::sin`,
   `cos`, `atan2` and `acos`. Drawn geometry is rounded to single precision and matches;
@@ -325,11 +333,14 @@ deletion of what it replaces once nothing calls it. "Agent" marks items run by a
 **S3, the engine draws every document** (then the JavaScript renderer, playback workers and
 effect executors are deleted):
 
-1. Effects rendering: every filter type as GPU passes on WebGPU and WebGL2 (agent, running).
-2. Generators (particle effects): simulation (`vfx-generator*.mjs`) and drawing.
-3. 3D: spatial poses (`_stykSpatial`), perspective projection, surfaces (culling, depth
-   order, depth-tested faces), figure meshes (skinning, view targets), movieclip meshes,
-   depth-tested rendering with painter-order splitting.
+1. Effects rendering: done for every filter type on WebGPU and WebGL2 (milestone log). Left:
+   drawing cels inside effect layers, effects in `styk-raster`.
+2. 3D, the largest remaining gate: 355 of the 402 native files in the corpus and the shipped
+   asset catalogue are kept off the engine by 3D meshes (measured 2026-10-03 with the gate
+   itself). Spatial poses (`_stykSpatial`), perspective projection, surfaces (culling,
+   depth order, depth-tested faces), figure meshes (skinning, view targets), movieclip
+   meshes, depth-tested rendering with painter-order splitting.
+3. Generators (particle effects): simulation (`vfx-generator*.mjs`) and drawing.
 4. Property channels on native timelines (scalar, colour, style, effect parameters, camera,
    scene) and pose channels, with animation origins.
 5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
@@ -400,9 +411,10 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-02 23:56 | S2 layers mixing imported and authored keys | After an edit, an imported layer has both kinds of keys; the editor tweens it through a window of the keys around the playhead. The typed evaluator held the authored pose instead (a wrong picture between such keys during playback); it now builds the same window (`mixed_window`), and the records follow. Fixture `sheet-mixed-keys`. | The fixture's 13 ticks: 81 of 117 primitives and 99 of 143 joints differed before, 0 now; its records are identical (fixtures 356 of 356). |
 | 2026-10-03 00:07 | S5 gestures on a layer sheet | `styk-edit` runs every ported call the way the app does: a draft of the evaluated frame (`authored.rs`), the commit through the sheet planner (`sheet.rs`: `_commitSheetPose`, `write`, `capture`, `materialize`, `publish`), `layer-sheet` history with undo, redo and the collection of sources from a dropped redo branch; an `Unported` call restores everything it touched. The replay state gained the layer revision and the next frame identity. | 16 recordings, 279 steps: the 15 scenarios of ported calls (258 steps, five of them on layer sheets: 99 steps) match the editor at every step in document bytes, state, results and events; transform-native 20 of 21 (a branch flip is not ported). |
 | 2026-10-03 00:16 | S5 movieclips on a layer sheet; cost of a gesture | Gestures on documents with movieclips: an instance is edited in the frame replacement that places it, other figures bake the replacement into their new pose, patch-only boundaries are fixed first; the committed draft stays on show until invalidated, as in the editor (it differs from a fresh evaluation after editing a replacement between its keys). `styk edit-bench`. | 18 recordings, 325 steps: the 17 scenarios of ported calls (304 steps) match at every step. On Pivot imports of about 100 MB (native, one run each, busy machine): a move step 0.01 ms, a joint-pose step up to 0.56 ms, a commit 2–7 ms, the first call on a document 68–102 ms. |
+| 2026-10-03 00:17 | S3 filter effects on the GPU (agent, reviewed and merged) | Every filter effect drawn by the engine as GPU passes on WebGPU, native and WebGL2: figures, nodes, connected groups, movieclip containers and the scene stack, ported from `VfxWebGPU.run` (`styk-render/src/effects/`, `styk_eval::vfx::layers`). The gate refuses only generated effects. The engine's memory starts at the size its module declares (a hard-coded size stopped the engine from starting once the module grew). Onion skins draw solid paints in the skin's tint. | The agent's runs: Electron (engine WebGPU against the WebGPU renderer) 30 of 30 steps on 8 effect documents, mean ≤ 0.075; web (WebGL2 against Canvas 2D) 23 of 30, the 7 being 6 scene-camera steps where Canvas 2D clears the camera rectangle and one pixelate edge; URIEL 3 in Electron 103 of 109 ticks (41: the old renderer had not shown a cel yet; 46: a drawing layer's onion skin missing; 61–64: a drawing cel under blur, bloom and glow). `styk gpubench` 1440×900: p50 0.36–1.9 ms with effects, 0.11–0.29 ms without; GPU memory for effect atlases up to 160 MiB. Here: 205 Rust tests on the merged tree; app parity not yet rerun after the merge. |
 
 In progress: the Rust codec in the app in place of Pyodide and the Python sidecar (agent);
-effects rendering as GPU passes (agent); baseline round 3 (section 5). Next in the main
+baseline round 3 (section 5). Next in the main
 thread: the facade (the app's gestures run in the engine, `docs/engine/editing.md`), then
 the remaining gesture paths (IK targets, rigs, movieclips on a sheet) and the next command
 groups (frames and keys, layers).

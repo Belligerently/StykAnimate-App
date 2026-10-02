@@ -18,8 +18,8 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-eval` | 83 | 774 KiB | 55 | 25 | 3 | 0 | 0 | 2 % | 42 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 57 | 728 KiB | 32 | 6 | 19 | 0 | 0 | 38 % | 29 % | 0 % |
-| `styk-render` | 52 | 708 KiB | 46 | 6 | 0 | 0 | 0 | 0 % | 36 % | 0 % |
-| **Total** | 355 | 4057 KiB | 290 | 43 | 22 | 0 | 0 | 7 % | 27 % | 0 % |
+| `styk-render` | 52 | 708 KiB | 40 | 12 | 0 | 0 | 0 | 0 % | 45 % | 0 % |
+| **Total** | 355 | 4057 KiB | 284 | 49 | 22 | 0 | 0 | 7 % | 29 % | 0 % |
 
 ## Engine modules
 
@@ -357,7 +357,7 @@ Engine logic: ported to Rust.
 | `src/renderer-raster-capture.mjs` | `styk-render` | js |  |
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
-| `src/renderer-vfx-vector.mjs` | `styk-render` | js |  |
+| `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
 | `src/renderer.mjs` | `styk-render` | partial | Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs); every other document still JS |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
@@ -376,12 +376,12 @@ Engine logic: ported to Rust.
 | `src/vfx-camera.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
 | `src/vfx-canvas.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
 | `src/vfx-cpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-gpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-scene.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-shaders.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
+| `src/vfx-gpu.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer |
+| `src/vfx-scene.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: scene stack over the camera image (effects); Canvas 2D path still JS |
+| `src/vfx-shaders.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: the filter shaders (effects/passes.wgsl); generated effects still JS |
 | `src/vfx-surface.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-viewport.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-webgpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
+| `src/vfx-viewport.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: layer density, crops and resolution caps per view (effects/plan.rs) |
+| `src/vfx-webgpu.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: every filter pass (styk-render effects/executor.rs, passes.wgsl) on WebGPU, native and WebGL2; still the oracle and the renderer of gated documents |
 
 ## Platform services
 
