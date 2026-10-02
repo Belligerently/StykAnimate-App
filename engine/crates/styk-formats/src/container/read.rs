@@ -265,18 +265,18 @@ impl<'a> Markers<'a> {
         let non_finite = || ContainerError::NonFinite { marker: text.to_string() };
         let numbers = match type_name {
             "u8" => Nums::F32(data.iter().map(|&b| b as f32).collect()),
-            "u16" => Nums::F32(data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]]) as f32).collect()),
-            "u32" => Nums::new(&data.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as f64).collect::<Vec<_>>()),
-            "i32" => Nums::new(&data.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap()) as f64).collect::<Vec<_>>()),
+            "u16" => Nums::F32(data.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c) as f32).collect()),
+            "u32" => Nums::new(&data.as_chunks::<4>().0.iter().map(|&c| u32::from_le_bytes(c) as f64).collect::<Vec<_>>()),
+            "i32" => Nums::new(&data.as_chunks::<4>().0.iter().map(|&c| i32::from_le_bytes(c) as f64).collect::<Vec<_>>()),
             "f32" => {
-                let values: Box<[f32]> = data.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+                let values: Box<[f32]> = data.as_chunks::<4>().0.iter().map(|&c| f32::from_le_bytes(c)).collect();
                 if values.iter().any(|v| !v.is_finite()) {
                     return Err(non_finite());
                 }
                 Nums::F32(values)
             }
             _ => {
-                let values: Vec<f64> = data.chunks_exact(8).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect();
+                let values: Vec<f64> = data.as_chunks::<8>().0.iter().map(|&c| f64::from_le_bytes(c)).collect();
                 if values.iter().any(|v| !v.is_finite()) {
                     return Err(non_finite());
                 }
@@ -310,7 +310,7 @@ fn safe_integer(text: &str) -> Option<usize> {
     if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    text.parse::<u64>().ok().filter(|&n| n <= (1 << 53) - 1).map(|n| n as usize)
+    text.parse::<u64>().ok().filter(|&n| n < (1 << 53)).map(|n| n as usize)
 }
 
 fn digits(text: &str) -> bool {

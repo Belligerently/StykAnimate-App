@@ -45,14 +45,9 @@ pub fn open_bytes(bytes: &[u8], ext: &str, name: &str) -> Result<Document, Error
     match ext {
         "piv" => piv::decode(bytes, name),
         "styk" | "stkz" | "stykmov" | "json" => {
-            let timing = std::env::var_os("STYK_TIMING").is_some();
             let kind = styk_formats::Kind::from_extension(ext).expect("matched above");
-            let t0 = std::time::Instant::now();
             let decoded = styk_formats::container::decode(bytes, kind).map_err(|e| Error::Format(e.to_string()))?;
             let document = styk_formats::native::normalize_decoded(decoded.document, kind).map_err(|e| Error::Format(e.to_string()))?;
-            if timing {
-                eprintln!("  container decode {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
-            }
             from_value(&document, name)
         }
         other => Err(Error::Unsupported(format!("Unsupported file type .{other}"))),
@@ -66,13 +61,8 @@ pub fn prepare(doc: Document) -> eval::Prepared {
 
 /// Builds the typed views of a document tree.
 pub fn from_value(document: &styk_doc::Value, name: &str) -> Result<Document, Error> {
-    let timing = std::env::var_os("STYK_TIMING").is_some();
-    let t0 = std::time::Instant::now();
     let mut loader = load::Loader::new();
     let mut doc = loader.document(document, name)?;
-    if timing {
-        eprintln!("  typed document {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
-    }
     doc.images = std::mem::take(&mut loader.images);
     doc.unsupported = loader.unsupported;
     for fig in &doc.figures {
