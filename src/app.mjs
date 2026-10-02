@@ -1951,6 +1951,7 @@ function loop(now) {
             ? editing.packet
             : undefined,
         report: drawingPreview?.report??editor.report,
+        drawingPreview: Boolean(drawingPreview),
         frame,
         geometry,
         view: state.view,

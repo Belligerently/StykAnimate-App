@@ -98,7 +98,11 @@ pub use styk_eval::assets::DecodedImage;
 /// Decodes every image of a document into atlas-ready pixels (tools; the engine
 /// decodes in the background instead).
 pub fn decode_images(doc: &Document, assets: &Assets) -> Vec<DecodedImage> {
-    (0..doc.images.len()).filter_map(|index| styk_eval::assets::decode_image(doc, assets, index)).collect()
+    let mut images: Vec<DecodedImage> = (0..doc.images.len()).filter_map(|index| styk_eval::assets::decode_image(doc, assets, index)).collect();
+    for (cel, _) in assets.cels.values() {
+        images.extend(styk_eval::assets::decode_cel(assets, cel));
+    }
+    images
 }
 
 struct LayerAtlas {
@@ -611,7 +615,8 @@ impl Renderer {
             return;
         }
         for img in images {
-            let Some(e) = assets.atlas.get(img.index as usize) else { continue };
+            let entry = if img.drawing { assets.drawing.get(img.index as usize) } else { assets.atlas.get(img.index as usize) };
+            let Some(e) = entry.filter(|e| e.valid) else { continue };
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &self.sprites,

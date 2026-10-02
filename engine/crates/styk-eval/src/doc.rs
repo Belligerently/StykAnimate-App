@@ -143,8 +143,10 @@ pub struct ImageAsset {
 pub struct DrawingTiles {
     pub anchor: [f64; 2],
     pub pixels_per_unit: f64,
-    /// (x, y, image) in cel pixel coordinates.
-    pub tiles: Vec<(f64, f64, u32)>,
+    /// Level-0 tiles: `(tx, ty, PNG bytes)` in tile coordinates (64 cel pixels per tile).
+    pub tiles: Vec<(i32, i32, Arc<[u8]>)>,
+    /// The tiles drawn at each display level 0–8 ([`crate::drawing::level_tiles`]).
+    pub levels: Vec<Vec<(i32, i32)>>,
 }
 
 #[derive(Clone, Debug)]

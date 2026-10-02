@@ -41,6 +41,20 @@ impl Engine {
         }
     }
 
+    /// Decodes drawing cel `cel` (every display level) for the atlas of `generation`.
+    pub(crate) fn decode_cel(&self, generation: &Arc<Generation>, cel: usize) {
+        let decoded = match generation.assets.cels.get(&cel) {
+            Some((tiles, _)) => styk_eval::assets::decode_cel(&generation.assets, tiles),
+            None => Vec::new(),
+        };
+        let mut state = self.inner.state.lock();
+        if state.images.lineage != generation.lineage {
+            return;
+        }
+        state.images.remaining = state.images.remaining.saturating_sub(1);
+        state.images.ready.extend(decoded.into_iter().map(Arc::new));
+    }
+
     /// Decoded images the renderer has not uploaded yet, up to `max_bytes` of pixels
     /// (at least one image), so one frame never uploads more than it can afford.
     pub fn take_images(&self, max_bytes: usize) -> Vec<Arc<DecodedImage>> {
@@ -64,10 +78,14 @@ impl Engine {
             let mut state = self.inner.state.lock();
             let Some(generation) = state.current.clone() else { return };
             let count = generation.prepared.doc.images.len();
-            state.images.reset(generation.lineage, count);
+            state.images.reset(generation.lineage, count + generation.assets.cels.len());
             for index in 0..count {
                 let generation = generation.clone();
                 state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_image(&generation, index)));
+            }
+            for &cel in generation.assets.cels.keys() {
+                let generation = generation.clone();
+                state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel)));
             }
         }
         self.inner.state.notify_all();

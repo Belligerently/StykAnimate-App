@@ -15,7 +15,6 @@ const POSE_FIELDS = ['_stykSpatial', '_stykAnimationOrigin', '_sticknodesSprite'
 
 function figureReason(figure, depth) {
   const styk = figure._styk;
-  if (styk?.drawing) return 'drawing layers';
   if (styk?.spatialMesh) return '3D meshes';
   if (styk?.animationOrigin) return 'animation origins';
   if (figure.polyfills?.some(polygon => polygon._stykSurface)) return '3D surfaces';

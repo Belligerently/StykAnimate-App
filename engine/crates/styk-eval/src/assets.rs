@@ -10,7 +10,7 @@ use lyon_path::math::point;
 use lyon_path::Path;
 use lyon_tessellation::{BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers};
 
-use crate::doc::{Document, Glyph, ImageData, PathCmd};
+use crate::doc::{Document, DrawingTiles, Glyph, ImageData, PathCmd};
 
 pub const PAGE: u32 = 4096;
 const GUTTER: u32 = 1;
@@ -47,6 +47,11 @@ pub struct Assets {
     /// Triangles of glyph outlines stroked at a glyph-space width (figure outlines
     /// around text), keyed by the glyph's address and the width's bits.
     pub glyph_strokes: HashMap<(usize, u32), (Arc<Glyph>, Arc<[[f32; 2]]>)>,
+    /// Atlas slots of drawing cel tiles (64×64 texels each, plus their border).
+    pub drawing: Vec<AtlasEntry>,
+    /// Per drawing cel, keyed by its address: the cel (held, so the address stays its
+    /// own) and its first slot at each display level.
+    pub cels: HashMap<usize, (Arc<DrawingTiles>, Vec<u32>)>,
     /// Where the next image goes.
     cursor: Cursor,
 }
@@ -80,6 +85,27 @@ impl Assets {
         let sizes: Vec<Option<(u32, u32)>> = crate::par::map(&doc.images[known..], 8, dimensions);
         assets.atlas.resize(doc.images.len(), AtlasEntry::default());
         pack(&sizes, &mut assets.atlas[known..], &mut assets.cursor);
+        // Drawing cels new in this revision get slots after everything placed before.
+        let mut cels = Vec::new();
+        collect_cels(doc, &mut cels);
+        cels.retain(|cel| !assets.cels.contains_key(&(Arc::as_ptr(cel) as usize)));
+        cels.dedup_by(|a, b| Arc::ptr_eq(a, b));
+        for cel in cels {
+            if assets.cels.contains_key(&(Arc::as_ptr(&cel) as usize)) {
+                continue;
+            }
+            let first = assets.drawing.len() as u32;
+            let mut starts = Vec::with_capacity(cel.levels.len());
+            let mut count = 0u32;
+            for level in &cel.levels {
+                starts.push(first + count);
+                count += level.len() as u32;
+            }
+            let sizes = vec![Some((crate::drawing::TILE, crate::drawing::TILE)); count as usize];
+            assets.drawing.resize(assets.drawing.len() + count as usize, AtlasEntry::default());
+            pack(&sizes, &mut assets.drawing[first as usize..], &mut assets.cursor);
+            assets.cels.insert(Arc::as_ptr(&cel) as usize, (cel, starts));
+        }
         assets.pages = if assets.cursor.used { assets.cursor.layer + 1 } else { 0 };
         let mut glyph_list: Vec<Arc<Glyph>> = Vec::new();
         collect_glyphs(doc, &mut glyph_list);
@@ -108,12 +134,26 @@ impl Assets {
         }
     }
 
+    /// The first atlas slot of each display level of `cel`.
+    pub fn cel_levels(&self, cel: &Arc<DrawingTiles>) -> Option<&[u32]> {
+        self.cels.get(&(Arc::as_ptr(cel) as usize)).map(|(_, starts)| starts.as_slice())
+    }
+
     pub fn image(&self, index: u32) -> Option<&AtlasEntry> {
         self.atlas.get(index as usize).filter(|e| e.valid)
     }
 
     pub fn glyph(&self, glyph: &Arc<Glyph>) -> Option<&Arc<[[f32; 2]]>> {
         self.glyphs.get(&(Arc::as_ptr(glyph) as usize)).map(|(_, triangles)| triangles)
+    }
+}
+
+fn collect_cels(doc: &Document, out: &mut Vec<Arc<DrawingTiles>>) {
+    for f in &doc.figures {
+        out.extend(f.images.iter().filter_map(|image| image.tiles.clone()));
+        if let Some(m) = &f.movieclip {
+            collect_cels(&m.document, out);
+        }
     }
 }
 
@@ -266,10 +306,23 @@ pub fn triangulate(path: &Path, rule: FillRule, tolerance: f32) -> Arc<[[f32; 2]
 /// Premultiplied RGBA pixels of one image, sized for its atlas rectangle with a
 /// one-pixel gutter that repeats its edges (so filtering never reads a neighbour).
 pub struct DecodedImage {
+    /// An index into `Document::images`, or into [`Assets::drawing`] when `drawing` is set.
     pub index: u32,
+    /// A drawing cel tile: straight alpha, with its neighbours' texels as its border.
+    pub drawing: bool,
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
+}
+
+/// Decodes a drawing cel into its atlas slots (every level, see [`crate::drawing`]).
+pub fn decode_cel(assets: &Assets, cel: &Arc<DrawingTiles>) -> Vec<DecodedImage> {
+    let Some(starts) = assets.cel_levels(cel) else { return Vec::new() };
+    let side = crate::drawing::TILE + 2;
+    crate::drawing::decode_cel(cel)
+        .into_iter()
+        .map(|(level, index, rgba)| DecodedImage { index: starts[level as usize] + index, drawing: true, width: side, height: side, rgba })
+        .collect()
 }
 
 /// Decodes image `index` of `doc` for the atlas `assets` laid out. `None` when the
@@ -305,5 +358,5 @@ pub fn decode_image(doc: &Document, assets: &Assets, index: usize) -> Option<Dec
             out[o + 3] = a as u8;
         }
     }
-    Some(DecodedImage { index: index as u32, width: gw as u32, height: gh as u32, rgba: out })
+    Some(DecodedImage { index: index as u32, drawing: false, width: gw as u32, height: gh as u32, rgba: out })
 }

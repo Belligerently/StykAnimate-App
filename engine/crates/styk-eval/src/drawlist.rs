@@ -35,6 +35,9 @@ pub const F_SMOOTH: u32 = 1 << 8;
 pub const F_RING_FILL: u32 = 1 << 9;
 /// An image drawn in the record's colour through its own coverage (onion tint).
 pub const F_TINT: u32 = 1 << 11;
+/// A drawing cel tile (`crate::drawing`): straight-alpha texels with a border, filtered
+/// by the shader; the record's `b[3]` is its display level.
+pub const F_DRAWING: u32 = 1 << 12;
 
 pub const NO_PAINT: u32 = u32::MAX;
 
@@ -431,9 +434,10 @@ impl<'a> Ctx<'a> {
         };
         // A tinted sprite keeps its coverage and takes the tint as its colour.
         let color = rgba8(self.tint.unwrap_or([255, 255, 255]), it.alpha);
-        let flags = if a.smooth { F_SMOOTH } else { 0 } | if self.tint.is_some() { F_TINT } else { 0 };
-        let mut quad = |anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, image: u32| {
-            let Some(e) = self.assets.image(image) else { return };
+        let tint = if self.tint.is_some() { F_TINT } else { 0 };
+        let flags = if a.smooth { F_SMOOTH } else { 0 } | tint;
+        // One atlas rectangle drawn over the cel-space rectangle (x, y, w, h); `extra` is the record's last parameter.
+        let quad = |out: &mut Out, kind: u32, e: &crate::assets::AtlasEntry, anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, extra: f64| {
             let o = place(anchor, x, y);
             let u = place(anchor, x + w, y);
             let v = place(anchor, x, y + h);
@@ -448,21 +452,24 @@ impl<'a> Ctx<'a> {
                 ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             ];
             let uv = e.uv();
-            out.push(
-                prim(K_IMAGE | flags, color, NO_PAINT, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, 0.0], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]),
-                b,
-            );
+            out.push(prim(kind, color, NO_PAINT, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, extra], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]), b);
         };
         if let Some(tiles) = &a.tiles {
-            for &(x, y, image) in &tiles.tiles {
-                quad(tiles.anchor, x, y, crate::drawing::TILE as f64, crate::drawing::TILE as f64, image);
+            // Every level's tiles; the shader keeps the level the view calls for (`crate::drawing`).
+            let Some(starts) = self.assets.cel_levels(tiles) else { return };
+            for (level, drawn) in tiles.levels.iter().enumerate() {
+                let span = (crate::drawing::TILE << level) as f64;
+                for (i, &(tx, ty)) in drawn.iter().enumerate() {
+                    let Some(e) = self.assets.drawing.get((starts[level] + i as u32) as usize).filter(|e| e.valid) else { continue };
+                    quad(out, K_IMAGE | F_DRAWING | tint, e, tiles.anchor, tx as f64 * span, ty as f64 * span, span, span, level as f64);
+                }
             }
             return;
         }
         let Some(image) = a.image else { return };
         let Some(e) = self.assets.image(image) else { return };
         let [w, h] = a.display_size.unwrap_or([e.source_w as f64, e.source_h as f64]);
-        quad(a.anchor_start, 0.0, 0.0, w, h, image);
+        quad(out, K_IMAGE | flags, e, a.anchor_start, 0.0, 0.0, w, h, 0.0);
     }
 
     /// Where a text's glyph-space point lands (the transform of `drawPrimitives`' text branch).

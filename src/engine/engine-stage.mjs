@@ -15,6 +15,7 @@ import {loadEngine} from './engine.mjs';
 import {EngineMirror} from './engine-mirror.mjs';
 import {EngineEligibility} from './engine-eligibility.mjs';
 import {engineTick} from './engine-playback.mjs';
+import {drawingResourcesFor} from '../drawing-resources.mjs';
 
 /** The engine side of the stage, shared by every renderer the app creates (it survives a device loss of the other). */
 let shared = null;
@@ -43,7 +44,28 @@ async function engineSide(canvas) {
     groups: [], frameReport: null, count: -1, definitions: null, failed: null, dirty: null, lastRefusal: null,
     /** Onion skin poses the engine holds, by the editor's sampled frame. */
     ghosts: new WeakMap(), nextGhost: 1, frameSent: false,
+    /** The drawing tiles each figure was last sent with: publication replaces them in place. */
+    tiles: new WeakMap(), drawingUnpublished,
     stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, fallbacks: 0}};
+}
+
+/**
+ * Whether a drawing of `report` has strokes not yet published into its figure
+ * (drawing-resources.mjs owns them until then): the engine draws a drawing from
+ * its published tiles, so until publication the JavaScript renderer draws.
+ */
+function drawingUnpublished(report) {
+  const resources = drawingResourcesFor(report);
+  if (!resources) return false;
+  for (const entry of resources.entries.values()) if (!entry.transient && (entry.store || entry.deferred?.length) && entry.published?.revision !== entry.revision) return true;
+  return false;
+}
+
+/** The published tiles of a figure's drawings, its own and its movieclip's. */
+function drawingTiles(figure, out = []) {
+  if (figure._styk?.drawing) out.push(figure.image_assets?.[0]?.styk_tiles ?? null);
+  for (const nested of figure._styk?.movieclip?.document?.figure_types ?? []) drawingTiles(nested, out);
+  return out;
 }
 
 const STRIP = new Set(['runtime_segments']);
@@ -80,6 +102,8 @@ export async function createStageRenderer(canvas, options, create) {
     if (side.failed) return side.failed;
     if (request.view?.rotation || request.view?.flip) return 'a rotated or mirrored view';
     if (!request.geometry) return 'no evaluated geometry';
+    if (request.drawingPreview) return 'a drawing preview';
+    if (drawingUnpublished(request.report)) return 'unpublished drawing strokes';
     const reason = side.eligibility.check(request.report, request.revision ?? -1, side.dirty);
     if (reason && side.dirty) {
       // The JavaScript renderer takes over; which figures were edited in place meanwhile is
@@ -89,8 +113,24 @@ export async function createStageRenderer(canvas, options, create) {
     return reason;
   };
 
+  /** Figures whose drawings were published in place since the engine got them become dirty. */
+  const republished = report => {
+    const changed = [];
+    report.figure_types?.forEach((figure, index) => {
+      if (!figure._styk?.drawing && !figure._styk?.movieclip) return;
+      const tiles = drawingTiles(figure), known = side.tiles.get(figure);
+      side.tiles.set(figure, tiles);
+      if (known && (known.length !== tiles.length || known.some((value, i) => value !== tiles[i]))) changed.push(index);
+    });
+    if (!changed.length) return;
+    side.dirty ??= {frameIndices: [], figureIndices: [], sourceIds: [], structural: false, definition: false};
+    side.dirty.figureIndices.push(...changed);
+    side.definitions = null;
+  };
+
   /** Figure definitions, backgrounds and properties: what an edit frame is drawn with. */
   const syncDefinitions = request => {
+    republished(request.report);
     const key = `${request.revision}:${request.artworkRevision}`;
     if (side.mirror.report === request.report && side.definitions === key) return;
     // Figures edited in place keep their objects; the editor's change events said which.
@@ -99,7 +139,7 @@ export async function createStageRenderer(canvas, options, create) {
     const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
       {figureIndices: dirty?.figureIndices ?? [], allFigures: side.resendFigures || Boolean(dirty?.definition && !dirty.figureIndices?.length)});
     side.definitions = key; side.resendFigures = false;
-    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
+    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.tiles = new WeakMap(); side.frameReport = request.report; }
     const unsupported = JSON.parse(side.engine.handle.unsupported());
     if (unsupported.length) throw new Error(`the engine does not draw ${unsupported.join(', ')} yet`);
     return result;
