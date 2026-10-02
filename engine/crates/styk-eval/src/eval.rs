@@ -996,17 +996,99 @@ impl Prepared {
             return Some(self.native_at(source + fraction * (target - source)));
         }
         if self.imported.get(id).copied().unwrap_or(false) {
-            // Mixed imported/authored track: hold the authored pose (rare).
-            return match &key.value {
-                SheetValue::SourceTick(t) => Some(self.native_at(*t)),
-                SheetValue::Frame(Some(fid)) => self.doc.pose_source(fid).map(|k| {
-                    frame_of(&KeyRef { frame: k.clone(), duration: 1, easing: None, origin: Some(FrameRef::Source(fid.clone())) })
-                }),
-                SheetValue::Frame(None) => None,
-            };
+            let index = at - 1;
+            let (seq, first) = self.mixed_window(id, &keys, index);
+            let fraction = next.map_or(0.0, |n| (tick - key.tick as f64) / (n.tick as f64 - key.tick as f64));
+            return Some(evaluate_native(&self.doc, &seq, index - first, fraction));
         }
         let seq = self.tracks.get(id)?;
         sample_pose_track(&self.doc, seq, tick)
+    }
+
+    /// A layer that mixes imported and authored keys (an imported animation after an
+    /// edit) tweens through a window of the keys around the playhead: one before the
+    /// interval and one after, each imported key standing in as the layer's own
+    /// figures of the imported pose at its source tick (`baseSample`'s `imported`
+    /// branch). Returns the window as a timeline and the index of its first key.
+    pub(crate) fn mixed_window(&self, id: &str, keys: &[&SheetKey], index: usize) -> (Seq, usize) {
+        let (first, last) = (index.saturating_sub(1), (index + 3).min(keys.len()));
+        let fixed = FIXED.contains(&id);
+        let window = keys[first..last]
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let (frame, origin) = match &entry.value {
+                    SheetValue::SourceTick(time) => (Some(Arc::new(self.endpoint(id, fixed, *time))), None),
+                    SheetValue::Frame(Some(fid)) => (self.doc.pose_source(fid).cloned(), Some(FrameRef::Source(fid.clone()))),
+                    SheetValue::Frame(None) => (None, None),
+                };
+                let frame = frame.unwrap_or_else(|| {
+                    // No pose: the first keyframe's own fields, without figures.
+                    let mut blank = self.doc.keyframes.first().map(|k| (**k).clone()).unwrap_or_else(blank_keyframe);
+                    blank.objects.clear();
+                    blank.draw_order.clear();
+                    blank.slot_of.clear();
+                    Arc::new(blank)
+                });
+                let until = keys.get(first + i + 1).map_or(entry.tick + 1, |next| next.tick);
+                KeyRef { frame, duration: until.saturating_sub(entry.tick), easing: Some(entry.easing.unwrap_or(Easing::LINEAR)), origin: if fixed { None } else { origin } }
+            })
+            .collect();
+        (Seq { keys: window, version: 5, auto_easing: self.doc.auto_easing, ticks: Vec::new() }, first)
+    }
+
+    /// `snapshotPoseFrame(sourceAt(time), <the layer's figures>)`: the imported pose at
+    /// `time` reduced to the figures of layer `id` and the figures they are joined to.
+    fn endpoint(&self, id: &str, fixed: bool, time: f64) -> Keyframe {
+        let source = self.native_at(time);
+        let layers = self.doc.layers.clone().unwrap_or_default();
+        let mut wanted = vec![false; source.objects.len()];
+        if !fixed {
+            let mut queue: Vec<usize> = (0..source.objects.len()).filter(|&slot| layers.layer_of(source.objects[slot].uid) == id).collect();
+            for &slot in &queue {
+                wanted[slot] = true;
+            }
+            let mut q = 0;
+            while q < queue.len() {
+                if let Some(parent) = source.objects[queue[q]].join.map(|j| j.slot as usize).filter(|&p| p < wanted.len() && !wanted[p]) {
+                    wanted[parent] = true;
+                    queue.push(parent);
+                }
+                q += 1;
+            }
+        }
+        let mut remap = vec![u32::MAX; wanted.len()];
+        let mut objects = Vec::new();
+        for (slot, object) in source.objects.iter().enumerate().filter(|(slot, _)| wanted[*slot]) {
+            remap[slot] = objects.len() as u32;
+            objects.push(object.clone());
+        }
+        for object in objects.iter_mut() {
+            if let Some(join) = object.join {
+                let target = remap.get(join.slot as usize).copied().filter(|&slot| slot != u32::MAX);
+                let rejoined = target.map(|slot| Join { slot, handle: join.handle });
+                if rejoined != object.join {
+                    Arc::make_mut(object).join = rejoined;
+                }
+            }
+        }
+        let mut frame = Keyframe {
+            duration: 1,
+            draw_order: source.draw_order.iter().filter_map(|&slot| remap.get(slot as usize).copied().filter(|&slot| slot != u32::MAX)).collect(),
+            objects,
+            camera: source.camera,
+            background: source.background,
+            background_b: source.background_b,
+            background_mix: source.background_mix,
+            easing: None,
+            frame_id: None,
+            slot_of: HashMap::new(),
+            continuations: source.continuations.clone(),
+            background_color: source.background_color,
+            vfx: source.pose_vfx.clone(),
+        };
+        frame.reindex();
+        frame
     }
 
     /// `sampleLayerSheet`: compose each layer's own pose track.
@@ -1136,10 +1218,9 @@ fn patch_track(doc: &Document, track: &SheetTrack, uid: u32) -> Seq {
     virtual_track(doc, false, keys.collect())
 }
 
-/// `buildVirtualPoseTrack`: keys become a native timeline of their source poses.
-fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&Arc<str>>)>) -> Seq {
-    keys.sort_by(|a, b| a.0.tick.cmp(&b.0.tick).then((b.0.hidden as u8).cmp(&(a.0.hidden as u8))));
-    let blank = Arc::new(Keyframe {
+/// A pose with nothing in it: no figures, the default camera, the first background.
+fn blank_keyframe() -> Keyframe {
+    Keyframe {
         duration: 1,
         objects: vec![],
         draw_order: vec![],
@@ -1153,7 +1234,13 @@ fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&
         continuations: Vec::new(),
         background_color: None,
         vfx: None,
-    });
+    }
+}
+
+/// `buildVirtualPoseTrack`: keys become a native timeline of their source poses.
+fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&Arc<str>>)>) -> Seq {
+    keys.sort_by(|a, b| a.0.tick.cmp(&b.0.tick).then((b.0.hidden as u8).cmp(&(a.0.hidden as u8))));
+    let blank = Arc::new(blank_keyframe());
     let refs = keys
         .iter()
         .enumerate()

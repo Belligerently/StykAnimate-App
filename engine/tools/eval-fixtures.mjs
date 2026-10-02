@@ -11,7 +11,7 @@
 // Inverse kinematics has its own set (ik-fixtures.mjs).
 import {mkdirSync} from 'node:fs';
 import path from 'node:path';
-import {here, documentOf, limb, open, whole, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
 
 /** Two limbs on one layer, the first moving between two keys of a layer sheet. */
 function pair() {
@@ -65,6 +65,19 @@ const fixtures = {
     track.keys[0].movieclipPatches = [{uid: 1, frameId: 'frame-loose'}];
     track.keys[1].movieclipPatches = [{uid: 1, frameId: 'frame-held', replacementUid: 9}];
     return {document: open(document, {layerTimeline: true}).serialize(), ticks: [0, 3, 6]};
+  },
+  /** An imported animation (four native keys, two joined limbs) with its second and
+   * fourth layer keys edited in the layer timeline: the layer then mixes imported and
+   * authored keys, which tween through a window of the keys around the playhead. */
+  'sheet-mixed-keys': () => {
+    const native = open(documentOf([limb(true), limb()], i => [240 + i * 150, 160]));
+    native.select(2); native.joinTo(1, 33);
+    for (const [dx, turn] of [[30, 0.5], [-10, -0.9], [45, 0.4]]) { nextKey(native, 4); native.select(1); native.moveSelection(dx, 12); native.rotateSelection(turn); }
+    const e = open(native.serialize(), {layerTimeline: true});
+    e.seek(4); e.select(1); e.moveSelection(25, -30);
+    e.seek(12); e.select(2, 1); e.rotateJoint(0.7);
+    e.seek(0);
+    return {document: e.serialize(), ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]};
   },
 };
 

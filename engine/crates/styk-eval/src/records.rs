@@ -444,9 +444,59 @@ impl<'a> Records<'a> {
             return native(start + fraction * (end - start));
         }
         if keys.iter().any(|k| source_tick(k).is_some()) {
-            return unported("layers that mix imported and authored keys");
+            // Imported and authored keys: a window of the keys around the playhead.
+            let Some(track) = self.prepared.doc.sheet.as_ref().and_then(|sheet| sheet.tracks.get(id)) else { return Err(Error::Invalid(format!("no track {id}"))) };
+            let typed: Vec<&crate::doc::SheetKey> = track.keys.iter().filter(|k| !k.patch_only).collect();
+            if typed.len() != keys.len() {
+                return Err(Error::Invalid(format!("the keys of {id} were not all read")));
+            }
+            let index = at - 1;
+            let (seq, first) = self.prepared.mixed_window(id, &typed, index);
+            let fraction = next.map_or(0.0, |n| {
+                let (a, b) = (num(key, "tick").unwrap_or(0.0), num(n, "tick").unwrap_or(0.0));
+                (tick - a) / (b - a)
+            });
+            let count = seq.keys.len();
+            let frame = self.interval(&seq, &|i| if i < count { self.window_frame(id, &keys, first + i, fixed).map(Some) } else { Ok(None) }, index - first, fraction)?;
+            return Ok(Some(Sample { frame, identity: Identity::Track(id.to_string()) }));
         }
         self.pose_track(id, &keys, tick)
+    }
+
+    /// One key of a mixed layer as a native keyframe (`baseSample`'s `imported` branch):
+    /// an imported key is the layer's figures of the imported pose at its source tick.
+    fn window_frame(&self, id: &str, keys: &[Value], index: usize, fixed: bool) -> Result<Value, Error> {
+        let entry = &keys[index];
+        let frame = match num(entry, "sourceTick") {
+            Some(time) => {
+                let source = self.native_at(time)?;
+                let uids: Vec<f64> = if fixed { Vec::new() } else { items(source.get("objects")).iter().filter_map(uid).filter(|&u| self.layer_of(u) == id).collect() };
+                Some(snapshot_pose_frame_of(&source, Some(&uids)))
+            }
+            None => entry.path(&["value", "frameId"]).and_then(Value::as_str).and_then(|frame_id| self.source(frame_id)),
+        };
+        let mut out = match &frame {
+            Some(frame) => frame.as_obj().cloned().unwrap_or_default(),
+            None => {
+                let mut blank = self.tree.get("keyframes").and_then(|k| k.item(0)).and_then(|f| f.as_obj().cloned()).unwrap_or_default();
+                empty_objects(&mut blank);
+                blank
+            }
+        };
+        let mut easing = Obj::new();
+        if let Some(interpolation) = entry.get("interpolation") {
+            easing.set("interpolation", interpolation.clone());
+        }
+        if let Some(bezier) = entry.get("bezier").filter(|b| b.truthy()) {
+            easing.set("bezier", bezier.clone());
+        }
+        let mut styk = frame.as_ref().and_then(|f| f.get("_styk")).and_then(Value::as_obj).cloned().unwrap_or_default();
+        styk.set("easing", Value::object(easing));
+        out.set("_styk", Value::object(styk));
+        let tick = num(entry, "tick").unwrap_or(0.0);
+        let until = keys.get(index + 1).and_then(|next| num(next, "tick")).unwrap_or(tick + 1.0);
+        out.set("duration_raw", Value::Num(until - tick));
+        Ok(Value::object(out))
     }
 
     /// `sample(id)`: the base pose, then the movieclip frames its key replaces.
@@ -932,23 +982,66 @@ fn ik_record(table: &Value, next: Option<&Value>, typed: &crate::ik::Table) -> V
 
 /// `snapshotPoseFrame(frame)` for every figure of the frame.
 pub fn snapshot_pose_frame(frame: &Value) -> Value {
-    let objects: Vec<Value> = items(frame.get("objects"))
+    snapshot_pose_frame_of(frame, None)
+}
+
+/// `snapshotPoseFrame(frame, uids)`: the frame with the figures `uids` name and the
+/// figures they are joined to (every figure without `uids`), slots renumbered, without
+/// the runtime caches and clock fields.
+pub fn snapshot_pose_frame_of(frame: &Value, uids: Option<&[f64]>) -> Value {
+    let all = items(frame.get("objects"));
+    let slots: Vec<usize> = match uids {
+        None => (0..all.len()).collect(),
+        Some(uids) => {
+            let by_uid: HashMap<u64, usize> = all.iter().enumerate().filter_map(|(slot, o)| Some((uid(o)?.to_bits(), slot))).collect();
+            let mut wanted = vec![false; all.len()];
+            let mut queue = Vec::new();
+            for id in uids {
+                if let Some(&slot) = by_uid.get(&id.to_bits()).filter(|&&slot| !wanted[slot]) {
+                    wanted[slot] = true;
+                    queue.push(slot);
+                }
+            }
+            let mut q = 0;
+            while q < queue.len() {
+                let parent = all[queue[q]].get("join").filter(|j| j.truthy()).and_then(|j| num(j, "target_object_slot"));
+                if let Some(parent) = parent.filter(|p| *p >= 0.0).map(|p| p as usize).filter(|&p| p < all.len() && !wanted[p]) {
+                    wanted[parent] = true;
+                    queue.push(parent);
+                }
+                q += 1;
+            }
+            (0..all.len()).filter(|&slot| wanted[slot]).collect()
+        }
+    };
+    let remap: HashMap<usize, usize> = slots.iter().enumerate().map(|(index, &slot)| (slot, index)).collect();
+    let objects: Vec<Value> = slots
         .iter()
         .enumerate()
-        .map(|(slot, object)| {
-            let mut out = object.as_obj().cloned().unwrap_or_default();
+        .map(|(index, &slot)| {
+            let mut out = all[slot].as_obj().cloned().unwrap_or_default();
             out.remove("runtime_segments");
             out.remove("_movieclipSample");
-            out.set("object_slot", Value::Num(slot as f64));
+            out.set("object_slot", Value::Num(index as f64));
+            if let Some(join) = out.get("join").filter(|j| j.truthy()).cloned() {
+                let mut join = join.as_obj().cloned().unwrap_or_default();
+                match num(&Value::object(join.clone()), "target_object_slot").filter(|s| *s >= 0.0).and_then(|s| remap.get(&(s as usize))) {
+                    Some(&target) => join.set("target_object_slot", Value::Num(target as f64)),
+                    None => {
+                        join.remove("target_object_slot");
+                    }
+                }
+                out.set("join", Value::object(join));
+            }
             Value::object(out)
         })
         .collect();
-    let count = objects.len();
     let order: Vec<usize> = match frame.get("object_draw_order").filter(|o| !o.is_null()) {
-        Some(order) => order.numbers().unwrap_or_default().into_iter().map(|s| s as usize).filter(|&s| s < count).collect(),
-        None => (0..count).collect(),
+        Some(order) => order.numbers().unwrap_or_default().into_iter().filter_map(|s| remap.get(&(s as usize)).copied()).collect(),
+        None => (0..slots.len()).collect(),
     };
     let ids: Vec<Value> = order.iter().map(|&slot| objects[slot].get("unique_id").cloned().unwrap_or(Value::Null)).collect();
+    let count = objects.len();
     let mut saved = frame.as_obj().cloned().unwrap_or_default();
     for key in ["_cameraMotionTick", "_vfxTimelineTick", "_vfxTimelineScene"] {
         saved.remove(key);
