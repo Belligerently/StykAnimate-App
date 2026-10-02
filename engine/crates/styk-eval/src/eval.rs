@@ -595,6 +595,11 @@ impl Prepared {
         prepared
     }
 
+    /// The pose track of a layer (or `scene`, `camera`) as a virtual native timeline.
+    pub(crate) fn track(&self, id: &str) -> Option<&Seq> {
+        self.tracks.get(id).map(|seq| &**seq)
+    }
+
     fn has_clips(&self) -> bool {
         self.doc.figures.iter().any(|f| f.movieclip.is_some())
     }
@@ -662,6 +667,28 @@ impl Prepared {
 
     /// `sampleMovieclipObjects`: chooses each instance's local clip time and
     /// removes instances that are not playing at this tick.
+    /// A movieclip instance's local time at `tick` (`_movieclipSample`): `Some(None)`
+    /// while it is not shown, `None` for a figure that is not a movieclip.
+    pub(crate) fn clip_local(&self, object: &Object, tick: f64) -> Option<Option<f64>> {
+        let doc = &self.doc;
+        let clip = doc.figure(object.figure).and_then(|f| f.movieclip.clone())?;
+        let default = MovieclipPlayback { start: 0.0, end: None, offset: 0.0, speed: 1.0, mode: MovieclipMode::Loop, presence: false, restarts: vec![] };
+        let settings = object.movieclip.as_deref().cloned().unwrap_or(default);
+        Some(if settings.presence {
+            let time = if settings.mode == MovieclipMode::Single { 0.0 } else { self.presence_elapsed(object.uid, tick) };
+            let s = MovieclipPlayback { start: 0.0, end: None, speed: 1.0, ..settings };
+            movieclip_time(&clip, &s, time, doc.fps)
+        } else {
+            movieclip_time(&clip, &settings, tick, doc.fps)
+        })
+    }
+
+    /// The frame before movieclips are sampled and layers ordered (`sampleLayerSheet`
+    /// or the native tween), for the record view.
+    pub(crate) fn raw(&self, tick: f64) -> Frame {
+        self.evaluate_raw(tick, false)
+    }
+
     fn apply_movieclips(&self, frame: &mut Frame, tick: f64) {
         if !self.has_clips() {
             return;
@@ -669,16 +696,7 @@ impl Prepared {
         let doc = &self.doc;
         let mut hidden = false;
         for object in frame.objects.iter_mut() {
-            let Some(clip) = doc.figure(object.figure).and_then(|f| f.movieclip.clone()) else { continue };
-            let default = MovieclipPlayback { start: 0.0, end: None, offset: 0.0, speed: 1.0, mode: MovieclipMode::Loop, presence: false, restarts: vec![] };
-            let settings = object.movieclip.as_deref().cloned().unwrap_or(default);
-            let local = if settings.presence {
-                let time = if settings.mode == MovieclipMode::Single { 0.0 } else { self.presence_elapsed(object.uid, tick) };
-                let s = MovieclipPlayback { start: 0.0, end: None, speed: 1.0, ..settings };
-                movieclip_time(&clip, &s, time, doc.fps)
-            } else {
-                movieclip_time(&clip, &settings, tick, doc.fps)
-            };
+            let Some(local) = self.clip_local(object, tick) else { continue };
             hidden |= local.is_none();
             Arc::make_mut(object).clip_time = local;
         }

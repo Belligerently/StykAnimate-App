@@ -5,6 +5,8 @@
 //!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
 //!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
+//!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
+//!                                         (engine/tools/records-reference.mjs wrote the folder)
 
 use std::path::Path;
 use std::time::Instant;
@@ -37,6 +39,7 @@ fn main() {
         Some("raster") if args.len() >= 4 => raster(&args[1], &args[2], &args[3], &args[4..]),
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2]),
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
+        Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y]");
@@ -68,6 +71,68 @@ fn edit_replay(files: &[String]) -> i32 {
         }
     }
     i32::from(failed)
+}
+
+/// Compares the evaluated frame as records, tick by tick, with what the editor stores
+/// (engine/tools/records-reference.mjs). `--write` leaves the engine's record of the
+/// first differing tick in `<folder>/engine-<tick>.json`. Exit code 1 on a difference;
+/// ticks the engine does not produce as records yet are counted, not failed.
+fn records(folder: &str, flags: &[String]) -> i32 {
+    use sha2::Digest;
+    let read = |name: &str| std::fs::read(Path::new(folder).join(name)).map_err(|e| format!("{folder}/{name}: {e}"));
+    let run = || -> Result<(usize, usize, Vec<String>, Vec<String>), String> {
+        let tree = styk_doc::json::parse(&read("report.json")?).map_err(|e| e.to_string())?;
+        let reference = styk_doc::json::parse(&read("records.json")?).map_err(|e| e.to_string())?;
+        let document = styk_eval::from_value(&tree, "").map_err(|e| e.to_string())?;
+        let prepared = styk_eval::prepare(document);
+        let records = styk_eval::records::Records::new(&tree, &prepared).map_err(|e| e.to_string())?;
+        let ticks: Vec<styk_doc::Value> = reference.get("ticks").and_then(|t| t.elements()).map(|e| e.iter().collect()).unwrap_or_default();
+        let (mut matched, mut unported, mut wrong) = (0, Vec::new(), Vec::new());
+        for entry in &ticks {
+            let tick = entry.get("tick").and_then(|t| t.as_f64()).unwrap_or(0.0);
+            let json = match records.snapshot(tick) {
+                Ok(value) => styk_doc::json::to_string(&value),
+                Err(styk_eval::records::Error::Unported(what)) => {
+                    unported.push(format!("tick {tick}: {what}"));
+                    continue;
+                }
+                Err(error) => return Err(format!("tick {tick}: {error}")),
+            };
+            let digest: String = sha2::Sha256::digest(json.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+            if entry.get("sha256").and_then(|s| s.as_str()) == Some(digest.as_str()) {
+                matched += 1;
+                continue;
+            }
+            let expected = entry.get("json").and_then(|j| j.as_str());
+            let detail = match expected {
+                Some(expected) => {
+                    let at = json.bytes().zip(expected.bytes()).position(|(a, b)| a != b).unwrap_or(json.len().min(expected.len()));
+                    let from = json.floor_char_boundary(at.saturating_sub(120));
+                    let cut = |text: &str| text[text.floor_char_boundary(from.min(text.len()))..text.floor_char_boundary((at + 100).min(text.len()))].to_string();
+                    format!("at byte {at}:\n    engine …{}…\n    editor …{}…", cut(&json), cut(expected))
+                }
+                None => format!("{} bytes, the editor's {}", json.len(), entry.get("bytes").and_then(|b| b.as_f64()).unwrap_or(0.0)),
+            };
+            if wrong.is_empty() && flags.iter().any(|f| f == "--write") {
+                let _ = std::fs::write(Path::new(folder).join(format!("engine-{tick}.json")), &json);
+            }
+            wrong.push(format!("tick {tick} differs {detail}"));
+        }
+        Ok((ticks.len(), matched, unported, wrong))
+    };
+    match run() {
+        Ok((total, matched, unported, wrong)) => {
+            println!("{folder}: {matched}/{total} ticks identical, {} not ported, {} different", unported.len(), wrong.len());
+            for line in unported.iter().take(3).chain(wrong.iter().take(3)) {
+                println!("  {line}");
+            }
+            i32::from(!wrong.is_empty())
+        }
+        Err(error) => {
+            println!("{folder}: {error}");
+            1
+        }
+    }
 }
 
 fn load(path: &str) -> Result<(Prepared, f64), String> {

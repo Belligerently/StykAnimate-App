@@ -44,6 +44,7 @@ and after), and emit change events the interface listens to.
   ported first are those mutations, checked on native frames; the app needs, in order:
   1. **The evaluated frame as records**: `editor.evaluatedFrame` reproduced as JSON byte for
      byte (layer sheets, tweens, movieclips, layer order), because a commit stores it.
+     In progress: `styk_eval::records` ([evaluation.md](evaluation.md)).
   2. **The authored lifecycle and the sheet planner**: drafts, ownership, key writing,
      pose-source capture and the history entry `publish` records.
   3. **The facade**: the app's gestures run in the engine.
