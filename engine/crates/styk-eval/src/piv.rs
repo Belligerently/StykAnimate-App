@@ -204,6 +204,7 @@ fn builtin_man() -> Figure {
         movieclip: None,
         plan,
         unsupported: vec![],
+        base: None,
     }
 }
 
@@ -578,6 +579,7 @@ fn read_figure_v5(r: &mut Reader, figure_id: u32, images: &mut Vec<ImageData>) -
         movieclip: None,
         plan,
         unsupported: vec![],
+        base: None,
     })
 }
 
@@ -967,5 +969,6 @@ fn read_figure_v4(r: &mut Reader, figure_id: u32, images: &mut Vec<ImageData>) -
         movieclip: None,
         plan,
         unsupported: vec![],
+        base: None,
     })
 }

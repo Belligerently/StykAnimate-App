@@ -9,10 +9,43 @@ use crate::doc::*;
 use crate::text::parse_svg_path;
 use crate::Error;
 
+/// Builds the typed views of a document and keeps them while their source
+/// records are unchanged.
+///
+/// One loader lives as long as one document lineage (every revision of the open
+/// project). [`Loader::document`] reuses the typed figure, keyframe and pose source
+/// of every record whose tree node is the node it was built from, so after an edit
+/// only the records the edit replaced are converted again.
 pub struct Loader {
     /// One image table shared by the root document and every nested movieclip.
+    /// Append-only: an index, once handed out, names the same image for good.
     pub images: Vec<ImageData>,
     pub unsupported: Vec<String>,
+    /// Image index by the address of its payload (a blob's bytes or a string's text).
+    image_of: HashMap<usize, u32>,
+    /// Typed views by the address of the record they were built from. The source
+    /// value is held so the address cannot be reused by another record.
+    figures: HashMap<usize, (Value, Arc<Figure>)>,
+    keyframes: HashMap<usize, (Value, Arc<Keyframe>)>,
+    /// Resolved style overlays by base figure (address; the figure is held) and overlay key.
+    styled: HashMap<(usize, String), (Arc<Figure>, Arc<Figure>)>,
+    /// Records converted (not reused) by the last [`Loader::document`] call.
+    pub converted: Converted,
+}
+
+/// How much of a document [`Loader::document`] had to convert.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Converted {
+    pub figures: usize,
+    pub keyframes: usize,
+}
+
+/// The address of a container node, the identity typed views are cached by.
+fn node_address(value: &Value) -> Option<usize> {
+    match value {
+        Value::Obj(object) => Some(Arc::as_ptr(object) as usize),
+        _ => None,
+    }
 }
 
 fn num(v: &Value, key: &str) -> Option<f64> {
@@ -97,7 +130,7 @@ impl Default for Loader {
 
 impl Loader {
     pub fn new() -> Self {
-        Loader { images: Vec::new(), unsupported: Vec::new() }
+        Loader { images: Vec::new(), unsupported: Vec::new(), image_of: HashMap::new(), figures: HashMap::new(), keyframes: HashMap::new(), styled: HashMap::new(), converted: Converted::default() }
     }
 
     fn note(&mut self, feature: &str) {
@@ -108,12 +141,24 @@ impl Loader {
 
     fn image(&mut self, v: &Value, keys: &[&str]) -> Option<u32> {
         for key in keys {
-            if let Some(field) = v.get(*key)
-                && let Some(bytes) = field.payload_bytes()
+            let Some(field) = v.get(*key) else { continue };
+            // The same payload (the same blob, or the same string) is one image, however
+            // many records or revisions name it.
+            let identity = match field {
+                Value::Blob(blob) => blob.bytes.as_ptr() as usize,
+                Value::Str(text) => text.as_ptr() as usize,
+                _ => continue,
+            };
+            if let Some(&index) = self.image_of.get(&identity) {
+                return Some(index);
+            }
+            if let Some(bytes) = field.payload_bytes()
                 && !bytes.is_empty()
             {
                 self.images.push(ImageData { bytes, color_key: None });
-                return Some(self.images.len() as u32 - 1);
+                let index = self.images.len() as u32 - 1;
+                self.image_of.insert(identity, index);
+                return Some(index);
             }
         }
         None
@@ -123,7 +168,27 @@ impl Loader {
         Some(v?.numbers()?.into())
     }
 
+    /// The typed views of `d`, reusing those of records unchanged since the last call.
     pub fn document(&mut self, d: &Value, name: &str) -> Result<Document, Error> {
+        self.converted = Converted::default();
+        let mut document = self.nested_document(d, name)?;
+        document.images = self.images.clone();
+        document.unsupported = self.unsupported.clone();
+        for figure in &document.figures {
+            for feature in &figure.unsupported {
+                if !document.unsupported.iter().any(|known| known == feature) {
+                    document.unsupported.push(feature.to_string());
+                }
+            }
+        }
+        if document.name.is_empty() {
+            document.name = name.to_string();
+        }
+        Ok(document)
+    }
+
+    /// One document of the tree: the project, or a movieclip's own.
+    fn nested_document(&mut self, d: &Value, name: &str) -> Result<Document, Error> {
         let version = int(d, "version").unwrap_or(5) as u32;
         if !(2..=5).contains(&version) {
             return Err(Error::Format(format!("Expected a decoded Pivot 2-5 scene, found version {version}")));
@@ -138,11 +203,11 @@ impl Loader {
         let styk = d.get("_styk").cloned().unwrap_or(Value::Null);
         let mut figures = Vec::new();
         for f in d.get("figure_types").and_then(Value::as_arr).into_iter().flatten() {
-            figures.push(Arc::new(self.figure(f, version)?));
+            figures.push(self.cached_figure(f, version)?);
         }
         let mut keyframes = Vec::new();
         for k in d.get("keyframes").and_then(Value::as_arr).into_iter().flatten() {
-            keyframes.push(Arc::new(self.keyframe(k)?));
+            keyframes.push(self.cached_keyframe(k)?);
         }
         if keyframes.is_empty() {
             return Err(Error::Format("The scene has no keyframes".into()));
@@ -154,7 +219,7 @@ impl Loader {
         let mut frame_sources = HashMap::new();
         if let Some(Value::Obj(sources)) = styk.get("frameSources") {
             for (id, frame) in sources.iter() {
-                frame_sources.insert(id.clone(), Arc::new(self.keyframe(frame)?));
+                frame_sources.insert(id.clone(), self.cached_keyframe(frame)?);
             }
         }
         let layers = styk.get("layers").filter(|v| v.is_object()).map(|l| Arc::new(layers(l)));
@@ -194,8 +259,43 @@ impl Loader {
             figure_index: HashMap::new(),
         };
         doc.reindex_figures();
-        resolve_styles(&mut doc);
+        self.resolve_styles(&mut doc);
         Ok(doc)
+    }
+
+    fn cached_figure(&mut self, f: &Value, version: u32) -> Result<Arc<Figure>, Error> {
+        if let Some(address) = node_address(f) {
+            if let Some((_, figure)) = self.figures.get(&address) {
+                return Ok(figure.clone());
+            }
+            let figure = Arc::new(self.figure(f, version)?);
+            self.converted.figures += 1;
+            self.figures.insert(address, (f.clone(), figure.clone()));
+            return Ok(figure);
+        }
+        Ok(Arc::new(self.figure(f, version)?))
+    }
+
+    fn cached_keyframe(&mut self, k: &Value) -> Result<Arc<Keyframe>, Error> {
+        if let Some(address) = node_address(k) {
+            if let Some((_, frame)) = self.keyframes.get(&address) {
+                return Ok(frame.clone());
+            }
+            let frame = Arc::new(self.keyframe(k)?);
+            self.converted.keyframes += 1;
+            self.keyframes.insert(address, (k.clone(), frame.clone()));
+            return Ok(frame);
+        }
+        Ok(Arc::new(self.keyframe(k)?))
+    }
+
+    /// Forgets the views of records that are no longer part of any live document
+    /// (the loader is their only holder). Call after publishing a revision.
+    pub fn release_unused(&mut self) {
+        self.figures.retain(|_, (source, _)| !source_unshared(source));
+        self.keyframes.retain(|_, (source, _)| !source_unshared(source));
+        let live: std::collections::HashSet<usize> = self.figures.values().map(|(_, figure)| Arc::as_ptr(figure) as usize).collect();
+        self.styled.retain(|(base, _), _| live.contains(base));
     }
 
     fn figure(&mut self, f: &Value, version: u32) -> Result<Figure, Error> {
@@ -278,6 +378,7 @@ impl Loader {
             movieclip,
             plan,
             unsupported,
+            base: None,
         })
     }
 
@@ -376,7 +477,7 @@ impl Loader {
 
     fn movieclip(&mut self, m: &Value) -> Result<Option<Arc<Movieclip>>, Error> {
         let Some(doc) = m.get("document").filter(|v| v.is_object()) else { return Ok(None) };
-        let document = Arc::new(self.document(doc, "movieclip")?);
+        let document = Arc::new(self.nested_document(doc, "movieclip")?);
         Ok(Some(Arc::new(Movieclip {
             duration: num(m, "duration").unwrap_or(1.0),
             source_start: num(m, "sourceStart").unwrap_or(0.0),
@@ -625,30 +726,55 @@ fn text_asset(a: &Value) -> Option<TextAsset> {
     Some(TextAsset { index, glyphs, placements, width, height })
 }
 
-/// Resolves every styled object's figure once, sharing identical overlays.
-fn resolve_styles(doc: &mut Document) {
-    let mut cache: HashMap<(u32, String), Arc<Figure>> = HashMap::new();
-    let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
-    let mut fix = |frame: &mut Arc<Keyframe>| {
-        if !frame.objects.iter().any(|o| o.style.is_some()) {
-            return;
-        }
-        let frame = Arc::make_mut(frame);
-        for object in frame.objects.iter_mut() {
-            let Some(style) = object.style.clone() else { continue };
-            let Some(base) = figures.get(&object.figure) else { continue };
-            let resolved = cache
-                .entry((object.figure, style.key.clone()))
-                .or_insert_with(|| Arc::new(crate::style::resolve(base, &style)))
-                .clone();
-            Arc::make_mut(object).figure_override = Some(resolved);
-        }
-    };
-    for k in doc.keyframes.iter_mut() {
-        fix(k);
+/// Whether the loader's cache holds the last reference to a record.
+fn source_unshared(source: &Value) -> bool {
+    match source {
+        Value::Obj(object) => Arc::strong_count(object) == 1,
+        _ => true,
     }
-    for k in doc.frame_sources.values_mut() {
-        fix(k);
+}
+
+impl Loader {
+    /// Gives every styled object the figure its style overlay resolves to, sharing
+    /// identical overlays. A frame resolved against figures that have not changed
+    /// since is kept as it is.
+    fn resolve_styles(&mut self, doc: &mut Document) {
+        let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
+        let mut fix = |frame: &mut Arc<Keyframe>| {
+            let current = |object: &Arc<Object>| match (&object.style, &object.figure_override, figures.get(&object.figure)) {
+                (None, _, _) | (Some(_), _, None) => true,
+                (Some(_), Some(resolved), Some(base)) => resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
+                (Some(_), None, Some(_)) => false,
+            };
+            if frame.objects.iter().all(current) {
+                return;
+            }
+            let frame = Arc::make_mut(frame);
+            for object in frame.objects.iter_mut() {
+                if current(object) {
+                    continue;
+                }
+                let Some(style) = object.style.clone() else { continue };
+                let Some(base) = figures.get(&object.figure) else { continue };
+                let resolved = self
+                    .styled
+                    .entry((Arc::as_ptr(base) as usize, style.key.clone()))
+                    .or_insert_with(|| {
+                        let mut figure = crate::style::resolve(base, &style);
+                        figure.base = Some(base.clone());
+                        (base.clone(), Arc::new(figure))
+                    })
+                    .1
+                    .clone();
+                Arc::make_mut(object).figure_override = Some(resolved);
+            }
+        };
+        for k in doc.keyframes.iter_mut() {
+            fix(k);
+        }
+        for k in doc.frame_sources.values_mut() {
+            fix(k);
+        }
     }
 }
 

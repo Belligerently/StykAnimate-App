@@ -219,6 +219,8 @@ pub struct Figure {
     pub plan: FigurePlan,
     /// Features the engine does not evaluate yet (reported, never silently lost).
     pub unsupported: Vec<&'static str>,
+    /// For a figure resolved from an instance's style overlay: the definition it was resolved from.
+    pub base: Option<Arc<Figure>>,
 }
 
 impl Figure {

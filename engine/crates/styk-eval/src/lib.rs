@@ -60,21 +60,8 @@ pub fn prepare(doc: Document) -> eval::Prepared {
     eval::Prepared::new(Arc::new(doc))
 }
 
-/// Builds the typed views of a document tree.
+/// Builds the typed views of a document tree once. A document that will change
+/// keeps a [`load::Loader`] instead, which converts only what each change replaced.
 pub fn from_value(document: &styk_doc::Value, name: &str) -> Result<Document, Error> {
-    let mut loader = load::Loader::new();
-    let mut doc = loader.document(document, name)?;
-    doc.images = std::mem::take(&mut loader.images);
-    doc.unsupported = loader.unsupported;
-    for fig in &doc.figures {
-        for f in &fig.unsupported {
-            if !doc.unsupported.iter().any(|u| u == f) {
-                doc.unsupported.push(f.to_string());
-            }
-        }
-    }
-    if doc.name.is_empty() {
-        doc.name = name.to_string();
-    }
-    Ok(doc)
+    load::Loader::new().document(document, name)
 }
