@@ -208,6 +208,11 @@ impl EngineHandle {
         self.engine.set_hidden(uids);
     }
 
+    /// Prepares frames with or without effects (the editor's effects preview).
+    pub fn set_effects(&self, on: bool) {
+        self.engine.set_effects(on);
+    }
+
     /// The id of the open document generation (0 when there is none). Prepared frames
     /// belong to one generation.
     pub fn generation(&self) -> f64 {

@@ -19,6 +19,11 @@ pub fn camera_is_identity(camera: Option<&Camera>) -> bool {
 /// World → workspace pixels for a camera, workspace zoom and pan.
 pub fn camera_matrix(doc: &Document, camera: Option<&Camera>, zoom: f64, pan: [f64; 2]) -> [f64; 6] {
     let camera = if doc.layers.as_ref().is_some_and(|l| !l.camera_visible) { None } else { camera };
+    camera_transform(camera, doc.canvas, zoom, pan)
+}
+
+/// [`camera_matrix`] for a camera already known to be shown, on a `canvas` of that size.
+pub fn camera_transform(camera: Option<&Camera>, canvas: [u32; 2], zoom: f64, pan: [f64; 2]) -> [f64; 6] {
     let [x, y] = pan;
     if camera_is_identity(camera) {
         return [zoom, 0.0, 0.0, zoom, x, y];
@@ -28,7 +33,7 @@ pub fn camera_matrix(doc: &Document, camera: Option<&Camera>, zoom: f64, pan: [f
     let scale = inverse * zoom;
     let angle = -c.angle;
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
-    let (cx, cy) = (doc.canvas[0] as f64 / 2.0, doc.canvas[1] as f64 / 2.0);
+    let (cx, cy) = (canvas[0] as f64 / 2.0, canvas[1] as f64 / 2.0);
     let (px, py) = (cx + c.x, cy + c.y);
     [a, b, -b, a, x + cx * zoom - a * px + b * py, y + cy * zoom - b * px - a * py]
 }
@@ -43,4 +48,16 @@ pub fn invert(m: [f64; 6]) -> [f64; 6] {
 
 pub fn apply(m: [f64; 6], p: [f64; 2]) -> [f64; 2] {
     [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]]
+}
+
+/// `a ∘ b`: applies `b`, then `a`.
+pub fn compose(a: [f64; 6], b: [f64; 6]) -> [f64; 6] {
+    [
+        a[0] * b[0] + a[2] * b[1],
+        a[1] * b[0] + a[3] * b[1],
+        a[0] * b[2] + a[2] * b[3],
+        a[1] * b[2] + a[3] * b[3],
+        a[0] * b[4] + a[2] * b[5] + a[4],
+        a[1] * b[4] + a[3] * b[5] + a[5],
+    ]
 }

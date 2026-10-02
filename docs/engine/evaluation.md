@@ -50,3 +50,38 @@ queue in the plan orders them.
   `engine/tools/ik-fixtures.mjs`, `eval-fixtures.mjs`, `vfx-fixtures.mjs`
   (byte-stable), checked by `cargo test -p styk-eval`.
 - `npm run engine:parity -- --corpus` runs the benchmark files at every tick.
+
+## The evaluated frame as records
+
+A gesture commits by storing the frame the editor shows: `snapshotPoseFrame(
+editor.evaluatedFrame)` becomes a pose source. `styk_eval::records` produces that record,
+byte for byte, so the commit can run in the engine ([editing.md](editing.md)). It mirrors
+the record-level shape of the editor's evaluation (which record a pose comes from, which
+keys a tween writes and in which order: `sampleLayerSheet`, `evaluatedNativeFrame`,
+`buildVirtualPoseTrack`, `sampleMovieclipObjects`, `applyLayerOrder`,
+`snapshotPoseFrame`) and takes every interpolated number from the typed evaluator, so the
+arithmetic has one implementation. Frames it does not produce yet answer `Unported` with
+the reason.
+
+- Covered: imported layers (the native timeline, exact and tweened), layers with authored
+  pose keys (virtual pose tracks), the whole-pose shortcut and the per-layer composition,
+  tweened IK controllers (`interpolateIK`), figure and scene effect stacks
+  (`interpolateVfx`, parameters resolved in the registry's order, paints normalized),
+  layers that mix imported and authored keys (the window of keys around the playhead),
+  movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
+  movieclips leaving the frame outside their span, layer order.
+- Not yet (each answers `Unported`): figures joined to a hidden movieclip, camera parallax offsets, 3D poses between keys, animation
+  origins, property channels, hidden pose keys, a movieclip's own document.
+- Pivot's own easing unwraps each angle along the whole run of tweened keys before the
+  interval. The drawing path unwraps from the previous key only (constant time, the same
+  picture); records follow the editor's chain (`evaluate_native_exact`), or a stored
+  angle would sit whole turns away (found on `hitoshi vs suzu tomiee ssj.piv`, tick 182;
+  the `eval-legacy-winding` fixture fails without it).
+- Angles are tweened through `styk_math::shortest`: with the platform's `sin` and `atan2`
+  an IK target rotation came out as `-0.06` where the editor stores
+  `-0.05999999999999999` (D16).
+- Harness: `engine/tools/records-reference.mjs <file> <folder>` records the editor's loaded
+  report and, per tick, the snapshot (SHA-256, and the JSON for small documents);
+  `styk records <folder> [--write]` compares. `engine/tools/records-fixtures.mjs` records
+  every editor-built fixture into `tests/fixtures/records/`; `tests/records.rs` requires
+  every recorded frame to be produced and identical.

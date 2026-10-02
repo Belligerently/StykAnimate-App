@@ -47,13 +47,13 @@ pub(crate) fn hidden_slots(generation: &Generation, frame: &styk_eval::eval::Fra
         .collect()
 }
 
-pub(crate) fn produce(generation: &Generation, tick: u32, hidden_uids: &[u32], clock: Clock) -> FrameData {
+pub(crate) fn produce(generation: &Generation, tick: u32, hidden_uids: &[u32], effects: bool, clock: Clock) -> FrameData {
     let started = clock();
     let prepared = &generation.prepared;
     let frame = prepared.evaluate(tick as f64);
     let scene = build(&prepared.doc, &frame);
     let hidden = hidden_slots(generation, &frame, hidden_uids);
-    let overrides = Overrides { hidden: &hidden, ..Default::default() };
+    let overrides = Overrides { hidden: &hidden, bypass_effects: !effects, ..Default::default() };
     let list = Arc::new(encode_with(&prepared.doc, &generation.assets, &scene, &overrides));
     FrameData {
         generation: generation.id,
@@ -82,13 +82,15 @@ pub(crate) struct Cache {
     playhead: u32,
     /// Figures hidden for this session, by identity. Prepared frames leave them out.
     pub(crate) hidden: Arc<[u32]>,
+    /// Effects are drawn (the editor's effects preview is on).
+    pub(crate) effects: bool,
     total: u32,
     stats: FrameStats,
 }
 
 impl Cache {
     pub fn new(budget: usize) -> Cache {
-        Cache { generation: 0, entries: HashMap::new(), bytes: 0, budget, wanted: Vec::new(), inflight: HashSet::new(), playhead: 0, hidden: Arc::from(Vec::new()), total: 1, stats: FrameStats::default() }
+        Cache { generation: 0, entries: HashMap::new(), bytes: 0, budget, wanted: Vec::new(), inflight: HashSet::new(), playhead: 0, hidden: Arc::from(Vec::new()), effects: true, total: 1, stats: FrameStats::default() }
     }
 
     pub fn reset(&mut self, generation: u64) {
@@ -180,10 +182,13 @@ impl Engine {
         if tick >= generation.playable_ticks() {
             return None;
         }
-        let hidden = self.inner.state.lock().frames.hidden.clone();
-        let data = produce(&generation, tick, &hidden, self.inner.clock);
+        let (hidden, effects) = {
+            let state = self.inner.state.lock();
+            (state.frames.hidden.clone(), state.frames.effects)
+        };
+        let data = produce(&generation, tick, &hidden, effects, self.inner.clock);
         let mut state = self.inner.state.lock();
-        if !Arc::ptr_eq(&state.frames.hidden, &hidden) {
+        if !Arc::ptr_eq(&state.frames.hidden, &hidden) || state.frames.effects != effects {
             return None;
         }
         state.frames.stats.inline += 1;
@@ -198,6 +203,17 @@ impl Engine {
             return;
         }
         state.frames.hidden = Arc::from(uids);
+        let generation = state.frames.generation;
+        state.frames.reset(generation);
+    }
+
+    /// Prepares frames with or without effects. Prepared frames of the other kind are dropped.
+    pub fn set_effects(&self, on: bool) {
+        let mut state = self.inner.state.lock();
+        if state.frames.effects == on {
+            return;
+        }
+        state.frames.effects = on;
         let generation = state.frames.generation;
         state.frames.reset(generation);
     }

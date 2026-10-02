@@ -1109,6 +1109,7 @@ dependencies = [
  "image",
  "pollster",
  "rayon",
+ "sha2",
  "styk-doc",
  "styk-edit",
  "styk-eval",

@@ -85,8 +85,10 @@ pub struct Prepared {
     presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
 }
 
+/// `shortest(a)`: the angle in (-π, π], with V8's rounding (tweened angles are stored
+/// when a gesture commits, D16).
 pub fn shortest(a: f64) -> f64 {
-    a.sin().atan2(a.cos())
+    styk_math::shortest(a)
 }
 
 pub fn frame_ticks(duration: u32) -> u32 {
@@ -205,7 +207,11 @@ pub fn auto_value(a: f64, b: f64, fraction: f64, duration: f64, previous: Option
 
 /// The interpolation context of one keyframe interval: channel values are
 /// read at keys index-1, index, index+1 and index+2.
-struct Sampler {
+struct Sampler<'a> {
+    seq: &'a Seq,
+    index: usize,
+    /// Unwrap angles along the whole run of keys, as the editor does (see [`Sampler::angle`]).
+    exact: bool,
     t: f64,
     auto: bool,
     auto_prev: bool,
@@ -219,12 +225,15 @@ struct Sampler {
     can_extend_right: bool,
 }
 
-impl Sampler {
-    fn new(seq: &Seq, index: usize, t: f64) -> Sampler {
+impl<'a> Sampler<'a> {
+    fn new(seq: &'a Seq, index: usize, t: f64, exact: bool) -> Sampler<'a> {
         let keys = &seq.keys;
         let mode = |k: usize| keys.get(k).and_then(|f| f.easing).map(|e| e.mode);
         let ticks = |k: Option<usize>| k.and_then(|k| keys.get(k)).map(|f| frame_ticks(f.duration) as f64).unwrap_or(0.0);
         Sampler {
+            seq,
+            index,
+            exact,
             t,
             auto: mode(index) == Some(EasingMode::Auto),
             auto_prev: index > 0 && mode(index - 1) == Some(EasingMode::Auto),
@@ -239,6 +248,36 @@ impl Sampler {
 
     /// `v` = values at keys [index-1, index, index+1, index+2].
     fn value(&self, v: [Option<f64>; 4], angular: bool) -> f64 {
+        self.value_from(v, angular, None)
+    }
+
+    /// An angle, with `far(k)` reading the channel at any key `k`. Pivot's own easing
+    /// unwraps an angle along the whole run of tweened keys before the interval, so
+    /// the value the editor stores can sit whole turns away from the one unwrapped
+    /// from the previous key alone. Both draw the same; when records are produced
+    /// (`exact`) the editor's chain is followed, at a cost that grows with the run.
+    fn angle(&self, v: [Option<f64>; 4], far: &dyn Fn(usize) -> Option<f64>) -> f64 {
+        self.value_from(v, true, self.unwrapped_before(&v, far))
+    }
+
+    /// The unwrapped angle at key index-1 when the run starts before it.
+    fn unwrapped_before(&self, v: &[Option<f64>; 4], far: &dyn Fn(usize) -> Option<f64>) -> Option<f64> {
+        if !self.exact || self.auto || !self.legacy || !(self.has_prev && self.ticks[0] > 1.0 && v[0].is_some()) {
+            return None;
+        }
+        let ticks = |k: usize| frame_ticks(self.seq.keys[k].duration) as f64;
+        let mut left = self.index - 1;
+        while left > 0 && ticks(left - 1) > 1.0 && far(left - 1).is_some() {
+            left -= 1;
+        }
+        let mut value = far(left)?;
+        for k in left + 1..self.index {
+            value += shortest(far(k)? - value);
+        }
+        Some(value)
+    }
+
+    fn value_from(&self, v: [Option<f64>; 4], angular: bool, before: Option<f64>) -> f64 {
         let (Some(a), Some(b)) = (v[1], v[2]) else { return v[1].unwrap_or(0.0) };
         let t = self.t;
         if self.auto {
@@ -261,7 +300,7 @@ impl Sampler {
         let left = self.has_prev && self.ticks[0] > 1.0 && v[0].is_some();
         let right = self.can_extend_right && self.ticks[2] > 1.0 && v[3].is_some();
         let unwrap = |prev: f64, value: f64| if angular { prev + shortest(value - prev) } else { value };
-        let u0 = if left { v[0].unwrap() } else { 0.0 };
+        let u0 = if left { before.unwrap_or_else(|| v[0].unwrap()) } else { 0.0 };
         let u1 = if left { unwrap(u0, a) } else { a };
         let u2 = unwrap(u1, b);
         if !left && !right {
@@ -394,6 +433,16 @@ fn frame_of(key: &KeyRef) -> Frame {
 
 /// `evaluatedNativeFrame`: one interval of a native or virtual timeline.
 pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame {
+    evaluate_interval(doc, seq, index, t, false)
+}
+
+/// [`evaluate_native`] with every stored value as the editor computes it, for
+/// records (see [`Sampler::angle`]).
+pub(crate) fn evaluate_native_exact(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame {
+    evaluate_interval(doc, seq, index, t, true)
+}
+
+fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
     let keys = &seq.keys;
     let Some(a) = keys.get(index) else { return Frame::default() };
     let Some(b) = keys.get(index + 1) else { return frame_of(a) };
@@ -411,7 +460,7 @@ pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame
     if t >= 1.0 {
         return frame_of(b);
     }
-    let sampler = Sampler::new(seq, index, t);
+    let sampler = Sampler::new(seq, index, t, exact);
     let around = |k: Option<usize>| k.and_then(|k| keys.get(k)).map(|f| &f.frame);
     let frames = [around(index.checked_sub(1)), Some(&a.frame), Some(&b.frame), around(Some(index + 2))];
     let mut objects = Vec::with_capacity(a.frame.objects.len());
@@ -435,7 +484,7 @@ pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame
                 x: sampler.value(get(|c| c.x), false),
                 y: sampler.value(get(|c| c.y), false),
                 scale: sampler.value(get(|c| c.scale), false),
-                angle: sampler.value(get(|c| c.angle), true),
+                angle: sampler.angle(get(|c| c.angle), &|k| keys.get(k).map(|f| f.frame.camera.unwrap_or_default().angle)),
                 is_default: false,
             })
         }
@@ -465,7 +514,9 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
     let mut out = o.clone();
     // IK: controller targets and follower angles tween with the pose (`interpolateIK`).
     if let Some(table) = &o.ik {
-        out.ik = Some(Arc::new(crate::ik::tween(table, recs.map(|r| r.and_then(|x| x.ik.as_deref())), t, &|v, angular| s.value(v, angular))));
+        let at = |k: usize| s.seq.keys.get(k).and_then(|f| f.frame.object(o.uid)).filter(|x| x.figure == o.figure).and_then(|x| x.ik.as_deref());
+        let value = |v: [Option<f64>; 4], angular: bool, far: &dyn Fn(usize) -> Option<f64>| if angular { s.angle(v, far) } else { s.value(v, false) };
+        out.ik = Some(Arc::new(crate::ik::tween(table, recs.map(|r| r.and_then(|x| x.ik.as_deref())), t, &value, &at)));
     }
     // Effects: matching identities interpolate toward the next pose's (`interpolateVfx`).
     if let Some(stacks) = &o.vfx {
@@ -516,7 +567,7 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
             }
             value
         };
-        let relative = s.value(recs.map(|r| r.map(relative_of)), true);
+        let relative = s.angle(recs.map(|r| r.map(relative_of)), &|k| s.seq.keys.get(k).and_then(|f| f.frame.object(o.uid)).filter(|x| x.figure == o.figure).map(|x| relative_of(x)));
         angles[i] = if parent == u32::MAX {
             relative
         } else {
@@ -595,6 +646,11 @@ impl Prepared {
         prepared
     }
 
+    /// The pose track of a layer (or `scene`, `camera`) as a virtual native timeline.
+    pub(crate) fn track(&self, id: &str) -> Option<&Seq> {
+        self.tracks.get(id).map(|seq| &**seq)
+    }
+
     fn has_clips(&self) -> bool {
         self.doc.figures.iter().any(|f| f.movieclip.is_some())
     }
@@ -662,6 +718,38 @@ impl Prepared {
 
     /// `sampleMovieclipObjects`: chooses each instance's local clip time and
     /// removes instances that are not playing at this tick.
+    /// A movieclip instance's local time at `tick` (`_movieclipSample`): `Some(None)`
+    /// while it is not shown, `None` for a figure that is not a movieclip.
+    pub(crate) fn clip_local(&self, object: &Object, tick: f64) -> Option<Option<f64>> {
+        let doc = &self.doc;
+        let clip = doc.figure(object.figure).and_then(|f| f.movieclip.clone())?;
+        let default = MovieclipPlayback { start: 0.0, end: None, offset: 0.0, speed: 1.0, mode: MovieclipMode::Loop, presence: false, restarts: vec![] };
+        let settings = object.movieclip.as_deref().cloned().unwrap_or(default);
+        Some(if settings.presence {
+            let time = if settings.mode == MovieclipMode::Single { 0.0 } else { self.presence_elapsed(object.uid, tick) };
+            let s = MovieclipPlayback { start: 0.0, end: None, speed: 1.0, ..settings };
+            movieclip_time(&clip, &s, time, doc.fps)
+        } else {
+            movieclip_time(&clip, &settings, tick, doc.fps)
+        })
+    }
+
+    /// The pose track of what replaces movieclip `uid` on layer `id` (`patchChannels`).
+    pub(crate) fn patch_track(&self, id: &str, uid: u32) -> Option<&Seq> {
+        self.patches.get(&(id.to_string(), uid)).map(|seq| &**seq)
+    }
+
+    /// One layer's own frame at `tick`, movieclip replacements applied (`sample(id)`).
+    pub(crate) fn layer_frame(&self, id: &str, tick: f64) -> Option<Frame> {
+        self.sample_track(id, tick)
+    }
+
+    /// The frame before movieclips are sampled and layers ordered (`sampleLayerSheet`
+    /// or the native tween), for the record view.
+    pub(crate) fn raw(&self, tick: f64) -> Frame {
+        self.evaluate_raw(tick, false)
+    }
+
     fn apply_movieclips(&self, frame: &mut Frame, tick: f64) {
         if !self.has_clips() {
             return;
@@ -669,16 +757,7 @@ impl Prepared {
         let doc = &self.doc;
         let mut hidden = false;
         for object in frame.objects.iter_mut() {
-            let Some(clip) = doc.figure(object.figure).and_then(|f| f.movieclip.clone()) else { continue };
-            let default = MovieclipPlayback { start: 0.0, end: None, offset: 0.0, speed: 1.0, mode: MovieclipMode::Loop, presence: false, restarts: vec![] };
-            let settings = object.movieclip.as_deref().cloned().unwrap_or(default);
-            let local = if settings.presence {
-                let time = if settings.mode == MovieclipMode::Single { 0.0 } else { self.presence_elapsed(object.uid, tick) };
-                let s = MovieclipPlayback { start: 0.0, end: None, speed: 1.0, ..settings };
-                movieclip_time(&clip, &s, time, doc.fps)
-            } else {
-                movieclip_time(&clip, &settings, tick, doc.fps)
-            };
+            let Some(local) = self.clip_local(object, tick) else { continue };
             hidden |= local.is_none();
             Arc::make_mut(object).clip_time = local;
         }
@@ -917,17 +996,99 @@ impl Prepared {
             return Some(self.native_at(source + fraction * (target - source)));
         }
         if self.imported.get(id).copied().unwrap_or(false) {
-            // Mixed imported/authored track: hold the authored pose (rare).
-            return match &key.value {
-                SheetValue::SourceTick(t) => Some(self.native_at(*t)),
-                SheetValue::Frame(Some(fid)) => self.doc.pose_source(fid).map(|k| {
-                    frame_of(&KeyRef { frame: k.clone(), duration: 1, easing: None, origin: Some(FrameRef::Source(fid.clone())) })
-                }),
-                SheetValue::Frame(None) => None,
-            };
+            let index = at - 1;
+            let (seq, first) = self.mixed_window(id, &keys, index);
+            let fraction = next.map_or(0.0, |n| (tick - key.tick as f64) / (n.tick as f64 - key.tick as f64));
+            return Some(evaluate_native(&self.doc, &seq, index - first, fraction));
         }
         let seq = self.tracks.get(id)?;
         sample_pose_track(&self.doc, seq, tick)
+    }
+
+    /// A layer that mixes imported and authored keys (an imported animation after an
+    /// edit) tweens through a window of the keys around the playhead: one before the
+    /// interval and one after, each imported key standing in as the layer's own
+    /// figures of the imported pose at its source tick (`baseSample`'s `imported`
+    /// branch). Returns the window as a timeline and the index of its first key.
+    pub(crate) fn mixed_window(&self, id: &str, keys: &[&SheetKey], index: usize) -> (Seq, usize) {
+        let (first, last) = (index.saturating_sub(1), (index + 3).min(keys.len()));
+        let fixed = FIXED.contains(&id);
+        let window = keys[first..last]
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let (frame, origin) = match &entry.value {
+                    SheetValue::SourceTick(time) => (Some(Arc::new(self.endpoint(id, fixed, *time))), None),
+                    SheetValue::Frame(Some(fid)) => (self.doc.pose_source(fid).cloned(), Some(FrameRef::Source(fid.clone()))),
+                    SheetValue::Frame(None) => (None, None),
+                };
+                let frame = frame.unwrap_or_else(|| {
+                    // No pose: the first keyframe's own fields, without figures.
+                    let mut blank = self.doc.keyframes.first().map(|k| (**k).clone()).unwrap_or_else(blank_keyframe);
+                    blank.objects.clear();
+                    blank.draw_order.clear();
+                    blank.slot_of.clear();
+                    Arc::new(blank)
+                });
+                let until = keys.get(first + i + 1).map_or(entry.tick + 1, |next| next.tick);
+                KeyRef { frame, duration: until.saturating_sub(entry.tick), easing: Some(entry.easing.unwrap_or(Easing::LINEAR)), origin: if fixed { None } else { origin } }
+            })
+            .collect();
+        (Seq { keys: window, version: 5, auto_easing: self.doc.auto_easing, ticks: Vec::new() }, first)
+    }
+
+    /// `snapshotPoseFrame(sourceAt(time), <the layer's figures>)`: the imported pose at
+    /// `time` reduced to the figures of layer `id` and the figures they are joined to.
+    fn endpoint(&self, id: &str, fixed: bool, time: f64) -> Keyframe {
+        let source = self.native_at(time);
+        let layers = self.doc.layers.clone().unwrap_or_default();
+        let mut wanted = vec![false; source.objects.len()];
+        if !fixed {
+            let mut queue: Vec<usize> = (0..source.objects.len()).filter(|&slot| layers.layer_of(source.objects[slot].uid) == id).collect();
+            for &slot in &queue {
+                wanted[slot] = true;
+            }
+            let mut q = 0;
+            while q < queue.len() {
+                if let Some(parent) = source.objects[queue[q]].join.map(|j| j.slot as usize).filter(|&p| p < wanted.len() && !wanted[p]) {
+                    wanted[parent] = true;
+                    queue.push(parent);
+                }
+                q += 1;
+            }
+        }
+        let mut remap = vec![u32::MAX; wanted.len()];
+        let mut objects = Vec::new();
+        for (slot, object) in source.objects.iter().enumerate().filter(|(slot, _)| wanted[*slot]) {
+            remap[slot] = objects.len() as u32;
+            objects.push(object.clone());
+        }
+        for object in objects.iter_mut() {
+            if let Some(join) = object.join {
+                let target = remap.get(join.slot as usize).copied().filter(|&slot| slot != u32::MAX);
+                let rejoined = target.map(|slot| Join { slot, handle: join.handle });
+                if rejoined != object.join {
+                    Arc::make_mut(object).join = rejoined;
+                }
+            }
+        }
+        let mut frame = Keyframe {
+            duration: 1,
+            draw_order: source.draw_order.iter().filter_map(|&slot| remap.get(slot as usize).copied().filter(|&slot| slot != u32::MAX)).collect(),
+            objects,
+            camera: source.camera,
+            background: source.background,
+            background_b: source.background_b,
+            background_mix: source.background_mix,
+            easing: None,
+            frame_id: None,
+            slot_of: HashMap::new(),
+            continuations: source.continuations.clone(),
+            background_color: source.background_color,
+            vfx: source.pose_vfx.clone(),
+        };
+        frame.reindex();
+        frame
     }
 
     /// `sampleLayerSheet`: compose each layer's own pose track.
@@ -1057,10 +1218,9 @@ fn patch_track(doc: &Document, track: &SheetTrack, uid: u32) -> Seq {
     virtual_track(doc, false, keys.collect())
 }
 
-/// `buildVirtualPoseTrack`: keys become a native timeline of their source poses.
-fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&Arc<str>>)>) -> Seq {
-    keys.sort_by(|a, b| a.0.tick.cmp(&b.0.tick).then((b.0.hidden as u8).cmp(&(a.0.hidden as u8))));
-    let blank = Arc::new(Keyframe {
+/// A pose with nothing in it: no figures, the default camera, the first background.
+fn blank_keyframe() -> Keyframe {
+    Keyframe {
         duration: 1,
         objects: vec![],
         draw_order: vec![],
@@ -1074,7 +1234,13 @@ fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&
         continuations: Vec::new(),
         background_color: None,
         vfx: None,
-    });
+    }
+}
+
+/// `buildVirtualPoseTrack`: keys become a native timeline of their source poses.
+fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&Arc<str>>)>) -> Seq {
+    keys.sort_by(|a, b| a.0.tick.cmp(&b.0.tick).then((b.0.hidden as u8).cmp(&(a.0.hidden as u8))));
+    let blank = Arc::new(blank_keyframe());
     let refs = keys
         .iter()
         .enumerate()

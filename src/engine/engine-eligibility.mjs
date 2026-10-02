@@ -10,15 +10,24 @@
  * only looks at the records an edit names.
  */
 
-/** Per-pose fields the engine does not evaluate yet. */
-const POSE_FIELDS = ['_stykSpatial', '_stykAnimationOrigin', '_sticknodesSprite', '_stykVfx', '_stykVfxScope', 'color_transition'];
+import {isGeneratorType} from '../vfx-registry.mjs';
+
+/** Per-pose fields the engine does not evaluate yet. Effect stacks (`_stykVfx`,
+ * `_stykVfxScope`) are drawn: a pose never holds a generated effect. */
+const POSE_FIELDS = ['_stykSpatial', '_stykAnimationOrigin', '_sticknodesSprite', 'color_transition'];
+
+/** The first effect type of an effects timeline the engine does not draw: generated
+ * effects (particles, aura, beams, smoke, explosions) stay with the JavaScript renderer. */
+function clipReason(clips) {
+  for (const clip of clips ?? []) for (const effect of clip.effects ?? []) if (isGeneratorType(effect.type)) return `generated effects (${effect.type})`;
+  return null;
+}
 
 function figureReason(figure, depth) {
   const styk = figure._styk;
   if (styk?.spatialMesh) return '3D meshes';
   if (styk?.animationOrigin) return 'animation origins';
   if (figure.polyfills?.some(polygon => polygon._stykSurface)) return '3D surfaces';
-  if (figure.segments?.some(segment => segment._stykVfx)) return 'effects';
   if (styk?.movieclip?.document) return depth > 16 ? 'deeply nested movieclips' : documentReason(styk.movieclip.document, depth + 1);
   return null;
 }
@@ -31,7 +40,8 @@ function frameReason(frame) {
 function metadataReason(report) {
   const styk = report._styk;
   if (!styk) return null;
-  if (styk.vfxClips?.clips?.length) return 'effects';
+  const generated = clipReason(styk.vfxClips?.clips);
+  if (generated) return generated;
   if (styk.animation?.channels?.length || styk.layerSheet?.legacyAnimation) return 'property channels';
   if (styk.simpleFrameDraft) return 'a frame draft';
   if (styk.cameraMotion?.clips?.some(clip => clip.type === 'follow')) return 'follow camera';

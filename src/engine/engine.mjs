@@ -9,6 +9,7 @@
  * its background work here between frames.
  */
 import init, {EngineHandle, Stage, api_version} from './pkg/styk_engine.js';
+import {declaredMemoryPages} from './engine-memory.mjs';
 
 /** The command/query API this loader was written for. */
 const API_VERSION = 1;
@@ -40,14 +41,16 @@ const MEMORY_MAXIMA = [32768, 16384, 8192];
  * never change (docs/engine/decisions/0014-shared-memory-maximum.md): a device that
  * cannot reserve 2 GiB of address space (mobile WebKit is the risk) gets the largest
  * maximum it accepts. `stykanimate.engine.memory` (MiB) overrides it for testing.
+ * It starts at `initial` pages, the size the module declares (`declaredMemoryPages`):
+ * a smaller memory does not link, and the size changes with the module's static data.
  */
-export function createEngineMemory(maxima = MEMORY_MAXIMA) {
+export function createEngineMemory(initial, maxima = MEMORY_MAXIMA) {
   let override = null;
   try { override = Number(globalThis.localStorage?.getItem('stykanimate.engine.memory')) || null; } catch { /* storage unavailable */ }
   const candidates = override ? [Math.min(32768, Math.max(256, Math.round(override * 16)))] : maxima;
   let failure;
   for (const maximum of candidates) {
-    try { return Object.assign(new WebAssembly.Memory({initial: 25, maximum, shared: true}), {maximumBytes: maximum * 65536}); }
+    try { return Object.assign(new WebAssembly.Memory({initial, maximum, shared: true}), {maximumBytes: maximum * 65536}); }
     catch (error) { failure = error; }
   }
   throw new Error(`The engine could not reserve its memory: ${failure?.message ?? failure}`);
@@ -55,8 +58,8 @@ export function createEngineMemory(maxima = MEMORY_MAXIMA) {
 
 async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.navigator?.deviceMemory} = {}) {
   const source = new URL('./pkg/styk_engine_bg.wasm', import.meta.url);
-  const module = await compile(source);
-  const reserved = createEngineMemory();
+  const {module, pages} = await compile(source);
+  const reserved = createEngineMemory(pages);
   const wasm = await init({module_or_path: module, memory: reserved});
   if (api_version() !== API_VERSION) throw new Error(`The engine module has API ${api_version()}, this page expects ${API_VERSION}. Reload the page.`);
   const memory = wasm.memory;
@@ -125,13 +128,19 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
   };
 }
 
+/** The compiled module and the pages of memory it declares. */
 async function compile(source) {
   // Node (unit tests) reads the file; browsers compile while downloading.
   if (source.protocol === 'file:') {
     const {readFile} = await import('node:fs/promises');
-    return WebAssembly.compile(await readFile(source));
+    const bytes = await readFile(source);
+    return {module: await WebAssembly.compile(bytes), pages: declaredMemoryPages(bytes)};
   }
-  const response = fetch(source, {credentials: 'same-origin'});
-  try { return await WebAssembly.compileStreaming(response); }
-  catch { return WebAssembly.compile(await (await fetch(source, {credentials: 'same-origin'})).arrayBuffer()); }
+  const response = await fetch(source, {credentials: 'same-origin'});
+  // A second reader of the same download: the import section says how large the memory starts.
+  const bytes = response.clone().arrayBuffer();
+  let module;
+  try { module = await WebAssembly.compileStreaming(response); }
+  catch { module = await WebAssembly.compile(await bytes); }
+  return {module, pages: declaredMemoryPages(await bytes)};
 }

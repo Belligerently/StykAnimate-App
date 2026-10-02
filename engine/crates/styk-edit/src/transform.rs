@@ -2,12 +2,11 @@
 //! `cancelDrag`) and moving them (`moveSelection`).
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use styk_doc::{Obj, Value};
 
 use crate::history::{Command, CommandKind};
-use crate::record::{frame_objects, join_target, num, object_mut, same, uid};
+use crate::record::{join_target, num, object_mut, same, uid};
 use crate::select::resolve_join_selection;
 use crate::timeline::rows;
 use crate::{Drag, EditError, Editor};
@@ -34,14 +33,13 @@ impl Editor {
         if self.drag.is_some() {
             self.commit_drag()?;
         }
-        let Some((_, object)) = self.object() else { return Ok(false) };
-        self.selection.uid = uid(&object);
-        if let Some(row) = rows(&self.report).get(self.frame_index) {
-            self.tick = row.start as f64;
-        } else {
-            self.tick = 0.0;
+        if self.sheet() {
+            return self.begin_authored_drag(label, translation);
         }
-        let objects = frame_objects(&self.report, self.frame_index);
+        let Some((_, object)) = self.object()? else { return Ok(false) };
+        self.selection.uid = uid(&object);
+        self.tick = rows(&self.report).get(self.frame_index).map_or(0.0, |row| row.start);
+        let objects = self.frame_objects();
         let slots = resolve_join_selection(&objects, &self.selection.uids, translation)?;
         self.drag = Some(Drag {
             label: label.to_string(),
@@ -51,6 +49,7 @@ impl Editor {
             before_selection: self.selection_state(),
             changed: false,
             detached: HashMap::new(),
+            authored: false,
         });
         Ok(true)
     }
@@ -58,7 +57,8 @@ impl Editor {
     /// `_expandTranslationDrag`: a pose gesture that starts moving takes in whole connected figures.
     fn expand_translation_drag(&mut self) -> Result<(), EditError> {
         let Some(drag) = self.drag.as_ref().filter(|d| !d.translation) else { return Ok(()) };
-        let objects = frame_objects(&self.report, self.frame_index);
+        // On a draft the selection frame is the draft itself.
+        let objects = self.frame_objects();
         let slots = resolve_join_selection(&objects, &self.selection.uids, true)?;
         let snapshots: HashMap<u32, Value> = drag.before.iter().filter_map(|o| Some((uid(o)?, o.clone()))).collect();
         let before = slots.iter().map(|&slot| uid(&objects[slot]).and_then(|u| snapshots.get(&u).cloned()).unwrap_or_else(|| objects[slot].clone())).collect();
@@ -70,7 +70,7 @@ impl Editor {
 
     /// `_objectEdit`: runs `mutate` inside the current gesture, or as a gesture of its own.
     pub(crate) fn object_edit(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
-        if self.object().is_none() {
+        if self.object()?.is_none() {
             return Ok(false);
         }
         let active = self.drag.is_some();
@@ -107,9 +107,12 @@ impl Editor {
 
     pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> {
         let Some(drag) = self.drag.as_ref() else { return Ok(false) };
+        if drag.authored {
+            return self.commit_authored_drag();
+        }
         let ids: Vec<u32> = drag.before.iter().filter_map(uid).collect();
         let index = drag.index;
-        let collect = |editor: &Editor| frame_objects(&editor.report, index).into_iter().filter(|o| uid(o).is_some_and(|u| ids.contains(&u))).collect::<Vec<_>>();
+        let collect = |editor: &Editor| crate::record::frame_objects(&editor.report, index).into_iter().filter(|o| uid(o).is_some_and(|u| ids.contains(&u))).collect::<Vec<_>>();
         let mut after = collect(self);
         if same(&drag.before, &after) {
             self.drag = None;
@@ -118,7 +121,7 @@ impl Editor {
         // Native Pivot stores final attachment coordinates as well as join links.
         if after.iter().any(|o| join_target(o).is_some()) {
             let roots = self.roots()?;
-            let objects = frame_objects(&self.report, index);
+            let objects = crate::record::frame_objects(&self.report, index);
             for (slot, object) in objects.iter().enumerate() {
                 let Some(id) = uid(object).filter(|u| ids.contains(u)) else { continue };
                 if join_target(object).is_none() {
@@ -133,22 +136,15 @@ impl Editor {
         }
         let drag = self.drag.take().unwrap();
         let after_selection = self.selection_state();
-        self.record(Command {
-            kind: CommandKind::Objects,
-            label: drag.label.clone(),
-            index,
-            before: drag.before,
-            after,
-            before_selection: drag.before_selection,
-            after_selection,
-            before_revision: 0,
-            after_revision: 0,
-        });
+        self.record(Command { kind: CommandKind::Objects { index, before: drag.before, after }, label: drag.label.clone(), before_selection: drag.before_selection, after_selection, before_revision: 0, after_revision: 0 });
         self.emit("edit", vec![("label", Value::str(&drag.label)), ("changedUids", uid_array(&ids))]);
         Ok(true)
     }
 
     pub(crate) fn cancel_drag(&mut self) -> Result<bool, EditError> {
+        if self.drag.as_ref().is_some_and(|drag| drag.authored) {
+            return self.cancel_authored_drag();
+        }
         let Some(drag) = self.drag.take() else { return Ok(false) };
         self.replace_objects(drag.index, &drag.before);
         let ids: Vec<u32> = drag.before.iter().filter_map(uid).collect();
@@ -166,9 +162,8 @@ impl Editor {
             if !options.detach_external {
                 editor.expand_translation_drag()?;
             }
-            let index = editor.frame_index;
             let snapshots: HashMap<u32, Value> = editor.drag.as_ref().unwrap().before.iter().filter_map(|o| Some((uid(o)?, o.clone()))).collect();
-            let objects = frame_objects(&editor.report, index);
+            let objects = editor.frame_objects();
             let affected: Vec<usize> = (0..objects.len()).filter(|&slot| uid(&objects[slot]).is_some_and(|u| snapshots.contains_key(&u))).collect();
             let external: Vec<usize> = affected
                 .iter()
@@ -180,7 +175,7 @@ impl Editor {
                 let roots = editor.roots()?;
                 for &slot in &external {
                     let id = uid(&objects[slot]).unwrap();
-                    let record = object_mut(&mut editor.report, index, slot).unwrap();
+                    let record = editor.frame_object_mut(slot).unwrap();
                     if let Some(root) = roots.get(&id) {
                         detached.insert(id, *root);
                         record.set("root_x", Value::Num(root[0]));
@@ -191,7 +186,7 @@ impl Editor {
                 editor.drag.as_mut().unwrap().detached.extend(detached.iter().map(|(k, v)| (*k, *v)));
             }
             for &slot in &affected {
-                let object = frame_objects(&editor.report, index).swap_remove(slot);
+                let object = editor.frame_objects().swap_remove(slot);
                 if join_target(&object).is_some() {
                     continue;
                 }
@@ -207,7 +202,7 @@ impl Editor {
                 } else {
                     (num(&object, "root_x").unwrap_or(f64::NAN), num(&object, "root_y").unwrap_or(f64::NAN))
                 };
-                let record = object_mut(&mut editor.report, index, slot).unwrap();
+                let record = editor.frame_object_mut(slot).unwrap();
                 record.set("root_x", Value::Num(x + dx));
                 record.set("root_y", Value::Num(y + dy));
                 record.remove("runtime_segments");
@@ -216,38 +211,19 @@ impl Editor {
         })
     }
 
-    /// The frame at the playhead and its geometry (`editor.evaluatedFrame`, `editor.geometry`),
-    /// from the engine's own evaluation. A document with features the engine cannot
-    /// evaluate yet is not edited here.
-    pub(crate) fn evaluate(&mut self) -> Result<(styk_eval::eval::Prepared, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
-        let document = self.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
-        if let Some(feature) = document.unsupported.first() {
-            return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
-        let prepared = styk_eval::eval::Prepared::new(Arc::new(document));
-        let frame = prepared.evaluate(self.tick);
-        let scene = styk_eval::geometry::build(&prepared.doc, &frame);
-        Ok((prepared, frame, scene))
-    }
-
-    fn scene(&mut self) -> Result<styk_eval::geometry::Scene, EditError> {
+    fn scene(&self) -> Result<styk_eval::geometry::Scene, EditError> {
         Ok(self.evaluate()?.2)
     }
 
-    /// World positions of every figure's root at the playhead, by unique id.
-    fn roots(&mut self) -> Result<HashMap<u32, [f64; 2]>, EditError> {
+    /// World positions of every figure's root on show, by unique id.
+    pub(crate) fn roots(&self) -> Result<HashMap<u32, [f64; 2]>, EditError> {
         Ok(self.scene()?.objects.iter().map(|object| (object.uid, object.root)).collect())
-    }
-
-    /// The figures selected in the selection frame, in slot order (`selectedObjects`).
-    pub(crate) fn selected_objects(&self) -> Vec<Value> {
-        self.selection_frame().into_iter().filter(|o| uid(o).is_some_and(|u| self.selection.uids.contains(&u))).collect()
     }
 
     /// The selected figure's root, or the middle of the box around every joint of
     /// `ids` when several figures are selected (`_transformSelection`, `centerFigure`).
-    fn selection_center(&mut self, ids: &[u32]) -> Result<[f64; 2], EditError> {
-        let single = self.selected_objects().len() == 1;
+    fn selection_center(&self, ids: &[u32]) -> Result<[f64; 2], EditError> {
+        let single = self.selected_objects()?.len() == 1;
         let selected = self.selection.uid;
         let scene = self.scene()?;
         if single {
@@ -276,15 +252,14 @@ impl Editor {
             if !pivot[0].is_finite() || !pivot[1].is_finite() {
                 return Err(EditError::Invalid(NOT_FINITE.into()));
             }
-            let index = editor.frame_index;
             let figures: Vec<Value> = editor.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-            for (slot, object) in frame_objects(&editor.report, index).iter().enumerate() {
+            for (slot, object) in editor.frame_objects().iter().enumerate() {
                 if !uid(object).is_some_and(|u| ids.contains(&u)) {
                     continue;
                 }
                 let type_id = num(object, "figure_type_id");
                 let figure = figures.iter().find(|f| num(f, "figure_type_id") == type_id).cloned().unwrap_or(Value::Null);
-                let record = object_mut(&mut editor.report, index, slot).unwrap();
+                let record = editor.frame_object_mut(slot).unwrap();
                 transform(record, pivot, join_target(object).is_none(), &figure);
                 record.remove("runtime_segments");
             }
@@ -331,7 +306,7 @@ impl Editor {
             Some("vertical") => false,
             _ => return Err(EditError::Invalid("errors.editorBuilderTopology.chooseAHorizontalOrVerticalFlip".into())),
         };
-        if self.selection.joint >= 0 && self.selected_objects().len() == 1 {
+        if self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
             return Err(EditError::Unported("mirrorSelection of a branch".into()));
         }
         let (center, selected_only) = transform_options(options)?;
@@ -357,16 +332,15 @@ impl Editor {
     }
 
     pub(crate) fn rotate_figure(&mut self, radians: f64) -> Result<bool, EditError> {
-        if self.selected_objects().len() > 1 {
+        if self.selected_objects()?.len() > 1 {
             return self.rotate_selection(radians, &Value::Null);
         }
         finite(radians)?;
         self.object_edit("Rotate figure", |editor| {
             let ids: Vec<u32> = editor.drag.as_ref().unwrap().before.iter().filter_map(uid).collect();
-            let index = editor.frame_index;
-            for (slot, object) in frame_objects(&editor.report, index).iter().enumerate() {
+            for (slot, object) in editor.frame_objects().iter().enumerate() {
                 if uid(object).is_some_and(|u| ids.contains(&u)) {
-                    let record = object_mut(&mut editor.report, index, slot).unwrap();
+                    let record = editor.frame_object_mut(slot).unwrap();
                     map_numbers(record, "angles", |a| a + radians);
                     record.remove("runtime_segments");
                 }
@@ -376,7 +350,7 @@ impl Editor {
     }
 
     pub(crate) fn center_figure(&mut self) -> Result<bool, EditError> {
-        if self.object().is_none() {
+        if self.object()?.is_none() {
             return Ok(false);
         }
         let ids = self.selection.uids.clone();
@@ -388,15 +362,14 @@ impl Editor {
 
     pub(crate) fn reset_pose(&mut self) -> Result<bool, EditError> {
         self.object_edit("Reset pose", |editor| {
-            let index = editor.frame_index;
             let figures: Vec<Value> = editor.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-            for (slot, object) in editor.selection_frame().iter().enumerate() {
+            for (slot, object) in editor.selection_frame()?.iter().enumerate() {
                 if !uid(object).is_some_and(|u| editor.selection.uids.contains(&u)) {
                     continue;
                 }
                 let type_id = num(object, "figure_type_id");
                 let segments: Vec<Value> = figures.iter().find(|f| num(f, "figure_type_id") == type_id).and_then(|f| f.get("segments").and_then(Value::elements)).map(|e| e.iter().collect()).unwrap_or_default();
-                let record = object_mut(&mut editor.report, index, slot).unwrap();
+                let record = editor.frame_object_mut(slot).unwrap();
                 record.set("angles", Value::array(segments.iter().map(|s| s.get("angle_rad").cloned().unwrap_or(Value::Null)).collect()));
                 record.set("bend_flag", Value::Num(0.0));
                 record.set("len_flag", Value::Num(0.0));

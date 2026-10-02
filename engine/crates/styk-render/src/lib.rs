@@ -53,6 +53,12 @@ pub struct Stats {
     pub downscaled: bool,
     /// Rounds of isolation layers the last frame needed (1 when they all fit the atlas).
     pub rounds: u32,
+    /// Layers the last frame filtered, and the effect passes it ran.
+    pub effect_layers: u32,
+    pub effect_passes: u32,
+    /// GPU memory of the effect working slots and of the isolation atlases.
+    pub effect_bytes: u64,
+    pub layer_bytes: u64,
 }
 
 pub struct Renderer {
@@ -82,6 +88,13 @@ pub struct Renderer {
     pub(crate) output: Option<(wgpu::Texture, wgpu::TextureView, wgpu::BindGroup, [u32; 2])>,
     pub(crate) list: Option<Arc<DrawList>>,
     pub(crate) list_prims: u32,
+    /// Atlas page size, and the frame size it grew from (pages fit the largest layer).
+    pub(crate) page: [u32; 2],
+    pub(crate) page_frame: [u32; 2],
+    /// Frames in a row whose layers all fit pages of the frame's size.
+    pub(crate) page_small: u32,
+    /// Effect passes, created with the first frame that filters.
+    pub(crate) executor: Option<effects::executor::Executor>,
     pub stats: Stats,
 }
 

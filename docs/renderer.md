@@ -531,3 +531,18 @@ temporary CPU buffers or browser/driver allocations.
 
 See [Compatibility measurements](performance/compatibility-improvements-2026-10-01.md)
 for matched workloads, pixel checks and remaining synchronous work.
+
+## Effects drawn by the engine
+
+While the Rust engine port is in progress (`docs/RUST-ENGINE-PORT.md`), the stage
+(`src/engine/engine-stage.mjs`) draws documents the engine accepts with the engine
+and forwards the rest to this renderer. Filter effects (every non-generator type,
+on figures, nodes, connected groups, movieclip containers and the scene) are drawn
+by the engine and follow this renderer's WebGPU rules: artwork with effects is
+filtered on the grid and at the density `rasterObject` would choose for the view,
+nested stacks on that grid as `withVfx` filters them, and scene effects on a camera
+image sized and projected as `CameraVfx` does, composited over the unfiltered frame
+with onion skins on top. The render option `vfxEnabled: false` (the effects preview)
+also turns effects off in the engine's edit frames and prepared playback. Documents
+whose effects timeline holds a generated effect keep this renderer. How it works,
+its memory and its parity results: [Engine: visual effects](engine/vfx.md#rendering).

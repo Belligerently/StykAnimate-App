@@ -12,6 +12,7 @@
 
 pub mod clips;
 pub mod frame;
+pub mod layers;
 pub mod padding;
 pub mod paint;
 pub mod parity;

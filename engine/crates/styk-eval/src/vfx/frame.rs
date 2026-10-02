@@ -163,6 +163,49 @@ pub fn evaluate(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
     Some(Arc::new(out))
 }
 
+/// The effects of an edit frame: a pose the editor evaluated itself, whose
+/// stacks already hold its clips (`vfxRenderFrame`: `_stykVfx` composed per key,
+/// `_vfxConnectedEffects`, a scope turned on by a clip, and the scene's
+/// `_vfxTimelineScene` read into [`Frame::pose_vfx`]). Nothing is sampled
+/// here, so nothing is applied twice; movieclip contents are evaluated by the
+/// engine as in [`evaluate`]. `None` when nothing is to be drawn.
+pub fn composed(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
+    let has_vfx = frame.pose_vfx.is_some()
+        || frame.objects.iter().any(|o| o.vfx.is_some() || o.vfx_connected.is_some() || doc.figure(o.figure).and_then(|f| f.movieclip.as_ref()).is_some_and(|clip| clip.prepared.has_vfx));
+    if !has_vfx {
+        return None;
+    }
+    let mut out = FrameVfx::default();
+    if let Some(pose) = &frame.pose_vfx {
+        extend_active(&mut out.scene, pose.figure());
+    }
+    let mut owners: Vec<Option<Owner>> = frame
+        .objects
+        .iter()
+        .map(|object| {
+            let mut owner = owner(doc, None, object, frame.tick)?;
+            // `connectedStack`: the composed group stack, or the figure's own.
+            if let Some(connected) = &object.vfx_connected {
+                owner.connected = connected.to_vec();
+            } else {
+                owner.connected = object.vfx.as_deref().map_or(&[][..], |p| p.figure()).to_vec();
+            }
+            Some(owner)
+        })
+        .collect();
+    if owners.iter().any(|o| o.as_ref().is_some_and(Owner::roots)) {
+        connect(frame, &mut owners, &mut out);
+    }
+    out.objects = owners.into_iter().map(|o| o.map(|o| o.vfx).filter(|v| !v.figure.is_empty() || v.attached.is_some() || !v.segments.is_empty())).collect();
+    if out.scene.is_empty() && out.objects.iter().all(Option::is_none) {
+        return None;
+    }
+    if out.objects.iter().all(Option::is_none) {
+        out.objects.clear();
+    }
+    Some(Arc::new(out))
+}
+
 /// One object's stacks: its per-pose stacks, then its clips in order.
 fn owner(doc: &Document, clips: Option<&Clips>, object: &crate::doc::Object, tick: f64) -> Option<Owner> {
     let own_clips = clips.and_then(|c| c.by_uid.get(&object.uid).map(|_| c));

@@ -127,16 +127,22 @@ pub fn interpolate(a: &Table, b: Option<&Table>, t: f64, sample: Option<&dyn Fn(
     Table { controllers: table }
 }
 
+/// The timeline's sampler of one channel: the values at keys index-1 to index+2,
+/// whether the channel is an angle, and a reader of the channel at any key.
+pub type ChannelSampler<'f> = dyn Fn([Option<f64>; 4], bool, &dyn Fn(usize) -> Option<f64>) -> f64 + 'f;
+
 /// The call in `evaluatedNativeFrame`: `records` are the object's tables at
 /// keys index-1, index, index+1 and index+2 (the object itself is `records[1]`),
 /// `t` is the interval's progress and `value` the timeline's channel sampler
 /// (linear, eased, Auto or Pivot's monotone cubic). A neighbouring key
 /// contributes to a channel only while its controller is enabled and pinned
-/// like the one being tweened.
-pub fn tween(table: &Table, records: [Option<&Table>; 4], t: f64, value: &dyn Fn([Option<f64>; 4], bool) -> f64) -> Table {
+/// like the one being tweened. `at(k)` is the object's table at any key `k`, for
+/// samplers that follow a channel along a whole run of keys.
+pub fn tween<'a>(table: &Table, records: [Option<&Table>; 4], t: f64, value: &ChannelSampler, at: &dyn Fn(usize) -> Option<&'a Table>) -> Table {
     let sample = |id: u32, channel: Channel, angular: bool| {
         let pinned = table.get(id).map(|c| c.pinned);
-        value(records.map(|record| record.and_then(|r| r.get(id)).filter(|c| c.enabled && Some(c.pinned) == pinned).and_then(|c| c.channel(channel))), angular)
+        let read = |record: Option<&Table>| record.and_then(|r| r.get(id)).filter(|c| c.enabled && Some(c.pinned) == pinned).and_then(|c| c.channel(channel));
+        value(records.map(read), angular, &|key| read(at(key)))
     };
     interpolate(table, records[2], t, Some(&sample))
 }

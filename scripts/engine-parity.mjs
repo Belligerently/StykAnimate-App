@@ -46,6 +46,10 @@ for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures']) {
 run('math fixtures regenerate unchanged', process.execPath, ['engine/tools/math-fixtures.mjs'], {quiet: true,
   check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-math/tests'], {cwd: root}).status === 0});
 
+// So is what the editor's evaluated frame stores (styk-eval's tests/records.rs compares).
+run('record fixtures regenerate unchanged', process.execPath, ['engine/tools/records-fixtures.mjs'], {quiet: true,
+  check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-eval/tests/fixtures/records'], {cwd: root}).status === 0});
+
 // Command recordings are byte-stable too: re-recording them in the JavaScript editor changes
 // nothing (styk-edit's test above replays them in the engine).
 run('edit recordings regenerate unchanged', process.execPath, ['engine/tools/edit-scenarios.mjs'], {quiet: true,
@@ -80,6 +84,12 @@ if (args.has('--corpus')) {
       check: result => /, 0 mismatched primitives, \d+ joints, 0 mismatched joints, 0 frames with differences/.test(result.stdout) && !/[1-9]\d* mismatched effects/.test(result.stdout)});
   }
   if (!files.length) results.push({name: 'corpus (not present on this machine)', ok: true, seconds: 0});
+  // The evaluated frame as records, every tick, against the editor (hashes: the frames are large).
+  for (const file of files) {
+    const folder = path.join(os.tmpdir(), `styk-records-${path.basename(file).replace(/\W+/g, '-')}`);
+    run(`records reference ${path.basename(file)}`, process.execPath, ['--max-old-space-size=12000', 'engine/tools/records-reference.mjs', file, folder], {quiet: true});
+    run(`evaluated records ${path.basename(file)}`, 'engine/target/release/styk', ['records', folder], {quiet: true});
+  }
   const recording = path.join(root, 'engine/target/piv-parity');
   if (existsSync(recording)) run('Pivot codec replay', ...cargo('run', '--release', '-p', 'styk-piv', '--bin', 'styk-piv', '--', 'replay', recording), {quiet: true});
 }

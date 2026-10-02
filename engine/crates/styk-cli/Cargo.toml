@@ -20,3 +20,4 @@ styk-render = { path = "../styk-render" }
 styk-raster = { path = "../styk-raster" }
 pollster = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
+sha2 = "0.10"

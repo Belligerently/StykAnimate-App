@@ -32,7 +32,7 @@ fn every_level_of_a_cel_is_placed_decoded_and_drawn() {
 
     let prepared = styk_eval::prepare(doc);
     let scene = build(&prepared.doc, &prepared.evaluate(0.0));
-    let list = encode_composed(&prepared.doc, &assets, &scene, &Overrides { hidden: &[], translations: &[], background: None }, &[], None);
+    let list = encode_composed(&prepared.doc, &assets, &scene, &Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false }, &[], None);
     let drawn = list.prims.iter().filter(|p| p.kind & F_DRAWING != 0).count();
     assert_eq!(drawn, slots, "every level's tiles are in the list; the shader keeps one level");
     for (level, tiles) in cel.levels.iter().enumerate() {

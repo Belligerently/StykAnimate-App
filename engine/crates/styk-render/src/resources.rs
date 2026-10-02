@@ -19,14 +19,18 @@ pub(crate) struct GpuPrim {
     pub(crate) c: [f32; 4],
 }
 
+/// A group's placement for one frame: six texels of the group table, written by
+/// [`crate::effects::record`] (layout in prim.wgsl, `Group`).
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, Default)]
-pub(crate) struct GpuGroup {
-    pub origin: [f32; 2],
-    pub scale: f32,
-    pub page: f32,
-    pub offset: [f32; 2],
-    pub size: [f32; 2],
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub(crate) struct GpuGroup(pub [f32; crate::effects::GROUP_FLOATS]);
+
+impl Default for GpuGroup {
+    fn default() -> GpuGroup {
+        let mut r = [0.0; crate::effects::GROUP_FLOATS];
+        r[6] = -1.0;
+        GpuGroup(r)
+    }
 }
 
 #[repr(C)]
@@ -143,7 +147,8 @@ pub(crate) fn sampler_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
 pub(crate) fn array_texture(device: &wgpu::Device, label: &str, size: [u32; 2], layers: u32, attachment: bool) -> (wgpu::Texture, wgpu::TextureView) {
     let mut usage = wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
     if attachment {
-        usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
+        // Effect passes copy layers out of the atlas and back.
+        usage |= wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC;
     }
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),

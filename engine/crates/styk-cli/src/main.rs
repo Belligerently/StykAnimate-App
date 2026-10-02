@@ -4,7 +4,11 @@
 //!   styk compare <file> <reference.json>  primitive-by-primitive parity with the JS editor
 //!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
+//!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 //!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
+//!   styk edit-bench <report.json> <uid> <tick>   what a gesture costs in styk-edit on a document
+//!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
+//!                                         (engine/tools/records-reference.mjs wrote the folder)
 
 use std::path::Path;
 use std::time::Instant;
@@ -31,15 +35,18 @@ fn main() {
             }
         },
         Some("info") if args.len() >= 2 => info(&args[1]),
+        Some("layers") if args.len() >= 3 => layers(&args[1], &args[2], args[3..].iter().any(|a| a == "--all")),
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
         Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
         Some("raster") if args.len() >= 4 => raster(&args[1], &args[2], &args[3], &args[4..]),
-        Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2]),
+        Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
+        Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
+        Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y]");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
             2
         }
     };
@@ -70,6 +77,113 @@ fn edit_replay(files: &[String]) -> i32 {
     i32::from(failed)
 }
 
+/// Times a gesture in styk-edit on a loaded report (records-reference.mjs writes one):
+/// selecting a figure at a tick, a drag of 30 moves and of 30 joint poses, each committed.
+fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
+    let ms = |since: Instant| since.elapsed().as_secs_f64() * 1000.0;
+    let started = Instant::now();
+    let tree = match std::fs::read(report).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())) {
+        Ok(tree) => tree,
+        Err(error) => {
+            println!("{report}: {error}");
+            return 2;
+        }
+    };
+    println!("parse {:.0} ms", ms(started));
+    let num = |text: &str| styk_doc::Value::Num(text.parse().unwrap_or(0.0));
+    let mut editor = styk_edit::Editor::new(tree, styk_edit::Options { property_channels: true, layer_timeline: true, auto_key: false });
+    let mut call = |name: &str, args: &[styk_doc::Value]| {
+        let started = Instant::now();
+        let result = editor.call(name, args);
+        editor.take_events();
+        (ms(started), result.map(|value| styk_doc::json::to_string(&value).len()).map_err(|e| e.to_string()))
+    };
+    let report = |label: &str, (time, result): (f64, Result<usize, String>)| println!("{label}: {time:.2} ms{}", result.err().map(|e| format!(" ({e})")).unwrap_or_default());
+    report("seek (first evaluation)", call("seek", &[num(tick)]));
+    report("select", call("select", &[num(uid), num("0")]));
+    for (gesture, step) in [("moveSelection", "move"), ("poseJoint", "pose")] {
+        report(&format!("beginDrag for {step}"), call("beginDrag", &[styk_doc::Value::str("Pose figure")]));
+        let mut times = Vec::new();
+        for i in 0..30 {
+            let (time, result) = call(gesture, &[num(&format!("{}", 300 + i)), num(&format!("{}", 250 + i))]);
+            if let Err(error) = result {
+                println!("{gesture}: {error}");
+                break;
+            }
+            times.push(time);
+        }
+        times.sort_by(|a, b| a.total_cmp(b));
+        if !times.is_empty() {
+            println!("{gesture} step: median {:.2} ms, slowest {:.2} ms over {}", times[times.len() / 2], times[times.len() - 1], times.len());
+        }
+        report(&format!("commitDrag after {step}"), call("commitDrag", &[]));
+    }
+    report("undo", call("undo", &[]));
+    0
+}
+
+/// Compares the evaluated frame as records, tick by tick, with what the editor stores
+/// (engine/tools/records-reference.mjs). `--write` leaves the engine's record of the
+/// first differing tick in `<folder>/engine-<tick>.json`. Exit code 1 on a difference;
+/// ticks the engine does not produce as records yet are counted, not failed.
+fn records(folder: &str, flags: &[String]) -> i32 {
+    use sha2::Digest;
+    let read = |name: &str| std::fs::read(Path::new(folder).join(name)).map_err(|e| format!("{folder}/{name}: {e}"));
+    let run = || -> Result<(usize, usize, Vec<String>, Vec<String>), String> {
+        let tree = styk_doc::json::parse(&read("report.json")?).map_err(|e| e.to_string())?;
+        let reference = styk_doc::json::parse(&read("records.json")?).map_err(|e| e.to_string())?;
+        let document = styk_eval::from_value(&tree, "").map_err(|e| e.to_string())?;
+        let prepared = styk_eval::prepare(document);
+        let records = styk_eval::records::Records::new(&tree, &prepared).map_err(|e| e.to_string())?;
+        let ticks: Vec<styk_doc::Value> = reference.get("ticks").and_then(|t| t.elements()).map(|e| e.iter().collect()).unwrap_or_default();
+        let (mut matched, mut unported, mut wrong) = (0, Vec::new(), Vec::new());
+        for entry in &ticks {
+            let tick = entry.get("tick").and_then(|t| t.as_f64()).unwrap_or(0.0);
+            let json = match records.snapshot(tick) {
+                Ok(value) => styk_doc::json::to_string(&value),
+                Err(styk_eval::records::Error::Unported(what)) => {
+                    unported.push(format!("tick {tick}: {what}"));
+                    continue;
+                }
+                Err(error) => return Err(format!("tick {tick}: {error}")),
+            };
+            let digest: String = sha2::Sha256::digest(json.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+            if entry.get("sha256").and_then(|s| s.as_str()) == Some(digest.as_str()) {
+                matched += 1;
+                continue;
+            }
+            let expected = entry.get("json").and_then(|j| j.as_str());
+            let detail = match expected {
+                Some(expected) => {
+                    let at = json.bytes().zip(expected.bytes()).position(|(a, b)| a != b).unwrap_or(json.len().min(expected.len()));
+                    let from = json.floor_char_boundary(at.saturating_sub(120));
+                    let cut = |text: &str| text[text.floor_char_boundary(from.min(text.len()))..text.floor_char_boundary((at + 100).min(text.len()))].to_string();
+                    format!("at byte {at}:\n    engine …{}…\n    editor …{}…", cut(&json), cut(expected))
+                }
+                None => format!("{} bytes, the editor's {}", json.len(), entry.get("bytes").and_then(|b| b.as_f64()).unwrap_or(0.0)),
+            };
+            if wrong.is_empty() && flags.iter().any(|f| f == "--write") {
+                let _ = std::fs::write(Path::new(folder).join(format!("engine-{tick}.json")), &json);
+            }
+            wrong.push(format!("tick {tick} differs {detail}"));
+        }
+        Ok((ticks.len(), matched, unported, wrong))
+    };
+    match run() {
+        Ok((total, matched, unported, wrong)) => {
+            println!("{folder}: {matched}/{total} ticks identical, {} not ported, {} different", unported.len(), wrong.len());
+            for line in unported.iter().take(3).chain(wrong.iter().take(3)) {
+                println!("  {line}");
+            }
+            i32::from(!wrong.is_empty())
+        }
+        Err(error) => {
+            println!("{folder}: {error}");
+            1
+        }
+    }
+}
+
 fn load(path: &str) -> Result<(Prepared, f64), String> {
     let started = Instant::now();
     let doc = styk_eval::open(Path::new(path)).map_err(|e| format!("{path}: {e}"))?;
@@ -79,6 +193,32 @@ fn load(path: &str) -> Result<(Prepared, f64), String> {
         eprintln!("  prepare (timelines, presence index) {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
     }
     Ok((prepared, started.elapsed().as_secs_f64() * 1000.0))
+}
+
+/// The raster layers of one frame's draw list: kind, rectangles, scale and effects.
+fn layers(path: &str, tick: &str, all: bool) -> i32 {
+    let (p, _) = match load(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
+    };
+    let assets = styk_eval::assets::Assets::build(&p.doc);
+    let scene = build(&p.doc, &p.evaluate(tick.parse().unwrap_or(0.0)));
+    let list = styk_eval::drawlist::encode(&p.doc, &assets, &scene);
+    for (g, group) in list.groups.iter().enumerate() {
+        let prims = list.prims.iter().filter(|p| p.group as usize == g).count();
+        let Some(layer) = list.layers.get(group.layer as usize) else {
+            if all {
+                println!("group {g} (parent {}, depth {}, opacity {}): {prims} prims, bounds {:?}", group.parent, group.depth, group.opacity, group.bounds);
+            }
+            continue;
+        };
+        let effects: Vec<&str> = styk_eval::drawlist::layer_effects(layer).iter().map(|e| e.kind().name()).collect();
+        println!("group {g} (parent {}, depth {}, opacity {}): {prims} prims, {:?} [{}]", group.parent, group.depth, group.opacity, layer.kind, effects.join(", "));
+    }
+    0
 }
 
 fn info(path: &str) -> i32 {
@@ -318,13 +458,26 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
         .unwrap_or([cw / 2.0, ch / 2.0]);
     let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
-    let matrix = camera_matrix(&p.doc, scene.camera.as_ref(), zoom, pan);
+    // --neutral: the editor's workspace (no scene camera in the view; the camera image sits on the camera rectangle).
+    let neutral = rest.iter().any(|a| a == "--neutral");
+    let matrix = camera_matrix(&p.doc, if neutral { None } else { scene.camera.as_ref() }, zoom, pan);
     let view = ViewParams {
         matrix,
         artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
         clip_to_artboard: !rest.iter().any(|a| a == "--no-clip"),
         clear: [0.16, 0.16, 0.17, 1.0],
+        zoom,
+        pan,
+        camera_view: !neutral,
     };
+    // --after T: the same renderer drew tick T first, as in the app, where resources outlive frames.
+    if let Some(first) = option(rest, "--after").and_then(|t| t.parse::<f64>().ok()) {
+        let earlier = std::sync::Arc::new(encode(&p.doc, &assets, &build(&p.doc, &p.evaluate(first))));
+        renderer.set_list(&earlier);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        renderer.render(&mut encoder, &view, [w, h]);
+        queue.submit([encoder.finish()]);
+    }
     renderer.set_list(&list);
     let mut encoder = device.create_command_encoder(&Default::default());
     renderer.render(&mut encoder, &view, [w, h]);
@@ -387,9 +540,9 @@ fn diff(a: &str, b: &str, out: &str, rest: &[String]) -> i32 {
 }
 
 /// GPU time per frame (submit + wait) across a fit → 11× zoom, at 1440×900.
-fn gpubench(path: &str, tick: &str) -> i32 {
+fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
     use styk_eval::assets::Assets;
-    use styk_eval::drawlist::encode;
+    use styk_eval::drawlist::{encode_composed, Overrides};
     use styk_eval::view::camera_matrix;
     use styk_render::{wgpu, Renderer, ViewParams};
     let (p, _) = match load(path) {
@@ -412,7 +565,8 @@ fn gpubench(path: &str, tick: &str) -> i32 {
     renderer.prepare_sprites(&assets);
     renderer.upload_images(&assets, &images);
     let scene = build(&p.doc, &p.evaluate(tick.parse().unwrap_or(0.0)));
-    let list = std::sync::Arc::new(encode(&p.doc, &assets, &scene));
+    let overrides = Overrides { bypass_effects: no_effects, ..Default::default() };
+    let list = std::sync::Arc::new(encode_composed(&p.doc, &assets, &scene, &overrides, &[], None));
     renderer.set_list(&list);
     let (w, h) = (1440u32, 900u32);
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
@@ -426,6 +580,9 @@ fn gpubench(path: &str, tick: &str) -> i32 {
             artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
             clip_to_artboard: true,
             clear: [0.07, 0.07, 0.09, 1.0],
+            zoom,
+            pan,
+            camera_view: true,
         };
         let start = Instant::now();
         let mut encoder = device.create_command_encoder(&Default::default());
@@ -433,7 +590,8 @@ fn gpubench(path: &str, tick: &str) -> i32 {
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         if k > 0 {
-            rows.push((zoom / fit, start.elapsed().as_secs_f64() * 1000.0, renderer.stats.passes, renderer.stats.groups));
+            let s = &renderer.stats;
+            rows.push((zoom / fit, start.elapsed().as_secs_f64() * 1000.0, s.passes, s.groups, s.effect_passes, s.effect_bytes + s.layer_bytes));
         }
     }
     let mut times: Vec<f64> = rows.iter().map(|r| r.1).collect();
@@ -448,7 +606,7 @@ fn gpubench(path: &str, tick: &str) -> i32 {
         adapter.get_info().name
     );
     for r in rows.iter().step_by(40) {
-        println!("  {:5.2}x  {:6.2} ms  {} passes  {} groups", r.0, r.1, r.2, r.3);
+        println!("  {:5.2}x  {:6.2} ms  {} passes  {} groups  {} effect passes  {:.1} MiB layers and effect slots", r.0, r.1, r.2, r.3, r.4, r.5 as f64 / 1048576.0);
     }
     0
 }

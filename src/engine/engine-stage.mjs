@@ -208,6 +208,7 @@ export async function createStageRenderer(canvas, options, create) {
       if (move && (move.x || move.y)) translations.push(slot, move.x, move.y);
     });
     const dpr = legacy.dpr || 1, view = request.view ?? {};
+    side.stage.set_effects(request.vfxEnabled !== false);
     const drawn = side.stage.render_edit((view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
       Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));

@@ -34,7 +34,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
     let mut expected = first.get("document").and_then(Value::as_str).ok_or("step 0 has no document")?.to_string();
     let report = styk_doc::json::parse(expected.as_bytes()).map_err(|error| error.to_string())?;
     let flag = |key: &str| reference.path(&["editor", key]).is_some_and(Value::truthy);
-    let mut editor = Editor::new(report, Options { property_channels: flag("propertyChannels"), layer_timeline: flag("layerTimeline") });
+    let mut editor = Editor::new(report, Options { property_channels: flag("propertyChannels"), layer_timeline: flag("layerTimeline"), auto_key: flag("autoKey") });
     let state = first.get("state").ok_or("step 0 has no state")?;
     let selected = state.get("selectedUid").and_then(Value::as_f64).map(|v| v as u32);
     let uids = state.get("selectedUids").and_then(Value::numbers).unwrap_or_default().into_iter().map(|v| v as u32).collect();
@@ -43,6 +43,8 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         state.get("frameIndex").and_then(Value::as_f64).unwrap_or(0.0) as usize,
         Selection { uid: selected, uids, joint: state.get("selectedJoint").and_then(Value::as_f64).unwrap_or(-1.0) as i64 },
     );
+    let counter = |key: &str| state.get(key).and_then(Value::as_f64).unwrap_or(0.0) as u64;
+    editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"));
     let mut outcome = Outcome { scenario: reference.get("scenario").and_then(Value::as_str).unwrap_or("").to_string(), steps: steps.len() - 1, ..Outcome::default() };
     if editor.report_json() != expected {
         outcome.mismatches.push("step 0: the loaded document does not survive the engine's store byte for byte".into());
@@ -119,6 +121,8 @@ fn state_value(editor: &Editor) -> Value {
     object.set("undoLabel", Value::str(&state.undo_label));
     object.set("redoLabel", Value::str(&state.redo_label));
     object.set("dirty", Value::Bool(state.dirty));
+    object.set("layerRevision", Value::Num(state.layer_revision as f64));
+    object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
     Value::object(object)
 }
 

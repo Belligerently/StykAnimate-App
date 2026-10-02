@@ -13,7 +13,11 @@ cannot reserve 2 GiB must not lose the engine.
 
 The page creates the memory itself (`createEngineMemory` in
 `src/engine/engine.mjs`) and hands it to the module: 2 GiB, else 1 GiB, else
-512 MiB, the first the browser accepts. `localStorage['stykanimate.engine.memory']`
+512 MiB, the first the browser accepts. It starts at the size the module
+declares for the memory it imports, read from the module's import section
+(`declaredMemoryPages` in `src/engine/engine-memory.mjs`): that size grows with
+the module's static data, and a smaller memory does not link, which leaves the
+page on the JavaScript renderer with only a console warning. `localStorage['stykanimate.engine.memory']`
 (MiB) forces a maximum for testing. A memory of 1 GiB or less budgets the
 frame cache like a 2 GiB device (48 MiB). If no maximum can be reserved the
 engine does not start and the JavaScript renderer draws, as without the engine
