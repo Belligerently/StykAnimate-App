@@ -8,9 +8,8 @@ use std::path::Path;
 use std::time::Instant;
 
 use rayon::prelude::*;
-use serde_json::Value;
 use styk_eval::eval::Prepared;
-use styk_eval::geometry::{build, ItemKind, Scene};
+use styk_eval::geometry::build;
 
 mod container;
 
@@ -123,19 +122,8 @@ fn bench(path: &str, rest: &[String]) -> i32 {
     0
 }
 
-fn kind_name(k: ItemKind) -> &'static str {
-    k.name()
-}
-
-fn pt(v: &Value) -> Option<[f64; 2]> {
-    let a = v.as_array()?;
-    Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?])
-}
-
-fn close(a: [f64; 2], b: [f64; 2], tol: f64) -> bool {
-    (a[0] - b[0]).abs() <= tol && (a[1] - b[1]).abs() <= tol
-}
-
+/// Parity with the JavaScript editor. The comparison itself is `styk_eval::parity`,
+/// shared with the engine's fixture tests.
 fn compare(path: &str, reference: &str, rest: &[String]) -> i32 {
     let verbose = rest.iter().any(|a| a == "--verbose");
     let (p, _) = match load(path) {
@@ -145,105 +133,35 @@ fn compare(path: &str, reference: &str, rest: &[String]) -> i32 {
             return 1;
         }
     };
-    let text = match std::fs::read_to_string(reference) {
+    let bytes = match std::fs::read(reference) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("{reference}: {e}");
             return 1;
         }
     };
-    let r: Value = serde_json::from_str(&text).expect("reference JSON");
-    let ref_total = r["totalTicks"].as_u64().unwrap_or(0) as u32;
-    if ref_total != p.total_ticks {
-        println!("total ticks differ: reference {ref_total}, engine {}", p.total_ticks);
+    let r = styk_doc::json::parse(&bytes).expect("reference JSON");
+    let report = styk_eval::parity::compare(&p, &r);
+    if let Some((reference, engine)) = report.total_ticks {
+        println!("total ticks differ: reference {reference}, engine {engine}");
     }
-    let tol = 2e-3;
-    let mut frames = 0;
-    let mut bad_frames = 0;
-    let mut total = 0usize;
-    let mut mismatched = 0usize;
-    let mut first_reports = 0;
-    for f in r["frames"].as_array().unwrap() {
-        let tick = f["tick"].as_f64().unwrap();
-        let scene: Scene = build(&p.doc, &p.evaluate(tick));
-        let expected = f["drawables"].as_array().unwrap();
-        frames += 1;
-        total += expected.len();
-        let mut problems: Vec<String> = Vec::new();
-        if expected.len() != scene.items.len() {
-            problems.push(format!("drawable count: reference {}, engine {}", expected.len(), scene.items.len()));
-        }
-        for (i, (e, it)) in expected.iter().zip(scene.items.iter()).enumerate() {
-            let uid = scene.objects[it.slot as usize].uid;
-            let mut why = Vec::new();
-            if e["uid"].as_u64() != Some(uid as u64) {
-                why.push(format!("uid {} vs {}", e["uid"], uid));
-            }
-            if e["type"].as_str() != Some(kind_name(it.kind)) {
-                why.push(format!("type {} vs {}", e["type"], kind_name(it.kind)));
-            }
-            if let Some(z) = e["z"].as_f64()
-                && (z - it.z).abs() > 1e-6
-            {
-                why.push(format!("z {z} vs {}", it.z));
-            }
-            let rgb: Vec<u8> = e["rgb"].as_array().map(|a| a.iter().filter_map(|v| v.as_u64().map(|x| x as u8)).collect()).unwrap_or_default();
-            if rgb.len() == 3 && rgb != it.rgb {
-                why.push(format!("rgb {rgb:?} vs {:?}", it.rgb));
-            }
-            for (key, value) in [("alpha", it.alpha), ("opacity", it.opacity)] {
-                if let Some(v) = e[key].as_f64()
-                    && (v - value).abs() > 1e-4
-                {
-                    why.push(format!("{key} {v} vs {value}"));
-                }
-            }
-            if it.kind == ItemKind::Poly {
-                let pts: Vec<[f64; 2]> = e["points"].as_array().map(|a| a.iter().filter_map(pt).collect()).unwrap_or_default();
-                let ours = scene.points_of(it);
-                if pts.len() != ours.len() {
-                    why.push(format!("poly points {} vs {}", pts.len(), ours.len()));
-                } else if let Some(k) = (0..pts.len()).find(|&k| !close(pts[k], ours[k], tol)) {
-                    why.push(format!("poly point {k} {:?} vs {:?}", pts[k], ours[k]));
-                }
-            } else {
-                if let (Some(s), Some(en)) = (pt(&e["start"]), pt(&e["end"])) {
-                    if !close(s, it.start, tol) {
-                        why.push(format!("start {s:?} vs {:?}", it.start));
-                    }
-                    if !close(en, it.end, tol) {
-                        why.push(format!("end {en:?} vs {:?}", it.end));
-                    }
-                }
-                if let Some(th) = e["thickness"].as_f64()
-                    && (th - it.thickness).abs() > tol
-                {
-                    why.push(format!("thickness {th} vs {}", it.thickness));
-                }
-            }
-            if !why.is_empty() {
-                mismatched += 1;
-                if problems.len() < 6 {
-                    problems.push(format!("#{i} {} uid {} seg/poly {}: {}", kind_name(it.kind), uid, it.index, why.join("; ")));
-                }
-            }
-        }
-        if !problems.is_empty() {
-            bad_frames += 1;
-            if verbose || first_reports < 3 {
-                first_reports += 1;
-                println!("tick {tick}:");
-                for p in &problems {
-                    println!("  {p}");
-                }
-            }
+    for frame in report.bad_frames.iter().take(if verbose { usize::MAX } else { 3 }) {
+        println!("tick {}:", frame.tick);
+        for p in &frame.problems {
+            println!("  {p}");
         }
     }
     println!(
-        "{}: {frames} frames, {total} reference primitives, {mismatched} mismatched primitives, {bad_frames} frames with differences",
-        Path::new(path).file_name().unwrap().to_string_lossy()
+        "{}: {} frames, {} reference primitives, {} mismatched primitives, {} joints, {} mismatched joints, {} frames with differences",
+        Path::new(path).file_name().unwrap().to_string_lossy(),
+        report.frames,
+        report.primitives,
+        report.mismatched_primitives,
+        report.joints,
+        report.mismatched_joints,
+        report.bad_frames.len()
     );
-    if bad_frames == 0 { 0 } else { 3 }
+    if report.matches() { 0 } else { 3 }
 }
 
 fn option<'a>(rest: &'a [String], name: &str) -> Option<&'a str> {

@@ -14,6 +14,7 @@ pub mod ik;
 pub mod load;
 pub mod onion;
 pub mod par;
+pub mod parity;
 pub mod piv;
 pub mod rig;
 pub mod sticknodes;
