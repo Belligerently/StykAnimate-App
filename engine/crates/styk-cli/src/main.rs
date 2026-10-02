@@ -41,7 +41,7 @@ fn main() {
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
             2
         }
     };
@@ -358,6 +358,14 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         pan,
         camera_view: !neutral,
     };
+    // --after T: the same renderer drew tick T first, as in the app, where resources outlive frames.
+    if let Some(first) = option(rest, "--after").and_then(|t| t.parse::<f64>().ok()) {
+        let earlier = std::sync::Arc::new(encode(&p.doc, &assets, &build(&p.doc, &p.evaluate(first))));
+        renderer.set_list(&earlier);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        renderer.render(&mut encoder, &view, [w, h]);
+        queue.submit([encoder.finish()]);
+    }
     renderer.set_list(&list);
     let mut encoder = device.create_command_encoder(&Default::default());
     renderer.render(&mut encoder, &view, [w, h]);
