@@ -4,7 +4,7 @@
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use serde_json::Value;
+use styk_doc::Value;
 
 use crate::doc::{Object, Segment};
 use crate::geometry::{Item, ItemKind, ITEM_POLYLINE, ITEM_SEG_BRUSH, ITEM_SOLID};
@@ -57,10 +57,10 @@ pub fn parse(v: &Value) -> Option<Arc<Shape>> {
     let f = |k: &str| v.get(k).and_then(Value::as_f64);
     let b = |k: &str| match v.get(k) {
         Some(Value::Bool(x)) => *x,
-        Some(Value::Number(n)) => n.as_f64().is_some_and(|x| x != 0.0),
+        Some(Value::Num(n)) => *n != 0.0,
         _ => false,
     };
-    let rgb = v.get("outline").and_then(Value::as_array).and_then(|a| Some([a.first()?.as_u64()? as u8, a.get(1)?.as_u64()? as u8, a.get(2)?.as_u64()? as u8]));
+    let rgb = v.get("outline").and_then(Value::numbers).filter(|a| a.len() >= 3).map(|a| [a[0] as u8, a[1] as u8, a[2] as u8]);
     Some(Arc::new(Shape {
         kind,
         sagitta: f("sagitta").unwrap_or(0.0),

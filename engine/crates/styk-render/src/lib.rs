@@ -12,9 +12,9 @@ use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use rayon::prelude::*;
-use styk_core::assets::{Assets, PAGE};
-use styk_core::doc::Document;
-use styk_core::drawlist::{DrawList, Prim};
+use styk_eval::assets::{Assets, PAGE};
+use styk_eval::doc::Document;
+use styk_eval::drawlist::{DrawList, Prim};
 
 pub use wgpu;
 

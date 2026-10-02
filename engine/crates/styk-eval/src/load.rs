@@ -1,17 +1,15 @@
-//! `.styk` JSON (with lazily resolved container markers) → typed [`Document`].
+//! Document tree → typed [`Document`]: the views evaluation reads.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::{Map, Value};
+use styk_doc::Value;
 
-use crate::container::Resolver;
 use crate::doc::*;
 use crate::text::parse_svg_path;
 use crate::Error;
 
-pub struct Loader<'a> {
-    pub r: Resolver<'a>,
+pub struct Loader {
     /// One image table shared by the root document and every nested movieclip.
     pub images: Vec<ImageData>,
     pub unsupported: Vec<String>,
@@ -21,23 +19,17 @@ fn num(v: &Value, key: &str) -> Option<f64> {
     v.get(key).and_then(Value::as_f64)
 }
 fn int(v: &Value, key: &str) -> Option<i64> {
-    v.get(key).and_then(|x| x.as_i64().or_else(|| x.as_f64().map(|f| f as i64)))
+    v.get(key).and_then(Value::as_f64).map(|f| f as i64)
 }
 fn truthy(v: Option<&Value>) -> bool {
-    match v {
-        None | Some(Value::Null) => false,
-        Some(Value::Bool(b)) => *b,
-        Some(Value::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
-        Some(Value::String(s)) => !s.is_empty(),
-        Some(_) => true,
-    }
+    v.is_some_and(Value::truthy)
 }
 fn rgb(v: Option<&Value>) -> Option<[u8; 3]> {
-    let a = v?.as_array()?;
-    if a.len() != 3 {
+    let a = v?.numbers()?;
+    if a.len() != 3 || a.iter().any(|c| c.fract() != 0.0 || !(0.0..=255.0).contains(c)) {
         return None;
     }
-    Some([a[0].as_u64()? as u8, a[1].as_u64()? as u8, a[2].as_u64()? as u8])
+    Some([a[0] as u8, a[1] as u8, a[2] as u8])
 }
 fn point(v: Option<&Value>) -> Option<[f64; 2]> {
     let v = v?;
@@ -55,7 +47,7 @@ pub fn easing(v: Option<&Value>) -> Option<Easing> {
         _ => EasingMode::Linear,
     };
     let mut bezier = Easing::LINEAR.bezier;
-    if let Some(b) = v.get("bezier").and_then(Value::as_array)
+    if let Some(b) = v.get("bezier").and_then(Value::elements)
         && b.len() == 4
     {
         for (i, x) in b.iter().enumerate() {
@@ -69,7 +61,7 @@ pub fn paint(v: Option<&Value>) -> Option<Arc<Paint>> {
     let v = v?;
     let stops: Vec<PaintStop> = v
         .get("stops")?
-        .as_array()?
+        .as_arr()?
         .iter()
         .filter_map(|s| {
             Some(PaintStop {
@@ -97,9 +89,15 @@ pub fn paint(v: Option<&Value>) -> Option<Arc<Paint>> {
     }))
 }
 
-impl<'a> Loader<'a> {
-    pub fn new(r: Resolver<'a>) -> Self {
-        Loader { r, images: Vec::new(), unsupported: Vec::new() }
+impl Default for Loader {
+    fn default() -> Self {
+        Loader::new()
+    }
+}
+
+impl Loader {
+    pub fn new() -> Self {
+        Loader { images: Vec::new(), unsupported: Vec::new() }
     }
 
     fn note(&mut self, feature: &str) {
@@ -111,7 +109,7 @@ impl<'a> Loader<'a> {
     fn image(&mut self, v: &Value, keys: &[&str]) -> Option<u32> {
         for key in keys {
             if let Some(field) = v.get(*key)
-                && let Some(bytes) = self.r.bytes(field)
+                && let Some(bytes) = field.payload_bytes()
                 && !bytes.is_empty()
             {
                 self.images.push(ImageData { bytes, color_key: None });
@@ -122,7 +120,7 @@ impl<'a> Loader<'a> {
     }
 
     fn numbers(&self, v: Option<&Value>) -> Option<Arc<[f64]>> {
-        Some(self.r.numbers(v?)?.into())
+        Some(v?.numbers()?.into())
     }
 
     pub fn document(&mut self, d: &Value, name: &str) -> Result<Document, Error> {
@@ -139,24 +137,24 @@ impl<'a> Loader<'a> {
         }
         let styk = d.get("_styk").cloned().unwrap_or(Value::Null);
         let mut figures = Vec::new();
-        for f in d.get("figure_types").and_then(Value::as_array).into_iter().flatten() {
+        for f in d.get("figure_types").and_then(Value::as_arr).into_iter().flatten() {
             figures.push(Arc::new(self.figure(f, version)?));
         }
         let mut keyframes = Vec::new();
-        for k in d.get("keyframes").and_then(Value::as_array).into_iter().flatten() {
+        for k in d.get("keyframes").and_then(Value::as_arr).into_iter().flatten() {
             keyframes.push(Arc::new(self.keyframe(k)?));
         }
         if keyframes.is_empty() {
             return Err(Error::Format("The scene has no keyframes".into()));
         }
         let mut backgrounds = Vec::new();
-        for b in d.get("backgrounds").and_then(Value::as_array).into_iter().flatten() {
+        for b in d.get("backgrounds").and_then(Value::as_arr).into_iter().flatten() {
             backgrounds.push(self.background(b));
         }
         let mut frame_sources = HashMap::new();
-        if let Some(Value::Object(sources)) = styk.get("frameSources") {
-            for (id, frame) in sources {
-                frame_sources.insert(Arc::from(id.as_str()), Arc::new(self.keyframe(frame)?));
+        if let Some(Value::Obj(sources)) = styk.get("frameSources") {
+            for (id, frame) in sources.iter() {
+                frame_sources.insert(id.clone(), Arc::new(self.keyframe(frame)?));
             }
         }
         let layers = styk.get("layers").filter(|v| v.is_object()).map(|l| Arc::new(layers(l)));
@@ -164,13 +162,13 @@ impl<'a> Loader<'a> {
         let camera_motion = styk
             .get("cameraMotion")
             .and_then(|m| m.get("clips"))
-            .and_then(Value::as_array)
+            .and_then(Value::as_arr)
             .map(|clips| clips.iter().filter_map(camera_motion_clip).collect())
             .unwrap_or_default();
-        if styk.get("vfxClips").and_then(|v| v.get("clips")).and_then(Value::as_array).is_some_and(|c| !c.is_empty()) {
+        if styk.get("vfxClips").and_then(|v| v.get("clips")).and_then(Value::as_arr).is_some_and(|c| !c.is_empty()) {
             self.note("visual effects (blur, glow…)");
         }
-        if styk.get("animation").and_then(|a| a.get("channels")).and_then(Value::as_array).is_some_and(|c| !c.is_empty()) {
+        if styk.get("animation").and_then(|a| a.get("channels")).and_then(Value::as_arr).is_some_and(|c| !c.is_empty()) {
             self.note("property channels");
         }
         let auto_easing = match d.get("auto_easing") {
@@ -204,19 +202,19 @@ impl<'a> Loader<'a> {
         let id = int(f, "figure_type_id").ok_or_else(|| Error::Format("Figure without an id".into()))? as u32;
         let styk = f.get("_styk").cloned().unwrap_or(Value::Null);
         let mut unsupported = Vec::new();
-        let segs = f.get("segments").and_then(Value::as_array).cloned().unwrap_or_default();
+        let segs = f.get("segments").and_then(Value::as_arr).unwrap_or_default();
         let mut segments = Vec::with_capacity(segs.len());
         for (i, s) in segs.iter().enumerate() {
             segments.push(self.segment(s, i, &mut unsupported));
         }
         let mut polyfills = Vec::new();
-        for p in f.get("polyfills").and_then(Value::as_array).into_iter().flatten() {
+        for p in f.get("polyfills").and_then(Value::as_arr).into_iter().flatten() {
             if p.get("_stykSurface").is_some() && !unsupported.contains(&"3D surfaces") {
                 unsupported.push("3D surfaces");
             }
             let joints = p
                 .get("segment_ids")
-                .and_then(|v| self.r.numbers(v))
+                .and_then(Value::numbers)
                 .unwrap_or_default()
                 .into_iter()
                 .map(|v| v as u32)
@@ -235,11 +233,11 @@ impl<'a> Loader<'a> {
         let is_drawing = styk.get("drawing").is_some();
         let pixels_per_unit = styk.get("drawing").and_then(|d| num(d, "pixelsPerUnit")).unwrap_or(1.0);
         let mut images = Vec::new();
-        for a in f.get("image_assets").and_then(Value::as_array).into_iter().flatten() {
+        for a in f.get("image_assets").and_then(Value::as_arr).into_iter().flatten() {
             images.push(self.image_asset(a, is_drawing, pixels_per_unit));
         }
         let mut texts = Vec::new();
-        for a in f.get("text_assets").and_then(Value::as_array).into_iter().flatten() {
+        for a in f.get("text_assets").and_then(Value::as_arr).into_iter().flatten() {
             if let Some(t) = text_asset(a) {
                 texts.push(t);
             }
@@ -307,8 +305,8 @@ impl<'a> Loader<'a> {
         } else {
             int(s, "flags").unwrap_or(0) & 256 != 0
         };
-        let extra = s.get("extra").and_then(Value::as_array);
-        let extra_at = |k: usize| extra.and_then(|e| e.get(k)).and_then(Value::as_f64);
+        let extra = s.get("extra").and_then(Value::elements);
+        let extra_at = |k: usize| extra.and_then(|e| e.get(k)).and_then(|v| v.as_f64());
         let asset = num(s, "extra_u16")
             .or_else(|| extra_at(0))
             .or_else(|| num(s, "image_asset_index"))
@@ -368,7 +366,7 @@ impl<'a> Loader<'a> {
             (Some(w), Some(h)) => Some([w, h]),
             _ => None,
         };
-        let tiles = a.get("styk_tiles").and_then(|t| self.r.bytes(t)).and_then(|bytes| {
+        let tiles = a.get("styk_tiles").and_then(Value::payload_bytes).and_then(|bytes| {
             let anchor = point(a.get("drawing_anchor")).unwrap_or(start);
             crate::drawing::decode_tiles(&bytes, &mut self.images).map(|tiles| Arc::new(DrawingTiles { anchor, pixels_per_unit, tiles }))
         });
@@ -426,7 +424,7 @@ impl<'a> Loader<'a> {
             z_index: num(o, "_stykZIndex").unwrap_or(0.0),
             style: crate::style::parse(o.get("_stykStyle"), o.get("_styk").and_then(|s| s.get("colorMode"))),
             sticknodes_shapes: match o.get("_sticknodesShapes") {
-                Some(Value::Object(map)) => Some(Arc::new(
+                Some(Value::Obj(map)) => Some(Arc::new(
                     map.iter().filter_map(|(k, v)| Some((k.parse::<u32>().ok()?, crate::sticknodes::parse(v)?))).collect(),
                 )),
                 _ => None,
@@ -438,7 +436,7 @@ impl<'a> Loader<'a> {
     pub fn keyframe(&mut self, k: &Value) -> Result<Keyframe, Error> {
         let objects: Vec<Arc<Object>> = k
             .get("objects")
-            .and_then(Value::as_array)
+            .and_then(Value::as_arr)
             .into_iter()
             .flatten()
             .filter_map(|o| self.object(o))
@@ -446,7 +444,7 @@ impl<'a> Loader<'a> {
             .collect();
         let draw_order = k
             .get("object_draw_order")
-            .and_then(|v| self.r.numbers(v))
+            .and_then(Value::numbers)
             .map(|v| v.into_iter().map(|x| x as u32).collect::<Vec<_>>())
             .filter(|v| v.len() == objects.len())
             .unwrap_or_else(|| (0..objects.len() as u32).collect());
@@ -472,7 +470,7 @@ impl<'a> Loader<'a> {
             background_color: num(k, "_stykBackgroundColor").map(|v| v as i64 as u32),
             continuations: styk
                 .and_then(|s| s.get("movieclipContinuations"))
-                .and_then(Value::as_array)
+                .and_then(Value::as_arr)
                 .into_iter()
                 .flatten()
                 .filter_map(|c| Some((int(c, "uid")? as u32, playback(c.get("playback")?))))
@@ -507,11 +505,11 @@ impl<'a> Loader<'a> {
 
     fn sheet(&mut self, s: &Value) -> LayerSheet {
         let mut tracks = HashMap::new();
-        if let Some(Value::Object(map)) = s.get("tracks") {
-            for (id, t) in map {
+        if let Some(Value::Obj(map)) = s.get("tracks") {
+            for (id, t) in map.iter() {
                 let keys = t
                     .get("keys")
-                    .and_then(Value::as_array)
+                    .and_then(Value::as_arr)
                     .into_iter()
                     .flatten()
                     .map(|k| SheetKey {
@@ -527,7 +525,7 @@ impl<'a> Loader<'a> {
                         },
                         movieclip_patches: k
                             .get("movieclipPatches")
-                            .and_then(Value::as_array)
+                            .and_then(Value::as_arr)
                             .into_iter()
                             .flatten()
                             .filter_map(|p| {
@@ -541,7 +539,7 @@ impl<'a> Loader<'a> {
                             .collect(),
                     })
                     .collect();
-                tracks.insert(id.clone(), Arc::new(SheetTrack { end: int(t, "end").unwrap_or(0) as u32, keys }));
+                tracks.insert(id.to_string(), Arc::new(SheetTrack { end: int(t, "end").unwrap_or(0) as u32, keys }));
             }
         }
         if s.get("legacyAnimation").is_some() {
@@ -552,20 +550,20 @@ impl<'a> Loader<'a> {
 }
 
 fn layers(l: &Value) -> Layers {
-    let order = l.get("order").and_then(Value::as_array).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    let order = l.get("order").and_then(Value::as_arr).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
     let mut assignments = HashMap::new();
-    if let Some(Value::Object(map)) = l.get("assignments") {
-        for (uid, layer) in map {
+    if let Some(Value::Obj(map)) = l.get("assignments") {
+        for (uid, layer) in map.iter() {
             if let (Ok(uid), Some(layer)) = (uid.parse::<u32>(), layer.as_str()) {
                 assignments.insert(uid, layer.to_string());
             }
         }
     }
     let hidden = match l.get("byId") {
-        Some(Value::Object(map)) => map
+        Some(Value::Obj(map)) => map
             .iter()
             .filter(|(_, v)| v.get("visible") == Some(&Value::Bool(false)))
-            .map(|(k, _)| k.clone())
+            .map(|(k, _)| k.to_string())
             .collect(),
         _ => vec![],
     };
@@ -582,7 +580,7 @@ fn layers(l: &Value) -> Layers {
 
 fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
     let params = match c.get("params") {
-        Some(Value::Object(map)) => map.iter().filter_map(|(k, v)| Some((k.clone(), v.as_f64()?))).collect(),
+        Some(Value::Obj(map)) => map.iter().filter_map(|(k, v)| Some((k.to_string(), v.as_f64()?))).collect(),
         _ => HashMap::new(),
     };
     Some(CameraMotionClip {
@@ -592,7 +590,7 @@ fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
         enabled: c.get("enabled") != Some(&Value::Bool(false)),
         muted: c
             .get("mutedRanges")
-            .and_then(Value::as_array)
+            .and_then(Value::as_arr)
             .into_iter()
             .flatten()
             .filter_map(|r| Some((num(r, "start")?, num(r, "end")?)))
@@ -608,13 +606,13 @@ fn text_asset(a: &Value) -> Option<TextAsset> {
     let height = num(bounds, "height").unwrap_or(0.0);
     let glyphs: Vec<Arc<Glyph>> = a
         .get("glyphs")?
-        .as_array()?
+        .as_arr()?
         .iter()
         .map(|g| Arc::new(Glyph { path: parse_svg_path(g.get("svg_path").and_then(Value::as_str).unwrap_or("")) }))
         .collect();
     let placements = a
         .get("placements")?
-        .as_array()?
+        .as_arr()?
         .iter()
         .filter(|p| p.get("visible") != Some(&Value::Bool(false)))
         .filter_map(|p| {
@@ -625,14 +623,6 @@ fn text_asset(a: &Value) -> Option<TextAsset> {
         .collect();
     let index = ["asset_index", "table_index"].iter().find_map(|k| num(a, k)).unwrap_or(0.0) as u32;
     Some(TextAsset { index, glyphs, placements, width, height })
-}
-
-/// Reads any JSON object map field into an owned map (helper for extensions).
-pub fn object_map(v: Option<&Value>) -> Map<String, Value> {
-    match v {
-        Some(Value::Object(m)) => m.clone(),
-        _ => Map::new(),
-    }
 }
 
 /// Resolves every styled object's figure once, sharing identical overlays.
@@ -678,7 +668,7 @@ pub fn playback(p: &Value) -> Arc<MovieclipPlayback> {
         presence: p.get("clock").and_then(Value::as_str) == Some("presence"),
         restarts: p
             .get("restarts")
-            .and_then(Value::as_array)
+            .and_then(Value::as_arr)
             .into_iter()
             .flatten()
             .filter_map(|k| Some((num(k, "tick")?, num(k, "offset")?)))

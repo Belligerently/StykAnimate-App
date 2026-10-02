@@ -1123,26 +1123,10 @@ dependencies = [
  "pollster",
  "rayon",
  "serde_json",
- "styk-core",
  "styk-doc",
+ "styk-eval",
  "styk-formats",
  "styk-render",
-]
-
-[[package]]
-name = "styk-core"
-version = "0.1.0"
-dependencies = [
- "base64",
- "flate2",
- "image",
- "lyon_path",
- "lyon_tessellation",
- "rayon",
- "serde_json",
- "sha2",
- "thiserror",
- "zstd",
 ]
 
 [[package]]
@@ -1151,6 +1135,21 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "ryu-js",
+ "thiserror",
+]
+
+[[package]]
+name = "styk-eval"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "flate2",
+ "image",
+ "lyon_path",
+ "lyon_tessellation",
+ "rayon",
+ "styk-doc",
+ "styk-formats",
  "thiserror",
 ]
 
@@ -1172,7 +1171,7 @@ dependencies = [
  "bytemuck",
  "image",
  "rayon",
- "styk-core",
+ "styk-eval",
  "wgpu",
 ]
 

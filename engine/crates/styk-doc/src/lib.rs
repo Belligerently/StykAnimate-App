@@ -24,7 +24,7 @@ mod number;
 mod value;
 
 pub use number::format_number;
-pub use value::{Blob, Nums, Obj, Shape, Value};
+pub use value::{Blob, Elements, Nums, Obj, Shape, Value};
 
 /// What went wrong while reading text into the store, and where.
 #[derive(Debug, thiserror::Error, PartialEq)]

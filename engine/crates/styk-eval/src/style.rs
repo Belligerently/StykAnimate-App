@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::Value;
+use styk_doc::Value;
 
 use crate::doc::{Figure, Outline, Paint, PaintKind};
 
@@ -62,8 +62,8 @@ pub fn parse(style: Option<&Value>, color_mode: Option<&Value>) -> Option<Arc<Ob
         key: format!("{}|{segment_colors}", s),
         ..Default::default()
     };
-    if let Some(Value::Object(map)) = s.get("segments") {
-        for (id, v) in map {
+    if let Some(Value::Obj(map)) = s.get("segments") {
+        for (id, v) in map.iter() {
             let Ok(id) = id.parse::<u32>() else { continue };
             out.segments.insert(
                 id,
@@ -79,8 +79,8 @@ pub fn parse(style: Option<&Value>, color_mode: Option<&Value>) -> Option<Arc<Ob
             );
         }
     }
-    if let Some(Value::Object(map)) = s.get("polygons") {
-        for (id, v) in map {
+    if let Some(Value::Obj(map)) = s.get("polygons") {
+        for (id, v) in map.iter() {
             let Ok(id) = id.parse::<u32>() else { continue };
             out.polygons.insert(id, PolygonStyle { color: f(v, "color").map(|c| c as u32), z: f(v, "zIndex"), opacity: f(v, "opacity") });
         }

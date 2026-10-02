@@ -9,8 +9,8 @@ use std::time::Instant;
 
 use rayon::prelude::*;
 use serde_json::Value;
-use styk_core::eval::Prepared;
-use styk_core::geometry::{build, ItemKind, Scene};
+use styk_eval::eval::Prepared;
+use styk_eval::geometry::{build, ItemKind, Scene};
 
 mod container;
 
@@ -35,9 +35,9 @@ fn main() {
 
 fn load(path: &str) -> Result<(Prepared, f64), String> {
     let started = Instant::now();
-    let doc = styk_core::open(Path::new(path)).map_err(|e| format!("{path}: {e}"))?;
+    let doc = styk_eval::open(Path::new(path)).map_err(|e| format!("{path}: {e}"))?;
     let t0 = Instant::now();
-    let prepared = styk_core::prepare(doc);
+    let prepared = styk_eval::prepare(doc);
     if std::env::var_os("STYK_TIMING").is_some() {
         eprintln!("  prepare (timelines, presence index) {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
     }
@@ -242,9 +242,9 @@ fn option<'a>(rest: &'a [String], name: &str) -> Option<&'a str> {
 
 /// Renders one tick headlessly through the GPU renderer and writes a PNG.
 fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
-    use styk_core::assets::Assets;
-    use styk_core::drawlist::encode;
-    use styk_core::view::camera_matrix;
+    use styk_eval::assets::Assets;
+    use styk_eval::drawlist::encode;
+    use styk_eval::view::camera_matrix;
     use styk_render::{wgpu, Renderer, ViewParams};
     let (p, ms) = match load(path) {
         Ok(v) => v,
@@ -366,9 +366,9 @@ fn diff(a: &str, b: &str, out: &str, rest: &[String]) -> i32 {
 
 /// GPU time per frame (submit + wait) across a fit → 11× zoom, at 1440×900.
 fn gpubench(path: &str, tick: &str) -> i32 {
-    use styk_core::assets::Assets;
-    use styk_core::drawlist::encode;
-    use styk_core::view::camera_matrix;
+    use styk_eval::assets::Assets;
+    use styk_eval::drawlist::encode;
+    use styk_eval::view::camera_matrix;
     use styk_render::{wgpu, Renderer, ViewParams};
     let (p, _) = match load(path) {
         Ok(v) => v,

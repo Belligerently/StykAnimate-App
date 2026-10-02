@@ -314,6 +314,25 @@ impl Value {
         }
     }
 
+    /// Either kind of array as a sequence of values. Elements are returned by value
+    /// (a clone is one reference count or one number).
+    pub fn elements(&self) -> Option<Elements<'_>> {
+        match self {
+            Value::Arr(items) => Some(Elements::Items(items)),
+            Value::Nums(numbers) => Some(Elements::Numbers(numbers)),
+            _ => None,
+        }
+    }
+
+    pub fn is_object(&self) -> bool {
+        matches!(self, Value::Obj(_))
+    }
+
+    /// A number as an integer, when it is one (JavaScript's `Number.isInteger`) and fits.
+    pub fn as_i64(&self) -> Option<i64> {
+        self.as_f64().filter(|n| n.fract() == 0.0 && n.abs() < 9.3e18).map(|n| n as i64)
+    }
+
     /// The numbers of an array of numbers, whichever way it is stored. `None` when
     /// the value is not an array or holds anything else.
     pub fn numbers(&self) -> Option<Vec<f64>> {
@@ -343,6 +362,23 @@ impl Value {
                 out.push_str(&b.prefix);
                 crate::json::base64_into(&b.bytes, unsafe { out.as_mut_vec() });
                 Some(std::borrow::Cow::Owned(out))
+            }
+            _ => None,
+        }
+    }
+
+    /// The bytes behind a base64 field or a `data:…;base64,` URL, whether the value is
+    /// a blob or plain text. `None` for anything else, including malformed base64.
+    pub fn payload_bytes(&self) -> Option<Arc<[u8]>> {
+        match self {
+            Value::Blob(blob) => Some(blob.bytes.clone()),
+            Value::Str(text) => {
+                let encoded = match text.find(";base64,") {
+                    Some(at) if text.starts_with("data:") => &text[at + 8..],
+                    _ if text.starts_with("data:") => return None,
+                    _ => text,
+                };
+                crate::json::base64_strict(encoded.trim()).map(Arc::from)
             }
             _ => None,
         }
@@ -415,6 +451,37 @@ impl Value {
     }
 }
 
+/// The elements of either kind of array (see [`Value::elements`]).
+#[derive(Clone, Copy)]
+pub enum Elements<'a> {
+    Items(&'a [Value]),
+    Numbers(&'a Nums),
+}
+
+impl<'a> Elements<'a> {
+    pub fn len(&self) -> usize {
+        match self {
+            Elements::Items(items) => items.len(),
+            Elements::Numbers(numbers) => numbers.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn get(&self, index: usize) -> Option<Value> {
+        match self {
+            Elements::Items(items) => items.get(index).cloned(),
+            Elements::Numbers(numbers) => numbers.get(index).map(Value::Num),
+        }
+    }
+
+    pub fn iter(self) -> impl ExactSizeIterator<Item = Value> + 'a {
+        (0..self.len()).map(move |i| self.get(i).expect("index within length"))
+    }
+}
+
 /// Structural equality: the same data, however it is stored or shared. Numbers
 /// compare as JavaScript's `===` does, except that NaN equals NaN.
 impl PartialEq for Value {
@@ -437,6 +504,21 @@ impl PartialEq for Value {
             }
             _ => false,
         }
+    }
+}
+
+/// JSON text, as `JSON.stringify` prints it.
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&crate::json::to_string(self))
+    }
+}
+
+impl<'a> IntoIterator for Elements<'a> {
+    type Item = Value;
+    type IntoIter = Box<dyn ExactSizeIterator<Item = Value> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.iter())
     }
 }
 

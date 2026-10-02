@@ -4,7 +4,7 @@
 
 use std::f64::consts::PI;
 
-use serde_json::Value;
+use styk_doc::Value;
 
 const EPS: f64 = 1e-8;
 const SPATIAL_EPS: f64 = 1e-9;
@@ -135,13 +135,13 @@ fn id(v: &Value, k: &str) -> Option<u32> {
     v.get(k).and_then(Value::as_f64).map(|x| x as u32)
 }
 fn vec3(v: Option<&Value>) -> Option<[f64; 3]> {
-    let a = v?.as_array()?;
-    Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?, a.get(2)?.as_f64()?])
+    let a = v?.numbers()?;
+    Some([*a.first()?, *a.get(1)?, *a.get(2)?])
 }
 fn weighted(v: &Value) -> Option<Weighted> {
     Some(Weighted {
         origin: id(v, "origin").unwrap_or(0),
-        anchors: v.get("anchors")?.as_array()?.iter().filter_map(|a| Some((id(a, "joint")?, f(a, "weight")?))).collect(),
+        anchors: v.get("anchors")?.as_arr()?.iter().filter_map(|a| Some((id(a, "joint")?, f(a, "weight")?))).collect(),
         depth: v.get("depth").and_then(weighted).map(Box::new),
     })
 }
@@ -220,12 +220,12 @@ pub fn parse(v: &Value) -> Option<Rig> {
             figure_rest_angle: f(p, "figureRestAngle").unwrap_or(0.0),
             keys: p
                 .get("keys")
-                .and_then(Value::as_array)
+                .and_then(Value::as_arr)
                 .into_iter()
                 .flatten()
                 .filter_map(|k| {
-                    let a = k.as_array()?;
-                    Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?, a.get(2)?.as_f64()?, a.get(3)?.as_f64()?])
+                    let a = k.numbers()?;
+                    Some([*a.first()?, *a.get(1)?, *a.get(2)?, *a.get(3)?])
                 })
                 .collect(),
         });
@@ -235,8 +235,8 @@ pub fn parse(v: &Value) -> Option<Rig> {
         rig.spatial = if s.get("bindings").is_some() {
             Some(Spatial::Skin {
                 point: vec3(s.get("point")).unwrap_or([0.0; 3]),
-                bindings: s.get("bindings").and_then(Value::as_array).into_iter().flatten().filter_map(|b| Some((id(b, "joint")?, f(b, "weight")?))).collect(),
-                view_points: s.get("viewPoints").and_then(Value::as_array).map(|a| a.iter().filter_map(|p| vec3(Some(p))).collect()),
+                bindings: s.get("bindings").and_then(Value::as_arr).into_iter().flatten().filter_map(|b| Some((id(b, "joint")?, f(b, "weight")?))).collect(),
+                view_points: s.get("viewPoints").and_then(Value::as_arr).map(|a| a.iter().filter_map(|p| vec3(Some(p))).collect()),
             })
         } else {
             Some(Spatial::Bone {
