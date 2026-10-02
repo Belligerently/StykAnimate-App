@@ -224,6 +224,6 @@ impl Stage {
     /// Primitive, isolation group and pass counts of the last frame, as JSON.
     pub fn stats(&self) -> String {
         let s = &self.renderer.stats;
-        format!("{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{}}}", s.prims, s.groups, s.passes, s.downscaled)
+        format!("{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{}}}", s.prims, s.groups, s.passes, s.downscaled, s.rounds)
     }
 }

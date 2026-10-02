@@ -6,7 +6,9 @@
 //!   WebGPU, Vulkan/Metal/DX12 and WebGL2, which has no storage buffers.
 //! * Draw lists are view independent: pan/zoom only rewrites a 96-byte uniform.
 //! * Translucent figures are isolated in an atlas: one pass per nesting depth
-//!   (ping-ponging between two atlases), not one pass per figure.
+//!   (ping-ponging between two atlases), not one pass per figure. When the
+//!   layers of a frame do not fit the atlas, they are drawn in rounds, each at
+//!   full resolution, with the frame drawn between rounds.
 //! * Sprites live in a texture array filled from images decoded on worker threads.
 //! * Output is drawn into an offscreen `Rgba8Unorm` frame (gamma-space blending,
 //!   like Canvas 2D) and copied into the host's surface.
@@ -16,7 +18,7 @@ use std::sync::Arc;
 use bytemuck::{Pod, Zeroable};
 use styk_eval::assets::{Assets, PAGE};
 use styk_eval::doc::Document;
-use styk_eval::drawlist::{DrawList, Prim};
+use styk_eval::drawlist::{DrawList, Prim, K_COMPOSITE};
 
 pub use wgpu;
 
@@ -110,7 +112,10 @@ pub struct Stats {
     pub prims: u32,
     pub groups: u32,
     pub passes: u32,
+    /// A group's layers were drawn below full resolution (they alone exceed the atlas).
     pub downscaled: bool,
+    /// Rounds of isolation layers the last frame needed (1 when they all fit the atlas).
+    pub rounds: u32,
 }
 
 pub struct Renderer {
@@ -269,6 +274,7 @@ fn buffer(device: &wgpu::Device, label: &str, size: u64, usage: wgpu::BufferUsag
 }
 
 /// Shelf packer for isolation layers inside fixed-size pages.
+#[derive(Clone, Copy)]
 struct Shelf {
     size: [u32; 2],
     page: u32,
@@ -301,6 +307,126 @@ impl Shelf {
         self.row = self.row.max(h);
         Some(at)
     }
+}
+
+/// One round of isolation layers: a run of the frame's top-level groups, with
+/// everything nested in them, placed in the atlases together.
+struct Round {
+    /// Group ids `first..end`: the run and its descendants (ids are given depth first).
+    first: usize,
+    end: usize,
+    pages_per_depth: Vec<u32>,
+    placed: Vec<(usize, GpuGroup)>,
+    /// The run is a single group whose layers did not fit at full resolution.
+    downscaled: bool,
+}
+
+/// Screen rectangle of a group's layer (clipped to the frame, with an antialiasing margin).
+fn layer_rect(list: &DrawList, view: &ViewParams, size: [u32; 2], g: usize) -> [f64; 4] {
+    let b = list.groups[g].bounds;
+    let corners = [view.to_screen(b[0] as f64, b[1] as f64), view.to_screen(b[2] as f64, b[1] as f64), view.to_screen(b[0] as f64, b[3] as f64), view.to_screen(b[2] as f64, b[3] as f64)];
+    let x0 = corners.iter().map(|c| c[0]).fold(f64::INFINITY, f64::min).floor() - 2.0;
+    let y0 = corners.iter().map(|c| c[1]).fold(f64::INFINITY, f64::min).floor() - 2.0;
+    let x1 = corners.iter().map(|c| c[0]).fold(f64::NEG_INFINITY, f64::max).ceil() + 2.0;
+    let y1 = corners.iter().map(|c| c[1]).fold(f64::NEG_INFINITY, f64::max).ceil() + 2.0;
+    [x0.max(0.0), y0.max(0.0), x1.min(size[0] as f64), y1.min(size[1] as f64)]
+}
+
+/// Packs groups `first..end` into fresh pages at `scale`, tallest first per depth.
+fn pack(list: &DrawList, rects: &[[f64; 4]], size: [u32; 2], first: usize, end: usize, scale: f64) -> Option<(Vec<(usize, GpuGroup)>, Vec<u32>)> {
+    let max_depth = list.groups.iter().map(|g| g.depth).max().unwrap_or(0) as usize;
+    let mut placed = Vec::with_capacity(end - first);
+    let mut pages = vec![0u32; max_depth + 1];
+    for depth in 1..=max_depth {
+        let mut members: Vec<usize> = (first..end).filter(|&g| list.groups[g].depth as usize == depth).collect();
+        if members.is_empty() {
+            continue;
+        }
+        members.sort_by(|&a, &b| (rects[b][3] - rects[b][1]).total_cmp(&(rects[a][3] - rects[a][1])));
+        let mut shelf = Shelf { size, page: 0, x: 0, y: 0, row: 0 };
+        for g in members {
+            let r = rects[g];
+            if r[2] <= r[0] || r[3] <= r[1] {
+                placed.push((g, GpuGroup { page: -1.0, ..Default::default() }));
+                continue;
+            }
+            let w = ((r[2] - r[0]) * scale).ceil().max(1.0) as u32;
+            let h = ((r[3] - r[1]) * scale).ceil().max(1.0) as u32;
+            let (page, x, y) = shelf.place(w, h, MAX_LAYER_PAGES)?;
+            placed.push((g, GpuGroup { origin: [r[0] as f32, r[1] as f32], scale: scale as f32, page: page as f32, offset: [x as f32, y as f32], size: [w as f32, h as f32] }));
+        }
+        pages[depth] = shelf.page + 1;
+    }
+    Some((placed, pages))
+}
+
+/// Splits the frame's isolation layers into rounds that each fit the atlas at full
+/// resolution: as many consecutive top-level groups per round as fit. A single group
+/// whose layers alone do not fit is drawn at the largest scale that does.
+fn plan_rounds(list: &DrawList, view: &ViewParams, size: [u32; 2]) -> Vec<Round> {
+    let n = list.groups.len();
+    let rects: Vec<[f64; 4]> = (0..n).map(|g| if g == 0 { [0.0; 4] } else { layer_rect(list, view, size, g) }).collect();
+    let max_depth = list.groups.iter().map(|g| g.depth).max().unwrap_or(0) as usize;
+    if let Some((placed, pages_per_depth)) = pack(list, &rects, size, 1, n, 1.0) {
+        return vec![Round { first: 1, end: n, pages_per_depth, placed, downscaled: false }];
+    }
+    // Top-level groups in order, each with the end of its subtree.
+    let tops: Vec<usize> = (1..n).filter(|&g| list.groups[g].depth == 1).collect();
+    let end_of = |k: usize| tops.get(k + 1).copied().unwrap_or(n);
+    let mut rounds = Vec::new();
+    let mut i = 0;
+    while i < tops.len() {
+        let fits = |count: usize| pack(list, &rects, size, tops[i], end_of(i + count - 1), 1.0);
+        let Some(mut best) = fits(1) else {
+            let mut scale = 0.5;
+            let (placed, pages_per_depth) = loop {
+                match pack(list, &rects, size, tops[i], end_of(i), scale) {
+                    Some(found) => break found,
+                    None if scale < 1e-3 => break (Vec::new(), vec![0; max_depth + 1]),
+                    None => scale *= 0.5,
+                }
+            };
+            rounds.push(Round { first: tops[i], end: end_of(i), pages_per_depth, placed, downscaled: true });
+            i += 1;
+            continue;
+        };
+        // The longest run that fits: grow by doubling, then bisect.
+        let remaining = tops.len() - i;
+        let (mut good, mut step) = (1, 1);
+        let mut bad = None;
+        while good < remaining {
+            let count = (good + step).min(remaining);
+            match fits(count) {
+                Some(found) => {
+                    best = found;
+                    good = count;
+                    step *= 2;
+                }
+                None => {
+                    bad = Some(count);
+                    break;
+                }
+            }
+        }
+        if let Some(mut bad) = bad {
+            while bad - good > 1 {
+                let middle = (good + bad) / 2;
+                match fits(middle) {
+                    Some(found) => {
+                        best = found;
+                        good = middle;
+                    }
+                    None => bad = middle,
+                }
+            }
+        }
+        rounds.push(Round { first: tops[i], end: end_of(i + good - 1), pages_per_depth: best.1, placed: best.0, downscaled: false });
+        i += good;
+    }
+    if rounds.is_empty() {
+        rounds.push(Round { first: 1, end: n, pages_per_depth: vec![0; max_depth + 1], placed: Vec::new(), downscaled: false });
+    }
+    rounds
 }
 
 impl Renderer {
@@ -447,7 +573,7 @@ impl Renderer {
             output: None,
             list: None,
             list_prims: 0,
-            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false },
+            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0 },
         }
     }
 
@@ -608,78 +734,43 @@ impl Renderer {
         if self.bind0.is_none() {
             self.rebind();
         }
-        // Place every isolation group: screen rect (clipped to the frame) → atlas rect.
-        let mut placed = vec![GpuGroup::default(); list.groups.len()];
+        let n = list.groups.len();
         let max_depth = list.groups.iter().map(|g| g.depth).max().unwrap_or(0);
-        let mut pages_per_depth = vec![0u32; max_depth as usize + 1];
-        let mut downscaled = false;
-        for depth in 1..=max_depth {
-            let members: Vec<usize> = (1..list.groups.len()).filter(|&g| list.groups[g].depth == depth).collect();
-            let mut rects: Vec<(usize, [f64; 4])> = Vec::with_capacity(members.len());
-            for &g in &members {
-                let b = list.groups[g].bounds;
-                let corners = [
-                    view.to_screen(b[0] as f64, b[1] as f64),
-                    view.to_screen(b[2] as f64, b[1] as f64),
-                    view.to_screen(b[0] as f64, b[3] as f64),
-                    view.to_screen(b[2] as f64, b[3] as f64),
-                ];
-                let x0 = corners.iter().map(|c| c[0]).fold(f64::INFINITY, f64::min).floor() - 2.0;
-                let y0 = corners.iter().map(|c| c[1]).fold(f64::INFINITY, f64::min).floor() - 2.0;
-                let x1 = corners.iter().map(|c| c[0]).fold(f64::NEG_INFINITY, f64::max).ceil() + 2.0;
-                let y1 = corners.iter().map(|c| c[1]).fold(f64::NEG_INFINITY, f64::max).ceil() + 2.0;
-                let r = [x0.max(0.0), y0.max(0.0), x1.min(size[0] as f64), y1.min(size[1] as f64)];
-                rects.push((g, r));
-            }
-            let mut scale = 1.0f64;
-            loop {
-                let mut shelf = Shelf { size, page: 0, x: 0, y: 0, row: 0 };
-                let mut order: Vec<usize> = (0..rects.len()).collect();
-                order.sort_by(|&a, &b| (rects[b].1[3] - rects[b].1[1]).total_cmp(&(rects[a].1[3] - rects[a].1[1])));
-                let mut ok = true;
-                for k in order {
-                    let (g, r) = rects[k];
-                    if r[2] <= r[0] || r[3] <= r[1] {
-                        placed[g] = GpuGroup { page: -1.0, ..Default::default() };
-                        continue;
-                    }
-                    let w = ((r[2] - r[0]) * scale).ceil().max(1.0) as u32;
-                    let h = ((r[3] - r[1]) * scale).ceil().max(1.0) as u32;
-                    match shelf.place(w, h, MAX_LAYER_PAGES) {
-                        Some((page, x, y)) => {
-                            placed[g] = GpuGroup {
-                                origin: [r[0] as f32, r[1] as f32],
-                                scale: scale as f32,
-                                page: page as f32,
-                                offset: [x as f32, y as f32],
-                                size: [w as f32, h as f32],
-                            };
-                        }
-                        None => {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-                if ok {
-                    pages_per_depth[depth as usize] = shelf.page + 1;
-                    break;
-                }
-                scale *= 0.5;
-                downscaled = true;
+        let rounds = plan_rounds(&list, view, size);
+        let mut placed = vec![GpuGroup::default(); n];
+        for round in &rounds {
+            for &(g, entry) in &round.placed {
+                placed[g] = entry;
             }
         }
+        let downscaled = rounds.iter().any(|round| round.downscaled);
         if self.groups.write(&self.device, &self.queue, bytemuck::cast_slice(&placed)) {
             self.rebind();
         }
-        // One uniform slot per pass: every (depth, page) and the frame.
-        let mut passes: Vec<(u32, u32, u32, u32)> = Vec::new(); // depth, page, start, end
-        for pass in &list.passes {
-            if pass.depth == 0 {
-                continue;
-            }
-            for page in 0..pages_per_depth[pass.depth as usize] {
-                passes.push((pass.depth, page, pass.start, pass.end));
+        // Each group's prims are one run inside its depth's pass (the encoder emits them by group).
+        let mut runs = vec![(u32::MAX, 0u32); n];
+        for (i, p) in list.prims.iter().enumerate() {
+            let run = &mut runs[p.group as usize];
+            run.0 = run.0.min(i as u32);
+            run.1 = i as u32 + 1;
+        }
+        // One uniform slot per layer pass (round, depth, page) and one for the frame.
+        let mut passes: Vec<(usize, u32, u32, u32, u32)> = Vec::new(); // round, depth, page, start, end
+        for (r, round) in rounds.iter().enumerate() {
+            for depth in (1..=max_depth).rev() {
+                let (mut start, mut end) = (u32::MAX, 0u32);
+                for g in round.first..round.end {
+                    if list.groups[g].depth == depth && runs[g].0 < runs[g].1 {
+                        start = start.min(runs[g].0);
+                        end = end.max(runs[g].1);
+                    }
+                }
+                if start >= end {
+                    continue;
+                }
+                for page in 0..round.pages_per_depth[depth as usize] {
+                    passes.push((r, depth, page, start, end));
+                }
             }
         }
         let root = list.passes.iter().find(|p| p.depth == 0).map(|p| (p.start, p.end)).unwrap_or((0, 0));
@@ -690,7 +781,7 @@ impl Renderer {
             self.rebind();
         }
         let mut uniform_data = vec![0u8; (UNIFORM_STRIDE * slots) as usize];
-        for (i, &(depth, page, _, _)) in passes.iter().enumerate() {
+        for (i, &(_, depth, page, _, _)) in passes.iter().enumerate() {
             let v = view.gpu([size[0] as f32, size[1] as f32, page as f32, depth as f32]);
             let o = i * UNIFORM_STRIDE as usize;
             uniform_data[o..o + std::mem::size_of::<GpuView>()].copy_from_slice(bytemuck::bytes_of(&v));
@@ -701,31 +792,84 @@ impl Renderer {
         self.queue.write_buffer(&self.uniforms, 0, &uniform_data);
 
         for depth in 1..=max_depth {
-            let pages = pages_per_depth[depth as usize];
+            let pages = rounds.iter().map(|round| round.pages_per_depth[depth as usize]).max().unwrap_or(0);
             if pages > 0 {
                 self.ensure_layers(depth as usize % 2, size, pages);
             }
         }
-        let bind0 = self.bind0.clone().unwrap();
-        for (i, &(depth, page, start, end)) in passes.iter().enumerate() {
-            if start == end {
+        // Where the frame stops for the next round: before the first composite of a group the next round draws.
+        let mut round_of = vec![usize::MAX; n];
+        for (r, round) in rounds.iter().enumerate() {
+            round_of[round.first..round.end].fill(r);
+        }
+        let bg = list.background_prims.min(root.1 - root.0);
+        let mut stops = vec![root.1; rounds.len()];
+        let mut next = 1;
+        for i in root.0 + bg..root.1 {
+            let p = &list.prims[i as usize];
+            if p.kind & 255 != K_COMPOSITE {
                 continue;
             }
-            let parity = depth as usize % 2;
-            let target = self.layers[parity].texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2),
-                base_array_layer: page,
-                array_layer_count: Some(1),
-                ..Default::default()
-            });
-            let msaa = Self::msaa(&self.device, &mut self.msaa_layer, size);
+            let r = round_of.get(p.b[0].to_bits() as usize).copied().unwrap_or(usize::MAX);
+            while next < rounds.len() && r != usize::MAX && r >= next {
+                stops[next - 1] = i;
+                next += 1;
+            }
+        }
+        let bind0 = self.bind0.clone().unwrap();
+        let mut from = root.0 + bg;
+        for (r, _) in rounds.iter().enumerate() {
+            for (i, &(round, depth, page, start, end)) in passes.iter().enumerate() {
+                if round != r {
+                    continue;
+                }
+                let parity = depth as usize % 2;
+                let target = self.layers[parity].texture.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: page,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                });
+                let msaa = Self::msaa(&self.device, &mut self.msaa_layer, size);
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("styk layer pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &msaa,
+                        depth_slice: None,
+                        resolve_target: Some(&target),
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Discard },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &bind0, &[(i as u64 * UNIFORM_STRIDE) as u32]);
+                pass.set_bind_group(1, &self.sprite_bind, &[]);
+                pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
+                pass.set_vertex_buffer(0, self.prims.slice(..));
+                pass.draw(0..6, start..end);
+            }
+            // The frame, up to the next round's first composite. The multisampled frame is kept between rounds.
+            let last = r + 1 == rounds.len();
+            let until = if last { root.1 } else { stops[r] };
+            let msaa = Self::msaa(&self.device, &mut self.msaa_main, size);
+            let output = &self.output.as_ref().unwrap().1;
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("styk layer pass"),
+                label: Some("styk frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &msaa,
                     depth_slice: None,
-                    resolve_target: Some(&target),
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Discard },
+                    resolve_target: if last { Some(output) } else { None },
+                    ops: wgpu::Operations {
+                        load: if r == 0 {
+                            wgpu::LoadOp::Clear(wgpu::Color { r: view.clear[0], g: view.clear[1], b: view.clear[2], a: view.clear[3] })
+                        } else {
+                            wgpu::LoadOp::Load
+                        },
+                        store: if last { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store },
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -733,55 +877,31 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &bind0, &[(i as u64 * UNIFORM_STRIDE) as u32]);
+            pass.set_bind_group(0, &bind0, &[(passes.len() as u64 * UNIFORM_STRIDE) as u32]);
             pass.set_bind_group(1, &self.sprite_bind, &[]);
-            pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
+            pass.set_bind_group(2, &self.layer_binds[1], &[]);
             pass.set_vertex_buffer(0, self.prims.slice(..));
-            pass.draw(0..6, start..end);
-        }
-        // The frame.
-        let msaa = Self::msaa(&self.device, &mut self.msaa_main, size);
-        let output = &self.output.as_ref().unwrap().1;
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("styk frame pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &msaa,
-                depth_slice: None,
-                resolve_target: Some(output),
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: view.clear[0], g: view.clear[1], b: view.clear[2], a: view.clear[3] }),
-                    store: wgpu::StoreOp::Discard,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &bind0, &[(passes.len() as u64 * UNIFORM_STRIDE) as u32]);
-        pass.set_bind_group(1, &self.sprite_bind, &[]);
-        pass.set_bind_group(2, &self.layer_binds[1], &[]);
-        pass.set_vertex_buffer(0, self.prims.slice(..));
-        let bg = list.background_prims.min(root.1 - root.0);
-        if bg > 0 {
-            pass.draw(0..6, root.0..root.0 + bg);
-        }
-        if view.clip_to_artboard {
-            let a = view.artboard;
-            let x0 = a[0].clamp(0.0, size[0] as f64).floor() as u32;
-            let y0 = a[1].clamp(0.0, size[1] as f64).floor() as u32;
-            let x1 = a[2].clamp(0.0, size[0] as f64).ceil() as u32;
-            let y1 = a[3].clamp(0.0, size[1] as f64).ceil() as u32;
-            if x1 > x0 && y1 > y0 {
-                pass.set_scissor_rect(x0, y0, x1 - x0, y1 - y0);
-                pass.draw(0..6, root.0 + bg..root.1);
+            if r == 0 && bg > 0 {
+                pass.draw(0..6, root.0..root.0 + bg);
             }
-        } else {
-            pass.draw(0..6, root.0 + bg..root.1);
+            if until > from {
+                if view.clip_to_artboard {
+                    let a = view.artboard;
+                    let x0 = a[0].clamp(0.0, size[0] as f64).floor() as u32;
+                    let y0 = a[1].clamp(0.0, size[1] as f64).floor() as u32;
+                    let x1 = a[2].clamp(0.0, size[0] as f64).ceil() as u32;
+                    let y1 = a[3].clamp(0.0, size[1] as f64).ceil() as u32;
+                    if x1 > x0 && y1 > y0 {
+                        pass.set_scissor_rect(x0, y0, x1 - x0, y1 - y0);
+                        pass.draw(0..6, from..until);
+                    }
+                } else {
+                    pass.draw(0..6, from..until);
+                }
+            }
+            from = until;
         }
-        drop(pass);
-        self.stats = Stats { prims: list.prims.len() as u32, groups: list.groups.len() as u32 - 1, passes: passes.len() as u32 + 1, downscaled };
+        self.stats = Stats { prims: list.prims.len() as u32, groups: n as u32 - 1, passes: passes.len() as u32 + rounds.len() as u32, downscaled, rounds: rounds.len() as u32 };
     }
 
     fn clear_only(&mut self, encoder: &mut wgpu::CommandEncoder, view: &ViewParams) {
@@ -859,4 +979,73 @@ pub fn read_frame(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Te
     drop(data);
     staging.unmap();
     (w, h, out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use styk_eval::drawlist::{Group, Pass};
+
+    /// A frame of `count` translucent figures, each covering most of a 400×300 view,
+    /// with one nested translucent outline each.
+    fn crowded(count: usize) -> DrawList {
+        let mut groups = vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0, 0.0, 400.0, 300.0] }];
+        for _ in 0..count {
+            let top = groups.len() as u32;
+            groups.push(Group { parent: 0, depth: 1, opacity: 0.5, bounds: [10.0, 10.0, 390.0, 290.0] });
+            groups.push(Group { parent: top, depth: 2, opacity: 0.5, bounds: [20.0, 20.0, 380.0, 280.0] });
+        }
+        DrawList { groups, passes: vec![Pass { depth: 0, start: 0, end: 0 }], ..Default::default() }
+    }
+
+    fn view() -> ViewParams {
+        ViewParams { matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], artboard: [0.0, 0.0, 400.0, 300.0], clip_to_artboard: false, clear: [0.0; 4] }
+    }
+
+    #[test]
+    fn layers_that_fit_take_one_round() {
+        let rounds = plan_rounds(&crowded(5), &view(), [400, 300]);
+        assert_eq!(rounds.len(), 1);
+        assert!(!rounds[0].downscaled);
+        assert_eq!(rounds[0].placed.len(), 10);
+    }
+
+    /// More full-frame layers than atlas pages: every one is still drawn at full
+    /// resolution, in rounds, each group exactly once and with its nested group.
+    #[test]
+    fn overflowing_layers_are_drawn_in_full_resolution_rounds() {
+        let list = crowded(21);
+        let rounds = plan_rounds(&list, &view(), [400, 300]);
+        assert!(rounds.len() > 1, "21 full-frame layers cannot share {MAX_LAYER_PAGES} pages");
+        let mut seen = vec![0; list.groups.len()];
+        let mut next = 1;
+        for round in &rounds {
+            assert!(!round.downscaled);
+            assert_eq!(round.first, next, "rounds are consecutive runs");
+            next = round.end;
+            assert!(round.pages_per_depth.iter().all(|&pages| pages <= MAX_LAYER_PAGES));
+            for &(g, entry) in &round.placed {
+                assert!((round.first..round.end).contains(&g));
+                assert_eq!(entry.scale, 1.0);
+                seen[g] += 1;
+            }
+        }
+        assert_eq!(next, list.groups.len());
+        assert!(seen[1..].iter().all(|&count| count == 1), "every layer placed once: {seen:?}");
+    }
+
+    /// A single group whose nested layers alone exceed the atlas is the one case drawn smaller.
+    #[test]
+    fn a_group_too_large_alone_is_downscaled() {
+        let mut groups = vec![Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0, 0.0, 400.0, 300.0] }];
+        groups.push(Group { parent: 0, depth: 1, opacity: 0.5, bounds: [0.0, 0.0, 400.0, 300.0] });
+        for _ in 0..(MAX_LAYER_PAGES as usize + 4) {
+            groups.push(Group { parent: 1, depth: 2, opacity: 0.5, bounds: [0.0, 0.0, 400.0, 300.0] });
+        }
+        let list = DrawList { groups, passes: vec![Pass { depth: 0, start: 0, end: 0 }], ..Default::default() };
+        let rounds = plan_rounds(&list, &view(), [400, 300]);
+        assert_eq!(rounds.len(), 1);
+        assert!(rounds[0].downscaled);
+        assert_eq!(rounds[0].placed.len(), list.groups.len() - 1);
+    }
 }
