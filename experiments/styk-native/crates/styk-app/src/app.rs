@@ -75,7 +75,40 @@ pub struct App {
     show_stats: bool,
     script: crate::Script,
     script_frames: u32,
-    measure_start: Option<(Instant, u64, u64, u32)>,
+    bench: Option<Bench>,
+    /// Stage size in points, for scripted gestures.
+    stage_size: Vec2,
+}
+
+/// Scripted measurements (`--bench`): playback, zoom, pan, zoom while playing.
+struct Bench {
+    /// Pose phase: the edited record, its original state and the segment turned.
+    pose: Option<(PoseRef, Arc<Object>, usize)>,
+    edit_ms: Vec<f32>,
+    phase: usize,
+    started: Option<Instant>,
+    last: Option<Instant>,
+    intervals: Vec<f32>,
+    work: Vec<f32>,
+    presented: Vec<(u32, Instant)>,
+    sync_before: u64,
+    misses_before: u64,
+    fit: f64,
+}
+
+impl Bench {
+    fn new() -> Bench {
+        Bench { pose: None, edit_ms: vec![], phase: 0, started: None, last: None, intervals: vec![], work: vec![], presented: vec![], sync_before: 0, misses_before: 0, fit: 1.0 }
+    }
+}
+
+fn quantiles(mut v: Vec<f32>) -> String {
+    if v.is_empty() {
+        return "{}".into();
+    }
+    v.sort_by(|a, b| a.total_cmp(b));
+    let q = |p: f64| v[((v.len() - 1) as f64 * p).round() as usize];
+    format!("{{\"n\":{},\"p50\":{:.2},\"p95\":{:.2},\"p99\":{:.2},\"max\":{:.2}}}", v.len(), q(0.5), q(0.95), q(0.99), v[v.len() - 1])
 }
 
 fn scan_files() -> Vec<(String, Vec<PathBuf>)> {
@@ -110,6 +143,8 @@ impl App {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(threads.saturating_sub(2).max(1))
                 .thread_name(|i| format!("styk-prefetch-{i}"))
+                // Background preparation yields to the UI and compositor threads.
+                .start_handler(|_| lower_priority())
                 .build()
                 .expect("prefetch pool"),
         );
@@ -142,8 +177,12 @@ impl App {
             show_stats: true,
             script,
             script_frames: 0,
-            measure_start: None,
+            bench: None,
+            stage_size: Vec2::new(1000.0, 700.0),
         };
+        if app.script.no_handles {
+            app.show_handles = false;
+        }
         if let Some(path) = initial {
             app.open(path, &cc.egui_ctx);
         }
@@ -186,6 +225,7 @@ impl App {
                 }
                 self.selected = self.script.select;
                 self.playing = self.script.play;
+                self.bench = None;
             }
             Ok(Err(e)) => {
                 self.error = Some(format!("{}: {e}", path.display()));
@@ -358,49 +398,220 @@ impl App {
                 let [w, h] = image.size;
                 let _ = image::save_buffer(&path, image.as_raw(), w as u32, h as u32, image::ColorType::Rgba8);
                 println!("screenshot {} ({w}x{h})", path.display());
-                if self.script.exit && self.script.measure.is_none() {
+                if self.script.exit && !self.script.bench {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
         }
-        if let Some(seconds) = self.script.measure {
-            let engine = self.engine.as_ref().unwrap();
-            match self.measure_start {
-                None if self.script_frames > 20 => {
-                    self.playing = true;
-                    self.measure_start = Some((Instant::now(), self.shown, self.playback_misses, self.tick));
+        if self.script.bench && self.script_frames > 20 {
+            if self.bench.is_none() {
+                self.bench = Some(Bench::new());
+            }
+            if self.step_bench() {
+                self.script.bench = false;
+                if self.script.exit && self.script.screenshot.is_none() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
-                Some((start, shown, misses, _)) if start.elapsed().as_secs_f64() >= seconds => {
-                    let elapsed = start.elapsed().as_secs_f64();
-                    let mut times: Vec<f32> = self.frame_times.iter().copied().collect();
-                    times.sort_by(|a, b| a.total_cmp(b));
-                    let p95 = times.get(times.len().saturating_sub(1) * 95 / 100).copied().unwrap_or(0.0);
-                    let worst = times.last().copied().unwrap_or(0.0);
-                    let s = &engine.stats;
-                    println!(
-                        "measure {}: {:.1} display fps over {elapsed:.1} s, frame interval p95 {p95:.1} ms, worst {worst:.1} ms, playback misses {}, prepared {} (avg {:.2} ms, worst {:.2} ms), cached {} frames",
-                        engine.path.file_name().unwrap_or_default().to_string_lossy(),
-                        (self.shown - shown) as f64 / elapsed,
-                        self.playback_misses - misses,
-                        s.produced,
-                        if s.produced > 0 { s.produce_ms_total / s.produced as f64 } else { 0.0 },
-                        s.produce_ms_worst,
-                        engine.cached_frames()
-                    );
-                    self.script.measure = None;
-                    if self.script.exit && self.script.screenshot.is_none() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                }
-                _ => {}
             }
         }
         if self.script.screenshot.is_some() && self.script_frames == 30 {
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
-        if self.script.exit && self.script.screenshot.is_none() && self.script.measure.is_none() && self.script_frames > 40 {
+        if self.script.exit && self.script.screenshot.is_none() && !self.script.bench && self.script_frames > 40 {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+    }
+
+    /// Advances the scripted benchmark; returns true when every phase is done.
+    fn step_bench(&mut self) -> bool {
+        let now = Instant::now();
+        let work = self.last_frame_ms;
+        let (cw, ch) = match &self.engine {
+            Some(e) => (e.doc().canvas[0] as f64, e.doc().canvas[1] as f64),
+            None => return true,
+        };
+        let name = self.engine.as_ref().unwrap().path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let size = self.stage_size;
+        let mut b = self.bench.take().unwrap();
+        let fit = ((size.x as f64 - 64.0) / cw).min((size.y as f64 - 64.0) / ch).max(0.01);
+        // Centre the canvas at a zoom, keeping the stage centre fixed.
+        let place = |app: &mut App, zoom: f64, shift: f64| {
+            app.zoom = zoom;
+            app.pan = Vec2::new(((size.x as f64 - cw * zoom) / 2.0 + shift) as f32, ((size.y as f64 - ch * zoom) / 2.0) as f32);
+        };
+        let mut done = false;
+        let mut next = false;
+        match b.phase {
+            // 0: one full playback pass from the first frame.
+            0 => {
+                if b.started.is_none() {
+                    b.started = Some(now);
+                    b.fit = fit;
+                    place(self, fit, 0.0);
+                    self.set_tick(0);
+                    self.looping = false;
+                    self.playing = true;
+                    self.last_instant = None;
+                    let e = self.engine.as_ref().unwrap();
+                    b.sync_before = e.stats.sync_frames;
+                    b.misses_before = self.playback_misses;
+                } else {
+                    if b.presented.last().is_none_or(|p| p.0 != self.tick) {
+                        b.presented.push((self.tick, now));
+                    }
+                    if !self.playing {
+                        let e = self.engine.as_ref().unwrap();
+                        let gaps: Vec<f32> = b.presented.windows(2).map(|w| w[1].1.duration_since(w[0].1).as_secs_f32() * 1000.0).collect();
+                        let sequential = b.presented.windows(2).all(|w| w[1].0 == w[0].0 + 1);
+                        let wall = b.presented.last().unwrap().1.duration_since(b.presented[0].1).as_secs_f64() * 1000.0;
+                        let rss = std::fs::read_to_string("/proc/self/status")
+                            .ok()
+                            .and_then(|s| s.lines().find(|l| l.starts_with("VmRSS:")).and_then(|l| l.split_whitespace().nth(1)).and_then(|v| v.parse::<u64>().ok()))
+                            .unwrap_or(0)
+                            / 1024;
+                        println!("BENCH {{\"file\":{:?},\"phase\":\"memory\",\"rssMiB\":{rss},\"cachedFrames\":{},\"cachedMiB\":{}}}", name, e.cached_frames(), e.cached_bytes() / (1 << 20));
+                        println!(
+                            "BENCH {{\"file\":{:?},\"phase\":\"playback\",\"fps\":{},\"frames\":{},\"ticks\":{},\"sequential\":{},\"wallMs\":{:.0},\"gaps\":{},\"preparedOnUiThread\":{},\"misses\":{},\"prepareMsAvg\":{:.2},\"prepareMsWorst\":{:.2}}}",
+                            name,
+                            e.doc().fps,
+                            b.presented.len(),
+                            e.total_ticks(),
+                            sequential,
+                            wall,
+                            quantiles(gaps),
+                            e.stats.sync_frames - b.sync_before,
+                            self.playback_misses - b.misses_before,
+                            if e.stats.produced > 0 { e.stats.produce_ms_total / e.stats.produced as f64 } else { 0.0 },
+                            e.stats.produce_ms_worst
+                        );
+                        next = true;
+                    }
+                }
+            }
+            // 1: zoom from fit to 11x and back (2.4 octaves), paused; 2: the same while playing.
+            1 | 3 => {
+                if b.started.is_none() {
+                    b.started = Some(now);
+                    self.playing = b.phase == 3;
+                    self.looping = true;
+                    self.last_instant = None;
+                    if b.phase == 1 {
+                        self.set_tick(self.script.tick.unwrap_or(0));
+                    }
+                } else {
+                    let t = now.duration_since(b.started.unwrap()).as_secs_f64() / 4.0;
+                    let tri = if t < 0.5 { t * 2.0 } else { 2.0 - t * 2.0 };
+                    place(self, b.fit * (2.4 * tri.max(0.0)).exp(), 0.0);
+                    if let Some(l) = b.last {
+                        b.intervals.push(now.duration_since(l).as_secs_f32() * 1000.0);
+                        b.work.push(work);
+                    }
+                    if t >= 1.0 {
+                        println!(
+                            "BENCH {{\"file\":{:?},\"phase\":\"{}\",\"intervals\":{},\"uiWorkMs\":{}}}",
+                            name,
+                            if b.phase == 1 { "zoom" } else { "zoom-while-playing" },
+                            quantiles(std::mem::take(&mut b.intervals)),
+                            quantiles(std::mem::take(&mut b.work))
+                        );
+                        next = true;
+                    }
+                }
+            }
+            // 2: pan back and forth at 8x zoom, paused.
+            2 => {
+                if b.started.is_none() {
+                    b.started = Some(now);
+                    self.playing = false;
+                    self.set_tick(self.script.tick.unwrap_or(0));
+                } else {
+                    let t = now.duration_since(b.started.unwrap()).as_secs_f64();
+                    place(self, b.fit * 8.0, 900.0 * (t * std::f64::consts::TAU / 1.5).sin());
+                    if let Some(l) = b.last {
+                        b.intervals.push(now.duration_since(l).as_secs_f32() * 1000.0);
+                        b.work.push(work);
+                    }
+                    if t >= 3.0 {
+                        println!(
+                            "BENCH {{\"file\":{:?},\"phase\":\"pan\",\"intervals\":{},\"uiWorkMs\":{}}}",
+                            name,
+                            quantiles(std::mem::take(&mut b.intervals)),
+                            quantiles(std::mem::take(&mut b.work))
+                        );
+                        next = true;
+                    }
+                }
+            }
+            // 4: posing — rotate one limb back and forth at a key for 3 s.
+            4 => {
+                if b.started.is_none() {
+                    b.started = Some(now);
+                    self.playing = false;
+                    self.set_tick(0);
+                    let engine = self.engine.as_mut().unwrap();
+                    let (frame, scene) = engine.scene(0);
+                    // The free figure with the most segments, turning its first dynamic limb.
+                    let mut best: Option<(PoseRef, Arc<Object>, usize, usize)> = None;
+                    for (slot, o) in frame.objects.iter().enumerate() {
+                        let Some((frame_ref, src)) = frame.origins.get(slot).cloned().flatten() else { continue };
+                        let Some(fig) = scene.figures.iter().find(|f| f.id == o.figure) else { continue };
+                        if fig.movieclip.is_some() || o.join.is_some() {
+                            continue;
+                        }
+                        let Some(i) = fig.segments.iter().position(|s| !s.is_static && s.parent != 0) else { continue };
+                        if best.as_ref().is_none_or(|b| fig.segments.len() > b.3) {
+                            let at = PoseRef { frame: frame_ref, slot: src };
+                            if let Some(before) = engine.object(&at) {
+                                best = Some((at, before, i, fig.segments.len()));
+                            }
+                        }
+                    }
+                    match best {
+                        Some((at, before, i, _)) => b.pose = Some((at, before, i)),
+                        None => next = true,
+                    }
+                } else if let Some((at, before, index)) = b.pose.clone() {
+                    let t = now.duration_since(b.started.unwrap()).as_secs_f64();
+                    let engine = self.engine.as_mut().unwrap();
+                    let edit_start = Instant::now();
+                    let base = before.angles.get(index).copied().unwrap_or(0.0);
+                    let doc = engine.doc();
+                    if let Some(obj) = edit::rotate(doc, &before, index, base + 0.6 * (t * std::f64::consts::TAU).sin())
+                        && let Some(next_doc) = edit::replace(doc, &at, Arc::new(obj))
+                    {
+                        engine.publish(next_doc);
+                        let _ = engine.frame(self.tick);
+                        let _ = engine.scene(self.tick);
+                    }
+                    b.edit_ms.push(edit_start.elapsed().as_secs_f32() * 1000.0);
+                    if let Some(l) = b.last {
+                        b.intervals.push(now.duration_since(l).as_secs_f32() * 1000.0);
+                    }
+                    if t >= 3.0 {
+                        if let Some(doc) = edit::replace(engine.doc(), &at, before) {
+                            engine.publish(doc);
+                        }
+                        println!(
+                            "BENCH {{\"file\":{:?},\"phase\":\"pose\",\"intervals\":{},\"editToFrameMs\":{}}}",
+                            name,
+                            quantiles(std::mem::take(&mut b.intervals)),
+                            quantiles(std::mem::take(&mut b.edit_ms))
+                        );
+                        next = true;
+                    }
+                }
+            }
+            _ => done = true,
+        }
+        b.last = Some(now);
+        if next {
+            b.phase += 1;
+            b.started = None;
+            b.last = None;
+            b.presented.clear();
+        }
+        self.bench = Some(b);
+        done
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -570,6 +781,7 @@ impl App {
 
     fn stage(&mut self, ui: &mut egui::Ui) {
         let rect = ui.available_rect_before_wrap();
+        self.stage_size = rect.size();
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         ui.painter().rect_filled(rect, CornerRadius::ZERO, theme::STAGE);
         let Some(engine) = &mut self.engine else {
@@ -816,4 +1028,16 @@ fn pick_figure(scene: &Scene, p: [f64; 2], tolerance: f64) -> Option<u32> {
         }
     }
     None
+}
+
+/// Lowers the calling thread's scheduling priority (Linux nice +10).
+fn lower_priority() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        unsafe extern "C" {
+            fn setpriority(which: i32, who: u32, prio: i32) -> i32;
+            fn gettid() -> i32;
+        }
+        let _ = setpriority(0, gettid() as u32, 10);
+    }
 }

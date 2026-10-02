@@ -19,6 +19,7 @@ fn main() {
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
         Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
+        Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y]");
@@ -31,7 +32,11 @@ fn main() {
 fn load(path: &str) -> Result<(Prepared, f64), String> {
     let started = Instant::now();
     let doc = styk_core::open(Path::new(path)).map_err(|e| format!("{path}: {e}"))?;
+    let t0 = Instant::now();
     let prepared = styk_core::prepare(doc);
+    if std::env::var_os("STYK_TIMING").is_some() {
+        eprintln!("  prepare (timelines, presence index) {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
+    }
     Ok((prepared, started.elapsed().as_secs_f64() * 1000.0))
 }
 
@@ -352,5 +357,72 @@ fn diff(a: &str, b: &str, out: &str, rest: &[String]) -> i32 {
         over32 as f64 * 100.0 / n,
         count
     );
+    0
+}
+
+/// GPU time per frame (submit + wait) across a fit → 11× zoom, at 1440×900.
+fn gpubench(path: &str, tick: &str) -> i32 {
+    use styk_core::assets::Assets;
+    use styk_core::drawlist::encode;
+    use styk_core::view::camera_matrix;
+    use styk_render::{wgpu, Renderer, ViewParams};
+    let (p, _) = match load(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        ..Default::default()
+    }))
+    .expect("adapter");
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_limits: adapter.limits(), ..Default::default() })).expect("device");
+    let assets = Assets::build(&p.doc);
+    let images = styk_render::decode_images(&p.doc, &assets);
+    let mut renderer = Renderer::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
+    renderer.prepare_sprites(&assets);
+    renderer.upload_images(&assets, &images);
+    let scene = build(&p.doc, &p.evaluate(tick.parse().unwrap_or(0.0)));
+    let list = std::sync::Arc::new(encode(&p.doc, &assets, &scene));
+    renderer.set_list(&list);
+    let (w, h) = (1440u32, 900u32);
+    let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
+    let fit = ((w as f64 - 64.0) / cw).min((h as f64 - 64.0) / ch);
+    let mut rows = Vec::new();
+    for k in 0..=200 {
+        let zoom = fit * (2.4 * k as f64 / 200.0).exp();
+        let pan = [w as f64 / 2.0 - cw / 2.0 * zoom, h as f64 / 2.0 - ch / 2.0 * zoom];
+        let view = ViewParams {
+            matrix: camera_matrix(&p.doc, scene.camera.as_ref(), zoom, pan),
+            artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
+            clip_to_artboard: true,
+            clear: [0.07, 0.07, 0.09, 1.0],
+        };
+        let start = Instant::now();
+        let mut encoder = device.create_command_encoder(&Default::default());
+        renderer.render(&mut encoder, &view, [w, h]);
+        queue.submit([encoder.finish()]);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        if k > 0 {
+            rows.push((zoom / fit, start.elapsed().as_secs_f64() * 1000.0, renderer.stats.passes, renderer.stats.groups));
+        }
+    }
+    let mut times: Vec<f64> = rows.iter().map(|r| r.1).collect();
+    times.sort_by(|a, b| a.total_cmp(b));
+    println!(
+        "{}: {} prims, GPU frame (submit+wait) p50 {:.2} ms, p95 {:.2} ms, max {:.2} ms over fit→11x ({})",
+        p.doc.name,
+        list.prims.len(),
+        times[times.len() / 2],
+        times[times.len() * 95 / 100],
+        times[times.len() - 1],
+        adapter.get_info().name
+    );
+    for r in rows.iter().step_by(40) {
+        println!("  {:5.2}x  {:6.2} ms  {} passes  {} groups", r.0, r.1, r.2, r.3);
+    }
     0
 }

@@ -46,9 +46,18 @@ pub fn open_bytes(bytes: &[u8], ext: &str, name: &str) -> Result<Document, Error
     match ext {
         "piv" => piv::decode(bytes, name),
         "styk" | "stkz" | "stykmov" | "json" => {
+            let timing = std::env::var_os("STYK_TIMING").is_some();
+            let t0 = std::time::Instant::now();
             let container = container::decode(bytes, if ext == "json" { "styk" } else { ext })?;
+            if timing {
+                eprintln!("  container decode {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
+            }
+            let t0 = std::time::Instant::now();
             let mut loader = load::Loader::new(container::Resolver::new(&container.sections));
             let mut doc = loader.document(&container.json, name)?;
+            if timing {
+                eprintln!("  typed document {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
+            }
             doc.images = std::mem::take(&mut loader.images);
             doc.unsupported = loader.unsupported;
             for fig in &doc.figures {

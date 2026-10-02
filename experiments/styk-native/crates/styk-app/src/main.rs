@@ -18,9 +18,10 @@ pub struct Script {
     pub center: Option<[f64; 2]>,
     pub play: bool,
     pub select: Option<u32>,
-    /// Measure playback for this many seconds, print the results and exit.
-    pub measure: Option<f64>,
+    /// Run the scripted benchmark (playback, zoom, pan, zoom while playing).
+    pub bench: bool,
     pub exit: bool,
+    pub no_handles: bool,
 }
 
 fn main() -> eframe::Result {
@@ -51,12 +52,10 @@ fn main() -> eframe::Result {
                 script.select = next(i).parse().ok();
                 i += 1;
             }
-            "--measure" => {
-                script.measure = next(i).parse().ok();
-                i += 1;
-            }
+            "--bench" => script.bench = true,
             "--play" => script.play = true,
             "--exit" => script.exit = true,
+            "--no-handles" => script.no_handles = true,
             other => initial = Some(std::path::PathBuf::from(other)),
         }
         i += 1;

@@ -48,8 +48,20 @@ pub fn load(path: &Path) -> Result<Loaded, String> {
     Ok(Loaded { path: path.to_path_buf(), prepared, assets, images, open_ms, assets_ms })
 }
 
+/// `STYK_SLOWDOWN=N` repeats each frame's preparation N times: a crude stand-in
+/// for an N-times slower CPU when judging headroom on phone-class hardware.
+fn slowdown() -> u32 {
+    static VALUE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *VALUE.get_or_init(|| std::env::var("STYK_SLOWDOWN").ok().and_then(|v| v.parse().ok()).unwrap_or(1).max(1))
+}
+
 pub fn produce(prepared: &Prepared, assets: &Assets, tick: u32) -> FrameData {
     let started = Instant::now();
+    for _ in 1..slowdown() {
+        let frame = prepared.evaluate(tick as f64);
+        let scene = build(&prepared.doc, &frame);
+        std::hint::black_box(encode(&prepared.doc, assets, &scene));
+    }
     let frame = prepared.evaluate(tick as f64);
     let scene = build(&prepared.doc, &frame);
     let list = Arc::new(encode(&prepared.doc, assets, &scene));
