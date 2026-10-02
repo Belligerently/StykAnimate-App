@@ -54,11 +54,14 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel |
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined |
+| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, inverse kinematics, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap |
 | `undo`, `redo` of what those record | yes | all of the above |
-| `poseJoint`, flipping a branch, everything else | no: `Unported` | pose-native, transform-native |
+| flipping a branch, everything else | no: `Unported` | transform-native |
 
 Every call answers `Unported` on documents with a layer sheet, property channels, animation
-origins, a movieclip source or inverse-kinematics controllers; those run in JavaScript.
+origins, a movieclip source or inverse-kinematics controllers, joint gestures on rigged or
+Stick Nodes figures, and geometry on documents with features the engine does not evaluate
+yet; those run in JavaScript.
 
 What the facade must still account for before it calls the engine (none of it is a
 document difference the harness can see):

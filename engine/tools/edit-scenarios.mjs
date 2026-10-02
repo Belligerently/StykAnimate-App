@@ -50,3 +50,42 @@ scenario('transform-joined', {}, [
   ['@select', 3, -1], ['rotateFigure', 0.7], ['scaleSelection', 0.5], ['centerFigure'], ['@seek', 6], ['@select', 2, -1], ['resetPose'],
   ['beginDrag', 'Pose figure'], ['rotateSelection', 0.1], ['rotateSelection', 0.1], ['cancelDrag'], ['undo'], ['undo'], ['redo'],
 ], 'joined-chain.document.json');
+scenario('pose-joints', {}, [
+  ['@select', 1, 0], ['poseJoint', 300, 260], ['rotateJoint', 0.3], ['rotateJoint', -0.1, {isolate: true}], ['@select', 1, 1],
+  ['bendJoint', 320, 250], ['bendJoint', 330, 240, {stretch: true}], ['poseJoint', 340, 250, {stretch: true, snap: false}],
+  ['beginDrag', 'Pose figure'], ['poseJoint', 330, 270], ['poseJoint', 320, 280, {stretch: true}], ['poseJoint', 318, 279, {stretch: true}], ['commitDrag'],
+  ['@select', 1, 1], ['poseJoint', 300, 300, {stretch: true}], ['poseJoint', 305, 300, {stretch: true, snapTolerance: 40}], ['bendJoint', 310, 300, {snapTolerance: 50}],
+  ['poseJoint', 1, 2, {snapTolerance: -1}], ['@select', 1, -1], ['poseJoint', 300, 300], ['bendJoint', 300, 300], ['rotateJoint', 1],
+  ['@select', 2, 2], ['bendJoint', 420, 260], ['poseJoint', 440, 250], ['undo'], ['undo'], ['undo'], ['redo'],
+]);
+scenario('pose-joined', {}, [
+  ['@select', 1, 2], ['rotateJoint', 0.4], ['poseJoint', 250, 300], ['rotateJoint', 0.2, {isolate: true}], ['@select', 2, 1], ['poseJoint', 300, 380],
+  ['bendJoint', 290, 390, {stretch: true}], ['@seek', 3], ['@select', 1, 1], ['poseJoint', 230, 310], ['@select', 3, 0], ['poseJoint', 260, 420, {stretch: true}],
+  ['undo'], ['undo'], ['undo'], ['redo'], ['@seek', 6], ['@select', 1, 0], ['rotateJoint', -0.5], ['undo'],
+], 'joined-chain.document.json');
+// Snapping back to the definition: pointers placed from the editor's own geometry, step by step.
+{
+  const probe = open(structuredClone(doc)), steps = [];
+  const run = step => { steps.push(step); const [method, ...args] = step; probe[method === '@select' ? 'select' : method](...args); };
+  const shin = () => probe.geometry.objects.get(0).segments[1];
+  const along = (length, turn = 0, side = 0) => {
+    const s = shin(), a = s.angle + turn;
+    return [s.start.x + length * Math.cos(a) - side * Math.sin(a), s.start.y + length * Math.sin(a) + side * Math.cos(a)];
+  };
+  run(['@select', 1, 1]);
+  run(['poseJoint', ...along(120), {stretch: true}]);          // stretched: the next gesture may snap back
+  run(['poseJoint', ...along(93), {stretch: true}]);           // 3 px from 90: snaps to the definition
+  run(['poseJoint', ...along(120), {stretch: true}]);
+  run(['poseJoint', ...along(93), {stretch: true, snap: false}]); // no snapping
+  run(['poseJoint', ...along(99), {stretch: true}]);           // 6 px away after the last: within tolerance? recorded either way
+  run(['bendJoint', ...along(90, 0.4)]);                        // bent
+  run(['bendJoint', ...along(probe.object.lengths?.[1] ?? 90, 0, 2)]); // 2 px from the straight end: snaps to 0
+  run(['bendJoint', ...along(90, 0.3)]);
+  run(['bendJoint', ...along(140, 0.02, 3), {stretch: true}]);  // stretching bend, near the straight line at the pointer's distance
+  run(['beginDrag', 'Pose figure']);
+  run(['poseJoint', ...along(130), {stretch: true}]);
+  run(['poseJoint', ...along(91.5), {stretch: true, snapTolerance: 2}]);
+  run(['commitDrag']);
+  run(['undo']); run(['undo']); run(['redo']);
+  scenario('pose-snap', {}, steps);
+}

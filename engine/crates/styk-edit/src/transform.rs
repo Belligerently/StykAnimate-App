@@ -12,7 +12,7 @@ use crate::select::resolve_join_selection;
 use crate::timeline::rows;
 use crate::{Drag, EditError, Editor};
 
-const NOT_FINITE: &str = "errors.editorCamera.mustBeFinite";
+pub(crate) const NOT_FINITE: &str = "errors.editorCamera.mustBeFinite";
 
 /// `moveSelection`'s options.
 #[derive(Clone, Copy, Debug, Default)]
@@ -69,7 +69,7 @@ impl Editor {
     }
 
     /// `_objectEdit`: runs `mutate` inside the current gesture, or as a gesture of its own.
-    fn object_edit(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+    pub(crate) fn object_edit(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
         if self.object().is_none() {
             return Ok(false);
         }
@@ -216,16 +216,22 @@ impl Editor {
         })
     }
 
-    /// The geometry of the frame at the playhead (`editor.geometry`), from the engine's
-    /// own evaluation. A document with features the engine cannot evaluate yet is not edited here.
-    fn scene(&mut self) -> Result<styk_eval::geometry::Scene, EditError> {
+    /// The frame at the playhead and its geometry (`editor.evaluatedFrame`, `editor.geometry`),
+    /// from the engine's own evaluation. A document with features the engine cannot
+    /// evaluate yet is not edited here.
+    pub(crate) fn evaluate(&mut self) -> Result<(styk_eval::eval::Prepared, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
         let document = self.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
         if let Some(feature) = document.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
         }
         let prepared = styk_eval::eval::Prepared::new(Arc::new(document));
         let frame = prepared.evaluate(self.tick);
-        Ok(styk_eval::geometry::build(&prepared.doc, &frame))
+        let scene = styk_eval::geometry::build(&prepared.doc, &frame);
+        Ok((prepared, frame, scene))
+    }
+
+    fn scene(&mut self) -> Result<styk_eval::geometry::Scene, EditError> {
+        Ok(self.evaluate()?.2)
     }
 
     /// World positions of every figure's root at the playhead, by unique id.
@@ -403,12 +409,12 @@ impl Editor {
     }
 }
 
-fn finite(value: f64) -> Result<f64, EditError> {
+pub(crate) fn finite(value: f64) -> Result<f64, EditError> {
     if value.is_finite() { Ok(value) } else { Err(EditError::Invalid(NOT_FINITE.into())) }
 }
 
 /// A numeric field as JavaScript arithmetic reads it (missing is NaN).
-fn field(object: &Obj, key: &str) -> f64 {
+pub(crate) fn field(object: &Obj, key: &str) -> f64 {
     object.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN)
 }
 

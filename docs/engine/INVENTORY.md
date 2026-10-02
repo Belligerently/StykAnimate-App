@@ -28,7 +28,7 @@ Engine logic: ported to Rust.
 | Module | Rust owner | Status | Notes |
 | --- | --- | --- | --- |
 | `src/pivot/model.mjs` | `styk-doc` | js | validation and structure |
-| `src/pivot/structure.mjs` | `styk-doc` | partial | Rust: resolveJoinSelection (styk-edit); validation and the rest still JS |
+| `src/pivot/structure.mjs` | `styk-doc` | partial | Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS |
 | `src/drawing-brush-textures.mjs` | `styk-drawing` | js |  |
 | `src/drawing-brush.mjs` | `styk-drawing` | js |  |
 | `src/drawing-clipboard.mjs` | `styk-drawing` | js |  |
@@ -127,7 +127,7 @@ Engine logic: ported to Rust.
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx.mjs` | `styk-edit` | js | commands and history |
-| `src/editor.mjs` | `styk-edit` | partial | Rust: select, selectMany, seek, beginDrag/commitDrag/cancelDrag, moveSelection, undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS |
+| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
 | `src/frame-draft-animation.mjs` | `styk-edit` | js |  |
 | `src/frame-timing-history.mjs` | `styk-edit` | js |  |

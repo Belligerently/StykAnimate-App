@@ -7,11 +7,13 @@
 //! events as `src/editor.mjs`. The command-replay harness (`replay`, and
 //! `engine/tools/edit-replay.mjs` on the JavaScript side) checks that step by step.
 //!
-//! Ported so far: selecting, seeking, moving figures (as a gesture or at once),
-//! and undo and redo of what those record, on native timelines. Every other call
+//! Ported so far: selecting, seeking, moving and transforming figures, posing,
+//! rotating and bending joints, and undo and redo of what those record, on native
+//! timelines (docs/engine/editing.md lists the calls). Every other call
 //! answers [`EditError::Unported`], so a facade knows to run it in JavaScript.
 
 mod history;
+mod pose;
 mod record;
 pub mod replay;
 mod select;
@@ -181,6 +183,9 @@ impl Editor {
             "rotateFigure" => self.rotate_figure(number(0)).map(Value::Bool),
             "centerFigure" => self.center_figure().map(Value::Bool),
             "resetPose" => self.reset_pose().map(Value::Bool),
+            "poseJoint" => self.pose_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
+            "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "undo" => self.undo().map(Value::Bool),
             "redo" => self.redo().map(Value::Bool),
             other => Err(EditError::Unported(other.to_string())),

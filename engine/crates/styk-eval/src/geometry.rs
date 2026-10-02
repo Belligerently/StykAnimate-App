@@ -176,6 +176,21 @@ struct Built {
 /// `ik` is the object's derived pose when a pinned IK controller reaches it:
 /// its angles (and stretched lengths) replace the authored channels.
 #[allow(clippy::too_many_arguments)]
+/// A segment's pose as the object stores it, before inverse kinematics, rigs and
+/// scale: angle, bend and length, with the editor's fallbacks (`segmentAt`).
+pub fn segment_pose(obj: &Object, seg: &crate::doc::Segment, i: usize) -> (f64, f64, f64) {
+    let angle = obj.angles.get(i).copied().unwrap_or(seg.angle);
+    let bend = match &obj.bends {
+        Some(b) => b.get(i).copied().unwrap_or(0.0),
+        None => seg.bend,
+    };
+    let length = match &obj.lengths {
+        Some(l) => l.get(i).copied().unwrap_or(seg.length),
+        None => seg.length,
+    };
+    (angle, bend, length)
+}
+
 fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>) -> Built {
     let obj = &frame.objects[slot];
     let n = fig.segments.len();
@@ -205,16 +220,9 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         let parent = plan.parent[i];
         let start = if parent == u32::MAX { root } else { ends[parent as usize] };
         let mut start = if start[0].is_nan() { root } else { start };
-        let mut angle = ik.map(|s| s.angles[i]).unwrap_or_else(|| obj.angles.get(i).copied().unwrap_or(seg.angle));
-        let mut bend = match &obj.bends {
-            Some(b) => b.get(i).copied().unwrap_or(0.0),
-            None => seg.bend,
-        };
-        let mut length = match (ik.and_then(|s| s.lengths.as_ref()), &obj.lengths) {
-            (Some(l), _) => l[i],
-            (None, Some(l)) => l.get(i).copied().unwrap_or(seg.length),
-            (None, None) => seg.length,
-        } * scale;
+        let (posed_angle, mut bend, posed_length) = segment_pose(obj, seg, i);
+        let mut angle = ik.map(|s| s.angles[i]).unwrap_or(posed_angle);
+        let mut length = ik.and_then(|s| s.lengths.as_ref()).map(|l| l[i]).unwrap_or(posed_length) * scale;
         let mut width = 1.0;
         let mut rig_handle: Option<([f64; 2], bool)> = None;
         if let Some(rp) = &rig_plan {

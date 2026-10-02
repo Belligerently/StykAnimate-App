@@ -171,7 +171,7 @@ src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx-clips.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx.mjs	engine	styk-edit	js	commands and history
-src/editor.mjs	engine	styk-edit	partial	Rust: select, selectMany, seek, beginDrag/commitDrag/cancelDrag, moveSelection, undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS
+src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
 src/export-canvas.mjs	engine	styk-export	js	
@@ -297,7 +297,7 @@ src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry.mjs	engine	styk-eval	partial	evaluation and world geometry. Rust: evaluatedNativeFrame, buildGeometry, drawPrimitives (draw lists); editing, picking and Canvas paths still JS
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
 src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection (styk-edit); validation and the rest still JS
+src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS
 src/pivot/surfaces.mjs	engine	styk-eval	js	evaluation and world geometry
 src/playback-bitmap-pool.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-budget.mjs	engine	styk-engine::playback	js	scheduling, budgets

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-const PORTED: &[&str] = &["move-native", "move-joined", "drag-cancel", "selection-native", "rotate-native", "transform-joined"];
+const PORTED: &[&str] = &["move-native", "move-joined", "drag-cancel", "selection-native", "rotate-native", "transform-joined", "pose-native", "pose-joints", "pose-joined", "pose-snap"];
 
 #[test]
 fn recordings_replay() {
