@@ -1,4 +1,4 @@
-# Engine: editing (stage S5, phase 1 started)
+# Engine: editing (stage S5, phase 1)
 
 How editing moves from the JavaScript `Editor` (`src/editor.mjs` and about 80
 `src/editor-*.mjs` modules, roughly 800 methods) into the engine without
@@ -19,14 +19,11 @@ and after), and emit change events the interface listens to.
   records into the same bytes, leaves the same selection and returns the same
   event detail (`kind`, `frameIndices`, `figureIndices`, `sourceIds`,
   `structural`, `definition`, labels).
-- The `Editor` facade keeps its API. A ported method asks the engine to run the
-  command on the engine's document; the engine answers with the changed records
-  (lifted, as the mirror sends them the other way), which the facade puts into
-  its JavaScript document in place of the old records, and with the event
-  detail, which it emits as before. History stays in JavaScript in this phase:
-  the facade records the before/after records exactly as the JavaScript command
-  did. An unported command runs in JavaScript as today and reaches the engine
-  through the mirror. Both copies stay identical after every command.
+- In the app a ported command first runs in **shadow** (below): the JavaScript editor
+  stays in charge and the engine's answer is compared, on real documents and gestures.
+  Ownership of a document moves to the engine in one step once its commands are ported
+  ([D15](decisions/0015-commands-record-for-record.md), revised): adopting records command
+  by command would need two copies of the editor's runtime state kept equal by hand.
 - Every port is checked by the **command-replay harness**: a scenario (a
   document, editor options, a list of `[method, ...arguments]` steps including
   undo and redo) runs in the JavaScript editor, which records the document
@@ -123,6 +120,37 @@ document difference the harness can see):
   limits, `validateObjectChanges` and `validateLayerState` are not ported.
 - **Audio ripple** (`editor.audioRipple`): inserting or removing frames on every track
   also shifts audio in the editor; the facade runs those in JavaScript while it is on.
+
+## Shadow editing in the app
+
+With `?engineShadow=on` (or `localStorage['stykanimate.engine.shadowEdit'] = 'on'`) every
+ported call the app makes also runs in the engine: `EngineHandle.edit_session` starts
+`styk_edit::session::Session` on the mirrored document with the editor's view and
+counters, `EditSession.call` answers each call as JSON (result, state, events, the
+gesture's draft, and the sheet, layers and pose sources a command published), and
+`src/engine/engine-edit-shadow.mjs` compares that with what the editor did. The editor
+stays in charge; nothing from the engine is applied. A session lives while every change
+to the document goes through calls it shadows; anything else ends it, and the next one
+starts when the mirror holds the editor's revision again. Results accumulate in
+`globalThis.__stykEditShadow`.
+
+`node scripts/engine-edit-shadow.mjs [--file <document.json>]` drives the real app in
+headless Chromium: pointer drags on joint handles and on the origin, keyboard undo and
+redo, transforms, timeline keys and frames, duplicate/join/unjoin/delete. Measured
+2026-10-03 (WebAssembly, SwiftShader), one run each:
+
+| Document | Calls run in the engine | The same as the editor | Different | Editor time | Engine time |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| joined-chain (imported, joined figures) | 77 | 77 | 0 | 57.7 ms | 28.2 ms |
+| sheet-layers (two layers, held key) | 77 | 77 | 0 | 59.9 ms | 30.2 ms |
+| sheet-movieclip-loose (a movieclip) | 77 | 77 | 0 | 62.6 ms | 30.6 ms |
+| sheet-mixed-keys (imported and authored keys) | 77 | 77 | 0 | 57.9 ms | 27.8 ms |
+
+"The same" means equal keys, order, strings and integers, and numbers within 1e-9
+relative: 28 to 53 of the 77 calls differ from Chromium's editor in the last digits of a
+pose, because Chromium's `Math` is not Node's ([D16](decisions/0016-v8-exact-math.md)).
+The engine time includes the JSON boundary. On the document the app starts with every
+call answers `Unported`: it has inverse-kinematics controllers, the next thing to port.
 
 ## What a gesture costs in the engine
 

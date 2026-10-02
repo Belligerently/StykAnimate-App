@@ -20,6 +20,7 @@ mod pose;
 mod record;
 pub mod replay;
 mod select;
+pub mod session;
 mod sheet;
 mod sheet_frames;
 mod timeline;
@@ -241,6 +242,52 @@ impl Editor {
             next_frame_identity: self.next_frame_identity,
             next_uid: self.next_uid,
         }
+    }
+
+    /// `editor.autoKey`, which the app sets from its settings.
+    pub fn set_auto_key(&mut self, auto_key: bool) {
+        self.auto_key = auto_key;
+    }
+
+    /// `editor.activeLayerId = id` when it differs (selection sets it in the editor
+    /// without a new revision, so a session's document may be behind).
+    pub fn set_active_layer_id(&mut self, id: &str) {
+        if self.report.path(&["_styk", "layers", "activeId"]).and_then(Value::as_str) != Some(id) && self.report.path(&["_styk", "layers"]).is_some() {
+            self.set_active_layer(id);
+        }
+    }
+
+    /// The state as JSON, in the key order `engine/tools/edit-replay.mjs` records it.
+    pub fn state_value(&self) -> Value {
+        let state = self.state();
+        let mut object = styk_doc::Obj::new();
+        object.set("tick", Value::Num(state.tick));
+        object.set("frameIndex", Value::Num(state.frame_index as f64));
+        object.set("selectedUid", state.selected_uid.map_or(Value::Null, |u| Value::Num(u as f64)));
+        object.set("selectedUids", Value::array(state.selected_uids.iter().map(|&u| Value::Num(u as f64)).collect()));
+        object.set("selectedJoint", Value::Num(state.selected_joint as f64));
+        object.set("canUndo", Value::Bool(state.can_undo));
+        object.set("canRedo", Value::Bool(state.can_redo));
+        object.set("undoLabel", Value::str(&state.undo_label));
+        object.set("redoLabel", Value::str(&state.redo_label));
+        object.set("dirty", Value::Bool(state.dirty));
+        object.set("layerRevision", Value::Num(state.layer_revision as f64));
+        object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
+        object.set("nextUid", Value::Num(state.next_uid as f64));
+        Value::object(object)
+    }
+
+    /// The figures the gesture in progress took, as they are in its draft (without
+    /// the clip sample times evaluation adds); `None` outside a gesture on a sheet.
+    pub fn draft_figures(&self) -> Option<Vec<Value>> {
+        let (drag, edit) = (self.drag.as_ref()?, self.authored.as_ref()?);
+        let taken: Vec<u32> = drag.before.iter().filter_map(record::uid).collect();
+        let figures = frame::objects_of(&edit.frame).into_iter().filter(|o| record::uid(o).is_some_and(|u| taken.contains(&u))).map(|figure| {
+            let mut figure = figure.as_obj().cloned().unwrap_or_default();
+            figure.remove("_movieclipSample");
+            Value::object(figure)
+        });
+        Some(figures.collect())
     }
 
     /// Runs one editor call by its JavaScript name, with JSON arguments; returns what

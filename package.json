@@ -16,6 +16,7 @@
     "engine:test": "cargo test --manifest-path engine/Cargo.toml --workspace --exclude styk-wasm",
     "engine:parity": "node scripts/engine-parity.mjs",
     "engine:bench": "node scripts/engine-benchmark.mjs",
+    "engine:shadow": "node scripts/engine-edit-shadow.mjs",
     "engine:bench:summary": "node scripts/engine-bench-summary.mjs",
     "locales:build": "node scripts/build-locales.mjs",
     "locales:check": "node scripts/build-locales.mjs --check",

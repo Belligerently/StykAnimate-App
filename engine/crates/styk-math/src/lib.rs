@@ -1,12 +1,15 @@
-//! `Math.sin`, `Math.cos`, `Math.atan2` and `Math.hypot` exactly as V8 computes them.
+//! `Math.sin`, `Math.cos`, `Math.atan2` and `Math.hypot` exactly as Node's V8 computes them.
 //!
-//! The editor stores the results of its arithmetic in documents, so an engine command
-//! that is to change the same records into the same bytes must round every result the
-//! same way. The platform's maths library does not: against V8 on two million inputs,
-//! Rust's `f64::sin` (glibc on Linux) differed in the last bit 2.7 % of the time and
-//! `f64::atan2` 17 %. V8 computes sine and cosine with fdlibm 5.3 (`src/base/ieee754.cc`),
-//! ported here with its `atan2` (over the `libm` crate's `atan`, which is fdlibm's), and
-//! `hypot` is V8's own scaled, compensated sum. `tests/v8.rs` checks all four against recorded V8 results.
+//! The editor stores the results of its arithmetic in documents, and the harnesses
+//! that check the engine against it run the editor in Node, byte for byte. So the
+//! engine rounds every stored result as Node does: V8 there computes sine, cosine and
+//! `atan2` with fdlibm 5.3 (`src/base/ieee754.cc`), ported here over the `libm` crate's
+//! `atan`, and `hypot` with its own scaled, compensated sum. The platform's library does
+//! not agree (Rust's `f64::sin` on Linux differed in the last bit for 2.7 % of two
+//! million inputs, `f64::atan2` for 17 %), and neither do browsers among themselves
+//! (docs/engine/decisions/0016-v8-exact-math.md); with this crate the engine gives one
+//! answer on every platform, natively and in WebAssembly. `tests/v8.rs` checks all four
+//! functions against recorded Node results.
 
 // Vendored as it is upstream.
 #[allow(clippy::all)]

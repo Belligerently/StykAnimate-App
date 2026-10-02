@@ -3,7 +3,7 @@
 //! every step, the document's bytes, the playhead, the selection, history and the
 //! change events with what the JavaScript editor did.
 
-use styk_doc::{Obj, Value};
+use styk_doc::Value;
 
 use crate::{EditError, Editor, Options, Selection};
 
@@ -88,7 +88,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         if actual != expected {
             differences.push(format!("document differs: {}", first_difference(&actual, &expected)));
         }
-        let got = json(&state_value(&editor));
+        let got = json(&editor.state_value());
         let want = json(step.get("state").unwrap_or(&Value::Null));
         if got != want {
             differences.push(format!("state {got}, the editor's {want}"));
@@ -105,26 +105,6 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         outcome.matched += 1;
     }
     Ok(outcome)
-}
-
-/// The state as `edit-replay.mjs` records it, in its key order.
-fn state_value(editor: &Editor) -> Value {
-    let state = editor.state();
-    let mut object = Obj::new();
-    object.set("tick", Value::Num(state.tick));
-    object.set("frameIndex", Value::Num(state.frame_index as f64));
-    object.set("selectedUid", state.selected_uid.map_or(Value::Null, |u| Value::Num(u as f64)));
-    object.set("selectedUids", Value::array(state.selected_uids.iter().map(|&u| Value::Num(u as f64)).collect()));
-    object.set("selectedJoint", Value::Num(state.selected_joint as f64));
-    object.set("canUndo", Value::Bool(state.can_undo));
-    object.set("canRedo", Value::Bool(state.can_redo));
-    object.set("undoLabel", Value::str(&state.undo_label));
-    object.set("redoLabel", Value::str(&state.redo_label));
-    object.set("dirty", Value::Bool(state.dirty));
-    object.set("layerRevision", Value::Num(state.layer_revision as f64));
-    object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
-    object.set("nextUid", Value::Num(state.next_uid as f64));
-    Value::object(object)
 }
 
 /// `plain()` in edit-replay.mjs: containers deeper than `depth` are dropped.

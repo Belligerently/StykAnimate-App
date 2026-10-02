@@ -100,6 +100,12 @@ if (args.has('--app')) {
     run(`app: IK fixture ${fixture}`, process.execPath, ['scripts/engine-app-parity.mjs', '--file', `engine/crates/styk-eval/tests/fixtures/ik/${fixture}.json`, '--label', `parity-${fixture}`, '--require-engine'], {quiet: true});
 }
 
+if (args.has('--app')) {
+  // Ported editor calls in the real app, in shadow of the JavaScript editor (docs/engine/editing.md).
+  for (const document of ['joined-chain', 'sheet-layers', 'sheet-movieclip-loose'])
+    run(`app: shadow editing ${document}`, process.execPath, ['scripts/engine-edit-shadow.mjs', '--file', `engine/tests/edit/${document}.document.json`], {quiet: true});
+}
+
 console.log('\nEngine parity');
 for (const {name, ok, seconds} of results) console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name} (${seconds.toFixed(1)} s)`);
 process.exit(results.every(result => result.ok) ? 0 : 1);
