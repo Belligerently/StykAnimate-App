@@ -211,6 +211,23 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   evaluation (handles, picking, the pose it sends to the engine) still run in JavaScript and
   call the evaluation modules the engine now covers. Deleting them needs stage S5 (the engine
   owns the document and evaluates for the editor); until then they are the oracle.
+- **The document is held twice until S5** (D12): the editor's JavaScript objects and the
+  engine's store and typed views. Measured 2026-10-02 in Electron (WebGPU), one run each after
+  opening the file and letting the mirror commit, machine load 4–5 from the baseline rounds
+  (`tmp/engine-port/mirror-memory.mjs`):
+
+  | File | Engine | WebAssembly memory | JS heap | Renderer process | All processes |
+  | --- | --- | ---: | ---: | ---: | ---: |
+  | Jay on a new app (repaired).styk | on | 153 MiB | 86 MiB | 523 MiB | 1,161 MiB |
+  | Jay on a new app (repaired).styk | off | — | 92 MiB | 568 MiB | 1,182 MiB |
+  | svr_uriel.piv | on | 268 MiB | 248 MiB | 762 MiB | 1,390 MiB |
+  | svr_uriel.piv | off | — | 262 MiB | 1,255 MiB | 1,866 MiB |
+
+  The engine's own memory (store, typed views, assets, decoded images awaiting upload, frame
+  cache) is the cost of the mirror; the totals are already lower with the engine because the
+  JavaScript renderer's raster caches and the playback workers' document copies are not used
+  for documents the engine draws. The JS heap's copy goes when the engine owns the document
+  (S5); the final report tracks the trajectory with the same measurement.
 - **First use is slow in WebAssembly.** The first file opened after the module loads takes
   about 2.2 s where the same file then takes 0.66 s (URIEL 3). Suspects: baseline-compiler
   code before the optimizing tier is ready, and growing the shared memory. To measure.
