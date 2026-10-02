@@ -4,6 +4,7 @@
 //!   styk compare <file> <reference.json>  primitive-by-primitive parity with the JS editor
 //!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
+//!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 
 use std::path::Path;
 use std::time::Instant;
@@ -30,14 +31,15 @@ fn main() {
             }
         },
         Some("info") if args.len() >= 2 => info(&args[1]),
+        Some("layers") if args.len() >= 3 => layers(&args[1], &args[2]),
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
         Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
         Some("raster") if args.len() >= 4 => raster(&args[1], &args[2], &args[3], &args[4..]),
-        Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2]),
+        Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y]");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] | gpubench <file> <tick> [--no-effects] | layers <file> <tick>");
             2
         }
     };
@@ -53,6 +55,26 @@ fn load(path: &str) -> Result<(Prepared, f64), String> {
         eprintln!("  prepare (timelines, presence index) {:.1} ms", t0.elapsed().as_secs_f64() * 1000.0);
     }
     Ok((prepared, started.elapsed().as_secs_f64() * 1000.0))
+}
+
+/// The raster layers of one frame's draw list: kind, rectangles, scale and effects.
+fn layers(path: &str, tick: &str) -> i32 {
+    let (p, _) = match load(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
+    };
+    let assets = styk_eval::assets::Assets::build(&p.doc);
+    let scene = build(&p.doc, &p.evaluate(tick.parse().unwrap_or(0.0)));
+    let list = styk_eval::drawlist::encode(&p.doc, &assets, &scene);
+    for (g, group) in list.groups.iter().enumerate() {
+        let Some(layer) = list.layers.get(group.layer as usize) else { continue };
+        let effects: Vec<&str> = styk_eval::drawlist::layer_effects(layer).iter().map(|e| e.kind().name()).collect();
+        println!("group {g} (parent {}, depth {}, opacity {}): {:?} [{}]", group.parent, group.depth, group.opacity, layer.kind, effects.join(", "));
+    }
+    0
 }
 
 fn info(path: &str) -> i32 {
@@ -364,9 +386,9 @@ fn diff(a: &str, b: &str, out: &str, rest: &[String]) -> i32 {
 }
 
 /// GPU time per frame (submit + wait) across a fit → 11× zoom, at 1440×900.
-fn gpubench(path: &str, tick: &str) -> i32 {
+fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
     use styk_eval::assets::Assets;
-    use styk_eval::drawlist::encode;
+    use styk_eval::drawlist::{encode_composed, Overrides};
     use styk_eval::view::camera_matrix;
     use styk_render::{wgpu, Renderer, ViewParams};
     let (p, _) = match load(path) {
@@ -389,7 +411,8 @@ fn gpubench(path: &str, tick: &str) -> i32 {
     renderer.prepare_sprites(&assets);
     renderer.upload_images(&assets, &images);
     let scene = build(&p.doc, &p.evaluate(tick.parse().unwrap_or(0.0)));
-    let list = std::sync::Arc::new(encode(&p.doc, &assets, &scene));
+    let overrides = Overrides { bypass_effects: no_effects, ..Default::default() };
+    let list = std::sync::Arc::new(encode_composed(&p.doc, &assets, &scene, &overrides, &[], None));
     renderer.set_list(&list);
     let (w, h) = (1440u32, 900u32);
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
@@ -413,7 +436,8 @@ fn gpubench(path: &str, tick: &str) -> i32 {
         queue.submit([encoder.finish()]);
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         if k > 0 {
-            rows.push((zoom / fit, start.elapsed().as_secs_f64() * 1000.0, renderer.stats.passes, renderer.stats.groups));
+            let s = &renderer.stats;
+            rows.push((zoom / fit, start.elapsed().as_secs_f64() * 1000.0, s.passes, s.groups, s.effect_passes, s.effect_bytes + s.layer_bytes));
         }
     }
     let mut times: Vec<f64> = rows.iter().map(|r| r.1).collect();
@@ -428,7 +452,7 @@ fn gpubench(path: &str, tick: &str) -> i32 {
         adapter.get_info().name
     );
     for r in rows.iter().step_by(40) {
-        println!("  {:5.2}x  {:6.2} ms  {} passes  {} groups", r.0, r.1, r.2, r.3);
+        println!("  {:5.2}x  {:6.2} ms  {} passes  {} groups  {} effect passes  {:.1} MiB layers and effect slots", r.0, r.1, r.2, r.3, r.4, r.5 as f64 / 1048576.0);
     }
     0
 }

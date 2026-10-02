@@ -231,9 +231,13 @@ impl Stage {
         Ok(true)
     }
 
-    /// Primitive, isolation group and pass counts of the last frame, as JSON.
+    /// Primitive, isolation group and pass counts of the last frame, its effect layers and
+    /// passes, and the GPU memory of the effect slots and isolation atlases, as JSON.
     pub fn stats(&self) -> String {
         let s = &self.renderer.stats;
-        format!("{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{}}}", s.prims, s.groups, s.passes, s.downscaled, s.rounds)
+        format!(
+            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{}}}",
+            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes
+        )
     }
 }

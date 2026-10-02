@@ -87,12 +87,15 @@ impl Renderer {
         });
         let sizes: Vec<[u32; 2]> = planned.iter().map(plan::Placement::size).collect();
         let largest = sizes.iter().skip(1).fold([0u32, 0u32], |a, s| [a[0].max(s[0]), a[1].max(s[1])]);
-        // Pages hold the frame and grow for larger layers (effect layers at the editor's density, the camera image).
-        if self.page_frame != size {
+        // Pages hold the frame and grow for larger layers (effect layers at the editor's density, the
+        // camera image); after 240 frames that all fit the frame they shrink back to it.
+        let wanted = page_size(size, largest);
+        self.page_small = if wanted == size { self.page_small + 1 } else { 0 };
+        if self.page_frame != size || self.page_small > 240 {
             self.page_frame = size;
             self.page = size;
+            self.page_small = 0;
         }
-        let wanted = page_size(size, largest);
         self.page = [self.page[0].max(wanted[0]), self.page[1].max(wanted[1])];
         let page = self.page;
         let rounds = plan_rounds(&list, &sizes, page);

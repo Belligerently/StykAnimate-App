@@ -91,6 +91,8 @@ pub struct Renderer {
     /// Atlas page size, and the frame size it grew from (pages fit the largest layer).
     pub(crate) page: [u32; 2],
     pub(crate) page_frame: [u32; 2],
+    /// Frames in a row whose layers all fit pages of the frame's size.
+    pub(crate) page_small: u32,
     /// Effect passes, created with the first frame that filters.
     pub(crate) executor: Option<effects::executor::Executor>,
     pub stats: Stats,

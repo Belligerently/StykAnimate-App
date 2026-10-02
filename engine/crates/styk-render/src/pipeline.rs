@@ -151,6 +151,7 @@ impl Renderer {
             list_prims: 0,
             page: [0, 0],
             page_frame: [0, 0],
+            page_small: 0,
             executor: None,
             stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0, effect_layers: 0, effect_passes: 0, effect_bytes: 0, layer_bytes: 0 },
         }
