@@ -34,10 +34,21 @@ and after), and emit change events the interface listens to.
   steps in `styk-edit` and compares. Scenarios come from the existing editor
   tests, from fixtures built with `engine/tools/fixture-kit.mjs`, and from
   recorded sessions.
-- Order: the gestures first (pose a joint, move, rotate, scale, IK targets: the
-  edit-to-frame path), then frames and keys, layers and the layer sheet,
-  figures and the builder, movieclips, effects and clips, camera, drawings'
-  metadata, clipboard, sessions.
+- Order: what the app runs. The app constructs the editor with `propertyChannels` and
+  `layerTimeline` (`src/app.mjs`), and `load` gives every document a layer sheet
+  (`initializeLayerSheet`). Every gesture in the app therefore takes the authored path
+  (`src/editor-authored-pose.mjs`): a draft of the evaluated frame at the playhead, the same
+  per-figure mutations as on a native frame, and a commit that captures the edited frame
+  into pose sources and writes keys on the layer tracks (`_commitSheetPose`, the sheet
+  planner and `publish` in `src/editor-layer-sheet.mjs`). The native-timeline commands
+  ported first are those mutations, checked on native frames; the app needs, in order:
+  1. **The evaluated frame as records**: `editor.evaluatedFrame` reproduced as JSON byte for
+     byte (layer sheets, tweens, movieclips, layer order), because a commit stores it.
+  2. **The authored lifecycle and the sheet planner**: drafts, ownership, key writing,
+     pose-source capture and the history entry `publish` records.
+  3. **The facade**: the app's gestures run in the engine.
+  Then frames and keys, layers and the layer sheet, figures and the builder, movieclips,
+  effects and clips, camera, drawings' metadata, clipboard, sessions.
 
 ## Status of phase 1
 

@@ -396,5 +396,7 @@ task), `CHANGELOG.md`, Windows CI.
 
 In progress: the Rust codec in the app in place of Pyodide and the Python sidecar (agent);
 effects rendering as GPU passes (agent); baseline rounds 2–3 (section 5). Next in the main
-thread: the facade's first ported calls (the app running posing and moving in the engine), then
-layer sheets and the remaining gesture paths (IK targets, rigs).
+thread: the evaluated frame as records (byte-identical to `editor.evaluatedFrame`), then the
+authored gesture lifecycle and the layer-sheet planner, then the facade (`docs/engine/editing.md`:
+the app edits every document through a layer sheet, so the native-timeline ports are building
+blocks, not yet what the app runs).
