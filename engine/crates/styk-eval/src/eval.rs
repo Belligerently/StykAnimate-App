@@ -70,6 +70,8 @@ pub struct Prepared {
     pub total_ticks: u32,
     tracks: HashMap<String, Arc<Seq>>,
     imported: HashMap<String, bool>,
+    /// The pose track of each replaced movieclip, by layer and replaced uid (`patchChannels`).
+    patches: HashMap<(String, u32), Arc<Seq>>,
     /// Presence-clock spans per movieclip instance: (start, end, elapsed, rate).
     presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
 }
@@ -550,6 +552,7 @@ impl Prepared {
         let clip_end = doc.camera_motion.iter().map(|c| c.start + c.duration).fold(0.0, f64::max) as u32;
         let mut tracks = HashMap::new();
         let mut imported = HashMap::new();
+        let mut patches = HashMap::new();
         if let Some(sheet) = &doc.sheet {
             rows.retain(|r| r.start < sheet.duration);
             for r in rows.iter_mut() {
@@ -561,12 +564,15 @@ impl Prepared {
             for (id, track) in &sheet.tracks {
                 tracks.insert(id.clone(), Arc::new(pose_track(&doc, id, track)));
                 imported.insert(id.clone(), track.keys.iter().any(|k| matches!(k.value, SheetValue::SourceTick(_))));
+                for patch in track.keys.iter().flat_map(|k| &k.movieclip_patches) {
+                    patches.entry((id.clone(), patch.uid)).or_insert_with(|| Arc::new(patch_track(&doc, track, patch.uid)));
+                }
             }
         } else if let Some(last) = rows.last_mut() {
             last.count = last.count.max(clip_end.saturating_sub(last.start));
         }
         let total_ticks = rows.last().map(|r| r.start + r.count).unwrap_or(0).max(1);
-        let mut prepared = Prepared { doc, native, rows, total_ticks, tracks, imported, presence: HashMap::new() };
+        let mut prepared = Prepared { doc, native, rows, total_ticks, tracks, imported, patches, presence: HashMap::new() };
         prepared.presence = prepared.presence_index();
         prepared
     }
@@ -744,9 +750,118 @@ impl Prepared {
         self.rows.iter().filter(|r| r.count > 0).map(|r| r.start).collect()
     }
 
+    /// `sample(id)` in `sampleLayerSheet`: the layer's own pose, then the movieclip
+    /// frames its key replaces.
     fn sample_track(&self, id: &str, tick: f64) -> Option<Frame> {
-        let sheet = self.doc.sheet.as_ref()?;
-        let track = sheet.tracks.get(id)?;
+        let track = self.doc.sheet.as_ref()?.tracks.get(id)?;
+        let mut frame = self.sample_base(id, track, tick);
+        if tick >= track.end as f64 {
+            return frame;
+        }
+        // Replacements are read from every key, the patch-only ones included.
+        let at = track.keys.partition_point(|k| k.tick as f64 <= tick);
+        let Some(key) = at.checked_sub(1).map(|i| &track.keys[i]) else { return frame };
+        let next = track.keys.get(at);
+        let held = key.easing.map(|e| e.mode) == Some(EasingMode::Constant);
+        for patch in &key.movieclip_patches {
+            let source = |fid: &Arc<str>| {
+                let key = self.doc.pose_source(fid)?;
+                Some(frame_of(&KeyRef { frame: key.clone(), duration: 1, easing: None, origin: Some(FrameRef::Source(fid.clone())) }))
+            };
+            // Consecutive replacements of one movieclip tween like any pose track.
+            let tweened = !held && next.is_some_and(|n| n.movieclip_patches.iter().any(|p| p.uid == patch.uid));
+            let replacement = match self.patches.get(&(id.to_string(), patch.uid)).filter(|_| tweened) {
+                Some(seq) => sample_pose_track(&self.doc, seq, tick),
+                None => source(&patch.frame_id),
+            };
+            let Some(replacement) = replacement else { continue };
+            let base = frame.take().unwrap_or_else(|| match self.doc.keyframes.first() {
+                Some(first) => Frame { objects: vec![], draw_order: vec![], origins: vec![], continuations: vec![], ..frame_of(&KeyRef { frame: first.clone(), duration: 1, easing: None, origin: None }) },
+                None => Frame::default(),
+            });
+            frame = Some(self.replace_movieclip_frame(base, patch, replacement));
+        }
+        frame
+    }
+
+    /// `replaceMovieclipFrame`: the objects of `replacement` take the place of the
+    /// movieclip `patch.uid` in `base`, in its place in the draw order.
+    fn replace_movieclip_frame(&self, base: Frame, patch: &crate::doc::MovieclipPatch, replacement: Frame) -> Frame {
+        let removed = patch.uid;
+        let added: std::collections::HashSet<u32> = replacement.objects.iter().map(|o| o.uid).collect();
+        let uid_at = |frame: &Frame, slot: u32| frame.objects.get(slot as usize).map(|o| o.uid);
+        let order_of = |frame: &Frame| -> Vec<u32> { frame.draw_order.iter().filter_map(|&slot| uid_at(frame, slot)).collect() };
+        // Each kept object with where it was authored and the uid it joins.
+        let mut members: Vec<(Arc<Object>, Option<(FrameRef, u32)>, Option<u32>)> = Vec::new();
+        let mut geometry = None;
+        for (slot, object) in base.objects.iter().enumerate() {
+            if object.uid == removed || added.contains(&object.uid) {
+                continue;
+            }
+            let mut object = object.clone();
+            let mut origin = base.origins.get(slot).cloned().flatten();
+            let mut parent = None;
+            if let Some(join) = object.join {
+                let target = uid_at(&base, join.slot);
+                if target == Some(removed) && patch.replacement_uid.is_some() {
+                    parent = patch.replacement_uid;
+                } else if target == Some(removed) {
+                    // Nothing replaces what it was joined to: it stays where the join held it.
+                    let scene = geometry.get_or_insert_with(|| crate::geometry::build(&self.doc, &base));
+                    let loose = Arc::make_mut(&mut object);
+                    if let Some(placed) = scene.objects.iter().find(|g| g.slot == slot as u32 && g.resolved) {
+                        loose.root = placed.root;
+                    }
+                    loose.join = None;
+                    origin = None;
+                } else {
+                    parent = target;
+                }
+            }
+            members.push((object, origin, parent));
+        }
+        for (slot, object) in replacement.objects.iter().enumerate() {
+            let parent = object.join.and_then(|join| uid_at(&replacement, join.slot));
+            members.push((object.clone(), replacement.origins.get(slot).cloned().flatten(), parent));
+        }
+        let previous = order_of(&base);
+        let anchor = previous.iter().position(|&uid| uid == removed);
+        let mut order: Vec<u32> = previous.iter().copied().filter(|uid| *uid != removed && !added.contains(uid)).collect();
+        let mut insertion = anchor.map_or(order.len(), |anchor| anchor.min(order.len()));
+        if let (None, Some(index), Some(layers)) = (anchor, patch.order_index, &self.doc.layers) {
+            let layer = layers.layer_of(removed);
+            let siblings: Vec<usize> = order.iter().enumerate().filter(|(_, uid)| layers.layer_of(**uid) == layer).map(|(at, _)| at).collect();
+            insertion = match (siblings.get(index as usize), siblings.last()) {
+                (Some(&at), _) => at,
+                (None, Some(&last)) => last + 1,
+                (None, None) => order.len(),
+            };
+        }
+        order.splice(insertion..insertion, order_of(&replacement));
+        // `normalizeFrame`: slots follow unique ids.
+        members.sort_by_key(|(object, _, _)| object.uid as i32);
+        let slots: HashMap<u32, u32> = members.iter().enumerate().map(|(slot, (object, _, _))| (object.uid, slot as u32)).collect();
+        let mut objects = Vec::with_capacity(members.len());
+        let mut origins = Vec::with_capacity(members.len());
+        for (mut object, mut origin, parent) in members {
+            if let Some(join) = object.join {
+                let rejoined = parent.and_then(|uid| slots.get(&uid)).map(|&slot| Join { slot, handle: join.handle });
+                if rejoined != object.join {
+                    Arc::make_mut(&mut object).join = rejoined;
+                    origin = None;
+                }
+            }
+            objects.push(object);
+            origins.push(origin);
+        }
+        let mut continuations: Vec<_> =
+            base.continuations.iter().filter(|(uid, _)| *uid != removed && !replacement.continuations.iter().any(|(other, _)| other == uid)).cloned().collect();
+        continuations.extend(replacement.continuations.iter().cloned());
+        Frame { objects, origins, continuations, draw_order: order.iter().filter_map(|uid| slots.get(uid).copied()).collect(), ..base }
+    }
+
+    /// `baseSample`: the layer's pose from its keys, without movieclip replacements.
+    fn sample_base(&self, id: &str, track: &SheetTrack, tick: f64) -> Option<Frame> {
         if tick >= track.end as f64 && !FIXED.contains(&id) {
             return None;
         }
@@ -901,11 +1016,22 @@ pub fn movieclip_time(clip: &Movieclip, s: &MovieclipPlayback, tick: f64, fps: f
     }
 }
 
-/// `buildVirtualPoseTrack`: keys become a native timeline of their source poses.
+/// The pose track of a layer: its keys that carry a pose of their own.
 fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
-    let fixed = FIXED.contains(&id);
-    let mut keys: Vec<&SheetKey> = track.keys.iter().filter(|k| !k.patch_only).collect();
-    keys.sort_by(|a, b| a.tick.cmp(&b.tick).then((b.hidden as u8).cmp(&(a.hidden as u8))));
+    let keys = track.keys.iter().filter(|k| !k.patch_only).map(|k| (k, if let SheetValue::Frame(Some(fid)) = &k.value { Some(fid) } else { None }));
+    virtual_track(doc, FIXED.contains(&id), keys.collect())
+}
+
+/// The pose track of what replaces movieclip `uid` on a layer: every key of the
+/// layer, posing the frame it replaces the movieclip with (or nothing).
+fn patch_track(doc: &Document, track: &SheetTrack, uid: u32) -> Seq {
+    let keys = track.keys.iter().map(|k| (k, k.movieclip_patches.iter().find(|p| p.uid == uid).map(|p| &p.frame_id)));
+    virtual_track(doc, false, keys.collect())
+}
+
+/// `buildVirtualPoseTrack`: keys become a native timeline of their source poses.
+fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&Arc<str>>)>) -> Seq {
+    keys.sort_by(|a, b| a.0.tick.cmp(&b.0.tick).then((b.0.hidden as u8).cmp(&(a.0.hidden as u8))));
     let blank = Arc::new(Keyframe {
         duration: 1,
         objects: vec![],
@@ -923,13 +1049,10 @@ fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
     let refs = keys
         .iter()
         .enumerate()
-        .map(|(i, key)| {
-            let (source, origin) = match &key.value {
-                SheetValue::Frame(Some(fid)) => match doc.pose_source(fid) {
-                    Some(k) => (k.clone(), Some(FrameRef::Source(fid.clone()))),
-                    None => (blank.clone(), None),
-                },
-                _ => (blank.clone(), None),
+        .map(|(i, (key, frame_id))| {
+            let (source, origin) = match frame_id.and_then(|fid| Some((doc.pose_source(fid)?, fid))) {
+                Some((k, fid)) => (k.clone(), Some(FrameRef::Source((*fid).clone()))),
+                None => (blank.clone(), None),
             };
             // Fixed tracks only need their camera/background fields.
             let source = if fixed && !source.objects.is_empty() {
@@ -944,13 +1067,13 @@ fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
             let next = keys.get(i + 1);
             KeyRef {
                 easing: if key.easing.is_some() { key.easing } else { source.easing },
-                duration: if key.hidden { 0 } else { next.map(|n| n.tick.saturating_sub(key.tick)).unwrap_or(1) },
+                duration: if key.hidden { 0 } else { next.map(|n| n.0.tick.saturating_sub(key.tick)).unwrap_or(1) },
                 frame: source,
                 origin: if fixed { None } else { origin },
             }
         })
         .collect();
-    Seq { keys: refs, version: 5, auto_easing: doc.auto_easing, ticks: keys.iter().map(|k| k.tick as f64).collect() }
+    Seq { keys: refs, version: 5, auto_easing: doc.auto_easing, ticks: keys.iter().map(|k| k.0.tick as f64).collect() }
 }
 
 /// `samplePoseTrack`: the interval of the track's own key ticks around `tick`.

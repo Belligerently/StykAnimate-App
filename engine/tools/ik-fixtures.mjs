@@ -8,59 +8,22 @@
 // Without names it regenerates every fixture into
 // engine/crates/styk-eval/tests/fixtures/ik/. The Rust test
 // engine/crates/styk-eval/tests/ik.rs compares the engine with each of them.
-import {execFileSync} from 'node:child_process';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
 import path from 'node:path';
+import {here, repo, Editor, emptyDocument, createObject, createFrame, documentOf, limb, open, joint, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repo = path.resolve(here, '../..');
-const {Editor} = await import(`${repo}/src/editor.mjs`);
-const {emptyDocument, createObject, createFrame} = await import(`${repo}/src/demo.mjs`);
 const {createStartupDocument} = await import(`${repo}/src/startup-document.mjs`);
 const {construction} = await import(`${repo}/src/rig-examples-3d.mjs`);
 const {solveIKPoints, interpolateIK} = await import(`${repo}/src/ik.mjs`);
 
 // ---------------------------------------------------------------- figures
 
-/** A document with one figure made of `segments` ([id, parent, length, angle, extra]). */
-function documentOf(figures, place = () => [300, 150]) {
-  const document = emptyDocument(), template = document.figure_types[0], base = template.segments[0];
-  document.figure_types = figures.map((segments, i) => ({...structuredClone(template), figure_type_id: i + 1, name: `Figure ${i + 1}`,
-    segments: segments.map(([segment_id, parent_id, length, angle_rad, extra = {}]) =>
-      ({...base, segment_id, parent_id, length, angle_rad, thickness: 6, aux_code: 0, is_static: false, flag_bits: undefined, ...extra})),
-    segment_count: segments.length}));
-  const objects = document.figure_types.map((figure, i) => createObject(figure, i + 1, ...place(i)));
-  document.keyframes = [createFrame(objects, 1)];
-  return document;
-}
 const fixed = {is_static: true, aux_code: 1};
-/** A thigh (11), a shin (22) and a foot (33); optionally a second limb (44, 55, 66). */
-const limb = (second = false) => [[11, 0, 90, .8], [22, 11, 90, 2], [33, 22, 35, 0],
-  ...(second ? [[44, 0, 90, 2.1], [55, 44, 90, 1.2], [66, 55, 35, Math.PI]] : [])];
 /** The foot of tests/ik-joined.test.mjs: static shin artwork, a construction
  * pivot at the ankle and a polygon that ties the foot's branches together. */
 const footed = () => [[11, 0, 90, .8], [12, 11, 20, .3, fixed], [22, 11, 90, 2], [23, 22, .00027, -1.6, fixed], [24, 23, 18, 1.1, fixed],
   [33, 23, 35, 0], [34, 33, 10, .2, fixed], [35, 23, 25, 1.5, fixed], [41, 22, 16, 1.1, fixed]];
 const footPolygon = (ids = [22, 35, 34, 33]) => [{polyfill_id: 1, segment_ids: ids, color_rgb: [10, 35, 65], alpha_raw: 0, z_order: 0}];
-
-const open = (document, options = {}) => new Editor({demo: false, ...options}).load(document);
-const joint = (editor, id, uid = editor.selectedUid ?? 1) => {
-  editor.select(uid); const index = editor.figure.segments.findIndex(s => s.segment_id === id);
-  editor.select(uid, index); return editor;
-};
-const whole = (editor, uid = 1) => { editor.select(uid, -1); return editor; };
-/** A second native keyframe after the current one; the editor moves onto it. */
-function nextKey(editor, ticks) {
-  editor.setFrameDuration(ticks); editor.duplicateFrame();
-  editor.selectFrame(editor.report.keyframes.length - 1);
-  return editor;
-}
-/** A later key on a layer's pose track; the editor moves onto it. */
-function nextSheetKey(editor, tick, uid = 1) {
-  editor.sheetInsertKey([editor.layerForUid(uid)], tick); editor.seek(tick);
-  return editor;
-}
 
 // --------------------------------------------------------------- fixtures
 
@@ -444,31 +407,13 @@ const out = path.resolve(outAt < 0 ? `${here}/../crates/styk-eval/tests/fixtures
 const names = args.filter((a, i) => !a.startsWith('--') && (outAt < 0 || i !== outAt + 1));
 for (const name of names) if (!fixtures[name] && name !== 'vectors') { console.error(`unknown fixture ${name}`); process.exit(2); }
 mkdirSync(out, {recursive: true});
-/** Every edit of a layer-sheet pose leaves its previous pose source in the
- * project for undo. No key refers to them, so no evaluation reads them: drop
- * them to keep a fixture to the few poses it is about. */
-function prune(document) {
-  const sources = document._styk?.frameSources, tracks = document._styk?.layerSheet?.tracks;
-  if (sources && tracks) {
-    const used = new Set(Object.values(tracks).flatMap(track => track.keys.flatMap(key => [key.value?.frameId, ...(key.movieclipPatches ?? []).map(p => p.frameId)])));
-    for (const id of Object.keys(sources)) if (!used.has(id)) delete sources[id];
-  }
-  for (const figure of document.figure_types) if (figure._styk?.movieclip?.document) prune(figure._styk.movieclip.document);
-  return document;
-}
 if (!names.length || names.includes('vectors')) {
   const cases = vectors();
   writeFileSync(`${out}/vectors.json`, JSON.stringify(cases) + '\n');
   console.log(`vectors: ${cases.solve.length} point solves, ${cases.interpolate.length} interpolations, ${(JSON.stringify(cases).length / 1024).toFixed(1)} KiB`);
 }
 for (const name of (names.length ? names : Object.keys(fixtures)).filter(name => name !== 'vectors')) {
-  const built = fixtures[name](), document = prune(built.document), ticks = built.ticks;
-  const file = `${out}/${name}.json`, reference = `${out}/${name}.reference.json`;
-  writeFileSync(file, JSON.stringify(document) + '\n');
-  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(',')], {stdio: ['ignore', 'ignore', 'ignore']});
-  // Timings differ on every run; without them a regenerated fixture is byte-stable.
-  const dump = JSON.parse(readFileSync(reference, 'utf8'));
-  delete dump.loadMs; delete dump.evalMsPerFrame;
+  const built = fixtures[name](), written = writeProject(out, name, built.document, built.ticks), {file, dump} = written;
   // What the solver derived, unrounded (the dump above rounds positions to
   // 1e-6): the angles and stretched lengths of every object a pinned
   // controller reaches, and each controller's outcome. Same editor
@@ -481,7 +426,5 @@ for (const name of (names.length ? names : Object.keys(fixtures)).filter(name =>
       angles: [...g.solvedAngles], lengths: g.solvedLengths ? [...g.solvedLengths] : null,
       controllers: [...g.ik].map(([handle, r]) => ({handle, conflict: Boolean(r.conflict), iterations: r.iterations ?? 0, error: r.error ?? 0, stretch: r.stretch ?? 1}))}));
   }
-  writeFileSync(reference, JSON.stringify(dump) + '\n');
-  const size = n => `${(n / 1024).toFixed(1)} KiB`;
-  console.log(`${name}: ${size(JSON.stringify(document).length)} project, ${dump.frames.length} ticks, ${size(JSON.stringify(dump).length)} reference`);
+  writeReference(written, name);
 }
