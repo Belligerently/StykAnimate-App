@@ -12,9 +12,13 @@ use serde_json::Value;
 use styk_core::eval::Prepared;
 use styk_core::geometry::{build, ItemKind, Scene};
 
+mod container;
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
+        Some("container") if args.len() >= 3 && args[1] == "roundtrip" => container::roundtrip(&args[2], &args[3..]),
+        Some("container") if args.len() >= 4 && args[1] == "json" => container::json(&args[2], &args[3]),
         Some("info") if args.len() >= 2 => info(&args[1]),
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
