@@ -20,8 +20,9 @@
 
 use std::sync::Arc;
 
+use styk_draw::{CameraPose, DrawList, LayerKind};
 use styk_eval::doc::Camera;
-use styk_eval::drawlist::{DrawList, LayerKind};
+use styk_eval::drawlist::layer_effects;
 use styk_eval::vfx::Effect;
 use styk_eval::view::{apply, camera_transform, compose, invert};
 
@@ -163,7 +164,8 @@ pub struct CameraPlan {
     pub composite: CameraComposite,
 }
 
-pub fn camera_plan(stack: &[Arc<Effect>], canvas: [u32; 2], camera: Option<Camera>, view: &View) -> CameraPlan {
+pub fn camera_plan(stack: &[Arc<Effect>], canvas: [u32; 2], camera: Option<CameraPose>, view: &View) -> CameraPlan {
+    let camera = camera.map(|c| Camera { x: c.x, y: c.y, scale: c.scale, angle: c.angle, is_default: c.is_default });
     let (cw, ch) = (canvas[0] as f64, canvas[1] as f64);
     let longest = cw.max(ch);
     let padding = styk_eval::vfx::padding(stack, 1.0, longest);
@@ -255,7 +257,7 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
             continue;
         }
         let layer = list.layers.get(group.layer as usize);
-        let stack = layer.map_or(&[][..], |l| &l.stack[..]);
+        let stack = layer.map_or(&[][..], layer_effects);
         let placement = match layer.map(|l| l.kind) {
             None => {
                 let b = group.bounds;
@@ -321,7 +323,7 @@ pub fn relative(parent: Affine, child: Affine) -> Affine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use styk_eval::drawlist::{EffectLayer, Group, NO_LAYER};
+    use styk_draw::{EffectLayer, Effects, Group, NO_LAYER};
     use styk_eval::vfx::registry::{Blur, Params};
 
     #[test]
@@ -362,6 +364,10 @@ mod tests {
         DrawList { groups, layers, ..Default::default() }
     }
 
+    fn stack(effects: Vec<Arc<Effect>>) -> Option<Effects> {
+        Some(Arc::new(effects))
+    }
+
     fn blur(radius: f64) -> Arc<Effect> {
         Arc::new(Effect { id: Arc::from("b"), enabled: true, params: Params::Blur(Blur { radius, ..Default::default() }) })
     }
@@ -376,8 +382,8 @@ mod tests {
         let entry = Group { parent: 0, depth: 1, opacity: 1.0, bounds: [100.0, 100.0, 300.0, 300.0], layer: 0 };
         let node = Group { parent: 1, depth: 2, opacity: 1.0, bounds: [150.0, 150.0, 200.0, 200.0], layer: 1 };
         let layers = vec![
-            EffectLayer { stack: vec![blur(4.0)], kind: LayerKind::Entry { bounds: [90.0, 90.0, 220.0, 220.0], domain: [97.0, 97.0, 206.0, 206.0], scale: 1.0, padding: 13.0 } },
-            EffectLayer { stack: vec![blur(2.0)], kind: LayerKind::Nested { bounds: [140.0, 140.0, 70.0, 70.0], domain: [147.0, 147.0, 56.0, 56.0], scale: 0.5 } },
+            EffectLayer { effects: stack(vec![blur(4.0)]), kind: LayerKind::Entry { bounds: [90.0, 90.0, 220.0, 220.0], domain: [97.0, 97.0, 206.0, 206.0], scale: 1.0, padding: 13.0 } },
+            EffectLayer { effects: stack(vec![blur(2.0)]), kind: LayerKind::Nested { bounds: [140.0, 140.0, 70.0, 70.0], domain: [147.0, 147.0, 56.0, 56.0], scale: 0.5 } },
         ];
         let plans = plan(&list(vec![root, entry, node], layers), &view());
         let (e, n) = (plans[1], plans[2]);
@@ -400,7 +406,7 @@ mod tests {
         let root = Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0; 4], layer: NO_LAYER };
         let far = Group { parent: 0, depth: 1, opacity: 1.0, bounds: [5000.0, 0.0, 5100.0, 100.0], layer: 0 };
         let wide = Group { parent: 0, depth: 1, opacity: 1.0, bounds: [-2000.0, 0.0, 3000.0, 100.0], layer: 1 };
-        let entry = |x: f64, w: f64| EffectLayer { stack: vec![blur(10.0)], kind: LayerKind::Entry { bounds: [x, 0.0, w, 100.0], domain: [x + 30.0, 30.0, w - 60.0, 40.0], scale: 1.0, padding: 30.0 } };
+        let entry = |x: f64, w: f64| EffectLayer { effects: stack(vec![blur(10.0)]), kind: LayerKind::Entry { bounds: [x, 0.0, w, 100.0], domain: [x + 30.0, 30.0, w - 60.0, 40.0], scale: 1.0, padding: 30.0 } };
         let plans = plan(&list(vec![root, far, wide], vec![entry(4970.0, 160.0), entry(-2030.0, 5060.0)]), &view());
         assert!(!plans[1].drawn(), "entirely off screen");
         let w = plans[2];
@@ -414,7 +420,7 @@ mod tests {
     #[test]
     fn the_camera_image_maps_onto_the_artboard() {
         let stack = vec![blur(8.0)];
-        let camera = Camera { x: 40.0, y: -10.0, scale: 0.8, angle: 0.1, is_default: false };
+        let camera = CameraPose { x: 40.0, y: -10.0, scale: 0.8, angle: 0.1, is_default: false };
         let c = camera_plan(&stack, [960, 540], Some(camera), &view());
         // The workspace zoom times the camera's scale, below the 2048-pixel cap.
         let resolution = 1.25 * 0.8;

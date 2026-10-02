@@ -9,15 +9,13 @@
 //
 //   node scripts/engine-app-parity.mjs [--file <project>] [--ticks 0,10,20] [--onion] [--play]
 //        [--target web|electron] [--renderer canvas|gpu] [--label <name>] [--url http://127.0.0.1:47831]
-//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 2]
+//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4]
 //
 // Without --file it uses the document the app starts with. The web target runs
 // headless Chromium, where the JavaScript renderer is its Canvas 2D fallback;
 // without --url it starts the development server (scripts/serve.mjs) on a free
 // port and stops it afterwards. The electron target runs the desktop app with a
-// fresh profile, where the JavaScript renderer is WebGPU unless --renderer canvas. --zoom
-// multiplies the fitted view's scale about the stage centre (effects are drawn at the
-// view's raster density, so their parity is checked at more than one). Output: artifacts/engine-rust/parity/app/<label>/ with both
+// fresh profile, where the JavaScript renderer is WebGPU unless --renderer canvas. Output: artifacts/engine-rust/parity/app/<label>/ with both
 // pictures, a difference picture and report.json per step. Exit code 1 when a
 // step fails, 2 when --require-engine is given and the engine did not draw.
 import {spawn} from 'node:child_process';
@@ -35,10 +33,10 @@ const flag = name => args.includes(name);
 const file = option('--file'), label = option('--label', file ? path.basename(file).replace(/[^\w.-]+/g, '-').toLowerCase() : 'startup');
 const out = path.resolve(option('--out', `artifacts/engine-rust/parity/app/${label}`));
 const ticks = option('--ticks')?.split(',').map(Number) ?? null;
+/** Zoom levels relative to "fit", each a set of steps (the app's own zoom action, 1.2× per step). */
+const zooms = option('--zoom')?.split(',').map(Number) ?? [1];
 const size = {width: Number(option('--width', 1440)), height: Number(option('--height', 900))};
 const target = option('--target', 'web');
-const zoom = Number(option('--zoom', 1));
-if (!(zoom > 0)) throw new Error('--zoom takes a positive factor.');
 const SETTINGS = {theme: 'light', locale: 'en', uiScale: 100, showHandles: false};
 
 /**
@@ -118,16 +116,11 @@ async function capture(browser, origin, engine) {
     if (await page.title() === before) throw new Error(`${file} did not open`);
   }
   await dismiss();
-  const total = await page.evaluate(async zoom => {
+  const total = await page.evaluate(async () => {
     styk.editor.select(null); styk.fit();
-    if (zoom !== 1) {
-      // About the stage centre; the seeks below draw with this view.
-      const stage = document.getElementById('viewport'), view = styk.state.view, cx = stage.clientWidth / 2, cy = stage.clientHeight / 2;
-      styk.state.view = {...view, scale: view.scale * zoom, x: cx - (cx - view.x) * zoom, y: cy - (cy - view.y) * zoom};
-    }
     for (let i = 0; i < 4; i++) await new Promise(resolve => requestAnimationFrame(resolve));
     return styk.editor.totalTicks;
-  }, zoom);
+  });
   const steps = [];
   const stage = page.locator('#viewport');
   const settle = () => page.evaluate(async () => {
@@ -148,10 +141,19 @@ async function capture(browser, origin, engine) {
     steps.push({name, picture, ...state});
   };
   const list = ticks ?? [...new Set([0, Math.floor(total / 4), Math.floor(total / 2), Math.floor(3 * total / 4), total - 1])].filter(tick => tick >= 0 && tick < total);
-  for (const tick of list) {
-    await page.evaluate(tick => styk.editor.seek(tick), tick);
-    await shoot(`tick-${tick}`);
+  for (const zoom of zooms) {
+    // The zoom action multiplies the scale by 1.2 (zoom-out divides): the nearest whole number of steps.
+    await page.evaluate(async zoom => {
+      styk.fit();
+      const steps = Math.round(Math.log(zoom) / Math.log(1.2));
+      for (let i = 0; i < Math.abs(steps); i++) await styk.actions[steps > 0 ? 'zoom-in' : 'zoom-out']();
+    }, zoom);
+    for (const tick of list) {
+      await page.evaluate(tick => styk.editor.seek(tick), tick);
+      await shoot(zoom === 1 ? `tick-${tick}` : `zoom-${zoom}-tick-${tick}`);
+    }
   }
+  await page.evaluate(() => styk.fit());
   if (flag('--onion')) {
     await page.evaluate(async () => { if (!styk.state.onion) await styk.actions['toggle-onion'](); });
     for (const tick of list) {
@@ -231,7 +233,7 @@ try {
   const legacy = await capture(browser, host.origin, false);
   await mkdir(out, {recursive: true});
   const page = await (await browser.newContext()).newPage();
-  const report = {label, file: file ?? null, target, zoom, renderer: option('--renderer', target === 'electron' ? 'gpu' : 'canvas'), limits: LIMITS, steps: [], problems: {engine: withEngine.problems, legacy: legacy.problems}};
+  const report = {label, file: file ?? null, target, renderer: option('--renderer', target === 'electron' ? 'gpu' : 'canvas'), limits: LIMITS, steps: [], problems: {engine: withEngine.problems, legacy: legacy.problems}};
   if (legacy.steps.some(step => step.engine)) throw new Error('The comparison run without the engine was drawn by the engine: ?engine=off or the stored setting was ignored.');
   for (const [index, step] of withEngine.steps.entries()) {
     const other = legacy.steps[index];

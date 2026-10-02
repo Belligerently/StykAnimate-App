@@ -221,7 +221,7 @@ impl Loader {
         if version < 5
             && let Some(delay) = num(d, "frame_delay_ms").filter(|&v| v > 0.0)
         {
-            fps = crate::piv::round_half_even(1000.0 / delay);
+            fps = round_half_even(1000.0 / delay);
         }
         let styk = d.get("_styk").cloned().unwrap_or(Value::Null);
         let mut figures = Vec::new();
@@ -513,7 +513,10 @@ impl Loader {
         };
         let tiles = a.get("styk_tiles").and_then(Value::payload_bytes).and_then(|bytes| {
             let anchor = point(a.get("drawing_anchor")).unwrap_or(start);
-            crate::drawing::decode_tiles(&bytes, &mut self.images).map(|tiles| Arc::new(DrawingTiles { anchor, pixels_per_unit, tiles }))
+            crate::drawing::parse_tiles(&bytes).map(|tiles| {
+                let levels = crate::drawing::level_tiles(&tiles);
+                Arc::new(DrawingTiles { anchor, pixels_per_unit, tiles, levels })
+            })
         });
         let image = if tiles.is_some() { None } else { self.image(a, &["data_url", "data_base64", "data_uri"]) };
         ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, image, smooth, tiles }
@@ -932,4 +935,17 @@ pub fn playback(p: &Value) -> Arc<MovieclipPlayback> {
             .filter_map(|k| Some((num(k, "tick")?, num(k, "offset")?)))
             .collect(),
     })
+}
+
+/// Rounds half to even (Python's `round`, which the Pivot codec uses for frame rates).
+fn round_half_even(v: f64) -> f64 {
+    let floor = v.floor();
+    let fraction = v - floor;
+    if fraction < 0.5 {
+        floor
+    } else if fraction > 0.5 {
+        floor + 1.0
+    } else {
+        floor + (floor % 2.0).abs()
+    }
 }

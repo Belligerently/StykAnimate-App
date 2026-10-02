@@ -19,136 +19,10 @@ use crate::geometry::{mix_color, Item, ItemKind, Scene};
 use crate::vfx::layers::{item_extent, rounded, Extent, EMPTY};
 use crate::vfx::{Effect, FrameVfx, ObjectVfx};
 
-pub const K_CAPSULE: u32 = 1;
-pub const K_ARC: u32 = 2;
-pub const K_DISC: u32 = 3;
-pub const K_RING: u32 = 4;
-pub const K_TRI: u32 = 5;
-pub const K_IMAGE: u32 = 6;
-pub const K_COMPOSITE: u32 = 7;
-pub const K_FILL_VIEW: u32 = 8;
-pub const K_BG_IMAGE: u32 = 9;
-pub const K_BOX: u32 = 10;
-/// A whole open or closed polyline, shaded once per pixel (no joint overlap).
-pub const K_POLYLINE: u32 = 11;
-pub const F_CLOSED: u32 = 1 << 10;
-
-pub const F_SMOOTH: u32 = 1 << 8;
-pub const F_RING_FILL: u32 = 1 << 9;
-/// An image drawn in the record's colour through its own coverage (onion tint).
-pub const F_TINT: u32 = 1 << 11;
-
-pub const NO_PAINT: u32 = u32::MAX;
-
-/// One GPU primitive (std430, 64 bytes).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Prim {
-    pub kind: u32,
-    pub group: u32,
-    /// RGBA8, straight alpha.
-    pub color: u32,
-    /// Offset of a paint record in [`DrawList::paints`] (vec4 units), or `NO_PAINT`.
-    pub paint: u32,
-    pub a: [f32; 4],
-    pub b: [f32; 4],
-    pub c: [f32; 4],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Group {
-    pub parent: u32,
-    pub depth: u32,
-    pub opacity: f32,
-    /// World-space bounds (x0, y0, x1, y1) of everything drawn in the group.
-    pub bounds: [f32; 4],
-    /// Index into [`DrawList::layers`] when the group is drawn on a raster of
-    /// its own (effects, or artwork holding effects), or [`NO_LAYER`].
-    pub layer: u32,
-}
-
-pub const NO_LAYER: u32 = u32::MAX;
-
-/// A group drawn the way the editor draws artwork with effects: on its own
-/// raster, filtered by `stack`, then composited. See `docs/engine/vfx.md`.
-#[derive(Clone, Debug)]
-pub struct EffectLayer {
-    /// Active filters in the order they run; empty for a layer that only holds
-    /// filtered artwork.
-    pub stack: Vec<Arc<crate::vfx::Effect>>,
-    pub kind: LayerKind,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum LayerKind {
-    /// Top-level artwork (an object, a movieclip instance or a connected run)
-    /// rasterized on a world-aligned grid anchored at `bounds`, at the editor's
-    /// raster density for the view (`rasterObject`), then resampled.
-    Entry {
-        /// `objectBounds` with every effect's padding: x, y, width, height.
-        bounds: [f64; 4],
-        /// The effects' coordinate domain (`objectBounds` without effect padding).
-        domain: [f64; 4],
-        /// The scale effect sizes are multiplied by (the owner's absolute scale).
-        scale: f64,
-        /// The largest effect padding of one item, which caps the raster density.
-        padding: f64,
-    },
-    /// Artwork inside an entry, filtered on the entry's own pixel grid (`withVfx`).
-    Nested { bounds: [f64; 4], domain: [f64; 4], scale: f64 },
-    /// The camera image: everything but onion skins, drawn through the scene's
-    /// camera at the camera preview's density, filtered, then projected.
-    Camera { canvas: [u32; 2], camera: Option<Camera> },
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Pass {
-    pub depth: u32,
-    pub start: u32,
-    pub end: u32,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DrawList {
-    pub prims: Vec<Prim>,
-    pub paints: Vec<[f32; 4]>,
-    /// Polyline vertices referenced by `K_POLYLINE` records.
-    pub points: Vec<[f32; 2]>,
-    pub groups: Vec<Group>,
-    /// Prim ranges per depth, deepest first; the last pass (depth 0) is the frame.
-    pub passes: Vec<Pass>,
-    /// Number of leading root prims that are background fills (drawn unclipped by figures).
-    pub background_prims: u32,
-    /// Raster layers of the groups that have one ([`Group::layer`]).
-    pub layers: Vec<EffectLayer>,
-}
-
-impl DrawList {
-    pub fn bytes(&self) -> usize {
-        self.prims.len() * std::mem::size_of::<Prim>()
-            + self.paints.len() * 16
-            + self.points.len() * 8
-            + self.groups.len() * std::mem::size_of::<Group>()
-            + self.layers.iter().map(|l| std::mem::size_of::<EffectLayer>() + l.stack.len() * 8).sum::<usize>()
-    }
-}
-
-pub fn rgba8(rgb: [u8; 3], alpha: f64) -> u32 {
-    let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u32;
-    rgb[0] as u32 | (rgb[1] as u32) << 8 | (rgb[2] as u32) << 16 | a << 24
-}
-
-fn argb8(raw: u32) -> u32 {
-    let (a, r, g, b) = (raw >> 24, raw >> 16 & 255, raw >> 8 & 255, raw & 255);
-    r | g << 8 | b << 16 | a << 24
-}
-
-/// Paint record kinds understood by the shader.
-const P_LINEAR: f32 = 0.0;
-const P_RADIAL: f32 = 1.0;
-const P_ANGULAR: f32 = 2.0;
-const P_DIAMOND: f32 = 3.0;
-const P_RADIAL_RING: f32 = 4.0;
+pub use styk_draw::{
+    argb8, CameraPose, EffectLayer, Effects, LayerKind, NO_LAYER, rgba8, sample_paint, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
+    K_COMPOSITE, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING,
+};
 
 /// A local primitive list with world bounds, before groups are assigned.
 #[derive(Default)]
@@ -476,9 +350,10 @@ impl<'a> Ctx<'a> {
         };
         // A tinted sprite keeps its coverage and takes the tint as its colour.
         let color = rgba8(self.tint.unwrap_or([255, 255, 255]), it.alpha);
-        let flags = if a.smooth { F_SMOOTH } else { 0 } | if self.tint.is_some() { F_TINT } else { 0 };
-        let mut quad = |anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, image: u32| {
-            let Some(e) = self.assets.image(image) else { return };
+        let tint = if self.tint.is_some() { F_TINT } else { 0 };
+        let flags = if a.smooth { F_SMOOTH } else { 0 } | tint;
+        // One atlas rectangle drawn over the cel-space rectangle (x, y, w, h); `extra` is the record's last parameter.
+        let quad = |out: &mut Out, kind: u32, e: &crate::assets::AtlasEntry, anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, extra: f64| {
             let o = place(anchor, x, y);
             let u = place(anchor, x + w, y);
             let v = place(anchor, x, y + h);
@@ -493,21 +368,24 @@ impl<'a> Ctx<'a> {
                 ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             ];
             let uv = e.uv();
-            out.push(
-                prim(K_IMAGE | flags, color, NO_PAINT, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, 0.0], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]),
-                b,
-            );
+            out.push(prim(kind, color, NO_PAINT, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, extra], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]), b);
         };
         if let Some(tiles) = &a.tiles {
-            for &(x, y, image) in &tiles.tiles {
-                quad(tiles.anchor, x, y, crate::drawing::TILE as f64, crate::drawing::TILE as f64, image);
+            // Every level's tiles; the shader keeps the level the view calls for (`crate::drawing`).
+            let Some(starts) = self.assets.cel_levels(tiles) else { return };
+            for (level, drawn) in tiles.levels.iter().enumerate() {
+                let span = (crate::drawing::TILE << level) as f64;
+                for (i, &(tx, ty)) in drawn.iter().enumerate() {
+                    let Some(e) = self.assets.drawing.get((starts[level] + i as u32) as usize).filter(|e| e.valid) else { continue };
+                    quad(out, K_IMAGE | F_DRAWING | tint, e, tiles.anchor, tx as f64 * span, ty as f64 * span, span, span, level as f64);
+                }
             }
             return;
         }
         let Some(image) = a.image else { return };
         let Some(e) = self.assets.image(image) else { return };
         let [w, h] = a.display_size.unwrap_or([e.source_w as f64, e.source_h as f64]);
-        quad(a.anchor_start, 0.0, 0.0, w, h, image);
+        quad(out, K_IMAGE | flags, e, a.anchor_start, 0.0, 0.0, w, h, 0.0);
     }
 
     /// Where a text's glyph-space point lands (the transform of `drawPrimitives`' text branch).
@@ -1170,8 +1048,16 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
 }
 
 /// The scene's camera as the camera image applies it (`effectiveCamera`).
-fn scene_camera(doc: &Document, scene: &Scene) -> Option<Camera> {
-    if doc.layers.as_ref().is_some_and(|l| !l.camera_visible) { None } else { scene.camera }
+fn scene_camera(doc: &Document, scene: &Scene) -> Option<CameraPose> {
+    if doc.layers.as_ref().is_some_and(|l| !l.camera_visible) {
+        return None;
+    }
+    scene.camera.map(|c| CameraPose { x: c.x, y: c.y, scale: c.scale, angle: c.angle, is_default: c.is_default })
+}
+
+/// The effects of a layer as the encoder resolved them ([`Layer::effects`]).
+pub fn layer_effects(layer: &EffectLayer) -> &[Arc<Effect>] {
+    layer.effects.as_ref().and_then(|e| e.downcast_ref::<Vec<Arc<Effect>>>()).map_or(&[], Vec::as_slice)
 }
 
 /// Encodes the frame being edited together with its onion skins.
@@ -1299,11 +1185,12 @@ impl Builder {
         id
     }
 
-    /// A group drawn on its own raster and filtered by `stack`.
+    /// A group drawn on its own raster and filtered by `stack` (when it holds any effect).
     fn open_layer(&mut self, parent: usize, opacity: f64, stack: Vec<Arc<Effect>>, kind: LayerKind) -> usize {
         let id = self.open(parent, opacity);
         self.groups[id].layer = self.layers.len() as u32;
-        self.layers.push(EffectLayer { stack, kind });
+        let effects = (!stack.is_empty()).then(|| Arc::new(stack) as Effects);
+        self.layers.push(EffectLayer { effects, kind });
         id
     }
 
@@ -1471,5 +1358,3 @@ fn composite(group: u32, opacity: f64, bounds: [f32; 4]) -> Prim {
     }
 }
 
-/// Shared handle for a draw list produced on a worker thread.
-pub type SharedDrawList = Arc<DrawList>;

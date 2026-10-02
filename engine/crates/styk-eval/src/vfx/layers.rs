@@ -100,10 +100,12 @@ pub fn item_extent(scene: &Scene, assets: &Assets, it: &Item) -> Option<Extent> 
 /// The corners of a sprite or drawing cel, placed as `drawPrimitives` places it.
 fn image_corners(it: &Item, seg: &crate::doc::Segment, a: &crate::doc::ImageAsset, assets: &Assets, add: &mut impl FnMut([f64; 2])) {
     let ([bx, by], [w, h]) = match (&a.tiles, a.image.and_then(|i| assets.image(i))) {
+        // A drawing cel: its level-0 tiles, in cel pixels.
         (Some(tiles), _) if !tiles.tiles.is_empty() => {
             let t = crate::drawing::TILE as f64;
             let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-            for &(x, y, _) in &tiles.tiles {
+            for &(tx, ty, _) in &tiles.tiles {
+                let (x, y) = (tx as f64 * t, ty as f64 * t);
                 x0 = x0.min(x);
                 y0 = y0.min(y);
                 x1 = x1.max(x + t);

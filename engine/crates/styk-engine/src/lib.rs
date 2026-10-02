@@ -189,22 +189,26 @@ impl Engine {
         let image_count = generation.prepared.doc.images.len();
         {
             let mut state = self.inner.state.lock();
-            let known = match &state.current {
-                Some(previous) if previous.lineage == generation.lineage => previous.prepared.doc.images.len().min(image_count),
-                _ => 0,
-            };
+            let previous = state.current.clone().filter(|previous| previous.lineage == generation.lineage);
+            let known = previous.as_ref().map_or(0, |previous| previous.prepared.doc.images.len().min(image_count));
+            // Drawing cels this revision placed that the previous one did not have.
+            let cels: Vec<usize> = generation.assets.cels.keys().copied().filter(|cel| !previous.as_ref().is_some_and(|p| p.assets.cels.contains_key(cel))).collect();
             state.frames.reset(id);
-            if known == 0 {
-                state.images.reset(generation.lineage, image_count);
+            if previous.is_none() {
+                state.images.reset(generation.lineage, image_count + cels.len());
                 state.tasks.clear();
             } else {
-                state.images.grow(image_count - known);
+                state.images.grow(image_count - known + cels.len());
             }
             // Image pixels are decoded in the background: the frames drawn before they
             // arrive show the artwork without them.
             for index in known..image_count {
                 let generation = generation.clone();
                 state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_image(&generation, index)));
+            }
+            for cel in cels {
+                let generation = generation.clone();
+                state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel)));
             }
             state.current = Some(generation);
         }

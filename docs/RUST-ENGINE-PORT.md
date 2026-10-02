@@ -226,6 +226,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   (section 7). Suspected cause: the JavaScript renderer draws figures from cached rasters at
   bucketed densities and resamples them. To confirm with the raster cache disabled, then
   record as a deliberate difference or fix.
+- **A joint drag on Jay on a new app (repaired) stalls presentation for about 0.7 s** once
+  per drag (benchmark `drag` workload: latency p95 914 ms at the baseline, 651 ms with the
+  engine drawing; median 419 → 50 ms). No long task runs meanwhile: the app holds the frame
+  while asynchronous editor work completes. Not the old renderer's scene preparation (skipped
+  since `1d9e30ad`, unchanged latency). To trace in S5, where the engine evaluates for the
+  editor.
 - **Edit frames rebuild the whole scene's geometry** when any object changes, and every commit
   resets the whole frame cache (tick-range invalidation, `playback-retention.mjs`, is not
   ported). Fine at the sizes measured so far; the dense-drag benchmark will decide.
@@ -283,6 +289,52 @@ row at tick 129, a green spot peaks at 63,212,138 in the engine and 51,158,105 i
 WebGPU renderer; an outline at 255,127,127 against 243,125,124). Not yet classified beyond
 that; open in section 6. The start-up document (Blue, IK controllers) and the IK fixtures
 `startup-pinned` and `joined-stretch` pass every step.
+
+## 8. Work queue
+
+What remains, in dependency order. Each item ends with its parity results, docs and the
+deletion of what it replaces once nothing calls it. "Agent" marks items run by a subagent
+(at most two at a time); everything else is done in the main thread.
+
+**S3, the engine draws every document** (then the JavaScript renderer, playback workers and
+effect executors are deleted):
+
+1. Effects rendering: every filter type as GPU passes on WebGPU and WebGL2 (agent, running).
+2. Generators (particle effects): simulation (`vfx-generator*.mjs`) and drawing.
+3. 3D: spatial poses (`_stykSpatial`), perspective projection, surfaces (culling, depth
+   order, depth-tested faces), figure meshes (skinning, view targets), movieclip meshes,
+   depth-tested rendering with painter-order splitting.
+4. Property channels on native timelines (scalar, colour, style, effect parameters, camera,
+   scene) and pose channels, with animation origins.
+5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
+   transitions, Stick Nodes sprites, frame drafts, retained movieclip sources,
+   `runtime_segments` fallbacks.
+6. Every other drawing path through the engine: thumbnails, library previews, the camera
+   monitor, the drawing workspace (live strokes), export frames (S4).
+7. A CPU rasterizer for exports, thumbnails and devices without WebGPU or WebGL2.
+8. Delete the JavaScript renderer, raster caches, stand-ins and density buckets, playback
+   workers, effect executors; the eligibility gate disappears.
+
+**S1, formats:** the Rust codec in the app in place of Pyodide and the Python sidecar (agent,
+running); then the Python codec stays only as the development oracle. Later, opening and
+saving `.styk` through Rust once the engine owns the document (S5).
+
+**S4, export:** frames, PNG sequence, GIF, APNG, SVG, ZIP and video frames from the engine;
+the audio mix and WebCodecs encoders stay platform services.
+
+**S5, the engine owns the document:** `styk-edit` with history; commands ported group by
+group, each checked by a command-replay harness (the same calls run in the JavaScript
+editor and in Rust; documents compared byte for byte after every step, undo and redo
+included); handle positions, picking and snapping as engine queries; the JavaScript
+`Editor` becomes a facade whose unported commands run on a checked-out JSON copy and write
+back through the mirror until none remain. Then the JavaScript evaluation, geometry,
+IK, rig, movieclip and effect-model modules are deleted.
+
+**S6, drawing raster engine** (brush, fill, selection, tiles, history) in Rust.
+
+**S7:** remove dead machinery, final interface screenshots and comparison, final interleaved
+benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, documentation set (§5 of the
+task), `CHANGELOG.md`, Windows CI.
 
 ## Milestone log
 
