@@ -10,7 +10,7 @@ import {DRAWING_MAX_PIXELS} from '../drawing-model.mjs';
 import {TRANSFORM_BYTES} from '../drawing-transform.mjs';
 import {TILE_BLOB_PREFIX, tileBlobBytes} from '../drawing-tile-codec.mjs';
 import {drawingPNGBytes} from '../drawing-png.mjs';
-import {engineCall, tilesIn, maskIn, changesOut, tilesOut, rectOf, bytesOf, releaseDrawingEngineMemory} from './engine-drawing.mjs';
+import {engineCall, tilesIn, maskIn, changesOut, tilesOut, rectOf, bytesOf, releaseDrawingEngineMemory, drawingEngineGeneration} from './engine-drawing.mjs';
 
 const validRect = r => r && [r.x, r.y].every(Number.isSafeInteger) && Number.isInteger(r.width) && Number.isInteger(r.height) && r.width > 0 && r.height > 0 && r.width * r.height <= DRAWING_MAX_PIXELS;
 const rectArray = r => r ? Float64Array.of(r.x, r.y, r.width, r.height) : new Float64Array(0);
@@ -26,14 +26,17 @@ let publisher = null;
 let preview = null;
 // A publication in bounded batches: the encode cache must survive until its final request.
 let publishing = false;
+// The instance these caches belong to: a replaced instance (memory released, or a trap) drops them.
+let generation = drawingEngineGeneration();
 
 /** Answers one pixel-worker request; `post(message, transfer)` replies. Afterwards an
  * instance grown past its allowance is replaced (dropping the encoded-tile cache, which the
  * publication protocol refills), except between the batches of one publication; a preview
  * worker keeps its source cache instead. */
 export async function drawingEngineOperation(data, post = (message, transfer) => self.postMessage(message, transfer)) {
+  if (generation !== drawingEngineGeneration()) { publisher = null; preview = null; publishing = false; generation = drawingEngineGeneration(); }
   try { await operation(data, post); }
-  finally { if (!preview && !publishing && releaseDrawingEngineMemory()) publisher = null; }
+  finally { if (!preview && !publishing && releaseDrawingEngineMemory()) { publisher = null; generation = drawingEngineGeneration(); } }
 }
 
 async function operation(data, post) {

@@ -137,26 +137,33 @@ const fmt = v => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)
 const cell = values => `${fmt(median(values))} (${fmt(Math.min(...values))}–${fmt(Math.max(...values))})`;
 
 if (args.includes('--one')) {
-  // One workload on one engine in a fresh process: peak resident memory.
+  // One workload on one engine in a fresh process: the peak resident memory of the job
+  // alone (Linux: the peak is reset after the inputs are built, /proc/self/clear_refs).
   const [name, engine] = [option('--one'), option('--engine')];
-  const before = process.memoryUsage().rss;
+  const {readFileSync: read, writeFileSync: write} = await import('node:fs');
+  const status = key => Number(read('/proc/self/status', 'utf8').match(new RegExp(`${key}:\\s+(\\d+)`))[1]) * 1024;
+  // A fresh instance for the job: the inputs above were prepared with the module too.
+  engineModule.releaseDrawingEngineMemory(0);
+  globalThis.gc?.(); globalThis.gc?.();
+  write('/proc/self/clear_refs', '5');
+  const before = status('VmRSS'), wasmBefore = engineModule.drawingEngineMemory();
   const stroke = strokes.find(s => s.name === name), operation = operations.find(o => o[0] === name);
   if (stroke) runStroke(engine === 'rust' ? engineModule.StrokeEngine : StrokeEngine, stroke.job);
   else await runOperation(engine, operation[1]);
-  console.log(JSON.stringify({name, engine, rssBefore: before, maxRss: process.resourceUsage().maxRSS * 1024, wasmBytes: engine === 'rust' ? engineModule.drawingEngineMemory() : 0}));
+  console.log(JSON.stringify({name, engine, rssBefore: before, maxRss: status('VmHWM'), wasmBefore, wasmBytes: engine === 'rust' ? engineModule.drawingEngineMemory() : 0}));
   process.exit(0);
 }
 
 if (args.includes('--memory')) {
   const rows = [];
-  console.log('| Workload | JavaScript peak growth MiB | Rust peak growth MiB | Rust linear memory MiB |\n| --- | ---: | ---: | ---: |');
+  console.log('| Workload | JavaScript: peak resident growth MiB | Rust: peak resident growth MiB | Rust: linear memory growth MiB |\n| --- | ---: | ---: | ---: |');
   for (const name of [...strokes.map(s => s.name), ...operations.map(o => o[0])]) {
     const row = {name};
     for (const engine of ['javascript', 'rust']) {
       const result = spawnSync(process.execPath, ['--expose-gc', fileURLToPath(import.meta.url), '--one', name, '--engine', engine], {encoding: 'utf8', maxBuffer: 1 << 24});
       if (result.status !== 0) throw new Error(result.stderr);
       const line = JSON.parse(result.stdout.trim().split('\n').at(-1));
-      row[engine] = {peakMiB: (line.maxRss - line.rssBefore) / 2 ** 20, maxRssMiB: line.maxRss / 2 ** 20, wasmMiB: line.wasmBytes / 2 ** 20};
+      row[engine] = {peakMiB: (line.maxRss - line.rssBefore) / 2 ** 20, maxRssMiB: line.maxRss / 2 ** 20, wasmMiB: (line.wasmBytes - line.wasmBefore) / 2 ** 20};
     }
     rows.push(row);
     console.log(`| ${name} | ${row.javascript.peakMiB.toFixed(0)} | ${row.rust.peakMiB.toFixed(0)} | ${row.rust.wasmMiB.toFixed(0)} |`);

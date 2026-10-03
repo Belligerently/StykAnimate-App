@@ -94,7 +94,7 @@ export function engineCall(call) {
   try { return call(glue); }
   catch (error) {
     const key = typeof error?.message === 'string' && error.message.startsWith('errors.') ? error.message : null;
-    if (!key) { try { glue.__wbg_reset_state?.(); } catch { /* the next call reports its own failure */ } throw error; }
+    if (!key) { try { glue.__wbg_reset_state?.(); generation++; } catch { /* the next call reports its own failure */ } throw error; }
     let localized;
     try { localized = messageError(new Error(''), key, {}); } catch { localized = new Error(key); }
     throw localized;
@@ -111,12 +111,6 @@ export function tilesIn(list, {png = false} = {}) {
     else if (t.pixels == null) tiles.pushEmpty(t.tx, t.ty);
     else tiles.push(t.tx, t.ty, bytesOf(t.pixels));
   }
-  return tiles;
-}
-/** A worker's tile store in (its tiles in `Map` order). */
-export function storeIn(store) {
-  const tiles = new glue.Tiles();
-  for (const t of store) tiles.push(t.tx, t.ty, t.pixels);
   return tiles;
 }
 export function bytesOf(value) {

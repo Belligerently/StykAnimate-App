@@ -59,7 +59,11 @@ model, textures and selections. Published tiles are byte-identical: `zlib.rs` wr
 same deflate stream as `zlib-sync.mjs`, `png.rs` the same PNG. One known gap: `x ** y`
 for exponents other than 1, 2 and 0.5 (custom pressure-size and opacity curves) is the
 platform's `pow`, which in WebAssembly is the `libm` crate's; browsers already differ
-from each other there (D16).
+from each other there (D16). Measured natively with that `pow`
+(`cargo test -p styk-drawing --features libm-pow --test parity`): in the one fixture with
+such curves (size curve 1.7, opacity curve 0.6) the 607 dab shapes differ in their last
+digits and every pixel, batch and undo record is still identical; every other fixture is
+unaffected (all presets use exponent 1).
 
 ## Parity
 

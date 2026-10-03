@@ -122,7 +122,15 @@ pub fn pow(x: f64, y: f64) -> f64 {
     if y == 0.0 {
         return 1.0;
     }
-    x.powf(y)
+    // `--features libm-pow` measures natively what WebAssembly computes (the `libm` crate's pow).
+    #[cfg(feature = "libm-pow")]
+    {
+        libm::pow(x, y)
+    }
+    #[cfg(not(feature = "libm-pow"))]
+    {
+        x.powf(y)
+    }
 }
 
 /// `Math.log2(x)` (fdlibm's, as V8 and the `libm` crate have it).
