@@ -592,6 +592,8 @@ pub struct Document {
     pub unsupported: Vec<String>,
     /// Non-fatal notes from loading.
     pub notes: Vec<String>,
+    /// A figure has an animation origin ([`crate::origin`]): native intervals correct roots.
+    pub origins: bool,
 }
 
 #[derive(Clone, Debug)]

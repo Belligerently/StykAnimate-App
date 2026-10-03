@@ -62,8 +62,9 @@ pub struct Item {
     pub points: (u32, u32),
     /// The object's colour override (for gradient end colours).
     pub color: u32,
-    /// The object's colour transition, which replaces `color` when mixing colours.
-    pub transition: Option<Arc<ColorTransition>>,
+    /// The object's colour transition (index into [`Scene::transitions`], or
+    /// `NO_TRANSITION`), which replaces `color` when mixing colours.
+    pub transition: u32,
     pub scale: f64,
     pub image_text_flags: bool,
     /// Movieclip nesting: index into [`Scene::chains`], or `NO_CHAIN`.
@@ -81,6 +82,7 @@ pub struct Item {
 
 pub const NO_CHAIN: u32 = u32::MAX;
 pub const NO_MESH: u32 = u32::MAX;
+pub const NO_TRANSITION: u32 = u32::MAX;
 
 impl Item {
     /// `depthSurface(item)`: the item is drawn depth tested against the depth
@@ -254,6 +256,8 @@ pub struct Scene {
     pub meshes: Vec<crate::spatial::SharedMesh>,
     /// Depths of depth-tested surfaces ([`Item::depth`]).
     pub depths: Vec<f64>,
+    /// Colour transitions of the objects that have one ([`Item::transition`]).
+    pub transitions: Vec<ColorTransition>,
 }
 
 impl Scene {
@@ -335,11 +339,13 @@ struct Built {
     /// Evaluated meshes and surface depths (local indices).
     meshes: Vec<crate::spatial::SharedMesh>,
     depths: Vec<f64>,
+    /// Colour transitions (local indices).
+    transitions: Vec<ColorTransition>,
 }
 
 impl Built {
     fn new(geometry: ObjectGeometry) -> Built {
-        Built { geometry, items: Vec::new(), points: Vec::new(), figures: Vec::new(), owners: Vec::new(), owner_scales: Vec::new(), chains: Vec::new(), clip_vfx: Vec::new(), meshes: Vec::new(), depths: Vec::new() }
+        Built { geometry, items: Vec::new(), points: Vec::new(), figures: Vec::new(), owners: Vec::new(), owner_scales: Vec::new(), chains: Vec::new(), clip_vfx: Vec::new(), meshes: Vec::new(), depths: Vec::new(), transitions: Vec::new() }
     }
 }
 
@@ -377,6 +383,10 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let plan = &fig.plan;
     let black_override = version < 5 && !fig.segment_colors;
     let mut segment_items: Vec<Item> = Vec::with_capacity(n);
+    let (transition, transitions) = match &obj.color_transition {
+        Some(c) => (0, vec![**c]),
+        None => (NO_TRANSITION, Vec::new()),
+    };
     // Rigged figures evaluate in dependency order with their rig context.
     let rig_plan = plan.rig.clone();
     let mut rig_states: Vec<Option<crate::rig::State>> = if rig_plan.is_some() { vec![None; n] } else { Vec::new() };
@@ -493,7 +503,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             z: seg.z,
             points: (p0, p1),
             color: obj.color,
-            transition: obj.color_transition.clone(),
+            transition,
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -650,7 +660,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             z,
             points: range,
             color: obj.color,
-            transition: obj.color_transition.clone(),
+            transition,
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -695,7 +705,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                     z: drawable.z,
                     points: (0, 0),
                     color: obj.color,
-                    transition: obj.color_transition.clone(),
+                    transition,
                     scale,
                     image_text_flags: obj.image_text_flags,
                     chain: NO_CHAIN,
@@ -745,6 +755,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     built.points = points;
     built.meshes = meshes;
     built.depths = surface_depths;
+    built.transitions = transitions;
     built
 }
 
@@ -790,6 +801,13 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
     let end = [root[0] + 40.0 * scale * styk_math::cos(angle), root[1] + 40.0 * scale * styk_math::sin(angle)];
     let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
+    let transition = match &obj.color_transition {
+        Some(c) => {
+            built.transitions.push(**c);
+            0
+        }
+        None => NO_TRANSITION,
+    };
     // `Math.floor(local)` clamped to the forms the clip has.
     let form = (local.floor().max(0.0) as usize).min(meshes.len() - 1);
     let mesh = &meshes[form];
@@ -821,7 +839,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
             z: drawable.z,
             points: (0, 0),
             color: obj.color,
-            transition: obj.color_transition.clone(),
+            transition,
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -949,6 +967,8 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     built.owner_scales.extend(source.owner_scales.iter().map(|s| s * scale.abs()));
     built.clip_vfx.push(source.vfx.clone());
     built.clip_vfx.extend_from_slice(&source.clip_vfx);
+    // The clip's items keep their indices into its own transitions.
+    built.transitions = source.transitions.clone();
     // Chain 0..n of the source shift by one owner and gain this clip as outermost.
     let hidden = clip.document.layers.as_ref().map(|l| l.hidden.clone()).unwrap_or_default();
     let mut chain_ids: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
@@ -1167,6 +1187,8 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
         scene.meshes.extend(b.meshes);
         let depth_base = scene.depths.len() as u32;
         scene.depths.extend_from_slice(&b.depths);
+        let transition_base = scene.transitions.len() as u32;
+        scene.transitions.extend_from_slice(&b.transitions);
         for mut it in b.items {
             it.points = (it.points.0 + base, it.points.1 + base);
             it.depth = (it.depth.0 + depth_base, it.depth.1 + depth_base);
@@ -1178,6 +1200,9 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
             }
             if it.chain != NO_CHAIN {
                 it.chain += chain_base;
+            }
+            if it.transition != NO_TRANSITION {
+                it.transition += transition_base;
             }
             scene.items.push(it);
         }

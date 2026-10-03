@@ -457,7 +457,7 @@ fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: boo
 /// `correctAnimationOrigins`: every unjoined figure with an animation origin is placed so
 /// that its pivot lands where its pose says, as each native interval leaves it.
 fn correct_origins(doc: &Document, frame: &mut Frame) {
-    if !frame.objects.iter().any(|o| o.origin.is_some()) {
+    if !doc.origins {
         return;
     }
     for object in frame.objects.iter_mut() {

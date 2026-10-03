@@ -289,7 +289,9 @@ impl Loader {
             unsupported: Vec::new(),
             notes: Vec::new(),
             figure_index: HashMap::new(),
+            origins: false,
         };
+        doc.origins = doc.figures.iter().any(|f| f.origin.is_some());
         doc.reindex_figures();
         self.resolve_styles(&mut doc);
         Ok(doc)
