@@ -39,7 +39,7 @@ export function drawingWorkerURL(url) {
   return next;
 }
 
-let loading = null, glue = null, failure = null, exports = null;
+let loading = null, glue = null, failure = null;
 
 async function load() {
   const module = new URL('./pkg/styk_drawing.js', import.meta.url);
@@ -47,8 +47,8 @@ async function load() {
   if (globalThis.process?.versions?.node && !globalThis.WorkerGlobalScope) {
     // Node (tests, tools): read the module from disk; fetch() has no file URLs there.
     const {readFile} = await import('node:fs/promises');
-    exports = await bindings.default({module_or_path: await readFile(new URL('./pkg/styk_drawing_bg.wasm', import.meta.url))});
-  } else exports = await bindings.default();
+    await bindings.default({module_or_path: await readFile(new URL('./pkg/styk_drawing_bg.wasm', import.meta.url))});
+  } else await bindings.default();
   if (bindings.drawingApiVersion() !== API_VERSION) throw new Error(`The drawing engine module has API ${bindings.drawingApiVersion()}, this page expects ${API_VERSION}. Reload the page.`);
   return bindings;
 }
@@ -69,7 +69,24 @@ export function drawingEngine() { return glue; }
 /** Why the module did not load, if it failed. */
 export function drawingEngineFailure() { return failure; }
 /** Bytes of linear memory the module holds in this thread (it grows, it never shrinks). */
-export function drawingEngineMemory() { return exports?.memory?.buffer?.byteLength ?? 0; }
+export function drawingEngineMemory() { return glue ? glue.memoryBytes() : 0; }
+
+/** What a drawing worker's instance may keep after a job: its working set (the largest
+ * job's) stays allocated until the instance is replaced, and the pixel worker's encoded
+ * tile cache (at most 64 MiB) lives in it. */
+export const DRAWING_ENGINE_RETAINED_BYTES = 256 * 1024 * 1024;
+let generation = 0;
+/** Replaces this thread's instance with a fresh one when it holds more than `limit`
+ * bytes, releasing the memory; objects of the old instance become invalid (callers drop
+ * them: `drawingEngineGeneration()` tells). Never call it while a stroke is open. */
+export function releaseDrawingEngineMemory(limit = DRAWING_ENGINE_RETAINED_BYTES) {
+  if (!glue || glue.memoryBytes() <= limit) return false;
+  glue.__wbg_reset_state();
+  generation++;
+  return true;
+}
+/** Increases each time the instance is replaced. */
+export function drawingEngineGeneration() { return generation; }
 
 /** Runs `call` on the module; a module error becomes the editor's localized error. A trap
  * (a panic aborts) leaves the instance unusable: it is replaced before the error is thrown. */
@@ -151,8 +168,18 @@ const settingsJSON = settings => JSON.stringify(settings ?? {}, (key, value) => 
 
 /** `StrokeEngine` (drawing-stroke-engine.mjs) in Rust, the same calls and answers. */
 export class StrokeEngine {
-  constructor() { this.engine = engineCall(g => new g.Strokes()); }
-  begin(id, settings) { engineCall(() => this.engine.begin(id, settingsJSON(settings), maskIn(settings?.mask))); }
+  constructor() { this.open = new Set(); this.renew(); }
+  renew() { this.engine = engineCall(g => new g.Strokes()); this.generation = generation; }
+  /** Between strokes, an instance grown past its allowance is replaced. */
+  settle() {
+    if (this.open.size) return;
+    if (releaseDrawingEngineMemory()) this.renew();
+  }
+  begin(id, settings) {
+    if (this.generation !== generation) this.renew();
+    this.open.add(id);
+    engineCall(() => this.engine.begin(id, settingsJSON(settings), maskIn(settings?.mask)));
+  }
   dabs(id, seq, dabs, tiles, tail) {
     const seeds = tilesIn(tiles);
     let output;
@@ -166,10 +193,15 @@ export class StrokeEngine {
     return {tiles: changed, dirty};
   }
   end(id) {
-    const output = engineCall(() => this.engine.end(id));
-    return output ? changesOut(output) : null;
+    try {
+      const output = engineCall(() => this.engine.end(id));
+      return output ? changesOut(output) : null;
+    } finally { this.open.delete(id); this.settle(); }
   }
-  cancel(id) { engineCall(() => this.engine.cancel(id)); }
+  cancel(id) {
+    try { engineCall(() => this.engine.cancel(id)); }
+    finally { this.open.delete(id); this.settle(); }
+  }
 }
 
 // ---------------------------------------------------------------- the brush model
@@ -235,3 +267,8 @@ export function encodeHistoryChunk(tiles) {
 export function decodeHistoryChunk(bytes) {
   return changesOut(engineCall(g => g.decodeHistoryChunk(bytesOf(bytes))));
 }
+/** The history worker's codec: stateless, so its instance is trimmed after every chunk. */
+export const historyCodec = {
+  encode(tiles) { try { return encodeHistoryChunk(tiles); } finally { releaseDrawingEngineMemory(); } },
+  decode(bytes) { try { return decodeHistoryChunk(bytes); } finally { releaseDrawingEngineMemory(); } },
+};

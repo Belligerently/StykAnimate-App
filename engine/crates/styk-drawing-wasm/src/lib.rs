@@ -40,6 +40,20 @@ fn start() {
     std::panic::set_hook(Box::new(|info| console_error(&format!("StykAnimate drawing engine panic: {info}"))));
 }
 
+/// Bytes of linear memory this instance holds. It grows with the largest working set and
+/// never shrinks; `src/engine/engine-drawing.mjs` replaces an instance that holds too much.
+#[wasm_bindgen(js_name = memoryBytes)]
+pub fn memory_bytes() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        (core::arch::wasm32::memory_size::<0>() * 65536) as f64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0.0
+    }
+}
+
 /// The version of the calls below, checked by `src/engine/engine-drawing.mjs`.
 #[wasm_bindgen(js_name = drawingApiVersion)]
 pub fn drawing_api_version() -> u32 {

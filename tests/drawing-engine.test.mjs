@@ -8,7 +8,7 @@ import {readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import english from '../src/locales/en.mjs';
-import {loadDrawingEngine, StrokeEngine as EngineStrokes, RustBrushStroke, encodeHistoryChunk as engineEncode, decodeHistoryChunk as engineDecode, drawingEngineEnabled} from '../src/engine/engine-drawing.mjs';
+import {loadDrawingEngine, StrokeEngine as EngineStrokes, RustBrushStroke, encodeHistoryChunk as engineEncode, decodeHistoryChunk as engineDecode, drawingEngineEnabled, drawingEngineMemory, releaseDrawingEngineMemory, drawingEngineGeneration} from '../src/engine/engine-drawing.mjs';
 import {drawingEngineOperation} from '../src/engine/engine-drawing-worker.mjs';
 import {drawingWorkerOperation} from '../src/drawing-worker-operations.mjs';
 import {materializeDrawingTiles} from '../src/drawing-preparation.mjs';
@@ -168,4 +168,28 @@ test('every error the drawing engine can raise has the editor\'s message', () =>
     for (const file of readdirSync(path.join(root, dir))) for (const [, key] of readFileSync(path.join(root, dir, file), 'utf8').matchAll(/"(errors\.[A-Za-z0-9.]+)"/g)) keys.add(key);
   assert.ok(keys.size > 50);
   assert.deepEqual([...keys].filter(key => !Object.hasOwn(english, key)), []);
+});
+
+// Last: it replaces this thread's instance.
+test('an instance gives back the memory a large job grew it to, and work goes on', async () => {
+  const art = artwork(11), replies = [], generation = drawingEngineGeneration();
+  // A 9-megapixel blur needs more than an instance may keep: the pixel worker replaces it afterwards.
+  await drawingEngineOperation({id: 1, kind: 'filter', tiles: tilesOf(art), bounds: {x: -1500, y: -1500, width: 3000, height: 3000}, options: {kind: 'blur', radius: 8}}, message => replies.push(message));
+  assert.ok(!replies[0].error, replies[0].error);
+  assert.equal(drawingEngineGeneration(), generation + 1, 'the grown instance was replaced');
+  assert.ok(drawingEngineMemory() < 32 * 2 ** 20, `the replacement starts small (${drawingEngineMemory()} bytes)`);
+  // A 2-megapixel blur stays within the allowance; a smaller limit releases it.
+  await drawingEngineOperation({id: 2, kind: 'filter', tiles: tilesOf(art), bounds: {x: -700, y: -700, width: 1400, height: 1400}, options: {kind: 'blur', radius: 8}}, message => replies.push(message));
+  const grown = drawingEngineMemory();
+  assert.ok(grown > 64 * 2 ** 20 && drawingEngineGeneration() === generation + 1, `kept within the allowance (${grown} bytes)`);
+  assert.equal(releaseDrawingEngineMemory(64 * 2 ** 20), true);
+  assert.ok(drawingEngineMemory() < 32 * 2 ** 20);
+  assert.equal(releaseDrawingEngineMemory(64 * 2 ** 20), false, 'a small instance is kept');
+  // The pixel worker answers on the fresh instance; a stroke engine renews itself between strokes.
+  await same('fill after the replacement', {id: 3, kind: 'fill', tiles: tilesOf(art), bounds: {x: -160, y: -128, width: 448, height: 384}, options: {x: 20, y: 30, color: [9, 9, 9, 255]}});
+  const strokes = new EngineStrokes(), reference = new StrokeEngine();
+  for (const engine of [strokes, reference]) engine.begin(4, {size: 12, seed: 1});
+  const dab = {x: 10.5, y: 12.25, radius: 6, opacity: 1, flow: 1, cos: 1, sin: 0, left: 4, top: 6, right: 17, bottom: 19};
+  assert.deepStrictEqual(strokes.dabs(4, 1, [dab], [{tx: 0, ty: 0, pixels: null}]), reference.dabs(4, 1, [dab], [{tx: 0, ty: 0, pixels: null}]));
+  assert.deepStrictEqual(strokes.end(4), reference.end(4));
 });

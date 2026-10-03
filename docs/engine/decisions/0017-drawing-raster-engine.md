@@ -60,6 +60,9 @@ stroke worker returns, every undo record, tile, PNG, blob and chunk is byte-iden
 ## Consequences
 
 - A third WebAssembly module ships; each drawing worker instantiates its own.
+- Linear memory never shrinks: a worker replaces an instance that grew past 256 MiB after a
+  job (between strokes for the stroke worker), so an idle worker cannot keep the peak of its
+  largest job, as JavaScript's collector would not.
 - `x ** y` with exponents other than 1, 2 and 0.5 (custom pressure-size and opacity curves)
   uses the platform's `pow`: glibc natively (what Node uses on Linux), the `libm` crate's in
   WebAssembly. Browsers already disagree among themselves here (D16); the fixtures compare

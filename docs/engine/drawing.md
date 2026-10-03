@@ -17,9 +17,20 @@ JavaScript only through `src/engine/engine-drawing.mjs` and `src/engine/engine-d
 
 Each worker instantiates its own module (no threads, no shared memory, stable Rust), so a
 worker is still terminated to cancel its job and its memory goes with it. Tiles enter the
-module one copy each (`Tiles`) and leave one copy each (`Output`, moved out into fresh,
-transferable buffers); every module object is freed after the call. Canvas work (preview
-bitmaps, thumbnail scaling) and base64 stay in JavaScript.
+module one copy each (`Tiles`, owned buffers) and leave one copy each (`Output`, copied into
+fresh, transferable arrays); a commit's full replacement tiles return as the buffers they
+arrived in. Every module object is freed after the call. Canvas work (preview bitmaps,
+thumbnail scaling) and base64 stay in JavaScript.
+
+Memory: a module's linear memory grows to its largest job's working set and never shrinks,
+where JavaScript's garbage collector would release it. So after each job a pixel worker whose
+instance holds more than `DRAWING_ENGINE_RETAINED_BYTES` (256 MiB, room for the 64 MiB
+encoded-tile cache) replaces it with a fresh one (`releaseDrawingEngineMemory`); the encode
+cache is refilled through the publication protocol's resend of missing tiles. The stroke
+worker does the same between strokes, the history worker after every chunk. A preview worker
+keeps its source cache (it is bounded by the viewport and accounted by its client). Jobs
+themselves are bounded by the same working-memory budgets as before (`maxBytes`, the owner's
+hard budget), checked by the same code.
 
 Still JavaScript, and why: the authoritative `TileStore` on the interface thread, its
 memory accounting (`drawing-tile-memory.mjs`) and history orchestration (`drawing-history.mjs`,
