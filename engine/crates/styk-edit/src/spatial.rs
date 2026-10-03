@@ -5,8 +5,8 @@
 //! hinges (`getSpatialMotion`, `setSpatialMotion`), and the canvas drags: a bone turned
 //! flat on screen or swung in depth (`poseSpatialJoint`, `_flatSpatialJoint`,
 //! `_arcSpatialJoint`), twisted about its axis (`twistSpatialJoint`), a mechanism moved
-//! along its track (`_moveMechanicalJoint`). 3D IK controllers (refused by the IK gate)
-//! and pose choices are not ported.
+//! along its track (`_moveMechanicalJoint`). Steering a planted 3D limb's knee, twisting
+//! with 3D IK and pose choices are not ported.
 
 use std::sync::Arc;
 
@@ -290,7 +290,9 @@ impl Editor {
         // `wholeFigure` rewrites the controllers from the table the figure had before the
         // edit (those without a 3D target unchanged).
         let controllers = if whole { context.object.get("_stykIK").filter(|t| t.truthy()).cloned() } else { None };
+        let figure = context.figure.clone();
         self.object_edit_with("Rotate articulated joint", true, |editor| {
+            crate::ik::release_spatial_chain(editor.frame_object_mut(slot).unwrap(), &figure, index);
             let sign = if editor.frame_objects()[slot].get("image_text_flags").is_some_and(Value::truthy) { -1.0 } else { 1.0 };
             if let Some(bend) = get("bend") {
                 editor.rotate_joint_by(slot, index, (bend - before.bend) * sign, true, false)?;
@@ -411,6 +413,10 @@ impl Editor {
             return self.move_mechanical_joint(&context, index, x, y, anchor);
         }
         let stretch = flag("stretch");
+        // A planted knee or elbow steers its 3D bend plane (`setSpatialIKPole`).
+        if !stretch && planted_limb_base(&context, index) {
+            return Err(EditError::Unported("steering a planted 3D limb".into()));
+        }
         let kind = if flag("depth") && !stretch { "arc" } else { "flat" };
         let uid = uid(&context.object).unwrap_or(0);
         if let Some(drag) = self.drag.as_mut() {
@@ -499,7 +505,9 @@ impl Editor {
         let handle = context.figure.segments[index].id;
         let slot = context.slot;
         let lengths: Vec<Value> = context.figure.segments.iter().map(|s| Value::Num(s.length)).collect();
+        let figure = context.figure.clone();
         self.object_edit_with(label, true, |editor| {
+            crate::ik::release_spatial_chain(editor.frame_object_mut(slot).unwrap(), &figure, index);
             let sign = if editor.frame_objects()[slot].get("image_text_flags").is_some_and(Value::truthy) { -1.0 } else { 1.0 };
             editor.rotate_joint_by(slot, index, (pose.bend - before.bend) * sign, true, false)?;
             let record = editor.frame_object_mut(slot).unwrap();
@@ -580,6 +588,9 @@ impl Editor {
         if !x.is_finite() || !y.is_finite() || !pixel.is_finite() || pixel <= 0.0 {
             return Ok(false);
         }
+        if crate::ik::spatial_ik_at(&context.object, &context.figure, index) {
+            return Err(EditError::Unported("twisting with 3D IK".into()));
+        }
         let mut gesture = self.bone_gesture(&context, index, "twist")?;
         let start = *gesture.start.get_or_insert([x, y]);
         self.keep_gesture(format!("twist:{}:{index}", uid(&context.object).unwrap_or(0)), Gesture::Bone(gesture.clone()));
@@ -655,4 +666,22 @@ impl Editor {
         let value = [motion.min, motion.max].into_iter().fold((lo + hi) / 2.0, |v, end| if distance(end) <= distance(v) { end } else { v });
         Ok(self.set_spatial_motion(value, false)? || true)
     }
+}
+
+/// Whether a pinned automatic 3D controller drives a two-bone limb that starts at `index`.
+fn planted_limb_base(context: &Context, index: usize) -> bool {
+    let figure = &context.figure;
+    let skeleton = styk_eval::ik::Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
+    context.object.get("_stykIK").and_then(Value::as_obj).is_some_and(|table| {
+        table.iter().any(|(id, c)| {
+            let truthy = |k: &str| c.get(k).is_some_and(Value::truthy);
+            let Ok(handle) = id.parse::<u32>() else { return false };
+            if !(truthy("enabled") && truthy("pinned") && truthy("spatialTarget")) || c.get("bendDirection").and_then(Value::as_f64) != Some(0.0) {
+                return false;
+            }
+            let length = c.get("chainLength").and_then(Value::as_f64).unwrap_or(2.0).max(0.0).min(u32::MAX as f64) as u32;
+            let chain = skeleton.chain(handle, length);
+            chain.len() == 2 && chain[0] == index
+        })
+    })
 }

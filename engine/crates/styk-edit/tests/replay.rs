@@ -23,6 +23,8 @@ const PORTED: &[&str] = &[
     "spatial-mesh-mechanism-sheet", "spatial-clip-mesh-sheet",
     // 3D bones: turned, dragged, twisted; mechanisms' hinges and slides.
     "spatial-turn-sheet", "spatial-mechanism-sheet", "spatial-drag-sheet", "spatial-mechanism-drag-sheet",
+    // A planted 3D leg (spatial IK target): Both, a side, mirrored.
+    "ik-spatial-sheet", "ik-spatial-side-sheet", "ik-spatial-mirrored-sheet",
 ];
 
 #[test]

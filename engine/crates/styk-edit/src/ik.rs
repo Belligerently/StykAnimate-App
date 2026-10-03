@@ -8,7 +8,9 @@
 //! (`_rememberIKBends`) and a stretched end followed by its pin (`_followStretchedIK`).
 //! Across joined figures the same runs on the assembly's temporary skeleton
 //! (`styk_eval::ik::joined::Assembly`: `context()`, `_ikPoseSlots`, `poseGraph`).
-//! 3D controllers answer `Unported` (the gate below).
+//! With 3D controllers (`spatialTarget`) every call runs except the paths that need their
+//! own solving: posing a 3D target, steering a planted 3D limb's knee, twisting with 3D IK
+//! and turning a whole figure (they answer `Unported`).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -82,9 +84,6 @@ impl Editor {
         let all: Vec<(std::sync::Arc<str>, Value)> = objects.iter().flat_map(controllers).collect();
         if all.is_empty() {
             return Ok(None);
-        }
-        if all.iter().any(|(_, c)| truthy(c, "spatialTarget")) {
-            return Ok(Some("with 3D IK".into()));
         }
         if !GESTURES.contains(&method) {
             return Ok(None);
@@ -407,9 +406,6 @@ impl Editor {
                     continue;
                 }
                 let handle = figure.segments[i].id;
-                if current.path(&["spatialFollowers", &handle.to_string()]).is_some_and(Value::truthy) {
-                    return Err(unported("with 3D followers"));
-                }
                 let next = next.get_or_insert_with(|| {
                     let mut next = current.as_obj().cloned().unwrap_or_default();
                     for key in ["followers", "joinedFollowers"] {
@@ -420,6 +416,13 @@ impl Editor {
                 let mut table = next.get("followers").and_then(Value::as_obj).cloned().unwrap_or_default();
                 assign(&mut table, &handle.to_string(), Value::Num(followers.get(&handle).copied().unwrap_or(f64::NAN) + delta));
                 next.set("followers", Value::object(table));
+                // `next.spatialFollowers = {...current.spatialFollowers, [handle]: turned}`: from
+                // the controller as it was, so of several turned only the last stays turned.
+                if let Some(q) = current.path(&["spatialFollowers", &handle.to_string()]).filter(|q| q.truthy()) {
+                    let mut spatial = current.get("spatialFollowers").and_then(Value::as_obj).cloned().unwrap_or_default();
+                    assign(&mut spatial, &handle.to_string(), Value::nums(&turn_quaternion(q, delta)));
+                    next.set("spatialFollowers", Value::object(spatial));
+                }
             }
             if let Some(next) = next {
                 set_controller(self.frame_object_mut(slot).unwrap(), &key, next);
@@ -453,10 +456,6 @@ impl Editor {
                 if (!include_joint && child.slot == slot && child.index == joint) || !selected.contains(&(child.slot, child.index)) {
                     continue;
                 }
-                let spatial = if child.slot == owner.slot { vec!["spatialFollowers".to_string(), child.handle.to_string()] } else { vec!["joinedSpatialFollowers".to_string(), child.uid.to_string(), child.handle.to_string()] };
-                if current.path(&spatial.iter().map(String::as_str).collect::<Vec<_>>()).is_some_and(Value::truthy) {
-                    return Err(unported("with 3D followers"));
-                }
                 let next = next.get_or_insert_with(|| {
                     let mut next = current.as_obj().cloned().unwrap_or_default();
                     for key in ["followers", "joinedFollowers"] {
@@ -465,16 +464,30 @@ impl Editor {
                     next
                 });
                 let angle = Value::Num(followers.get(&skeleton.segments[i].id).copied().unwrap_or(f64::NAN) + delta);
+                let (uid_key, handle_key) = (child.uid.to_string(), child.handle.to_string());
                 if child.slot == owner.slot {
                     let mut table = next.get("followers").and_then(Value::as_obj).cloned().unwrap_or_default();
-                    assign(&mut table, &child.handle.to_string(), angle);
+                    assign(&mut table, &handle_key, angle);
                     next.set("followers", Value::object(table));
+                    if let Some(q) = current.path(&["spatialFollowers", &handle_key]).filter(|q| q.truthy()) {
+                        let mut spatial = current.get("spatialFollowers").and_then(Value::as_obj).cloned().unwrap_or_default();
+                        assign(&mut spatial, &handle_key, Value::nums(&turn_quaternion(q, delta)));
+                        next.set("spatialFollowers", Value::object(spatial));
+                    }
                 } else {
                     let mut table = next.get("joinedFollowers").and_then(Value::as_obj).cloned().unwrap_or_default();
-                    let mut inner = table.get(&child.uid.to_string()).and_then(Value::as_obj).cloned().unwrap_or_default();
-                    assign(&mut inner, &child.handle.to_string(), angle);
-                    assign(&mut table, &child.uid.to_string(), Value::object(inner));
+                    let mut inner = table.get(&uid_key).and_then(Value::as_obj).cloned().unwrap_or_default();
+                    assign(&mut inner, &handle_key, angle);
+                    assign(&mut table, &uid_key, Value::object(inner));
                     next.set("joinedFollowers", Value::object(table));
+                    if let Some(q) = current.path(&["joinedSpatialFollowers", &uid_key, &handle_key]).filter(|q| q.truthy()) {
+                        // `{...next.joinedSpatialFollowers, [uid]: {...next…[uid], [handle]: turned}}`
+                        let mut spatial = next.get("joinedSpatialFollowers").and_then(Value::as_obj).cloned().unwrap_or_default();
+                        let mut inner = spatial.get(&uid_key).and_then(Value::as_obj).cloned().unwrap_or_default();
+                        assign(&mut inner, &handle_key, Value::nums(&turn_quaternion(q, delta)));
+                        assign(&mut spatial, &uid_key, Value::object(inner));
+                        next.set("joinedSpatialFollowers", Value::object(spatial));
+                    }
                 }
             }
             if let Some(next) = next {
@@ -767,6 +780,53 @@ fn set_controller(record: &mut Obj, key: &str, next: Obj) {
     let mut table = record.get("_stykIK").and_then(Value::as_obj).cloned().unwrap_or_default();
     assign(&mut table, key, Value::object(next));
     record.set("_stykIK", Value::object(table));
+}
+
+/// `quatMultiply(spatialQuaternion(delta, 0, 0), q)`: a follower's world orientation turned in the view plane.
+fn turn_quaternion(q: &Value, delta: f64) -> [f64; 4] {
+    let q = q.numbers().unwrap_or_default();
+    let q = [q.first().copied().unwrap_or(f64::NAN), q.get(1).copied().unwrap_or(f64::NAN), q.get(2).copied().unwrap_or(f64::NAN), q.get(3).copied().unwrap_or(f64::NAN)];
+    styk_eval::rig::quat_multiply(styk_eval::rig::spatial_quaternion(delta, 0.0, 0.0), q)
+}
+
+/// `_releaseSpatialChain(object, index)`: posing a bone by hand takes its limb from a
+/// planted 3D controller whose chain holds it.
+pub(crate) fn release_spatial_chain(record: &mut Obj, figure: &styk_eval::doc::Figure, index: usize) {
+    let Some(table) = record.get("_stykIK").and_then(Value::as_obj).cloned() else { return };
+    let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
+    let mut changed = table.clone();
+    let mut any = false;
+    for (id, c) in table.iter() {
+        if !(truthy(c, "enabled") && truthy(c, "pinned") && truthy(c, "spatialTarget")) {
+            continue;
+        }
+        let Ok(handle) = id.parse::<u32>() else { continue };
+        let length = c.get("chainLength").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        if length.is_nan() || length < 0.0 || !skeleton.chain(handle, length.min(u32::MAX as f64) as u32).contains(&index) {
+            continue;
+        }
+        let mut next = c.as_obj().cloned().unwrap_or_default();
+        next.set("pinned", Value::Bool(false));
+        assign(&mut changed, id, Value::object(next));
+        any = true;
+    }
+    if any {
+        record.set("_stykIK", Value::object(changed));
+    }
+}
+
+/// Whether the figure has a planted 3D controller (`spatialTarget`) driving a limb that
+/// starts at `index` (a knee or elbow drag steers its bend), or one ending at `index`.
+pub(crate) fn spatial_ik_at(object: &Value, figure: &styk_eval::doc::Figure, index: usize) -> bool {
+    let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
+    controllers(object).iter().any(|(id, c)| {
+        let Ok(handle) = id.parse::<u32>() else { return false };
+        if !truthy(c, "enabled") || !truthy(c, "spatialTarget") {
+            return false;
+        }
+        let length = c.get("chainLength").and_then(Value::as_f64).unwrap_or(2.0).max(0.0).min(u32::MAX as f64) as u32;
+        skeleton.index(handle) == Some(index) || skeleton.chain(handle, length).contains(&index)
+    })
 }
 
 /// An array index as JavaScript objects enumerate them: first, in ascending order.

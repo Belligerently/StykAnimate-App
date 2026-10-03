@@ -354,6 +354,9 @@ impl Editor {
             if segments.iter().any(|s| s.get("_stykRig").is_some()) {
                 return Err(EditError::Unported("posing an IK target on a rigged figure".into()));
             }
+            if object.path(&["_stykIK", &handle.to_string(), "spatialTarget"]).is_some_and(Value::truthy) {
+                return Err(EditError::Unported("posing a 3D IK target".into()));
+            }
             return self.pose_ik_target(slot, handle as u32, x, y);
         }
         let Some(segment) = segments.get(joint) else { return Ok(false) };

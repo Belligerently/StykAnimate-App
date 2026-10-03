@@ -355,6 +355,13 @@ scenario('figures-layers-sheet', app, [
     ['beginDrag', 'Pose figure'], ['poseJoint', ...at(400, 0)], ['commitDrag'],
     ['@select', 1, 14], ['poseJoint', 350, 250], ['@select', 1, 5], ['beginDrag', 'Pose figure'], ['poseJoint', 330, 160], ['commitDrag'], ['undo'], ['redo'],
   ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json');
+  // A planted 3D leg (a spatial IK target): moves, keys and duplicates; turning the body;
+  // turning the thigh releases the leg; posing the foot plants its new orientation.
+  for (const fixture of ['spatial', 'spatial-side', 'spatial-mirrored']) scenario(`ik-${fixture}-sheet`, app, [
+    ['@select', 1, -1], ['moveSelection', 10, 5], ['rotateSelection', 0.1], ['@seek', 2], ['sheetInsertKey', ['layer-1'], 2], ['duplicateFigure'], ['undo'],
+    ['@select', 1, 3], ['rotateJoint', 0.2], ['@select', 1, 12], ['beginDrag', 'Pose figure'], ['poseJoint', 330, 300], ['poseJoint', 340, 310], ['commitDrag'],
+    ['rotateJoint', 0.3], ['rotateJoint', 0.25, {isolate: true}], ['@select', 1, 6], ['rotateJoint', 0.15], ['undo'], ['undo'], ['redo'],
+  ], `../../crates/styk-eval/tests/fixtures/ik/${fixture}.json`);
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],
