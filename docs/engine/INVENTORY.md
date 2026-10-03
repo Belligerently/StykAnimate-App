@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 72 | 13 | 1 | 0 | 0 | 0 % | 31 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 71 | 14 | 1 | 0 | 0 | 0 % | 35 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4064 KiB | 241 | 75 | 17 | 22 | 1 | 16 % | 33 % | 0 % |
+| **Total** | 356 | 4064 KiB | 240 | 76 | 17 | 22 | 1 | 16 % | 34 % | 0 % |
 
 ## Engine modules
 
@@ -84,7 +84,7 @@ Engine logic: ported to Rust.
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal), removePolygon, editDefinition (styk-edit/src/polygons.rs); polygon colour and opacity on a figure on show, surfaces, figure style and the builder's segment commands still JS |
-| `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
+| `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
 | `src/editor-camera.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-sparse.mjs` | `styk-edit` | js | commands and history |
@@ -106,11 +106,11 @@ Engine logic: ported to Rust.
 | `src/editor-layer-focus.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-folders.mjs` | `styk-edit` | ported | createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); getLayerFolders reads the state |
 | `src/editor-layer-migration.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard (sheetCopyFrames, sheetPasteFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, transfer between layers, channel and range commands still JS |
+| `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard and frames dragged between rows (sheetCopyFrames, sheetPasteFrames, sheetTransferFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, channel and range commands still JS |
 | `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-motion-path.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-movieclips.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames and the other commands still JS |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: adding a figure at the playhead on a layer sheet (applyFigureRange add, insert, _commitSheetRange: Editor::add_figure, commit_sheet_range); other range operations, pasting and native timelines still JS |
