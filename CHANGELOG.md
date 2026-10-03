@@ -25,6 +25,7 @@ What's new in each version of StykAnimate.
 ### Performance
 
 - Pivot files open faster, and in the web app the first one no longer waits for a large download.
+- Editing large animations is faster.
 
 ## [1.2.5]
 

@@ -4,7 +4,7 @@
 // keyboard undo and redo) and through the editor's timeline commands, and reports how
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
-//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own] [--url http://127.0.0.1:47831] [--out <report.json>]
+//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -18,6 +18,8 @@
 // calls produce). The same interactions run first with the editor alone (shadowed, to time
 // it), then with the engine owning; the documents, history labels and selection after
 // them, and after undoing everything, must be the same. Prints what each call cost both.
+// --own --default: the second run is the app's default (the engine owns editing for the
+// document classes it edits by default, and stays out of the others).
 import {spawn} from 'node:child_process';
 import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -177,7 +179,9 @@ try {
     // The editor alone, shadowed so that its time in each call the engine would own is
     // measured (shadowing never changes what the editor does).
     const alone = await run('engineShadow=on');
-    const owned = await run('engineEdit=on');
+    // With --default, the app as users get it: the engine owns the document's calls when its
+    // editing class is owned by default (src/engine/engine-edit-shadow.mjs, OWNED_CLASSES).
+    const owned = await run(args.includes('--default') ? '' : 'engineEdit=on');
     const {report, steps, problems} = owned;
     console.log(`steps: ${steps.join('; ')}`);
     console.log(`engine-owned calls: ${report.owned} adopted from the engine (${report.ownedMs.toFixed(1)} ms), ${report.compared} run in both and the same, ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
@@ -218,7 +222,8 @@ try {
     for (const problem of [...alone.problems, ...problems].slice(0, 5)) console.log(`  page: ${problem}`);
     const out = option('--out');
     if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, differences, problems}, null, 1));
-    failed = differences.length > 0 || report.mismatches.length > 0 || report.owned === 0 || problems.length > 0;
+    console.log(`  mode ${report.mode}`);
+    failed = differences.length > 0 || report.mismatches.length > 0 || (report.owned === 0 && !args.includes('--default')) || problems.length > 0;
   } else {
   const {report, steps, problems} = await run('engineShadow=on');
   if (!report) throw new Error('Shadow editing was not installed (is ?engineShadow=on honoured?)');

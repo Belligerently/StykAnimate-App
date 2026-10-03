@@ -205,9 +205,15 @@ the frame with IK.
 
 ## Engine-owned editing in the app
 
-With `?engineEdit=on` (or `localStorage['stykanimate.engine.ownEdit'] = 'on'`) the engine
-runs ported calls in the editor's place while a session lives (the same
-`src/engine/engine-edit-shadow.mjs`, mode `own`). The calls that change the document
+The engine runs ported calls in the editor's place while a session lives (the same
+`src/engine/engine-edit-shadow.mjs`): by default for documents of an editing class in
+`OWNED_CLASSES` (D15: a class flips once its calls cost no more in the engine than in the
+editor), for every document with `?engineEdit=on` (or
+`localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
+keeps the editor in charge and compares. `editingClass(report)` names a document's class:
+`movieclips` when a figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
+`large figures` from 1,000 segments across its figure definitions, else `figures`. The
+calls that change the document
 (the gestures' moves, poses and transforms, `commitDrag`, the layer timeline's keys and
 frames, joining, duplicating and deleting figures) run in the engine only; the editor
 adopts what they produced and does not compute it:
@@ -254,6 +260,24 @@ Two adoption defects were found this way and fixed: on AyameDemo the committed d
 editor keeps on show was dropped, so the next gesture began from a fresh evaluation
 (another figure slot and keyframe index); on joined-chain the kept draft lacked the joined
 roots the commit refreshes, so the next gesture began with a joined figure 13 px away.
+
+### Which classes the engine edits by default
+
+`large figures` since 2026-10-03. `node scripts/engine-edit-shadow.mjs --own --default`
+runs the shadow driver's interactions with the editor alone, then with the app as users get
+it; on large figure documents the engine owned every call it could and cost less in total,
+in every run (headless Chromium, the machine under other load, two rounds):
+
+| Document | Calls owned | Editor alone | Engine owning, adoption included | Same document, history and selection |
+| --- | ---: | ---: | ---: | --- |
+| 20 figures of 200 segments | 54 | 163.2 ms, 213.6 ms | 100.1 ms, 175.8 ms | yes |
+| AyameDemo.piv (537 figure definitions, 6,854 segments) | 54 | 946.7 ms, 1,171.2 ms | 757.7 ms, 801.8 ms | yes |
+
+`figures` stays with the editor: on the document the app starts with, the same run cost
+87.8 ms owned against 76.8 ms alone, a pose about 0.31 ms in the engine plus 0.49 ms to adopt
+its answer against the editor's 0.58 ms for the whole call (medians of 48 in the app; the
+answer crosses the JSON boundary and the editor's own events and caches still run). `3d`
+and `movieclips` stay too: some of their calls are slower in the engine (below).
 
 What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow
 run, the engine's from an owned run, adoption included). The first measurement found
