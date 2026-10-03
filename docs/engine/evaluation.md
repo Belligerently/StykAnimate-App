@@ -70,8 +70,9 @@ A pose's `color_transition` (`{from, to, t}`; no command writes one, older docum
 carry it) replaces the object's override wherever the editor colours its figure
 (`objectColor`): every segment, polygon and mesh palette colour, and the paint stops and
 second colour of a gradient, is mixed with both overrides and taken `t` of the way between
-them, rounded (`geometry::object_rgb`). Items carry the transition so the draw list colours
-gradients with it; movieclip contents use their own object's. A tween keeps the first key's
+them, rounded (`geometry::object_rgb`). Items keep an index into the scene's transitions
+(`Scene::transitions`, so items stay plain data) for the draw list's gradients; movieclip
+contents use their own object's. A tween keeps the first key's
 transition, as the editor's does. Whether a two-colour gradient is drawn at all still
 follows the override alone (an opaque override draws the segment solid), as in the editor.
 
