@@ -143,6 +143,13 @@ async function run(mode) {
   // A hand or foot with an IK controller, when the figure has one: its target is dragged.
   const target = (await handles()).find(handle => handle.ik);
   if (target) await step('drag an IK target', async () => { await settled(); const now = await handles(); await drag(now.find(h => h.joint === target.joint) ?? target, -30, 20); });
+  // The inspector's IK settings on that limb: pinned and released, its target turned, the
+  // bend side changed.
+  if (target) await step('change the IK settings of a limb', () => page.evaluate(joint => {
+    const e = styk.editor; e.select(e.selectedUid, joint);
+    const pinned = Boolean(e.getIKSettings().pinned);
+    e.setNodeIK({pinned: !pinned}); e.rotateIKTarget(0.2); e.setNodeIK({bendDirection: -1}); e.setNodeIK({pinned});
+  }, target.joint));
   // A figure with 3D bones: a planted leg's knee dragged (its bend plane swings), a bone
   // twisted with the right button (a planted leg's knee swings it instead), the rig reset.
   const knee = (await handles()).find(handle => handle.knee);

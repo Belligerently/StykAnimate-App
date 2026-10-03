@@ -23,6 +23,8 @@ use crate::{EditError, Editor};
 /// `capture(figure, object, geometry, handle, controller)`: the limb as drawn.
 #[derive(Clone, Debug)]
 pub(crate) struct Capture {
+    /// `unprojectJoint(geometry.joints.get(handle))`: the end of the limb before perspective.
+    pub target: [f64; 2],
     pub followers: BTreeMap<u32, f64>,
     pub bend_direction: f64,
     pub bend_reference: BendReference,
@@ -109,10 +111,40 @@ pub(crate) fn merged(base: &Value, patch: &[(&str, Value)]) -> Value {
     Value::object(object)
 }
 
+/// What `capture` reads of the controller it captures the limb for.
+#[derive(Clone, Debug)]
+pub(crate) struct CaptureSpec {
+    /// `controller.target.rotation ?? 0`.
+    pub rotation: f64,
+    pub chain_length: u32,
+    /// `controller.bendDirection`, when set: otherwise the side the limb bends to on screen.
+    pub bend_direction: Option<f64>,
+    pub bend_reference: Option<BendReference>,
+    /// `controller.spatialTarget.swivel ?? 0`.
+    pub swivel: f64,
+}
+
 impl Editor {
     /// `capture(figure, object, geometry, handle, controller)` of the limb ending at
     /// `handle` of the figure in `slot`, with `captureSpatialIK`'s parts.
     pub(crate) fn capture_limb(&self, slot: usize, handle: u32) -> Result<Capture, EditError> {
+        let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
+        let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
+        let current = object.path(&["_stykIK", &handle.to_string()]).cloned().unwrap_or(Value::Null);
+        let controller = ik::parse::table(object.get("_stykIK")).and_then(|table| table.get(handle).cloned()).ok_or_else(|| unported("with a controller the engine cannot read"))?;
+        let spec = CaptureSpec {
+            rotation: controller.target.rotation,
+            chain_length: controller.chain_length,
+            // `controller.bendDirection ?? bendDirection`
+            bend_direction: current.get("bendDirection").is_some_and(|v| !v.is_null()).then_some(controller.bend_direction),
+            bend_reference: controller.bend_reference.clone(),
+            swivel: controller.spatial_target.as_ref().map_or(0.0, |s| s.swivel),
+        };
+        self.capture_with(slot, handle, &spec)
+    }
+
+    /// [`Editor::capture_limb`] for the controller `spec` describes.
+    pub(crate) fn capture_with(&self, slot: usize, handle: u32, spec: &CaptureSpec) -> Result<Capture, EditError> {
         let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
         let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
         let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
@@ -121,15 +153,13 @@ impl Editor {
         let evaluated = &frame.objects[at];
         let geometry = scene.objects.iter().find(|g| g.uid == id && g.resolved).ok_or_else(|| unported("of a figure the engine does not draw"))?;
         let figure = evaluated.figure_override.as_deref().or_else(|| prepared.doc.figure(evaluated.figure).map(|f| &**f)).ok_or_else(|| unported("of a figure without a definition"))?;
-        let current = object.path(&["_stykIK", &handle.to_string()]).cloned().unwrap_or(Value::Null);
-        let controller = ik::parse::table(object.get("_stykIK")).and_then(|table| table.get(handle).cloned()).ok_or_else(|| unported("with a controller the engine cannot read"))?;
         let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
         let solved = crate::ik::solve_frame(&prepared, &frame, &scene);
         let drawn = |i: usize| crate::ik::displayed_angle(&prepared, &frame, &scene, &solved, at, i);
-        let rotation = controller.target.rotation;
+        let rotation = spec.rotation;
         let follower_indices = skeleton.follower_indices(handle);
         let followers: BTreeMap<u32, f64> = follower_indices.iter().map(|&i| (figure.segments[i].id, drawn(i) - rotation)).collect();
-        let chain = skeleton.chain(handle, controller.chain_length);
+        let chain = skeleton.chain(handle, spec.chain_length);
         let mut bend_direction = 1.0;
         if chain.len() >= 2 {
             let (a, c) = (geometry.starts[chain[0]], geometry.ends[chain[chain.len() - 1]]);
@@ -145,20 +175,21 @@ impl Editor {
                 bend_direction = if cross < 0.0 { -1.0 } else { 1.0 };
             }
         }
-        if skeleton.index(handle).is_none() || geometry.joint(figure, handle).is_none() {
+        let Some(point) = skeleton.index(handle).and(geometry.joint(figure, handle)) else {
             return Err(EditError::Invalid("errors.editorIk.selectAValidIkNode".into()));
-        }
+        };
+        // `unprojectJoint(point)`: before perspective when the figure has one.
+        let raw = skeleton.index(handle).and_then(|i| geometry.spatial.as_ref().and_then(|s| s.depths.get(i)).and_then(|d| d.raw));
+        let target = raw.map_or(point, |r| [r[0], r[1]]);
         if chain.is_empty() {
             return Err(unported("without a chain"));
         }
         let points: Vec<[f64; 2]> = std::iter::once(geometry.starts[chain[0]]).chain(chain.iter().map(|&i| geometry.ends[i])).collect();
         let lengths: Vec<f64> = chain.iter().map(|&i| hypot(geometry.ends[i][0] - geometry.starts[i][0], geometry.ends[i][1] - geometry.starts[i][1])).collect();
-        let bend_reference = ik::bend_reference(&points, &lengths, controller.bend_reference.as_ref());
-        // `bendDirection: controller.bendDirection ?? bendDirection`
-        let bend_direction = if current.get("bendDirection").is_some_and(|v| !v.is_null()) { controller.bend_direction } else { bend_direction };
-        let swivel = controller.spatial_target.as_ref().map_or(0.0, |s| s.swivel);
-        let spatial = self.capture_spatial(slot, &chain, &follower_indices, rotation, swivel)?;
-        Ok(Capture { followers, bend_direction, bend_reference, spatial_followers: spatial.spatial_followers, spatial_target: spatial.spatial_target })
+        let bend_reference = ik::bend_reference(&points, &lengths, spec.bend_reference.as_ref());
+        let bend_direction = spec.bend_direction.unwrap_or(bend_direction);
+        let spatial = self.capture_spatial(slot, &chain, &follower_indices, rotation, spec.swivel)?;
+        Ok(Capture { target, followers, bend_direction, bend_reference, spatial_followers: spatial.spatial_followers, spatial_target: spatial.spatial_target })
     }
 
     /// `captureSpatialIK(figure, object, geometry, chain, followers, rotation, swivel)`.

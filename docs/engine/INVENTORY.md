@@ -99,7 +99,7 @@ Engine logic: ported to Rust.
 | `src/editor-frames.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-commands.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-edit.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget on flat figures, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); setNodeIK, rotateIKTarget, getIKSettings and 3D controllers still JS |
+| `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget on figures not joined to others (ik_settings.rs); setNodeIK and rotateIKTarget across joined figures (bakeGraph) still JS |
 | `src/editor-inbetween-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-inbetween.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-async.mjs` | `styk-edit` | js | commands and history |
@@ -121,7 +121,7 @@ Engine logic: ported to Rust.
 | `src/editor-selection.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs); setSpatialFeetPinned and joined 3D IK targets still JS |
+| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs), setSpatialFeetPinned (ik_settings.rs); joined 3D IK targets still JS |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |

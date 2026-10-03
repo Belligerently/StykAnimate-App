@@ -455,6 +455,46 @@ scenario('figures-layers-sheet', app, [
   scenario('pose-choice-mechanism-sheet', app, [
     ['@select', 1, -1], ['setPoseChoice', 'Mouth', 18], ['setPoseChoice', 'Mouth', 0], ['setPoseChoice', 'Mouth', 18], ['undo'], ['redo'],
   ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json');
+  // An IK controller's settings from the inspector: pinned and released (the limb kept as
+  // drawn), stretch, chain length and bend side, its target turned (a free limb's branches
+  // turning with it), switched off and on, chains that would share bones, and refusals.
+  scenario('ik-settings-sheet', app, [
+    ['@select', 1, 3], ['setNodeIK', {pinned: true}], ['setNodeIK', {allowStretch: true}], ['setNodeIK', {bendDirection: -1}], ['poseJoint', 240, 330], ['setNodeIK', {bendDirection: 0}],
+    ['setNodeIK', {bendDirection: 1}],
+    ['setNodeIK', {chainLength: 1}], ['setNodeIK', {chainLength: 99}], ['setNodeIK', {bogus: 1}], ['setNodeIK', {enabled: 'yes'}], ['rotateIKTarget', 0.4],
+    ['poseJoint', 250, 300], ['setNodeIK', {pinned: false}], ['rotateIKTarget', -0.3], ['rotateIKTarget', 'x'], ['setNodeIK', {enabled: false}], ['setNodeIK', {enabled: true}],
+    ['@select', 1, 2], ['setNodeIK', {enabled: true, chainLength: 1}], ['@select', 1, 1], ['setNodeIK', {enabled: true}], ['setNodeIK', {enabled: true}],
+    ['@select', 1, -1], ['setNodeIK', {enabled: true}], ['setNodeIK', {pinned: true}], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('ik-settings-pinned-sheet', app, [
+    ['@select', 1, 3], ['setNodeIK', {allowStretch: true}], ['poseJoint', 560, 330], ['setNodeIK', {pinned: false}], ['@select', 1, 5], ['setNodeIK', {chainLength: 1}],
+    ['setNodeIK', {bendDirection: 0}], ['rotateIKTarget', 0.5], ['@select', 1, 7], ['setNodeIK', {enabled: false}], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/startup-pinned.json');
+  // A planted 3D leg: its swivel (through the pole when it is the only setting), the feet
+  // planted and released at once, switched off (its record kept) and on, turned.
+  scenario('ik-settings-spatial-sheet', app, [
+    ['@select', 1, 9], ['setNodeIK', {swivel: 0.4}], ['setNodeIK', {swivel: 0.2, allowStretch: true}], ['setNodeIK', {swivel: 'x'}], ['setSpatialFeetPinned', false],
+    ['setSpatialFeetPinned', true], ['setNodeIK', {enabled: false}], ['setNodeIK', {enabled: true}], ['rotateIKTarget', 0.3], ['setNodeIK', {pinned: false}],
+    ['rotateIKTarget', -0.2], ['@select', 1, 3], ['setSpatialFeetPinned', false], ['undo'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/spatial.json');
+  // Pinned controllers whose followers were never stored: configuring one stores the
+  // followers its limb is solved with, and every other pinned controller takes its own.
+  {
+    const document = JSON.parse(readFileSync(new URL('../crates/styk-eval/tests/fixtures/ik/followers.json', import.meta.url), 'utf8'));
+    for (const frame of document.keyframes) for (const object of frame.objects) if (object._stykIK?.['22']) {
+      object._stykIK['22'].followers = {};
+      object._stykIK['12'] = {enabled: true, pinned: true, allowStretch: false, bendDirection: 1, chainLength: 1, target: {x: object.root_x + 10, y: object.root_y - 40, rotation: 0}, followers: {}};
+    }
+    writeFileSync(`${out}/ik-settings-followers.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('ik-settings-followers-sheet', app, [
+    ['@select', 1, 1], ['setNodeIK', {allowStretch: true}], ['undo'], ['@select', 1, 2], ['setNodeIK', {allowStretch: true}], ['@select', 1, 1], ['setNodeIK', {chainLength: 1}],
+    ['setNodeIK', {bendDirection: -1}], ['undo'], ['redo'],
+  ], 'ik-settings-followers.document.json');
+  // IK is not put on a joint a rig derives (a connector).
+  scenario('ik-settings-rig-sheet', app, [
+    ['@select', 1, 5], ['setNodeIK', {enabled: true}], ['@select', 1, 2], ['setNodeIK', {enabled: true}], ['setNodeIK', {chainLength: 1}], ['undo'], ['redo'],
+  ], 'rig.document.json');
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],
