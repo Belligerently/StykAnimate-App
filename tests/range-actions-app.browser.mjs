@@ -9,7 +9,7 @@ import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {objectBounds} from '../src/renderer-geometry.mjs';
-const {startBackend} = createRequire(import.meta.url)('../desktop/backend.cjs');
+const {startDesktopHost} = createRequire(import.meta.url)('../desktop/web-host.cjs');
 const appRoot = fileURLToPath(new URL('..', import.meta.url)), out = path.join(appRoot, 'artifacts');
 await mkdir(out, {recursive: true});
 const report = emptyDocument(); report.canvas_width = 720; report.canvas_height = 430;
@@ -23,7 +23,7 @@ await writeFile(sourcePath, JSON.stringify(new Editor({demo: false}).load(report
 const joined = structuredClone(report);
 for (const frame of joined.keyframes) frame.objects[0].join = {target_object_slot: 1, target_unique_id: 2, target_handle_id: 1};
 await writeFile(joinedPath, JSON.stringify(new Editor({demo: false}).load(joined).serialize()));
-const backend = await startBackend({appRoot}), checks = [], errors = []; let browser, page;
+const backend = await startDesktopHost({appRoot}), checks = [], errors = []; let browser, page;
 const firstCase = Number(process.env.RANGE_FROM || 0); let caseIndex = 0;
 const object = (frame, uid) => frame.objects.find(object => object.unique_id === uid);
 try {

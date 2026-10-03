@@ -6,8 +6,8 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const [source,referencePath]=process.argv.slice(2);
 if(!source||!referencePath)throw new Error('Provide the input project and saved reference playback-worker.mjs.');
-const {startBackend}=createRequire(import.meta.url)('../desktop/backend.cjs');
-const backend=await startBackend({appRoot:process.cwd()}),output=path.resolve('artifacts/project-playback',process.env.STYK_COMPARE_LABEL||'pixel-comparison');let browser;
+const {startDesktopHost}=createRequire(import.meta.url)('../desktop/web-host.cjs');
+const backend=await startDesktopHost({appRoot:process.cwd()}),output=path.resolve('artifacts/project-playback',process.env.STYK_COMPARE_LABEL||'pixel-comparison');let browser;
 await mkdir(output,{recursive:true});
 try{
   browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1600,height:1000}});

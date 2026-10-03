@@ -131,7 +131,6 @@ if (mode !== 'desktop') {
   }
 }
 if (mode !== 'kernels') {
-  await run('shell', ['scripts/benchmark-shell-startup.mjs', label, 'normal']);
   const {emptyDocument, createObject, createFrame} = await import('../src/demo.mjs');
   const {buildContainerV2} = await import('../src/native-container.mjs');
   for (const count of [30, 300]) {

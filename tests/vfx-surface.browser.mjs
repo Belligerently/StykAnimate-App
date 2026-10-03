@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47843'}/api/health`);
+  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47843'}/tests/fixtures/blank.html`);
   const results=await page.evaluate(async()=>{
     const {withVfx,releaseVfxSurface}=await import('/src/vfx-canvas.mjs'),{createVfx}=await import('/src/vfx.mjs');
     const {createRenderer}=await import('/src/renderer.mjs'),{emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs');

@@ -4,9 +4,9 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 const appRoot = fileURLToPath(new URL('..', import.meta.url)), output = path.join(appRoot, 'artifacts', 'origin-support');
-await mkdir(output, {recursive: true}); const server = await backend.startBackend({appRoot}); let browser;
+await mkdir(output, {recursive: true}); const server = await backend.startDesktopHost({appRoot}); let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true}); const page = await browser.newPage({viewport: {width: 1440, height: 1000}}), errors = [];
   page.on('pageerror', error => errors.push(error.message)); await page.goto(server.origin); await page.waitForFunction(() => styk?.ready);

@@ -8,8 +8,8 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const [source,referenceRoot]=process.argv.slice(2);
 if(!source||!referenceRoot)throw new Error('Provide project file and reference source directory.');
-const {startBackend}=createRequire(import.meta.url)('../desktop/backend.cjs');
-const backend=await startBackend({appRoot:process.cwd()}),output=path.resolve('artifacts/playback-integrity',process.env.STYK_SEQUENCE_LABEL||'sequence');
+const {startDesktopHost}=createRequire(import.meta.url)('../desktop/web-host.cjs');
+const backend=await startDesktopHost({appRoot:process.cwd()}),output=path.resolve('artifacts/playback-integrity',process.env.STYK_SEQUENCE_LABEL||'sequence');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex'),sourceHash=hash(await readFile(source));
 const sourceRoot=path.resolve(process.env.STYK_SEQUENCE_SOURCES||'src'),captured=new Map(),sourceHashes={};
 for(const name of (await readdir(sourceRoot,{recursive:true})).filter(name=>name.endsWith('.mjs'))){

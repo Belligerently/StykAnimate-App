@@ -8,8 +8,8 @@ import {previewPNG} from './preview-png-fixture.mjs';
 const root = path.resolve('.'), out = path.join(root, 'artifacts/adaptive-preview');
 await mkdir(out, {recursive: true});
 await writeFile(path.join(out, 'large.png'), await previewPNG(8192, 4096));
-const {startBackend} = createRequire(import.meta.url)('../desktop/backend.cjs');
-const backend = await startBackend({appRoot: root}); let browser;
+const {startDesktopHost} = createRequire(import.meta.url)('../desktop/web-host.cjs');
+const backend = await startDesktopHost({appRoot: root}); let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const page = await browser.newPage({viewport: {width: 1440, height: 960}}), errors = [];

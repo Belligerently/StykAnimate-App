@@ -33,22 +33,25 @@ same switches but has not been verified here.
 
 ```bash
 npm ci
+node scripts/engine-build.mjs          # the engine and the Pivot codec (WebAssembly)
 uv venv .venv --python 3.12.9          # or: python3.12 -m venv .venv
 uv pip install --python .venv/bin/python -r scripts/requirements-build.txt
-npm run build:frame-scan               # needs a C++17 compiler (g++ or clang)
-npm run build:sidecar                  # freezes the Pivot codec with PyInstaller
-npm run verify:sidecar
 npm run build:video-encoder            # stages the bundled ffmpeg
 version=$(node -p 'require("./package.json").version')
 npm run dist:linux -- --x64 --publish never "--config.directories.output=release/$version"
 npm run release:verify -- "release/$version" --platform=linux
 ```
 
-The `build:*` scripts run through `scripts/run-python.mjs`, which uses
-`STYK_PYTHON`, then the repository `.venv`, then `python3`/`python`, so a bare
-`python` is not required. The native scanner builds into
-`native/bin/linux-x64/` (untracked); Windows keeps its tracked
-`native/bin/x64/`, so a Linux build never dirties or breaks the Windows one.
+`engine-build.mjs` needs the Rust toolchains it names (the pinned nightly with `rust-src`
+for the engine, stable for the codec, both with the `wasm32-unknown-unknown` target) and
+`wasm-bindgen-cli`; a C compiler that targets WebAssembly (clang) builds the zstd library
+both modules include. Python is only needed for the video encoder staging above (and for the
+codec's development test oracle). The `build:*` scripts run through
+`scripts/run-python.mjs`, which uses `STYK_PYTHON`, then the repository `.venv`, then
+`python3`/`python`, so a bare `python` is not required. The oracle's optional native
+scanner (`npm run build:frame-scan`) builds into `native/bin/linux-x64/` (untracked);
+Windows keeps its tracked `native/bin/x64/`, so a Linux build never dirties or breaks the
+Windows one.
 
 ### AppImage and the Chromium sandbox
 
@@ -79,9 +82,9 @@ manual download of the first updater-enabled release. See [updates](UPDATES.md).
 
 ```bash
 npm run check && npm test                          # unit tests (also on Windows in CI)
-python3 -m unittest discover -s backend -p "test_*.py"
+python3 -m unittest discover -s backend -p "test_*.py"   # the Python codec oracle
 npx playwright install chromium                    # once, for the browser tests
-npm run serve &                                    # the codec and dev host on :47831
+npm run serve &                                    # the dev host on :47831
 STYK_URL=http://127.0.0.1:47831 node tests/timeline.browser.mjs
 xvfb-run -a npm run test:boot                      # boots the app from source
 xvfb-run -a npm run test:boot:packaged             # boots release/linux-unpacked
@@ -133,10 +136,8 @@ interface on any platform.
 
 ## Shutdown and processes
 
-The desktop app keeps a pipe on the codec's stdin and the codec exits at EOF
-(`--exit-on-stdin-close`), so a crash, `kill -9` or out-of-memory kill of the
-editor never leaves the codec running with its caches. Normal quit and SIGTERM
-stop it through Electron's quit handlers as before.
+The desktop app starts no helper process for Pivot files: the codec runs in a worker of
+the editor page and ends with it, however the app stops.
 
 ## Why WebGPU is on by default
 

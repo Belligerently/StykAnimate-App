@@ -151,8 +151,9 @@ remain intact. The live project and its `.styk` save retain every original archi
 - `node tests/document-export-browser.mjs`
 - `node scripts/smoke-app-save.mjs`
 
-The package build tracks `native_format.py` alongside the codec's other runtime
-sources, so an old sidecar must be rebuilt before packaging the new formats.
+The app reads containers with `src/native-container.mjs` and, when that cannot, with the Pivot
+codec's `styk-formats` reader; `native_format.py` is the reader of the Python codec, kept as
+the development test oracle.
 
 ## Project colors
 

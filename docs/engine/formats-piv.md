@@ -1,6 +1,6 @@
 # Engine: Pivot files and the codec service
 
-How the Rust engine (`engine/crates/styk-piv`) reads and writes Pivot `.piv`/`.stk` files and answers the codec API. It replaces the Python codec (`codecs/`, `backend/server.py`, `backend/browser_service.py`) and its C++ frame scanner; while both exist the Python codec is the oracle, and the crate must answer what it answers.
+How the Rust engine (`engine/crates/styk-piv`) reads and writes Pivot `.piv`/`.stk` files and answers the codec API. It replaces the Python codec (`codecs/`, `backend/server.py`, `backend/browser_service.py`) and its C++ frame scanner: every build of the app runs this crate (see [How the app runs the codec](#how-the-app-runs-the-codec)). The Python codec is kept, unshipped, as the development test oracle, and the crate must answer what it answers.
 
 ## Contract
 
@@ -10,6 +10,45 @@ How the Rust engine (`engine/crates/styk-piv`) reads and writes Pivot `.piv`/`.s
 - **"Unchanged" exports** return the original file. The decision compares document fingerprints (`src/digest.rs`, version 3 of `server.document_digest`), which native saves store, so their bytes are a file-format contract.
 - **Native documents** (`.styk`, `.stkz`, `.stykmov`, `.json`) go through the `NativeDocuments` trait; `Containers` implements it over `styk-formats` (feature `containers`, on by default). Without it those requests answer `415`.
 - **No threads, files or clock** in the library. Timing fields are zero unless the host calls `Codec::set_clock`. Cancellation is cooperative: `cancel` is polled where Python called `work_control.checkpoint` (per frame, per record, per table), and a cancelled request answers `499 cancelled` without changing the cache or any lease. The crate builds for `wasm32-unknown-unknown` with and without `containers`.
+
+## How the app runs the codec
+
+`engine/crates/styk-codec-wasm` wraps `Codec` for JavaScript: `new PivotCodec('web' | 'desktop')`
+and `request(method, target, headersJSON, body, cancel)`, which answers a `CodecResponse`
+(`status`, `headers` as JSON pairs, `takeBody()`). `cancel` is an object whose `cancelled()`
+the codec polls at its checkpoints, and the clock is `performance.now()`. It has no threads or
+shared memory, so stable Rust builds it: `node scripts/engine-build.mjs` builds it after the
+engine into `src/engine/pkg/styk_codec.js` and `styk_codec_bg.wasm` (git-ignored; 1,532,259
+bytes, 0.43 MiB at Brotli 5, at its introduction, without wasm-opt), with wasm-bindgen's
+`--experimental-reset-state-function` and the `wasm` profile (`panic = "abort"`, symbols kept).
+Its size and SHA-256 are recorded under `codec` in `src/engine/pkg/build-info.json`, which
+packaging and the web build check.
+
+Every build runs it the same way: in a worker of the editor page.
+
+- `src/codec-engine.mjs` loads the module on the first request and answers one request. A
+  trap (a panic aborts, memory runs out) answers `500 codec_error`, and the next request runs
+  on a fresh instance (`__wbg_reset_state`) with an empty source cache, as a restarted codec
+  service would have.
+- `src/codec-web-worker.mjs` hosts it behind the request queue `src/codec-web-shell.mjs` (one
+  request at a time, `busy`/`idle` to the page); `src/codec-web-host.mjs` creates the worker,
+  tells it its limits and connects one `MessagePort` per job; `src/codec-request.mjs` turns a
+  request over that port into a standard `Response`.
+- **Cancellation.** On a cross-origin isolated page (every host sends COOP/COEP) each job has
+  an `Int32Array` over a `SharedArrayBuffer`: cancelling sets it, the codec sees it at its next
+  checkpoint and answers `499 cancelled`, and the worker keeps its cache and leases; requests
+  of that job still queued are answered `499` without running. Without isolation the busy
+  worker is terminated and the next request starts a new one, unless other jobs wait on it.
+- **Profiles** (`codecProfile()` in `codec-web-host.mjs`). The web build (`<meta name="styk-codec"
+  content="browser">`, or `?codec=browser`) uses `Limits::web()`, embeds each Pivot import's
+  verified original in its document and announces the converter while it loads; the desktop
+  app and the development server use `Limits::desktop()` and keep originals leased in the
+  codec, as the desktop service did.
+- **Samples.** `/api/samples` and `/api/open` are not served by the codec. On the desktop the
+  main process lists the `.piv`/`.stk` files beside a source checkout and reads one
+  (`desktop/samples.cjs`, the rules of `ProjectStore.samples`, `safe_child` and `open`, with
+  their answers); the page imports the bytes through `/api/import`. A packaged app lists none.
+- Node tests and tools load the same module with `tests/support/codec.mjs`.
 
 ## Modules
 
@@ -46,6 +85,28 @@ How the Rust engine (`engine/crates/styk-piv`) reads and writes Pivot `.piv`/`.s
 
 ## Testing
 
+- In JavaScript: `tests/codec-engine.test.mjs` (the built module, trap recovery, cancellation, and
+  one document against the Python oracle), `tests/codec-web-shell.test.mjs`,
+  `tests/codec-web-host.test.mjs` (shared flags and the terminate fallback),
+  `tests/desktop-samples.test.mjs` (the sample rules against the oracle) and, in a browser,
+  `tests/codec-cancellation.browser.mjs`.
+
 - `cargo test -p styk-piv`: unit tests next to the code, and `tests/service.rs`, `tests/formats.rs` (the behaviours the Python tests assert, on generated fixtures). `tests/fixtures/expected.json` and `upgraded-legacy-v*.json` are what the Python codec answered for the fixtures; `.venv/bin/python engine/tools/piv/fixtures.py` regenerates fixtures and answers, `--check` verifies them.
 - Parity with the Python codec: `engine/tools/piv/parity.sh` records the oracle (`oracle.py`) and replays it (`styk-piv replay`), comparing import JSON (as parsed documents: numbers equal as doubles, negative zero included), `STYKPIV1` bytes, export bytes, native containers (as documents) and error responses. Suites that need the private corpus (`~/Downloads/pivs`, `WafflesPack`, `Valthim - Yuki.piv`) are skipped without it. `STYK_PIV_PARITY=<dir> cargo test -p styk-piv --test parity` replays an existing recording.
 - Timing: `styk-piv import <file> --time` (one import, as the service does it), `styk-piv profile <file>` (inflate, decode, JSON text, hashing).
+
+## Desktop round trip
+
+`xvfb-run -a npm run test:native-formats` (`scripts/smoke-native-formats.mjs`) opens a
+`.piv`, a `.stk` and a `.styk` through File → Open in the desktop app, edits each (a figure
+moved; for the `.stk`, a segment's thickness and colour), saves it as a project, exports
+the Pivot ones back to their own format, opens every written file again and checks the
+edit, and checks the sources were not written. Measured 2026-10-03 on Linux with
+`AyameDemo.piv` and `Revolver Receiver.stk` from the private corpus and
+`AssetReleases/3D-Guns/Scenes/Demos/01-Fire-and-Reload.styk`: 17 of 17 steps.
+
+With the codec's synthetic `figure-modern.stk` (`engine/tools/piv/fixtures.py`), a segment
+edit does not survive `.stk` export: the export writes the same 84 bytes as before the
+edit. The Python oracle writes the same bytes, so the Rust codec matches it; the defect is
+older than the port and is listed in the plan's open problems.
+

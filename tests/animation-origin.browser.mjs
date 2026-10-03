@@ -2,12 +2,12 @@ import {chromium} from './support/playwright.mjs';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 const appRoot=fileURLToPath(new URL('..',import.meta.url)),output=path.join(appRoot,'artifacts','animation-origin');
-await mkdir(output,{recursive:true});const server=await backend.startBackend({appRoot});let browser;
+await mkdir(output,{recursive:true});const server=await backend.startDesktopHost({appRoot});let browser;
 try{
   browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:980,height:620}}),errors=[];
-  page.on('pageerror',error=>errors.push(error.message));await page.goto(`${server.origin}/api/health`);
+  page.on('pageerror',error=>errors.push(error.message));await page.goto(`${server.origin}/tests/fixtures/blank.html`);
   const result=await page.evaluate(async()=>{
     const [{Editor},{emptyDocument,createFrame,createObject},{createRenderer},{buildGeometry,evaluatedFrame,timeline},{DocumentExporter},{ImportClient}]=await Promise.all([
       import('/src/editor.mjs'),import('/src/demo.mjs'),import('/src/renderer.mjs'),import('/src/pivot/geometry.mjs'),import('/src/document-export.mjs'),import('/src/import-client.mjs')]);

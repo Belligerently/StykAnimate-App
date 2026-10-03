@@ -12,7 +12,7 @@ try{
   const body=execFileSync('git',['show',`${revision}:src/${file}`],{encoding:'utf8',windowsHide:true});
   await page.route(`**/src/${file}`,route=>route.fulfill({status:200,contentType:'text/javascript',body}));
  }
- await page.goto((process.env.STYK_TEST_URL||'http://127.0.0.1:47832')+'/api/health');
+ await page.goto((process.env.STYK_TEST_URL||'http://127.0.0.1:47832')+'/tests/fixtures/blank.html');
  const rows=await page.evaluate(async()=>{
   const {emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{createVfx}=await import('/src/vfx.mjs');
   const {createRenderer}=await import('/src/renderer.mjs'),{drawExportSceneTiled,exportFrameGeometry}=await import('/src/export-frame-core.mjs');

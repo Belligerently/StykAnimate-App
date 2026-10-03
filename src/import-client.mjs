@@ -6,13 +6,20 @@ import {materializeNativeFrames} from './import-wire.mjs';
 import {nativePlaybackSnapshot} from './playback-native.mjs';
 import {codecJob} from './codec-job.mjs';
 import {codecRequest} from './codec-request.mjs';
+import {browserCodecHost, codecProfile} from './codec-web-host.mjs';
 export class ImportClient {
-  // The desktop codec requires its per-launch token; the browser dev server has none.
-  constructor({baseURL = globalThis.location?.origin, token = globalThis.stykDesktop?.apiToken || '', timeoutMs = 180000,
-    workerURL = new URL('./import-worker.mjs', import.meta.url)} = {}) {
+  /** `baseURL` is the page origin workers resolve resources against. The Pivot codec runs in a
+   * worker of this page (`codecHost`). With `embedSource` (the web build) a Pivot import carries
+   * its original in the document instead of a lease in the codec. `readSample` reads a file of
+   * the desktop sample list: {ok, name, bytes} or {ok: false, error, code, status}. */
+  constructor({baseURL = globalThis.location?.origin, timeoutMs = 180000,
+    workerURL = new URL('./import-worker.mjs', import.meta.url), codecHost = null, embedSource = codecProfile() === 'web',
+    readSample = path => globalThis.stykDesktop?.readSample?.(path)} = {}) {
     if (!baseURL) throw messageError(new Error(''), "errors.importClient.theImporterRequiresALocalBackendUrl", {});
     this.baseURL = new URL(baseURL, globalThis.location?.href).origin;
-    this.token = token;
+    this.codecHost = codecHost;
+    this.embedSource = embedSource;
+    this.readSample = readSample;
     this.timeoutMs = timeoutMs;
     this.sequence = 0;
     this.cancelGeneration = 0;
@@ -145,12 +152,11 @@ export class ImportClient {
     this.sourceRelease = this.sourceRelease.then(async () => {
       await cancelled;
       for (let attempt=0; attempt<3; attempt++) {
-        const job = codecJob(this.baseURL, this.token);
+        const job = this._codecJob();
         try {
           const link = job.link();
-          const headers = {'Content-Type':'application/json',...(this.token ? {Authorization:`Bearer ${this.token}`} : {})};
-          const response = await codecRequest({baseURL:this.baseURL,...link.fields}, '/api/source/release', {
-            method:'POST',headers,body:JSON.stringify({ownerId,...(jobId ? {jobId} : {})}),signal:AbortSignal.timeout(10000),keepalive:true,
+          const response = await codecRequest(link.fields, '/api/source/release', {
+            method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ownerId,...(jobId ? {jobId} : {})}),signal:AbortSignal.timeout(10000),
           });
           if (response.ok || response.status < 500) return;
         } catch { /* A transient transport failure must not drop queued cleanup. */ }
@@ -160,6 +166,8 @@ export class ImportClient {
     }).finally(() => this.sourceOwners.delete(ownerId));
     await this.sourceRelease;
   }
+
+  _codecJob() { return codecJob({host: this.codecHost ?? browserCodecHost()}); }
 
   _fail(error) {
     if(!this.disposed)this.diagnostics?.recovery('import_worker','started');
@@ -179,7 +187,7 @@ export class ImportClient {
       messageError(new Error(''), 'errors.importClient.thisFileCouldNotBeImported', {}), {code:'source_retention_limit',status:413}));
     // Retry only the user's next operation; never silently repeat a failed one.
     if(this.failure){try{this._startWorker();}catch(error){this.diagnostics?.recovery('import_worker','failed');return Promise.reject(error);}}
-    const id = ++this.sequence, backendJob = codecJob(this.baseURL, this.token);
+    const id = ++this.sequence, backendJob = this._codecJob();
     const sourceOwner = project ? crypto.randomUUID().replaceAll('-','') : undefined;
     if (sourceOwner) this.sourceOwners.set(sourceOwner,'owned');
     return new Promise((resolve, reject) => {
@@ -194,7 +202,7 @@ export class ImportClient {
       this.pending.set(id, request);
       try {
         const link = backendJob.link();
-        this.worker.postMessage({id, operation, baseURL: this.baseURL, token: this.token, jobId: backendJob.id, sourceOwner, ...link.fields, ...payload}, [...transfer, ...link.transfer]);
+        this.worker.postMessage({id, operation, jobId: backendJob.id, sourceOwner, embedSource: this.embedSource, ...link.fields, ...payload}, [...transfer, ...link.transfer]);
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -231,9 +239,20 @@ export class ImportClient {
     return this.importFile(file,options);
   }
 
-  openSample(path,{project=false}={}) {
-    if (typeof path !== 'string' || !path) return Promise.reject(messageError(new Error(''), "errors.importClient.chooseAProjectFromTheLibrary", {}));
-    return this._request('open', {path},[],undefined,project);
+  /** A file of the desktop sample list: the desktop reads it, and its bytes are an ordinary import under its own name. */
+  async openSample(path,{project=false}={}) {
+    if (this.disposed) throw messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {});
+    if (typeof path !== 'string' || !path) throw messageError(new Error(''), "errors.importClient.chooseAProjectFromTheLibrary", {});
+    const generation=this.cancelGeneration,sample=await this.readSample(path);
+    if(generation!==this.cancelGeneration)throw messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {});
+    if (!sample?.ok) {
+      // The codec service's own answer for a sample it could not open (desktop/samples.cjs).
+      const status=Number(sample?.status)||500;
+      const error=sample?.error?new Error(sample.error):messageError(new Error(''), 'errors.importWorker.importFailed', {status});
+      throw Object.assign(error,{code:sample?.code,status,telemetryCode:status>=500?'backend_unavailable':'backend_rejected',telemetryStage:'request'});
+    }
+    const view=sample.bytes,bytes=view.byteOffset===0&&view.byteLength===view.buffer.byteLength?view.buffer:view.slice().buffer;
+    return this._request('import', {filename: sample.name, bytes}, [bytes],undefined,project);
   }
 
   dispose() {

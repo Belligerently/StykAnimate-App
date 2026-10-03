@@ -9,7 +9,7 @@ const browser = await chromium.launch({channel: 'chrome', headless: true});
 try {
   const page = await browser.newPage({viewport: {width: 850, height: 420}}), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/api/health`);
+  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result = await page.evaluate(async () => {
     const [{exportAnimation}, {crc32}, {exportSVG}, {emptyDocument, createObject}, {buildGeometry, drawGeometry}] = await Promise.all([
       import('/src/image-export.mjs'), import('/src/image-codecs.mjs'), import('/src/svg-export.mjs'), import('/src/demo.mjs'), import('/src/pivot/geometry.mjs'),

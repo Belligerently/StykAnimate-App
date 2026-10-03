@@ -4,7 +4,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
-  const page=await browser.newPage();await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47831'}/api/health`);
+  const page=await browser.newPage();await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result=await page.evaluate(async()=>{
     const {compilePlaybackPacket,PlaybackResources}=await import('/src/playback-worker.mjs');
     const {ArtworkRegistry}=await import('/src/render-artwork.mjs');

@@ -52,7 +52,6 @@ async function importRequest(message, signal) {
   const headers = {Accept: `${NATIVE_FRAME_CONTENT_TYPE}, application/json`};
   if (message.jobId) headers['X-Styk-Job-Id'] = message.jobId;
   if (message.sourceOwner) headers['X-Styk-Source-Owner'] = message.sourceOwner;
-  if (message.token) headers.Authorization = `Bearer ${message.token}`;
   let path, body;
   if (message.operation === 'import') {
     if (!(message.bytes instanceof ArrayBuffer)) throw messageError(new Error(''), "errors.importWorker.theImporterDidNotReceiveTheCompleteFile", {});
@@ -82,11 +81,6 @@ async function importRequest(message, signal) {
     path = `/api/import?filename=${encodeURIComponent(message.filename)}`;
     headers['Content-Type'] = 'application/octet-stream';
     body = message.bytes;
-  } else if (message.operation === 'open') {
-    if (typeof message.path !== 'string') throw messageError(new Error(''), "errors.importWorker.theSampleNeedsAFilePath", {});
-    path = '/api/open';
-    headers['Content-Type'] = 'application/json';
-    body = JSON.stringify({path: message.path});
   } else throw messageError(new Error(''), "errors.importWorker.unknownImportOperation", {});
   const response = await codecRequest(message, path, {method: 'POST', headers, body, signal}).catch(error => {
     error.telemetryCode = 'backend_unavailable'; error.telemetryStage = 'request'; throw error;
@@ -127,9 +121,10 @@ async function importRequest(message, signal) {
 }
 
 async function embedBrowserSource(result,message,signal) {
-  if (!message.codecPort || !result.sourceOwner || !result.sourceId) return;
-  // The browser codec can restart on cancellation. Adopt a self-contained
-  // verified original before publishing the editable project to the page.
+  if (!message.embedSource || !result.sourceOwner || !result.sourceId) return;
+  // The web build keeps no lease in the codec, which a page that is not
+  // cross-origin isolated restarts on cancellation: the editable project
+  // carries its verified original before it is published to the page.
   const headers = {'X-Styk-Job-Id':message.jobId};
   const response = await codecRequest(message, `/api/source?id=${encodeURIComponent(result.sourceId)}`, {headers,signal});
   if (!response.ok) throw Object.assign(messageError(new Error(''), 'errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord', {}), {status:response.status});

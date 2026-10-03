@@ -8,7 +8,7 @@ const browser = await chromium.launch({channel: 'chrome', headless: true});
 try {
   const page = await browser.newPage({viewport: {width: 1100, height: 850}}), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/api/health`);
+  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result = await page.evaluate(async () => {
     const {createRenderer, screenToWorld} = await import('/src/renderer.mjs');
     const {emptyDocument, createFrame} = await import('/src/demo.mjs');

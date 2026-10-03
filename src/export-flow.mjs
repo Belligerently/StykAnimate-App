@@ -238,7 +238,6 @@ export function createExportFlow(ctx) {
         height: options.height,
         smoothing: options.smoothing,
         baseURL: importer.baseURL,
-        token: importer.token,
         signal: controller.signal,
         onFrame: ({stage, tick}) => stage === 'rendering' ? progressUI.frameStarted(tick) : progressUI.frameRendered(),
         getRevision: () =>
@@ -443,7 +442,7 @@ export function createExportFlow(ctx) {
     return {
       render(tick, canvas, { signal } = {}) {
         if (!editor.totalTicks || signal?.aborted) return Promise.resolve(false);
-        renderer ??= new ThumbnailRenderer(editor, { baseURL: importer.baseURL, token: importer.token, onError: () => {} });
+        renderer ??= new ThumbnailRenderer(editor, { baseURL: importer.baseURL, onError: () => {} });
         const rows = editor.timeline, index = Math.max(0, rows.findLastIndex((row) => row.start <= tick));
         return renderer.renderThumbnail(index, canvas, { tick, storedFrames: false, signal });
       },
