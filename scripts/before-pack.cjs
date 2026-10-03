@@ -12,11 +12,11 @@ module.exports = async function beforePack(context) {
   const notes = JSON.parse(await fs.readFile(path.join(appRoot, 'desktop', 'release-info.json'), 'utf8'));
   if (notes.version !== context.packager.appInfo.version) throw new Error('Release notes must match the packaged version. Run npm run release:prepare.');
   const architecture = typeof context.arch === 'number' ? Arch[context.arch] : context.arch;
-  // The engine and the Pivot codec ship as WebAssembly modules among the web resources (src/engine/pkg).
+  // The engine, the Pivot codec and the drawing raster engine ship as WebAssembly modules among the web resources (src/engine/pkg).
   let modules;
   try { modules = JSON.parse(await fs.readFile(path.join(appRoot, 'src', 'engine', 'pkg', 'build-info.json'), 'utf8')); }
   catch { throw new Error('Build the engine and the Pivot codec before packaging: node scripts/engine-build.mjs'); }
-  for (const [name, expected] of [['styk_engine_bg.wasm', modules.sha256], ['styk_codec_bg.wasm', modules.codec?.sha256]]) {
+  for (const [name, expected] of [['styk_engine_bg.wasm', modules.sha256], ['styk_codec_bg.wasm', modules.codec?.sha256], ['styk_drawing_bg.wasm', modules.drawing?.sha256]]) {
     let bytes;
     try { bytes = await fs.readFile(path.join(appRoot, 'src', 'engine', 'pkg', name)); }
     catch { throw new Error(`${name} is missing; build it with node scripts/engine-build.mjs`); }

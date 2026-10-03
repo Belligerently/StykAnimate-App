@@ -35,8 +35,8 @@ async function walk(relative) {
   }
 }
 for (const directory of ['src', 'vendor', 'assets']) await walk(directory);
-// The engine and the Pivot codec are WebAssembly modules built into src/engine/pkg (node scripts/engine-build.mjs).
-if (!snapshot) for (const required of ['styk_engine_bg.wasm', 'styk_codec_bg.wasm', 'styk_codec.js'].map((name) => path.join('src', 'engine', 'pkg', name)))
+// The engine, the Pivot codec and the drawing raster engine are WebAssembly modules built into src/engine/pkg (node scripts/engine-build.mjs).
+if (!snapshot) for (const required of ['styk_engine_bg.wasm', 'styk_codec_bg.wasm', 'styk_codec.js', 'styk_drawing_bg.wasm', 'styk_drawing.js'].map((name) => path.join('src', 'engine', 'pkg', name)))
   if (!files.includes(required)) throw new Error(`${required.replaceAll('\\', '/')} is missing; build it with node scripts/engine-build.mjs.`);
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const manifest = [];

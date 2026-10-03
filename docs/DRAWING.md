@@ -263,6 +263,14 @@ are not supported.
 
 ## Runtime and performance
 
+The raster work below runs in the Rust drawing engine (`styk-drawing`,
+[docs/engine/drawing.md](engine/drawing.md)): the stroke, pixel and history
+workers each load its WebAssembly module, and the controller's brush model
+computes dab shapes with it, through the same messages and objects the
+JavaScript modules exchange. `?drawingEngine=off` (or `?engine=off`) keeps the
+JavaScript raster engine, which remains the reference the engine is checked
+against pixel for pixel; so does a build without the module.
+
 `drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
 one report. Resident tiles are limited by a budget scaled from device memory
 (192–768 MiB; the hard ceiling for unpublished work is at least 768 MiB);

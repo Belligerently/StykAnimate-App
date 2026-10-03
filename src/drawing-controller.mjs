@@ -14,7 +14,8 @@ import {SLIDERS,installDrawingSliders,refreshSliders,formatSlider,displayValue} 
 import {WetInk} from './drawing-wet-ink.mjs';
 import {installPressureCurve} from './drawing-pressure-curve.mjs';
 import {tileChanges,maskValue,lassoMask,tileAlignedRect,DrawingStroke,rectPoints,ellipsePoints,combineMasks,invertMask,rectMask,maskEdges,pointFilterWork} from './drawing-pixels.mjs';
-import {BrushStroke,normalizeBrush,dabRadius,BRUSH_DEFAULTS,BRUSH_KEYS,BRUSH_LENGTHS,LINEAR_PRESSURE} from './drawing-brush.mjs';
+import {normalizeBrush,dabRadius,BRUSH_DEFAULTS,BRUSH_KEYS,BRUSH_LENGTHS,LINEAR_PRESSURE} from './drawing-brush.mjs';
+import {createBrushStroke,loadDrawingEngine} from './engine/engine-drawing.mjs';
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
@@ -52,6 +53,9 @@ export class DrawingController {
     // Whether a finger draws (docs/TOUCH.md): 'auto' until a pen is used, 'always', or 'never' (a finger pans).
     // The app answers 'never' for Automatic outside the touch interface.
     this.fingerDrawing=fingerDrawing;this.penSeen=false;
+    // Dab shapes come from the drawing raster engine once it has loaded here
+    // (the JavaScript brush model until then, with identical shapes).
+    loadDrawingEngine();
     Object.assign(this,{editor,state,overlay,viewport,onRender,onUI,onError,onStatus,beforeEdit,getImageSource,getTimeline,getClipboard,sampleColor,settings:{preset:'ink',...BRUSH_DEFAULTS,spacingRatio:.08,color:'#252525',filterRadius:4,hue:0,saturation:0,lightness:0,brightness:0,contrast:0,mirrorX:false,mirrorY:false,selectShape:'lasso',shapeKind:'rect',shapeFill:false,color2:'#ffffff',resolution:2,filter:'smooth',length:1,tolerance:16,expansion:1,gap:0,sampleAll:false},sequence:0,strokeId:0,sessions:new Map(),strokeStats:{batches:0,maxQueueDepth:0,lastRoundTripMs:0}});
     // Recent colours are the shared palette's (color-palette.mjs), so every
     // picker offers what was painted; the property keeps Draw's old name and
@@ -496,7 +500,7 @@ export class DrawingController {
    * stroke or queue for the worker's next batch; a taper-out's provisional
    * tail is read by either when it paints. */
   strokePaths(s){
-    s.paths=s.mirrors.map((map,index)=>({map,stroke:new BrushStroke(s.brush,shape=>{shape.pi=index;if(s.gpu)s.gpu.add(shape);else s.pending.push(shape);},{seed:s.brush.seed+index*7919})}));
+    s.paths=s.mirrors.map((map,index)=>({map,stroke:createBrushStroke(s.brush,shape=>{shape.pi=index;if(s.gpu)s.gpu.add(shape);else s.pending.push(shape);},{seed:s.brush.seed+index*7919})}));
     s.tailCache=null;
     if(s.gpu&&s.brush.taperOut>0)s.gpu.tail=()=>this.strokeTail(s);
   }

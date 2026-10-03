@@ -18,3 +18,4 @@ Architecture decision records of the Rust engine port. Each states the context, 
 - [D14: The shared memory's maximum adapts to what the device can reserve](0014-shared-memory-maximum.md)
 - [D15: Editing moves to the engine command by command, record for record](0015-commands-record-for-record.md)
 - [D16: Stored arithmetic uses one Math, the one Node's V8 has, bit for bit](0016-v8-exact-math.md)
+- [D17: The drawing raster engine is its own crate, run by the drawing workers in its own module](0017-drawing-raster-engine.md)

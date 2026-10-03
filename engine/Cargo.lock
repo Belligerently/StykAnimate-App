@@ -1151,6 +1151,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "styk-drawing-wasm"
+version = "0.1.0"
+dependencies = [
+ "styk-doc",
+ "styk-drawing",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "styk-edit"
 version = "0.1.0"
 dependencies = [

@@ -17,6 +17,7 @@ is [`../RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md); decisions are in
 | [rendering.md](rendering.md) | the draw-list format, GPU renderer, CPU rasterizer, the stage |
 | [threading.md](threading.md) | WebAssembly, workers, scheduling, budgets |
 | [editing.md](editing.md) | moving the editor's commands into the engine (S5, in design) |
+| [drawing.md](drawing.md) | the drawing raster engine: brushes, strokes, fill, selections, transforms, tile and undo codecs (S6) |
 
 Commands: `npm run engine:build`, `npm run engine:test` (seconds once built),
 `npm run engine:parity` (`-- --corpus`, `-- --app`), `npm run engine:bench`
