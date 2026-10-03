@@ -243,7 +243,10 @@ adopts what they produced and does not compute it:
 - the selection, the next figure identity, the live-edit events and a seek the call made.
 
 Selecting, seeking, starting and cancelling a gesture, and undo and redo run in both and are
-compared as in shadow mode (history stays the editor's). A call the engine refuses, or whose
+compared as in shadow mode (history stays the editor's). Commands the timeline groups into one history entry
+(`movieclipBatch`) run their ported calls through the session, then the batch's own event ends
+it, and undoing the batch ends the next one (history the session did not record); measured
+with the driver's batch step, owned editing still matches the editor alone. A call the engine refuses, or whose
 answer the editor cannot adopt, runs in the editor alone and ends the session; an error runs
 the editor's call so that the editor raises it with its message. In shadow mode the answer's
 unchanged tracks are checked to be the editor's unchanged objects.
