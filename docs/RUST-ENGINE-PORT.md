@@ -193,14 +193,19 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
   `node engine/tools/gate-census.mjs` (2026-10-03, the gate itself on each file loaded as
-  the app loads it): of 384 native documents (the asset catalogue, the private corpus and
-  the repository's fixtures; Pivot figures left out), the engine draws 383 since generated
-  effects are drawn; the unrepaired Jay file is invalid ("Pose array does not match its
-  figure"). No file uses the other gated
-  features, which users can still create: property channels on native timelines, animation
-  origins, follow camera, layer parallax, Stick Nodes sprites, colour transitions, frame
-  drafts, rotated movieclip drawings (`drawingRotation`). A drawing stroke not yet
-  published still makes its frame fall back to the JavaScript renderer.
+  the app loads it): of 382 native documents (the asset catalogue, the private corpus and
+  the repository's fixtures; Pivot figures left out), the engine draws 380; 2 do not load in
+  Node (`svr_uriel.piv` exceeds Node's string limit; the unrepaired Jay file is invalid). The
+  gate still refuses property channels on native timelines, frame drafts (temporary editing
+  state, only ever shown as onion skins) and movieclips nested deeper than 16 levels; no file
+  of the census uses them, and users can still create the first two. A drawing stroke not
+  yet published still makes its frame fall back to the JavaScript renderer.
+- **Known divergences of the newly drawn features**: the engine tweens a captured movieclip's
+  own keyframes where the editor samples its retained source (`movieclipSource`); the follow
+  camera reshapes its whole path on every revision where the editor resamples incrementally
+  (edit frames use the committed path); records (`styk_eval::records`) still refuse documents
+  with animation origins, so editing them stays with the editor; onion-skin ghosts get no
+  parallax (the editor never shows onion skins with the camera on).
 - **Captions in scenes the engine now draws**: the WebGPU renderer draws text from glyph
   textures, the engine from tessellated glyphs; caption-heavy 3D catalogue scenes fail
   app parity in their captions only (15 Guns 0 of 5 steps, Hand & Face 2 of 5, Vehicles 7 of
@@ -476,10 +481,10 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 15:06 | S5 pose choices | `styk-edit/src/pose_choice.rs`: `setPoseChoice` for groups of 3D bones shown one at a time or all hidden and for presets over existing channels, the selection read back from the channels as `poseChoiceGroups` does; the shadow driver picks another choice on rigs that have them. | 3 recordings (33 steps) match the editor at every step; 7 of 7 mutations break one. App shadow with the engine's `Math` on a Hand-and-Face demo scene: 100 of 100 calls the same; engine-owned editing there matches the editor alone (3.1 MB document, 16 history entries, and after undoing everything). |
 | 2026-10-03 15:51 | S5 cheaper commits | Publishing a gesture found each layer key among the earlier ones by scanning and cloning (quadratic in a layer's keys), and every re-read of the document after a commit copied and re-resolved styled frames after looking up every object's figure; keys are now found by identity through a map, only styled objects are looked up, resolved frames stay in the loader's cache, and commits refresh joined roots from the figures concerned only. `scripts/engine-edit-cost.mjs` measures a pose gesture per call in the app. | AyameDemo commit natively 12.7–13.0 ms → 1.5–1.7 ms (interleaved), in WebAssembly 7.7 → 2.7 ms. Per call in the app the engine poses and commits faster than the editor on every figure document measured (start document 0.16 against 0.33 ms a pose, AyameDemo 0.84 against 1.59 ms); 3D documents not yet everywhere. engine:parity all ok. |
 | 2026-10-03 16:08 | S5 engine-owned editing on by default for large figure documents (D15) | `editingClass(report)` (`movieclips`, `3d`, `large figures` from 1,000 segments across the figure definitions, `figures`); by default the engine owns the ported calls of the classes in `OWNED_CLASSES`, now `large figures`; `?engineEdit=on/off` and `?engineShadow=on` still decide when set. The shadow driver's `--own --default` runs the app as users get it. | Shadow driver interactions, editor alone against default: 20 figures of 200 segments 163.2/213.6 ms → 100.1/175.8 ms, AyameDemo 946.7/1,171.2 → 757.7/801.8 ms (two rounds), documents, history and selection the same; small figure documents stay with the editor (start document 87.8 ms owned against 76.8 alone), 3D documents untouched in default mode. npm test 4,347/4,380 (the 6 known failures); test:timeline, test:hotkeys:ui and test:touch pass; test:ui stops at its WebGPU check (no WebGPU in headless Chromium here). |
+| 2026-10-03 16:21 | S3 the remaining gates (agent, reviewed and merged) | Layer parallax (`styk_eval::parallax`, offsets baked into draw lists, generated effects moving with their layer), the follow camera (`styk_eval::follow`: bounds sampled through `geometry::build_measured`, dead zone, look-ahead, springs, zoom; paths extended in chunks behind a non-blocking swap, D7; edit frames now follow preview camera motion), colour transitions (an index per drawn item into `Scene.transitions`), Stick Nodes sprites, animation origins (`styk_eval::origin`: layout and support-graph kinds, corrected roots, in-between tweens, the rotation `figure_angle` uses), rotated movieclip drawings; new eval, origin and spatial fixtures, each failing without its feature. The gate refuses only property channels, frame drafts and deeply nested movieclips. | engine:test 243 passing; engine:parity all ok (with `origin-fixtures`) on the merged tree. App parity (agent): every new fixture passes on web and Electron (parallax 10/10, follow 13/13, colour transitions 9/9, sprites 7/7, origins 6/6 each, rotated drawings 13/13), a private follow-camera recovery file 16/16 and 11/11; after the merge parallax 3/3 in the app here. Gate census: 382 native documents, 380 drawn, 2 do not load in Node. Cost on documents without the features within noise after two fixes (a colour transition held per item as an index, origin corrections skipped without origins). |
 
-In progress: the remaining S3 gate features (agent: parallax,
-follow camera, colour transitions, Stick Nodes sprites, animation origins, rotated movieclip
-drawings, then property channels); captions drawn from glyph textures (agent). Next in the
+In progress: captions drawn from glyph textures (agent). Next for an agent: property channels
+on native timelines (S3 item 4). Next in the
 main thread: joined 3D IK targets, then more of the commands documents send outside the
 gesture set (`setNodeIK`, `rotateIKTarget`, `setSpatialFeetPinned`, segment edits); the next
 classes to flip (D15): small figure documents once a pose's boundary and adoption cost less

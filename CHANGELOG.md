@@ -26,6 +26,8 @@ What's new in each version of StykAnimate.
 
 - Pivot files open faster, and in the web app the first one no longer waits for a large download.
 - Editing large animations is faster.
+- Animations with particles, auras, beams, smoke or explosions play and edit more smoothly.
+- Smoother playback for animations with parallax layers, a following camera, moved figure origins, Stick Nodes sprites or turning 3D drawings.
 
 ## [1.2.5]
 

@@ -15,11 +15,11 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-edit` | 86 | 1213 KiB | 80 | 6 | 0 | 0 | 0 | 0 % | 23 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
-| `styk-eval` | 83 | 774 KiB | 45 | 29 | 9 | 0 | 0 | 15 % | 48 % | 0 % |
+| `styk-eval` | 83 | 774 KiB | 40 | 34 | 9 | 0 | 0 | 15 % | 53 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 34 | 13 | 5 | 0 | 0 | 9 % | 46 % | 0 % |
-| **Total** | 356 | 4063 KiB | 264 | 53 | 16 | 22 | 1 | 16 % | 27 % | 0 % |
+| **Total** | 356 | 4063 KiB | 259 | 58 | 16 | 22 | 1 | 16 % | 28 % | 0 % |
 
 ## Engine modules
 
@@ -176,9 +176,7 @@ Engine logic: ported to Rust.
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
 | `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | js |  |
 | `src/animation-channels.mjs` | `styk-eval` | js |  |
-| `src/animation-origin-support.mjs` | `styk-eval` | js |  |
 | `src/animation-origin-validation.mjs` | `styk-eval` | js |  |
-| `src/animation-origin.mjs` | `styk-eval` | js |  |
 | `src/animation-pose.mjs` | `styk-eval` | partial | Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS |
 | `src/animation-properties.mjs` | `styk-eval` | js |  |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
@@ -189,7 +187,6 @@ Engine logic: ported to Rust.
 | `src/frame-ids.mjs` | `styk-eval` | js |  |
 | `src/keyframe-easing.mjs` | `styk-eval` | partial | Rust: easing curves (linear, eased, bezier, constant, Auto); validation still JS |
 | `src/layer-folders.mjs` | `styk-eval` | js |  |
-| `src/layer-parallax.mjs` | `styk-eval` | js |  |
 | `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS |
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
 | `src/motion-path-falloff.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
@@ -210,18 +207,21 @@ Engine logic: ported to Rust.
 | `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
 | `src/structural-equality.mjs` | `styk-eval` | js |  |
 | `src/camera-bake-authored.mjs` | `styk-eval::camera` | js |  |
-| `src/camera-follow.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-motion-bake-client.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-motion-bake-worker.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-motion-bake.mjs` | `styk-eval::camera` | js |  |
-| `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: camera presets (shake, handheld, wobble, impact, zoom pulse); follow camera still JS |
-| `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | js |  |
-| `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry; clip effects and drawings still JS |
+| `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS |
+| `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: sampling, shaping (dead zone, look-ahead, springs, zoom), sampleFollow (styk_eval::follow); followFramingOffset and incremental resampling still JS |
+| `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | partial | Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS |
+| `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS |
 | `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-membership.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-mesh-materialize.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-presence.mjs` | `styk-eval::movieclips` | partial | Rust: presence clock and continuations; editing still JS |
 | `src/movieclips.mjs` | `styk-eval::movieclips` | partial | Rust: movieclipTime and clip sampling; capture and editing still JS |
+| `src/animation-origin-support.mjs` | `styk-eval::origin` | partial | Rust: support-graph origins with ghosts, corrections, origin rotation (styk_eval::origin); editing still JS |
+| `src/animation-origin.mjs` | `styk-eval::origin` | partial | Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); editing still JS |
+| `src/layer-parallax.mjs` | `styk-eval::parallax` | partial | Rust: parallaxResolver, per-slot offsets against camera travel (styk_eval::parallax); validation and translatedPlan still JS |
 | `src/builder-construction.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/builder-fill.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/camera-overlay.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
@@ -241,7 +241,7 @@ Engine logic: ported to Rust.
 | `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
 | `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
 | `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation; poseChoiceGroups and applyChannelPoseChoice for setPoseChoice (styk-edit/src/pose_choice.rs); the 3D panel's reading of groups and validation still JS |
-| `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS |
+| `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); authoring still JS |
 | `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
 | `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS |
@@ -329,7 +329,7 @@ Engine logic: ported to Rust.
 | `src/sticknodes/decoder/project-layout.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/sticknodes/decoder/project.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/sticknodes/decoder/renderer.mjs` | `styk-formats::sticknodes` | js |  |
-| `src/sticknodes/geometry.mjs` | `styk-formats::sticknodes` | partial | Rust: curved segments and shaped drawables (sticknodes.rs); import still JS |
+| `src/sticknodes/geometry.mjs` | `styk-formats::sticknodes` | partial | Rust: curved segments, shaped drawables, sprites (sticknodesSpriteAsset, sticknodes.rs); import still JS |
 | `src/sticknodes/validation.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/canvas-artwork-pick.mjs` | `styk-render` | js |  |
 | `src/canvas-color-sample.mjs` | `styk-render` | js |  |
