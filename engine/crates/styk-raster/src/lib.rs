@@ -354,7 +354,7 @@ impl Raster<'_> {
         let mut color = vec![0u32; bw * bh * n];
         for face in faces {
             let p = [device(face.a[0], face.a[1]), device(face.a[2], face.a[3]), device(face.b[0], face.b[1])];
-            let z = [face.b[2] as f64, face.b[3] as f64, face.c[0] as f64];
+            let z = [face.b[2], face.b[3], face.c[0]].map(|d| window_depth(d, face.c[1], face.c[2]) as f64);
             let area = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
             if area == 0.0 || !area.is_finite() {
                 continue;

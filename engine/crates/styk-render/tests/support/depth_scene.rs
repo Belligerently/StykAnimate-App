@@ -13,7 +13,8 @@ fn tri(color: u32, p: [[f32; 2]; 3], depth: Option<[f32; 3]>) -> Prim {
         Some(d) => (K_TRI | F_DEPTH, d),
         None => (K_TRI, [0.0; 3]),
     };
-    Prim { kind, group: 0, color, paint: NO_PAINT, a: [p[0][0], p[0][1], p[1][0], p[1][1]], b: [p[2][0], p[2][1], d[0], d[1]], c: [d[2], 0.0, 0.0, 0.0] }
+    // Depths in a run spanning 0..10.
+    Prim { kind, group: 0, color, paint: NO_PAINT, a: [p[0][0], p[0][1], p[1][0], p[1][1]], b: [p[2][0], p[2][1], d[0], d[1]], c: [d[2], 0.0, 10.0, 0.0] }
 }
 
 /// A square of two faces at one depth.
@@ -33,11 +34,11 @@ fn reset(x0: f32, y0: f32, x1: f32, y1: f32) -> Prim {
 pub fn scene() -> DrawList {
     let mut prims = vec![Prim { kind: K_FILL_VIEW, group: 0, color: WHITE, paint: NO_PAINT, a: [0.0; 4], b: [0.0; 4], c: [0.0; 4] }];
     prims.push(reset(0.0, 0.0, 60.0, 60.0));
-    prims.extend(square(RED, 0.0, 0.0, 40.0, 40.0, Some(window_depth(10.0, 0.0, 10.0))));
-    prims.extend(square(BLUE, 20.0, 20.0, 60.0, 60.0, Some(window_depth(0.0, 0.0, 10.0))));
+    prims.extend(square(RED, 0.0, 0.0, 40.0, 40.0, Some(10.0)));
+    prims.extend(square(BLUE, 20.0, 20.0, 60.0, 60.0, Some(0.0)));
     prims.extend(square(GREEN, 30.0, 0.0, 40.0, 10.0, None));
     prims.push(reset(50.0, 50.0, 64.0, 64.0));
-    prims.extend(square(WHITE, 50.0, 50.0, 64.0, 64.0, Some(window_depth(0.0, 0.0, 10.0))));
+    prims.extend(square(WHITE, 50.0, 50.0, 64.0, 64.0, Some(0.0)));
     let end = prims.len() as u32;
     DrawList {
         prims,

@@ -497,8 +497,7 @@ impl Ctx<'_> {
         }
         let (z_min, range) = (z0 as f32, (z1 - z0).max(1e-8) as f32);
         out.push(prim(K_DEPTH_RESET, 0, NO_PAINT, [x0, y0, x1, y1], [0.0; 4], [0.0; 4]), [x0, y0, x1, y1]);
-        let face = |out: &mut Out, color: [u8; 3], p: [[f32; 2]; 3], z: [f32; 3]| {
-            let d = z.map(|z| window_depth(z, z_min, range));
+        let face = |out: &mut Out, color: [u8; 3], p: [[f32; 2]; 3], d: [f32; 3]| {
             let bounds = [p[0][0].min(p[1][0]).min(p[2][0]) as f64, p[0][1].min(p[1][1]).min(p[2][1]) as f64, p[0][0].max(p[1][0]).max(p[2][0]) as f64, p[0][1].max(p[1][1]).max(p[2][1]) as f64];
             out.grow(bounds[0], bounds[1], bounds[2], bounds[3]);
             out.prims.push(Prim {
@@ -508,7 +507,7 @@ impl Ctx<'_> {
                 paint: NO_PAINT,
                 a: [p[0][0], p[0][1], p[1][0], p[1][1]],
                 b: [p[2][0], p[2][1], d[0], d[1]],
-                c: [d[2], 0.0, 0.0, 0.0],
+                c: [d[2], z_min, range, 0.0],
             });
         };
         for it in items {
@@ -578,6 +577,12 @@ struct ObjectOut {
     extents: Vec<(Extent, f64)>,
     /// The object carries effects of its own (figure or node stacks).
     has_fx: bool,
+    /// The object holds depth-tested faces, which the editor draws from a raster of
+    /// the object's own (`requiresCompatibilityTexture`).
+    depth: bool,
+    /// `objectBounds` of the object (x, y, width, height), with effect padding;
+    /// measured when the frame has effects or depth-tested faces.
+    bounds: [f64; 4],
 }
 
 /// A node with its own stack.
@@ -818,6 +823,8 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         i = j;
     }
     let fx = !bypass && (scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some));
+    // Objects with depth-tested faces are drawn on rasters of their own, sized by their bounds.
+    let measured = fx || !scene.meshes.is_empty() || !scene.depths.is_empty();
     let encode_run = |&(a, b): &(usize, usize)| -> Option<ObjectOut> {
         let first = &scene.items[a];
         let opacity = first.opacity;
@@ -854,7 +861,7 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
             }
             let node = if k < run_end { None } else { own.and_then(|o| node_stack(o, &scene.figures[it.figure as usize], it)) };
             let pad = figure_pad + node.map_or(0.0, |stack| crate::vfx::padding(stack, scale, 0.0));
-            let extent = if fx { item_extent(scene, assets, it) } else { None };
+            let extent = if measured { item_extent(scene, assets, it) } else { None };
             if let Some(stack) = node {
                 let mut out = Out::new();
                 ctx.item(&mut out, it, 0.0, [0, 0, 0]);
@@ -876,7 +883,9 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
             }
         }
         let has_fx = !figure_stack.is_empty() || !nodes.is_empty();
-        let mut figure = has_fx.then(|| Box::new(Fx { stack: figure_stack.to_vec(), bounds: rounded(with), domain: rounded(without), scale, padding: largest }));
+        let depth = run_end > a;
+        let mut bounds = rounded(with);
+        let mut figure = has_fx.then(|| Box::new(Fx { stack: figure_stack.to_vec(), bounds, domain: rounded(without), scale, padding: largest }));
         if let Some(&(_, delta)) = translations.iter().find(|(slot, _)| *slot == first.slot) {
             outline.translate(delta);
             items.translate(delta);
@@ -890,8 +899,10 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
             for (e, _) in &mut extents {
                 e.translate(delta);
             }
+            bounds[0] += delta[0];
+            bounds[1] += delta[1];
         }
-        Some(ObjectOut { opacity, outline_alpha, outline, items, nodes, figure, extents, has_fx })
+        Some(ObjectOut { opacity, outline_alpha, outline, items, nodes, figure, extents, has_fx, depth, bounds })
     };
     let objects: Vec<Option<ObjectOut>> = crate::par::map(&runs, 16, encode_run);
     Encoded { runs, objects, of_slot, fx }
@@ -1061,6 +1072,21 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
             }
         }
     }
+    // An entry without effects that holds depth-tested faces is drawn on a raster of
+    // its own too (`requiresCompatibilityTexture`): docs/engine/spatial.md.
+    let mut entry_depth = vec![false; range.1 - range.0];
+    let mut start = range.0;
+    while start < range.1 {
+        let mut end = start + 1;
+        if let Some(first) = steps_of(start).first() {
+            while end < range.1 && steps_of(end).first().is_some_and(|s| s.level == first.level) {
+                end += 1;
+            }
+        }
+        let any = !entry_fx[start - range.0] && (start..end).any(|k| encoded.objects[k].as_ref().is_some_and(|o| o.depth));
+        entry_depth[start - range.0..end - range.0].fill(any);
+        start = end;
+    }
     let measure = |b: &mut Builder, open: &Open, end: usize| {
         let (mut with, mut without, mut largest) = (EMPTY, EMPTY, 0.0f64);
         for k in open.first..end {
@@ -1093,9 +1119,12 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
             let parent = stack.last().map(|o| o.target).unwrap_or(base);
             let skipped = stack.last().is_some_and(|o| o.skipped) || s.opacity <= 0.0;
             let entry = index == 0 && entry_fx[k - range.0];
+            let raster = index == 0 && entry_depth[k - range.0];
             let filtered = !s.stack.is_empty();
-            let (target, measured) = if skipped || !(s.opacity < 1.0 || filtered || entry) {
+            let (target, measured) = if skipped || !(s.opacity < 1.0 || filtered || entry || raster) {
                 (parent, false)
+            } else if raster && !filtered {
+                (b.open_layer(parent, s.opacity, Vec::new(), LayerKind::Raster { bounds: [0.0; 4] }), true)
             } else if entry {
                 (b.open_layer(parent, s.opacity, s.stack.to_vec(), LayerKind::Entry { bounds: [0.0; 4], domain: [0.0; 4], scale: s.scale, padding: 0.0 }), true)
             } else if filtered {
@@ -1110,7 +1139,7 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
         }
         let Some(o) = encoded.objects[k].as_ref() else { continue };
         let parent = stack.last().map(|o| o.target).unwrap_or(base);
-        b.object(parent, o, path.is_empty() && entry_fx[k - range.0]);
+        b.object(parent, o, path.is_empty() && entry_fx[k - range.0], path.is_empty() && entry_depth[k - range.0]);
     }
     while let Some(open) = stack.pop() {
         if open.measured {
@@ -1280,6 +1309,7 @@ impl Builder {
                 *b = bounds;
                 *d = domain;
             }
+            LayerKind::Raster { bounds: b } => *b = bounds,
             LayerKind::Camera { .. } => {}
         }
     }
@@ -1295,7 +1325,7 @@ impl Builder {
             return;
         }
         let bounds = match self.layers.get(g.layer as usize).map(|l| l.kind) {
-            Some(LayerKind::Entry { bounds: r, .. } | LayerKind::Nested { bounds: r, .. }) => [r[0] as f32, r[1] as f32, (r[0] + r[2]) as f32, (r[1] + r[3]) as f32],
+            Some(LayerKind::Entry { bounds: r, .. } | LayerKind::Nested { bounds: r, .. } | LayerKind::Raster { bounds: r }) => [r[0] as f32, r[1] as f32, (r[0] + r[2]) as f32, (r[1] + r[3]) as f32],
             _ => g.bounds,
         };
         self.groups[target].bounds = bounds;
@@ -1346,12 +1376,14 @@ impl Builder {
 
     /// One figure instance: object opacity layer (with its own effects), outline
     /// layer, then its items with filtered nodes in their place. An `entry`
-    /// holding effects is drawn on a raster of its own even when opaque.
-    fn object(&mut self, parent: usize, o: &ObjectOut, entry: bool) {
+    /// holding effects is drawn on a raster of its own even when opaque, and so is
+    /// a `raster` entry, which holds depth-tested faces.
+    fn object(&mut self, parent: usize, o: &ObjectOut, entry: bool, raster: bool) {
         let fx = o.figure.as_deref();
         let filtered = fx.is_some_and(|f| !f.stack.is_empty());
         let layered = filtered || (entry && fx.is_some());
-        let isolate = o.opacity < 1.0 || layered;
+        let raster = raster && !layered;
+        let isolate = o.opacity < 1.0 || layered || raster;
         let target = match fx {
             Some(f) if layered => {
                 let kind = if entry {
@@ -1361,6 +1393,7 @@ impl Builder {
                 };
                 self.open_layer(parent, o.opacity, f.stack.clone(), kind)
             }
+            _ if raster => self.open_layer(parent, o.opacity, Vec::new(), LayerKind::Raster { bounds: o.bounds }),
             _ if isolate => self.open(parent, o.opacity),
             _ => parent,
         };

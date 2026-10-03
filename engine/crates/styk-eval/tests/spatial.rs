@@ -368,12 +368,19 @@ fn depth_surfaces_encode_as_depth_runs() {
                     runs += 1;
                     assert!(list.prims.get(i + 1).is_some_and(face), "{name} tick {tick}: a reset without faces");
                 } else if face(p) {
+                    // The editor draws an object with depth-tested faces from a raster of its own.
+                    let mut group = p.group as usize;
+                    while group != 0 && list.groups[group].layer == styk_draw::NO_LAYER {
+                        group = list.groups[group].parent as usize;
+                    }
+                    let layer = list.layers.get(list.groups[group].layer as usize).map(|l| l.kind);
+                    assert!(matches!(layer, Some(styk_draw::LayerKind::Raster { bounds }) if bounds[2] > 0.0 && bounds[3] > 0.0), "{name} tick {tick}: a face outside a raster entry ({layer:?})");
                     let r = reset.unwrap_or_else(|| panic!("{name} tick {tick}: a face outside a run"));
                     assert!(list.prims[i - 1].kind & 255 == K_DEPTH_RESET || face(&list.prims[i - 1]), "{name} tick {tick}: a run interrupted");
                     for (x, y) in [(p.a[0], p.a[1]), (p.a[2], p.a[3]), (p.b[0], p.b[1])] {
                         assert!(x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3], "{name} tick {tick}: a face outside its reset");
                     }
-                    for d in [p.b[2], p.b[3], p.c[0]] {
+                    for d in [p.b[2], p.b[3], p.c[0]].map(|d| styk_eval::drawlist::window_depth(d, p.c[1], p.c[2])) {
                         assert!((0.0004..=0.9996).contains(&d), "{name} tick {tick}: window depth {d}");
                     }
                 }

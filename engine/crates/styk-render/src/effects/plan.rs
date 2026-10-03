@@ -130,8 +130,9 @@ pub fn raster_bounds(bounds: [f64; 4], visible: Option<[f64; 4]>, resolution: f6
 /// its world origin, its density and its complete size in pixels. `bounds` is
 /// `objectBounds` with effect padding, `padding` the largest item padding,
 /// `physical` the view's pixels per world unit, `visible` the world rectangle
-/// on screen. `None` when it is entirely off screen at a cropping density.
-pub fn entry_raster(bounds: [f64; 4], padding: f64, physical: f64, visible: [f64; 4], max_texture: u32) -> Option<([f64; 2], f64, [u32; 2])> {
+/// on screen. `filtered`: the artwork holds effects, whose surfaces cap the density
+/// (`vfxRasterScale`). `None` when it is entirely off screen at a cropping density.
+pub fn entry_raster(bounds: [f64; 4], padding: f64, physical: f64, visible: [f64; 4], max_texture: u32, filtered: bool) -> Option<([f64; 2], f64, [u32; 2])> {
     let max = 8192f64.min(max_texture as f64);
     let desired = raster_resolution(physical);
     let mut resolution = desired;
@@ -150,8 +151,10 @@ pub fn entry_raster(bounds: [f64; 4], padding: f64, physical: f64, visible: [f64
     }
     let mut density = resolution.min(max / rect[2]).min(max / rect[3]);
     // `vfxRasterScale`: nested halos within the effect surface limit.
-    let edge = 4096f64.min(max) - 128.0;
-    density = density.min(edge / (rect[2] + 2.0 * padding)).min(edge / (rect[3] + 2.0 * padding));
+    if filtered {
+        let edge = 4096f64.min(max) - 128.0;
+        density = density.min(edge / (rect[2] + 2.0 * padding)).min(edge / (rect[3] + 2.0 * padding));
+    }
     let size = [(rect[2] * density).ceil().max(1.0) as u32, (rect[3] * density).ceil().max(1.0) as u32];
     Some(([rect[0], rect[1]], density, size))
 }
@@ -269,11 +272,23 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
                     Placement { space: parent.space, rect: capped(rect, max), filter: None, camera: None }
                 }
             }
+            Some(LayerKind::Raster { bounds }) => {
+                // An entry without effects: the editor's grid for the view, resampled.
+                let region = mapped(invert(parent.space), parent.rect);
+                match entry_raster(bounds, 0.0, physical, visible, view.max_texture, false) {
+                    None => none,
+                    Some((origin, ps, size)) => {
+                        let space = [ps, 0.0, 0.0, ps, -origin[0] * ps, -origin[1] * ps];
+                        let wanted = outward(grow(mapped(space, region), 2.0));
+                        Placement { space, rect: capped(intersect([0.0, 0.0, size[0] as f64, size[1] as f64], wanted), max), filter: None, camera: None }
+                    }
+                }
+            }
             Some(LayerKind::Entry { bounds, domain, scale, padding }) => {
                 // What of the parent is drawn, in world units. The grid itself is the
                 // editor's for the view (the camera image reuses the view's rasters).
                 let region = mapped(invert(parent.space), parent.rect);
-                match entry_raster(bounds, padding, physical, visible, view.max_texture) {
+                match entry_raster(bounds, padding, physical, visible, view.max_texture, true) {
                     None => none,
                     Some((origin, ps, size)) => {
                         let space = [ps, 0.0, 0.0, ps, -origin[0] * ps, -origin[1] * ps];
@@ -338,12 +353,12 @@ mod tests {
     #[test]
     fn an_entry_takes_the_editors_density_and_grid() {
         // A 300×200 figure at a 1.25 view: rasterized at 2^0.5 on its own bounds.
-        let (origin, ps, size) = entry_raster([100.0, 50.0, 300.0, 200.0], 20.0, 1.25, [0.0, 0.0, 2000.0, 2000.0], 8192).unwrap();
+        let (origin, ps, size) = entry_raster([100.0, 50.0, 300.0, 200.0], 20.0, 1.25, [0.0, 0.0, 2000.0, 2000.0], 8192, true).unwrap();
         assert_eq!(origin, [100.0, 50.0]);
         assert!((ps - 2f64.sqrt()).abs() < 1e-12);
         assert_eq!(size, [425, 283]);
         // Large halos lower the density so the layer stays within the effect surface.
-        let (_, ps, size) = entry_raster([0.0, 0.0, 3000.0, 100.0], 400.0, 2.0, [0.0, 0.0, 3000.0, 100.0], 8192).unwrap();
+        let (_, ps, size) = entry_raster([0.0, 0.0, 3000.0, 100.0], 400.0, 2.0, [0.0, 0.0, 3000.0, 100.0], 8192, true).unwrap();
         assert!((ps - 3968.0 / 3800.0).abs() < 1e-12);
         assert_eq!(size[0], (3000.0 * ps).ceil() as u32);
     }
@@ -352,7 +367,7 @@ mod tests {
     fn close_ups_crop_on_the_complete_grid() {
         // At 16x only the visible part is rasterized, on a grid of whole 128-pixel steps.
         let visible = [150.0, 120.0, 40.0, 30.0];
-        let (origin, ps, size) = entry_raster([100.0, 100.0, 200.0, 200.0], 4.0, 16.0, visible, 8192).unwrap();
+        let (origin, ps, size) = entry_raster([100.0, 100.0, 200.0, 200.0], 4.0, 16.0, visible, 8192, true).unwrap();
         assert_eq!(ps, 16.0);
         let steps = |v: f64| ((v - 100.0) * ps).rem_euclid(128.0);
         assert!(steps(origin[0]) == 0.0 && steps(origin[1]) == 0.0, "{origin:?}");
@@ -399,6 +414,24 @@ mod tests {
         let nf = n.filter.unwrap();
         assert!((nf.origin[0] - (n.rect[0] - (147.0 - 90.0) * ps)).abs() < 1e-9);
         assert!((nf.scale - ps * 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_raster_entry_takes_the_editors_grid_without_an_effect_cap() {
+        let root = Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0; 4], layer: NO_LAYER };
+        let object = Group { parent: 0, depth: 1, opacity: 1.0, bounds: [100.0, 100.0, 300.0, 300.0], layer: 0 };
+        let layers = vec![EffectLayer { effects: None, kind: LayerKind::Raster { bounds: [97.0, 98.0, 206.0, 205.0] } }];
+        let p = plan(&list(vec![root, object], layers), &view())[1];
+        // The view's 1.25 pixels per unit, a quarter octave up: √2, on a grid anchored at the bounds.
+        let ps = 2f64.sqrt();
+        assert_eq!(p.space, [ps, 0.0, 0.0, ps, -97.0 * ps, -98.0 * ps]);
+        assert_eq!(p.rect, [0.0, 0.0, (206.0 * ps).ceil(), (205.0 * ps).ceil()]);
+        assert!(p.filter.is_none());
+        // Only artwork with effects keeps within the effect surface (`vfxRasterScale`).
+        let wide = [0.0, 0.0, 3000.0, 100.0];
+        let visible = [0.0, 0.0, 3000.0, 100.0];
+        assert_eq!(entry_raster(wide, 0.0, 1.25, visible, 8192, false).unwrap().1, ps);
+        assert!(entry_raster(wide, 0.0, 1.25, visible, 8192, true).unwrap().1 < ps);
     }
 
     #[test]

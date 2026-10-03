@@ -232,12 +232,13 @@ fn vs_main(in: VsIn) -> VsOut {
     } else if (kind == K_TRI) {
         if (vi == 0u) { world = p.a.xy; } else if (vi == 1u) { world = p.a.zw; } else { world = p.b.xy; }
         if ((p.kind & F_DEPTH) != 0u) {
-            // A face of a depth run: its corner's window depth (styk-draw `F_DEPTH`).
-            var depth = p.c.x;
-            if (vi == 0u) { depth = p.b.z; } else if (vi == 1u) { depth = p.b.w; }
+            // A face of a depth run: its corner's window depth, mapped over the run's depth
+            // range in this shader as the editor's mesh raster maps it (styk-draw `F_DEPTH`).
+            var d = p.c.x;
+            if (vi == 0u) { d = p.b.z; } else if (vi == 1u) { d = p.b.w; }
             out.world = world;
             out.pos = clip_pos(to_target(world, g, gr));
-            out.pos.z = depth;
+            out.pos.z = 0.9995 - 0.999 * (d - p.c.y) / p.c.z;
             return out;
         }
     } else if (kind == K_DEPTH_RESET) {
