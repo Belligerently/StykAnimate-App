@@ -1,20 +1,20 @@
 path	kind	owner	status	note
-src/animation-channels.mjs	engine	styk-eval	js	
+src/animation-channels.mjs	engine	styk-eval::channels	partial	Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); authoring validation, animationPropertyValue and editing still JS
 src/animation-history.mjs	engine	styk-edit	js	
 src/animation-origin-support.mjs	engine	styk-eval::origin	partial	Rust: support-graph origins with ghosts, corrections, origin rotation (styk_eval::origin); editing still JS
 src/animation-origin-validation.mjs	engine	styk-eval	js	
 src/animation-origin.mjs	engine	styk-eval::origin	partial	Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); editing still JS
-src/animation-pose.mjs	engine	styk-eval	partial	Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS
-src/animation-properties.mjs	engine	styk-eval	js	
+src/animation-pose.mjs	engine	styk-eval	partial	Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS; plus composePoseChannels and handleOrientation (styk_eval::channels::pose)
+src/animation-properties.mjs	engine	styk-eval::channels	partial	Rust: property vocabulary, discrete and colour properties; validation and names still JS
 src/animation-property-state.mjs	engine	styk-eval	js	
-src/animation-style.mjs	engine	styk-eval	partial	Rust: per-instance style overlays (resolveInstanceFigure); style channels still JS
+src/animation-style.mjs	engine	styk-eval::channels	partial	Rust: style overlays and style channels (setAnimationStyle, applicability); validation still JS
 src/app-dialogs.mjs	ui	-	stays	
 src/app.mjs	ui	-	stays	
 src/application-menu.mjs	ui	-	stays	
 src/asset-library.mjs	ui	-	stays	
 src/audio-encode.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/audio-engine.mjs	platform	styk-export::audio	js	Web Audio preview
-src/audio-model.mjs	engine	styk-export::audio	js	audio model and offline mix
+src/audio-model.mjs	engine	styk-export::audio	js	audio model and offline mix; validateAudioState also in styk-edit/src/audio.rs for the ported audio commands
 src/audio-pcm.mjs	engine	styk-export::audio	js	audio model and offline mix
 src/audio-timeline.mjs	ui	-	stays	
 src/audio-worker.mjs	platform	styk-export::audio	js	Web Audio preview
@@ -122,18 +122,18 @@ src/drawing-worker-preview.mjs	engine	styk-drawing	js
 src/drawing-worker.mjs	engine	styk-drawing	js	
 src/editable-scene-preparation.mjs	engine	styk-render	js	
 src/editor-animation.mjs	engine	styk-edit	js	commands and history
-src/editor-audio.mjs	engine	styk-edit	js	commands and history
+src/editor-audio.mjs	engine	styk-edit	partial	Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS
 src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS
 src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-topology.mjs	engine	styk-edit	js	commands and history
-src/editor-builder.mjs	engine	styk-edit	js	commands and history
-src/editor-camera-motion.mjs	engine	styk-edit	js	commands and history
+src/editor-builder.mjs	engine	styk-edit	partial	Rust: addPolygon, updatePolygon (handles, order, surface removal), removePolygon, editDefinition (styk-edit/src/polygons.rs); polygon colour and opacity on a figure on show, surfaces, figure style and the builder's segment commands still JS
+src/editor-camera-motion.mjs	engine	styk-edit	partial	Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS
 src/editor-camera.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-async.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-sparse.mjs	engine	styk-edit	js	commands and history
-src/editor-colors.mjs	engine	styk-edit	js	commands and history
+src/editor-colors.mjs	engine	styk-edit	partial	Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs); recolouring figures (editFigureColors and its range operation) still JS
 src/editor-combine.mjs	engine	styk-edit	js	commands and history
 src/editor-disconnect.mjs	engine	styk-edit	js	commands and history
 src/editor-drawing.mjs	engine	styk-edit	js	commands and history
@@ -151,7 +151,7 @@ src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-focus.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-folders.mjs	engine	styk-edit	ported	createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); getLayerFolders reads the state
 src/editor-layer-migration.mjs	engine	styk-edit	js	commands and history
-src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS
+src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard (sheetCopyFrames, sheetPasteFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, transfer between layers, channel and range commands still JS
 src/editor-layers.mjs	engine	styk-edit	partial	Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS
 src/editor-load.mjs	engine	styk-edit	js	commands and history
 src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
@@ -269,7 +269,7 @@ src/native-container.mjs	engine	styk-formats::container	ported	Rust: reader and 
 src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
-src/native-property-curve.mjs	engine	styk-eval	js	
+src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
 src/native-property-edit.mjs	engine	styk-edit	js	
 src/native-property-projection.mjs	engine	styk-eval	js	
 src/native-property-ranges.mjs	engine	styk-edit	js	

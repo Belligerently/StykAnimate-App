@@ -12,7 +12,9 @@
 //! timelines (docs/engine/editing.md lists the calls). Every other call
 //! answers [`EditError::Unported`], so a facade knows to run it in JavaScript.
 
+mod audio;
 mod authored;
+mod camera_motion;
 mod figures;
 mod frame;
 mod history;
@@ -21,11 +23,14 @@ mod ik_settings;
 mod layers;
 mod pose;
 mod pose_choice;
+mod palette;
+mod polygons;
 mod record;
 pub mod replay;
 mod select;
 pub mod session;
 mod sheet;
+mod sheet_clipboard;
 mod sheet_frames;
 mod spatial;
 mod spatial_ik;
@@ -137,6 +142,8 @@ pub struct Editor {
     pub(crate) source_table_was_present: bool,
     /// The layer of each figure in the last published poses (`_newLayerHints`).
     pub(crate) new_layer_hints: HashMap<u32, String>,
+    /// `editor._sheetClipboard`: the timeline frames this editor copied.
+    pub(crate) sheet_clipboard: Option<sheet_clipboard::Clipboard>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
@@ -209,6 +216,7 @@ impl Editor {
             generated_sources: Vec::new(),
             source_table_was_present,
             new_layer_hints: HashMap::new(),
+            sheet_clipboard: None,
             events: Vec::new(),
             eval: RefCell::default(),
             gate: RefCell::new(None),
@@ -414,6 +422,16 @@ impl Editor {
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "setAudioTrack" => self.set_audio_track(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteAudioTrack" => self.delete_audio_track(&arg(0)).map(Value::Bool),
+            "setAudioClip" => self.set_audio_clip(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "deleteAudioClip" => self.delete_audio_clip(&arg(0)).map(Value::Bool),
+            "addPaletteColor" => self.add_palette_color(&arg(0)).map(Value::Bool),
+            "addPaletteColors" => self.add_palette_colors(&arg(0)),
+            "removePaletteColor" => self.remove_palette_color(&arg(0)).map(Value::Bool),
+            "movePaletteColor" => self.move_palette_color(&arg(0), &arg(1)).map(Value::Bool),
+            "setCameraMotion" => self.set_camera_motion(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteCameraMotion" => self.delete_camera_motion(&arg(0)).map(Value::Bool),
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
@@ -438,6 +456,18 @@ impl Editor {
             "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
+            "updatePolygon" => match args.get(1) {
+                None => self.update_polygon(&arg(0), &Value::Null),
+                Some(Value::Null) => Err(EditError::Unported("a polygon change that is null".into())),
+                Some(patch) => self.update_polygon(&arg(0), patch),
+            },
+            "removePolygon" => self.remove_polygon(&arg(0)),
+            "sheetCopyFrames" => match arg(1).as_f64() {
+                Some(start) => self.sheet_copy_frames(&arg(0), start, &arg(2)),
+                None => Err(EditError::Unported("copying frames from a frame that is not a number".into())),
+            },
+            "sheetPasteFrames" => self.sheet_paste_frames(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetMoveFrames" => self.sheet_move_frames(&arg(0), number(1), number(2), &arg(3), &arg(4)).map(Value::Bool),
             "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetDuplicateFrameAfter" => self.sheet_duplicate_frame_after(&arg(0), &arg(1)).map(Value::Bool),

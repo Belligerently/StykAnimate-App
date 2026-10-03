@@ -91,9 +91,8 @@ impl Stacks {
 /// colours; switches, options, seeds, order, membership and `enabled` come
 /// from `a`. Effects only in `b` do not appear before their pose.
 ///
-/// Values a property channel (`vfx1:*`, `vfxStack`, `vfxScope`) would set
-/// apply to the result of this tween, before clips; channels are not
-/// evaluated by the engine yet (`Document::unsupported` names them).
+/// Values of property channels (`vfx1:*`, `vfxStack`, `vfxScope`) apply to the
+/// result of this tween, before clips ([`crate::channels::scalar`]).
 pub fn interpolate(a: &Arc<Stacks>, b: Option<&Arc<Stacks>>, t: f64) -> Arc<Stacks> {
     let Some(b) = b else { return a.clone() };
     if Arc::ptr_eq(a, b) || t == 0.0 {

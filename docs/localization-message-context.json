@@ -36517,7 +36517,7 @@
   },
   "timelineOrganization.chooseLayersToFocus": {
     "locations": [
-      "src/editor-layer-focus.mjs:50"
+      "src/editor-layer-focus.mjs:55"
     ],
     "context": "throw messageError(new Error(''), 'timelineOrganization.chooseLayersToFocus', {});"
   },
@@ -36535,7 +36535,7 @@
   },
   "timelineOrganization.invalidFocusLock": {
     "locations": [
-      "src/editor-layer-focus.mjs:51"
+      "src/editor-layer-focus.mjs:56"
     ],
     "context": "if (typeof lock !== 'boolean') throw messageError(new Error(''), 'timelineOrganization.invalidFocusLock', {});"
   },

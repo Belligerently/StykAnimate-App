@@ -75,11 +75,16 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | IK settings (`styk-edit/src/ik_settings.rs`): `setNodeIK` switches a controller on (pinned where the limb is drawn, refused on a joint a rig derives and on chains that would share bones) or off (the limb kept as drawn, a 3D limb's record kept), pins and releases it (released lengths kept on the chain), sets stretch, chain length, bend side ("Both" recapturing the bend) and a 3D limb's swivel; `rotateIKTarget` turns a target (a free limb captured first, its branches turning with it); `setSpatialFeetPinned` plants or releases every foot of a 3D figure in one gesture | yes, not across joined figures | ik-settings-sheet, ik-settings-pinned-sheet, ik-settings-spatial-sheet, ik-settings-rig-sheet, ik-settings-followers-sheet |
 | `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller; across joined figures on the assembly's skeleton (`poseGraph`, `captureFor`) | yes, without perspective or 3D controllers | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet, ik-joined-unpinned-sheet, startup-join-sheet |
 | Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`); a gesture on joined figures takes in their whole assembly (`_ikPoseSlots`, `_expandIKDrag`) | yes | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet, ik-joined-sheet, ik-joined-late-sheet |
+| The project palette (`styk-edit/src/palette.rs`): `addPaletteColor`, `addPaletteColors`, `removePaletteColor`, `movePaletteColor` (colours as `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or bytes), one `palette` history entry each; compared in both editors | yes | palette-sheet |
+| Audio tracks and clips (`styk-edit/src/audio.rs`): `setAudioTrack` (name, volume, mute, solo), `deleteAudioTrack`, `setAudioClip` (start, trim, duration, volume, fades kept within the clip, another track; the clip edited goes last on its track, as in the editor), `deleteAudioClip`, recordings nothing uses dropped; validated as `validateAudioState` does, each recording checked once (the editor's `WeakSet`, here by identity without keeping it alive); one `audio` history entry each. Not run in the app yet: the engine's document leaves the audio out ([document.md](document.md)), so these stay with the editor until the engine saves. Adding tracks, importing, splitting, duplicating and pasting clips draw random identities and ripples with frame edits are batches: they stay in the editor | yes | audio-sheet, audio-none-sheet |
+| Camera motion clips (`styk-edit/src/camera_motion.rs`): `setCameraMotion` (start, duration, switch, parameters, followed figures; muted ranges move with the clip) and `deleteCameraMotion`, validated as `validateCameraMotion` does, one `camera-motion` history entry each, the sheet lengthened to the last clip; compared in both editors, not adopted. Adding, duplicating, pasting and randomizing clips draw random identities or seeds and stay in the editor | yes | camera-motion-sheet |
 | `updateSegment(patch)`: the selected joint's angle, length and bend (one posed edit; a connector's length within 0 to 1) and its definition's colour, transparency, thickness, shape and construction flag with the raw flags following (one `figure` history entry); compared in both editors, not adopted (its definition event is not a sheet publication) | yes | update-segment-sheet, update-segment-rig-sheet |
 | `updateObject(patch)`, `updateSelection(patch)`: the inspector's figure fields (scale, position, opacity, name, colour, mirroring, metadata) with the editor's refusals; with several figures selected, shared fields edit them all | yes | update-object-sheet, update-object-native |
 | `addFigure(typeId)` on a layer sheet: a new figure of a library definition in the middle of the canvas at the playhead, selected, in the active layer, through the range commit (`applyFigureRange`, `insert`, `_commitSheetRange`: only the inserted figure's layer is keyed, unlike a whole-frame transaction, which also stores joined figures' roots) | yes, not for movieclips or on a native timeline | add-figure-sheet, add-figure-layers-sheet |
 | The layer list (`styk-edit/src/layers.rs`): `renameLayer`, `setLayerColor`, `setLayerVisible`, `setLayerLocked` (the scene and camera tracks too), `reorderLayers`, `moveLayerTo`, `createLayer`, and folders (`createLayerFolder`, `renameLayerFolder`, `moveLayersToFolder`, `arrangeLayers`, `deleteLayerFolder`): one `layers` history entry each, as the paths of the layer state it changed (`_layerEdit`, including its quirk of recording a removal of what was absent), the sheet's tracks following the layers | yes; run in both editors and compared, not adopted (cheap, and the session then lives through them) | layer-list-sheet, layers-folders-sheet, layers-native |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`, `sheetMoveFrames` (keys moved or copied along their tracks, replacing the keys they land on): the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple; moving a movieclip's keys and copying a drawing layer's are not ported | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet, move-frames-sheet, move-frames-imported-sheet |
+| The timeline clipboard (`styk-edit/src/sheet_clipboard.rs`): `sheetCopyFrames` keeps each layer's poses over a range (at its start, its keys and the layer's end inside it, with their easing; a figure joined to one on another layer is kept where geometry puts it, unjoined, as `ownedFrame` does) and `sheetPasteFrames` writes them over or inserted before what follows, on the same layers or on others (the figures, joins and IK followers renamed together, the new identities assigned to the destination); the copy's return value is the editor's clipboard, a view. A session pastes only what it copied itself: the facade asks the engine only when the editor's clipboard is the object the session's copy made (or both have none) | yes, without drawing layers, movieclip parts, movieclips on the presence clock and clipboards from another document | sheet-clipboard-sheet, sheet-clipboard-empty-sheet, sheet-clipboard-ik-sheet |
+| Polygons (`styk-edit/src/polygons.rs`): `addPolygon` (through at least three distinct handles, a closing repeat dropped, behind the skeleton unless an order is given, the next identity kept in the definition), `updatePolygon` (handles, order, a surface removed), `removePolygon` (polygons without an identity take theirs from their place), refusing a cycle another polygon draws in either direction; one `figure` history entry each (`editDefinition`, native order arrays dropped); compared in both editors, not adopted. A colour or opacity edit of a figure on show is recoloured or keyed (other families) and a new surface is fitted to the figure's geometry: `Unported` | yes | polygons-sheet, polygons-native, polygons-native-file-sheet |
 | `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go | yes, on a layer sheet; not for movieclip instances or several figures at once | figures-sheet, figures-layers-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
 | flipping a branch, everything else | no: `Unported` | transform-native |
@@ -101,8 +106,9 @@ Every ported call runs in both of the editor's modes:
   (refusals and their cancel events), movieclip-sheet and movieclip-loose-sheet.
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
-A call answers `Unported`, and changes nothing, on documents with property channels on a
-native timeline, animation origins or a movieclip source; for posing a joined 3D IK target and
+A call answers `Unported`, and changes nothing, on documents with property channels (on a
+native timeline, or a layer sheet's `legacyAnimation`, which the engine draws but does not
+edit), animation origins or a movieclip source; for posing a joined 3D IK target and
 configuring or turning IK targets across joined figures;
 for poses on a drawing layer; for a replaced figure joined to one
 outside its movieclip frame; and wherever the engine does not evaluate the frame as
@@ -141,8 +147,11 @@ document difference the harness can see):
   altogether). The engine counts them from the document when first needed; the editor's
   set of figures *ever seen* can be larger after figures were deleted and collected.
 - **Layer focus locks and the timeline's layer selection** (`_sheetSelection`) are
-  runtime state of the JavaScript editor; the facade runs selection and seeking in
-  JavaScript while either is on.
+  runtime state of the JavaScript editor: a focus lock refuses edits on the other layers,
+  and a layer selection is followed by seeks. The facade starts no engine session while
+  a focus lock or a followed layer selection is on, and changing either ends the current
+  session (measured with the driver's focus step: without this, owned editing inserted a
+  key the editor refuses on a locked layer).
 - **`runtime_segments`** are not in the engine's copy (the mirror strips them). The
   editor's history snapshots keep them, so on a native timeline a gesture that moves a
   figure with `runtime_segments` and puts it back is a change in JavaScript and none in
@@ -217,7 +226,9 @@ The engine runs ported calls in the editor's place while a session lives (the sa
 editor), for every document with `?engineEdit=on` (or
 `localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
 keeps the editor in charge and compares. `editingClass(report)` names a document's class:
-`movieclips` when a figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
+`unported` for documents the engine does not edit at all (property channels, animation
+origins, a captured movieclip's own document; the engine draws them), `movieclips` when a
+figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
 `large figures` from 1,000 segments across its figure definitions, else `figures`. The
 calls that change the document
 (the gestures' moves, poses and transforms, `commitDrag`, the layer timeline's keys and
@@ -239,9 +250,13 @@ adopts what they produced and does not compute it:
 - the selection, the next figure identity, the live-edit events and a seek the call made.
 
 Selecting, seeking, starting and cancelling a gesture, and undo and redo run in both and are
-compared as in shadow mode (history stays the editor's). A call the engine refuses, or whose
+compared as in shadow mode (history stays the editor's). Commands the timeline groups into one history entry
+(`movieclipBatch`) run their ported calls through the session, then the batch's own event ends
+it, and undoing the batch ends the next one (history the session did not record); measured
+with the driver's batch step, owned editing still matches the editor alone. A call the engine refuses, or whose
 answer the editor cannot adopt, runs in the editor alone and ends the session; an error runs
-the editor's call so that the editor raises it with its message. In shadow mode the answer's
+the editor's call so that the editor raises it with its message. If the engine itself fails a call (it
+throws), the editor runs it and engine sessions stop for the rest of the page. In shadow mode the answer's
 unchanged tracks are checked to be the editor's unchanged objects.
 
 `node scripts/engine-edit-shadow.mjs --own [--file <document.json> | --import <file.piv>]`

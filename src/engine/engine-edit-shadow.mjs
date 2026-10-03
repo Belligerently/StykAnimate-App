@@ -22,6 +22,7 @@
  * Anything else (an unported command, a load, an asynchronous edit) ends it.
  */
 import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
+import {layerFocusOf} from '../editor-layer-focus.mjs';
 
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
@@ -29,15 +30,16 @@ const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDr
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
   'renameLayer', 'setLayerColor', 'setLayerVisible', 'setLayerLocked', 'reorderLayers', 'moveLayerTo', 'createLayer', 'createLayerFolder', 'renameLayerFolder',
-  'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'undo', 'redo'];
+  'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'setCameraMotion', 'deleteCameraMotion',
+  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'addPolygon', 'updatePolygon', 'removePolygon', 'undo', 'redo'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold): a view, not compared. */
-const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder']);
+const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
   'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
-  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection']);
+  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames']);
 
 /** A switch set in the address (`?query=on|off`), else in local storage: 'on', 'off' or null. */
 const choice = (query, key) => {
@@ -66,12 +68,15 @@ export function engineEditMode() {
 const LARGE = 1000;
 
 /**
- * A document's editing class (D15, docs/engine/editing.md): `movieclips` when a figure is a
- * movieclip, `3d` when a figure has 3D bones or a mesh, else `large figures` from LARGE
- * segments across its figure definitions and `figures` below.
+ * A document's editing class (D15, docs/engine/editing.md): `unported` for documents the
+ * engine does not edit at all (property channels, animation origins, a captured
+ * movieclip's own document), `movieclips` when a figure is a movieclip, `3d` when a figure
+ * has 3D bones or a mesh, else `large figures` from LARGE segments across its figure
+ * definitions and `figures` below.
  */
 export function editingClass(report) {
-  const figures = report?.figure_types ?? [];
+  const figures = report?.figure_types ?? [], styk = report?._styk;
+  if (styk?.animation?.channels?.length || styk?.layerSheet?.legacyAnimation || styk?.movieclipSource || figures.some(figure => figure?._styk?.animationOrigin)) return 'unported';
   if (figures.some(figure => figure?._styk?.movieclip)) return 'movieclips';
   if (figures.some(figure => figure?.segments?.some(segment => segment?._stykRig?.spatial))) return '3d';
   return figures.reduce((sum, figure) => sum + (figure?.segments?.length ?? 0), 0) >= LARGE ? 'large figures' : 'figures';
@@ -140,9 +145,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   const report = globalThis.__stykEditShadow = {own, mode, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0};
   let session = null, depth = 0, events = null;
+  // The timeline clipboard the session copied (the editor's object): a session starts
+  // with none, and pastes only when the editor's clipboard is that one.
+  let copied = null;
   const end = why => {
     if (!session) return;
-    session.free(); session = null;
+    session.free(); session = null; copied = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
@@ -154,7 +162,13 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (depth > 0) { events?.push(plain(detail ?? null)); return; }
     // The document changed through something the session did not run.
     if (['edit', 'history', 'document'].includes(detail?.kind)) end(`a ${detail.kind} outside the shadowed calls`);
+    // Runtime state the engine does not hold (editing.md): layer focus, which locks layers
+    // and counts as a layer revision, and a timeline layer selection that follows seeks.
+    else if (detail?.kind === 'layer-focus') end('layer focus');
+    else if (detail?.kind === 'selection' && detail.sheetSelection) end('a timeline layer selection');
   });
+  /** Whether the editor holds runtime state that changes what calls do and the engine lacks. */
+  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor._sheetSelection?.contents);
 
   /** Brings the engine's frames to the editor's revision (playback does it only when it prepares). */
   let syncing = null;
@@ -168,9 +182,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   report.prepare = prepare;
 
+  // After the engine fails a call (it threw), editing stays with the editor for the rest of
+  // the page: the call ran in the editor, and the engine is not asked again.
+  let broken = false;
   const begin = () => {
     if (session) return session;
-    if (!ownedClass()) return null;
+    if (broken || !ownedClass() || runtimeState()) return null;
     const side = engineSide();
     if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
@@ -306,6 +323,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (depth > 0) return original.apply(this, args);
       let live = begin(), before = null, payload = null;
       if (live && (name === 'undo' && !live.can_undo() || name === 'redo' && !live.can_redo())) { end('history the session did not record'); live = null; }
+      if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         const given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
@@ -320,7 +338,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
         try { text = live.call(name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
-        catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; }
+        catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
         report.calls++;
         const why = answer?.status === 'ok' ? unadoptable(answer) : null;
         if (answer?.status === 'ok' && !why) {
@@ -364,7 +382,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           report.engineMs += performance.now() - called; report.calls++;
           if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
-        } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; }
+          if (name === 'sheetCopyFrames' && session && !thrown) copied = editor._sheetClipboard;
+        } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;
       return result;

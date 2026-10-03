@@ -29,15 +29,65 @@ is the oracle while both exist.
 ## Order of evaluation
 
 1. Native keyframes tween with Pivot's rules (`evaluatedNativeFrame`): easing,
-   Auto curves, colour and background transitions, IK controllers.
+   Auto curves, colour and background transitions, IK controllers. Property
+   channels then apply ([below](#property-channels)).
 2. A layer sheet samples each layer's own pose track (`sampleLayerSheet`),
    applies its keys' movieclip replacements (`replaceMovieclipFrame`) and
-   composes layers in order.
+   composes layers in order. Imported keys sample the native timeline with the
+   sheet's `legacyAnimation` channels; when every layer, the scene and the camera
+   share one native sample (or a layer has nothing), that sample is the frame,
+   slots and all, as the editor returns its one object.
 3. Movieclip instances choose their local time (`sampleMovieclipObjects`),
    layers order the draw order (`applyLayerOrder`).
 4. The scene camera ([below](#the-scene-camera)): where it travels moves parallax
    layers, then camera-motion impulses shake the shot.
 5. Effects resolve per object and for the scene.
+
+## Property channels
+
+Sparse keyed curves over the native timeline (`_styk.animation`, src/animation-channels.mjs,
+src/animation-pose.mjs; `styk_eval::channels`). A document opened in the app has a layer
+sheet, and its channels are the sheet's `legacyAnimation`, which the imported keys sample
+(`legacySheetReport`); a native document (and a movieclip's own document) uses
+`_styk.animation`. The loader reads them leniently into typed channels (`channels::parse`:
+target, property, keys with their curves and flags; a channel the editor would refuse is left
+out and noted), cached by record like effect clips. `Prepared` builds each pose channel's key
+track once (`channels::Compiled`), and every native evaluation (`Prepared::native_at`, a
+movieclip's fractional frames) applies them at the tick:
+
+- **Pose channels** (`channels::pose`, `composePoseChannels`): a figure or layer channel
+  replaces the figures it owns (a figure channel its figure, a layer channel the layer's other
+  figures) with their pose in the frame its key track samples (`buildVirtualPoseTrack`: a
+  native timeline of the keys' source poses at the document's version, hidden keys lasting
+  nothing, a key without `interpolation` keeping its source's easing; `maskedRanges` show
+  nothing, `useBasePose` the native pose, `nativeProperties` keep the native scale,
+  transparency, colour, depth and outline). Joins are resolved again by identity: a figure
+  whose parent left, or whose joint is gone, stays where its own frame drew it; a joined figure
+  turns by the change of its parent's joint direction (`handleOrientation`, through the
+  original tree for a figure with an animation origin). Unreplaced figures keep their slots,
+  arrivals follow; each layer keeps its sampled pose's stacking order, an `orderAnchor` figure
+  right after its anchor. The camera's and the scene's tracks set the camera and the
+  background, colour key and scene effects (blank before their first key).
+- **Scalar channels** (`channels::scalar`, `composeAnimationChannels`): sampled with
+  `sampleAnimationChannel` (easing modes, Auto with neighbouring Auto keys, held and discrete
+  properties, `passthrough` intervals that hand the property back, Pivot's monotone cubic for
+  `nativeCurve` keys, `nativeRotation` along the shortest turn, `nativeValueMode` colour and
+  opacity through Pivot's bytes, colours per byte rounded, effect colours through
+  `interpolateVfxColor`), effect stacks first, then fill styles, then the rest in saved order:
+  effect parameters onto the tweened stacks (`applyVfxParameter`: clamped numbers, colours as
+  keyed, `enabled`, whole stacks, the scope), the camera, the background and colour key, a
+  figure's colour override and depth, style overlays (`setAnimationStyle`, resolved again with
+  the instance's sprite; a definition-scoped channel wins over the unscoped one, a missing node
+  stays dormant), and last the figures' scale, transparency and rotation from the roots down
+  (a rotation carries into the figures joined below, ghost bones included), origins corrected,
+  then positions, where a joined figure's position moves its root figure (measured on the
+  frame's geometry).
+- The native timeline lasts until the channels' last frame (`animationEndTick`); channel keys
+  are boundaries of the presence clocks; effect channels make evaluation resolve effects even
+  where no pose saves a stack; a follow camera's samples keep only the channels of the camera,
+  of layers and of the followed figures (`followSamplingReport`).
+- Editing documents with channels stays with the editor: `styk-edit` answers `Unported`, and
+  the evaluated frame as records refuses them.
 
 ## Animation origins
 
@@ -129,19 +179,27 @@ with the frame and draws them.
 
 ## Not evaluated yet
 
-Named in `Document::unsupported` and gated in the app: property channels on
-native timelines and frame drafts; a captured movieclip's retained source
-(`movieclipSource`) is not read (the engine tweens the clip's keyframes where the
-editor samples the source). The work queue in the plan orders them.
+Gated in the app: frame drafts (temporary editing state shown only as onion skins). A
+captured movieclip's retained source (`movieclipSource`) is not read (the engine tweens
+the clip's keyframes where the editor samples the source, channels included). The work
+queue in the plan orders them.
 
 ## Testing
 
 - `styk compare <file> <reference.json>` against `engine/tools/reference.mjs`
   (every primitive and joint of the sampled ticks; `--vfx` adds effects, `--camera`
-  the shot camera and each object's parallax offset).
+  the shot camera and each object's parallax offset, `--scene` the background and
+  colour key, `--style` each object's outline and each segment's second colour;
+  `--native` evaluates the document on its native timeline instead of as the app
+  loads it).
 - Fixture suites built by the editor's own commands:
   `engine/tools/ik-fixtures.mjs`, `eval-fixtures.mjs`, `vfx-fixtures.mjs`,
-  `spatial-fixtures.mjs`, `origin-fixtures.mjs` (byte-stable), checked by `cargo test -p styk-eval`.
+  `spatial-fixtures.mjs`, `origin-fixtures.mjs`, `channel-fixtures.mjs` (byte-stable),
+  checked by `cargo test -p styk-eval`. Each channel fixture is checked as saved (against
+  the editor's native timeline) and as the app holds it (a layer sheet with
+  `legacyAnimation`, against the app's evaluation); `tests/channels.rs` also requires that
+  each fixture, each channel kind and each curve flag it uses changes the result when
+  removed.
 - `npm run engine:parity -- --corpus` runs the benchmark files at every tick.
 
 ## The evaluated frame as records

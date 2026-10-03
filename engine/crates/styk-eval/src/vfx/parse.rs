@@ -18,7 +18,7 @@ pub const CLIP_LIMIT: usize = 4096;
 const TIME_LIMIT: f64 = 10_000_000.0;
 
 /// The descriptor of `vfx1:type:id:enabled`.
-const ENABLED: Spec = Spec { name: "enabled", kind: ParamKind::Toggle, default: 1.0, min: 0.0, max: 1.0 };
+pub const ENABLED: Spec = Spec { name: "enabled", kind: ParamKind::Toggle, default: 1.0, min: 0.0, max: 1.0 };
 
 /// `/^[a-zA-Z0-9_-]{1,max}$/`, the identities of effects and clips.
 fn identity(text: &str, max: usize) -> bool {

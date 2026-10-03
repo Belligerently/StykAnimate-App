@@ -20,10 +20,12 @@ function figureReason(figure, depth) {
   return null;
 }
 
+/** Property channels (`_styk.animation`, a layer sheet's `legacyAnimation`) are evaluated
+ * and drawn, every kind (docs/engine/evaluation.md); frame drafts are not: temporary editing
+ * state, shown only as onion skins. */
 function metadataReason(report) {
   const styk = report._styk;
   if (!styk) return null;
-  if (styk.animation?.channels?.length || styk.layerSheet?.legacyAnimation) return 'property channels';
   if (styk.simpleFrameDraft) return 'a frame draft';
   return null;
 }

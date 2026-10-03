@@ -2,7 +2,7 @@
 // Dumps what the current JavaScript editor evaluates for a document, so the
 // Rust engine can be checked against it primitive by primitive.
 //
-//   node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks 0,5,9] [--every N] [--max N] [--vfx] [--camera] [--images]
+//   node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks 0,5,9] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native]
 //
 // Pivot .piv files go through the repository's Python codec first
 // (tools/decode-piv.sh), exactly like the desktop app's import service.
@@ -21,6 +21,17 @@
 // over the displayed size, the transform imageDrawNeed in src/image-resources.mjs
 // spells out), from the asset as the drawable holds it (a Stick Nodes sprite's
 // stretched one). The size is the displayed one, else the asset's recorded one.
+//
+// --scene adds, per tick, the evaluated frame's background (`scene`: the image identities,
+// their mix and the colour key `_stykBackgroundColor`), what scene channels set.
+//
+// --style adds, per object, the outline its resolved figure is drawn with (`outline`: the
+// width the renderers read from `u28`, the colour and the opacity of `global_style`), what
+// outline channels set (`null` without one); and per segment drawable the second colour and
+// transparency byte of a two-colour segment (`secondary`, `null` without one).
+//
+// --native evaluates the document on its native timeline (the editor without layer sheets,
+// as documents with property channels were authored) instead of as the app loads it.
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
@@ -32,13 +43,14 @@ const {Editor} = await import(`${repo}/src/editor.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
 if (!input || !output) {
-  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx] [--camera] [--images]');
+  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native]');
   process.exit(2);
 }
 const option = name => { const i = rest.indexOf(name); return i < 0 ? undefined : rest[i + 1]; };
 const effects = rest.includes('--vfx') ? await effectDumper() : null;
 const shots = rest.includes('--camera') ? await shotDumper() : null;
 const images = rest.includes('--images');
+const scenes = rest.includes('--scene'), styles = rest.includes('--style');
 
 let document;
 if (/\.(styk|stkz|stykmov)$/i.test(input)) {
@@ -49,9 +61,9 @@ if (/\.(styk|stkz|stykmov)$/i.test(input)) {
   document = JSON.parse(readFileSync(input, 'utf8'));
 }
 
-// Same editor configuration as src/app.mjs.
+// Same editor configuration as src/app.mjs (without layer sheets for --native).
 const started = performance.now();
-const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true});
+const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: !rest.includes('--native')});
 editor.load(document, path.basename(input));
 const loadMs = performance.now() - started;
 const total = editor.totalTicks;
@@ -109,6 +121,7 @@ for (const tick of ticks) {
       if (Math.abs(d.bend ?? 0) > 1e-7) item.points = d.points.map(pt);
     }
     if (images && d.type === 'image' && d.asset?.anchor_length) item.image = imageCorners(d);
+    if (styles && d.seg) item.secondary = d.seg.secondary ? [...d.seg.secondary.rgb, Number(d.seg.secondary.a ?? 0)] : null;
     if (d._movieclipOwner || d._movieclipPart !== undefined) item.movieclip = true;
     return item;
   });
@@ -116,7 +129,7 @@ for (const tick of ticks) {
   for (const [slot, g] of geometry.objects) {
     if (!g) continue;
     objects.push({slot, uid: g.obj.unique_id, figure: g.fig?.figure_type_id, root: pt(g.root),
-      joints: [...g.joints].map(([id, p]) => [id, ...pt(p)])});
+      joints: [...g.joints].map(([id, p]) => [id, ...pt(p)]), ...(styles ? {outline: outline(g.fig)} : {})});
   }
   frames.push({
     tick,
@@ -126,6 +139,7 @@ for (const tick of ticks) {
     ...(meshes.length ? {meshes} : {}),
     ...(effects ? {vfx: effects(editor.report, frame, geometry, tick)} : {}),
     ...(shots ? {shot: shots(editor.report, frame)} : {}),
+    ...(scenes ? {scene: {background: [frame.background_id ?? 0, frame.background_id_b ?? 0, frame.background_mix ?? 0], color: frame._stykBackgroundColor ?? null}} : {}),
   });
 }
 
@@ -137,6 +151,12 @@ writeFileSync(output, JSON.stringify({
 }));
 console.error(`${path.basename(input)}: ${ticks.length} frames of ${total}, load ${loadMs.toFixed(0)} ms, ` +
   `${(evalMs / Math.max(1, ticks.length)).toFixed(2)} ms per evaluated frame`);
+
+/** The outline a resolved figure is drawn with: the renderers read its width from `u28` (single precision bits). */
+function outline(figure) {
+  const style = figure?.segment_decode?.global_style, width = style?.u28 ? new Float32Array(new Uint32Array([style.u28]).buffer)[0] : 0;
+  return width > 0 && Number.isFinite(width) ? {width: round(width), rgb: style.rgb ?? [0, 0, 0], alpha: round(1 - Number(style.u30 ?? 0) / 255)} : null;
+}
 
 /** The corners a picture drawable is drawn at: origin, along its width, along its height, opposite. */
 function imageCorners(d) {

@@ -9,6 +9,11 @@ export function layerFocusLocked(report, id) {
   return Boolean(focus?.lock && !focus.ids.has(id));
 }
 
+/** The focus set on `report`, as it is (no reconciliation): for readers that must not change the editor. */
+export function layerFocusOf(report) {
+  return focusByReport.get(report) ?? null;
+}
+
 export function figureFocusLocked(report, uid) {
   const layers = report._styk?.layers;
   const id = Object.hasOwn(layers?.assignments ?? {}, String(uid)) ? layers.assignments[String(uid)] : layers?.defaultLayerId ?? 'layer-1';
