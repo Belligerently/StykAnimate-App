@@ -244,6 +244,11 @@ fn resolved_vfx(effect: &Value) -> Result<Obj, Error> {
     Ok(record)
 }
 
+/// `validateVfxStack(stack)` of a stack already checked: every effect resolved.
+pub fn resolved_stack(stack: &Value) -> Result<Value, Error> {
+    Ok(Value::array(items(Some(stack)).iter().map(|effect| resolved_vfx(effect).map(Value::object)).collect::<Result<_, _>>()?))
+}
+
 /// `applyVfxParameter(owner, target, property, value)`.
 fn apply_vfx(owner: &mut Obj, target: &Target, property: &Property, value: &Value) -> Result<(), Error> {
     match property {
@@ -623,12 +628,13 @@ impl Records<'_> {
             let parent_slot = parent.and_then(|p| slots.get(&uid_bits(p))).copied();
             let target = parent_slot.map(|p| &placed[p].object);
             let oriented = Records::handle_orientation(target, num(&join, "target_handle_id"), &definitions);
-            if parent_slot.is_none() || oriented.is_none() {
+            let Some(parent_slot) = parent_slot.filter(|_| oriented.is_some()) else {
                 // Its parent left, or no longer has the joint: it stays where its own frame drew it.
-                if !geometry.contains_key(&record.source) {
-                    geometry.insert(record.source, self.geometry_of(frame_of(record.source))?);
-                }
-                let root = geometry[&record.source].objects.get(record.slot).filter(|g| g.resolved).map(|g| g.root);
+                let scene = match geometry.entry(record.source) {
+                    std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::hash_map::Entry::Vacant(entry) => entry.insert(self.geometry_of(frame_of(record.source))?),
+                };
+                let root = scene.objects.get(record.slot).filter(|g| g.resolved).map(|g| g.root);
                 object.set("object_slot", Value::Num(slot as f64));
                 for (axis, key) in ["root_x", "root_y"].into_iter().enumerate() {
                     match root.map(|r| Value::Num(r[axis])).or_else(|| record.object.get(key).cloned()) {
@@ -640,12 +646,13 @@ impl Records<'_> {
                 }
                 object.set("join", Value::Null);
                 object.remove("runtime_segments");
-            } else {
-                let mut join = join.as_obj().cloned().unwrap_or_default();
-                join.set("target_object_slot", Value::Num(parent_slot.unwrap() as f64));
-                object.set("object_slot", Value::Num(slot as f64));
-                object.set("join", Value::object(join));
-            }
+                objects.push(object);
+                continue;
+            };
+            let mut join = join.as_obj().cloned().unwrap_or_default();
+            join.set("target_object_slot", Value::Num(parent_slot as f64));
+            object.set("object_slot", Value::Num(slot as f64));
+            object.set("join", Value::object(join));
             objects.push(object);
         }
         // Parents before children: a joined figure turns by the change of its parent's joint.

@@ -87,6 +87,10 @@ impl Editor {
     /// `editor.evaluatedFrame`: the draft of the gesture in progress, else the
     /// document at the playhead.
     pub(crate) fn shown_frame(&self) -> Result<Value, EditError> {
+        // A property edit shows its preview over everything else (`_sheetPropertyPreview`).
+        if let Some(preview) = self.property_preview() {
+            return Ok(preview);
+        }
         match (&self.authored, &self.retained) {
             (Some(edit), _) => Ok(edit.frame.clone()),
             (None, Some(frame)) => Ok(frame.clone()),

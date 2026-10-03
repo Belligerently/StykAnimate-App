@@ -42,6 +42,8 @@ const PORTED: &[&str] = &[
     "update-object-sheet", "update-object-native", "update-segment-sheet", "update-segment-rig-sheet",
     // Camera motion clips.
     "camera-motion-sheet", "palette-sheet", "audio-sheet", "audio-none-sheet", "sheet-clipboard-sheet", "sheet-clipboard-empty-sheet", "sheet-clipboard-ik-sheet", "polygons-sheet", "polygons-native", "polygons-native-file-sheet", "vfx-clips-sheet", "batch-sheet", "sheet-selection-sheet", "figure-clipboard-sheet", "figure-clipboard-ik-sheet", "figure-clipboard-vfx-sheet",
+    // Property edits on a layer sheet: inspector scrubs, keyed values, scene colours, outlines, polygon opacity, effects.
+    "property-scrub-sheet", "property-autokey-sheet", "property-keys-sheet", "property-locked-sheet", "scene-color-sheet", "figure-style-sheet", "polygon-opacity-sheet", "vfx-parameter-sheet",
 ];
 
 #[test]

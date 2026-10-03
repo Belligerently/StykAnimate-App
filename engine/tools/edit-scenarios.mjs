@@ -783,3 +783,5 @@ scenario('figures-layers-sheet', app, [
     ['@select', 2, 3], ['poseJoint', 600, 300], ['@seek', 6], ['@select', 1, 0], ['bendJoint', 230, 140], ['undo'], ['undo'], ['redo'],
   ], '../../crates/styk-eval/tests/fixtures/ik/chain-long.json');
 }
+// Property edits on a layer sheet (inspector scrubs, keyed values, scene colours, effects).
+await import('./edit-scenarios-property.mjs');

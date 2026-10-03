@@ -26,6 +26,7 @@ mod pose;
 mod pose_choice;
 mod palette;
 mod polygons;
+mod property_edit;
 mod record;
 pub mod replay;
 mod select;
@@ -154,6 +155,8 @@ pub struct Editor {
     pub(crate) batch: Option<history::Batch>,
     /// `editor._sheetSelection`: the layer chosen on the timeline.
     pub(crate) sheet_selection: Option<select::SheetSelection>,
+    /// `editor._animationEdit` on a layer sheet, with its `_sheetPropertyPreview`.
+    pub(crate) property_edit: Option<property_edit::Edit>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
@@ -201,6 +204,7 @@ struct Snapshot {
     vfx_edit: Option<Option<Value>>,
     batch: Option<history::Batch>,
     sheet_selection: Option<select::SheetSelection>,
+    property_edit: Option<property_edit::Edit>,
 }
 
 impl Editor {
@@ -236,6 +240,7 @@ impl Editor {
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
+            property_edit: None,
             events: Vec::new(),
             eval: RefCell::default(),
             gate: RefCell::new(None),
@@ -282,7 +287,7 @@ impl Editor {
             can_redo: !self.redo.is_empty(),
             undo_label: self.undo.last().map(|c| c.label.clone()).unwrap_or_default(),
             redo_label: self.redo.last().map(|c| c.label.clone()).unwrap_or_default(),
-            dirty: self.revision != self.saved_revision || self.drag.as_ref().is_some_and(|d| d.changed),
+            dirty: self.revision != self.saved_revision || self.drag.as_ref().is_some_and(|d| d.changed) || self.property_edit.as_ref().is_some_and(|e| e.changed),
             layer_revision: self.layer_revision,
             next_frame_identity: self.next_frame_identity,
             next_uid: self.next_uid,
@@ -389,6 +394,7 @@ impl Editor {
             vfx_edit: self.vfx_edit.clone(),
             batch: self.batch.clone(),
             sheet_selection: self.sheet_selection.clone(),
+            property_edit: self.property_edit.clone(),
         }
     }
 
@@ -412,6 +418,7 @@ impl Editor {
         self.vfx_edit = snapshot.vfx_edit;
         self.batch = snapshot.batch;
         self.sheet_selection = snapshot.sheet_selection;
+        self.property_edit = snapshot.property_edit;
     }
 
     fn dispatch(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
@@ -423,6 +430,10 @@ impl Editor {
         }
         if let Some(reason) = self.ik_gate(method)? {
             return Err(EditError::Unported(format!("{method} {reason}")));
+        }
+        self.property_gate(method)?;
+        if let Some(result) = self.property_call(method, args) {
+            return result;
         }
         match method {
             "select" | "@select" => {

@@ -150,6 +150,21 @@ impl Session {
                 answer.set("retained", frame.get("objects").cloned().unwrap_or(Value::Null));
             }
         }
+        // What a property edit shows while the inspector scrubs (`_sheetPropertyPreview`), for
+        // the app to compare: the frame, without the clip sample times evaluation adds.
+        if method == "previewAnimationEdit"
+            && let Some(preview) = self.editor.property_preview()
+        {
+            let mut frame = preview.as_obj().cloned().unwrap_or_default();
+            let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+            let objects = objects.into_iter().map(|object| {
+                let mut object = object.as_obj().cloned().unwrap_or_default();
+                object.remove("_movieclipSample");
+                Value::object(object)
+            });
+            frame.set("objects", Value::array(objects.collect()));
+            answer.set("preview", Value::object(frame));
+        }
         answer.set("events", Value::array(events));
         answer.set("draft", self.editor.draft_figures().map_or(Value::Null, Value::array));
         answer.set("drag", self.editor.drag_value());

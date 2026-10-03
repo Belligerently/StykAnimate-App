@@ -25,7 +25,7 @@ use styk_doc::{Obj, Value};
 
 use crate::eval::{Prepared, Row, Seq, evaluate_native_exact_only, timeline_rows};
 
-pub use channels::Bound;
+pub use channels::{Bound, resolved_stack};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
