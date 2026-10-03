@@ -150,6 +150,9 @@ pub struct ImageAsset {
     pub anchor_angle: f64,
     /// Displayed size in figure units (decoded pixel size unless overridden).
     pub display_size: Option<[f64; 2]>,
+    /// The asset's own `width` and `height`, when it records them (a Stick Nodes
+    /// sprite is sized from them).
+    pub size: Option<[f64; 2]>,
     /// Index into `Document::images`.
     pub image: Option<u32>,
     /// Smooth sampling (authored drawings); Pivot sprites sample nearest.
@@ -324,6 +327,9 @@ pub struct Object {
     /// `color_transition`: the object's colours part way between two overrides, in place
     /// of its own override ([`crate::geometry::object_rgb`]).
     pub color_transition: Option<Arc<ColorTransition>>,
+    /// `_sticknodesSprite`: how an imported Stick Nodes sprite stretches and pivots its
+    /// picture, applied to the figure the object resolves to ([`crate::sticknodes::sprite_figure`]).
+    pub sticknodes_sprite: Option<Arc<crate::sticknodes::Sprite>>,
 }
 
 /// `color_transition` of a pose (`objectColor` in src/pivot/geometry.mjs): each colour is

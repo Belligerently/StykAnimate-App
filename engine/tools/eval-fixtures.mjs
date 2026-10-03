@@ -10,8 +10,11 @@
 // engine/crates/styk-eval/tests/eval.rs compares the engine with each of them.
 // Inverse kinematics has its own set (ik-fixtures.mjs).
 import {mkdirSync} from 'node:fs';
+import {deflateSync} from 'node:zlib';
 import path from 'node:path';
-import {here, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
+
+const {createImageFigure} = await import(`${repo}/src/media-authoring.mjs`);
 
 // The editor names camera-motion clips at random; fixtures must be byte-stable, so
 // identities count up again from the same value for each fixture.
@@ -24,6 +27,24 @@ function pair() {
   nextSheetKey(e, 6, 1); whole(e, 1).moveSelection(40, -20);
   e.seek(0);
   return e;
+}
+/** A small PNG of four coloured quadrants, so a misplaced picture shows. */
+function quadrants(width, height) {
+  const crc = bytes => { let c = ~0; for (const b of bytes) { c ^= b; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; } return ~c >>> 0; };
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(8), tail = Buffer.alloc(4);
+    head.writeUInt32BE(data.length); head.write(type, 4); tail.writeUInt32BE(crc(Buffer.concat([Buffer.from(type), data])));
+    return Buffer.concat([head, data, tail]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 6;
+  const rows = [];
+  for (let y = 0; y < height; y++) {
+    rows.push(0);
+    for (let x = 0; x < width; x++) rows.push(...(x < width / 2 ? (y < height / 2 ? [230, 40, 40, 255] : [40, 160, 60, 255]) : (y < height / 2 ? [40, 70, 220, 255] : [240, 200, 30, 255])));
+  }
+  const bytes = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from(rows), {level: 9})), chunk('IEND', Buffer.alloc(0))]);
+  return `data:image/png;base64,${bytes.toString('base64')}`;
 }
 const instanceOf = (e, clip) => e.evaluatedFrame.objects.find(object => object.figure_type_id === clip.figure_type_id).unique_id;
 
@@ -190,6 +211,26 @@ const fixtures = {
     later.objects.find(object => object.unique_id === 1).color_transition.t = 0.9;
     return {document: open(document, {layerTimeline: true}).serialize(), ticks: [0, 4, 8, 11]};
   },
+  /** A sprite imported as the editor imports pictures, three instances: one plain, and two
+   * with the fields the Stick Nodes importer writes for its sprites (`_sticknodesSprite`,
+   * written by hand here: no command writes them), stretched and pivoted, one scaled and
+   * turned, one mirrored, the first moving between two keys. */
+  'sticknodes-sprites': () => {
+    const sprite = createImageFigure({dataUrl: quadrants(16, 8), width: 16, height: 8, name: 'Sprite', figureTypeId: 1});
+    const e = open(documentOf([limb()], () => [120, 150]), {layerTimeline: true});
+    e.importFigure({...structuredClone(e.report), figure_types: [sprite], keyframes: [{...structuredClone(e.report.keyframes[0]), objects: []}]});
+    e.sheetSetDuration(10);
+    e.select(2); e.moveSelection(-200, -60);
+    e.addFigure(2); const stretched = e.selectedUid; e.select(stretched); e.moveSelection(-60, 40); e.rotateSelection(0.4); e.scaleSelection(2);
+    e.addFigure(2); const mirrored = e.selectedUid; e.select(mirrored); e.moveSelection(120, 10); e.mirrorSelection('horizontal'); e.rotateSelection(-0.7);
+    e.seek(8); e.select(stretched); e.moveSelection(30, 20); e.rotateSelection(0.5);
+    e.seek(0);
+    const document = e.serialize(), source = {distortion: [[0, 0], [0, 0], [0, 0], [0, 0]]};
+    const sprites = {[stretched]: {source, ratio: 1.6, pivotX: 0.25, pivotY: 0.7}, [mirrored]: {source, ratio: 0.5, pivotX: 0.8, pivotY: 0.1}};
+    for (const frame of [...document.keyframes, ...Object.values(document._styk.frameSources)])
+      for (const object of frame.objects) if (sprites[object.unique_id]) object._sticknodesSprite = structuredClone(sprites[object.unique_id]);
+    return {document: open(document, {layerTimeline: true}).serialize(), ticks: [0, 4, 8], images: true};
+  },
 };
 
 const args = process.argv.slice(2);
@@ -202,5 +243,5 @@ mkdirSync(out, {recursive: true});
 for (const name of names.length ? names : Object.keys(fixtures)) {
   counter = 0;
   const built = await fixtures[name]();
-  writeReference(writeProject(out, name, built.document, built.ticks, {camera: built.camera}), name);
+  writeReference(writeProject(out, name, built.document, built.ticks, {camera: built.camera, images: built.images}), name);
 }

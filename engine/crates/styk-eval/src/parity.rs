@@ -248,6 +248,9 @@ fn drawables(scene: &Scene, expected: &[Value], meshes: &[Value], report: &mut R
                 why.push(format!("surface depth {k} {} vs {}", depth[k], ours[k]));
             }
         } else {
+            if let Some(corners) = e.get("image") {
+                image_corners(scene, it, corners, &mut why);
+            }
             if let (Some(start), Some(end)) = (point(e.get("start")), point(e.get("end"))) {
                 if !close(start, it.start) {
                     why.push(format!("start {start:?} vs {:?}", it.start));
@@ -268,6 +271,37 @@ fn drawables(scene: &Scene, expected: &[Value], meshes: &[Value], report: &mut R
                 problems.push(format!("#{i} {} uid {} seg/poly {}: {}", it.kind.name(), uid, it.index, why.join("; ")));
             }
         }
+    }
+}
+
+/// Where a picture is drawn (`--images`): the corners of its displayed rectangle under
+/// drawGeometry's transform, from the asset the item's figure holds (a Stick Nodes sprite's
+/// stretched one), sized by its displayed size, else its recorded one.
+fn image_corners(scene: &Scene, it: &crate::geometry::Item, expected: &Value, why: &mut Vec<String>) {
+    let fig = &scene.figures[it.figure as usize];
+    let Some(seg) = fig.segments.get(it.index as usize) else { return };
+    let Some(a) = fig.image(seg.asset).filter(|a| a.anchor_length != 0.0) else {
+        why.push("image: no anchored asset in the engine".into());
+        return;
+    };
+    let Some([w, h]) = a.display_size.or(a.size) else {
+        why.push("image: no size in the engine".into());
+        return;
+    };
+    let mirror = seg.mirror != it.image_text_flags;
+    let start = if seg.reverse { it.end } else { it.start };
+    let scale = (it.end[0] - it.start[0]).hypot(it.end[1] - it.start[1]) / a.anchor_length;
+    let angle = (if mirror { it.angle + a.anchor_angle - std::f64::consts::PI } else { it.angle - a.anchor_angle }) + if seg.reverse { std::f64::consts::PI } else { 0.0 };
+    let (sin, cos) = (styk_math::sin(angle), styk_math::cos(angle));
+    let mx = if mirror { -1.0 } else { 1.0 };
+    let corner = |x: f64, y: f64| {
+        let (px, py) = (mx * scale * (x - a.anchor_start[0]), scale * (y - a.anchor_start[1]));
+        [start[0] + px * cos - py * sin, start[1] + px * sin + py * cos]
+    };
+    let ours = [corner(0.0, 0.0), corner(w, 0.0), corner(0.0, h), corner(w, h)];
+    let expected: Vec<[f64; 2]> = expected.elements().map(|c| c.iter().filter_map(|p| point(Some(&p))).collect()).unwrap_or_default();
+    if expected.len() != 4 || expected.iter().zip(&ours).any(|(e, o)| !close(*e, *o)) {
+        why.push(format!("image corners {expected:?} vs {ours:?}"));
     }
 }
 

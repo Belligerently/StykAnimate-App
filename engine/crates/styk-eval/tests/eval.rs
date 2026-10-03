@@ -122,6 +122,19 @@ fn color_fixture_depends_on_its_transitions() {
     assert!(!compare("color-transitions", document).matches(), "matches without its colour transitions");
 }
 
+/// The sprite fixture would prove nothing if its pictures sat where they do without the
+/// sprites' stretch and pivot.
+#[test]
+fn sprite_fixture_depends_on_its_sprites() {
+    let text = std::fs::read_to_string(folder().join("sticknodes-sprites.json")).expect("fixture");
+    let count = text.matches("\"_sticknodesSprite\"").count();
+    assert!(count > 0, "no Stick Nodes sprite in the fixture");
+    let bare = text.replace("\"_sticknodesSprite\"", "\"_withoutSprite\"");
+    let tree = styk_doc::json::parse(bare.as_bytes()).expect("json");
+    let document = styk_eval::from_value(&tree, "sticknodes-sprites").expect("document");
+    assert!(!compare("sticknodes-sprites", document).matches(), "matches without its sprites");
+}
+
 /// The follow fixtures would prove nothing if their shots matched without the follow
 /// clips (their figures dropped, the clips' spans kept).
 #[test]

@@ -50,6 +50,17 @@ gradients with it; movieclip contents use their own object's. A tween keeps the 
 transition, as the editor's does. Whether a two-colour gradient is drawn at all still
 follows the override alone (an opaque override draws the segment solid), as in the editor.
 
+## Stick Nodes sprites
+
+An imported Stick Nodes sprite keeps its stretch and pivot on the pose (`_sticknodesSprite`:
+`ratio`, `pivotX`, `pivotY`; the Stick Nodes importer writes it). The editor applies them to
+the picture's asset when it builds the segment (`sticknodesSpriteAsset`): shown at the
+asset's width and its height times the ratio, anchored at the pivot. The engine applies them
+where it resolves an object's figure, after a style overlay (`Loader::styled_object`,
+`sticknodes::sprite_figure`, shared by identical sprites), so the draw list, effect bounds
+and editing all read the stretched asset. `styk compare` checks where pictures are drawn
+when the reference has them (`reference.mjs --images`).
+
 ## The scene camera
 
 What the camera does when the scene is seen through it: prepared playback frames

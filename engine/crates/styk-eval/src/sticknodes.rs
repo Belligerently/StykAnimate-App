@@ -9,6 +9,26 @@ use styk_doc::Value;
 use crate::doc::{Object, Segment};
 use crate::geometry::{Item, ItemKind, ITEM_POLYLINE, ITEM_SEG_BRUSH, ITEM_SOLID};
 
+/// `_sticknodesSprite` (src/sticknodes/geometry.mjs): an imported sprite's vertical
+/// stretch against its width and the pivot its picture turns about, as fractions of it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sprite {
+    pub ratio: f64,
+    /// `pivotX`, `pivotY` (the Y pivot counts from the bottom).
+    pub pivot: [f64; 2],
+}
+
+/// `sticknodesSpriteAsset` for every picture of `figure`: shown at the asset's width and
+/// its height times the ratio, anchored at the pivot (an asset without a recorded size
+/// is placed at NaN, as the editor's is, and not drawn).
+pub fn sprite_figure(figure: &mut crate::doc::Figure, sprite: &Sprite) {
+    for asset in &mut figure.images {
+        let [w, h] = asset.size.unwrap_or([f64::NAN; 2]);
+        asset.display_size = Some([w, h * sprite.ratio]);
+        asset.anchor_start = [w * sprite.pivot[0], h * sprite.ratio * (1.0 - sprite.pivot[1])];
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     RoundedSegment,

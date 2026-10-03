@@ -528,7 +528,11 @@ impl Loader {
             })
         });
         let image = if tiles.is_some() { None } else { self.image(a, &["data_url", "data_base64", "data_uri"]) };
-        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, image, smooth, tiles }
+        let size = match (num(a, "width"), num(a, "height")) {
+            (Some(w), Some(h)) => Some([w, h]),
+            _ => None,
+        };
+        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, size, image, smooth, tiles }
     }
 
     fn movieclip(&mut self, m: &Value) -> Result<Option<Arc<Movieclip>>, Error> {
@@ -564,10 +568,19 @@ impl Loader {
         let join = o.get("join").filter(|j| j.is_object()).and_then(|j| {
             Some(Join { slot: int(j, "target_object_slot")? as u32, handle: int(j, "target_handle_id").unwrap_or(0) as u32 })
         });
-        for (key, feature) in [("_stykAnimationOrigin", "animation origins"), ("_sticknodesSprite", "Stick Nodes sprites")] {
-            if o.get(key).is_some() {
-                self.note(feature);
+        if o.get("_stykAnimationOrigin").is_some() {
+            self.note("animation origins");
+        }
+        // `validateSticknodesObject` refuses a sprite without a finite ratio and pivot; it is left out here.
+        let sticknodes_sprite = o.get("_sticknodesSprite").filter(|s| s.is_object()).and_then(|s| {
+            let sprite = crate::sticknodes::Sprite { ratio: num(s, "ratio")?, pivot: [num(s, "pivotX")?, num(s, "pivotY")?] };
+            if !sprite.ratio.is_finite() || !sprite.pivot.iter().all(|p| p.is_finite()) {
+                return None;
             }
+            Some(Arc::new(sprite))
+        });
+        if o.get("_sticknodesSprite").is_some() && sticknodes_sprite.is_none() {
+            self.notes.push(format!("object {uid}: a Stick Nodes sprite without a finite ratio and pivot is drawn unstretched"));
         }
         let movieclip = o.get("_stykMovieclip").filter(|v| v.is_object()).map(playback);
         Some(Object {
@@ -598,6 +611,7 @@ impl Loader {
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
             vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
             spatial: o.get("_stykSpatial").and_then(crate::spatial::parse_pose).map(Arc::new),
+            sticknodes_sprite,
             color_transition: o.get("color_transition").filter(|c| c.is_object()).map(|c| {
                 Arc::new(ColorTransition { from: js_uint32(num(c, "from")), to: js_uint32(num(c, "to")), t: num(c, "t").unwrap_or(f64::NAN) })
             }),
@@ -915,18 +929,32 @@ fn source_unshared(source: &Value) -> bool {
 }
 
 impl Loader {
-    /// Gives a styled object the figure its style overlay resolves to, sharing
-    /// identical overlays. Returns whether the object changed.
+    /// Gives an object the figure it draws with: its style overlay resolved, then its
+    /// Stick Nodes sprite's stretch and pivot applied to the figure's pictures, sharing
+    /// identical results. Returns whether the object changed.
     fn styled_object(&mut self, base: &Arc<Figure>, object: &mut Arc<Object>) -> bool {
-        let Some(style) = object.style.clone() else { return false };
+        let (style, sprite) = (object.style.clone(), object.sticknodes_sprite.clone());
+        if style.is_none() && sprite.is_none() {
+            return false;
+        }
         if object.figure_override.as_ref().is_some_and(|resolved| resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base))) {
             return false;
         }
+        let mut key = style.as_ref().map_or_else(String::new, |style| style.key.clone());
+        if let Some(sprite) = &sprite {
+            key.push_str(&format!("\u{1}sprite {:x} {:x} {:x}", sprite.ratio.to_bits(), sprite.pivot[0].to_bits(), sprite.pivot[1].to_bits()));
+        }
         let resolved = self
             .styled
-            .entry((Arc::as_ptr(base) as usize, style.key.clone()))
+            .entry((Arc::as_ptr(base) as usize, key))
             .or_insert_with(|| {
-                let mut figure = crate::style::resolve(base, &style);
+                let mut figure = match &style {
+                    Some(style) => crate::style::resolve(base, style),
+                    None => (**base).clone(),
+                };
+                if let Some(sprite) = &sprite {
+                    crate::sticknodes::sprite_figure(&mut figure, sprite);
+                }
                 figure.base = Some(base.clone());
                 (base.clone(), Arc::new(figure))
             })
@@ -941,10 +969,15 @@ impl Loader {
     fn resolve_styles(&mut self, doc: &mut Document) {
         let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
         let mut fix = |frame: &mut Arc<Keyframe>| {
-            let stale = |object: &Arc<Object>| match (&object.style, &object.figure_override, figures.get(&object.figure)) {
-                (None, _, _) | (Some(_), _, None) => false,
-                (Some(_), Some(resolved), Some(base)) => !resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
-                (Some(_), None, Some(_)) => true,
+            let stale = |object: &Arc<Object>| {
+                if object.style.is_none() && object.sticknodes_sprite.is_none() {
+                    return false;
+                }
+                match (&object.figure_override, figures.get(&object.figure)) {
+                    (_, None) => false,
+                    (Some(resolved), Some(base)) => !resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
+                    (None, Some(_)) => true,
+                }
             };
             if !frame.objects.iter().any(stale) {
                 return;

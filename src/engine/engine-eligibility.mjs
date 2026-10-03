@@ -13,9 +13,10 @@
 import {isGeneratorType} from '../vfx-registry.mjs';
 
 /** Per-pose fields the engine does not evaluate yet. Effect stacks (`_stykVfx`,
- * `_stykVfxScope`), 3D poses (`_stykSpatial`: perspective, part proportions) and
- * colour transitions (`color_transition`) are drawn: a pose never holds a generated effect. */
-const POSE_FIELDS = ['_stykAnimationOrigin', '_sticknodesSprite'];
+ * `_stykVfxScope`), 3D poses (`_stykSpatial`: perspective, part proportions), colour
+ * transitions (`color_transition`) and Stick Nodes sprites (`_sticknodesSprite`) are
+ * drawn: a pose never holds a generated effect. */
+const POSE_FIELDS = ['_stykAnimationOrigin'];
 
 /** The first effect type of an effects timeline the engine does not draw: generated
  * effects (particles, aura, beams, smoke, explosions) stay with the JavaScript renderer. */
