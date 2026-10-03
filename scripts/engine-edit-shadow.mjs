@@ -150,6 +150,13 @@ async function run(mode) {
     await step('twist a 3D bone with the right button', async () => { const now = await handles(); await drag(now.find(h => h.joint === bone.joint) ?? bone, 40, 0, 'right'); });
     await step('reset the 3D rig', () => page.evaluate(() => styk.editor.resetSpatialPose(true)));
   }
+  // A rig with pose choices: another choice picked, as the 3D panel's choice menu does.
+  const choice = await page.evaluate(async () => {
+    const {poseChoiceGroups} = await import('/src/rig-pose-choices.mjs');
+    const e = styk.editor, group = poseChoiceGroups(e.figure, e.object)[0], other = group?.choices.find(c => c.id !== group.value);
+    return other ? [group.name, other.id] : null;
+  });
+  if (choice) await step('choose a rig pose', () => page.evaluate(([name, id]) => styk.editor.setPoseChoice(name, id), choice));
   await settled();
 
   const report = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__stykEditShadow ?? null, (key, value) => typeof value === 'function' ? undefined : value)));

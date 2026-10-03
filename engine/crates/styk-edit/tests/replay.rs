@@ -28,6 +28,8 @@ const PORTED: &[&str] = &[
     // Posing 3D IK targets: planted (flat pole, depth push, swivel, pole and depth), bent to a side, free.
     "ik-spatial-target-sheet", "ik-spatial-side-target-sheet", "ik-spatial-free-sheet",
     "ik-spatial-steer-sheet", "ik-spatial-side-steer-sheet", "ik-spatial-mirrored-steer-sheet", "spatial-reset-sheet",
+    // Pose choices: 3D bones shown one at a time, presets over channels.
+    "pose-choices-sheet", "pose-presets-sheet", "pose-choice-mechanism-sheet",
 ];
 
 #[test]

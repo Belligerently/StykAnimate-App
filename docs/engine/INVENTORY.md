@@ -121,7 +121,7 @@ Engine logic: ported to Rust.
 | `src/editor-selection.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setSpatialFeetPinned, pose choices and joined 3D IK targets still JS |
+| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs); setSpatialFeetPinned and joined 3D IK targets still JS |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
@@ -240,7 +240,7 @@ Engine logic: ported to Rust.
 | `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
 | `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
 | `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
-| `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation; the choice interface still JS |
+| `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation; poseChoiceGroups and applyChannelPoseChoice for setPoseChoice (styk-edit/src/pose_choice.rs); the 3D panel's reading of groups and validation still JS |
 | `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS |
 | `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |

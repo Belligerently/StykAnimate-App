@@ -7,7 +7,8 @@
 //! `_arcSpatialJoint`), twisted about its axis (`twistSpatialJoint`), a mechanism moved
 //! along its track (`_moveMechanicalJoint`); with 3D IK, a planted knee steering its limb's
 //! bend plane, a twist swinging a planted limb's swivel or turning its foot or hand, a whole
-//! figure turned with its targets, and `resetSpatialPose`. Pose choices are not ported.
+//! figure turned with its targets, and `resetSpatialPose`. Pose choices are in
+//! `pose_choice.rs`.
 
 use std::sync::Arc;
 

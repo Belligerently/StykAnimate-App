@@ -414,6 +414,47 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 5], ['setSpatialPose', {turn: 0.2, pitch: 0.1}], ['resetSpatialPose'], ['setSpatialPose', {turn: -0.3}], ['@select', 1, 11], ['setSpatialMotion', 4],
     ['resetSpatialPose', true], ['undo'], ['undo'], ['redo'],
   ], 'spatial-reset.document.json');
+  // Pose choices: a group of 3D bones shown one at a time (or none), and a group of presets
+  // over existing channels (as tests/rig-pose-choices.test.mjs builds them), on a figure
+  // turned, moved, scaled and mirrored.
+  {
+    const {construction} = await import('../../src/rig-examples-3d.mjs');
+    const {createObject, createFrame, emptyDocument} = await import('../../src/demo.mjs');
+    const {compilePoseChoices} = await import('../../scripts/hand-face/presets.mjs');
+    const eyes = () => {
+      const q = construction(); q.add(0, 0, 0, 'Figure rotation');
+      for (const label of ['Neutral', 'Focused', 'Closed']) {
+        const turn = q.add(0, 0, 0, label + ' turn'), pitch = q.add(0, 0, 0, label + ' tilt');
+        const id = q.add(0, 27, 0, label, {rig: {spatial: {parent: 0, origin: [0, 0, 0], tip: [0, 0, 27], turn, pitch}}});
+        q.segments[id - 1]._stykPoseChoice = {group: 'Eyes', label, shown: 27, hidden: 0};
+      }
+      return {figure_type_id: 1, segments: q.segments, polyfills: [], image_assets: [], text_assets: []};
+    };
+    const write = (name, figure) => {
+      const object = createObject(figure, 1, 100, 100);
+      Object.assign(object, {angles: object.angles.map(a => a + 0.6), root_x: 117, scale: 1.8, image_text_flags: 1});
+      writeFileSync(`${out}/${name}.document.json`, JSON.stringify({...emptyDocument(), figure_types: [figure], keyframes: [createFrame([object])]}) + '\n');
+    };
+    write('pose-choices', eyes());
+    const presets = eyes();
+    for (const segment of presets.segments) delete segment._stykPoseChoice;
+    compilePoseChoices(presets, [{name: 'Expression', choices: [
+      {label: 'Rest', pose: {}},
+      {label: 'Smile', pose: {bend: {Neutral: 0.4}, swing: {Focused: [0.2, -0.3]}, length: {Closed: 18}}},
+    ]}], 'Neutral');
+    write('pose-presets', presets);
+  }
+  scenario('pose-choices-sheet', app, [
+    ['@select', 1, -1], ['setPoseChoice', 'Eyes', 7], ['setPoseChoice', 'Eyes', 7], ['setPoseChoice', 'Eyes', 10], ['setPoseChoice', 'Eyes', 0], ['setPoseChoice', 'Eyes', 999],
+    ['setPoseChoice', 'Mouth', 3], ['beginDrag', 'Expression'], ['setPoseChoice', 'Eyes', 4], ['cancelDrag'], ['@seek', 2], ['setPoseChoice', 'Eyes', 4], ['undo'], ['undo'], ['redo'],
+  ], 'pose-choices.document.json');
+  scenario('pose-presets-sheet', app, [
+    ['@select', 1, -1], ['setPoseChoice', 'Expression', 2], ['setPoseChoice', 'Expression', 2], ['setPoseChoice', 'Expression', 1], ['setPoseChoice', 'Expression', 0],
+    ['@select', 1, 3], ['rotateJoint', 0.1], ['@select', 1, -1], ['setPoseChoice', 'Expression', 2], ['undo'], ['undo'], ['redo'],
+  ], 'pose-presets.document.json');
+  scenario('pose-choice-mechanism-sheet', app, [
+    ['@select', 1, -1], ['setPoseChoice', 'Mouth', 18], ['setPoseChoice', 'Mouth', 0], ['setPoseChoice', 'Mouth', 18], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json');
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

@@ -166,7 +166,7 @@ src/editor-scene.mjs	engine	styk-edit	js	commands and history
 src/editor-selection.mjs	engine	styk-edit	js	commands and history
 src/editor-sessions.mjs	engine	styk-edit	js	commands and history
 src/editor-spatial-shape.mjs	engine	styk-edit	js	commands and history
-src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setSpatialFeetPinned, pose choices and joined 3D IK targets still JS
+src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs); setSpatialFeetPinned and joined 3D IK targets still JS
 src/editor-sprite-segment.mjs	engine	styk-edit	js	commands and history
 src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
@@ -363,7 +363,7 @@ src/rig-controls.mjs	ui	-	stays
 src/rig-examples-3d.mjs	engine	styk-edit	js	
 src/rig-examples.mjs	engine	styk-edit	js	
 src/rig-mechanism-examples.mjs	engine	styk-edit	js	
-src/rig-pose-choices.mjs	engine	styk-eval::spatial	partial	Rust: hidden pose choices in evaluation; the choice interface still JS
+src/rig-pose-choices.mjs	engine	styk-eval::spatial	partial	Rust: hidden pose choices in evaluation; poseChoiceGroups and applyChannelPoseChoice for setPoseChoice (styk-edit/src/pose_choice.rs); the 3D panel's reading of groups and validation still JS
 src/rig-solids.mjs	engine	styk-edit	js	
 src/rig-spatial.mjs	engine	styk-eval::spatial	partial	Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS
 src/rig-test-ui.mjs	ui	-	stays	
