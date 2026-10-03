@@ -549,6 +549,20 @@ scenario('figures-layers-sheet', app, [
   scenario('update-object-native', {}, [
     ['@select', 1, -1], ['updateObject', {scale: 0.75, root_y: 100}], ['selectMany', [1, 2]], ['updateObject', {field28: 64}], ['undo'], ['redo'],
   ]);
+  // The inspector's segment fields: the joint's angle, length and bend (one posed edit),
+  // its colour, transparency, thickness, shape and construction flag (one definition entry),
+  // both at once; refusals; history.
+  scenario('update-segment-sheet', app, [
+    ['@select', 1, 3], ['updateSegment', {angle_rad: 1.2}], ['updateSegment', {length: 40}], ['updateSegment', {bend_rad: 0.3}], ['updateSegment', {color_rgb: [200, 30, 40]}],
+    ['updateSegment', {transparency: 128, thickness: 9}], ['updateSegment', {primitive_code: 1}], ['updateSegment', {is_static: true}], ['updateSegment', {angle_rad: 0.5, color_rgb: [0, 0, 255]}],
+    ['@select', 1, 2], ['updateSegment', {thickness: 0}], ['@select', 1, 3],
+    ['updateSegment', {color_rgb: [300, 0, 0]}], ['updateSegment', {transparency: -1}], ['updateSegment', {primitive_code: 9}], ['updateSegment', {length: -2}],
+    ['updateSegment', {parent_id: 1}], ['updateSegment', {thickness: -1}], ['updateSegment', {angle_rad: 'x'}], ['@select', 1, -1], ['updateSegment', {thickness: 3}],
+    ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('update-segment-rig-sheet', app, [
+    ['@select', 1, 5], ['updateSegment', {length: 0.4}], ['updateSegment', {length: 2}], ['@select', 1, 2], ['updateSegment', {angle_rad: 2}], ['undo'], ['redo'],
+  ], 'rig.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

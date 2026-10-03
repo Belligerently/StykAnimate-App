@@ -23,6 +23,8 @@ pub enum CommandKind {
     /// Paths of the layer state before and after, and the sheet when the layers' tracks
     /// changed with them (`kind: 'layers'`).
     Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, structural: bool, timing: bool },
+    /// A figure definition before and after (`kind: 'figure'`).
+    Figure { index: usize, before: Value, after: Value },
 }
 
 /// One history entry.
@@ -115,6 +117,16 @@ impl Editor {
             }
             CommandKind::LayerSheet { .. } => self.apply_sheet_command(command, direction)?,
             CommandKind::Layers { .. } => self.apply_layers_command(command, direction)?,
+            CommandKind::Figure { index, before, after } => {
+                if let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr)
+                    && let Some(slot) = figures.get_mut(*index)
+                {
+                    *slot = if direction == Direction::Before { before.clone() } else { after.clone() };
+                }
+                self.restore_selection(selection)?;
+                self.revision = revision;
+                self.emit("history", vec![("label", Value::str(&command.label)), ("definition", Value::Bool(true)), ("animation", Value::Bool(false))]);
+            }
         }
         Ok(())
     }

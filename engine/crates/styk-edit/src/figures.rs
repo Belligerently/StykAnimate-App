@@ -7,6 +7,7 @@ use styk_doc::{Obj, Value};
 
 use crate::frame::objects_of;
 use crate::record::{join_target, num, uid};
+use crate::history::{Command, CommandKind};
 use crate::{EditError, Editor};
 
 /// `setOrder(frame, ids)`: the drawing order as unique ids and as slots.
@@ -362,5 +363,139 @@ impl Editor {
             }
             Ok(())
         })
+    }
+
+    /// `updateSegment(patch)`: the selected joint's pose fields (`angle_rad`, `length`,
+    /// `bend_rad`, one posed edit) and its definition's style fields (one `figure` entry).
+    pub(crate) fn update_segment(&mut self, patch: &Value) -> Result<bool, EditError> {
+        let Some((slot, object)) = self.object()? else { return Ok(false) };
+        let definition = self.figure_value(&object);
+        let segments: Vec<Value> = definition.get("segments").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        let index = self.selection.joint;
+        if definition.is_null() || index < 0 || index as usize >= segments.len() {
+            return Ok(false);
+        }
+        let index = index as usize;
+        let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
+        let given = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        let byte = |v: &Value| v.as_f64().is_some_and(|n| n.fract() == 0.0 && (0.0..=255.0).contains(&n));
+        if let Some(color) = given("color_rgb")
+            && !color.elements().map(|e| e.iter().collect::<Vec<_>>()).is_some_and(|c| c.len() == 3 && c.iter().all(byte))
+        {
+            return Err(EditError::Invalid("errors.editor.colorMustContainThreeRgbBytes".into()));
+        }
+        if given("transparency").is_some_and(|t| !byte(&t)) {
+            return Err(EditError::Invalid("errors.editor.transparencyMustBeAByte".into()));
+        }
+        if given("primitive_code").is_some_and(|p| !p.as_f64().is_some_and(|n| n.fract() == 0.0 && (0.0..=6.0).contains(&n))) {
+            return Err(EditError::Invalid("errors.editor.unknownSegmentPrimitive".into()));
+        }
+        let mut pose: Vec<(&str, f64)> = Vec::new();
+        for field in ["angle_rad", "length", "bend_rad"] {
+            if let Some(value) = given(field) {
+                let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(EditError::Invalid(crate::transform::NOT_FINITE.into())) };
+                pose.push((field, value));
+            }
+        }
+        let style: Vec<(String, Value)> = entries.iter().filter(|(k, _)| !["angle_rad", "length", "bend_rad"].contains(&k.as_str())).cloned().collect();
+        let segment = segments[index].clone();
+        let connector = segment.path(&["_stykRig", "connector"]).is_some_and(Value::truthy);
+        if let Some((_, length)) = pose.iter().find(|(k, _)| *k == "length")
+            && (*length < 0.0 || (connector && *length > 1.0))
+        {
+            return Err(EditError::Invalid("errors.editor.connectorPositionMustBe01SegmentLengths".into()));
+        }
+        if !pose.is_empty() {
+            let lengths: Vec<Value> = segments.iter().map(|s| s.get("length").cloned().unwrap_or(Value::Null)).collect();
+            let bends: Vec<Value> = segments.iter().map(|s| s.get("bend_rad").cloned().filter(|b| !b.is_null()).unwrap_or(Value::Num(0.0))).collect();
+            let rest_bend = segment.get("bend_rad").and_then(Value::as_f64).unwrap_or(0.0);
+            let value = |key: &str| pose.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
+            self.object_edit_with("Edit joint", true, |editor| {
+                if let Some(angle) = value("angle_rad") {
+                    let current = editor.frame_objects()[slot].get("angles").and_then(|a| a.item(index)).and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
+                    editor.rotate_joint_by(slot, index, angle - current, true, false)?;
+                }
+                if let Some(length) = value("length") {
+                    let record = editor.frame_object_mut(slot).unwrap();
+                    if !record.get("len_flag").is_some_and(Value::truthy) {
+                        record.set("lengths", Value::array(lengths.clone()));
+                    }
+                    record.set("len_flag", Value::Num(1.0));
+                    crate::pose::set_item_at(record, "lengths", index, length);
+                }
+                if let Some(bend) = value("bend_rad") {
+                    let record = &editor.frame_objects()[slot];
+                    let previous = if record.get("bend_flag").is_some_and(Value::truthy) { record.get("bends").and_then(|b| b.item(index)).and_then(|v| v.as_f64()).unwrap_or(f64::NAN) } else { rest_bend };
+                    editor.rotate_joint_by(slot, index, bend - previous, false, false)?;
+                    let record = editor.frame_object_mut(slot).unwrap();
+                    if !record.get("bend_flag").is_some_and(Value::truthy) {
+                        record.set("bends", Value::array(bends.clone()));
+                    }
+                    record.set("bend_flag", Value::Num(1.0));
+                    crate::pose::set_item_at(record, "bends", index, bend);
+                }
+                editor.frame_object_mut(slot).unwrap().remove("runtime_segments");
+                Ok(())
+            })?;
+        }
+        if style.is_empty() {
+            return Ok(true);
+        }
+        if style.iter().any(|(k, _)| k == "segment_id" || k == "parent_id") {
+            return Err(EditError::Invalid("errors.editor.useTheFigureBuilderToChangeJointHierarchy".into()));
+        }
+        if let Some((_, thickness)) = style.iter().find(|(k, _)| k == "thickness") {
+            let Some(thickness) = thickness.as_f64().filter(|t| t.is_finite()) else { return Err(EditError::Invalid(crate::transform::NOT_FINITE.into())) };
+            if thickness < 0.0 {
+                return Err(EditError::Invalid("errors.editor.thicknessCannotBeNegative".into()));
+            }
+        }
+        let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        let Some(figure_index) = figures.iter().position(|f| f.get("figure_type_id") == object.get("figure_type_id")) else { return Ok(false) };
+        let before = figures[figure_index].clone();
+        let selection = self.selection_state();
+        let mut changed = segment.as_obj().cloned().unwrap_or_default();
+        for (key, value) in &style {
+            changed.set(key, value.clone());
+        }
+        // Raw definition flags follow the edit (`aux_code`, `segment_kind`, `segment_type`, `flags`, `visible`).
+        let number = |o: &Obj, key: &str| o.get(key).and_then(Value::as_f64).unwrap_or(0.0);
+        if let Some((_, is_static)) = style.iter().find(|(k, _)| k == "is_static") {
+            // `(s.aux_code ?? 0) & ~1 | Number(s.is_static)`, in 32-bit integers.
+            let bit = match is_static {
+                Value::Bool(b) => *b as i32,
+                other => other.as_f64().filter(|n| n.is_finite()).map_or(0, |n| n as i64 as i32),
+            };
+            let aux = (number(&changed, "aux_code") as i64 as i32 & !1) | bit;
+            changed.set("aux_code", Value::Num(aux as f64));
+        }
+        if style.iter().any(|(k, _)| k == "primitive_code") {
+            let code = number(&changed, "primitive_code") as usize;
+            const KINDS: [&str; 7] = ["line", "circle", "image", "circleFill", "circleClear", "text", "squareLine"];
+            changed.set("segment_kind", Value::str(KINDS[code.min(6)]));
+            let kind = match code {
+                1 | 3 | 4 => "circle",
+                2 => "image",
+                5 => "text",
+                _ => "line",
+            };
+            changed.set("segment_type", Value::str(kind));
+        }
+        let code = number(&changed, "primitive_code") as i64 as i32;
+        let aux = number(&changed, "aux_code") as i64 as i32;
+        changed.set("flags", Value::Num((code | aux.wrapping_shl(8)) as f64));
+        let thickness = changed.get("thickness").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        changed.set("visible", Value::Bool(thickness > 0.01 || code > 0));
+        let mut after = before.as_obj().cloned().unwrap_or_default();
+        let mut list: Vec<Value> = segments.clone();
+        list[index] = Value::object(changed);
+        after.set("segments", Value::array(list));
+        let after = Value::object(after);
+        if let Some(slot) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).and_then(|f| f.get_mut(figure_index)) {
+            *slot = after.clone();
+        }
+        self.record(Command { kind: CommandKind::Figure { index: figure_index, before, after }, label: "Edit segment style".into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0 })?;
+        self.emit("edit", vec![("label", Value::str("Edit segment style")), ("definition", Value::Bool(true))]);
+        Ok(true)
     }
 }
