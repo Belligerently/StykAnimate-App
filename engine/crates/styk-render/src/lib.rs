@@ -28,6 +28,7 @@ pub mod effects;
 mod frame;
 mod images;
 mod isolation;
+mod materials;
 mod pipeline;
 mod present;
 mod resources;
@@ -61,6 +62,8 @@ pub struct Stats {
     pub layer_bytes: u64,
     /// GPU memory of the multisampled depth buffers of depth runs (3D faces); 0 without any.
     pub depth_bytes: u64,
+    /// GPU memory of the particle material atlas (generated effects); 0 until a list needs it.
+    pub material_bytes: u64,
 }
 
 pub struct Renderer {
@@ -80,7 +83,15 @@ pub struct Renderer {
     pub(crate) points: Table,
     pub(crate) bind0: Option<wgpu::BindGroup>,
     pub(crate) sprites: wgpu::Texture,
+    pub(crate) sprite_view: wgpu::TextureView,
     pub(crate) sprite_bind: wgpu::BindGroup,
+    /// The particle material atlas of generated effects, and its trilinear sampler.
+    pub(crate) materials: materials::Materials,
+    pub(crate) material_sampler: wgpu::Sampler,
+    /// Additive blending (generated effects), created with the first list that has any.
+    pub(crate) pipeline_add: Option<wgpu::RenderPipeline>,
+    /// Ranges of the current list's prims drawn additively; empty when it has none.
+    pub(crate) add_ranges: Vec<(u32, u32)>,
     pub(crate) nearest: wgpu::Sampler,
     pub(crate) linear: wgpu::Sampler,
     pub(crate) layers: [LayerAtlas; 2],
@@ -131,18 +142,29 @@ impl Renderer {
         }
         self.list_prims = list.prims.len() as u32;
         self.list = Some(list.clone());
-        // Where the depth-tested faces are: passes switch pipelines there.
+        // Generated effects: the materials their sprites sample.
+        self.ensure_materials(list.materials);
+        // Where the depth-tested faces are and where generated effects add light: passes
+        // switch pipelines there. (A reset without faces draws nothing, with or without a
+        // depth buffer.)
         self.depth_faces.clear();
-        // (A reset without faces draws nothing, with or without a depth buffer.)
+        self.add_ranges.clear();
+        let extend = |ranges: &mut Vec<(u32, u32)>, i: u32| match ranges.last_mut() {
+            Some(last) if last.1 == i => last.1 = i + 1,
+            _ => ranges.push((i, i + 1)),
+        };
         for (i, p) in list.prims.iter().enumerate() {
-            if p.kind & 255 != styk_draw::K_TRI || p.kind & styk_draw::F_DEPTH == 0 {
+            if p.kind & (styk_draw::F_DEPTH | styk_draw::F_ADD) == 0 {
                 continue;
             }
-            let i = i as u32;
-            match self.depth_faces.last_mut() {
-                Some(last) if last.1 == i => last.1 = i + 1,
-                _ => self.depth_faces.push((i, i + 1)),
+            match p.kind & 255 {
+                styk_draw::K_TRI if p.kind & styk_draw::F_DEPTH != 0 => extend(&mut self.depth_faces, i as u32),
+                styk_draw::K_PARTICLE | styk_draw::K_BEAM if p.kind & styk_draw::F_ADD != 0 => extend(&mut self.add_ranges, i as u32),
+                _ => {}
             }
+        }
+        if !self.add_ranges.is_empty() {
+            self.additive_pipeline();
         }
     }
 

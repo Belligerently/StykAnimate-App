@@ -10,19 +10,11 @@
  * only looks at the records an edit names.
  */
 
-import {isGeneratorType} from '../vfx-registry.mjs';
-
 /** Per-pose fields the engine does not evaluate yet. Effect stacks (`_stykVfx`,
  * `_stykVfxScope`) and 3D poses (`_stykSpatial`: perspective, part proportions)
- * are drawn: a pose never holds a generated effect. */
+ * are drawn. Every effect of an effects timeline is drawn, generated effects
+ * (particles, aura, beams, smoke, explosions) included (docs/engine/vfx.md). */
 const POSE_FIELDS = ['_stykAnimationOrigin', '_sticknodesSprite', 'color_transition'];
-
-/** The first effect type of an effects timeline the engine does not draw: generated
- * effects (particles, aura, beams, smoke, explosions) stay with the JavaScript renderer. */
-function clipReason(clips) {
-  for (const clip of clips ?? []) for (const effect of clip.effects ?? []) if (isGeneratorType(effect.type)) return `generated effects (${effect.type})`;
-  return null;
-}
 
 /** 3D meshes, one-sided surfaces and attached movieclip meshes are drawn
  * (docs/engine/spatial.md); drawings a spatial bone turns are not. */
@@ -42,8 +34,6 @@ function frameReason(frame) {
 function metadataReason(report) {
   const styk = report._styk;
   if (!styk) return null;
-  const generated = clipReason(styk.vfxClips?.clips);
-  if (generated) return generated;
   if (styk.animation?.channels?.length || styk.layerSheet?.legacyAnimation) return 'property channels';
   if (styk.simpleFrameDraft) return 'a frame draft';
   if (styk.cameraMotion?.clips?.some(clip => clip.type === 'follow')) return 'follow camera';

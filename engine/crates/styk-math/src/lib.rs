@@ -1,5 +1,5 @@
-//! `Math.sin`, `Math.cos`, `Math.atan2`, `Math.hypot`, `Math.asin` and `Math.acos` exactly as
-//! Node's V8 computes them.
+//! `Math.sin`, `Math.cos`, `Math.atan2`, `Math.hypot`, `Math.asin`, `Math.acos` and `Math.exp`
+//! exactly as Node's V8 computes them.
 //!
 //! The editor stores the results of its arithmetic in documents, and the harnesses
 //! that check the engine against it run the editor in Node, byte for byte. So the
@@ -9,9 +9,10 @@
 //! not agree (Rust's `f64::sin` on Linux differed in the last bit for 2.7 % of two
 //! million inputs, `f64::atan2` for 17 %), and neither do browsers among themselves
 //! (docs/engine/decisions/0016-v8-exact-math.md); with this crate the engine gives one
-//! answer on every platform, natively and in WebAssembly. `asin` and `acos` are the `libm`
-//! crate's, which agree with V8's fdlibm on every recorded input (the platform's differ on
-//! 7 % and 4 % of them). `tests/v8.rs` checks all six functions against recorded Node results.
+//! answer on every platform, natively and in WebAssembly. `asin`, `acos` and `exp` are the
+//! `libm` crate's, which agree with V8's fdlibm on every recorded input (the platform's differ
+//! on 7 %, 4 % and 10 % of them; V8 returns `Math.E` for `exp(1)`). `tests/v8.rs` checks all
+//! seven functions against recorded Node results.
 
 // Vendored as it is upstream.
 #[allow(clippy::all)]
@@ -311,4 +312,19 @@ pub fn asin(x: f64) -> f64 {
 /// `Math.acos` (fdlibm's, as the `libm` crate has it: identical to V8's on every recorded input).
 pub fn acos(x: f64) -> f64 {
     libm::acos(x)
+}
+
+/// `Math.exp(x)`: fdlibm's `__ieee754_exp`, which V8 has in `ieee754::exp` and the `libm`
+/// crate ports from FreeBSD unchanged (the platform's `f64::exp` differed from Node for 10 %
+/// of two million inputs, the `libm` crate for none), except that V8 returns `Math.E` for 1.
+///
+/// `Math.pow` has no counterpart here: Node's results agree with neither the `libm` crate
+/// (fdlibm's `pow` differed for 9 % of two million inputs) nor glibc (which rounds `x²`
+/// differently from `x * x`), so engine code that needs `Math.pow` uses `libm::pow` where
+/// a last-bit difference cannot reach a stored value or a decision (docs/engine/vfx.md).
+pub fn exp(x: f64) -> f64 {
+    if x == 1.0 {
+        return std::f64::consts::E;
+    }
+    libm::exp(x)
 }

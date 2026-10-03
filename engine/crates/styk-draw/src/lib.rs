@@ -20,7 +20,8 @@
 //! * Paint records (`paints`, rows of four `f32`): a head row
 //!   `[kind, stop count, 0, 0]`, a geometry row, an extra row, then two rows per
 //!   stop: `[offset, 0, 0, 0]` and straight RGBA. [`sample_paint`] is the
-//!   reference evaluation every renderer reproduces.
+//!   reference evaluation every renderer reproduces. The same table holds the
+//!   rows of generated-effect draws ([`K_PARTICLE`], [`K_BEAM`]).
 
 /// A stroked segment with round caps: `a` = (x0, y0, x1, y1), `b.x` = half width.
 pub const K_CAPSULE: u32 = 1;
@@ -76,6 +77,54 @@ pub const DEPTH_FAR: f32 = 0.9999;
 pub fn window_depth(z: f32, z_min: f32, range: f32) -> f32 {
     0.9995 - 0.999 * (z - z_min) / range
 }
+
+/// One particle of a generated effect (docs/engine/vfx.md, Generated effects), in its
+/// draw's local coordinates. `paint` is the offset of the draw's three rows in
+/// [`DrawList::paints`]: `[m0, m1, m2, m3]` and `[tx, ty, s, shade]`, its transform to the
+/// world (`x' = m0·x + m2·y + tx`, `y' = m1·x + m3·y + ty`, a movieclip's placement for
+/// effects nested in one, `s` = √|det|), then `[softness, stretch, aspect, row]`, the
+/// draw's constants (`row` is a sprite's material row plus one). The particle's shape is
+/// [`particle_shape`] (`P_*`); `a` = (x, y, size, rotation), `b` = (vx, vy, h, 0) (`h`: a
+/// chunk's random proportion), `c` = straight RGBA in floats (the opacity times its colour
+/// stop's), `color` = a sprite's atlas cell, `column | row << 8`. A lightning arc segment
+/// ([`P_ARC`]) has `a` = (x0, y0, x1, y1), `b.x` = its radius. Renderers expand the record
+/// as the editor's vertex shader does (`vfx-generator-gpu.mjs`): its pixel margins are the
+/// target's pixel in local units.
+pub const K_PARTICLE: u32 = 13;
+/// A beam of a generated effect, in local coordinates as [`K_PARTICLE`]: `a` = (origin x,
+/// origin y, tip x, tip y), `b` = (width, wobble, seed, tick), `c` = (opacity, style, 0, 0);
+/// `paint` = the draw's three rows, then its colours at ramp positions 0 and 1 (straight
+/// RGB and the stop's opacity).
+pub const K_BEAM: u32 = 14;
+/// Drawn with additive blending: colour and alpha are added to the target's.
+pub const F_ADD: u32 = 1 << 14;
+/// Particle shapes (`SHAPE` in src/vfx-generator-layers.mjs), bits 16–18 of a [`K_PARTICLE`]'s kind.
+pub const P_DISC: u32 = 0;
+pub const P_STREAK: u32 = 1;
+pub const P_RING: u32 = 2;
+pub const P_CHUNK: u32 = 3;
+pub const P_ARC: u32 = 5;
+pub const P_SPRITE: u32 = 6;
+pub const P_SQUARE: u32 = 7;
+
+/// The shape of a [`K_PARTICLE`] record.
+pub const fn particle_shape(kind: u32) -> u32 {
+    kind >> 16 & 7
+}
+
+/// The kind of a [`K_PARTICLE`] record of `shape`.
+pub const fn particle_kind(shape: u32, additive: bool) -> u32 {
+    K_PARTICLE | (shape & 7) << 16 | if additive { F_ADD } else { 0 }
+}
+
+/// The particle material atlas the renderers sample for [`P_SPRITE`] particles (the
+/// editor's procedural atlas, `styk_eval::vfx::generated::atlas`): `MATERIAL_ROWS` rows of
+/// `MATERIAL_COLUMNS` cells of `MATERIAL_CELL` pixels, two channels (shading × coverage,
+/// coverage), `MATERIAL_LEVELS` box-reduced levels sampled trilinearly.
+pub const MATERIAL_CELL: u32 = 128;
+pub const MATERIAL_COLUMNS: u32 = 8;
+pub const MATERIAL_ROWS: u32 = 17;
+pub const MATERIAL_LEVELS: u32 = 4;
 
 /// An image sampled bilinearly (drawings); Pivot sprites sample their nearest texel.
 pub const F_SMOOTH: u32 = 1 << 8;
@@ -199,6 +248,8 @@ pub struct DrawList {
     pub background_prims: u32,
     /// Raster layers of the groups that have one ([`Group::layer`]).
     pub layers: Vec<EffectLayer>,
+    /// The particle material rows [`P_SPRITE`] particles sample, one bit per row.
+    pub materials: u32,
 }
 
 impl DrawList {

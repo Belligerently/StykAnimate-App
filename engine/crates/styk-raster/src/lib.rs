@@ -17,10 +17,14 @@
 //!   polygon fans show no seams between their triangles.
 //! * Drawing cels show one level per cel by the same rule as the GPU
 //!   (`floor(-log2(pixels per cel pixel))`, 0–8).
+//! * Generated effects (`K_PARTICLE`, `K_BEAM`) are expanded into the GPU's
+//!   quads and shaded per pixel by its fragment arithmetic (`generators`).
 //! * Depth runs (3D faces, `K_DEPTH_RESET` then `K_TRI` with `F_DEPTH`) are
 //!   rasterized with a depth buffer of four samples per pixel at the GPU's
 //!   standard sample positions, resolved, then composited at their place in
 //!   painter order, as the GPU draws them.
+
+mod generators;
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -320,6 +324,7 @@ impl Raster<'_> {
                     }
                 }
                 K_BG_IMAGE => self.background(target, p),
+                K_PARTICLE | K_BEAM => self.generated(target, p, clip),
                 _ => {}
             }
             i += 1;

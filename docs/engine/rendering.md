@@ -20,7 +20,12 @@ editor draws it from a raster of its own. 3D faces are **depth runs**: a
 tested against each other and placed as a whole in painter order
 ([spatial.md](spatial.md#drawing)).
 Paint records live in `DrawList::paints`; `sample_paint` is the reference
-evaluation every renderer reproduces.
+evaluation every renderer reproduces. Generated effects are `K_PARTICLE` records
+(one per particle, in the shape bits of its kind, in its draw's local units) and
+`K_BEAM` records; each points at its draw's rows in `paints` (its transform to the
+world and its constants), `F_ADD` marks those blended additively, and
+`DrawList::materials` names the particle material rows sprites sample
+([vfx.md](vfx.md#generated-effects-on-screen)).
 
 ## GPU (`styk-render`)
 
@@ -34,6 +39,7 @@ evaluation every renderer reproduces.
 | `present.rs` | copy into the host's surface, read-back |
 | `view.rs` | world → output transform, artboard |
 | `effects/` | effect layers ([vfx.md](vfx.md#rendering)): `plan.rs` places each group for the view (density, crop, composite), `mod.rs` writes its group record, `executor.rs` and `passes.wgsl` run effect stacks on pooled slots |
+| `materials.rs` | the particle material atlas of generated effects: a placeholder texel until a list names a row, then the editor's procedural rows with their reduced levels (5.9 MB), sampled trilinearly |
 
 Drawing cels: every display level's tiles are in the list; the vertex shader
 keeps the level `floor(-log2(pixels per cel pixel))` (0–8) and the fragment
@@ -46,9 +52,17 @@ and two variants of the one shader's pipeline (painter order writing depth; face
 tested `less-equal`), switched where faces begin and end; the vertex shader maps a
 corner's depth to its window depth with the editor's expression.
 
+Generated effects: the vertex shader expands each `K_PARTICLE` or `K_BEAM` record
+exactly as the editor's generator shader does, in its draw's local units with the
+target's pixel in those units, then places it by the draw's transform; the fragment
+shader shades it as the editor's does. Runs of `F_ADD` records draw with an additive
+pipeline variant (colour and alpha added), created with the first list that has one.
+
 Invariants: no per-frame allocation in steady state; the no-effect path draws
 one pass per depth and round and creates no effect resource; a list without 3D
-faces creates no depth buffer and draws one instanced draw per pass; WebGL2 limits (no storage buffers, one sampler
+faces creates no depth buffer and a list without additive records no additive
+pipeline, and either draws one instanced draw per pass; the material atlas is a
+placeholder texel until a list names a row; WebGL2 limits (no storage buffers, one sampler
 per texture, array textures of at least two layers, [D11](decisions/0011-array-textures-two-layers.md)).
 
 ## CPU (`styk-raster`)
@@ -61,7 +75,10 @@ with `sample_paint`; consecutive triangles of one look fill as one path.
 two differ by less than 0.2/255 on average, along edges (0.30–0.56 on 3D scenes,
 whose raster entries the GPU resamples and the CPU draws at the output's density).
 Depth runs rasterize with a four-sample depth buffer compared at 24 bits.
-Effects are not drawn on the CPU yet.
+Generated effects expand into the GPU's quads and are shaded per pixel by its
+fragment arithmetic, additive ones added (`generators.rs`); on the generator
+fixtures the CPU and the GPU differ by less than 0.2/255 on average.
+Filter effects are not drawn on the CPU yet.
 
 ## In the app
 
@@ -71,9 +88,10 @@ prepared playback frames for documents the engine supports
 ([D4](decisions/0004-strangler-gate.md)). The WebGPU surface is configured with
 premultiplied alpha so the page shows through the pasteboard. Filter effects are
 drawn by the engine; the effects preview switch reaches it through
-`Stage::set_effects` and `EngineHandle::set_effects`. Documents with generated
-effects keep the JavaScript renderer, as do drawings a spatial bone turns; 3D
-meshes, surfaces and poses are drawn by the engine.
+`Stage::set_effects` and `EngineHandle::set_effects`. Generated effects are drawn
+by the engine (an edit frame whose trails are still being sampled asks the app for
+another frame, `Stage::refining`); drawings a spatial bone turns keep the
+JavaScript renderer; 3D meshes, surfaces and poses are drawn by the engine.
 
 ## Testing
 

@@ -22,7 +22,7 @@ fn a_tinted_ghost_keeps_custom_paints_and_drops_secondary_colours() {
     let prepared = styk_eval::prepare(doc);
     let scene = build(&prepared.doc, &prepared.evaluate(0.0));
     let ghost_scene = build(&prepared.doc, &prepared.evaluate(8.0));
-    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false };
+    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None };
     let plain = encode_composed(&prepared.doc, &assets, &scene, &overrides, &[], None);
     let ghost = Ghost { scene: &ghost_scene, opacity: 0.14, tint: Some(TINT), hidden: &[] };
     // One figure: the ghost under the current pose.
@@ -53,7 +53,7 @@ fn a_tinted_ghost_draws_solid_paints_in_its_tint() {
         let prepared = styk_eval::prepare(doc);
         let scene = build(&prepared.doc, &prepared.evaluate(0.0));
         let ghost_scene = build(&prepared.doc, &prepared.evaluate(8.0));
-        let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false };
+        let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: false, generators: None };
         let ghost = Ghost { scene: &ghost_scene, opacity: 0.14, tint: Some(TINT), hidden: &[] };
         let list = encode_composed(&prepared.doc, &assets, &scene, &overrides, &[ghost], Some(&[Layer::Ghost(0, 0), Layer::Current(0)]));
         let tint = u32::from_le_bytes([TINT[0], TINT[1], TINT[2], 255]);
