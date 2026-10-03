@@ -13,6 +13,7 @@
 
 pub mod edit;
 pub mod engine;
+pub mod math;
 pub mod stage;
 
 use wasm_bindgen::prelude::*;

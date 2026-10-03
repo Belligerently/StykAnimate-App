@@ -1,4 +1,5 @@
-//! `Math.sin`, `Math.cos`, `Math.atan2`, `Math.hypot` and `Math.exp` exactly as Node's V8 computes them.
+//! `Math.sin`, `Math.cos`, `Math.atan2`, `Math.hypot`, `Math.asin`, `Math.acos` and `Math.exp`
+//! exactly as Node's V8 computes them.
 //!
 //! The editor stores the results of its arithmetic in documents, and the harnesses
 //! that check the engine against it run the editor in Node, byte for byte. So the
@@ -8,8 +9,10 @@
 //! not agree (Rust's `f64::sin` on Linux differed in the last bit for 2.7 % of two
 //! million inputs, `f64::atan2` for 17 %), and neither do browsers among themselves
 //! (docs/engine/decisions/0016-v8-exact-math.md); with this crate the engine gives one
-//! answer on every platform, natively and in WebAssembly. `tests/v8.rs` checks every
-//! function against recorded Node results.
+//! answer on every platform, natively and in WebAssembly. `asin`, `acos` and `exp` are the
+//! `libm` crate's, which agree with V8's fdlibm on every recorded input (the platform's differ
+//! on 7 %, 4 % and 10 % of them; V8 returns `Math.E` for `exp(1)`). `tests/v8.rs` checks all
+//! seven functions against recorded Node results.
 
 // Vendored as it is upstream.
 #[allow(clippy::all)]
@@ -299,6 +302,16 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 /// The editor's `shortest(a)`: `Math.atan2(Math.sin(a), Math.cos(a))`, the angle in (-π, π].
 pub fn shortest(a: f64) -> f64 {
     atan2(sin(a), cos(a))
+}
+
+/// `Math.asin` (fdlibm's, as the `libm` crate has it: identical to V8's on every recorded input).
+pub fn asin(x: f64) -> f64 {
+    libm::asin(x)
+}
+
+/// `Math.acos` (fdlibm's, as the `libm` crate has it: identical to V8's on every recorded input).
+pub fn acos(x: f64) -> f64 {
+    libm::acos(x)
 }
 
 /// `Math.exp(x)`: fdlibm's `__ieee754_exp`, which V8 has in `ieee754::exp` and the `libm`

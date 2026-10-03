@@ -119,6 +119,22 @@ pub struct ObjectGeometry {
     /// What a spatial rig's joints carry besides their positions; `None` for
     /// a figure without one.
     pub spatial: Option<Arc<ObjectSpatial>>,
+    /// Per segment of a figure with rig relationships, what editing reads from its
+    /// evaluation (`rigSpace`, `connector`); `None` for a figure without any.
+    pub rig: Option<Arc<[RigJoint]>>,
+}
+
+/// A rigged joint as geometry evaluated it, for editing: the space its authored
+/// angle is in (`rigSpace`, which `authoredRigTarget` inverts) and whether it is a
+/// connector sliding between two joints.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RigJoint {
+    pub space: Option<crate::rig::Space>,
+    pub connector: bool,
+    /// The joint as the rig evaluated it, drawn or not: angle, bend and scaled length.
+    pub angle: f64,
+    pub bend: f64,
+    pub length: f64,
 }
 
 /// The 3D side of an evaluated figure: what surfaces, meshes and attached
@@ -608,7 +624,20 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     items.sort_by(|a, b| a.z.total_cmp(&b.z));
     let _ = doc;
     let spatial = has_spatial.then(|| Arc::new(ObjectSpatial { frames, depths, figure_angle, mirror: obj.image_text_flags, camera }));
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial });
+    let rig = rig_plan.is_some().then(|| {
+        rig_states
+            .iter()
+            .zip(&fig.segments)
+            .map(|(state, seg)| RigJoint {
+                space: state.and_then(|s| s.space),
+                connector: seg.rig.as_ref().is_some_and(|r| r.connector.is_some()),
+                angle: state.map_or(f64::NAN, |s| s.angle),
+                bend: state.map_or(f64::NAN, |s| s.bend),
+                length: state.map_or(f64::NAN, |s| s.length),
+            })
+            .collect()
+    });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig });
     built.items = items;
     built.points = points;
     built.meshes = meshes;
@@ -648,7 +677,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
     };
     let angle = attachment.as_ref().map_or(local_angle, |a| a.figure_angle);
     let end = [root[0] + 40.0 * scale * styk_math::cos(angle), root[1] + 40.0 * scale * styk_math::sin(angle)];
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
     let Some(local) = obj.clip_time else { return built };
     // `Math.floor(local)` clamped to the forms the clip has.
     let form = (local.floor().max(0.0) as usize).min(meshes.len() - 1);
@@ -719,7 +748,7 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
     let Some(local) = obj.clip_time else { return built };
     let source = clip_scene(clip, local);
     // Meshes inside the clip keep their evaluated positions: the editor places a
@@ -784,6 +813,26 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
 
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
+    build_filtered(doc, frame, None)
+}
+
+/// [`build`] for the objects in `slots` and the objects they are joined to, the others
+/// left unresolved: what an editing call reads of one figure's geometry, without the
+/// whole frame's.
+pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
+    let count = frame.objects.len();
+    let mut needed = vec![false; count];
+    for &slot in slots {
+        let mut at = Some(slot);
+        while let Some(i) = at.filter(|&i| i < count && !needed[i]) {
+            needed[i] = true;
+            at = frame.objects[i].join.map(|j| j.slot as usize);
+        }
+    }
+    build_filtered(doc, frame, Some(&needed))
+}
+
+fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Scene {
     let count = frame.objects.len();
     let mut scene = Scene {
         objects: vec![ObjectGeometry::default(); count],
@@ -839,6 +888,14 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
     let joined_ik = crate::ik::joined::solve(frame, &|slot| fig_of.get(slot).filter(|&&s| s != u32::MAX).map(|&s| &scene.figures[s as usize]));
     let mut built: Vec<Option<Built>> = (0..count).map(|_| None).collect();
     for slots in &order {
+        let filtered: Vec<usize>;
+        let slots = match needed {
+            Some(needed) => {
+                filtered = slots.iter().copied().filter(|&i| needed[i]).collect();
+                &filtered
+            }
+            None => slots,
+        };
         let resolve_root = |i: usize, built: &[Option<Built>]| -> Option<[f64; 2]> {
             let o = &frame.objects[i];
             let mut root = [o.root[0], o.root[1]];

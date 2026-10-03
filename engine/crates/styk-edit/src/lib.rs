@@ -24,6 +24,8 @@ mod select;
 pub mod session;
 mod sheet;
 mod sheet_frames;
+mod spatial;
+mod spatial_ik;
 mod timeline;
 mod transform;
 
@@ -70,6 +72,18 @@ pub(crate) struct Drag {
     pub detached: HashMap<u32, [f64; 2]>,
     /// The gesture edits a draft of the frame on show (a layer sheet), not a keyframe.
     pub authored: bool,
+    /// A rotation's targets by selected slot, joint and isolation (`rotationTargets`): the
+    /// figures' structure does not change during a gesture.
+    pub rotation_targets: HashMap<(usize, usize, bool), Vec<(usize, usize)>>,
+    /// 3D bone drags by `kind:uid:joint` (`spatialGesture`): each sample is solved from
+    /// the gesture's fixed start. And the kind of each bone's drag (`spatialKinds`).
+    pub spatial_gestures: HashMap<String, spatial::Gesture>,
+    pub spatial_kinds: HashMap<String, &'static str>,
+    /// A limb's capture by `uid:handle`, kept when it has a 3D target (`_drag.ikCapture`);
+    /// the 3D parts alone (`spatialIKCapture`); where a depth push left a target (`ikResume`).
+    pub ik_captures: HashMap<String, spatial_ik::Capture>,
+    pub spatial_ik_captures: HashMap<String, spatial_ik::SpatialCapture>,
+    pub ik_resume: HashMap<String, Option<[f64; 2]>>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -394,6 +408,10 @@ impl Editor {
             "centerFigure" => self.center_figure().map(Value::Bool),
             "resetPose" => self.reset_pose().map(Value::Bool),
             "poseJoint" => self.pose_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
+            "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
+            "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),

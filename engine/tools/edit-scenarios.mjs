@@ -291,6 +291,101 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 0], ['poseJoint', 330, 230], ['rotateJoint', 0.1], ['bendJoint', 340, 220], ['@select', 1, 1], ['poseJoint', 300, 300],
     ['bendJoint', 290, 310, {stretch: true}], ['@select', 1, 2], ['poseJoint', 280, 330, {stretch: true}], ['bendJoint', 270, 335], ['undo'], ['undo'], ['redo'],
   ], 'sticknodes.document.json');
+  // Rig controls: a stretch driver and the bones that follow it (posed in its space), an
+  // angle-locked bone (it only stretches), and a connector between two joints (it slides
+  // and bends along its centerline).
+  {
+    const e = open(documentOf([[[11, 0, 90, .8], [22, 11, 90, 2], [33, 22, 35, 0], [44, 0, 70, 2.4], [55, 44, 60, 1.6]]]));
+    joint(e, 22, 1); e.enableSmartStretch(true);
+    joint(e, 44, 1); e.setAngleLock('world');
+    e.select(1, 0); e.addConnector(33, 55, {position: .4});
+    writeFileSync(`${out}/rig.document.json`, JSON.stringify(prune(e.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  }
+  scenario('rig-sheet', app, [
+    ['@select', 1, 2], ['poseJoint', 300, 330], ['@select', 1, 1], ['poseJoint', 330, 300, {stretch: true}], ['@select', 1, 2], ['poseJoint', 310, 340],
+    ['@select', 1, 3], ['poseJoint', 240, 200], ['rotateJoint', 0.3], ['poseJoint', 230, 210, {stretch: true}], ['bendJoint', 228, 205],
+    ['@select', 1, 5], ['poseJoint', 280, 260], ['bendJoint', 285, 250], ['setConnectorPosition', 0.7], ['setConnectorPosition', 2],
+    ['@select', 1, 4], ['bendJoint', 220, 240], ['@select', 1, -1], ['moveSelection', 10, 5], ['undo'], ['undo'], ['redo'],
+  ], 'rig.document.json');
+  // Rigs with pinned IK: the solver works through the rig's spaces.
+  for (const fixture of ['rig-follow', 'rig-stretch']) scenario(`ik-${fixture}-sheet`, app, [
+    ['@select', 1, -1], ['moveSelection', 10, 5], ['rotateSelection', 0.1], ['@select', 1, 1], ['rotateJoint', 0.2], ['bendJoint', 260, 200],
+    ['undo'], ['undo'], ['redo'],
+  ], `../../crates/styk-eval/tests/fixtures/ik/${fixture}.json`);
+  // 3D documents: transforms, timeline keys and history on figures with 3D bones, meshes,
+  // surfaces, perspective and part proportions.
+  for (const fixture of ['mesh-perspective', 'mesh-sheet', 'surfaces-skin', 'surfaces-perspective', 'mesh-mechanism', 'clip-mesh']) scenario(`spatial-${fixture}-sheet`, app, [
+    ['@select', 1, -1], ['moveSelection', 12, -6], ['rotateSelection', 0.15], ['scaleSelection', 1.1], ['mirrorSelection', 'horizontal'], ['rotateFigure', -0.1],
+    ['centerFigure'], ['@seek', 2], ['sheetInsertKey', ['layer-1'], 2], ['moveSelection', -5, 5], ['resetPose'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], `../../crates/styk-eval/tests/fixtures/spatial/${fixture}.json`);
+  // Turning 3D bones (setSpatialPose, and rotateJoint on a bone) in perspective, and the
+  // hinges and slides of a mechanism (setSpatialMotion), one hinge driven by another.
+  scenario('spatial-turn-sheet', app, [
+    ['@select', 1, 5], ['rotateJoint', 0.2], ['rotateJoint', -0.1, {isolate: true}], ['setSpatialPose', {turn: 0.3}], ['setSpatialPose', {pitch: -0.2, bend: 0.1}],
+    ['@select', 1, 8], ['rotateJoint', 0.4], ['setSpatialPose', {bend: 0.5}, {wholeFigure: true}], ['setSpatialPose', {roll: 1}],
+    ['@select', 1, 5], ['setSpatialPose', {turn: 0.1}, {wholeFigure: true}], ['setSpatialPose', {turn: 0.1}], ['undo'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-perspective.json');
+  scenario('spatial-mechanism-sheet', app, [
+    ['@select', 1, 8], ['rotateJoint', 0.3], ['setSpatialMotion', 0.9], ['setSpatialMotion', 0.25, {fraction: true}], ['@select', 1, 11], ['setSpatialMotion', 10],
+    ['setSpatialMotion', 1, {fraction: true}], ['rotateJoint', 0.2], ['setSpatialMotion', null], ['@select', 1, 14], ['rotateJoint', 0.5], ['@select', 1, 5],
+    ['setSpatialPose', {turn: 0.2, pitch: 0.1}], ['@select', 1, 2], ['setSpatialMotion', 0.5], ['undo'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json');
+  // Dragging 3D bones on the canvas: turned flat on screen, swung in depth (the depth key
+  // pressed mid-drag), stretched, twisted; and a mechanism's hinges and slide moved along
+  // their tracks.
+  scenario('spatial-drag-sheet', app, [
+    ['@select', 1, 8], ['beginDrag', 'Pose figure'], ['poseJoint', 380, 230], ['poseJoint', 390, 250], ['poseJoint', 400, 270], ['commitDrag'],
+    ['beginDrag', 'Pose figure'], ['poseJoint', 380, 230, {depth: true}], ['poseJoint', 360, 240, {depth: true, alternate: true}], ['poseJoint', 350, 260], ['commitDrag'],
+    ['beginDrag', 'Pose figure'], ['poseJoint', 390, 240, {stretch: true}], ['poseJoint', 395, 250, {stretch: true}], ['commitDrag'],
+    ['@select', 1, 5], ['beginDrag', 'Pose figure'], ['bendJoint', 300, 200], ['bendJoint', 340, 200, {pixel: 2}], ['commitDrag'], ['bendJoint', 320, 210],
+    ['poseJoint', 300, 250, {depth: true, pixel: 2, anchor: {x: 310, y: 240}}],
+    // Inside the bone's projected reach the bone leaves the view plane, on the gesture's side
+    // or, with the alternate key, the other.
+    ['@select', 1, 8], ['beginDrag', 'Pose figure'], ['poseJoint', 380, 230, {depth: true, pixel: 3}], ['poseJoint', 340, 200, {depth: true, pixel: 3}],
+    ['poseJoint', 420, 260, {depth: true, alternate: true, pixel: 3}], ['poseJoint', 360, 280, {depth: true, alternate: true, pixel: 3}], ['commitDrag'],
+    ['undo'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-perspective.json');
+  // The slide's handle as the editor draws it: the drag starts there.
+  const mechanism = JSON.parse(readFileSync(new URL('../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json', import.meta.url), 'utf8'));
+  const probe = open(structuredClone(mechanism), app); probe.select(1, 11);
+  const slide = probe.geometry.objects.get(0).joints.get(12), at = (dx, dy) => [slide.x + dx, slide.y + dy];
+  scenario('spatial-mechanism-drag-sheet', app, [
+    ['@select', 1, 8], ['beginDrag', 'Pose figure'], ['poseJoint', 340, 200], ['poseJoint', 360, 220], ['commitDrag'],
+    ['@select', 1, 11], ['beginDrag', 'Pose figure'], ['poseJoint', ...at(1, 1), {anchor: {x: slide.x, y: slide.y}}], ['poseJoint', ...at(6, 3)], ['poseJoint', ...at(12, -2)], ['commitDrag'],
+    ['beginDrag', 'Pose figure'], ['poseJoint', ...at(400, 0)], ['commitDrag'],
+    ['@select', 1, 14], ['poseJoint', 350, 250], ['@select', 1, 5], ['beginDrag', 'Pose figure'], ['poseJoint', 330, 160], ['commitDrag'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json');
+  // A planted 3D leg (a spatial IK target): moves, keys and duplicates; turning the body;
+  // turning the thigh releases the leg; posing the foot plants its new orientation.
+  for (const fixture of ['spatial', 'spatial-side', 'spatial-mirrored']) scenario(`ik-${fixture}-sheet`, app, [
+    ['@select', 1, -1], ['moveSelection', 10, 5], ['rotateSelection', 0.1], ['@seek', 2], ['sheetInsertKey', ['layer-1'], 2], ['duplicateFigure'], ['undo'],
+    ['@select', 1, 3], ['rotateJoint', 0.2], ['@select', 1, 12], ['beginDrag', 'Pose figure'], ['poseJoint', 330, 300], ['poseJoint', 340, 310], ['commitDrag'],
+    ['rotateJoint', 0.3], ['rotateJoint', 0.25, {isolate: true}], ['@select', 1, 6], ['rotateJoint', 0.15], ['undo'], ['undo'], ['redo'],
+  ], `../../crates/styk-eval/tests/fixtures/ik/${fixture}.json`);
+  // Posing 3D IK targets: a planted 3D foot moved (its knee keeping its side on screen),
+  // pushed in depth then dragged on from where the push left it, its swivel, pole and depth
+  // set; a leg bent to one side; and a free 3D leg posed by its foot.
+  {
+    const legs = name => JSON.parse(readFileSync(new URL(`../crates/styk-eval/tests/fixtures/ik/${name}.json`, import.meta.url), 'utf8'));
+    const foot = name => { const e = open(legs(name), app); e.select(1, 9); const p = e.geometry.objects.get(0).joints.get(10); return (dx, dy) => [p.x + dx, p.y + dy]; };
+    for (const name of ['spatial', 'spatial-side']) {
+      const at = foot(name);
+      scenario(`ik-${name}-target-sheet`, app, [
+        ['@select', 1, 9], ['beginDrag', 'Pose figure'], ['poseJoint', ...at(8, -4)], ['poseJoint', ...at(16, -10)], ['poseJoint', ...at(-12, 6)], ['commitDrag'],
+        ['beginDrag', 'Pose figure'], ['poseJoint', ...at(0, 0), {depth: true, pixel: 2}], ['poseJoint', ...at(0, 30), {depth: true, pixel: 2}], ['poseJoint', ...at(5, 30)], ['poseJoint', ...at(10, 25)], ['commitDrag'],
+        ['setSpatialIKTarget', {swivel: 0.3}], ['setSpatialIKTarget', {pole: [0, 0, 1]}], ['setSpatialIKTarget', {depth: 5}], ['setSpatialIKTarget', {bad: 1}], ['setSpatialIKTarget', {pole: [1, 1, 0]}],
+        ['undo'], ['undo'], ['redo'],
+      ], `../../crates/styk-eval/tests/fixtures/ik/${name}.json`);
+    }
+    const free = open(legs('spatial'));
+    free.select(1, 9); free.setNodeIK({pinned: false});
+    writeFileSync(`${out}/ik-spatial-free.document.json`, JSON.stringify(prune(free.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+    const at = foot('spatial');
+    scenario('ik-spatial-free-sheet', app, [
+      ['@select', 1, 9], ['beginDrag', 'Pose figure'], ['poseJoint', ...at(8, -4)], ['poseJoint', ...at(16, -10)], ['poseJoint', ...at(-12, 6)], ['commitDrag'],
+      ['poseJoint', ...at(4, 4)], ['setSpatialIKTarget', {swivel: -0.2}], ['setSpatialIKTarget', {depth: 3}], ['undo'], ['redo'],
+    ], 'ik-spatial-free.document.json');
+  }
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

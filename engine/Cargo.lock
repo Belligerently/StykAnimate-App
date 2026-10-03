@@ -1238,6 +1238,7 @@ dependencies = [
  "styk-engine",
  "styk-eval",
  "styk-formats",
+ "styk-math",
  "styk-render",
  "wasm-bindgen",
  "wasm-bindgen-futures",

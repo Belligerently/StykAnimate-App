@@ -6,7 +6,6 @@
 //! (`styk_eval::records`), byte for byte what the editor evaluates, and its geometry
 //! from the typed view of that same record.
 
-use std::rc::Rc;
 use std::sync::Arc;
 
 use styk_doc::{Obj, Value};
@@ -23,7 +22,7 @@ pub(crate) struct Cache {
     /// The document `prepared` and `frames` belong to (a shared node: any change to
     /// the editor's report makes it a different one).
     report: Option<Value>,
-    prepared: Option<Rc<Prepared>>,
+    prepared: Option<Arc<Prepared>>,
     /// Evaluated frames by tick and by whether movieclips were sampled; a few recent ones.
     frames: Vec<(u64, bool, Value)>,
 }
@@ -47,13 +46,23 @@ impl Editor {
         self.report.path(&["_styk", "layerSheet"]).is_some()
     }
 
+    /// Starts from typed views already made for the current document (the engine's
+    /// mirror), and the loader that made them, so the first call converts nothing.
+    pub fn adopt_prepared(&mut self, loader: styk_eval::load::Loader, prepared: Arc<Prepared>) {
+        let mut cache = self.eval.borrow_mut();
+        cache.loader = loader;
+        cache.prepared = Some(prepared);
+        cache.report = Some(self.report.clone());
+        cache.frames.clear();
+    }
+
     /// The typed views of the current document.
-    pub(crate) fn prepared(&self) -> Result<Rc<Prepared>, EditError> {
+    pub(crate) fn prepared(&self) -> Result<Arc<Prepared>, EditError> {
         let mut cache = self.eval.borrow_mut();
         if cache.prepared.is_none() || !cache.report.as_ref().is_some_and(|report| report.same_node(&self.report)) {
             let document = cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
-            cache.prepared = Some(Rc::new(Prepared::new(Arc::new(document))));
-            cache.report = Some(self.report.clone());
+            cache.prepared = Some(Arc::new(Prepared::new(Arc::new(document))));
+                cache.report = Some(self.report.clone());
             cache.frames.clear();
         }
         Ok(cache.prepared.clone().unwrap())
@@ -129,18 +138,23 @@ impl Editor {
     /// The frame on show as the typed evaluator reads it, and its geometry
     /// (`editor.geometry`). A document with features the engine cannot evaluate yet
     /// is not edited here.
-    pub(crate) fn evaluate(&self) -> Result<(Rc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+    pub(crate) fn evaluate(&self) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+        self.evaluate_only(None)
+    }
+
+    /// [`Editor::evaluate`] with the geometry of the figures in `slots` (and those they are
+    /// joined to) only, when given.
+    pub(crate) fn evaluate_only(&self, slots: Option<&[usize]>) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
         }
-        // The engine evaluates 3D, but no command replay covers editing it yet.
-        if styk_eval::spatial::document_has_3d(&prepared.doc) {
-            return Err(EditError::Unported("geometry with 3D".into()));
-        }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
-        let scene = styk_eval::geometry::build(&prepared.doc, &frame);
+        let scene = match slots {
+            Some(slots) => styk_eval::geometry::build_only(&prepared.doc, &frame, slots),
+            None => styk_eval::geometry::build(&prepared.doc, &frame),
+        };
         Ok((prepared, frame, scene))
     }
 

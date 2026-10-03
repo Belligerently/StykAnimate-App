@@ -64,7 +64,12 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel, gestures-sheet |
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
-| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`), Stick Nodes curves (a straight segment with a sagitta, which geometry reports with a bend of 1e-6) | yes, without rigs or 3D bones | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet, sticknodes-sheet |
+| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`), Stick Nodes curves (a straight segment with a sagitta, which geometry reports with a bend of 1e-6) | yes, without 3D bones | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet, sticknodes-sheet |
+| Every ported call on documents with 3D bones, meshes, surfaces, perspective and part proportions | yes | spatial-mesh-perspective-sheet, spatial-mesh-sheet-sheet, spatial-surfaces-skin-sheet, spatial-surfaces-perspective-sheet, spatial-mesh-mechanism-sheet, spatial-clip-mesh-sheet |
+| 3D bones (`styk-edit/src/spatial.rs`): turned (`setSpatialPose`, `rotateJoint` without `isolate`, from the angles the bone is drawn with), dragged flat on screen or swung in depth with the depth key, the alternate side and a mid-drag switch (`poseSpatialJoint`, `_flatSpatialJoint`, `_arcSpatialJoint`), stretched, twisted (`bendJoint` → `twistSpatialJoint`); mechanisms' hinges and slides set (`setSpatialMotion`, a hinge through `setSpatialPose`) and dragged along their track (`_moveMechanicalJoint`), a driven hinge included. Results go through `quaternionPose` with `styk-math`'s `asin` | yes, without pose choices | spatial-turn-sheet, spatial-mechanism-sheet, spatial-drag-sheet, spatial-mechanism-drag-sheet |
+| 3D IK controllers (`spatialTarget`): every call on their frames, with posing a bone of a planted limb releasing it (`_releaseSpatialChain`), a posed hand or foot planting its new orientation (`_plantSpatialFollower`) and turned followers' 3D orientations (`spatialFollowers`, the editor's quirk of keeping only the last of several turned included) | yes, without steering a planted knee, twisting with 3D IK or turning a whole figure | ik-spatial-sheet, ik-spatial-side-sheet, ik-spatial-mirrored-sheet |
+| Posing 3D IK targets (`styk-edit/src/spatial_ik.rs`): a planted target moves with its knee kept on its side on screen (`_flatSpatialIKPole`), the depth key pushes it in depth and a plain drag continues from there (`poseSpatialIKDepth`, `_spatialIKPointer`), `setSpatialIKTarget` sets depth, pole and swivel; a free 3D limb is captured once per gesture with its 3D target and followers' orientations (`captureSpatialIK`, `_drag.ikCapture`) and solved without following the target's orientation; IK posing on rigged figures, the drawn angles read from the rig (`RigJoint`) | yes, not across joined figures | ik-spatial-target-sheet, ik-spatial-side-target-sheet, ik-spatial-free-sheet |
+| Rig controls: a joint in a rig space takes the pointer through `authoredRigTarget` (from `styk_eval::ik::rig`; the drawn shape and rig space from geometry's `RigJoint`), an angle lock only stretches along its chord and does not turn, a connector slides (`slideConnector`, `setConnectorPosition`) and bends through the pointer (`_bendConnector`); skins, angle paths and weighted joints are not posed by hand | yes, without 3D bones and IK posing on rigged figures | rig-sheet, ik-rig-follow-sheet, ik-rig-stretch-sheet |
 | `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller; across joined figures on the assembly's skeleton (`poseGraph`, `captureFor`) | yes, without perspective or 3D controllers | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet, ik-joined-unpinned-sheet, startup-join-sheet |
 | Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`); a gesture on joined figures takes in their whole assembly (`_ikPoseSlots`, `_expandIKDrag`) | yes | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet, ik-joined-sheet, ik-joined-late-sheet |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
@@ -90,8 +95,9 @@ Every ported call runs in both of the editor's modes:
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
 A call answers `Unported`, and changes nothing, on documents with property channels on a
-native timeline, animation origins or a movieclip source; for joint gestures on rigged
-figures; for poses on a drawing layer; for a replaced figure joined to one
+native timeline, animation origins or a movieclip source; for steering a planted 3D
+limb's knee, twisting a bone with 3D IK, turning a whole figure with 3D IK, posing a joined
+3D IK target and pose choices; for poses on a drawing layer; for a replaced figure joined to one
 outside its movieclip frame; and wherever the engine does not evaluate the frame as
 records yet ([evaluation.md](evaluation.md)).
 
@@ -155,6 +161,16 @@ stays in charge; nothing from the engine is applied. A session lives while every
 to the document goes through calls it shadows; anything else ends it, and the next one
 starts when the mirror holds the editor's revision again. Results accumulate in
 `globalThis.__stykEditShadow`.
+
+With `--exact-math` the driver replaces the page's `Math.sin`, `cos`, `atan2`, `hypot`,
+`asin` and `acos` by the engine's (exported from the WebAssembly binding for this purpose,
+`styk-wasm/src/math.rs`) before the document loads: the editor then computes what Node
+computes, and the comparison is exact. This is how a difference is told from the browser's
+own rounding: on the Kung-Fu Master and Karate Fighter rigs, dragging a free 3D foot
+differed by up to 1.54 rad in 34 angles with Chromium's `Math` (a knee's side decided on a
+nearly degenerate limb) and was identical with the engine's (95 of 95 calls on each rig,
+measured 2026-10-03; also exact: the start-up document 94 of 94, a 3D catalogue scene 74 of
+74, joined 55 of 55, the rigged document 78 of 78, sheet-movieclip-loose 78 of 78).
 
 `node scripts/engine-edit-shadow.mjs [--file <document.json>]` drives the real app in
 headless Chromium: pointer drags on joint handles and on the origin, keyboard undo and
@@ -234,22 +250,26 @@ editor keeps on show was dropped, so the next gesture began from a fresh evaluat
 roots the commit refreshes, so the next gesture began with a joined figure 13 px away.
 
 What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow
-run, the engine's from an owned run, adoption included):
+run, the engine's from an owned run, adoption included). The first measurement found
+`poseJoint` at 200.6 ms; the causes were fixed: a rotation's targets were found with list
+membership tests (quadratic in the figure's 515 segments) and on every call, each angle was
+changed by unpacking and repacking the whole angle array, every evaluation scanned the
+document for 3D, and every call drew the whole frame. Sessions now also start from the
+mirror's prepared document instead of converting it again.
 
 | Call | Calls | Editor | Engine | Adoption |
 | --- | ---: | ---: | ---: | ---: |
-| `poseJoint` (pointer drags) | 36 | 53.8 ms | 200.6 ms | 16.0 ms |
-| `moveSelection` | 3 | 17.2 ms | 17.2 ms | 7.3 ms |
-| `sheetInsertFrames` | 1 | 827.8 ms | 322.8 ms | 88.2 ms |
-| `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 679.5 ms | 86.8 ms | 32.2 ms |
-| keys: `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetRemoveFrames` | 4 | 72.1 ms | 107.3 ms | 21.5 ms |
+| `poseJoint` (pointer drags) | 36 | 25.3 ms | 56.1 ms | 15.9 ms |
+| `moveSelection` | 3 | 10.2 ms | 17.0 ms | 8.0 ms |
+| `sheetInsertFrames` | 1 | 393.3 ms | 359.6 ms | 70.8 ms |
+| `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 365.9 ms | about 100 ms | about 40 ms |
 
-The frame-drafting commands are several times faster in the engine. Joint poses are not:
-a session prepares the whole document's typed views on its first call (about 100 ms on this
-file, paid again by every new session), and each gesture call evaluates the frame's whole
-geometry where the editor rebuilds only what changed. Engine-owned editing therefore stays
-opt-in; making it the default for a document class waits for sessions that share the
-mirror's prepared document and for gestures that evaluate only the figures they need.
+All owned calls together: 899 ms against the editor's 898 ms. The frame-drafting commands
+are three to six times faster in the engine. Joint poses on this file's 515-segment figure
+cost 1.2 ms a call in WebAssembly (0.39 ms natively, `styk edit-bench`) plus 0.45 ms
+adoption, against the editor's 0.7 ms: each call still converts and draws the posed figure
+whole where the editor rebuilds only what changed, and the answer carries the whole figure
+(14 KB). Engine-owned editing therefore stays opt-in for now.
 
 ## What a gesture costs in the engine
 
@@ -265,6 +285,12 @@ report. Native build, one run each while the machine was busy with other work
 | A joint-pose step (geometry of the draft) | 0.56 ms | 0.03 ms |
 | Commit (planner, capture, history) | 1.8–2.7 ms | 7.3–7.5 ms |
 | Undo | 6.1 ms | 5.2 ms |
+
+The same tool on AyameDemo as the app holds it after import (its layer sheet, 105 figures
+on show, uid 9043 with 515 segments at tick 734), after the fixes above: a joint-pose step
+median 0.39 ms (8.42 ms before: also the drag's cached rotation targets, as the editor's
+`_drag.rotationTargets`, and the geometry of the posed figure and those it hangs from only,
+`geometry::build_only`), a move step 0.02 ms, commits 5.0–9.0 ms, undo 2.1 ms.
 
 Not measured: WebAssembly, and the boundary (arguments in, changed records out).
 

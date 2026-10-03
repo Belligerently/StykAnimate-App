@@ -43,3 +43,16 @@ fn std_differs_from_v8() {
     let cases = read("sincos.bin");
     assert!(cases.chunks_exact(3).any(|c| !same(c[0].cos(), c[2]) || !same(libm::cos(c[0]), c[2])));
 }
+
+#[test]
+fn arc_sine_and_arc_cosine() {
+    let cases = read("asin-acos.bin");
+    let wrong: Vec<String> = cases
+        .chunks_exact(3)
+        .filter(|c| !same(styk_math::asin(c[0]), c[1]) || !same(styk_math::acos(c[0]), c[2]))
+        .map(|c| format!("x {:e}: asin {:e} (V8 {:e}), acos {:e} (V8 {:e})", c[0], styk_math::asin(c[0]), c[1], styk_math::acos(c[0]), c[2]))
+        .collect();
+    assert!(cases.len() / 3 > 15_000 && wrong.is_empty(), "{} of {} differ: {:#?}", wrong.len(), cases.len() / 3, &wrong[..wrong.len().min(10)]);
+    // The platform's do not agree with V8 here either.
+    assert!(cases.chunks_exact(3).any(|c| !same(c[0].asin(), c[1]) || !same(c[0].acos(), c[2])));
+}
