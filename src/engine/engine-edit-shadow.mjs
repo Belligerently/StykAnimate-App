@@ -8,10 +8,18 @@
  * Off unless `?engineShadow=on` or `localStorage['stykanimate.engine.shadowEdit'] = 'on'`.
  * Results accumulate in `globalThis.__stykEditShadow`.
  *
+ * With `?engineEdit=on` (or `localStorage['stykanimate.engine.ownEdit'] = 'on'`) the
+ * engine runs the calls in OWNED in the editor's place while a session lives: the editor
+ * adopts the gesture's draft and what the call published (`adoptLayerSheet`), with its own
+ * bookkeeping, events and history, and does not compute them. The other ported calls
+ * (selection, seeking, starting and cancelling a gesture, undo and redo) run in both and
+ * are compared as in shadow mode. A call the engine refuses runs in the editor alone.
+ *
  * A session starts from the mirror once it holds the editor's current revision,
  * and lives while every change to the document goes through calls it shadows.
  * Anything else (an unported command, a load, an asynchronous edit) ends it.
  */
+import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
@@ -20,14 +28,20 @@ const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDr
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'undo', 'redo'];
 /** Calls that return a frame or a figure record: a view, not compared. */
 const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure']);
+/** Calls the engine runs in the editor's place when it owns editing. */
+const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
+  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
+  'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure']);
 
-export function shadowEditEnabled() {
+const setting = (query, key) => {
   try {
-    const query = new URLSearchParams(globalThis.location?.search ?? '').get('engineShadow');
-    if (query) return query === 'on';
-    return globalThis.localStorage?.getItem('stykanimate.engine.shadowEdit') === 'on';
+    const value = new URLSearchParams(globalThis.location?.search ?? '').get(query);
+    if (value) return value === 'on';
+    return globalThis.localStorage?.getItem(key) === 'on';
   } catch { return false; }
-}
+};
+export const shadowEditEnabled = () => setting('engineShadow', 'stykanimate.engine.shadowEdit') || engineEditEnabled();
+export const engineEditEnabled = () => setting('engineEdit', 'stykanimate.engine.ownEdit');
 
 /** Event details as plain data, as engine/tools/edit-replay.mjs records them. */
 const plain = (value, depth = 4) => {
@@ -61,8 +75,8 @@ function close(a, b) {
  * @param {object} editor the app's Editor
  * @param {() => object|null} engineSide the stage's engine side (`renderer.engineSide`), once it exists
  */
-export function installEditShadow(editor, engineSide) {
-  const report = globalThis.__stykEditShadow = {calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0};
+export function installEditShadow(editor, engineSide, {own = engineEditEnabled()} = {}) {
+  const report = globalThis.__stykEditShadow = {own, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0};
   let session = null, depth = 0, events = null;
   const end = why => {
     if (!session) return;
@@ -105,12 +119,15 @@ export function installEditShadow(editor, engineSide) {
     return session = started;
   };
 
-  const compare = (name, args, answer, result, thrown, captured) => {
+  const compare = (name, args, answer, result, thrown, captured, sheetBefore) => {
     let rounded = false;
     const problems = [], same = (label, ours, theirs) => {
       if (ours === theirs) return;
       if (typeof ours === 'string' && typeof theirs === 'string' && close(ours, theirs)) { rounded = true; return; }
-      problems.push(`${label}: engine ${String(theirs).slice(0, 300)}, editor ${String(ours).slice(0, 300)}`);
+      const a = String(theirs), b = String(ours);
+      let at = 0; while (at < a.length && a[at] === b[at]) at++;
+      const from = Math.max(0, at - 160);
+      problems.push(`${label} (from character ${at}): engine …${a.slice(from, at + 160)}, editor …${b.slice(from, at + 160)}`);
     };
     if (answer.status === 'error' || thrown) same('error', thrown ? (thrown.messageKey ?? thrown.message) : 'none', answer.status === 'error' ? answer.error : 'none');
     else if (!VIEWS.has(name)) same('result', JSON.stringify(result ?? null), JSON.stringify(answer.result ?? null));
@@ -124,7 +141,11 @@ export function installEditShadow(editor, engineSide) {
     const published = captured.some(detail => detail?.layerSheet), styk = editor.report._styk;
     if (published !== ('sheet' in answer)) problems.push(`published: engine ${'sheet' in answer}, editor ${published}`);
     else if (published) {
-      same('layer sheet', JSON.stringify(styk.layerSheet), JSON.stringify(answer.sheet));
+      // The answer carries the tracks the call replaced: the editor must have left the others as they were.
+      const kept = (answer.trackOrder ?? []).filter(id => !Object.hasOwn(answer.sheet.tracks, id));
+      for (const id of kept) if (styk.layerSheet?.tracks?.[id] !== sheetBefore?.tracks?.[id]) problems.push(`track ${id}: the editor replaced it, the engine did not`);
+      const sheet = {...answer.sheet, tracks: Object.fromEntries((answer.trackOrder ?? []).map(id => [id, Object.hasOwn(answer.sheet.tracks, id) ? answer.sheet.tracks[id] : styk.layerSheet?.tracks?.[id]]))};
+      same('layer sheet', JSON.stringify(styk.layerSheet), JSON.stringify(sheet));
       same('layers', JSON.stringify(styk.layers), JSON.stringify(answer.layers));
       for (const [id, source] of Object.entries(answer.sources ?? {})) same(`pose source ${id}`, JSON.stringify(styk.frameSources?.[id] ?? null), JSON.stringify(source));
     }
@@ -135,11 +156,85 @@ export function installEditShadow(editor, engineSide) {
       if (rounded) report.rounded++;
       return;
     }
-    if (report.mismatches.length < 50) report.mismatches.push({call: name, args: plain(args), problems});
+    if (report.mismatches.length < 50) report.mismatches.push({call: name, args: plain(args), problems,
+      context: {tick: editor.tick, frameIndex: editor.frameIndex, draftObjects: edit?.frame.objects.length, keyframe: edit?.frame.keyframe_index, frameDraft: Boolean(editor.report._styk?.simpleFrameDraft)}});
     console.warn(`[engine shadow] ${name} differs:\n  ${problems.join('\n  ')}`);
     end('a difference');
   };
 
+  const originals = new Map();
+  /** What the editor does with an owned call's answer instead of computing it. */
+  const adopt = (name, answer, selection) => {
+    const {state} = answer, edit = editor._authoredPoseEdit, drag = editor._drag;
+    // The frame a gesture the call began and ended itself drafted: the one on show.
+    const shown = answer.retained && !editor._authoredPoseEdit ? editor.evaluatedFrame : null;
+    // The gesture's draft: the engine's figures replace the editor's, and the editor's
+    // snapshots take in what the engine's gesture took in.
+    if (answer.drag && answer.draft) {
+      const objects = edit.frame.objects, taken = new Set(drag.before.map(object => object.unique_id));
+      for (const uid of answer.drag.before) if (!taken.has(uid)) {
+        const object = objects.find(item => item.unique_id === uid);
+        if (object) drag.before.push(structuredClone(object));
+      }
+      drag.before.sort((a, b) => a.object_slot - b.object_slot);
+      if (answer.drag.translation) drag.scope = 'translation';
+      for (const figure of answer.draft) {
+        const slot = objects.findIndex(object => object.unique_id === figure.unique_id); if (slot < 0) continue;
+        if (objects[slot]._movieclipSample !== undefined) figure._movieclipSample = objects[slot]._movieclipSample;
+        objects[slot] = figure; edit.owned.add(slot);
+      }
+    }
+    const engineSelection = state.selectedUid !== editor.selectedUid || state.selectedJoint !== editor.selectedJoint
+      || JSON.stringify(state.selectedUids) !== JSON.stringify([...editor.selectedUids]);
+    if (engineSelection) {
+      editor._polygonSelection = null; editor._segmentSelection = null; editor._branchSelection = null;
+      editor.selectedUids = new Set(state.selectedUids); editor._selectedUid = state.selectedUid; editor.selectedJoint = state.selectedJoint;
+    }
+    editor._nextUid = state.nextUid;
+    let published = false;
+    for (const {kind, frameIndex, tick, ...detail} of answer.events) {
+      if (kind === 'edit' && detail.live) {
+        if (drag) { drag.changed = true; editor._invalidateObjects(detail.changedUids, null, {pose: true}); }
+        else editor._invalidate();
+        editor._emit('edit', detail);
+      } else if (kind === 'edit' && detail.layerSheet && !published) {
+        published = true;
+        // As `_commitSheetPose`: the committed draft stays on show through publication.
+        let preview = null;
+        const drafted = edit && drag ? edit.frame : shown;
+        if (answer.retained && drafted) {
+          const samples = new Map(drafted.objects.map(object => [object.unique_id, object._movieclipSample]));
+          for (const object of answer.retained) if (samples.get(object.unique_id) !== undefined) object._movieclipSample = samples.get(object.unique_id);
+          // Geometry rebuilds: the commit may have moved joined figures' roots.
+          preview = {frame: {...drafted, objects: answer.retained}, geometry: null, incremental: null};
+        }
+        if (!answer.drag) { editor._drag = null; editor._authoredPoseEdit = null; }
+        editor._authoredCommitPreview = preview;
+        try {
+          adoptLayerSheet(editor, {sheet: answer.sheet, trackOrder: answer.trackOrder, layers: answer.layers, sources: answer.sources, nextFrame: state.nextFrameIdentity},
+            detail.label, {selection: drag?.beforeSelection ?? selection, retainGeometry: Boolean(preview)});
+        } finally { editor._authoredCommitPreview = null; }
+      } else if (kind === 'seek') originals.get('seek').call(editor, tick);
+    }
+    // A gesture that ended without publishing (nothing changed).
+    if (!answer.drag && editor._drag && !published) { editor._drag = null; editor._authoredPoseEdit = null; editor._invalidate(); }
+    if (name === 'duplicateFigure') return editor.object;
+    if (name === 'sheetAppendFrame') return editor.evaluatedFrame;
+    return answer.result;
+  };
+  /** Why the editor cannot adopt every effect of this answer (then it runs the call itself), or null. */
+  const unadoptable = answer => {
+    const other = answer.events.find(({kind, live, layerSheet}) => !(kind === 'seek' || kind === 'edit' && (live || layerSheet)));
+    if (other) return `a ${other.kind} event`;
+    if (answer.events.filter(event => event.layerSheet).length > 1) return 'two publications';
+    if (answer.draft && !(editor._authoredPoseEdit && editor._drag && answer.drag)) return `a gesture the editor did not begin (drag ${Boolean(editor._drag)}, draft ${Boolean(editor._authoredPoseEdit)}, engine ${JSON.stringify(answer.drag)})`;
+    return null;
+  };
+
+  for (const name of PORTED) {
+    const original = editor[name];
+    if (typeof original === 'function') originals.set(name, original);
+  }
   for (const name of PORTED) {
     const original = editor[name];
     if (typeof original !== 'function') continue;
@@ -157,19 +252,54 @@ export function installEditShadow(editor, engineSide) {
         else before = JSON.stringify(view());
       }
       if (!live) report.skipped++;
+      // The engine runs the call in the editor's place.
+      if (live && own && OWNED.has(name)) {
+        const selection = editor._selectionState(), called = performance.now();
+        let answer;
+        try { answer = JSON.parse(live.call(name, payload, before)); }
+        catch (error) { report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; }
+        report.calls++;
+        const why = answer?.status === 'ok' ? unadoptable(answer) : null;
+        if (answer?.status === 'ok' && !why) {
+          depth++;
+          const adopting = performance.now();
+          try { return adopt(name, answer, selection); }
+          finally {
+            depth--; report.owned++; report.ownedMs += performance.now() - called;
+            const entry = (report.byCall ??= {})[name] ??= {calls: 0, engineMs: 0, adoptMs: 0};
+            entry.calls++; entry.engineMs += adopting - called; entry.adoptMs += performance.now() - adopting;
+          }
+        }
+        if (answer?.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
+        else if (answer?.status === 'error') {
+          // The editor throws the error itself, with its message; both are unchanged.
+          depth++;
+          try { const result = original.apply(this, args); end('an error the editor did not raise'); return result; }
+          catch (error) { if ((error.messageKey ?? error.message) !== answer.error) end('a different error'); throw error; }
+          finally { depth--; }
+        } else if (answer) end(`an answer the editor cannot adopt (${name}: ${why})`);
+        live = null;
+      }
+      const sheetBefore = editor.report._styk?.layerSheet;
       depth++; events = [];
       const started = performance.now();
       let result, thrown;
       try { result = original.apply(this, args); } catch (error) { thrown = error; } finally { depth--; }
       const captured = events; events = null;
       report.jsMs += performance.now() - started;
+      // What the calls the engine would own cost the editor (compared with `ownedMs`).
+      if (OWNED.has(name)) {
+        report.ownableMs = (report.ownableMs ?? 0) + performance.now() - started;
+        const entry = (report.byCall ??= {})[name] ??= {calls: 0, editorMs: 0};
+        entry.calls++; entry.editorMs += performance.now() - started;
+      }
       if (live && typeof result?.then === 'function') { end('an asynchronous call'); live = null; }
       if (live) {
         try {
           const called = performance.now(), answer = JSON.parse(live.call(name, payload, before));
           report.engineMs += performance.now() - called; report.calls++;
           if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
-          else compare(name, args, answer, result, thrown, captured);
+          else compare(name, args, answer, result, thrown, captured, sheetBefore);
         } catch (error) { report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; }
       }
       if (thrown) throw thrown;

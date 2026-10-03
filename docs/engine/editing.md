@@ -181,6 +181,76 @@ the engine (on joined, two undos reach history from before the session, which en
 starts the next). Their times include a duplicate, join and unjoin that each re-evaluate
 the frame with IK.
 
+## Engine-owned editing in the app
+
+With `?engineEdit=on` (or `localStorage['stykanimate.engine.ownEdit'] = 'on'`) the engine
+runs ported calls in the editor's place while a session lives (the same
+`src/engine/engine-edit-shadow.mjs`, mode `own`). The calls that change the document
+(the gestures' moves, poses and transforms, `commitDrag`, the layer timeline's keys and
+frames, joining, duplicating and deleting figures) run in the engine only; the editor
+adopts what they produced and does not compute it:
+
+- a gesture's draft: the engine's figures replace the editor's in its draft, and the
+  editor's snapshots take in the figures the engine's gesture took in (`drag` in the
+  answer: their identities and whether the gesture moves whole connected figures);
+- what a call published: `adoptLayerSheet` (src/editor-layer-sheet.mjs) runs the editor's
+  own `publish` on a plan made of the engine's sheet, layers and new pose sources, so
+  validation, layer bookkeeping, events and the history entry are the editor's. The answer
+  carries only the tracks the call replaced (`trackOrder` names them all); the others stay
+  the editor's objects, shared with history as before;
+- a committed gesture's draft stays on show as in `_commitSheetPose`
+  (`_authoredCommitPreview`): the answer carries its figures (`retained`), as the commit
+  leaves them (joined figures' roots refreshed from geometry), in place of the editor's
+  draft or, for a gesture the call began and ended itself, of the frame it showed;
+- the selection, the next figure identity, the live-edit events and a seek the call made.
+
+Selecting, seeking, starting and cancelling a gesture, and undo and redo run in both and are
+compared as in shadow mode (history stays the editor's). A call the engine refuses, or whose
+answer the editor cannot adopt, runs in the editor alone and ends the session; an error runs
+the editor's call so that the editor raises it with its message. In shadow mode the answer's
+unchanged tracks are checked to be the editor's unchanged objects.
+
+`node scripts/engine-edit-shadow.mjs --own [--file <document.json> | --import <file.piv>]`
+runs the same interactions twice, with the editor alone and with the engine owning, and
+compares the documents, the history labels and the selection after them and after undoing
+everything. Numbers may differ in their last digits ([D16](decisions/0016-v8-exact-math.md)):
+the engine computes with Node's `Math`, the browser's editor with Chromium's. Measured
+2026-10-03, headless Chromium:
+
+| Document | Calls adopted from the engine | Same as the editor alone | Numbers differing in last digits |
+| --- | ---: | --- | ---: |
+| the document the app starts with | 54 | yes (32,872 bytes, 13 history entries) | 31 |
+| startup-pinned | 65 | yes | 43 |
+| followers | 65 | yes | 76 |
+| joined (four joined figures with IK) | 39 | yes | 38 |
+| joined-chain | 54 | yes | 50 |
+| sheet-layers | 54 | yes | 80 |
+| sheet-movieclip-loose | 54 | yes | 28 |
+| AyameDemo.piv, imported (48.7 MB document) | 55 | yes (10 history entries) | 996 |
+
+Two adoption defects were found this way and fixed: on AyameDemo the committed draft the
+editor keeps on show was dropped, so the next gesture began from a fresh evaluation
+(another figure slot and keyframe index); on joined-chain the kept draft lacked the joined
+roots the commit refreshes, so the next gesture began with a joined figure 13 px away.
+
+What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow
+run, the engine's from an owned run, adoption included):
+
+| Call | Calls | Editor | Engine | Adoption |
+| --- | ---: | ---: | ---: | ---: |
+| `poseJoint` (pointer drags) | 36 | 53.8 ms | 200.6 ms | 16.0 ms |
+| `moveSelection` | 3 | 17.2 ms | 17.2 ms | 7.3 ms |
+| `sheetInsertFrames` | 1 | 827.8 ms | 322.8 ms | 88.2 ms |
+| `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 679.5 ms | 86.8 ms | 32.2 ms |
+| keys: `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetRemoveFrames` | 4 | 72.1 ms | 107.3 ms | 21.5 ms |
+
+The frame-drafting commands are several times faster in the engine. Joint poses are not:
+a session prepares the whole document's typed views on its first call (about 100 ms on this
+file, paid again by every new session), and each gesture call evaluates the frame's whole
+geometry where the editor rebuilds only what changed. Engine-owned editing therefore stays
+opt-in; making it the default for a document class waits for sessions that share the
+mirror's prepared document and for gestures that evaluate only the figures they need.
+
 ## What a gesture costs in the engine
 
 `styk edit-bench <report.json> <uid> <tick>` times a gesture in `styk-edit` on a loaded

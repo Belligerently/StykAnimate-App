@@ -4,11 +4,16 @@
 // keyboard undo and redo) and through the editor's timeline commands, and reports how
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
-//   node scripts/engine-edit-shadow.mjs [--file <document.json>] [--url http://127.0.0.1:47831] [--out <report.json>]
+//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
 // differed or nothing was compared.
+//
+// --own: the engine owns editing (`?engineEdit=on`, the editor adopts what the engine's
+// calls produce). The same interactions run first with the editor alone, then with the
+// engine owning; the documents, history labels and selection after them, and after
+// undoing everything, must be the same.
 import {spawn} from 'node:child_process';
 import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -36,17 +41,26 @@ async function server() {
 
 const {origin, stop} = await server();
 const browser = await chromium.launch();
+const own = args.includes('--own');
 let failed = true;
-try {
+/** One run of the interactions; `mode` is the query that sets up editing. */
+async function run(mode) {
   const context = await browser.newContext({viewport: {width: 1440, height: 900}});
   await context.addInitScript(settings => localStorage.setItem('stykanimate.editor.settings.v1', JSON.stringify(settings)),
     {theme: 'light', locale: 'en', uiScale: 100, showHandles: true, rendererMode: 'canvas'});
   const page = await context.newPage();
   const problems = [];
   page.on('pageerror', error => problems.push(`pageerror ${error.message.slice(0, 300)}`));
-  await page.goto(`${origin}/?engineShadow=on`);
+  await page.goto(`${origin}/?${mode}`);
   await page.waitForFunction(() => window.styk?.ready === true, null, {timeout: 60000});
   await page.evaluate(() => { document.querySelector('.styk-privacy [data-decline]')?.click(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); });
+  const imported = option('--import');
+  if (imported) {
+    // A native file through the page's own import (the Pivot codec in WebAssembly).
+    await page.setInputFiles('#file-input', path.resolve(imported));
+    await page.waitForFunction(() => styk.editor.report.figure_types.length > 0 && !styk.state.importing && styk.editor.name !== undefined, null, {timeout: 180000});
+    await page.waitForFunction(name => (styk.editor.name ?? '').length > 0 && !styk.state.importing, path.basename(imported), {timeout: 180000});
+  }
   const file = option('--file');
   if (file) {
     const text = await readFile(path.resolve(file), 'utf8');
@@ -57,7 +71,9 @@ try {
     for (let i = 0; i < 100; i++) {
       const ready = await page.evaluate(async () => {
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return Boolean(await globalThis.__stykEditShadow?.prepare());
+        // The editor alone has nothing to wait for.
+        if (!globalThis.__stykEditShadow) return true;
+        return Boolean(await globalThis.__stykEditShadow.prepare());
       });
       if (ready) return true;
       await sleep(100);
@@ -104,6 +120,57 @@ try {
   await settled();
 
   const report = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__stykEditShadow ?? null, (key, value) => typeof value === 'function' ? undefined : value)));
+  /** The document, history and selection as the editor holds them, then after undoing everything. */
+  const outcome = await page.evaluate(() => {
+    const e = styk.editor, runtime = (key, value) => ['_movieclipSample', 'runtime_segments'].includes(key) ? undefined : value;
+    const capture = () => ({document: JSON.stringify(e.report, runtime), undo: e._undo.map(command => command.label), redo: e._redo.map(command => command.label),
+      selection: {uid: e.selectedUid, uids: [...e.selectedUids], joint: e.selectedJoint, tick: e.tick}});
+    const after = capture();
+    while (e.canUndo) e.undo();
+    return {after, undone: capture()};
+  });
+  await context.close();
+  return {report, outcome, steps, problems};
+}
+try {
+  if (own) {
+    const alone = await run('engineShadow=off');
+    const owned = await run('engineEdit=on');
+    const {report, steps, problems} = owned;
+    console.log(`steps: ${steps.join('; ')}`);
+    console.log(`engine-owned calls: ${report.owned} adopted from the engine (${report.ownedMs.toFixed(1)} ms), ${report.compared} run in both and the same, ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
+    for (const [why, count] of Object.entries(report.ended)) console.log(`  session ended ${count}×: ${why}`);
+    for (const [what, count] of Object.entries(report.unported)) console.log(`  not ported ${count}×: ${what}`);
+    for (const mismatch of report.mismatches.slice(0, 8)) console.log(`  ${mismatch.call}(${JSON.stringify(mismatch.args ?? []).slice(0, 80)}):\n    ${mismatch.problems.join('\n    ').slice(0, 1500)}`);
+    // Numbers may differ in their last digits: the engine computes with Node's Math, the
+    // browser's editor with the browser's (docs/engine/decisions/0016-v8-exact-math.md).
+    let rounded = 0;
+    const near = (x, y, at) => {
+      if (typeof x === 'number' && typeof y === 'number') {
+        if (x === y) return null;
+        if (Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y))) { rounded++; return null; }
+        return `${at}: ${x} against ${y}`;
+      }
+      if (x === null || y === null || typeof x !== 'object' || typeof y !== 'object') return x === y ? null : `${at}: ${JSON.stringify(x)?.slice(0, 200)} against ${JSON.stringify(y)?.slice(0, 200)}`;
+      const keys = Object.keys(x), others = Object.keys(y);
+      if (keys.length !== others.length || keys.some((key, i) => key !== others[i])) return `${at}: keys ${keys.join(',').slice(0, 200)} against ${others.join(',').slice(0, 200)}`;
+      for (const key of keys) { const found = near(x[key], y[key], `${at}/${key}`); if (found) return found; }
+      return null;
+    };
+    const differences = [];
+    for (const phase of ['after', 'undone']) for (const key of ['document', 'undo', 'redo', 'selection']) {
+      const [a, b] = [alone, owned].map(run => key === 'document' ? JSON.parse(run.outcome[phase][key]) : run.outcome[phase][key]);
+      const found = near(a, b, `${phase} ${key}`);
+      if (found) differences.push(found);
+    }
+    console.log(differences.length ? `DIFFERENT from the editor alone:\n  ${differences.join('\n  ')}`
+      : `the same as the editor alone: document (${alone.outcome.after.document.length} bytes; ${rounded} numbers differ in their last digits), history (${alone.outcome.after.undo.length} entries), selection, and after undoing everything`);
+    for (const problem of [...alone.problems, ...problems].slice(0, 5)) console.log(`  page: ${problem}`);
+    const out = option('--out');
+    if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, differences, problems}, null, 1));
+    failed = differences.length > 0 || report.mismatches.length > 0 || report.owned === 0 || problems.length > 0;
+  } else {
+  const {report, steps, problems} = await run('engineShadow=on');
   if (!report) throw new Error('Shadow editing was not installed (is ?engineShadow=on honoured?)');
   const out = option('--out');
   if (out) await writeFile(path.resolve(out), JSON.stringify({steps, ...report, problems}, null, 1));
@@ -115,6 +182,7 @@ try {
   for (const mismatch of report.mismatches.slice(0, 8)) console.log(`  ${mismatch.call}(${JSON.stringify(mismatch.args ?? []).slice(0, 80)}):\n    ${mismatch.problems.join('\n    ').slice(0, 1500)}`);
   for (const problem of problems.slice(0, 5)) console.log(`  page: ${problem}`);
   failed = report.mismatches.length > 0 || report.compared === 0;
+  }
 } finally {
   await browser.close();
   await stop();

@@ -30,6 +30,13 @@ equal by hand. Instead:
 3. Ownership flips in one step per document once its commands are ported: the engine's
    session becomes the document, and the JavaScript editor a view of it.
 
+Step 3 is implemented as the editor facade adopting the engine's results
+(`?engineEdit=on`, [`../editing.md`](../editing.md), "Engine-owned editing in the app"):
+for ported calls the engine computes and the editor keeps only its bookkeeping (publishing,
+events, history), checked by running the same interactions with and without the engine
+owning. It becomes the default for a document class once its cost is not higher than the
+editor's (measured 2026-10-03: frame-drafting commands faster, joint poses slower).
+
 ## Consequences
 
 Each port is a mechanical comparison rather than a judgement. The editor's arithmetic is

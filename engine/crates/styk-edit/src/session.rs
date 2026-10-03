@@ -62,6 +62,7 @@ impl Session {
     /// calls the session did not see. Returns the answer as JSON (see the module).
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         let before = self.editor.report().clone();
+        let retained = self.editor.retained_frame();
         let mut answer = Obj::new();
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
         let (Ok(args), Ok(view)) = parsed else {
@@ -101,9 +102,21 @@ impl Session {
             (old, new) => old.is_some() != new.is_some(),
         };
         if published {
-            // What a command publishes: the sheet, the layers and the sources its events name.
+            // What a command publishes: the sheet (with the tracks it replaced; `trackOrder`
+            // names them all), the layers and the sources its events name.
             let styk = report.get("_styk");
-            answer.set("sheet", styk.and_then(|s| s.get("layerSheet")).cloned().unwrap_or(Value::Null));
+            let tracks = |document: &Value| document.path(&["_styk", "layerSheet", "tracks"]).and_then(Value::as_obj).cloned().unwrap_or_default();
+            let (old, new) = (tracks(&before), tracks(report));
+            let changed: Vec<&std::sync::Arc<str>> = new.iter().filter(|(id, track)| !old.get(id).is_some_and(|previous| previous.same_node(track))).map(|(id, _)| id).collect();
+            let mut sheet = styk.and_then(|s| s.get("layerSheet")).and_then(Value::as_obj).cloned().unwrap_or_default();
+            let mut replaced = Obj::new();
+            for id in &changed {
+                replaced.set(id, new.get(id).cloned().unwrap_or(Value::Null));
+            }
+            sheet.set("tracks", Value::object(replaced));
+            answer.set("sheet", Value::object(sheet));
+            answer.set("trackOrder", Value::array(new.keys().map(|id| Value::str(id)).collect()));
+            answer.set("changedTracks", Value::array(changed.iter().map(|id| Value::str(id)).collect()));
             answer.set("layers", styk.and_then(|s| s.get("layers")).cloned().unwrap_or(Value::Null));
             let mut sources = Obj::new();
             for id in events.iter().flat_map(|event| event.get("sourceIds").and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default()) {
@@ -112,9 +125,15 @@ impl Session {
                 }
             }
             answer.set("sources", Value::object(sources));
+            // A committed gesture's draft stays on show (`_authoredCommitPreview`), with what
+            // the commit itself changed in it (joined figures' roots from geometry): its figures.
+            if let Some(frame) = self.editor.retained_frame().filter(|frame| !retained.as_ref().is_some_and(|old| old.same_node(frame))) {
+                answer.set("retained", frame.get("objects").cloned().unwrap_or(Value::Null));
+            }
         }
         answer.set("events", Value::array(events));
         answer.set("draft", self.editor.draft_figures().map_or(Value::Null, Value::array));
+        answer.set("drag", self.editor.drag_value());
         styk_doc::json::to_string(&Value::object(answer))
     }
 }

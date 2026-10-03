@@ -30,7 +30,7 @@ mod transform;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use styk_doc::Value;
+use styk_doc::{Obj, Value};
 
 pub use history::{Command, CommandKind};
 pub use select::Selection;
@@ -280,6 +280,23 @@ impl Editor {
 
     /// The figures the gesture in progress took, as they are in its draft (without
     /// the clip sample times evaluation adds); `None` outside a gesture on a sheet.
+    /// The gesture in progress as a facade needs it: the identities of the figures it
+    /// snapshots and whether it moves whole connected figures. `Null` between gestures.
+    pub fn drag_value(&self) -> Value {
+        let Some(drag) = &self.drag else { return Value::Null };
+        let mut value = Obj::new();
+        value.set("before", Value::array(drag.before.iter().filter_map(record::uid).map(|u| Value::Num(u as f64)).collect()));
+        value.set("translation", Value::Bool(drag.translation));
+        value.set("label", Value::str(&drag.label));
+        Value::object(value)
+    }
+
+    /// The committed gesture's draft the editor keeps on show until a seek, an edit or
+    /// history invalidates it (`_authoredCommitPreview`), if any.
+    pub fn retained_frame(&self) -> Option<Value> {
+        self.retained.clone()
+    }
+
     pub fn draft_figures(&self) -> Option<Vec<Value>> {
         let (drag, edit) = (self.drag.as_ref()?, self.authored.as_ref()?);
         let taken: Vec<u32> = drag.before.iter().filter_map(record::uid).collect();

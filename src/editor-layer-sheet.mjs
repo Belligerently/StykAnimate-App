@@ -170,6 +170,17 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
   editor._layerChanged({reindex:true});editor._emit('edit',{label,structural:true,timing:true,layerSheet:true,
     definition:Boolean(assets?.figure_types),frameIndices:[],sourceIds:plan.sources.map(source=>source.id)});return true;
 }
+/** Publishes a layer sheet the engine computed for a call it ran in the editor's place
+ * (src/engine/engine-edit-shadow.mjs, `?engineEdit=on`): the same bookkeeping, events
+ * and history as a plan made here. `sheet.tracks` holds the tracks the call replaced and
+ * `trackOrder` names every track; the others stay the editor's own objects. Every source
+ * it names is new. */
+export function adoptLayerSheet(editor,{sheet,trackOrder,layers,sources,nextFrame},label,{selection,retainGeometry=false}={}){
+  const before=editor.report._styk.layerSheet;
+  const state={...sheet,tracks:Object.fromEntries(trackOrder.map(id=>[id,Object.hasOwn(sheet.tracks,id)?sheet.tracks[id]:before.tracks[id]]))};
+  const plan={state,layers,nextFrame,materialize(){},sources:Object.entries(sources??{}).map(([id,value])=>({id,before:{exists:false},after:{exists:true,value}}))};
+  return publish(editor,plan,label,{selection,retainGeometry});
+}
 function replaceAt(editor,plan,id,tick,uid,frame,options={},end=tick+1){
   checkedTick(tick);const track=plan.get(id);
   if(tick>=track.end)return;
