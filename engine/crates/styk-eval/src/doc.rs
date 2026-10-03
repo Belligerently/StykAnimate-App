@@ -375,11 +375,14 @@ pub struct Camera {
     pub scale: f64,
     pub angle: f64,
     pub is_default: bool,
+    /// `_parallaxMotionOffset`: the screen impulse a camera-motion bake folded into
+    /// this camera, which parallax layers do not follow ([`crate::parallax`]).
+    pub motion_offset: Option<[f64; 2]>,
 }
 
 impl Default for Camera {
     fn default() -> Self {
-        Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: true }
+        Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: true, motion_offset: None }
     }
 }
 
@@ -506,6 +509,18 @@ pub struct Layers {
     pub hidden: Vec<String>,
     pub camera_visible: bool,
     pub scene_visible: bool,
+    /// The layers with parallax on (`byId[id].parallax.enabled`), in `order`.
+    pub parallax: Vec<(String, LayerParallax)>,
+}
+
+/// `byId[id].parallax` of a layer whose parallax is on (src/layer-parallax.mjs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayerParallax {
+    /// How much of the camera's travel the layer follows on each axis (1 = all of it).
+    pub x: f64,
+    pub y: f64,
+    /// The camera position at which the layer sits where it was drawn.
+    pub reference: [f64; 2],
 }
 
 impl Layers {

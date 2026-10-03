@@ -34,20 +34,45 @@ is the oracle while both exist.
    applies its keys' movieclip replacements (`replaceMovieclipFrame`) and
    composes layers in order.
 3. Movieclip instances choose their local time (`sampleMovieclipObjects`),
-   layers order the draw order (`applyLayerOrder`), camera presets apply.
-4. Effects resolve per object and for the scene.
+   layers order the draw order (`applyLayerOrder`).
+4. The scene camera ([below](#the-scene-camera)): where it travels moves parallax
+   layers, then camera-motion impulses shake the shot.
+5. Effects resolve per object and for the scene.
+
+## The scene camera
+
+What the camera does when the scene is seen through it: prepared playback frames
+always, edit frames only in the camera preview (`cameraEnabled`). The editor applies
+both at render time (`cameraAtTime`, `parallaxResolver`); the engine works them out
+with the frame and draws them.
+
+- **Travel** (`cameraTravelAt`) is where the camera is: the authored camera, tweened
+  with its baked camera-motion offset (`_parallaxMotionOffset`, tweened when either key
+  has one, like the other camera channels).
+- **Parallax** (`styk_eval::parallax`, `layer-parallax.mjs`): each layer whose parallax
+  is on moves by `(1 - response) × (travel - reference - baked offset)` per axis; a
+  joined figure moves with the layer of its join chain's root. `Frame::parallax` holds
+  the offset of every object by slot (`None` when nothing moves, and always for a
+  movieclip's own frame: its contents move with their instance). It is a translation
+  of the whole object, artwork, effects and movieclip contents alike, which the draw
+  list takes as one more per-object translation after a drag's
+  (`Parallax::translations`); geometry, records and editing never see it. Onion skins
+  take none: the editor shows them only with the camera off.
+- **Impulses** (`camera::at_time`, `sampleCameraMotion`) shake the shot from the
+  travelled camera.
 
 ## Not evaluated yet
 
 Named in `Document::unsupported` and gated in the app: property channels on
-native timelines, animation origins, follow cameras, layer parallax, frame
-drafts, retained movieclip sources, drawings a spatial bone turns
-(`drawingRotation`). The work queue in the plan orders them.
+native timelines, animation origins, follow cameras, frame drafts, retained
+movieclip sources, drawings a spatial bone turns (`drawingRotation`). The work
+queue in the plan orders them.
 
 ## Testing
 
 - `styk compare <file> <reference.json>` against `engine/tools/reference.mjs`
-  (every primitive and joint of the sampled ticks; `--vfx` adds effects).
+  (every primitive and joint of the sampled ticks; `--vfx` adds effects, `--camera`
+  the shot camera and each object's parallax offset).
 - Fixture suites built by the editor's own commands:
   `engine/tools/ik-fixtures.mjs`, `eval-fixtures.mjs`, `vfx-fixtures.mjs`,
   `spatial-fixtures.mjs` (byte-stable), checked by `cargo test -p styk-eval`.
@@ -73,8 +98,10 @@ the reason.
   movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
   movieclips leaving the frame outside their span, layer order, 3D poses between keys
   (`interpolateSpatialPose`'s record).
-- Not yet (each answers `Unported`): figures joined to a hidden movieclip, camera parallax offsets, animation
-  origins, property channels, hidden pose keys, a movieclip's own document.
+- Not yet (each answers `Unported`): figures joined to a hidden movieclip, animation
+  origins, property channels, hidden pose keys, a movieclip's own document. A tweened
+  camera keeps its baked camera-motion offset (`_parallaxMotionOffset`) as the editor
+  writes it.
 - Pivot's own easing unwraps each angle along the whole run of tweened keys before the
   interval. The drawing path unwraps from the previous key only (constant time, the same
   picture); records follow the editor's chain (`evaluate_native_exact`), or a stored

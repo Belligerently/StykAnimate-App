@@ -47,7 +47,6 @@ function metadataReason(report) {
   if (styk.animation?.channels?.length || styk.layerSheet?.legacyAnimation) return 'property channels';
   if (styk.simpleFrameDraft) return 'a frame draft';
   if (styk.cameraMotion?.clips?.some(clip => clip.type === 'follow')) return 'follow camera';
-  for (const layer of Object.values(styk.layers?.byId ?? {})) if (layer?.parallax && (layer.parallax.x || layer.parallax.y || layer.parallax.depth)) return 'layer parallax';
   return null;
 }
 

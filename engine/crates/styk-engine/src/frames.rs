@@ -53,7 +53,9 @@ pub(crate) fn produce(generation: &Generation, tick: u32, hidden_uids: &[u32], e
     let frame = prepared.evaluate(tick as f64);
     let scene = build(&prepared.doc, &frame);
     let hidden = hidden_slots(generation, &frame, hidden_uids);
-    let overrides = Overrides { hidden: &hidden, bypass_effects: !effects, ..Default::default() };
+    // Prepared frames are shown through the scene camera, which moves parallax layers.
+    let translations = frame.parallax.as_ref().map(|p| p.translations(&[])).unwrap_or_default();
+    let overrides = Overrides { hidden: &hidden, translations: &translations, bypass_effects: !effects, ..Default::default() };
     let list = Arc::new(encode_with(&prepared.doc, &generation.assets, &scene, &overrides));
     FrameData {
         generation: generation.id,

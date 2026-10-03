@@ -13,6 +13,11 @@ import {mkdirSync} from 'node:fs';
 import path from 'node:path';
 import {here, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
 
+// The editor names camera-motion clips at random; fixtures must be byte-stable, so
+// identities count up again from the same value for each fixture.
+let counter = 0;
+Object.defineProperty(globalThis.crypto, 'randomUUID', {configurable: true, value: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`});
+
 /** Two limbs on one layer, the first moving between two keys of a layer sheet. */
 function pair() {
   const e = open(documentOf([limb(), limb()], i => [260 + i * 120, 150]), {layerTimeline: true});
@@ -79,6 +84,42 @@ const fixtures = {
     e.seek(0);
     return {document: e.serialize(), ticks: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]};
   },
+  /** Two layers with parallax (one linked, one with its own response per axis and a
+   * reference away from the origin) while the camera travels; a figure of a still
+   * layer joined to a parallax figure moves with the layer of its chain's root. */
+  'parallax-layers': () => {
+    const e = open(documentOf([limb(), limb(), limb()], i => [200 + i * 120, 160]), {layerTimeline: true});
+    e.sheetSetDuration(24);
+    const back = e.createLayer('Back'), front = e.createLayer('Front');
+    e.assignFiguresToLayer([1], back.id); e.assignFiguresToLayer([2], front.id);
+    e.select(3); e.joinTo(2, 22);
+    e.seek(8); e.setCameraValues({x: 60, y: -30});
+    e.setLayerParallax(back.id, {enabled: true, x: 0.25});
+    e.seek(16); e.setCameraValues({x: -40, y: 20, scale: 1.2, angle_rad: 0.15});
+    e.setLayerParallax(front.id, {enabled: true, linked: false, x: 1.5, y: 0.6});
+    e.seek(0);
+    return {document: e.serialize(), ticks: [0, 3, 8, 11, 16, 20], camera: true};
+  },
+  /** A camera shake baked into camera keys: each key keeps the shake apart
+   * (`_parallaxMotionOffset`), which parallax layers do not follow; between the keys
+   * left after clearing some (one linear span, one Auto run), the offsets tween with
+   * the camera. */
+  'parallax-baked-motion': async () => {
+    const e = open(documentOf([limb(), limb()], i => [220 + i * 160, 160]), {layerTimeline: true});
+    e.sheetSetDuration(20);
+    const back = e.createLayer('Back');
+    e.assignFiguresToLayer([2], back.id);
+    e.seek(10); e.setCameraValues({x: 50, y: 10});
+    e.seek(0); e.setLayerParallax(back.id, {enabled: true, x: 0.4});
+    const shake = e.addCameraMotion('shake', {start: 2, duration: 14});
+    e.setCameraMotion(shake, {params: {moveX: 30, moveY: 20, frequency: 3}});
+    await e.bakeCameraMotion({start: 0, end: 20});
+    e.sheetClearKeys(['camera'], 4, 7); e.sheetClearKeys(['camera'], 12, 14);
+    // Baked keys hold; a linear span, and an Auto run whose curve reads the keys around it.
+    e.sheetSetEasing(['camera'], 3, 3, {interpolation: 'linear'}); e.sheetSetEasing(['camera'], 10, 15, {interpolation: 'auto'});
+    e.seek(0);
+    return {document: e.serialize(), ticks: [0, 3, 5, 6, 9, 13, 15, 17], camera: true};
+  },
 };
 
 const args = process.argv.slice(2);
@@ -89,6 +130,7 @@ const names = args.filter((a, i) => !a.startsWith('--') && (outAt < 0 || i !== o
 for (const name of names) if (!fixtures[name]) { console.error(`unknown fixture ${name}`); process.exit(2); }
 mkdirSync(out, {recursive: true});
 for (const name of names.length ? names : Object.keys(fixtures)) {
-  const built = fixtures[name]();
-  writeReference(writeProject(out, name, built.document, built.ticks), name);
+  counter = 0;
+  const built = await fixtures[name]();
+  writeReference(writeProject(out, name, built.document, built.ticks, {camera: built.camera}), name);
 }

@@ -61,12 +61,13 @@ export function prune(document) {
  * Writes `<out>/<name>.json` (the project) and returns the editor's evaluation of
  * it at `ticks`, without the timings that differ on every run: the caller adds
  * what it needs and writes `<name>.reference.json` with writeReference().
- * `vfx` adds the effects the editor resolves (reference.mjs --vfx).
+ * `vfx` adds the effects the editor resolves (reference.mjs --vfx), `camera` what the
+ * scene camera does when shown (--camera: the shot camera and parallax offsets).
  */
-export function writeProject(out, name, document, ticks, {vfx = false} = {}) {
+export function writeProject(out, name, document, ticks, {vfx = false, camera = false} = {}) {
   const file = `${out}/${name}.json`, reference = `${out}/${name}.reference.json`;
   writeFileSync(file, JSON.stringify(prune(document)) + '\n');
-  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
+  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
   const dump = JSON.parse(readFileSync(reference, 'utf8'));
   delete dump.loadMs; delete dump.evalMsPerFrame;
   return {file, reference, dump};

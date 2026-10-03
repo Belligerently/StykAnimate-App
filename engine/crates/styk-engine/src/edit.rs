@@ -31,6 +31,27 @@ struct Pose {
     scene: Option<Arc<Scene>>,
     /// The draw counter when this pose was last shown.
     used: u64,
+    /// What the scene camera does to `frame`, for the generation it was worked out for.
+    shot: Option<(u64, Arc<styk_eval::parallax::Parallax>)>,
+}
+
+impl Pose {
+    fn new(frame: Frame, used: u64) -> Pose {
+        Pose { frame, scene: None, used, shot: None }
+    }
+
+    /// How far parallax layers move this pose's objects while the scene camera shows it
+    /// (`parallaxResolver`), worked out once per document generation.
+    fn parallax(&mut self, generation: &Generation) -> Option<Arc<styk_eval::parallax::Parallax>> {
+        if let Some((id, parallax)) = &self.shot
+            && *id == generation.id
+        {
+            return Some(parallax.clone());
+        }
+        let parallax = styk_eval::parallax::resolve(&generation.prepared.doc, &self.frame, self.frame.camera.as_ref())?;
+        self.shot = Some((generation.id, parallax.clone()));
+        Some(parallax)
+    }
 }
 
 /// An edit frame, its onion skins, and what was last built from them. Owned by the thread that draws.
@@ -71,6 +92,8 @@ pub struct EditOptions<'a> {
     pub onions: &'a [Onion<'a>],
     /// Draw without effects (the editor's effects preview is off).
     pub bypass_effects: bool,
+    /// The frame is shown through the scene camera (playback preview), which moves parallax layers.
+    pub camera: bool,
 }
 
 fn flags(slots: &[u32], count: usize) -> Vec<bool> {
@@ -124,7 +147,7 @@ impl EditScene {
         self.follow(generation);
         let previous = self.current.take();
         let frame = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
-        self.current = Some(Pose { frame, scene: None, used: self.draws });
+        self.current = Some(Pose::new(frame, self.draws));
         Ok(())
     }
 
@@ -133,7 +156,7 @@ impl EditScene {
         self.follow(generation);
         let previous = self.ghosts.remove(&id);
         let frame = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
-        self.ghosts.insert(id, Pose { frame, scene: None, used: self.draws });
+        self.ghosts.insert(id, Pose::new(frame, self.draws));
         Ok(())
     }
 
@@ -156,7 +179,12 @@ impl EditScene {
         let Some(current) = self.current.as_mut() else { return Ok(None) };
         let scene = scene_of(current);
         let hidden = flags(options.hidden, current.frame.objects.len());
-        let overrides = Overrides { hidden: &hidden, translations: options.translations, background: options.background, bypass_effects: options.bypass_effects };
+        // Through the scene camera, parallax layers move after any drag (onion skins are
+        // never shown with the camera on, so they take no parallax).
+        let parallax = if options.camera { current.parallax(generation) } else { None };
+        let moved = parallax.map(|p| p.translations(options.translations));
+        let translations = moved.as_deref().unwrap_or(options.translations);
+        let overrides = Overrides { hidden: &hidden, translations, background: options.background, bypass_effects: options.bypass_effects };
         if options.onions.is_empty() {
             let frame_scene = scene;
             return Ok(Some(Arc::new(encode_composed(doc, &generation.assets, &frame_scene, &overrides, &[], None))));

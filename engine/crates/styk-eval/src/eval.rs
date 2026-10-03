@@ -66,6 +66,9 @@ pub struct Frame {
     /// Every effect to draw at this tick, resolved ([`crate::vfx::evaluate`]).
     /// `None` when there is none, and always for a document without effects.
     pub vfx: Option<Arc<crate::vfx::FrameVfx>>,
+    /// How far parallax layers move each object while the scene camera is shown
+    /// ([`crate::parallax`]); `None` when nothing moves.
+    pub parallax: Option<Arc<crate::parallax::Parallax>>,
 }
 
 /// A document plus the timing tables evaluation needs, built once per revision.
@@ -428,6 +431,7 @@ fn frame_of(key: &KeyRef) -> Frame {
         background_color: k.background_color,
         pose_vfx: k.vfx.clone(),
         vfx: None,
+        parallax: None,
     }
 }
 
@@ -477,15 +481,20 @@ fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: boo
         objects.push(Arc::new(tween_object(&sampler, fig, o, next, &recs, auto)));
     }
     let camera = match (a.frame.camera, b.frame.camera) {
-        (Some(_), Some(_)) => {
+        (Some(ca), Some(cb)) => {
             let cams = frames.map(|f| f.map(|f| f.camera.unwrap_or_default()));
             let get = |k: fn(&Camera) -> f64| cams.map(|c| c.as_ref().map(k));
+            // A baked parallax offset tweens when either key has one; a key without one is at zero.
+            let motion_offset = (ca.motion_offset.is_some() || cb.motion_offset.is_some()).then(|| {
+                [sampler.value(get(|c| c.motion_offset.map_or(0.0, |o| o[0])), false), sampler.value(get(|c| c.motion_offset.map_or(0.0, |o| o[1])), false)]
+            });
             Some(Camera {
                 x: sampler.value(get(|c| c.x), false),
                 y: sampler.value(get(|c| c.y), false),
                 scale: sampler.value(get(|c| c.scale), false),
                 angle: sampler.angle(get(|c| c.angle), &|k| keys.get(k).map(|f| f.frame.camera.unwrap_or_default().angle)),
                 is_default: false,
+                motion_offset,
             })
         }
         _ => a.frame.camera,
@@ -496,6 +505,7 @@ fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: boo
         tick: 0.0,
         pose_vfx: a.frame.vfx.as_ref().map(|stacks| crate::vfx::interpolate(stacks, b.frame.vfx.as_ref(), t)),
         vfx: None,
+        parallax: None,
         origins: vec![None; objects.len()],
         continuations: a.frame.continuations.clone(),
         background_color: a.frame.background_color,
@@ -810,8 +820,15 @@ impl Prepared {
         let mut frame = self.evaluate_raw(tick, fractional);
         self.apply_movieclips(&mut frame, tick);
         apply_layer_order(&self.doc, &mut frame);
+        // Where the camera travels (`cameraTravelAt`) moves parallax layers; camera-motion
+        // impulses shake the finished shot on top of it. A movieclip's own frame is drawn
+        // with its instance's parallax, never its own.
+        let travel = frame.camera;
+        if !fractional {
+            frame.parallax = crate::parallax::resolve(&self.doc, &frame, travel.as_ref());
+        }
         if !self.doc.camera_motion.is_empty() {
-            frame.camera = crate::camera::at_time(frame.camera, &self.doc.camera_motion, tick, self.doc.fps);
+            frame.camera = crate::camera::at_time(travel, &self.doc.camera_motion, tick, self.doc.fps);
         }
         if self.has_vfx {
             frame.vfx = crate::vfx::evaluate(&self.doc, &frame);
@@ -1149,6 +1166,7 @@ impl Prepared {
             background_color,
             pose_vfx,
             vfx: None,
+            parallax: None,
         }
     }
 }

@@ -822,6 +822,14 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         runs.push((i, j));
         i = j;
     }
+    // Translations by slot (drags and parallax layers can move every object of a frame).
+    let mut moved: Vec<Option<[f64; 2]>> = Vec::new();
+    for &(slot, delta) in translations {
+        if moved.len() <= slot as usize {
+            moved.resize(slot as usize + 1, None);
+        }
+        moved[slot as usize] = Some(delta);
+    }
     let fx = !bypass && (scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some));
     // Objects with depth-tested faces are drawn on rasters of their own, sized by their bounds.
     let measured = fx || !scene.meshes.is_empty() || !scene.depths.is_empty();
@@ -886,7 +894,7 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         let depth = run_end > a;
         let mut bounds = rounded(with);
         let mut figure = has_fx.then(|| Box::new(Fx { stack: figure_stack.to_vec(), bounds, domain: rounded(without), scale, padding: largest }));
-        if let Some(&(_, delta)) = translations.iter().find(|(slot, _)| *slot == first.slot) {
+        if let Some(delta) = moved.get(first.slot as usize).copied().flatten() {
             outline.translate(delta);
             items.translate(delta);
             for node in &mut nodes {

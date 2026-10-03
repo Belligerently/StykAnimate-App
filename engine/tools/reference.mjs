@@ -2,7 +2,7 @@
 // Dumps what the current JavaScript editor evaluates for a document, so the
 // Rust engine can be checked against it primitive by primitive.
 //
-//   node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks 0,5,9] [--every N] [--max N] [--vfx]
+//   node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks 0,5,9] [--every N] [--max N] [--vfx] [--camera]
 //
 // Pivot .piv files go through the repository's Python codec first
 // (tools/decode-piv.sh), exactly like the desktop app's import service.
@@ -10,6 +10,11 @@
 // --vfx adds, per tick, the effects the editor resolves (`frames[].vfx`): the
 // stacks the renderers hand to the effect executors, the generated effects,
 // and the clips the inspector shows as active (docs/engine/vfx.md).
+//
+// --camera adds, per tick, what the scene camera does when it is shown
+// (`frames[].shot`): the camera the scene is seen through (`cameraAtTime`: the
+// authored camera, follow clips and camera-motion impulses) and how far parallax
+// layers move each object, by slot (`parallaxResolver`).
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
@@ -21,11 +26,12 @@ const {Editor} = await import(`${repo}/src/editor.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
 if (!input || !output) {
-  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx]');
+  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx] [--camera]');
   process.exit(2);
 }
 const option = name => { const i = rest.indexOf(name); return i < 0 ? undefined : rest[i + 1]; };
 const effects = rest.includes('--vfx') ? await effectDumper() : null;
+const shots = rest.includes('--camera') ? await shotDumper() : null;
 
 let document;
 if (/\.(styk|stkz|stykmov)$/i.test(input)) {
@@ -111,6 +117,7 @@ for (const tick of ticks) {
     objects, drawables: items,
     ...(meshes.length ? {meshes} : {}),
     ...(effects ? {vfx: effects(editor.report, frame, geometry, tick)} : {}),
+    ...(shots ? {shot: shots(editor.report, frame)} : {}),
   });
 }
 
@@ -122,6 +129,17 @@ writeFileSync(output, JSON.stringify({
 }));
 console.error(`${path.basename(input)}: ${ticks.length} frames of ${total}, load ${loadMs.toFixed(0)} ms, ` +
   `${(evalMs / Math.max(1, ticks.length)).toFixed(2)} ms per evaluated frame`);
+
+/** What the scene camera does to a frame when it is shown (src/renderer.mjs, src/playback-worker.mjs). */
+async function shotDumper() {
+  const {cameraAtTime} = await import(`${repo}/src/camera-motion.mjs`);
+  const {parallaxResolver} = await import(`${repo}/src/layer-parallax.mjs`);
+  return (report, frame) => {
+    const camera = cameraAtTime(report, frame), depth = parallaxResolver(report, frame);
+    return {camera: camera ? {x: camera.x ?? 0, y: camera.y ?? 0, scale: camera.scale ?? 1, angle: camera.angle_rad ?? 0, isDefault: Boolean(camera.is_default)} : null,
+      parallax: frame.objects.map(object => { const d = depth(object.unique_id); return [d.x, d.y]; })};
+  };
+}
 
 /**
  * What the editor resolves for effects at one tick, as the renderers hand it to

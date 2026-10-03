@@ -14,6 +14,7 @@ pub mod ik;
 pub mod load;
 pub mod onion;
 pub mod par;
+pub mod parallax;
 pub mod parity;
 pub mod records;
 pub mod rig;

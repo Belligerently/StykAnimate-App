@@ -95,7 +95,7 @@ pub fn at_time(camera: Option<Camera>, clips: &[CameraMotionClip], tick: f64, fp
     }
     let c = match camera {
         Some(c) if !c.is_default => c,
-        _ => Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: false },
+        _ => Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: false, motion_offset: None },
     };
     let scale = c.scale / d.zoom;
     let angle = c.angle + d.rotation;
@@ -105,5 +105,6 @@ pub fn at_time(camera: Option<Camera>, clips: &[CameraMotionClip], tick: f64, fp
         scale,
         angle,
         is_default: false,
+        motion_offset: c.motion_offset,
     })
 }

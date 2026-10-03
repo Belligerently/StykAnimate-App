@@ -664,6 +664,7 @@ impl Loader {
             background_color: key.background_color,
             pose_vfx: key.vfx,
             vfx: None,
+            parallax: None,
         })
     }
 
@@ -681,6 +682,7 @@ impl Loader {
             scale: num(c, "scale").unwrap_or(1.0),
             angle: num(c, "angle_rad").unwrap_or(0.0),
             is_default: truthy(c.get("is_default")),
+            motion_offset: c.get("_parallaxMotionOffset").filter(|p| p.is_object()).map(|p| [num(p, "x").unwrap_or(0.0), num(p, "y").unwrap_or(0.0)]),
         });
         let styk = k.get("_styk");
         let mut frame = Keyframe {
@@ -778,7 +780,7 @@ impl Loader {
 }
 
 fn layers(l: &Value) -> Layers {
-    let order = l.get("order").and_then(Value::as_arr).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    let order: Vec<String> = l.get("order").and_then(Value::as_arr).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
     let mut assignments = HashMap::new();
     if let Some(Value::Obj(map)) = l.get("assignments") {
         for (uid, layer) in map.iter() {
@@ -796,6 +798,9 @@ fn layers(l: &Value) -> Layers {
         _ => vec![],
     };
     let fixed_visible = |id: &str| l.get("fixed").and_then(|f| f.get(id)).and_then(|v| v.get("visible")) != Some(&Value::Bool(false));
+    // `parallaxResolver`: the layers of `order` whose parallax is on. The editor refuses a
+    // file whose parallax is malformed (`validateParallax`); such a layer is left still here.
+    let parallax = order_parallax(l, &order);
     Layers {
         order,
         assignments,
@@ -803,7 +808,22 @@ fn layers(l: &Value) -> Layers {
         hidden,
         camera_visible: fixed_visible("camera"),
         scene_visible: fixed_visible("scene"),
+        parallax,
     }
+}
+
+fn order_parallax(l: &Value, order: &[String]) -> Vec<(String, LayerParallax)> {
+    order
+        .iter()
+        .filter_map(|id| {
+            let p = l.get("byId")?.get(id)?.get("parallax")?;
+            if !truthy(p.get("enabled")) {
+                return None;
+            }
+            let reference = p.get("reference")?;
+            Some((id.clone(), LayerParallax { x: num(p, "x")?, y: num(p, "y")?, reference: [num(reference, "x")?, num(reference, "y")?] }))
+        })
+        .collect()
 }
 
 fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
