@@ -56,6 +56,7 @@ impl Editor {
             ik_captures: HashMap::new(),
             spatial_ik_captures: HashMap::new(),
             ik_resume: HashMap::new(),
+            handle_edit: None,
             authored: false,
         });
         Ok(true)
@@ -103,7 +104,7 @@ impl Editor {
 
     /// `touch`: marks the gesture changed, remembers how pinned limbs now bend, and
     /// announces the live edit.
-    fn touch(&mut self) -> Result<(), EditError> {
+    pub(crate) fn touch(&mut self) -> Result<(), EditError> {
         let changed = match self.drag.as_mut() {
             Some(drag) => {
                 drag.changed = true;

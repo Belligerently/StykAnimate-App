@@ -26,6 +26,7 @@ import {layerFocusOf} from '../editor-layer-focus.mjs';
 
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
+  'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
@@ -39,7 +40,7 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
 const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'importFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
-  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
+  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'editHandlePosition', 'commitHandleEditDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
   'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection', 'importFigure']);
 
@@ -291,6 +292,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       }
       drag.before.sort((a, b) => a.object_slot - b.object_slot);
       if (answer.drag.translation) drag.scope = 'translation';
+      // Back at its start, a handle gesture restores what it moved (restoring the unmoved changes nothing).
+      for (const state of drag.handleEdit?.states ?? []) state.moved = true;
       for (const figure of answer.draft) {
         const slot = objects.findIndex(object => object.unique_id === figure.unique_id); if (slot < 0) continue;
         if (objects[slot]._movieclipSample !== undefined) figure._movieclipSample = objects[slot]._movieclipSample;

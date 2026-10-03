@@ -43,6 +43,7 @@ impl Editor {
             ik_captures: HashMap::new(),
             spatial_ik_captures: HashMap::new(),
             ik_resume: HashMap::new(),
+            handle_edit: None,
             authored: true,
         });
         Ok(true)
@@ -119,6 +120,7 @@ impl Editor {
             ik_captures: HashMap::new(),
             spatial_ik_captures: HashMap::new(),
             ik_resume: HashMap::new(),
+            handle_edit: None,
             authored: true,
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());

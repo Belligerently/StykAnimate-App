@@ -850,4 +850,50 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, -1], ['moveSelection', 15, 10], ['@select', 2, -1], ['rotateSelection', 0.2], ['@select', 1, 1], ['rotateJoint', 0.2],
     ['@select', 2, 3], ['poseJoint', 600, 300], ['@seek', 6], ['@select', 1, 0], ['bendJoint', 230, 140], ['undo'], ['undo'], ['redo'],
   ], '../../crates/styk-eval/tests/fixtures/ik/chain-long.json');
+  // Handle Edit Mode: handles moved with the arcs kept, bends edited from either end, figures
+  // joined at a handle moving with it, a root moved, a gesture returned to its start and
+  // cancelled, a handle that changed mid-gesture, a joined root (refused); history.
+  {
+    const start = (uid, joint, options = {}) => {
+      const e = open(JSON.parse(readFileSync(`${out}/joined-chain.document.json`, 'utf8')), options);
+      if (options.layerTimeline) e.seek(3);
+      e.select(uid, joint); e.beginHandleEditDrag(); const {x, y} = e._drag.handleEdit.point; e.cancelHandleEditDrag();
+      return [x, y];
+    };
+    scenario('handle-edit-native', {}, [
+      ['@select', 2, 1], ['editHandlePosition', 330, 300], ['@select', 1, 0], ['editHandlePosition', 240, 260, {bend: true}],
+      ['@select', 1, 2], ['beginHandleEditDrag'], ['editHandlePosition', 300, 260], ['editHandlePosition', 310, 270, {bend: true}], ['commitHandleEditDrag'],
+      ['@select', 1, -1], ['editHandlePosition', 180, 170], ['@select', 2, -1], ['editHandlePosition', 10, 10],
+      ['@select', 3, 0], ['beginHandleEditDrag', {bend: true}], ['editHandlePosition', 400, 300], ['editHandlePosition', ...start(3, 0)], ['editHandlePosition', 420, 310],
+      ['editHandlePosition', ...start(3, 0)], ['commitHandleEditDrag'], ['beginHandleEditDrag'], ['editHandlePosition', 410, 290], ['cancelHandleEditDrag'],
+      ['beginHandleEditDrag', {label: 'Move handle'}], ['@select', 3, 1], ['editHandlePosition', 5, 5], ['commitHandleEditDrag'],
+      ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'joined-chain.document.json');
+    scenario('handle-edit-sheet', app, [
+      ['@seek', 3], ['@select', 2, 1], ['editHandlePosition', 330, 300], ['@select', 1, 1], ['beginHandleEditDrag', {bend: true}], ['editHandlePosition', 280, 240],
+      ['editHandlePosition', 285, 250, {bend: false}], ['commitHandleEditDrag'], ['@select', 3, 0], ['beginHandleEditDrag'], ['editHandlePosition', 400, 330],
+      ['editHandlePosition', ...start(3, 0, app)], ['commitHandleEditDrag'], ['@seek', 6], ['@select', 1, -1], ['editHandlePosition', 200, 150],
+      ['undo'], ['undo'], ['redo'],
+    ], 'joined-chain.document.json');
+    // Pinned limbs (the solved angles and stretched lengths), Stick Nodes curves.
+    scenario('handle-edit-ik-sheet', app, [
+      ['@select', 1, 0], ['editHandlePosition', 300, 230], ['@select', 1, 2], ['editHandlePosition', 420, 300, {bend: true}], ['@select', 2, 1], ['editHandlePosition', 690, 300],
+      ['@seek', 1], ['@select', 1, 1], ['beginHandleEditDrag', {bend: true}], ['editHandlePosition', 400, 280], ['commitHandleEditDrag'], ['undo'], ['redo'],
+    ], '../../crates/styk-eval/tests/fixtures/ik/stretch.json');
+    scenario('handle-edit-chain-sheet', app, [
+      ['@select', 1, 1], ['editHandlePosition', 260, 200], ['@select', 2, 2], ['editHandlePosition', 560, 220, {bend: true}], ['undo'], ['redo'],
+    ], '../../crates/styk-eval/tests/fixtures/ik/chain-long.json');
+    scenario('handle-edit-sticknodes-sheet', app, [
+      ['@select', 1, 0], ['editHandlePosition', 330, 230], ['@select', 1, 1], ['editHandlePosition', 300, 300, {bend: true}], ['@select', 1, 2], ['editHandlePosition', 280, 330],
+      ['undo'], ['redo'], ['undo'], ['undo'], ['undo'], ['bendJoint', 320, 240], ['@select', 1, 2], ['editHandlePosition', 285, 325],
+    ], 'sticknodes.document.json');
+    // A segment bent past a full turn: its chord points away from its start angle.
+    writeFileSync(`${out}/full-turn.document.json`, JSON.stringify(documentOf([[[11, 0, 90, .8], [22, 11, 90, 2, {bend_rad: 7}], [33, 22, 35, 0]]])) + '\n');
+    scenario('handle-edit-full-turn-sheet', app, [
+      ['@select', 1, 1], ['editHandlePosition', 330, 260], ['editHandlePosition', 335, 250, {bend: true}], ['undo'], ['redo'],
+    ], 'full-turn.document.json');
+    scenario('handle-edit-startup-sheet', app, [
+      ['@select', 1, 3], ['editHandlePosition', 520, 300], ['@select', 1, 0], ['editHandlePosition', 470, 260, {bend: true}], ['undo'], ['redo'],
+    ], 'startup.document.json');
+  }
 }

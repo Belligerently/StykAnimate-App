@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 71 | 14 | 1 | 0 | 0 | 0 % | 35 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 70 | 14 | 2 | 0 | 0 | 1 % | 35 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4064 KiB | 240 | 76 | 17 | 22 | 1 | 16 % | 34 % | 0 % |
+| **Total** | 356 | 4064 KiB | 239 | 76 | 18 | 22 | 1 | 16 % | 34 % | 0 % |
 
 ## Engine modules
 
@@ -98,7 +98,7 @@ Engine logic: ported to Rust.
 | `src/editor-frame-draft.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-frames.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-commands.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-handle-edit.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-handle-edit.mjs` | `styk-edit` | ported | beginHandleEditDrag, editHandlePosition, commitHandleEditDrag, cancelHandleEditDrag, handleEditSegmentPose (styk-edit/src/handle_edit.rs) |
 | `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget on figures not joined to others (ik_settings.rs); setNodeIK and rotateIKTarget across joined figures (bakeGraph) still JS |
 | `src/editor-inbetween-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-inbetween.mjs` | `styk-edit` | js | commands and history |

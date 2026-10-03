@@ -192,7 +192,7 @@ fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
 }
 
 /// `object[key][index] = value` on an array of numbers.
-fn set_item(object: &mut Obj, key: &str, index: usize, value: f64) {
+pub(crate) fn set_item(object: &mut Obj, key: &str, index: usize, value: f64) {
     let Some(array) = object.get_mut(key) else { return };
     let Some(list) = array.make_arr() else { return };
     if index >= list.len() {

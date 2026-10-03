@@ -18,6 +18,7 @@ mod camera_motion;
 mod figure_clipboard;
 mod figures;
 mod frame;
+mod handle_edit;
 mod history;
 mod ik;
 mod ik_settings;
@@ -96,6 +97,8 @@ pub(crate) struct Drag {
     pub ik_captures: HashMap<String, spatial_ik::Capture>,
     pub spatial_ik_captures: HashMap<String, spatial_ik::SpatialCapture>,
     pub ik_resume: HashMap<String, Option<[f64; 2]>>,
+    /// A Handle Edit Mode gesture (`_drag.handleEdit`).
+    pub handle_edit: Option<handle_edit::HandleEdit>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -445,6 +448,10 @@ impl Editor {
             }
             "commitDrag" => self.commit_drag().map(Value::Bool),
             "cancelDrag" => self.cancel_drag().map(Value::Bool),
+            "beginHandleEditDrag" => self.begin_handle_edit_drag(&arg(0)).map(Value::Bool),
+            "editHandlePosition" => self.edit_handle_position(number(0), number(1), &arg(2)).map(Value::Bool),
+            "commitHandleEditDrag" => self.finish_handle_edit_drag(true).map(Value::Bool),
+            "cancelHandleEditDrag" => self.finish_handle_edit_drag(false).map(Value::Bool),
             "beginTranslationDrag" => self.begin_drag(arg(0).as_str().unwrap_or("Move figures"), true).map(Value::Bool),
             "moveSelection" => self.move_selection(arg(0).as_f64().unwrap_or(f64::NAN), arg(1).as_f64().unwrap_or(f64::NAN), &arg(2)).map(Value::Bool),
             "rotateSelection" => self.rotate_selection(number(0), &arg(1)).map(Value::Bool),
