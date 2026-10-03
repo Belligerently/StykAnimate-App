@@ -37,6 +37,7 @@ impl Editor {
             before_selection: self.selection_state(),
             changed: false,
             detached: HashMap::new(),
+            rotation_targets: HashMap::new(),
             authored: true,
         });
         Ok(true)
@@ -107,6 +108,7 @@ impl Editor {
             before_selection: self.selection_state(),
             changed: false,
             detached: HashMap::new(),
+            rotation_targets: HashMap::new(),
             authored: true,
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());

@@ -256,8 +256,8 @@ export function installEditShadow(editor, engineSide, {own = engineEditEnabled()
       // The engine runs the call in the editor's place.
       if (live && own && OWNED.has(name)) {
         const selection = editor._selectionState(), called = performance.now();
-        let answer;
-        try { answer = JSON.parse(live.call(name, payload, before)); }
+        let answer, text = '', parsing = called;
+        try { text = live.call(name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
         catch (error) { report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; }
         report.calls++;
         const why = answer?.status === 'ok' ? unadoptable(answer) : null;
@@ -267,8 +267,9 @@ export function installEditShadow(editor, engineSide, {own = engineEditEnabled()
           try { return adopt(name, answer, selection); }
           finally {
             depth--; report.owned++; report.ownedMs += performance.now() - called;
-            const entry = (report.byCall ??= {})[name] ??= {calls: 0, engineMs: 0, adoptMs: 0};
-            entry.calls++; entry.engineMs += adopting - called; entry.adoptMs += performance.now() - adopting;
+            const entry = (report.byCall ??= {})[name] ??= {calls: 0};
+            entry.calls++; entry.engineMs = (entry.engineMs ?? 0) + adopting - called; entry.adoptMs = (entry.adoptMs ?? 0) + performance.now() - adopting;
+            entry.callMs = (entry.callMs ?? 0) + parsing - called; entry.answerBytes = (entry.answerBytes ?? 0) + text.length;
           }
         }
         if (answer?.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
@@ -291,8 +292,8 @@ export function installEditShadow(editor, engineSide, {own = engineEditEnabled()
       // What the calls the engine would own cost the editor (compared with `ownedMs`).
       if (OWNED.has(name)) {
         report.ownableMs = (report.ownableMs ?? 0) + performance.now() - started;
-        const entry = (report.byCall ??= {})[name] ??= {calls: 0, editorMs: 0};
-        entry.calls++; entry.editorMs += performance.now() - started;
+        const entry = (report.byCall ??= {})[name] ??= {calls: 0};
+        entry.calls++; entry.editorMs = (entry.editorMs ?? 0) + performance.now() - started;
       }
       if (live && typeof result?.then === 'function') { end('an asynchronous call'); live = null; }
       if (live) {

@@ -212,7 +212,9 @@ impl Editor {
 
     /// The selected segment as the geometry at the playhead draws it.
     fn shape(&self, object: &Value, joint: usize) -> Result<Option<Shape>, EditError> {
-        let (prepared, frame, scene) = self.evaluate()?;
+        // The selected figure's geometry, and that of the figures it hangs from.
+        let slot = self.frame_objects().iter().position(|o| uid(o) == uid(object));
+        let (prepared, frame, scene) = self.evaluate_only(slot.as_ref().map(std::slice::from_ref))?;
         let Some(id) = uid(object) else { return Ok(None) };
         let Some(evaluated) = frame.objects.iter().find(|o| o.uid == id) else { return Ok(None) };
         let Some(geometry) = scene.objects.iter().find(|g| g.uid == id && g.resolved) else { return Ok(None) };
@@ -264,7 +266,17 @@ impl Editor {
         if include_joint && figure.and_then(|f| f.get("segments").and_then(|s| s.item(joint))).is_some_and(|s| rig_has(&s, &["angleLock"])) {
             return Ok(());
         }
-        let targets = rotation_targets(&objects, &figures, slot, joint, isolate);
+        let key = (slot, joint, isolate);
+        let targets = match self.drag.as_ref().and_then(|drag| drag.rotation_targets.get(&key)) {
+            Some(targets) => targets.clone(),
+            None => {
+                let targets = rotation_targets(&objects, &figures, slot, joint, isolate);
+                if let Some(drag) = self.drag.as_mut() {
+                    drag.rotation_targets.insert(key, targets.clone());
+                }
+                targets
+            }
+        };
         self.rotate_ik_followers(slot, joint, &targets, delta, include_joint)?;
         // Grouped by figure, in the order the figures first appear (each angle changes once).
         let mut by_object: Vec<(usize, Vec<usize>)> = Vec::new();

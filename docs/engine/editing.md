@@ -237,27 +237,25 @@ roots the commit refreshes, so the next gesture began with a joined figure 13 px
 
 What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow
 run, the engine's from an owned run, adoption included). The first measurement found
-`poseJoint` at 200.6 ms; three causes were fixed: a rotation's targets were found with
-list membership tests (quadratic in the figure's 515 segments), each angle was changed by
-unpacking and repacking the whole angle array, and every evaluation scanned the document
-for 3D. Sessions now also start from the mirror's prepared document instead of converting
-it again.
+`poseJoint` at 200.6 ms; the causes were fixed: a rotation's targets were found with list
+membership tests (quadratic in the figure's 515 segments) and on every call, each angle was
+changed by unpacking and repacking the whole angle array, every evaluation scanned the
+document for 3D, and every call drew the whole frame. Sessions now also start from the
+mirror's prepared document instead of converting it again.
 
 | Call | Calls | Editor | Engine | Adoption |
 | --- | ---: | ---: | ---: | ---: |
-| `poseJoint` (pointer drags) | 36 | 25.3 ms | 87.8 ms | 17.1 ms |
-| `moveSelection` | 3 | 10.2 ms | 18.0 ms | 9.7 ms |
-| `sheetInsertFrames` | 1 | 393.3 ms | 362.0 ms | 74.5 ms |
-| `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 365.9 ms | 100.2 ms | 41.4 ms |
-| keys: `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetRemoveFrames` | 4 | 61.1 ms | 121.2 ms | 28.9 ms |
+| `poseJoint` (pointer drags) | 36 | 25.3 ms | 56.1 ms | 15.9 ms |
+| `moveSelection` | 3 | 10.2 ms | 17.0 ms | 8.0 ms |
+| `sheetInsertFrames` | 1 | 393.3 ms | 359.6 ms | 70.8 ms |
+| `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 365.9 ms | about 100 ms | about 40 ms |
 
-All owned calls together: 953 ms against the editor's 898 ms. The frame-drafting commands
-are three to six times faster in the engine; joint poses are still about three and a half
-times slower (2.4 ms a call in WebAssembly plus 0.5 ms adoption, against 0.7 ms), because
-each gesture call evaluates the whole frame's geometry where the editor rebuilds what
-changed, and the answer carries the whole figure (515 segments here). Engine-owned editing
-therefore stays opt-in; making it the default for a document class waits for gestures
-that evaluate only the figures they need.
+All owned calls together: 899 ms against the editor's 898 ms. The frame-drafting commands
+are three to six times faster in the engine. Joint poses on this file's 515-segment figure
+cost 1.2 ms a call in WebAssembly (0.39 ms natively, `styk edit-bench`) plus 0.45 ms
+adoption, against the editor's 0.7 ms: each call still converts and draws the posed figure
+whole where the editor rebuilds only what changed, and the answer carries the whole figure
+(14 KB). Engine-owned editing therefore stays opt-in for now.
 
 ## What a gesture costs in the engine
 
@@ -276,7 +274,9 @@ report. Native build, one run each while the machine was busy with other work
 
 The same tool on AyameDemo as the app holds it after import (its layer sheet, 105 figures
 on show, uid 9043 with 515 segments at tick 734), after the fixes above: a joint-pose step
-median 0.84 ms (8.42 ms before), a move step 0.02 ms, commits 5.0–9.0 ms, undo 2.1 ms.
+median 0.39 ms (8.42 ms before: also the drag's cached rotation targets, as the editor's
+`_drag.rotationTargets`, and the geometry of the posed figure and those it hangs from only,
+`geometry::build_only`), a move step 0.02 ms, commits 5.0–9.0 ms, undo 2.1 ms.
 
 Not measured: WebAssembly, and the boundary (arguments in, changed records out).
 

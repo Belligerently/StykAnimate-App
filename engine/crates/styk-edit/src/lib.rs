@@ -70,6 +70,9 @@ pub(crate) struct Drag {
     pub detached: HashMap<u32, [f64; 2]>,
     /// The gesture edits a draft of the frame on show (a layer sheet), not a keyframe.
     pub authored: bool,
+    /// A rotation's targets by selected slot, joint and isolation (`rotationTargets`): the
+    /// figures' structure does not change during a gesture.
+    pub rotation_targets: HashMap<(usize, usize, bool), Vec<(usize, usize)>>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).

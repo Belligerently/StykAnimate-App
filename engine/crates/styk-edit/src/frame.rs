@@ -143,6 +143,12 @@ impl Editor {
     /// (`editor.geometry`). A document with features the engine cannot evaluate yet
     /// is not edited here.
     pub(crate) fn evaluate(&self) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+        self.evaluate_only(None)
+    }
+
+    /// [`Editor::evaluate`] with the geometry of the figures in `slots` (and those they are
+    /// joined to) only, when given.
+    pub(crate) fn evaluate_only(&self, slots: Option<&[usize]>) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
@@ -154,7 +160,10 @@ impl Editor {
         }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
-        let scene = styk_eval::geometry::build(&prepared.doc, &frame);
+        let scene = match slots {
+            Some(slots) => styk_eval::geometry::build_only(&prepared.doc, &frame, slots),
+            None => styk_eval::geometry::build(&prepared.doc, &frame),
+        };
         Ok((prepared, frame, scene))
     }
 

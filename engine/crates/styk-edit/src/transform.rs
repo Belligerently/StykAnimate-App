@@ -50,6 +50,7 @@ impl Editor {
             before_selection: self.selection_state(),
             changed: false,
             detached: HashMap::new(),
+            rotation_targets: HashMap::new(),
             authored: false,
         });
         Ok(true)

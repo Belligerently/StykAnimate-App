@@ -799,6 +799,26 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
 
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
+    build_filtered(doc, frame, None)
+}
+
+/// [`build`] for the objects in `slots` and the objects they are joined to, the others
+/// left unresolved: what an editing call reads of one figure's geometry, without the
+/// whole frame's.
+pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
+    let count = frame.objects.len();
+    let mut needed = vec![false; count];
+    for &slot in slots {
+        let mut at = Some(slot);
+        while let Some(i) = at.filter(|&i| i < count && !needed[i]) {
+            needed[i] = true;
+            at = frame.objects[i].join.map(|j| j.slot as usize);
+        }
+    }
+    build_filtered(doc, frame, Some(&needed))
+}
+
+fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Scene {
     let count = frame.objects.len();
     let mut scene = Scene {
         objects: vec![ObjectGeometry::default(); count],
@@ -854,6 +874,14 @@ pub fn build(doc: &Document, frame: &Frame) -> Scene {
     let joined_ik = crate::ik::joined::solve(frame, &|slot| fig_of.get(slot).filter(|&&s| s != u32::MAX).map(|&s| &scene.figures[s as usize]));
     let mut built: Vec<Option<Built>> = (0..count).map(|_| None).collect();
     for slots in &order {
+        let filtered: Vec<usize>;
+        let slots = match needed {
+            Some(needed) => {
+                filtered = slots.iter().copied().filter(|&i| needed[i]).collect();
+                &filtered
+            }
+            None => slots,
+        };
         let resolve_root = |i: usize, built: &[Option<Built>]| -> Option<[f64; 2]> {
             let o = &frame.objects[i];
             let mut root = [o.root[0], o.root[1]];
