@@ -18,6 +18,8 @@ styk-formats = { path = "../styk-formats" }
 rayon = "1"
 styk-render = { path = "../styk-render" }
 styk-raster = { path = "../styk-raster" }
+styk-engine = { path = "../styk-engine" }
+styk-export = { path = "../styk-export" }
 pollster = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
 sha2 = "0.10"

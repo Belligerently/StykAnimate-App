@@ -11,12 +11,15 @@
 //!   tick that is no longer wanted and not yet started is never prepared.
 //! - [`Engine::frame`] returns a prepared frame if one is ready.
 //!
+//! - [`Engine::export_frames`] pins a revision for an export ([`export`]).
+//!
 //! Nothing here blocks the calling thread except [`Engine::work`]. The browser's
 //! interface thread may not wait on a lock, so every shared structure is taken
 //! with [`sync::Shared::lock`], which spins for the few instructions a holder needs.
 
 pub mod anchors;
 pub mod edit;
+pub mod export;
 mod frames;
 mod images;
 pub mod mirror;

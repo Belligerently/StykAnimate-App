@@ -19,7 +19,7 @@ fn depth_runs_hide_faces_behind_and_keep_painter_order() {
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).expect("device");
     let mut renderer = Renderer::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
     renderer.set_list(&std::sync::Arc::new(scene()));
-    let view = ViewParams { matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], artboard: [0.0, 0.0, 64.0, 64.0], clip_to_artboard: false, clear: [0.0; 4], zoom: 1.0, pan: [0.0; 2], camera_view: false };
+    let view = ViewParams { matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], artboard: [0.0, 0.0, 64.0, 64.0], clip_to_artboard: false, clear: [0.0; 4], zoom: 1.0, pan: [0.0; 2], stretch: 1.0, camera_view: false, camera_limit: styk_render::CAMERA_PREVIEW_LIMIT };
     let mut encoder = device.create_command_encoder(&Default::default());
     renderer.render(&mut encoder, &view, [64, 64]);
     queue.submit([encoder.finish()]);
