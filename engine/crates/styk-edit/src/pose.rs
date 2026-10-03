@@ -169,6 +169,16 @@ fn rotation_targets(objects: &[Value], figures: &[Value], slot: usize, joint: us
 }
 
 /// `angles[index] += delta` on an object record.
+/// `object.angles[index] += delta`.
+pub(crate) fn add_angle_at(object: &mut Obj, index: usize, delta: f64) {
+    add_angles(object, &[index], delta);
+}
+
+/// `object[key][index] = value`.
+pub(crate) fn set_item_at(object: &mut Obj, key: &str, index: usize, value: f64) {
+    set_item(object, key, index, value);
+}
+
 /// `object.angles[i] += delta` for each of `indices`, the angle array unpacked once.
 fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
     let Some(angles) = object.get_mut("angles") else { return };
@@ -258,7 +268,7 @@ impl Editor {
     }
 
     /// `_rotateJoint(delta, includeJoint, {isolate})` (`_applyJointRotation`) on the frame being edited.
-    fn rotate_joint_by(&mut self, slot: usize, joint: usize, delta: f64, include_joint: bool, isolate: bool) -> Result<(), EditError> {
+    pub(crate) fn rotate_joint_by(&mut self, slot: usize, joint: usize, delta: f64, include_joint: bool, isolate: bool) -> Result<(), EditError> {
         let objects = self.frame_objects();
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         // An angle-locked joint does not turn, nor does anything below it.
@@ -303,13 +313,18 @@ impl Editor {
             return Ok(false);
         }
         let isolate = options.get("isolate").is_some_and(Value::truthy);
-        if !isolate && rig_has(&segments[joint], &["spatial", "origin"]) {
-            return Err(EditError::Unported("rotating a 3D bone".into()));
+        // A 3D bone turns through its pose (`getSpatialPose`, `setSpatialPose`).
+        if !isolate
+            && rig_has(&segments[joint], &["spatial", "origin"])
+            && let Some(result) = self.rotate_spatial_joint(delta)?
+        {
+            return Ok(result);
         }
         self.object_edit_with("Rotate joint", true, |editor| editor.rotate_joint_by(slot, joint, delta, true, isolate))
     }
 
     pub(crate) fn pose_joint(&mut self, x: f64, y: f64, options: &Value) -> Result<bool, EditError> {
+        let raw_options = options.clone();
         // Rigged figures (refused by joint_context) are checked before the arguments, as there.
         let context = self.joint_context()?;
         // A skin point, an angle path or a weighted joint is not posed by hand; checked
@@ -346,7 +361,7 @@ impl Editor {
             return Ok(false);
         }
         if rig_has(segment, &["spatial", "origin"]) {
-            return Err(EditError::Unported("posing a 3D bone".into()));
+            return self.pose_spatial_joint(x, y, &raw_options);
         }
         let Some(shape) = self.shape(&object, joint)? else { return Ok(false) };
         let scale = object.get("scale").and_then(Value::as_f64).unwrap_or(f64::NAN);
@@ -432,6 +447,7 @@ impl Editor {
     }
 
     pub(crate) fn bend_joint(&mut self, x: f64, y: f64, options: &Value) -> Result<bool, EditError> {
+        let raw_options = options.clone();
         let options = PoseOptions::from_value(options);
         finite(x)?;
         finite(y)?;
@@ -442,7 +458,7 @@ impl Editor {
         let Some(Joint { slot, object, segments, joint }) = self.joint_context()? else { return Ok(false) };
         let Some(segment) = segments.get(joint) else { return Ok(false) };
         if rig_has(segment, &["spatial", "origin"]) {
-            return Err(EditError::Unported("twisting a 3D bone".into()));
+            return self.twist_spatial_joint(x, y, raw_options.get("pixel").and_then(Value::as_f64).unwrap_or(1.0));
         }
         let primitive = segment.get("primitive_code").and_then(Value::as_f64).unwrap_or_else(|| ((segment.get("flags").and_then(Value::as_f64).unwrap_or(0.0) as i64) & 255) as f64);
         if is_static(segment) || !(primitive == 0.0 || primitive == 6.0) {

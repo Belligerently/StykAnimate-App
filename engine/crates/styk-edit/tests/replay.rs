@@ -21,6 +21,8 @@ const PORTED: &[&str] = &[
     // Documents with 3D bones, meshes, surfaces, perspective and part proportions.
     "spatial-mesh-perspective-sheet", "spatial-mesh-sheet-sheet", "spatial-surfaces-skin-sheet", "spatial-surfaces-perspective-sheet",
     "spatial-mesh-mechanism-sheet", "spatial-clip-mesh-sheet",
+    // 3D bones: turned, dragged, twisted; mechanisms' hinges and slides.
+    "spatial-turn-sheet", "spatial-mechanism-sheet", "spatial-drag-sheet", "spatial-mechanism-drag-sheet",
 ];
 
 #[test]

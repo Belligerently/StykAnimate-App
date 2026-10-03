@@ -55,6 +55,13 @@ impl Camera {
         js_max(NEAR, 1.0 - self.k * z)
     }
 
+    /// `unprojectSpatial(p, depth, object, root)` with this camera: the scene point at
+    /// `depth` that projects to `p`.
+    pub fn unproject(&self, p: [f64; 2], depth: f64) -> [f64; 2] {
+        let d = self.divisor(depth);
+        [self.root[0] + (p[0] - self.root[0]) * d, self.root[1] + (p[1] - self.root[1]) * d]
+    }
+
     /// `projectSpatial(p, camera)`.
     pub fn project(&self, p: [f64; 3]) -> [f64; 2] {
         let d = self.divisor(p[2]);

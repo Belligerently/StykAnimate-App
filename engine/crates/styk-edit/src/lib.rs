@@ -24,6 +24,7 @@ mod select;
 pub mod session;
 mod sheet;
 mod sheet_frames;
+mod spatial;
 mod timeline;
 mod transform;
 
@@ -73,6 +74,10 @@ pub(crate) struct Drag {
     /// A rotation's targets by selected slot, joint and isolation (`rotationTargets`): the
     /// figures' structure does not change during a gesture.
     pub rotation_targets: HashMap<(usize, usize, bool), Vec<(usize, usize)>>,
+    /// 3D bone drags by `kind:uid:joint` (`spatialGesture`): each sample is solved from
+    /// the gesture's fixed start. And the kind of each bone's drag (`spatialKinds`).
+    pub spatial_gestures: HashMap<String, spatial::Gesture>,
+    pub spatial_kinds: HashMap<String, &'static str>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -398,6 +403,8 @@ impl Editor {
             "resetPose" => self.reset_pose().map(Value::Bool),
             "poseJoint" => self.pose_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
+            "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
+            "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
