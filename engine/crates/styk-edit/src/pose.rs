@@ -201,12 +201,10 @@ impl Editor {
         let figure = evaluated.figure_override.as_ref().or_else(|| prepared.doc.figure(evaluated.figure));
         let Some(segment) = figure.and_then(|f| f.segments.get(joint)) else { return Ok(None) };
         let start = geometry.starts.get(joint).copied().unwrap_or([f64::NAN; 2]);
-        let (angle, bend, _) = styk_eval::geometry::segment_pose(evaluated, segment, joint);
+        let (_, bend, _) = styk_eval::geometry::segment_pose(evaluated, segment, joint);
         // A pinned limb is drawn with its solved angles.
-        let angle = match figure.and_then(|f| crate::ik::solved_angles(f, evaluated)) {
-            Some(angles) => angles.get(joint).copied().unwrap_or(angle),
-            None => angle,
-        };
+        let slot = frame.objects.iter().position(|o| o.uid == id).unwrap();
+        let angle = crate::ik::displayed_angle(&prepared, &frame, &crate::ik::solve_frame(&prepared, &frame, &scene), slot, joint);
         Ok(Some(Shape { start, angle, bend }))
     }
 

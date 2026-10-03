@@ -65,8 +65,8 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
 | `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
-| `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller | yes, on figures of their own without perspective | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet |
-| Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`) | yes, on figures of their own | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet |
+| `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller; across joined figures on the assembly's skeleton (`poseGraph`, `captureFor`) | yes, without perspective or 3D controllers | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet, ik-joined-unpinned-sheet, startup-join-sheet |
+| Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`); a gesture on joined figures takes in their whole assembly (`_ikPoseSlots`, `_expandIKDrag`) | yes | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet, ik-joined-sheet, ik-joined-late-sheet |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
 | `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go | yes, on a layer sheet; not for movieclip instances or several figures at once | figures-sheet, figures-layers-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
@@ -102,14 +102,18 @@ seeking and history run anywhere. Dragging the end of a limb moves a pinned targ
 solves an unpinned limb with `styk_eval::ik::solve_object` and bakes it (`poseIKTarget`).
 Around pinned limbs, gestures read the solution geometry draws (`ik::solve_local`): a
 pose edit bakes it first, turning a follower changes its offset, and every change
-remembers the bend the limb is now solved with. All of it matches the editor bit for
-bit. A call answers `Unported` on a frame with a 3D controller or enabled controllers
-next to joined figures (IK across joined figures, `context()` and `_ikPoseSlots`, is not
-ported), and when posing a target of a figure in perspective. Recorded in startup-sheet
-(the document the app starts with), ik-unpinned-sheet (a foot whose branches follow the
-target, a three-bone chain that stretches, drags, a cancel, undo), pinned-ik-sheet,
-ik-followers-sheet and ik-chains-sheet (pinned two-bone limbs, a foot with followers,
-four-bone chains on Both and on one side).
+remembers the bend the limb is now solved with. Joined figures with IK are compiled into
+one temporary skeleton (`styk_eval::ik::joined::Assembly`, which geometry uses too): a
+gesture takes in the whole assembly, and followers in other figures are kept by their
+identity (`joinedFollowers`). All of it matches the editor bit for bit. A call answers
+`Unported` on a frame with a 3D controller and when posing a target of a figure in
+perspective. Recorded in startup-sheet and startup-join-sheet (the document the app
+starts with, alone and with a copy joined to a hand), ik-unpinned-sheet (a foot whose
+branches follow the target, a three-bone chain that stretches, drags, a cancel, undo),
+pinned-ik-sheet, ik-followers-sheet and ik-chains-sheet (pinned two-bone limbs, a foot
+with followers, four-bone chains on Both and on one side), ik-joined-sheet and
+ik-joined-unpinned-sheet (a shin's controller driving another figure's thigh, pinned and
+free) and ik-joined-late-sheet (a foot joined after the controller was set).
 
 What the facade must still account for before it calls the engine (none of it is a
 document difference the harness can see):
@@ -163,17 +167,19 @@ redo, transforms, timeline keys and frames, duplicate/join/unjoin/delete. Measur
 | sheet-layers (two layers, held key) | 77 | 77 | 0 | 59.9 ms | 30.2 ms |
 | sheet-movieclip-loose (a movieclip) | 77 | 77 | 0 | 62.6 ms | 30.6 ms |
 | sheet-mixed-keys (imported and authored keys) | 77 | 77 | 0 | 57.9 ms | 27.8 ms |
-| the document the app starts with (unpinned IK on every limb) | 73 | 72 | 0 | 64.9 ms | 27.9 ms |
-| startup-pinned (every limb pinned) | 84 | 83 | 0 | 75.8 ms | 39.9 ms |
-| followers (a pinned foot with followers and a polygon) | 84 | 83 | 0 | 79.5 ms | 39.7 ms |
+| the document the app starts with (unpinned IK on every limb) | 77 | 77 | 0 | 174.0 ms | 81.7 ms |
+| startup-pinned (every limb pinned) | 88 | 88 | 0 | 167.1 ms | 100.0 ms |
+| followers (a pinned foot with followers and a polygon) | 88 | 88 | 0 | 181.5 ms | 93.3 ms |
+| joined (IK across four joined figures) | 54 | 54 | 0 | 71.4 ms | 43.9 ms |
 
 "The same" means equal keys, order, strings and integers, and numbers within 1e-9
 relative: 28 to 53 of the 77 calls differ from Chromium's editor in the last digits of a
 pose, because Chromium's `Math` is not Node's ([D16](decisions/0016-v8-exact-math.md)).
-The engine time includes the JSON boundary. On the three IK documents (measured
-2026-10-03 after IK editing was ported) the one call left to JavaScript is `unjoinFigure`
-after a join, refused with IK on joined figures; the session then ends and the next one
-starts from the editor's state.
+The engine time includes the JSON boundary. The IK documents were measured 2026-10-03
+after IK editing was ported, joined figures included: every call the script makes runs in
+the engine (on joined, two undos reach history from before the session, which ends it and
+starts the next). Their times include a duplicate, join and unjoin that each re-evaluate
+the frame with IK.
 
 ## What a gesture costs in the engine
 

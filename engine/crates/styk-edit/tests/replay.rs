@@ -14,6 +14,8 @@ const PORTED: &[&str] = &[
     // Inverse-kinematics controllers: the document the app starts with, posing unpinned limbs,
     // gestures around pinned limbs (followers, stretch, chains of four bones).
     "startup-sheet", "ik-unpinned-sheet", "pinned-ik-sheet", "ik-followers-sheet", "ik-chains-sheet",
+    // IK across joined figures: pinned and free, a follower joined late, the start document joined.
+    "ik-joined-sheet", "ik-joined-unpinned-sheet", "ik-joined-late-sheet", "startup-join-sheet",
 ];
 
 #[test]

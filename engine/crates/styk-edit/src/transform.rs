@@ -41,7 +41,7 @@ impl Editor {
         self.selection.uid = uid(&object);
         self.tick = rows(&self.report).get(self.frame_index).map_or(0.0, |row| row.start);
         let objects = self.frame_objects();
-        let slots = resolve_join_selection(&objects, &self.selection.uids, translation)?;
+        let slots = Editor::ik_pose_slots(&objects, resolve_join_selection(&objects, &self.selection.uids, translation)?);
         self.drag = Some(Drag {
             label: label.to_string(),
             translation,

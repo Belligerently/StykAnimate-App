@@ -248,6 +248,42 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 0], ['rotateJoint', -0.2], ['@select', 1, 2], ['poseJoint', 380, 330, {stretch: true}], ['@seek', 4], ['@select', 1, 5],
     ['beginDrag', 'Pose figure'], ['rotateJoint', 0.1], ['rotateJoint', 0.1], ['commitDrag'], ['undo'], ['redo'], ['@select', 1, -1], ['mirrorSelection', 'horizontal'], ['undo'],
   ], '../../crates/styk-eval/tests/fixtures/ik/followers.json');
+  // IK across joined figures: the shin's controller drives a thigh of another figure, and
+  // the foot and toe joined at its end follow it (joinedFollowers).
+  scenario('ik-joined-sheet', app, [
+    ['@select', 1, -1], ['moveSelection', 10, 5], ['@select', 2, 0], ['poseJoint', 350, 280], ['@select', 3, 0], ['rotateJoint', 0.3],
+    ['@select', 1, 0], ['rotateJoint', -0.2], ['@select', 2, 0], ['poseJoint', 390, 330, {stretch: true}], ['@select', 3, 0],
+    ['beginDrag', 'Pose figure'], ['rotateJoint', 0.1], ['rotateJoint', 0.1], ['commitDrag'], ['undo'], ['redo'], ['@select', 1, -1], ['rotateSelection', 0.2], ['undo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/joined.json');
+  {
+    const e = open(JSON.parse(readFileSync(new URL('../crates/styk-eval/tests/fixtures/ik/joined.json', import.meta.url), 'utf8')));
+    e.select(2, 0); e.setNodeIK({pinned: false});
+    writeFileSync(`${out}/ik-joined-unpinned.document.json`, JSON.stringify(prune(e.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  }
+  // The same assembly with the controller free: dragging the end solves across the figures.
+  scenario('ik-joined-unpinned-sheet', app, [
+    ['@select', 2, 0], ['poseJoint', 350, 270], ['beginDrag', 'Pose figure'], ['poseJoint', 360, 280], ['poseJoint', 380, 300], ['commitDrag'], ['undo'], ['redo'],
+    ['@select', 3, 0], ['rotateJoint', 0.2], ['@select', 1, -1], ['moveSelection', 5, 5], ['@seek', 3], ['@select', 2, 0], ['poseJoint', 330, 300],
+  ], 'ik-joined-unpinned.document.json');
+  // A foot joined to the shin's end after the shin's controller was set: a pose edit bakes
+  // its follower into the controller (joinedFollowers).
+  {
+    const fixed = {is_static: true, aux_code: 1};
+    const document = documentOf([[[11, 0, 90, .8], [12, 11, 20, .3, fixed]], [[22, 0, 90, 2]], [[33, 0, 35, 0], [34, 33, 10, .2, fixed]]]);
+    document.keyframes[0].objects[1].join = {target_object_slot: 0, target_unique_id: 1, target_handle_id: 11};
+    const e = open(document);
+    e.select(2, 0); e.setNodeIK({enabled: true}); e.poseJoint(365, 265);
+    e.select(3, -1); e.joinTo(2, 22);
+    writeFileSync(`${out}/ik-joined-late.document.json`, JSON.stringify(prune(e.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  }
+  scenario('ik-joined-late-sheet', app, [
+    ['@select', 1, 0], ['rotateJoint', -0.1], ['@select', 3, 0], ['rotateJoint', 0.2], ['@select', 2, 0], ['poseJoint', 340, 290], ['undo'], ['undo'], ['redo'],
+  ], 'ik-joined-late.document.json');
+  // The start document with a copy joined to a hand, then unjoined.
+  scenario('startup-join-sheet', app, [
+    ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],
+    ['@select', 2, -1], ['unjoinFigure'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
   // Pinned chains of four bones (FABRIK), on Both and on one side.
   scenario('ik-chains-sheet', app, [
     ['@select', 1, -1], ['moveSelection', 15, 10], ['@select', 2, -1], ['rotateSelection', 0.2], ['@select', 1, 1], ['rotateJoint', 0.2],

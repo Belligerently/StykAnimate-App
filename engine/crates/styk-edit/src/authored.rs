@@ -27,6 +27,7 @@ impl Editor {
         // what is joined to them, and leaves what they are joined to in place.
         let connected = resolve_join_selection(&objects, &self.selection.uids, true)?;
         let slots = if translation { connected } else { resolve_join_selection(&objects, &self.selection.uids, false)? };
+        let slots = Editor::ik_pose_slots(&objects, slots);
         self.authored = Some(Authored { frame: source.clone(), source, tick: self.tick, transaction: false });
         self.drag = Some(Drag {
             label: label.to_string(),
