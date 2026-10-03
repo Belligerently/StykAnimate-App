@@ -174,6 +174,7 @@ async function run(mode) {
       if (other) e.sheetPasteFrames([other], 2);
       e.undo();
     }));
+    await step('drag frames to another layer', () => page.evaluate(() => { const e = styk.editor, order = e.report._styk?.layers?.order ?? []; if (order.length < 2) return; e.sheetTransferFrames([order[0]], [order[1]], 0, 1, 3, {copy: true}); e.undo(); }));
     await step('move and copy keys along the timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetMoveFrames(layer, 0, 0, 1); e.sheetMoveFrames(layer, 1, 1, 1, {copy: true}); e.undo(); e.undo(); e.redo(); }));
     await step('edit a figure from the inspector', () => page.evaluate(() => { const e = styk.editor; e.updateObject({scale: 1.2}); e.updateObject({field28: 200, name: 'Inspected'}); e.undo(); }));
     // Property edits on the layer sheet: scrubs with their previews, keyed values, the scene's
@@ -214,6 +215,7 @@ async function run(mode) {
       const e = styk.editor; if (e.selectedUid === null) return;
       e.copySelection(); e.pasteSelection(); e.pasteSelection({pasteMode: 'instance'}); e.duplicateSelection(); e.cutSelection(); e.pasteSelection(); e.undo(); e.undo(); e.undo();
     }));
+    await step('import a figure', () => page.evaluate(() => { const e = styk.editor, figure = e.report.figure_types[0]; if (!figure || figure._styk?.movieclip) return; e.importFigure(structuredClone(figure), {position: {x: 200, y: 150}}); e.moveSelection(10, 0); e.undo(); e.undo(); }));
     await step('add an effect clip', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid !== null && !e.getVfxClips().length) e.addVfxClip({kind: 'figure', uid: e.selectedUid}, 'glow', {start: 0, duration: 8}); }));
     await step('edit an effect clip, its parameters and keys', () => page.evaluate(() => {
       const e = styk.editor, clip = e.getVfxClips()[0]; if (!clip) return; const effect = clip.effects[0].id;
@@ -223,6 +225,8 @@ async function run(mode) {
     }));
     await step('edit a segment from the inspector', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1); e.updateSegment({color_rgb: [10, 20, 30]}); e.updateSegment({angle_rad: 1}); e.undo(); e.select(e.selectedUid, -1); }));
     await step('edit and delete a camera motion clip', () => page.evaluate(() => { const e = styk.editor, clip = e.getCameraMotions()[0]; if (!clip) return; e.setCameraMotion(clip.id, {start: clip.start + 1}); e.setCameraMotion(clip.id, {enabled: !clip.enabled}); e.deleteCameraMotion(clip.id); e.undo(); }));
+    await step('set a layer parallax', () => page.evaluate(() => { const e = styk.editor, layer = e.report._styk?.layers?.order?.[0]; if (!layer) return; e.setLayerParallax(layer, {enabled: true, x: 0.5}); e.setLayerParallax(layer, {linked: false, y: 2}); e.undo(); e.undo(); }));
+    await step('change the project settings', () => page.evaluate(() => { const e = styk.editor, {fps, canvas_width: width, canvas_height: height} = e.report; e.setFPS(fps + 1); e.updateProject({canvas_width: width + 10}); e.setCanvasSize(width, height); e.undo(); e.undo(); e.undo(); }));
     await step('add, reorder and remove project colours', () => page.evaluate(() => { const e = styk.editor; e.addPaletteColor('#3366cc'); e.addPaletteColors(['#ff8800', [10, 200, 30]]); e.movePaletteColor('#ff8800', 0); e.removePaletteColor('#3366cc'); e.undo(); }));
     await step('add a figure from the library', () => page.evaluate(() => { const e = styk.editor; e.addFigure(e.report.figure_types[0]?.figure_type_id); e.moveSelection(-30, 15); e.undo(); }));
     await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));

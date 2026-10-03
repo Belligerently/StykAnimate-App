@@ -129,7 +129,7 @@ src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-builder.mjs	engine	styk-edit	partial	Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs); polygon colour on a figure on show, surfaces, figure definition style and the builder's segment commands still JS
-src/editor-camera-motion.mjs	engine	styk-edit	partial	Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS
+src/editor-camera-motion.mjs	engine	styk-edit	partial	Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS
 src/editor-camera.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-async.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-sparse.mjs	engine	styk-edit	js	commands and history
@@ -151,11 +151,11 @@ src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-focus.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-folders.mjs	engine	styk-edit	ported	createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); getLayerFolders reads the state
 src/editor-layer-migration.mjs	engine	styk-edit	js	commands and history
-src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard (sheetCopyFrames, sheetPasteFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, transfer between layers, channel and range commands still JS; _sheetPropertyEntries (styk-edit/src/property_edit.rs)
+src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard and frames dragged between rows (sheetCopyFrames, sheetPasteFrames, sheetTransferFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, channel and range commands still JS; _sheetPropertyEntries (styk-edit/src/property_edit.rs)
 src/editor-layers.mjs	engine	styk-edit	partial	Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS
 src/editor-load.mjs	engine	styk-edit	js	commands and history
 src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
-src/editor-movieclips.mjs	engine	styk-edit	js	commands and history
+src/editor-movieclips.mjs	engine	styk-edit	partial	Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames and the other commands still JS
 src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
 src/editor-range-commands.mjs	engine	styk-edit	partial	Rust: adding a figure at the playhead on a layer sheet (applyFigureRange add, insert, _commitSheetRange: Editor::add_figure, commit_sheet_range); other range operations, pasting and native timelines still JS
@@ -172,21 +172,21 @@ src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx-clips.mjs	engine	styk-edit	partial	Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS
 src/editor-vfx.mjs	engine	styk-edit	partial	Rust: setVfxParameter (styk-edit/src/property_edit.rs); adding, pasting, presets and stack edits still JS
-src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection: styk-edit/src/figure_clipboard.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
+src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
-src/export-canvas.mjs	engine	styk-export	js	
+src/export-canvas.mjs	engine	styk-export	js	frame hand-over shared by both export workers
 src/export-capabilities.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
-src/export-crisp.mjs	engine	styk-export	js	
+src/export-crisp.mjs	engine	styk-export	partial	Rust: No smoothing as Edges::Crisp for documents the engine draws (styk-render, styk-export); other documents JS
 src/export-flow.mjs	ui	-	stays	export dialog and request
-src/export-frame-core.mjs	engine	styk-export	js	
-src/export-frame-renderer.mjs	engine	styk-export	js	
-src/export-frame-worker.mjs	engine	styk-export	js	
-src/export-memory.mjs	engine	styk-export	js	
+src/export-frame-core.mjs	engine	styk-export	partial	Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS
+src/export-frame-renderer.mjs	engine	styk-export	partial	Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents
+src/export-frame-worker.mjs	engine	styk-export	partial	Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs); this worker draws documents the engine does not
+src/export-memory.mjs	engine	styk-export	partial	Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); JavaScript exports keep these budgets
 src/export-presets.mjs	ui	-	stays	export dialog and request
 src/export-progress.mjs	ui	-	stays	export dialog and request
 src/export-request.mjs	ui	-	stays	export dialog and request
-src/export-sampling.mjs	engine	styk-export	js	
+src/export-sampling.mjs	engine	styk-export	partial	Rust: the sampling limits mirrored in styk_export::settings; the JavaScript worker still reads these
 src/export-sheet.mjs	ui	-	stays	export dialog and request
 src/export-sink.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/export-video-quality.mjs	ui	-	stays	export dialog and request

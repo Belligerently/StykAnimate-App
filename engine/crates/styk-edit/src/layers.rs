@@ -336,6 +336,62 @@ impl Editor {
         self.layer_edit("Set layer color", updates, false, None)
     }
 
+    /// `setLayerParallax(id, patch)` (src/editor-camera-motion.mjs): a figure layer's
+    /// response to camera travel, its reference the camera on show unless set.
+    pub(crate) fn set_layer_parallax(&mut self, id: &Value, patch: &Value) -> Result<bool, EditError> {
+        self.ensure_layer_state()?;
+        let state = self.layer_state();
+        let Some(id) = id.as_str().filter(|id| state.path(&["byId", id]).is_some()).map(str::to_string) else {
+            return Err(EditError::Invalid("errors.editorCameraMotion.selectAFigureLayerForParallax".into()));
+        };
+        if state.path(&["byId", &id, "locked"]).is_some_and(Value::truthy) {
+            return Err(EditError::Invalid("errors.editorCameraMotion.unlockBeforeEditingParallax".into()));
+        }
+        let patch = patch.as_obj().ok_or_else(|| EditError::Unported("a parallax change that is not an object".into()))?;
+        if patch.keys().any(|key| !["enabled", "linked", "x", "y", "reference"].contains(&&**key)) {
+            return Err(EditError::Invalid("errors.editorCameraMotion.unsupportedParallaxProperty".into()));
+        }
+        let camera = self.shown_frame()?.get("camera").cloned().unwrap_or(Value::Null);
+        let axis = |key: &str| camera.get(key).filter(|v| !v.is_null()).cloned().unwrap_or(Value::Num(0.0));
+        let mut reference = Obj::new();
+        reference.set("x", axis("x"));
+        reference.set("y", axis("y"));
+        let mut p = Obj::new();
+        p.set("enabled", Value::Bool(false));
+        p.set("linked", Value::Bool(true));
+        p.set("x", Value::Num(1.0));
+        p.set("y", Value::Num(1.0));
+        p.set("reference", Value::object(reference));
+        if let Some(current) = state.path(&["byId", &id, "parallax"]).and_then(Value::as_obj) {
+            for (key, value) in current.iter() {
+                p.set(key, value.clone());
+            }
+        }
+        for (key, value) in patch.iter() {
+            p.set(key, value.clone());
+        }
+        if p.get("linked").is_some_and(Value::truthy) {
+            let given = |key: &str| patch.get(key).is_some();
+            if given("y") && !given("x") {
+                let y = p.get("y").cloned().unwrap_or(Value::Null);
+                p.set("x", y);
+            } else {
+                let x = p.get("x").cloned().unwrap_or(Value::Null);
+                p.set("y", x);
+            }
+        }
+        // `validateParallax(p)`
+        let response = |key: &str| matches!(p.get(key), Some(Value::Num(v)) if v.is_finite() && (0.0..=4.0).contains(v));
+        let finite = |value: Option<&Value>| matches!(value, Some(Value::Num(v)) if v.is_finite());
+        let reference = p.get("reference").filter(|r| r.truthy());
+        let valid = matches!(p.get("enabled"), Some(Value::Bool(_))) && matches!(p.get("linked"), Some(Value::Bool(_))) && response("x") && response("y")
+            && reference.is_some_and(|r| finite(r.get("x")) && finite(r.get("y")));
+        if !valid {
+            return Err(EditError::Invalid("errors.layerParallax.parallaxNeedsA0400ResponseAndA".into()));
+        }
+        self.layer_edit("Edit layer parallax", vec![(path(&["byId", &id, "parallax"]), Some(Value::object(p)), false)], false, None)
+    }
+
     /// `setLayerVisible(id, visible)`, `setLayerLocked(id, locked)`.
     pub(crate) fn set_layer_flag(&mut self, id: &Value, key: &str, value: &Value) -> Result<bool, EditError> {
         let id = id.as_str().unwrap_or("").to_string();

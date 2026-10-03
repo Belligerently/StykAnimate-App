@@ -26,6 +26,8 @@ pub(crate) struct FigureClipboard {
     pub(crate) offset: f64,
     pastes: f64,
     unported: Option<&'static str>,
+    /// From an imported file: every definition is a new one.
+    foreign: bool,
 }
 
 fn invalid(key: &str) -> EditError {
@@ -199,7 +201,7 @@ impl Editor {
         let order: Vec<u32> = crate::figures::frame_order(frame.as_obj().unwrap_or(&Obj::new())).into_iter().map(|u| u as u32).filter(|u| ids.contains(u)).collect();
         let layers = ids.iter().map(|&u| (u, self.layer_of(u))).collect();
         let count = objects.len();
-        self.figure_clipboard = Some(FigureClipboard { objects, figures, layers, order, source_version: self.report.get("version").cloned().unwrap_or(Value::Null), offset: 24.0, pastes: 0.0, unported });
+        self.figure_clipboard = Some(FigureClipboard { objects, figures, layers, order, source_version: self.report.get("version").cloned().unwrap_or(Value::Null), offset: 24.0, pastes: 0.0, unported, foreign: false });
         Ok(Value::Num(count as f64))
     }
 
@@ -226,7 +228,7 @@ impl Editor {
         }
         let offset = options.get("offset").filter(|o| !o.is_null()).cloned();
         let default_offset = clipboard.offset * (clipboard.pastes + 1.0);
-        let inserted = self.paste_figures(&clipboard, options, offset.as_ref(), default_offset, "Paste figures")?;
+        let inserted = self.paste_figures(&clipboard, options, offset.as_ref(), default_offset, None, "Paste figures")?;
         if !inserted.is_empty() && offset.as_ref().is_none_or(|o| o.as_f64() != Some(0.0))
             && let Some(clipboard) = self.figure_clipboard.as_mut()
         {
@@ -258,9 +260,94 @@ impl Editor {
         result
     }
 
+    /// `importFigure(document, {position})`: the figures of a file (its first frame's, else
+    /// one of its first definition) as new figures and definitions, centred at `position`
+    /// (the canvas's centre by default); the first of them selected.
+    pub(crate) fn import_figure(&mut self, document: &Value, options: &Value) -> Result<Value, EditError> {
+        let position = match options.get("position").filter(|p| p.truthy()) {
+            Some(p) => {
+                let (x, y) = (p.get("x").and_then(Value::as_f64), p.get("y").and_then(Value::as_f64));
+                match (x, y) {
+                    (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some([x, y]),
+                    _ => return Err(invalid("errors.editorRangeCommands.chooseAValidCanvasPosition")),
+                }
+            }
+            None => None,
+        };
+        let source = document.get("document").filter(|d| !d.is_null()).or_else(|| document.get("report").filter(|d| !d.is_null())).unwrap_or(document);
+        let figures: Vec<Value> = match source.get("figure_types").filter(|f| !f.is_null()) {
+            Some(list) => list.elements().map(|e| e.iter().collect()).unwrap_or_default(),
+            None if source.get("segments").is_some_and(Value::truthy) => vec![source.clone()],
+            None => Vec::new(),
+        };
+        if figures.iter().any(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
+            return Err(EditError::Unported("importing a movieclip".into()));
+        }
+        if figures.is_empty() {
+            return Err(invalid("errors.editor.theImportedFileContainsNoFigureDefinitions"));
+        }
+        if figures.iter().any(|f| f.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) || f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)) {
+            return Err(EditError::Unported("importing figures with animation origins or drawings".into()));
+        }
+        let frame = source.get("keyframes").and_then(|k| k.item(0));
+        let mut sources: Vec<Value> = frame.as_ref().map(objects_of).unwrap_or_default();
+        let from_frame = !sources.is_empty();
+        if !from_frame {
+            // `createObject(figures[0], 1, 0, 0)`
+            let figure = &figures[0];
+            let angles: Vec<Value> = figure.get("segments").and_then(Value::elements).map(|e| e.iter().map(|s| s.get("angle_rad").cloned().unwrap_or(Value::Null)).collect()).unwrap_or_default();
+            let mut object = Obj::new();
+            object.set("object_slot", Value::Num(0.0));
+            object.set("unique_id", Value::Num(1.0));
+            object.set("figure_type_id", figure.get("figure_type_id").cloned().unwrap_or(Value::Null));
+            object.set("root_x", Value::Num(0.0));
+            object.set("root_y", Value::Num(0.0));
+            object.set("scale", Value::Num(1.0));
+            object.set("color_override_raw", Value::Num(0.0));
+            object.set("field28", Value::Num(0.0));
+            object.set("angles", Value::array(angles));
+            object.set("len_flag", Value::Num(0.0));
+            object.set("lengths", Value::array(Vec::new()));
+            object.set("bend_flag", Value::Num(0.0));
+            object.set("bends", Value::array(Vec::new()));
+            object.set("join", Value::Null);
+            sources.push(Value::object(object));
+        }
+        // Joins name their parent by slot in the file; the clipboard names it by identity.
+        let by_slot: Vec<(f64, Value)> = sources.iter().enumerate().map(|(i, o)| (num(o, "object_slot").unwrap_or(i as f64), o.get("unique_id").cloned().unwrap_or(Value::Null))).collect();
+        let objects: Vec<Value> = sources
+            .iter()
+            .map(|object| {
+                let mut record = object.as_obj().cloned().unwrap_or_default();
+                let parent = object.get("join").filter(|j| j.truthy()).and_then(|j| num(j, "target_object_slot")).and_then(|slot| by_slot.iter().find(|(s, _)| *s == slot)).map(|(_, uid)| uid.clone());
+                match (object.get("join").and_then(Value::as_obj), parent) {
+                    (Some(join), Some(parent)) => {
+                        let mut join = join.clone();
+                        join.set("target_unique_id", parent);
+                        record.set("join", Value::object(join));
+                    }
+                    _ => record.set("join", Value::Null),
+                }
+                Value::object(record)
+            })
+            .collect();
+        let order: Vec<u32> = if from_frame {
+            crate::figures::frame_order(frame.as_ref().and_then(Value::as_obj).unwrap_or(&Obj::new())).into_iter().map(|u| u as u32).collect()
+        } else {
+            objects.iter().filter_map(uid).collect()
+        };
+        let clipboard = FigureClipboard { objects, figures, layers: Vec::new(), order, source_version: Value::Null, offset: 0.0, pastes: 0.0, unported: None, foreign: true };
+        let canvas = [num(&self.report, "canvas_width").unwrap_or(f64::NAN) / 2.0, num(&self.report, "canvas_height").unwrap_or(f64::NAN) / 2.0];
+        let mut operation = Obj::new();
+        operation.set("newIdentities", Value::Bool(true));
+        let inserted = self.paste_figures(&clipboard, &Value::object(operation), None, 0.0, Some(position.unwrap_or(canvas)), "Import figure")?;
+        self.selection.uid = inserted.first().copied();
+        Ok(self.object()?.map(|(_, o)| o).unwrap_or(Value::Null))
+    }
+
     /// `applyFigureRange({kind: 'paste', …}, {atPlayhead: true})` on a layer sheet:
     /// `insertionPlan`, `insert` and `_commitSheetRange`. Returns the pasted identities.
-    fn paste_figures(&mut self, clipboard: &FigureClipboard, options: &Value, offset: Option<&Value>, default_offset: f64, label: &str) -> Result<Vec<u32>, EditError> {
+    fn paste_figures(&mut self, clipboard: &FigureClipboard, options: &Value, offset: Option<&Value>, default_offset: f64, position: Option<[f64; 2]>, label: &str) -> Result<Vec<u32>, EditError> {
         if !self.sheet() {
             return Err(EditError::Unported("pasting figures on a native timeline".into()));
         }
@@ -268,6 +355,7 @@ impl Editor {
             return Err(EditError::Unported(reason.into()));
         }
         let paste_mode = match options.get("pasteMode").filter(|m| !m.is_null()) {
+            None if clipboard.foreign => "instance".to_string(),
             None => "default".to_string(),
             Some(mode) => mode.as_str().unwrap_or("?").to_string(),
         };
@@ -283,7 +371,7 @@ impl Editor {
         }
         let version = self.report.get("version").and_then(Value::as_f64).unwrap_or(f64::NAN);
         let source_version = clipboard.source_version.as_f64().unwrap_or(f64::NAN);
-        if source_version != version {
+        if !clipboard.foreign && source_version != version {
             return Err(EditError::Unported("a clipboard from another format version".into()));
         }
         let new_identities = options.get("newIdentities").is_some_and(Value::truthy);
@@ -301,7 +389,7 @@ impl Editor {
         }
         let renamed = |old: u32| uid_map.iter().find(|(from, _)| *from == old).map(|(_, to)| *to);
         // Definitions: the copied ones themselves (instances), else new copies.
-        let independent = paste_mode != "instance";
+        let independent = paste_mode != "instance" || clipboard.foreign;
         let mut added: Vec<Value> = Vec::new();
         let mut types: Vec<(f64, Value, HashMap<i64, usize>)> = Vec::new();
         for original in &clipboard.figures {
@@ -329,6 +417,19 @@ impl Editor {
         if !offset.is_finite() {
             return Err(invalid("errors.editorRangeCommands.pasteOffsetMustBeFinite"));
         }
+        // Placed at a position: the copied figures' roots (all of them when every one is joined) centred there.
+        let (dx, dy) = match position {
+            Some([x, y]) => {
+                let roots: Vec<&Value> = clipboard.objects.iter().filter(|o| !o.get("join").is_some_and(Value::truthy)).collect();
+                let anchors: Vec<&Value> = if roots.is_empty() { clipboard.objects.iter().collect() } else { roots };
+                let mean = |key: &str| anchors.iter().map(|o| num(o, key).unwrap_or(f64::NAN)).sum::<f64>() / anchors.len() as f64;
+                (x - mean("root_x"), y - mean("root_y"))
+            }
+            None => (offset, offset),
+        };
+        if !dx.is_finite() || !dy.is_finite() {
+            return Err(invalid("errors.editorRangeCommands.chooseAValidCanvasPosition"));
+        }
         let mut hints: HashMap<u32, String> = HashMap::new();
         let mut objects: Vec<Obj> = Vec::new();
         for original in &clipboard.objects {
@@ -343,9 +444,9 @@ impl Editor {
             let new = renamed(old).unwrap_or(old);
             object.set("unique_id", Value::Num(new as f64));
             object.set("figure_type_id", Value::Num(new_type));
-            object.set("root_x", Value::Num(num(original, "root_x").unwrap_or(f64::NAN) + offset));
-            object.set("root_y", Value::Num(num(original, "root_y").unwrap_or(f64::NAN) + offset));
-            crate::ik::translate_targets(&mut object, offset, offset, &Value::object(snapshot_pose_object(original)), false);
+            object.set("root_x", Value::Num(num(original, "root_x").unwrap_or(f64::NAN) + dx));
+            object.set("root_y", Value::Num(num(original, "root_y").unwrap_or(f64::NAN) + dy));
+            crate::ik::translate_targets(&mut object, dx, dy, &Value::object(snapshot_pose_object(original)), false);
             crate::sheet_clipboard::remap_followers(&mut object, &uid_map);
             let segments: Vec<Value> = figure.get("segments").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
             for (field, enabled, fallback) in [("angles", true, "angle_rad"), ("lengths", object.get("len_flag").is_some_and(Value::truthy), "length"), ("bends", object.get("bend_flag").is_some_and(Value::truthy), "bend_rad")] {

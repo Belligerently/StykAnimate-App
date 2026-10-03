@@ -769,6 +769,74 @@ scenario('figures-layers-sheet', app, [
   scenario('figure-clipboard-ik-sheet', app, [
     ['selectMany', [2, 3]], ['copySelection'], ['pasteSelection', {pasteMode: 'instance'}], ['@select', 5, 0], ['poseJoint', 340, 290], ['undo'], ['undo'], ['redo'],
   ], 'ik-joined-unpinned.document.json');
+  // Project settings: frame rate, canvas size, both from the settings dialog; unchanged
+  // values; refusals; history. And a format 4 document, which also stores the frame delay.
+  scenario('project-settings-sheet', app, [
+    ['setFPS', 30], ['setFPS', 30], ['setFPS', 0], ['setFPS', 1.5], ['setCanvasSize', 1280, 720], ['setCanvasSize', 0, 5], ['updateProject', {fps: 12, canvas_width: 640}],
+    ['updateProject', {name: 'x'}], ['updateProject', {canvas_height: 0}], ['updateProject', {fps: 2000}], ['updateProject', {}], ['updateProject', {canvas_height: 480}], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    document.version = 4; document.frame_delay_ms = 42;
+    writeFileSync(`${out}/format4.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('project-settings-format4-sheet', app, [['setFPS', 25], ['updateProject', {fps: 7}], ['undo'], ['undo'], ['redo']], 'format4.document.json');
+  // Importing figures: a file's first frame centred on the canvas, a chain of joined figures
+  // (centred on its unjoined root, joins kept) at a position, a single definition; a file without figures, a bad position;
+  // history.
+  {
+    const file = JSON.parse(readFileSync(`${out}/two-limbs.document.json`, 'utf8')), chain = JSON.parse(readFileSync(`${out}/joined-chain.document.json`, 'utf8'));
+    // A file whose joins name their parent by slot only, as older ones do.
+    const bySlot = structuredClone(chain); for (const object of bySlot.keyframes[0].objects) if (object.join) delete object.join.target_unique_id;
+    scenario('import-figure-sheet', app, [
+      ['importFigure', file], ['importFigure', chain, {position: {x: 300, y: 200}}], ['importFigure', bySlot], ['importFigure', file.figure_types[1], {position: {x: 100, y: 120}}], ['importFigure', {figure_types: []}],
+      ['importFigure', file, {position: {x: 'a', y: 0}}], ['moveSelection', 5, 5], ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'startup.document.json');
+  }
+  // Layer parallax: switched on with linked axes (the other axis following the one given),
+  // unlinked, its reference the camera on show (also where the camera has moved); refusals;
+  // history.
+  scenario('layer-parallax-sheet', app, [
+    ['setLayerParallax', 'layer-2', {enabled: true, x: 0.5}], ['setLayerParallax', 'layer-2', {y: 2}], ['setLayerParallax', 'layer-2', {linked: false, x: 1}],
+    ['setLayerParallax', 'layer-2', {y: 3}], ['setLayerParallax', 'layer-2', {x: 5}], ['setLayerParallax', 'layer-2', {foo: 1}], ['setLayerParallax', 'scene', {x: 1}],
+    ['setLayerParallax', 'layer-2', {reference: {x: 10, y: 'a'}}], ['setLayerLocked', 'layer-2', true], ['setLayerParallax', 'layer-2', {x: 1}], ['setLayerLocked', 'layer-2', false],
+    ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  {
+    const document = JSON.parse(readFileSync(`${out}/sheet-layers.document.json`, 'utf8'));
+    for (const frame of document.keyframes) frame.camera = {is_default: false, x: 40, y: -20, scale: 1, angle_rad: 0};
+    writeFileSync(`${out}/parallax-camera.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('layer-parallax-camera-sheet', app, [['setLayerParallax', 'layer-1', {enabled: true}], ['undo'], ['redo']], 'parallax-camera.document.json');
+  // Renaming a movieclip: trimmed, unchanged, too long or empty, a figure that is not one;
+  // history.
+  scenario('movieclip-rename-sheet', app, [
+    ['@seek', 3], ['@select', 4, -1], ['renameMovieclip', '  Walk cycle  '], ['renameMovieclip', 'Walk cycle'], ['renameMovieclip', '   '], ['renameMovieclip', 'x'.repeat(121)],
+    ['renameMovieclip', 12], ['@select', 1, -1], ['renameMovieclip', 'Nope'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
+  // A movieclip instance's playback on the frame on show: mode, speed and offset, restart
+  // keys; refusals (speed, mode, placement, clock, restart order, a figure that is not a
+  // movieclip, a drawing the clip does not have); history.
+  scenario('movieclip-playback-sheet', app, [
+    ['@seek', 3], ['@select', 4, -1], ['setMovieclipPlayback', {speed: 0}], ['setMovieclipPlayback', {mode: 'x'}], ['setMovieclipPlayback', {start: -1}],
+    ['setMovieclipPlayback', {clock: 'x'}], ['setMovieclipPlayback', {restarts: [{tick: 5, offset: 0}, {tick: 2, offset: 0}]}], ['setMovieclipPlayback', {restarts: [{tick: 2, offset: 1}]}],
+    ['setMovieclipPlayback', {speed: 2}], ['setMovieclipPlayback', {mode: 'once'}],
+    ['setMovieclipDrawing', 4, 0, 0], ['undo'], ['undo'], ['redo'], ['@select', 1, -1], ['setMovieclipPlayback', {mode: 'once'}],
+  ], 'sheet-movieclip.document.json');
+  // A clip on the document's clock: its placement and restart keys.
+  scenario('movieclip-playback-timed-sheet', app, [
+    ['@seek', 3], ['@select', 4, -1], ['setMovieclipPlayback', {start: -1}], ['setMovieclipPlayback', {end: 1}], ['setMovieclipPlayback', {start: 2, end: 2}],
+    ['setMovieclipPlayback', {restarts: [{tick: 5, offset: 0}, {tick: 2, offset: 0}]}], ['setMovieclipPlayback', {restarts: [{tick: 2, offset: -1}]}],
+    ['setMovieclipPlayback', {restarts: [{tick: 2, offset: 1}, {tick: 4, offset: 0}]}], ['setMovieclipPlayback', {start: 2, end: 6, speed: 1.5}], ['undo'], ['redo'],
+  ], 'sheet-movieclip-timed.document.json');
+  // Frames dragged to another row of the timeline: moved, copied back, refusals (a layer that
+  // does not exist, a locked one); the clipboard left as it was (nothing to paste after);
+  // history.
+  scenario('sheet-transfer-sheet', app, [
+    ['sheetTransferFrames', ['layer-1'], ['layer-2'], 0, 3, 8], ['sheetTransferFrames', ['layer-2'], ['layer-1'], 8, 9, 12, {copy: true}], ['sheetPasteFrames', ['layer-1'], 0],
+    ['sheetTransferFrames', ['layer-1'], ['nope'], 0, 1, 2], ['setLayerLocked', 'layer-2', true], ['sheetTransferFrames', ['layer-1'], ['layer-2'], 0, 1, 2],
+    ['setLayerLocked', 'layer-2', false], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

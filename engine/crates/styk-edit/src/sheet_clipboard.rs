@@ -54,6 +54,14 @@ fn distinct(ids: &Value, repeated: &str) -> Result<Vec<String>, EditError> {
     Ok(list)
 }
 
+/// Layer ids as given (an array of text), repeats allowed.
+fn distinct_list(ids: &Value) -> Result<Vec<String>, EditError> {
+    match ids.elements() {
+        Some(ids) => ids.iter().map(|id| id.as_str().map(str::to_string).ok_or_else(|| EditError::Unported("a layer id that is not text".into()))).collect(),
+        None => Err(EditError::Unported("layer ids that are not a list".into())),
+    }
+}
+
 /// `Array.prototype.slice(start, end)`.
 fn js_slice<T: Clone>(list: &[T], start: i64, end: i64) -> Vec<T> {
     let len = list.len() as i64;
@@ -172,6 +180,44 @@ impl Editor {
         }
         self.sheet_clipboard = Some(Clipboard { start, duration: end - start + 1.0, rows, unported });
         Ok(Value::Null)
+    }
+
+    /// `sheetTransferFrames(ids, destinations, start, end, tick, {copy})`: a range of layers
+    /// moved (or copied) onto other rows at `tick`, as one batch; the clipboard left as it was.
+    pub(crate) fn sheet_transfer_frames(&mut self, ids: &Value, destinations: &Value, start: f64, end: f64, tick: &Value, options: &Value) -> Result<Value, EditError> {
+        let sources = distinct_list(ids)?;
+        let targets = distinct_list(destinations)?;
+        self.assert_layers(&sources.iter().chain(&targets).cloned().collect::<Vec<_>>())?;
+        let copy = options.get("copy").is_some_and(Value::truthy);
+        let kept = self.sheet_clipboard.clone();
+        let result = (|| {
+            self.sheet_copy_frames(ids, start, &Value::Num(end))?;
+            // Moving clips on the presence clock keeps their phase on the source rows: not ported.
+            if let Some(reason) = self.sheet_clipboard.as_ref().and_then(|c| c.unported) {
+                return Err(EditError::Unported(reason.into()));
+            }
+            self.begin_batch(if copy { "Copy frames to layer" } else { "Move frames to layer" })?;
+            let moved = (|| {
+                if !copy {
+                    self.sheet_clear_frames(ids, start, &Value::Num(end))?;
+                }
+                self.sheet_paste_frames(destinations, tick, &Value::Null)
+            })();
+            match moved {
+                Ok(pasted) => {
+                    self.end_batch()?;
+                    Ok(Value::Bool(pasted))
+                }
+                Err(error) => {
+                    if matches!(error, EditError::Invalid(_)) {
+                        self.abort_batch()?;
+                    }
+                    Err(error)
+                }
+            }
+        })();
+        self.sheet_clipboard = kept;
+        result
     }
 
     /// `sheetPasteFrames(ids, tick, {insert})`: the clipboard's rows on `ids` (or, given one

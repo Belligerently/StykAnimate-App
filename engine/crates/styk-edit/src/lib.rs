@@ -22,10 +22,12 @@ mod history;
 mod ik;
 mod ik_settings;
 mod layers;
+mod movieclips;
 mod pose;
 mod pose_choice;
 mod palette;
 mod polygons;
+mod project;
 mod property_edit;
 mod record;
 pub mod replay;
@@ -553,12 +555,20 @@ impl Editor {
             "moveVfxClipKeys" => self.move_vfx_clip_keys(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
             "deleteVfxClipKeys" => self.delete_vfx_clip_keys(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setVfxClipEasing" => self.set_vfx_clip_easing(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "renameMovieclip" => self.rename_movieclip(&arg(0)),
+            "setMovieclipPlayback" => self.set_movieclip_playback(&arg(0), &arg(1)),
+            "setMovieclipDrawing" => self.set_movieclip_drawing(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "setLayerParallax" => self.set_layer_parallax(&arg(0), &arg(1)).map(Value::Bool),
+            "setFPS" => self.set_fps(&arg(0)).map(Value::Bool),
+            "setCanvasSize" => self.set_canvas_size(&arg(0), &arg(1)).map(Value::Bool),
+            "updateProject" => self.update_project(&arg(0)).map(Value::Bool),
             "copySelection" => match args.first().and_then(|o| o.get("wholeFigures")).is_some_and(Value::truthy) {
                 false => self.copy_selection(),
                 true => Err(EditError::Unported("copying whole figures of a branch selection".into())),
             },
             "cutSelection" => self.cut_selection(),
             "pasteSelection" => self.paste_selection(&arg(0)),
+            "importFigure" => self.import_figure(&arg(0), &arg(1)),
             "duplicateSelection" => self.duplicate_selection(&arg(0)),
             "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
             "updatePolygon" => match args.get(1) {
@@ -570,6 +580,10 @@ impl Editor {
             "sheetCopyFrames" => match arg(1).as_f64() {
                 Some(start) => self.sheet_copy_frames(&arg(0), start, &arg(2)),
                 None => Err(EditError::Unported("copying frames from a frame that is not a number".into())),
+            },
+            "sheetTransferFrames" => match (arg(2).as_f64(), arg(3).as_f64()) {
+                (Some(start), Some(end)) => self.sheet_transfer_frames(&arg(0), &arg(1), start, end, &arg(4), &arg(5)),
+                _ => Err(EditError::Unported("transferring frames of a range that is not numbers".into())),
             },
             "sheetPasteFrames" => self.sheet_paste_frames(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetMoveFrames" => self.sheet_move_frames(&arg(0), number(1), number(2), &arg(3), &arg(4)).map(Value::Bool),
