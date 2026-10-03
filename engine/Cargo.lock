@@ -1224,6 +1224,7 @@ dependencies = [
  "pollster",
  "styk-draw",
  "styk-eval",
+ "styk-raster",
  "wgpu",
 ]
 

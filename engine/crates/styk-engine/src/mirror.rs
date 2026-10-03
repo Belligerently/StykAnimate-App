@@ -245,7 +245,7 @@ impl Engine {
         mirror.assets = Some(assets.clone());
         mirror.loader.release_unused();
         let ms = self.now() - started;
-        let id = self.publish(Generation { id: 0, lineage: mirror.lineage, revision, prepared, assets, open_ms: ms });
+        let id = self.publish(Generation { id: 0, lineage: mirror.lineage, revision, prepared, assets, open_ms: ms, anchors: None });
         Ok(Committed { generation: id, revision, converted, ms })
     }
 }

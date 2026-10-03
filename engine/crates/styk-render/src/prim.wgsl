@@ -46,6 +46,9 @@ struct Group {
 @group(1) @binding(0) var sprites: texture_2d_array<f32>;
 @group(1) @binding(1) var linear_sampler: sampler;
 @group(2) @binding(0) var layers: texture_2d_array<f32>;
+// The particle material atlas (styk-draw MATERIAL_*): coverage and shading, trilinear.
+@group(1) @binding(2) var materials: texture_2d<f32>;
+@group(1) @binding(3) var material_sampler: sampler;
 
 const TABLE_WIDTH: u32 = 1024u;
 
@@ -92,6 +95,13 @@ const K_BG_IMAGE: u32 = 9u;
 const K_BOX: u32 = 10u;
 const K_POLYLINE: u32 = 11u;
 const K_DEPTH_RESET: u32 = 12u;
+const K_PARTICLE: u32 = 13u;
+const K_BEAM: u32 = 14u;
+const MATERIAL_CELL: f32 = 128.0;
+const MATERIAL_COLUMNS: f32 = 8.0;
+const MATERIAL_ROWS: f32 = 17.0;
+const MATERIAL_MAX_LOD: f32 = 3.0;
+const TAU: f32 = 6.28318530718;
 const F_CLOSED: u32 = 1024u;
 const F_DEPTH: u32 = 8192u;
 const DEPTH_FAR: f32 = 0.9999;
@@ -156,6 +166,132 @@ fn in_sweep(angle: f32, start: f32, sweep: f32) -> bool {
     d = start - angle;
     d = d - floor(d / (2.0 * PI)) * 2.0 * PI;
     return d <= -sweep;
+}
+
+// Hashing and value noise of generated effects, bit-compatible with the editor's.
+fn pcg(v: u32) -> u32 {
+    let s = v * 747796405u + 2891336453u;
+    let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+
+fn hash2(x: i32, y: i32) -> f32 {
+    return f32(pcg((bitcast<u32>(x) * 73856093u) ^ (bitcast<u32>(y) * 19349663u))) * (1.0 / 4294967296.0);
+}
+
+fn vnoise(v: vec2<f32>) -> f32 {
+    let i = floor(v);
+    let f = v - i;
+    let u = f * f * (3.0 - 2.0 * f);
+    let ix = i32(i.x);
+    let iy = i32(i.y);
+    return mix(mix(hash2(ix, iy), hash2(ix + 1, iy), u.x), mix(hash2(ix, iy + 1), hash2(ix + 1, iy + 1), u.x), u.y);
+}
+
+fn smooth01(a: f32, b: f32, x: f32) -> f32 {
+    let t = clamp((x - a) / (b - a), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+struct Shaped {
+    local: vec2<f32>,
+    uv: vec2<f32>,
+    prm: vec4<f32>,
+};
+
+// One corner `q` (-1..1) of a generated-effect record, in its draw's local units; `px` is the
+// target's pixel in those units, `r2` the draw's constants (softness, stretch, aspect, row).
+fn particle_corner(p: Prim, kind: u32, q: vec2<f32>, px: f32, r2: vec4<f32>) -> Shaped {
+    var o: Shaped;
+    if (kind == K_BEAM) {
+        let a = p.a.xy;
+        let d = p.a.zw - a;
+        let len = max(length(d), 1.0);
+        let dn = d / len;
+        let nn = vec2<f32>(-dn.y, dn.x);
+        let w = p.b.x;
+        let halo = w * 3.5 + 8.0;
+        let lx = mix(-halo, len + halo, q.x * 0.5 + 0.5);
+        let ly = q.y * halo;
+        o.local = a + dn * lx + nn * ly;
+        o.uv = vec2<f32>(lx, ly);
+        o.prm = vec4<f32>(len, w, p.b.y, p.b.z);
+        return o;
+    }
+    let shape = (p.kind >> 16u) & 7u;
+    let softness = r2.x;
+    if (shape == 5u) {
+        // A lightning arc segment: a capsule with a glow margin.
+        let p0 = p.a.xy;
+        let p1 = p.a.zw;
+        let r = p.b.x;
+        let d = p1 - p0;
+        let l = length(d);
+        var dn = vec2<f32>(1.0, 0.0);
+        if (l > 1e-4) { dn = d / l; }
+        let hl = 0.5 * l;
+        let e = r + r * 4.0;
+        let local = vec2<f32>(q.x * (hl + e), q.y * e);
+        o.local = (p0 + p1) * 0.5 + dn * local.x + vec2<f32>(-dn.y, dn.x) * local.y;
+        o.uv = local;
+        o.prm = vec4<f32>(hl, r, px, 0.0);
+        return o;
+    }
+    let centre = p.a.xy;
+    let sz = p.a.z;
+    let rot = p.a.w;
+    let vel = p.b.xy;
+    let cr = vec2<f32>(cos(rot), sin(rot));
+    if (shape == 1u) {
+        let sp = length(vel);
+        var d = vec2<f32>(1.0, 0.0);
+        if (sp > 1e-4) { d = vel / sp; }
+        let hl = 0.5 * sp * r2.y;
+        let rr = max(sz, px * 0.5);
+        let local = vec2<f32>(q.x * (hl + rr + px), q.y * (rr + px));
+        o.local = centre - d * hl + d * local.x + vec2<f32>(-d.y, d.x) * local.y;
+        o.uv = local;
+        o.prm = vec4<f32>(hl, rr, softness, px);
+        return o;
+    }
+    if (shape == 3u) {
+        let e = q * (sz * 1.3 + px);
+        o.local = centre + vec2<f32>(e.x * cr.x - e.y * cr.y, e.x * cr.y + e.y * cr.x);
+        o.uv = q * (1.3 + px / max(sz, 1e-3));
+        o.prm = vec4<f32>(p.b.z, px / max(sz, 1e-3), 0.0, 0.0);
+        return o;
+    }
+    if (shape == 6u) {
+        // A textured sprite: one atlas cell, scaled along its up axis by aspect and speed.
+        let hx = max(sz, px * 0.5);
+        let hy = hx * r2.z + 0.5 * length(vel) * r2.y;
+        let e = vec2<f32>(q.x * hx, q.y * hy);
+        o.local = centre + vec2<f32>(e.x * cr.x - e.y * cr.y, e.x * cr.y + e.y * cr.x);
+        let cell = vec2<f32>(f32(p.color & 255u), f32(p.color >> 8u));
+        o.uv = vec2<f32>((cell.x + q.x * 0.5 + 0.5) / MATERIAL_COLUMNS, (cell.y + q.y * 0.5 + 0.5) / MATERIAL_ROWS);
+        let shade = paint_row(p.paint + 1u).w;
+        // Level of detail from the cell's size on screen.
+        o.prm = vec4<f32>(shade, clamp(log2(MATERIAL_CELL * px / (2.0 * max(hx, hy))), 0.0, MATERIAL_MAX_LOD), 0.0, 0.0);
+        return o;
+    }
+    if (shape == 7u) {
+        let rr = max(sz, px * 0.5);
+        let e = q * (rr + px);
+        o.local = centre + vec2<f32>(e.x * cr.x - e.y * cr.y, e.x * cr.y + e.y * cr.x);
+        o.uv = q * (1.0 + px / rr);
+        o.prm = vec4<f32>(px / rr, 0.0, 0.0, 0.0);
+        return o;
+    }
+    // Discs and rings; soft discs may be flattened into ellipses, such as glows on the ground.
+    var grow = 1.0;
+    if (shape == 2u) { grow = 1.0 + softness * 2.0; }
+    let rr = max(sz, px * 0.5);
+    var squash = 1.0;
+    if (shape == 0u) { squash = r2.z; }
+    o.local = centre + q * (rr * grow + px) * vec2<f32>(1.0, squash);
+    o.uv = q * (grow + px / rr);
+    o.prm = vec4<f32>(softness, px / rr, 0.0, 0.0);
+    return o;
 }
 
 @vertex
@@ -262,6 +398,23 @@ fn vs_main(in: VsIn) -> VsOut {
         }
         world = p.a.xy + p.a.zw * c.x + p.b.xy * c.y;
         out.uv = c;
+    } else if (kind == K_PARTICLE || kind == K_BEAM) {
+        // Generated effects: expanded in their draw's local units exactly as the editor's
+        // vertex shader does (`vs` in vfx-generator-gpu.mjs), then placed by the draw's transform.
+        let r0 = paint_row(p.paint);
+        let r1 = paint_row(p.paint + 1u);
+        let r2 = paint_row(p.paint + 2u);
+        let px = aa / max(r1.z, 1e-12);
+        let q = c * 2.0 - vec2<f32>(1.0);
+        let shaped = particle_corner(p, kind, q, px, r2);
+        out.uv = shaped.uv;
+        // The fragment stage reads the record's per-instance values (`prm` in
+        // vfx-generator-gpu.mjs) where other kinds carry their `a` field.
+        out.a = shaped.prm;
+        world = affine(r0, r1.xy, shaped.local);
+        out.world = world;
+        out.pos = clip_pos(to_target(world, g, gr));
+        return out;
     } else if (kind == K_COMPOSITE) {
         // The child's shown rectangle, carried into this target by the child's own map.
         let child = group_at(bitcast<u32>(p.b.x));
@@ -380,6 +533,115 @@ fn sd_arc(p: vec2<f32>, center: vec2<f32>, r: f32, start: f32, sweep: f32) -> f3
     return min(length(p - e0), length(p - e1));
 }
 
+fn soft(d: f32, s: f32, aa: f32) -> f32 {
+    let edge = 1.0 - smooth01(1.0 - aa, 1.0, d);
+    return pow(max(1.0 - d, 1e-5), s) * edge;
+}
+
+// Material shading: 0.5 keeps the colour, lower darkens, higher lightens.
+fn shade_rgb(c: vec3<f32>, s: f32) -> vec3<f32> {
+    if (s < 0.5) { return c * (0.25 + 1.5 * s); }
+    return mix(c, vec3<f32>(1.0), (s - 0.5) * 1.4);
+}
+
+// A generated-effect particle's premultiplied colour (`fs` in vfx-generator-gpu.mjs).
+fn particle_color(p: Prim, uv: vec2<f32>, prm: vec4<f32>) -> vec4<f32> {
+    let shape = (p.kind >> 16u) & 7u;
+    var cov = 0.0;
+    if (shape == 0u) {
+        cov = soft(length(uv), prm.x, min(prm.y * 1.5, 1.0));
+    } else if (shape == 1u) {
+        // A tapered streak: full width and brightness at the head, thinning and fading toward the tail.
+        let hl = prm.x;
+        let t = clamp(uv.x / max(hl, 1e-3) * 0.5 + 0.5, 0.0, 1.0);
+        let w = select(1.0, mix(0.3, 1.0, t), hl > 0.5);
+        let d = length(vec2<f32>(max(abs(uv.x) - hl, 0.0), uv.y / w)) / prm.y;
+        let tail = select(1.0, t * t * (3.0 - 2.0 * t) * 0.9 + 0.1, hl > 0.5);
+        cov = soft(d, prm.z, min(prm.w / prm.y * 1.5, 1.0)) * tail;
+    } else if (shape == 2u) {
+        let d = length(uv);
+        let rd = abs(d - 1.0) / max(prm.x, 0.01);
+        cov = pow(max(1.0 - rd, 0.0), 1.6) + 0.18 * (1.0 - smooth01(0.0, 1.0, d)) * step(d, 1.0);
+    } else if (shape == 3u) {
+        let q = abs(uv);
+        let d = max(q.x, q.y * (0.55 + 0.6 * prm.x) + q.x * 0.25);
+        cov = 1.0 - smooth01(1.0 - min(prm.y * 1.5, 1.0), 1.0, d);
+    } else if (shape == 5u) {
+        let d = length(vec2<f32>(max(abs(uv.x) - prm.x, 0.0), uv.y));
+        let r = prm.y;
+        cov = min(clamp(1.0 - (d - r) / prm.z, 0.0, 1.0) + exp(-d / (r * 2.5)) * 0.55, 1.0);
+    } else if (shape == 6u) {
+        let tex = textureSampleLevel(materials, material_sampler, uv, prm.y);
+        if (tex.g <= 0.002) { discard; }
+        let rgb = shade_rgb(p.c.rgb, mix(0.5, clamp(tex.r / tex.g, 0.0, 1.0), prm.x));
+        let k = tex.g * p.c.a;
+        return vec4<f32>(rgb * k, k);
+    } else if (shape == 7u) {
+        let q = max(abs(uv.x), abs(uv.y));
+        let aa = min(prm.x * 1.5, 1.0);
+        cov = 1.0 - smooth01(1.0 - aa, 1.0, q);
+    }
+    let k = cov * p.c.a;
+    if (k <= 0.0) { discard; }
+    return vec4<f32>(p.c.rgb * k, k);
+}
+
+// A beam's premultiplied colour (`beamColor` in vfx-generator-gpu.mjs); `aa` is the pixel in local units.
+fn beam_color(p: Prim, uv: vec2<f32>, prm: vec4<f32>, aa: f32) -> vec4<f32> {
+    let len = prm.x;
+    let w = prm.y;
+    if (w <= 0.05) { discard; }
+    let t = p.b.w;
+    let x = uv.x;
+    let style = u32(p.c.y);
+    let opacity = p.c.x;
+    let c0 = paint_row(p.paint + 3u);
+    let c1 = paint_row(p.paint + 4u);
+    let wob = (vnoise(vec2<f32>(x * 0.018 - t * 0.55, prm.w)) - 0.5) * 2.0 * prm.z * w * smooth01(0.0, 80.0, x);
+    let y = uv.y - wob;
+    let ww = w * mix(0.55, 1.0, smooth01(0.0, 70.0, x));
+    let d = length(vec2<f32>(max(max(-x, x - len), 0.0), abs(y)));
+    if (style == 2u) {
+        // Cartoon: a flat body with a lighter core band and crisp edges.
+        let body = 1.0 - smooth01(ww - aa, ww + aa, d);
+        let core = 1.0 - smooth01(ww * 0.45 - aa, ww * 0.45 + aa, d);
+        let a = body * opacity;
+        return vec4<f32>(mix(c1.rgb, c0.rgb, core) * a, a);
+    }
+    var core: f32;
+    var body: f32;
+    var glow: f32;
+    let pulse = 0.8 + 0.4 * vnoise(vec2<f32>(x * 0.035 - t * 1.7, 3.0 + prm.w));
+    if (style == 1u) {
+        // Laser: a hard, steady core with a tight glow.
+        core = 1.0 - smooth01(ww * 0.2 - aa, ww * 0.2 + aa, d);
+        body = 1.0 - smooth01(ww * 0.5 - aa, ww * 0.5 + aa, d);
+        glow = exp(-d / (ww * 1.1 + 1.0)) * 0.5;
+    } else {
+        core = 1.0 - smooth01(ww * 0.26, ww * 0.42, d);
+        body = 1.0 - smooth01(ww * 0.45, ww, d);
+        glow = exp(-d / (ww * 0.9 + 1.0)) * 0.45;
+    }
+    var rgb = c0.rgb * core + c1.rgb * (body * 0.8 + glow) * select(pulse, 1.0, style == 1u);
+    var a = core + body * 0.7 + glow * 0.5;
+    if (style == 3u) {
+        // Spiral: two strands winding around the beam.
+        let period = max(24.0, w * 3.2);
+        let inside = step(0.0, x) * step(x, len);
+        for (var s = 0u; s < 2u; s = s + 1u) {
+            let phase = x / period * TAU - t * 0.35 + f32(s) * 3.14159265;
+            let sy = sin(phase) * ww * 0.95;
+            let depth = 0.55 + 0.45 * cos(phase);
+            let strand = exp(-abs(y - sy) / (ww * 0.1 + 0.6)) * depth * inside;
+            rgb = rgb + c0.rgb * strand;
+            a = a + strand * 0.8;
+        }
+    }
+    let alpha = clamp(a, 0.0, 1.0) * opacity;
+    if (alpha <= 0.0) { discard; }
+    return vec4<f32>(min(vec3<f32>(1.0), rgb) * alpha, alpha);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let pos = in.pos.xy;
@@ -388,6 +650,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     let p = Prim(in.head.x, in.head.y, in.head.z, in.head.w, in.a, in.b, in.c);
     let kind = p.kind & 255u;
+    if (kind == K_PARTICLE) {
+        return particle_color(p, in.uv, in.a);
+    }
+    if (kind == K_BEAM) {
+        return beam_color(p, in.uv, in.a, in.aa / max(paint_row(p.paint + 1u).z, 1e-12));
+    }
     let w = in.world;
     let aa = in.aa;
     var base = unpack(p.color);

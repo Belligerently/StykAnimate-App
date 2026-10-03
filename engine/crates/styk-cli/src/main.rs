@@ -259,6 +259,15 @@ fn generators(path: &str, ticks: &[String]) -> i32 {
     0
 }
 
+/// A frame's draw list as the app's playback prepares it: its generated effects
+/// included (earlier-tick anchors evaluated without a cache), effects optionally off.
+fn encode_frame(p: &Prepared, assets: &styk_eval::assets::Assets, tick: f64, frame: &styk_eval::eval::Frame, scene: &styk_eval::geometry::Scene, no_effects: bool) -> styk_eval::drawlist::DrawList {
+    use styk_eval::vfx::generated;
+    let batch = if no_effects { None } else { generated::build(p, frame, scene, Some(tick), Some(&generated::Evaluate), 1.0) };
+    let overrides = styk_eval::drawlist::Overrides { bypass_effects: no_effects, generators: batch.as_ref(), ..Default::default() };
+    styk_eval::drawlist::encode_with(&p.doc, assets, scene, &overrides)
+}
+
 fn info(path: &str) -> i32 {
     let (p, ms) = match load(path) {
         Ok(v) => v,
@@ -392,7 +401,6 @@ fn option<'a>(rest: &'a [String], name: &str) -> Option<&'a str> {
 /// `styk raster`: the same frame as `styk render`, rasterized on the CPU (styk-raster).
 fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     use styk_eval::assets::Assets;
-    use styk_eval::drawlist::encode;
     use styk_eval::view::camera_matrix;
     let (p, ms) = match load(path) {
         Ok(v) => v,
@@ -413,7 +421,7 @@ fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     let started = Instant::now();
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = encode(&p.doc, &assets, &scene);
+    let list = encode_frame(&p, &assets, tick, &frame, &scene, false);
     let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
     let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
@@ -450,7 +458,6 @@ fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
 
 fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     use styk_eval::assets::Assets;
-    use styk_eval::drawlist::encode;
     use styk_eval::view::camera_matrix;
     use styk_render::{wgpu, Renderer, ViewParams};
     let (p, ms) = match load(path) {
@@ -494,7 +501,7 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     let started = Instant::now();
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = std::sync::Arc::new(encode(&p.doc, &assets, &scene));
+    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, false));
     let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
     let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
@@ -517,7 +524,8 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     };
     // --after T: the same renderer drew tick T first, as in the app, where resources outlive frames.
     if let Some(first) = option(rest, "--after").and_then(|t| t.parse::<f64>().ok()) {
-        let earlier = std::sync::Arc::new(encode(&p.doc, &assets, &build(&p.doc, &p.evaluate(first))));
+        let earlier_frame = p.evaluate(first);
+        let earlier = std::sync::Arc::new(encode_frame(&p, &assets, first, &earlier_frame, &build(&p.doc, &earlier_frame), false));
         renderer.set_list(&earlier);
         let mut encoder = device.create_command_encoder(&Default::default());
         renderer.render(&mut encoder, &view, [w, h]);
@@ -587,7 +595,6 @@ fn diff(a: &str, b: &str, out: &str, rest: &[String]) -> i32 {
 /// GPU time per frame (submit + wait) across a fit → 11× zoom, at 1440×900.
 fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
     use styk_eval::assets::Assets;
-    use styk_eval::drawlist::{encode_composed, Overrides};
     use styk_eval::view::camera_matrix;
     use styk_render::{wgpu, Renderer, ViewParams};
     let (p, _) = match load(path) {
@@ -609,9 +616,10 @@ fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
     let mut renderer = Renderer::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
     renderer.prepare_sprites(&assets);
     renderer.upload_images(&assets, &images);
-    let scene = build(&p.doc, &p.evaluate(tick.parse().unwrap_or(0.0)));
-    let overrides = Overrides { bypass_effects: no_effects, ..Default::default() };
-    let list = std::sync::Arc::new(encode_composed(&p.doc, &assets, &scene, &overrides, &[], None));
+    let tick: f64 = tick.parse().unwrap_or(0.0);
+    let frame = p.evaluate(tick);
+    let scene = build(&p.doc, &frame);
+    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, no_effects));
     renderer.set_list(&list);
     let (w, h) = (1440u32, 900u32);
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);

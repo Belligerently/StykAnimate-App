@@ -18,6 +18,7 @@ use styk_eval::eval::Frame;
 use styk_eval::geometry::{Scene, build};
 use styk_eval::load::Loader;
 use styk_eval::onion::{GhostPlace, compose};
+use styk_eval::vfx::generated::Batch;
 
 use crate::Generation;
 
@@ -31,6 +32,10 @@ struct Pose {
     scene: Option<Arc<Scene>>,
     /// The draw counter when this pose was last shown.
     used: u64,
+    /// The effects timeline's tick the editor composed the pose at (`_vfxTimelineTick`).
+    vfx_tick: Option<f64>,
+    /// Its generated effects, built when first drawn (again while incomplete).
+    generators: Option<Arc<Batch>>,
 }
 
 /// An edit frame, its onion skins, and what was last built from them. Owned by the thread that draws.
@@ -43,6 +48,8 @@ pub struct EditScene {
     lineage: u64,
     generation: u64,
     draws: u64,
+    /// The last frame's generated effects used the current pose for some trails: draw again.
+    refining: bool,
 }
 
 /// One onion skin of a frame.
@@ -71,6 +78,15 @@ pub struct EditOptions<'a> {
     pub onions: &'a [Onion<'a>],
     /// Draw without effects (the editor's effects preview is off).
     pub bypass_effects: bool,
+    /// The host's clock and how long a frame may evaluate generated effects' earlier
+    /// anchors (the editor's 6 ms); without a clock, all of them are evaluated.
+    pub clock: Option<crate::Clock>,
+    pub anchor_budget_ms: f64,
+}
+
+/// A clock for hosts that give none: anchors are then always evaluated.
+fn no_clock() -> f64 {
+    0.0
 }
 
 fn flags(slots: &[u32], count: usize) -> Vec<bool> {
@@ -97,6 +113,7 @@ impl EditScene {
             self.generation = generation.id;
             if let Some(pose) = &mut self.current {
                 pose.scene = None;
+                pose.generators = None;
             }
             for pose in self.ghosts.values_mut() {
                 pose.scene = None;
@@ -106,8 +123,9 @@ impl EditScene {
 
     /// Reads a pose. Its effects are the ones the editor composed into it
     /// (clips included), never sampled again here: see `docs/engine/vfx.md`.
-    fn parse(&mut self, generation: &Generation, text: &[u8], previous: Option<&Frame>) -> Result<Frame, String> {
+    fn parse(&mut self, generation: &Generation, text: &[u8], previous: Option<&Frame>) -> Result<(Frame, Option<f64>), String> {
         let value: Value = styk_doc::json::parse(text).map_err(|e| e.to_string())?;
+        let vfx_tick = value.get("_vfxTimelineTick").and_then(Value::as_f64);
         let loader = self.loader.as_mut().expect("follow() ran");
         let doc = &generation.prepared.doc;
         let mut frame = loader.edit_frame(&value, previous, doc).map_err(|e| e.to_string())?;
@@ -115,7 +133,7 @@ impl EditScene {
         if fields || generation.prepared.has_vfx {
             frame.vfx = styk_eval::vfx::frame::composed(doc, &frame);
         }
-        Ok(frame)
+        Ok((frame, vfx_tick))
     }
 
     /// Replaces the frame. `text` is a keyframe-shaped JSON record whose `objects`
@@ -123,8 +141,8 @@ impl EditScene {
     pub fn update(&mut self, generation: &Generation, text: &[u8]) -> Result<(), String> {
         self.follow(generation);
         let previous = self.current.take();
-        let frame = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
-        self.current = Some(Pose { frame, scene: None, used: self.draws });
+        let (frame, vfx_tick) = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
+        self.current = Some(Pose { frame, scene: None, used: self.draws, vfx_tick, generators: None });
         Ok(())
     }
 
@@ -132,13 +150,20 @@ impl EditScene {
     pub fn update_ghost(&mut self, generation: &Generation, id: u32, text: &[u8]) -> Result<(), String> {
         self.follow(generation);
         let previous = self.ghosts.remove(&id);
-        let frame = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
-        self.ghosts.insert(id, Pose { frame, scene: None, used: self.draws });
+        let (frame, vfx_tick) = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
+        self.ghosts.insert(id, Pose { frame, scene: None, used: self.draws, vfx_tick, generators: None });
         Ok(())
     }
 
     pub fn has_frame(&self) -> bool {
         self.current.is_some()
+    }
+
+    /// Whether the last frame's generated effects are still being refined: some of their
+    /// earlier anchors did not fit the frame's budget, so the next frame should be drawn
+    /// again (`incomplete` batches in the editor).
+    pub fn refining(&self) -> bool {
+        self.refining
     }
 
     /// The camera of the edit frame.
@@ -156,7 +181,28 @@ impl EditScene {
         let Some(current) = self.current.as_mut() else { return Ok(None) };
         let scene = scene_of(current);
         let hidden = flags(options.hidden, current.frame.objects.len());
-        let overrides = Overrides { hidden: &hidden, translations: options.translations, background: options.background, bypass_effects: options.bypass_effects };
+        // Generated effects: built once per pose, again while trails are being refined.
+        self.refining = false;
+        let mut batch = None;
+        if let Some(anchors) = generation.anchors.as_ref().filter(|_| !options.bypass_effects) {
+            if current.generators.as_ref().is_none_or(|b| b.incomplete) {
+                let clock = options.clock.unwrap_or(no_clock);
+                let deadline = if options.clock.is_some() { clock() + options.anchor_budget_ms } else { f64::INFINITY };
+                let sampler = anchors.sampler(clock, deadline);
+                current.generators = styk_eval::vfx::generated::build(&generation.prepared, &current.frame, &scene, current.vfx_tick, Some(&sampler), 1.0).map(Arc::new);
+            }
+            self.refining = current.generators.as_ref().is_some_and(|b| b.incomplete);
+            batch = current.generators.clone();
+            // Draws beside a figure being dragged move with it (`offsetGeneratorBatch`).
+            if let Some(b) = batch.as_mut().filter(|_| !options.translations.is_empty()) {
+                let frame = &current.frame;
+                Arc::make_mut(b).offset(|uid| {
+                    let slot = frame.objects.iter().position(|o| o.uid == uid)? as u32;
+                    options.translations.iter().find(|(s, _)| *s == slot).map(|(_, d)| *d)
+                });
+            }
+        }
+        let overrides = Overrides { hidden: &hidden, translations: options.translations, background: options.background, bypass_effects: options.bypass_effects, generators: batch.as_deref() };
         if options.onions.is_empty() {
             let frame_scene = scene;
             return Ok(Some(Arc::new(encode_composed(doc, &generation.assets, &frame_scene, &overrides, &[], None))));

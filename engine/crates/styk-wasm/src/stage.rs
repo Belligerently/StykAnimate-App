@@ -125,6 +125,12 @@ impl Stage {
         self.edit.update_ghost(&generation, id, json.as_bytes()).map_err(js_error)
     }
 
+    /// Whether the last edit frame's generated effects still lack some of their targets'
+    /// earlier positions (they used the current pose): the interface draws again.
+    pub fn refining(&self) -> bool {
+        self.edit.refining()
+    }
+
     /// Whether the pose of onion skin `id` is still kept.
     pub fn has_ghost(&self, id: u32) -> bool {
         self.edit.has_ghost(id)
@@ -164,7 +170,9 @@ impl Stage {
                 hidden: slots,
             })
             .collect();
-        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects };
+        // Generated effects evaluate earlier anchors for at most 6 ms a frame, as the editor does
+        // (`INTERACTIVE_SAMPLING_MS`); the rest refine over the next frames (`refining`).
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
         let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
         let scene_camera = if camera { self.edit.camera() } else { None };
         self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)
@@ -236,8 +244,8 @@ impl Stage {
     pub fn stats(&self) -> String {
         let s = &self.renderer.stats;
         format!(
-            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{}}}",
-            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes
+            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{},\"materialBytes\":{}}}",
+            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes, s.material_bytes
         )
     }
 }

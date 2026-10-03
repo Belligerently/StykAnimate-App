@@ -13,7 +13,7 @@ How the Rust engine (`engine/crates/styk-eval/src/vfx/`) decides, for one tick, 
   - `warnings`: connected groups nested too deep.
 - Every stack is what `activeVfx` returns, in render order: enabled filters that change their input, each an `Arc<vfx::Effect>` whose `Params` is one struct per effect type with typed fields (`f64`, `Color` for an RGB integer or a paint, an enum per option list, `bool` switches, `u32` seeds and counts). Values are those the editor hands an executor: keys sampled, poses tweened, `effectStrength` multiplied by the clip's strength and fades.
 - `vfx::padding`, `vfx::sampling_padding` and `vfx::working_slots` take such a stack (`vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots`).
-- Saying what must be drawn: `Document::unsupported` does not name effects, since they are evaluated. A frame whose `vfx` is `Some` has effects the renderer must draw, and `vfx::document_has_vfx` (`documentHasVfx`) tells whether a document carries any at all. The engine draws every filter ([Rendering](#rendering)); the interface's gate (`src/engine/engine-eligibility.mjs`) keeps documents with generated effects on the JavaScript renderer, by effect type.
+- Saying what must be drawn: `Document::unsupported` does not name effects, since they are evaluated. A frame whose `vfx` is `Some` has effects the renderer must draw, and `vfx::document_has_vfx` (`documentHasVfx`) tells whether a document carries any at all. The engine draws every filter and every generated effect ([Rendering](#rendering)); the interface's gate (`src/engine/engine-eligibility.mjs`) no longer refuses any effect.
 
 ## Evaluation order
 
@@ -55,7 +55,7 @@ Particles, auras, energy beams, explosions and smoke create artwork instead of f
 
 **A frame's batch** (`generated::build(prepared, frame, scene, tick, sampler, density)`): every enabled generator clip active at the frame's `_vfxTimelineTick` (from its start to its end plus `clip_tail`, the longest lifetime, jitter and trail of its layers) compiles its sampled effects into layers, then movieclip containers whose documents carry generators add theirs, evaluated at the instance's local time, in its transform and opacity, four levels deep, beside the container. Layers pack into one batch: a record per draw, a birth table (per layer, a row per tick of still-visible births: anchor, emission amount, keyed direction, speed and size; per effect, the target's outline, one per birth tick for trails) and the draws (shape, resolved blending, target, placement, material row). Trail echoes, glow halos and outlines are extra draws of the same particles. A particle is then a pure function of its record, the table, its instance index and the tick (`particle::evaluate`): nothing is simulated or kept between frames.
 
-**Anchors on earlier ticks**: particles keep the position their target had when they were born, so a batch reads the target on earlier ticks through a `Sampler`. The evaluation crate's `Evaluate` evaluates the document at each such tick; the engine keeps them across frames (Rendering). A sampler may answer `Pending` when an interactive frame's time budget is spent: the batch then uses the current pose for those births and is marked `incomplete`, to be built again.
+**Anchors on earlier ticks**: particles keep the position their target had when they were born, so a batch reads the target on earlier ticks through a `Sampler`. The evaluation crate's `Evaluate` evaluates the document at each such tick; the engine keeps them across frames (`styk_engine::anchors`, see [Generated effects on screen](#generated-effects-on-screen)). A sampler may answer `Pending` when an interactive frame's time budget is spent: the batch then uses the current pose for those births and is marked `incomplete`, to be built again.
 
 Invariants:
 
@@ -95,7 +95,7 @@ Differences, on purpose or known:
 
 ## Rendering
 
-The engine draws every filter the way the editor's WebGPU renderer does (`rasterObject`, `filterArtworkVfx`, `withVfx` and `CameraVfx` in the JavaScript), on WebGPU, native and WebGL2 alike. Generated effects are not drawn by the engine yet: a document whose effects timeline holds one keeps the JavaScript renderer (`engine-eligibility.mjs`, by effect type). The editor's effects preview switch reaches the engine for edit frames (`Stage::set_effects`) and prepared playback (`EngineHandle::set_effects`), which then draws without effects.
+The engine draws every filter the way the editor's WebGPU renderer does (`rasterObject`, `filterArtworkVfx`, `withVfx` and `CameraVfx` in the JavaScript), on WebGPU, native and WebGL2 alike, and every generated effect ([Generated effects on screen](#generated-effects-on-screen)). The editor's effects preview switch reaches the engine for edit frames (`Stage::set_effects`) and prepared playback (`EngineHandle::set_effects`), which then draws without effects, generated ones included.
 
 ### From effects to layers (`drawlist.rs`, `vfx/layers.rs`)
 
@@ -143,6 +143,43 @@ After a depth's layer passes, each filtered layer of that depth is copied into w
 - A foreign object without any primitive does not split a connected run in the engine (the editor's layout lists it); such runs filter together.
 - A drawing cel inside an effect layer is sampled as the cel display samples it (one display level, bilinear); the editor paints it into the effect raster through Canvas 2D with high-quality smoothing. Thin strokes differ, and a threshold (bloom) amplifies it.
 - Effects of the editor's Canvas 2D fallback run on its WebGL 2 or CPU executor with the same kernels; on devices without WebGPU the engine draws like WebGPU devices.
+
+### Generated effects on screen
+
+**Where batches are built.** Prepared playback frames (`styk_engine` `frames::produce`, on the engine's workers) build the frame's batch with the generation's anchor cache and no time budget, as the editor's playback workers do. Edit frames (`EditScene::draw_list`, on the interface thread) build it once per pose with a budget of 6 ms for earlier anchors (the editor's `INTERACTIVE_SAMPLING_MS`); an incomplete batch is drawn and `Stage::refining` tells the app (`engine-stage.mjs`) to draw again, as the editor's incomplete batches do. A drag moves the draws beside the dragged figure (`Batch::offset`, `offsetGeneratorBatch`). The CLI's `render`, `raster` and `gpubench` draw a frame's generated effects with `Evaluate`.
+
+**Anchor cache** (`styk_engine::anchors`). One per document generation, for documents with generated effects (`Generation::anchors`), shared by workers and the interface thread through the spinning lock (map accesses only; D7). A miss evaluates the document at that tick (`anchors::evaluate_at`) once and stores the anchors of every generator target of the document there, so consecutive frames evaluate one new tick each. At most 4,096 entries; beyond, the least recently used quarter goes. An edit publishes a new generation and a new cache, as the editor's cache is dropped when the evaluation generation changes.
+
+**In the draw list** (`drawlist/generators.rs`). Each draw of the batch becomes its records, evaluated once per frame: a `K_PARTICLE` per live particle (shape in the kind's bits, position, size, rotation and velocity in the draw's local units, colour from the ramp with the stop's opacity multiplied in, a sprite's atlas cell), a `K_PARTICLE` per lightning arc segment, one `K_BEAM` per firing beam; each points at its draw's rows in `paints`: the movieclip transform and offset to the world, the scale, the material shading, softness, stretch and aspect, and for beams the ramp's end colours. Additive draws carry `F_ADD`. Placement is the editor's walk through painter order (`generatorSchedule`, `scheduleWalker`): scene draws behind the figures come after the background, before the first entry; a target's behind-placed draws come when its first entry begins and its front-placed ones when the next entry begins; draws of targets with no entry (hidden artwork, no artwork) and scene draws in front come after the last entry. An entry is the editor's layout entry: one object, a movieclip container's runs, or a connected run, which counts as its root when the root is in it and as its first part otherwise. Draws of hidden targets are left out, onion skins draw none, and the camera image draws every draw again in its own walk, as `CameraVfx` does. Draw lists of frames without generated effects are unchanged.
+
+**On the GPU and the CPU**: see [rendering.md](rendering.md). The material atlas is uploaded row by row as lists name rows (`DrawList::materials`); when a document with generated effects opens, the engine generates the 17 rows on its workers (once per process), so the interface thread finds them ready. A row being generated by another thread is generated again rather than waited for (D7).
+
+**Measured** (2026-10-03, NVIDIA RTX 4070 SUPER, machine shared with other work at a load average of 11 to 15). App parity (`scripts/engine-app-parity.mjs`, D13 limits unchanged), Electron, the engine on WebGPU against the editor's WebGPU renderer:
+
+| Document | Steps passing | Largest mean beyond 2 | Largest single difference | Solid pixels |
+| --- | --- | --- | --- | --- |
+| fixture `explosions` (ticks 2, 6, 12) | 3/3 | 0.008 | 24 | 0 |
+| fixture `auras` (4, 9, 13, 19) | 4/4 | 0.010 | 30 | 0 |
+| fixture `beams` (3, 7, 11, 15) | 4/4 | 0.034 | 58 | 0 |
+| fixture `particles` (3, 7, 10, 14) | 4/4 | 0.067 | 53 | 0 |
+| fixture `smoke` (3, 8, 13, 17) | 4/4 | 0.034 | 55 | 0 |
+| fixture `movieclip` (0, 2, 5, 9) | 4/4 | 0.029 | 61 | 0 |
+| fixture `tails` (2, 5, 7, 12, with onion skins, after playback through the engine) | 9/9 | 0.023 | 61 | 0 |
+| `Impact-FX-Fight.styk` (30, 108, 157, 185, 192, 205) | 0/6 | 0.38 | 115 | 0 |
+| `TDD2 URIEL NEMESIS 3.styk` (20, 100, 140, 200) | 2/4 | 0.23 | 189 | 910 |
+
+The largest single differences are along figure and beam edges. Every failing step there is not caused by generated effects: `Impact-FX-Fight.styk` fails by the mean rule alone, along glyph and figure edges, with the same numbers when effects are off in both runs (tick 30: 0.3233 against 0.3210 with effects; tick 185: 0.3842 against 0.3796), so with no generated effect drawn by either; `TDD2 URIEL NEMESIS 3.styk` ticks 100 and 140 lack a drawing cel the stage had not uploaded yet when the step was captured (the open issue below; `styk render`, which uploads every image first, draws it), and the document draws no generated effect at any tick.
+
+Web target (headless Chromium, the engine on WebGL2 against the editor's Canvas 2D fallback): `auras` 4/4, `smoke` 4/4, `particles` 3/4 (tick 14: mean 0.27), `explosions` 1/3 (means 0.22, 0.89, 0.74; 11 and 4 solid pixels), `beams` 1/4 (means up to 2.61, 3,820 solid). These are the fallback's own departure from the editor's WebGPU renderer: its Canvas path draws particles from tinted sprites on a colour ramp of 8 or 32 steps, beams from a cross-section sprite along segments, squares, rings and streaks from sprites, and thins previews above 4,000 particles. The editor's two renderers differ by as much on the same document (Electron, the editor's WebGPU pictures against its Canvas 2D pictures: `explosions` means 0.17, 0.66, 0.41 with 0, 15 and 3 solid pixels; `beams` ticks 7, 11, 15 means 1.24, 2.66, 1.07 with 552, 3,882 and 195 solid). Recorded as a deliberate difference, as for polygon seams: where a device lacks WebGPU, generated effects now look as they do on WebGPU devices.
+
+Cost: building a batch takes 0.1 to 1.6 ms on the fixtures and evaluating their 100 to 920 live particles 0.07 to 0.39 ms (native, `styk generators`, earlier anchors evaluated without a cache); `Impact-FX-Fight.styk` 2.4 ms for its batch (nested movieclip documents evaluated at earlier ticks without a cache) and 0.04 ms for its 68 particles. GPU frame time at 1,440×900 over 200 zoom levels (`styk gpubench`, p50): fixtures 0.13 to 0.17 ms without their generated effects, 0.16 to 0.55 ms with them (`beams` the most, its soft, wide beams filling the frame). Documents without generated effects, against `engine-rust` before this work (4 interleaved rounds, the order of the two builds alternating): GPU p50 `hitoshi vs suzu tomiee ssj.piv` tick 129 0.39 to 0.81 ms before and 0.41 to 0.68 after, `svr_uriel.piv` tick 100 0.80 to 1.34 and 0.82 to 1.27, `Jay on a new app (repaired).styk` tick 13 0.29 to 0.65 and 0.27 to 1.00; draw-list encoding 0.45 to 4.05 ms and 0.40 to 3.93 (hitoshi), 0.25 to 0.50 and 0.25 to 0.51 (Jay). The load made single runs vary by a factor of up to four; no difference shows beyond that noise. Not measured: frame times in the browser, the interface thread's cost of edit frames in the app, other GPUs.
+
+**Differences from the JavaScript, on purpose or known**:
+
+- Particles are evaluated on the CPU in double precision (the editor's reference, `evaluateParticle`) and expanded by the vertex shader; the editor's WebGPU renderer evaluates them in its vertex shader in single precision. Positions differ below a pixel.
+- On devices without WebGPU the engine draws like WebGPU devices (above); the Canvas fallback's 4,000-particle preview budget is not followed (every particle is drawn).
+- A connected group's member that is not its root, drawn in the root's run, has its draws placed at the end of the frame, as the editor's layout lists only the run's anchor (the same in both).
+
 
 ### Adding an effect type to the renderer
 
@@ -221,7 +258,6 @@ The memory is bounded but the bound is large: a layer is at most 3,968 pixels on
 
 ### Open
 
-- Generated effects (particles, beam, explosion, smoke) are not drawn by the engine: the gate keeps their documents on the JavaScript renderer.
 - Drawing cels inside effect layers are resampled bilinearly, not with Canvas 2D's high-quality smoothing (URIEL ticks 61 to 64).
 - The CPU rasterizer (`styk-raster`) does not filter and does not know the camera image group: for a frame with a scene stack it would draw the frame twice.
 - `previewRasterScale` (the editor lowering all raster densities under memory pressure) is not followed.
@@ -267,4 +303,6 @@ target/debug/styk generators <file> <tick>…       # a frame's draws, live part
 
 `tests/generators.rs` loads every fixture (auras, beams, explosions, smoke and particles in every style and look, clip tails, a movieclip carrying generators instanced turned, scaled, mirrored and translucent) and, at every recorded tick, requires the editor's batch bit for bit (records and table in single precision, draws) and the same live particles with every value equal (sizes within 1e-12 relative, `Math.pow`), the same beams, arc hashes and ramp colours; each fixture stops matching without its effect clips, and those with trails without earlier-tick anchors. `atlas.json` holds a hash of every material row and level, which the engine generates byte for byte.
 
-Measured when this landed: `TDD2 URIEL NEMESIS 3.styk` (40 clips), all 232 ticks: 602 stacks and 337 effects compared, no difference (nor in its geometry). The Impact FX pack (`AssetReleases/Impact-FX`: the fight scene, 240 ticks, and the 28 movieclip files) keeps its effects, all particles, inside 8 distinct movieclip documents; opened alone, each compares 18 ticks and 16 generated effects with no difference. Their geometry differs where they use 3D poses and surfaces, which the engine does not evaluate yet.
+Measured when this landed: `TDD2 URIEL NEMESIS 3.styk` (40 clips), all 232 ticks: 602 stacks and 337 effects compared, no difference (nor in its geometry). The Impact FX pack (`AssetReleases/Impact-FX`: the fight scene, 240 ticks, and the 28 movieclip files) keeps its effects, all particles, inside 8 distinct movieclip documents; opened alone, each compares 18 ticks and 16 generated effects with no difference. Their geometry differs where they use 3D poses and surfaces, which the engine did not evaluate then.
+
+Generated effects, measured when they landed (2026-10-03): the seven fixtures, 29 ticks, 7,752 live particles: every batch bit for bit, every particle equal (sizes within 1e-12), all 17 material rows and their levels byte for byte. In `TDD2 URIEL NEMESIS 3.styk` the explosion clip's target (uid 2386) is absent from every frame of the clip's range, so neither the editor nor the engine draws a generated effect at any of its 232 ticks.

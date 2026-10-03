@@ -17,10 +17,11 @@
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
-pub const CELL: usize = 128;
-pub const COLUMNS: usize = 8;
-pub const LEVELS: usize = 4;
-pub const ROWS: usize = 17;
+/// The atlas layout is the draw-list format's (`styk_draw::MATERIAL_*`).
+pub const CELL: usize = styk_draw::MATERIAL_CELL as usize;
+pub const COLUMNS: usize = styk_draw::MATERIAL_COLUMNS as usize;
+pub const LEVELS: usize = styk_draw::MATERIAL_LEVELS as usize;
+pub const ROWS: usize = styk_draw::MATERIAL_ROWS as usize;
 
 const TAU: f64 = PI * 2.0;
 const PX: f64 = 2.0 / CELL as f64;
