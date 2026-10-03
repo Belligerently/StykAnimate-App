@@ -781,6 +781,18 @@ scenario('figures-layers-sheet', app, [
     writeFileSync(`${out}/format4.document.json`, JSON.stringify(document) + '\n');
   }
   scenario('project-settings-format4-sheet', app, [['setFPS', 25], ['updateProject', {fps: 7}], ['undo'], ['undo'], ['redo']], 'format4.document.json');
+  // Importing figures: a file's first frame centred on the canvas, a chain of joined figures
+  // (centred on its unjoined root, joins kept) at a position, a single definition; a file without figures, a bad position;
+  // history.
+  {
+    const file = JSON.parse(readFileSync(`${out}/two-limbs.document.json`, 'utf8')), chain = JSON.parse(readFileSync(`${out}/joined-chain.document.json`, 'utf8'));
+    // A file whose joins name their parent by slot only, as older ones do.
+    const bySlot = structuredClone(chain); for (const object of bySlot.keyframes[0].objects) if (object.join) delete object.join.target_unique_id;
+    scenario('import-figure-sheet', app, [
+      ['importFigure', file], ['importFigure', chain, {position: {x: 300, y: 200}}], ['importFigure', bySlot], ['importFigure', file.figure_types[1], {position: {x: 100, y: 120}}], ['importFigure', {figure_types: []}],
+      ['importFigure', file, {position: {x: 'a', y: 0}}], ['moveSelection', 5, 5], ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'startup.document.json');
+  }
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

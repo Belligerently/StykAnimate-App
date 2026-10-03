@@ -552,6 +552,7 @@ impl Editor {
             },
             "cutSelection" => self.cut_selection(),
             "pasteSelection" => self.paste_selection(&arg(0)),
+            "importFigure" => self.import_figure(&arg(0), &arg(1)),
             "duplicateSelection" => self.duplicate_selection(&arg(0)),
             "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
             "updatePolygon" => match args.get(1) {
