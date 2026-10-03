@@ -131,7 +131,7 @@ impl Renderer {
             page_frame: [0, 0],
             page_small: 0,
             executor: None,
-            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0, effect_layers: 0, effect_passes: 0, effect_bytes: 0, layer_bytes: 0 },
+            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0, effect_layers: 0, effect_passes: 0, effect_bytes: 0, layer_bytes: 0, depth_bytes: 0 },
         }
     }
 }

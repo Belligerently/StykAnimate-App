@@ -27,6 +27,14 @@ struct DepthRuns {
     ranges: Vec<(u32, u32)>,
 }
 
+impl DepthRuns {
+    /// Whether prims `range` hold any face: only such passes get a depth buffer.
+    fn within(&self, range: std::ops::Range<u32>) -> bool {
+        let first = self.ranges.partition_point(|&(_, end)| end <= range.start);
+        self.ranges.get(first).is_some_and(|&(start, _)| start < range.end)
+    }
+}
+
 /// A pass's depth buffer: each run resets the depth it uses, so it is never kept.
 fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAttachment<'_> {
     wgpu::RenderPassDepthStencilAttachment { view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }
@@ -278,6 +286,7 @@ impl Renderer {
             let pipelines = self.depth_pipelines();
             DepthRuns { flat: pipelines.flat.clone(), faces: pipelines.faces.clone(), ranges }
         });
+        let (mut layer_depth, mut frame_depth) = (false, false);
         let mut from = root.0 + bg;
         for (r, _) in rounds.iter().enumerate() {
             for depth in (1..=max_depth).rev() {
@@ -293,7 +302,9 @@ impl Renderer {
                         ..Default::default()
                     });
                     let msaa = Self::msaa(&self.device, &mut self.msaa_layer, page);
-                    let depth_view = depth_runs.as_ref().map(|_| Self::depth_buffer(&self.device, &mut self.depth_layer, page));
+                    let face_runs = depth_runs.as_ref().filter(|r| r.within(start..end));
+                    let depth_view = face_runs.map(|_| Self::depth_buffer(&self.device, &mut self.depth_layer, page));
+                    layer_depth |= depth_view.is_some();
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("styk layer pass"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -311,7 +322,7 @@ impl Renderer {
                     pass.set_bind_group(1, &self.sprite_bind, &[]);
                     pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
                     pass.set_vertex_buffer(0, self.prims.slice(..));
-                    draw_prims(&mut pass, &self.pipeline, depth_runs.as_ref(), start..end);
+                    draw_prims(&mut pass, &self.pipeline, face_runs, start..end);
                 }
                 // The filtered groups of this depth, before the next depth composites them.
                 if let Some(executor) = &mut self.executor {
@@ -329,7 +340,10 @@ impl Renderer {
             let last = r + 1 == rounds.len();
             let until = if last { root.1 } else { stops[r] };
             let msaa = Self::msaa(&self.device, &mut self.msaa_main, size);
-            let depth_view = depth_runs.as_ref().map(|_| Self::depth_buffer(&self.device, &mut self.depth_main, size));
+            // Faces sit in raster entries, so a frame pass seldom holds any.
+            let face_runs = depth_runs.as_ref().filter(|r| r.within(root.0..root.1));
+            let depth_view = face_runs.map(|_| Self::depth_buffer(&self.device, &mut self.depth_main, size));
+            frame_depth |= depth_view.is_some();
             let output = &self.output.as_ref().unwrap().1;
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("styk frame pass"),
@@ -356,7 +370,7 @@ impl Renderer {
             pass.set_bind_group(2, &self.layer_binds[1], &[]);
             pass.set_vertex_buffer(0, self.prims.slice(..));
             if r == 0 && bg > 0 {
-                draw_prims(&mut pass, &self.pipeline, depth_runs.as_ref(), root.0..root.0 + bg);
+                draw_prims(&mut pass, &self.pipeline, face_runs, root.0..root.0 + bg);
             }
             if until > from {
                 if view.clip_to_artboard {
@@ -367,17 +381,26 @@ impl Renderer {
                     let y1 = a[3].clamp(0.0, size[1] as f64).ceil() as u32;
                     if x1 > x0 && y1 > y0 {
                         pass.set_scissor_rect(x0, y0, x1 - x0, y1 - y0);
-                        draw_prims(&mut pass, &self.pipeline, depth_runs.as_ref(), from..until);
+                        draw_prims(&mut pass, &self.pipeline, face_runs, from..until);
                     }
                 } else {
-                    draw_prims(&mut pass, &self.pipeline, depth_runs.as_ref(), from..until);
+                    draw_prims(&mut pass, &self.pipeline, face_runs, from..until);
                 }
             }
             from = until;
         }
+        // Depth buffers live while frames use them (a document with 3D faces).
+        if !layer_depth {
+            self.depth_layer = None;
+        }
+        if !frame_depth {
+            self.depth_main = None;
+        }
         let fx = self.executor.as_ref().map(|e| e.stats).unwrap_or_default();
         // An atlas always has two layers at least (resources::array_texture).
         let layer_bytes = self.layers.iter().map(|a| a.size[0] as u64 * a.size[1] as u64 * 4 * a.pages.max(2) as u64).sum();
+        // Four samples of four bytes (depth24plus) per pixel, frame and layer pages.
+        let depth_bytes = [&self.depth_main, &self.depth_layer].iter().filter_map(|d| d.as_ref()).map(|d| d.1[0] as u64 * d.1[1] as u64 * 4 * SAMPLES as u64).sum();
         self.stats = Stats {
             prims: list.prims.len() as u32,
             groups: n as u32 - 1,
@@ -388,6 +411,7 @@ impl Renderer {
             effect_passes: fx.passes,
             effect_bytes: fx.slot_bytes,
             layer_bytes,
+            depth_bytes,
         };
     }
 

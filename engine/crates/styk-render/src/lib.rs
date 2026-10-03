@@ -59,6 +59,8 @@ pub struct Stats {
     /// GPU memory of the effect working slots and of the isolation atlases.
     pub effect_bytes: u64,
     pub layer_bytes: u64,
+    /// GPU memory of the multisampled depth buffers of depth runs (3D faces); 0 without any.
+    pub depth_bytes: u64,
 }
 
 pub struct Renderer {
