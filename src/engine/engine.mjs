@@ -27,7 +27,7 @@ let loading = null;
  * Loads the engine once per page.
  * @param {{workers?: number, deviceMemory?: number}} [options]
  * @returns {Promise<{handle: EngineHandle, workers: number, threaded: boolean, createStage(canvas: HTMLCanvasElement): Promise<Stage>,
- *   open(bytes: Uint8Array, extension: string, name: string): Promise<object>, whenProgress(): Promise<void>, destroy(): void}>}
+ *   open(bytes: Uint8Array, extension: string, name: string): Promise<object>, whenProgress(seen?: number): Promise<void>, progressSeen(): number, destroy(): void}>}
  */
 export function loadEngine(options = {}) {
   return loading ??= load(options).catch(error => { loading = null; throw error; });
@@ -92,10 +92,16 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
     };
     setTimeout(slice, 0);
   };
-  /** Resolves when background work has finished something since the call. */
-  const whenProgress = () => {
+  /** The progress counter now: read it before checking for a result, then wait with it. */
+  const progressSeen = () => Atomics.load(progress, 0);
+  /**
+   * Resolves when background work has finished something since the counter read `seen`
+   * (by default, since the call). Pass a value read before checking for a result, or work
+   * finishing in between is only noticed at the 250 ms timeout.
+   */
+  const whenProgress = (seen = progressSeen()) => {
     pump();
-    const seen = Atomics.load(progress, 0);
+    if (Atomics.load(progress, 0) !== seen) return Promise.resolve();
     if (threaded && typeof Atomics.waitAsync === 'function') {
       const waiting = Atomics.waitAsync(progress, 0, seen, 250);
       return waiting.async ? waiting.value.then(() => {}) : Promise.resolve();
@@ -106,7 +112,7 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
     });
   };
   return {
-    handle, workers: pool.length, threaded, pump, whenProgress,
+    handle, workers: pool.length, threaded, pump, whenProgress, progressSeen,
     /** The engine's memory now, and the most it may grow to (chosen by createEngineMemory). */
     get memoryBytes() { return memory.buffer.byteLength; },
     memoryMaximumBytes: reserved.maximumBytes,
@@ -115,9 +121,9 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
     async open(bytes, extension, name) {
       handle.open(bytes, extension, name);
       for (;;) {
-        const opened = handle.take_opened();
+        const seen = progressSeen(), opened = handle.take_opened();
         if (opened !== undefined) return JSON.parse(opened);
-        await whenProgress();
+        await whenProgress(seen);
       }
     },
     destroy() {

@@ -234,9 +234,25 @@ impl Engine {
     /// through [`Engine::spawn`] for anything large.
     pub fn commit(&self, revision: u64, batch: u32) -> Result<Committed, MirrorError> {
         let started = self.now();
-        let changes = self.inner.staged.lock().remove(&batch).unwrap_or_default();
         // Only one commit runs at a time; commits are background tasks, so waiting here is allowed.
-        let mut mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.commit_locked(mirror, started, revision, batch)
+    }
+
+    /// [`Engine::commit`] for the interface thread, which may not wait (D7): `Ok(None)` while
+    /// another commit runs, the batch staged as it was, to be committed by a later call.
+    pub fn try_commit(&self, revision: u64, batch: u32) -> Result<Option<Committed>, MirrorError> {
+        let started = self.now();
+        let mirror = match self.inner.mirror.try_lock() {
+            Ok(mirror) => mirror,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(None),
+        };
+        self.commit_locked(mirror, started, revision, batch).map(Some)
+    }
+
+    fn commit_locked(&self, mut mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32) -> Result<Committed, MirrorError> {
+        let changes = self.inner.staged.lock().remove(&batch).unwrap_or_default();
         let (tree, reset) = mirror.apply(changes)?;
         if reset {
             mirror.loader = Loader::new();
@@ -259,5 +275,32 @@ impl Engine {
         let ms = self.now() - started;
         let id = self.publish(Generation { id: 0, lineage: mirror.lineage, revision, prepared, assets, open_ms: ms, anchors: None });
         Ok(Committed { generation: id, revision, converted, ms })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Budgets;
+
+    fn clock() -> f64 {
+        0.0
+    }
+
+    #[test]
+    fn the_interface_thread_never_waits_for_a_commit() {
+        let engine = Engine::new(clock, Budgets::for_device(None));
+        engine.stage(0, Change::Reset);
+        engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20}"#.to_vec()));
+        engine.stage(0, Change::Layout(Table::Figures, vec![]));
+        engine.stage(0, Change::Layout(Table::Keyframes, vec![]));
+        // Another commit holds the mirror (a background commit of the document's frames).
+        let busy = engine.inner.mirror.lock().unwrap();
+        assert!(matches!(engine.try_commit(1, 0), Ok(None)), "the interface thread is told to come back, not made to wait");
+        assert!(engine.inner.staged.lock().contains_key(&0), "the batch stays staged");
+        drop(busy);
+        let done = engine.try_commit(1, 0).unwrap().expect("the mirror is free");
+        assert_eq!(done.revision, 1);
+        assert!(!engine.inner.staged.lock().contains_key(&0));
     }
 }

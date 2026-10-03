@@ -38,6 +38,16 @@ the next tree, converts only changed records and publishes a new generation, or
 changes nothing if any staged change is invalid. The cost: the document exists
 twice (plan section 6 measures it) until the engine owns it (S5).
 
+Only one commit runs at a time. `commit_now` runs on the interface thread, which
+may not wait ([D7](decisions/0007-interface-thread-never-blocks.md)): while a
+background commit of the frames holds the mirror it answers `{busy: true}` and
+leaves the batch staged (`Engine::try_commit`), and `syncDefinitions` throws
+`engine_busy` without forgetting what it sent; the next `commit_now` commits it.
+The stage then draws that frame with the JavaScript renderer, as for any refusal;
+a frame sync (`syncFrames`) and an export wait for the background commit
+instead. (Before, the interface thread waited on the lock, which a browser
+refuses: the batch was lost and the mirror silently out of step.)
+
 ## Invariants
 
 - No silent loss: a field the engine does not understand stays in the tree and
