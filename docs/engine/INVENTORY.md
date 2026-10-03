@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 82 | 4 | 0 | 0 | 0 | 0 % | 19 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 80 | 6 | 0 | 0 | 0 | 0 % | 23 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 50 | 29 | 4 | 0 | 0 | 3 % | 48 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 38 | 12 | 2 | 0 | 0 | 2 % | 45 % | 0 % |
-| **Total** | 356 | 4063 KiB | 275 | 50 | 8 | 22 | 1 | 13 % | 26 % | 0 % |
+| **Total** | 356 | 4063 KiB | 273 | 52 | 8 | 22 | 1 | 13 % | 27 % | 0 % |
 
 ## Engine modules
 
@@ -115,13 +115,13 @@ Engine logic: ported to Rust.
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-range-commands.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-rig-constraints.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS |
 | `src/editor-rig.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-scene.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-selection.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-spatial.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose, getSpatialMotion, setSpatialMotion, poseSpatialJoint (flat, arc, mechanisms), twistSpatialJoint, _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); 3D IK target, pole and depth editing, pose choices, resetSpatialPose still JS |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |

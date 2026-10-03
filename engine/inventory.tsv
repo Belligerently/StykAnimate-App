@@ -160,13 +160,13 @@ src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
 src/editor-range-commands.mjs	engine	styk-edit	js	commands and history
 src/editor-ranges.mjs	engine	styk-edit	js	commands and history
-src/editor-rig-constraints.mjs	engine	styk-edit	js	commands and history
+src/editor-rig-constraints.mjs	engine	styk-edit	partial	Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS
 src/editor-rig.mjs	engine	styk-edit	js	commands and history
 src/editor-scene.mjs	engine	styk-edit	js	commands and history
 src/editor-selection.mjs	engine	styk-edit	js	commands and history
 src/editor-sessions.mjs	engine	styk-edit	js	commands and history
 src/editor-spatial-shape.mjs	engine	styk-edit	js	commands and history
-src/editor-spatial.mjs	engine	styk-edit	js	commands and history
+src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose, getSpatialMotion, setSpatialMotion, poseSpatialJoint (flat, arc, mechanisms), twistSpatialJoint, _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); 3D IK target, pole and depth editing, pose choices, resetSpatialPose still JS
 src/editor-sprite-segment.mjs	engine	styk-edit	js	commands and history
 src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
