@@ -12,6 +12,7 @@
 //! timelines (docs/engine/editing.md lists the calls). Every other call
 //! answers [`EditError::Unported`], so a facade knows to run it in JavaScript.
 
+mod audio;
 mod authored;
 mod camera_motion;
 mod figures;
@@ -416,6 +417,10 @@ impl Editor {
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "setAudioTrack" => self.set_audio_track(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteAudioTrack" => self.delete_audio_track(&arg(0)).map(Value::Bool),
+            "setAudioClip" => self.set_audio_clip(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "deleteAudioClip" => self.delete_audio_clip(&arg(0)).map(Value::Bool),
             "addPaletteColor" => self.add_palette_color(&arg(0)).map(Value::Bool),
             "addPaletteColors" => self.add_palette_colors(&arg(0)),
             "removePaletteColor" => self.remove_palette_color(&arg(0)).map(Value::Bool),

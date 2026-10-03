@@ -589,6 +589,37 @@ scenario('figures-layers-sheet', app, [
     ['addPaletteColors', ['#123456', '#ff0000', '#123456', [1, 2, 3]]], ['movePaletteColor', '#123456', 0], ['movePaletteColor', '#123456', 99], ['movePaletteColor', '#999999', 0],
     ['removePaletteColor', '#aabbcc'], ['removePaletteColor', [0, 128, 255]], ['addPaletteColor', [300, 0, 0]], ['addPaletteColors', []], ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'startup.document.json');
+  // Audio tracks and clips: track name, volume, solo and mute (33 clips sounding at once
+  // refused; 32, with 31 ending as one starts or a silent clip, not), clip timing with fades kept within
+  // the clip, a clip moved to another track, deletions that drop recordings nothing uses;
+  // refusals; a pose gesture in progress committed first; history. And a document
+  // without audio. (Recordings are checked when a document opens, and these commands add
+  // none, so a faulty recording never reaches them.)
+  const audioAsset = (id, duration, extra = {}) => ({id, name: `${id}.wav`, size: 3, duration, chunks: [{data_base64: 'AAAA'}], peaks: [0.25, 1, 0.5], ...extra});
+  const audioClip = (id, assetId, start, extra = {}) => ({id, assetId, start, offset: 0, duration: 1, gain: 1, fadeIn: 0, fadeOut: 0, ...extra});
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    const crowd = [...Array.from({length: 31}, (_, i) => audioClip(`crowd-${i}`, 'sound-c', 0)), audioClip('crowd-late', 'sound-c', 1)];
+    document._styk.audio = {version: 1, assets: {'sound-a': audioAsset('sound-a', 2), 'sound-b': audioAsset('sound-b', 1.5, {size: 1, chunks: [{data_base64: 'AA=='}]}), 'sound-c': audioAsset('sound-c', 4)}, tracks: [
+      {id: 'audio-a', name: 'Music', gain: 1, mute: false, solo: false, clips: [audioClip('clip-1', 'sound-a', 0, {fadeOut: 0.25}), audioClip('clip-2', 'sound-a', 2)]},
+      {id: 'audio-b', name: 'Effects', gain: 0.8, mute: false, solo: false, clips: [audioClip('clip-3', 'sound-b', 0.5, {duration: 1.5})]},
+      {id: 'audio-c', name: 'Crowd', gain: 1, mute: true, solo: false, clips: crowd},
+    ]};
+    writeFileSync(`${out}/audio.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('audio-sheet', app, [
+    ['setAudioTrack', 'audio-a', {name: 'Voice', gain: 0.5}], ['setAudioTrack', 'audio-a', {name: 'Voice'}], ['setAudioTrack', 'audio-a', {pan: 1}], ['setAudioTrack', 'nope', {mute: true}],
+    ['setAudioTrack', 'audio-b', {solo: true}], ['setAudioTrack', 'audio-a', {gain: 5}], ['setAudioTrack', 'audio-a', {name: '  '}], ['setAudioTrack', 'audio-c', {mute: false}], ['setAudioTrack', 'audio-b', {solo: false}],
+    ['setAudioTrack', 'audio-a', {mute: true}], ['setAudioTrack', 'audio-b', {solo: false}], ['setAudioClip', 'crowd-0', {gain: 0}], ['setAudioTrack', 'audio-a', {mute: false}],
+    ['setAudioClip', 'clip-1', {start: 1.5, duration: 0.2}], ['setAudioClip', 'clip-1', {start: 1.5}], ['setAudioClip', 'clip-2', {fadeIn: 3}], ['setAudioClip', 'clip-1', {}, 'audio-b'],
+    ['setAudioClip', 'clip-1', {gain: 'x'}], ['setAudioClip', 'clip-1', {volume: 1}], ['setAudioClip', 'clip-1', {duration: 99}], ['setAudioClip', 'clip-1', {}, 'nope'],
+    ['setAudioClip', 'nope', {start: 0}], ['setAudioClip', 'clip-2', {offset: 1.9, duration: 0.2}],
+    ['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['setAudioTrack', 'audio-a', {gain: 0.7}],
+    ['deleteAudioClip', 'clip-3'], ['deleteAudioClip', 'nope'], ['deleteAudioTrack', 'audio-c'], ['deleteAudioTrack', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'audio.document.json');
+  scenario('audio-none-sheet', app, [
+    ['deleteAudioTrack', 'audio-a'], ['setAudioTrack', 'audio-a', {mute: true}], ['setAudioClip', 'clip-1', {start: 1}], ['deleteAudioClip', 'clip-1'],
+  ], 'startup.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

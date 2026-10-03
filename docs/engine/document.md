@@ -36,7 +36,10 @@ payloads as binary sections), stages them per batch
 and commits by revision (`commit`, `commit_now`). `styk_engine::mirror` builds
 the next tree, converts only changed records and publishes a new generation, or
 changes nothing if any staged change is invalid. The cost: the document exists
-twice (plan section 6 measures it) until the engine owns it (S5).
+twice (plan section 6 measures it) until the engine owns it (S5). The mirror leaves
+out the audio (`_styk.audio`, whose recordings can reach 96 MiB): nothing the engine
+draws reads it, and holding the recordings twice is not worth the audio commands
+`styk-edit` has ported; it joins the engine's document when the engine saves (S5).
 
 ## Invariants
 

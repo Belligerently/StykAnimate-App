@@ -14,7 +14,7 @@ src/application-menu.mjs	ui	-	stays
 src/asset-library.mjs	ui	-	stays	
 src/audio-encode.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/audio-engine.mjs	platform	styk-export::audio	js	Web Audio preview
-src/audio-model.mjs	engine	styk-export::audio	js	audio model and offline mix
+src/audio-model.mjs	engine	styk-export::audio	js	audio model and offline mix; validateAudioState also in styk-edit/src/audio.rs for the ported audio commands
 src/audio-pcm.mjs	engine	styk-export::audio	js	audio model and offline mix
 src/audio-timeline.mjs	ui	-	stays	
 src/audio-worker.mjs	platform	styk-export::audio	js	Web Audio preview
@@ -122,7 +122,7 @@ src/drawing-worker-preview.mjs	engine	styk-drawing	js
 src/drawing-worker.mjs	engine	styk-drawing	js	
 src/editable-scene-preparation.mjs	engine	styk-render	js	
 src/editor-animation.mjs	engine	styk-edit	js	commands and history
-src/editor-audio.mjs	engine	styk-edit	js	commands and history
+src/editor-audio.mjs	engine	styk-edit	partial	Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS
 src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS
 src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history

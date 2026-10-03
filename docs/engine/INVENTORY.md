@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 75 | 10 | 1 | 0 | 0 | 0 % | 28 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 74 | 11 | 1 | 0 | 0 | 0 % | 29 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4063 KiB | 250 | 66 | 17 | 22 | 1 | 16 % | 31 % | 0 % |
+| **Total** | 356 | 4063 KiB | 249 | 67 | 17 | 22 | 1 | 16 % | 31 % | 0 % |
 
 ## Engine modules
 
@@ -77,7 +77,7 @@ Engine logic: ported to Rust.
 | `src/clipboard-worker.mjs` | `styk-edit` | js |  |
 | `src/demo.mjs` | `styk-edit` | js |  |
 | `src/editor-animation.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-audio.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-audio.mjs` | `styk-edit` | partial | Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS |
 | `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
@@ -271,7 +271,7 @@ Engine logic: ported to Rust.
 | `src/image-export-worker.mjs` | `styk-export` | js |  |
 | `src/image-export.mjs` | `styk-export` | js |  |
 | `src/svg-export.mjs` | `styk-export` | js |  |
-| `src/audio-model.mjs` | `styk-export::audio` | js | audio model and offline mix |
+| `src/audio-model.mjs` | `styk-export::audio` | js | audio model and offline mix; validateAudioState also in styk-edit/src/audio.rs for the ported audio commands |
 | `src/audio-pcm.mjs` | `styk-export::audio` | js | audio model and offline mix |
 | `backend/native_format.py` | `styk-formats::container` | verified | the app reads containers in src/native-container.mjs and, as the codec fallback, styk-piv over styk-formats; kept only as the development test oracle (not shipped) |
 | `src/base64.mjs` | `styk-formats::container` | ported | Rust: styk-doc JSON base64 |
