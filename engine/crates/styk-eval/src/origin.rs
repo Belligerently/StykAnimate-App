@@ -52,6 +52,8 @@ pub struct Layout {
     pub path: Vec<usize>,
     /// The segment index of the rotation handle.
     pub rotation: Option<usize>,
+    /// By handle: the segment the walk from the pivot reaches it through (`endpoints`).
+    pub endpoints: HashMap<u32, usize>,
 }
 
 /// One bone of a retained support graph.
@@ -74,6 +76,8 @@ pub struct Support {
     pub path: Vec<(usize, f64)>,
     /// The bone whose turn is the figure's rotation.
     pub rotation: usize,
+    /// By handle: the bone ending there, or `-1` at the original pivot (`vertices`).
+    pub vertices: HashMap<u32, i64>,
 }
 
 /// A bone's or ghost's pose: angle, bend and length.
@@ -173,7 +177,11 @@ pub fn compile(v: &Value, segments: &[Segment]) -> Result<Origin, String> {
             .filter(|path| path.iter().all(|&(bone, _)| bone < bones.len()))
             .ok_or("a support path term is malformed")?;
         let rotation = num(support, "rotation").map(|r| r as usize).filter(|&r| r < bones.len()).ok_or("a support rotation out of range")?;
-        return Ok(Origin { handle, rotation_handle, reversed, kind: Kind::Support(Support { bones, ready, path, rotation }) });
+        let vertices = match support.get("vertices") {
+            Some(Value::Obj(map)) => map.iter().filter_map(|(key, node)| Some((key.parse::<u32>().ok()?, node.as_f64()? as i64))).collect(),
+            _ => HashMap::new(),
+        };
+        return Ok(Origin { handle, rotation_handle, reversed, kind: Kind::Support(Support { bones, ready, path, rotation, vertices }) });
     }
     // `animationOriginLayout`: breadth first from the pivot over the undirected segments,
     // each node's edges in segment order.
@@ -197,6 +205,7 @@ pub fn compile(v: &Value, segments: &[Segment]) -> Result<Origin, String> {
             layout.ready.push(index);
             layout.parents[index] = via;
             layout.reversed[index] = segments[index].parent != node;
+            layout.endpoints.insert(other, index);
             queue.push((other, Some(index)));
         }
         q += 1;
@@ -252,6 +261,32 @@ pub fn support_pose(figure: &Figure, object: Option<&Object>, support: &Support,
     };
     let angle = object.angles.get(native).copied().unwrap_or(f64::NAN) + if bone.reversed { bend + std::f64::consts::PI } else { 0.0 };
     GhostPose { angle, bend: if bone.reversed { -bend } else { bend }, length }
+}
+
+/// `animationOriginHandleOrientation`: the direction of joint `handle` in the original
+/// tree's basis (where a figure joined there hangs). `None` for a handle the tree does not
+/// reach; NaN where the editor reads an undefined segment.
+pub fn handle_orientation(figure: &Figure, object: &Object, handle: u32) -> Option<f64> {
+    let origin = figure.origin.as_ref()?;
+    match &origin.kind {
+        Kind::Support(support) => {
+            let node = *support.vertices.get(&handle)?;
+            let index = if node < 0 { support.rotation } else { node as usize };
+            if index >= support.bones.len() {
+                return Some(f64::NAN);
+            }
+            let pose = support_pose(figure, Some(object), support, index);
+            Some(pose.angle + if node < 0 { 0.0 } else { pose.bend })
+        }
+        Kind::Layout(layout) => {
+            if Some(handle) == origin.handle {
+                return Some(layout.rotation.map_or(f64::NAN, |index| angle(figure, Some(object), index, origin.reversed)));
+            }
+            let index = *layout.endpoints.get(&handle)?;
+            let reverse = layout.reversed[index];
+            Some(angle(figure, Some(object), index, reverse) + bend(figure, Some(object), index, reverse))
+        }
+    }
 }
 
 /// `animationRotation`: how far the pose turned the figure from its rest angle.

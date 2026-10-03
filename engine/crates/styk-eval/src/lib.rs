@@ -4,6 +4,7 @@
 
 pub mod assets;
 pub mod camera;
+pub mod channels;
 pub mod doc;
 pub mod drawing;
 pub mod drawlist;

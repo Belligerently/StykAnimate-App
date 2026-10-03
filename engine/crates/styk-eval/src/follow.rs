@@ -423,6 +423,19 @@ fn projected(doc: &Document, keep: &HashSet<u32>) -> Document {
     out.vfx_elsewhere = false;
     out.keyframes = doc.keyframes.iter().map(|frame| project_frame(frame, keep)).collect();
     out.frame_sources = doc.frame_sources.iter().map(|(id, frame)| (id.clone(), project_frame(frame, keep))).collect();
+    // `_styk.animation` keeps the channels of the camera, of layers and of the followed
+    // figures themselves; a layer sheet keeps its `legacyAnimation` whole.
+    if out.sheet.is_none()
+        && let Some(animation) = &doc.animation
+    {
+        let channels: Vec<_> = animation
+            .channels
+            .iter()
+            .filter(|c| matches!(c.target, crate::channels::Target::Camera | crate::channels::Target::Layer { .. }) || c.target.uid().is_some_and(|uid| keep.contains(&uid)))
+            .cloned()
+            .collect();
+        out.animation = crate::channels::Animation::of(channels);
+    }
     out
 }
 

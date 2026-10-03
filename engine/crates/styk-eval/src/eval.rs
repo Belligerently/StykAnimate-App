@@ -1,6 +1,6 @@
 //! Frame evaluation: the timeline, native Pivot tweening (`evaluatedNativeFrame`
-//! in src/pivot/geometry.mjs) and the StykAnimate layer sheet
-//! (`sampleLayerSheet` in src/layer-sheet.mjs).
+//! in src/pivot/geometry.mjs) with its property channels ([`crate::channels`]) and the
+//! StykAnimate layer sheet (`sampleLayerSheet` in src/layer-sheet.mjs).
 //!
 //! Evaluation is a pure function of an immutable [`Prepared`] document and a
 //! tick, so any number of threads can evaluate different ticks concurrently.
@@ -88,6 +88,8 @@ pub struct Prepared {
     presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
     /// Follow camera clips and their shaped paths ([`crate::follow`]).
     follow: Option<crate::follow::Follow>,
+    /// The property channels the native timeline is evaluated with ([`crate::channels`]).
+    channels: Option<crate::channels::Compiled>,
 }
 
 /// `shortest(a)`: the angle in (-π, π], with V8's rounding (tweened angles are stored
@@ -329,7 +331,7 @@ impl<'a> Sampler<'a> {
     }
 }
 
-fn color_tween(a: u32, b: u32, t: f64) -> u32 {
+pub(crate) fn color_tween(a: u32, b: u32, t: f64) -> u32 {
     let (am, bm) = (a >> 24, b >> 24);
     if am == 0 && bm == 0 {
         return a;
@@ -456,7 +458,7 @@ fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: boo
 
 /// `correctAnimationOrigins`: every unjoined figure with an animation origin is placed so
 /// that its pivot lands where its pose says, as each native interval leaves it.
-fn correct_origins(doc: &Document, frame: &mut Frame) {
+pub(crate) fn correct_origins(doc: &Document, frame: &mut Frame) {
     if !doc.origins {
         return;
     }
@@ -690,6 +692,7 @@ impl Prepared {
         };
         let mut rows = native_timeline(&doc);
         let clip_end = doc.camera_motion.iter().map(|c| c.start + c.duration).fold(0.0, f64::max) as u32;
+        let channels = doc.animation.as_ref().map(|animation| crate::channels::Compiled::new(&doc, animation));
         let mut tracks = HashMap::new();
         let mut imported = HashMap::new();
         let mut patches = HashMap::new();
@@ -709,12 +712,17 @@ impl Prepared {
                 }
             }
         } else if let Some(last) = rows.last_mut() {
-            last.count = last.count.max(clip_end.saturating_sub(last.start));
+            // A native timeline also lasts until the channels' last frame (`animationEndTick`).
+            let end = clip_end.max(doc.animation.as_ref().map_or(0.0, |a| a.end.max(0.0)) as u32);
+            last.count = last.count.max(end.saturating_sub(last.start));
         }
         let total_ticks = rows.last().map(|r| r.start + r.count).unwrap_or(0).max(1);
-        let has_vfx = crate::vfx::has_own_vfx(&doc) || doc.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.prepared.has_vfx));
+        // Effect channels can give a pose a stack it does not save.
+        let has_vfx = crate::vfx::has_own_vfx(&doc)
+            || doc.animation.as_ref().is_some_and(|a| a.vfx)
+            || doc.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.prepared.has_vfx));
         let follow = crate::follow::Follow::new(&doc);
-        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow };
+        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow, channels };
         prepared.presence = prepared.presence_index();
         prepared
     }
@@ -734,27 +742,31 @@ impl Prepared {
         if !self.has_clips() {
             return out;
         }
-        let mut times: Vec<u32> = vec![0];
+        let mut times: Vec<f64> = vec![0.0];
         match &self.doc.sheet {
             Some(sheet) => {
-                times.push(sheet.duration);
+                times.push(sheet.duration as f64);
                 for t in sheet.tracks.values() {
-                    times.push(t.end);
-                    times.extend(t.keys.iter().map(|k| k.tick));
+                    times.push(t.end as f64);
+                    times.extend(t.keys.iter().map(|k| k.tick as f64));
                 }
             }
             None => {
                 for r in &self.rows {
-                    times.push(r.start);
-                    times.push(r.start + r.count);
+                    times.push(r.start as f64);
+                    times.push((r.start + r.count) as f64);
+                }
+                // Channel keys can change who is in the frame.
+                for channel in self.doc.animation.iter().flat_map(|a| &a.channels) {
+                    times.extend(channel.keys.iter().map(|k| k.tick));
                 }
             }
         }
-        times.sort_unstable();
+        times.sort_by(f64::total_cmp);
         times.dedup();
         let mut elapsed: HashMap<u32, f64> = HashMap::new();
         for w in times.windows(2) {
-            let (start, end) = (w[0] as f64, w[1] as f64);
+            let (start, end) = (w[0], w[1]);
             if end <= start {
                 continue;
             }
@@ -814,7 +826,7 @@ impl Prepared {
 
     /// One layer's own frame at `tick`, movieclip replacements applied (`sample(id)`).
     pub(crate) fn layer_frame(&self, id: &str, tick: f64) -> Option<Frame> {
-        self.sample_track(id, tick)
+        self.sample_track(id, tick).map(|(frame, _)| frame)
     }
 
     /// The frame before movieclips are sampled and layers ordered (`sampleLayerSheet`
@@ -918,7 +930,7 @@ impl Prepared {
             self.sample_sheet(tick)
         } else if fractional {
             let (index, t) = row_at_fraction(&self.rows, tick);
-            evaluate_native(&self.doc, &self.native, index, t)
+            self.with_channels(evaluate_native(&self.doc, &self.native, index, t), tick)
         } else {
             self.native_at(tick)
         };
@@ -926,10 +938,20 @@ impl Prepared {
         frame
     }
 
-    /// Native evaluation at an absolute (possibly fractional) tick.
+    /// The native timeline at an absolute (possibly fractional) tick, its property
+    /// channels applied: the frame itself, or what a layer sheet's imported keys sample
+    /// (`sampleLegacy`, whose channels are the sheet's `legacyAnimation`).
     pub fn native_at(&self, tick: f64) -> Frame {
         let (index, t) = row_at(&self.rows, tick);
-        evaluate_native(&self.doc, &self.native, index, t)
+        self.with_channels(evaluate_native(&self.doc, &self.native, index, t), tick)
+    }
+
+    /// `composePoseChannels` then `composeAnimationChannels` at `tick`.
+    fn with_channels(&self, frame: Frame, tick: f64) -> Frame {
+        match &self.channels {
+            Some(channels) => channels.compose(&self.doc, frame, tick),
+            None => frame,
+        }
     }
 
     /// Keyframe index whose start is exactly `tick`, if any (native timelines).
@@ -949,16 +971,20 @@ impl Prepared {
     }
 
     /// `sample(id)` in `sampleLayerSheet`: the layer's own pose, then the movieclip
-    /// frames its key replaces.
-    fn sample_track(&self, id: &str, tick: f64) -> Option<Frame> {
+    /// frames its key replaces; with what the editor's frame object is (see [`Sampled`]).
+    fn sample_track(&self, id: &str, tick: f64) -> Option<(Frame, Sampled)> {
         let track = self.doc.sheet.as_ref()?.tracks.get(id)?;
-        let mut frame = self.sample_base(id, track, tick);
+        let sampled = self.sample_base(id, track, tick);
         if tick >= track.end as f64 {
-            return frame;
+            return sampled;
         }
+        let (mut frame, mut identity) = match sampled {
+            Some((frame, identity)) => (Some(frame), identity),
+            None => (None, Sampled::Track),
+        };
         // Replacements are read from every key, the patch-only ones included.
         let at = track.keys.partition_point(|k| k.tick as f64 <= tick);
-        let Some(key) = at.checked_sub(1).map(|i| &track.keys[i]) else { return frame };
+        let Some(key) = at.checked_sub(1).map(|i| &track.keys[i]) else { return frame.map(|frame| (frame, identity)) };
         let next = track.keys.get(at);
         let held = key.easing.map(|e| e.mode) == Some(EasingMode::Constant);
         for patch in &key.movieclip_patches {
@@ -978,8 +1004,9 @@ impl Prepared {
                 None => Frame::default(),
             });
             frame = Some(self.replace_movieclip_frame(base, patch, replacement));
+            identity = Sampled::Track;
         }
-        frame
+        frame.map(|frame| (frame, identity))
     }
 
     /// `replaceMovieclipFrame`: the objects of `replacement` take the place of the
@@ -1059,7 +1086,7 @@ impl Prepared {
     }
 
     /// `baseSample`: the layer's pose from its keys, without movieclip replacements.
-    fn sample_base(&self, id: &str, track: &SheetTrack, tick: f64) -> Option<Frame> {
+    fn sample_base(&self, id: &str, track: &SheetTrack, tick: f64) -> Option<(Frame, Sampled)> {
         if tick >= track.end as f64 && !FIXED.contains(&id) {
             return None;
         }
@@ -1074,9 +1101,9 @@ impl Prepared {
             && matches!(n.value, SheetValue::Frame(None))
         {
             return match &key.value {
-                SheetValue::SourceTick(t) => Some(self.native_at(*t)),
+                SheetValue::SourceTick(t) => Some((self.native_at(*t), Sampled::Native(t.to_bits()))),
                 SheetValue::Frame(Some(id)) => self.doc.pose_source(id).map(|k| {
-                    frame_of(&KeyRef { frame: k.clone(), duration: 1, easing: None, origin: Some(FrameRef::Source(id.clone())) })
+                    (frame_of(&KeyRef { frame: k.clone(), duration: 1, easing: None, origin: Some(FrameRef::Source(id.clone())) }), Sampled::Source(id.clone()))
                 }),
                 SheetValue::Frame(None) => None,
             };
@@ -1091,16 +1118,17 @@ impl Prepared {
                 }
                 None => (0.0, source),
             };
-            return Some(self.native_at(source + fraction * (target - source)));
+            let time = source + fraction * (target - source);
+            return Some((self.native_at(time), Sampled::Native(time.to_bits())));
         }
         if self.imported.get(id).copied().unwrap_or(false) {
             let index = at - 1;
             let (seq, first) = self.mixed_window(id, &keys, index);
             let fraction = next.map_or(0.0, |n| (tick - key.tick as f64) / (n.tick as f64 - key.tick as f64));
-            return Some(evaluate_native(&self.doc, &seq, index - first, fraction));
+            return Some((evaluate_native(&self.doc, &seq, index - first, fraction), Sampled::Track));
         }
         let seq = self.tracks.get(id)?;
-        sample_pose_track(&self.doc, seq, tick)
+        sample_pose_track(&self.doc, seq, tick).map(|frame| (frame, Sampled::Track))
     }
 
     /// A layer that mixes imported and authored keys (an imported animation after an
@@ -1195,16 +1223,34 @@ impl Prepared {
         let scene = self.sample_track("scene", tick);
         let camera = self.sample_track("camera", tick);
         let layers = doc.layers.clone().unwrap_or_default();
+        let frames: Vec<(&String, Option<(Frame, Sampled)>)> = layers.order.iter().map(|id| (id, self.sample_track(id, tick))).collect();
+        // Imported layers that share one native pose are that pose, whole, slots included.
+        if let (Some((scene, identity)), Some((_, other))) = (&scene, &camera)
+            && *identity != Sampled::Track
+            && other == identity
+        {
+            let frame_of = |layer: &str| frames.iter().find(|(id, _)| id.as_str() == layer).and_then(|(_, sampled)| sampled.as_ref());
+            let same = |layer: &str| frame_of(layer).is_some_and(|(_, sampled)| sampled == identity);
+            if scene.objects.iter().all(|o| same(layers.layer_of(o.uid)))
+                && scene.continuations.iter().all(|(uid, _)| same(layers.layer_of(*uid)))
+                && frames.iter().all(|(_, sampled)| match sampled {
+                    None => true,
+                    Some((frame, sampled)) => sampled == identity || (frame.objects.is_empty() && frame.continuations.is_empty()),
+                })
+            {
+                return Frame { tick, ..scene.clone() };
+            }
+        }
         let mut objects: Vec<Arc<Object>> = Vec::new();
         let mut origins = Vec::new();
         let mut parents: Vec<Option<u32>> = Vec::new();
         let mut continuations = Vec::new();
-        for id in &layers.order {
-            let Some(frame) = self.sample_track(id, tick) else { continue };
-            continuations.extend(frame.continuations.iter().filter(|(uid, _)| layers.layer_of(*uid) == id).cloned());
+        for (id, sampled) in &frames {
+            let Some((frame, _)) = sampled else { continue };
+            continuations.extend(frame.continuations.iter().filter(|(uid, _)| layers.layer_of(*uid) == id.as_str()).cloned());
             for &slot in &frame.draw_order {
                 let object = &frame.objects[slot as usize];
-                if layers.layer_of(object.uid) != id {
+                if layers.layer_of(object.uid) != id.as_str() {
                     continue;
                 }
                 parents.push(object.join.map(|j| frame.objects[j.slot as usize].uid));
@@ -1224,6 +1270,7 @@ impl Prepared {
                 Arc::make_mut(&mut objects[i]).join = join;
             }
         }
+        let scene = scene.map(|(frame, _)| frame);
         let (background, background_b, background_mix) = match &scene {
             Some(s) => (s.background, s.background_b, s.background_mix),
             None => (0, 0, 0.0),
@@ -1234,7 +1281,7 @@ impl Prepared {
             tick,
             draw_order: (0..objects.len() as u32).collect(),
             objects,
-            camera: Some(camera.and_then(|c| c.camera).unwrap_or_default()),
+            camera: Some(camera.and_then(|(c, _)| c.camera).unwrap_or_default()),
             background,
             background_b,
             background_mix,
@@ -1304,6 +1351,19 @@ pub fn movieclip_time(clip: &Movieclip, s: &MovieclipPlayback, tick: f64, fps: f
     }
 }
 
+/// Which of the editor's frame objects a layer's sample is (`sampleLayerSheet` caches
+/// `sourceAt(time)` and returns retained sources as they are): layers whose samples are the
+/// same object share it, slots included.
+#[derive(Clone, Debug, PartialEq)]
+enum Sampled {
+    /// `sourceAt(time)`: the native timeline at a time (its bits).
+    Native(u64),
+    /// A retained pose source, by id.
+    Source(Arc<str>),
+    /// A frame of the layer's own (never shared with another layer's).
+    Track,
+}
+
 /// The pose track of a layer: its keys that carry a pose of their own.
 fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
     let keys = track.keys.iter().filter(|k| !k.patch_only).map(|k| (k, if let SheetValue::Frame(Some(fid)) = &k.value { Some(fid) } else { None }));
@@ -1318,7 +1378,7 @@ fn patch_track(doc: &Document, track: &SheetTrack, uid: u32) -> Seq {
 }
 
 /// A pose with nothing in it: no figures, the default camera, the first background.
-fn blank_keyframe() -> Keyframe {
+pub(crate) fn blank_keyframe() -> Keyframe {
     Keyframe {
         duration: 1,
         objects: vec![],
@@ -1371,7 +1431,7 @@ fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&
 }
 
 /// `samplePoseTrack`: the interval of the track's own key ticks around `tick`.
-fn sample_pose_track(doc: &Document, seq: &Seq, tick: f64) -> Option<Frame> {
+pub(crate) fn sample_pose_track(doc: &Document, seq: &Seq, tick: f64) -> Option<Frame> {
     let ticks = &seq.ticks;
     if ticks.is_empty() || tick < ticks[0] {
         return None;

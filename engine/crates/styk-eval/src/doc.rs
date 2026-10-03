@@ -585,9 +585,14 @@ pub struct Document {
     pub camera_motion: Vec<CameraMotionClip>,
     /// Effect clips (`_styk.vfxClips`), see [`crate::vfx`]; `None` when there are none.
     pub vfx_clips: Option<Arc<crate::vfx::Clips>>,
-    /// Effects the typed model does not hold (property channels of effects,
-    /// clips of a captured movieclip's source), for [`crate::vfx::document_has_vfx`].
+    /// Effects saved outside poses and clips (property channels of effects, which
+    /// [`Document::animation`] evaluates; clips of a captured movieclip's source, which
+    /// nothing reads), for [`crate::vfx::document_has_vfx`].
     pub vfx_elsewhere: bool,
+    /// The property channels the native timeline is evaluated with ([`crate::channels`]):
+    /// `_styk.animation`, or a layer sheet's `legacyAnimation`, which its imported keys
+    /// sample. `None` when there is no channel.
+    pub animation: Option<Arc<crate::channels::Animation>>,
     /// Features present in the file that this engine does not evaluate yet.
     pub unsupported: Vec<String>,
     /// Non-fatal notes from loading.
