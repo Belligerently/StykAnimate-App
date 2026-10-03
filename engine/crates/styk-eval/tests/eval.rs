@@ -108,6 +108,20 @@ fn parallax_fixtures_depend_on_parallax() {
     assert!(!compare("parallax-baked-motion", document).matches(), "matches without its baked offsets");
 }
 
+/// The colour-transition fixture would prove nothing if it matched without its transitions.
+#[test]
+fn color_fixture_depends_on_its_transitions() {
+    let mut document = open("color-transitions");
+    let mut transitions = 0;
+    for frame in document.frame_sources.values_mut().chain(document.keyframes.iter_mut()) {
+        for object in Arc::make_mut(frame).objects.iter_mut() {
+            transitions += Arc::make_mut(object).color_transition.take().is_some() as usize;
+        }
+    }
+    assert!(transitions > 0, "no colour transition in the fixture");
+    assert!(!compare("color-transitions", document).matches(), "matches without its colour transitions");
+}
+
 /// The follow fixtures would prove nothing if their shots matched without the follow
 /// clips (their figures dropped, the clips' spans kept).
 #[test]

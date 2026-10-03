@@ -598,6 +598,9 @@ impl Loader {
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
             vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
             spatial: o.get("_stykSpatial").and_then(crate::spatial::parse_pose).map(Arc::new),
+            color_transition: o.get("color_transition").filter(|c| c.is_object()).map(|c| {
+                Arc::new(ColorTransition { from: js_uint32(num(c, "from")), to: js_uint32(num(c, "to")), t: num(c, "t").unwrap_or(f64::NAN) })
+            }),
         })
     }
 
@@ -959,6 +962,14 @@ impl Loader {
         for k in doc.frame_sources.values_mut() {
             fix(k);
         }
+    }
+}
+
+/// `Number(value) >>> 0`: JavaScript's ToUint32 of a number (zero for none, NaN or infinity).
+fn js_uint32(value: Option<f64>) -> u32 {
+    match value {
+        Some(v) if v.is_finite() => v.trunc().rem_euclid(4294967296.0) as u32,
+        _ => 0,
     }
 }
 

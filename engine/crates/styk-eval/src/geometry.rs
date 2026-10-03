@@ -62,6 +62,8 @@ pub struct Item {
     pub points: (u32, u32),
     /// The object's colour override (for gradient end colours).
     pub color: u32,
+    /// The object's colour transition, which replaces `color` when mixing colours.
+    pub transition: Option<Arc<ColorTransition>>,
     pub scale: f64,
     pub image_text_flags: bool,
     /// Movieclip nesting: index into [`Scene::chains`], or `NO_CHAIN`.
@@ -285,6 +287,15 @@ pub fn fround(v: f64) -> f64 {
     v as f32 as f64
 }
 
+/// `objectColor`: a colour of a figure as the object draws it, mixed with its override, or
+/// with both overrides of its colour transition and taken `t` of the way between them.
+pub fn object_rgb(base: [u8; 3], color: u32, transition: Option<&ColorTransition>) -> [u8; 3] {
+    let Some(c) = transition else { return mix_color(base, color) };
+    let (a, b) = (mix_color(base, c.from), mix_color(base, c.to));
+    // `Math.round(lerp(a, b, t))`; a NaN channel is drawn as 0, as the GPU renderer clamps it.
+    std::array::from_fn(|i| (a[i] as f64 + (b[i] as f64 - a[i] as f64) * c.t + 0.5).floor() as u8)
+}
+
 pub fn mix_color(base: [u8; 3], raw: u32) -> [u8; 3] {
     let k = raw >> 24;
     if k == 0 {
@@ -441,7 +452,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         let rgb = if black_override {
             if (obj.color as i32) < 0 { [0, 0, 0] } else { [(obj.color & 255) as u8, (obj.color >> 8 & 255) as u8, (obj.color >> 16 & 255) as u8] }
         } else {
-            mix_color(seg.rgb, obj.color)
+            object_rgb(seg.rgb, obj.color, obj.color_transition.as_deref())
         };
         let kind = match seg.prim {
             Prim::Line => ItemKind::Line,
@@ -470,6 +481,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             z: seg.z,
             points: (p0, p1),
             color: obj.color,
+            transition: obj.color_transition.clone(),
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -620,12 +632,13 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             bend: 0.0,
             length: 0.0,
             thickness: 0.0,
-            rgb: mix_color(poly.rgb, obj.color),
+            rgb: object_rgb(poly.rgb, obj.color, obj.color_transition.as_deref()),
             alpha: poly.alpha,
             opacity,
             z,
             points: range,
             color: obj.color,
+            transition: obj.color_transition.clone(),
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -646,7 +659,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             mirror: obj.image_text_flags,
             camera,
             joint: &joint,
-            colors: fig.mesh_colors.iter().map(|&c| mix_color(c, obj.color)).collect(),
+            colors: fig.mesh_colors.iter().map(|&c| object_rgb(c, obj.color, obj.color_transition.as_deref())).collect(),
         };
         if let Some(mut mesh) = crate::spatial::evaluate_mesh(mesh_plan, &|i| frames.get(i).copied().flatten(), context) {
             let mut levels: Vec<f64> = items.iter().map(|it| it.z).collect();
@@ -670,6 +683,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                     z: drawable.z,
                     points: (0, 0),
                     color: obj.color,
+                    transition: obj.color_transition.clone(),
                     scale,
                     image_text_flags: obj.image_text_flags,
                     chain: NO_CHAIN,
@@ -764,7 +778,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
         mirror: obj.image_text_flags,
         pivot: clip.pivot,
         attachment,
-        colors: mesh.colors.iter().map(|&c| mix_color(c, obj.color)).collect(),
+        colors: mesh.colors.iter().map(|&c| object_rgb(c, obj.color, obj.color_transition.as_deref())).collect(),
     };
     let mut geometry = crate::spatial::evaluate_clip_mesh(mesh, pose);
     for drawable in geometry.split(&[]) {
@@ -785,6 +799,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
             z: drawable.z,
             points: (0, 0),
             color: obj.color,
+            transition: obj.color_transition.clone(),
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,

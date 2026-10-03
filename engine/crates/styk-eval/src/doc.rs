@@ -321,6 +321,19 @@ pub struct Object {
     pub vfx_connected: Option<Arc<[Arc<crate::vfx::Effect>]>>,
     /// Perspective and part proportions of a 3D pose (`_stykSpatial`).
     pub spatial: Option<Arc<SpatialPose>>,
+    /// `color_transition`: the object's colours part way between two overrides, in place
+    /// of its own override ([`crate::geometry::object_rgb`]).
+    pub color_transition: Option<Arc<ColorTransition>>,
+}
+
+/// `color_transition` of a pose (`objectColor` in src/pivot/geometry.mjs): each colour is
+/// mixed with both overrides and taken `t` of the way from the first to the second.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorTransition {
+    /// ARGB overrides, as `color_override_raw`.
+    pub from: u32,
+    pub to: u32,
+    pub t: f64,
 }
 
 /// `_stykSpatial` (src/spatial-projection.mjs): what a pose adds to a spatial rig.

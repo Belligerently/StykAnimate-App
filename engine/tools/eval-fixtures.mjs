@@ -156,6 +156,40 @@ const fixtures = {
     e.setCameraMotion(second, {params: {lag: 0, zoomFit: 1, padding: 0.3, maxZoom: 4, fadeIn: 6, fadeOut: 0}});
     return {document: e.serialize(), ticks: [0, 4, 8, 10, 12, 18, 22, 26, 30, 35, 39], camera: true};
   },
+  /** Written by hand on an editor-built project: no command writes colour transitions,
+   * which older documents carry and the editor draws (`objectColor`). A figure with a
+   * polygon, a circle, a two-colour segment and a painted one, each colour mixed with both
+   * overrides part way, a later key with another transition (a tween keeps the first key's),
+   * and a movieclip whose figure has one (its contents draw in their own object's colours). */
+  'color-transitions': () => {
+    const painted = [
+      [11, 0, 90, .8, {color_rgb: [200, 30, 30]}],
+      [22, 11, 90, 2, {color_rgb: [20, 160, 40], secondary: {rgb: [0, 0, 255], a: 0}}],
+      [33, 22, 35, 0, {color_rgb: [40, 40, 200], paint: {type: 'linear', angle: 0, stops: [{offset: 0, color: [255, 0, 0], opacity: 1}, {offset: 1, color: [0, 0, 255], opacity: 1}]}}],
+      [44, 0, 40, 2.6, {primitive_code: 3, segment_kind: 'circleFill', segment_type: 'circle', color_rgb: [90, 90, 20], thickness: 0}],
+    ];
+    const base = documentOf([painted, limb()], i => [240 + i * 170, 170]);
+    base.figure_types[0].polyfills = [{polyfill_id: 1, segment_ids: [0, 11, 22], color_rgb: [120, 40, 160], alpha_raw: 0, z_order: 0}];
+    const e = open(base, {layerTimeline: true});
+    e.sheetSetDuration(12);
+    e.seek(8); e.select(1); e.moveSelection(40, 20);
+    e.seek(0); e.select(2);
+    e.createMovieclip({start: 0, end: 12});
+    const document = e.serialize();
+    const transitions = {1: {from: 0xff2050c0, to: 0x80ff8000, t: 0.35}, 2: {from: 0, to: 0xffffffff, t: 0.6}};
+    const visit = frame => { for (const object of frame.objects ?? []) if (transitions[object.unique_id]) object.color_transition = {...transitions[object.unique_id]}; };
+    const visitDocument = doc => {
+      if (!doc) return;
+      [...doc.keyframes, ...Object.values(doc._styk?.frameSources ?? {})].forEach(visit);
+      visitDocument(doc._styk?.movieclipSource?.document);
+      for (const figure of doc.figure_types) visitDocument(figure._styk?.movieclip?.document);
+    };
+    visitDocument(document);
+    const track = document._styk.layerSheet.tracks[document._styk.layers.defaultLayerId];
+    const later = document._styk.frameSources[track.keys.find(key => key.tick === 8).value.frameId];
+    later.objects.find(object => object.unique_id === 1).color_transition.t = 0.9;
+    return {document: open(document, {layerTimeline: true}).serialize(), ticks: [0, 4, 8, 11]};
+  },
 };
 
 const args = process.argv.slice(2);
