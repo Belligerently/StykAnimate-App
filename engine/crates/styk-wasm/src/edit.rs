@@ -20,8 +20,9 @@ impl EngineHandle {
     /// (JSON: options, view and counters). `undefined` while the mirror is committing
     /// or empty: this never waits.
     pub fn edit_session(&self, state: &str) -> Result<Option<EditSession>, JsError> {
-        let Some((revision, tree)) = self.engine.mirrored() else { return Ok(None) };
-        let session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
+        // The mirror's typed views of this revision: the session converts nothing to start.
+        let Some((revision, tree, loader, prepared)) = self.engine.mirrored_for_editing() else { return Ok(None) };
+        let session = styk_edit::session::Session::start_prepared(tree, state, loader, prepared).map_err(js_error)?;
         Ok(Some(EditSession { session, revision: revision as f64 }))
     }
 }

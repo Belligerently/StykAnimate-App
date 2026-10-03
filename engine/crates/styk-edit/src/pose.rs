@@ -114,22 +114,27 @@ fn id_of(segment: &Value, key: &str) -> f64 {
 fn rotation_targets(objects: &[Value], figures: &[Value], slot: usize, joint: usize, isolate: bool) -> Vec<(usize, usize)> {
     let figure_of = |object: &Value| figures.iter().find(|f| num(f, "figure_type_id") == num(object, "figure_type_id")).cloned().unwrap_or(Value::Null);
     let segments = segments_of(&figure_of(&objects[slot]));
-    let mut handles: Vec<f64> = vec![id_of(&segments[joint], "segment_id")];
+    let ids: Vec<f64> = segments.iter().map(|s| id_of(s, "segment_id")).collect();
+    let mut handles: Vec<f64> = vec![ids[joint]];
+    // Membership by bits, as the handle lists compare them; a figure may have thousands of segments.
+    let mut taken: HashSet<u64> = HashSet::from([ids[joint].to_bits()]);
     let mut children: HashMap<u64, Vec<f64>> = HashMap::new();
-    for s in &segments {
-        children.entry(id_of(s, "parent_id").to_bits()).or_default().push(id_of(s, "segment_id"));
+    let mut by_id: HashMap<u64, usize> = HashMap::new();
+    for (i, s) in segments.iter().enumerate() {
+        children.entry(id_of(s, "parent_id").to_bits()).or_default().push(ids[i]);
+        by_id.entry(ids[i].to_bits()).or_insert(i);
     }
-    let by_id = |id: f64| segments.iter().find(|s| id_of(s, "segment_id").to_bits() == id.to_bits());
     let mut q = 0;
     while q < handles.len() {
         for &id in children.get(&handles[q].to_bits()).map(Vec::as_slice).unwrap_or(&[]) {
-            if !handles.iter().any(|h| h.to_bits() == id.to_bits()) && (!isolate || by_id(id).is_some_and(static_group)) {
+            if !taken.contains(&id.to_bits()) && (!isolate || by_id.get(&id.to_bits()).is_some_and(|&i| static_group(&segments[i]))) {
+                taken.insert(id.to_bits());
                 handles.push(id);
             }
         }
         q += 1;
     }
-    let mut targets: Vec<(usize, usize)> = segments.iter().enumerate().filter(|(_, s)| handles.iter().any(|h| h.to_bits() == id_of(s, "segment_id").to_bits())).map(|(i, _)| (slot, i)).collect();
+    let mut targets: Vec<(usize, usize)> = (0..segments.len()).filter(|&i| taken.contains(&ids[i].to_bits())).map(|i| (slot, i)).collect();
     let mut joined: HashMap<usize, Vec<usize>> = HashMap::new();
     for (i, child) in objects.iter().enumerate() {
         if let Some(target) = join_target(child) {
@@ -164,11 +169,14 @@ fn rotation_targets(objects: &[Value], figures: &[Value], slot: usize, joint: us
 }
 
 /// `angles[index] += delta` on an object record.
-fn add_angle(object: &mut Obj, index: usize, delta: f64) {
+/// `object.angles[i] += delta` for each of `indices`, the angle array unpacked once.
+fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
     let Some(angles) = object.get_mut("angles") else { return };
     let Some(list) = angles.make_arr() else { return };
-    if let Some(angle) = list.get_mut(index) {
-        *angle = Value::Num(angle.as_f64().unwrap_or(f64::NAN) + delta);
+    for &index in indices {
+        if let Some(angle) = list.get_mut(index) {
+            *angle = Value::Num(angle.as_f64().unwrap_or(f64::NAN) + delta);
+        }
     }
     angles.repack();
 }
@@ -258,11 +266,19 @@ impl Editor {
         }
         let targets = rotation_targets(&objects, &figures, slot, joint, isolate);
         self.rotate_ik_followers(slot, joint, &targets, delta, include_joint)?;
+        // Grouped by figure, in the order the figures first appear (each angle changes once).
+        let mut by_object: Vec<(usize, Vec<usize>)> = Vec::new();
         for (object_slot, segment) in targets {
-            if (include_joint || object_slot != slot || segment != joint)
-                && let Some(record) = self.frame_object_mut(object_slot)
-            {
-                add_angle(record, segment, delta);
+            if include_joint || object_slot != slot || segment != joint {
+                match by_object.iter_mut().find(|(s, _)| *s == object_slot) {
+                    Some((_, list)) => list.push(segment),
+                    None => by_object.push((object_slot, vec![segment])),
+                }
+            }
+        }
+        for (object_slot, segments) in by_object {
+            if let Some(record) = self.frame_object_mut(object_slot) {
+                add_angles(record, &segments, delta);
             }
         }
         Ok(())

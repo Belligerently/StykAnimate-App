@@ -16,6 +16,7 @@ use crate::Error;
 /// project). [`Loader::document`] reuses the typed figure, keyframe and pose source
 /// of every record whose tree node is the node it was built from, so after an edit
 /// only the records the edit replaced are converted again.
+#[derive(Clone)]
 pub struct Loader {
     /// One image table shared by the root document and every nested movieclip.
     /// Append-only: an index, once handed out, names the same image for good.

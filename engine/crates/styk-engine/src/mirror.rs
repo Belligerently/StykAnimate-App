@@ -99,11 +99,13 @@ pub(crate) struct Mirror {
     loader: Loader,
     lineage: u64,
     assets: Option<Arc<Assets>>,
+    /// The typed views of `tree`, as published with its generation.
+    prepared: Option<Arc<Prepared>>,
 }
 
 impl Default for Mirror {
     fn default() -> Self {
-        Mirror { tree: Value::object(Obj::new()), revision: 0, loader: Loader::new(), lineage: 0, assets: None }
+        Mirror { tree: Value::object(Obj::new()), revision: 0, loader: Loader::new(), lineage: 0, assets: None, prepared: None }
     }
 }
 
@@ -217,6 +219,15 @@ impl Engine {
         Some((mirror.revision, mirror.tree.clone()))
     }
 
+    /// [`Engine::mirrored`] with what an edit session needs to start without converting
+    /// the document again: a copy of the mirror's loader (typed records shared) and the
+    /// typed views published for that revision. `None` while committing, as there.
+    pub fn mirrored_for_editing(&self) -> Option<(u64, Value, Loader, Arc<Prepared>)> {
+        let mirror = self.inner.mirror.try_lock().ok()?;
+        mirror.tree.get("keyframes")?;
+        Some((mirror.revision, mirror.tree.clone(), mirror.loader.clone(), mirror.prepared.clone()?))
+    }
+
     /// Applies everything staged in `batch` and publishes the result as the document
     /// of `revision` (the interface's own revision counter). All or nothing: on an
     /// error the previous document stays. Runs on the calling thread; hosts call it
@@ -242,6 +253,7 @@ impl Engine {
         let prepared = Arc::new(Prepared::new(Arc::new(document)));
         mirror.tree = tree;
         mirror.revision = revision;
+        mirror.prepared = Some(prepared.clone());
         mirror.assets = Some(assets.clone());
         mirror.loader.release_unused();
         let ms = self.now() - started;

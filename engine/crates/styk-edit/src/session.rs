@@ -35,6 +35,13 @@ impl Session {
     /// `state` is JSON: the editor's options (`propertyChannels`, `layerTimeline`,
     /// `autoKey`), view (`tick`, `frameIndex`, `selectedUid`, `selectedUids`,
     /// `selectedJoint`, `activeLayerId`) and counters (`layerRevision`, `nextFrameIdentity`, `nextUid`).
+    /// [`Session::start`] from typed views already made for `report` (the engine's mirror).
+    pub fn start_prepared(report: Value, state: &str, loader: styk_eval::load::Loader, prepared: std::sync::Arc<styk_eval::eval::Prepared>) -> Result<Session, String> {
+        let mut session = Session::start(report, state)?;
+        session.editor.adopt_prepared(loader, prepared);
+        Ok(session)
+    }
+
     pub fn start(report: Value, state: &str) -> Result<Session, String> {
         let state = styk_doc::json::parse(state.as_bytes()).map_err(|error| error.to_string())?;
         let options = Options { property_channels: flag(&state, "propertyChannels"), layer_timeline: flag(&state, "layerTimeline"), auto_key: flag(&state, "autoKey") };
