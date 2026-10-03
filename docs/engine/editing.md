@@ -102,8 +102,9 @@ Every ported call runs in both of the editor's modes:
   (refusals and their cancel events), movieclip-sheet and movieclip-loose-sheet.
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
-A call answers `Unported`, and changes nothing, on documents with property channels on a
-native timeline, animation origins or a movieclip source; for posing a joined 3D IK target and
+A call answers `Unported`, and changes nothing, on documents with property channels (on a
+native timeline, or a layer sheet's `legacyAnimation`, which the engine draws but does not
+edit), animation origins or a movieclip source; for posing a joined 3D IK target and
 configuring or turning IK targets across joined figures;
 for poses on a drawing layer; for a replaced figure joined to one
 outside its movieclip frame; and wherever the engine does not evaluate the frame as

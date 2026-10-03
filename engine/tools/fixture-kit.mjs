@@ -63,12 +63,14 @@ export function prune(document) {
  * what it needs and writes `<name>.reference.json` with writeReference().
  * `vfx` adds the effects the editor resolves (reference.mjs --vfx), `camera` what the
  * scene camera does when shown (--camera: the shot camera and parallax offsets), `images`
- * where pictures are drawn (--images).
+ * where pictures are drawn (--images), `scene` the frame's background (--scene), `style` each
+ * object's outline (--style); `native` evaluates it on its native timeline (--native) into
+ * `<name>.native.reference.json`.
  */
-export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false} = {}) {
-  const file = `${out}/${name}.json`, reference = `${out}/${name}.reference.json`;
+export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false, scene = false, style = false, native = false} = {}) {
+  const file = `${out}/${name}.json`, reference = `${out}/${name}${native ? '.native' : ''}.reference.json`;
   writeFileSync(file, JSON.stringify(prune(document)) + '\n');
-  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
+  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : []), ...(scene ? ['--scene'] : []), ...(style ? ['--style'] : []), ...(native ? ['--native'] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
   const dump = JSON.parse(readFileSync(reference, 'utf8'));
   delete dump.loadMs; delete dump.evalMsPerFrame;
   return {file, reference, dump};

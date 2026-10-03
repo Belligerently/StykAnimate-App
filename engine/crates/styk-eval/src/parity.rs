@@ -1,7 +1,8 @@
 //! Parity with the JavaScript editor: compares what this engine evaluates with
 //! a reference dump written by `engine/tools/reference.mjs` (every drawable and
 //! every joint of the sampled ticks, the effects when the dump has them (see
-//! [`crate::vfx::parity`]), and what the scene camera does when it is shown).
+//! [`crate::vfx::parity`]), what the scene camera does when it is shown, and the
+//! background and outlines when the dump has them).
 //!
 //! `styk compare` and the fixture tests share this one comparison, so a
 //! tolerance cannot drift between them.
@@ -80,6 +81,10 @@ pub fn compare(prepared: &Prepared, reference: &Value) -> Report {
         report.frames += 1;
         drawables(&scene, items(frame.get("drawables")), items(frame.get("meshes")), &mut report, &mut problems);
         joints(prepared, &scene, items(frame.get("objects")), &mut report, &mut problems);
+        outlines(prepared, &evaluated, items(frame.get("objects")), &mut problems);
+        if let Some(expected) = frame.get("scene") {
+            background_matches(&evaluated, expected, &mut problems);
+        }
         if let Some(effects) = frame.get("vfx") {
             crate::vfx::parity::compare(prepared, &evaluated, effects, &mut report.vfx, &mut problems);
         }
@@ -126,6 +131,43 @@ fn shot_matches(frame: &crate::eval::Frame, shot: &Value, problems: &mut Vec<Str
         // Lines are capped; a frame with any problem already counts as differing.
         if (!close_value(expected[0], ours[0]) || !close_value(expected[1], ours[1])) && problems.len() < LINES {
             problems.push(format!("parallax of slot {slot}: {expected:?} vs {ours:?}"));
+        }
+    }
+}
+
+/// The frame's background (`--scene`): image identities and mix exactly, and the colour key.
+fn background_matches(frame: &crate::eval::Frame, expected: &Value, problems: &mut Vec<String>) {
+    let ids = expected.get("background").and_then(Value::numbers).unwrap_or_default();
+    let ours = [frame.background as f64, frame.background_b as f64, frame.background_mix];
+    if ids.len() != 3 || (0..3).any(|k| ids[k] != ours[k]) {
+        problems.push(format!("background {ids:?} vs {ours:?}"));
+    }
+    let color = expected.get("color").and_then(Value::as_f64);
+    if color != frame.background_color.map(|c| c as f64) {
+        problems.push(format!("background colour {color:?} vs {:?}", frame.background_color));
+    }
+}
+
+/// Each object's outline (`--style`): what its resolved figure is drawn with.
+fn outlines(prepared: &Prepared, frame: &crate::eval::Frame, expected: &[Value], problems: &mut Vec<String>) {
+    for object in expected {
+        let Some(want) = object.get("outline") else { continue };
+        let slot = object.get("slot").and_then(Value::as_f64).unwrap_or(-1.0) as usize;
+        let Some(ours) = frame.objects.get(slot) else { continue };
+        let figure = ours.figure_override.as_ref().or_else(|| prepared.doc.figure(ours.figure));
+        let have = figure.and_then(|f| f.outline.clone());
+        let same = match (want, &have) {
+            (Value::Null, None) => true,
+            (Value::Null, Some(_)) | (_, None) => false,
+            (want, Some(have)) => {
+                let width = want.get("width").and_then(Value::as_f64).unwrap_or(f64::NAN);
+                let rgb: Vec<u8> = want.get("rgb").and_then(Value::numbers).map(|a| a.iter().map(|&c| c as u8).collect()).unwrap_or_default();
+                let alpha = want.get("alpha").and_then(Value::as_f64).unwrap_or(f64::NAN);
+                (width - have.width).abs() <= TOLERANCE && rgb == have.rgb && (alpha - have.alpha).abs() <= 1e-4
+            }
+        };
+        if !same && problems.len() < LINES {
+            problems.push(format!("outline of slot {slot}: {want} vs {have:?}"));
         }
     }
 }
@@ -250,6 +292,13 @@ fn drawables(scene: &Scene, expected: &[Value], meshes: &[Value], report: &mut R
         } else {
             if let Some(corners) = e.get("image") {
                 image_corners(scene, it, corners, &mut why);
+            }
+            if let Some(expected) = e.get("secondary") {
+                let ours = scene.figures.get(it.figure as usize).and_then(|f| f.segments.get(it.index as usize)).and_then(|s| s.secondary);
+                let want = expected.numbers().filter(|v| v.len() == 4).map(|v| ([v[0] as u8, v[1] as u8, v[2] as u8], v[3] as u8));
+                if want != ours {
+                    why.push(format!("secondary {want:?} vs {ours:?}"));
+                }
             }
             if let (Some(start), Some(end)) = (point(e.get("start")), point(e.get("end"))) {
                 if !close(start, it.start) {

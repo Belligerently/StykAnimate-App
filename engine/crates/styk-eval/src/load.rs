@@ -34,6 +34,8 @@ pub struct Loader {
     styled: HashMap<(usize, String), (Arc<Figure>, Arc<Figure>)>,
     /// Effect clips by the address of the `vfxClips` record they were built from.
     vfx_clips: HashMap<usize, (Value, Option<Arc<crate::vfx::Clips>>)>,
+    /// Property channels by the address of the animation record they were built from.
+    animations: HashMap<usize, (Value, Option<Arc<crate::channels::Animation>>)>,
     /// Records converted (not reused) by the last [`Loader::document`] call.
     pub converted: Converted,
 }
@@ -144,6 +146,7 @@ impl Loader {
             keyframes: HashMap::new(),
             styled: HashMap::new(),
             vfx_clips: HashMap::new(),
+            animations: HashMap::new(),
             converted: Converted::default(),
         }
     }
@@ -262,9 +265,12 @@ impl Loader {
         fn channels(animation: Option<&Value>) -> &[Value] {
             animation.and_then(|a| a.get("channels")).and_then(Value::as_arr).unwrap_or(&[])
         }
-        if !channels(styk.get("animation")).is_empty() {
-            self.note("property channels");
-        }
+        // The channels the native timeline is evaluated with: a layer sheet's imported keys
+        // sample its `legacyAnimation` (`legacySheetReport`); `_styk.animation` is not read then.
+        let animation = match &sheet {
+            Some(_) => self.cached_animation(styk.path(&["layerSheet", "legacyAnimation"])),
+            None => self.cached_animation(styk.get("animation")),
+        };
         let effect_channels = [styk.get("animation"), styk.path(&["layerSheet", "legacyAnimation"])]
             .into_iter()
             .any(|animation| channels(animation).iter().any(|c| c.get("property").and_then(Value::as_str).is_some_and(crate::vfx::parse::is_vfx_property)));
@@ -293,6 +299,7 @@ impl Loader {
             camera_motion,
             vfx_clips,
             vfx_elsewhere: effect_channels || source_vfx,
+            animation,
             unsupported: Vec::new(),
             notes: Vec::new(),
             figure_index: HashMap::new(),
@@ -340,6 +347,18 @@ impl Loader {
         clips
     }
 
+    /// The property channels of an animation record, reused while the record is unchanged.
+    fn cached_animation(&mut self, v: Option<&Value>) -> Option<Arc<crate::channels::Animation>> {
+        let v = v?;
+        let Some(address) = node_address(v) else { return crate::channels::parse(Some(v), &mut self.notes) };
+        if let Some((_, animation)) = self.animations.get(&address) {
+            return animation.clone();
+        }
+        let animation = crate::channels::parse(Some(v), &mut self.notes);
+        self.animations.insert(address, (v.clone(), animation.clone()));
+        animation
+    }
+
     fn cached_keyframe(&mut self, k: &Value) -> Result<Arc<Keyframe>, Error> {
         if let Some(address) = node_address(k) {
             if let Some((_, frame)) = self.keyframes.get(&address) {
@@ -359,6 +378,7 @@ impl Loader {
         self.figures.retain(|_, (source, _)| !source_unshared(source));
         self.keyframes.retain(|_, (source, _)| !source_unshared(source));
         self.vfx_clips.retain(|_, (source, _)| !source_unshared(source));
+        self.animations.retain(|_, (source, _)| !source_unshared(source));
         let live: std::collections::HashSet<usize> = self.figures.values().map(|(_, figure)| Arc::as_ptr(figure) as usize).collect();
         self.styled.retain(|(base, _), _| live.contains(base));
     }
@@ -827,9 +847,6 @@ impl Loader {
                     .collect();
                 tracks.insert(id.to_string(), Arc::new(SheetTrack { end: int(t, "end").unwrap_or(0) as u32, keys }));
             }
-        }
-        if s.get("legacyAnimation").is_some() {
-            self.note("legacy property channels");
         }
         LayerSheet { duration: int(s, "duration").unwrap_or(1).max(1) as u32, tracks }
     }
