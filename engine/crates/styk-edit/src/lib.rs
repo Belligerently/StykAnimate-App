@@ -13,6 +13,7 @@
 //! answers [`EditError::Unported`], so a facade knows to run it in JavaScript.
 
 mod authored;
+mod camera_motion;
 mod figures;
 mod frame;
 mod history;
@@ -414,6 +415,8 @@ impl Editor {
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "setCameraMotion" => self.set_camera_motion(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteCameraMotion" => self.delete_camera_motion(&arg(0)).map(Value::Bool),
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),

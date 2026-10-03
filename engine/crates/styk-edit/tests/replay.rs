@@ -40,6 +40,8 @@ const PORTED: &[&str] = &[
     "move-frames-sheet", "move-frames-imported-sheet",
     // The inspector's figure fields.
     "update-object-sheet", "update-object-native", "update-segment-sheet", "update-segment-rig-sheet",
+    // Camera motion clips.
+    "camera-motion-sheet",
 ];
 
 #[test]

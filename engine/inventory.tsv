@@ -129,7 +129,7 @@ src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-builder.mjs	engine	styk-edit	js	commands and history
-src/editor-camera-motion.mjs	engine	styk-edit	js	commands and history
+src/editor-camera-motion.mjs	engine	styk-edit	partial	Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS
 src/editor-camera.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-async.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-sparse.mjs	engine	styk-edit	js	commands and history

@@ -563,6 +563,25 @@ scenario('figures-layers-sheet', app, [
   scenario('update-segment-rig-sheet', app, [
     ['@select', 1, 5], ['updateSegment', {length: 0.4}], ['updateSegment', {length: 2}], ['@select', 1, 2], ['updateSegment', {angle_rad: 2}], ['undo'], ['redo'],
   ], 'rig.document.json');
+  // Camera motion clips: moved, retimed past the sheet's end (which lengthens it), switched
+  // off, parameters and followed figures changed, muted ranges moving with their clip;
+  // refusals (parameter range, property, clip, kind, follow length, a locked camera);
+  // deleted; history.
+  {
+    const document = JSON.parse(readFileSync(new URL('../crates/styk-eval/tests/fixtures/eval/follow-figures.json', import.meta.url), 'utf8'));
+    document._styk.cameraMotion.clips[1].mutedRanges = [{start: 12, end: 16}];
+    writeFileSync(`${out}/camera-motion.document.json`, JSON.stringify(document) + '\n');
+  }
+  {
+    const follow = 'motion-00000000-0000-4000-8000-000000000001', shake = 'motion-00000000-0000-4000-8000-000000000002';
+    scenario('camera-motion-sheet', app, [
+      ['setCameraMotion', shake, {start: 14}], ['setCameraMotion', shake, {params: {strength: 1.5, seed: 7}}], ['setCameraMotion', shake, {enabled: false}],
+      ['setCameraMotion', shake, {duration: 80}], ['setCameraMotion', follow, {targets: [{uid: 1, weight: 0.5}]}], ['setCameraMotion', shake, {params: {strength: 9}}],
+      ['setCameraMotion', shake, {bogus: 1}], ['setCameraMotion', 'nope', {start: 1}], ['setCameraMotion', shake, {targets: [{uid: 1, weight: 1}]}],
+      ['setCameraMotion', follow, {duration: 200000}], ['setCameraMotion', shake, {start: 14}], ['setLayerLocked', 'camera', true], ['setCameraMotion', shake, {start: 3}],
+      ['setLayerLocked', 'camera', false], ['deleteCameraMotion', shake], ['deleteCameraMotion', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'camera-motion.document.json');
+  }
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);
