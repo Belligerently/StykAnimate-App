@@ -159,7 +159,7 @@ meshes, its surfaces or its 3D poses, and without the part it is about (view
 targets, blended vertices, the depth-order offset, splitting primitives, instance
 palettes, reflection, mechanical joints, the hidden expression, depth guides); three
 reach the near-plane clip. 120 recorded `interpolateSpatialPose` results match bit for
-bit. Records: 493 recorded ticks of every editor-built fixture are produced and
+bit. Records: 512 recorded ticks of every editor-built fixture are produced and
 byte-identical, 102 of them spatial (34 with a tweened 3D pose).
 
 **Renderers**: a scene with a depth run, a later record and a second run holds the GPU
