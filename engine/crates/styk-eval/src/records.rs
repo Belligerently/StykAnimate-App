@@ -16,12 +16,16 @@
 //! `engine/tools/records-reference.mjs` records the editor's output and
 //! `styk records` compares.
 
+mod channels;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use styk_doc::{Obj, Value};
 
-use crate::eval::{Prepared, Row, Seq, evaluate_native_exact, timeline_rows};
+use crate::eval::{Prepared, Row, Seq, evaluate_native_exact_only, timeline_rows};
+
+pub use channels::{Bound, resolved_stack};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -88,6 +92,9 @@ pub struct Records<'a> {
     prepared: &'a Prepared,
     /// `timeline(legacySheetReport(report))`: the native rows without the sheet's cut.
     rows: Vec<Row>,
+    /// The property channels the native timeline is sampled with (`sampleLegacy`): a
+    /// layer sheet's `legacyAnimation`, else `_styk.animation`.
+    legacy: Vec<Bound>,
 }
 
 impl<'a> Records<'a> {
@@ -105,12 +112,11 @@ impl<'a> Records<'a> {
             Some(sheet) => sheet.path(&["legacyAnimation", "channels"]),
             None => styk.and_then(|s| s.path(&["animation", "channels"])),
         };
-        if legacy_channels.and_then(Value::array_len).unwrap_or(0) > 0 {
-            return unported("property channels");
-        }
+        let legacy = channels::bind_compiled(prepared, &items(legacy_channels))?;
         let doc = &prepared.doc;
         let mut rows = timeline_rows(doc.version, doc.keyframes.iter().map(|k| k.duration));
-        // The last row lasts as long as the camera and effect clips do.
+        // The last row lasts as long as the channels (`animationEndTick`), the camera and
+        // effect clips do.
         let ends = clips(&["cameraMotion", "clips"])
             .iter()
             .map(|c| num(c, "start").unwrap_or(0.0) + num(c, "duration").unwrap_or(0.0))
@@ -118,16 +124,30 @@ impl<'a> Records<'a> {
                 Some(Value::Null) => 0.0,
                 _ => num(c, "start").unwrap_or(0.0) + num(c, "duration").unwrap_or(0.0),
             }))
-            .fold(0.0, f64::max);
+            .fold(channels::end_tick(&legacy), f64::max);
         if let Some(last) = rows.last_mut() {
             last.count = last.count.max((ends - last.start as f64).max(0.0) as u32);
         }
-        Ok(Records { tree, prepared, rows })
+        Ok(Records { tree, prepared, rows, legacy })
     }
 
     /// `snapshotPoseFrame(editor.evaluatedFrame)` at `tick`.
     pub fn snapshot(&self, tick: f64) -> Result<Value, Error> {
         Ok(snapshot_pose_frame(&self.evaluated(tick)?))
+    }
+
+    /// What `engine/tools/records-reference.mjs` recorded for one tick (`{tick, channels?}`):
+    /// the evaluated frame, or with `channels` the frame a property edit writes there
+    /// (`_sheetPropertyEntries`: `at(report, tick)` with those one-key channels composed).
+    pub fn recorded(&self, entry: &Value) -> Result<Value, Error> {
+        let tick = num(entry, "tick").unwrap_or(0.0);
+        match entry.get("channels").and_then(Value::elements) {
+            Some(channels) => {
+                let channels: Vec<Value> = channels.iter().collect();
+                Ok(snapshot_pose_frame(&self.compose_channels(self.evaluated_with(tick, false)?, &channels, tick)?))
+            }
+            None => self.snapshot(tick),
+        }
     }
 
     /// `evaluatedFrame(report, …, tick)` without the runtime clock fields.
@@ -210,25 +230,28 @@ impl<'a> Records<'a> {
         Ok(Value::object(out))
     }
 
-    /// `sampleLegacy(report, time)`: the native timeline at a time, in layer order.
+    /// `sampleLegacy(report, time)`: the native timeline at a time with its property
+    /// channels composed, in layer order.
     fn native_at(&self, time: f64) -> Result<Value, Error> {
         let index = self.rows.partition_point(|r| r.start as f64 <= time).saturating_sub(1);
         let t = match self.rows.get(index) {
             Some(row) if row.count > 0 => (time - row.start as f64) / row.count as f64,
             _ => 0.0,
         };
-        Ok(self.layer_order(self.native(index, t)?))
+        let frame = self.native(index, t)?;
+        Ok(self.layer_order(self.compose(frame, &self.legacy, time)?))
     }
 
     /// `evaluatedNativeFrame(report, index, t)` on the document's own keyframes.
     fn native(&self, index: usize, t: f64) -> Result<Value, Error> {
         let frames = items(self.tree.get("keyframes"));
-        self.interval(&self.prepared.native, &|i| Ok(frames.get(i).cloned()), index, t)
+        self.interval(&self.prepared.native, &|i| Ok(frames.get(i).cloned()), index, t, None)
     }
 
     /// `evaluatedNativeFrame` on a timeline: the document's keyframes, or a pose
-    /// track's virtual ones. `frame_at` gives the record of each key of `seq`.
-    fn interval(&self, seq: &Seq, frame_at: &dyn Fn(usize) -> Result<Option<Value>, Error>, index: usize, t: f64) -> Result<Value, Error> {
+    /// track's virtual ones. `frame_at` gives the record of each key of `seq`; with
+    /// `only`, the other figures keep the interval's first pose (`requestedUids`).
+    fn interval(&self, seq: &Seq, frame_at: &dyn Fn(usize) -> Result<Option<Value>, Error>, index: usize, t: f64, only: Option<&[u32]>) -> Result<Value, Error> {
         let (Some(a), Some(key)) = (frame_at(index)?, seq.keys.get(index)) else { return Err(Error::Invalid(format!("no key {index}"))) };
         let Some(b) = frame_at(index + 1)? else { return Ok(a) };
         if t <= 0.0 || (seq.version < 5 && key.easing.is_none()) {
@@ -246,7 +269,7 @@ impl<'a> Records<'a> {
             return Ok(b);
         }
         // The numbers: the typed evaluator's tween of the same interval.
-        let typed = evaluate_native_exact(&self.prepared.doc, seq, index, t);
+        let typed = evaluate_native_exact_only(&self.prepared.doc, seq, index, t, only);
         let before = &key.frame.objects;
         let next: HashMap<u64, Value> = items(b.get("objects")).into_iter().filter_map(|o| Some((uid(&o)?.to_bits(), o))).collect();
         let mut objects = Vec::new();
@@ -353,14 +376,17 @@ impl<'a> Records<'a> {
     fn pose_track(&self, id: &str, keys: &[Value], tick: f64) -> Result<Option<Sample>, Error> {
         let fixed = id == "scene" || id == "camera";
         let Some(seq) = self.prepared.track(id) else { return Err(Error::Invalid(format!("no pose track {id}"))) };
-        Ok(self.sample_keys(seq, keys, fixed, tick)?.map(|frame| Sample { frame, identity: Identity::Track(id.to_string()) }))
+        Ok(self.sample_keys(seq, keys, fixed, tick, None)?.map(|frame| Sample { frame, identity: Identity::Track(id.to_string()) }))
     }
 
-    /// `samplePoseTrack` on keys and the typed sequence built from the same keys.
-    fn sample_keys(&self, seq: &Seq, keys: &[Value], fixed: bool, tick: f64) -> Result<Option<Value>, Error> {
-        if keys.iter().any(|k| truthy(k.get("hidden"))) {
-            return unported("hidden pose keys");
-        }
+    /// `samplePoseTrack` on keys and the typed sequence built from the same keys, tweening
+    /// only the figures `only` when given (`sampleUids`).
+    fn sample_keys(&self, seq: &Seq, keys: &[Value], fixed: bool, tick: f64, only: Option<&[u32]>) -> Result<Option<Value>, Error> {
+        // `buildVirtualPoseTrack` orders the keys by time, a hidden key before a visible one at
+        // the same time (a stable sort, as the typed track's).
+        let hidden = |k: &Value| truthy(k.get("hidden"));
+        let mut keys = keys.to_vec();
+        keys.sort_by(|a, b| num(a, "tick").unwrap_or(0.0).total_cmp(&num(b, "tick").unwrap_or(0.0)).then((hidden(b) as u8).cmp(&(hidden(a) as u8))));
         let ticks: Vec<f64> = keys.iter().map(|k| num(k, "tick").unwrap_or(0.0)).collect();
         if ticks.is_empty() || tick < ticks[0] {
             return Ok(None);
@@ -370,7 +396,7 @@ impl<'a> Records<'a> {
             Some(&next) if next > ticks[low] => ((tick - ticks[low]) / (next - ticks[low])).clamp(0.0, 1.0),
             _ => 0.0,
         };
-        Ok(Some(self.interval(seq, &|i| self.virtual_frame(keys, i, fixed), low, fraction)?))
+        Ok(Some(self.interval(seq, &|i| self.virtual_frame(&keys, i, fixed), low, fraction, only)?))
     }
 
     /// `layerIdForUid(report, uid)`.
@@ -480,7 +506,7 @@ impl<'a> Records<'a> {
                 (tick - a) / (b - a)
             });
             let count = seq.keys.len();
-            let frame = self.interval(&seq, &|i| if i < count { self.window_frame(id, &keys, first + i, fixed).map(Some) } else { Ok(None) }, index - first, fraction)?;
+            let frame = self.interval(&seq, &|i| if i < count { self.window_frame(id, &keys, first + i, fixed).map(Some) } else { Ok(None) }, index - first, fraction, None)?;
             return Ok(Some(Sample { frame, identity: Identity::Track(id.to_string()) }));
         }
         self.pose_track(id, &keys, tick)
@@ -556,7 +582,7 @@ impl<'a> Records<'a> {
                     })
                     .collect();
                 let Some(seq) = self.prepared.patch_track(id, removed as u32) else { return Err(Error::Invalid(format!("no replacement track for {removed} on {id}"))) };
-                self.sample_keys(seq, &mapped, false, tick)?
+                self.sample_keys(seq, &mapped, false, tick, None)?
             } else {
                 patch.get("frameId").and_then(Value::as_str).and_then(|frame_id| self.source(frame_id))
             };

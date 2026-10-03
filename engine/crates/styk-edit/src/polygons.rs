@@ -247,12 +247,17 @@ impl Editor {
             return Err(invalid("errors.editorBuilder.polygonPropertyIsNotEditable"));
         }
         let style_only = patch.keys().all(|key| ["color", "opacity"].contains(&&**key));
-        if style_only && (patch.contains("color") || self.options.property_channels) {
-            // Recoloured (`editFigureColors`) or keyed (`addAnimationKeys`) on the figure on show.
-            if patch.is_empty() {
-                return Ok(Value::array(Vec::new()));
-            }
-            return Err(EditError::Unported("a polygon's colour or opacity on a figure on show".into()));
+        if style_only && patch.contains("color") {
+            // Recoloured on the figure on show (`editFigureColors`).
+            return Err(EditError::Unported("a polygon's colour on a figure on show".into()));
+        }
+        if style_only && self.options.property_channels {
+            // Keyed on the figure on show (`addAnimationKeys`).
+            let ((_, figure), Some((_, object))) = (definition.unwrap(), self.object()?) else { return Err(EditError::Unported("a polygon without its figure on show".into())) };
+            let polygon = figure.get("polyfills").and_then(|p| p.item(at)).and_then(|p| p.get("polyfill_id").and_then(Value::as_f64)).unwrap_or(at as f64 + 1.0);
+            let uid = object.get("unique_id").cloned().unwrap_or(Value::Null);
+            let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
+            return self.key_polygon_style(uid, polygon, type_id, patch);
         }
         self.edit_definition("Edit polygon", |before, figure| {
             let mut polygons: Vec<Value> = figure.get("polyfills").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();

@@ -897,3 +897,5 @@ scenario('figures-layers-sheet', app, [
     ], 'startup.document.json');
   }
 }
+// Property edits on a layer sheet (inspector scrubs, keyed values, scene colours, effects).
+await import('./edit-scenarios-property.mjs');

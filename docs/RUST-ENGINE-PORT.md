@@ -115,6 +115,7 @@ Each gets an ADR under `docs/engine/decisions/` when it lands.
 | D14 | The page creates the engine's shared memory with the largest maximum the browser reserves (2 GiB, else 1 GiB, else 512 MiB; override `stykanimate.engine.memory`), and budgets caches to it. | Mobile WebKit may refuse a 2 GiB reservation. Desktop Chromium and WebKit accept 2 GiB and grow it; the fallback path is exercised by refusing the larger maxima. Real iOS devices are unverified. | done |
 | D15 | Editing moves to the engine command by command (`docs/engine/editing.md`): a ported facade method runs in `styk-edit` and returns the changed records and event detail, which the JavaScript document and history adopt; unported commands run in JavaScript and reach the engine through the mirror. Every port is checked by the command-replay harness (`engine/tools/edit-replay.mjs`): documents byte for byte, selection, history and events after every step. | The app keeps working at every commit while about 800 editor methods move; the harness turns each port into a mechanical comparison. | in use; revised 2026-10-03: ported commands run in shadow in the app before ownership flips, class by class; the engine edits large figure documents by default ([ADR](engine/decisions/0015-commands-record-for-record.md)) |
 | D16 | Engine arithmetic whose results are stored in documents uses `styk-math`: fdlibm 5.3 `sin`, `cos`, `atan2` and V8's `hypot`, bit for bit as Node computes them. | The harnesses run the editor in Node and compare bytes; Rust's `f64::sin` differed from it for 2.7 % of two million inputs, `f64::atan2` 17 %. Browsers disagree among themselves too (Chromium 153 differs from Node for 3.9 % of sines and 17 % of `atan2`), so the app already stores last-digit differences per browser: the engine gives one answer everywhere. | in use ([ADR](engine/decisions/0016-v8-exact-math.md)) |
+| D17 | The drawing raster engine is its own crate, `styk-drawing`, bound as a separate non-threaded WebAssembly module (`styk-drawing-wasm`) that each drawing worker instantiates for itself; JavaScript reaches it through `src/engine/engine-drawing.mjs`. | The drawing workers cancel a job by terminating the worker; a terminated thread of the shared-memory engine module could die holding its allocator or a lock (D7) and block every other thread. Tiles already cross to the workers in bounded transfers, so a module per worker costs no extra copy. | in use ([ADR](engine/decisions/0017-drawing-raster-engine.md)) |
 
 ## 5. Baseline (current app, before any engine change)
 
@@ -198,7 +199,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Node (`svr_uriel.piv` exceeds Node's string limit; the unrepaired Jay file is invalid). The
   gate still refuses frame drafts (temporary editing state, only ever shown as onion skins)
   and movieclips nested deeper than 16 levels; property channels are drawn by the engine and
-  edited by the editor only. Electron's WebGPU canvas shows nothing under Xvfb on this
+  edited by it on layer sheets (class `channels`, not owned by default; `_styk.animation` on a
+  native timeline stays with the editor). Electron's WebGPU canvas shows nothing under Xvfb on this
   machine, so Electron app parity of new features ran the engine on WebGL2 there. A drawing stroke not
   yet published still makes its frame fall back to the JavaScript renderer.
 - **Exports through the engine** (`styk-export`, `src/engine/engine-export.mjs`): an export
@@ -209,6 +211,22 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   with effects and 3D, which the JavaScript exporter drew smooth; scene-effect camera images
   wider than 3,968 px are upscaled. Not verified: Windows, macOS, real displays, other GPUs,
   Firefox, Safari, packaged builds.
+- **Drawing raster engine** (`styk-drawing`, D17): custom pressure curves use libm's `pow` in
+  WebAssembly (measured natively: dab shapes differ in their last digits, pixels identical);
+  jobs peak higher in module memory (released above 256 MiB per instance); tile preparation
+  and the per-sample brush model are slower; the GPU brush stays JavaScript. Each completed
+  publication of a large cel costs the interface thread 0.2–0.7 s while the engine stage syncs
+  the new asset (both engines; 2,040-tile cel), now kept out of undo and redo but still paid
+  after strokes and fills. Not verified: Windows, macOS, packaged builds, real pens.
+- **Property edits, open after the port**: paints (fill styles and effect colours), keys
+  holding movieclip frame replacements, polygon colour (`editFigureColors`), adding effects and
+  presets (random identities), camera drags as a command, channels on a native timeline and
+  animation origins stay with the editor. Owned editing of `channels-figure` took 289.3 ms
+  against the editor's 116.9 ms (one run, loaded machine): records rebuild channel bindings
+  and convert frames for geometry on every evaluation, and scrub previews carry whole frames,
+  so the `channels` class is not owned until large documents are measured. Bézier easing uses
+  `pow`, which in WebAssembly is libm and may differ from a browser's in the last bit (not
+  observed).
 - **Known divergences of the newly drawn features**: the engine tweens a captured movieclip's
   own keyframes where the editor samples its retained source (`movieclipSource`); the follow
   camera reshapes its whole path on every revision where the editor resamples incrementally
@@ -365,6 +383,15 @@ and 122 controller outcomes and 599 solved angles equal to the editor's bit for 
 the same iteration counts (since the solver's trigonometry moved to `styk-math`; within
 4.5e-11 rad before); each fixture with a pin fails without the solver. 4 movieclip
 replacement fixtures, 0 mismatches, each failing without its replacements.
+
+**Drawing raster engine** (`engine/tools/drawing-fixtures.mjs`, `cargo test -p styk-drawing
+--test parity`): 1,067 checks identical: every dab shape, batch, dirty tile and undo record of
+60 strokes, 16 fills, masks, filters, selections, transforms, levels 1–5, PNG and blob bytes,
+undo chunks, clipboard; `tests/drawing-engine.*` compare the two engines through the app.
+
+**Property channels as records** (`engine/tools/records-fixtures.mjs`): 26 channel and
+property-edit documents, 458 ticks identical to the editor's evaluated frame, each differing
+without its channels; 1,265 of 1,265 recorded ticks overall.
 
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
 the JavaScript renderer being its Canvas 2D fallback, WebGL2 for the engine), 29 documents
@@ -524,6 +551,8 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 23:49 | S5 movieclip playback on a frame | `setMovieclipPlayback` and `setMovieclipDrawing` on the frame on show with `validatePlayback` (`styk-edit/src/movieclips.rs`); shadowed in the app. | 2 recordings (27 steps) match the editor at every step; 6 of 6 mutations break one. |
 | 2026-10-03 23:59 | S5 frames dragged between rows | `sheetTransferFrames` as one call (`styk-edit/src/sheet_clipboard.rs`): copy, clear when moving and paste in one batch, the clipboard left as it was; compared in the app. | 1 recording (11 steps) matches the editor at every step; 3 of 3 mutations break it. App shadow with the engine's `Math`: start document 198/198; owned editing the same as the editor alone. |
 | 2026-10-04 00:38 | S5 Handle Edit Mode | `beginHandleEditDrag`, `editHandlePosition`, `commitHandleEditDrag`, `cancelHandleEditDrag` (`styk-edit/src/handle_edit.rs`, with `handleEditSegmentPose` on `styk-math`): a handle of the current pose moved with the arcs meeting it kept or bent from either end, figures joined at it moving with it, a gesture brought back to its start restoring what it moved; pinned limbs from their solved angles and stretched lengths; owned with the large figure class. | 7 recordings (94 steps) match the editor at every step; 13 of 13 mutations break one. App shadow with the engine's `Math`: start document 205/205; owned editing (3 handle moves and a commit adopted) the same as the editor alone. |
+| 2026-10-04 00:44 | S6 the drawing raster engine (agent, reviewed and merged) | styk-drawing (tiles, brush model, stroke compositing, fill and wand, masks, filters, selection capture, transforms, reduced levels, PNG with a byte-exact deflate, tile blobs and the encode cache, undo chunks, clipboard) and styk-drawing-wasm, a separate non-threaded module per drawing worker (D17); the stroke, pixel and history workers and the brush model run it by default (`?drawingEngine=off`); an instance holding more than 256 MiB is replaced after a job. Publication now waits while an undo or redo is being prepared (it had been finishing inside the next one: blob assembly plus the stage's figure update). | 1,067 recorded checks identical; Node: fill 145→39 ms, wand 490→150, blur 995→407, publish 1,069 tiles 1,098→429; app, dense cel, back-to-back undo/redo 199/200 ms against JavaScript 222/306 (10 interleaved rounds; 1,011/1,226 before the fix); Electron: identical cels and blobs, files cross between engines pixel for pixel; job memory peaks higher (fills 40–68 MiB vs 16). |
+| 2026-10-04 00:44 | S5 animated properties (agent, reviewed and merged) | `styk_eval::records` composes property channels as records (`records/channels.rs`, sharing `Channel::sample_at`) for a sheet's `legacyAnimation`, `_styk.animation` and the one-key channels of property edits; Bézier `t ** 3` through the platform's `pow`. `styk-edit/src/property_edit.rs`: `addAnimationKeys`, the sheet branches of begin/preview/commit/cancelAnimationEdit, `setSceneColor`, `setSceneBackground`, `setBackgroundColor`, `updateFigureStyle`, `updatePolygon` opacity, `setVfxParameter`; the session holds scrub previews and the app compares them. Documents with `legacyAnimation` are edited by the engine (a pose-slot bug fixed on the way), as class `channels`, not owned by default. | Records: 26 channel and property fixtures, 458 ticks identical, each failing without its channels; 1,265/1,265 overall. Replays: 17 recordings, 303 steps match; mutations: records 6 caught and 3 equivalent, commands 13 of 14 (1 equivalent), a wrong preview caught in the app, the geometry step 2 of 2. App with the engine's `Math`: start document 227/227, owned the same as the editor alone; channels-figure 200/200, owned the same; channels-pose 152/152; channels-vfx 184/184. |
 
 In progress: the drawing raster engine (agent, S6); animated properties in editing (agent:
 record-level channels, the timeline's property edits, then documents with legacy channels).

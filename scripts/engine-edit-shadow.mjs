@@ -177,6 +177,34 @@ async function run(mode) {
     await step('drag frames to another layer', () => page.evaluate(() => { const e = styk.editor, order = e.report._styk?.layers?.order ?? []; if (order.length < 2) return; e.sheetTransferFrames([order[0]], [order[1]], 0, 1, 3, {copy: true}); e.undo(); }));
     await step('move and copy keys along the timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetMoveFrames(layer, 0, 0, 1); e.sheetMoveFrames(layer, 1, 1, 1, {copy: true}); e.undo(); e.undo(); e.redo(); }));
     await step('edit a figure from the inspector', () => page.evaluate(() => { const e = styk.editor; e.updateObject({scale: 1.2}); e.updateObject({field28: 200, name: 'Inspected'}); e.undo(); }));
+    // Property edits on the layer sheet: scrubs with their previews, keyed values, the scene's
+    // colour, the figure's outline and a polygon's opacity, then an effect's parameter.
+    await step('scrub and key properties from the inspector', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.report._styk?.layerSheet) return;
+      const figure = {kind: 'figure', uid}, later = Math.max(0, Math.min(2, e.totalTicks - 1));
+      // Earlier steps may leave a layer locked: a refused edit is compared like any other.
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      attempt(() => { e.beginAnimationEdit(figure, 'scale'); e.previewAnimationEdit(1.2); e.previewAnimationEdit(1.3); e.commitAnimationEdit(); });
+      attempt(() => { e.beginAnimationEdit(figure, 'opacity'); e.previewAnimationEdit(0.6); e.cancelAnimationEdit(); });
+      attempt(() => { e.beginAnimationEdit({kind: 'camera'}, 'x'); e.previewAnimationEdit(25); e.commitAnimationEdit(); });
+      attempt(() => e.addAnimationKeys([{target: figure, property: 'color', value: 0xff3080c0}, {target: figure, property: 'zIndex', tick: later, value: 1}]));
+      // The layer step leaves the scene locked (its unlock undone): unlocked here so that the scene's colour is edited.
+      if (e.report._styk?.layers?.fixed?.scene?.locked) e.setLayerLocked('scene', false);
+      attempt(() => e.setSceneColor(0xff204060)); attempt(() => e.setBackgroundColor(0xffe0e0ff)); attempt(() => e.setSceneBackground(0));
+      attempt(() => e.updateFigureStyle({outlineWidth: 2, outlineOpacity: 0.5}));
+      if (e.figure?.polyfills?.length) attempt(() => e.updatePolygon(0, {opacity: 0.4}));
+      e.cancelAnimationEdit(); e.undo(); e.undo(); e.redo();
+    }));
+    await step('add an effect to a figure', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid !== null && e.report._styk?.layerSheet) e.addVfx({kind: 'figure', uid: e.selectedUid}, 'blur'); }));
+    await step('key and scrub an effect parameter', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null) return;
+      const figure = {kind: 'figure', uid}, effect = e.vfxEffects(figure).find(item => item.type === 'blur'); if (!effect) return;
+      try {
+        e.setVfxParameter(figure, effect.id, 'radius', 5);
+        e.beginAnimationEdit(figure, `vfx1:blur:${effect.id}:radius`, {exactTarget: true}); e.previewAnimationEdit(8); e.previewAnimationEdit(9); e.commitAnimationEdit();
+      } catch { /* a locked layer: compared in the shadow */ }
+      e.cancelAnimationEdit(); e.undo(); e.undo();
+    }));
     await step('create, reshape and delete a polygon', () => page.evaluate(() => {
       const e = styk.editor, figure = e.figure; if (!figure) return;
       const ids = [0, ...figure.segments.slice(0, 3).map(segment => segment.segment_id)]; if (ids.length < 4) return;
@@ -320,6 +348,7 @@ try {
   console.log(`steps: ${steps.join('; ')}`);
   console.log(`shadowed calls: ${report.calls} run in the engine, ${report.compared} the same (${report.rounded} of them but for last digits of the browser's Math), ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
   console.log(`time in those calls: editor ${report.jsMs.toFixed(1)} ms, engine ${report.engineMs.toFixed(1)} ms`);
+  console.log(`  the same, by call: ${Object.entries(report.comparedByCall ?? {}).map(([name, count]) => `${name} ×${count}`).join(', ')}`);
   for (const [why, count] of Object.entries(report.ended)) console.log(`  session ended ${count}×: ${why}`);
   for (const [what, count] of Object.entries(report.unported)) console.log(`  not ported ${count}×: ${what}`);
   for (const mismatch of report.mismatches.slice(0, 8)) console.log(`  ${mismatch.call}(${JSON.stringify(mismatch.args ?? []).slice(0, 80)}):\n    ${mismatch.problems.join('\n    ').slice(0, 1500)}`);

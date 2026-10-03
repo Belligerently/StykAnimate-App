@@ -66,7 +66,7 @@ pub(crate) fn track(doc: &Document, channel: &Channel) -> Seq {
 }
 
 /// `maskedAt`: whether `tick` lies in one of the ordered `[start, end)` ranges.
-fn masked_at(ranges: &[(f64, f64)], tick: f64) -> bool {
+pub(crate) fn masked_at(ranges: &[(f64, f64)], tick: f64) -> bool {
     let at = ranges.partition_point(|range| range.0 <= tick);
     at > 0 && tick < ranges[at - 1].1
 }

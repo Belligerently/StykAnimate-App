@@ -87,6 +87,10 @@ impl Editor {
     /// `editor.evaluatedFrame`: the draft of the gesture in progress, else the
     /// document at the playhead.
     pub(crate) fn shown_frame(&self) -> Result<Value, EditError> {
+        // A property edit shows its preview over everything else (`_sheetPropertyPreview`).
+        if let Some(preview) = self.property_preview() {
+            return Ok(preview);
+        }
         match (&self.authored, &self.retained) {
             (Some(edit), _) => Ok(edit.frame.clone()),
             (None, Some(frame)) => Ok(frame.clone()),
@@ -148,10 +152,6 @@ impl Editor {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
-        // The engine draws property channels; editing documents that have them is not ported.
-        if prepared.doc.animation.is_some() {
-            return Err(EditError::Unported("geometry with property channels".into()));
         }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;

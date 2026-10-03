@@ -33,6 +33,7 @@ What's new in each version of StykAnimate.
 - Editing large animations is faster.
 - Exporting animations with effects, particles, 3D or many figures is several times faster.
 - Animations with particles, auras, beams, smoke or explosions play and edit more smoothly.
+- Fills, magic wand selections, filters and saving are faster on drawing layers.
 - Smoother playback for animations with parallax layers, a following camera, moved figure origins, Stick Nodes sprites, turning 3D drawings or animated properties.
 
 ## [1.2.5]

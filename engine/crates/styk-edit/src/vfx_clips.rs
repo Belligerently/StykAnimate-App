@@ -105,7 +105,7 @@ fn check_value(found: &Descriptor, value: Option<&Value>) -> Result<(), EditErro
 }
 
 /// `validateVfxStack(stack)`, effects in `known` (already checked) skipped.
-fn check_stack(stack: Option<&Value>, known: &[Value]) -> Result<(), EditError> {
+pub(crate) fn check_stack(stack: Option<&Value>, known: &[Value]) -> Result<(), EditError> {
     let Some(effects) = stack.filter(|s| s.is_array()).map(|s| list(Some(s))).filter(|e| e.len() <= STACK_LIMIT) else {
         return Err(invalid("errors.vfx.anEffectStackSupportsUpToEffects"));
     };
