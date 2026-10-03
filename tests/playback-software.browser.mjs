@@ -6,8 +6,8 @@ import path from 'node:path';
 
 const root = path.resolve('.'), out = path.join(root, 'artifacts/playback-software');
 await mkdir(out, {recursive: true});
-const {startBackend} = createRequire(import.meta.url)('../desktop/backend.cjs');
-const backend = await startBackend({appRoot: root}); let browser;
+const {startDesktopHost} = createRequire(import.meta.url)('../desktop/web-host.cjs');
+const backend = await startDesktopHost({appRoot: root}); let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const page = await browser.newPage({viewport: {width: 1440, height: 960}}), errors = [];

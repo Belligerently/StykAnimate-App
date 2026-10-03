@@ -417,7 +417,7 @@ try {
     const importView = trajectory?.view ? {...trajectory.view, scale: config.scale} : config.viewX !== null && config.viewY !== null
       ? {x: config.viewX, y: config.viewY, scale: config.scale} : null;
     await page.waitForTimeout(150); const rendererInfo = await page.evaluate(installProbe, {frameIndex: config.frameIndex, importView});
-    const backendHealth = await page.evaluate(async () => (await fetch('/api/health')).json());
+    const backendHealth = await page.evaluate(async () => (await (await import('/tests/support/page-codec.mjs')).codecFetch('/api/health')).json());
     if (config.expectedScanner) assert.equal(backendHealth.nativeFrameScanner, config.expectedScanner, 'Actual desktop backend selected an unexpected native-frame scanner.');
     if (config.expectedScanner === 'cpp') {
       assert.equal(backendHealth.nativeFrameScannerInfo?.abi, 1);

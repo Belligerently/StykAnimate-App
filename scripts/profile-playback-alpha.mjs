@@ -8,7 +8,7 @@ const source = process.argv[2] || corpusPath('Downloads/16 Akane vs Akato Segund
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();
-  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/api/health`);
+  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   await page.evaluate(() => { document.body.innerHTML = '<input id="source" type="file">'; });
   await page.locator('#source').setInputFiles(source);
   const result = await page.evaluate(async () => {

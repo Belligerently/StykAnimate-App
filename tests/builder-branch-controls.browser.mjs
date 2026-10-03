@@ -4,9 +4,9 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 const appRoot = fileURLToPath(new URL('..', import.meta.url)), output = path.join(appRoot, 'artifacts', 'builder-branch-controls');
-await mkdir(output, {recursive: true}); const server = await backend.startBackend({appRoot}); let browser, page;
+await mkdir(output, {recursive: true}); const server = await backend.startDesktopHost({appRoot}); let browser, page;
 const checks = [], errors = [], branchIds = [10, 20, 30, 40, 50, 60, 80];
 const near = (a, b) => assert.ok(Math.abs(a - b) < .0002, `${a} != ${b}`);
 try {

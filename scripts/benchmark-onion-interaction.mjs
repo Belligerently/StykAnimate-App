@@ -4,7 +4,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 
 const out = 'artifacts/onion-performance-20260928';
 const baseline = process.env.STYK_ONION_BASELINE;
@@ -14,7 +14,7 @@ const fingerprints = async root => Object.fromEntries(await Promise.all(sourceFi
   catch (error) { if (error.code === 'ENOENT') return [file,null]; throw error; }
 })));
 const sources = {current:await fingerprints(process.cwd()),...(baseline?{baseline:await fingerprints(baseline)}:{})};
-const server = await backend.startBackend({appRoot: process.cwd()});
+const server = await backend.startDesktopHost({appRoot: process.cwd()});
 const browser = await chromium.launch({channel: 'chrome', headless: true});
 await mkdir(out, {recursive: true});
 try {

@@ -46,9 +46,9 @@ export function replay(scenario, base = repo) {
     tick: editor.tick, frameIndex: editor.frameIndex,
     selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])], selectedJoint: editor.selectedJoint ?? -1,
     canUndo: editor.canUndo, canRedo: editor.canRedo, undoLabel: editor.undoLabel, redoLabel: editor.redoLabel, dirty: editor.dirty,
-    // Runtime counters the document does not carry: events name the layer revision, and
-    // new pose sources take the next frame identity.
-    layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity,
+    // Runtime counters the document does not carry: events name the layer revision, new
+    // pose sources take the next frame identity and new figures the next unique id.
+    layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid,
   });
   let previous = reportJSON(editor);
   const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: []}];

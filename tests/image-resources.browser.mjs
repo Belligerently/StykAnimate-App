@@ -11,8 +11,8 @@ const root = path.resolve('.'), output = path.join(root, 'artifacts/image-resour
 await mkdir(output, {recursive: true});
 await writeFile(path.join(output, 'fixture.html'), '<!doctype html><title>Image resources</title>');
 const source = `data:image/png;base64,${(await previewPNG(32, 16)).toString('base64')}`;
-const {startBackend} = createRequire(import.meta.url)('../desktop/backend.cjs');
-const backend = await startBackend({appRoot: root}); let browser;
+const {startDesktopHost} = createRequire(import.meta.url)('../desktop/web-host.cjs');
+const backend = await startDesktopHost({appRoot: root}); let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
   const context = await browser.newContext(), blocked = [];

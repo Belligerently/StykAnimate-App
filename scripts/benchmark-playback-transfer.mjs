@@ -13,6 +13,7 @@ import {documentChunks, applyDocumentChunk} from '../src/document-transport.mjs'
 import {clipboardWireChunks, createClipboardWireDecoder} from '../src/clipboard-wire.mjs';
 import {packNumbers,unpackNumbers} from './playback-transfer-numbers.mjs';
 import {materializeNativeFrames} from '../src/import-wire.mjs';
+import {nodeCodec} from '../tests/support/codec.mjs';
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 // Identity graph is separate from JSON values: lost sharing can invalidate
@@ -71,20 +72,19 @@ if(!isMainThread){
 }else{
   const source=process.argv[2],output=process.argv[3]||'artifacts/playback-transfer.json';
   assert.ok(source,'Provide a read-only Pivot fixture');
-  const {default:backend}=await import('../desktop/backend.cjs');
   const {unpackNativeFrameResponse,NATIVE_FRAME_CONTENT_TYPE}=await import('../src/import-wire.mjs');
   const {Editor}=await import('../src/editor.mjs');
   const {performanceSourceHashes}=await import('./performance-source-hashes.mjs');
   const sourceHashes=await performanceSourceHashes(),bytes=await readFile(source),sourceSha256=sha(bytes);
-  const service=await backend.startBackend({appRoot:process.cwd()});let document,native;
-  try{
-    const response=await fetch(`${service.origin}/api/import?filename=${encodeURIComponent(path.basename(source))}`,
+  let document,native;
+  {
+    const response=await nodeCodec().fetch(`/api/import?filename=${encodeURIComponent(path.basename(source))}`,
       {method:'POST',headers:{Accept:NATIVE_FRAME_CONTENT_TYPE,'Content-Type':'application/octet-stream'},body:bytes});
     assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),NATIVE_FRAME_CONTENT_TYPE);
     const buffer=await response.arrayBuffer(),{result,offset}=unpackNativeFrameResponse(buffer);
     native={buffer,offset,meta:{...result.nativeFrames}};
     await materializeNativeFrames(result,buffer,offset);document=result.document;
-  }finally{service.stop();}
+  }
   const editor=new Editor({demo:false,propertyChannels:true,layerTimeline:true});editor.load(document);
   const {_stykSource,...report}=editor.report;
   if(report._styk?.audio){const {audio,...metadata}=report._styk;report._styk=metadata;}

@@ -32,6 +32,7 @@ import { Editor } from "./editor.mjs";
 import { createRenderer as createScriptRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
 import { createStageRenderer } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
+import { installEditShadow, shadowEditEnabled } from "./engine/engine-edit-shadow.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
@@ -42,8 +43,7 @@ import { OnionController } from "./onion-controller.mjs";
 import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
 import { BackgroundDialog } from "./background-dialog.mjs";
 import { ImportClient } from "./import-client.mjs";
-import { codecMode } from "./codec-job.mjs";
-import { browserCodecHost } from "./codec-web-host.mjs";
+import { browserCodecHost, codecProfile } from "./codec-web-host.mjs";
 import { PlaybackCache } from "./playback.mjs";
 import {playbackWindow,playbackLookaheadSize,playbackStartupWindow,normalizePlaybackRange} from './playback-window.mjs';
 import {PlaybackUploadWarmup,PlaybackUploadAhead} from './playback-upload.mjs';
@@ -601,6 +601,8 @@ function syncShell() {
 }
 // The stage: the engine draws the documents it can, the JavaScript renderer the others (docs/RUST-ENGINE-PORT.md).
 const createRenderer = (surface, options) => createStageRenderer(surface, options, createScriptRenderer);
+// A development check: ported editor calls also run in the engine and are compared (docs/engine/editing.md).
+if (shadowEditEnabled()) installEditShadow(editor, () => state.renderer?.engineSide ?? null);
 const playback = createStagePlayback(new PlaybackCache({
   gpuIsolation: true,
   diagnostics:telemetry.performance,
@@ -3423,19 +3425,6 @@ canvasPinch = installCanvasPinch({
   onEnd: requestRender,
 });
 
-async function api(path, options = {}) {
-  const headers = importer.token ? { ...options.headers, Authorization: `Bearer ${importer.token}` } : options.headers;
-  const response = await fetch(path, { ...options, headers });
-  if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-    try {
-      const data = await response.json();
-      message = data.error?.message || data.error || data.message || message;
-    } catch {}
-    throw new Error(message);
-  }
-  return response;
-}
 async function acceptImport(
   result,
   name,
@@ -6144,7 +6133,6 @@ if (desktop) {
     }),
   );
   desktop.onOpenFile?.(guarded(acceptNativeFile));
-  desktop.onBackendError?.(fail);
 }
 window.addEventListener("pagehide", () => clipboardWorker.dispose());
 window.addEventListener("pagehide", event => { if (!event.persisted) importer.dispose(); });
@@ -6641,7 +6629,7 @@ async function init() {
   actions['chain-cancel'] = () => construction.cancel();
   actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:()=>{if(!state.playing&&!state.previewing)syncBackgroundInteraction(Boolean(viewGestureActive()));requestRender();},onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL,token:importer.token}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:()=>{if(!state.playing&&!state.previewing)syncBackgroundInteraction(Boolean(viewGestureActive()));requestRender();},onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
     // A finger draws in the touch interface (Settings › Draw with a finger); elsewhere it pans, as before.
     // Automatic draws with a finger only in the touch interface; Always also does on a desktop layout.
     fingerDrawing:()=>{const mode=state.settings.fingerDraw;return mode==='auto'&&!touchMode?.active?'never':mode;}});
@@ -6695,17 +6683,17 @@ async function init() {
   requestAnimationFrame(() => overlays.markReady());
   warmPlayback();
   offerRecovery();
-  // The first Pivot import or export in the browser downloads the converter
-  // (about 13 MB); say so instead of leaving the operation looking stuck. A
-  // failure is reported by the import or export that hit it.
-  if (codecMode() === "browser") {
+  // The first Pivot import or export in the browser downloads the converter;
+  // say so instead of leaving the operation looking stuck. A failure is
+  // reported by the import or export that hit it.
+  if (codecProfile() === "web") {
     browserCodecHost().subscribe(({ state, stage }) => {
       if (state === "loading") status(stage === "runtime" ? {messageKey: "app.loadingThePivotConverterFirstUseOnly", messageParams: {}} : {messageKey: "app.startingThePivotConverter", messageParams: {}}, false, true);
     });
   }
   try {
-    // The in-browser codec has no workspace: people open the files they pick.
-    const data = codecMode() === "browser" ? {samples: []} : await (await api("/api/samples")).json();
+    // Only the desktop app has a sample list (desktop/samples.cjs); in a browser people open the files they pick.
+    const data = desktop?.listSamples ? await desktop.listSamples() : {samples: []};
     state.samples = data.samples || [];
     renderAssets();
   } catch (error) {

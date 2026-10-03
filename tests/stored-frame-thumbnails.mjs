@@ -7,7 +7,7 @@ try {
   page.on('requestfailed',request=>console.log('Request failed',request.url(),request.failure()?.errorText));
   page.on('response',response=>{if(response.status()>=400)console.log('Response failed',response.status(),response.url());});
   page.on('console',message=>{if(message.type()==='error')console.log('Browser error',message.text());});
-  await page.goto('http://127.0.0.1:47831/api/health');
+  await page.goto('http://127.0.0.1:47831/tests/fixtures/blank.html');
   const result=await page.evaluate(async()=>{
     const {Editor}=await import('/src/editor.mjs'),{emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
     const {ThumbnailRenderer}=await import('/src/thumbnail-renderer.mjs');

@@ -3,9 +3,9 @@ import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 const output=path.resolve('artifacts/polygon-construction');await mkdir(output,{recursive:true});
-const service=await backend.startBackend({appRoot:process.cwd()});let browser,page;
+const service=await backend.startDesktopHost({appRoot:process.cwd()});let browser,page;
 const checks=[],errors=[],check=(name,ok)=>{assert.ok(ok,name);checks.push(name);console.log('PASS',name);};
 try{
  browser=await chromium.launch({channel:'chrome',headless:true});
@@ -71,7 +71,7 @@ try{
  const exported={};for(const format of ['piv','stk'])exported[format]=await exportFile(format,`curved.${format}`);
  for(const format of ['piv','stk']){
   const bytes=[...await readFile(exported[format])];
-  const decoded=await page.evaluate(async({bytes,format})=>{const response=await fetch(`/api/import?filename=curved.${format}`,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:Uint8Array.from(bytes)});if(!response.ok)throw new Error(await response.text());const report=(await response.json()).document;const f=report.figure_types.find(f=>f.polyfills?.length);return{handles:f.polyfills[0].segment_ids,bend:f.segments.find(s=>s.segment_id===1).bend_rad,polyCount:f.polyfills.length};},{bytes,format});
+  const decoded=await page.evaluate(async({bytes,format})=>{const response=await (await import('/tests/support/page-codec.mjs')).codecFetch(`/api/import?filename=curved.${format}`,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:Uint8Array.from(bytes)});if(!response.ok)throw new Error(await response.text());const report=(await response.json()).document;const f=report.figure_types.find(f=>f.polyfills?.length);return{handles:f.polyfills[0].segment_ids,bend:f.segments.find(s=>s.segment_id===1).bend_rad,polyCount:f.polyfills.length};},{bytes,format});
   check(`actual ${format.toUpperCase()} save/reopen retains connections and curved segment`,JSON.stringify(decoded.handles)==='[0,1,2,3]'&&decoded.polyCount===1&&Math.abs(decoded.bend-Math.PI/2)<1e-6);
  }
  await page.keyboard.press('Control+z');

@@ -81,11 +81,11 @@ setup UI and a detached pose tester. See [rig contracts and verification](RIG-CO
 
 ## Import and native codec
 
-Electron reads selected source files through its isolated bridge. A persistent loopback codec process uses the supplied PIV/STK readers and writers. The app-specific modern reader bulk-unpacks numeric arrays and omits obsolete scalar-edit binding allocations. Optional `orjson` accelerates large response encoding; the standard-library path remains available. This does not replace the binary grammar.
+Electron reads selected source files through its isolated bridge. The Pivot codec, the Rust crate `engine/crates/styk-piv` compiled to WebAssembly, reads and writes PIV/STK files in a worker of the editor page on every platform; it answers what the original Python readers and writers (kept as its development test oracle) answered, replaying their recorded answers identically. Its modern reader bulk-reads numeric arrays and omits obsolete scalar-edit binding allocations. See [Pivot files and the codec service](engine/formats-piv.md).
 
-The import worker performs fetch/JSON parsing. `document-transport.mjs` transfers bounded document fragments rather than cloning one entire expanded scene into the UI. Its default packet estimate is 256 KiB with a 3 ms preparation budget and receiver acknowledgments. Large strings, pose arrays and records are split; unknown fields and numeric values remain intact. The same transport supplies playback snapshots and native document exports.
+The import worker reads the codec's responses and parses them. `document-transport.mjs` transfers bounded document fragments rather than cloning one entire expanded scene into the UI. Its default packet estimate is 256 KiB with a 3 ms preparation budget and receiver acknowledgments. Large strings, pose arrays and records are split; unknown fields and numeric values remain intact. The same transport supplies playback snapshots and native document exports.
 
-The backend source/document cache has 24 entries and a 384 MiB budget. Source imports are limited to 128 MiB; decoded/native documents to 256 MiB. A native document is retained once because it already contains original source bytes. These are cache/input limits, not a promise that total application working set stays under those values. See [backend contract](../backend/README.md).
+The codec's source/document cache has 24 entries and a 384 MiB budget on the desktop (160 MiB in the web build). Source imports are limited to 128 MiB (96 MiB on the web); decoded/native documents to 256 MiB (128 MiB). A native document is retained once because it already contains original source bytes. These are cache/input limits, not a promise that total application working set stays under those values. See [the codec's request contract](../backend/README.md).
 
 ## WebGPU and prepared playback
 
@@ -171,28 +171,26 @@ Editor styles load through `src/styles/app.css`, the only stylesheet `index.html
 
 Electron uses context isolation, sandboxed renderer code, and no renderer Node globals. Native IPC exposes specific file/stream/window/preference operations, not arbitrary filesystem commands. Workspace preferences live in a fixed, atomically written user-data JSON file capped at 16 KiB. They and recovery survive a restarted process even though its loopback origin changes.
 
-`desktop/web-host.cjs` owns the desktop's loopback origin. It streams public web
-assets asynchronously while `desktop/backend.cjs` starts the Python codec in
-parallel. `/api/` requests use the same origin and stream through a bounded
-16-request proxy with backpressure and four separate cancellation slots; pending
-requests do not buffer their uploads.
-Closing a client releases its proxy slot, and quitting aborts both pending codec
-startup and the running child. Codec failure leaves WebGPU editing, Undo/Redo,
-native project saving and local native reopening available. Pivot/STK conversion
-still requires the codec. Import/export controllers own an opaque job identity
-and send cancellation independently of their worker. The proxy also cancels
-disconnected requests over a separate bounded control connection pool. Python
-admits one heavy request at a time before reading its body, with at most 16
-active/queued requests; health and cancellation bypass that queue. Cooperative
-checks in decode, validation, fingerprint and writer loops release cancelled
-work, and source-cache publication is ordered against cancellation. Individual
-native/standard-library operations finish before the next check. Browser development
-continues to use the Python server's static host. The deployable web build has no server: the same codec runs in WebAssembly behind the same request contract
-(`codec-request.mjs`, `backend/browser_service.py`); see [Web build](WEB.md). On phones and
+`desktop/web-host.cjs` owns the desktop's loopback origin: it streams the web assets,
+read-only, to this machine's pages only, cross-origin isolated. `npm run serve` uses the same
+host for browser development. Pivot and STK files are read and written by the Pivot codec,
+`engine/crates/styk-piv` compiled to WebAssembly, in a worker of the editor page on every
+platform, desktop, development server and web build alike
+([Pivot files and the codec service](engine/formats-piv.md)). Import and export workers reach it
+over a MessagePort per job with the request contract of the former HTTP service
+(`codec-request.mjs`); its queue (`codec-web-shell.mjs`) runs one request at a time. Import/export
+controllers own an opaque job identity and cancel independently of their worker: on a
+cross-origin isolated page a shared flag stops the running request at the codec's next
+cooperative checkpoint (decode, validation, fingerprint and writer loops) and the worker keeps
+its cache; elsewhere the busy codec worker is stopped. A codec failure leaves WebGPU editing,
+Undo/Redo, native project saving and local native reopening available; the next request starts
+a fresh codec. The desktop's sample list comes from the main process (`desktop/samples.cjs`).
+The Python codec (`codecs/`, `backend/`) is kept only as the codec's development test oracle;
+see [Web build](WEB.md) for the web profile's limits. On phones and
 tablets the same editor runs its touch interface (`src/touch/`), which re-arranges the shell and
 turns fingers into the desktop's pointer events; see [Touch interface](TOUCH.md).
 
-Windows and Linux source execution and packaged builds are verified; CI builds, packages and boots the Linux AppImage, and runs the unit suite on both ([Linux support](LINUX.md)). A distributable includes the frozen codec sidecar, current web assets, source grammar, and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS has a build target that has not been executed. Platform-specific behaviour lives in the owning layer: Chromium's GPU switches in `desktop/gpu-switches.cjs`, native library locations in `native_scan.build_directory()`, interpreter discovery in `scripts/run-python.mjs`.
+Windows and Linux source execution and packaged builds are verified; CI builds, packages and boots the Linux AppImage, and runs the unit suite on both ([Linux support](LINUX.md)). A distributable includes the current web assets (the engine and codec WebAssembly modules among them), the video encoder and licenses. Rebuild and verify the package after source changes; earlier smoke reports do not certify newer bytes. macOS has a build target that has not been executed. Platform-specific behaviour lives in the owning layer: Chromium's GPU switches in `desktop/gpu-switches.cjs`, interpreter discovery for the packaging scripts in `scripts/run-python.mjs`.
 
 ## Canvas guides and grid
 

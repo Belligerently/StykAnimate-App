@@ -4,15 +4,15 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const require = createRequire(import.meta.url), {startBackend} = require('../desktop/backend.cjs');
+const require = createRequire(import.meta.url), {startDesktopHost} = require('../desktop/web-host.cjs');
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const backend = await startBackend({appRoot});
+const backend = await startDesktopHost({appRoot});
 let browser;
 try {
   try { browser = await chromium.launch({headless: true}); }
   catch { browser = await chromium.launch({channel: 'chrome', headless: true}); }
   const page = await browser.newPage();
-  await page.goto(`${backend.origin}/api/health`);
+  await page.goto(`${backend.origin}/tests/fixtures/blank.html`);
   const result = await page.evaluate(async origin => {
     const [{exportSVG}, {buildGeometry, drawGeometry}, {drawBackground, backgroundBounds}, {cameraMatrix}] = await Promise.all([
       import(`${origin}/src/svg-export.mjs`), import(`${origin}/src/pivot/geometry.mjs`), import(`${origin}/src/pivot/background.mjs`), import(`${origin}/src/renderer-geometry.mjs`),

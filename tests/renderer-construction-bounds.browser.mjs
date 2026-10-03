@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {chromium} from './support/playwright.mjs';
-import backendTools from '../desktop/backend.cjs';
+import backendTools from '../desktop/web-host.cjs';
 
 const out=path.resolve('artifacts/renderer-construction-bounds');
 await mkdir(out,{recursive:true});
-const backend=await backendTools.startBackend({appRoot:process.cwd()});let browser;
+const backend=await backendTools.startDesktopHost({appRoot:process.cwd()});let browser;
 try {
   browser=await chromium.launch({channel:'chrome',headless:true});
   const page=await browser.newPage({viewport:{width:1200,height:800}}),errors=[];

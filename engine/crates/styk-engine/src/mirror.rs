@@ -94,6 +94,8 @@ pub struct Committed {
 
 pub(crate) struct Mirror {
     tree: Value,
+    /// The interface revision of the last commit.
+    revision: u64,
     loader: Loader,
     lineage: u64,
     assets: Option<Arc<Assets>>,
@@ -101,7 +103,7 @@ pub(crate) struct Mirror {
 
 impl Default for Mirror {
     fn default() -> Self {
-        Mirror { tree: Value::object(Obj::new()), loader: Loader::new(), lineage: 0, assets: None }
+        Mirror { tree: Value::object(Obj::new()), revision: 0, loader: Loader::new(), lineage: 0, assets: None }
     }
 }
 
@@ -206,6 +208,15 @@ impl Engine {
         self.inner.staged.lock().entry(batch).or_default().push(change);
     }
 
+    /// The mirrored document and the interface revision of its last commit, for an
+    /// edit session to start from. `None` while a commit is running (this never
+    /// waits) or before any document. The tree is shared, not copied.
+    pub fn mirrored(&self) -> Option<(u64, Value)> {
+        let mirror = self.inner.mirror.try_lock().ok()?;
+        mirror.tree.get("keyframes")?;
+        Some((mirror.revision, mirror.tree.clone()))
+    }
+
     /// Applies everything staged in `batch` and publishes the result as the document
     /// of `revision` (the interface's own revision counter). All or nothing: on an
     /// error the previous document stays. Runs on the calling thread; hosts call it
@@ -230,6 +241,7 @@ impl Engine {
         });
         let prepared = Arc::new(Prepared::new(Arc::new(document)));
         mirror.tree = tree;
+        mirror.revision = revision;
         mirror.assets = Some(assets.clone());
         mirror.loader.release_unused();
         let ms = self.now() - started;

@@ -2,11 +2,11 @@ import {chromium} from './support/playwright.mjs';
 import {createRequire} from 'node:module';
 import {mkdir,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
-const require=createRequire(import.meta.url),{startBackend}=require('../desktop/backend.cjs');
-const backend=await startBackend({appRoot:process.cwd()});let browser;
+const require=createRequire(import.meta.url),{startDesktopHost}=require('../desktop/web-host.cjs');
+const backend=await startDesktopHost({appRoot:process.cwd()});let browser;
 try{
   browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();
-  const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(`${backend.origin}/api/health`);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(`${backend.origin}/tests/fixtures/blank.html`);
   const result=await page.evaluate(async()=>{
     const {glyphTextureDescriptor,cropGlyphTexture,drawGlyphMask}=await import('/src/renderer-glyphs.mjs');
     const {createRenderer}=await import('/src/renderer.mjs');

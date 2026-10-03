@@ -3,7 +3,7 @@
 //! every step, the document's bytes, the playhead, the selection, history and the
 //! change events with what the JavaScript editor did.
 
-use styk_doc::{Obj, Value};
+use styk_doc::Value;
 
 use crate::{EditError, Editor, Options, Selection};
 
@@ -44,7 +44,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         Selection { uid: selected, uids, joint: state.get("selectedJoint").and_then(Value::as_f64).unwrap_or(-1.0) as i64 },
     );
     let counter = |key: &str| state.get(key).and_then(Value::as_f64).unwrap_or(0.0) as u64;
-    editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"));
+    editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"), counter("nextUid"));
     let mut outcome = Outcome { scenario: reference.get("scenario").and_then(Value::as_str).unwrap_or("").to_string(), steps: steps.len() - 1, ..Outcome::default() };
     if editor.report_json() != expected {
         outcome.mismatches.push("step 0: the loaded document does not survive the engine's store byte for byte".into());
@@ -71,8 +71,8 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
             (Err(EditError::Invalid(key)), None) => differences.push(format!("error {key}, the editor succeeded")),
             (Ok(_), Some(error)) => differences.push(format!("succeeded, the editor failed with {}", error.get("key").and_then(Value::as_str).unwrap_or("an error"))),
             (Ok(value), None) => {
-                // `seek` returns the evaluated frame: a view the facade reads from its own copy.
-                if method != "seek" && method != "@seek" {
+                // These return the evaluated frame: a view the facade reads from its own copy.
+                if !["seek", "@seek", "sheetAppendFrame"].contains(&method.as_str()) {
                     let got = json(&plain(value, 4).unwrap_or(Value::Null));
                     let want = json(step.get("result").unwrap_or(&Value::Null));
                     if got != want {
@@ -88,7 +88,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         if actual != expected {
             differences.push(format!("document differs: {}", first_difference(&actual, &expected)));
         }
-        let got = json(&state_value(&editor));
+        let got = json(&editor.state_value());
         let want = json(step.get("state").unwrap_or(&Value::Null));
         if got != want {
             differences.push(format!("state {got}, the editor's {want}"));
@@ -105,25 +105,6 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         outcome.matched += 1;
     }
     Ok(outcome)
-}
-
-/// The state as `edit-replay.mjs` records it, in its key order.
-fn state_value(editor: &Editor) -> Value {
-    let state = editor.state();
-    let mut object = Obj::new();
-    object.set("tick", Value::Num(state.tick));
-    object.set("frameIndex", Value::Num(state.frame_index as f64));
-    object.set("selectedUid", state.selected_uid.map_or(Value::Null, |u| Value::Num(u as f64)));
-    object.set("selectedUids", Value::array(state.selected_uids.iter().map(|&u| Value::Num(u as f64)).collect()));
-    object.set("selectedJoint", Value::Num(state.selected_joint as f64));
-    object.set("canUndo", Value::Bool(state.can_undo));
-    object.set("canRedo", Value::Bool(state.can_redo));
-    object.set("undoLabel", Value::str(&state.undo_label));
-    object.set("redoLabel", Value::str(&state.redo_label));
-    object.set("dirty", Value::Bool(state.dirty));
-    object.set("layerRevision", Value::Num(state.layer_revision as f64));
-    object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
-    Value::object(object)
 }
 
 /// `plain()` in edit-replay.mjs: containers deeper than `depth` are dropped.

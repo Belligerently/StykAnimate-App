@@ -1119,6 +1119,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "styk-codec-wasm"
+version = "0.1.0"
+dependencies = [
+ "styk-doc",
+ "styk-piv",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "styk-doc"
 version = "0.1.0"
 dependencies = [
@@ -1222,6 +1231,7 @@ version = "0.1.0"
 dependencies = [
  "js-sys",
  "styk-doc",
+ "styk-edit",
  "styk-engine",
  "styk-eval",
  "styk-formats",

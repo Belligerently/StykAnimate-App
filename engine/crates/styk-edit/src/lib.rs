@@ -13,13 +13,16 @@
 //! answers [`EditError::Unported`], so a facade knows to run it in JavaScript.
 
 mod authored;
+mod figures;
 mod frame;
 mod history;
 mod pose;
 mod record;
 pub mod replay;
 mod select;
+pub mod session;
 mod sheet;
+mod sheet_frames;
 mod timeline;
 mod transform;
 
@@ -76,6 +79,8 @@ pub(crate) struct Authored {
     /// The evaluated frame the gesture started from.
     pub source: Value,
     pub tick: f64,
+    /// A command's draft of the whole frame (`transaction`): figures may come and go.
+    pub transaction: bool,
 }
 
 pub struct Editor {
@@ -100,6 +105,12 @@ pub struct Editor {
     pub(crate) layer_revision: u64,
     /// `editor._nextFrameIdentity`: the number of the next pose source (`frame-N`).
     pub(crate) next_frame_identity: u64,
+    /// `editor._nextUid`: the unique id of the next new figure.
+    pub(crate) next_uid: u64,
+    /// How many poses hold each figure, over the keyframes and the pose sources
+    /// (`_layerUidCounts`), and every figure seen so far (`_layerSeenUids`). Read
+    /// from the document when first needed, then kept with every command.
+    pub(crate) uid_counts: Option<(HashMap<u32, i64>, std::collections::HashSet<u32>)>,
     /// `auto_key` of [`Options`], which the app may change between calls.
     pub(crate) auto_key: bool,
     /// Pose sources this session captured, in order (`_generatedFrameSources`).
@@ -131,6 +142,7 @@ pub struct State {
     pub dirty: bool,
     pub layer_revision: u64,
     pub next_frame_identity: u64,
+    pub next_uid: u64,
 }
 
 /// Everything a call may change, to put back when it turns out not to be ported.
@@ -144,7 +156,8 @@ struct Snapshot {
     retained: Option<Value>,
     undo: Vec<Command>,
     redo: Vec<Command>,
-    counters: [u64; 5],
+    counters: [u64; 6],
+    uid_counts: Option<(HashMap<u32, i64>, std::collections::HashSet<u32>)>,
     generated_sources: Vec<String>,
     new_layer_hints: HashMap<u32, String>,
     events: usize,
@@ -172,6 +185,8 @@ impl Editor {
             revision_serial: 0,
             layer_revision: 0,
             next_frame_identity,
+            next_uid: 1,
+            uid_counts: None,
             auto_key: options.auto_key,
             generated_sources: Vec::new(),
             source_table_was_present,
@@ -191,10 +206,11 @@ impl Editor {
     }
 
     /// The editor's counters that the document does not carry: the layer revision
-    /// its events name and the number of the next pose source.
-    pub fn set_counters(&mut self, layer_revision: u64, next_frame_identity: u64) {
+    /// its events name, the number of the next pose source and the next figure identity.
+    pub fn set_counters(&mut self, layer_revision: u64, next_frame_identity: u64, next_uid: u64) {
         self.layer_revision = layer_revision;
         self.next_frame_identity = next_frame_identity;
+        self.next_uid = next_uid;
     }
 
     pub fn report(&self) -> &Value {
@@ -224,7 +240,54 @@ impl Editor {
             dirty: self.revision != self.saved_revision || self.drag.as_ref().is_some_and(|d| d.changed),
             layer_revision: self.layer_revision,
             next_frame_identity: self.next_frame_identity,
+            next_uid: self.next_uid,
         }
+    }
+
+    /// `editor.autoKey`, which the app sets from its settings.
+    pub fn set_auto_key(&mut self, auto_key: bool) {
+        self.auto_key = auto_key;
+    }
+
+    /// `editor.activeLayerId = id` when it differs (selection sets it in the editor
+    /// without a new revision, so a session's document may be behind).
+    pub fn set_active_layer_id(&mut self, id: &str) {
+        if self.report.path(&["_styk", "layers", "activeId"]).and_then(Value::as_str) != Some(id) && self.report.path(&["_styk", "layers"]).is_some() {
+            self.set_active_layer(id);
+        }
+    }
+
+    /// The state as JSON, in the key order `engine/tools/edit-replay.mjs` records it.
+    pub fn state_value(&self) -> Value {
+        let state = self.state();
+        let mut object = styk_doc::Obj::new();
+        object.set("tick", Value::Num(state.tick));
+        object.set("frameIndex", Value::Num(state.frame_index as f64));
+        object.set("selectedUid", state.selected_uid.map_or(Value::Null, |u| Value::Num(u as f64)));
+        object.set("selectedUids", Value::array(state.selected_uids.iter().map(|&u| Value::Num(u as f64)).collect()));
+        object.set("selectedJoint", Value::Num(state.selected_joint as f64));
+        object.set("canUndo", Value::Bool(state.can_undo));
+        object.set("canRedo", Value::Bool(state.can_redo));
+        object.set("undoLabel", Value::str(&state.undo_label));
+        object.set("redoLabel", Value::str(&state.redo_label));
+        object.set("dirty", Value::Bool(state.dirty));
+        object.set("layerRevision", Value::Num(state.layer_revision as f64));
+        object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
+        object.set("nextUid", Value::Num(state.next_uid as f64));
+        Value::object(object)
+    }
+
+    /// The figures the gesture in progress took, as they are in its draft (without
+    /// the clip sample times evaluation adds); `None` outside a gesture on a sheet.
+    pub fn draft_figures(&self) -> Option<Vec<Value>> {
+        let (drag, edit) = (self.drag.as_ref()?, self.authored.as_ref()?);
+        let taken: Vec<u32> = drag.before.iter().filter_map(record::uid).collect();
+        let figures = frame::objects_of(&edit.frame).into_iter().filter(|o| record::uid(o).is_some_and(|u| taken.contains(&u))).map(|figure| {
+            let mut figure = figure.as_obj().cloned().unwrap_or_default();
+            figure.remove("_movieclipSample");
+            Value::object(figure)
+        });
+        Some(figures.collect())
     }
 
     /// Runs one editor call by its JavaScript name, with JSON arguments; returns what
@@ -249,7 +312,8 @@ impl Editor {
             retained: self.retained.clone(),
             undo: self.undo.clone(),
             redo: self.redo.clone(),
-            counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity],
+            counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid],
+            uid_counts: self.uid_counts.clone(),
             generated_sources: self.generated_sources.clone(),
             new_layer_hints: self.new_layer_hints.clone(),
             events: self.events.len(),
@@ -266,7 +330,8 @@ impl Editor {
         self.retained = snapshot.retained;
         self.undo = snapshot.undo;
         self.redo = snapshot.redo;
-        [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity] = snapshot.counters;
+        [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid] = snapshot.counters;
+        self.uid_counts = snapshot.uid_counts;
         self.generated_sources = snapshot.generated_sources;
         self.new_layer_hints = snapshot.new_layer_hints;
         self.events.truncate(snapshot.events);
@@ -310,6 +375,20 @@ impl Editor {
             "poseJoint" => self.pose_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "sheetDuplicateFrameAfter" => self.sheet_duplicate_frame_after(&arg(0), &arg(1)).map(Value::Bool),
+            "sheetSetEasing" => self.sheet_set_easing(&arg(0), number(1), number(2), &arg(3)).map(Value::Bool),
+            "sheetClearKeys" => self.sheet_clear_keys(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetClearFrames" => self.sheet_clear_frames(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetInsertFrames" => self.sheet_insert_frames(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetRemoveFrames" => self.sheet_remove_frames(&arg(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetSetDuration" => self.sheet_set_duration(number(0), &arg(1), &arg(2)).map(Value::Bool),
+            "sheetAppendFrame" => self.sheet_append_frame(&arg(0)),
+            "joinTo" => self.join_to(arg(0).as_f64(), &arg(1)).map(Value::Bool),
+            "unjoinFigure" => self.unjoin_figure().map(Value::Bool),
+            "joinFigure" => if arg(0).is_null() { self.unjoin_figure() } else { self.join_to(arg(0).as_f64(), &arg(1)) }.map(Value::Bool),
+            "deleteSelection" | "deleteFigure" => self.delete_selection().map(Value::Bool),
+            "duplicateFigure" => self.duplicate_figure(),
             "undo" => self.undo().map(Value::Bool),
             "redo" => self.redo().map(Value::Bool),
             other => Err(EditError::Unported(other.to_string())),

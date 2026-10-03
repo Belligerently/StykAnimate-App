@@ -42,7 +42,7 @@ async function run(window) {
   await execute('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
   const readyAt = Date.now(), startupMs = performance.now() - started;
   const baseline = {versions: process.versions, processes: app.getAppMetrics()};
-  const baselineHealth = await execute("fetch('/api/health').then(r => r.json())");
+  const baselineHealth = await execute("(async (path, init) => { const [{codecJob}, {codecRequest}] = await Promise.all([import('/src/codec-job.mjs'), import('/src/codec-request.mjs')]); const job = codecJob(); try { return await codecRequest(job.link().fields, path, init); } finally { job.finish(); } })('/api/health').then(r => r.json())");
   // The driver disables collection before launch in this disposable profile.
   // Close the release splash before timing the import.
   await execute("for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); styk.editor.markSaved();");
@@ -115,7 +115,7 @@ async function run(window) {
     const bytes = new TextEncoder().encode(JSON.stringify({figure_types: r.figure_types, keyframes: r.keyframes, backgrounds: r.backgrounds, fps: r.fps, width: r.canvas_width, height: r.canvas_height}));
     return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), v => v.toString(16).padStart(2, '0')).join('');
   })()`);
-  const health = await execute("fetch('/api/health').then(r => r.json())");
+  const health = await execute("(async (path, init) => { const [{codecJob}, {codecRequest}] = await Promise.all([import('/src/codec-job.mjs'), import('/src/codec-request.mjs')]); const job = codecJob(); try { return await codecRequest(job.link().fields, path, init); } finally { job.finish(); } })('/api/health').then(r => r.json())");
   await writeFile(path.join(output, 'import.png'), (await window.webContents.capturePage()).toPNG());
   const exports = process.env.STYK_BENCH_EXPORT === '1' ? await execute(`(async () => {
     const {DocumentExporter} = await import('/src/document-export.mjs');

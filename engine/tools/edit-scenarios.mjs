@@ -1,4 +1,4 @@
-import {writeFileSync} from 'node:fs';
+import {readFileSync, writeFileSync} from 'node:fs';
 // Builds the first command-replay scenarios (engine/tests/edit/) with the editor's own fixture kit.
 //   node engine/tools/edit-scenarios.mjs && node engine/tools/edit-replay.mjs --all
 import {documentOf, limb, open, nextKey, prune} from './fixture-kit.mjs';
@@ -157,3 +157,46 @@ scenario('locked-sheet', app, [
     ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
   ], 'sheet-movieclip-loose.document.json');
 }
+// Keys and frames of the layer timeline, on the two-layer sheet and on the sheet with a clip.
+scenario('keys-sheet', app, [
+  ['sheetInsertKey', ['layer-1'], 3], ['sheetInsertKey', ['layer-2'], 2, {blank: true}], ['@seek', 5], ['sheetInsertKey'],
+  ['sheetSetEasing', ['layer-1'], 0, 3, {interpolation: 'bezier', bezier: [0.2, 0, 0.8, 1]}], ['sheetSetEasing', ['layer-2'], 0, 6, {interpolation: 'hold'}],
+  ['sheetSetEasing', ['layer-1'], 0, 1, {interpolation: 'wobble'}], ['sheetInsertKey', ['layer-9'], 1], ['sheetClearKeys', ['layer-1'], 3, 3], ['undo'], ['undo'], ['redo'],
+  ['@select', 1, -1], ['moveSelection', 6, 6], ['sheetInsertKey', ['layer-1', 'layer-2'], 9], ['sheetInsertKey', ['scene'], 4], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'],
+], 'sheet-layers.document.json');
+scenario('frames-sheet', app, [
+  ['@seek', 2], ['sheetDuplicateFrameAfter'], ['sheetInsertFrames', ['layer-1', 'layer-2'], 2, 2], ['sheetRemoveFrames', ['layer-2'], 1, 2], ['sheetClearFrames', ['layer-1'], 4, 5],
+  ['sheetSetDuration', 3], ['@seek', 1], ['sheetSetDuration', 1, 'layer-2'], ['sheetAppendFrame'], ['sheetAppendFrame', {duration: 3}],
+  ['sheetInsertFrames', ['scene', 'camera', 'layer-1', 'layer-2'], 0, 1], ['sheetRemoveFrames', ['layer-1'], 5, 2], ['sheetInsertFrames', ['layer-1'], 1.5], ['sheetSetDuration', 0],
+  ['sheetRemoveFrames', ['scene', 'camera', 'layer-1', 'layer-2'], 0, 3], ['@select', 1, -1], ['moveSelection', 4, 4],
+  ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'], ['redo'],
+], 'sheet-layers.document.json');
+scenario('frames-movieclip-sheet', app, [
+  ['@seek', 2], ['sheetInsertFrames', ['scene', 'camera', 'layer-1'], 1, 2], ['sheetDuplicateFrameAfter'], ['sheetRemoveFrames', ['layer-1'], 0, 1], ['sheetInsertKey', ['layer-1'], 4],
+  ['sheetAppendFrame', {duration: 2}], ['sheetClearFrames', ['layer-1'], 2, 3], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+], 'sheet-movieclip-loose.document.json');
+// The same document with the clip's instance on the document's clock (a span and a restart):
+// written by hand, as files from before the presence clock have it. Inserting and removing
+// frames retimes the span.
+{
+  const timed = JSON.parse(readFileSync(`${out}/sheet-movieclip-loose.document.json`, 'utf8'));
+  for (const frame of Object.values(timed._styk.frameSources)) for (const object of frame.objects)
+    if (object._stykMovieclip) object._stykMovieclip = {start: 1, end: 6, offset: 0, speed: 1, mode: 'loop', restarts: [{tick: 3, offset: 0}]};
+  writeFileSync(`${out}/sheet-movieclip-timed.document.json`, JSON.stringify(timed) + '\n');
+  scenario('frames-timed-clip-sheet', app, [
+    ['@seek', 2], ['sheetInsertFrames', ['scene', 'camera', 'layer-1'], 1, 2], ['sheetDuplicateFrameAfter'], ['sheetRemoveFrames', ['layer-1'], 0, 1], ['sheetInsertKey', ['layer-1'], 4],
+    ['sheetAppendFrame', {duration: 2}], ['sheetInsertFrames', ['scene', 'camera', 'layer-1'], 0, 1], ['sheetInsertKey', ['layer-1'], 14], ['sheetClearFrames', ['layer-1'], 2, 3],
+    ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'],
+  ], 'sheet-movieclip-timed.document.json');
+}
+// Commands that draft the whole frame on a sheet: joins, duplicates and deletions.
+scenario('figures-sheet', app, [
+  ['@seek', 2], ['@select', 3, -1], ['unjoinFigure'], ['joinTo', 1, 22], ['joinFigure', null], ['joinTo', 3, 0], ['joinTo', 2, 99], ['joinTo', 2, 11],
+  ['@select', 2, -1], ['joinTo', 3, 0], ['duplicateFigure'], ['moveSelection', 10, -30], ['duplicateFigure'], ['undo'], ['@seek', 4], ['@select', 1, -1], ['rotateSelection', 0.2],
+  ['@select', 2, -1], ['deleteSelection'], ['undo'], ['@select', 1, -1], ['deleteFigure'], ['selectMany', [2, 3]], ['deleteSelection'], ['deleteSelection'],
+  ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'], ['redo'], ['redo'],
+], 'joined-chain.document.json');
+scenario('figures-layers-sheet', app, [
+  ['@seek', 3], ['@select', 3, -1], ['duplicateFigure'], ['@select', 3, -1], ['unjoinFigure'], ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 3, 11],
+  ['selectMany', [1, 3]], ['deleteSelection'], ['undo'], ['undo'], ['@seek', 5], ['@select', 2, 1], ['rotateJoint', 0.3], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+], 'sheet-layers.document.json');

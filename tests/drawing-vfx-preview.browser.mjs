@@ -5,7 +5,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 const browser=await chromium.launch({channel:'chrome',headless:true}),errors=[];
 try{
  const page=await browser.newPage();page.on('pageerror',error=>errors.push(error.message));
- await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47835'}/api/health`);
+ await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47835'}/tests/fixtures/blank.html`);
  const result=await page.evaluate(async()=>{
   const [{Editor},{emptyDocument,createFrame,createObject},{createRenderer},{drawingMetadata},{createGpuStroke},{normalizeBrush,BrushStroke}]=await Promise.all([
    import('/src/editor.mjs'),import('/src/demo.mjs'),import('/src/renderer.mjs'),import('/src/drawing-model.mjs'),import('/src/drawing-gpu.mjs'),import('/src/drawing-brush.mjs')]);

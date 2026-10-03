@@ -30,6 +30,8 @@ const run = (name, command, commandArgs, options = {}) => {
   return result;
 };
 const nice = process.platform === 'win32' ? [] : ['nice', '-n', '10'];
+/** Whether `paths` are as committed: no changed file and no new one (`git diff` misses new files). */
+const unchanged = (...paths) => spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', ...paths], {cwd: root, encoding: 'utf8'}).stdout.trim() === '';
 const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.length ? ['cargo'] : []), ...rest, '--manifest-path', 'engine/Cargo.toml']];
 
 // Fixture suites (fast: a few seconds once built).
@@ -39,22 +41,22 @@ run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p',
 for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures']) {
   if (!existsSync(path.join(root, `engine/tools/${tool}.mjs`))) continue;
   run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
-    check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-eval/tests/fixtures'], {cwd: root}).status === 0});
+    check: () => unchanged('engine/crates/styk-eval/tests/fixtures')});
 }
 
 // V8's Math results for styk-math are byte-stable unless V8 changes.
 run('math fixtures regenerate unchanged', process.execPath, ['engine/tools/math-fixtures.mjs'], {quiet: true,
-  check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-math/tests'], {cwd: root}).status === 0});
+  check: () => unchanged('engine/crates/styk-math/tests')});
 
 // So is what the editor's evaluated frame stores (styk-eval's tests/records.rs compares).
 run('record fixtures regenerate unchanged', process.execPath, ['engine/tools/records-fixtures.mjs'], {quiet: true,
-  check: () => spawnSync('git', ['diff', '--quiet', '--', 'engine/crates/styk-eval/tests/fixtures/records'], {cwd: root}).status === 0});
+  check: () => unchanged('engine/crates/styk-eval/tests/fixtures/records')});
 
 // Command recordings are byte-stable too: re-recording them in the JavaScript editor changes
 // nothing (styk-edit's test above replays them in the engine).
 run('edit recordings regenerate unchanged', process.execPath, ['engine/tools/edit-scenarios.mjs'], {quiet: true,
   check: () => spawnSync(process.execPath, ['engine/tools/edit-replay.mjs', '--all'], {cwd: root}).status === 0
-    && spawnSync('git', ['diff', '--quiet', '--', 'engine/tests/edit'], {cwd: root}).status === 0});
+    && unchanged('engine/tests/edit')});
 
 // Containers: every native file in the repository, against the JavaScript reader.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});
@@ -98,6 +100,12 @@ if (args.has('--app')) {
   run('app: start-up document', process.execPath, ['scripts/engine-app-parity.mjs', '--label', 'parity-startup', '--onion', '--play', '--require-engine'], {quiet: true});
   for (const fixture of ['startup-pinned', 'joined-stretch'])
     run(`app: IK fixture ${fixture}`, process.execPath, ['scripts/engine-app-parity.mjs', '--file', `engine/crates/styk-eval/tests/fixtures/ik/${fixture}.json`, '--label', `parity-${fixture}`, '--require-engine'], {quiet: true});
+}
+
+if (args.has('--app')) {
+  // Ported editor calls in the real app, in shadow of the JavaScript editor (docs/engine/editing.md).
+  for (const document of ['joined-chain', 'sheet-layers', 'sheet-movieclip-loose'])
+    run(`app: shadow editing ${document}`, process.execPath, ['scripts/engine-edit-shadow.mjs', '--file', `engine/tests/edit/${document}.document.json`], {quiet: true});
 }
 
 console.log('\nEngine parity');

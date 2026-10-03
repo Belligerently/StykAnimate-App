@@ -136,7 +136,7 @@ impl Editor {
         }
         let drag = self.drag.take().unwrap();
         let after_selection = self.selection_state();
-        self.record(Command { kind: CommandKind::Objects { index, before: drag.before, after }, label: drag.label.clone(), before_selection: drag.before_selection, after_selection, before_revision: 0, after_revision: 0 });
+        self.record(Command { kind: CommandKind::Objects { index, before: drag.before, after }, label: drag.label.clone(), before_selection: drag.before_selection, after_selection, before_revision: 0, after_revision: 0 })?;
         self.emit("edit", vec![("label", Value::str(&drag.label)), ("changedUids", uid_array(&ids))]);
         Ok(true)
     }

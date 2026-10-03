@@ -14,7 +14,7 @@ try {
     const body = await readFile(path.join(output, `${name}.before.mjs`), 'utf8');
     await page.route(`**/src/${name}.mjs`, route => route.fulfill({body, contentType: 'text/javascript'}));
   }
-  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/api/health`);
+  await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result = await page.evaluate(async () => {
     const {createRenderer} = await import('/src/renderer.mjs');
     const {compilePlaybackPacket} = await import('/src/playback-worker.mjs');

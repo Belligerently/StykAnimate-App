@@ -27,11 +27,14 @@ A dedicated worker assembles each snapshot, synchronizes existing derived
 aliases, validates the scene, and builds the output. `.styk`/`.stkz`/`.stykmov`
 saves are encoded in the worker as version-2 sectioned containers — large
 numeric arrays and base64 payloads move to binary sections, the original source
-bytes come from `GET /api/source`, and the skeleton compresses with zstd —
-without the document ever being serialized on the service. `.piv`/`.stk` still
-upload to the local file service, as does a native export when local encoding
-cannot run (no zstd support, missing source), preserving the service's exact
-response including actionable error statuses. Missing display aliases remain
+bytes come from the codec's `/api/source` route, and the skeleton compresses with
+zstd — without the document ever being serialized by the codec. `.piv`/`.stk`
+exports go to the Pivot codec, as does a native export when local encoding
+cannot run (no zstd support, missing source). The codec is the Rust one
+(`engine/crates/styk-piv`) compiled to WebAssembly and running in a worker of the
+editor page (`src/codec-web-worker.mjs`); it answers the same `/api/...` routes the
+former local file service did, over the worker's message ports, with the same
+responses and actionable error statuses ([engine/formats-piv.md](engine/formats-piv.md)). Missing display aliases remain
 absent so an untouched STK or legacy document does not become a semantic edit
 merely from normalization. A Blob returns to the renderer without JSON or
 base64 conversion. Use the native Blob streaming helper to save it through

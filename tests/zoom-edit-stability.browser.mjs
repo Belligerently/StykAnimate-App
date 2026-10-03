@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {chromium} from './support/playwright.mjs';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 
-const server = await backend.startBackend({appRoot: process.cwd()});
+const server = await backend.startDesktopHost({appRoot: process.cwd()});
 const browser = await chromium.launch({channel: 'chrome', headless: true});
 const out = 'artifacts/zoom-edit-stability', results = [];
 await mkdir(out, {recursive: true});

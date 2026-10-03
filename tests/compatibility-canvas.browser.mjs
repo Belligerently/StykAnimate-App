@@ -2,6 +2,7 @@ import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
+import {exposeWorkspaceSamples} from './support/workspace-samples.mjs';
 
 const out = path.resolve('artifacts/compatibility-canvas');
 await mkdir(out, {recursive: true});
@@ -10,6 +11,7 @@ const results = [];
 try {
   for (const failure of ['unavailable', 'requestDevice']) {
     const page = await browser.newPage({viewport: {width: 1280, height: 850}}), errors = [];
+    await exposeWorkspaceSamples(page);
     page.on('pageerror', e => errors.push(e.message));
     await page.addInitScript(failure => Object.defineProperty(navigator, 'gpu', {value: failure === 'unavailable' ? undefined : {
       requestAdapter: async () => ({requestDevice: async () => {throw new Error('D3D12 create command queue failed with DXGI_ERROR_DEVICE_REMOVED (0x887A0005)');}}),
@@ -78,7 +80,7 @@ try {
     if (process.env.COMPATIBILITY_SAMPLE) {
       await page.evaluate(async sample => {
         const {ImportClient} = await import('/src/import-client.mjs');
-        const client = new ImportClient();
+        const client = new ImportClient({readSample: (await import('/tests/support/page-samples.mjs')).sampleReader()});
         try {
           const imported = await client.openSample(sample);
           styk.editor.markSaved(); await styk.acceptImport(imported, sample.split('/').at(-1));

@@ -4,16 +4,16 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-import backend from '../desktop/backend.cjs';
+import backend from '../desktop/web-host.cjs';
 import {performanceSourceHashes} from '../scripts/performance-source-hashes.mjs';
 
 const sources=process.argv.slice(2);assert.ok(sources.length,'Provide native-v5 PIV fixtures.');
-const hashes=await performanceSourceHashes(),service=await backend.startBackend({appRoot:process.cwd()});
+const hashes=await performanceSourceHashes(),service=await backend.startDesktopHost({appRoot:process.cwd()});
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex'),results=[];let browser;
 try{
   browser=await chromium.launch({channel:'chrome',headless:true});
   const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(`${service.origin}/api/health`);await page.setContent('<input id="source" type="file">');
+  await page.goto(`${service.origin}/tests/fixtures/blank.html`);await page.setContent('<input id="source" type="file">');
   for(const source of sources){
     const filename=path.resolve(source),before=sha(await readFile(filename));
     await page.locator('#source').setInputFiles(filename);

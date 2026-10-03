@@ -5,16 +5,18 @@ import {exportEditable} from './helpers/editable-export.mjs';
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import backend from "../desktop/backend.cjs";
+import backend from '../desktop/web-host.cjs';
+import {exposeWorkspaceSamples} from './support/workspace-samples.mjs';
 const output = path.resolve("artifacts/camera-bake-authored");
 await mkdir(output, { recursive: true });
 const service = process.env.STYK_URL
   ? null
-  : await backend.startBackend({ appRoot: process.cwd() });
+  : await backend.startDesktopHost({ appRoot: process.cwd() });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 980 } }),
   checks = [],
   errors = [];
+await exposeWorkspaceSamples(page);
 page.on("pageerror", (error) => errors.push(error.message));
 const check = (name, value) => {
   assert.ok(value, name);
@@ -108,7 +110,7 @@ try {
       import("/src/import-client.mjs"),
       import("/src/document-export.mjs"),
     ]);
-    const importer = new ImportClient(),
+    const importer = new ImportClient({readSample: (await import('/tests/support/page-samples.mjs')).sampleReader()}),
       exporter = new DocumentExporter();
     const assert = (value, message) => {
       if (!value) throw new Error(message);

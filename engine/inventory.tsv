@@ -60,11 +60,12 @@ src/clipboard-worker-client.mjs	engine	styk-edit	js
 src/clipboard-worker-plan.mjs	engine	styk-edit	js	
 src/clipboard-worker.mjs	engine	styk-edit	js	
 src/codec-job.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-engine.mjs	engine	styk-formats::service	js	import/export transport: loads the Rust codec module (styk-codec-wasm) and answers one request
 src/codec-request.mjs	engine	styk-formats::service	js	import/export transport
-src/codec-web-engine.mjs	engine	styk-formats::service	js	import/export transport
-src/codec-web-host.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-web-engine.mjs	engine	styk-formats::service	removed	ran the Python codec in Pyodide; the codec worker runs styk-codec-wasm (3300 bytes)
+src/codec-web-host.mjs	engine	styk-formats::service	js	import/export transport: the codec worker, its codec profile and shared cancellation flags
 src/codec-web-shell.mjs	engine	styk-formats::service	js	import/export transport
-src/codec-web-worker.mjs	engine	styk-formats::service	js	import/export transport
+src/codec-web-worker.mjs	engine	styk-formats::service	js	import/export transport: the worker running the Rust codec module (styk-codec-wasm)
 src/color-palette.mjs	engine	styk-eval	js	
 src/color-picker-magnifier.mjs	ui	-	stays	
 src/color-picker.mjs	ui	-	stays	
@@ -122,7 +123,7 @@ src/drawing-worker.mjs	engine	styk-drawing	js
 src/editable-scene-preparation.mjs	engine	styk-render	js	
 src/editor-animation.mjs	engine	styk-edit	js	commands and history
 src/editor-audio.mjs	engine	styk-edit	js	commands and history
-src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); transactions and property-channel commits still JS
+src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); property-channel commits still JS
 src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
@@ -150,7 +151,7 @@ src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-focus.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-folders.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-migration.mjs	engine	styk-edit	js	commands and history
-src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose, the planner (write, capture, materialize), publish and undo/redo of layer-sheet commands for gestures on existing figures (styk-edit); every other sheet command still JS
+src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS
 src/editor-layers.mjs	engine	styk-edit	js	commands and history
 src/editor-load.mjs	engine	styk-edit	js	commands and history
 src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
@@ -534,55 +535,55 @@ src/web-library.mjs	platform	-	stays	file, storage and network services
 src/web-offline.mjs	platform	-	stays	file, storage and network services
 src/web-support.js	ui	-	stays	
 src/zlib-sync.mjs	engine	styk-formats::container	partial	Rust: inflate of drawing tiles (PNG decoder); deflate still JS
-codecs/codec_bridge.py	engine	styk-formats::piv	ported	Rust: styk-piv bridge.rs
-codecs/image_stream.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/image_stream.rs
-codecs/piv_asset_writer.py	engine	styk-formats::piv	ported	Rust: styk-piv write/assets.rs
-codecs/piv_codec.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/v5.rs; replays the Python recording identically (13,369 requests)
-codecs/piv_document.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/v5.rs
-codecs/piv_full_writer.py	engine	styk-formats::piv	ported	Rust: styk-piv write/full.rs
-codecs/piv_legacy.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/legacy.rs
-codecs/piv_legacy_v2.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/legacy_v2.rs
-codecs/piv_legacy_v4.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/legacy_v4.rs
-codecs/piv_migrate.py	engine	styk-formats::piv	ported	Rust: styk-piv write/migrate.rs
-codecs/piv_side_tables.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/side_tables.rs
-codecs/pivot_decoder.py	engine	styk-formats::piv	partial	Rust: legacy layout detection; its v5 guessing decoders are unreachable
-codecs/work_control.py	engine	styk-formats::piv	ported	Rust: cooperative cancellation (styk-piv ctx.rs)
-backend/benchmark.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/benchmark_fast_decode.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/browser_service.py	engine	styk-formats::service	ported	Rust: styk-piv service.rs
-backend/fast_decode.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/frames.rs
-backend/import_wire.py	engine	styk-formats::piv	ported	Rust: styk-piv wire.rs (STYKPIV1)
-backend/jobs.py	engine	styk-formats::service	partial	Rust: cancelled requests answer 499; the job queue still Python
-backend/native_format.py	engine	styk-formats::container	partial	container v1/v2 (service side). Rust: reading every version
-backend/native_scan.py	engine	styk-formats::piv	ported	Rust: styk-piv piv/frames.rs scan mode
-backend/process_metrics.py	engine	styk-formats::service	js	codec service routes, source cache, cancellation
-backend/profile_import.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/profile_native_save.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/server.py	engine	styk-formats::service	partial	codec service routes, source cache, cancellation. Rust: project store, fingerprints, error responses, request parsing, limits (styk-piv store.rs, digest.rs); the HTTP handler still Python
-backend/test_browser_roundtrip.mjs	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_browser_service.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_document_digest.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_fast_decode.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_import_wire_review.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_jobs.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_legacy_bitmap_keys.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_legacy_upgrade_export.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_library_format.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_native_format.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_native_layout.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_native_scan.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_parent_watch.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_piv_identities.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_piv_media_recovery.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_piv_type_changes.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_server.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_source_lifetime.py	tool	-	stays	Python test or profiler; removed with the Python codec
-backend/test_stk_topology.py	tool	-	stays	Python test or profiler; removed with the Python codec
-native/piv-frame-scan.cpp	engine	styk-formats::piv	ported	Rust: styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)
+codecs/codec_bridge.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv bridge.rs); kept only as the development test oracle (not shipped)
+codecs/image_stream.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/image_stream.rs); kept only as the development test oracle (not shipped)
+codecs/piv_asset_writer.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/assets.rs); kept only as the development test oracle (not shipped)
+codecs/piv_codec.py	engine	styk-formats::piv	verified	the app runs styk-piv (piv/v5.rs; replays the Python recording identically, 13,369 requests); kept only as the development test oracle (not shipped)
+codecs/piv_document.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/v5.rs); kept only as the development test oracle (not shipped)
+codecs/piv_full_writer.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/full.rs); kept only as the development test oracle (not shipped)
+codecs/piv_legacy.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy.rs); kept only as the development test oracle (not shipped)
+codecs/piv_legacy_v2.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy_v2.rs); kept only as the development test oracle (not shipped)
+codecs/piv_legacy_v4.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy_v4.rs); kept only as the development test oracle (not shipped)
+codecs/piv_migrate.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/migrate.rs); kept only as the development test oracle (not shipped)
+codecs/piv_side_tables.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/side_tables.rs); kept only as the development test oracle (not shipped)
+codecs/pivot_decoder.py	engine	styk-formats::piv	verified	the app runs styk-piv (legacy layout detection; its v5 guessing decoders are unreachable); kept only as the development test oracle (not shipped)
+codecs/work_control.py	engine	styk-formats::piv	verified	the app runs styk-piv (cooperative cancellation: ctx.rs, polled through a shared flag); kept only as the development test oracle (not shipped)
+backend/benchmark.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/benchmark_fast_decode.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/browser_service.py	engine	styk-formats::service	verified	the app runs styk-piv (styk-piv service.rs); kept only as the development test oracle (not shipped)
+backend/fast_decode.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs); kept only as the development test oracle (not shipped)
+backend/import_wire.py	engine	styk-formats::piv	verified	the app runs styk-piv (wire.rs, STYKPIV1); kept only as the development test oracle (not shipped)
+backend/jobs.py	engine	styk-formats::service	verified	the app runs styk-piv (cancelled requests answer 499) behind the codec worker queue (src/codec-web-shell.mjs); kept only as the development test oracle (not shipped)
+backend/native_format.py	engine	styk-formats::container	verified	the app reads containers in src/native-container.mjs and, as the codec fallback, styk-piv over styk-formats; kept only as the development test oracle (not shipped)
+backend/native_scan.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs scan mode); kept only as the development test oracle (not shipped)
+backend/process_metrics.py	engine	styk-formats::service	verified	measured the codec service process; the codec runs in the page now, so the app has nothing to measure; kept only as the development test oracle (not shipped)
+backend/profile_import.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/profile_native_save.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/server.py	engine	styk-formats::service	verified	the app runs styk-piv (project store, fingerprints, error responses, request parsing, limits: store.rs, digest.rs, service.rs) in the codec worker; no HTTP handler ships; kept only as the development test oracle (not shipped)
+backend/test_browser_roundtrip.mjs	tool	-	stays	browser test of the Python codec service, the development oracle
+backend/test_browser_service.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_document_digest.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_fast_decode.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_import_wire_review.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_jobs.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_legacy_bitmap_keys.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_legacy_upgrade_export.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_library_format.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_native_format.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_native_layout.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_native_scan.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_parent_watch.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_piv_identities.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_piv_media_recovery.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_piv_type_changes.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_server.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_source_lifetime.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_stk_topology.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+native/piv-frame-scan.cpp	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)); kept only as the development test oracle (not shipped)
 native/vfw-bridge.cpp	platform	-	stays	Windows VFW encoder bridge (stays native)
 desktop/appimage-updater.cjs	platform	-	stays	Electron shell and services
 desktop/audio-service.cjs	platform	-	stays	Electron shell and services
-desktop/backend.cjs	platform	styk-formats::service	js	starts the Python codec; goes away with it
+desktop/backend.cjs	platform	styk-formats::service	removed	started the Python codec sidecar; the desktop runs styk-codec-wasm in the page (6079 bytes)
 desktop/file-streams.cjs	platform	-	stays	Electron shell and services
 desktop/font-service.cjs	platform	-	stays	Electron shell and services
 desktop/gpu-switches.cjs	platform	-	stays	Electron shell and services
@@ -604,5 +605,6 @@ desktop/telemetry.cjs	platform	-	stays	Electron shell and services
 desktop/updates.cjs	platform	-	stays	Electron shell and services
 desktop/vfw-export-service.cjs	platform	-	stays	Electron shell and services
 desktop/video-export-service.cjs	platform	-	stays	Electron shell and services
+desktop/samples.cjs	platform	-	stays	the desktop sample list and sample bytes, under the Python codec service's samples/open rules
 desktop/web-host.cjs	platform	-	stays	Electron shell and services
 desktop/workspace-instance.cjs	platform	-	stays	Electron shell and services

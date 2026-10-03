@@ -14,7 +14,7 @@ const { FileStreams } = require('./file-streams.cjs');
 const { SharedClipboard } = require('./shared-clipboard.cjs');
 const { workspaceDirectory } = require('./workspace-instance.cjs');
 const { spawn } = require('node:child_process');
-const { randomBytes } = require('node:crypto');
+const { sampleRoot, listSamples, readSample } = require('./samples.cjs');
 const { WorkspacePreferences } = require('./preferences.cjs');
 const { SupportService } = require('./support.cjs');
 const { ProjectFiles } = require('./project-files.cjs');
@@ -49,9 +49,8 @@ const fileFilters = () => [
   { name: t('desktop.main.stykanimateProject'), extensions: ['styk', 'json'] },
 ];
 let window;
-let backend;
-// Per-launch secret required by the loopback codec API; never persisted.
-const apiToken = randomBytes(32).toString('hex');
+// The loopback origin the editor page is served from (web-host.cjs).
+let webHost;
 let fileStreams;
 let videoExports;
 let audioImports;
@@ -126,7 +125,7 @@ else {
 
 function trusted(event) {
   const url = event.senderFrame?.url || '';
-  if (!window || event.sender !== window.webContents || !backend || new URL(url).origin !== backend.origin) {
+  if (!window || event.sender !== window.webContents || !webHost || new URL(url).origin !== webHost.origin) {
     throw messageError(new Error(''), 'desktop.main.errors.thisOperationIsRestrictedToTheStykAnimateWorkspace', {});
   }
 }
@@ -227,7 +226,7 @@ async function rememberRecent(file) {
 }
 
 async function queueOpenFile(file) {
-  if (!window || !backend || !pageLoaded) { pendingFiles.push(file); return; }
+  if (!window || !webHost || !pageLoaded) { pendingFiles.push(file); return; }
   try { window.webContents.send('styk:file-opened', await readImportFile(file)); }
   catch (error) { dialog.showErrorBox(t('desktop.main.unableToOpenFile'), error.message); }
 }
@@ -720,10 +719,14 @@ function registerIpc() {
     return windowState();
   });
   handle('styk:window-state', (event) => { trusted(event); return windowState(); });
-  // Only the trusted workspace frame receives the codec session token.
-  ipcMain.on('styk:api-token', (event) => {
-    try { trusted(event); event.returnValue = apiToken; }
-    catch { event.returnValue = ''; }
+  // The sample list and the bytes of one sample, under the rules in samples.cjs.
+  handle('styk:samples-list', async (event) => {
+    trusted(event);
+    return listSamples(await sampleRoot({ appRoot: APP_ROOT, packaged: app.isPackaged }));
+  });
+  handle('styk:sample-read', async (event, relative) => {
+    trusted(event);
+    return readSample(await sampleRoot({ appRoot: APP_ROOT, packaged: app.isPackaged }), relative);
   });
   ipcMain.on('styk:memory-bytes', (event) => {
     try { trusted(event); event.returnValue = os.totalmem(); }
@@ -775,7 +778,7 @@ async function createWindow() {
     return { action: 'deny' };
   });
   window.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).origin !== backend.origin) event.preventDefault();
+    if (new URL(url).origin !== webHost.origin) event.preventDefault();
   });
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
   const editorWindow = window;
@@ -792,7 +795,7 @@ async function createWindow() {
       if (editorWindow.isDestroyed() || !rendererFailed) return;
       if (answer.response === 0) {
         documentState = { name: 'Untitled', dirty: false, unsaved: 0, unsavedName: '' };
-        await editorWindow.loadURL(backend.origin);
+        await editorWindow.loadURL(webHost.origin);
       } else if (answer.response === 2) {
         // The dead renderer cannot save. Closing this window must retain the
         // existing recovery file and must not wait for a save acknowledgement.
@@ -841,7 +844,7 @@ async function createWindow() {
     if ((event.isMainFrame ?? mainFrame) && !(event.isSameDocument ?? inPlace)) projectFiles.clear();
   });
   window.webContents.on('did-finish-load', () => { rendererFailed = false; pageLoaded = true; void flushPendingOpens(); });
-  await window.loadURL(backend.origin);
+  await window.loadURL(webHost.origin);
   if (process.env.STYK_DEVTOOLS === '1') window.webContents.openDevTools({ mode: 'detach' });
   await flushPendingOpens();
 }
@@ -869,11 +872,9 @@ async function start() {
   const memoryTimer = setInterval(() => {
     if (telemetry?.state.consent.diagnostics && window?.isFocused()) {
       const metrics = app.getAppMetrics();
-      const phase=telemetry.resourcePhase||'unknown',epoch=telemetry.epoch;
+      const phase=telemetry.resourcePhase||'unknown';
+      // The Pivot codec runs in a worker of the editor page, so the renderer's share includes it.
       telemetry.sampleResources({memory_process:metrics.reduce((sum,item)=>sum+(item.memory?.workingSetSize||0),0)/1024},phase);
-      if(backend?.origin)void fetch(backend.origin+'/api/health',{signal:AbortSignal.timeout(1500)}).then(response=>response.json()).then(value=>{
-        if(telemetry.epoch===epoch&&window?.isFocused()&&Number.isFinite(value.processMemoryMiB))telemetry.sampleResources({memory_backend:value.processMemoryMiB},phase);
-      }).catch(()=>{});
       telemetry.sampleMemory(metrics.reduce((sum, item) => sum + (item.memory?.workingSetSize || 0), 0) / 1024);
       telemetry.record({ epoch: telemetry.epoch, data: { gauges: { process_cpu_percent: metrics.reduce((sum, item) => sum + (item.cpu?.percentCPUUsage || 0), 0) } } });
     }
@@ -881,11 +882,7 @@ async function start() {
   library = new LibraryStore(process.env.STYK_LIBRARY_DIR || path.join(app.getPath('documents'), 'StykAnimate', 'library'));
   // A temporarily unavailable Documents volume should not prevent animation work.
   void library.init().catch(error => console.warn('Library initialization:', error.message));
-  backend = await startDesktopHost({
-    appRoot: APP_ROOT, resourcesPath: process.resourcesPath, packaged: app.isPackaged, token: apiToken,
-    log: (message) => { if (process.env.STYK_DEBUG === '1') process.stderr.write(message); },
-    onError: (message) => { telemetry?.error('BackendError', 'backend', 'backend_errors'); if (window && !window.isDestroyed()) window.webContents.send('styk:backend-error', message); },
-  });
+  webHost = await startDesktopHost({ appRoot: APP_ROOT, resourcesPath: process.resourcesPath, packaged: app.isPackaged });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   // Each workspace owns a separate Chromium session directory, and each
@@ -909,5 +906,5 @@ app.on('before-quit', (event) => {
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('will-quit', () => updates?.dispose());
-app.on('will-quit', () => { backend?.stop(); library?.dispose().catch(() => {}); fileStreams?.dispose().catch(() => {}); videoExports?.dispose().catch(() => {}); vfwExports?.dispose().catch(() => {}); audioImports?.dispose().catch(() => {}); });
-process.on('exit', () => backend?.stop());
+app.on('will-quit', () => { webHost?.stop(); library?.dispose().catch(() => {}); fileStreams?.dispose().catch(() => {}); videoExports?.dispose().catch(() => {}); vfwExports?.dispose().catch(() => {}); audioImports?.dispose().catch(() => {}); });
+process.on('exit', () => webHost?.stop());

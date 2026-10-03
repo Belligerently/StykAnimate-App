@@ -15,7 +15,7 @@ try {
     if(!sources.has(file))sources.set(file,execFileSync('git',['show',`${baseline}:${file}`],{maxBuffer:16*1024*1024}));
     await route.fulfill({body:sources.get(file),contentType:'text/javascript'});
   });
-  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47843'}/api/health`);
+  await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47843'}/tests/fixtures/blank.html`);
   const result=await page.evaluate(async()=>{
     const [{drawCameraMonitor},{drawCameraMonitor:released},{createRenderer},{PlaybackCache},{defaultFigure,createObject,createFrame},{buildGeometry}]=await Promise.all([
       import('/src/camera-monitor.mjs'),import('/release/src/camera-monitor.mjs'),import('/src/renderer.mjs'),import('/src/playback.mjs'),import('/src/demo.mjs'),import('/src/pivot/geometry.mjs')]);

@@ -5,6 +5,7 @@ import {mkdir,readFile,writeFile,stat} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+import {exposeWorkspaceSamples} from '../tests/support/workspace-samples.mjs';
 
 const origin=process.env.STYK_URL||'http://127.0.0.1:47831';
 const output=path.resolve(process.env.STYK_COMPAT_OUTPUT||'artifacts/compatibility-improvements/paired.json');
@@ -21,7 +22,8 @@ const result={measuredAt:new Date().toISOString(),environment:{cpu:os.cpus()[0].
 let browser;
 try{
   browser=await chromium.launch({channel:'chromium',headless:true});result.environment.browser=browser.version();
-  const page=await browser.newPage();page.on('pageerror',error=>result.errors.push(error.message));
+  const page=await browser.newPage();
+  await exposeWorkspaceSamples(page);page.on('pageerror',error=>result.errors.push(error.message));
   await page.route('**/__compat_probe__',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Compatibility benchmark</title>'}));
   await page.goto(origin+'/__compat_probe__');
   await page.exposeFunction('compatibilityProgress',detail=>{
@@ -33,7 +35,7 @@ try{
     if(local)await page.locator('#compatibility-file').setInputFiles(path.resolve(sample));
     await page.evaluate(async({sample,local})=>{
       const [{ImportClient},{Editor}]=await Promise.all([import('/src/import-client.mjs'),import('/src/editor.mjs')]);
-      const importer=window.compatibilityImporter=new ImportClient();
+      const importer=window.compatibilityImporter=new ImportClient({readSample: (await import('/tests/support/page-samples.mjs')).sampleReader()});
       try{
         const imported=local?await importer.importFile(document.getElementById('compatibility-file').files[0],{project:true})
           :await importer.openSample(sample,{project:true});

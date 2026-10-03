@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+// Shadow editing in the real app (docs/engine/editing.md): opens the app with
+// `?engineShadow=on`, edits a document through the interface (pointer drags on handles,
+// keyboard undo and redo) and through the editor's timeline commands, and reports how
+// the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
+//
+//   node scripts/engine-edit-shadow.mjs [--file <document.json>] [--url http://127.0.0.1:47831] [--out <report.json>]
+//
+// Headless Chromium on the development server (started on a free port unless --url).
+// Without --file it edits the document the app starts with. Exit code 1 when any call
+// differed or nothing was compared.
+import {spawn} from 'node:child_process';
+import {readFile, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {chromium} from '../tests/support/playwright.mjs';
+
+const root = path.resolve(import.meta.dirname, '..');
+const args = process.argv.slice(2);
+const option = (name, fallback) => { const at = args.indexOf(name); return at < 0 ? fallback : args[at + 1]; };
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function server() {
+  const given = option('--url');
+  if (given) return {origin: given.replace(/\/$/, ''), stop: async () => {}};
+  const port = 47000 + Math.floor(Math.random() * 900);
+  const child = spawn(process.execPath, ['scripts/serve.mjs', '--port', String(port)], {cwd: root, stdio: 'ignore',
+    env: {...process.env, STYK_PYTHON: process.env.STYK_PYTHON ?? path.join(root, '.venv/bin/python')}});
+  const origin = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 100; i++) {
+    try { if ((await fetch(origin)).ok) return {origin, stop: async () => { child.kill(); }}; } catch { /* not listening yet */ }
+    await sleep(100);
+  }
+  child.kill();
+  throw new Error('The development server did not start.');
+}
+
+const {origin, stop} = await server();
+const browser = await chromium.launch();
+let failed = true;
+try {
+  const context = await browser.newContext({viewport: {width: 1440, height: 900}});
+  await context.addInitScript(settings => localStorage.setItem('stykanimate.editor.settings.v1', JSON.stringify(settings)),
+    {theme: 'light', locale: 'en', uiScale: 100, showHandles: true, rendererMode: 'canvas'});
+  const page = await context.newPage();
+  const problems = [];
+  page.on('pageerror', error => problems.push(`pageerror ${error.message.slice(0, 300)}`));
+  await page.goto(`${origin}/?engineShadow=on`);
+  await page.waitForFunction(() => window.styk?.ready === true, null, {timeout: 60000});
+  await page.evaluate(() => { document.querySelector('.styk-privacy [data-decline]')?.click(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); });
+  const file = option('--file');
+  if (file) {
+    const text = await readFile(path.resolve(file), 'utf8');
+    await page.evaluate(({text, name}) => { styk.editor.load(JSON.parse(text), name); styk.editor.markSaved(); }, {text, name: path.basename(file)});
+  }
+  /** Waits until the engine holds the editor's current revision, so a session can start. */
+  const settled = async () => {
+    for (let i = 0; i < 100; i++) {
+      const ready = await page.evaluate(async () => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return Boolean(await globalThis.__stykEditShadow?.prepare());
+      });
+      if (ready) return true;
+      await sleep(100);
+    }
+    return false;
+  };
+  if (!await settled()) throw new Error(`The engine never held the document: ${await page.evaluate(() => JSON.stringify(styk.state.renderer?.engineStats ?? null))}`);
+
+  /** Client coordinates of the handles of the figure with the most segments. */
+  const handles = () => page.evaluate(async () => {
+    const {editor, state} = styk;
+    const {worldToScreen} = await import('/src/renderer.mjs');
+    const {getPivotHandles} = await import('/src/canvas-interactions.mjs');
+    const segments = new Map(editor.report.figure_types.map(figure => [figure.figure_type_id, figure.segments.length]));
+    const figure = [...editor.evaluatedFrame.objects].sort((a, b) => (segments.get(b.figure_type_id) ?? 0) - (segments.get(a.figure_type_id) ?? 0))[0];
+    editor.select(figure.unique_id, -1);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = (document.querySelector('#overlay') ?? document.querySelector('#viewport')).getBoundingClientRect();
+    const options = {report: editor.report, frame: editor.evaluatedFrame, view: state.view, cameraEnabled: false};
+    const all = getPivotHandles(editor.geometry, {frame: editor.frame, selectedUid: editor.selectedUid, selectedUids: editor.selectedUids, showUnselected: state.settings.showUnselectedHandles, viewScale: state.view.scale, autoSize: true, maxDiameter: 10});
+    return all.filter(handle => handle.uid === figure.unique_id && !handle.static).map(handle => { const at = worldToScreen(handle.point, options); return {joint: handle.joint, x: rect.left + at.x, y: rect.top + at.y}; })
+      .filter(handle => handle.x > rect.left + 60 && handle.x < rect.right - 60 && handle.y > rect.top + 60 && handle.y < rect.bottom - 60);
+  });
+  /** A pointer drag from a handle along a small arc, as a hand would do it. */
+  const drag = async (from, dx, dy) => {
+    await page.mouse.move(from.x, from.y); await sleep(60);
+    await page.mouse.down(); await sleep(60);
+    for (let i = 1; i <= 12; i++) { await page.mouse.move(from.x + dx * i / 12, from.y + dy * i / 12 + Math.sin(i / 2) * 6); await sleep(16); }
+    await page.mouse.up(); await sleep(120);
+  };
+  const steps = [];
+  const step = async (name, run) => { await settled(); await run(); steps.push(name); };
+
+  const first = await handles();
+  const joints = first.filter(handle => handle.joint >= 0), origin0 = first.find(handle => handle.joint < 0);
+  if (joints[0]) await step('drag a joint handle', () => drag(joints[0], 40, -30));
+  if (joints[1]) await step('drag another joint handle', async () => { const now = await handles(); const handle = now.find(h => h.joint === joints[1].joint) ?? joints[1]; await drag(handle, -30, 25); });
+  if (origin0) await step('drag the figure by its origin', async () => { const now = await handles(); await drag(now.find(h => h.joint < 0) ?? origin0, 50, 20); });
+  await step('undo and redo from the keyboard', async () => { await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+y'); await sleep(150); });
+  await step('seek and transform through the editor', () => page.evaluate(() => { const e = styk.editor, last = Math.max(0, e.totalTicks - 1); e.seek(Math.min(3, last)); e.rotateSelection(0.25); e.scaleSelection(1.1); e.moveSelection(12, -8); e.undo(); e.redo(); }));
+  await step('keys and frames of the layer timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetInsertKey(layer, Math.min(2, e.totalTicks - 1)); e.sheetDuplicateFrameAfter(); e.sheetSetEasing(layer, 0, 1, {interpolation: 'ease-in'}); e.sheetInsertFrames(layer, 1, 2); e.sheetRemoveFrames(layer, 1, 1); e.undo(); e.undo(); e.redo(); }));
+  await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));
+  if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
+  await settled();
+
+  const report = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__stykEditShadow ?? null, (key, value) => typeof value === 'function' ? undefined : value)));
+  if (!report) throw new Error('Shadow editing was not installed (is ?engineShadow=on honoured?)');
+  const out = option('--out');
+  if (out) await writeFile(path.resolve(out), JSON.stringify({steps, ...report, problems}, null, 1));
+  console.log(`steps: ${steps.join('; ')}`);
+  console.log(`shadowed calls: ${report.calls} run in the engine, ${report.compared} the same (${report.rounded} of them but for last digits of the browser's Math), ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
+  console.log(`time in those calls: editor ${report.jsMs.toFixed(1)} ms, engine ${report.engineMs.toFixed(1)} ms`);
+  for (const [why, count] of Object.entries(report.ended)) console.log(`  session ended ${count}×: ${why}`);
+  for (const [what, count] of Object.entries(report.unported)) console.log(`  not ported ${count}×: ${what}`);
+  for (const mismatch of report.mismatches.slice(0, 8)) console.log(`  ${mismatch.call}(${JSON.stringify(mismatch.args ?? []).slice(0, 80)}):\n    ${mismatch.problems.join('\n    ').slice(0, 1500)}`);
+  for (const problem of problems.slice(0, 5)) console.log(`  page: ${problem}`);
+  failed = report.mismatches.length > 0 || report.compared === 0;
+} finally {
+  await browser.close();
+  await stop();
+}
+process.exit(failed ? 1 : 0);

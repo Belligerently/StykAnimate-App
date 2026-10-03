@@ -15,7 +15,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
 process.chdir(repo);
 const {chromium} = await import(`${repo}/tests/support/playwright.mjs`);
-const {startBackend} = createRequire(import.meta.url)(`${repo}/desktop/backend.cjs`);
+// The app from source; it decodes the file in its own codec worker.
+const {startDesktopHost} = createRequire(import.meta.url)(`${repo}/desktop/web-host.cjs`);
 
 const [source, outdir, tickList, size] = process.argv.slice(2);
 if (!source || !outdir || !tickList) {
@@ -25,7 +26,7 @@ if (!source || !outdir || !tickList) {
 const ticks = tickList.split(',').map(Number);
 const name = path.basename(source, path.extname(source)).replace(/\s+/g, '_');
 await mkdir(outdir, {recursive: true});
-const backend = await startBackend({appRoot: repo});
+const backend = await startDesktopHost({appRoot: repo});
 let browser;
 try {
   browser = await chromium.launch({channel: 'chrome', headless: true});
