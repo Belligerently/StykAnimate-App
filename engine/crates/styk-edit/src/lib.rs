@@ -29,6 +29,7 @@ pub mod replay;
 mod select;
 pub mod session;
 mod sheet;
+mod sheet_clipboard;
 mod sheet_frames;
 mod spatial;
 mod spatial_ik;
@@ -140,6 +141,8 @@ pub struct Editor {
     pub(crate) source_table_was_present: bool,
     /// The layer of each figure in the last published poses (`_newLayerHints`).
     pub(crate) new_layer_hints: HashMap<u32, String>,
+    /// `editor._sheetClipboard`: the timeline frames this editor copied.
+    pub(crate) sheet_clipboard: Option<sheet_clipboard::Clipboard>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
@@ -212,6 +215,7 @@ impl Editor {
             generated_sources: Vec::new(),
             source_table_was_present,
             new_layer_hints: HashMap::new(),
+            sheet_clipboard: None,
             events: Vec::new(),
             eval: RefCell::default(),
             gate: RefCell::new(None),
@@ -451,6 +455,11 @@ impl Editor {
             "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetCopyFrames" => match arg(1).as_f64() {
+                Some(start) => self.sheet_copy_frames(&arg(0), start, &arg(2)),
+                None => Err(EditError::Unported("copying frames from a frame that is not a number".into())),
+            },
+            "sheetPasteFrames" => self.sheet_paste_frames(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetMoveFrames" => self.sheet_move_frames(&arg(0), number(1), number(2), &arg(3), &arg(4)).map(Value::Bool),
             "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetDuplicateFrameAfter" => self.sheet_duplicate_frame_after(&arg(0), &arg(1)).map(Value::Bool),

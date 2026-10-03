@@ -536,6 +536,27 @@ scenario('figures-layers-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 2, 2, 2],
     ['sheetMoveFrames', ['layer-1', 'layer-2'], 0, 10, 3], ['@seek', 5], ['@select', 1, -1], ['moveSelection', 4, 4], ['undo'], ['undo'], ['redo'],
   ], 'sheet-layers.document.json');
+  // The timeline clipboard: a range copied and pasted on its own layer (inside it, the pose
+  // after the range kept; past its end; a range holding the layer's end),
+  // two layers pasted on each other's rows (new identities, a join following them) and
+  // inserted from one layer downwards, the scene's row on itself; refusals (repeated,
+  // missing or locked layers, too few layers below, another kind of track, not a whole
+  // frame); pasting past a layer's end; history.
+  scenario('sheet-clipboard-sheet', app, [
+    ['sheetCopyFrames', ['layer-1'], 0, 3], ['sheetPasteFrames', ['layer-1'], 1], ['sheetPasteFrames', ['layer-1'], 4], ['sheetCopyFrames', ['layer-1'], 5, 9], ['sheetPasteFrames', ['layer-1'], 20],
+    ['sheetCopyFrames', ['layer-1', 'layer-2'], 0, 6], ['sheetPasteFrames', ['layer-2', 'layer-1'], 10],
+    ['sheetPasteFrames', ['layer-1'], 2, {insert: true}], ['sheetPasteFrames', ['layer-2'], 2, {insert: true}], ['sheetPasteFrames', ['layer-1', 'layer-1'], 0], ['sheetPasteFrames', ['scene'], 0],
+    ['sheetPasteFrames', ['layer-1', 'layer-2'], 1.5], ['sheetCopyFrames', ['layer-1', 'layer-1'], 0], ['sheetCopyFrames', [], 0], ['sheetCopyFrames', ['nope'], 0],
+    ['sheetCopyFrames', ['scene'], 0, 2], ['sheetPasteFrames', ['layer-1'], 3], ['sheetPasteFrames', ['scene'], 3], ['sheetCopyFrames', ['layer-2'], 6, 8],
+    ['setLayerLocked', 'layer-2', true], ['sheetPasteFrames', ['layer-2'], 0], ['setLayerLocked', 'layer-2', false], ['sheetPasteFrames', ['layer-2'], 30],
+    ['@seek', 12], ['@select', 1, -1], ['moveSelection', 6, 3], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  scenario('sheet-clipboard-empty-sheet', app, [['sheetPasteFrames', ['layer-1'], 0], ['sheetPasteFrames', ['layer-1', 'layer-1'], 0]], 'sheet-layers.document.json');
+  // Joined figures with an IK controller whose followers are in the joined figure, pasted
+  // on a new layer: identities, joins and followers renamed together.
+  scenario('sheet-clipboard-ik-sheet', app, [
+    ['createLayer', 'Copy'], ['sheetCopyFrames', ['layer-1'], 0, 4], ['sheetPasteFrames', ['layer-2'], 0], ['@select', 5, 0], ['poseJoint', 340, 290], ['undo'], ['undo'], ['redo'],
+  ], 'ik-joined-unpinned.document.json');
   scenario('move-frames-imported-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 3], ['sheetMoveFrames', ['layer-1'], 3, 8, 2, {copy: true}], ['undo'], ['redo'],
   ], 'startup.document.json');

@@ -51,7 +51,7 @@ fn retime_playback(object: &mut Obj, start: impl Fn(f64) -> f64, end: impl Fn(f6
 }
 
 /// `shiftClipTime(clone(frame), delta)`: clips on the document's clock start `delta` later.
-fn shift_clip_time(frame: &Value, delta: f64) -> Value {
+pub(crate) fn shift_clip_time(frame: &Value, delta: f64) -> Value {
     let objects: Vec<Value> = objects_of(frame)
         .into_iter()
         .map(|object| {
