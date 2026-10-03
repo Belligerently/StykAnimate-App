@@ -29,8 +29,10 @@ How the engine runs in the app (`engine/crates/styk-engine`,
 - The export worker (`src/engine/engine-export-worker.mjs`, one per export, see
   [rendering.md](rendering.md#exports)): joins the shared memory like a preparation
   worker but keeps its event loop, because its GPU device (WebGPU in the worker, else
-  WebGL2 on an `OffscreenCanvas`) answers through promises. `ExportRenderer`
-  (`styk-wasm`) pins the export's revision (`styk_engine::export::ExportFrames`),
+  WebGL2 on an `OffscreenCanvas`) answers through promises. The export dialog starts
+  one when it opens (`warm`: joining the engine and getting an `ExportDevice`);
+  `ExportRenderer` (`styk-wasm`) takes the device, pins the export's revision
+  (`styk_engine::export::ExportFrames`),
   asks the preparation workers for the next frames and its pictures, draws and reads
   back. It ends with `release`: the renderer is freed, the device destroyed and the
   thread's stack and thread-local storage given back (`__wbindgen_thread_destroy`)

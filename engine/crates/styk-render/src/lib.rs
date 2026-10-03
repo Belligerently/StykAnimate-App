@@ -195,6 +195,11 @@ impl Renderer {
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
+
+    /// How this renderer covers edges.
+    pub fn edges(&self) -> Edges {
+        if self.crisp { Edges::Crisp } else { Edges::Smooth }
+    }
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }

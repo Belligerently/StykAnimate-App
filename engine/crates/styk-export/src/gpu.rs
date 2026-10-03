@@ -46,6 +46,12 @@ impl GpuExport {
     /// An exporter of `settings` frames drawing tiles of at most `max_tile` pixels a side
     /// (also within the device's texture limit).
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, settings: Settings, max_tile: u32) -> GpuExport {
+        GpuExport::with_renderer(device, queue, settings, max_tile, None)
+    }
+
+    /// [`GpuExport::new`] drawing with `renderer` when it covers edges as `settings` ask (one
+    /// made ahead of the export, its pipelines ready), else with a new one.
+    pub fn with_renderer(device: &wgpu::Device, queue: &wgpu::Queue, settings: Settings, max_tile: u32, renderer: Option<Renderer>) -> GpuExport {
         let side = max_tile.min(device.limits().max_texture_dimension_2d).max(2);
         let tiles = tiles(settings.render_size(), side, settings.smoothing.factor());
         let size = tiles[0].size;
@@ -55,7 +61,7 @@ impl GpuExport {
         let readbacks = (0..slots)
             .map(|_| device.create_buffer(&wgpu::BufferDescriptor { label: Some("styk export read-back"), size: bytes, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false }))
             .collect();
-        let renderer = Renderer::with_edges(device, queue, wgpu::TextureFormat::Rgba8Unorm, settings.smoothing.edges());
+        let renderer = renderer.filter(|r| r.edges() == settings.smoothing.edges()).unwrap_or_else(|| Renderer::with_edges(device, queue, wgpu::TextureFormat::Rgba8Unorm, settings.smoothing.edges()));
         GpuExport { device: device.clone(), queue: queue.clone(), renderer, settings, tiles, readbacks, stride, atlas: None, resolved: Vec::new() }
     }
 

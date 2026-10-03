@@ -15,7 +15,7 @@ use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::Engine;
 use styk_eval::doc::Camera;
 use styk_export::{GpuExport, Settings, Smoothing};
-use styk_render::wgpu;
+use styk_render::{wgpu, Edges, Renderer};
 use wasm_bindgen::prelude::*;
 
 use crate::{clock, js_error};
@@ -24,23 +24,22 @@ use crate::{clock, js_error};
 /// reports progress instead of stalling the worker in one call.
 const IMAGE_UPLOAD_BYTES: usize = 32 << 20;
 
+/// The GPU device of an export worker. Getting one (finding an adapter, its device, the
+/// renderer's pipelines) takes a good part of a second, so the worker gets it while the export
+/// dialog is open (`prewarm` in engine-export.mjs) and the export starts with it.
 #[wasm_bindgen]
-pub struct ExportRenderer {
-    frames: ExportFrames,
-    gpu: GpuExport,
+pub struct ExportDevice {
     device: wgpu::Device,
+    queue: wgpu::Queue,
     /// WebGL2 draws through a context of this surface; WebGPU needs none.
-    _surface: Option<wgpu::Surface<'static>>,
+    surface: Option<wgpu::Surface<'static>>,
     backend: String,
-    /// The pose the editor shows, when the export is of it.
-    edit: EditScene,
-    /// The frame being exported: its draw list and the camera it is seen through.
-    current: Option<(Arc<DrawList>, Option<Camera>)>,
-    /// What the device reported: lost, out of memory or a validation error.
+    /// What the device reported: lost, out of memory or a validation error (recoverable when
+    /// a retry with smaller tiles may pass).
     failure: Arc<Mutex<Option<(bool, String)>>>,
-    frames_drawn: u32,
-    last_evaluate_ms: f64,
-    /// Starting: finding an adapter, getting its device, creating the renderer (ms).
+    /// A renderer with smooth edges, its pipelines created (crisp edges make their own).
+    renderer: Option<Renderer>,
+    /// Finding an adapter, getting its device, creating the renderer (ms).
     start_ms: [f64; 3],
 }
 
@@ -49,19 +48,9 @@ fn adapter_options<'a, 'b>(surface: Option<&'a wgpu::Surface<'b>>) -> wgpu::Requ
 }
 
 #[wasm_bindgen]
-impl ExportRenderer {
-    /// Starts an export of `width`×`height` frames sampled as `smoothing` (`edges`, `none`,
-    /// `sprites`), in tiles of at most `tile` pixels. `address` comes from
-    /// `EngineHandle::address` and is consumed. Fails when the engine does not hold the
-    /// document of `revision`, or when no GPU device can be had (`canvas` gives WebGL2 a
-    /// context where the worker has no WebGPU).
-    #[allow(clippy::too_many_arguments)]
-    pub async fn create(address: usize, revision: f64, width: u32, height: u32, smoothing: String, max_pixels: f64, tile: u32, canvas: Option<web_sys::OffscreenCanvas>) -> Result<ExportRenderer, JsError> {
-        // SAFETY: `address` was produced by `EngineHandle::address` in this memory and is used once.
-        let engine = unsafe { *Box::from_raw(address as *mut Engine) };
-        let smoothing = Smoothing::parse(&smoothing).ok_or_else(|| js_error("choose Smooth edges, No smoothing or Smooth sprites"))?;
-        let settings = Settings::new(width, height, smoothing, max_pixels as u64).map_err(js_error)?;
-        let frames = engine.export_frames(revision as u64).map_err(js_error)?;
+impl ExportDevice {
+    /// WebGPU in this worker, else WebGL2 on `canvas`. Fails when neither gives a device.
+    pub async fn create(canvas: Option<web_sys::OffscreenCanvas>) -> Result<ExportDevice, JsError> {
         let started = clock();
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         descriptor.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
@@ -96,22 +85,72 @@ impl ExportRenderer {
             let memory = matches!(error, wgpu::Error::OutOfMemory { .. });
             errors.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert((memory, error.to_string()));
         }));
-        let mut gpu = GpuExport::new(&device, &queue, settings, tile);
+        let renderer = Renderer::with_edges(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, Edges::Smooth);
+        Ok(ExportDevice { device, queue, surface, backend: format!("{:?} · {}", info.backend, info.name), failure, renderer: Some(renderer), start_ms: [adapted - started, deviced - adapted, clock() - deviced] })
+    }
+
+    /// Whether the device still works (it was not lost while waiting for the export).
+    pub fn usable(&self) -> bool {
+        self.failure.lock().unwrap_or_else(|e| e.into_inner()).is_none()
+    }
+
+    /// Releases a device no export took.
+    pub fn dispose(&mut self) {
+        self.renderer = None;
+        self.device.destroy();
+    }
+}
+
+#[wasm_bindgen]
+pub struct ExportRenderer {
+    frames: ExportFrames,
+    gpu: GpuExport,
+    device: wgpu::Device,
+    /// WebGL2 draws through a context of this surface; WebGPU needs none.
+    _surface: Option<wgpu::Surface<'static>>,
+    backend: String,
+    /// The pose the editor shows, when the export is of it.
+    edit: EditScene,
+    /// The frame being exported: its draw list and the camera it is seen through.
+    current: Option<(Arc<DrawList>, Option<Camera>)>,
+    /// What the device reported: lost, out of memory or a validation error.
+    failure: Arc<Mutex<Option<(bool, String)>>>,
+    frames_drawn: u32,
+    last_evaluate_ms: f64,
+    /// Finding an adapter, getting its device, creating the renderer (ms).
+    start_ms: [f64; 3],
+}
+
+#[wasm_bindgen]
+impl ExportRenderer {
+    /// Starts an export of `width`×`height` frames sampled as `smoothing` (`edges`, `none`,
+    /// `sprites`), in tiles of at most `tile` pixels, on `device` (consumed). `address`
+    /// comes from `EngineHandle::address` and is consumed. Fails when the engine does not
+    /// hold the document of `revision`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create(address: usize, revision: f64, width: u32, height: u32, smoothing: String, max_pixels: f64, tile: u32, device: ExportDevice) -> Result<ExportRenderer, JsError> {
+        // SAFETY: `address` was produced by `EngineHandle::address` in this memory and is used once.
+        let engine = unsafe { *Box::from_raw(address as *mut Engine) };
+        let mut device = device;
+        let smoothing = Smoothing::parse(&smoothing).ok_or_else(|| js_error("choose Smooth edges, No smoothing or Smooth sprites"))?;
+        let settings = Settings::new(width, height, smoothing, max_pixels as u64).map_err(js_error)?;
+        let frames = engine.export_frames(revision as u64).map_err(js_error)?;
+        let mut gpu = GpuExport::with_renderer(&device.device, &device.queue, settings, tile, device.renderer.take());
         let generation = frames.generation().clone();
         gpu.prepare_sprites(generation.lineage, &generation.assets);
         frames.decode_images();
         Ok(ExportRenderer {
             frames,
             gpu,
-            device,
-            _surface: surface,
-            backend: format!("{:?} · {}", info.backend, info.name),
+            device: device.device.clone(),
+            _surface: device.surface.take(),
+            backend: device.backend.clone(),
             edit: EditScene::default(),
             current: None,
-            failure,
+            failure: device.failure.clone(),
             frames_drawn: 0,
             last_evaluate_ms: 0.0,
-            start_ms: [adapted - started, deviced - adapted, clock() - deviced],
+            start_ms: device.start_ms,
         })
     }
 

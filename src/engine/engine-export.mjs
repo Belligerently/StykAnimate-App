@@ -16,7 +16,8 @@
  * retry ladder and the output canvas are the base class's. A document the engine does
  * not draw, or a device the worker cannot get, uses the JavaScript worker instead,
  * decided before the first frame. SVG stays vector output: `vector` exports always use
- * the JavaScript renderer.
+ * the JavaScript renderer. `prewarmExportRenderer` starts the worker and its device while
+ * the export dialog is open.
  */
 import {ExportFrameRenderer} from '../export-frame-renderer.mjs';
 import {drawingBarrier} from '../drawing-resources.mjs';
@@ -26,6 +27,45 @@ import {EXPORT_MAX_PIXELS} from '../export-sampling.mjs';
 export const ENGINE_TILE_SIDE = 2048;
 /** How long a worker may take to release the engine memory and GPU device it holds. */
 const RELEASE_MS = 5000;
+/** How long a worker warmed for an export waits for it. */
+const WARM_MS = 60000;
+const WORKER_NAME = 'StykAnimate export rendering (engine)';
+
+/**
+ * Asks an engine export worker to free what it holds in the engine's memory and its GPU
+ * device, then end; it is terminated if it does not say so in time (what it held then stays
+ * allocated).
+ */
+function release(worker) {
+  const timer = setTimeout(() => worker.terminate(), RELEASE_MS);
+  worker.addEventListener('message', ({data}) => { if (data?.released) { clearTimeout(timer); worker.terminate(); } });
+  try { worker.postMessage({operation: 'release'}); } catch { clearTimeout(timer); worker.terminate(); }
+}
+
+/** An engine export worker started ahead of an export, and when it is given up. */
+let warm = null;
+
+/**
+ * Starts an engine export worker ahead of an export (the export dialog opens): joining the
+ * engine and getting a GPU device take most of a second, which the next export then skips.
+ * Given up after a minute without an export. Does nothing where exports would not use the engine.
+ */
+export function prewarmExportRenderer({stage} = {}) {
+  const engine = stage?.engineSide?.engine;
+  if (warm || !engine?.threaded || !engineExportEnabled() || typeof Worker !== 'function') return;
+  const worker = new Worker(new URL('./engine-export-worker.mjs', import.meta.url), {type: 'module', name: WORKER_NAME});
+  const entry = warm = {worker, timer: setTimeout(() => { if (warm === entry) { warm = null; release(worker); } }, WARM_MS)};
+  worker.addEventListener('message', ({data}) => { if (data?.warmed === false && warm === entry) { warm = null; clearTimeout(entry.timer); release(worker); } });
+  worker.postMessage({operation: 'warm', ...engine.join});
+}
+
+/** The warmed worker, for an export that uses the engine. */
+function takeWarm() {
+  const entry = warm;
+  warm = null;
+  if (entry) clearTimeout(entry.timer);
+  return entry?.worker ?? null;
+}
 
 /** `?engineExport=off` (or the stored setting) keeps the JavaScript export renderer, for comparisons. */
 export function engineExportEnabled() {
@@ -59,22 +99,17 @@ export class EngineExportFrames extends ExportFrameRenderer {
     this.stats.renderer = null;
   }
 
-  /** The worker of the current mode; none before `load` decides. */
+  /** The worker of the current mode (the warmed one when there is one); none before `load` decides. */
   _spawn() {
     if (this.mode === 'javascript') return super._spawn();
     if (this.mode !== 'engine') return;
-    this._attach(new Worker(new URL('./engine-export-worker.mjs', import.meta.url), {type: 'module', name: 'StykAnimate export rendering (engine)'}));
+    this._attach(takeWarm() ?? new Worker(new URL('./engine-export-worker.mjs', import.meta.url), {type: 'module', name: WORKER_NAME}));
   }
 
-  /**
-   * The engine's worker frees what it holds in the shared memory and its GPU device, then
-   * ends; it is terminated if it does not say so in time (what it held then stays allocated).
-   */
+  /** The engine's worker frees what it holds in the shared memory and its GPU device, then ends. */
   _release(worker) {
     if (!worker || worker.styk !== 'engine') return super._release(worker);
-    const timer = setTimeout(() => worker.terminate(), RELEASE_MS);
-    worker.addEventListener('message', ({data}) => { if (data?.released) { clearTimeout(timer); worker.terminate(); } });
-    try { worker.postMessage({operation: 'release'}); } catch { clearTimeout(timer); worker.terminate(); }
+    release(worker);
   }
 
   _attach(worker) {

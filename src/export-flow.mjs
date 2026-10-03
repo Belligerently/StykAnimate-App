@@ -41,7 +41,7 @@ import { openExportSink as openExportSinkRaw } from "./export-sink.mjs";
 import { materializeSimpleFrameDraftForPivot } from "./pivot-frame-draft.mjs";
 import { exportAnimation } from "./image-export.mjs";
 import { defaultGIFDither } from "./gif-options.mjs";
-import { createExportFrameRenderer } from "./engine/engine-export.mjs";
+import { createExportFrameRenderer, prewarmExportRenderer } from "./engine/engine-export.mjs";
 import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs";
 import { checkExportContext } from "./export-canvas.mjs";
 import { buildExportRequest, exportFormatInfo, exportJob } from "./export-request.mjs";
@@ -457,6 +457,8 @@ export function createExportFlow(ctx) {
   function showExport() {
     finishCurrentEdit();
     sheet?.close();
+    // The engine's export worker and its GPU device start while the choices are made.
+    prewarmExportRenderer({ stage: state.renderer });
     const report = editor.report, audio = audioState(report), clips = audibleClips(audio);
     const fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps;
     const opened = sheet = openExportSheet({

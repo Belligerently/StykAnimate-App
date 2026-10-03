@@ -15,10 +15,12 @@
  * into free read-back slots while earlier ones are mapped, and puts a frame on the canvas
  * only when it is asked for: at most `AHEAD` frames, as many slots as the renderer has.
  *
- * Requests run one at a time; `release` ends the worker after freeing what it holds in
- * the engine's memory (its renderer, its thread's stack) and its GPU device.
+ * `warm` joins the engine and gets the GPU device ahead of an export (while the export
+ * dialog is open), so `start` only pins the document. Requests run one at a time;
+ * `release` ends the worker after freeing what it holds in the engine's memory (its
+ * renderer, its thread's stack) and its GPU device.
  */
-import {initSync, ExportRenderer} from './pkg/styk_engine.js';
+import {initSync, ExportDevice, ExportRenderer} from './pkg/styk_engine.js';
 import {applyDocumentChunk} from '../document-transport.mjs';
 import {exportContext, checkExportContext, deliverExportFrame} from '../export-canvas.mjs';
 
@@ -31,7 +33,7 @@ const STRIP = new Set(['runtime_segments']);
 /** Frames drawn ahead of the one asked for, at most (within the renderer's read-back slots). */
 const AHEAD = 6;
 
-let wasm = null, renderer = null, progress = null, options = null, canvas = null, context = null, tile = null, frameDocument;
+let wasm = null, device = null, renderer = null, progress = null, options = null, canvas = null, context = null, tile = null, frameDocument;
 let releasing = false, running = Promise.resolve();
 /** Read-back slots not holding a tile, and the frames drawn ahead by tick: their slots and reads. */
 let free = [];
@@ -53,15 +55,28 @@ function whenProgress(seen) {
   return new Promise(resolve => setTimeout(resolve, 4));
 }
 
-async function start(message) {
-  const began = performance.now();
+/** Joins the engine (once per worker) and gets a GPU device, unless the worker has a usable one. */
+async function warm(message) {
   wasm ??= initSync({module: message.module, memory: message.memory, thread_stack_size: message.stack});
-  const joined = performance.now();
-  progress = new Int32Array(message.memory.buffer, message.progress, 1);
-  options = message;
+  progress ??= new Int32Array(message.memory.buffer, message.progress, 1);
+  if (device && !device.usable()) { device.dispose(); device.free(); device = null; }
+  device ??= await ExportDevice.create(new OffscreenCanvas(1, 1));
+  return {warm: true};
+}
+
+async function start(message) {
+  const began = performance.now(), warmed = Boolean(device);
+  let joined;
   try {
+    await warm(message);
+    joined = performance.now();
+    options = message;
     renderer?.free();
-    renderer = await ExportRenderer.create(message.address, message.revision, message.width, message.height, message.smoothing, message.maxPixels, message.tileSize, new OffscreenCanvas(1, 1));
+    renderer = null;
+    // The device moves into the renderer.
+    const ready = device;
+    device = null;
+    renderer = ExportRenderer.create(message.address, message.revision, message.width, message.height, message.smoothing, message.maxPixels, message.tileSize, ready);
   } catch (error) {
     renderer = null;
     throw Object.assign(new Error(`The engine cannot draw this export here: ${error?.message ?? error}`), {code: 'engine_unavailable'});
@@ -69,7 +84,7 @@ async function start(message) {
   canvas ??= new OffscreenCanvas(message.width, message.height);
   context = exportContext(canvas);
   layout();
-  return {engine: {...JSON.parse(renderer.stats()), backend: renderer.backend(), modulesMs: loadedAt, startAt: began, joinMs: joined - began, createMs: performance.now() - joined}};
+  return {engine: {...JSON.parse(renderer.stats()), backend: renderer.backend(), warmed, modulesMs: loadedAt, startAt: began, deviceMs: joined - began, createMs: performance.now() - joined}};
 }
 
 /** One tile's pixels, reused for every tile of every frame, and every slot free. */
@@ -153,6 +168,7 @@ async function render(message) {
 
 async function operate(message) {
   switch (message.operation) {
+    case 'warm': return warm(message);
     case 'start': return start(message);
     case 'frame-start': frameDocument = undefined; return {};
     case 'frame-chunk': frameDocument = applyDocumentChunk(frameDocument, message.chunk); return {};
@@ -167,7 +183,8 @@ async function release() {
   releasing = true;
   await running.catch(() => {});
   try { renderer?.dispose(); renderer?.free(); } catch { /* the device may be gone already */ }
-  renderer = null;
+  try { device?.dispose(); device?.free(); } catch { /* never taken by an export */ }
+  renderer = device = null;
   if (canvas) canvas.width = canvas.height = 1;
   canvas = context = tile = frameDocument = null;
   // No call into the module may follow on this thread (wasm-bindgen's thread destructor).
@@ -184,8 +201,10 @@ self.addEventListener('message', ({data: message}) => {
   });
   running = run.catch(() => {});
   run.then(result => {
+    if (message.id === undefined) { self.postMessage({warmed: true}); return; }
     self.postMessage({id: message.id, ok: true, ...result}, result.bitmap ? [result.bitmap] : []);
   }, error => {
+    if (message.id === undefined) { self.postMessage({warmed: false, error: String(error?.message ?? error)}); return; }
     const text = error?.message ?? String(error);
     // GPU memory exhaustion and a lost device may pass with smaller tiles or a new device.
     const recoverable = message.operation === 'render' && /^recoverable: /.test(text);

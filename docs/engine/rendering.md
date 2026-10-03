@@ -245,9 +245,12 @@ export dialog and the encoders see the same object. Before the worker starts, th
 brought to the export's revision through the playback adapter's synchronisation
 (`exportDocument`, the one playback uses and the app keeps current with every edit) and then
 what only the stage knows (figures edited in place, drawings just published: `prepareExport`).
-A document the engine does not draw, a page without worker threads (not cross-origin
-isolated) or a worker that cannot get a GPU device exports with the JavaScript worker, decided
-before the first frame; an export never mixes the two. `?engineExport=off` (or
+Starting the worker (its modules, joining the engine, the GPU device and the renderer's
+pipelines) took 400–500 ms in Electron, so the export dialog starts one when it opens
+(`prewarmExportRenderer`, `ExportDevice`); the export takes it, and a worker no export takes
+within a minute is released. A document the engine does not draw, a page without worker threads
+(not cross-origin isolated) or a worker that cannot get a GPU device exports with the JavaScript
+worker, decided before the first frame; an export never mixes the two. `?engineExport=off` (or
 `localStorage['stykanimate.engine.export'] = 'off'`) keeps the JavaScript renderer for
 comparisons.
 

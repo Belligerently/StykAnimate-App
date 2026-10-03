@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ExportFrameRenderer} from '../src/export-frame-renderer.mjs';
-import {createExportFrameRenderer, EngineExportFrames, ENGINE_TILE_SIDE} from '../src/engine/engine-export.mjs';
+import {createExportFrameRenderer, EngineExportFrames, ENGINE_TILE_SIDE, prewarmExportRenderer} from '../src/engine/engine-export.mjs';
 
 /** Fake workers, canvases and bitmaps (as tests/export-robustness.test.mjs); `respond(message, worker)` answers. */
 function environment(t, respond) {
@@ -37,6 +37,7 @@ function environment(t, respond) {
 /** Answers both workers' requests; the engine's worker says when it released what it held. */
 const answer = (overrides = {}) => (message, worker, bitmap) => {
   if (message.operation === 'release') return {released: true};
+  if (message.operation === 'warm') return overrides.warm?.(message, worker) ?? {warmed: true};
   const custom = overrides[message.operation]?.(message, worker);
   if (custom !== undefined) return custom && {id: message.id, ...custom};
   return {id: message.id, ok: true, ...(message.operation === 'render' ? {bitmap: bitmap()} : {}), ...(message.operation === 'start' && worker.engine ? {engine: {backend: 'test', tiles: 1}} : {})};
@@ -186,4 +187,44 @@ test('a worker that does not release in time is terminated, and cancellation rej
   t.mock.timers.tick(5000);
   assert.equal(workers[0].terminated, true);
   renderer.dispose();
+});
+
+test('the export dialog warms a worker that the export then takes', async t => {
+  const {workers} = environment(t, answer());
+  const {stage, playback} = app();
+  prewarmExportRenderer({stage});
+  prewarmExportRenderer({stage});
+  assert.equal(workers.length, 1, 'one warm worker at a time');
+  assert.equal(workers[0].messages[0].operation, 'warm');
+  assert.equal(workers[0].messages[0].module, 'module', 'it joins the engine');
+  const renderer = createExportFrameRenderer({width: 32, height: 32}, {stage, playback, revision: 4});
+  await renderer.load(report());
+  assert.equal(workers.length, 1, 'the export takes the warm worker instead of starting one');
+  assert.deepEqual(workers[0].messages.map(message => message.operation), ['warm', 'start']);
+  renderer.dispose();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(workers[0].terminated, true);
+});
+
+test('a warm worker no export takes is released after a minute, and one without a device at once', async t => {
+  const {workers} = environment(t, answer({warm: (message, worker) => workers.indexOf(worker) === 1 ? {warmed: false, error: 'no GPU adapter'} : undefined}));
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const {stage} = app();
+  // Nothing is warmed where exports would not use the engine.
+  prewarmExportRenderer({stage: {}});
+  prewarmExportRenderer({stage: app({threaded: false}).stage});
+  assert.equal(workers.length, 0);
+  prewarmExportRenderer({stage});
+  t.mock.timers.tick(59999);
+  assert.equal(workers[0].messages.at(-1).operation, 'warm');
+  t.mock.timers.tick(1);
+  assert.equal(workers[0].messages.at(-1).operation, 'release', 'given up after a minute');
+  await new Promise(resolve => queueMicrotask(resolve));
+  // A worker that finds no GPU device says so and is released at once; the next dialog warms again.
+  prewarmExportRenderer({stage});
+  await new Promise(resolve => queueMicrotask(resolve));
+  assert.equal(workers[1].messages.at(-1).operation, 'release');
+  prewarmExportRenderer({stage});
+  assert.equal(workers.length, 3);
+  t.mock.timers.tick(60000);
 });

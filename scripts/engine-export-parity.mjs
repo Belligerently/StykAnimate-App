@@ -6,7 +6,7 @@
 //        [--timing-smoothing edges] [--rounds 2] [--repaint]
 //        [--label <name>] [--out <dir>]
 //        [--electron-arg <switch>]... [--cancel] [--formats png,png-sequence,gif,apng,mp4,webm]
-//        [--format-rounds 1] [--integrity]
+//        [--format-rounds 1] [--dialog] [--integrity]
 //
 // One run of the desktop app (under xvfb-run on Linux) with a fresh profile; without --file the document the app
 // starts with. For each sampling choice and tick, the same frame three ways, each as the lossless PNG the APNG,
@@ -26,7 +26,8 @@
 // progress dialog and failing in the engine's worker (a frame outside the animation), and checks the file is untouched,
 // no export worker is left and the engine's memory does not grow.
 // --formats png,png-sequence,gif,apng,mp4,webm runs the app's own export commands (today's defaults: the canvas size,
-// the whole animation; png: the frame the editor shows) once with each renderer (--format-rounds times, alternating), writing <format>-engine.<ext> and <format>-javascript.<ext> with their times
+// the whole animation; png: the frame the editor shows) once with each renderer (--format-rounds times, alternating;
+// with --dialog the export dialog opens 1.5 s before each, as when a person exports), writing <format>-engine.<ext> and <format>-javascript.<ext> with their times
 // and memory peaks; scripts/engine-export-compare.py decodes and compares each pair.
 // Output: artifacts/engine-rust/parity/export/<label>/ (pictures, report.json). Exit code 1 when a renderer failed.
 import {spawnSync} from 'node:child_process';
@@ -382,16 +383,26 @@ try {
       sampler.start();
       const started = Date.now(), load = os.loadavg()[0];
       let problem = null;
+      if (args.includes('--dialog')) {
+        // As a person exports: the export dialog opens, the choices take a moment, then Export.
+        await session.page.evaluate(() => window.styk.actions.export());
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await session.page.evaluate(() => document.querySelector('#export-dialog')?.close?.());
+        // The export below must not start inside the closing dialog (closing it cancels an export).
+        await session.page.waitForFunction(() => !document.querySelector('#export-dialog[open]'), null, {timeout: 10000}).catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+      const began = Date.now();
       try { await session.page.evaluate(id => window.styk.actions[id](), ACTION[format]); } catch (error) { problem = String(error.message ?? error); }
       const finished = Date.now();
       // The file is complete once its size stops changing (the save renames it into place).
       let size = -1;
-      for (let stable = 0, deadline = Date.now() + 600000; stable < 3 && Date.now() < deadline;) {
+      for (let stable = 0, deadline = Date.now() + (problem ? 0 : 600000); stable < 3 && Date.now() < deadline;) {
         const now = await readFile(target).then(b => b.length, () => -1);
         stable = now === size && now > 0 ? stable + 1 : 0; size = now;
         await new Promise(resolve => setTimeout(resolve, 150));
       }
-      const ms = finished - started;
+      const ms = finished - began;
       const peak = await sampler.stop();
       const stats = await session.page.evaluate(() => window.__lastExportStats ?? null);
       const row = {round, format, kind, file: path.relative(root, target), bytes: size, ms, peak, load: Number(load.toFixed(1)), problem,
@@ -429,6 +440,7 @@ try {
       await writeFile(target, previous);
       await session.app.evaluate(({dialog}, file) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: file}); }, target);
       const memoryBefore = await session.page.evaluate(() => styk.state.renderer.engineSide?.engine.memoryBytes ?? null);
+      const gpuBefore = gpuMiB((await new Sampler(session.app).read()).pids);
       await session.page.evaluate(how => { localStorage.setItem('stykanimate.engine.export', 'on'); window.__failRender = how === 'failure' ? 3 : 0; }, how);
       const exporting = session.page.evaluate(() => window.styk.actions['export-png-sequence']().then(() => 'finished', error => `failed: ${error.message}`));
       if (how === 'cancel') {
@@ -440,7 +452,8 @@ try {
       const after = await session.page.evaluate(() => ({workers: [...window.__exportWorkers].filter(w => /export/i.test(w.__name ?? '')).map(w => w.__name), released: window.__exportReleased,
         memory: styk.state.renderer.engineSide?.engine.memoryBytes ?? null, status: document.querySelector('#status')?.textContent?.trim() ?? null}));
       const bytes = await readFile(target);
-      const row = {how, outcome, untouched: hash(bytes) === hash(previous), exportWorkersLeft: after.workers, released: after.released,
+      const gpuAfter = gpuMiB((await new Sampler(session.app).read()).pids);
+      const row = {how, outcome, untouched: hash(bytes) === hash(previous), exportWorkersLeft: after.workers, released: after.released, gpuBeforeMiB: gpuBefore, gpuAfterMiB: gpuAfter,
         engineMemoryBeforeMiB: memoryBefore && Math.round(memoryBefore / 1048576), engineMemoryAfterMiB: after.memory && Math.round(after.memory / 1048576), status: after.status};
       report.integrity.push(row);
       console.log(JSON.stringify({integrity: row}));
