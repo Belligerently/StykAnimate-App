@@ -56,6 +56,9 @@ async function run(mode) {
   const context = await browser.newContext({viewport: {width: 1440, height: 900}});
   await context.addInitScript(settings => localStorage.setItem('stykanimate.editor.settings.v1', JSON.stringify(settings)),
     {theme: 'light', locale: 'en', uiScale: 100, showHandles: true, rendererMode: 'canvas'});
+  // Identities the editor draws (effect clips, camera clips) come out the same in every run,
+  // so the runs with and without the engine owning editing can be compared.
+  await context.addInitScript(() => { let next = 0; crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++next).padStart(12, '0')}`; });
   const page = await context.newPage();
   const problems = [];
   page.on('pageerror', error => problems.push(`pageerror ${error.message.slice(0, 300)}`));
@@ -174,6 +177,13 @@ async function run(mode) {
       const ids = [0, ...figure.segments.slice(0, 3).map(segment => segment.segment_id)]; if (ids.length < 4) return;
       e.addPolygon(ids.slice(0, 3)); const index = e.figure.polyfills.length - 1;
       e.updatePolygon(index, {zOrder: -3}); e.updatePolygon(index, {handleIds: [ids[0], ids[1], ids[3]]}); e.removePolygon(index); e.undo(); e.undo();
+    }));
+    await step('add an effect clip', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid !== null && !e.getVfxClips().length) e.addVfxClip({kind: 'figure', uid: e.selectedUid}, 'glow', {start: 0, duration: 8}); }));
+    await step('edit an effect clip, its parameters and keys', () => page.evaluate(() => {
+      const e = styk.editor, clip = e.getVfxClips()[0]; if (!clip) return; const effect = clip.effects[0].id;
+      e.setVfxClip(clip.id, {name: 'Shadowed', strength: 0.7}); e.setVfxClipParameter(clip.id, effect, 'radius', 20); e.setVfxClipParameters(clip.id, effect, {intensity: 1.2}, {key: true});
+      e.beginVfxClipEdit(); e.setVfxClipParameter(clip.id, effect, 'radius', 24); e.setVfxClipParameter(clip.id, effect, 'radius', 26); e.commitVfxClipEdit();
+      e.trimVfxClipStart(clip.id, 2); e.undo(); e.deleteVfxClip(clip.id); e.undo();
     }));
     await step('edit a segment from the inspector', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1); e.updateSegment({color_rgb: [10, 20, 30]}); e.updateSegment({angle_rad: 1}); e.undo(); e.select(e.selectedUid, -1); }));
     await step('edit and delete a camera motion clip', () => page.evaluate(() => { const e = styk.editor, clip = e.getCameraMotions()[0]; if (!clip) return; e.setCameraMotion(clip.id, {start: clip.start + 1}); e.setCameraMotion(clip.id, {enabled: !clip.enabled}); e.deleteCameraMotion(clip.id); e.undo(); }));

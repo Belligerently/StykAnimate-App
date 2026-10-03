@@ -31,7 +31,9 @@ const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDr
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
   'renameLayer', 'setLayerColor', 'setLayerVisible', 'setLayerLocked', 'reorderLayers', 'moveLayerTo', 'createLayer', 'createLayerFolder', 'renameLayerFolder',
   'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'setCameraMotion', 'deleteCameraMotion',
-  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'addPolygon', 'updatePolygon', 'removePolygon', 'undo', 'redo'];
+  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'addPolygon', 'updatePolygon', 'removePolygon',
+  'beginVfxClipEdit', 'commitVfxClipEdit', 'cancelVfxClipEdit', 'setVfxClip', 'trimVfxClipStart', 'deleteVfxClip', 'moveVfxClipOrder', 'reorderVfxGroupEffect',
+  'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold): a view, not compared. */
 const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames']);
@@ -189,7 +191,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (session) return session;
     if (broken || !ownedClass() || runtimeState()) return null;
     const side = engineSide();
-    if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit) return null;
+    if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit || editor._vfxClipEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
     if (!side.mirror.framesCurrent(editor.report, editor.revision)) { prepare(); return null; }
     const started = side.engine.handle.edit_session(JSON.stringify({...view(), ...counters(), propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)}));

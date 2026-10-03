@@ -41,7 +41,7 @@ const PORTED: &[&str] = &[
     // The inspector's figure fields.
     "update-object-sheet", "update-object-native", "update-segment-sheet", "update-segment-rig-sheet",
     // Camera motion clips.
-    "camera-motion-sheet", "palette-sheet", "audio-sheet", "audio-none-sheet", "sheet-clipboard-sheet", "sheet-clipboard-empty-sheet", "sheet-clipboard-ik-sheet", "polygons-sheet", "polygons-native", "polygons-native-file-sheet",
+    "camera-motion-sheet", "palette-sheet", "audio-sheet", "audio-none-sheet", "sheet-clipboard-sheet", "sheet-clipboard-empty-sheet", "sheet-clipboard-ik-sheet", "polygons-sheet", "polygons-native", "polygons-native-file-sheet", "vfx-clips-sheet",
 ];
 
 #[test]

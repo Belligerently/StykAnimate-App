@@ -36,6 +36,7 @@ mod spatial;
 mod spatial_ik;
 mod timeline;
 mod transform;
+mod vfx_clips;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -144,6 +145,8 @@ pub struct Editor {
     pub(crate) new_layer_hints: HashMap<u32, String>,
     /// `editor._sheetClipboard`: the timeline frames this editor copied.
     pub(crate) sheet_clipboard: Option<sheet_clipboard::Clipboard>,
+    /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
+    pub(crate) vfx_edit: Option<Option<Value>>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
@@ -217,6 +220,7 @@ impl Editor {
             source_table_was_present,
             new_layer_hints: HashMap::new(),
             sheet_clipboard: None,
+            vfx_edit: None,
             events: Vec::new(),
             eval: RefCell::default(),
             gate: RefCell::new(None),
@@ -456,6 +460,28 @@ impl Editor {
             "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "beginVfxClipEdit" => self.begin_vfx_clip_edit(),
+            "commitVfxClipEdit" => self.commit_vfx_clip_edit().map(Value::Bool),
+            "cancelVfxClipEdit" => self.cancel_vfx_clip_edit().map(Value::Bool),
+            "setVfxClip" => self.set_vfx_clip(&arg(0), &arg(1)).map(Value::Bool),
+            "trimVfxClipStart" => self.trim_vfx_clip_start(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteVfxClip" => self.delete_vfx_clip(&arg(0)).map(Value::Bool),
+            "moveVfxClipOrder" => self.move_vfx_clip_order(&arg(0), &arg(1)).map(Value::Bool),
+            "reorderVfxGroupEffect" => self.reorder_vfx_group_effect(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "setVfxClipParameter" => {
+                let mut values = Obj::new();
+                match arg(2).as_str() {
+                    Some(param) => values.set(param, arg(3)),
+                    None => return Err(EditError::Unported("an effect parameter name that is not text".into())),
+                }
+                self.set_vfx_clip_parameters(&arg(0), &arg(1), &Value::object(values), &arg(4)).map(Value::Bool)
+            }
+            "setVfxClipParameters" => self.set_vfx_clip_parameters(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "toggleVfxClipKey" => self.toggle_vfx_clip_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "moveVfxClipKey" => self.move_vfx_clip_key(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "moveVfxClipKeys" => self.move_vfx_clip_keys(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "deleteVfxClipKeys" => self.delete_vfx_clip_keys(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "setVfxClipEasing" => self.set_vfx_clip_easing(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
             "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
             "updatePolygon" => match args.get(1) {
                 None => self.update_polygon(&arg(0), &Value::Null),

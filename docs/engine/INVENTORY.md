@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 73 | 12 | 1 | 0 | 0 | 0 % | 30 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 72 | 13 | 1 | 0 | 0 | 0 % | 31 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4063 KiB | 248 | 68 | 17 | 22 | 1 | 16 % | 31 % | 0 % |
+| **Total** | 356 | 4063 KiB | 247 | 69 | 17 | 22 | 1 | 16 % | 32 % | 0 % |
 
 ## Engine modules
 
@@ -125,7 +125,7 @@ Engine logic: ported to Rust.
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-vfx-clips.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS |
 | `src/editor-vfx.mjs` | `styk-edit` | js | commands and history |
 | `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
@@ -244,7 +244,7 @@ Engine logic: ported to Rust.
 | `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); authoring still JS |
 | `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
-| `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS |
+| `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validateVfxClips for edits (styk-edit/src/vfx_clips.rs, paints excepted) |
 | `src/vfx-connected.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS |
 | `src/vfx-key-channels.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
 | `src/vfx-paint.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::paint |

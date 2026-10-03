@@ -33,6 +33,9 @@ pub enum CommandKind {
     /// The audio before (the empty audio when there was none) and after, and whether the
     /// document had audio before (`kind: 'audio'`).
     Audio { before: Value, after: Value, before_present: bool },
+    /// The effect clips before (none when there were none) and after, and the sheet when
+    /// the clips lengthened it (`kind: 'vfx-clips'`).
+    VfxClips { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
 }
 
 /// One history entry.
@@ -84,6 +87,7 @@ impl Editor {
     }
 
     pub(crate) fn undo(&mut self) -> Result<bool, EditError> {
+        self.cancel_vfx_clip_edit()?;
         if self.drag.is_some() {
             self.cancel_drag()?;
         }
@@ -94,6 +98,7 @@ impl Editor {
     }
 
     pub(crate) fn redo(&mut self) -> Result<bool, EditError> {
+        self.cancel_vfx_clip_edit()?;
         let Some(command) = self.redo.pop() else { return Ok(false) };
         self.apply(&command, Direction::After)?;
         self.undo.push(command);
@@ -128,6 +133,7 @@ impl Editor {
             CommandKind::CameraMotion { .. } => self.apply_camera_command(command, direction)?,
             CommandKind::Palette { .. } => self.apply_palette_command(command, direction)?,
             CommandKind::Audio { .. } => self.apply_audio_command(command, direction)?,
+            CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
             CommandKind::Figure { index, before, after } => {
                 if let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr)
                     && let Some(slot) = figures.get_mut(*index)
