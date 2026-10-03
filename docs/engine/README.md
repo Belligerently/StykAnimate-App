@@ -13,6 +13,7 @@ is [`../RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md); decisions are in
 | [evaluation.md](evaluation.md) | timelines, layer sheets, movieclips, geometry, draw-list encoding |
 | [rigs-ik.md](rigs-ik.md) | rig constraints and inverse kinematics |
 | [vfx.md](vfx.md) | visual effects |
+| [spatial.md](spatial.md) | 3D: spatial poses, one-sided surfaces, figure and movieclip meshes, depth runs |
 | [rendering.md](rendering.md) | the draw-list format, GPU renderer, CPU rasterizer, the stage |
 | [threading.md](threading.md) | WebAssembly, workers, scheduling, budgets |
 | [editing.md](editing.md) | moving the editor's commands into the engine (S5, in design) |

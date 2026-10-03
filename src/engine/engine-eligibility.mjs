@@ -13,8 +13,9 @@
 import {isGeneratorType} from '../vfx-registry.mjs';
 
 /** Per-pose fields the engine does not evaluate yet. Effect stacks (`_stykVfx`,
- * `_stykVfxScope`) are drawn: a pose never holds a generated effect. */
-const POSE_FIELDS = ['_stykSpatial', '_stykAnimationOrigin', '_sticknodesSprite', 'color_transition'];
+ * `_stykVfxScope`) and 3D poses (`_stykSpatial`: perspective, part proportions)
+ * are drawn: a pose never holds a generated effect. */
+const POSE_FIELDS = ['_stykAnimationOrigin', '_sticknodesSprite', 'color_transition'];
 
 /** The first effect type of an effects timeline the engine does not draw: generated
  * effects (particles, aura, beams, smoke, explosions) stay with the JavaScript renderer. */
@@ -23,11 +24,12 @@ function clipReason(clips) {
   return null;
 }
 
+/** 3D meshes, one-sided surfaces and attached movieclip meshes are drawn
+ * (docs/engine/spatial.md); drawings a spatial bone turns are not. */
 function figureReason(figure, depth) {
   const styk = figure._styk;
-  if (styk?.spatialMesh) return '3D meshes';
   if (styk?.animationOrigin) return 'animation origins';
-  if (figure.polyfills?.some(polygon => polygon._stykSurface)) return '3D surfaces';
+  if (styk?.movieclip?.drawingRotation) return 'rotated drawings';
   if (styk?.movieclip?.document) return depth > 16 ? 'deeply nested movieclips' : documentReason(styk.movieclip.document, depth + 1);
   return null;
 }

@@ -102,6 +102,9 @@ pub struct Segment {
     pub name: Option<String>,
     /// Rig relationship (`_stykRig`).
     pub rig: Option<Arc<crate::rig::Rig>>,
+    /// `_stykPoseChoice.hidden === 0`: a hidden expression of a spatial bone
+    /// scales uniformly about its origin instead of stretching along its axis.
+    pub choice_scale: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -113,6 +116,22 @@ pub struct Polyfill {
     pub rgb: [u8; 3],
     pub alpha: f64,
     pub z: f64,
+    /// `_stykSurface`: a one-sided face with a reference triangle (docs/engine/spatial.md).
+    pub surface: Option<Surface>,
+}
+
+/// A one-sided native fill (`_stykSurface`, src/pivot/surfaces.mjs).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Surface {
+    /// Origin, X and Y reference joints: their winding is the front.
+    pub basis: [u32; 3],
+    /// `side === 'back'`.
+    pub back: bool,
+    pub flipped: bool,
+    /// Depth guide joints (empty when the face has none).
+    pub depth: Vec<u32>,
+    /// The face is drawn depth tested against its neighbours.
+    pub depth_test: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -188,6 +207,9 @@ pub struct FigurePlan {
     pub polygons: Vec<PolygonPlan>,
     /// Rig evaluation plan when any segment has a rig relationship.
     pub rig: Option<Arc<crate::rig::RigPlan>>,
+    /// A joint carries depth (a spatial bone or skin point, or a weighted joint
+    /// with a depth): geometry keeps what surfaces and meshes read from it.
+    pub spatial: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -218,6 +240,10 @@ pub struct Figure {
     pub segment_colors: bool,
     pub is_drawing: bool,
     pub movieclip: Option<Arc<Movieclip>>,
+    /// `_styk.spatialMesh`, compiled against this figure's joints ([`crate::spatial`]).
+    pub mesh: Option<Arc<crate::spatial::MeshPlan>>,
+    /// The mesh palette as this figure draws it (an instance's `meshColors` replace entries).
+    pub mesh_colors: Arc<[[u8; 3]]>,
     pub plan: FigurePlan,
     /// Features the engine does not evaluate yet (reported, never silently lost).
     pub unsupported: Vec<&'static str>,
@@ -239,6 +265,9 @@ pub struct Movieclip {
     pub source_start: f64,
     pub pivot: [f64; 2],
     pub document: Arc<Document>,
+    /// `spatialMeshes`: one indexed mesh per local frame, drawn in place of the
+    /// clip's own document ([`crate::spatial::ClipMesh`]).
+    pub meshes: Option<Arc<[Arc<crate::spatial::ClipMesh>]>>,
     /// The clip's own timeline, prepared once.
     pub prepared: Arc<crate::eval::Prepared>,
     /// Evaluated local frames shared by every instance (bounded).
@@ -290,6 +319,32 @@ pub struct Object {
     /// as the editor composed it with its clips. Only edit frames carry it
     /// ([`crate::vfx::frame::composed`]); documents never save it.
     pub vfx_connected: Option<Arc<[Arc<crate::vfx::Effect>]>>,
+    /// Perspective and part proportions of a 3D pose (`_stykSpatial`).
+    pub spatial: Option<Arc<SpatialPose>>,
+}
+
+/// `_stykSpatial` (src/spatial-projection.mjs): what a pose adds to a spatial rig.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpatialPose {
+    pub camera: Option<SpatialCamera>,
+    /// Width and taper by bone handle. Integer keys iterate in ascending order
+    /// in JavaScript, which is the order a `BTreeMap` keeps.
+    pub shape: Option<std::collections::BTreeMap<u32, SpatialShape>>,
+}
+
+/// `_stykSpatial.camera`: perspective of one figure. A missing centre is the figure's root.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpatialCamera {
+    pub strength: f64,
+    pub distance: f64,
+    pub center: [Option<f64>; 2],
+}
+
+/// `_stykSpatial.shape[handle]`: radial width and its taper along the bone.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpatialShape {
+    pub width: f64,
+    pub taper: f64,
 }
 
 /// `_stykMovieclip` playback settings of one instance.
@@ -576,5 +631,6 @@ pub fn plan_figure(segments: &[Segment], polyfills: &[Polyfill]) -> FigurePlan {
         })
         .collect();
     let rig = crate::rig::plan(segments, &index_of).map(Arc::new);
-    FigurePlan { parent, order, index_of, child_start, children, polygons, rig }
+    let spatial = segments.iter().any(|s| s.rig.as_ref().is_some_and(|r| r.spatial.is_some() || r.weighted.as_ref().is_some_and(|w| w.depth.is_some())));
+    FigurePlan { parent, order, index_of, child_start, children, polygons, rig, spatial }
 }

@@ -72,6 +72,13 @@ pub fn item_extent(scene: &Scene, assets: &Assets, it: &Item) -> Option<Extent> 
             add([c[0] + r, c[1] + r]);
         }
         ItemKind::Poly => scene.points_of(it).iter().for_each(|&p| add(p)),
+        // `objectBounds` takes the whole mesh's visible bounds for each of its drawables.
+        ItemKind::Mesh => {
+            if let Some(b) = scene.mesh_of(it).and_then(|mesh| mesh.bounds) {
+                add([b[0] as f64, b[1] as f64]);
+                add([b[2] as f64, b[3] as f64]);
+            }
+        }
         _ => {
             // A segment's points: its sampled arc, or its two ends.
             let points = scene.points_of(it);

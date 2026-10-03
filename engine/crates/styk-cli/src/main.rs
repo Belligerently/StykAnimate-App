@@ -261,16 +261,22 @@ fn bench(path: &str, rest: &[String]) -> i32 {
     println!("{}: opened in {ms:.1} ms, {} ticks", p.doc.name, p.total_ticks);
     // Warm up.
     let _ = build(&p.doc, &p.evaluate(0.0));
-    let started = Instant::now();
+    let assets = styk_eval::assets::Assets::build(&p.doc);
     let mut items = 0usize;
     let mut worst = 0f64;
+    let (mut serial, mut encoding, mut records) = (0f64, 0f64, 0usize);
     for t in 0..frames {
         let s = Instant::now();
         let scene = build(&p.doc, &p.evaluate(t as f64));
-        worst = worst.max(s.elapsed().as_secs_f64() * 1000.0);
+        let built = s.elapsed().as_secs_f64() * 1000.0;
+        worst = worst.max(built);
+        serial += built;
         items += scene.items.len();
+        // Its draw list, timed apart.
+        let s = Instant::now();
+        records += styk_eval::drawlist::encode(&p.doc, &assets, &scene).prims.len();
+        encoding += s.elapsed().as_secs_f64() * 1000.0;
     }
-    let serial = started.elapsed().as_secs_f64() * 1000.0;
     let started = Instant::now();
     let parallel_items: usize = (0..frames).into_par_iter().map(|t| build(&p.doc, &p.evaluate(t as f64)).items.len()).sum();
     let parallel = started.elapsed().as_secs_f64() * 1000.0;
@@ -287,6 +293,7 @@ fn bench(path: &str, rest: &[String]) -> i32 {
         parallel / frames as f64,
         frames as f64 / (parallel / 1000.0)
     );
+    println!("  draw lists one frame at a time: {:.3} ms/frame, {:.0} records/frame", encoding / frames as f64, records as f64 / frames as f64);
     0
 }
 
@@ -591,7 +598,7 @@ fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         if k > 0 {
             let s = &renderer.stats;
-            rows.push((zoom / fit, start.elapsed().as_secs_f64() * 1000.0, s.passes, s.groups, s.effect_passes, s.effect_bytes + s.layer_bytes));
+            rows.push((zoom / fit, start.elapsed().as_secs_f64() * 1000.0, s.passes, s.groups, s.effect_passes, s.effect_bytes + s.layer_bytes + s.depth_bytes));
         }
     }
     let mut times: Vec<f64> = rows.iter().map(|r| r.1).collect();
@@ -606,7 +613,7 @@ fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
         adapter.get_info().name
     );
     for r in rows.iter().step_by(40) {
-        println!("  {:5.2}x  {:6.2} ms  {} passes  {} groups  {} effect passes  {:.1} MiB layers and effect slots", r.0, r.1, r.2, r.3, r.4, r.5 as f64 / 1048576.0);
+        println!("  {:5.2}x  {:6.2} ms  {} passes  {} groups  {} effect passes  {:.1} MiB layers, effect slots and depth buffers", r.0, r.1, r.2, r.3, r.4, r.5 as f64 / 1048576.0);
     }
     0
 }

@@ -5,11 +5,11 @@
 //   npm run engine:parity -- --corpus    # also the private corpus (~/Downloads), where present
 //   npm run engine:parity -- --app       # also the app with and without the engine (Chromium)
 //
-// Repository tier: the Rust fixture suites (IK, evaluation, effects, draw lists, the Pivot
+// Repository tier: the Rust fixture suites (IK, evaluation, effects, 3D, draw lists, the Pivot
 // codec's recorded answers, command replays), the container reader and writer against src/native-container.mjs
 // on every native file in the repository, and fixture regeneration (byte-stable: a fixture
 // that changes means the editor's behaviour changed).
-// Corpus tier: geometry of every tick of the benchmark files against the editor
+// Corpus tier: geometry of every tick of the benchmark files and of the catalogue's 3D scenes against the editor
 // (engine/tools/reference.mjs + styk compare) and the Pivot codec replay when a recording
 // exists. App tier: scripts/engine-app-parity.mjs on the start-up document and the IK
 // fixtures. Exit code 1 when any check fails.
@@ -38,7 +38,7 @@ const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.leng
 run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit', '-p', 'styk-math'));
 
 // Fixture generators are byte-stable: regenerating changes nothing.
-for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures']) {
+for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures', 'spatial-fixtures']) {
   if (!existsSync(path.join(root, `engine/tools/${tool}.mjs`))) continue;
   run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
     check: () => unchanged('engine/crates/styk-eval/tests/fixtures')});
@@ -86,6 +86,14 @@ if (args.has('--corpus')) {
       check: result => /, 0 mismatched primitives, \d+ joints, 0 mismatched joints, 0 frames with differences/.test(result.stdout) && !/[1-9]\d* mismatched effects/.test(result.stdout)});
   }
   if (!files.length) results.push({name: 'corpus (not present on this machine)', ok: true, seconds: 0});
+  // 3D scenes of the asset catalogue (meshes, surfaces, mechanisms): geometry at every tick.
+  for (const file of ['AssetReleases/3D-Guns/Scenes/15-Guns-Pivot-3D.styk', 'AssetReleases/Hand-and-Face/Scenes/Hand-and-Face-Pivot-3D.styk',
+    'AssetReleases/Vehicles/Scenes/Vehicles-Pivot-3D.styk', 'AssetReleases/Impact-FX/Scenes/Impact-Motion-FX-Pivot.styk'].filter(file => existsSync(path.join(root, file)))) {
+    const reference = path.join(os.tmpdir(), `styk-reference-${path.basename(file).replace(/\W+/g, '-')}.json`);
+    run(`reference ${path.basename(file)}`, process.execPath, ['engine/tools/reference.mjs', file, reference, '--every', '1'], {quiet: true});
+    run(`geometry ${path.basename(file)}`, 'engine/target/release/styk', ['compare', file, reference], {quiet: true,
+      check: result => /, 0 mismatched primitives, \d+ joints, 0 mismatched joints, 0 frames with differences/.test(result.stdout)});
+  }
   // The evaluated frame as records, every tick, against the editor (hashes: the frames are large).
   for (const file of files) {
     const folder = path.join(os.tmpdir(), `styk-records-${path.basename(file).replace(/\W+/g, '-')}`);

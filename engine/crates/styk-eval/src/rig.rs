@@ -5,7 +5,9 @@
 use std::f64::consts::PI;
 
 use styk_doc::Value;
-use styk_math::{atan2, cos, hypot, sin};
+// The spatial path computes as V8 does, bit for bit: its results decide which
+// faces are culled, where a tolerance of a few units in the last place matters.
+use styk_math::{atan2, cos, hypot, norm, sin};
 
 const EPS: f64 = 1e-8;
 const SPATIAL_EPS: f64 = 1e-9;
@@ -418,6 +420,12 @@ pub struct SpatialFrame {
     pub origin: [f64; 3],
     pub axis: [f64; 3],
     pub stretch: f64,
+    /// `choiceScale`: a hidden expression scales about its origin by its stretch.
+    pub choice_scale: Option<f64>,
+    /// Part proportions of the pose (`_stykSpatial.shape`), when they change anything.
+    pub shape: Option<crate::doc::SpatialShape>,
+    /// `restLength`: the bone's rest length, set with `shape`.
+    pub rest_length: f64,
 }
 
 /// The derived local space of a rig joint (`space` in rig-constraints.mjs): what
@@ -445,6 +453,11 @@ pub struct State {
     pub spatial: Option<SpatialFrame>,
     pub path: Option<([f64; 2], f64, f64)>,
     pub space: Option<Space>,
+    /// Where the joint's depth lands along the surface reference X, from the
+    /// figure root (`depthOffset`): spatial joints and weighted joints with a depth.
+    pub depth_offset: Option<[f64; 2]>,
+    /// The handle before perspective (`handle.rawPoint`), when the pose has a camera.
+    pub raw_point: Option<[f64; 3]>,
 }
 
 pub struct Input {
@@ -477,7 +490,7 @@ pub fn spatial_quaternion(bend: f64, turn: f64, pitch: f64) -> [f64; 4] {
 }
 
 fn axis_quaternion(axis: [f64; 3], angle: f64) -> [f64; 4] {
-    let h = sin(angle / 2.0) / (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+    let h = sin(angle / 2.0) / norm(&axis);
     [axis[0] * h, axis[1] * h, axis[2] * h, cos(angle / 2.0)]
 }
 
@@ -485,9 +498,25 @@ fn wrap(a: f64) -> f64 {
     atan2(sin(a), cos(a))
 }
 
+/// `shapeOffset(frame, point)`: the radial offset part proportions give a bind-space point.
+pub fn shape_offset(f: &SpatialFrame, shape: crate::doc::SpatialShape, point: [f64; 3]) -> [f64; 3] {
+    let r = [point[0] - f.origin[0], point[1] - f.origin[1], point[2] - f.origin[2]];
+    let d = r[0] * f.axis[0] + r[1] * f.axis[1] + r[2] * f.axis[2];
+    let u = (d / f.rest_length).clamp(0.0, 1.0);
+    let amount = shape.width * (1.0 + shape.taper * u * u * (3.0 - 2.0 * u)) - 1.0;
+    [(r[0] - d * f.axis[0]) * amount, (r[1] - d * f.axis[1]) * amount, (r[2] - d * f.axis[2]) * amount]
+}
+
+/// `spatialPoint(frame, point)`: a bind-space point carried by a bone's frame.
 pub fn spatial_point(f: &SpatialFrame, point: [f64; 3]) -> [f64; 3] {
     let mut p = point;
-    if (f.stretch - 1.0).abs() > SPATIAL_EPS {
+    if let Some(shape) = f.shape {
+        let offset = shape_offset(f, shape, point);
+        p = [point[0] + offset[0], point[1] + offset[1], point[2] + offset[2]];
+    }
+    if let Some(choice) = f.choice_scale {
+        p = [f.origin[0] + (p[0] - f.origin[0]) * choice, f.origin[1] + (p[1] - f.origin[1]) * choice, f.origin[2] + (p[2] - f.origin[2]) * choice];
+    } else if (f.stretch - 1.0).abs() > SPATIAL_EPS {
         let d = (point[0] - f.origin[0]) * f.axis[0] + (point[1] - f.origin[1]) * f.axis[1] + (point[2] - f.origin[2]) * f.axis[2];
         for i in 0..3 {
             p[i] += d * (f.stretch - 1.0) * f.axis[i];
@@ -500,7 +529,10 @@ pub fn spatial_point(f: &SpatialFrame, point: [f64; 3]) -> [f64; 3] {
     r
 }
 
-fn view_interpolation(f: &SpatialFrame, count: usize) -> (usize, usize, f64, f64, f64, f64) {
+/// `spatialViewInterpolation(frame)` for `count` evenly spaced views: the two
+/// views around the bone's heading (index, next, blend), the heading's cosine
+/// and sine, and the strength that fades correction out near a vertical view.
+pub fn view_interpolation(f: &SpatialFrame, count: usize) -> (usize, usize, f64, f64, f64, f64) {
     let [x, y, z, w] = f.q;
     let (fx, fz) = (2.0 * (w * y - x * z), 1.0 - 2.0 * (x * x + y * y));
     let horizontal = hypot(fx, fz);
@@ -537,10 +569,12 @@ fn skin_point(point: [f64; 3], bindings: &[(u32, f64)], views: Option<&Vec<[f64;
     let first = get(bindings[0].0)?.q;
     let (mut x, mut y, mut z, mut w, mut dx, mut dy, mut dz, mut dw) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
     let mut stretch = false;
+    let mut shaped = false;
     for &(joint, weight) in bindings {
         let f = get(joint)?;
         let (q, d) = (f.q, f.dual);
         stretch |= (f.stretch - 1.0).abs() > SPATIAL_EPS;
+        shaped |= f.shape.is_some();
         let wgt = weight * if q[0] * first[0] + q[1] * first[1] + q[2] * first[2] + q[3] * first[3] < 0.0 { -1.0 } else { 1.0 };
         x += q[0] * wgt;
         y += q[1] * wgt;
@@ -561,15 +595,33 @@ fn skin_point(point: [f64; 3], bindings: &[(u32, f64)], views: Option<&Vec<[f64;
         }
         return Some(p);
     }
-    let norm = (x * x + y * y + z * z + w * w).sqrt();
+    let norm = norm(&[x, y, z, w]);
     let (x, y, z, w, dx, dy, dz, dw) = (x / norm, y / norm, z / norm, w / norm, dx / norm, dy / norm, dz / norm, dw / norm);
     let [a, b, c] = point;
     let (tx, ty, tz) = (2.0 * (y * c - z * b), 2.0 * (z * a - x * c), 2.0 * (x * b - y * a));
-    Some([
+    let mut result = [
         a + w * tx + y * tz - z * ty + 2.0 * (-dw * x + dx * w - dy * z + dz * y),
         b + w * ty + z * tx - x * tz + 2.0 * (-dw * y + dx * z + dy * w - dz * x),
         c + w * tz + x * ty - y * tx + 2.0 * (-dw * z - dx * y + dy * x + dz * w),
-    ])
+    ];
+    // Radial offsets blend in bind space and rotate with the same normalized quaternion.
+    if shaped {
+        let mut offset = [0.0; 3];
+        for &(joint, weight) in bindings {
+            let f = get(joint)?;
+            if let Some(shape) = f.shape {
+                let d = shape_offset(&f, shape, point);
+                for i in 0..3 {
+                    offset[i] += d[i] * weight;
+                }
+            }
+        }
+        let rotated = quat_rotate([x, y, z, w], offset);
+        for i in 0..3 {
+            result[i] += rotated[i];
+        }
+    }
+    Some(result)
 }
 
 /// Periodic monotone cubic sampling of an angle path.
@@ -623,6 +675,10 @@ pub struct Context<'a> {
     pub mirror: bool,
     pub len_flag: bool,
     pub lengths: Option<&'a [f64]>,
+    /// The pose's perspective (`projection(object, root)`); inverse kinematics evaluates without it.
+    pub camera: Option<crate::spatial::Camera>,
+    /// The pose's part proportions by bone handle (`_stykSpatial.shape`).
+    pub shape: Option<&'a std::collections::BTreeMap<u32, crate::doc::SpatialShape>>,
 }
 
 /// `createRigEvaluation(...).evaluate(i, input, joints)`.
@@ -653,7 +709,13 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         };
         let (start, dx, dy) = pos(w);
         let angle = if hypot(dx, dy) < 1e-8 { input.angle } else { atan2(dy, dx) };
+        let depth_offset = w.depth.as_deref().map(|depth| {
+            let (start, dx, dy) = pos(depth);
+            [start[0] + dx - root[0], start[1] + dy - root[1]]
+        });
         let s = State {
+            depth_offset,
+            raw_point: None,
             start,
             angle,
             authored_angle: angle,
@@ -716,6 +778,8 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             spatial: None,
             path: Some((origin, delta, z)),
             space: Some(Space { rotation: delta, follow: None }),
+            depth_offset: None,
+            raw_point: None,
         };
         states[i] = Some(st);
         return st;
@@ -857,6 +921,8 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         spatial: None,
         path: None,
         space,
+        depth_offset: None,
+        raw_point: None,
     };
     states[i] = Some(st);
     st
@@ -869,7 +935,18 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
     let sign = if ctx.mirror { -1.0 } else { 1.0 };
     let root = ctx.root;
     let scale = ctx.scale;
-    let project = |p: [f64; 3]| [root[0] + (p[0] * cs - p[1] * sign * sn) * scale, root[1] + (p[0] * sn + p[1] * sign * cs) * scale];
+    // The figure's rotation, scale and reflection, then the pose's perspective. The
+    // second value is the point before perspective (`rawPoint`).
+    let project = |p: [f64; 3]| -> ([f64; 2], Option<[f64; 3]>) {
+        let flat = [root[0] + (p[0] * cs - p[1] * sign * sn) * scale, root[1] + (p[0] * sn + p[1] * sign * cs) * scale];
+        match &ctx.camera {
+            Some(camera) => {
+                let raw = [flat[0], flat[1], p[2] * scale];
+                (camera.project(raw), Some(raw))
+            }
+            None => (flat, None),
+        }
+    };
     let mut start = input.start;
     let mut spatial = None;
     let point = match sp {
@@ -879,7 +956,7 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
             let parent_bend = parent_frame.map(|p| p.native_bend).unwrap_or(0.0);
             let parent_authored = parent_frame.map(|p| p.authored_bend).unwrap_or(parent_bend);
             let v = [tip[0] - origin[0], tip[1] - origin[1], tip[2] - origin[2]];
-            let length = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            let length = norm(&v);
             let axis = if length > SPATIAL_EPS { [v[0] / length, v[1] / length, v[2] / length] } else { [0.0, 1.0, 0.0] };
             let authored_bend = (input.angle - ctx.figure_angle) * sign - seg.angle;
             let driver = motion.as_ref().and_then(|m| m.driver).map(|(j, mul)| get(j).map(|f| f.motion_value).unwrap_or(0.0) * mul).unwrap_or(0.0);
@@ -930,20 +1007,28 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
             let t = [o[0] - rotated[0], o[1] - rotated[1], o[2] - rotated[2]];
             let stretch = if motion.is_none() && length > SPATIAL_EPS && scale.abs() > SPATIAL_EPS { input.length / scale / length } else { 1.0 };
             let dual = quat_multiply([t[0], t[1], t[2], 0.0], q).map(|n| n * 0.5);
-            let frame = SpatialFrame { q, t, dual, native_bend, authored_bend, motion_value, origin: *origin, axis, stretch };
+            // A hidden expression loses its area instead of flattening into a card.
+            let choice_scale = seg.choice_scale.then_some(stretch);
+            let shape = ctx.shape.and_then(|shapes| shapes.get(&seg.id)).copied().filter(|shape| shape.width != 1.0 || shape.taper != 0.0);
+            let rest_length = if shape.is_some() { length.max(SPATIAL_EPS) } else { 0.0 };
+            let frame = SpatialFrame { q, t, dual, native_bend, authored_bend, motion_value, origin: *origin, axis, stretch, choice_scale, shape, rest_length };
             spatial = Some(frame);
-            start = project(o);
+            start = project(o).0;
             spatial_point(&frame, *tip)
         }
     };
-    let handle = project(point);
+    let (handle, raw_point) = project(point);
     let (dx, dy) = (handle[0] - start[0], handle[1] - start[1]);
-    let angle = if hypot(dx, dy) < SPATIAL_EPS { input.angle } else { atan2(dy, dx) };
+    let span = hypot(dx, dy);
+    let angle = if span < SPATIAL_EPS { input.angle } else { atan2(dy, dx) };
     State {
+        // Depth guides use the same figure rotation and scale as the surface reference X.
+        depth_offset: Some([point[2] * scale * cs, point[2] * scale * sn]),
+        raw_point,
         start,
         angle,
         authored_angle: input.angle,
-        length: hypot(dx, dy),
+        length: span,
         bend: 0.0,
         width: 1.0,
         handle: Some(handle),

@@ -368,6 +368,7 @@ impl<'a> Assembly<'a> {
             bends: Some(&graph.bends),
             mirror: false,
             figure_angle: graph.angles.first().copied().unwrap_or(0.0) - graph.segments.first().map(|s| s.angle).unwrap_or(0.0),
+            shape: None,
         }
     }
 

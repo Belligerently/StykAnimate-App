@@ -52,6 +52,30 @@ pub const K_BOX: u32 = 10;
 pub const K_POLYLINE: u32 = 11;
 /// A closed [`K_POLYLINE`].
 pub const F_CLOSED: u32 = 1 << 10;
+/// Starts a depth run (docs/engine/spatial.md): the depth buffer is reset to far over the
+/// world rectangle `a` = (x0, y0, x1, y1), which covers every face of the run. Draws no colour.
+///
+/// A depth run is consecutive depth-tested faces of one figure, as the editor composites
+/// them (`paintDepthSurfaces`, `rasterizeMeshGroup`): `K_DEPTH_RESET`, then the run's
+/// [`K_TRI`] records with [`F_DEPTH`]. Within the run a face hides what is behind it; the
+/// run as a whole sits at its place in painter order, over what was drawn before it.
+pub const K_DEPTH_RESET: u32 = 12;
+/// A depth-tested [`K_TRI`] of a depth run: `b.zw` and `c.x` hold its corners' depths (larger
+/// is nearer), `c.y` and `c.z` the run's smallest depth and depth range; renderers map them to
+/// window depths with [`window_depth`] where they rasterize (smaller is nearer; an equal depth
+/// keeps the later face). The GPU computes that mapping in its vertex shader, as the editor's
+/// mesh raster does, so faces that nearly share a plane resolve as they do in the editor.
+pub const F_DEPTH: u32 = 1 << 13;
+/// Window depth of the far plane a [`K_DEPTH_RESET`] writes: beyond every face of a run,
+/// whose depths lie in [0.0005, 0.9995].
+pub const DEPTH_FAR: f32 = 0.9999;
+
+/// Window depth of a face corner at depth `z` (larger is nearer) in a run whose depths
+/// span `z_min`..`z_min + range`, as the editor's depth rasters compute it in single
+/// precision (`0.9995 - 0.999 * (z - zMin) / range`, src/renderer-mesh-raster.mjs).
+pub fn window_depth(z: f32, z_min: f32, range: f32) -> f32 {
+    0.9995 - 0.999 * (z - z_min) / range
+}
 
 /// An image sampled bilinearly (drawings); Pivot sprites sample their nearest texel.
 pub const F_SMOOTH: u32 = 1 << 8;
@@ -143,6 +167,12 @@ pub enum LayerKind {
     },
     /// Artwork inside an entry, filtered on the entry's own pixel grid (`withVfx`).
     Nested { bounds: [f64; 4], domain: [f64; 4], scale: f64 },
+    /// Top-level artwork without effects that the editor still draws from a raster of
+    /// its own: an object or movieclip instance holding depth-tested 3D faces
+    /// (`requiresCompatibilityTexture`, docs/engine/spatial.md). Rasterized like an
+    /// [`LayerKind::Entry`], on a grid anchored at `bounds` (`objectBounds`, x, y,
+    /// width, height) at the editor's raster density for the view, then resampled.
+    Raster { bounds: [f64; 4] },
     /// The camera image: everything but onion skins, drawn through the scene's
     /// camera at the camera preview's density, filtered, then projected onto the
     /// camera rectangle (`CameraVfx`). `canvas` is the scene's size.

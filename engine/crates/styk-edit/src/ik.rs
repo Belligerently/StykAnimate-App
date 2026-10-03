@@ -600,6 +600,7 @@ impl Editor {
             bends: bends.as_deref(),
             mirror: object.get("image_text_flags").is_some_and(Value::truthy),
             figure_angle: ik::figure_angle(figure, evaluated),
+            shape: evaluated.spatial.as_ref().and_then(|s| s.shape.as_ref()),
         };
         let table = Table { controllers: BTreeMap::from([(handle, temporary)]) };
         let solution = ik::solve_object(&skeleton, &pose, geometry.root, &table).ok_or_else(|| unported("the solver did not reach"))?;

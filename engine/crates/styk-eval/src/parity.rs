@@ -76,7 +76,7 @@ pub fn compare(prepared: &Prepared, reference: &Value) -> Report {
         let scene: Scene = build(&prepared.doc, &evaluated);
         let mut problems: Vec<String> = Vec::new();
         report.frames += 1;
-        drawables(&scene, items(frame.get("drawables")), &mut report, &mut problems);
+        drawables(&scene, items(frame.get("drawables")), items(frame.get("meshes")), &mut report, &mut problems);
         joints(prepared, &scene, items(frame.get("objects")), &mut report, &mut problems);
         if let Some(effects) = frame.get("vfx") {
             crate::vfx::parity::compare(prepared, &evaluated, effects, &mut report.vfx, &mut problems);
@@ -88,7 +88,76 @@ pub fn compare(prepared: &Prepared, reference: &Value) -> Report {
     report
 }
 
-fn drawables(scene: &Scene, expected: &[Value], report: &mut Report, problems: &mut Vec<String>) {
+/// Depths are ratios along a figure's reference axis or scene units over a
+/// scale: compared within the coordinate tolerance, relative for large values.
+fn close_depth(a: f64, b: f64) -> bool {
+    (a - b).abs() <= TOLERANCE * a.abs().max(1.0)
+}
+
+/// A mesh drawable against the reference: the same faces in the same order
+/// (vertex indices and palette entries exactly), and, for the mesh they index,
+/// the same vertices, depths, colours and bounds (docs/engine/spatial.md).
+fn mesh_faces(scene: &Scene, it: &crate::geometry::Item, expected: Option<&Value>, meshes: &[Value], why: &mut Vec<String>) {
+    let (Some(expected), Some(mesh)) = (expected, scene.mesh_of(it)) else {
+        why.push("mesh: missing in the reference or the engine".into());
+        return;
+    };
+    let (a, b) = (it.faces.0 as usize, it.faces.1 as usize);
+    if expected.get("index").and_then(Value::as_f64) != Some(it.index as f64) {
+        why.push(format!("mesh drawable {} vs {}", expected.get("index").unwrap_or(&Value::Null), it.index));
+    }
+    if expected.get("count").and_then(Value::as_f64) != Some((b - a) as f64) {
+        why.push(format!("mesh faces {} vs {}", expected.get("count").unwrap_or(&Value::Null), b - a));
+        return;
+    }
+    let triangles = expected.get("triangles").and_then(Value::numbers).unwrap_or_default();
+    if let Some(k) = (0..triangles.len().min((b - a) * 3)).find(|&k| triangles[k] != mesh.triangles[a * 3 + k] as f64) {
+        why.push(format!("mesh face {} vertex {} vs {}", k / 3, triangles[k], mesh.triangles[a * 3 + k]));
+    }
+    let materials = expected.get("materials").and_then(Value::numbers).unwrap_or_default();
+    if let Some(k) = (0..materials.len().min(b - a)).find(|&k| materials[k] != mesh.materials[a + k] as f64) {
+        why.push(format!("mesh face {k} colour {} vs {}", materials[k], mesh.materials[a + k]));
+    }
+    let Some(geometry) = expected.get("id").and_then(Value::as_f64).and_then(|id| meshes.get(id as usize)) else {
+        why.push("mesh: the reference has no geometry for it".into());
+        return;
+    };
+    let positions = geometry.get("positions").and_then(Value::numbers).unwrap_or_default();
+    if positions.len() != mesh.positions.len() {
+        why.push(format!("mesh vertices {} vs {}", positions.len() / 2, mesh.positions.len() / 2));
+    } else if let Some(k) = (0..positions.len()).find(|&k| (positions[k] - mesh.positions[k] as f64).abs() > TOLERANCE) {
+        why.push(format!("mesh vertex {} {} vs {}", k / 2, positions[k], mesh.positions[k]));
+    }
+    let depth = geometry.get("depth").and_then(Value::numbers).unwrap_or_default();
+    if depth.len() == mesh.depth.len()
+        && let Some(k) = (0..depth.len()).find(|&k| !close_depth(depth[k], mesh.depth[k] as f64))
+    {
+        why.push(format!("mesh depth {k} {} vs {}", depth[k], mesh.depth[k]));
+    }
+    let colors: Vec<Vec<f64>> = geometry.get("colors").and_then(Value::elements).map(|c| c.iter().filter_map(|c| c.numbers()).collect()).unwrap_or_default();
+    if colors.len() != mesh.colors.len() || colors.iter().zip(&mesh.colors).any(|(e, c)| e.len() != 3 || (0..3).any(|k| e[k] != c[k] as f64)) {
+        why.push(format!("mesh colours {colors:?} vs {:?}", mesh.colors));
+    }
+    let bounds = geometry.get("bounds").and_then(Value::numbers);
+    match (bounds, mesh.bounds) {
+        (Some(e), Some(ours)) if e.len() == 4 => {
+            if (0..4).any(|k| (e[k] - ours[k] as f64).abs() > TOLERANCE) {
+                why.push(format!("mesh bounds {e:?} vs {ours:?}"));
+            }
+        }
+        (None, None) => {}
+        (e, ours) => why.push(format!("mesh bounds {e:?} vs {ours:?}")),
+    }
+    for (key, ours) in [("zMin", mesh.z_min), ("zMax", mesh.z_max)] {
+        if let Some(e) = geometry.get(key).and_then(Value::as_f64)
+            && !close_depth(e, ours as f64)
+        {
+            why.push(format!("mesh {key} {e} vs {ours}"));
+        }
+    }
+}
+
+fn drawables(scene: &Scene, expected: &[Value], meshes: &[Value], report: &mut Report, problems: &mut Vec<String>) {
     report.primitives += expected.len();
     if expected.len() != scene.items.len() {
         problems.push(format!("drawable count: reference {}, engine {}", expected.len(), scene.items.len()));
@@ -118,13 +187,23 @@ fn drawables(scene: &Scene, expected: &[Value], report: &mut Report, problems: &
                 why.push(format!("{key} {v} vs {value}"));
             }
         }
-        if it.kind == ItemKind::Poly {
+        if it.kind == ItemKind::Mesh {
+            mesh_faces(scene, it, e.get("mesh"), meshes, &mut why);
+        } else if it.kind == ItemKind::Poly {
             let points: Vec<[f64; 2]> = e.get("points").and_then(Value::elements).map(|a| a.iter().filter_map(|p| point(Some(&p))).collect()).unwrap_or_default();
             let ours = scene.points_of(it);
             if points.len() != ours.len() {
                 why.push(format!("poly points {} vs {}", points.len(), ours.len()));
             } else if let Some(k) = (0..points.len()).find(|&k| !close(points[k], ours[k])) {
                 why.push(format!("poly point {k} {:?} vs {:?}", points[k], ours[k]));
+            }
+            // A depth-tested surface: one depth per point (`depthValues`).
+            let depth = e.get("depth").and_then(Value::numbers).unwrap_or_default();
+            let ours = scene.depths_of(it);
+            if depth.len() != ours.len() {
+                why.push(format!("surface depths {} vs {}", depth.len(), ours.len()));
+            } else if let Some(k) = (0..depth.len()).find(|&k| !close_depth(depth[k], ours[k])) {
+                why.push(format!("surface depth {k} {} vs {}", depth[k], ours[k]));
             }
         } else {
             if let (Some(start), Some(end)) = (point(e.get("start")), point(e.get("end"))) {

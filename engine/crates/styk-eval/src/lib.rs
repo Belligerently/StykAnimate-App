@@ -17,6 +17,7 @@ pub mod par;
 pub mod parity;
 pub mod records;
 pub mod rig;
+pub mod spatial;
 pub mod sticknodes;
 pub mod style;
 pub mod text;

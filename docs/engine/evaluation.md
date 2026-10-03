@@ -16,8 +16,10 @@ is the oracle while both exist.
   movieclips, where each pose came from (`origins`, for editing) and the frame's
   effects (`vfx`, see [vfx.md](vfx.md)).
 - `geometry::build(document, frame)` resolves joins, rigs ([rigs-ik.md](rigs-ik.md)),
-  IK, movieclip instances and Stick Nodes shapes into a `Scene`: per object
-  its joints and drawable items in world units.
+  IK, movieclip instances, Stick Nodes shapes and 3D ([spatial.md](spatial.md):
+  perspective, one-sided surfaces, figure and attached movieclip meshes) into a
+  `Scene`: per object its joints and drawable items in world units, and the
+  scene's evaluated meshes and surface depths.
 - `drawlist::encode_composed(document, assets, scene, overrides, ghosts, order)`
   turns a scene into a draw list ([rendering.md](rendering.md)): translucent
   figures and outlines become isolation groups; onion ghosts are tinted,
@@ -37,18 +39,18 @@ is the oracle while both exist.
 
 ## Not evaluated yet
 
-Named in `Document::unsupported` and gated in the app: 3D poses and meshes,
-surfaces, property channels on native timelines, animation origins, follow
-cameras, layer parallax, frame drafts, retained movieclip sources. The work
-queue in the plan orders them.
+Named in `Document::unsupported` and gated in the app: property channels on
+native timelines, animation origins, follow cameras, layer parallax, frame
+drafts, retained movieclip sources, drawings a spatial bone turns
+(`drawingRotation`). The work queue in the plan orders them.
 
 ## Testing
 
 - `styk compare <file> <reference.json>` against `engine/tools/reference.mjs`
   (every primitive and joint of the sampled ticks; `--vfx` adds effects).
 - Fixture suites built by the editor's own commands:
-  `engine/tools/ik-fixtures.mjs`, `eval-fixtures.mjs`, `vfx-fixtures.mjs`
-  (byte-stable), checked by `cargo test -p styk-eval`.
+  `engine/tools/ik-fixtures.mjs`, `eval-fixtures.mjs`, `vfx-fixtures.mjs`,
+  `spatial-fixtures.mjs` (byte-stable), checked by `cargo test -p styk-eval`.
 - `npm run engine:parity -- --corpus` runs the benchmark files at every tick.
 
 ## The evaluated frame as records
@@ -69,8 +71,9 @@ the reason.
   (`interpolateVfx`, parameters resolved in the registry's order, paints normalized),
   layers that mix imported and authored keys (the window of keys around the playhead),
   movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
-  movieclips leaving the frame outside their span, layer order.
-- Not yet (each answers `Unported`): figures joined to a hidden movieclip, camera parallax offsets, 3D poses between keys, animation
+  movieclips leaving the frame outside their span, layer order, 3D poses between keys
+  (`interpolateSpatialPose`'s record).
+- Not yet (each answers `Unported`): figures joined to a hidden movieclip, camera parallax offsets, animation
   origins, property channels, hidden pose keys, a movieclip's own document.
 - Pivot's own easing unwraps each angle along the whole run of tweened keys before the
   interval. The drawing path unwraps from the previous key only (constant time, the same

@@ -64,6 +64,18 @@ for (const tick of ticks) {
   const geometry = editor.geometry;
   const drawables = geometry.drawables;
   evalMs += performance.now() - t0;
+  // Evaluated meshes (docs/engine/spatial.md): each once per tick, in the order
+  // their first drawable appears; a drawable names its mesh and its faces.
+  const meshes = [], meshIds = new Map();
+  const meshId = mesh => {
+    if (!meshIds.has(mesh)) {
+      meshIds.set(mesh, meshes.length);
+      const n = mesh.vertexCount, list = values => Array.from(values, round);
+      meshes.push({vertexCount: n, positions: list(mesh.positions.subarray(0, n * 2)), depth: list(mesh.depth.subarray(0, n)), colors: mesh.colors.map(c => [...c]),
+        bounds: mesh.bounds ? [mesh.bounds.x0, mesh.bounds.y0, mesh.bounds.x1, mesh.bounds.y1].map(round) : null, zMin: round(mesh.zMin), zMax: round(mesh.zMax)});
+    }
+    return meshIds.get(mesh);
+  };
   const items = drawables.map(d => {
     const item = {
       slot: d.slot, uid: d.obj?.unique_id, type: d.type,
@@ -71,8 +83,13 @@ for (const tick of ticks) {
       seg: d.seg?.segment_id, poly: d.type === 'poly' ? d.index : undefined,
       z: round(d.z), rgb: d.rgb, alpha: round(d.alpha), opacity: round(d.opacity),
     };
-    if (d.type === 'poly') item.points = d.points.map(pt);
-    else {
+    if (d.type === 'mesh') item.mesh = {id: meshId(d.spatialMesh), index: d.index, count: d.count,
+      triangles: Array.from(d.triangles.subarray(0, d.count * 3)), materials: Array.from(d.materials.subarray(0, d.count))};
+    else if (d.type === 'poly') {
+      item.points = d.points.map(pt);
+      // A depth-tested surface: one depth per point.
+      if (d.depthValues) item.depth = d.depthValues.map(round);
+    } else {
       item.start = pt(d.start); item.end = pt(d.end);
       item.thickness = round(d.thickness); item.length = round(d.length);
       item.angle = round(d.angle); item.bend = round(d.bend);
@@ -92,6 +109,7 @@ for (const tick of ticks) {
     camera: frame.camera ?? null,
     background: {id: frame.background_id ?? 0, b: frame.background_id_b ?? 0, mix: frame.background_mix ?? 0},
     objects, drawables: items,
+    ...(meshes.length ? {meshes} : {}),
     ...(effects ? {vfx: effects(editor.report, frame, geometry, tick)} : {}),
   });
 }

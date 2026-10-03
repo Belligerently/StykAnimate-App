@@ -522,6 +522,10 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
     if let Some(stacks) = &o.vfx {
         out.vfx = Some(crate::vfx::interpolate(stacks, next.vfx.as_ref(), t));
     }
+    // 3D: perspective and part proportions tween linearly within their limits (`interpolateSpatialPose`).
+    if o.spatial.is_some() || next.spatial.is_some() {
+        out.spatial = Some(Arc::new(crate::spatial::interpolate_pose(o, next, t)));
+    }
     out.root = [s.value(read(&|x| x.root[0]), false), s.value(read(&|x| x.root[1]), false)];
     out.scale = s.value(read(&|x| x.scale), false);
     out.transparency = if auto {

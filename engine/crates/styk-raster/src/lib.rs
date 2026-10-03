@@ -17,6 +17,10 @@
 //!   polygon fans show no seams between their triangles.
 //! * Drawing cels show one level per cel by the same rule as the GPU
 //!   (`floor(-log2(pixels per cel pixel))`, 0–8).
+//! * Depth runs (3D faces, `K_DEPTH_RESET` then `K_TRI` with `F_DEPTH`) are
+//!   rasterized with a depth buffer of four samples per pixel at the GPU's
+//!   standard sample positions, resolved, then composited at their place in
+//!   painter order, as the GPU draws them.
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -215,6 +219,12 @@ impl Raster<'_> {
             let clip = if g == 0 && i - start < background { None } else { clip };
             let kind = p.kind & 255;
             match kind {
+                K_DEPTH_RESET => {
+                    let faces = prims[i + 1..end].iter().take_while(|q| q.kind & 255 == K_TRI && q.kind & F_DEPTH != 0).count();
+                    self.depth_run(target, p, &prims[i + 1..i + 1 + faces], clip);
+                    i += 1 + faces;
+                    continue;
+                }
                 K_TRI => {
                     // A run of triangles of one look fills as one path.
                     let mut pb = PathBuilder::new();
@@ -313,6 +323,82 @@ impl Raster<'_> {
                 _ => {}
             }
             i += 1;
+        }
+    }
+
+    /// A depth run: its faces depth tested against each other (smaller window depth is
+    /// nearer, an equal depth keeps the later face) in a buffer of four samples per
+    /// pixel, resolved, then drawn over the target.
+    fn depth_run(&self, target: &mut Pixmap, reset: &Prim, faces: &[Prim], clip: Option<&Mask>) {
+        // The four sample positions of 4× multisampling (D3D, Vulkan and Metal standard).
+        const SAMPLES: [[f32; 2]; 4] = [[0.375, 0.125], [0.875, 0.375], [0.125, 0.625], [0.625, 0.875]];
+        let samples: &[[f32; 2]] = if self.view.anti_alias { &SAMPLES } else { &[[0.5, 0.5]] };
+        let [a, b, c, d, e, f] = self.view.matrix;
+        // Device coordinates and depth planes in double precision: faces in one plane then
+        // agree on their depth to far below the buffer's resolution and tie.
+        let device = |x: f32, y: f32| [a * x as f64 + c * y as f64 + e, b * x as f64 + d * y as f64 + f];
+        let corners = [device(reset.a[0], reset.a[1]), device(reset.a[2], reset.a[1]), device(reset.a[0], reset.a[3]), device(reset.a[2], reset.a[3])];
+        let (w, h) = (target.width() as i64, target.height() as i64);
+        let x0 = (corners.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min).floor() as i64 - 1).clamp(0, w);
+        let y0 = (corners.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min).floor() as i64 - 1).clamp(0, h);
+        let x1 = (corners.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max).ceil() as i64 + 1).clamp(0, w);
+        let y1 = (corners.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max).ceil() as i64 + 1).clamp(0, h);
+        if x1 <= x0 || y1 <= y0 || faces.is_empty() {
+            return;
+        }
+        let (bw, bh, n) = ((x1 - x0) as usize, (y1 - y0) as usize, samples.len());
+        // Depths are compared as the GPU's 24-bit depth buffer stores them: faces that lie
+        // in one plane then tie, and the later one shows, as on the GPU.
+        const EMPTY: u32 = u32::MAX;
+        let mut depth = vec![EMPTY; bw * bh * n];
+        let mut color = vec![0u32; bw * bh * n];
+        for face in faces {
+            let p = [device(face.a[0], face.a[1]), device(face.a[2], face.a[3]), device(face.b[0], face.b[1])];
+            let z = [face.b[2], face.b[3], face.c[0]].map(|d| window_depth(d, face.c[1], face.c[2]) as f64);
+            let area = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+            if area == 0.0 || !area.is_finite() {
+                continue;
+            }
+            let fx0 = (p.iter().map(|q| q[0]).fold(f64::INFINITY, f64::min).floor() as i64).max(x0);
+            let fy0 = (p.iter().map(|q| q[1]).fold(f64::INFINITY, f64::min).floor() as i64).max(y0);
+            let fx1 = (p.iter().map(|q| q[0]).fold(f64::NEG_INFINITY, f64::max).ceil() as i64).min(x1);
+            let fy1 = (p.iter().map(|q| q[1]).fold(f64::NEG_INFINITY, f64::max).ceil() as i64).min(y1);
+            // Edge functions, positive inside whatever the winding.
+            let edge = |a: [f64; 2], b: [f64; 2], q: [f64; 2]| ((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])) / area;
+            for y in fy0..fy1 {
+                for x in fx0..fx1 {
+                    let pixel = ((y - y0) as usize * bw + (x - x0) as usize) * n;
+                    for (k, s) in samples.iter().enumerate() {
+                        let q = [x as f64 + s[0] as f64, y as f64 + s[1] as f64];
+                        let (u, v, t) = (edge(p[1], p[2], q), edge(p[2], p[0], q), edge(p[0], p[1], q));
+                        if u < 0.0 || v < 0.0 || t < 0.0 {
+                            continue;
+                        }
+                        let value = ((u * z[0] + v * z[1] + t * z[2]).clamp(0.0, 1.0) * 16_777_215.0).round() as u32;
+                        if value <= depth[pixel + k] {
+                            depth[pixel + k] = value;
+                            color[pixel + k] = face.color;
+                        }
+                    }
+                }
+            }
+        }
+        // Resolve: the average of the samples' premultiplied colours.
+        let mut rgba = vec![0u8; bw * bh * 4];
+        for (i, pixel) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let mut sum = [0f32; 4];
+            for k in 0..n {
+                if depth[i * n + k] != EMPTY {
+                    let c = unpack(color[i * n + k]);
+                    sum = [sum[0] + c[0] * c[3], sum[1] + c[1] * c[3], sum[2] + c[2] * c[3], sum[3] + c[3]];
+                }
+            }
+            for (out, value) in pixel.iter_mut().zip(sum) {
+                *out = (value / n as f32 * 255.0).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+        if let Some(layer) = pixmap_from(bw as u32, bh as u32, rgba) {
+            target.draw_pixmap(x0 as i32, y0 as i32, layer.as_ref(), &PixmapPaint::default(), Transform::identity(), clip);
         }
     }
 

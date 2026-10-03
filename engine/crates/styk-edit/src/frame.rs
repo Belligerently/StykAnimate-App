@@ -134,6 +134,10 @@ impl Editor {
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
         }
+        // The engine evaluates 3D, but no command replay covers editing it yet.
+        if styk_eval::spatial::document_has_3d(&prepared.doc) {
+            return Err(EditError::Unported("geometry with 3D".into()));
+        }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         let scene = styk_eval::geometry::build(&prepared.doc, &frame);
