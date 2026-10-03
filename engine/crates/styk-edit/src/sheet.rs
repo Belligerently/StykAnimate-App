@@ -569,11 +569,12 @@ impl Editor {
 
     /// `ownedFrame(report, frame, uids)` with `continuations` set: the frame reduced to
     /// the figures `uids` name, joins among them kept, slots by unique id.
-    fn owned_frame(&self, frame: &Value, uids: &[u32], steps: &[Value]) -> Result<Value, EditError> {
+    pub(crate) fn owned_frame(&self, frame: &Value, uids: &[u32], steps: &[Value]) -> Result<Value, EditError> {
         let all = objects_of(frame);
         let selected = |object: &Value| uid(object).is_some_and(|u| uids.contains(&u));
         let order: Vec<f64> = frame_order(frame).into_iter().filter(|u| uids.contains(&(*u as u32))).collect();
         let mut members: Vec<Obj> = Vec::new();
+        let mut scene = None;
         for object in all.iter().filter(|o| selected(o)) {
             let mut record = object.as_obj().cloned().unwrap_or_default();
             if let Some(join) = object.get("join").filter(|j| j.truthy()) {
@@ -584,7 +585,18 @@ impl Editor {
                         join.set("target_unique_id", parent.clone());
                         record.set("join", Value::object(join));
                     }
-                    None => return Err(EditError::Unported("a replaced figure joined to a figure outside its movieclip frame".into())),
+                    // Joined to a figure left out: it stays where geometry puts it, unjoined.
+                    None => {
+                        if scene.is_none() {
+                            scene = Some(self.record_geometry(frame)?);
+                        }
+                        let slot = num(object, "object_slot");
+                        if let Some(root) = scene.as_ref().and_then(|scene| scene.objects.iter().find(|g| Some(g.slot as f64) == slot)).map(|g| g.root) {
+                            record.set("root_x", Value::Num(root[0]));
+                            record.set("root_y", Value::Num(root[1]));
+                        }
+                        record.set("join", Value::Null);
+                    }
                 }
             }
             members.push(record);
@@ -622,6 +634,16 @@ impl Editor {
         Ok(Value::object(out))
     }
 
+    /// `buildGeometry(report, frame)` for a frame record that need not be the one on show.
+    fn record_geometry(&self, record: &Value) -> Result<styk_eval::geometry::Scene, EditError> {
+        let prepared = self.prepared()?;
+        if let Some(feature) = prepared.doc.unsupported.first() {
+            return Err(EditError::Unported(format!("geometry with {feature}")));
+        }
+        let frame = self.eval.borrow_mut().loader.edit_frame(record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
+        Ok(styk_eval::geometry::build(&prepared.doc, &frame))
+    }
+
     /// `planner(editor, ids)`: `ids` must be layers that exist and are not locked.
     pub(crate) fn planner(&self, ids: &[String]) -> Result<Plan, EditError> {
         let styk = self.report.get("_styk");
@@ -654,6 +676,8 @@ impl Editor {
     /// `publish(editor, plan, label, {selection})`: the plan becomes the document's
     /// sheet, with one history entry.
     pub(crate) fn publish(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>) -> Result<bool, EditError> {
+        // How many poses hold each figure, counted on the document before it changes.
+        self.ensure_counts();
         // Imported spans whose ends changed are frozen as poses: an unchanged
         // imported span keeps evaluating from the import.
         for (id, _) in plan.tracks.clone() {
@@ -904,7 +928,18 @@ impl Editor {
             }
         };
         keep_sheet(self.report.path(&["_styk", "layerSheet"]), &mut retained);
-        for command in self.undo.iter().chain(&self.redo) {
+        // `historyCommands`: the entries of batches count as entries.
+        fn flatten<'a>(commands: impl Iterator<Item = &'a Command>, out: &mut Vec<&'a Command>) {
+            for command in commands {
+                match &command.kind {
+                    CommandKind::Batch { commands } => flatten(commands.iter(), out),
+                    _ => out.push(command),
+                }
+            }
+        }
+        let mut history = Vec::new();
+        flatten(self.undo.iter().chain(&self.redo), &mut history);
+        for command in history {
             if let CommandKind::LayerSheet { before, after, sources, .. } = &command.kind {
                 keep_sheet(Some(before), &mut retained);
                 keep_sheet(Some(after), &mut retained);

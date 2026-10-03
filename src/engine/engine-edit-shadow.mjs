@@ -22,22 +22,26 @@
  * Anything else (an unported command, a load, an asynchronous edit) ends it.
  */
 import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
+import {layerFocusOf} from '../editor-layer-focus.mjs';
 
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
-const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
+const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
   'renameLayer', 'setLayerColor', 'setLayerVisible', 'setLayerLocked', 'reorderLayers', 'moveLayerTo', 'createLayer', 'createLayerFolder', 'renameLayerFolder',
-  'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'setCameraMotion', 'deleteCameraMotion', 'undo', 'redo'];
+  'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'setCameraMotion', 'deleteCameraMotion',
+  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'addPolygon', 'updatePolygon', 'removePolygon',
+  'beginVfxClipEdit', 'commitVfxClipEdit', 'cancelVfxClipEdit', 'setVfxClip', 'trimVfxClipStart', 'deleteVfxClip', 'moveVfxClipOrder', 'reorderVfxGroupEffect',
+  'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold): a view, not compared. */
-const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder']);
+const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
   'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
-  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection']);
+  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames']);
 
 /** A switch set in the address (`?query=on|off`), else in local storage: 'on', 'off' or null. */
 const choice = (query, key) => {
@@ -143,41 +147,84 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   const report = globalThis.__stykEditShadow = {own, mode, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0};
   let session = null, depth = 0, events = null;
+  // A batch in progress (`movieclipBatch`): the session records it as one entry too, and a
+  // session that ends inside it does not restart until it closes. `closing` collects the
+  // batch's own change event, which the editor sends after the batch's last call.
+  let batching = false, closing = null;
+  // The timeline clipboard the session copied (the editor's object): a session starts
+  // with none, and pastes only when the editor's clipboard is that one.
+  let copied = null;
   const end = why => {
     if (!session) return;
-    session.free(); session = null;
+    session.free(); session = null; copied = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
-    selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey)});
+    selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey),
+    sheetSelection: editor._sheetSelection ? {id: editor._sheetSelection.id, contents: Boolean(editor._sheetSelection.contents)} : null});
   const counters = () => ({layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid});
 
   editor.addEventListener('change', event => {
     const detail = event.detail;
+    if (['edit', 'history', 'document'].includes(detail?.kind)) changedInPlace(detail);
     if (depth > 0) { events?.push(plain(detail ?? null)); return; }
+    if (closing) { closing.push(plain(detail ?? null)); return; }
     // The document changed through something the session did not run.
     if (['edit', 'history', 'document'].includes(detail?.kind)) end(`a ${detail.kind} outside the shadowed calls`);
+    // Runtime state the engine does not hold (editing.md): layer focus, which locks layers
+    // and counts as a layer revision, and a selected branch, which commands act on instead
+    // of whole figures.
+    else if (detail?.kind === 'layer-focus') end('layer focus');
+    else if (detail?.kind === 'selection' && editor.branchSelected) end('a branch selection');
   });
+  /** Whether the editor holds runtime state that changes what calls do and the engine lacks. */
+  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor.branchSelected);
 
   /** Brings the engine's frames to the editor's revision (playback does it only when it prepares). */
   let syncing = null;
+  // Records the editor changed in place, which the mirror cannot see by identity, as its change
+  // events name them: a definition edit may change a figure in place (every figure is resent),
+  // and one that changes its structure outside a sheet publication rewrites every pose of it
+  // too (everything is). The next sync resends them, and no session starts before it has.
+  let stale = null;
+  const changedInPlace = detail => {
+    const topology = detail.definition && detail.structural && !detail.layerSheet;
+    // A sheet publication names the pose sources it adds; they are new records, not changed ones.
+    const sources = detail.layerSheet ? [] : detail.sourceIds ?? [];
+    if (!detail.definition && !detail.figureIndices?.length && !detail.frameIndices?.length && !sources.length) return;
+    stale ??= {all: false, figures: false, figureIndices: [], frameIndices: [], sourceIds: []};
+    if (detail.definition && !detail.figureIndices?.length) stale.figures = true;
+    if (topology || detail.kind === 'document') stale.all = true;
+    stale.figureIndices.push(...detail.figureIndices ?? []); stale.frameIndices.push(...detail.frameIndices ?? []); stale.sourceIds.push(...sources);
+  };
   const prepare = () => {
     const side = engineSide();
     if (!side || side.failed) return Promise.resolve(false);
-    if (side.mirror.framesCurrent(editor.report, editor.revision)) return Promise.resolve(true);
-    const target = editor.report, revision = editor.revision;
-    syncing ??= side.mirror.syncFrames(target, revision).then(() => side.mirror.framesCurrent(editor.report, editor.revision), () => false).finally(() => { syncing = null; });
+    if (!stale && side.mirror.framesCurrent(editor.report, editor.revision)) return Promise.resolve(true);
+    if (syncing) return syncing;
+    const target = editor.report, revision = editor.revision, dirty = stale;
+    stale = null;
+    const resend = !dirty ? {} : dirty.all
+      ? {allFigures: true, frameIndices: target.keyframes.map((_, index) => index), sourceIds: Object.keys(target._styk?.frameSources ?? {})}
+      : {allFigures: dirty.figures, figureIndices: dirty.figureIndices, frameIndices: dirty.frameIndices, sourceIds: dirty.sourceIds};
+    syncing = side.mirror.syncFrames(target, revision, resend).then(() => side.mirror.framesCurrent(editor.report, editor.revision),
+      () => { if (dirty) stale = {...dirty, ...(stale ? {all: dirty.all || stale.all, figures: dirty.figures || stale.figures,
+        figureIndices: [...dirty.figureIndices, ...stale.figureIndices], frameIndices: [...dirty.frameIndices, ...stale.frameIndices], sourceIds: [...dirty.sourceIds, ...stale.sourceIds]} : {})}; return false; })
+      .finally(() => { syncing = null; });
     return syncing;
   };
   report.prepare = prepare;
 
+  // After the engine fails a call (it threw), editing stays with the editor for the rest of
+  // the page: the call ran in the editor, and the engine is not asked again.
+  let broken = false;
   const begin = () => {
     if (session) return session;
-    if (!ownedClass()) return null;
+    if (broken || batching || !ownedClass() || runtimeState()) return null;
     const side = engineSide();
-    if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit) return null;
+    if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit || editor._vfxClipEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
-    if (!side.mirror.framesCurrent(editor.report, editor.revision)) { prepare(); return null; }
+    if (stale || syncing || !side.mirror.framesCurrent(editor.report, editor.revision)) { prepare(); return null; }
     const started = side.engine.handle.edit_session(JSON.stringify({...view(), ...counters(), propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)}));
     if (!started) return null;
     if (started.revision() !== editor.revision) { started.free(); return null; }
@@ -309,6 +356,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (depth > 0) return original.apply(this, args);
       let live = begin(), before = null, payload = null;
       if (live && (name === 'undo' && !live.can_undo() || name === 'redo' && !live.can_redo())) { end('history the session did not record'); live = null; }
+      if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         const given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
@@ -323,7 +371,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
         try { text = live.call(name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
-        catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; }
+        catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
         report.calls++;
         const why = answer?.status === 'ok' ? unadoptable(answer) : null;
         if (answer?.status === 'ok' && !why) {
@@ -367,11 +415,43 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           report.engineMs += performance.now() - called; report.calls++;
           if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
-        } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; }
+          if (name === 'sheetCopyFrames' && session && !thrown) copied = editor._sheetClipboard;
+        } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;
       return result;
     };
   }
+  // Batches: the calls inside run as they would alone; the session opens and closes the same
+  // batch, and its closing event and state are compared with the editor's.
+  const batch = editor.movieclipBatch;
+  if (typeof batch === 'function') editor.movieclipBatch = function batched(label, operation, options) {
+    // Inside another batch or call, a batch only runs its operation.
+    if (depth > 0 || editor._movieclipBatch || batching) return batch.call(this, label, operation, options);
+    const live = begin();
+    if (!live) return batch.call(this, label, operation, options);
+    if (typeof label !== 'string' || options?.beforeSelection) { end('a batch the engine cannot open'); return batch.call(this, label, operation, options); }
+    let answer;
+    try { answer = JSON.parse(live.call('beginBatch', JSON.stringify([label]), JSON.stringify(view()))); }
+    catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: 'beginBatch', problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; return batch.call(this, label, operation, options); }
+    if (answer.status !== 'ok') { end('a batch the engine cannot open'); return batch.call(this, label, operation, options); }
+    batching = true;
+    const sheetBefore = editor.report._styk?.layerSheet;
+    let result, closed = null;
+    try {
+      result = batch.call(this, label, () => { const value = operation(); closing = []; return value; }, options);
+      closed = closing;
+    } catch (error) { closing = null; batching = false; end('a batch that failed'); throw error; }
+    finally { closing = null; batching = false; }
+    if (session && closed) {
+      try {
+        const called = performance.now(), ended = JSON.parse(session.call('endBatch', '[]', JSON.stringify(view())));
+        report.engineMs += performance.now() - called; report.calls++;
+        if (ended.status !== 'ok') end('a batch the engine cannot close');
+        else compare('endBatch', [], ended, result, null, closed, sheetBefore);
+      } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: 'endBatch', problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; }
+    }
+    return result;
+  };
   return report;
 }

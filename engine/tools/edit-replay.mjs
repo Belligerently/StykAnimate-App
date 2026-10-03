@@ -9,7 +9,8 @@
 //
 // A scenario: {"name", "document": <path relative to the scenario | inline document>,
 // "editor": {"propertyChannels", "layerTimeline", "autoKey"}, "steps": [["method", ...arguments], …]}.
-// A step may also be ["@seek", tick] or ["@select", uid, joint] (the same as the method
+// A step may also be ["@batch", label, [steps]] (the steps inside one movieclipBatch), or
+// ["@seek", tick] or ["@select", uid, joint] (the same as the method
 // calls, spelled out for readability). The document recorded is the editor's in-memory
 // report as the engine's mirror receives it (`JSON.stringify(editor.report)` without the
 // `runtime_segments` caches): phase 1 ports start from the loaded report, not the file.
@@ -52,12 +53,16 @@ export function replay(scenario, base = repo) {
   });
   let previous = reportJSON(editor);
   const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: []}];
+  // ["@batch", label, steps]: the steps inside one `movieclipBatch`, as the timeline runs
+  // several commands; recorded as one step, returning the last step's result.
+  const run = ([name, ...args]) => {
+    if (name === '@batch') { let last; return editor.movieclipBatch(args[0], () => { for (const step of args[1]) last = run(step); return last; }); }
+    return editor[name === '@seek' ? 'seek' : name === '@select' ? 'select' : name](...args);
+  };
   scenario.steps.forEach((call, index) => {
     events.length = 0;
-    const [name, ...args] = call;
-    const method = name === '@seek' ? 'seek' : name === '@select' ? 'select' : name;
     let result, error = null;
-    try { result = editor[method](...args); }
+    try { result = run(call); }
     catch (caught) { error = {message: caught.message, key: caught.messageKey ?? null}; }
     const text = reportJSON(editor);
     steps.push({step: index + 1, call, result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});

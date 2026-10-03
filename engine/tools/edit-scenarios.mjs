@@ -2,6 +2,8 @@ import {readFileSync, writeFileSync} from 'node:fs';
 // Builds the first command-replay scenarios (engine/tests/edit/) with the editor's own fixture kit.
 //   node engine/tools/edit-scenarios.mjs && node engine/tools/edit-replay.mjs --all
 import {documentOf, limb, open, joint, nextKey, prune, Editor} from './fixture-kit.mjs';
+import {createVfxClip} from '../../src/vfx-clips.mjs';
+import {createVfx} from '../../src/vfx.mjs';
 const out = new URL('../tests/edit', import.meta.url).pathname;
 // A native-timeline document with two limbs (one joined to the other) over two keyframes.
 const doc = documentOf([limb(true), limb()], i => [250 + i * 150, 160]);
@@ -536,6 +538,27 @@ scenario('figures-layers-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 2, 2, 2],
     ['sheetMoveFrames', ['layer-1', 'layer-2'], 0, 10, 3], ['@seek', 5], ['@select', 1, -1], ['moveSelection', 4, 4], ['undo'], ['undo'], ['redo'],
   ], 'sheet-layers.document.json');
+  // The timeline clipboard: a range copied and pasted on its own layer (inside it, the pose
+  // after the range kept; past its end; a range holding the layer's end),
+  // two layers pasted on each other's rows (new identities, a join following them) and
+  // inserted from one layer downwards, the scene's row on itself; refusals (repeated,
+  // missing or locked layers, too few layers below, another kind of track, not a whole
+  // frame); pasting past a layer's end; history.
+  scenario('sheet-clipboard-sheet', app, [
+    ['sheetCopyFrames', ['layer-1'], 0, 3], ['sheetPasteFrames', ['layer-1'], 1], ['sheetPasteFrames', ['layer-1'], 4], ['sheetCopyFrames', ['layer-1'], 5, 9], ['sheetPasteFrames', ['layer-1'], 20],
+    ['sheetCopyFrames', ['layer-1', 'layer-2'], 0, 6], ['sheetPasteFrames', ['layer-2', 'layer-1'], 10],
+    ['sheetPasteFrames', ['layer-1'], 2, {insert: true}], ['sheetPasteFrames', ['layer-2'], 2, {insert: true}], ['sheetPasteFrames', ['layer-1', 'layer-1'], 0], ['sheetPasteFrames', ['scene'], 0],
+    ['sheetPasteFrames', ['layer-1', 'layer-2'], 1.5], ['sheetCopyFrames', ['layer-1', 'layer-1'], 0], ['sheetCopyFrames', [], 0], ['sheetCopyFrames', ['nope'], 0],
+    ['sheetCopyFrames', ['scene'], 0, 2], ['sheetPasteFrames', ['layer-1'], 3], ['sheetPasteFrames', ['scene'], 3], ['sheetCopyFrames', ['layer-2'], 6, 8],
+    ['setLayerLocked', 'layer-2', true], ['sheetPasteFrames', ['layer-2'], 0], ['setLayerLocked', 'layer-2', false], ['sheetPasteFrames', ['layer-2'], 30],
+    ['@seek', 12], ['@select', 1, -1], ['moveSelection', 6, 3], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  scenario('sheet-clipboard-empty-sheet', app, [['sheetPasteFrames', ['layer-1'], 0], ['sheetPasteFrames', ['layer-1', 'layer-1'], 0]], 'sheet-layers.document.json');
+  // Joined figures with an IK controller whose followers are in the joined figure, pasted
+  // on a new layer: identities, joins and followers renamed together.
+  scenario('sheet-clipboard-ik-sheet', app, [
+    ['createLayer', 'Copy'], ['sheetCopyFrames', ['layer-1'], 0, 4], ['sheetPasteFrames', ['layer-2'], 0], ['@select', 5, 0], ['poseJoint', 340, 290], ['undo'], ['undo'], ['redo'],
+  ], 'ik-joined-unpinned.document.json');
   scenario('move-frames-imported-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 3], ['sheetMoveFrames', ['layer-1'], 3, 8, 2, {copy: true}], ['undo'], ['redo'],
   ], 'startup.document.json');
@@ -582,6 +605,144 @@ scenario('figures-layers-sheet', app, [
       ['setLayerLocked', 'camera', false], ['deleteCameraMotion', shake], ['deleteCameraMotion', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
     ], 'camera-motion.document.json');
   }
+  // The project palette: colours added as hex text (short, upper-case) and as bytes, one
+  // already there, several at once, reordered (also past the end), removed; refusals.
+  scenario('palette-sheet', app, [
+    ['addPaletteColor', '#FF0000'], ['addPaletteColor', [0, 128, 255]], ['addPaletteColor', 'abc'], ['addPaletteColor', '#ff0000'], ['addPaletteColor', 'red'],
+    ['addPaletteColors', ['#123456', '#ff0000', '#123456', [1, 2, 3]]], ['movePaletteColor', '#123456', 0], ['movePaletteColor', '#123456', 99], ['movePaletteColor', '#999999', 0],
+    ['removePaletteColor', '#aabbcc'], ['removePaletteColor', [0, 128, 255]], ['addPaletteColor', [300, 0, 0]], ['addPaletteColors', []], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  // Audio tracks and clips: track name, volume, solo and mute (33 clips sounding at once
+  // refused; 32, with 31 ending as one starts or a silent clip, not), clip timing with fades kept within
+  // the clip, a clip moved to another track, deletions that drop recordings nothing uses;
+  // refusals; a pose gesture in progress committed first; history. And a document
+  // without audio. (Recordings are checked when a document opens, and these commands add
+  // none, so a faulty recording never reaches them.)
+  const audioAsset = (id, duration, extra = {}) => ({id, name: `${id}.wav`, size: 3, duration, chunks: [{data_base64: 'AAAA'}], peaks: [0.25, 1, 0.5], ...extra});
+  const audioClip = (id, assetId, start, extra = {}) => ({id, assetId, start, offset: 0, duration: 1, gain: 1, fadeIn: 0, fadeOut: 0, ...extra});
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    const crowd = [...Array.from({length: 31}, (_, i) => audioClip(`crowd-${i}`, 'sound-c', 0)), audioClip('crowd-late', 'sound-c', 1)];
+    document._styk.audio = {version: 1, assets: {'sound-a': audioAsset('sound-a', 2), 'sound-b': audioAsset('sound-b', 1.5, {size: 1, chunks: [{data_base64: 'AA=='}]}), 'sound-c': audioAsset('sound-c', 4)}, tracks: [
+      {id: 'audio-a', name: 'Music', gain: 1, mute: false, solo: false, clips: [audioClip('clip-1', 'sound-a', 0, {fadeOut: 0.25}), audioClip('clip-2', 'sound-a', 2)]},
+      {id: 'audio-b', name: 'Effects', gain: 0.8, mute: false, solo: false, clips: [audioClip('clip-3', 'sound-b', 0.5, {duration: 1.5})]},
+      {id: 'audio-c', name: 'Crowd', gain: 1, mute: true, solo: false, clips: crowd},
+    ]};
+    writeFileSync(`${out}/audio.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('audio-sheet', app, [
+    ['setAudioTrack', 'audio-a', {name: 'Voice', gain: 0.5}], ['setAudioTrack', 'audio-a', {name: 'Voice'}], ['setAudioTrack', 'audio-a', {pan: 1}], ['setAudioTrack', 'nope', {mute: true}],
+    ['setAudioTrack', 'audio-b', {solo: true}], ['setAudioTrack', 'audio-a', {gain: 5}], ['setAudioTrack', 'audio-a', {name: '  '}], ['setAudioTrack', 'audio-c', {mute: false}], ['setAudioTrack', 'audio-b', {solo: false}],
+    ['setAudioTrack', 'audio-a', {mute: true}], ['setAudioTrack', 'audio-b', {solo: false}], ['setAudioClip', 'crowd-0', {gain: 0}], ['setAudioTrack', 'audio-a', {mute: false}],
+    ['setAudioClip', 'clip-1', {start: 1.5, duration: 0.2}], ['setAudioClip', 'clip-1', {start: 1.5}], ['setAudioClip', 'clip-2', {fadeIn: 3}], ['setAudioClip', 'clip-1', {}, 'audio-b'],
+    ['setAudioClip', 'clip-1', {gain: 'x'}], ['setAudioClip', 'clip-1', {volume: 1}], ['setAudioClip', 'clip-1', {duration: 99}], ['setAudioClip', 'clip-1', {}, 'nope'],
+    ['setAudioClip', 'nope', {start: 0}], ['setAudioClip', 'clip-2', {offset: 1.9, duration: 0.2}],
+    ['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['setAudioTrack', 'audio-a', {gain: 0.7}],
+    ['deleteAudioClip', 'clip-3'], ['deleteAudioClip', 'nope'], ['deleteAudioTrack', 'audio-c'], ['deleteAudioTrack', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'audio.document.json');
+  scenario('audio-none-sheet', app, [
+    ['deleteAudioTrack', 'audio-a'], ['setAudioTrack', 'audio-a', {mute: true}], ['setAudioClip', 'clip-1', {start: 1}], ['deleteAudioClip', 'clip-1'],
+  ], 'startup.document.json');
+  // Polygons of the selected figure's definition: created (defaults; a closing repeat of
+  // the first handle; colour, opacity and order given), reshaped, reordered and deleted;
+  // refusals (the same cycle in either direction, too few, repeated or unknown handles,
+  // colour, opacity and order out of range, unknown fields, missing polygons); a pose
+  // gesture in progress committed first; history.
+  scenario('polygons-sheet', app, [
+    ['@select', 1, -1], ['addPolygon', [0, 2, 3]], ['addPolygon', [3, 2, 0]], ['addPolygon', [1, 4, 5, 1], {color: '#FF8800', opacity: 0.5, zOrder: 3}],
+    ['addPolygon', [1, 1, 2]], ['addPolygon', [1, 2]], ['addPolygon', [1, 2, 999]], ['addPolygon', 'x'], ['addPolygon', [0, 2, 4], {color: 'red'}],
+    ['addPolygon', [0, 2, 4], {opacity: 2}], ['addPolygon', [0, 2, 4], {zOrder: 1e39}], ['updatePolygon', 0, {handleIds: [0, 2, 4]}], ['updatePolygon', 0, {zOrder: -5}],
+    ['updatePolygon', 0, {handleIds: [5, 4, 1]}], ['updatePolygon', 5, {zOrder: 1}], ['updatePolygon', 0, {fill: 1}], ['updatePolygon', 0, {surface: null}], ['updatePolygon', 0, {}],
+    ['removePolygon', 0], ['removePolygon', 9], ['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['addPolygon', [0, 3, 4]],
+    ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  // A definition from a native file: polygons without identities (they take theirs from
+  // their place when one is deleted), native order arrays (dropped by any edit), a next
+  // identity past the largest (kept for the next polygon).
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    const figure = document.figure_types[0];
+    figure.polyfills = [[0, 2, 3], [1, 4, 5], [6, 7, 8]].map((ids, i) => ({segment_ids: ids, color_rgb: [40 * i, 80, 120], alpha_raw: 0, color_alpha: 1, z_order: -i, z_order_runtime_raw: -i - 1}));
+    figure.segment_z_raw = figure.segments.map((_, i) => i);
+    figure.poly_z_raw = [0, 1, 2];
+    writeFileSync(`${out}/polygons.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('polygons-native-file-sheet', app, [
+    ['@select', 1, -1], ['removePolygon', 2], ['addPolygon', [0, 4, 5]], ['removePolygon', 1], ['addPolygon', [0, 7, 8]], ['undo'], ['undo'], ['redo'],
+  ], 'polygons.document.json');
+  scenario('polygons-native', {}, [
+    ['@select', 1, -1], ['addPolygon', [0, 11, 22]], ['addPolygon', [11, 22, 33], {zOrder: 0.5}], ['updatePolygon', 1, {zOrder: 2}], ['updatePolygon', 0, {handleIds: [0, 44, 55]}], ['removePolygon', 1], ['undo'], ['redo'],
+  ]);
+  // Effect clips: timing, name, switch, strength, fades, a clip lengthening the sheet;
+  // trimming a start (keys rebased when time before the source is revealed); order among
+  // a target's clips and inside a group; parameters set or keyed (keys present, asked
+  // for), switched, toggled, moved, deleted and eased (discrete parameters hold); the
+  // gizmo edit committed as one entry, cancelled, and cancelled by undo; refusals
+  // (unknown fields, clips, effects and parameters, ranges, stacks, locked layers,
+  // occupied key frames); a pose gesture in progress committed first; history.
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    const glow = createVfxClip({kind: 'figure', uid: 1}, 'glow', 'clip-glow', 'fx-glow', {start: 2, duration: 6});
+    glow.keys = {'vfx1:glow:fx-glow:radius': [{tick: 0, value: 4, interpolation: 'linear'}, {tick: 4, value: 20, interpolation: 'linear'}]};
+    const tint = createVfxClip({kind: 'figure', uid: 1}, 'tint', 'clip-tint', 'fx-tint');
+    const scene = createVfxClip({kind: 'scene'}, 'vignette', 'clip-scene', 'fx-vig', {start: 0, duration: 6});
+    const group = {...createVfxClip({kind: 'figure', uid: 1}, 'glow', 'clip-group', 'fx-a', {start: 1, duration: 5}), name: 'Pair'};
+    group.effects = [...group.effects, createVfx('outline', 'fx-b')];
+    document._styk.vfxClips = {version: 1, clips: [glow, scene, tint, group]};
+    writeFileSync(`${out}/vfx-clips.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('vfx-clips-sheet', app, [
+    ['setVfxClip', 'clip-glow', {start: 3, name: 'Glow'}], ['setVfxClip', 'clip-glow', {start: 3}], ['setVfxClip', 'clip-glow', {bogus: 1}], ['setVfxClip', 'nope', {start: 1}],
+    ['setVfxClip', 'clip-glow', {duration: 0}], ['setVfxClip', 'clip-glow', {strength: 0.5, fadeIn: 2, enabled: false}], ['setVfxClip', 'clip-glow', {duration: 20}],
+    ['trimVfxClipStart', 'clip-glow', 6], ['trimVfxClipStart', 'clip-glow', 0], ['trimVfxClipStart', 'clip-tint', 3],
+    ['moveVfxClipOrder', 'clip-tint', -1], ['moveVfxClipOrder', 'clip-scene', 1], ['moveVfxClipOrder', 'clip-tint', 2],
+    ['@seek', 4], ['setVfxClipParameter', 'clip-glow', 'fx-glow', 'radius', 30], ['setVfxClipParameter', 'clip-tint', 'fx-tint', 'mix', 0.8],
+    ['setVfxClipParameter', 'clip-tint', 'fx-tint', 'mix', 5], ['setVfxClipParameter', 'clip-tint', 'fx-tint', 'nope', 1], ['setVfxClipParameter', 'clip-tint', 'fx-x', 'mix', 1],
+    ['setVfxClipParameter', 'clip-tint', 'fx-tint', 'enabled', 0], ['setVfxClipParameters', 'clip-tint', 'fx-tint', {mix: 0.3, color: 255}, {key: true}],
+    ['toggleVfxClipKey', 'clip-tint', 'vfx1:tint:fx-tint:mix'], ['toggleVfxClipKey', 'clip-tint', 'vfx1:tint:fx-tint:mix'],
+    ['moveVfxClipKey', 'clip-tint', 'vfx1:tint:fx-tint:mix', 4, 7], ['moveVfxClipKey', 'clip-tint', 'vfx1:tint:fx-tint:color', 4, 7],
+    ['moveVfxClipKeys', 'clip-tint', 7, 9], ['moveVfxClipKeys', 'clip-tint', 9, 9], ['deleteVfxClipKeys', 'clip-tint', 9, {properties: ['vfx1:tint:fx-tint:mix']}],
+    ['setVfxClipParameters', 'clip-tint', 'fx-tint', {color: 65280}, {key: true, tick: 2}], ['moveVfxClipKey', 'clip-tint', 'vfx1:tint:fx-tint:color', 2, 9], ['moveVfxClipKeys', 'clip-tint', 2, 9],
+    ['setVfxClipEasing', 'clip-glow', 'vfx1:glow:fx-glow:radius', 0, 'ease-in'],
+    ['reorderVfxGroupEffect', 'clip-group', 'fx-b', 0], ['reorderVfxGroupEffect', 'clip-group', 'fx-b', 0], ['reorderVfxGroupEffect', 'clip-group', 'fx-z', 0],
+    ['setVfxClipParameters', 'clip-group', 'fx-b', {mode: 1}, {key: true}], ['setVfxClipEasing', 'clip-group', 'vfx1:outline:fx-b:mode', 3, 'linear'],
+    ['setVfxClip', 'clip-group', {effects: [{version: 2, type: 'nope', id: 'x', enabled: true, params: {}}]}], ['setVfxClip', 'clip-scene', {effects: []}],
+    ['setVfxClip', 'clip-tint', {strength: 2}], ['setVfxClip', 'clip-group', {effects: [{version: 2, type: 'tint', id: 'fx-c', enabled: true, params: {bogus: 1}}]}],
+    ['setVfxClip', 'clip-group', {effects: [{version: 3, type: 'tint', id: 'fx-c', enabled: true, params: {}}]}],
+    ['setVfxClip', 'clip-group', {effects: [{version: 1, type: 'tint', id: 'fx-c', enabled: true, params: {mix: 0.25}}]}],
+    ['setLayerLocked', 'layer-1', true], ['setVfxClip', 'clip-glow', {start: 2}], ['setLayerLocked', 'layer-1', false],
+    ['beginVfxClipEdit'], ['setVfxClipParameter', 'clip-glow', 'fx-glow', 'intensity', 1.5], ['setVfxClipParameter', 'clip-glow', 'fx-glow', 'intensity', 2], ['commitVfxClipEdit'],
+    ['beginVfxClipEdit'], ['setVfxClip', 'clip-tint', {strength: 0.2}], ['cancelVfxClipEdit'], ['beginVfxClipEdit'], ['setVfxClip', 'clip-tint', {strength: 0.4}], ['undo'],
+    ['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['setVfxClip', 'clip-glow', {name: 'Kept'}],
+    ['deleteVfxClip', 'clip-scene'], ['deleteVfxClip', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'vfx-clips.document.json');
+  // Batches (`movieclipBatch`, as the timeline runs several commands as one): a key extended,
+  // easing over two ranges, a batch that records nothing, one that fails half way (its first
+  // entry undone), a pose gesture, entries of different kinds; history across them.
+  scenario('batch-sheet', app, [
+    ['@batch', 'Extend keyframe', [['sheetSetDuration', 3, 'layer-1', 0]]],
+    ['@batch', 'Change easing', [['sheetSetEasing', ['layer-1'], 0, 1, {interpolation: 'ease-in'}], ['sheetSetEasing', ['layer-1'], 2, 3, {interpolation: 'linear'}]]],
+    ['@batch', 'Nothing', [['select', 1, -1]]],
+    ['@batch', 'Fails', [['sheetInsertKey', ['layer-1'], 4], ['sheetSetEasing', ['layer-1'], 0, 1, {interpolation: 'bogus'}]]],
+    ['@batch', 'Pose', [['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['commitDrag']]],
+    ['@batch', 'Mixed', [['addPaletteColor', '#123456'], ['seek', 5], ['sheetInsertKey', ['layer-1'], 5]]],
+    ['undo'], ['undo'], ['undo'], ['redo'], ['@select', 1, -1], ['moveSelection', 4, 4], ['undo'], ['undo'], ['redo'], ['undo'], ['undo'], ['undo'],
+  ], 'startup.document.json');
+  // The timeline's layer selection: a layer chosen with its contents selects its figures on
+  // show and follows them through seeks and edits, until seeking keeps the selection, a
+  // figure is selected on the canvas or another layer is chosen; the scene's row, a layer
+  // that does not exist, choosing without contents; the active layer set alone; undo
+  // restoring a followed selection a canvas click had dropped; the same figures selected in
+  // another order (kept); a layer whose first figure is joined to another.
+  scenario('sheet-selection-sheet', app, [
+    ['selectSheetLayer', 'layer-1'], ['seek', 6], ['selectSheetLayer', 'layer-2'], ['seek', 3], ['moveSelection', 5, 5], ['keepSelectionOnSeek'], ['seek', 0],
+    ['selectSheetLayer', 'scene'], ['selectSheetLayer', 'nope'], ['selectSheetLayer', 'layer-1', {contents: false}], ['seek', 6], ['selectSheetLayer', 'layer-2'], ['select', 1, -1], ['seek', 3],
+    ['setActiveLayer', 'layer-2'], ['setActiveLayer', 'layer-2'], ['setActiveLayer', 'nope'],
+    ['selectSheetLayer', 'layer-1'], ['moveSelection', 3, 3], ['seek', 2], ['undo'], ['seek', 5], ['redo'], ['seek', 1],
+    ['@seek', 8], ['@select', 1, -1], ['addFigure', 1], ['selectSheetLayer', 'layer-1'], ['seek', 2], ['seek', 9], ['keepSelectionOnSeek'], ['seek', 2], ['seek', 9],
+    ['selectSheetLayer', 'layer-1'], ['moveSelection', 2, 2], ['select', 1, -1], ['undo'], ['seek', 2], ['selectMany', [2, 1]], ['selectSheetLayer', 'layer-1'],
+    ['seek', 9], ['@select', 1, -1], ['joinTo', 4, 0], ['selectSheetLayer', 'layer-1'],
+  ], 'sheet-layers.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

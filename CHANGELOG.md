@@ -22,6 +22,10 @@ What's new in each version of StykAnimate.
 - Ctrl-dragging a node that uses IK stretches it like any other node.
 - A calmer top bar: the menus are in the StykAnimate menu, and your open projects take their place.
 
+### Fixed
+
+- Undoing a timeline change made of several steps keeps your selection and shows the right frame.
+
 ### Performance
 
 - Pivot files open faster, and in the web app the first one no longer waits for a large download.

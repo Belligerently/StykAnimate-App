@@ -23,6 +23,12 @@ fn flag(value: &Value, key: &str) -> bool {
     value.get(key).is_some_and(Value::truthy)
 }
 
+/// `sheetSelection` of a view: the layer chosen on the timeline and whether it follows seeks.
+fn sheet_selection_of(view: &Value) -> Option<(&str, bool)> {
+    let chosen = view.get("sheetSelection").filter(|s| s.is_object())?;
+    Some((chosen.get("id").and_then(Value::as_str)?, chosen.get("contents").is_some_and(Value::truthy)))
+}
+
 fn selection_of(view: &Value) -> Selection {
     Selection {
         uid: number(view, "selectedUid").map(|v| v as u32),
@@ -52,6 +58,7 @@ impl Session {
         if let Some(active) = state.get("activeLayerId").and_then(Value::as_str) {
             editor.set_active_layer_id(active);
         }
+        editor.set_sheet_selection(sheet_selection_of(&state));
         Ok(Session { editor })
     }
 
@@ -84,6 +91,7 @@ impl Session {
             if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
                 self.editor.set_active_layer_id(active);
             }
+            self.editor.set_sheet_selection(sheet_selection_of(&view));
         }
         let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
         match self.editor.call(method, &args) {

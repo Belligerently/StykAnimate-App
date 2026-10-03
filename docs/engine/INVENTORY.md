@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 76 | 9 | 1 | 0 | 0 | 0 % | 28 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 72 | 13 | 1 | 0 | 0 | 0 % | 31 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4063 KiB | 251 | 65 | 17 | 22 | 1 | 16 % | 31 % | 0 % |
+| **Total** | 356 | 4063 KiB | 247 | 69 | 17 | 22 | 1 | 16 % | 32 % | 0 % |
 
 ## Engine modules
 
@@ -77,18 +77,18 @@ Engine logic: ported to Rust.
 | `src/clipboard-worker.mjs` | `styk-edit` | js |  |
 | `src/demo.mjs` | `styk-edit` | js |  |
 | `src/editor-animation.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-audio.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-audio.mjs` | `styk-edit` | partial | Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS |
 | `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal), removePolygon, editDefinition (styk-edit/src/polygons.rs); polygon colour and opacity on a figure on show, surfaces, figure style and the builder's segment commands still JS |
 | `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
 | `src/editor-camera.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-sparse.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-colors.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-colors.mjs` | `styk-edit` | partial | Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs); recolouring figures (editFigureColors and its range operation) still JS |
 | `src/editor-combine.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-drawing.mjs` | `styk-edit` | js | commands and history |
@@ -106,7 +106,7 @@ Engine logic: ported to Rust.
 | `src/editor-layer-focus.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-folders.mjs` | `styk-edit` | ported | createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); getLayerFolders reads the state |
 | `src/editor-layer-migration.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS |
+| `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard (sheetCopyFrames, sheetPasteFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, transfer between layers, channel and range commands still JS |
 | `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-motion-path.mjs` | `styk-edit` | js | commands and history |
@@ -125,7 +125,7 @@ Engine logic: ported to Rust.
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-vfx-clips.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS |
 | `src/editor-vfx.mjs` | `styk-edit` | js | commands and history |
 | `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
@@ -244,7 +244,7 @@ Engine logic: ported to Rust.
 | `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); authoring still JS |
 | `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
-| `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS |
+| `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validateVfxClips for edits (styk-edit/src/vfx_clips.rs, paints excepted) |
 | `src/vfx-connected.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS |
 | `src/vfx-key-channels.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
 | `src/vfx-paint.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::paint |
@@ -271,7 +271,7 @@ Engine logic: ported to Rust.
 | `src/image-export-worker.mjs` | `styk-export` | js |  |
 | `src/image-export.mjs` | `styk-export` | js |  |
 | `src/svg-export.mjs` | `styk-export` | js |  |
-| `src/audio-model.mjs` | `styk-export::audio` | js | audio model and offline mix |
+| `src/audio-model.mjs` | `styk-export::audio` | js | audio model and offline mix; validateAudioState also in styk-edit/src/audio.rs for the ported audio commands |
 | `src/audio-pcm.mjs` | `styk-export::audio` | js | audio model and offline mix |
 | `backend/native_format.py` | `styk-formats::container` | verified | the app reads containers in src/native-container.mjs and, as the codec fallback, styk-piv over styk-formats; kept only as the development test oracle (not shipped) |
 | `src/base64.mjs` | `styk-formats::container` | ported | Rust: styk-doc JSON base64 |
