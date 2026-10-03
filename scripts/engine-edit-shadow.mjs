@@ -163,6 +163,10 @@ async function run(mode) {
       e.selectSheetLayer(kept); e.seek(Math.min(2, e.totalTicks - 1)); e.seek(0); e.moveSelection(4, 2); e.undo(); e.keepSelectionOnSeek(); e.seek(1); e.seek(0);
       if (uid !== null) e.select(uid, -1);
     }));
+    await step('select a branch and delete it', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid, figure = e.figure; if (uid === null || !figure || figure.segments.length < 3) return;
+      e.selectBranch(uid, 1); e.deleteSelection(); e.select(uid, -1);
+    }));
     await step('extend a key in one batch, as the timeline does', () => page.evaluate(() => { const e = styk.editor, layer = e.activeLayerId; e.movieclipBatch('Extend keyframe', () => { const {start, end} = e.sheetSpan(layer, e.tick); e.sheetSetDuration(end - start + 1, layer, start); }); e.undo(); e.redo(); }));
     await step('copy and paste timeline frames', () => page.evaluate(() => {
       const e = styk.editor, layer = e.activeLayerId, other = e.report._styk?.layers?.order?.find(id => id !== layer);

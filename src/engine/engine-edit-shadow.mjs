@@ -166,25 +166,51 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
 
   editor.addEventListener('change', event => {
     const detail = event.detail;
+    if (['edit', 'history', 'document'].includes(detail?.kind)) changedInPlace(detail);
     if (depth > 0) { events?.push(plain(detail ?? null)); return; }
     if (closing) { closing.push(plain(detail ?? null)); return; }
     // The document changed through something the session did not run.
     if (['edit', 'history', 'document'].includes(detail?.kind)) end(`a ${detail.kind} outside the shadowed calls`);
     // Runtime state the engine does not hold (editing.md): layer focus, which locks layers
-    // and counts as a layer revision.
+    // and counts as a layer revision, and a selected branch, which commands act on instead
+    // of whole figures.
     else if (detail?.kind === 'layer-focus') end('layer focus');
+    else if (detail?.kind === 'selection' && editor.branchSelected) end('a branch selection');
   });
   /** Whether the editor holds runtime state that changes what calls do and the engine lacks. */
-  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock);
+  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor.branchSelected);
 
   /** Brings the engine's frames to the editor's revision (playback does it only when it prepares). */
   let syncing = null;
+  // Records the editor changed in place, which the mirror cannot see by identity, as its change
+  // events name them: a definition edit may change a figure in place (every figure is resent),
+  // and one that changes its structure outside a sheet publication rewrites every pose of it
+  // too (everything is). The next sync resends them, and no session starts before it has.
+  let stale = null;
+  const changedInPlace = detail => {
+    const topology = detail.definition && detail.structural && !detail.layerSheet;
+    // A sheet publication names the pose sources it adds; they are new records, not changed ones.
+    const sources = detail.layerSheet ? [] : detail.sourceIds ?? [];
+    if (!detail.definition && !detail.figureIndices?.length && !detail.frameIndices?.length && !sources.length) return;
+    stale ??= {all: false, figures: false, figureIndices: [], frameIndices: [], sourceIds: []};
+    if (detail.definition && !detail.figureIndices?.length) stale.figures = true;
+    if (topology || detail.kind === 'document') stale.all = true;
+    stale.figureIndices.push(...detail.figureIndices ?? []); stale.frameIndices.push(...detail.frameIndices ?? []); stale.sourceIds.push(...sources);
+  };
   const prepare = () => {
     const side = engineSide();
     if (!side || side.failed) return Promise.resolve(false);
-    if (side.mirror.framesCurrent(editor.report, editor.revision)) return Promise.resolve(true);
-    const target = editor.report, revision = editor.revision;
-    syncing ??= side.mirror.syncFrames(target, revision).then(() => side.mirror.framesCurrent(editor.report, editor.revision), () => false).finally(() => { syncing = null; });
+    if (!stale && side.mirror.framesCurrent(editor.report, editor.revision)) return Promise.resolve(true);
+    if (syncing) return syncing;
+    const target = editor.report, revision = editor.revision, dirty = stale;
+    stale = null;
+    const resend = !dirty ? {} : dirty.all
+      ? {allFigures: true, frameIndices: target.keyframes.map((_, index) => index), sourceIds: Object.keys(target._styk?.frameSources ?? {})}
+      : {allFigures: dirty.figures, figureIndices: dirty.figureIndices, frameIndices: dirty.frameIndices, sourceIds: dirty.sourceIds};
+    syncing = side.mirror.syncFrames(target, revision, resend).then(() => side.mirror.framesCurrent(editor.report, editor.revision),
+      () => { if (dirty) stale = {...dirty, ...(stale ? {all: dirty.all || stale.all, figures: dirty.figures || stale.figures,
+        figureIndices: [...dirty.figureIndices, ...stale.figureIndices], frameIndices: [...dirty.frameIndices, ...stale.frameIndices], sourceIds: [...dirty.sourceIds, ...stale.sourceIds]} : {})}; return false; })
+      .finally(() => { syncing = null; });
     return syncing;
   };
   report.prepare = prepare;
@@ -198,7 +224,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     const side = engineSide();
     if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit || editor._vfxClipEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
-    if (!side.mirror.framesCurrent(editor.report, editor.revision)) { prepare(); return null; }
+    if (stale || syncing || !side.mirror.framesCurrent(editor.report, editor.revision)) { prepare(); return null; }
     const started = side.engine.handle.edit_session(JSON.stringify({...view(), ...counters(), propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)}));
     if (!started) return null;
     if (started.revision() !== editor.revision) { started.free(); return null; }
