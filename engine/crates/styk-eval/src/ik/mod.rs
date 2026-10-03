@@ -181,6 +181,7 @@ pub fn solve_local(figure: &Figure, object: &Object, root: [f64; 2]) -> Option<S
         bends: object.bends.as_deref(),
         mirror: object.image_text_flags,
         figure_angle: figure_angle(figure, object),
+        shape: object.spatial.as_ref().and_then(|s| s.shape.as_ref()),
     };
     solve_object(&skeleton, &pose, root, table)
 }

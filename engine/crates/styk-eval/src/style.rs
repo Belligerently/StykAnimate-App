@@ -34,6 +34,8 @@ pub struct ObjectStyle {
     pub outline_width: Option<f64>,
     pub segments: HashMap<u32, SegmentStyle>,
     pub polygons: HashMap<u32, PolygonStyle>,
+    /// `meshColors`: palette index → RGB integer replacing a mesh colour.
+    pub mesh_colors: Vec<(u32, u32)>,
     pub segment_colors: bool,
     /// Canonical text of the overlay, used to share resolved figures.
     pub key: String,
@@ -85,6 +87,9 @@ pub fn parse(style: Option<&Value>, color_mode: Option<&Value>) -> Option<Arc<Ob
             out.polygons.insert(id, PolygonStyle { color: f(v, "color").map(|c| c as u32), z: f(v, "zIndex"), opacity: f(v, "opacity") });
         }
     }
+    if let Some(Value::Obj(map)) = s.get("meshColors") {
+        out.mesh_colors = map.iter().filter_map(|(index, v)| Some((index.parse::<u32>().ok()?, v.as_f64()? as u32))).collect();
+    }
     Some(Arc::new(out))
 }
 
@@ -130,6 +135,16 @@ pub fn resolve(figure: &Figure, style: &ObjectStyle) -> Figure {
         if let (Some(op), Some(sec)) = (o.gradient_opacity, seg.secondary.as_mut()) {
             sec.1 = alpha_byte(op) as u8;
         }
+    }
+    // `meshPaletteColor`: the instance recolours palette entries; the mesh itself stays shared.
+    if !style.mesh_colors.is_empty() && !out.mesh_colors.is_empty() {
+        let mut palette = out.mesh_colors.to_vec();
+        for &(index, color) in &style.mesh_colors {
+            if let Some(entry) = palette.get_mut(index as usize) {
+                *entry = rgb_of(color);
+            }
+        }
+        out.mesh_colors = palette.into();
     }
     for poly in out.polyfills.iter_mut() {
         let Some(o) = style.polygons.get(&poly.id) else { continue };

@@ -142,6 +142,9 @@ impl<'a> RigContext<'a> {
                         mirror: group.object.image_text_flags,
                         len_flag: group.object.lengths.is_some(),
                         lengths: group.object.lengths.as_deref(),
+                        // Inverse kinematics solves before perspective (`project: false`).
+                        camera: None,
+                        shape: group.object.spatial.as_ref().and_then(|s| s.shape.as_ref()),
                     };
                     let joint = |id: u32| points.get(skeleton, if id != 0 { *group.ids.get(&id)? } else { group.root_id });
                     let p = crate::rig::evaluate(&context, &mut scratch.states, index as usize, input, &joint);
@@ -159,6 +162,8 @@ impl<'a> RigContext<'a> {
                         mirror: pose.mirror,
                         len_flag: pose.lengths.is_some(),
                         lengths: pose.lengths,
+                        camera: None,
+                        shape: pose.shape,
                     };
                     let joint = |id: u32| points.get(skeleton, id);
                     crate::rig::evaluate(&context, states, i, input, &joint)

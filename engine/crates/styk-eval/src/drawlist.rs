@@ -210,6 +210,8 @@ impl<'a> Ctx<'a> {
     fn item(&self, out: &mut Out, it: &Item, outline: f64, outline_rgb: [u8; 3]) {
         let fig = self.figure(it);
         match it.kind {
+            // Depth-tested faces are encoded as runs (`Ctx::depth_run`), never one by one.
+            ItemKind::Mesh => {}
             ItemKind::Poly => self.poly(out, it, outline, outline_rgb),
             ItemKind::Line | ItemKind::SquareLine => {
                 let width = it.thickness + 2.0 * outline;

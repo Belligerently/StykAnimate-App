@@ -353,9 +353,6 @@ impl Loader {
         }
         let mut polyfills = Vec::new();
         for p in f.get("polyfills").and_then(Value::as_arr).into_iter().flatten() {
-            if p.get("_stykSurface").is_some() && !unsupported.contains(&"3D surfaces") {
-                unsupported.push("3D surfaces");
-            }
             let joints = p
                 .get("segment_ids")
                 .and_then(Value::numbers)
@@ -372,6 +369,7 @@ impl Loader {
                     None => num(p, "color_alpha").unwrap_or(1.0),
                 },
                 z: num(p, "z_order").unwrap_or(0.0),
+                surface: p.get("_stykSurface").and_then(crate::spatial::parse_surface),
             });
         }
         let is_drawing = styk.get("drawing").is_some();
@@ -401,14 +399,21 @@ impl Loader {
             Some(m) => self.movieclip(m)?,
             None => None,
         };
-        if styk.get("spatialMesh").is_some() {
-            unsupported.push("3D meshes");
-        }
         if styk.get("animationOrigin").is_some() {
             unsupported.push("animation origins");
         }
         let _ = version;
         let plan = plan_figure(&segments, &polyfills);
+        // A mesh is compiled against the figure's joints once (`spatialMeshPlan`). The
+        // editor rejects a file whose mesh is invalid; here it is left out and noted.
+        let mesh = styk.get("spatialMesh").and_then(|mesh| match crate::spatial::MeshPlan::compile(mesh, &|id| plan.index_of.get(&id).copied()) {
+            Ok(mesh) => Some(Arc::new(mesh)),
+            Err(reason) => {
+                self.notes.push(format!("figure {id}: {reason}"));
+                None
+            }
+        });
+        let mesh_colors: Arc<[[u8; 3]]> = mesh.as_ref().map(|mesh| mesh.palette.as_slice().into()).unwrap_or_else(|| Arc::from(Vec::new()));
         Ok(Figure {
             id,
             name: f.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
@@ -420,6 +425,8 @@ impl Loader {
             segment_colors: styk.get("colorMode").and_then(Value::as_str) == Some("segments"),
             is_drawing,
             movieclip,
+            mesh,
+            mesh_colors,
             plan,
             unsupported,
             base: None,
@@ -488,6 +495,7 @@ impl Loader {
             sticknodes_shape: sticknodes,
             name: s.get("name").and_then(Value::as_str).map(str::to_string),
             rig: s.get("_stykRig").and_then(crate::rig::parse).map(Arc::new),
+            choice_scale: s.get("_stykPoseChoice").and_then(|choice| num(choice, "hidden")) == Some(0.0),
         }
     }
 
@@ -525,10 +533,22 @@ impl Loader {
     fn movieclip(&mut self, m: &Value) -> Result<Option<Arc<Movieclip>>, Error> {
         let Some(doc) = m.get("document").filter(|v| v.is_object()) else { return Ok(None) };
         let document = Arc::new(self.nested_document(doc, "movieclip")?);
+        // Attached meshes: one per local frame. An invalid one leaves the clip without meshes.
+        let meshes = m.get("spatialMeshes").and_then(Value::elements).and_then(|meshes| {
+            let parsed: Option<Vec<Arc<crate::spatial::ClipMesh>>> = meshes.iter().map(|mesh| crate::spatial::ClipMesh::parse(&mesh).map(Arc::new)).collect();
+            if parsed.is_none() {
+                self.notes.push("a movieclip's 3D meshes are not valid indexed meshes".to_string());
+            }
+            parsed.filter(|meshes| !meshes.is_empty()).map(Arc::from)
+        });
+        if m.get("drawingRotation").is_some_and(Value::truthy) {
+            self.note("rotated drawings");
+        }
         Ok(Some(Arc::new(Movieclip {
             duration: num(m, "duration").unwrap_or(1.0),
             source_start: num(m, "sourceStart").unwrap_or(0.0),
             pivot: point(m.get("pivot")).unwrap_or([0.0, 0.0]),
+            meshes,
             prepared: Arc::new(crate::eval::Prepared::new(document.clone())),
             document,
             cache: Default::default(),
@@ -543,7 +563,7 @@ impl Loader {
         let join = o.get("join").filter(|j| j.is_object()).and_then(|j| {
             Some(Join { slot: int(j, "target_object_slot")? as u32, handle: int(j, "target_handle_id").unwrap_or(0) as u32 })
         });
-        for (key, feature) in [("_stykSpatial", "3D poses"), ("_stykAnimationOrigin", "animation origins"), ("_sticknodesSprite", "Stick Nodes sprites")] {
+        for (key, feature) in [("_stykAnimationOrigin", "animation origins"), ("_sticknodesSprite", "Stick Nodes sprites")] {
             if o.get(key).is_some() {
                 self.note(feature);
             }
@@ -576,6 +596,7 @@ impl Loader {
             vfx: crate::vfx::parse::stacks(o.get("_stykVfx"), &mut self.notes),
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
             vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
+            spatial: o.get("_stykSpatial").and_then(crate::spatial::parse_pose).map(Arc::new),
         })
     }
 

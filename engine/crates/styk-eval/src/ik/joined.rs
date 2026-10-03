@@ -287,6 +287,7 @@ fn solve_component<'a>(frame: &'a Frame, slots: &[usize], figure_of: &dyn Fn(usi
         bends: Some(&graph.bends),
         mirror: false,
         figure_angle: graph.angles.first().copied().unwrap_or(0.0) - graph.segments.first().map(|s| s.angle).unwrap_or(0.0),
+        shape: None,
     };
     let solution = solve_object(&skeleton, &pose, graph.root, &Table { controllers })?;
     // `scatter(solution)`: back to each figure's own slots, ids and scale.

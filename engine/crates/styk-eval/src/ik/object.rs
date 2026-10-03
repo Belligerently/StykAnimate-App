@@ -42,6 +42,8 @@ pub struct Pose<'a> {
     pub mirror: bool,
     /// `animationRotation(figure, object)`.
     pub figure_angle: f64,
+    /// Part proportions of a 3D pose by bone handle (`_stykSpatial.shape`).
+    pub shape: Option<&'a std::collections::BTreeMap<u32, crate::doc::SpatialShape>>,
 }
 
 impl Pose<'_> {
