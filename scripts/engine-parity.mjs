@@ -6,7 +6,7 @@
 //   npm run engine:parity -- --app       # also the app with and without the engine (Chromium)
 //
 // Repository tier: the Rust fixture suites (IK, evaluation, effects, 3D, property channels, draw lists, the Pivot
-// codec's recorded answers, command replays), the container reader and writer against src/native-container.mjs
+// codec's recorded answers, command replays, the drawing raster engine), the container reader and writer against src/native-container.mjs
 // on every native file in the repository, and fixture regeneration (byte-stable: a fixture
 // that changes means the editor's behaviour changed).
 // Corpus tier: geometry of every tick of the benchmark files and of the catalogue's 3D scenes against the editor
@@ -35,7 +35,7 @@ const unchanged = (...paths) => spawnSync('git', ['status', '--porcelain', '--un
 const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.length ? ['cargo'] : []), ...rest, '--manifest-path', 'engine/Cargo.toml']];
 
 // Fixture suites (fast: a few seconds once built).
-run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit', '-p', 'styk-math'));
+run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit', '-p', 'styk-math', '-p', 'styk-drawing'));
 
 // Fixture generators are byte-stable: regenerating changes nothing.
 for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures', 'generator-fixtures', 'spatial-fixtures', 'origin-fixtures', 'channel-fixtures']) {
@@ -43,6 +43,12 @@ for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures', 'generator-f
   run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
     check: () => unchanged('engine/crates/styk-eval/tests/fixtures')});
 }
+
+// The drawing raster engine's recordings of the JavaScript drawing engine (strokes, fills,
+// selections, transforms, filters, levels, codecs) are byte-stable too; styk-drawing's
+// tests/parity.rs above replays them.
+run('drawing fixtures regenerate unchanged', process.execPath, ['engine/tools/drawing-fixtures.mjs'], {quiet: true,
+  check: () => unchanged('engine/crates/styk-drawing/tests/fixtures')});
 
 // V8's Math results for styk-math are byte-stable unless V8 changes.
 run('math fixtures regenerate unchanged', process.execPath, ['engine/tools/math-fixtures.mjs'], {quiet: true,
