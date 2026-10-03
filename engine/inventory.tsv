@@ -175,18 +175,18 @@ src/editor-vfx.mjs	engine	styk-edit	js	commands and history
 src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection: styk-edit/src/figure_clipboard.rs), _restoreSelection, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
-src/export-canvas.mjs	engine	styk-export	js	
+src/export-canvas.mjs	engine	styk-export	js	frame hand-over shared by both export workers
 src/export-capabilities.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
-src/export-crisp.mjs	engine	styk-export	js	
+src/export-crisp.mjs	engine	styk-export	partial	Rust: No smoothing as Edges::Crisp for documents the engine draws (styk-render, styk-export); other documents JS
 src/export-flow.mjs	ui	-	stays	export dialog and request
-src/export-frame-core.mjs	engine	styk-export	js	
-src/export-frame-renderer.mjs	engine	styk-export	js	
-src/export-frame-worker.mjs	engine	styk-export	js	
-src/export-memory.mjs	engine	styk-export	js	
+src/export-frame-core.mjs	engine	styk-export	partial	Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS
+src/export-frame-renderer.mjs	engine	styk-export	partial	Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents
+src/export-frame-worker.mjs	engine	styk-export	partial	Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs); this worker draws documents the engine does not
+src/export-memory.mjs	engine	styk-export	partial	Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); JavaScript exports keep these budgets
 src/export-presets.mjs	ui	-	stays	export dialog and request
 src/export-progress.mjs	ui	-	stays	export dialog and request
 src/export-request.mjs	ui	-	stays	export dialog and request
-src/export-sampling.mjs	engine	styk-export	js	
+src/export-sampling.mjs	engine	styk-export	partial	Rust: the sampling limits mirrored in styk_export::settings; the JavaScript worker still reads these
 src/export-sheet.mjs	ui	-	stays	export dialog and request
 src/export-sink.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/export-video-quality.mjs	ui	-	stays	export dialog and request

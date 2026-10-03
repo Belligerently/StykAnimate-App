@@ -24,13 +24,35 @@ How the engine runs in the app (`engine/crates/styk-engine`,
 - `src/engine/engine.mjs`: loads the module with shared memory, starts
   `navigator.hardwareConcurrency - 1` workers, at most 8 (`engine-worker.mjs`), and
   without cross-origin isolation runs the same module without workers through
-  `pump()`.
+  `pump()`. `join` hands another thread what it needs to join the engine (the
+  compiled module, the memory, a stack size, the progress counter's address).
+- The export worker (`src/engine/engine-export-worker.mjs`, one per export, see
+  [rendering.md](rendering.md#exports)): joins the shared memory like a preparation
+  worker but keeps its event loop, because its GPU device (WebGPU in the worker, else
+  WebGL2 on an `OffscreenCanvas`) answers through promises. The export dialog starts
+  one when it opens (`warm`: joining the engine and getting an `ExportDevice`);
+  `ExportRenderer` (`styk-wasm`) takes the device, pins the export's revision
+  (`styk_engine::export::ExportFrames`),
+  asks the preparation workers for the next frames and its pictures, draws and reads
+  back. It ends with `release`: the device is destroyed, the read-backs it rejects
+  settle (their answers run through the module), then the renderer is freed and the
+  thread's stack and thread-local storage given back (`__wbindgen_thread_destroy`)
+  before the worker closes, with no turn of its event loop in between (a call into the
+  module after the destructor writes through a stack the shared memory has taken back:
+  cancelling an export of URIEL 3 crashed the page that way until the answers were
+  let through first); a worker that does not answer within 5 s is terminated
+  (what it held then stays allocated in the shared memory). Pages that are not
+  cross-origin isolated export with the JavaScript renderer.
 
 ## Rules
 
 - The interface thread never blocks: shared state is taken with a spinning
   lock around queue pushes and pointer swaps; waiting is `Atomics.waitAsync` on
-  the engine's progress counter, which Rust bumps with `Atomics.notify`.
+  the engine's progress counter, which Rust bumps with `Atomics.notify`. Read the
+  counter (`progressSeen()`) before checking for a result and wait with that value
+  (`whenProgress(seen)`): work that finishes in between is otherwise only noticed at
+  the 250 ms timeout. The mirror's commit on the interface thread only tries the
+  mirror's lock (`Engine::try_commit`, [document.md](document.md)).
 - No rayon in WebAssembly: `styk_eval::par::map` is sequential there;
   parallelism is whole frames on workers.
 - Library code has no clock, file or thread of its own: the host injects a
@@ -46,6 +68,8 @@ Never strip the profile ([D10](decisions/0010-keep-wasm-symbols.md)).
 
 ## Testing
 
-`cargo test -p styk-engine` (scheduler, mirror, definitions-only commits);
+`cargo test -p styk-engine` (scheduler, mirror, definitions-only commits, a commit
+the interface thread finds busy, export frames prepared ahead); `node --test
+tests/engine-export.test.mjs` (the export worker's start, release and fallbacks);
 `engine/viewer/` (a bare page over the engine with `window.viewer` benchmarks);
 the app parity tool.

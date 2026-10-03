@@ -2,7 +2,8 @@
 
 How a draw list becomes pixels: the format (`engine/crates/styk-draw`), the GPU
 renderer (`engine/crates/styk-render`), the CPU rasterizer
-(`engine/crates/styk-raster`) and the stage in the app (`src/engine/engine-stage.mjs`).
+(`engine/crates/styk-raster`), the stage in the app (`src/engine/engine-stage.mjs`) and
+export frames (`engine/crates/styk-export`, `src/engine/engine-export.mjs`).
 
 ## The draw list (`styk-draw`)
 
@@ -192,8 +193,9 @@ the quietest round 86–96 against 104–108 ms (the draw list holds 26 % more r
 ## CPU (`styk-raster`)
 
 The same draw list rasterized with tiny-skia (Skia's raster backend, as Canvas
-2D): for exports, thumbnails, library previews and devices without WebGPU or
-WebGL2. Groups render into their own pixmaps; custom paints shade per pixel
+2D): meant for thumbnails, library previews and devices without WebGPU or WebGL2
+(exports draw with the GPU renderer, see [Exports](#exports); `styk export --cpu`
+compares the two). Groups render into their own pixmaps; custom paints shade per pixel
 with `sample_paint`; consecutive triangles of one look fill as one path.
 `styk raster` renders a frame like `styk render`; on the compared frames the
 two differ by less than 0.2/255 on average, along edges (0.30–0.56 on 3D scenes,
@@ -223,7 +225,220 @@ by the engine (an edit frame whose trails are still being sampled asks the app f
 another frame, `Stage::refining`); so are 3D meshes, surfaces, poses and drawings a
 spatial bone turns.
 
+## Exports
+
+For a document the engine draws, export frames (PNG, PNG and JPEG sequences, GIF, APNG and
+video frames) come from the engine: the frame the stage would show at that tick, through the
+scene camera, at the export's size and sampling, without onion skins. The encoders (the PNG,
+GIF, APNG and ZIP writers, WebCodecs, FFmpeg, the audio mix) are unchanged and receive the
+same canvases and PNG frames as before. SVG stays vector output from the JavaScript exporter,
+and so do documents the gate refuses (`engine-eligibility.mjs`).
+
+**Where it runs.** `src/engine/engine-export.mjs` gives the export a renderer:
+`EngineExportFrames`, an `ExportFrameRenderer` (`src/export-frame-renderer.mjs`) whose worker
+is `src/engine/engine-export-worker.mjs`. The worker joins the engine's shared memory like a
+preparation worker but keeps its event loop, holds a GPU device of its own (WebGPU in the
+worker, else WebGL2 on an `OffscreenCanvas`) and runs `ExportRenderer` (`styk-wasm`): nothing
+of an export is evaluated, drawn or read back on the interface thread (D7). Requests, progress,
+revision checks, timeouts, the retry ladder and the output canvas are the base class's, so the
+export dialog and the encoders see the same object. Before the worker starts, the document is
+brought to the export's revision through the playback adapter's synchronisation
+(`exportDocument`, the one playback uses and the app keeps current with every edit) and then
+what only the stage knows (figures edited in place, drawings just published: `prepareExport`).
+Starting the worker (its modules, joining the engine, the GPU device and the renderer's
+pipelines) took 400–500 ms in Electron, so the export dialog starts one when it opens
+(`prewarmExportRenderer`, `ExportDevice`); the export takes it, and a worker no export takes
+within a minute is released. A document the engine does not draw, a page without worker threads
+(not cross-origin isolated) or a worker that cannot get a GPU device exports with the JavaScript
+worker, decided before the first frame; an export never mixes the two. `?engineExport=off` (or
+`localStorage['stykanimate.engine.export'] = 'off'`) keeps the JavaScript renderer for
+comparisons.
+
+**Frames.** `styk_engine::export::ExportFrames` pins the generation of the export's revision
+and evaluates ticks as playback does: effects drawn (exports ignore the editor's effects
+preview), the session's hidden figures shown, the document's hidden layers hidden, generated
+effects with every earlier anchor evaluated. Up to eight following ticks are prepared on the
+engine's workers. The pose the editor shows (a PNG of the current frame) crosses as document
+chunks, like the JavaScript worker's, and is drawn by an `EditScene` without onion skins. Every
+picture of the document is decoded for the export's device before the first frame, so an
+export never shows a frame without one.
+
+**Settings** (`styk-export`):
+
+| Export setting | Engine |
+| --- | --- |
+| Size | The canvas scaled to the output: `scale(output / canvas)` then the scene camera (`view::tile_view`); an output of another shape stretches (`ViewParams::stretch`), as `drawExportScene` does. |
+| Smooth edges | `Edges::Smooth`: four samples a pixel, analytic shapes covered by distance; sprites to the nearest texel. |
+| No smoothing | `Edges::Crisp`: one sample a pixel at its centre, every shape fully in or out (hairlines one solid pixel), lone glyphs from their outlines, layers and drawing cels to the nearest texel; opacity kept. Unlike the JavaScript exporter, which draws frames with effects, generated effects or 3D smooth (its vector path cannot carry them), crisp edges apply to every frame; filtered pixels stay filtered. |
+| Smooth sprites | Drawn at twice the width and height, each 2×2 block averaged in premultiplied colour (`pixels::resolve`, the rule of `downsampleExportPixels`). |
+| Background | The scene's, from the draw list; transparent where the scene has none. |
+| Video without alpha | Composited over black by the engine before any rounding (`matte`). |
+| Scene effects | The camera image follows the output's density (`ViewParams::camera_limit` unbounded) within the effect surface (3,968 pixels); the stage caps it at 2,048. |
+
+**Memory** (D11). A frame is drawn in equal tiles of at most 2,048 rendered pixels a side
+(`tiles::TILE_SIDE`), each the same view shifted by whole pixels: the renderer's targets (frame,
+samples, isolation atlas pages, depth) stay those of one tile whatever the output, about the
+stage's own. Tiles are read back into at most eight slots of 64 MiB together; the worker keeps
+one tile's pixels and the output canvas. The export's device holds its own sprite atlas, the
+size of the stage's. Frames prepared ahead are at most eight draw lists. A GPU out-of-memory
+error or a lost device retries the frame with half the tile side, then once with a new worker
+and device (the base class's ladder), then fails; nothing is written.
+
+**Read-back.** A browser hands a mapped buffer over only when its GPU process gets to it. In
+Electron under Xvfb that took 3–5 ms a frame while the page was still and 60–320 ms while the
+page repainted (the export dialog's progress repaints every frame), against well under a
+millisecond of drawing. So the worker draws the export's next frames ahead into free read-back
+slots (at most six frames) while earlier ones are mapped, and puts a frame on its canvas only
+when the encoder asks for it; frames drawn ahead for another order (a second GIF pass, the
+current pose) are given back unread. WebGL2 (a worker without WebGPU, as headless Chromium here)
+completes a read-back only when its device is polled: the worker polls between turns of its event
+loop until it does.
+
+**Cancellation and failure.** Cancelling, closing the dialog or a revision change rejects the
+pending request at once (the base class); the worker is asked to `release`: it destroys the
+device, lets the read-backs that rejects settle, frees the renderer and gives back its thread's
+stack, then closes ([threading.md](threading.md)). A worker that does
+not answer within 5 s is terminated. The save layer is unchanged: a cancelled or failed export
+leaves an existing file untouched.
+
+**What differs from the JavaScript exporter.** It draws with Canvas 2D in a worker: its
+antialiasing, text, 3D (faces filled one by one, with seams), filter effects and generated
+effects (tinted sprites, colour ramps) are the editor's Canvas 2D fallback's, not its WebGPU
+renderer's. Engine export frames are the stage's pixels (D13 on the stage at the same frame,
+below); against the JavaScript export they differ along edges, in text, effects and particles,
+and in No smoothing on frames the JavaScript exporter drew smooth.
+
+**Why the GPU, measured** (`styk export`, native, RTX 4070 SUPER, 1,920×1,080, Smooth edges, the
+median of 10 frames each, the same draw lists, the GPU time including the read-back of the
+frame; 2026-10-03, load average 6–7):
+
+| Document | GPU | CPU (`styk-raster`) |
+| --- | ---: | ---: |
+| The start document | 12.6 ms | 14.3 ms |
+| Impact-FX-Fight.styk (effects, generated effects, captions) | 13.1 ms | 186.9 ms, without its effects |
+| Vehicles-Pivot-3D.styk (3D, text) | 13.6 ms | 409.0 ms |
+| 15-Guns-Pivot-3D.styk (3D, text) | 13.7 ms | 444.8 ms |
+| generators/explosions.json (generated effects) | 13.3 ms | 258.8 ms |
+| hitoshi vs suzu tomiee ssj.piv (private corpus, a Pivot import) | 12.3 ms | 179.8 ms |
+| TDD2 URIEL NEMESIS 3.styk (private corpus; effects, drawing cels) | 12.2 ms | 97.6 ms, without its effects |
+
+The CPU rasterizer also draws no filter effects and no camera image, and runs without SIMD in
+WebAssembly; WebGPU in a worker draws everything the stage draws with the stage's own renderer. A
+native renderer in Electron's main process would have added a second build per platform and an
+IPC copy of every frame for what WebGPU in a worker already gives.
+
+### Measured
+
+`scripts/engine-export-parity.mjs` in Electron under Xvfb (`--use-angle=vulkan`, so WebGPU is the
+NVIDIA adapter), 2026-10-03, the machine shared with other work (load averages 1.6–18 during the
+runs; each run notes its own). Frames are the lossless PNGs the APNG, PNG-sequence and native video
+encoders receive.
+
+**Pixels.** Engine export frames against the engine's stage drawing the same tick through the
+camera at the same size: **identical, every pixel**, at Smooth edges on all seven documents (21
+frames; 1,280×720 for the 16:9 documents and the 960×540 ones, 1,280×640 for URIEL 3, 1,140×630
+for hitoshi, each the canvas's own shape). Against today's JavaScript exports (mean |Δ| of the
+largest channel, alpha included; D13 mean not counting differences of two levels or less; solid
+pixels as D13 counts them; three ticks each):
+
+| Document | Smooth edges | No smoothing | Smooth sprites |
+| --- | --- | --- | --- |
+| The start document | 0.015, 0.014, 0 | 0.010, 0.010, 0 | 0.004, 0.002, 0 |
+| Impact-FX-Fight.styk | 0.85–0.95, 0.37–0.47, 0 | 1.55–1.78, 1.06–1.30, 0–5 | 0.48–0.52, 0.14–0.18, 0 |
+| Vehicles-Pivot-3D.styk | 1.09–1.65, 0.61–1.23, 0–5 | 2.10–3.50, 1.62–3.09, 0–359 | 0.54–0.73, 0.21–0.42, 0–7 |
+| 15-Guns-Pivot-3D.styk (two ticks) | 1.09–1.56, 0.63–1.11, 0–27 | 1.96–2.99, 1.49–2.53, 3–4 | 0.54–0.71, 0.20–0.38, 0 |
+| generators/explosions.json | 1.24–1.83, 0.93–1.29, 14–57 | 0.82–1.21, 0.47–0.78, 16–73 | 1.08–1.67, 0.77–1.11, 1–47 |
+| hitoshi vs suzu tomiee ssj.piv | 0.32–0.77, 0.11–0.18, 0 | 0.02–0.09, 0.01–0.06, 0 | 0.27–0.63, 0.03–0.05, 0 |
+| TDD2 URIEL NEMESIS 3.styk | 0.07–0.32, 0.02–0.07, 0 | 0.04–0.46, 0.02–0.44, 0 | 0.04–0.22, 0.00–0.02, 0 |
+
+Where they differ (difference pictures inspected): along figure and text edges (Canvas 2D against
+four samples), in captions (Canvas 2D text against the stage's text, [Text](#text)), in 3D (the
+JavaScript exporter's faces resampled from its own raster, softer, with the stage's crisper), in
+generated effects (the Canvas 2D fallback's tinted sprites and colour ramps against the WebGPU
+shading, the solid pixels of the explosions fixture), and in No smoothing on frames with effects
+or 3D, which the JavaScript exporter draws smooth and the engine crisp (the solid pixels of the
+Vehicles and Guns rows).
+
+**Speed and memory of the renderers** (each renderer in turn, two rounds, the order alternating;
+PNG frames at about 1,920×1,080, the canvas's shape; the time includes starting the renderer and
+the first frame; peaks of every process of the app, and the GPU memory `nvidia-smi` attributes to
+it; no dialog open):
+
+| Document (frames) | Engine: total, median frame | JavaScript: total, median frame | Peak memory, engine / JavaScript | GPU memory, engine / JavaScript |
+| --- | --- | --- | --- | --- |
+| The start document (10) | 712–716 ms, 20.2–20.8 ms | 603–649 ms, 15.9–17.2 ms | 1,257 / 1,243 MiB | 263 / 211 MiB |
+| Impact-FX-Fight.styk (60) | 2,111–2,131 ms, 24.6–24.7 ms | 6,359–6,799 ms, 80.7–85.6 ms | 1,865 / 1,681 MiB | 447 / 261 MiB |
+| Vehicles-Pivot-3D.styk (7) | 759–764 ms, 23.6 ms | 1,299–1,318 ms, 91.0–92.9 ms | 1,335 / 1,406 MiB | 406 / 273 MiB |
+| 15-Guns-Pivot-3D.styk (6) | 719–753 ms, 24.1–25.0 ms | 1,210–1,216 ms, 98.7–99.0 ms | 1,424 / 1,483 MiB | 412 / 279 MiB |
+| generators/explosions.json (16) | 1,136–1,213 ms, 40.8–42.3 ms | 4,094–4,626 ms, 247.6–298.1 ms | 1,392 / 1,273 MiB | 399 / 340 MiB |
+| hitoshi vs suzu tomiee ssj.piv (60, 1,900×1,050) | 1,970–2,027 ms, 23.2–23.4 ms | 5,171–5,217 ms, 66.9–67.4 ms | 1,999 / 1,821 MiB | 718 / 477 MiB |
+| TDD2 URIEL NEMESIS 3.styk (60, 1,920×960) | 2,590–3,697 ms, 21.6–31.9 ms | 82,782–86,412 ms, 243.4–252.8 ms | 2,158 / 2,287 MiB | 1,262 / 901 MiB |
+
+The engine's first frame waits for every picture (URIEL 3: 0.8–0.9 s for its drawing cels, where
+the JavaScript renderer decodes them frame by frame). Its own GPU device costs GPU memory the
+JavaScript renderer does not use (52–361 MiB more here): the read-back slots (up to 64 MiB), the
+frame's samples and layer pages, and a second copy of the document's sprite atlas, the stage
+keeping its own. Process memory moved both ways (−129 to +184 MiB): the JavaScript renderer's document
+copy and raster caches in its worker against the engine worker's tile buffers.
+
+**Exports through the app** (`--formats … --dialog`: the export dialog opens 1.5 s before each
+export, then the app's own command exports today's defaults, the canvas size and the whole
+animation, through the real encoders and the desktop save; two rounds, the order alternating):
+
+| Format | The start document (10 frames, 960×540): engine / JavaScript | Impact-FX-Fight.styk (240 frames, 1,920×1,080): engine / JavaScript |
+| --- | --- | --- |
+| PNG of the current frame | 417–495 / 568–1,238 ms | 526–1,031 / 926–981 ms |
+| PNG sequence | 1,020–1,342 / 1,008–1,806 ms | 16.4–18.6 / 67.2–102.3 s |
+| GIF | 1,349 ms (one round) / 1,405–1,734 ms | 52.7–64.5 / 85.9–121.4 s |
+| APNG | 1,063–1,179 / 1,537–1,925 ms | 21.7–24.5 / 94.2–102.7 s |
+| MP4 (FFmpeg) | 859–1,177 / 871–1,519 ms | 13.8–19.1 / 57.6–63.7 s |
+| WebM (FFmpeg) | 691–1,299 / 1,071–1,590 ms | 14.6–20.0 / 43.2–52.5 s |
+
+Load averages 10–18 during the start document's runs, 3–17 during Impact's. Peak memory of every
+process: 1,058–1,164 / 1,044–1,098 MiB and 1,354–1,731 / 1,296–1,672 MiB; GPU memory 233–274 /
+231–236 MiB and 262–490 / 253–314 MiB. Before the dialog started the worker, the start document's
+exports took 0.06–1.2 s longer with the engine than with the JavaScript renderer (worker start
+400–500 ms, now 11–57 ms). The outputs, decoded by `scripts/engine-export-compare.py` (Pillow, the
+bundled FFmpeg), engine against JavaScript, mean |Δ| over all frames (worst frame): the start
+document PNG, PNG sequence, GIF and APNG 0.016, MP4 0.099 (0.100), WebM 0.123 (0.129); Impact PNG
+0.572, PNG sequence and APNG 0.599 (0.669), GIF 1.287 (1.443), MP4 0.983 (1.113), WebM 0.729
+(1.933). Impact's PNG frames are much smaller from the engine (240 frames: 83.5 against 473.9 MB):
+Canvas 2D dithers its gradients (48.5 % of a frame's pixels differ by exactly one level, the
+background's) and the engine does not; GIF 57.7 against 52.0 MB, MP4 1.76 against 1.92 MB.
+TDD2 URIEL NEMESIS 3.styk (private corpus, 232 frames at its 800×400 canvas, one round, load
+averages 5–9), engine / JavaScript: PNG of the current frame 1,168 / 1,340 ms, PNG sequence 13.9 /
+23.0 s, GIF 29.7 / 49.6 s, MP4 13.9 / 22.5 s; peaks 1,809–2,076 / 1,729–1,955 MiB, GPU memory
+626–786 / 426–658 MiB; outputs 0.346 (PNG), 0.306 (PNG sequence, worst frame 2.391), 1.205 (GIF,
+3.502), 0.685 (MP4, 3.521). Its worst frames are the gaps the stage has too (plan section 6): tick
+46, where the JavaScript renderer draws a drawing layer's onion skin and the engine does not, and
+ticks 61–62, a drawing cel under blur, bloom and glow sampled bilinearly.
+
+**Cancellation and failure** (`--cancel`, `--integrity`): on Impact-FX-Fight.styk and TDD2 URIEL
+NEMESIS 3.styk, ten exports aborted after their first frame left no export worker, every worker
+said it had released its memory and device, and the engine's memory stayed where it was (87 and
+364 MiB); the app's PNG-sequence export over an existing file, cancelled from the progress dialog
+after two frames and failed in the engine's worker (a frame outside the animation), left the file
+byte for byte as it was and no export worker. The GPU memory `nvidia-smi` attributes to the app
+went back down on URIEL 3 (393 → 384 → 383 MiB); on Impact, in a later run, the first cancelled
+export left it 42 MiB higher (249 → 291 MiB) and the failed one after it did not raise it (291 →
+290 MiB). The engine's memory grew with the first export of a session (Impact 79 → 87 and 83 → 90
+MiB, the allocator's high-water mark) and not afterwards. Before the
+release order was fixed ([threading.md](threading.md)), cancelling URIEL 3's export crashed the
+page, twice in two runs; it did not in the two runs since.
+
 ## Testing
+
+`cargo test -p styk-export` (settings and their limits, tiles covering every pixel once, the
+output view, the 2×2 average against the JavaScript rule, and on a GPU: tiles against the whole
+frame by D13 with no seam along tile edges, crisp edges without partly covered pixels, Smooth
+sprites as the average of a frame drawn twice as large, the black matte);
+`cargo test -p styk-engine --test export`; `cargo test -p styk-render --test glyphs` (crisp
+edges fill no glyph mask); `node --test tests/engine-export.test.mjs`; `styk export <file>
+<ticks> <out> [--size WxH] [--smoothing edges|none|sprites] [--tile N] [--cpu]`;
+`scripts/engine-export-parity.mjs` (frames from both renderers and the stage, timings and memory,
+the app's own exports per format with `--formats`, cancellation and failure with `--cancel` and
+`--integrity`) and `scripts/engine-export-compare.py` (decodes and compares the exports of a
+format).
 
 `cargo test -p styk-render -p styk-raster`; text: `cargo test -p styk-eval --test text`
 (raster entries, glyph records and their mask layouts against numbers the editor printed,

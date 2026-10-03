@@ -7,7 +7,7 @@ use crate::effects::executor::{Executor, Frame, Run};
 use crate::effects::{self, plan, Slot};
 use crate::isolation::{page_size, plan_rounds};
 use crate::resources::{buffer, GpuGroup, GpuView};
-use crate::{Renderer, Stats, ViewParams, FORMAT, SAMPLES, UNIFORM_STRIDE};
+use crate::{Renderer, Stats, ViewParams, FORMAT, UNIFORM_STRIDE};
 
 /// One effect run of a frame: a filtered group's layer at `at` on `page` of its depth's atlas.
 struct Work {
@@ -98,14 +98,14 @@ fn draw_painted(pass: &mut wgpu::RenderPass<'_>, base: &wgpu::RenderPipeline, de
 }
 
 impl Renderer {
-    /// A multisampled depth buffer of `size` for passes with depth runs.
-    fn depth_buffer(device: &wgpu::Device, slot: &mut Option<(wgpu::Texture, [u32; 2])>, size: [u32; 2]) -> wgpu::TextureView {
+    /// A depth buffer of `size` with `samples` per pixel for passes with depth runs.
+    fn depth_buffer(device: &wgpu::Device, slot: &mut Option<(wgpu::Texture, [u32; 2])>, size: [u32; 2], samples: u32) -> wgpu::TextureView {
         if slot.as_ref().is_none_or(|s| s.1 != size) {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("styk depth"),
                 size: wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
                 mip_level_count: 1,
-                sample_count: SAMPLES,
+                sample_count: samples,
                 dimension: wgpu::TextureDimension::D2,
                 format: crate::pipeline::DEPTH_FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -142,13 +142,14 @@ impl Renderer {
         self.output = Some((texture, view, bind, size));
     }
 
-    pub(crate) fn msaa(device: &wgpu::Device, slot: &mut Option<(wgpu::Texture, [u32; 2])>, size: [u32; 2]) -> wgpu::TextureView {
+    /// The multisampled target of passes with `samples` per pixel (more than one).
+    pub(crate) fn msaa(device: &wgpu::Device, slot: &mut Option<(wgpu::Texture, [u32; 2])>, size: [u32; 2], samples: u32) -> wgpu::TextureView {
         if slot.as_ref().is_none_or(|s| s.1 != size) {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("styk msaa"),
                 size: wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
                 mip_level_count: 1,
-                sample_count: SAMPLES,
+                sample_count: samples,
                 dimension: wgpu::TextureDimension::D2,
                 format: FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -180,7 +181,9 @@ impl Renderer {
             size,
             zoom: view.zoom,
             pan: view.pan,
+            stretch: view.stretch,
             camera_view: view.camera_view,
+            camera_limit: view.camera_limit,
             max_texture: self.device.limits().max_texture_dimension_2d,
         });
         let sizes: Vec<[u32; 2]> = planned.iter().map(plan::Placement::size).collect();
@@ -275,11 +278,11 @@ impl Renderer {
         }
         let mut uniform_data = vec![0u8; (UNIFORM_STRIDE * slots_needed) as usize];
         for (i, &(_, depth, page_index, _, _)) in passes.iter().enumerate() {
-            let v = view.gpu([page[0] as f32, page[1] as f32, page_index as f32, depth as f32]);
+            let v = view.gpu([page[0] as f32, page[1] as f32, page_index as f32, depth as f32], self.crisp);
             let o = i * UNIFORM_STRIDE as usize;
             uniform_data[o..o + std::mem::size_of::<GpuView>()].copy_from_slice(bytemuck::bytes_of(&v));
         }
-        let v = view.gpu([size[0] as f32, size[1] as f32, 0.0, 0.0]);
+        let v = view.gpu([size[0] as f32, size[1] as f32, 0.0, 0.0], self.crisp);
         let o = passes.len() * UNIFORM_STRIDE as usize;
         uniform_data[o..o + std::mem::size_of::<GpuView>()].copy_from_slice(bytemuck::bytes_of(&v));
         self.queue.write_buffer(&self.uniforms, 0, &uniform_data);
@@ -332,17 +335,18 @@ impl Renderer {
                         array_layer_count: Some(1),
                         ..Default::default()
                     });
-                    let msaa = Self::msaa(&self.device, &mut self.msaa_layer, page);
+                    // With one sample a pixel the pass draws straight into its atlas page.
+                    let msaa = (self.samples > 1).then(|| Self::msaa(&self.device, &mut self.msaa_layer, page, self.samples));
                     let face_runs = depth_runs.as_ref().filter(|r| r.within(start..end));
-                    let depth_view = face_runs.map(|_| Self::depth_buffer(&self.device, &mut self.depth_layer, page));
+                    let depth_view = face_runs.map(|_| Self::depth_buffer(&self.device, &mut self.depth_layer, page, self.samples));
                     layer_depth |= depth_view.is_some();
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("styk layer pass"),
                         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &msaa,
+                            view: msaa.as_ref().unwrap_or(&target),
                             depth_slice: None,
-                            resolve_target: Some(&target),
-                            ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Discard },
+                            resolve_target: msaa.as_ref().map(|_| &target),
+                            ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: if msaa.is_some() { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store } },
                         })],
                         depth_stencil_attachment: depth_view.as_ref().map(depth_attachment),
                         timestamp_writes: None,
@@ -370,25 +374,26 @@ impl Renderer {
             // The frame, up to the next round's first composite. The multisampled frame is kept between rounds.
             let last = r + 1 == rounds.len();
             let until = if last { root.1 } else { stops[r] };
-            let msaa = Self::msaa(&self.device, &mut self.msaa_main, size);
+            // With one sample a pixel the frame is drawn straight into the output, kept between rounds.
+            let msaa = (self.samples > 1).then(|| Self::msaa(&self.device, &mut self.msaa_main, size, self.samples));
             // Faces sit in raster entries, so a frame pass seldom holds any.
             let face_runs = depth_runs.as_ref().filter(|r| r.within(root.0..root.1));
-            let depth_view = face_runs.map(|_| Self::depth_buffer(&self.device, &mut self.depth_main, size));
+            let depth_view = face_runs.map(|_| Self::depth_buffer(&self.device, &mut self.depth_main, size, self.samples));
             frame_depth |= depth_view.is_some();
             let output = &self.output.as_ref().unwrap().1;
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("styk frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &msaa,
+                    view: msaa.as_ref().unwrap_or(output),
                     depth_slice: None,
-                    resolve_target: if last { Some(output) } else { None },
+                    resolve_target: if last && msaa.is_some() { Some(output) } else { None },
                     ops: wgpu::Operations {
                         load: if r == 0 {
                             wgpu::LoadOp::Clear(wgpu::Color { r: view.clear[0], g: view.clear[1], b: view.clear[2], a: view.clear[3] })
                         } else {
                             wgpu::LoadOp::Load
                         },
-                        store: if last { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store },
+                        store: if last && msaa.is_some() { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store },
                     },
                 })],
                 depth_stencil_attachment: depth_view.as_ref().map(depth_attachment),
@@ -431,7 +436,7 @@ impl Renderer {
         // An atlas always has two layers at least (resources::array_texture).
         let layer_bytes = self.layers.iter().map(|a| a.size[0] as u64 * a.size[1] as u64 * 4 * a.pages.max(2) as u64).sum();
         // Four samples of four bytes (depth24plus) per pixel, frame and layer pages.
-        let depth_bytes = [&self.depth_main, &self.depth_layer].iter().filter_map(|d| d.as_ref()).map(|d| d.1[0] as u64 * d.1[1] as u64 * 4 * SAMPLES as u64).sum();
+        let depth_bytes = [&self.depth_main, &self.depth_layer].iter().filter_map(|d| d.as_ref()).map(|d| d.1[0] as u64 * d.1[1] as u64 * 4 * self.samples as u64).sum();
         self.stats = Stats {
             prims: list.prims.len() as u32,
             groups: n as u32 - 1,

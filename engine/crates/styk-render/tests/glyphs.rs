@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use styk_eval::drawlist::{encode, DrawList, F_GLYPH_VECTOR, K_GLYPH};
-use styk_render::{read_frame, wgpu, Renderer, ViewParams};
+use styk_render::{read_frame, wgpu, Edges, Renderer, ViewParams};
 
 const SIZE: [u32; 2] = [400, 200];
 
@@ -31,7 +31,7 @@ fn list() -> DrawList {
 fn view(zoom: f64) -> ViewParams {
     let z = 0.5 * zoom;
     let pan = [200.0 - 650.0 * z, 100.0 - 200.0 * z];
-    ViewParams { matrix: [z, 0.0, 0.0, z, pan[0], pan[1]], artboard: [pan[0], pan[1], pan[0] + 800.0 * z, pan[1] + 400.0 * z], clip_to_artboard: false, clear: [0.0; 4], zoom: z, pan, camera_view: false }
+    ViewParams { matrix: [z, 0.0, 0.0, z, pan[0], pan[1]], artboard: [pan[0], pan[1], pan[0] + 800.0 * z, pan[1] + 400.0 * z], clip_to_artboard: false, clear: [0.0; 4], zoom: z, pan, stretch: 1.0, camera_view: false, camera_limit: styk_render::CAMERA_PREVIEW_LIMIT }
 }
 
 fn draw(renderer: &mut Renderer, device: &wgpu::Device, queue: &wgpu::Queue, list: &Arc<DrawList>, view: &ViewParams) -> Vec<u8> {
@@ -81,4 +81,23 @@ fn lone_glyphs_draw_from_masks_kept_across_frames() {
     assert!(differing(&close, &blank) > 1000, "close up the glyph's triangles draw");
     let none = draw(&mut renderer, &device, &queue, &masks_only, &view(20.0));
     assert_eq!(differing(&none, &blank), 0, "close up no mask is drawn");
+}
+
+#[test]
+fn crisp_edges_draw_lone_glyphs_from_their_outlines() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())) else {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    };
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).expect("device");
+    let with = Arc::new(list());
+    let mut crisp = Renderer::with_edges(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, Edges::Crisp);
+    let pixels = draw(&mut crisp, &device, &queue, &with, &view(1.0));
+    assert_eq!(crisp.stats.glyph_masks, 0, "a mask's coverage is smooth: crisp edges fill none");
+    // The outlines are drawn, aliased: every glyph pixel is fully covered or not at all.
+    let mut empty = (*with).clone();
+    empty.prims.iter_mut().filter(|p| p.kind & F_GLYPH_VECTOR != 0 || p.kind == K_GLYPH).for_each(|p| p.kind = 0);
+    let blank = draw(&mut Renderer::with_edges(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, Edges::Crisp), &device, &queue, &Arc::new(empty), &view(1.0));
+    assert!(differing(&pixels, &blank) > 200, "the glyphs are drawn");
 }

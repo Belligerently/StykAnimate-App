@@ -1112,7 +1112,9 @@ dependencies = [
  "sha2",
  "styk-doc",
  "styk-edit",
+ "styk-engine",
  "styk-eval",
+ "styk-export",
  "styk-formats",
  "styk-raster",
  "styk-render",
@@ -1200,6 +1202,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "styk-export"
+version = "0.1.0"
+dependencies = [
+ "pollster",
+ "styk-draw",
+ "styk-engine",
+ "styk-eval",
+ "styk-render",
+]
+
+[[package]]
 name = "styk-formats"
 version = "0.1.0"
 dependencies = [
@@ -1254,9 +1267,11 @@ version = "0.1.0"
 dependencies = [
  "js-sys",
  "styk-doc",
+ "styk-draw",
  "styk-edit",
  "styk-engine",
  "styk-eval",
+ "styk-export",
  "styk-formats",
  "styk-math",
  "styk-render",

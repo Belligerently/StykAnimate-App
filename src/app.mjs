@@ -6156,6 +6156,8 @@ window.styk = {
   tutorials,
   state,
   actions,
+  // The playback adapter: tools drive exports and playback through the app's own objects.
+  playback,
   importFiles,
   acceptImport,
   fit,

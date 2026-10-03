@@ -6,7 +6,7 @@
 
 struct View {
     m: vec4<f32>,        // world -> screen: x' = m.x*x + m.z*y + t.x
-    t: vec4<f32>,        //                  y' = m.y*x + m.w*y + t.y ; t.z = screen px per world unit
+    t: vec4<f32>,        //                  y' = m.y*x + m.w*y + t.y ; t.z = screen px per world unit; t.w = 1 for crisp edges
     inv: vec4<f32>,      // screen -> world (same layout)
     inv_t: vec4<f32>,
     dest: vec4<f32>,     // target width, height, page index, depth
@@ -478,7 +478,13 @@ fn vs_main(in: VsIn) -> VsOut {
     return out;
 }
 
+// Crisp edges (Edges::Crisp, exports without smoothing): a pixel is in or out at its centre.
+fn crisp() -> bool {
+    return view.t.w > 0.5;
+}
+
 fn coverage(d: f32, aa: f32) -> f32 {
+    if (crisp()) { return select(0.0, 1.0, d <= 0.0); }
     return clamp(0.5 - d / aa, 0.0, 1.0);
 }
 
@@ -699,10 +705,10 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (kind == K_CAPSULE || kind == K_BOX || kind == K_ARC || kind == K_POLYLINE) {
         var hw = p.b.x;
         if (kind == K_ARC) { hw = p.a.w; }
-        // Hairlines keep a one-pixel footprint and fade with their width.
+        // Hairlines keep a one-pixel footprint and fade with their width (crisp: solid).
         var fade = 1.0;
         if (hw < aa * 0.5) {
-            fade = max(hw, 0.0) * 2.0 / aa;
+            fade = select(max(hw, 0.0) * 2.0 / aa, select(0.0, 1.0, hw > 0.0), crisp());
             hw = aa * 0.5;
         }
         var d = 0.0;
@@ -738,7 +744,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         var hw = p.a.w;
         var fade = 1.0;
         if (hw < aa * 0.5) {
-            fade = max(hw, 0.0) * 2.0 / aa;
+            fade = select(max(hw, 0.0) * 2.0 / aa, select(0.0, 1.0, hw > 0.0), crisp());
             hw = aa * 0.5;
         }
         let ring = coverage(abs(dist - p.a.z) - hw, aa) * fade;
@@ -768,7 +774,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let texel = 1.0 / size;
         let raw = mix(rect.xy, rect.zw, in.uv);
         var tex: vec4<f32>;
-        if ((p.kind & F_DRAWING) != 0u) {
+        if ((p.kind & F_DRAWING) != 0u && crisp()) {
+            // Crisp edges: the nearest texel of the tile, unfiltered.
+            let nearest = vec2<i32>(round(rect.xy * size)) + vec2<i32>(clamp(floor(in.uv * 64.0), vec2<f32>(0.0), vec2<f32>(63.0)));
+            tex = premul(textureLoad(sprites, nearest, i32(p.b.z), 0));
+        } else if ((p.kind & F_DRAWING) != 0u) {
             // Straight-alpha texels, premultiplied, then filtered bilinearly; the slot's
             // border holds the neighbouring tiles' texels, so tiles join without seams.
             let t = in.uv * 64.0 - vec2<f32>(0.5);
@@ -781,7 +791,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let t01 = premul(textureLoad(sprites, origin + vec2<i32>(0, 1), layer, 0));
             let t11 = premul(textureLoad(sprites, origin + vec2<i32>(1, 1), layer, 0));
             tex = mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
-        } else if ((p.kind & F_SMOOTH) != 0u) {
+        } else if ((p.kind & F_SMOOTH) != 0u && !crisp()) {
             tex = textureSampleLevel(sprites, linear_sampler, raw, i32(p.b.z), 0.0);
         } else {
             let q = clamp(raw, rect.xy + texel * 0.5, rect.zw - texel * 0.5);
@@ -802,10 +812,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return textureSampleLevel(sprites, linear_sampler, texel_centre(q, size), i32(p.a.z), 0.0) * base.a;
     }
     if (kind == K_COMPOSITE) {
-        // Bilinear, clamped to the child's own rectangle as an exact texture's edge would be.
+        // Bilinear, clamped to the child's own rectangle as an exact texture's edge would be
+        // (crisp edges: the nearest texel; a layer on the screen's grid is copied either way).
         let child = group_at(bitcast<u32>(p.b.x));
         let size = vec2<f32>(textureDimensions(layers).xy);
-        let uv = clamp(in.uv, child.clip.xy + vec2<f32>(0.5), child.clip.zw - vec2<f32>(0.5));
+        var uv = clamp(in.uv, child.clip.xy + vec2<f32>(0.5), child.clip.zw - vec2<f32>(0.5));
+        if (crisp()) { uv = floor(uv) + vec2<f32>(0.5); }
         let tex = textureSampleLevel(layers, linear_sampler, uv / size, i32(child.page), 0.0);
         return tex * base.a;
     }

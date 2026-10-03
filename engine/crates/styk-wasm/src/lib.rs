@@ -7,12 +7,14 @@
 //!   page, shared with the worker threads by address.
 //! - [`stage::Stage`]: the GPU surface of one canvas. Interface thread only.
 //! - [`edit::EditSession`]: the editor's calls run on the mirrored document. Interface thread only.
+//! - [`export::ExportRenderer`]: export frames, drawn in a worker with a GPU device of its own.
 //!
 //! The module is instantiated once per thread over one shared memory. Workers
 //! call [`engine::worker_run`] and stay inside it.
 
 pub mod edit;
 pub mod engine;
+pub mod export;
 pub mod math;
 pub mod stage;
 

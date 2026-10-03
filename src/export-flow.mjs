@@ -41,7 +41,7 @@ import { openExportSink as openExportSinkRaw } from "./export-sink.mjs";
 import { materializeSimpleFrameDraftForPivot } from "./pivot-frame-draft.mjs";
 import { exportAnimation } from "./image-export.mjs";
 import { defaultGIFDither } from "./gif-options.mjs";
-import { ExportFrameRenderer } from "./export-frame-renderer.mjs";
+import { createExportFrameRenderer, prewarmExportRenderer } from "./engine/engine-export.mjs";
 import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs";
 import { checkExportContext } from "./export-canvas.mjs";
 import { buildExportRequest, exportFormatInfo, exportJob } from "./export-request.mjs";
@@ -233,7 +233,9 @@ export function createExportFlow(ctx) {
     measurement.onProgress = value => progressUI.update(value);
     measurement.releaseRenderer = () => frameRenderer?.dispose();
     try {
-      frameRenderer = new ExportFrameRenderer({
+      // The engine draws the frames of documents it draws (src/engine/engine-export.mjs);
+      // SVG stays vector output, from the JavaScript renderer.
+      frameRenderer = createExportFrameRenderer({
         width: options.width,
         height: options.height,
         smoothing: options.smoothing,
@@ -244,7 +246,7 @@ export function createExportFlow(ctx) {
           editor.report === source
             ? `${editor.revision}:${editor.frameDraftRevision}`
             : "replaced",
-      });
+      }, {stage: state.renderer, playback, revision: editor.revision, range: [start, start + frames - 1], vector: format === 'svg'});
       await frameRenderer.load(report);
       measurement.stage = 'encode';
       const saved = await render(
@@ -455,6 +457,8 @@ export function createExportFlow(ctx) {
   function showExport() {
     finishCurrentEdit();
     sheet?.close();
+    // The engine's export worker and its GPU device start while the choices are made.
+    prewarmExportRenderer({ stage: state.renderer });
     const report = editor.report, audio = audioState(report), clips = audibleClips(audio);
     const fps = report.frame_delay_ms ? 1000 / report.frame_delay_ms : report.fps;
     const opened = sheet = openExportSheet({

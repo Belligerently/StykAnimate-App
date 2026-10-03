@@ -16,6 +16,8 @@ styk-eval = { path = "../styk-eval" }
 styk-edit = { path = "../styk-edit" }
 styk-engine = { path = "../styk-engine" }
 styk-render = { path = "../styk-render" }
+styk-export = { path = "../styk-export" }
+styk-draw = { path = "../styk-draw" }
 styk-math = { path = "../styk-math" }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

@@ -124,10 +124,13 @@ impl EngineHandle {
 
     /// Commits everything staged in `batch` on this thread and returns the outcome as JSON, as
     /// [`EngineHandle::take_committed`] does. For small commits the next frame needs
-    /// (figure definitions while editing); documents commit in the background.
+    /// (figure definitions while editing); documents commit in the background. Never waits
+    /// (D7): while a background commit runs the answer is `{revision, busy: true}` and the
+    /// batch stays staged for the next call.
     pub fn commit_now(&self, revision: f64, batch: u32) -> String {
-        match self.engine.commit(revision as u64, batch) {
-            Ok(done) => format!(
+        match self.engine.try_commit(revision as u64, batch) {
+            Ok(None) => format!("{{\"revision\":{},\"busy\":true}}", revision as u64),
+            Ok(Some(done)) => format!(
                 "{{\"revision\":{},\"generation\":{},\"figures\":{},\"keyframes\":{},\"ms\":{:.3}}}",
                 done.revision, done.generation, done.converted.figures, done.converted.keyframes, done.ms
             ),
