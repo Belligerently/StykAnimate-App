@@ -808,6 +808,12 @@ scenario('figures-layers-sheet', app, [
     writeFileSync(`${out}/parallax-camera.document.json`, JSON.stringify(document) + '\n');
   }
   scenario('layer-parallax-camera-sheet', app, [['setLayerParallax', 'layer-1', {enabled: true}], ['undo'], ['redo']], 'parallax-camera.document.json');
+  // Renaming a movieclip: trimmed, unchanged, too long or empty, a figure that is not one;
+  // history.
+  scenario('movieclip-rename-sheet', app, [
+    ['@seek', 3], ['@select', 4, -1], ['renameMovieclip', '  Walk cycle  '], ['renameMovieclip', 'Walk cycle'], ['renameMovieclip', '   '], ['renameMovieclip', 'x'.repeat(121)],
+    ['renameMovieclip', 12], ['@select', 1, -1], ['renameMovieclip', 'Nope'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

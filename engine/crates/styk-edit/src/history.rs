@@ -38,6 +38,9 @@ pub enum CommandKind {
     VfxClips { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
     /// Fields of the document before (absent ones as none) and after (`kind: 'fields'`).
     Fields { before: Vec<(String, Option<Value>)>, after: Vec<(String, Value)>, timing: bool },
+    /// A movieclip definition before (none when it was added) and after (none when removed)
+    /// at its place in the definitions (`kind: 'movieclip-definition'`).
+    MovieclipDefinition { index: usize, before: Option<Value>, after: Option<Value> },
     /// Entries recorded inside `movieclipBatch`, undone and redone together (`kind: 'movieclip-batch'`).
     Batch { commands: Vec<Command> },
 }
@@ -196,6 +199,7 @@ impl Editor {
             CommandKind::Audio { .. } => self.apply_audio_command(command, direction)?,
             CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
             CommandKind::Fields { .. } => self.apply_fields_command(command, direction)?,
+            CommandKind::MovieclipDefinition { .. } => self.apply_movieclip_definition(command, direction)?,
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
                 for child in ordered {
