@@ -769,6 +769,18 @@ scenario('figures-layers-sheet', app, [
   scenario('figure-clipboard-ik-sheet', app, [
     ['selectMany', [2, 3]], ['copySelection'], ['pasteSelection', {pasteMode: 'instance'}], ['@select', 5, 0], ['poseJoint', 340, 290], ['undo'], ['undo'], ['redo'],
   ], 'ik-joined-unpinned.document.json');
+  // Project settings: frame rate, canvas size, both from the settings dialog; unchanged
+  // values; refusals; history. And a format 4 document, which also stores the frame delay.
+  scenario('project-settings-sheet', app, [
+    ['setFPS', 30], ['setFPS', 30], ['setFPS', 0], ['setFPS', 1.5], ['setCanvasSize', 1280, 720], ['setCanvasSize', 0, 5], ['updateProject', {fps: 12, canvas_width: 640}],
+    ['updateProject', {name: 'x'}], ['updateProject', {canvas_height: 0}], ['updateProject', {fps: 2000}], ['updateProject', {}], ['updateProject', {canvas_height: 480}], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    document.version = 4; document.frame_delay_ms = 42;
+    writeFileSync(`${out}/format4.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('project-settings-format4-sheet', app, [['setFPS', 25], ['updateProject', {fps: 7}], ['undo'], ['undo'], ['redo']], 'format4.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);
