@@ -538,11 +538,16 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     let (fw, fh, pixels) = styk_render::read_frame(&device, &queue, renderer.frame_texture().unwrap());
     image::save_buffer(out, &pixels, fw, fh, image::ColorType::Rgba8).expect("write png");
     println!(
-        "{}: tick {tick}, {} prims, {} groups, {} passes, opened {ms:.0} ms, assets {assets_ms:.0} ms, frame {encode_ms:.2} ms → {out} ({})",
+        "{}: tick {tick}, {} prims, {} groups, {} passes ({} rounds{}, layers {:.1} MiB, {} glyph masks in {:.1} MiB), opened {ms:.0} ms, assets {assets_ms:.0} ms, frame {encode_ms:.2} ms → {out} ({})",
         p.doc.name,
         renderer.stats.prims,
         renderer.stats.groups,
         renderer.stats.passes,
+        renderer.stats.rounds,
+        if renderer.stats.downscaled { ", downscaled" } else { "" },
+        renderer.stats.layer_bytes as f64 / 1048576.0,
+        renderer.stats.glyph_masks,
+        renderer.stats.glyph_bytes as f64 / 1048576.0,
         adapter.get_info().name
     );
     0

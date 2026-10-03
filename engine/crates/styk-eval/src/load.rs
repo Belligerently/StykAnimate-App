@@ -836,7 +836,13 @@ fn text_asset(a: &Value) -> Option<TextAsset> {
         .get("glyphs")?
         .as_arr()?
         .iter()
-        .map(|g| Arc::new(Glyph { path: parse_svg_path(g.get("svg_path").and_then(Value::as_str).unwrap_or("")) }))
+        .map(|g| {
+            let source = g.get("svg_path").and_then(Value::as_str).unwrap_or("");
+            // `maskFor`: finite stored bounds of positive size, and a path to fill.
+            let bounds = g.get("bounds").and_then(|b| Some([num(b, "left")?, num(b, "top")?, num(b, "right")?, num(b, "bottom")?]));
+            let bounds = bounds.filter(|b| !source.is_empty() && b.iter().all(|v| v.is_finite()) && b[2] > b[0] && b[3] > b[1]);
+            Arc::new(Glyph { path: parse_svg_path(source), bounds })
+        })
         .collect();
     let placements = a
         .get("placements")?

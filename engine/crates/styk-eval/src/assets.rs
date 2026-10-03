@@ -54,6 +54,75 @@ pub struct Assets {
     pub cels: HashMap<usize, (Arc<DrawingTiles>, Vec<u32>)>,
     /// Where the next image goes.
     cursor: Cursor,
+    /// Finer tessellations of glyphs drawn large ([`Assets::glyph_at`]), made when first
+    /// drawn and shared by the revisions of one document.
+    fine: Arc<FineGlyphs>,
+}
+
+/// Curve flattening of the tessellations a document's assets hold: within this many
+/// glyph units of the outline (level 0).
+pub const GLYPH_TOLERANCE: f32 = 0.02;
+/// Text drawn large flattens finer, by halves (levels 1 to [`GLYPH_MAX_LEVEL`]), so that
+/// its curves stay within this many world units of the outline the editor fills.
+pub const GLYPH_WORLD_TOLERANCE: f64 = 0.1;
+pub const GLYPH_MAX_LEVEL: u8 = 8;
+/// Bytes of finer glyph tessellations kept per document; beyond, the cache starts over.
+const FINE_BUDGET: usize = 64 << 20;
+
+/// The tessellation level of glyphs drawn `xs` and `ys` world units per glyph unit: the
+/// coarsest whose flattening, scaled to the world, is within [`GLYPH_WORLD_TOLERANCE`].
+pub fn glyph_level(xs: f64, ys: f64) -> u8 {
+    let scale = xs.abs().max(ys.abs());
+    if !(scale.is_finite() && scale > 0.0) {
+        return 0;
+    }
+    (scale * GLYPH_TOLERANCE as f64 / GLYPH_WORLD_TOLERANCE).log2().ceil().clamp(0.0, GLYPH_MAX_LEVEL as f64) as u8
+}
+
+/// Finer glyph tessellations by (glyph address, stroke width bits or `u32::MAX` for a fill,
+/// level), with the glyph held so its address stays its own.
+type FineMap = HashMap<(usize, u32, u8), (Arc<Glyph>, Arc<[[f32; 2]]>)>;
+
+/// [`FineMap`] and the bytes of its triangles.
+#[derive(Default)]
+struct FineGlyphs {
+    map: std::sync::Mutex<(FineMap, usize)>,
+}
+
+impl FineGlyphs {
+    /// Takes the map, spinning while another thread holds it: the interface thread may not
+    /// wait (D7), and every critical section is a lookup or an insertion.
+    fn lock(&self) -> std::sync::MutexGuard<'_, (FineMap, usize)> {
+        loop {
+            match self.map.try_lock() {
+                Ok(guard) => return guard,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => return poisoned.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => std::hint::spin_loop(),
+            }
+        }
+    }
+
+    /// The cached triangles of `key`, or `make()`'s, stored. Tessellation runs without the
+    /// lock: two threads may both make one, and the first stored is kept.
+    fn get(&self, glyph: &Arc<Glyph>, key: (usize, u32, u8), make: impl FnOnce() -> Arc<[[f32; 2]]>) -> Arc<[[f32; 2]]> {
+        if let Some((_, triangles)) = self.lock().0.get(&key) {
+            return triangles.clone();
+        }
+        let triangles = make();
+        let mut guard = self.lock();
+        let (map, bytes) = &mut *guard;
+        if let Some((_, kept)) = map.get(&key) {
+            return kept.clone();
+        }
+        let size = std::mem::size_of_val(&*triangles);
+        if *bytes + size > FINE_BUDGET {
+            map.clear();
+            *bytes = 0;
+        }
+        *bytes += size;
+        map.insert(key, (glyph.clone(), triangles.clone()));
+        triangles
+    }
 }
 
 /// The packer's position: images are only ever appended, so a rectangle handed
@@ -125,13 +194,29 @@ impl Assets {
         assets
     }
 
-    /// Triangles of `glyph`'s outline stroked `width` wide in glyph space: prepared
-    /// for every outlined figure of the document, tessellated here for any other.
-    pub fn glyph_stroke(&self, glyph: &Arc<Glyph>, width: f32) -> Arc<[[f32; 2]]> {
-        match self.glyph_strokes.get(&(Arc::as_ptr(glyph) as usize, width.to_bits())) {
+    /// Triangles of `glyph`'s outline stroked `width` wide in glyph space, flattened at
+    /// tessellation `level` ([`glyph_level`]): level 0 prepared for every outlined figure
+    /// of the document (tessellated here for any other), finer levels when first drawn.
+    pub fn glyph_stroke(&self, glyph: &Arc<Glyph>, width: f32, level: u8) -> Arc<[[f32; 2]]> {
+        let address = Arc::as_ptr(glyph) as usize;
+        if level > 0 {
+            return self.fine.get(glyph, (address, width.to_bits(), level), || stroke_at(&glyph.path, width, level_tolerance(level)));
+        }
+        match self.glyph_strokes.get(&(address, width.to_bits())) {
             Some((_, triangles)) => triangles.clone(),
             None => stroke(&glyph.path, width),
         }
+    }
+
+    /// Triangles of `glyph` filled even-odd, flattened at tessellation `level`
+    /// ([`glyph_level`]): level 0 prepared for the document, finer levels when first
+    /// drawn (on the calling thread, cached for every later frame).
+    pub fn glyph_at(&self, glyph: &Arc<Glyph>, level: u8) -> Option<Arc<[[f32; 2]]>> {
+        if level == 0 {
+            return self.glyph(glyph).cloned();
+        }
+        let address = Arc::as_ptr(glyph) as usize;
+        self.glyphs.contains_key(&address).then(|| self.fine.get(glyph, (address, u32::MAX, level), || tessellate_at(&glyph.path, level_tolerance(level))))
     }
 
     /// The first atlas slot of each display level of `cel`.
@@ -270,17 +355,32 @@ fn glyph_path(path: &[PathCmd], close_all: bool) -> Path {
     builder.build()
 }
 
+/// The flattening tolerance of tessellation `level`, in glyph units.
+fn level_tolerance(level: u8) -> f32 {
+    GLYPH_TOLERANCE / (1u32 << level.min(GLYPH_MAX_LEVEL)) as f32
+}
+
 /// Even-odd fill triangulation of one glyph (glyph space).
 pub fn tessellate(path: &[PathCmd]) -> Arc<[[f32; 2]]> {
-    triangulate(&glyph_path(path, true), FillRule::EvenOdd, 0.02)
+    tessellate_at(path, GLYPH_TOLERANCE)
+}
+
+/// [`tessellate`] flattening curves within `tolerance` glyph units.
+pub fn tessellate_at(path: &[PathCmd], tolerance: f32) -> Arc<[[f32; 2]]> {
+    triangulate(&glyph_path(path, true), FillRule::EvenOdd, tolerance)
 }
 
 /// A glyph's outline stroked `width` wide with round joins and caps (glyph space),
 /// as the editor strokes text for a figure outline.
 pub fn stroke(path: &[PathCmd], width: f32) -> Arc<[[f32; 2]]> {
+    stroke_at(path, width, GLYPH_TOLERANCE)
+}
+
+/// [`stroke`] flattening curves within `tolerance` glyph units.
+pub fn stroke_at(path: &[PathCmd], width: f32, tolerance: f32) -> Arc<[[f32; 2]]> {
     let path = glyph_path(path, false);
     let mut buffers: VertexBuffers<[f32; 2], u32> = VertexBuffers::new();
-    let options = StrokeOptions::tolerance(0.02).with_line_width(width).with_line_join(LineJoin::Round).with_line_cap(LineCap::Round);
+    let options = StrokeOptions::tolerance(tolerance).with_line_width(width).with_line_join(LineJoin::Round).with_line_cap(LineCap::Round);
     let ok = StrokeTessellator::new()
         .tessellate_path(&path, &options, &mut BuffersBuilder::new(&mut buffers, |v: StrokeVertex| v.position().to_array()))
         .is_ok();

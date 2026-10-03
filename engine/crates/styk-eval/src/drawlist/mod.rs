@@ -22,7 +22,7 @@ use crate::vfx::layers::{item_extent, rounded, Extent, EMPTY};
 use crate::vfx::{Effect, FrameVfx, ObjectVfx};
 
 pub use styk_draw::{
-    argb8, CameraPose, EffectLayer, Effects, LayerKind, NO_LAYER, rgba8, sample_paint, window_depth, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DEPTH, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
+    argb8, CameraPose, EffectLayer, Effects, GlyphInstance, GlyphMask, LayerKind, F_GLYPH_VECTOR, K_GLYPH, NO_LAYER, rgba8, sample_paint, window_depth, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DEPTH, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
     K_COMPOSITE, K_DEPTH_RESET, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING, K_PARTICLE, K_BEAM, F_ADD,
 };
 
@@ -32,12 +32,15 @@ struct Out {
     prims: Vec<Prim>,
     paints: Vec<[f32; 4]>,
     points: Vec<[f32; 2]>,
+    /// Lone glyphs drawn from masks; `K_GLYPH` and `F_GLYPH_VECTOR` records hold local
+    /// indices, fixed up when merged.
+    glyphs: Vec<GlyphInstance>,
     bounds: [f32; 4],
 }
 
 impl Out {
     fn new() -> Out {
-        Out { prims: Vec::new(), paints: Vec::new(), points: Vec::new(), bounds: [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY] }
+        Out { prims: Vec::new(), paints: Vec::new(), points: Vec::new(), glyphs: Vec::new(), bounds: [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY] }
     }
     fn grow(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) {
         self.bounds[0] = self.bounds[0].min(x0 as f32);
@@ -420,9 +423,10 @@ impl<'a> Ctx<'a> {
         }
         let place = Self::text_place(it, seg, t);
         let color = rgba8(rgb, 1.0);
+        let level = crate::assets::glyph_level((it.end[0] - it.start[0]).hypot(it.end[1] - it.start[1]) / t.width, it.scale);
         for &(g, dx, dy) in &t.placements {
             let Some(glyph) = t.glyphs.get(g as usize) else { continue };
-            let tris = self.assets.glyph_stroke(glyph, width);
+            let tris = self.assets.glyph_stroke(glyph, width, level);
             for tr in tris.chunks_exact(3) {
                 let p = |v: [f32; 2]| place(v[0] as f64 + dx as f64, v[1] as f64 + dy as f64);
                 let (a, b, c) = (p(tr[0]), p(tr[1]), p(tr[2]));
@@ -430,6 +434,43 @@ impl<'a> Ctx<'a> {
                 out.push(prim(K_TRI, color, NO_PAINT, [a[0], a[1], b[0], b[1]], [c[0], c[1], 0.0, 0.0], [0.0; 4]), bounds);
             }
         }
+    }
+
+    /// A lone solid glyph (`glyph_mask`): its [`K_GLYPH`] record, drawn from a mask where the
+    /// view allows one, then its triangles flagged [`F_GLYPH_VECTOR`] for other views. The
+    /// object's `opacity` is applied to its colour, as the editor's glyph shader applies it:
+    /// a glyph does not overlap itself (its triangles share no sample).
+    fn glyph(&self, out: &mut Out, it: &Item, mask: GlyphMask, opacity: f64) {
+        let fig = self.figure(it);
+        let Some(text) = fig.segments.get(it.index as usize).and_then(|seg| fig.text(seg.asset)) else { return };
+        let Some(&(g, dx, dy)) = text.placements.first() else { return };
+        let level = crate::assets::glyph_level(mask.scale[0], mask.scale[1]);
+        let Some(triangles) = text.glyphs.get(g as usize).and_then(|glyph| self.assets.glyph_at(glyph, level)) else { return };
+        let index = out.glyphs.len() as u32;
+        let color = rgba8(self.tint.unwrap_or(it.rgb), it.alpha.clamp(0.0, 1.0) * opacity.clamp(0.0, 1.0));
+        let (sin, cos) = mask.angle.sin_cos();
+        let place = |x: f64, y: f64| -> [f64; 2] {
+            let (lx, ly) = (mask.scale[0] * (x + dx as f64), mask.scale[1] * (y + dy as f64));
+            [mask.origin[0] + cos * lx - sin * ly, mask.origin[1] + sin * lx + cos * ly]
+        };
+        // The record covers the glyph's bounds and the mask's two texels of padding, which
+        // stay within four world units at the lowest raster density.
+        let [l, t, r, b] = mask.bounds;
+        let corners = [place(l, t), place(r, t), place(l, b), place(r, b)];
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for p in corners {
+            (x0, y0, x1, y1) = (x0.min(p[0]), y0.min(p[1]), x1.max(p[0]), y1.max(p[1]));
+        }
+        out.push(Prim { kind: K_GLYPH, group: 0, color, paint: NO_PAINT, a: [0.0; 4], b: [f32::from_bits(index), 0.0, 0.0, 0.0], c: [0.0; 4] }, [x0 - 4.0, y0 - 4.0, x1 + 4.0, y1 + 4.0]);
+        for tr in triangles.as_chunks::<3>().0 {
+            let p = |v: [f32; 2]| place(v[0] as f64, v[1] as f64);
+            let (a, b, c) = (p(tr[0]), p(tr[1]), p(tr[2]));
+            let bounds = [a[0].min(b[0]).min(c[0]), a[1].min(b[1]).min(c[1]), a[0].max(b[0]).max(c[0]), a[1].max(b[1]).max(c[1])];
+            let mut record = prim(K_TRI | F_GLYPH_VECTOR, color, NO_PAINT, [a[0], a[1], b[0], b[1]], [c[0], c[1], 0.0, 0.0], [0.0; 4]);
+            record.b[2] = f32::from_bits(index);
+            out.push(record, bounds);
+        }
+        out.glyphs.push(GlyphInstance { mask, triangles });
     }
 
     /// Vector text (`drawPrimitives` text branch), even-odd filled glyphs.
@@ -460,8 +501,10 @@ impl<'a> Ctx<'a> {
         } else {
             (rgba8(it.rgb, it.alpha), NO_PAINT)
         };
+        // Large text flattens its curves finer, so they stay as close to the outline in the world.
+        let level = crate::assets::glyph_level(sx, sy);
         for &(g, dx, dy) in &t.placements {
-            let Some(tris) = t.glyphs.get(g as usize).and_then(|glyph| self.assets.glyph(glyph)) else { continue };
+            let Some(tris) = t.glyphs.get(g as usize).and_then(|glyph| self.assets.glyph_at(glyph, level)) else { continue };
             for tr in tris.chunks_exact(3) {
                 let p = |v: [f32; 2]| place(v[0] as f64 + dx as f64, v[1] as f64 + dy as f64);
                 let (a, b, c) = (p(tr[0]), p(tr[1]), p(tr[2]));
@@ -579,11 +622,11 @@ struct ObjectOut {
     extents: Vec<(Extent, f64)>,
     /// The object carries effects of its own (figure or node stacks).
     has_fx: bool,
-    /// The object holds depth-tested faces, which the editor draws from a raster of
-    /// the object's own (`requiresCompatibilityTexture`).
-    depth: bool,
+    /// The object holds depth-tested faces or text that is not a lone glyph, which the
+    /// editor draws from a raster of the object's own (`requiresCompatibilityTexture`).
+    raster: bool,
     /// `objectBounds` of the object (x, y, width, height), with effect padding;
-    /// measured when the frame has effects or depth-tested faces.
+    /// measured when the frame has effects, depth-tested faces or text.
     bounds: [f64; 4],
 }
 
@@ -732,6 +775,9 @@ impl Out {
             point[0] += dx;
             point[1] += dy;
         }
+        for glyph in &mut self.glyphs {
+            glyph.mask.origin = [glyph.mask.origin[0] + d[0], glyph.mask.origin[1] + d[1]];
+        }
         // Paint records: [kind, stops, …], geometry, extra, then two rows per stop.
         let mut at = 0;
         while at + 2 < self.paints.len() {
@@ -828,8 +874,8 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         i = j;
     }
     let fx = !bypass && (scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some));
-    // Objects with depth-tested faces are drawn on rasters of their own, sized by their bounds.
-    let measured = fx || !scene.meshes.is_empty() || !scene.depths.is_empty();
+    // Objects with depth-tested faces or text are drawn on rasters of their own, sized by their bounds.
+    let measured = fx || !scene.meshes.is_empty() || !scene.depths.is_empty() || scene.items.iter().any(|it| it.kind == ItemKind::Text);
     let encode_run = |&(a, b): &(usize, usize)| -> Option<ObjectOut> {
         let first = &scene.items[a];
         let opacity = first.opacity;
@@ -858,6 +904,8 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         let mut extents: Vec<(Extent, f64)> = Vec::new();
         let (mut with, mut without, mut largest) = (EMPTY, EMPTY, 0.0f64);
         let mut run_end = a;
+        // A lone solid glyph is drawn from a mask of its own (`glyphTextureDescriptor`).
+        let glyph = glyph_mask(scene, &scene.items[a..b]);
         for (k, it) in scene.items[a..b].iter().enumerate().map(|(k, it)| (a + k, it)) {
             // Consecutive depth-tested faces are drawn as one depth run.
             if k >= run_end && it.depth_surface() {
@@ -877,6 +925,8 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
                 }
                 let fx = Fx { stack: stack.to_vec(), bounds: rounded(bounds), domain: rounded(domain), scale, padding: pad };
                 nodes.push(Node { at: items.prims.len(), out, fx });
+            } else if let Some(mask) = glyph {
+                ctx.glyph(&mut items, it, mask, opacity);
             } else if k >= run_end {
                 ctx.item(&mut items, it, 0.0, [0, 0, 0]);
             }
@@ -888,7 +938,9 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
             }
         }
         let has_fx = !figure_stack.is_empty() || !nodes.is_empty();
-        let depth = run_end > a;
+        // `requiresCompatibilityTexture`: depth-tested faces, and text (the editor's
+        // `rasterObject` paints glyphs with Canvas 2D at its raster density).
+        let raster = run_end > a || (glyph.is_none() && scene.items[a..b].iter().any(|it| it.kind == ItemKind::Text));
         let mut bounds = rounded(with);
         let mut figure = has_fx.then(|| Box::new(Fx { stack: figure_stack.to_vec(), bounds, domain: rounded(without), scale, padding: largest }));
         if let Some(&(_, delta)) = translations.iter().find(|(slot, _)| *slot == first.slot) {
@@ -907,10 +959,47 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
             bounds[0] += delta[0];
             bounds[1] += delta[1];
         }
-        Some(ObjectOut { opacity, outline_alpha, outline, items, nodes, figure, extents, has_fx, depth, bounds })
+        // A lone glyph is one primitive: its opacity is in its colour (`glyphTextureDescriptor`),
+        // with no isolation layer.
+        let opacity = if glyph.is_some() { 1.0 } else { opacity };
+        Some(ObjectOut { opacity, outline_alpha, outline, items, nodes, figure, extents, has_fx, raster, bounds })
     };
     let objects: Vec<Option<ObjectOut>> = crate::par::map(&runs, 16, encode_run);
     Encoded { runs, objects, of_slot, fx }
+}
+
+/// The mask an object is drawn from when it is one solid glyph (`glyphTextureDescriptor`,
+/// src/renderer-glyphs.mjs): one text item, outside movieclips, with one visible
+/// character whose glyph has stored bounds, no effects of its own (`hasDrawableVfx`),
+/// no figure outline and no gradient. The view decides whether the mask is used
+/// ([`GlyphMask::layout`]).
+fn glyph_mask(scene: &Scene, items: &[Item]) -> Option<GlyphMask> {
+    let [it] = items else { return None };
+    if it.kind != ItemKind::Text || it.chain != crate::geometry::NO_CHAIN {
+        return None;
+    }
+    let fig = &scene.figures[it.figure as usize];
+    let seg = fig.segments.get(it.index as usize)?;
+    let text = fig.text(seg.asset)?;
+    if fig.outline.is_some() || ((seg.paint.is_some() || seg.secondary.is_some()) && it.color >> 24 != 255) || text.width == 0.0 {
+        return None;
+    }
+    let &[(g, dx, dy)] = &text.placements[..] else { return None };
+    let bounds = text.glyphs.get(g as usize)?.bounds?;
+    // Effects of the object's own, whether or not they are drawn (the preview switch).
+    let fx = scene.vfx.as_deref().and_then(|v| v.object(it.slot));
+    if fx.is_some_and(|o| !o.figure.is_empty() || o.attached.is_some() || o.segments.iter().any(|(_, s)| !s.is_empty())) {
+        return None;
+    }
+    let mirror = seg.mirror != it.image_text_flags;
+    let xs = (it.end[0] - it.start[0]).hypot(it.end[1] - it.start[1]) / text.width;
+    Some(GlyphMask {
+        bounds,
+        origin: if seg.reverse { it.end } else { it.start },
+        angle: it.angle + if seg.reverse { PI } else { 0.0 } - if mirror { PI } else { 0.0 },
+        scale: [if mirror { -xs } else { xs }, it.scale],
+        offset: [dx as f64, dy as f64],
+    })
 }
 
 /// A frame (the scene's own, `TOP`) or a movieclip owner's frame.
@@ -1077,9 +1166,9 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
             }
         }
     }
-    // An entry without effects that holds depth-tested faces is drawn on a raster of
-    // its own too (`requiresCompatibilityTexture`): docs/engine/spatial.md.
-    let mut entry_depth = vec![false; range.1 - range.0];
+    // An entry without effects that holds depth-tested faces or text is drawn on a raster
+    // of its own too (`requiresCompatibilityTexture`): docs/engine/spatial.md, rendering.md.
+    let mut entry_raster = vec![false; range.1 - range.0];
     let mut start = range.0;
     while start < range.1 {
         let mut end = start + 1;
@@ -1088,8 +1177,8 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
                 end += 1;
             }
         }
-        let any = !entry_fx[start - range.0] && (start..end).any(|k| encoded.objects[k].as_ref().is_some_and(|o| o.depth));
-        entry_depth[start - range.0..end - range.0].fill(any);
+        let any = !entry_fx[start - range.0] && (start..end).any(|k| encoded.objects[k].as_ref().is_some_and(|o| o.raster));
+        entry_raster[start - range.0..end - range.0].fill(any);
         start = end;
     }
     let measure = |b: &mut Builder, open: &Open, end: usize| {
@@ -1151,7 +1240,7 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
             let parent = stack.last().map(|o| o.target).unwrap_or(base);
             let skipped = stack.last().is_some_and(|o| o.skipped) || s.opacity <= 0.0;
             let entry = index == 0 && entry_fx[k - range.0];
-            let raster = index == 0 && entry_depth[k - range.0];
+            let raster = index == 0 && entry_raster[k - range.0];
             let filtered = !s.stack.is_empty();
             let (target, measured) = if skipped || !(s.opacity < 1.0 || filtered || entry || raster) {
                 (parent, false)
@@ -1171,7 +1260,7 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
         }
         let Some(o) = encoded.objects[k].as_ref() else { continue };
         let parent = stack.last().map(|o| o.target).unwrap_or(base);
-        b.object(parent, o, path.is_empty() && entry_fx[k - range.0], path.is_empty() && entry_depth[k - range.0]);
+        b.object(parent, o, path.is_empty() && entry_fx[k - range.0], path.is_empty() && entry_raster[k - range.0]);
     }
     while let Some(open) = stack.pop() {
         if open.measured {
@@ -1286,8 +1375,8 @@ pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides
         }
         close_ghost(&mut b, &mut open, ghosts);
     }
-    let (prims, paints, points, groups, passes, layers) = b.finish();
-    DrawList { prims, paints, points, groups, passes, background_prims, layers, materials }
+    let (prims, paints, points, groups, passes, layers, glyphs) = b.finish();
+    DrawList { prims, paints, points, groups, passes, background_prims, layers, materials, glyphs }
 }
 
 fn close_ghost(b: &mut Builder, open: &mut Option<(u32, usize)>, ghosts: &[Ghost<'_>]) {
@@ -1316,6 +1405,7 @@ struct Builder {
     prims: Vec<Vec<Prim>>,
     paints: Vec<[f32; 4]>,
     points: Vec<[f32; 2]>,
+    glyphs: Vec<GlyphInstance>,
     layers: Vec<EffectLayer>,
 }
 
@@ -1327,6 +1417,7 @@ impl Builder {
             prims: vec![Vec::new()],
             paints: Vec::new(),
             points: Vec::new(),
+            glyphs: Vec::new(),
             layers: Vec::new(),
         }
     }
@@ -1396,20 +1487,21 @@ impl Builder {
     }
 
     fn add_ref(&mut self, target: usize, out: &Out) {
-        let (paint_base, point_base) = self.tables(out);
-        self.add_part(target, out, 0..out.prims.len(), paint_base, point_base);
+        let bases = self.tables(out);
+        self.add_part(target, out, 0..out.prims.len(), bases);
     }
 
-    /// Appends the paint and polyline tables of `out`; returns where they start.
-    fn tables(&mut self, out: &Out) -> (u32, u32) {
-        let base = (self.paints.len() as u32, self.points.len() as u32);
+    /// Appends the paint, polyline and glyph tables of `out`; returns where they start.
+    fn tables(&mut self, out: &Out) -> (u32, u32, u32) {
+        let base = (self.paints.len() as u32, self.points.len() as u32, self.glyphs.len() as u32);
         self.paints.extend_from_slice(&out.paints);
         self.points.extend_from_slice(&out.points);
+        self.glyphs.extend_from_slice(&out.glyphs);
         base
     }
 
     /// Adds primitives `range` of `out`, whose tables start at the given bases.
-    fn add_part(&mut self, target: usize, out: &Out, range: std::ops::Range<usize>, paint_base: u32, point_base: u32) {
+    fn add_part(&mut self, target: usize, out: &Out, range: std::ops::Range<usize>, (paint_base, point_base, glyph_base): (u32, u32, u32)) {
         // A part of an object grows its group by the whole object's bounds, which cover it.
         if (!range.is_empty() || out.prims.is_empty()) && out.bounds[0] <= out.bounds[2] {
             self.grow(target, out.bounds);
@@ -1422,6 +1514,11 @@ impl Builder {
             if p.kind & 255 == K_POLYLINE {
                 p.b[1] = f32::from_bits(p.b[1].to_bits() + point_base);
             }
+            if p.kind & 255 == K_GLYPH {
+                p.b[0] = f32::from_bits(p.b[0].to_bits() + glyph_base);
+            } else if p.kind & F_GLYPH_VECTOR != 0 {
+                p.b[2] = f32::from_bits(p.b[2].to_bits() + glyph_base);
+            }
             self.prims[target].push(p);
         }
     }
@@ -1429,7 +1526,7 @@ impl Builder {
     /// One figure instance: object opacity layer (with its own effects), outline
     /// layer, then its items with filtered nodes in their place. An `entry`
     /// holding effects is drawn on a raster of its own even when opaque, and so is
-    /// a `raster` entry, which holds depth-tested faces.
+    /// a `raster` entry, which holds depth-tested faces or text.
     fn object(&mut self, parent: usize, o: &ObjectOut, entry: bool, raster: bool) {
         let fx = o.figure.as_deref();
         let filtered = fx.is_some_and(|f| !f.stack.is_empty());
@@ -1461,17 +1558,17 @@ impl Builder {
         if o.nodes.is_empty() {
             self.add_ref(target, &o.items);
         } else {
-            let (paint_base, point_base) = self.tables(&o.items);
+            let bases = self.tables(&o.items);
             let mut from = 0;
             for node in &o.nodes {
-                self.add_part(target, &o.items, from..node.at, paint_base, point_base);
+                self.add_part(target, &o.items, from..node.at, bases);
                 let f = &node.fx;
                 let id = self.open_layer(target, 1.0, f.stack.clone(), LayerKind::Nested { bounds: f.bounds, domain: f.domain, scale: f.scale });
                 self.add_ref(id, &node.out);
                 self.close(id, 1.0, true);
                 from = node.at;
             }
-            self.add_part(target, &o.items, from..o.items.prims.len(), paint_base, point_base);
+            self.add_part(target, &o.items, from..o.items.prims.len(), bases);
         }
         if isolate {
             self.close(target, o.opacity, true);
@@ -1479,7 +1576,7 @@ impl Builder {
     }
 
     #[allow(clippy::type_complexity)]
-    fn finish(mut self) -> (Vec<Prim>, Vec<[f32; 4]>, Vec<[f32; 2]>, Vec<Group>, Vec<Pass>, Vec<EffectLayer>) {
+    fn finish(mut self) -> (Vec<Prim>, Vec<[f32; 4]>, Vec<[f32; 2]>, Vec<Group>, Vec<Pass>, Vec<EffectLayer>, Vec<GlyphInstance>) {
         let max_depth = self.groups.iter().map(|g| g.depth).max().unwrap_or(0);
         let mut prims = Vec::with_capacity(self.prims.iter().map(Vec::len).sum());
         let mut passes = Vec::new();
@@ -1496,7 +1593,7 @@ impl Builder {
             }
             passes.push(Pass { depth, start, end: prims.len() as u32 });
         }
-        (prims, self.paints, self.points, self.groups, passes, self.layers)
+        (prims, self.paints, self.points, self.groups, passes, self.layers, self.glyphs)
     }
 }
 

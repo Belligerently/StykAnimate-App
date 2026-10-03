@@ -98,6 +98,16 @@ pub const K_PARTICLE: u32 = 13;
 pub const K_BEAM: u32 = 14;
 /// Drawn with additive blending: colour and alpha are added to the target's.
 pub const F_ADD: u32 = 1 << 14;
+/// A lone solid glyph drawn from its coverage mask ([`GlyphMask`], docs/engine/rendering.md):
+/// `b.x` = the bits of its index in [`DrawList::glyphs`], `color` = straight RGBA (the text's
+/// colour and opacity). Renderers draw the mask the view calls for
+/// ([`GlyphMask::layout`] at the view's raster density) as a quad sampled bilinearly. Where
+/// the view allows no mask, they draw the glyph's own triangles instead: the
+/// [`F_GLYPH_VECTOR`] [`K_TRI`] records that follow the record.
+pub const K_GLYPH: u32 = 15;
+/// A [`K_TRI`] of a [`K_GLYPH`] record's glyph, drawn only where the view allows no mask:
+/// `b.z` = the bits of the record's index in [`DrawList::glyphs`].
+pub const F_GLYPH_VECTOR: u32 = 1 << 15;
 /// Particle shapes (`SHAPE` in src/vfx-generator-layers.mjs), bits 16–18 of a [`K_PARTICLE`]'s kind.
 pub const P_DISC: u32 = 0;
 pub const P_STREAK: u32 = 1;
@@ -217,15 +227,93 @@ pub enum LayerKind {
     /// Artwork inside an entry, filtered on the entry's own pixel grid (`withVfx`).
     Nested { bounds: [f64; 4], domain: [f64; 4], scale: f64 },
     /// Top-level artwork without effects that the editor still draws from a raster of
-    /// its own: an object or movieclip instance holding depth-tested 3D faces
-    /// (`requiresCompatibilityTexture`, docs/engine/spatial.md). Rasterized like an
-    /// [`LayerKind::Entry`], on a grid anchored at `bounds` (`objectBounds`, x, y,
-    /// width, height) at the editor's raster density for the view, then resampled.
+    /// its own (`requiresCompatibilityTexture`, `rasterObject`): an object or movieclip
+    /// instance holding depth-tested 3D faces (docs/engine/spatial.md) or text
+    /// (docs/engine/rendering.md). Rasterized like an [`LayerKind::Entry`], on a grid
+    /// anchored at `bounds` (`objectBounds`, x, y, width, height) at the editor's raster
+    /// density for the view, then resampled.
     Raster { bounds: [f64; 4] },
     /// The camera image: everything but onion skins, drawn through the scene's
     /// camera at the camera preview's density, filtered, then projected onto the
     /// camera rectangle (`CameraVfx`). `canvas` is the scene's size.
     Camera { canvas: [u32; 2], camera: Option<CameraPose> },
+}
+
+/// A glyph the editor's WebGPU renderer draws from a mask of its own
+/// (`glyphTextureDescriptor`, src/renderer-glyphs.mjs): an object holding one text
+/// segment with one visible character, solid, without effects, outline or movieclip.
+/// The mask is the glyph's path filled on a grid in glyph space whose sides are powers
+/// of two, at least 1.25 times the view's raster density plus two texels of padding;
+/// it is drawn as a quad, sampled bilinearly, in the text's colour and opacity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlyphMask {
+    /// The glyph's bounds in glyph space (`glyph.bounds`): left, top, right, bottom.
+    pub bounds: [f64; 4],
+    /// Glyph space to world: a glyph point `p` lands at
+    /// `origin + R(angle)·(scale.x·(p.x + offset.x), scale.y·(p.y + offset.y))`: the
+    /// text's start, angle and scales (`scale.x` negative when mirrored) and the
+    /// character's offset from the text's lower-left corner.
+    pub origin: [f64; 2],
+    pub angle: f64,
+    pub scale: [f64; 2],
+    pub offset: [f64; 2],
+}
+
+/// The mask of a [`GlyphMask`] for one raster density: its size in texels, where its
+/// texels land (`x' = m0·u + m2·v + m4`, `y' = m1·u + m3·v + m5`, texel units) and how
+/// glyph space maps onto it (`u = g0·x + g2`, `v = g1·y + g3`, the editor's
+/// `setTransform(scaleX, 0, 0, scaleY, -left·scaleX, -top·scaleY)`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlyphMaskLayout {
+    pub width: u32,
+    pub height: u32,
+    pub to_world: [f64; 6],
+    pub from_glyph: [f64; 4],
+}
+
+impl GlyphMask {
+    /// The largest mask side the editor allows (`glyphTextureDescriptor`'s default).
+    pub const MAX_DIMENSION: f64 = 4096.0;
+    /// The largest raster density at which the editor uses masks (`rasterResolution(scale) <= 8`).
+    pub const MAX_RESOLUTION: f64 = 8.0;
+
+    /// The mask at raster density `resolution` (`rasterResolution` of the view), or `None`
+    /// where the editor draws the object's raster instead: a density above
+    /// [`GlyphMask::MAX_RESOLUTION`], a mask that would exceed `max_dimension`, or a
+    /// degenerate placement. The arithmetic is `glyphTextureDescriptor`'s, in its order.
+    pub fn layout(&self, resolution: f64, max_dimension: f64) -> Option<GlyphMaskLayout> {
+        let [left, top, right, bottom] = self.bounds;
+        let [xs, ys] = self.scale;
+        if resolution > Self::MAX_RESOLUTION || !(right > left && bottom > top) || ![left, top, right, bottom].iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        if ![xs, ys, self.angle, resolution, self.offset[0], self.offset[1]].iter().all(|v| v.is_finite()) || xs == 0.0 || ys == 0.0 || resolution <= 0.0 {
+            return None;
+        }
+        let (span_x, span_y) = (right - left, bottom - top);
+        let required_x = span_x * xs.abs() * resolution + 4.0;
+        let required_y = span_y * ys.abs() * resolution + 4.0;
+        if required_x > max_dimension || required_y > max_dimension {
+            return None;
+        }
+        let dimension = |required: f64| max_dimension.min(2f64.powf((8f64.max((required - 4.0) * 1.25 + 4.0)).log2().ceil()));
+        let (width, height) = (dimension(required_x), dimension(required_y));
+        let (scale_x, scale_y) = ((width - 4.0) / span_x, (height - 4.0) / span_y);
+        let (mask_left, mask_top) = (left - 2.0 / scale_x, top - 2.0 / scale_y);
+        let (sin, cos) = self.angle.sin_cos();
+        let px = (self.offset[0] + mask_left) * xs;
+        let py = (self.offset[1] + mask_top) * ys;
+        let x = self.origin[0] + px * cos - py * sin;
+        let y = self.origin[1] + px * sin + py * cos;
+        // `axes` over the whole mask, per texel.
+        let axes = [width / scale_x * xs * cos, width / scale_x * xs * sin, -height / scale_y * ys * sin, height / scale_y * ys * cos];
+        Some(GlyphMaskLayout {
+            width: width as u32,
+            height: height as u32,
+            to_world: [axes[0] / width, axes[1] / width, axes[2] / height, axes[3] / height, x, y],
+            from_glyph: [scale_x, scale_y, -mask_left * scale_x, -mask_top * scale_y],
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -250,6 +338,18 @@ pub struct DrawList {
     pub layers: Vec<EffectLayer>,
     /// The particle material rows [`P_SPRITE`] particles sample, one bit per row.
     pub materials: u32,
+    /// The glyphs [`K_GLYPH`] records draw, by index.
+    pub glyphs: Vec<GlyphInstance>,
+}
+
+/// One [`K_GLYPH`] record's glyph: where its mask is laid out and what fills it.
+#[derive(Clone, Debug)]
+pub struct GlyphInstance {
+    pub mask: GlyphMask,
+    /// The glyph's triangles in glyph space (even-odd resolved, no overlaps), shared by
+    /// every instance of one glyph drawn at one tessellation level: renderers key the masks
+    /// they keep by this allocation.
+    pub triangles: std::sync::Arc<[[f32; 2]]>,
 }
 
 impl DrawList {
@@ -259,6 +359,7 @@ impl DrawList {
             + self.points.len() * 8
             + self.groups.len() * std::mem::size_of::<Group>()
             + self.layers.len() * (std::mem::size_of::<EffectLayer>() + 64)
+            + self.glyphs.len() * std::mem::size_of::<GlyphInstance>()
     }
 }
 
@@ -334,6 +435,51 @@ mod tests {
         assert_eq!(sample_paint(&paints, 0, [-5.0, 0.0]), [1.0, 0.0, 0.0, 1.0]);
         assert_eq!(sample_paint(&paints, 0, [5.0, 3.0]), [0.5, 0.0, 0.5, 1.0]);
         assert_eq!(sample_paint(&paints, 0, [20.0, 0.0]), [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    /// `glyphTextureDescriptor` (src/renderer-glyphs.mjs) on the same three items: plain,
+    /// mirrored at a large scale, and reversed and mirrored by the object's flag at a
+    /// quarter-octave density. Expected numbers printed by the editor's own function.
+    #[test]
+    fn glyph_masks_are_laid_out_as_the_editor_lays_them_out() {
+        use std::f64::consts::PI;
+        let bounds = [0.5859375, 10.68359375, 31.162109375, 26.23046875];
+        let (left, bottom, width) = (-3.25, 2.5, 40.75);
+        let offset = [1.25 - left, -0.75 - bottom];
+        let mask = |start: [f64; 2], end: [f64; 2], angle: f64, ys: f64, reverse: bool, mirror: bool| GlyphMask {
+            bounds,
+            origin: if reverse { end } else { start },
+            angle: angle + if reverse { PI } else { 0.0 } - if mirror { PI } else { 0.0 },
+            scale: [(end[0] - start[0]).hypot(end[1] - start[1]) / width * if mirror { -1.0 } else { 1.0 }, ys],
+            offset,
+        };
+        let cases = [
+            (mask([100.0, 50.0], [180.0, 70.0], 20f64.atan2(80.0), 1.5, false, false), 0.5, (64, 32, [105.68340140318618, 61.197407935312526], [64.02862985685071, 16.00715746421268, -6.464007506548696, 25.856030026194784])),
+            (
+                mask([1095.0865478515625, -342.3170166015625], [-1200.0, 300.0], 2.91361312482548, 60.0, false, true),
+                0.5,
+                (2048, 1024, [907.4258268119008, 157.2079183415732], [-1745.3927877345693, 404.9540393340701, 211.6515252892565, 912.2394392222302]),
+            ),
+            (
+                mask([-20.0, 10.0], [30.0, -40.0], -0.785, -2.0, true, true),
+                2.378414230005442,
+                (256, 128, [13.900951276616404, -44.221814954907316], [-38.1274515700087, 38.097101741289485, -22.686808232252876, -22.704881542624634]),
+            ),
+        ];
+        for (glyph, resolution, (w, h, at, axes)) in cases {
+            let layout = glyph.layout(resolution, GlyphMask::MAX_DIMENSION).expect("a mask");
+            assert_eq!((layout.width, layout.height), (w, h));
+            let m = layout.to_world;
+            let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * b.abs().max(1.0);
+            assert!(close(m[4], at[0]) && close(m[5], at[1]), "{m:?} against {at:?}");
+            let whole = [m[0] * w as f64, m[1] * w as f64, m[2] * h as f64, m[3] * h as f64];
+            assert!(whole.iter().zip(axes).all(|(&a, b)| close(a, b)), "{whole:?} against {axes:?}");
+        }
+        // Beyond the editor's density or its largest mask, the object's raster is drawn instead.
+        let (glyph, ..) = cases[0];
+        assert!(glyph.layout(8.0, GlyphMask::MAX_DIMENSION).is_some());
+        assert!(glyph.layout(9.51, GlyphMask::MAX_DIMENSION).is_none());
+        assert!(cases[1].0.layout(4.0, GlyphMask::MAX_DIMENSION).is_none(), "a mask wider than 4096 texels");
     }
 
     #[test]

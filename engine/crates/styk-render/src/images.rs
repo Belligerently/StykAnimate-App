@@ -21,7 +21,8 @@ pub fn decode_images(doc: &Document, assets: &Assets) -> Vec<DecodedImage> {
 
 
 impl Renderer {
-    pub(crate) fn sprite_bind(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, view: &wgpu::TextureView, linear: &wgpu::Sampler, materials: &wgpu::TextureView, material_sampler: &wgpu::Sampler) -> wgpu::BindGroup {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn sprite_bind(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, view: &wgpu::TextureView, linear: &wgpu::Sampler, materials: &wgpu::TextureView, material_sampler: &wgpu::Sampler, glyphs: &wgpu::TextureView) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("styk sprites"),
             layout,
@@ -30,13 +31,14 @@ impl Renderer {
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(linear) },
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(materials) },
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(material_sampler) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(glyphs) },
             ],
         })
     }
 
-    /// Binds the sprite atlas and the particle materials again (either was replaced).
+    /// Binds the sprite atlas, the particle materials and the glyph masks again (one was replaced).
     pub(crate) fn rebind_sprites(&mut self) {
-        self.sprite_bind = Self::sprite_bind(&self.device, &self.layout1, &self.sprite_view, &self.linear, &self.materials.view, &self.material_sampler);
+        self.sprite_bind = Self::sprite_bind(&self.device, &self.layout1, &self.sprite_view, &self.linear, &self.materials.view, &self.material_sampler, &self.glyphs.view);
     }
 
     /// Allocates the sprite atlas for a document (pages from its asset layout).
