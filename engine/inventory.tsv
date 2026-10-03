@@ -501,15 +501,15 @@ src/vfx-clip-timeline.mjs	ui	-	stays
 src/vfx-clips.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS
 src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
 src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
-src/vfx-generator-anchors.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	js	
-src/vfx-generator-atlas.mjs	engine	styk-render::generators	js	
-src/vfx-generator-canvas.mjs	engine	styk-render::generators	js	
-src/vfx-generator-frame.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-gpu.mjs	engine	styk-render::generators	js	
-src/vfx-generator-layers.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-styles.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generators.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-atlas.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-canvas.mjs	engine	styk-render::generators	partial	Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it
+src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-gpu.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-layers.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-styles.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generators.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-gizmos.mjs	ui	-	stays	
 src/vfx-gpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer
 src/vfx-icons.mjs	ui	-	stays	
