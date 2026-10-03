@@ -618,8 +618,25 @@ impl Editor {
             let current: Vec<Value> = plan.keys(&id).into_iter().filter(|k| !k.get("patchOnly").is_some_and(Value::truthy)).collect();
             let name = |key: Option<&Value>| key.and_then(|k| k.get("id")).cloned();
             let tick = |key: Option<&Value>| key.and_then(|k| num(k, "tick"));
+            // Where each previous key with a text identity is (the first of equal ones, as a
+            // scan finds it); other identities are looked for by scanning.
+            let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::with_capacity(previous.len());
+            let mut other = false;
+            for (at, old) in previous.iter().enumerate() {
+                match old.get("id").and_then(|id| id.as_str().map(str::to_string)) {
+                    Some(id) => {
+                        index.entry(id).or_insert(at);
+                    }
+                    None => other = true,
+                }
+            }
             for (i, key) in current.iter().enumerate() {
-                let Some(at) = previous.iter().position(|old| name(Some(old)) == name(Some(key))) else { continue };
+                let scan = || previous.iter().position(|old| name(Some(old)) == name(Some(key)));
+                let found = match key.get("id").and_then(|id| id.as_str().map(str::to_string)) {
+                    Some(id) if !other => index.get(&id).copied(),
+                    _ => scan(),
+                };
+                let Some(at) = found else { continue };
                 let (old, old_next, next) = (&previous[at], previous.get(at + 1), current.get(i + 1));
                 let moved = tick(Some(key)) != tick(Some(old))
                     || key.get("interpolation") != old.get("interpolation")
@@ -689,7 +706,7 @@ impl Editor {
                 return Err(EditError::Invalid("errors.layerSheet.invalidLayerExposureLength".into()));
             }
             let mut previous = -1.0;
-            let mut seen: Vec<String> = Vec::new();
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             for key in plan.keys(id) {
                 let name = key.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                 let tick = num(&key, "tick").unwrap_or(f64::NAN);
@@ -715,7 +732,7 @@ impl Editor {
                         }
                     }
                 }
-                seen.push(name);
+                seen.insert(name);
             }
         }
         // An untouched track may not outlast a shortened sheet.

@@ -7,7 +7,9 @@
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 //!   styk generators <file> <tick>…        the generated effects of frames: draws, live particles, timing
 //!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
-//!   styk edit-bench <report.json> <uid> <tick>   what a gesture costs in styk-edit on a document
+//!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
+//!                                         on a document, called directly and through an edit
+//!                                         session's JSON (as the app calls it)
 //!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
 //!                                         (engine/tools/records-reference.mjs wrote the folder)
 
@@ -45,7 +47,7 @@ fn main() {
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
         Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
-        Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3]),
+        Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3], &args[4..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
@@ -81,7 +83,9 @@ fn edit_replay(files: &[String]) -> i32 {
 
 /// Times a gesture in styk-edit on a loaded report (records-reference.mjs writes one):
 /// selecting a figure at a tick, a drag of 30 moves and of 30 joint poses, each committed.
-fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
+fn edit_bench(report: &str, uid: &str, tick: &str, rest: &[String]) -> i32 {
+    let report_path = report.to_string();
+    let joint = rest.iter().position(|a| a == "--joint").and_then(|at| rest.get(at + 1)).map_or("0".to_string(), |j| j.clone());
     let ms = |since: Instant| since.elapsed().as_secs_f64() * 1000.0;
     let started = Instant::now();
     let tree = match std::fs::read(report).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())) {
@@ -102,8 +106,8 @@ fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
     };
     let report = |label: &str, (time, result): (f64, Result<usize, String>)| println!("{label}: {time:.2} ms{}", result.err().map(|e| format!(" ({e})")).unwrap_or_default());
     report("seek (first evaluation)", call("seek", &[num(tick)]));
-    report("select", call("select", &[num(uid), num("0")]));
-    for (gesture, step) in [("moveSelection", "move"), ("poseJoint", "pose")] {
+    report("select", call("select", &[num(uid), num(&joint)]));
+    for (gesture, step) in [("moveSelection", "move"), ("moveSelection", "move again"), ("poseJoint", "pose")] {
         report(&format!("beginDrag for {step}"), call("beginDrag", &[styk_doc::Value::str("Pose figure")]));
         let mut times = Vec::new();
         for i in 0..30 {
@@ -121,6 +125,33 @@ fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
         report(&format!("commitDrag after {step}"), call("commitDrag", &[]));
     }
     report("undo", call("undo", &[]));
+    // The same pose gesture through a session, JSON in and out, as the app's calls go.
+    let tree = styk_doc::json::parse(&std::fs::read(report_path).unwrap_or_default()).unwrap_or(styk_doc::Value::Null);
+    let state = format!(r#"{{"propertyChannels":true,"layerTimeline":true,"tick":{tick},"frameIndex":0,"selectedUid":{uid},"selectedUids":[{uid}],"selectedJoint":{joint}}}"#);
+    let started = Instant::now();
+    let mut session = match styk_edit::session::Session::start(tree, &state) {
+        Ok(session) => session,
+        Err(error) => {
+            println!("session: {error}");
+            return 2;
+        }
+    };
+    println!("session start {:.2} ms", ms(started));
+    let view = format!(r#"{{"tick":{tick},"frameIndex":0,"selectedUid":{uid},"selectedUids":[{uid}],"selectedJoint":{joint},"activeLayerId":null,"autoKey":false}}"#);
+    let mut times = Vec::new();
+    let mut bytes = 0;
+    session.call("beginDrag", r#"["Pose figure"]"#, &view);
+    for i in 0..30 {
+        let started = Instant::now();
+        let answer = session.call("poseJoint", &format!("[{},{}]", 300 + i, 250 + i), &view);
+        times.push(ms(started));
+        bytes = answer.len();
+    }
+    times.sort_by(|a, b| a.total_cmp(b));
+    println!("session poseJoint: median {:.2} ms, slowest {:.2} ms, {bytes} bytes an answer", times[times.len() / 2], times[times.len() - 1]);
+    let started = Instant::now();
+    let answer = session.call("commitDrag", "[]", &view);
+    println!("session commitDrag: {:.2} ms, {} bytes", ms(started), answer.len());
     0
 }
 

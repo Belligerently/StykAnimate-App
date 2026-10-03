@@ -230,17 +230,24 @@ impl Loader {
             figures.push(self.cached_figure(f, version)?);
         }
         let mut keyframes = Vec::new();
+        // Where each frame's record is: its resolved styles are kept there for the next read.
+        let mut addresses: Vec<Option<usize>> = Vec::new();
         for k in d.get("keyframes").and_then(Value::as_arr).into_iter().flatten() {
             keyframes.push(self.cached_keyframe(k)?);
+            addresses.push(node_address(k));
         }
         let mut backgrounds = Vec::new();
         for b in d.get("backgrounds").and_then(Value::as_arr).into_iter().flatten() {
             backgrounds.push(self.background(b));
         }
         let mut frame_sources = HashMap::new();
+        let mut source_addresses: Vec<(Arc<str>, usize)> = Vec::new();
         if let Some(Value::Obj(sources)) = styk.get("frameSources") {
             for (id, frame) in sources.iter() {
                 frame_sources.insert(id.clone(), self.cached_keyframe(frame)?);
+                if let Some(address) = node_address(frame) {
+                    source_addresses.push((id.clone(), address));
+                }
             }
         }
         let layers = styk.get("layers").filter(|v| v.is_object()).map(|l| Arc::new(layers(l)));
@@ -292,6 +299,17 @@ impl Loader {
         };
         doc.reindex_figures();
         self.resolve_styles(&mut doc);
+        // Frames whose styled figures were resolved are cached resolved: the next read of an
+        // unchanged record and figure finds nothing stale.
+        let resolved = doc.keyframes.iter().zip(&addresses).filter_map(|(frame, address)| Some((address.as_ref()?, frame)));
+        let sources = source_addresses.iter().filter_map(|(id, address)| Some((address, doc.frame_sources.get(id)?)));
+        for (address, frame) in resolved.chain(sources) {
+            if let Some(entry) = self.keyframes.get_mut(address)
+                && !Arc::ptr_eq(&entry.1, frame)
+            {
+                entry.1 = frame.clone();
+            }
+        }
         Ok(doc)
     }
 
@@ -911,10 +929,14 @@ impl Loader {
     fn resolve_styles(&mut self, doc: &mut Document) {
         let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
         let mut fix = |frame: &mut Arc<Keyframe>| {
-            let stale = |object: &Arc<Object>| match (&object.style, &object.figure_override, figures.get(&object.figure)) {
-                (None, _, _) | (Some(_), _, None) => false,
-                (Some(_), Some(resolved), Some(base)) => !resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
-                (Some(_), None, Some(_)) => true,
+            // Only styled objects are looked up: most frames have none.
+            let stale = |object: &Arc<Object>| {
+                object.style.is_some()
+                    && match (&object.figure_override, figures.get(&object.figure)) {
+                        (_, None) => false,
+                        (Some(resolved), Some(base)) => !resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
+                        (None, Some(_)) => true,
+                    }
             };
             if !frame.objects.iter().any(stale) {
                 return;

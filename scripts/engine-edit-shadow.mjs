@@ -15,9 +15,9 @@
 // editor computes what Node computes and numbers must match exactly.
 //
 // --own: the engine owns editing (`?engineEdit=on`, the editor adopts what the engine's
-// calls produce). The same interactions run first with the editor alone, then with the
-// engine owning; the documents, history labels and selection after them, and after
-// undoing everything, must be the same.
+// calls produce). The same interactions run first with the editor alone (shadowed, to time
+// it), then with the engine owning; the documents, history labels and selection after
+// them, and after undoing everything, must be the same. Prints what each call cost both.
 import {spawn} from 'node:child_process';
 import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -174,7 +174,9 @@ async function run(mode) {
 }
 try {
   if (own) {
-    const alone = await run('engineShadow=off');
+    // The editor alone, shadowed so that its time in each call the engine would own is
+    // measured (shadowing never changes what the editor does).
+    const alone = await run('engineShadow=on');
     const owned = await run('engineEdit=on');
     const {report, steps, problems} = owned;
     console.log(`steps: ${steps.join('; ')}`);
@@ -205,6 +207,14 @@ try {
     }
     console.log(differences.length ? `DIFFERENT from the editor alone:\n  ${differences.join('\n  ')}`
       : `the same as the editor alone: document (${alone.outcome.after.document.length} bytes; ${rounded} numbers differ in their last digits), history (${alone.outcome.after.undo.length} entries), selection, and after undoing everything`);
+    // What each call cost the editor alone and the engine owning it (its call and the
+    // editor's adoption of the answer).
+    const ms = value => (value ?? 0).toFixed(1);
+    for (const [name, entry] of Object.entries(report.byCall ?? {})) {
+      const editor = alone.report?.byCall?.[name];
+      console.log(`  ${name} ×${entry.calls}: editor ${editor ? `${ms(editor.editorMs)} ms (×${editor.calls})` : 'not measured'}, engine ${ms(entry.engineMs)} ms + adoption ${ms(entry.adoptMs)} ms, ${Math.round((entry.answerBytes ?? 0) / Math.max(1, entry.calls))} bytes an answer`);
+    }
+    if (alone.report) console.log(`  all owned calls: editor alone ${ms(alone.report.ownableMs)} ms, engine owning ${ms(report.ownedMs)} ms`);
     for (const problem of [...alone.problems, ...problems].slice(0, 5)) console.log(`  page: ${problem}`);
     const out = option('--out');
     if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, differences, problems}, null, 1));

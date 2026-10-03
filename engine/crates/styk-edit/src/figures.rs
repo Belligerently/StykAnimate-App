@@ -114,7 +114,7 @@ impl Editor {
         let Some((_, object)) = self.object()?.filter(|(_, o)| join_target(o).is_some()) else { return Ok(false) };
         let selected = uid(&object);
         let root = match self.selected_slot()? {
-            Some(_) => selected.and_then(|u| self.roots().ok()?.get(&u).copied()),
+            Some(_) => selected.and_then(|u| self.roots_of(&[u]).ok()?.get(&u).copied()),
             None => None,
         };
         self.transaction("Unjoin figure", |editor| {
@@ -203,7 +203,7 @@ impl Editor {
             self.new_layer_hints.insert(identity as u32, layer);
         }
         let root = match self.selected_slot()? {
-            Some(_) => original.and_then(|u| self.roots().ok()?.get(&u).copied()),
+            Some(_) => original.and_then(|u| self.roots_of(&[u]).ok()?.get(&u).copied()),
             None => None,
         };
         let at = |key: &str, world: Option<f64>| world.or_else(|| copy.get(key).and_then(Value::as_f64)).unwrap_or(f64::NAN) + 24.0;

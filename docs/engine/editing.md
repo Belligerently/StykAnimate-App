@@ -270,12 +270,34 @@ mirror's prepared document instead of converting it again.
 | `sheetInsertFrames` | 1 | 393.3 ms | 359.6 ms | 70.8 ms |
 | `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 365.9 ms | about 100 ms | about 40 ms |
 
-All owned calls together: 899 ms against the editor's 898 ms. The frame-drafting commands
-are three to six times faster in the engine. Joint poses on this file's 515-segment figure
-cost 1.2 ms a call in WebAssembly (0.39 ms natively, `styk edit-bench`) plus 0.45 ms
-adoption, against the editor's 0.7 ms: each call still converts and draws the posed figure
-whole where the editor rebuilds only what changed, and the answer carries the whole figure
-(14 KB). Engine-owned editing therefore stays opt-in for now.
+All owned calls together: 899 ms against the editor's 898 ms. Those whole-run totals mix in
+the session's first call (about 6 ms once, while the browser compiles the engine's code to
+its fast tier) and the load of the machine, so the costs were then measured call by call.
+
+`node scripts/engine-edit-cost.mjs <file>...` (headless Chromium, the same document,
+figure and joint): four drags of 15 pointer moves, the first not counted, through an edit
+session as engine-owned editing calls it (the answer parsed) and through the editor (the
+time its change listeners take subtracted: both pay it). Adopting a pose answer adds about
+0.05 ms. Medians, 2026-10-03, after two fixes found this way: publishing a gesture matched
+each key of a layer against every earlier key (quadratic in a layer's keys), and the
+document's typed views re-read every style overlay after each commit (AyameDemo's commit
+was 7.7 ms in WebAssembly, and natively 12.7 to 13.0 ms against 1.5 to 1.7 ms after, in
+interleaved runs of `styk edit-bench`):
+
+| Document | Class | Pose: editor | Pose: engine | Commit: editor | Commit: engine |
+| --- | --- | ---: | ---: | ---: | ---: |
+| the document the app starts with (10 segments, unpinned IK) | figures | 0.325 ms | 0.16 ms | 0.81 ms | 0.22 ms |
+| rig (connectors, angle locks) | figures | 0.19 ms | 0.065 ms | 0.58 ms | 0.115 ms |
+| joined-chain (three joined figures) | figures | 0.22 ms | 0.075 ms | 0.68 ms | 0.185 ms |
+| 20 figures of 200 segments | figures | 0.36 ms | 0.23 ms | 4.02 ms | 1.915 ms |
+| AyameDemo.piv (105 figures, largest 699 segments) | figures | 1.59 ms | 0.835 ms | 3.1 ms | 2.69 ms |
+| a planted 3D leg (ik/spatial) | 3d | 0.855 ms | 0.895 ms | 0.585 ms | 0.195 ms |
+| Kung-Fu Master (81 segments, 3D, IK) | 3d | 1.66 ms | 0.74 ms | 0.5 ms | 0.25 ms |
+| Hand-and-Face Talk and React (6 figures) | 3d | 1.985 ms | 1.31 ms | 0.055 ms | 0.115 ms |
+
+Figures of 10 to 800 segments (synthetic trees, one figure) measured the same way: poses
+0.07 to 0.235 ms in the engine against 0.185 to 0.93 ms, commits 0.11 to 0.44 ms against
+0.52 to 1.36 ms.
 
 ## What a gesture costs in the engine
 
