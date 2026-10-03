@@ -33,15 +33,20 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'setCameraMotion', 'deleteCameraMotion',
   'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'copySelection', 'cutSelection', 'pasteSelection', 'duplicateSelection', 'addPolygon', 'updatePolygon', 'removePolygon',
   'beginVfxClipEdit', 'commitVfxClipEdit', 'cancelVfxClipEdit', 'setVfxClip', 'trimVfxClipStart', 'deleteVfxClip', 'moveVfxClipOrder', 'reorderVfxGroupEffect',
-  'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo'];
+  'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo',
+  // Property edits on a layer sheet (styk-edit/src/property_edit.rs).
+  'addAnimationKeys', 'addAnimationKey', 'beginAnimationEdit', 'previewAnimationEdit', 'commitAnimationEdit', 'cancelAnimationEdit', 'setSceneColor', 'setSceneBackground',
+  'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold): a view, not compared. */
-const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch']);
+const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch', 'beginAnimationEdit']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
   'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
-  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection']);
+  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection',
+  // Property edits publish the sheet; a scrub's previews are compared, not adopted.
+  'addAnimationKeys', 'addAnimationKey', 'commitAnimationEdit', 'setSceneColor', 'setSceneBackground', 'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter']);
 
 /** A switch set in the address (`?query=on|off`), else in local storage: 'on', 'off' or null. */
 const choice = (query, key) => {
@@ -97,6 +102,11 @@ const plain = (value, depth = 4) => {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plain(item, depth - 1)]).filter(([, item]) => item !== undefined));
 };
 const withoutSample = (key, value) => key === '_movieclipSample' ? undefined : value;
+/** What a property edit's preview shows (`_sheetPropertyPreview`), as the engine composes it:
+ * figures and the frame's own fields, without runtime caches and clocks. */
+const previewOf = frame => JSON.stringify(frame ? {objects: frame.objects, camera: frame.camera, background_id: frame.background_id, background_id_b: frame.background_id_b,
+  background_mix: frame.background_mix, _stykBackgroundColor: frame._stykBackgroundColor, _stykVfx: frame._stykVfx} : null,
+  (key, value) => key === '_movieclipSample' || key === 'runtime_segments' ? undefined : value);
 
 /**
  * Whether two JSON texts say the same, numbers within a few units in the last place.
@@ -251,6 +261,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     const edit = editor._authoredPoseEdit, drag = editor._drag;
     const taken = edit && drag ? new Set(drag.before.map(object => object.unique_id)) : null;
     same('draft', JSON.stringify(taken ? edit.frame.objects.filter(object => taken.has(object.unique_id)) : null, withoutSample), JSON.stringify(answer.draft));
+    if ('preview' in answer) same('preview', previewOf(editor._sheetPropertyPreview), previewOf(answer.preview));
     const published = captured.some(detail => detail?.layerSheet), styk = editor.report._styk;
     if (published !== ('sheet' in answer)) problems.push(`published: engine ${'sheet' in answer}, editor ${published}`);
     else if (published) {
@@ -264,6 +275,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     }
     if (!problems.length) {
       report.compared++;
+      (report.comparedByCall ??= {})[name] = (report.comparedByCall[name] ?? 0) + 1;
       // The same but for last digits: the session goes on with its own, and later calls
       // are compared within the same tolerance.
       if (rounded) report.rounded++;
@@ -304,6 +316,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       editor.selectedUids = new Set(state.selectedUids); editor._selectedUid = state.selectedUid; editor.selectedJoint = state.selectedJoint;
     }
     editor._nextUid = state.nextUid;
+    // A property edit ends as `commitAnimationEdit` ends it, whatever it publishes.
+    if (name === 'commitAnimationEdit') { editor._animationEdit = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
     let published = false;
     for (const {kind, frameIndex, tick, ...detail} of answer.events) {
       if (kind === 'edit' && detail.live) {
