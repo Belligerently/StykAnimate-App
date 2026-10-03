@@ -5,11 +5,13 @@
  * events, the gesture's draft and what a command published. The JavaScript editor
  * stays the one the app uses; nothing the engine answers is applied.
  *
- * Off unless `?engineShadow=on` or `localStorage['stykanimate.engine.shadowEdit'] = 'on'`.
+ * With `?engineShadow=on` or `localStorage['stykanimate.engine.shadowEdit'] = 'on'`.
  * Results accumulate in `globalThis.__stykEditShadow`.
  *
- * With `?engineEdit=on` (or `localStorage['stykanimate.engine.ownEdit'] = 'on'`) the
- * engine runs the calls in OWNED in the editor's place while a session lives: the editor
+ * Engine-owned editing: the engine runs the calls in OWNED in the editor's place while a
+ * session lives, by default for documents of an editing class in OWNED_CLASSES (D15:
+ * classes measured not slower than the editor), for every document with `?engineEdit=on`
+ * (or `localStorage['stykanimate.engine.ownEdit'] = 'on'`), never with `off`. The editor
  * adopts the gesture's draft and what the call published (`adoptLayerSheet`), with its own
  * bookkeeping, events and history, and does not compute them. The other ported calls
  * (selection, seeking, starting and cancelling a gesture, undo and redo) run in both and
@@ -25,24 +27,56 @@ import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
-  'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'undo', 'redo'];
+  'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'undo', 'redo'];
 /** Calls that return a frame or a figure record: a view, not compared. */
 const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
   'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
-  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose']);
+  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned']);
 
-const setting = (query, key) => {
+/** A switch set in the address (`?query=on|off`), else in local storage: 'on', 'off' or null. */
+const choice = (query, key) => {
   try {
     const value = new URLSearchParams(globalThis.location?.search ?? '').get(query);
-    if (value) return value === 'on';
-    return globalThis.localStorage?.getItem(key) === 'on';
-  } catch { return false; }
+    if (value) return value === 'on' ? 'on' : 'off';
+    const stored = globalThis.localStorage?.getItem(key);
+    return stored === 'on' || stored === 'off' ? stored : null;
+  } catch { return null; }
 };
-export const shadowEditEnabled = () => setting('engineShadow', 'stykanimate.engine.shadowEdit') || engineEditEnabled();
-export const engineEditEnabled = () => setting('engineEdit', 'stykanimate.engine.ownEdit');
+
+/**
+ * How the engine takes part in editing: `own` (it runs every ported call), `shadow` (it
+ * runs them too and is compared; the editor stays in charge), `off`, or `classes` (the
+ * default: it owns the calls of documents whose editing class is in OWNED_CLASSES and stays
+ * out of the others).
+ */
+export function engineEditMode() {
+  const edit = choice('engineEdit', 'stykanimate.engine.ownEdit');
+  if (edit === 'on') return 'own';
+  if (choice('engineShadow', 'stykanimate.engine.shadowEdit') === 'on') return 'shadow';
+  return edit === 'off' ? 'off' : 'classes';
+}
+
+/** Segments across a document's figure definitions from which it is a large one. */
+const LARGE = 1000;
+
+/**
+ * A document's editing class (D15, docs/engine/editing.md): `movieclips` when a figure is a
+ * movieclip, `3d` when a figure has 3D bones or a mesh, else `large figures` from LARGE
+ * segments across its figure definitions and `figures` below.
+ */
+export function editingClass(report) {
+  const figures = report?.figure_types ?? [];
+  if (figures.some(figure => figure?._styk?.movieclip)) return 'movieclips';
+  if (figures.some(figure => figure?.segments?.some(segment => segment?._stykRig?.spatial))) return '3d';
+  return figures.reduce((sum, figure) => sum + (figure?.segments?.length ?? 0), 0) >= LARGE ? 'large figures' : 'figures';
+}
+
+/** The classes the engine edits by default: their calls cost no more in the engine than in
+ * the editor, adoption included (measured 2026-10-03, docs/engine/editing.md). */
+export const OWNED_CLASSES = new Set(['large figures']);
 
 /** Event details as plain data, as engine/tools/edit-replay.mjs records them. */
 const plain = (value, depth = 4) => {
@@ -90,8 +124,18 @@ function numbersApart(a, b) {
  * @param {object} editor the app's Editor
  * @param {() => object|null} engineSide the stage's engine side (`renderer.engineSide`), once it exists
  */
-export function installEditShadow(editor, engineSide, {own = engineEditEnabled()} = {}) {
-  const report = globalThis.__stykEditShadow = {own, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0};
+export function installEditShadow(editor, engineSide, {mode = engineEditMode()} = {}) {
+  const own = mode !== 'shadow';
+  // `classes`: the document's class, read again when the document or its figures change.
+  let classed = {report: null, revision: -1, owned: false};
+  const ownedClass = () => {
+    if (mode !== 'classes') return true;
+    if (classed.report !== editor.report || classed.revision !== editor.definitionRevision) {
+      classed = {report: editor.report, revision: editor.definitionRevision, owned: OWNED_CLASSES.has(editingClass(editor.report))};
+    }
+    return classed.owned;
+  };
+  const report = globalThis.__stykEditShadow = {own, mode, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0};
   let session = null, depth = 0, events = null;
   const end = why => {
     if (!session) return;
@@ -123,6 +167,7 @@ export function installEditShadow(editor, engineSide, {own = engineEditEnabled()
 
   const begin = () => {
     if (session) return session;
+    if (!ownedClass()) return null;
     const side = engineSide();
     if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
@@ -272,7 +317,7 @@ export function installEditShadow(editor, engineSide, {own = engineEditEnabled()
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
         try { text = live.call(name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
-        catch (error) { report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; }
+        catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; }
         report.calls++;
         const why = answer?.status === 'ok' ? unadoptable(answer) : null;
         if (answer?.status === 'ok' && !why) {
@@ -316,7 +361,7 @@ export function installEditShadow(editor, engineSide, {own = engineEditEnabled()
           report.engineMs += performance.now() - called; report.calls++;
           if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
-        } catch (error) { report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; }
+        } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; }
       }
       if (thrown) throw thrown;
       return result;

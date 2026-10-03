@@ -32,7 +32,7 @@ import { Editor } from "./editor.mjs";
 import { createRenderer as createScriptRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
 import { createStageRenderer } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
-import { installEditShadow, shadowEditEnabled } from "./engine/engine-edit-shadow.mjs";
+import { installEditShadow, engineEditMode } from "./engine/engine-edit-shadow.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
@@ -601,8 +601,10 @@ function syncShell() {
 }
 // The stage: the engine draws the documents it can, the JavaScript renderer the others (docs/RUST-ENGINE-PORT.md).
 const createRenderer = (surface, options) => createStageRenderer(surface, options, createScriptRenderer);
-// A development check: ported editor calls also run in the engine and are compared (docs/engine/editing.md).
-if (shadowEditEnabled()) installEditShadow(editor, () => state.renderer?.engineSide ?? null);
+// Ported editor calls run in the engine for the document classes it edits by default, or
+// for every document, or are compared with the editor's (docs/engine/editing.md).
+const engineEditing = engineEditMode();
+if (engineEditing !== 'off') installEditShadow(editor, () => state.renderer?.engineSide ?? null, {mode: engineEditing});
 const playback = createStagePlayback(new PlaybackCache({
   gpuIsolation: true,
   diagnostics:telemetry.performance,

@@ -414,6 +414,87 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 5], ['setSpatialPose', {turn: 0.2, pitch: 0.1}], ['resetSpatialPose'], ['setSpatialPose', {turn: -0.3}], ['@select', 1, 11], ['setSpatialMotion', 4],
     ['resetSpatialPose', true], ['undo'], ['undo'], ['redo'],
   ], 'spatial-reset.document.json');
+  // Pose choices: a group of 3D bones shown one at a time (or none), and a group of presets
+  // over existing channels (as tests/rig-pose-choices.test.mjs builds them), on a figure
+  // turned, moved, scaled and mirrored.
+  {
+    const {construction} = await import('../../src/rig-examples-3d.mjs');
+    const {createObject, createFrame, emptyDocument} = await import('../../src/demo.mjs');
+    const {compilePoseChoices} = await import('../../scripts/hand-face/presets.mjs');
+    const eyes = () => {
+      const q = construction(); q.add(0, 0, 0, 'Figure rotation');
+      for (const label of ['Neutral', 'Focused', 'Closed']) {
+        const turn = q.add(0, 0, 0, label + ' turn'), pitch = q.add(0, 0, 0, label + ' tilt');
+        const id = q.add(0, 27, 0, label, {rig: {spatial: {parent: 0, origin: [0, 0, 0], tip: [0, 0, 27], turn, pitch}}});
+        q.segments[id - 1]._stykPoseChoice = {group: 'Eyes', label, shown: 27, hidden: 0};
+      }
+      return {figure_type_id: 1, segments: q.segments, polyfills: [], image_assets: [], text_assets: []};
+    };
+    const write = (name, figure) => {
+      const object = createObject(figure, 1, 100, 100);
+      Object.assign(object, {angles: object.angles.map(a => a + 0.6), root_x: 117, scale: 1.8, image_text_flags: 1});
+      writeFileSync(`${out}/${name}.document.json`, JSON.stringify({...emptyDocument(), figure_types: [figure], keyframes: [createFrame([object])]}) + '\n');
+    };
+    write('pose-choices', eyes());
+    const presets = eyes();
+    for (const segment of presets.segments) delete segment._stykPoseChoice;
+    compilePoseChoices(presets, [{name: 'Expression', choices: [
+      {label: 'Rest', pose: {}},
+      {label: 'Smile', pose: {bend: {Neutral: 0.4}, swing: {Focused: [0.2, -0.3]}, length: {Closed: 18}}},
+    ]}], 'Neutral');
+    write('pose-presets', presets);
+  }
+  scenario('pose-choices-sheet', app, [
+    ['@select', 1, -1], ['setPoseChoice', 'Eyes', 7], ['setPoseChoice', 'Eyes', 7], ['setPoseChoice', 'Eyes', 10], ['setPoseChoice', 'Eyes', 0], ['setPoseChoice', 'Eyes', 999],
+    ['setPoseChoice', 'Mouth', 3], ['beginDrag', 'Expression'], ['setPoseChoice', 'Eyes', 4], ['cancelDrag'], ['@seek', 2], ['setPoseChoice', 'Eyes', 4], ['undo'], ['undo'], ['redo'],
+  ], 'pose-choices.document.json');
+  scenario('pose-presets-sheet', app, [
+    ['@select', 1, -1], ['setPoseChoice', 'Expression', 2], ['setPoseChoice', 'Expression', 2], ['setPoseChoice', 'Expression', 1], ['setPoseChoice', 'Expression', 0],
+    ['@select', 1, 3], ['rotateJoint', 0.1], ['@select', 1, -1], ['setPoseChoice', 'Expression', 2], ['undo'], ['undo'], ['redo'],
+  ], 'pose-presets.document.json');
+  scenario('pose-choice-mechanism-sheet', app, [
+    ['@select', 1, -1], ['setPoseChoice', 'Mouth', 18], ['setPoseChoice', 'Mouth', 0], ['setPoseChoice', 'Mouth', 18], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json');
+  // An IK controller's settings from the inspector: pinned and released (the limb kept as
+  // drawn), stretch, chain length and bend side, its target turned (a free limb's branches
+  // turning with it), switched off and on, chains that would share bones, and refusals.
+  scenario('ik-settings-sheet', app, [
+    ['@select', 1, 3], ['setNodeIK', {pinned: true}], ['setNodeIK', {allowStretch: true}], ['setNodeIK', {bendDirection: -1}], ['poseJoint', 240, 330], ['setNodeIK', {bendDirection: 0}],
+    ['setNodeIK', {bendDirection: 1}],
+    ['setNodeIK', {chainLength: 1}], ['setNodeIK', {chainLength: 99}], ['setNodeIK', {bogus: 1}], ['setNodeIK', {enabled: 'yes'}], ['rotateIKTarget', 0.4],
+    ['poseJoint', 250, 300], ['setNodeIK', {pinned: false}], ['rotateIKTarget', -0.3], ['rotateIKTarget', 'x'], ['setNodeIK', {enabled: false}], ['setNodeIK', {enabled: true}],
+    ['@select', 1, 2], ['setNodeIK', {enabled: true, chainLength: 1}], ['@select', 1, 1], ['setNodeIK', {enabled: true}], ['setNodeIK', {enabled: true}],
+    ['@select', 1, -1], ['setNodeIK', {enabled: true}], ['setNodeIK', {pinned: true}], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('ik-settings-pinned-sheet', app, [
+    ['@select', 1, 3], ['setNodeIK', {allowStretch: true}], ['poseJoint', 560, 330], ['setNodeIK', {pinned: false}], ['@select', 1, 5], ['setNodeIK', {chainLength: 1}],
+    ['setNodeIK', {bendDirection: 0}], ['rotateIKTarget', 0.5], ['@select', 1, 7], ['setNodeIK', {enabled: false}], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/startup-pinned.json');
+  // A planted 3D leg: its swivel (through the pole when it is the only setting), the feet
+  // planted and released at once, switched off (its record kept) and on, turned.
+  scenario('ik-settings-spatial-sheet', app, [
+    ['@select', 1, 9], ['setNodeIK', {swivel: 0.4}], ['setNodeIK', {swivel: 0.2, allowStretch: true}], ['setNodeIK', {swivel: 'x'}], ['setSpatialFeetPinned', false],
+    ['setSpatialFeetPinned', true], ['setNodeIK', {enabled: false}], ['setNodeIK', {enabled: true}], ['rotateIKTarget', 0.3], ['setNodeIK', {pinned: false}],
+    ['rotateIKTarget', -0.2], ['@select', 1, 3], ['setSpatialFeetPinned', false], ['undo'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/spatial.json');
+  // Pinned controllers whose followers were never stored: configuring one stores the
+  // followers its limb is solved with, and every other pinned controller takes its own.
+  {
+    const document = JSON.parse(readFileSync(new URL('../crates/styk-eval/tests/fixtures/ik/followers.json', import.meta.url), 'utf8'));
+    for (const frame of document.keyframes) for (const object of frame.objects) if (object._stykIK?.['22']) {
+      object._stykIK['22'].followers = {};
+      object._stykIK['12'] = {enabled: true, pinned: true, allowStretch: false, bendDirection: 1, chainLength: 1, target: {x: object.root_x + 10, y: object.root_y - 40, rotation: 0}, followers: {}};
+    }
+    writeFileSync(`${out}/ik-settings-followers.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('ik-settings-followers-sheet', app, [
+    ['@select', 1, 1], ['setNodeIK', {allowStretch: true}], ['undo'], ['@select', 1, 2], ['setNodeIK', {allowStretch: true}], ['@select', 1, 1], ['setNodeIK', {chainLength: 1}],
+    ['setNodeIK', {bendDirection: -1}], ['undo'], ['redo'],
+  ], 'ik-settings-followers.document.json');
+  // IK is not put on a joint a rig derives (a connector).
+  scenario('ik-settings-rig-sheet', app, [
+    ['@select', 1, 5], ['setNodeIK', {enabled: true}], ['@select', 1, 2], ['setNodeIK', {enabled: true}], ['setNodeIK', {chainLength: 1}], ['undo'], ['redo'],
+  ], 'rig.document.json');
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

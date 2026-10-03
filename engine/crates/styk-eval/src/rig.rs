@@ -458,6 +458,8 @@ pub struct State {
     pub depth_offset: Option<[f64; 2]>,
     /// The handle before perspective (`handle.rawPoint`), when the pose has a camera.
     pub raw_point: Option<[f64; 3]>,
+    /// A spatial bone's start before perspective (`start.rawPoint`), when the pose has a camera.
+    pub start_raw: Option<[f64; 3]>,
 }
 
 pub struct Input {
@@ -496,6 +498,32 @@ fn axis_quaternion(axis: [f64; 3], angle: f64) -> [f64; 4] {
 
 fn wrap(a: f64) -> f64 {
     atan2(sin(a), cos(a))
+}
+
+/// `quaternionPose(q, previous)`: the bend, turn and pitch of a rotation, on the Euler
+/// branch nearest `previous` (`[bend, turn, pitch]`), with V8's trigonometry.
+pub fn quaternion_pose(q: [f64; 4], previous: [f64; 3]) -> [f64; 3] {
+    let n = norm(&q);
+    let [x, y, z, w] = q.map(|v| v / n);
+    let sy = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0);
+    let turn = styk_math::asin(sy);
+    let [prev_bend, prev_turn, prev_pitch] = previous;
+    let (pitch, bend) = if sy.abs() > 1.0 - 1e-10 {
+        let pitch = prev_pitch;
+        let a = quat_multiply([x, y, z, w], [-sin(pitch / 2.0), 0.0, 0.0, cos(pitch / 2.0)]);
+        (pitch, 2.0 * atan2(a[2], a[3]))
+    } else {
+        (atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y)), atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+    };
+    // Keys in the editor's order: pitch, turn, bend.
+    let near = |p: [f64; 3]| [prev_pitch + wrap(p[0] - prev_pitch), prev_turn + wrap(p[1] - prev_turn), prev_bend + wrap(p[2] - prev_bend)];
+    let first = near([pitch, turn, bend]);
+    let second = near([pitch + std::f64::consts::PI, std::f64::consts::PI - turn, bend + std::f64::consts::PI]);
+    // The editor sorts the two by the difference of their squared distances.
+    let prev = [prev_pitch, prev_turn, prev_bend];
+    let order = (0..3).fold(0.0, |s, k| s + (second[k] - prev[k]).powi(2) - (first[k] - prev[k]).powi(2));
+    let [p, t, b] = if order < 0.0 { second } else { first };
+    [b, t, p]
 }
 
 /// `shapeOffset(frame, point)`: the radial offset part proportions give a bind-space point.
@@ -716,6 +744,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         let s = State {
             depth_offset,
             raw_point: None,
+            start_raw: None,
             start,
             angle,
             authored_angle: angle,
@@ -780,6 +809,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             space: Some(Space { rotation: delta, follow: None }),
             depth_offset: None,
             raw_point: None,
+            start_raw: None,
         };
         states[i] = Some(st);
         return st;
@@ -923,6 +953,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         space,
         depth_offset: None,
         raw_point: None,
+        start_raw: None,
     };
     states[i] = Some(st);
     st
@@ -948,6 +979,7 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
         }
     };
     let mut start = input.start;
+    let mut start_raw = None;
     let mut spatial = None;
     let point = match sp {
         Spatial::Skin { point, bindings, view_points } => skin_point(*point, bindings, view_points.as_ref(), &get).unwrap_or(*point),
@@ -1013,7 +1045,7 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
             let rest_length = if shape.is_some() { length.max(SPATIAL_EPS) } else { 0.0 };
             let frame = SpatialFrame { q, t, dual, native_bend, authored_bend, motion_value, origin: *origin, axis, stretch, choice_scale, shape, rest_length };
             spatial = Some(frame);
-            start = project(o).0;
+            (start, start_raw) = project(o);
             spatial_point(&frame, *tip)
         }
     };
@@ -1025,6 +1057,7 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
         // Depth guides use the same figure rotation and scale as the surface reference X.
         depth_offset: Some([point[2] * scale * cs, point[2] * scale * sn]),
         raw_point,
+        start_raw,
         start,
         angle,
         authored_angle: input.angle,

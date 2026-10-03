@@ -75,7 +75,7 @@ impl Editor {
     fn finish_authored_drag(&mut self, ids: &[u32], after: &[Value]) -> Result<bool, EditError> {
         // A pose stores where its joined figures sit as well as their joins.
         if after.iter().any(|o| join_target(o).is_some()) {
-            let roots = self.roots()?;
+            let roots = self.roots_of(ids)?;
             for (slot, object) in self.frame_objects().iter().enumerate() {
                 let Some(id) = uid(object).filter(|u| ids.contains(u)) else { continue };
                 if join_target(object).is_none() {

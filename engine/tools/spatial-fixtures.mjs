@@ -26,6 +26,7 @@ const {convertDocumentSpatialMeshes} = await import(`${repo}/src/spatial-mesh-le
 const {movieclipFigure} = await import(`${repo}/src/movieclips.mjs`);
 const {rigExampleDocument} = await import(`${repo}/src/rig-examples.mjs`);
 const {interpolateSpatialPose} = await import(`${repo}/src/spatial-projection.mjs`);
+const {defaultFigure} = await import(`${repo}/src/demo.mjs`);
 
 // ---------------------------------------------------------------- figures
 
@@ -257,6 +258,27 @@ const fixtures = {
     nextKey(e, 6); pose(e, head, {turn: 3.6, pitch: -.8}); whole(e, 1).mirrorSelection('horizontal');
     nextKey(e, 4); pose(e, head, {turn: 4.4, pitch: 1.3}); e.select(1); e.setSpatialCamera({strength: 1, distance: 12});
     return {document: e.serialize(), ticks: [0, 2, 3, 5, 6, 8, 10]};
+  },
+  /** Drawings a spatial bone turns (`drawingRotation`): a movieclip of two forms, each eight
+   * directions at three tilts (authored as the editor's own test of them authors it), joined
+   * to a head bone whose origin sits off the figure's plane. It shows the view the bone's turn
+   * and tilt select, rolled with its bend; then the second form, picked with the drawing
+   * control; then the figure mirrored and seen in perspective (scaled by the bone's depth). */
+  'rotated-drawings': () => {
+    const r = rig(), head = r.bone(null, [0, -30, 50], 'Head', {origin: [0, 0, 50]});
+    const body = r.figure(1, 'Body'), ink = defaultFigure(1);
+    // Each frame places its ink where it can be told from every other frame.
+    const inner = {...emptyDocument(), figure_types: [ink], keyframes: Array.from({length: 48}, (_, i) => createFrame([createObject(ink, 1, (i % 8) * 14, Math.floor(i / 8) * 14)]))};
+    const forms = movieclipFigure(2, 'Head forms', inner, {duration: 48, pivot: {x: 0, y: 0}});
+    const sets = Array.from({length: 2}, (_, g) => ({name: `Form ${g}`, views: Array.from({length: 24}, (_, i) => ({name: `View ${i}`, frame: g * 24 + i}))}));
+    Object.assign(forms._styk.movieclip, {drawingSets: sets, drawingRotation: {steps: 8, tiltThreshold: 20 * Math.PI / 180}});
+    const attached = createObject(forms, 2, 0, 0, {join: {target_object_slot: 0, target_unique_id: 1, target_handle_id: head.id}, _stykMovieclip: {start: 0, end: 100, mode: 'single', offset: 0}, scale: 1.5});
+    const e = open(documentOf([body, forms], [createObject(body, 1, 260, 260), attached]));
+    pose(e, head, {turn: .7, pitch: .2, bend: .3});
+    nextKey(e, 6); pose(e, head, {turn: 2.4, pitch: -.6, bend: -.4}); e.setMovieclipDrawing(2, 1, 0);
+    nextKey(e, 6); pose(e, head, {turn: 4.1, pitch: .5, bend: .2}); whole(e, 1).mirrorSelection('horizontal');
+    nextKey(e, 4); e.select(1); e.setSpatialCamera({strength: .8, distance: 300}); pose(e, head, {turn: 5.5, pitch: .1});
+    return {document: e.serialize(), ticks: [0, 3, 6, 9, 12, 14, 16]};
   },
 };
 

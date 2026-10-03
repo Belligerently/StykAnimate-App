@@ -17,7 +17,9 @@ mod figures;
 mod frame;
 mod history;
 mod ik;
+mod ik_settings;
 mod pose;
+mod pose_choice;
 mod record;
 pub mod replay;
 mod select;
@@ -411,6 +413,10 @@ impl Editor {
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "rotateIKTarget" => self.rotate_ik_target(number(0)).map(Value::Bool),
+            "setSpatialFeetPinned" => self.set_spatial_feet_pinned(&arg(0)).map(Value::Bool),
+            "setNodeIK" => self.set_node_ik(&arg(0)).map(Value::Bool),
+            "setPoseChoice" => self.set_pose_choice(&arg(0), number(1)).map(Value::Bool),
             "resetSpatialPose" => self.reset_spatial_pose(arg(0).truthy()).map(Value::Bool),
             "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),

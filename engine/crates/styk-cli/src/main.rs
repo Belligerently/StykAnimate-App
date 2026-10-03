@@ -7,7 +7,9 @@
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 //!   styk generators <file> <tick>…        the generated effects of frames: draws, live particles, timing
 //!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
-//!   styk edit-bench <report.json> <uid> <tick>   what a gesture costs in styk-edit on a document
+//!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
+//!                                         on a document, called directly and through an edit
+//!                                         session's JSON (as the app calls it)
 //!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
 //!                                         (engine/tools/records-reference.mjs wrote the folder)
 
@@ -45,7 +47,7 @@ fn main() {
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
         Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
-        Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3]),
+        Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3], &args[4..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
@@ -81,7 +83,9 @@ fn edit_replay(files: &[String]) -> i32 {
 
 /// Times a gesture in styk-edit on a loaded report (records-reference.mjs writes one):
 /// selecting a figure at a tick, a drag of 30 moves and of 30 joint poses, each committed.
-fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
+fn edit_bench(report: &str, uid: &str, tick: &str, rest: &[String]) -> i32 {
+    let report_path = report.to_string();
+    let joint = rest.iter().position(|a| a == "--joint").and_then(|at| rest.get(at + 1)).map_or("0".to_string(), |j| j.clone());
     let ms = |since: Instant| since.elapsed().as_secs_f64() * 1000.0;
     let started = Instant::now();
     let tree = match std::fs::read(report).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())) {
@@ -102,8 +106,8 @@ fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
     };
     let report = |label: &str, (time, result): (f64, Result<usize, String>)| println!("{label}: {time:.2} ms{}", result.err().map(|e| format!(" ({e})")).unwrap_or_default());
     report("seek (first evaluation)", call("seek", &[num(tick)]));
-    report("select", call("select", &[num(uid), num("0")]));
-    for (gesture, step) in [("moveSelection", "move"), ("poseJoint", "pose")] {
+    report("select", call("select", &[num(uid), num(&joint)]));
+    for (gesture, step) in [("moveSelection", "move"), ("moveSelection", "move again"), ("poseJoint", "pose")] {
         report(&format!("beginDrag for {step}"), call("beginDrag", &[styk_doc::Value::str("Pose figure")]));
         let mut times = Vec::new();
         for i in 0..30 {
@@ -121,6 +125,33 @@ fn edit_bench(report: &str, uid: &str, tick: &str) -> i32 {
         report(&format!("commitDrag after {step}"), call("commitDrag", &[]));
     }
     report("undo", call("undo", &[]));
+    // The same pose gesture through a session, JSON in and out, as the app's calls go.
+    let tree = styk_doc::json::parse(&std::fs::read(report_path).unwrap_or_default()).unwrap_or(styk_doc::Value::Null);
+    let state = format!(r#"{{"propertyChannels":true,"layerTimeline":true,"tick":{tick},"frameIndex":0,"selectedUid":{uid},"selectedUids":[{uid}],"selectedJoint":{joint}}}"#);
+    let started = Instant::now();
+    let mut session = match styk_edit::session::Session::start(tree, &state) {
+        Ok(session) => session,
+        Err(error) => {
+            println!("session: {error}");
+            return 2;
+        }
+    };
+    println!("session start {:.2} ms", ms(started));
+    let view = format!(r#"{{"tick":{tick},"frameIndex":0,"selectedUid":{uid},"selectedUids":[{uid}],"selectedJoint":{joint},"activeLayerId":null,"autoKey":false}}"#);
+    let mut times = Vec::new();
+    let mut bytes = 0;
+    session.call("beginDrag", r#"["Pose figure"]"#, &view);
+    for i in 0..30 {
+        let started = Instant::now();
+        let answer = session.call("poseJoint", &format!("[{},{}]", 300 + i, 250 + i), &view);
+        times.push(ms(started));
+        bytes = answer.len();
+    }
+    times.sort_by(|a, b| a.total_cmp(b));
+    println!("session poseJoint: median {:.2} ms, slowest {:.2} ms, {bytes} bytes an answer", times[times.len() / 2], times[times.len() - 1]);
+    let started = Instant::now();
+    let answer = session.call("commitDrag", "[]", &view);
+    println!("session commitDrag: {:.2} ms, {} bytes", ms(started), answer.len());
     0
 }
 
@@ -261,10 +292,16 @@ fn generators(path: &str, ticks: &[String]) -> i32 {
 
 /// A frame's draw list as the app's playback prepares it: its generated effects
 /// included (earlier-tick anchors evaluated without a cache), effects optionally off.
-fn encode_frame(p: &Prepared, assets: &styk_eval::assets::Assets, tick: f64, frame: &styk_eval::eval::Frame, scene: &styk_eval::geometry::Scene, no_effects: bool) -> styk_eval::drawlist::DrawList {
+fn encode_frame(p: &Prepared, assets: &styk_eval::assets::Assets, tick: f64, frame: &styk_eval::eval::Frame, scene: &styk_eval::geometry::Scene, no_effects: bool, camera: bool) -> styk_eval::drawlist::DrawList {
     use styk_eval::vfx::generated;
-    let batch = if no_effects { None } else { generated::build(p, frame, scene, Some(tick), Some(&generated::Evaluate), 1.0) };
-    let overrides = styk_eval::drawlist::Overrides { bypass_effects: no_effects, generators: batch.as_ref(), ..Default::default() };
+    let mut batch = if no_effects { None } else { generated::build(p, frame, scene, Some(tick), Some(&generated::Evaluate), 1.0) };
+    // Through the scene camera parallax layers move, and generated effects beside a figure with it.
+    let parallax = frame.parallax.as_ref().filter(|_| camera);
+    let translations = parallax.map(|p| p.translations(&[])).unwrap_or_default();
+    if let (Some(batch), Some(parallax), Some(layers)) = (batch.as_mut(), parallax, p.doc.layers.as_deref()) {
+        batch.offset(|uid| Some(parallax.of_uid(layers, uid)));
+    }
+    let overrides = styk_eval::drawlist::Overrides { translations: &translations, bypass_effects: no_effects, generators: batch.as_ref(), ..Default::default() };
     styk_eval::drawlist::encode_with(&p.doc, assets, scene, &overrides)
 }
 
@@ -421,7 +458,7 @@ fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     let started = Instant::now();
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = encode_frame(&p, &assets, tick, &frame, &scene, false);
+    let list = encode_frame(&p, &assets, tick, &frame, &scene, false, true);
     let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
     let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
@@ -499,9 +536,11 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     renderer.prepare_sprites(&assets);
     renderer.upload_images(&assets, &images);
     let started = Instant::now();
+    // --neutral: the editor's workspace (no scene camera in the view; the camera image sits on the camera rectangle).
+    let neutral = rest.iter().any(|a| a == "--neutral");
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, false));
+    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, false, !neutral));
     let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
     let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
@@ -510,8 +549,6 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
         .unwrap_or([cw / 2.0, ch / 2.0]);
     let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
-    // --neutral: the editor's workspace (no scene camera in the view; the camera image sits on the camera rectangle).
-    let neutral = rest.iter().any(|a| a == "--neutral");
     let matrix = camera_matrix(&p.doc, if neutral { None } else { scene.camera.as_ref() }, zoom, pan);
     let view = ViewParams {
         matrix,
@@ -525,7 +562,7 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     // --after T: the same renderer drew tick T first, as in the app, where resources outlive frames.
     if let Some(first) = option(rest, "--after").and_then(|t| t.parse::<f64>().ok()) {
         let earlier_frame = p.evaluate(first);
-        let earlier = std::sync::Arc::new(encode_frame(&p, &assets, first, &earlier_frame, &build(&p.doc, &earlier_frame), false));
+        let earlier = std::sync::Arc::new(encode_frame(&p, &assets, first, &earlier_frame, &build(&p.doc, &earlier_frame), false, !neutral));
         renderer.set_list(&earlier);
         let mut encoder = device.create_command_encoder(&Default::default());
         renderer.render(&mut encoder, &view, [w, h]);
@@ -624,7 +661,7 @@ fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
     let tick: f64 = tick.parse().unwrap_or(0.0);
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, no_effects));
+    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, no_effects, true));
     renderer.set_list(&list);
     let (w, h) = (1440u32, 900u32);
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);

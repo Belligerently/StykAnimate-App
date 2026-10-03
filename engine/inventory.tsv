@@ -1,9 +1,9 @@
 path	kind	owner	status	note
 src/animation-channels.mjs	engine	styk-eval	js	
 src/animation-history.mjs	engine	styk-edit	js	
-src/animation-origin-support.mjs	engine	styk-eval	js	
+src/animation-origin-support.mjs	engine	styk-eval::origin	partial	Rust: support-graph origins with ghosts, corrections, origin rotation (styk_eval::origin); editing still JS
 src/animation-origin-validation.mjs	engine	styk-eval	js	
-src/animation-origin.mjs	engine	styk-eval	js	
+src/animation-origin.mjs	engine	styk-eval::origin	partial	Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); editing still JS
 src/animation-pose.mjs	engine	styk-eval	partial	Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS
 src/animation-properties.mjs	engine	styk-eval	js	
 src/animation-property-state.mjs	engine	styk-eval	js	
@@ -32,7 +32,7 @@ src/builder-outliner.mjs	ui	-	stays
 src/builder-session.mjs	engine	styk-edit	js	
 src/builder-surface-ui.mjs	ui	-	stays	
 src/camera-bake-authored.mjs	engine	styk-eval::camera	js	
-src/camera-follow.mjs	engine	styk-eval::camera	js	
+src/camera-follow.mjs	engine	styk-eval::follow	partial	Rust: sampling, shaping (dead zone, look-ahead, springs, zoom), sampleFollow (styk_eval::follow); followFramingOffset and incremental resampling still JS
 src/camera-monitor.mjs	ui	-	stays	
 src/camera-motion-bake-client.mjs	engine	styk-eval::camera	js	
 src/camera-motion-bake-worker.mjs	engine	styk-eval::camera	js	
@@ -41,7 +41,7 @@ src/camera-motion-graph.mjs	ui	-	stays
 src/camera-motion-localization.mjs	ui	-	stays	
 src/camera-motion-timeline.mjs	ui	-	stays	
 src/camera-motion-ui.mjs	ui	-	stays	
-src/camera-motion.mjs	engine	styk-eval::camera	partial	Rust: camera presets (shake, handheld, wobble, impact, zoom pulse); follow camera still JS
+src/camera-motion.mjs	engine	styk-eval::camera	partial	Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS
 src/camera-overlay.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/canvas-artwork-pick.mjs	engine	styk-render	js	
 src/canvas-color-sample.mjs	engine	styk-render	js	
@@ -144,7 +144,7 @@ src/editor-frame-draft.mjs	engine	styk-edit	js	commands and history
 src/editor-frames.mjs	engine	styk-edit	js	commands and history
 src/editor-handle-commands.mjs	engine	styk-edit	js	commands and history
 src/editor-handle-edit.mjs	engine	styk-edit	js	commands and history
-src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget on flat figures, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); setNodeIK, rotateIKTarget, getIKSettings and 3D controllers still JS
+src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget on figures not joined to others (ik_settings.rs); setNodeIK and rotateIKTarget across joined figures (bakeGraph) still JS
 src/editor-inbetween-async.mjs	engine	styk-edit	js	commands and history
 src/editor-inbetween.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
@@ -166,7 +166,7 @@ src/editor-scene.mjs	engine	styk-edit	js	commands and history
 src/editor-selection.mjs	engine	styk-edit	js	commands and history
 src/editor-sessions.mjs	engine	styk-edit	js	commands and history
 src/editor-spatial-shape.mjs	engine	styk-edit	js	commands and history
-src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setSpatialFeetPinned, pose choices and joined 3D IK targets still JS
+src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs), setSpatialFeetPinned (ik_settings.rs); joined 3D IK targets still JS
 src/editor-sprite-segment.mjs	engine	styk-edit	js	commands and history
 src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
@@ -236,7 +236,7 @@ src/keyframe-easing-popover.mjs	ui	-	stays
 src/keyframe-easing-view.mjs	ui	-	stays	
 src/keyframe-easing.mjs	engine	styk-eval	partial	Rust: easing curves (linear, eased, bezier, constant, Auto); validation still JS
 src/layer-folders.mjs	engine	styk-eval	js	
-src/layer-parallax.mjs	engine	styk-eval	js	
+src/layer-parallax.mjs	engine	styk-eval::parallax	partial	Rust: parallaxResolver, per-slot offsets against camera travel (styk_eval::parallax); validation and translatedPlan still JS
 src/layer-sheet.mjs	engine	styk-eval	partial	Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS
 src/layer-timeline.mjs	ui	-	stays	
 src/layers.mjs	engine	styk-eval	partial	Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS
@@ -255,8 +255,8 @@ src/motion-path-controls.mjs	ui	-	stays
 src/motion-path-falloff.mjs	engine	styk-eval	js	onion sampling and motion-path projection
 src/motion-path.mjs	engine	styk-eval	js	onion sampling and motion-path projection
 src/movieclip-drawings-view.mjs	ui	-	stays	
-src/movieclip-drawings.mjs	engine	styk-eval::movieclips	js	
-src/movieclip-geometry.mjs	engine	styk-eval::movieclips	partial	Rust: nested clip geometry; clip effects and drawings still JS
+src/movieclip-drawings.mjs	engine	styk-eval::movieclips	partial	Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS
+src/movieclip-geometry.mjs	engine	styk-eval::movieclips	partial	Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS
 src/movieclip-materialize.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-membership.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-mesh-materialize.mjs	engine	styk-eval::movieclips	js	
@@ -363,9 +363,9 @@ src/rig-controls.mjs	ui	-	stays
 src/rig-examples-3d.mjs	engine	styk-edit	js	
 src/rig-examples.mjs	engine	styk-edit	js	
 src/rig-mechanism-examples.mjs	engine	styk-edit	js	
-src/rig-pose-choices.mjs	engine	styk-eval::spatial	partial	Rust: hidden pose choices in evaluation; the choice interface still JS
+src/rig-pose-choices.mjs	engine	styk-eval::spatial	partial	Rust: hidden pose choices in evaluation; poseChoiceGroups and applyChannelPoseChoice for setPoseChoice (styk-edit/src/pose_choice.rs); the 3D panel's reading of groups and validation still JS
 src/rig-solids.mjs	engine	styk-edit	js	
-src/rig-spatial.mjs	engine	styk-eval::spatial	partial	Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS
+src/rig-spatial.mjs	engine	styk-eval::spatial	partial	Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); authoring still JS
 src/rig-test-ui.mjs	ui	-	stays	
 src/rig-weighted.mjs	engine	styk-eval::rig	partial	Rust: weighted joints and bindings; authoring still JS
 src/scene-order.mjs	engine	styk-render	partial	Rust: composeSceneGroups for onion skins; other scene grouping still JS
@@ -407,7 +407,7 @@ src/sticknodes/decoder/png-browser.mjs	engine	styk-formats::sticknodes	js
 src/sticknodes/decoder/project-layout.mjs	engine	styk-formats::sticknodes	js	
 src/sticknodes/decoder/project.mjs	engine	styk-formats::sticknodes	js	
 src/sticknodes/decoder/renderer.mjs	engine	styk-formats::sticknodes	js	
-src/sticknodes/geometry.mjs	engine	styk-formats::sticknodes	partial	Rust: curved segments and shaped drawables (sticknodes.rs); import still JS
+src/sticknodes/geometry.mjs	engine	styk-formats::sticknodes	partial	Rust: curved segments, shaped drawables, sprites (sticknodesSpriteAsset, sticknodes.rs); import still JS
 src/sticknodes/validation.mjs	engine	styk-formats::sticknodes	js	
 src/structural-equality.mjs	engine	styk-eval	js	
 src/studio-shell.mjs	ui	-	stays	
@@ -501,15 +501,15 @@ src/vfx-clip-timeline.mjs	ui	-	stays
 src/vfx-clips.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS
 src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
 src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
-src/vfx-generator-anchors.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	js	
-src/vfx-generator-atlas.mjs	engine	styk-render::generators	js	
-src/vfx-generator-canvas.mjs	engine	styk-render::generators	js	
-src/vfx-generator-frame.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-gpu.mjs	engine	styk-render::generators	js	
-src/vfx-generator-layers.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-styles.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generators.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-atlas.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-canvas.mjs	engine	styk-render::generators	partial	Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it
+src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-gpu.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-layers.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-styles.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generators.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-gizmos.mjs	ui	-	stays	
 src/vfx-gpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer
 src/vfx-icons.mjs	ui	-	stays	

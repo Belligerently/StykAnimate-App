@@ -62,6 +62,9 @@ pub struct Item {
     pub points: (u32, u32),
     /// The object's colour override (for gradient end colours).
     pub color: u32,
+    /// The object's colour transition (index into [`Scene::transitions`], or
+    /// `NO_TRANSITION`), which replaces `color` when mixing colours.
+    pub transition: u32,
     pub scale: f64,
     pub image_text_flags: bool,
     /// Movieclip nesting: index into [`Scene::chains`], or `NO_CHAIN`.
@@ -79,6 +82,7 @@ pub struct Item {
 
 pub const NO_CHAIN: u32 = u32::MAX;
 pub const NO_MESH: u32 = u32::MAX;
+pub const NO_TRANSITION: u32 = u32::MAX;
 
 impl Item {
     /// `depthSurface(item)`: the item is drawn depth tested against the depth
@@ -122,6 +126,64 @@ pub struct ObjectGeometry {
     /// Per segment of a figure with rig relationships, what editing reads from its
     /// evaluation (`rigSpace`, `connector`); `None` for a figure without any.
     pub rig: Option<Arc<[RigJoint]>>,
+    /// What a follow camera frames of the object (`figureBounds`): `[x0, y0, x1, y1]` over
+    /// its visible segments' endpoints, curves and circles with half their stroke, and
+    /// every polygon's points (culled surfaces too); a movieclip's handle. `None` when
+    /// nothing is finite, and for a figure built without [`build_measured`].
+    pub extent: Option<[f64; 4]>,
+}
+
+/// `figureBounds` in src/camera-follow.mjs, accumulated point by point.
+#[derive(Clone, Copy, Debug)]
+struct Bounds {
+    rect: [f64; 4],
+    found: bool,
+}
+
+impl Bounds {
+    fn new() -> Bounds {
+        Bounds { rect: [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], found: false }
+    }
+
+    fn add(&mut self, p: [f64; 2], pad: f64) {
+        if !p[0].is_finite() || !p[1].is_finite() {
+            return;
+        }
+        self.found = true;
+        let r = &mut self.rect;
+        if p[0] - pad < r[0] {
+            r[0] = p[0] - pad;
+        }
+        if p[1] - pad < r[1] {
+            r[1] = p[1] - pad;
+        }
+        if p[0] + pad > r[2] {
+            r[2] = p[0] + pad;
+        }
+        if p[1] + pad > r[3] {
+            r[3] = p[1] + pad;
+        }
+    }
+
+    /// A segment as drawn before Stick Nodes shapes expand it: a circle by its centre and
+    /// radius, a curve by its points, a line by its ends; half its stroke around each.
+    fn segment(&mut self, it: &Item, prim: Prim, points: &[[f64; 2]]) {
+        let pad = if it.thickness.is_nan() { f64::NAN } else { it.thickness.max(0.0) / 2.0 };
+        if prim.is_circle() {
+            self.add([(it.start[0] + it.end[0]) / 2.0, (it.start[1] + it.end[1]) / 2.0], it.length.abs() / 2.0 + pad);
+        } else if !points.is_empty() {
+            for &p in points {
+                self.add(p, pad);
+            }
+        } else {
+            self.add(it.start, pad);
+            self.add(it.end, pad);
+        }
+    }
+
+    fn extent(&self) -> Option<[f64; 4]> {
+        self.found.then_some(self.rect)
+    }
 }
 
 /// A rigged joint as geometry evaluated it, for editing: the space its authored
@@ -150,6 +212,10 @@ pub struct ObjectSpatial {
     pub mirror: bool,
     /// The pose's perspective.
     pub camera: Option<crate::spatial::Camera>,
+    /// Per segment index: the angle the pose authored for it (`authoredAngle`).
+    pub authored: Vec<f64>,
+    /// Per segment index: a spatial bone's start before perspective (`start.rawPoint`).
+    pub start_raws: Vec<Option<[f64; 3]>>,
 }
 
 impl ObjectGeometry {
@@ -190,6 +256,8 @@ pub struct Scene {
     pub meshes: Vec<crate::spatial::SharedMesh>,
     /// Depths of depth-tested surfaces ([`Item::depth`]).
     pub depths: Vec<f64>,
+    /// Colour transitions of the objects that have one ([`Item::transition`]).
+    pub transitions: Vec<ColorTransition>,
 }
 
 impl Scene {
@@ -231,6 +299,15 @@ pub fn fround(v: f64) -> f64 {
     v as f32 as f64
 }
 
+/// `objectColor`: a colour of a figure as the object draws it, mixed with its override, or
+/// with both overrides of its colour transition and taken `t` of the way between them.
+pub fn object_rgb(base: [u8; 3], color: u32, transition: Option<&ColorTransition>) -> [u8; 3] {
+    let Some(c) = transition else { return mix_color(base, color) };
+    let (a, b) = (mix_color(base, c.from), mix_color(base, c.to));
+    // `Math.round(lerp(a, b, t))`; a NaN channel is drawn as 0, as the GPU renderer clamps it.
+    std::array::from_fn(|i| (a[i] as f64 + (b[i] as f64 - a[i] as f64) * c.t + 0.5).floor() as u8)
+}
+
 pub fn mix_color(base: [u8; 3], raw: u32) -> [u8; 3] {
     let k = raw >> 24;
     if k == 0 {
@@ -262,11 +339,13 @@ struct Built {
     /// Evaluated meshes and surface depths (local indices).
     meshes: Vec<crate::spatial::SharedMesh>,
     depths: Vec<f64>,
+    /// Colour transitions (local indices).
+    transitions: Vec<ColorTransition>,
 }
 
 impl Built {
     fn new(geometry: ObjectGeometry) -> Built {
-        Built { geometry, items: Vec::new(), points: Vec::new(), figures: Vec::new(), owners: Vec::new(), owner_scales: Vec::new(), chains: Vec::new(), clip_vfx: Vec::new(), meshes: Vec::new(), depths: Vec::new() }
+        Built { geometry, items: Vec::new(), points: Vec::new(), figures: Vec::new(), owners: Vec::new(), owner_scales: Vec::new(), chains: Vec::new(), clip_vfx: Vec::new(), meshes: Vec::new(), depths: Vec::new(), transitions: Vec::new() }
     }
 }
 
@@ -288,7 +367,8 @@ pub fn segment_pose(obj: &Object, seg: &crate::doc::Segment, i: usize) -> (f64, 
     (angle, bend, length)
 }
 
-fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>) -> Built {
+#[allow(clippy::too_many_arguments)]
+fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: bool) -> Built {
     let obj = &frame.objects[slot];
     let n = fig.segments.len();
     let scale = obj.scale;
@@ -303,10 +383,14 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let plan = &fig.plan;
     let black_override = version < 5 && !fig.segment_colors;
     let mut segment_items: Vec<Item> = Vec::with_capacity(n);
+    let (transition, transitions) = match &obj.color_transition {
+        Some(c) => (0, vec![**c]),
+        None => (NO_TRANSITION, Vec::new()),
+    };
     // Rigged figures evaluate in dependency order with their rig context.
     let rig_plan = plan.rig.clone();
     let mut rig_states: Vec<Option<crate::rig::State>> = if rig_plan.is_some() { vec![None; n] } else { Vec::new() };
-    let figure_angle = obj.angles.first().copied().unwrap_or(0.0) - fig.segments.first().map(|s| s.angle).unwrap_or(0.0);
+    let figure_angle = crate::origin::rotation(fig, obj);
     let order: &[u32] = match &rig_plan {
         Some(r) => &r.order,
         None => &plan.order,
@@ -317,6 +401,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let shape = obj.spatial.as_ref().and_then(|s| s.shape.as_ref());
     let mut frames: Vec<Option<crate::rig::SpatialFrame>> = if has_spatial { vec![None; n] } else { Vec::new() };
     let mut depths: Vec<crate::spatial::JointDepth> = if has_spatial { vec![Default::default(); n] } else { Vec::new() };
+    let mut authored: Vec<f64> = if has_spatial { vec![f64::NAN; n] } else { Vec::new() };
+    let mut start_raws: Vec<Option<[f64; 3]>> = if has_spatial { vec![None; n] } else { Vec::new() };
     for &i in order {
         let i = i as usize;
         let seg = &fig.segments[i];
@@ -353,6 +439,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             if has_spatial {
                 frames[i] = st.spatial;
                 depths[i] = crate::spatial::JointDepth { offset: st.depth_offset, raw: st.raw_point };
+                authored[i] = st.authored_angle;
+                start_raws[i] = st.start_raw;
             }
             start = st.start;
             angle = st.angle;
@@ -386,7 +474,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         let rgb = if black_override {
             if (obj.color as i32) < 0 { [0, 0, 0] } else { [(obj.color & 255) as u8, (obj.color >> 8 & 255) as u8, (obj.color >> 16 & 255) as u8] }
         } else {
-            mix_color(seg.rgb, obj.color)
+            object_rgb(seg.rgb, obj.color, obj.color_transition.as_deref())
         };
         let kind = match seg.prim {
             Prim::Line => ItemKind::Line,
@@ -415,6 +503,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             z: seg.z,
             points: (p0, p1),
             color: obj.color,
+            transition,
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -451,6 +540,16 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let joint_depth = |handle: u32| -> crate::spatial::JointDepth { plan.index_of.get(&handle).and_then(|&i| depths.get(i as usize)).copied().unwrap_or_default() };
     let mut surface_depths: Vec<f64> = Vec::new();
     let mut raws: Vec<Option<[f64; 3]>> = Vec::new();
+    // What a follow camera frames (`figureBounds`), only when asked for ([`build_measured`]).
+    let mut bounds = Bounds::new();
+    if measure {
+        for it in &segment_items {
+            let seg = &fig.segments[it.index as usize];
+            if seg.visible {
+                bounds.segment(it, seg.prim, &points[it.points.0 as usize..it.points.1 as usize]);
+            }
+        }
+    }
     for (pi, poly) in fig.polyfills.iter().enumerate() {
         let pp = &plan.polygons[pi];
         let p0 = points.len() as u32;
@@ -521,6 +620,11 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                     None => {}
                 }
             }
+            if measure {
+                for &p in &points[range.0 as usize..range.1 as usize] {
+                    bounds.add(p, 0.0);
+                }
+            }
             let result = crate::spatial::evaluate_surface(surface, poly.z, &points[range.0 as usize..range.1 as usize], projected, root, &joint, &joint_depth);
             if result.culled {
                 points.truncate(p0 as usize);
@@ -531,6 +635,12 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                 let d0 = surface_depths.len() as u32;
                 surface_depths.extend_from_slice(&values);
                 depth = (d0, surface_depths.len() as u32);
+            }
+        } else {
+            if measure {
+                for &p in &points[range.0 as usize..range.1 as usize] {
+                    bounds.add(p, 0.0);
+                }
             }
         }
         items.push(Item {
@@ -544,12 +654,13 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             bend: 0.0,
             length: 0.0,
             thickness: 0.0,
-            rgb: mix_color(poly.rgb, obj.color),
+            rgb: object_rgb(poly.rgb, obj.color, obj.color_transition.as_deref()),
             alpha: poly.alpha,
             opacity,
             z,
             points: range,
             color: obj.color,
+            transition,
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -570,7 +681,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             mirror: obj.image_text_flags,
             camera,
             joint: &joint,
-            colors: fig.mesh_colors.iter().map(|&c| mix_color(c, obj.color)).collect(),
+            colors: fig.mesh_colors.iter().map(|&c| object_rgb(c, obj.color, obj.color_transition.as_deref())).collect(),
         };
         if let Some(mut mesh) = crate::spatial::evaluate_mesh(mesh_plan, &|i| frames.get(i).copied().flatten(), context) {
             let mut levels: Vec<f64> = items.iter().map(|it| it.z).collect();
@@ -594,6 +705,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                     z: drawable.z,
                     points: (0, 0),
                     color: obj.color,
+                    transition,
                     scale,
                     image_text_flags: obj.image_text_flags,
                     chain: NO_CHAIN,
@@ -623,7 +735,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     }
     items.sort_by(|a, b| a.z.total_cmp(&b.z));
     let _ = doc;
-    let spatial = has_spatial.then(|| Arc::new(ObjectSpatial { frames, depths, figure_angle, mirror: obj.image_text_flags, camera }));
+    let spatial = has_spatial.then(|| Arc::new(ObjectSpatial { frames, depths, figure_angle, mirror: obj.image_text_flags, camera, authored, start_raws }));
     let rig = rig_plan.is_some().then(|| {
         rig_states
             .iter()
@@ -637,12 +749,22 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             })
             .collect()
     });
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig });
+    let extent = bounds.extent();
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig, extent });
     built.items = items;
     built.points = points;
     built.meshes = meshes;
     built.depths = surface_depths;
+    built.transitions = transitions;
     built
+}
+
+/// A movieclip instance's extent for a follow camera: its handle, from the root 40 units along its angle.
+fn handle_extent(root: [f64; 2], end: [f64; 2]) -> Option<[f64; 4]> {
+    let mut bounds = Bounds::new();
+    bounds.add(root, 0.0);
+    bounds.add(end, 0.0);
+    bounds.extent()
 }
 
 /// The object a movieclip instance is joined to, for an attached mesh: its
@@ -677,8 +799,15 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
     };
     let angle = attachment.as_ref().map_or(local_angle, |a| a.figure_angle);
     let end = [root[0] + 40.0 * scale * styk_math::cos(angle), root[1] + 40.0 * scale * styk_math::sin(angle)];
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
+    let transition = match &obj.color_transition {
+        Some(c) => {
+            built.transitions.push(**c);
+            0
+        }
+        None => NO_TRANSITION,
+    };
     // `Math.floor(local)` clamped to the forms the clip has.
     let form = (local.floor().max(0.0) as usize).min(meshes.len() - 1);
     let mesh = &meshes[form];
@@ -689,7 +818,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
         mirror: obj.image_text_flags,
         pivot: clip.pivot,
         attachment,
-        colors: mesh.colors.iter().map(|&c| mix_color(c, obj.color)).collect(),
+        colors: mesh.colors.iter().map(|&c| object_rgb(c, obj.color, obj.color_transition.as_deref())).collect(),
     };
     let mut geometry = crate::spatial::evaluate_clip_mesh(mesh, pose);
     for drawable in geometry.split(&[]) {
@@ -710,6 +839,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
             z: drawable.z,
             points: (0, 0),
             color: obj.color,
+            transition,
             scale,
             image_text_flags: obj.image_text_flags,
             chain: NO_CHAIN,
@@ -739,17 +869,88 @@ pub fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
     scene
 }
 
+/// The drawing a spatial bone turns a movieclip to (`rotatedDrawing`): the view its turn and
+/// tilt select in the instance's form, the roll it adds, and how it places the instance.
+struct RotatedDrawing {
+    frame: f64,
+    root: [f64; 2],
+    angle: f64,
+    scale: f64,
+    flip: f64,
+}
+
+/// `drawingSelection(asset, object).group`: the form whose views hold the instance's frame.
+fn drawing_group(clip: &Movieclip, obj: &Object) -> usize {
+    let frame = obj.movieclip.as_ref().map_or(0.0, |p| p.offset);
+    clip.drawing_sets.iter().position(|views| views.contains(&frame)).unwrap_or(0)
+}
+
+/// `rotatedDrawing` with `drawingRotationReference`, and the placement
+/// `buildMovieclipGeometrySteps` gives it: at the bone's start, turned by its roll and the
+/// figure's rotation, scaled by its stretch and its depth under perspective.
+fn rotated_drawing(clip: &Movieclip, obj: &Object, parent: &JoinedParent<'_>) -> Option<RotatedDrawing> {
+    let rotation = clip.drawing_rotation?;
+    let index = *parent.figure.plan.index_of.get(&obj.join?.handle)? as usize;
+    let spatial = parent.geometry.spatial.as_ref()?;
+    let bone = spatial.frames.get(index)?.as_ref()?;
+    let figure_angle = crate::origin::rotation(parent.figure, parent.object);
+    // The native angles of the turn and tilt controls up the bone chain disambiguate the
+    // equivalent Euler branches of side and back views.
+    let sign = if parent.object.image_text_flags { -1.0 } else { 1.0 };
+    let (mut turn, mut pitch) = (0.0, 0.0);
+    let mut current = Some(index);
+    while let Some(k) = current {
+        let Some(crate::rig::Spatial::Bone { parent: up, turn: turn_id, pitch: pitch_id, .. }) = parent.figure.segments[k].rig.as_ref().and_then(|r| r.spatial.as_ref()) else { break };
+        if spatial.frames.get(k).copied().flatten().is_none() {
+            break;
+        }
+        for (id, sum) in [(*turn_id, &mut turn), (*pitch_id, &mut pitch)] {
+            let control = *parent.figure.plan.index_of.get(&id)? as usize;
+            *sum += (spatial.authored[control] - figure_angle) * sign - parent.figure.segments[control].angle;
+        }
+        current = if *up != 0 { parent.figure.plan.index_of.get(up).map(|&i| i as usize) } else { None };
+    }
+    let [bend, turn, pitch] = crate::rig::quaternion_pose(bone.q, [bone.native_bend, turn, pitch]);
+    let steps = rotation.steps as f64;
+    let direction = (((yaw_step(turn, steps)) % steps) + steps) % steps;
+    let tilt = if pitch < -rotation.tilt_threshold { 1.0 } else if pitch > rotation.tilt_threshold { 2.0 } else { 0.0 };
+    let view = (tilt * steps + direction) as usize;
+    let frame = *clip.drawing_sets.get(drawing_group(clip, obj))?.get(view)?;
+    let camera = crate::spatial::Camera::of(parent.object, parent.geometry.root);
+    let depth_scale = match (camera, spatial.start_raws.get(index).copied().flatten()) {
+        (Some(camera), Some(raw)) => 1.0 / (1.0 - camera.k * raw[2]).max(0.05),
+        _ => 1.0,
+    };
+    let inherited = if parent.object.image_text_flags { -1.0 } else { 1.0 };
+    Some(RotatedDrawing {
+        frame,
+        root: parent.geometry.starts[index],
+        angle: obj.angles.first().copied().unwrap_or(0.0) + bend * inherited + figure_angle,
+        scale: obj.scale * bone.stretch * depth_scale,
+        flip: (if obj.image_text_flags { -1.0 } else { 1.0 }) * inherited,
+    })
+}
+
+/// `Math.floor(yaw / (2π) * steps + .5)`: the nearest of `steps` directions.
+fn yaw_step(yaw: f64, steps: f64) -> f64 {
+    (yaw / (std::f64::consts::PI * 2.0) * steps + 0.5).floor()
+}
+
 /// `buildMovieclipGeometrySteps`: the clip's scene placed at its pivot.
-fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: [f64; 2]) -> Built {
+fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: [f64; 2], parent: Option<JoinedParent<'_>>) -> Built {
     let obj = &frame.objects[slot];
-    let angle = obj.angles.first().copied().unwrap_or(0.0);
-    let scale = obj.scale;
-    let flip = if obj.image_text_flags { -1.0 } else { 1.0 };
+    let drawing = parent.as_ref().and_then(|parent| rotated_drawing(clip, obj, parent));
+    let root = drawing.as_ref().map_or(root, |d| d.root);
+    let angle = drawing.as_ref().map_or_else(|| obj.angles.first().copied().unwrap_or(0.0), |d| d.angle);
+    let scale = drawing.as_ref().map_or(obj.scale, |d| d.scale);
+    let flip = drawing.as_ref().map_or(if obj.image_text_flags { -1.0 } else { 1.0 }, |d| d.flip);
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
+    // A rotated drawing shows the frame its bone selects, whatever the clip's own time.
+    let local = drawing.as_ref().map_or(local, |d| d.frame);
     let source = clip_scene(clip, local);
     // Meshes inside the clip keep their evaluated positions: the editor places a
     // clip's points, starts and ends, and a mesh drawable has none of them.
@@ -766,6 +967,8 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     built.owner_scales.extend(source.owner_scales.iter().map(|s| s * scale.abs()));
     built.clip_vfx.push(source.vfx.clone());
     built.clip_vfx.extend_from_slice(&source.clip_vfx);
+    // The clip's items keep their indices into its own transitions.
+    built.transitions = source.transitions.clone();
     // Chain 0..n of the source shift by one owner and gain this clip as outermost.
     let hidden = clip.document.layers.as_ref().map(|l| l.hidden.clone()).unwrap_or_default();
     let mut chain_ids: std::collections::HashMap<(u32, u32), u32> = std::collections::HashMap::new();
@@ -813,7 +1016,12 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
 
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None)
+    build_filtered(doc, frame, None, false)
+}
+
+/// [`build`] with every figure's [`ObjectGeometry::extent`]: what a follow camera samples.
+pub fn build_measured(doc: &Document, frame: &Frame) -> Scene {
+    build_filtered(doc, frame, None, true)
 }
 
 /// [`build`] for the objects in `slots` and the objects they are joined to, the others
@@ -829,10 +1037,10 @@ pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
             at = frame.objects[i].join.map(|j| j.slot as usize);
         }
     }
-    build_filtered(doc, frame, Some(&needed))
+    build_filtered(doc, frame, Some(&needed), false)
 }
 
-fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Scene {
+fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: bool) -> Scene {
     let count = frame.objects.len();
     let mut scene = Scene {
         objects: vec![ObjectGeometry::default(); count],
@@ -912,16 +1120,17 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Sce
             let fig = &scene.figures[*fig_of.get(i)? as usize];
             let root = resolve_root(i, &built).unwrap_or(frame.objects[i].root);
             if let Some(clip) = &fig.movieclip {
+                // An attached mesh, or drawings a bone turns, read the bone the instance is
+                // joined to from its parent's geometry.
+                let parent = frame.objects[i].join.filter(|_| clip.meshes.is_some() || clip.drawing_rotation.is_some()).and_then(|j| {
+                    let geometry = &built.get(j.slot as usize)?.as_ref()?.geometry;
+                    let figure = scene.figures.get(*fig_of.get(j.slot as usize)? as usize)?;
+                    Some(JoinedParent { object: &frame.objects[j.slot as usize], figure, geometry })
+                });
                 if let Some(meshes) = &clip.meshes {
-                    // An attached mesh reads the bone it is joined to from its parent's geometry.
-                    let parent = frame.objects[i].join.and_then(|j| {
-                        let geometry = &built.get(j.slot as usize)?.as_ref()?.geometry;
-                        let figure = scene.figures.get(*fig_of.get(j.slot as usize)? as usize)?;
-                        Some(JoinedParent { object: &frame.objects[j.slot as usize], figure, geometry })
-                    });
                     return Some((i, build_clip_mesh(frame, i, fig_of[i], fig, clip, meshes, root, parent)));
                 }
-                return Some((i, build_clip(frame, i, fig, clip, root)));
+                return Some((i, build_clip(frame, i, fig, clip, root, parent)));
             }
             // IK: a pinned object draws its derived pose, from its assembly or solved on its own (`evaluateIKPose`).
             let local;
@@ -932,7 +1141,7 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Sce
                     local.as_ref()
                 }
             };
-            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik)))
+            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik, measure)))
         };
         let results: Vec<(usize, Built)> = crate::par::map(&slots, 32, make).into_iter().flatten().collect();
         for (i, b) in results {
@@ -978,6 +1187,8 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Sce
         scene.meshes.extend(b.meshes);
         let depth_base = scene.depths.len() as u32;
         scene.depths.extend_from_slice(&b.depths);
+        let transition_base = scene.transitions.len() as u32;
+        scene.transitions.extend_from_slice(&b.transitions);
         for mut it in b.items {
             it.points = (it.points.0 + base, it.points.1 + base);
             it.depth = (it.depth.0 + depth_base, it.depth.1 + depth_base);
@@ -989,6 +1200,9 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Sce
             }
             if it.chain != NO_CHAIN {
                 it.chain += chain_base;
+            }
+            if it.transition != NO_TRANSITION {
+                it.transition += transition_base;
             }
             scene.items.push(it);
         }

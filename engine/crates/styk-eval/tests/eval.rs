@@ -81,3 +81,76 @@ fn movieclip_fixtures_depend_on_their_replacements() {
         assert!(!compare(&name, document).matches(), "{name}: matches without its replacements");
     }
 }
+
+/// The parallax fixtures would prove nothing if they matched without their layers'
+/// parallax, and the baked one without the offsets its camera keys keep apart.
+#[test]
+fn parallax_fixtures_depend_on_parallax() {
+    let names: Vec<String> = fixtures().into_iter().filter(|name| name.starts_with("parallax-")).collect();
+    assert!(names.len() >= 2, "parallax fixtures are missing");
+    for name in &names {
+        let mut document = open(name);
+        let layers = Arc::make_mut(document.layers.as_mut().unwrap_or_else(|| panic!("{name}: no layers")));
+        assert!(!layers.parallax.is_empty(), "{name}: no layer with parallax");
+        layers.parallax.clear();
+        let report = compare(name, document);
+        assert!(report.shots > 0, "{name}: the reference has no shots");
+        assert!(!report.matches(), "{name}: matches without parallax");
+    }
+    let mut document = open("parallax-baked-motion");
+    let mut offsets = 0;
+    for frame in document.frame_sources.values_mut().chain(document.keyframes.iter_mut()) {
+        if let Some(camera) = Arc::make_mut(frame).camera.as_mut() {
+            offsets += camera.motion_offset.take().is_some_and(|o| o != [0.0, 0.0]) as usize;
+        }
+    }
+    assert!(offsets > 0, "no baked offset in the fixture");
+    assert!(!compare("parallax-baked-motion", document).matches(), "matches without its baked offsets");
+}
+
+/// The colour-transition fixture would prove nothing if it matched without its transitions.
+#[test]
+fn color_fixture_depends_on_its_transitions() {
+    let mut document = open("color-transitions");
+    let mut transitions = 0;
+    for frame in document.frame_sources.values_mut().chain(document.keyframes.iter_mut()) {
+        for object in Arc::make_mut(frame).objects.iter_mut() {
+            transitions += Arc::make_mut(object).color_transition.take().is_some() as usize;
+        }
+    }
+    assert!(transitions > 0, "no colour transition in the fixture");
+    assert!(!compare("color-transitions", document).matches(), "matches without its colour transitions");
+}
+
+/// The sprite fixture would prove nothing if its pictures sat where they do without the
+/// sprites' stretch and pivot.
+#[test]
+fn sprite_fixture_depends_on_its_sprites() {
+    let text = std::fs::read_to_string(folder().join("sticknodes-sprites.json")).expect("fixture");
+    let count = text.matches("\"_sticknodesSprite\"").count();
+    assert!(count > 0, "no Stick Nodes sprite in the fixture");
+    let bare = text.replace("\"_sticknodesSprite\"", "\"_withoutSprite\"");
+    let tree = styk_doc::json::parse(bare.as_bytes()).expect("json");
+    let document = styk_eval::from_value(&tree, "sticknodes-sprites").expect("document");
+    assert!(!compare("sticknodes-sprites", document).matches(), "matches without its sprites");
+}
+
+/// The follow fixtures would prove nothing if their shots matched without the follow
+/// clips (their figures dropped, the clips' spans kept).
+#[test]
+fn follow_fixtures_depend_on_their_clips() {
+    let names: Vec<String> = fixtures().into_iter().filter(|name| name.starts_with("follow-")).collect();
+    assert!(names.len() >= 2, "follow fixtures are missing");
+    for name in &names {
+        let mut document = open(name);
+        let mut follows = 0;
+        for clip in document.camera_motion.iter_mut().filter(|clip| clip.kind == "follow") {
+            follows += !clip.targets.is_empty() as usize;
+            clip.targets.clear();
+        }
+        assert!(follows > 0, "{name}: no follow clip");
+        let report = compare(name, document);
+        assert!(report.shots > 0, "{name}: the reference has no shots");
+        assert!(!report.matches(), "{name}: matches without its follow clips");
+    }
+}

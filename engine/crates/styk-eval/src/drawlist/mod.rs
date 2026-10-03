@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use crate::assets::Assets;
 use crate::doc::*;
-use crate::geometry::{mix_color, Item, ItemKind, Scene};
+use crate::geometry::{object_rgb, Item, ItemKind, Scene};
 use crate::vfx::layers::{item_extent, rounded, Extent, EMPTY};
 use crate::vfx::{Effect, FrameVfx, ObjectVfx};
 
@@ -116,10 +116,7 @@ fn stop_color(rgb: [u8; 3], opacity: f64) -> [f32; 4] {
     [rgb[0] as f32 / 255.0, rgb[1] as f32 / 255.0, rgb[2] as f32 / 255.0, opacity.clamp(0.0, 1.0) as f32]
 }
 
-/// Colour mapping of a figure's override (`objectColor`).
-fn object_color(c: [u8; 3], color: u32) -> [u8; 3] {
-    mix_color(c, color)
-}
+
 
 /// `paintGeometry` + record for a paint between two world points.
 fn paint_record(out: &mut Out, p: &Paint, stops: &[(f32, [f32; 4])], start: [f64; 2], end: [f64; 2]) -> u32 {
@@ -145,6 +142,12 @@ struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
+    /// A colour of the item's figure as its object draws it (`objectColor`): its override
+    /// or its colour transition.
+    fn object_color(&self, c: [u8; 3], it: &Item) -> [u8; 3] {
+        object_rgb(c, it.color, self.scene.transitions.get(it.transition as usize))
+    }
+
     fn figure(&self, it: &Item) -> &Figure {
         &self.scene.figures[it.figure as usize]
     }
@@ -167,14 +170,14 @@ impl<'a> Ctx<'a> {
         let secondary = if self.tint.is_some() { None } else { seg.secondary };
         if let Some(paint) = &seg.paint {
             let mut stops: Vec<(f32, [f32; 4])> =
-                paint.stops.iter().map(|s| (s.offset as f32, stop_color(object_color(s.rgb, it.color), s.opacity))).collect();
+                paint.stops.iter().map(|s| (s.offset as f32, stop_color(self.object_color(s.rgb, it), s.opacity))).collect();
             stops.sort_by(|a, b| a.0.total_cmp(&b.0));
-            stops[0].1 = stop_color(object_color(seg.rgb, it.color), seg.alpha);
+            stops[0].1 = stop_color(self.object_color(seg.rgb, it), seg.alpha);
             if let Some((rgb, a)) = secondary
                 && stops.len() > 1
             {
                 let last = stops.len() - 1;
-                stops[last].1 = stop_color(object_color(rgb, it.color), 1.0 - a as f64 / 255.0);
+                stops[last].1 = stop_color(self.object_color(rgb, it), 1.0 - a as f64 / 255.0);
             }
             if stops.len() == 1 || paint.kind == PaintKind::Solid {
                 let c = stops[0].1;
@@ -204,7 +207,7 @@ impl<'a> Ctx<'a> {
                     }
                 }
             }
-            let stops = [(0.0, stop_color(it.rgb, it.alpha)), (1.0, stop_color(object_color(rgb, it.color), 1.0 - a as f64 / 255.0))];
+            let stops = [(0.0, stop_color(it.rgb, it.alpha)), (1.0, stop_color(self.object_color(rgb, it), 1.0 - a as f64 / 255.0))];
             let rec = out.paint(P_LINEAR, [it.start[0] as f32, it.start[1] as f32, end[0] as f32, end[1] as f32], [0.0; 4], &stops);
             return (solid, rec);
         }
@@ -494,7 +497,7 @@ impl<'a> Ctx<'a> {
         } else if it.color >> 24 != 255 && seg.secondary.is_some() {
             // Vertical gradient from the baseline to the top of the text.
             let (rgb, a) = seg.secondary.unwrap();
-            let stops = [(0.0, stop_color(it.rgb, it.alpha)), (1.0, stop_color(object_color(rgb, it.color), 1.0 - a as f64 / 255.0))];
+            let stops = [(0.0, stop_color(it.rgb, it.alpha)), (1.0, stop_color(self.object_color(rgb, it), 1.0 - a as f64 / 255.0))];
             let p0 = place(0.0, 0.0);
             let p1 = place(0.0, -t.height);
             (rgba8(it.rgb, it.alpha), out.paint(P_LINEAR, [p0[0] as f32, p0[1] as f32, p1[0] as f32, p1[1] as f32], [0.0; 4], &stops))
@@ -873,6 +876,14 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         runs.push((i, j));
         i = j;
     }
+    // Translations by slot (drags and parallax layers can move every object of a frame).
+    let mut moved: Vec<Option<[f64; 2]>> = Vec::new();
+    for &(slot, delta) in translations {
+        if moved.len() <= slot as usize {
+            moved.resize(slot as usize + 1, None);
+        }
+        moved[slot as usize] = Some(delta);
+    }
     let fx = !bypass && (scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some));
     // Objects with depth-tested faces or text are drawn on rasters of their own, sized by their bounds.
     let measured = fx || !scene.meshes.is_empty() || !scene.depths.is_empty() || scene.items.iter().any(|it| it.kind == ItemKind::Text);
@@ -943,7 +954,7 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         let raster = run_end > a || (glyph.is_none() && scene.items[a..b].iter().any(|it| it.kind == ItemKind::Text));
         let mut bounds = rounded(with);
         let mut figure = has_fx.then(|| Box::new(Fx { stack: figure_stack.to_vec(), bounds, domain: rounded(without), scale, padding: largest }));
-        if let Some(&(_, delta)) = translations.iter().find(|(slot, _)| *slot == first.slot) {
+        if let Some(delta) = moved.get(first.slot as usize).copied().flatten() {
             outline.translate(delta);
             items.translate(delta);
             for node in &mut nodes {

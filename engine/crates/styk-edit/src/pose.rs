@@ -287,7 +287,14 @@ impl Editor {
                 targets
             }
         };
-        self.rotate_ik_followers(slot, joint, &targets, delta, include_joint)?;
+        self.apply_joint_rotation(slot, joint, &targets, delta, include_joint)
+    }
+
+    /// `_applyJointRotation(targets, delta, includeJoint)`: the followers of pinned limbs
+    /// turn with what turns, then every target segment's angle.
+    pub(crate) fn apply_joint_rotation(&mut self, slot: usize, joint: usize, targets: &[(usize, usize)], delta: f64, include_joint: bool) -> Result<(), EditError> {
+        self.rotate_ik_followers(slot, joint, targets, delta, include_joint)?;
+        let targets = targets.to_vec();
         // Grouped by figure, in the order the figures first appear (each angle changes once).
         let mut by_object: Vec<(usize, Vec<usize>)> = Vec::new();
         for (object_slot, segment) in targets {

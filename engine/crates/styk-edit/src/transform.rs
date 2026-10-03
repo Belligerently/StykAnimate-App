@@ -136,7 +136,7 @@ impl Editor {
         }
         // Native Pivot stores final attachment coordinates as well as join links.
         if after.iter().any(|o| join_target(o).is_some()) {
-            let roots = self.roots()?;
+            let roots = self.roots_of(&ids)?;
             let objects = crate::record::frame_objects(&self.report, index);
             for (slot, object) in objects.iter().enumerate() {
                 let Some(id) = uid(object).filter(|u| ids.contains(u)) else { continue };
@@ -188,7 +188,7 @@ impl Editor {
                 .collect();
             let mut detached: HashMap<u32, [f64; 2]> = HashMap::new();
             if !external.is_empty() {
-                let roots = editor.roots()?;
+                let roots = editor.roots_of(&external.iter().filter_map(|&slot| uid(&objects[slot])).collect::<Vec<_>>())?;
                 for &slot in &external {
                     let id = uid(&objects[slot]).unwrap();
                     let record = editor.frame_object_mut(slot).unwrap();
@@ -244,6 +244,15 @@ impl Editor {
     /// World positions of every figure's root on show, by unique id.
     pub(crate) fn roots(&self) -> Result<HashMap<u32, [f64; 2]>, EditError> {
         Ok(self.scene()?.objects.iter().map(|object| (object.uid, object.root)).collect())
+    }
+
+    /// [`Editor::roots`] of the figures `ids` only: the geometry of those figures and of
+    /// the figures they are joined to is built, not the whole frame's (IK across joined
+    /// figures is solved for the whole frame either way, so the roots are the same).
+    pub(crate) fn roots_of(&self, ids: &[u32]) -> Result<HashMap<u32, [f64; 2]>, EditError> {
+        let slots: Vec<usize> = self.frame_objects().iter().enumerate().filter(|(_, o)| uid(o).is_some_and(|u| ids.contains(&u))).map(|(slot, _)| slot).collect();
+        let (_, _, scene) = self.evaluate_only(Some(&slots))?;
+        Ok(scene.objects.iter().filter(|object| ids.contains(&object.uid)).map(|object| (object.uid, object.root)).collect())
     }
 
     /// The selected figure's root, or the middle of the box around every joint of

@@ -168,7 +168,7 @@ pub struct CameraPlan {
 }
 
 pub fn camera_plan(stack: &[Arc<Effect>], canvas: [u32; 2], camera: Option<CameraPose>, view: &View) -> CameraPlan {
-    let camera = camera.map(|c| Camera { x: c.x, y: c.y, scale: c.scale, angle: c.angle, is_default: c.is_default });
+    let camera = camera.map(|c| Camera { x: c.x, y: c.y, scale: c.scale, angle: c.angle, is_default: c.is_default, motion_offset: None });
     let (cw, ch) = (canvas[0] as f64, canvas[1] as f64);
     let longest = cw.max(ch);
     let padding = styk_eval::vfx::padding(stack, 1.0, longest);

@@ -35,7 +35,11 @@ Step 3 is implemented as the editor facade adopting the engine's results
 for ported calls the engine computes and the editor keeps only its bookkeeping (publishing,
 events, history), checked by running the same interactions with and without the engine
 owning. It becomes the default for a document class once its cost is not higher than the
-editor's (measured 2026-10-03: frame-drafting commands faster, joint poses slower).
+editor's. The first class flipped on 2026-10-03: large figure documents (no 3D figures or
+movieclips, 1,000 segments or more across the figure definitions), where engine-owned
+editing cost 18 to 39 % less than the editor alone in the shadow driver's interactions;
+small figure documents stay with the editor (the JSON boundary and adoption cost more than
+the editor's own call), as do 3D documents and movieclips for now (editing.md).
 
 ## Consequences
 

@@ -53,12 +53,18 @@ pub(crate) fn produce(generation: &Generation, tick: u32, hidden_uids: &[u32], e
     let frame = prepared.evaluate(tick as f64);
     let scene = build(&prepared.doc, &frame);
     let hidden = hidden_slots(generation, &frame, hidden_uids);
+    // Prepared frames are shown through the scene camera, which moves parallax layers,
+    // and the generated effects beside a figure with it (`offsetGeneratorBatch`).
+    let translations = frame.parallax.as_ref().map(|p| p.translations(&[])).unwrap_or_default();
     // Generated effects, with their targets' earlier positions from the generation's cache.
-    let batch = generation.anchors.as_ref().filter(|_| effects).and_then(|anchors| {
+    let mut batch = generation.anchors.as_ref().filter(|_| effects).and_then(|anchors| {
         let sampler = anchors.sampler(clock, f64::INFINITY);
         styk_eval::vfx::generated::build(prepared, &frame, &scene, Some(tick as f64), Some(&sampler), 1.0)
     });
-    let overrides = Overrides { hidden: &hidden, bypass_effects: !effects, generators: batch.as_ref(), ..Default::default() };
+    if let (Some(batch), Some(parallax), Some(layers)) = (batch.as_mut(), frame.parallax.as_ref(), prepared.doc.layers.as_deref()) {
+        batch.offset(|uid| Some(parallax.of_uid(layers, uid)));
+    }
+    let overrides = Overrides { hidden: &hidden, translations: &translations, bypass_effects: !effects, generators: batch.as_ref(), ..Default::default() };
     let list = Arc::new(encode_with(&prepared.doc, &generation.assets, &scene, &overrides));
     FrameData {
         generation: generation.id,
