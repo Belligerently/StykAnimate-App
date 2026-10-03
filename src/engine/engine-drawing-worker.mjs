@@ -24,13 +24,16 @@ const transferOf = changes => changes.flatMap(t => [t.before?.buffer, t.after?.b
 let publisher = null;
 // One source cache per preview worker.
 let preview = null;
+// A publication in bounded batches: the encode cache must survive until its final request.
+let publishing = false;
 
 /** Answers one pixel-worker request; `post(message, transfer)` replies. Afterwards an
  * instance grown past its allowance is replaced (dropping the encoded-tile cache, which the
- * publication protocol refills); a preview worker keeps its source cache instead. */
+ * publication protocol refills), except between the batches of one publication; a preview
+ * worker keeps its source cache instead. */
 export async function drawingEngineOperation(data, post = (message, transfer) => self.postMessage(message, transfer)) {
   try { await operation(data, post); }
-  finally { if (!preview && releaseDrawingEngineMemory()) publisher = null; }
+  finally { if (!preview && !publishing && releaseDrawingEngineMemory()) publisher = null; }
 }
 
 async function operation(data, post) {
@@ -94,6 +97,7 @@ async function operation(data, post) {
     }
     if (kind === 'encode-tiles') {
       publisher ??= engineCall(g => new g.Publisher(64 * 1024 * 1024));
+      publishing = Boolean(data.partial);
       if (data.pngs?.length) withTiles(data.pngs, pngs => engineCall(() => publisher.adopt(data.celId, pngs)), {png: true});
       const keep = data.keep == null ? undefined : Float64Array.from(data.keep.flatMap(key => key.split(',').map(Number)));
       const output = withTiles(data.tiles, tiles => engineCall(() => publisher.encode(data.celId, keep, tiles, Boolean(data.partial))), {png: true});
