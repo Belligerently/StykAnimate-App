@@ -64,7 +64,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel, gestures-sheet |
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
-| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
+| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`), Stick Nodes curves (a straight segment with a sagitta, which geometry reports with a bend of 1e-6) | yes, without rigs or 3D bones | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet, sticknodes-sheet |
 | `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller; across joined figures on the assembly's skeleton (`poseGraph`, `captureFor`) | yes, without perspective or 3D controllers | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet, ik-joined-unpinned-sheet, startup-join-sheet |
 | Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`); a gesture on joined figures takes in their whole assembly (`_ikPoseSlots`, `_expandIKDrag`) | yes | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet, ik-joined-sheet, ik-joined-late-sheet |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
@@ -90,8 +90,8 @@ Every ported call runs in both of the editor's modes:
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
 A call answers `Unported`, and changes nothing, on documents with property channels on a
-native timeline, animation origins or a movieclip source; for joint gestures on rigged or
-Stick Nodes figures; for poses on a drawing layer; for a replaced figure joined to one
+native timeline, animation origins or a movieclip source; for joint gestures on rigged
+figures; for poses on a drawing layer; for a replaced figure joined to one
 outside its movieclip frame; and wherever the engine does not evaluate the frame as
 records yet ([evaluation.md](evaluation.md)).
 

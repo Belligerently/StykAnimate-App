@@ -279,6 +279,18 @@ scenario('figures-layers-sheet', app, [
   scenario('ik-joined-late-sheet', app, [
     ['@select', 1, 0], ['rotateJoint', -0.1], ['@select', 3, 0], ['rotateJoint', 0.2], ['@select', 2, 0], ['poseJoint', 340, 290], ['undo'], ['undo'], ['redo'],
   ], 'ik-joined-late.document.json');
+  // Stick Nodes curves: a straight segment with a sagitta is drawn as a curve whose bend
+  // the editor's geometry reports as 1e-6, which the pose arithmetic then uses.
+  {
+    const document = documentOf([[[11, 0, 90, .8, {primitive_code: 0, _sticknodes: {kind: 'rounded-segment', sagitta: 12}}],
+      [22, 11, 90, 2, {primitive_code: 6, _sticknodes: {kind: 'segment', sagitta: 0}}], [33, 22, 35, 0, {primitive_code: 0}]]]);
+    document.keyframes[0].objects[0]._sticknodesShapes = {22: {kind: 'segment', sagitta: -9, reversed: true}, 33: {kind: 'rounded-segment', sagitta: 5}};
+    writeFileSync(`${out}/sticknodes.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('sticknodes-sheet', app, [
+    ['@select', 1, 0], ['poseJoint', 330, 230], ['rotateJoint', 0.1], ['bendJoint', 340, 220], ['@select', 1, 1], ['poseJoint', 300, 300],
+    ['bendJoint', 290, 310, {stretch: true}], ['@select', 1, 2], ['poseJoint', 280, 330, {stretch: true}], ['bendJoint', 270, 335], ['undo'], ['undo'], ['redo'],
+  ], 'sticknodes.document.json');
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

@@ -1,8 +1,7 @@
 //! Posing joints (`poseJoint`, `rotateJoint`, `bendJoint`, `_rotateJoint`,
 //! `_poseSnapState`) and the rotation targets of a joint (`rotationEdits` in
 //! src/pivot/structure.mjs). Posing the end of a limb with an IK controller goes to
-//! [`crate::ik`]. Rig controls, pinned inverse kinematics, 3D bones and Stick Nodes
-//! curves are not ported: those calls answer `Unported`.
+//! [`crate::ik`]. Rig controls and 3D bones are not ported: those calls answer `Unported`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -180,9 +179,6 @@ impl Editor {
         if segments.iter().any(|s| s.get("_stykRig").is_some()) {
             return Err(EditError::Unported("posing a rigged figure".into()));
         }
-        if object.get("_sticknodesShapes").is_some() || segments.iter().any(|s| s.get("_sticknodes").is_some()) {
-            return Err(EditError::Unported("posing a Stick Nodes figure".into()));
-        }
         // `selectedSlot` is the selected id's slot; without it there is no shape.
         let selected = self.selection.uid.filter(|&u| uid(&object) == Some(u));
         if selected.is_none() || self.selection.joint < 0 {
@@ -202,6 +198,9 @@ impl Editor {
         let Some(segment) = figure.and_then(|f| f.segments.get(joint)) else { return Ok(None) };
         let start = geometry.starts.get(joint).copied().unwrap_or([f64::NAN; 2]);
         let (_, bend, _) = styk_eval::geometry::segment_pose(evaluated, segment, joint);
+        // A straight Stick Nodes segment with a sagitta is drawn as a curve, which geometry
+        // reports with a bend of 1e-6.
+        let bend = if bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, evaluated).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { bend };
         // A pinned limb is drawn with its solved angles.
         let slot = frame.objects.iter().position(|o| o.uid == id).unwrap();
         let angle = crate::ik::displayed_angle(&prepared, &frame, &crate::ik::solve_frame(&prepared, &frame, &scene), slot, joint);
