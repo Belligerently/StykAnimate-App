@@ -87,3 +87,46 @@ SHA-256 prefixes of every output; byte-stable regeneration, checked by `npm run 
 protocol, the brush model and the undo codec through both engines' facades in Node and
 requires identical replies, and that every error key the crate can raise is in the
 English catalogue.
+
+`tests/drawing-engine.desktop.mjs` (Electron, under `xvfb-run -a`) draws, fills and saves
+the same strokes with each engine, requires identical cels and published blobs, opens each
+engine's file in the other and repeats an edit there with identical pixels and history.
+`tests/drawing-engine.browser.mjs` (development server) checks the same in a browser with
+thumbnails and previews, and reports the workers' memory.
+
+## Measurements
+
+Measured on the shared development machine (load average 7–18 during the runs; engines
+interleaved in the same runs; numbers are medians unless ranges are given). They are
+evidence for these runs, not for other machines.
+
+`node scripts/benchmark-drawing-engine.mjs` (Node, worker requests through both facades,
+7 rounds), JavaScript → Rust: enclosed fill 145 → 38.7 ms, whole-stage fill 422 → 138,
+magic wand 490 → 150, blur 995 → 407, hue/saturation 225 → 150, selection capture
+11.9 → 7.9, rotated transform commit 53.8 → 44.1, resampling to half 92.0 → 81.8 and to
+double 526 → 366, publishing 1,069 tiles 1,098 → 429, decoding them 323 → 184 ms. Stroke
+worker totals per stroke 0.66–1.01× JavaScript's time and pen-up 0.23–0.39×. Slower in
+Rust: preparing 64 tiles 0.43 → 0.88 ms (the copy into the module) and the brush model on
+the interface thread 2.6–8.4 → 3.2–9.9 µs per sample (calls across the boundary); undo
+chunks encode in 0.27–0.38 ms (JavaScript 0.24–0.36) and decode in 0.20–0.22 ms
+(JavaScript 0.26–0.29).
+
+`--memory` (each workload alone in a fresh process; peak resident growth): the module's
+linear memory grows to the job's working set, 5–12 MiB for strokes, 40–68 MiB for fills and
+the wand, 171 MiB for a whole-stage blur, 34–45 MiB for transforms and publication, where
+JavaScript's garbage-collected peaks are 0–22 MiB except blur (149 MiB) and publication
+(59 MiB). The instance is replaced after a job once it holds more than 256 MiB.
+
+Live drawing in a browser (`tests/drawing-latency.browser.mjs`, blank 1080p cel at 2×,
+Canvas 2D, four interleaved rounds), input-to-visible p50 JavaScript/Rust: small 30.1/29.6,
+pencil 40.7/32.3, charcoal 30.1/29.5, soft 160 px 56.1/39.0, oil 26.4/32.9 ms; pen-up to
+commit 57.3/52.2, 65.7/52.6, 59.5/52.9, 79.3/79.4, 47.9/57.2 ms. Worker memory after a few
+strokes and a fill (`measureUserAgentSpecificMemory`): pixel worker 32.9 MiB (JavaScript
+21.5), stroke worker 7.6 (3.6), history worker 6.7 (2.9).
+
+`scripts/benchmark-drawing-engine-app.mjs` (browser, dense 2,040-tile cel, 3 rounds):
+fill 144 ms (JavaScript 184), publication 561 (801), undo and redo of large soft strokes
+from the disk tier with publication settled 815 and 978 ms (JavaScript 615 and 1,008, with
+ranges overlapping: 266–1,254 against 357–755 and 781–1,653 against 299–1,864). Back to
+back, undo and redo wait for the previous edit's publication (its last tile encoding takes
+165–230 ms in both engines), so their times depend on when publication ends.
