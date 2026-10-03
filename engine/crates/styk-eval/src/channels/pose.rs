@@ -166,36 +166,36 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
     if channels.is_empty() {
         return base;
     }
-    let figure_owned: HashSet<u32> = channels.iter().filter_map(|(_, c)| if let Target::Figure { uid } = c.target { Some(uid) } else { None }).collect();
-    let default_layer: Arc<str> = Arc::from("layer-1");
-    let owner = |uid: u32| -> Owner {
-        if figure_owned.contains(&uid) {
-            return Owner::Figure(uid);
-        }
-        Owner::Layer(match &doc.layers {
-            Some(layers) => Arc::from(layers.layer_of(uid)),
-            None => default_layer.clone(),
-        })
-    };
-    let native_owners: HashSet<Owner> = channels
-        .iter()
-        .filter(|(_, c)| c.native_properties)
-        .filter_map(|(_, c)| match &c.target {
-            Target::Figure { uid } => Some(Owner::Figure(*uid)),
-            Target::Layer { id } => Some(Owner::Layer(id.clone())),
-            _ => None,
-        })
-        .collect();
     let mut sampled: Vec<Frame> = Vec::new();
-    let mut replacements: Vec<(Owner, Source)> = Vec::new();
-    let mut result = base.clone();
+    let mut replacements: Vec<(Owner, Source, bool)> = Vec::new();
+    // The frame's own fields, which camera and scene tracks replace; figures come last.
+    let mut result = Frame {
+        tick: base.tick,
+        objects: Vec::new(),
+        draw_order: Vec::new(),
+        camera: base.camera,
+        background: base.background,
+        background_b: base.background_b,
+        background_mix: base.background_mix,
+        origins: Vec::new(),
+        continuations: base.continuations.clone(),
+        background_color: base.background_color,
+        pose_vfx: base.pose_vfx.clone(),
+        vfx: base.vfx.clone(),
+        parallax: base.parallax.clone(),
+    };
     for &(index, channel) in &channels {
         let frame = if masked_at(&channel.masked, tick) {
             None
         } else if channel.use_base_pose {
             Some(Source::Base)
         } else {
-            compiled.tracks[index].as_ref().and_then(|seq| crate::eval::sample_pose_track(doc, seq, tick)).map(|frame| {
+            // A figure's track tweens that figure alone (`sampleUids`).
+            let only = match &channel.target {
+                Target::Figure { uid } => Some(std::slice::from_ref(uid)),
+                _ => None,
+            };
+            compiled.tracks[index].as_ref().and_then(|seq| crate::eval::sample_pose_track_only(doc, seq, tick, only)).map(|frame| {
                 sampled.push(frame);
                 Source::Sampled(sampled.len() - 1)
             })
@@ -209,8 +209,8 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
             Source::Sampled(i) => &sampled[i],
         };
         match &channel.target {
-            Target::Layer { id } => set(&mut replacements, Owner::Layer(id.clone()), source),
-            Target::Figure { uid } => set(&mut replacements, Owner::Figure(*uid), source),
+            Target::Layer { id } => set(&mut replacements, Owner::Layer(id.clone()), source, channel.native_properties),
+            Target::Figure { uid } => set(&mut replacements, Owner::Figure(*uid), source, channel.native_properties),
             Target::Camera => result.camera = Some(frame.camera.unwrap_or_default()),
             Target::Scene => {
                 result.background = frame.background;
@@ -223,7 +223,7 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
         }
     }
     if replacements.is_empty() {
-        return result;
+        return Frame { objects: base.objects, draw_order: base.draw_order, origins: base.origins, ..result };
     }
     let frame_of = |source: Source| -> &Frame {
         match source {
@@ -231,19 +231,44 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
             Source::Sampled(i) => &sampled[i],
         }
     };
-    let replaced = |id: &Owner| replacements.iter().find(|(owner, _)| owner == id).map(|(_, source)| *source);
+    // Who owns a figure (`owner(uid)`): its own channel, else its layer's, by replacement.
+    let mut by_figure: HashMap<u32, usize> = HashMap::new();
+    let mut by_layer: HashMap<&str, usize> = HashMap::new();
+    for (r, (owner, _, _)) in replacements.iter().enumerate() {
+        match owner {
+            Owner::Figure(uid) => {
+                by_figure.insert(*uid, r);
+            }
+            Owner::Layer(id) => {
+                by_layer.insert(id, r);
+            }
+        }
+    }
+    let replacement_of = |uid: u32| -> Option<usize> {
+        match by_figure.get(&uid) {
+            Some(&r) => Some(r),
+            None => by_layer.get(doc.layers.as_ref().map_or("layer-1", |layers| layers.layer_of(uid))).copied(),
+        }
+    };
     // The figures each replacement brings, in its frame's drawing order.
-    let brought: Vec<Vec<usize>> = replacements.iter().map(|(id, source)| ordered(frame_of(*source)).into_iter().filter(|&slot| owner(frame_of(*source).objects[slot].uid) == *id).collect()).collect();
+    let brought: Vec<Vec<usize>> = replacements
+        .iter()
+        .enumerate()
+        .map(|(r, (_, source, _))| {
+            let frame = frame_of(*source);
+            ordered(frame).into_iter().filter(|&slot| replacement_of(frame.objects[slot].uid) == Some(r)).collect()
+        })
+        .collect();
     let mut records: Vec<Record> = Vec::new();
     let mut included: HashSet<u32> = HashSet::new();
     // Unchanged figures keep their native slots; new appearances follow in source order.
     for (slot, object) in base.objects.iter().enumerate() {
-        if replaced(&owner(object.uid)).is_none() {
+        if replacement_of(object.uid).is_none() {
             records.push(Record { object: object.clone(), source: Source::Base, slot });
             included.insert(object.uid);
         }
     }
-    for (r, (_, source)) in replacements.iter().enumerate() {
+    for (r, (_, source, _)) in replacements.iter().enumerate() {
         for &slot in &brought[r] {
             let object = &frame_of(*source).objects[slot];
             if included.insert(object.uid) {
@@ -252,7 +277,7 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
         }
     }
     let slots: HashMap<u32, usize> = records.iter().enumerate().map(|(slot, record)| (record.object.uid, slot)).collect();
-    let natives: HashMap<u32, &Arc<Object>> = if native_owners.is_empty() { HashMap::new() } else { base.objects.iter().map(|object| (object.uid, object)).collect() };
+    let natives: HashMap<u32, &Arc<Object>> = if replacements.iter().any(|(_, _, native)| *native) { base.objects.iter().map(|object| (object.uid, object)).collect() } else { HashMap::new() };
     // Where a figure was drawn in its own frame, for one that comes loose.
     let mut geometry: HashMap<usize, crate::geometry::Scene> = HashMap::new();
     let key = |source: Source| match source {
@@ -262,7 +287,8 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
     let mut objects: Vec<Arc<Object>> = Vec::with_capacity(records.len());
     let mut origins: Vec<Option<(FrameRef, u32)>> = Vec::with_capacity(records.len());
     for record in &records {
-        let mut object = if native_owners.contains(&owner(record.object.uid)) { native_appearance(doc, &record.object, natives.get(&record.object.uid).copied()) } else { record.object.clone() };
+        let native = replacement_of(record.object.uid).is_some_and(|r| replacements[r].2);
+        let mut object = if native { native_appearance(doc, &record.object, natives.get(&record.object.uid).copied()) } else { record.object.clone() };
         let source = frame_of(record.source);
         let mut origin = source.origins.get(record.slot).cloned().flatten();
         if !Arc::ptr_eq(&object, &record.object) {
@@ -349,41 +375,41 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
             stack.anchors.entry(anchor).or_default().push(*uid);
         }
     }
-    let mut emitted: HashSet<Owner> = HashSet::new();
-    let mut emit = |stack: &mut Stacking, id: &Owner| {
-        if !emitted.insert(id.clone()) {
+    let mut emitted = vec![false; replacements.len()];
+    let mut emit = |stack: &mut Stacking, r: usize| {
+        if std::mem::replace(&mut emitted[r], true) {
             return;
         }
-        if let Some(r) = replacements.iter().position(|(owner, _)| owner == id) {
-            let frame = frame_of(replacements[r].1);
-            for &slot in &brought[r] {
-                stack.append(frame.objects[slot].uid);
-            }
+        let frame = frame_of(replacements[r].1);
+        for &slot in &brought[r] {
+            stack.append(frame.objects[slot].uid);
         }
     };
     for slot in ordered(&base) {
         let uid = base.objects[slot].uid;
-        let id = owner(uid);
-        if replaced(&id).is_some() {
-            emit(&mut stack, &id);
-        } else {
-            stack.append(uid);
+        match replacement_of(uid) {
+            Some(r) => emit(&mut stack, r),
+            None => stack.append(uid),
         }
         stack.append_anchors(uid);
     }
-    for (id, _) in &replacements {
-        emit(&mut stack, id);
+    for r in 0..replacements.len() {
+        emit(&mut stack, r);
     }
     let mut order = std::mem::take(&mut stack.order);
     order.extend((0..count).filter(|&slot| !stack.placed[slot]).map(|slot| slot as u32));
     Frame { objects, origins, draw_order: order, ..result }
 }
 
-/// `replacements.set(id, frame)`: a later channel of the same owner takes its place.
-fn set(replacements: &mut Vec<(Owner, Source)>, id: Owner, source: Source) {
-    match replacements.iter_mut().find(|(owner, _)| *owner == id) {
-        Some(entry) => entry.1 = source,
-        None => replacements.push((id, source)),
+/// `replacements.set(id, frame)`: a later channel of the same owner takes its place;
+/// `native` is whether a channel of the owner keeps the native appearance.
+fn set(replacements: &mut Vec<(Owner, Source, bool)>, id: Owner, source: Source, native: bool) {
+    match replacements.iter_mut().find(|(owner, _, _)| *owner == id) {
+        Some(entry) => {
+            entry.1 = source;
+            entry.2 |= native;
+        }
+        None => replacements.push((id, source, native)),
     }
 }
 

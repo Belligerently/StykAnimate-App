@@ -166,7 +166,8 @@ const fixtures = {
    * in the retained source, `movieclipSource`). The clip is a figure scaled, turned and
    * recoloured by channels on its native timeline; the host is a layer sheet. */
   'channels-in-movieclip': () => {
-    const inner = authoring(documentOf([limb()], () => [120, 120]));
+    // Placed so that the scaled, turned figure stays inside the camera's frame.
+    const inner = authoring(documentOf([limb()], () => [260, 150]));
     nextKey(inner, 12); whole(inner, 1).moveSelection(40, 10);
     inner.addAnimationKeys([key(figure(1), 'scale', 4, 1.6), key(figure(1), 'rotation', 8, 1.2), key(figure(1), 'color', 6, 0xffe02040), key(figure(1), 'scale', 16, 0.8)]);
     const clipDocument = inner.serialize();

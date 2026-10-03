@@ -441,17 +441,23 @@ fn frame_of(key: &KeyRef) -> Frame {
 
 /// `evaluatedNativeFrame`: one interval of a native or virtual timeline.
 pub fn evaluate_native(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame {
-    evaluate_interval(doc, seq, index, t, false)
+    evaluate_interval(doc, seq, index, t, false, None)
+}
+
+/// [`evaluate_native`] tweening only the figures `uids` and the figures they hang from
+/// (`requestedUids`); the others keep the interval's first pose.
+pub(crate) fn evaluate_native_only(doc: &Document, seq: &Seq, index: usize, t: f64, uids: &[u32]) -> Frame {
+    evaluate_interval(doc, seq, index, t, false, Some(uids))
 }
 
 /// [`evaluate_native`] with every stored value as the editor computes it, for
 /// records (see [`Sampler::angle`]).
 pub(crate) fn evaluate_native_exact(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame {
-    evaluate_interval(doc, seq, index, t, true)
+    evaluate_interval(doc, seq, index, t, true, None)
 }
 
-fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
-    let mut frame = tween_interval(doc, seq, index, t, exact);
+fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool, only: Option<&[u32]>) -> Frame {
+    let mut frame = tween_interval(doc, seq, index, t, exact, only);
     correct_origins(doc, &mut frame);
     frame
 }
@@ -470,7 +476,7 @@ pub(crate) fn correct_origins(doc: &Document, frame: &mut Frame) {
     }
 }
 
-fn tween_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
+fn tween_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool, only: Option<&[u32]>) -> Frame {
     let keys = &seq.keys;
     let Some(a) = keys.get(index) else { return Frame::default() };
     let Some(b) = keys.get(index + 1) else { return frame_of(a) };
@@ -491,8 +497,30 @@ fn tween_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) 
     let sampler = Sampler::new(seq, index, t, exact);
     let around = |k: Option<usize>| k.and_then(|k| keys.get(k)).map(|f| &f.frame);
     let frames = [around(index.checked_sub(1)), Some(&a.frame), Some(&b.frame), around(Some(index + 2))];
+    // A figure's trajectory needs only its figures and those they hang from in either key.
+    let needed: Option<std::collections::HashSet<u32>> = only.map(|uids| {
+        let mut needed: std::collections::HashSet<u32> = uids.iter().copied().collect();
+        let mut queue: Vec<u32> = uids.to_vec();
+        let mut i = 0;
+        while i < queue.len() {
+            for key in [&a.frame, &b.frame] {
+                let parent = key.object(queue[i]).and_then(|o| o.join).and_then(|j| key.objects.get(j.slot as usize));
+                if let Some(parent) = parent
+                    && needed.insert(parent.uid)
+                {
+                    queue.push(parent.uid);
+                }
+            }
+            i += 1;
+        }
+        needed
+    });
     let mut objects = Vec::with_capacity(a.frame.objects.len());
     for o in &a.frame.objects {
+        if needed.as_ref().is_some_and(|needed| !needed.contains(&o.uid)) {
+            objects.push(o.clone());
+            continue;
+        }
         let Some(next) = b.frame.object(o.uid).filter(|n| n.figure == o.figure) else {
             objects.push(o.clone());
             continue;
@@ -1228,16 +1256,13 @@ impl Prepared {
         if let (Some((scene, identity)), Some((_, other))) = (&scene, &camera)
             && *identity != Sampled::Track
             && other == identity
+            && frames.iter().all(|(_, sampled)| match sampled {
+                None => true,
+                Some((frame, sampled)) => sampled == identity || (frame.objects.is_empty() && frame.continuations.is_empty()),
+            })
         {
-            let frame_of = |layer: &str| frames.iter().find(|(id, _)| id.as_str() == layer).and_then(|(_, sampled)| sampled.as_ref());
-            let same = |layer: &str| frame_of(layer).is_some_and(|(_, sampled)| sampled == identity);
-            if scene.objects.iter().all(|o| same(layers.layer_of(o.uid)))
-                && scene.continuations.iter().all(|(uid, _)| same(layers.layer_of(*uid)))
-                && frames.iter().all(|(_, sampled)| match sampled {
-                    None => true,
-                    Some((frame, sampled)) => sampled == identity || (frame.objects.is_empty() && frame.continuations.is_empty()),
-                })
-            {
+            let shared: std::collections::HashSet<&str> = frames.iter().filter(|(_, s)| s.as_ref().is_some_and(|(_, s)| s == identity)).map(|(id, _)| id.as_str()).collect();
+            if scene.objects.iter().all(|o| shared.contains(layers.layer_of(o.uid))) && scene.continuations.iter().all(|(uid, _)| shared.contains(layers.layer_of(*uid))) {
                 return Frame { tick, ..scene.clone() };
             }
         }
@@ -1432,6 +1457,11 @@ fn virtual_track(doc: &Document, fixed: bool, mut keys: Vec<(&SheetKey, Option<&
 
 /// `samplePoseTrack`: the interval of the track's own key ticks around `tick`.
 pub(crate) fn sample_pose_track(doc: &Document, seq: &Seq, tick: f64) -> Option<Frame> {
+    sample_pose_track_only(doc, seq, tick, None)
+}
+
+/// [`sample_pose_track`] tweening only the figures `uids` (and those they hang from) when given.
+pub(crate) fn sample_pose_track_only(doc: &Document, seq: &Seq, tick: f64, uids: Option<&[u32]>) -> Option<Frame> {
     let ticks = &seq.ticks;
     if ticks.is_empty() || tick < ticks[0] {
         return None;
@@ -1441,7 +1471,10 @@ pub(crate) fn sample_pose_track(doc: &Document, seq: &Seq, tick: f64) -> Option<
         Some(&next) if next > ticks[low] => ((tick - ticks[low]) / (next - ticks[low])).clamp(0.0, 1.0),
         _ => 0.0,
     };
-    Some(evaluate_native(doc, seq, low, fraction))
+    Some(match uids {
+        Some(uids) => evaluate_native_only(doc, seq, low, fraction, uids),
+        None => evaluate_native(doc, seq, low, fraction),
+    })
 }
 
 /// `applyLayerOrder`: group back-to-front by user layer, stable within each.
