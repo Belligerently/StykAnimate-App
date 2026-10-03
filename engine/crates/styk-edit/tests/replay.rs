@@ -34,6 +34,8 @@ const PORTED: &[&str] = &[
     "ik-settings-sheet", "ik-settings-pinned-sheet", "ik-settings-spatial-sheet", "ik-settings-rig-sheet", "ik-settings-followers-sheet",
     // The layer list: names, colours, visibility, locks, new layers, order.
     "layer-list-sheet", "layers-native", "layers-folders-sheet",
+    // Figures added from the library.
+    "add-figure-sheet", "add-figure-layers-sheet",
 ];
 
 #[test]

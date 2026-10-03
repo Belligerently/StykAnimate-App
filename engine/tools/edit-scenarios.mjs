@@ -518,6 +518,15 @@ scenario('figures-layers-sheet', app, [
     ['arrangeLayers', ['layer-1', 'layer-2', 'layer-3', 'layer-4'], ['layer-2'], null], ['arrangeLayers', ['layer-1']],
     ['deleteLayerFolder', 'folder-1'], ['deleteLayerFolder', 'folder-1'], ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'sheet-layers.document.json');
+  // Figures added from the library at the playhead: the first definition, a chosen one, one
+  // that does not exist; at a later tick inside a held key; the new figure posed; history.
+  scenario('add-figure-sheet', app, [
+    ['addFigure'], ['addFigure', 1], ['addFigure', 99], ['@seek', 3], ['addFigure'], ['@select', 4, 3], ['poseJoint', 300, 200], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('add-figure-layers-sheet', app, [
+    ['@select', 3, -1], ['addFigure', 1], ['moveSelection', 20, 10], ['@seek', 6], ['addFigure', 1], ['setLayerLocked', 'layer-2', true], ['addFigure', 1],
+    ['setLayerLocked', 'layer-2', false], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

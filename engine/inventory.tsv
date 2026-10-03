@@ -158,7 +158,7 @@ src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
 src/editor-movieclips.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
-src/editor-range-commands.mjs	engine	styk-edit	js	commands and history
+src/editor-range-commands.mjs	engine	styk-edit	partial	Rust: adding a figure at the playhead on a layer sheet (applyFigureRange add, insert, _commitSheetRange: Editor::add_figure, commit_sheet_range); other range operations, pasting and native timelines still JS
 src/editor-ranges.mjs	engine	styk-edit	js	commands and history
 src/editor-rig-constraints.mjs	engine	styk-edit	partial	Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS
 src/editor-rig.mjs	engine	styk-edit	js	commands and history
