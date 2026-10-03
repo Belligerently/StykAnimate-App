@@ -15,11 +15,11 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-edit` | 86 | 1213 KiB | 76 | 9 | 1 | 0 | 0 | 0 % | 28 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
-| `styk-eval` | 83 | 774 KiB | 40 | 34 | 9 | 0 | 0 | 15 % | 53 % | 0 % |
+| `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4063 KiB | 254 | 62 | 17 | 22 | 1 | 16 % | 30 % | 0 % |
+| **Total** | 356 | 4063 KiB | 251 | 65 | 17 | 22 | 1 | 16 % | 31 % | 0 % |
 
 ## Engine modules
 
@@ -175,12 +175,9 @@ Engine logic: ported to Rust.
 | `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | js |  |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
 | `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/animation-channels.mjs` | `styk-eval` | js |  |
 | `src/animation-origin-validation.mjs` | `styk-eval` | js |  |
-| `src/animation-pose.mjs` | `styk-eval` | partial | Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS |
-| `src/animation-properties.mjs` | `styk-eval` | js |  |
+| `src/animation-pose.mjs` | `styk-eval` | partial | Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS; plus composePoseChannels and handleOrientation (styk_eval::channels::pose) |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
-| `src/animation-style.mjs` | `styk-eval` | partial | Rust: per-instance style overlays (resolveInstanceFigure); style channels still JS |
 | `src/color-palette.mjs` | `styk-eval` | js |  |
 | `src/connected-timeline.mjs` | `styk-eval` | js |  |
 | `src/figure-colors.mjs` | `styk-eval` | js |  |
@@ -192,7 +189,6 @@ Engine logic: ported to Rust.
 | `src/motion-path-falloff.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/motion-path.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/native-pose-projection.mjs` | `styk-eval` | js |  |
-| `src/native-property-curve.mjs` | `styk-eval` | js |  |
 | `src/native-property-projection.mjs` | `styk-eval` | js |  |
 | `src/object-identity.mjs` | `styk-eval` | js |  |
 | `src/onion-range.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
@@ -211,6 +207,10 @@ Engine logic: ported to Rust.
 | `src/camera-motion-bake-worker.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-motion-bake.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS |
+| `src/animation-channels.mjs` | `styk-eval::channels` | partial | Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); authoring validation, animationPropertyValue and editing still JS |
+| `src/animation-properties.mjs` | `styk-eval::channels` | partial | Rust: property vocabulary, discrete and colour properties; validation and names still JS |
+| `src/animation-style.mjs` | `styk-eval::channels` | partial | Rust: style overlays and style channels (setAnimationStyle, applicability); validation still JS |
+| `src/native-property-curve.mjs` | `styk-eval::channels` | partial | Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor |
 | `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: sampling, shaping (dead zone, look-ahead, springs, zoom), sampleFollow (styk_eval::follow); followFramingOffset and incremental resampling still JS |
 | `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | partial | Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS |
 | `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS |

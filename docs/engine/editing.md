@@ -219,7 +219,9 @@ The engine runs ported calls in the editor's place while a session lives (the sa
 editor), for every document with `?engineEdit=on` (or
 `localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
 keeps the editor in charge and compares. `editingClass(report)` names a document's class:
-`movieclips` when a figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
+`unported` for documents the engine does not edit at all (property channels, animation
+origins, a captured movieclip's own document; the engine draws them), `movieclips` when a
+figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
 `large figures` from 1,000 segments across its figure definitions, else `figures`. The
 calls that change the document
 (the gestures' moves, poses and transforms, `commitDrag`, the layer timeline's keys and

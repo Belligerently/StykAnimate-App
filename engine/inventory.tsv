@@ -1,13 +1,13 @@
 path	kind	owner	status	note
-src/animation-channels.mjs	engine	styk-eval	js	
+src/animation-channels.mjs	engine	styk-eval::channels	partial	Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); authoring validation, animationPropertyValue and editing still JS
 src/animation-history.mjs	engine	styk-edit	js	
 src/animation-origin-support.mjs	engine	styk-eval::origin	partial	Rust: support-graph origins with ghosts, corrections, origin rotation (styk_eval::origin); editing still JS
 src/animation-origin-validation.mjs	engine	styk-eval	js	
 src/animation-origin.mjs	engine	styk-eval::origin	partial	Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); editing still JS
-src/animation-pose.mjs	engine	styk-eval	partial	Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS
-src/animation-properties.mjs	engine	styk-eval	js	
+src/animation-pose.mjs	engine	styk-eval	partial	Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS; plus composePoseChannels and handleOrientation (styk_eval::channels::pose)
+src/animation-properties.mjs	engine	styk-eval::channels	partial	Rust: property vocabulary, discrete and colour properties; validation and names still JS
 src/animation-property-state.mjs	engine	styk-eval	js	
-src/animation-style.mjs	engine	styk-eval	partial	Rust: per-instance style overlays (resolveInstanceFigure); style channels still JS
+src/animation-style.mjs	engine	styk-eval::channels	partial	Rust: style overlays and style channels (setAnimationStyle, applicability); validation still JS
 src/app-dialogs.mjs	ui	-	stays	
 src/app.mjs	ui	-	stays	
 src/application-menu.mjs	ui	-	stays	
@@ -269,7 +269,7 @@ src/native-container.mjs	engine	styk-formats::container	ported	Rust: reader and 
 src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
-src/native-property-curve.mjs	engine	styk-eval	js	
+src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
 src/native-property-edit.mjs	engine	styk-edit	js	
 src/native-property-projection.mjs	engine	styk-eval	js	
 src/native-property-ranges.mjs	engine	styk-edit	js	
