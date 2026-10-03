@@ -418,9 +418,11 @@ NEMESIS 3.styk, ten exports aborted after their first frame left no export worke
 said it had released its memory and device, and the engine's memory stayed where it was (87 and
 364 MiB); the app's PNG-sequence export over an existing file, cancelled from the progress dialog
 after two frames and failed in the engine's worker (a frame outside the animation), left the file
-byte for byte as it was and no export worker; the GPU memory `nvidia-smi` attributes to the app
-went back down (URIEL 3: 393 → 384 → 383 MiB) and the engine's memory did not grow (on Impact it
-had grown from 79 to 87 MiB with the first export, the allocator's high-water mark). Before the
+byte for byte as it was and no export worker. The GPU memory `nvidia-smi` attributes to the app
+went back down on URIEL 3 (393 → 384 → 383 MiB); on Impact, in a later run, the first cancelled
+export left it 42 MiB higher (249 → 291 MiB) and the failed one after it did not raise it (291 →
+290 MiB). The engine's memory grew with the first export of a session (Impact 79 → 87 and 83 → 90
+MiB, the allocator's high-water mark) and not afterwards. Before the
 release order was fixed ([threading.md](threading.md)), cancelling URIEL 3's export crashed the
 page, twice in two runs; it did not in the two runs since.
 
