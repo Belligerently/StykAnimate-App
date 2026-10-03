@@ -209,8 +209,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   editor's own evaluation (handles, picking, the pose it sends to the engine) still run in
   JavaScript and call the evaluation modules the engine covers; they go when the engine owns
   a document class (S5, D15). Deleted so far: the Python codec runtime, sidecar and their
-  loaders (codec merge). Ported editor calls run in shadow (`?engineShadow=on`); the
-  document the app starts with has IK controllers, which `styk-edit` does not run yet.
+  loaders (codec merge). Ported editor calls run in shadow (`?engineShadow=on`): on the
+  document the app starts with, its pinned variant, a foot with followers and a joined
+  assembly every call the shadow script makes now runs in the engine with no difference.
+  Still unported in `styk-edit`: rig controls, 3D bones and controllers, Stick Nodes
+  curves, drawing layers, audio ripple, multi-figure and movieclip-instance variants of the
+  frame-drafting commands, and every command outside the gesture and timeline set.
 - **The document is held twice until S5** (D12): the editor's JavaScript objects and the
   engine's store and typed views. Measured 2026-10-02 in Electron (WebGPU), one run each after
   opening the file and letting the mirror commit, machine load 4–5 from the baseline rounds
@@ -244,11 +248,11 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   would draw a scene stack's frame twice); `previewRasterScale` is not followed; effect
   layers may reach 3,968 px (60 MiB) with two to eight pages per atlas; a still frame can
   lack a drawing cel until the next redraw because nothing redraws while images decode.
-- **Some evaluation trigonometry is still the platform's** (D16): tweens now go through
-  `styk_math::shortest`, but geometry, the IK solver and 3D quaternions use `f64::sin`,
-  `cos`, `atan2` and `acos`. Drawn geometry is rounded to single precision and matches;
-  before the engine stores those results in documents (baking IK poses, 3D poses between
-  keys), those paths move to `styk-math` (which needs `acos`).
+- **Some evaluation trigonometry is still the platform's** (D16): tweens, the IK solver
+  and rig constraints use `styk-math` (the solver now matches the editor bit for bit), but
+  geometry and 3D quaternions use `f64::sin`, `cos`, `atan2`, `acos` and `asin`. Drawn
+  geometry is rounded to single precision and matches; before the engine stores 3D poses
+  between keys, those paths move to `styk-math` (which needs `acos` and `asin`).
 - **The codec, open after the merge**: a segment edit to a figure from the synthetic
   `figure-modern.stk` fixture does not survive `.stk` export (the export writes the
   unedited 84 bytes; the Python oracle writes the same bytes, so the defect predates the
@@ -315,8 +319,9 @@ responses (status, code and message), 3 native containers, 213 other routes.
 largest string Node can hold. To do: stream the reference from the frame transport.
 
 **Fixtures** (`cargo test -p styk-eval`): 27 IK fixtures built by the editor, 0 mismatches,
-and 122 controller outcomes and 599 solved angles equal to the editor's within 4.5e-11 rad
-with the same iteration counts; each fixture with a pin fails without the solver. 4 movieclip
+and 122 controller outcomes and 599 solved angles equal to the editor's bit for bit with
+the same iteration counts (since the solver's trigonometry moved to `styk-math`; within
+4.5e-11 rad before); each fixture with a pin fails without the solver. 4 movieclip
 replacement fixtures, 0 mismatches, each failing without its replacements.
 
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
@@ -432,9 +437,11 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 00:45 | S5 shadow editing in the app | `styk_edit::session` (calls in, JSON out), `EngineHandle.edit_session` / `EditSession.call` in `styk-wasm`, `Engine::mirrored`, `src/engine/engine-edit-shadow.mjs` (off unless `?engineShadow=on`), `scripts/engine-edit-shadow.mjs`. D15 revised (shadow, then ownership flips per document) and D16 restated (one `Math`, Node's; browsers disagree among themselves). | Headless Chromium, real pointer drags, keyboard undo/redo and commands on four documents: 77 of 77 calls the same as the editor in each (28–53 only in last digits, Chromium's `Math`), engine 28–31 ms against the editor's 58–63 ms for those calls. The start-up document answers `Unported` throughout: it has IK controllers. |
 | 2026-10-03 10:05 | S1 the Pivot codec in WebAssembly in the app (agent, reviewed, completed and merged) | Every build opens and writes Pivot files with `styk-piv` compiled to WebAssembly (`engine/crates/styk-codec-wasm`, stable Rust) and run in a worker of the editor page; Pyodide, the PyInstaller sidecar and its scripts, `desktop/backend.cjs` and `src/codec-web-engine.mjs` are deleted; desktop samples come over two IPC calls (`desktop/samples.cjs`); `backend/` and `codecs/` stay as the development oracle. Completed here: CI builds the engine before the unit tests, a stale sweep step, the export contract doc, `scripts/smoke-native-formats.mjs`. | Web build 61.3 → 51.0 MiB raw, 17.4 → 12.5 MiB at Brotli 5 (Python runtime 13.3 / 5.8 MiB → none; WebAssembly 6.5 / 2.0 → 9.7 / 3.0 MiB: engine 5.6 MiB, codec 1.5 MiB). Import medians of three interleaved rounds, measured by the agent before → after: desktop from source (Xvfb, Canvas 2D) `svr_uriel.piv` 12.58 → 4.44 s and `tdd2 uriel nemesis.piv` 28.89 → 6.07 s; web build (headless Chromium) 23.40 → 7.37 s and 20.32 → 8.14 s; development server 2.67 → 3.05 s (the old service had a C++ scanner) and 5.47 → 4.14 s. Same documents, key order and edited-export bytes as the Python service on four files; AyameDemo.piv exports the same 2,091,013 bytes in Chrome 153, Firefox 155 and WebKit 26.6. Here: `npm test` 4,347 of 4,380 pass (the 6 known failures), `engine:test` 208, `engine:parity` all ok, Python oracle 161 pass, `web:verify` ok, desktop round trip 17 of 17. |
 
-In progress: 3D meshes, surfaces and poses in the engine (agent, resumed after a session
-limit stopped it). Next in the main thread: inverse kinematics in `styk-edit` (the shadow run
-showed the document the app starts with needs it), the remaining gesture paths (rigs, 3D
-bones, Stick Nodes curves), then flipping document ownership to the engine one document
-class at a time (D15). After the 3D agent: generated effects (particles, smoke, beams,
-explosions) as the next subagent.
+| 2026-10-03 11:02 | S5 inverse kinematics in `styk-edit` | Every IK path of the editor's gestures, as the editor runs them: controller targets moving with their figure (`translateIKTargets`); dragging the end of a limb (`poseIKTarget`: a pinned target moves, a free limb is captured as drawn, solved and baked); around pinned limbs, the displayed solution baked before a pose edit, follower offsets turned with their joint, the bend remembered after each change, a stretched end followed by its pin; across joined figures, the assembly's temporary skeleton (`styk_eval::ik::joined::Assembly`, now public and shared with geometry) for all of it, with `_ikPoseSlots` and `_expandIKDrag`. The IK solver and rig constraints use `styk-math`. Only 3D controllers and posing a target in perspective answer `Unported`. | 33 recordings, 654 steps: the 32 scenarios of ported calls (633 steps; 10 new IK scenarios) match the editor at every step in document bytes, state, results and events, and each new IK path breaks at least one of them when removed. The solver's 122 outcomes and 599 angles now equal the editor's bit for bit (`tests/ik.rs` compares exactly). App shadow (headless Chromium): the start-up document 77 of 77 calls, `startup-pinned` 88 of 88, `followers` 88 of 88, `joined` 54 of 54 the same as the editor, none different; engine 82–100 ms against the editor's 167–182 ms for those calls. |
+
+In progress: 3D meshes, surfaces and poses in the engine (agent). Next in the main thread:
+the remaining gesture paths (rig controls, 3D bones, Stick Nodes curves) and the commands
+documents of the start-up class still send to JavaScript, then flipping document ownership
+to the engine one document class at a time (D15), starting with the class the app starts
+with. After the 3D agent: generated effects (particles, smoke, beams, explosions) as the
+next subagent.

@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1212 KiB | 83 | 3 | 0 | 0 | 0 | 0 % | 17 % | 0 % |
+| `styk-edit` | 86 | 1212 KiB | 82 | 4 | 0 | 0 | 0 | 0 % | 19 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 55 | 25 | 3 | 0 | 0 | 2 % | 42 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 40 | 12 | 0 | 0 | 0 | 0 % | 45 % | 0 % |
-| **Total** | 356 | 4062 KiB | 283 | 45 | 5 | 22 | 1 | 12 % | 24 % | 0 % |
+| **Total** | 356 | 4062 KiB | 282 | 46 | 5 | 22 | 1 | 12 % | 25 % | 0 % |
 
 ## Engine modules
 
@@ -99,7 +99,7 @@ Engine logic: ported to Rust.
 | `src/editor-frames.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-commands.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-edit.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-ik.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget on flat figures, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); setNodeIK, rotateIKTarget, getIKSettings and 3D controllers still JS |
 | `src/editor-inbetween-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-inbetween.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-async.mjs` | `styk-edit` | js | commands and history |
@@ -235,11 +235,11 @@ Engine logic: ported to Rust.
 | `src/canvas-interactions.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/polygon-preview.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/ik-evaluation.mjs` | `styk-eval::rig` | ported | Rust: not needed (memoization; the engine caches whole frames) |
-| `src/ik-joined.mjs` | `styk-eval::rig` | partial | Rust: joined assemblies and solve; validation of joins still JS |
+| `src/ik-joined.mjs` | `styk-eval::rig` | partial | Rust: assemblies, solve and scatter with followers, used by evaluation and editing (ik::joined::Assembly); join validation still JS |
 | `src/ik-rig.mjs` | `styk-eval::rig` | partial | Rust: rig projection, refinement, analytic spatial limb; editing helpers still JS |
 | `src/ik-spatial.mjs` | `styk-eval::rig` | partial | Rust: evaluation; pole and capture helpers for editing still JS |
 | `src/ik-topology.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
-| `src/ik.mjs` | `styk-eval::rig` | partial | Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK); editing helpers still JS |
+| `src/ik.mjs` | `styk-eval::rig` | partial | Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK, ikBendReference) and translateIKTargets (styk-edit); remapIKFollowers, validateIK still JS |
 | `src/rig-angle-path.mjs` | `styk-eval::rig` | partial | Rust: angle path sampling; authoring still JS |
 | `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation; authoring helpers still JS |
 | `src/rig-control-details.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
