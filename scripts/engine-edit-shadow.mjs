@@ -10,6 +10,10 @@
 // Without --file it edits the document the app starts with. Exit code 1 when any call
 // differed or nothing was compared.
 //
+// --exact-math: the browser's Math functions are replaced by the engine's (Node's V8
+// results, docs/engine/decisions/0016-v8-exact-math.md) before the document loads, so the
+// editor computes what Node computes and numbers must match exactly.
+//
 // --own: the engine owns editing (`?engineEdit=on`, the editor adopts what the engine's
 // calls produce). The same interactions run first with the editor alone, then with the
 // engine owning; the documents, history labels and selection after them, and after
@@ -42,6 +46,7 @@ async function server() {
 const {origin, stop} = await server();
 const browser = await chromium.launch();
 const own = args.includes('--own');
+const exactMath = args.includes('--exact-math');
 let failed = true;
 /** One run of the interactions; `mode` is the query that sets up editing. */
 async function run(mode) {
@@ -54,6 +59,12 @@ async function run(mode) {
   await page.goto(`${origin}/?${mode}`);
   await page.waitForFunction(() => window.styk?.ready === true, null, {timeout: 60000});
   await page.evaluate(() => { document.querySelector('.styk-privacy [data-decline]')?.click(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); });
+  if (exactMath) await page.evaluate(async () => {
+    const m = await import('/src/engine/pkg/styk_engine.js');
+    Object.assign(Math, {sin: m.math_sin, cos: m.math_cos, atan2: m.math_atan2, asin: m.math_asin, acos: m.math_acos,
+      hypot: (...values) => values.length === 2 ? m.math_hypot(+values[0], +values[1]) : m.math_norm(Float64Array.from(values, Number))});
+    globalThis.__stykExactMath = true;
+  });
   const imported = option('--import');
   if (imported) {
     // A native file through the page's own import (the Pivot codec in WebAssembly).
@@ -94,7 +105,9 @@ async function run(mode) {
     const rect = (document.querySelector('#overlay') ?? document.querySelector('#viewport')).getBoundingClientRect();
     const options = {report: editor.report, frame: editor.evaluatedFrame, view: state.view, cameraEnabled: false};
     const all = getPivotHandles(editor.geometry, {frame: editor.frame, selectedUid: editor.selectedUid, selectedUids: editor.selectedUids, showUnselected: state.settings.showUnselectedHandles, viewScale: state.view.scale, autoSize: true, maxDiameter: 10});
-    return all.filter(handle => handle.uid === figure.unique_id && !handle.static).map(handle => { const at = worldToScreen(handle.point, options); return {joint: handle.joint, x: rect.left + at.x, y: rect.top + at.y}; })
+    const definition = editor.report.figure_types.find(type => type.figure_type_id === figure.figure_type_id)?.segments ?? [];
+    const ik = joint => Boolean(figure._stykIK?.[definition[joint]?.segment_id]?.enabled);
+    return all.filter(handle => handle.uid === figure.unique_id && !handle.static).map(handle => { const at = worldToScreen(handle.point, options); return {joint: handle.joint, ik: handle.joint >= 0 && ik(handle.joint), x: rect.left + at.x, y: rect.top + at.y}; })
       .filter(handle => handle.x > rect.left + 60 && handle.x < rect.right - 60 && handle.y > rect.top + 60 && handle.y < rect.bottom - 60);
   });
   /** A pointer drag from a handle along a small arc, as a hand would do it. */
@@ -117,6 +130,9 @@ async function run(mode) {
   await step('keys and frames of the layer timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetInsertKey(layer, Math.min(2, e.totalTicks - 1)); e.sheetDuplicateFrameAfter(); e.sheetSetEasing(layer, 0, 1, {interpolation: 'ease-in'}); e.sheetInsertFrames(layer, 1, 2); e.sheetRemoveFrames(layer, 1, 1); e.undo(); e.undo(); e.redo(); }));
   await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));
   if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
+  // A hand or foot with an IK controller, when the figure has one: its target is dragged.
+  const target = (await handles()).find(handle => handle.ik);
+  if (target) await step('drag an IK target', async () => { await settled(); const now = await handles(); await drag(now.find(h => h.joint === target.joint) ?? target, -30, 20); });
   await settled();
 
   const report = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__stykEditShadow ?? null, (key, value) => typeof value === 'function' ? undefined : value)));

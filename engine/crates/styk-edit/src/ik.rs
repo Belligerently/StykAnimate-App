@@ -102,11 +102,25 @@ impl Editor {
     /// `poseIKTarget(x, y)` for the enabled, unpinned controller ending at `handle` of the
     /// figure in `slot`: the pointer becomes its target and the limb is solved to it.
     pub(crate) fn pose_ik_target(&mut self, slot: usize, handle: u32, x: f64, y: f64) -> Result<bool, EditError> {
+        // The pointer at the target's depth (`unprojectSpatial`).
+        let key = handle.to_string();
+        let shown = self.frame_objects().get(slot).and_then(|o| o.path(&["_stykIK", &key]).cloned()).unwrap_or(Value::Null);
+        let spatial_depth = shown.path(&["spatialTarget", "depth"]).and_then(Value::as_f64);
+        let context = self.spatial_context_at(slot)?;
+        let depth = if truthy(&shown, "pinned") {
+            spatial_depth.unwrap_or(0.0)
+        } else {
+            context.as_ref().and_then(|c| c.raw(handle)).map(|r| r[2]).or(spatial_depth).unwrap_or(0.0)
+        };
+        let [x, y] = context.as_ref().map_or([x, y], |c| c.unproject_at([x, y], depth));
+        let graph = self.in_assembly(slot)?;
+        if graph && (truthy(&shown, "spatialTarget") || context.as_ref().is_some_and(|c| c.frames.iter().any(Option::is_some))) {
+            return Err(EditError::Unported("posing a joined 3D IK target".into()));
+        }
         self.object_edit("Move IK target", |editor| {
-            let key = handle.to_string();
             let current = editor.frame_objects().get(slot).and_then(|o| o.path(&["_stykIK", &key]).cloned()).unwrap_or(Value::Null);
             if !truthy(&current, "pinned") {
-                return if editor.in_assembly(slot)? { editor.pose_graph(slot, handle, x, y) } else { editor.bake_unpinned(slot, handle, x, y) };
+                return if graph { editor.pose_graph(slot, handle, x, y) } else { editor.bake_unpinned(slot, handle, x, y) };
             }
             // A pinned target persists where it is put; geometry solves the limb to it.
             let mut next = current.as_obj().cloned().unwrap_or_default();
@@ -114,6 +128,14 @@ impl Editor {
             target.set("x", Value::Num(x));
             target.set("y", Value::Num(y));
             next.set("target", Value::object(target));
+            // A planted 3D limb's knee keeps its side on screen (`_flatSpatialIKPole`).
+            if let Some(spatial) = current.get("spatialTarget").filter(|s| s.truthy()).and_then(crate::spatial_ik::parse_spatial_target) {
+                let length = current.get("chainLength").and_then(Value::as_f64).unwrap_or(f64::NAN).max(0.0).min(u32::MAX as f64) as u32;
+                let bend = current.get("bendDirection").and_then(Value::as_f64).unwrap_or(f64::NAN);
+                if let Some(pole) = editor.flat_spatial_ik_pole(slot, handle, length, bend, [x, y], &spatial)? {
+                    next.set("spatialTarget", crate::spatial_ik::merged(current.get("spatialTarget").unwrap(), &[("pole", Value::nums(&pole))]));
+                }
+            }
             let record = editor.frame_object_mut(slot).ok_or_else(|| EditError::Unported("posing an IK target outside the frame".into()))?;
             set_controller(record, &key, next);
             record.remove("runtime_segments");
@@ -204,7 +226,7 @@ impl Editor {
         let (mut followers, mut joined) = (BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, f64>>::new());
         for i in assembly.skeleton().follower_indices(id) {
             let entry = assembly.entry(i);
-            let angle = displayed_angle(&prepared, &frame, &solved, entry.slot, entry.index) - rotation;
+            let angle = displayed_angle(&prepared, &frame, &scene, &solved, entry.slot, entry.index) - rotation;
             if entry.slot == slot {
                 followers.insert(entry.handle, angle);
             } else {
@@ -555,47 +577,47 @@ impl Editor {
         let controller = ik::parse::table(object.get("_stykIK")).and_then(|table| table.get(handle).cloned()).ok_or_else(|| unported("with a controller the engine cannot read"))?;
         let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
         let angles = object.get("angles").and_then(Value::numbers).filter(|a| a.len() >= figure.segments.len()).ok_or_else(|| unported("of a pose without every angle"))?;
-        let solved = solve_frame(&prepared, &frame, &scene);
-        let at = frame.objects.iter().position(|o| o.uid == id).unwrap();
-        let drawn = |i: usize| displayed_angle(&prepared, &frame, &solved, at, i);
 
-        // capture(figure, object, geometry, handle, controller)
+        // capture(figure, object, geometry, handle, controller), kept for the gesture once it
+        // has a 3D target (`_drag.ikCapture`).
         let rotation = controller.target.rotation;
-        let followers: BTreeMap<u32, f64> = skeleton.follower_indices(handle).into_iter().map(|i| (figure.segments[i].id, drawn(i) - rotation)).collect();
-        let chain = skeleton.chain(handle, controller.chain_length);
-        let mut bend_direction = 1.0;
-        if chain.len() >= 2 {
-            let (a, c) = (geometry.starts[chain[0]], geometry.ends[chain[chain.len() - 1]]);
-            let mut cross = 0.0f64;
-            for &i in &chain[..chain.len() - 1] {
-                let b = geometry.ends[i];
-                let value = (c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]);
-                if value.abs() > cross.abs() {
-                    cross = value;
-                }
-            }
-            if cross.abs() > 1e-8 {
-                bend_direction = if cross < 0.0 { -1.0 } else { 1.0 };
+        let capture_key = format!("{id}:{handle}");
+        if !self.drag.as_ref().is_some_and(|d| d.ik_captures.contains_key(&capture_key)) {
+            let capture = self.capture_limb(slot, handle)?;
+            if let Some(drag) = self.drag.as_mut() {
+                drag.ik_captures.insert(capture_key.clone(), capture);
             }
         }
-        if skeleton.index(handle).is_none() || geometry.joint(figure, handle).is_none() {
-            return Err(EditError::Invalid("errors.editorIk.selectAValidIkNode".into()));
+        let cached = self.drag.as_ref().and_then(|d| d.ik_captures.get(&capture_key).cloned());
+        let captured = match cached {
+            Some(capture) if capture.spatial_target.is_some() => capture,
+            _ => self.capture_limb(slot, handle)?,
+        };
+        let followers = captured.followers.clone();
+        // `{...next, ...captured}`: the captured 3D parts, else the controller's.
+        let mut spatial_value = match &captured.spatial_target {
+            Some(target) => Some(crate::spatial_ik::spatial_target_value(target)),
+            None => current.get("spatialTarget").filter(|s| s.truthy()).cloned(),
+        };
+        let mut spatial_target = captured.spatial_target.clone().or_else(|| controller.spatial_target.clone());
+        if let Some(spatial) = spatial_target.as_mut() {
+            let bend = current.get("bendDirection").and_then(Value::as_f64).unwrap_or(f64::NAN);
+            if let Some(pole) = self.flat_spatial_ik_pole(slot, handle, controller.chain_length, bend, [x, y], spatial)? {
+                spatial.pole = pole;
+                spatial_value = spatial_value.map(|v| crate::spatial_ik::merged(&v, &[("pole", Value::nums(&pole))]));
+            }
         }
-        if chain.is_empty() {
-            return Err(unported("without a chain"));
-        }
-        let points: Vec<[f64; 2]> = std::iter::once(geometry.starts[chain[0]]).chain(chain.iter().map(|&i| geometry.ends[i])).collect();
-        let lengths: Vec<f64> = chain.iter().map(|&i| hypot(geometry.ends[i][0] - geometry.starts[i][0], geometry.ends[i][1] - geometry.starts[i][1])).collect();
-        let captured = ik::bend_reference(&points, &lengths, controller.bend_reference.as_ref());
-        // `bendDirection: controller.bendDirection ?? bendDirection`
-        let bend_direction = if current.get("bendDirection").is_some_and(|v| !v.is_null()) { controller.bend_direction } else { bend_direction };
-
+        let spatial_followers = captured.spatial_followers.clone();
+        let follow = spatial_target.is_none();
+        let captured_reference = captured.bend_reference.clone();
         let temporary = Controller {
             pinned: true,
             target: Target { x, y, rotation },
             followers: followers.clone(),
-            bend_direction,
-            bend_reference: Some(captured.clone()),
+            bend_direction: captured.bend_direction,
+            bend_reference: Some(captured_reference.clone()),
+            spatial_followers: spatial_followers.clone().or_else(|| controller.spatial_followers.clone()),
+            spatial_target: spatial_target.clone(),
             ..controller
         };
         let baseline = self.drag.as_ref().and_then(|drag| drag.before.iter().find(|o| uid(o) == Some(id)).cloned()).ok_or_else(|| unported("outside a gesture"))?;
@@ -616,7 +638,7 @@ impl Editor {
             shape: evaluated.spatial.as_ref().and_then(|s| s.shape.as_ref()),
         };
         let table = Table { controllers: BTreeMap::from([(handle, temporary)]) };
-        let solution = ik::solve_object(&skeleton, &pose, geometry.root, &table).ok_or_else(|| unported("the solver did not reach"))?;
+        let solution = ik::solve_object_with(&skeleton, &pose, geometry.root, &table, follow).ok_or_else(|| unported("the solver did not reach"))?;
         let solved = solution.results.iter().find(|(h, _)| *h == handle).and_then(|(_, outcome)| outcome.bend_reference.clone());
 
         let mut next = current.as_obj().cloned().unwrap_or_default();
@@ -625,7 +647,13 @@ impl Editor {
         target.set("y", Value::Num(y));
         next.set("target", Value::object(target));
         next.set("followers", angle_table(&followers));
-        next.set("bendReference", reference_value(solved.as_ref().unwrap_or(&captured)));
+        if let Some(followers) = &spatial_followers {
+            next.set("spatialFollowers", crate::spatial_ik::quaternion_table(followers));
+        }
+        if let Some(value) = spatial_value {
+            next.set("spatialTarget", value);
+        }
+        next.set("bendReference", reference_value(solved.as_ref().unwrap_or(&captured_reference)));
         let record = self.frame_object_mut(slot).ok_or_else(|| unported("outside the frame"))?;
         record.set("angles", Value::nums(&solution.angles));
         match (&solution.lengths, length_flag) {
@@ -715,9 +743,14 @@ pub(crate) fn solve_frame(prepared: &Prepared, frame: &Frame, scene: &Scene) -> 
 }
 
 /// The angle geometry draws segment `index` of the figure in `slot` with: solved for a
-/// pinned limb (`ik.angles[i] ?? obj.angles[i]`).
-pub(crate) fn displayed_angle(prepared: &Prepared, frame: &Frame, solved: &HashMap<u32, Solved>, slot: usize, index: usize) -> f64 {
+/// pinned limb (`ik.angles[i] ?? obj.angles[i]`), then through the figure's rig.
+pub(crate) fn displayed_angle(prepared: &Prepared, frame: &Frame, scene: &Scene, solved: &HashMap<u32, Solved>, slot: usize, index: usize) -> f64 {
     let object = &frame.objects[slot];
+    // A rigged figure is drawn as its rig evaluates it, every joint drawn or not.
+    let rigged = scene.objects.iter().find(|g| g.uid == object.uid && g.resolved).and_then(|g| g.rig.as_ref()).and_then(|rig| rig.get(index).copied());
+    if let Some(joint) = rigged {
+        return joint.angle;
+    }
     if let Some(angle) = solved.get(&object.uid).and_then(|s| s.solution.angles.get(index)) {
         return *angle;
     }
@@ -777,8 +810,12 @@ pub(crate) fn follow_stretched(record: &mut Obj, handle: u32, limb: &[[f64; 2]],
 
 /// `object._stykIK = {...object._stykIK, [key]: next}`.
 fn set_controller(record: &mut Obj, key: &str, next: Obj) {
+    set_controller_value(record, key, Value::object(next));
+}
+
+pub(crate) fn set_controller_value(record: &mut Obj, key: &str, next: Value) {
     let mut table = record.get("_stykIK").and_then(Value::as_obj).cloned().unwrap_or_default();
-    assign(&mut table, key, Value::object(next));
+    assign(&mut table, key, next);
     record.set("_stykIK", Value::object(table));
 }
 

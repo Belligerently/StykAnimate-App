@@ -25,6 +25,8 @@ const PORTED: &[&str] = &[
     "spatial-turn-sheet", "spatial-mechanism-sheet", "spatial-drag-sheet", "spatial-mechanism-drag-sheet",
     // A planted 3D leg (spatial IK target): Both, a side, mirrored.
     "ik-spatial-sheet", "ik-spatial-side-sheet", "ik-spatial-mirrored-sheet",
+    // Posing 3D IK targets: planted (flat pole, depth push, swivel, pole and depth), bent to a side, free.
+    "ik-spatial-target-sheet", "ik-spatial-side-target-sheet", "ik-spatial-free-sheet",
 ];
 
 #[test]

@@ -55,6 +55,11 @@ pub(crate) struct Context {
     pub camera: Option<Camera>,
     /// `unprojectJoint(shape.start)` per segment: the start before perspective.
     pub starts: Vec<[f64; 2]>,
+    /// Each segment's handle as drawn, and before perspective.
+    pub ends: Vec<[f64; 2]>,
+    pub raws: Vec<Option<[f64; 3]>>,
+    /// The pose's part proportions.
+    pub shape: Option<std::collections::BTreeMap<u32, styk_eval::doc::SpatialShape>>,
 }
 
 /// A 3D bone drag from its fixed start (`_spatialGesture(kind)`), or a mechanism's track.
@@ -62,6 +67,10 @@ pub(crate) struct Context {
 pub(crate) enum Gesture {
     Bone(BoneGesture),
     Mechanism(MechanismGesture),
+    /// `flat-ik:`: a 3D limb's flat pole (`crate::spatial_ik`).
+    FlatIk(crate::spatial_ik::FlatPole),
+    /// `depth:`: a depth push, from the pointer's height and the target's depth at its start.
+    Depth { y: f64, depth: f64 },
 }
 
 #[derive(Clone, Debug)]
@@ -157,7 +166,14 @@ fn number_at(value: &Value, key: &str, index: usize) -> f64 {
 impl Editor {
     /// The selected figure's 3D context, when it is posed here.
     pub(crate) fn spatial_context(&self) -> Result<Option<Context>, EditError> {
-        let Some((slot, object)) = self.object()? else { return Ok(None) };
+        let Some((slot, _)) = self.object()? else { return Ok(None) };
+        self.spatial_context_at(slot)
+    }
+
+    /// The 3D context of the figure in `slot` of the frame on show (the gesture's draft
+    /// during one).
+    pub(crate) fn spatial_context_at(&self, slot: usize) -> Result<Option<Context>, EditError> {
+        let Some(object) = self.selection_frame()?.get(slot).cloned() else { return Ok(None) };
         let Some(id) = uid(&object) else { return Ok(None) };
         let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
         let Some(at) = frame.objects.iter().position(|o| o.uid == id) else { return Ok(None) };
@@ -177,6 +193,9 @@ impl Editor {
             .collect();
         let camera = Camera::of(evaluated, root);
         let scale = evaluated.scale;
+        let ends = geometry.map(|g| g.ends.clone()).unwrap_or_default();
+        let raws = (0..figure.segments.len()).map(|i| geometry.and_then(|g| g.spatial.as_ref()).and_then(|s| s.depths.get(i)).and_then(|d| d.raw)).collect();
+        let shape = evaluated.spatial.as_ref().and_then(|s| s.shape.clone());
         let solved = crate::ik::solve_frame(&prepared, &frame, &scene).remove(&id).map(|s| s.solution.angles);
         let angles = solved.unwrap_or_else(|| (0..figure.segments.len().max(object.get("angles").and_then(Value::array_len).unwrap_or(0))).map(|i| number_at(&object, "angles", i)).collect());
         Ok(Some(Context {
@@ -191,6 +210,9 @@ impl Editor {
             scale,
             camera,
             starts,
+            ends,
+            raws,
+            shape,
         }))
     }
 
@@ -386,6 +408,32 @@ fn plant_spatial_follower(record: &mut Obj, handle: u32, world: [f64; 4]) {
 
 impl Context {
     /// `unprojectSpatial(p, depth, object, root)`.
+    pub(crate) fn unproject_at(&self, p: [f64; 2], depth: f64) -> [f64; 2] {
+        self.unproject(p, depth)
+    }
+
+    /// `projectSpatial(p, projection(object, root))`.
+    pub(crate) fn project(&self, p: [f64; 3]) -> [f64; 2] {
+        match &self.camera {
+            Some(camera) => camera.project(p),
+            None => [p[0], p[1]],
+        }
+    }
+
+    /// `geometry.joints.get(handle)`: the handle as drawn.
+    pub(crate) fn joint(&self, handle: u32) -> [f64; 2] {
+        self.figure.plan.index_of.get(&handle).and_then(|&i| self.ends.get(i as usize).copied()).unwrap_or([f64::NAN; 2])
+    }
+
+    /// The handle's `rawPoint`, when perspective moved it.
+    pub(crate) fn raw_joint(&self, handle: u32) -> Option<[f64; 2]> {
+        self.raw(handle).map(|r| [r[0], r[1]])
+    }
+
+    pub(crate) fn raw(&self, handle: u32) -> Option<[f64; 3]> {
+        self.figure.plan.index_of.get(&handle).and_then(|&i| self.raws.get(i as usize).copied().flatten())
+    }
+
     fn unproject(&self, p: [f64; 2], depth: f64) -> [f64; 2] {
         match &self.camera {
             Some(camera) => camera.unproject(p, depth),

@@ -245,7 +245,7 @@ impl Editor {
         let bend = if bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, evaluated).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { bend };
         // A pinned limb is drawn with its solved angles.
         let slot = frame.objects.iter().position(|o| o.uid == id).unwrap();
-        let angle = crate::ik::displayed_angle(&prepared, &frame, &crate::ik::solve_frame(&prepared, &frame, &scene), slot, joint);
+        let angle = crate::ik::displayed_angle(&prepared, &frame, &scene, &crate::ik::solve_frame(&prepared, &frame, &scene), slot, joint);
         let length = styk_eval::geometry::segment_pose(evaluated, segment, joint).2 * evaluated.scale;
         let end = geometry.ends.get(joint).copied().unwrap_or([f64::NAN; 2]);
         Ok(Some(Shape { start, angle, bend, length, end, points: vec![start, end], space: None, connector: false }))
@@ -351,13 +351,20 @@ impl Editor {
             && let Some(handle) = handle
             && object.path(&["_stykIK", &handle.to_string()]).is_some_and(|c| c.get("enabled").is_some_and(Value::truthy))
         {
-            if segments.iter().any(|s| s.get("_stykRig").is_some()) {
-                return Err(EditError::Unported("posing an IK target on a rigged figure".into()));
+            // The alternate or depth key pushes a 3D target in depth; a plain drag afterwards
+            // continues from where the push left the target.
+            let flag = |key: &str| raw_options.get(key).is_some_and(Value::truthy);
+            let (figure_uid, handle) = (uid(&object).unwrap_or(0), handle as u32);
+            if flag("alternate") || flag("depth") {
+                let pixel = raw_options.get("pixel").and_then(Value::as_f64).filter(|p| *p != 0.0 && !p.is_nan()).unwrap_or(1.0);
+                if self.pose_spatial_ik_depth(slot, handle, x, y, pixel)? {
+                    self.clear_flat_spatial_ik(figure_uid, handle);
+                    return Ok(true);
+                }
             }
-            if object.path(&["_stykIK", &handle.to_string(), "spatialTarget"]).is_some_and(Value::truthy) {
-                return Err(EditError::Unported("posing a 3D IK target".into()));
-            }
-            return self.pose_ik_target(slot, handle as u32, x, y);
+            self.clear_spatial_ik_depth(figure_uid, handle);
+            let [x, y] = self.spatial_ik_pointer(slot, handle, x, y)?;
+            return self.pose_ik_target(slot, handle, x, y);
         }
         let Some(segment) = segments.get(joint) else { return Ok(false) };
         if is_static(segment) {

@@ -25,14 +25,14 @@ import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
-  'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'undo', 'redo'];
+  'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'undo', 'redo'];
 /** Calls that return a frame or a figure record: a view, not compared. */
 const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
   'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
-  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion']);
+  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget']);
 
 const setting = (query, key) => {
   try {
@@ -62,6 +62,8 @@ const withoutSample = (key, value) => key === '_movieclipSample' ? undefined : v
  */
 function close(a, b) {
   if (a === b) return true;
+  // With the engine's Math in the page (a verification harness), numbers must be equal.
+  if (globalThis.__stykExactMath) return false;
   const near = (x, y) => {
     if (typeof x === 'number' && typeof y === 'number') return Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
     if (x === null || y === null || typeof x !== 'object' || typeof y !== 'object') return x === y;
@@ -70,6 +72,18 @@ function close(a, b) {
     return keys.length === others.length && keys.every((key, index) => key === others[index] && near(x[key], y[key]));
   };
   try { return near(JSON.parse(a), JSON.parse(b)); } catch { return false; }
+}
+
+/** When two JSON texts differ in numbers only: how far apart the most distant pair is. */
+function numbersApart(a, b) {
+  let largest = 0, count = 0;
+  const walk = (x, y) => {
+    if (typeof x === 'number' && typeof y === 'number') { if (x !== y) { count++; largest = Math.max(largest, Math.abs(x - y)); } return true; }
+    if (x === null || y === null || typeof x !== 'object' || typeof y !== 'object') return x === y;
+    const keys = Object.keys(x), others = Object.keys(y);
+    return keys.length === others.length && keys.every((key, i) => key === others[i] && walk(x[key], y[key]));
+  };
+  try { return walk(JSON.parse(a), JSON.parse(b)) ? `; ${count} numbers differ, by at most ${largest.toExponential(2)}` : ''; } catch { return ''; }
 }
 
 /**
@@ -128,7 +142,7 @@ export function installEditShadow(editor, engineSide, {own = engineEditEnabled()
       const a = String(theirs), b = String(ours);
       let at = 0; while (at < a.length && a[at] === b[at]) at++;
       const from = Math.max(0, at - 160);
-      problems.push(`${label} (from character ${at}): engine …${a.slice(from, at + 160)}, editor …${b.slice(from, at + 160)}`);
+      problems.push(`${label} (from character ${at}${numbersApart(a, b)}): engine …${a.slice(from, at + 160)}, editor …${b.slice(from, at + 160)}`);
     };
     if (answer.status === 'error' || thrown) same('error', thrown ? (thrown.messageKey ?? thrown.message) : 'none', answer.status === 'error' ? answer.error : 'none');
     else if (!VIEWS.has(name)) same('result', JSON.stringify(result ?? null), JSON.stringify(answer.result ?? null));

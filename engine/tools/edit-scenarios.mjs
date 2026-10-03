@@ -362,6 +362,30 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 3], ['rotateJoint', 0.2], ['@select', 1, 12], ['beginDrag', 'Pose figure'], ['poseJoint', 330, 300], ['poseJoint', 340, 310], ['commitDrag'],
     ['rotateJoint', 0.3], ['rotateJoint', 0.25, {isolate: true}], ['@select', 1, 6], ['rotateJoint', 0.15], ['undo'], ['undo'], ['redo'],
   ], `../../crates/styk-eval/tests/fixtures/ik/${fixture}.json`);
+  // Posing 3D IK targets: a planted 3D foot moved (its knee keeping its side on screen),
+  // pushed in depth then dragged on from where the push left it, its swivel, pole and depth
+  // set; a leg bent to one side; and a free 3D leg posed by its foot.
+  {
+    const legs = name => JSON.parse(readFileSync(new URL(`../crates/styk-eval/tests/fixtures/ik/${name}.json`, import.meta.url), 'utf8'));
+    const foot = name => { const e = open(legs(name), app); e.select(1, 9); const p = e.geometry.objects.get(0).joints.get(10); return (dx, dy) => [p.x + dx, p.y + dy]; };
+    for (const name of ['spatial', 'spatial-side']) {
+      const at = foot(name);
+      scenario(`ik-${name}-target-sheet`, app, [
+        ['@select', 1, 9], ['beginDrag', 'Pose figure'], ['poseJoint', ...at(8, -4)], ['poseJoint', ...at(16, -10)], ['poseJoint', ...at(-12, 6)], ['commitDrag'],
+        ['beginDrag', 'Pose figure'], ['poseJoint', ...at(0, 0), {depth: true, pixel: 2}], ['poseJoint', ...at(0, 30), {depth: true, pixel: 2}], ['poseJoint', ...at(5, 30)], ['poseJoint', ...at(10, 25)], ['commitDrag'],
+        ['setSpatialIKTarget', {swivel: 0.3}], ['setSpatialIKTarget', {pole: [0, 0, 1]}], ['setSpatialIKTarget', {depth: 5}], ['setSpatialIKTarget', {bad: 1}], ['setSpatialIKTarget', {pole: [1, 1, 0]}],
+        ['undo'], ['undo'], ['redo'],
+      ], `../../crates/styk-eval/tests/fixtures/ik/${name}.json`);
+    }
+    const free = open(legs('spatial'));
+    free.select(1, 9); free.setNodeIK({pinned: false});
+    writeFileSync(`${out}/ik-spatial-free.document.json`, JSON.stringify(prune(free.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+    const at = foot('spatial');
+    scenario('ik-spatial-free-sheet', app, [
+      ['@select', 1, 9], ['beginDrag', 'Pose figure'], ['poseJoint', ...at(8, -4)], ['poseJoint', ...at(16, -10)], ['poseJoint', ...at(-12, 6)], ['commitDrag'],
+      ['poseJoint', ...at(4, 4)], ['setSpatialIKTarget', {swivel: -0.2}], ['setSpatialIKTarget', {depth: 3}], ['undo'], ['redo'],
+    ], 'ik-spatial-free.document.json');
+  }
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],
