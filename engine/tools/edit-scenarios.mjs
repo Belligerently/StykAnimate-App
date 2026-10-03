@@ -716,6 +716,18 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['setVfxClip', 'clip-glow', {name: 'Kept'}],
     ['deleteVfxClip', 'clip-scene'], ['deleteVfxClip', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'vfx-clips.document.json');
+  // Batches (`movieclipBatch`, as the timeline runs several commands as one): a key extended,
+  // easing over two ranges, a batch that records nothing, one that fails half way (its first
+  // entry undone), a pose gesture, entries of different kinds; history across them.
+  scenario('batch-sheet', app, [
+    ['@batch', 'Extend keyframe', [['sheetSetDuration', 3, 'layer-1', 0]]],
+    ['@batch', 'Change easing', [['sheetSetEasing', ['layer-1'], 0, 1, {interpolation: 'ease-in'}], ['sheetSetEasing', ['layer-1'], 2, 3, {interpolation: 'linear'}]]],
+    ['@batch', 'Nothing', [['select', 1, -1]]],
+    ['@batch', 'Fails', [['sheetInsertKey', ['layer-1'], 4], ['sheetSetEasing', ['layer-1'], 0, 1, {interpolation: 'bogus'}]]],
+    ['@batch', 'Pose', [['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['commitDrag']]],
+    ['@batch', 'Mixed', [['addPaletteColor', '#123456'], ['seek', 5], ['sheetInsertKey', ['layer-1'], 5]]],
+    ['undo'], ['undo'], ['undo'], ['redo'], ['@select', 1, -1], ['moveSelection', 4, 4], ['undo'], ['undo'], ['redo'], ['undo'], ['undo'], ['undo'],
+  ], 'startup.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

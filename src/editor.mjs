@@ -264,8 +264,9 @@ export class Editor extends EventTarget {
   }
   _selectionState() { return {frameIndex: this.frameIndex, tick: this.tick, uid: this.selectedUid, uids: [...this.selectedUids], joint: this.selectedJoint, activeLayerId: this.activeLayerId, sheetSelection:this._sheetSelection?{...this._sheetSelection}:null, ...(this.selectedPolygonIndex >= 0 ? {polygonSelection:{...this._polygonSelection}} : {}), ...(this._segmentSelection && this.selectedSegmentIds.size > 1 ? {segmentIds:[...this.selectedSegmentIds]} : {}), ...(this.branchSelected ? {branch: {...this._branchSelection}} : {})}; }
   _restoreSelection(state) {
-    this.frameIndex = clamp(state.frameIndex, 0, this.report.keyframes.length - 1);
-    this.tick = clamp(state.tick, 0, Math.max(0, this.totalTicks - 1));
+    const frameIndex = clamp(state.frameIndex, 0, this.report.keyframes.length - 1), tick = clamp(state.tick, 0, Math.max(0, this.totalTicks - 1));
+    // The frame on show is cached for the playhead: moving the playhead must not read the old one.
+    if (frameIndex !== this.frameIndex || tick !== this.tick) { this.frameIndex = frameIndex; this.tick = tick; this._invalidate({viewOnly: true}); }
     const existing = new Set((this.selectionFrame?.objects ?? []).filter(o=>!this.isFigureFocusLocked(o.unique_id)).map(o => o.unique_id));
     this.selectedUid = existing.has(state.uid) ? state.uid : null;
     this.selectedUids = new Set((state.uids ?? [state.uid]).filter(uid => existing.has(uid)));

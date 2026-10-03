@@ -36,6 +36,20 @@ pub enum CommandKind {
     /// The effect clips before (none when there were none) and after, and the sheet when
     /// the clips lengthened it (`kind: 'vfx-clips'`).
     VfxClips { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
+    /// Entries recorded inside `movieclipBatch`, undone and redone together (`kind: 'movieclip-batch'`).
+    Batch { commands: Vec<Command> },
+}
+
+/// `editor._movieclipBatch` in progress: its entries, label, the revision before it and the
+/// selection when it began.
+#[derive(Clone, Debug)]
+pub(crate) struct Batch {
+    commands: Vec<Command>,
+    label: String,
+    revision: u64,
+    before_selection: SelectionState,
+    /// Batches opened inside this one, which only run their operation.
+    nested: u32,
 }
 
 /// One history entry.
@@ -73,6 +87,10 @@ impl Editor {
         self.revision_serial += 1;
         command.after_revision = self.revision_serial;
         self.revision = command.after_revision;
+        if let Some(batch) = self.batch.as_mut() {
+            batch.commands.push(command);
+            return Ok(());
+        }
         self.undo.push(command);
         self.redo.clear();
         let mut trimmed = false;
@@ -83,6 +101,47 @@ impl Editor {
         if collect || trimmed {
             self.prune_frame_sources();
         }
+        Ok(())
+    }
+
+    /// `movieclipBatch(label, operation)` begins: entries recorded until it ends become one.
+    pub(crate) fn begin_batch(&mut self, label: &str) -> Result<(), EditError> {
+        match self.batch.as_mut() {
+            Some(batch) => batch.nested += 1,
+            None => self.batch = Some(Batch { commands: Vec::new(), label: label.into(), revision: self.revision, before_selection: self.selection_state(), nested: 0 }),
+        }
+        Ok(())
+    }
+
+    /// The batch's operation returned: its entries as one, and the batch's change event.
+    pub(crate) fn end_batch(&mut self) -> Result<(), EditError> {
+        let Some(batch) = self.batch.as_mut() else { return Ok(()) };
+        if batch.nested > 0 {
+            batch.nested -= 1;
+            return Ok(());
+        }
+        let batch = self.batch.take().unwrap();
+        if !batch.commands.is_empty() {
+            let after_selection = self.selection_state();
+            self.record(Command { kind: CommandKind::Batch { commands: batch.commands }, label: batch.label.clone(), before_selection: batch.before_selection, after_selection, before_revision: 0, after_revision: 0 })?;
+            if let Some(command) = self.undo.last_mut() {
+                command.before_revision = batch.revision;
+            }
+            if self.sheet() {
+                self.prune_frame_sources();
+            }
+        }
+        self.emit("edit", vec![("structural", Value::Bool(true)), ("timing", Value::Bool(true)), ("label", Value::str(&batch.label))]);
+        Ok(())
+    }
+
+    /// The batch's operation failed: its entries undone, the revision as before it.
+    pub(crate) fn abort_batch(&mut self) -> Result<(), EditError> {
+        let Some(batch) = self.batch.take() else { return Ok(()) };
+        for command in batch.commands.iter().rev() {
+            self.apply(command, Direction::Before)?;
+        }
+        self.revision = batch.revision;
         Ok(())
     }
 
@@ -134,6 +193,14 @@ impl Editor {
             CommandKind::Palette { .. } => self.apply_palette_command(command, direction)?,
             CommandKind::Audio { .. } => self.apply_audio_command(command, direction)?,
             CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
+            CommandKind::Batch { commands } => {
+                let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
+                for child in ordered {
+                    self.apply(child, direction)?;
+                }
+                self.restore_selection(selection)?;
+                self.revision = revision;
+            }
             CommandKind::Figure { index, before, after } => {
                 if let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr)
                     && let Some(slot) = figures.get_mut(*index)

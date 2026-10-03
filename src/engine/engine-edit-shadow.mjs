@@ -36,7 +36,7 @@ const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDr
   'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold): a view, not compared. */
-const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames']);
+const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
   'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
@@ -147,6 +147,10 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   const report = globalThis.__stykEditShadow = {own, mode, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0};
   let session = null, depth = 0, events = null;
+  // A batch in progress (`movieclipBatch`): the session records it as one entry too, and a
+  // session that ends inside it does not restart until it closes. `closing` collects the
+  // batch's own change event, which the editor sends after the batch's last call.
+  let batching = false, closing = null;
   // The timeline clipboard the session copied (the editor's object): a session starts
   // with none, and pastes only when the editor's clipboard is that one.
   let copied = null;
@@ -162,6 +166,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   editor.addEventListener('change', event => {
     const detail = event.detail;
     if (depth > 0) { events?.push(plain(detail ?? null)); return; }
+    if (closing) { closing.push(plain(detail ?? null)); return; }
     // The document changed through something the session did not run.
     if (['edit', 'history', 'document'].includes(detail?.kind)) end(`a ${detail.kind} outside the shadowed calls`);
     // Runtime state the engine does not hold (editing.md): layer focus, which locks layers
@@ -189,7 +194,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   let broken = false;
   const begin = () => {
     if (session) return session;
-    if (broken || !ownedClass() || runtimeState()) return null;
+    if (broken || batching || !ownedClass() || runtimeState()) return null;
     const side = engineSide();
     if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit || editor._vfxClipEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
@@ -391,5 +396,36 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       return result;
     };
   }
+  // Batches: the calls inside run as they would alone; the session opens and closes the same
+  // batch, and its closing event and state are compared with the editor's.
+  const batch = editor.movieclipBatch;
+  if (typeof batch === 'function') editor.movieclipBatch = function batched(label, operation, options) {
+    // Inside another batch or call, a batch only runs its operation.
+    if (depth > 0 || editor._movieclipBatch || batching) return batch.call(this, label, operation, options);
+    const live = begin();
+    if (!live) return batch.call(this, label, operation, options);
+    if (typeof label !== 'string' || options?.beforeSelection) { end('a batch the engine cannot open'); return batch.call(this, label, operation, options); }
+    let answer;
+    try { answer = JSON.parse(live.call('beginBatch', JSON.stringify([label]), JSON.stringify(view()))); }
+    catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: 'beginBatch', problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; return batch.call(this, label, operation, options); }
+    if (answer.status !== 'ok') { end('a batch the engine cannot open'); return batch.call(this, label, operation, options); }
+    batching = true;
+    const sheetBefore = editor.report._styk?.layerSheet;
+    let result, closed = null;
+    try {
+      result = batch.call(this, label, () => { const value = operation(); closing = []; return value; }, options);
+      closed = closing;
+    } catch (error) { closing = null; batching = false; end('a batch that failed'); throw error; }
+    finally { closing = null; batching = false; }
+    if (session && closed) {
+      try {
+        const called = performance.now(), ended = JSON.parse(session.call('endBatch', '[]', JSON.stringify(view())));
+        report.engineMs += performance.now() - called; report.calls++;
+        if (ended.status !== 'ok') end('a batch the engine cannot close');
+        else compare('endBatch', [], ended, result, null, closed, sheetBefore);
+      } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: 'endBatch', problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; }
+    }
+    return result;
+  };
   return report;
 }
