@@ -206,11 +206,16 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   (edit frames use the committed path); records (`styk_eval::records`) still refuse documents
   with animation origins, so editing them stays with the editor; onion-skin ghosts get no
   parallax (the editor never shows onion skins with the camera on).
-- **Captions in scenes the engine now draws**: the WebGPU renderer draws text from glyph
-  textures, the engine from tessellated glyphs; caption-heavy 3D catalogue scenes fail
-  app parity in their captions only (15 Guns 0 of 5 steps, Hand & Face 2 of 5, Vehicles 7 of
-  16; their 3D regions within 0.00–0.17 levels beyond the D13 quantum, no solid pixels).
-  Needs its own work item.
+- **Captions**: text is drawn as the WebGPU renderer draws it ([rendering.md](engine/rendering.md#text)).
+  One step still fails: 15 Guns tick 0 (mean 0.294, its cover page), because Chromium's
+  accelerated Canvas 2D fills text with 9 coverage levels and the engine with 4 samples; no
+  measured rule reproduces it, and WebGPU offers no 8-sample mode. On devices without
+  WebGPU text now looks as on WebGPU devices (the editor's Canvas 2D fallback differs from
+  its own WebGPU renderer by 0.49–1.17 levels there), a deliberate difference. Large Pivot
+  text flattens finer, so text-heavy documents encode more records (Uriel: 26 % more, edit
+  frames 104–108 ms against 86–96 ms in the quietest round), and the first draw of large
+  text tessellates on the interface thread (12 ms once at Uriel tick 370): the finer levels
+  could be made on the workers.
 - **3D editing is ported except joined 3D IK targets**: posing a 3D IK target on joined
   figures and `setSpatialFeetPinned` still run in the editor alone.
 - **No-WebGPU devices lose the Canvas 2D fallback's seams.** The JavaScript Canvas 2D
@@ -488,9 +493,10 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 18:05 | S5 moving keys | `sheetMoveFrames` runs in the engine: keys moved or copied along their tracks (a key made first where there is none, landing keys replaced, imported keys captured, the track and sheet lengthened), owned by default with the large figure class; moving a movieclip's keys and copying a drawing layer's answer `Unported`. | 2 recordings (18 steps) match the editor at every step; 5 of 6 mutations break one (capturing imported keys before they move is also done by publishing, which captures them at their old tick). App shadow with the engine's `Math`: start document 125/125, two-layer sheet 104/104; owned there matches the editor alone in one session. |
 | 2026-10-03 18:17 | S5 the inspector's figure fields | `updateObject` and `updateSelection` run in the engine (scale, position, opacity, name, colour, mirroring, metadata, with the editor's refusals), owned by default with the large figure class. | 2 recordings (23 steps) match the editor at every step; 6 of 6 mutations break one. App shadow with the engine's `Math`, the driver editing a figure from the inspector: start document 128/128, two-layer sheet 107/107; owned there matches the editor alone in one session. |
 | 2026-10-03 18:29 | S5 the inspector's segment fields | `updateSegment` runs in the engine (the joint's angle, length and bend as one posed edit; the definition's style fields, with its raw flags, as a `figure` history entry, a new kind in `styk-edit`). | 2 recordings (32 steps) match the editor at every step; 6 of 6 mutations break one. App shadow with the engine's `Math`, the driver editing a segment from the inspector: start document 133/133, rig document 112/112; owned editing on the start document matches the editor alone in one session. |
+| 2026-10-03 18:30 | S3 captions and text (agent, reviewed and merged) | Text drawn as the editor's WebGPU renderer draws it: objects holding text are raster entries on the editor's `objectBounds` and grid (`rasterObject`; none of the failing captions was a lone glyph), lone solid glyphs `K_GLYPH` records drawn from masks laid out as `glyphTextureDescriptor` does and filled once per glyph and size into a GPU atlas kept across frames (at most 64 MiB, least recently used pages evicted), their triangles past density 8; large Pivot text flattens finer (within 0.1 world units, a 64 MiB cache). | Electron app parity (limits unchanged): 15 Guns 0/5 → 4/5, Hand & Face 2/5 → 5/5, Vehicles 7/16 → 16/16, Impact-FX-Fight 2/11 → 11/11, a private Pivot file 2/4 → 4/4; documents without text unchanged. GPU p50 unchanged on catalogue scenes, Uriel tick 370 1.87 → 0.65 ms. engine:test 249 passing; engine:parity all ok on the merged tree. |
 
-In progress: captions drawn from glyph textures (agent), property channels on native
-timelines (agent, S3 item 4). Next in the
+In progress: property channels on native timelines (agent, S3 item 4); exports through the
+engine (agent, S4). Next in the
 main thread: joined 3D IK targets, then more of the commands documents send outside the
 gesture set (segment edits, deleting layers and moving figures between them, adding figures
 across frames, pasting, frame clipboard); the next

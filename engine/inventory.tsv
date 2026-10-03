@@ -343,7 +343,7 @@ src/render-artwork.mjs	engine	styk-render	js
 src/renderer-camera-scene.mjs	engine	styk-render	js	
 src/renderer-canvas-plan.mjs	engine	styk-render	js	
 src/renderer-geometry.mjs	engine	styk-render	partial	Rust: draw lists for supported documents
-src/renderer-glyphs.mjs	engine	styk-render	js	
+src/renderer-glyphs.mjs	engine	styk-render	partial	Rust: glyph mask layout (styk_draw::GlyphMask::layout), fill and shared mask cache (styk-render glyphs.rs) for lone glyphs; the playback worker's mask crops and culling (cropGlyphTexture, glyphVisible) are not ported (the engine shares whole masks)
 src/renderer-handles.mjs	engine	styk-render	js	
 src/renderer-mesh-raster.mjs	engine	styk-render	ported	Rust: objects with 3D faces drawn from rasters at the editor density (styk-render frame.rs); still used by the JavaScript renderer
 src/renderer-onion-composite.mjs	engine	styk-render	partial	Rust: onion composites for supported documents
@@ -355,7 +355,7 @@ src/renderer-raster-capture.mjs	engine	styk-render	js
 src/renderer-upload.mjs	engine	styk-render	js	
 src/renderer-vector-raster.mjs	engine	styk-render	js	
 src/renderer-vfx-vector.mjs	engine	styk-render	partial	Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it
-src/renderer.mjs	engine	styk-render	partial	Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs); every other document still JS
+src/renderer.mjs	engine	styk-render	partial	Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs), text as its WebGPU path draws it (object rasters, glyph masks); every other document still JS
 src/rig-angle-path.mjs	engine	styk-eval::rig	partial	Rust: angle path sampling; authoring still JS
 src/rig-constraints.mjs	engine	styk-eval::rig	partial	Rust: plan and evaluation; authoring helpers still JS
 src/rig-control-details.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes

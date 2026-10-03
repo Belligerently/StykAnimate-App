@@ -18,8 +18,8 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-eval` | 83 | 774 KiB | 40 | 34 | 9 | 0 | 0 | 15 % | 53 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
-| `styk-render` | 52 | 708 KiB | 34 | 13 | 5 | 0 | 0 | 9 % | 46 % | 0 % |
-| **Total** | 356 | 4063 KiB | 256 | 60 | 17 | 22 | 1 | 16 % | 29 % | 0 % |
+| `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
+| **Total** | 356 | 4063 KiB | 255 | 61 | 17 | 22 | 1 | 16 % | 30 % | 0 % |
 
 ## Engine modules
 
@@ -347,7 +347,7 @@ Engine logic: ported to Rust.
 | `src/renderer-camera-scene.mjs` | `styk-render` | js |  |
 | `src/renderer-canvas-plan.mjs` | `styk-render` | js |  |
 | `src/renderer-geometry.mjs` | `styk-render` | partial | Rust: draw lists for supported documents |
-| `src/renderer-glyphs.mjs` | `styk-render` | js |  |
+| `src/renderer-glyphs.mjs` | `styk-render` | partial | Rust: glyph mask layout (styk_draw::GlyphMask::layout), fill and shared mask cache (styk-render glyphs.rs) for lone glyphs; the playback worker's mask crops and culling (cropGlyphTexture, glyphVisible) are not ported (the engine shares whole masks) |
 | `src/renderer-handles.mjs` | `styk-render` | js |  |
 | `src/renderer-mesh-raster.mjs` | `styk-render` | ported | Rust: objects with 3D faces drawn from rasters at the editor density (styk-render frame.rs); still used by the JavaScript renderer |
 | `src/renderer-onion-composite.mjs` | `styk-render` | partial | Rust: onion composites for supported documents |
@@ -359,7 +359,7 @@ Engine logic: ported to Rust.
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
 | `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs); every other document still JS |
+| `src/renderer.mjs` | `styk-render` | partial | Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs), text as its WebGPU path draws it (object rasters, glyph masks); every other document still JS |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
