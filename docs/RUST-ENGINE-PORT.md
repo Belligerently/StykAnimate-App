@@ -192,12 +192,15 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 ## 6. Open problems
 
 - **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
-  Since the 3D merge the engine draws 349 of the 358 native files of the asset catalogue
-  (16 before, measured by the agent with the gate itself); the corpus count with the 402
-  files is to be remeasured. Left: generated effects (agent running), property channels on
-  native timelines, follow camera, parallax, rotated movieclip drawings
-  (`drawingRotation`, no file uses it). A drawing stroke not yet published still makes its
-  frame fall back to the JavaScript renderer.
+  `node engine/tools/gate-census.mjs` (2026-10-03, the gate itself on each file loaded as
+  the app loads it): of 382 native documents (the asset catalogue, the private corpus and
+  the repository's fixtures; Pivot figures left out), the engine draws 370; 10 have
+  generated effects (agent running) and 2 do not load in Node (`svr_uriel.piv` exceeds
+  Node's string limit; the unrepaired Jay file is invalid). No file uses the other gated
+  features, which users can still create: property channels on native timelines, animation
+  origins, follow camera, layer parallax, Stick Nodes sprites, colour transitions, frame
+  drafts, rotated movieclip drawings (`drawingRotation`). A drawing stroke not yet
+  published still makes its frame fall back to the JavaScript renderer.
 - **Captions in scenes the engine now draws**: the WebGPU renderer draws text from glyph
   textures, the engine from tessellated glyphs; caption-heavy 3D catalogue scenes fail
   app parity in their captions only (15 Guns 0 of 5 steps, Hand & Face 2 of 5, Vehicles 7 of
