@@ -119,6 +119,21 @@ export function createStagePlayback(legacy, {stage}) {
       engine.handle.request(ticks[0], new Uint32Array(ticks));
       engine.pump();
     },
+    /**
+     * For an export (engine-export.mjs): brings the engine's document to `report` at
+     * `revision` through the same synchronisation playback uses, which the app keeps
+     * current with every edit afterwards. Resolves `true` once the engine holds it,
+     * `false` when the engine does not draw this document.
+     */
+    async exportDocument(next, nextRevision) {
+      if (!eligible(next, nextRevision)) return false;
+      if (!engineMode || report !== next) playback.load(next, {revision: nextRevision});
+      else if (revision !== nextRevision || (!syncing && !side().mirror.framesCurrent(report, revision))) playback.updateDocument({revision: nextRevision});
+      if (!engineMode) return false;
+      while (syncing) await syncing;
+      if (syncError) throw syncError;
+      return side().mirror.framesCurrent(next, nextRevision);
+    },
     get(tick) { return engineMode ? packetFor(tick) : legacy.get(tick); },
     has(tick) { return engineMode ? packetFor(tick) !== null : legacy.has(tick); },
     bufferedAhead(tick, count, end) {

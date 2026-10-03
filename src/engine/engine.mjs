@@ -113,6 +113,12 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
   };
   return {
     handle, workers: pool.length, threaded, pump, whenProgress, progressSeen,
+    /**
+     * What another thread needs to join the engine (the export worker, engine-export.mjs):
+     * the compiled module, the shared memory, a worker's stack size and the address of
+     * the progress counter. Call `handle.address()` for the engine itself, once per thread.
+     */
+    join: {module, memory, stack: WORKER_STACK_BYTES, progress: handle.progress_address()},
     /** The engine's memory now, and the most it may grow to (chosen by createEngineMemory). */
     get memoryBytes() { return memory.buffer.byteLength; },
     memoryMaximumBytes: reserved.maximumBytes,

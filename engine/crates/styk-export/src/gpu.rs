@@ -3,6 +3,12 @@
 //! The host owns the device (a worker's WebGPU or WebGL2 device in the app, a native
 //! adapter in tools) and waits for each read-back its own way: `map_async` and the
 //! event loop in a browser, [`GpuExport::render_blocking`] natively.
+//!
+//! A drawn tile is copied into one of several read-back **slots**, so a host can draw the
+//! next tiles and frames while earlier ones are still being mapped: a browser delivers a
+//! mapping only when its GPU process gets to it, which can take far longer than drawing
+//! (measured in docs/engine/rendering.md, Exports). Commands run in queue order, so a
+//! slot keeps the tile copied into it whatever is drawn afterwards.
 
 use std::sync::Arc;
 
@@ -16,14 +22,19 @@ use crate::settings::Settings;
 use crate::tiles::{tiles, Tile};
 use crate::view::tile_view;
 
+/// Read-back slots hold at most this many bytes together (at least two slots).
+pub const READBACK_BYTES: u64 = 64 << 20;
+/// Read-back slots at most.
+pub const MAX_SLOTS: usize = 8;
+
 pub struct GpuExport {
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: Renderer,
     settings: Settings,
     tiles: Vec<Tile>,
-    /// Where a drawn tile is copied for reading: `stride` bytes a row (256-byte aligned).
-    readback: wgpu::Buffer,
+    /// Where drawn tiles are copied for reading: `stride` bytes a row (256-byte aligned).
+    readbacks: Vec<wgpu::Buffer>,
     stride: u32,
     /// The document lineage and page count the sprite atlas is laid out for.
     atlas: Option<(u64, u32)>,
@@ -39,14 +50,13 @@ impl GpuExport {
         let tiles = tiles(settings.render_size(), side, settings.smoothing.factor());
         let size = tiles[0].size;
         let stride = (size[0] * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("styk export read-back"),
-            size: stride as u64 * size[1] as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
+        let bytes = stride as u64 * size[1] as u64;
+        let slots = ((READBACK_BYTES / bytes.max(1)) as usize).clamp(2, MAX_SLOTS);
+        let readbacks = (0..slots)
+            .map(|_| device.create_buffer(&wgpu::BufferDescriptor { label: Some("styk export read-back"), size: bytes, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false }))
+            .collect();
         let renderer = Renderer::with_edges(device, queue, wgpu::TextureFormat::Rgba8Unorm, settings.smoothing.edges());
-        GpuExport { device: device.clone(), queue: queue.clone(), renderer, settings, tiles, readback, stride, atlas: None, resolved: Vec::new() }
+        GpuExport { device: device.clone(), queue: queue.clone(), renderer, settings, tiles, readbacks, stride, atlas: None, resolved: Vec::new() }
     }
 
     pub fn settings(&self) -> &Settings {
@@ -55,6 +65,11 @@ impl GpuExport {
 
     pub fn tiles(&self) -> &[Tile] {
         &self.tiles
+    }
+
+    /// Read-back slots: tiles that can be waiting to be read at once.
+    pub fn slots(&self) -> usize {
+        self.readbacks.len()
     }
 
     pub fn device(&self) -> &wgpu::Device {
@@ -82,8 +97,8 @@ impl GpuExport {
         self.renderer.upload_images(assets, images);
     }
 
-    /// Draws tile `index` of `list` seen through `camera`, and copies it for reading.
-    pub fn draw(&mut self, doc: &Document, list: &Arc<DrawList>, camera: Option<&Camera>, index: usize) {
+    /// Draws tile `index` of `list` seen through `camera`, and copies it into read-back `slot`.
+    pub fn draw(&mut self, doc: &Document, list: &Arc<DrawList>, camera: Option<&Camera>, index: usize, slot: usize) {
         let tile = self.tiles[index];
         let view = tile_view(doc, camera, &self.settings, &tile);
         self.renderer.set_list(list);
@@ -92,26 +107,27 @@ impl GpuExport {
         let texture = self.renderer.frame_texture().expect("render() allocates the frame");
         encoder.copy_texture_to_buffer(
             texture.as_image_copy(),
-            wgpu::TexelCopyBufferInfo { buffer: &self.readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(self.stride), rows_per_image: Some(tile.size[1]) } },
+            wgpu::TexelCopyBufferInfo { buffer: &self.readbacks[slot], layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(self.stride), rows_per_image: Some(tile.size[1]) } },
             wgpu::Extent3d { width: tile.size[0], height: tile.size[1], depth_or_array_layers: 1 },
         );
         self.queue.submit([encoder.finish()]);
     }
 
-    /// The buffer a drawn tile is copied into: map it for reading, then [`GpuExport::resolve`].
-    pub fn readback(&self) -> &wgpu::Buffer {
-        &self.readback
+    /// Read-back `slot`: map it for reading, then [`GpuExport::resolve`].
+    pub fn readback(&self, slot: usize) -> &wgpu::Buffer {
+        &self.readbacks[slot]
     }
 
-    /// Converts the mapped read-back of tile `index` into output pixels (straight RGBA,
-    /// `tile.valid / factor` pixels, rows packed; over black with `matte`) and unmaps it.
-    pub fn resolve(&mut self, index: usize, matte: bool) -> Result<&[u8], String> {
+    /// Converts the mapped read-back `slot`, holding tile `index`, into output pixels
+    /// (straight RGBA, `tile.valid / factor` pixels, rows packed; over black with `matte`) and
+    /// unmaps it.
+    pub fn resolve(&mut self, index: usize, slot: usize, matte: bool) -> Result<&[u8], String> {
         let tile = self.tiles[index];
         {
-            let data = self.readback.slice(..).get_mapped_range().map_err(|e| format!("the export read-back is not mapped: {e:?}"))?;
+            let data = self.readbacks[slot].slice(..).get_mapped_range().map_err(|e| format!("the export read-back is not mapped: {e:?}"))?;
             resolve(&data, self.stride as usize, tile.valid, self.settings.smoothing.factor(), matte, &mut self.resolved);
         }
-        self.readback.unmap();
+        self.readbacks[slot].unmap();
         Ok(&self.resolved)
     }
 
@@ -119,14 +135,14 @@ impl GpuExport {
     /// device delivers the mapping through its event loop.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn render_blocking(&mut self, doc: &Document, list: &Arc<DrawList>, camera: Option<&Camera>, index: usize, matte: bool) -> Result<&[u8], String> {
-        self.draw(doc, list, camera, index);
+        self.draw(doc, list, camera, index, 0);
         let (sender, receiver) = std::sync::mpsc::channel();
-        self.readback.slice(..).map_async(wgpu::MapMode::Read, move |result| {
+        self.readbacks[0].slice(..).map_async(wgpu::MapMode::Read, move |result| {
             let _ = sender.send(result);
         });
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         receiver.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
-        self.resolve(index, matte)
+        self.resolve(index, 0, matte)
     }
 
     /// Renders a whole frame natively into straight RGBA of the output size.

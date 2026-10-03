@@ -6,7 +6,7 @@ import { PlaybackResources } from "./playback-resources.mjs";
 import { exportFrameGeometry, drawExportSceneTiled } from "./export-frame-core.mjs";
 import { exportMemoryPlan, EXPORT_MAX_WORKING_BYTES } from "./export-memory.mjs";
 import {diagnosticDetails} from './telemetry-schema.mjs';
-import {exportContext, checkExportContext} from './export-canvas.mjs';
+import {exportContext, checkExportContext, deliverExportFrame} from './export-canvas.mjs';
 import { exportSVG } from "./svg-export.mjs";
 import { rasterizeCrispSVG } from "./export-crisp.mjs";
 
@@ -18,24 +18,7 @@ let report,
   canvas,
   tile,
   running = false;
-async function deliverFrame(message, stats) {
-  if (!message.native) return {bitmap: canvas.transferToImageBitmap(), stats};
-  const started = performance.now(), context = exportContext(canvas);
-  if (!message.preserveAlpha) {
-    // Composite behind the rendered pixels in place. No second full-size canvas
-    // or renderer-thread bitmap round trip is needed for opaque native video.
-    context.save();
-    try {
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.globalCompositeOperation = 'destination-over';
-      context.fillStyle = '#000'; context.fillRect(0, 0, canvas.width, canvas.height);
-    } finally {context.restore();}
-  }
-  const blob = await canvas.convertToBlob({type: 'image/png'});
-  checkExportContext(context);
-  if (blob.type !== 'image/png' || !blob.size) throw messageError(new Error(''), "errors.exportFrameWorker.losslessVideoFrameEncodingIsUnavailable", {});
-  return {nativeFrame: {blob, width: canvas.width, height: canvas.height}, stats: {...stats, pngMs: performance.now() - started}};
-}
+const deliverFrame = (message, stats) => deliverExportFrame(canvas, message, stats);
 function tickFrame(tick) {
   const end = rows.at(-1)?.start + rows.at(-1)?.count;
   if (!Number.isInteger(tick) || tick < 0 || tick >= end)

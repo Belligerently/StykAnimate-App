@@ -20,8 +20,9 @@ use crate::frames::{produce, FrameData};
 use crate::sync::Shared;
 use crate::{Engine, Generation};
 
-/// Frames prepared ahead of the one the export draws, at most.
-pub const AHEAD: usize = 3;
+/// Frames prepared ahead of the one the export draws, at most (the export worker draws as
+/// many as six ahead while earlier ones are read back).
+pub const AHEAD: usize = 8;
 
 #[derive(Default)]
 struct State {

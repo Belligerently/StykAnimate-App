@@ -2,7 +2,8 @@
 
 How a draw list becomes pixels: the format (`engine/crates/styk-draw`), the GPU
 renderer (`engine/crates/styk-render`), the CPU rasterizer
-(`engine/crates/styk-raster`) and the stage in the app (`src/engine/engine-stage.mjs`).
+(`engine/crates/styk-raster`), the stage in the app (`src/engine/engine-stage.mjs`) and
+export frames (`engine/crates/styk-export`, `src/engine/engine-export.mjs`).
 
 ## The draw list (`styk-draw`)
 
@@ -192,8 +193,9 @@ the quietest round 86–96 against 104–108 ms (the draw list holds 26 % more r
 ## CPU (`styk-raster`)
 
 The same draw list rasterized with tiny-skia (Skia's raster backend, as Canvas
-2D): for exports, thumbnails, library previews and devices without WebGPU or
-WebGL2. Groups render into their own pixmaps; custom paints shade per pixel
+2D): meant for thumbnails, library previews and devices without WebGPU or WebGL2
+(exports draw with the GPU renderer, see [Exports](#exports); `styk export --cpu`
+compares the two). Groups render into their own pixmaps; custom paints shade per pixel
 with `sample_paint`; consecutive triangles of one look fill as one path.
 `styk raster` renders a frame like `styk render`; on the compared frames the
 two differ by less than 0.2/255 on average, along edges (0.30–0.56 on 3D scenes,
@@ -223,7 +225,105 @@ by the engine (an edit frame whose trails are still being sampled asks the app f
 another frame, `Stage::refining`); so are 3D meshes, surfaces, poses and drawings a
 spatial bone turns.
 
+## Exports
+
+For a document the engine draws, export frames (PNG, PNG and JPEG sequences, GIF, APNG and
+video frames) come from the engine: the frame the stage would show at that tick, through the
+scene camera, at the export's size and sampling, without onion skins. The encoders (the PNG,
+GIF, APNG and ZIP writers, WebCodecs, FFmpeg, the audio mix) are unchanged and receive the
+same canvases and PNG frames as before. SVG stays vector output from the JavaScript exporter,
+and so do documents the gate refuses (`engine-eligibility.mjs`).
+
+**Where it runs.** `src/engine/engine-export.mjs` gives the export a renderer:
+`EngineExportFrames`, an `ExportFrameRenderer` (`src/export-frame-renderer.mjs`) whose worker
+is `src/engine/engine-export-worker.mjs`. The worker joins the engine's shared memory like a
+preparation worker but keeps its event loop, holds a GPU device of its own (WebGPU in the
+worker, else WebGL2 on an `OffscreenCanvas`) and runs `ExportRenderer` (`styk-wasm`): nothing
+of an export is evaluated, drawn or read back on the interface thread (D7). Requests, progress,
+revision checks, timeouts, the retry ladder and the output canvas are the base class's, so the
+export dialog and the encoders see the same object. Before the worker starts, the document is
+brought to the export's revision through the playback adapter's synchronisation
+(`exportDocument`, the one playback uses and the app keeps current with every edit) and then
+what only the stage knows (figures edited in place, drawings just published: `prepareExport`).
+A document the engine does not draw, a page without worker threads (not cross-origin
+isolated) or a worker that cannot get a GPU device exports with the JavaScript worker, decided
+before the first frame; an export never mixes the two. `?engineExport=off` (or
+`localStorage['stykanimate.engine.export'] = 'off'`) keeps the JavaScript renderer for
+comparisons.
+
+**Frames.** `styk_engine::export::ExportFrames` pins the generation of the export's revision
+and evaluates ticks as playback does: effects drawn (exports ignore the editor's effects
+preview), the session's hidden figures shown, the document's hidden layers hidden, generated
+effects with every earlier anchor evaluated. Up to eight following ticks are prepared on the
+engine's workers. The pose the editor shows (a PNG of the current frame) crosses as document
+chunks, like the JavaScript worker's, and is drawn by an `EditScene` without onion skins. Every
+picture of the document is decoded for the export's device before the first frame, so an
+export never shows a frame without one.
+
+**Settings** (`styk-export`):
+
+| Export setting | Engine |
+| --- | --- |
+| Size | The canvas scaled to the output: `scale(output / canvas)` then the scene camera (`view::tile_view`); an output of another shape stretches (`ViewParams::stretch`), as `drawExportScene` does. |
+| Smooth edges | `Edges::Smooth`: four samples a pixel, analytic shapes covered by distance; sprites to the nearest texel. |
+| No smoothing | `Edges::Crisp`: one sample a pixel at its centre, every shape fully in or out (hairlines one solid pixel), lone glyphs from their outlines, layers and drawing cels to the nearest texel; opacity kept. Unlike the JavaScript exporter, which draws frames with effects, generated effects or 3D smooth (its vector path cannot carry them), crisp edges apply to every frame; filtered pixels stay filtered. |
+| Smooth sprites | Drawn at twice the width and height, each 2×2 block averaged in premultiplied colour (`pixels::resolve`, the rule of `downsampleExportPixels`). |
+| Background | The scene's, from the draw list; transparent where the scene has none. |
+| Video without alpha | Composited over black by the engine before any rounding (`matte`). |
+| Scene effects | The camera image follows the output's density (`ViewParams::camera_limit` unbounded) within the effect surface (3,968 pixels); the stage caps it at 2,048. |
+
+**Memory** (D11). A frame is drawn in equal tiles of at most 2,048 rendered pixels a side
+(`tiles::TILE_SIDE`), each the same view shifted by whole pixels: the renderer's targets (frame,
+samples, isolation atlas pages, depth) stay those of one tile whatever the output, about the
+stage's own. Tiles are read back into at most eight slots of 64 MiB together; the worker keeps
+one tile's pixels and the output canvas. The export's device holds its own sprite atlas, the
+size of the stage's. Frames prepared ahead are at most eight draw lists. A GPU out-of-memory
+error or a lost device retries the frame with half the tile side, then once with a new worker
+and device (the base class's ladder), then fails; nothing is written.
+
+**Read-back.** A browser hands a mapped buffer over only when its GPU process gets to it. In
+Electron under Xvfb that took 3–5 ms a frame while the page was still and 60–320 ms while the
+page repainted (the export dialog's progress repaints every frame), against well under a
+millisecond of drawing. So the worker draws the export's next frames ahead into free read-back
+slots (at most six frames) while earlier ones are mapped, and puts a frame on its canvas only
+when the encoder asks for it; frames drawn ahead for another order (a second GIF pass, the
+current pose) are given back unread.
+
+**Cancellation and failure.** Cancelling, closing the dialog or a revision change rejects the
+pending request at once (the base class); the worker is asked to `release`: it frees the
+renderer, destroys the device and gives back its thread's stack, then closes. A worker that does
+not answer within 5 s is terminated. The save layer is unchanged: a cancelled or failed export
+leaves an existing file untouched.
+
+**What differs from the JavaScript exporter.** It draws with Canvas 2D in a worker: its
+antialiasing, text, 3D (faces filled one by one, with seams), filter effects and generated
+effects (tinted sprites, colour ramps) are the editor's Canvas 2D fallback's, not its WebGPU
+renderer's. Engine export frames are the stage's pixels (D13 on the stage at the same frame,
+below); against the JavaScript export they differ along edges, in text, effects and particles,
+and in No smoothing on frames the JavaScript exporter drew smooth.
+
+**Why the GPU, measured** (`styk export`, native, RTX 4070 SUPER, 1,920×1,080, Smooth edges, the
+median of 10 frames each, the same draw lists): the start document 11.8 ms on the GPU (drawing
+and read-back) and 11.5 ms on the CPU (`styk-raster`); Impact-FX-Fight 12.2 against 166.5 ms;
+Vehicles-Pivot-3D 12.6 against 371.1 ms. The CPU rasterizer also draws no filter effects and no
+camera image yet, and runs without SIMD in WebAssembly; WebGPU in a worker draws everything the
+stage draws with the stage's own renderer. A native renderer in Electron's main process would
+have added a second build per platform and an IPC copy of every frame for what WebGPU in a
+worker already gives.
+
 ## Testing
+
+`cargo test -p styk-export` (settings and their limits, tiles covering every pixel once, the
+output view, the 2×2 average against the JavaScript rule, and on a GPU: tiles against the whole
+frame by D13 with no seam along tile edges, crisp edges without partly covered pixels, Smooth
+sprites as the average of a frame drawn twice as large, the black matte);
+`cargo test -p styk-engine --test export`; `cargo test -p styk-render --test glyphs` (crisp
+edges fill no glyph mask); `node --test tests/engine-export.test.mjs`; `styk export <file>
+<ticks> <out> [--size WxH] [--smoothing edges|none|sprites] [--tile N] [--cpu]`;
+`scripts/engine-export-parity.mjs` (frames from both renderers and the stage, timings and memory,
+the app's own exports per format with `--formats`, cancellation and failure with `--cancel` and
+`--integrity`) and `scripts/engine-export-compare.py` (decodes and compares the exports of a
+format).
 
 `cargo test -p styk-render -p styk-raster`; text: `cargo test -p styk-eval --test text`
 (raster entries, glyph records and their mask layouts against numbers the editor printed,
