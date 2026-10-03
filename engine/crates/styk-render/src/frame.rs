@@ -170,6 +170,8 @@ impl Renderer {
         if self.bind0.is_none() {
             self.rebind();
         }
+        // Lone glyphs: the masks this view calls for (filled now when no frame has yet).
+        self.prepare_glyphs(encoder, &list, plan::raster_resolution(view.matrix[0].hypot(view.matrix[1])));
         let n = list.groups.len();
         let max_depth = list.groups.iter().map(|g| g.depth).max().unwrap_or(0);
         // Where every group is drawn for this view (effects::plan), then where it lands in the atlas.
@@ -442,6 +444,9 @@ impl Renderer {
             layer_bytes,
             depth_bytes,
             material_bytes: self.materials.bytes(),
+            glyph_masks: self.glyphs.count() as u32,
+            glyph_masks_filled: self.glyphs.filled,
+            glyph_bytes: self.glyphs.bytes(),
         };
     }
 

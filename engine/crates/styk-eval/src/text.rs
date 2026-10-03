@@ -83,7 +83,9 @@ impl TextBuilder {
         let gi = match self.glyphs.iter().position(|(p, _)| p.as_slice() == path) {
             Some(i) => i,
             None => {
-                self.glyphs.push((path.to_vec(), Arc::new(Glyph { path: path.to_vec() })));
+                // Pivot's stored glyph bounds are its control-point bounds (`path_bounds`).
+                let bounds = path_bounds(path).filter(|b| b[2] > b[0] && b[3] > b[1]).map(|b| b.map(f64::from));
+                self.glyphs.push((path.to_vec(), Arc::new(Glyph { path: path.to_vec(), bounds })));
                 self.glyphs.len() - 1
             }
         };

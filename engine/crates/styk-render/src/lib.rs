@@ -26,6 +26,7 @@ pub use wgpu;
 
 pub mod effects;
 mod frame;
+mod glyphs;
 mod images;
 mod isolation;
 mod materials;
@@ -64,6 +65,11 @@ pub struct Stats {
     pub depth_bytes: u64,
     /// GPU memory of the particle material atlas (generated effects); 0 until a list needs it.
     pub material_bytes: u64,
+    /// Lone glyphs drawn from masks (styk-draw `K_GLYPH`): the masks kept, those the last
+    /// frame filled, and the GPU memory of their atlas (0 until a list draws one).
+    pub glyph_masks: u32,
+    pub glyph_masks_filled: u32,
+    pub glyph_bytes: u64,
 }
 
 pub struct Renderer {
@@ -88,6 +94,8 @@ pub struct Renderer {
     /// The particle material atlas of generated effects, and its trilinear sampler.
     pub(crate) materials: materials::Materials,
     pub(crate) material_sampler: wgpu::Sampler,
+    /// The masks of lone glyphs (styk-draw `K_GLYPH`) and where each instance is drawn from.
+    pub(crate) glyphs: glyphs::GlyphMasks,
     /// Additive blending (generated effects), created with the first list that has any.
     pub(crate) pipeline_add: Option<wgpu::RenderPipeline>,
     /// Ranges of the current list's prims drawn additively; empty when it has none.

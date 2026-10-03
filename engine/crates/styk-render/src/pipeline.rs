@@ -33,12 +33,20 @@ impl Renderer {
                 table_entry(1),
                 table_entry(2),
                 table_entry(3),
+                // Where each lone glyph is drawn from this frame (glyphs.rs).
+                table_entry(4),
             ],
         });
         let layout1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk sprites"),
-            // Sprites and drawings, then the particle materials of generated effects.
-            entries: &[texture_entry(0, wgpu::TextureViewDimension::D2Array), sampler_entry(1), texture_entry(2, wgpu::TextureViewDimension::D2), sampler_entry(3)],
+            // Sprites and drawings, the particle materials of generated effects, the glyph masks.
+            entries: &[
+                texture_entry(0, wgpu::TextureViewDimension::D2Array),
+                sampler_entry(1),
+                texture_entry(2, wgpu::TextureViewDimension::D2),
+                sampler_entry(3),
+                texture_entry(4, wgpu::TextureViewDimension::D2Array),
+            ],
         });
         let layout2 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk layers"),
@@ -90,7 +98,8 @@ impl Renderer {
         let (sprites, sprite_view) = array_texture(&device, "styk sprites", [1, 1], 1, false);
         let materials = crate::materials::Materials::placeholder(&device);
         let material_sampler = crate::materials::sampler(&device);
-        let sprite_bind = Self::sprite_bind(&device, &layout1, &sprite_view, &linear, &materials.view, &material_sampler);
+        let glyphs = crate::glyphs::GlyphMasks::new(&device);
+        let sprite_bind = Self::sprite_bind(&device, &layout1, &sprite_view, &linear, &materials.view, &material_sampler, &glyphs.view);
         let make_layers = |label: &str| {
             let (texture, view) = array_texture(&device, label, [1, 1], 1, true);
             LayerAtlas { texture, view, size: [1, 1], pages: 1 }
@@ -124,6 +133,7 @@ impl Renderer {
             sprite_bind,
             materials,
             material_sampler,
+            glyphs,
             pipeline_add: None,
             add_ranges: Vec::new(),
             nearest,
@@ -139,7 +149,7 @@ impl Renderer {
             page_frame: [0, 0],
             page_small: 0,
             executor: None,
-            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0, effect_layers: 0, effect_passes: 0, effect_bytes: 0, layer_bytes: 0, depth_bytes: 0, material_bytes: 0 },
+            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0, effect_layers: 0, effect_passes: 0, effect_bytes: 0, layer_bytes: 0, depth_bytes: 0, material_bytes: 0, glyph_masks: 0, glyph_masks_filled: 0, glyph_bytes: 0 },
         }
     }
 }
@@ -235,6 +245,7 @@ impl Renderer {
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&self.paints.view) },
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.groups.view) },
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&self.points.view) },
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&self.glyphs.table.view) },
             ],
         }));
     }

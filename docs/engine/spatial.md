@@ -238,7 +238,8 @@ measured by region, their 3D parts differ by 0.00–0.17 levels beyond the quant
 with no solid pixel (15 Guns 0.08–0.12, Vehicles below 0.01 off the cover page),
 their captions by 0.4–1.7. The same 15 Guns scene with its meshes removed fails the
 same way (ticks 0 and 3: mean 0.76 and 0.41 against 0.75 and 0.41 with them): text
-drawn as vector glyphs against the renderer's glyph textures, not 3D.
+drawn as vector glyphs against the renderer's object rasters, not 3D. Text is now drawn
+as the renderer draws it ([rendering.md](rendering.md#text)), with these scenes' results.
 
 **App parity, web target** (engine WebGL2 on SwiftShader against the Canvas 2D
 fallback): Karate movement, Katana turntable, Pistol-3D and the fixtures
@@ -276,8 +277,6 @@ of it the multisampled depth buffer of the layer pages); none without 3D.
   3D (`spatial::document_has_3d`) until a command replay covers editing them; the
   editor's 3D commands (`setSpatialPose`, `setSpatialCamera`, proportions, mechanical
   joints, pose choices, the spatial gizmo) are not ported.
-- **Captions** of the catalogue's scenes differ from the WebGPU renderer, which draws
-  text from glyph textures: not 3D, but the scenes now drawn by the engine show it.
 - **Draw-list cost**: each face is a 64-byte record (1.1 ms per frame to encode the
   Karate fighter's 12,000 faces); an indexed form would encode and upload less.
 

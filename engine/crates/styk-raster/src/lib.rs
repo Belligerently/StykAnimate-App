@@ -23,6 +23,10 @@
 //!   rasterized with a depth buffer of four samples per pixel at the GPU's
 //!   standard sample positions, resolved, then composited at their place in
 //!   painter order, as the GPU draws them.
+//! * Raster entries (`LayerKind::Raster`: 3D artwork, text) are drawn at the
+//!   output's density rather than resampled from the editor's raster grid, and
+//!   lone glyphs (`K_GLYPH`) by their own triangles (`F_GLYPH_VECTOR`), not
+//!   from masks.
 
 mod generators;
 

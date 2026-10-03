@@ -240,12 +240,13 @@ impl Stage {
     }
 
     /// Primitive, isolation group and pass counts of the last frame, its effect layers and
-    /// passes, and the GPU memory of the effect slots, isolation atlases and depth buffers, as JSON.
+    /// passes, the GPU memory of the effect slots, isolation atlases and depth buffers, and the
+    /// glyph masks kept, filled by the last frame and their memory, as JSON.
     pub fn stats(&self) -> String {
         let s = &self.renderer.stats;
         format!(
-            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{},\"materialBytes\":{}}}",
-            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes, s.material_bytes
+            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{},\"materialBytes\":{},\"glyphMasks\":{},\"glyphMasksFilled\":{},\"glyphBytes\":{}}}",
+            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes, s.material_bytes, s.glyph_masks, s.glyph_masks_filled, s.glyph_bytes
         )
     }
 }

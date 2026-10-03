@@ -49,6 +49,10 @@ struct Group {
 // The particle material atlas (styk-draw MATERIAL_*): coverage and shading, trilinear.
 @group(1) @binding(2) var materials: texture_2d<f32>;
 @group(1) @binding(3) var material_sampler: sampler;
+// Lone glyphs (styk-draw K_GLYPH, glyphs.rs): where each instance is drawn from this frame
+// (three texels each), and the atlas of their coverage masks, sampled bilinearly.
+@group(0) @binding(4) var glyph_table: texture_2d<f32>;
+@group(1) @binding(4) var glyph_masks: texture_2d_array<f32>;
 
 const TABLE_WIDTH: u32 = 1024u;
 
@@ -62,6 +66,12 @@ fn paint_row(i: u32) -> vec4<f32> {
 
 fn polyline_point(i: u32) -> vec2<f32> {
     return textureLoad(point_table, table_at(i), 0).xy;
+}
+
+// Row `k` of lone glyph `i`: texel axes to the world, then the origin and mask size, then
+// the mask's place in the atlas (x, y, page) and 1 where it is drawn from its mask.
+fn glyph_row(i: u32, k: u32) -> vec4<f32> {
+    return textureLoad(glyph_table, table_at(i * 3u + k), 0);
 }
 
 fn group_at(g: u32) -> Group {
@@ -97,6 +107,8 @@ const K_POLYLINE: u32 = 11u;
 const K_DEPTH_RESET: u32 = 12u;
 const K_PARTICLE: u32 = 13u;
 const K_BEAM: u32 = 14u;
+const K_GLYPH: u32 = 15u;
+const F_GLYPH_VECTOR: u32 = 32768u;
 const MATERIAL_CELL: f32 = 128.0;
 const MATERIAL_COLUMNS: f32 = 8.0;
 const MATERIAL_ROWS: f32 = 17.0;
@@ -366,6 +378,11 @@ fn vs_main(in: VsIn) -> VsOut {
         let e = p.a.z + max(p.a.w, aa * 0.5) + margin;
         world = p.a.xy + mix(vec2<f32>(-e), vec2<f32>(e), c);
     } else if (kind == K_TRI) {
+        // A lone glyph's own triangles draw only where the view gives it no mask.
+        if ((p.kind & F_GLYPH_VECTOR) != 0u && glyph_row(bitcast<u32>(p.b.z), 2u).w > 0.5) {
+            out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+            return out;
+        }
         if (vi == 0u) { world = p.a.xy; } else if (vi == 1u) { world = p.a.zw; } else { world = p.b.xy; }
         if ((p.kind & F_DEPTH) != 0u) {
             // A face of a depth run: its corner's window depth, mapped over the run's depth
@@ -398,6 +415,23 @@ fn vs_main(in: VsIn) -> VsOut {
         }
         world = p.a.xy + p.a.zw * c.x + p.b.xy * c.y;
         out.uv = c;
+    } else if (kind == K_GLYPH) {
+        // A lone glyph's mask: its texels placed in the world by this frame's table, as the
+        // editor's glyph quad places its texture (`glyphTextureShape`).
+        let i = bitcast<u32>(p.b.x);
+        let r0 = glyph_row(i, 0u);
+        let r1 = glyph_row(i, 1u);
+        let r2 = glyph_row(i, 2u);
+        if (r2.w < 0.5) {
+            out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+            return out;
+        }
+        let texel = c * r1.zw;
+        world = vec2<f32>(r0.x * texel.x + r0.z * texel.y + r1.x, r0.y * texel.x + r0.w * texel.y + r1.y);
+        out.uv = texel;
+        // The fragment stage reads the mask's place where other kinds carry `a` and `b`.
+        out.a = r2;
+        out.b = vec4<f32>(r1.zw, 0.0, 0.0);
     } else if (kind == K_PARTICLE || kind == K_BEAM) {
         // Generated effects: expanded in their draw's local units exactly as the editor's
         // vertex shader does (`vs` in vfx-generator-gpu.mjs), then placed by the draw's transform.
@@ -718,6 +752,15 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     }
     if (kind == K_TRI) {
         return premul(base);
+    }
+    if (kind == K_GLYPH) {
+        // The mask sampled bilinearly, clamped to its own texels as an exact texture's edge
+        // would be, in the text's colour and opacity (the editor's glyph shader).
+        let size = vec2<f32>(textureDimensions(glyph_masks).xy);
+        let t = clamp(in.uv, vec2<f32>(0.5), in.b.xy - vec2<f32>(0.5)) + in.a.xy;
+        let alpha = textureSampleLevel(glyph_masks, linear_sampler, t / size, i32(in.a.z), 0.0).r * base.a;
+        if (alpha <= 0.0) { discard; }
+        return vec4<f32>(base.rgb * alpha, alpha);
     }
     if (kind == K_IMAGE) {
         let rect = p.c;

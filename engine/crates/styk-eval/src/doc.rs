@@ -175,6 +175,10 @@ pub struct DrawingTiles {
 pub struct Glyph {
     /// Path commands in glyph space.
     pub path: Vec<PathCmd>,
+    /// The glyph's stored bounds (`glyph.bounds`: left, top, right, bottom), which size
+    /// the editor's glyph masks; `None` without them or without a path, which the
+    /// editor then draws from the object's raster.
+    pub bounds: Option<[f64; 4]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
