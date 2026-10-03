@@ -91,7 +91,10 @@ const K_FILL_VIEW: u32 = 8u;
 const K_BG_IMAGE: u32 = 9u;
 const K_BOX: u32 = 10u;
 const K_POLYLINE: u32 = 11u;
+const K_DEPTH_RESET: u32 = 12u;
 const F_CLOSED: u32 = 1024u;
+const F_DEPTH: u32 = 8192u;
+const DEPTH_FAR: f32 = 0.9999;
 const F_SMOOTH: u32 = 256u;
 const F_RING_FILL: u32 = 512u;
 const F_TINT: u32 = 2048u;
@@ -228,6 +231,22 @@ fn vs_main(in: VsIn) -> VsOut {
         world = p.a.xy + mix(vec2<f32>(-e), vec2<f32>(e), c);
     } else if (kind == K_TRI) {
         if (vi == 0u) { world = p.a.xy; } else if (vi == 1u) { world = p.a.zw; } else { world = p.b.xy; }
+        if ((p.kind & F_DEPTH) != 0u) {
+            // A face of a depth run: its corner's window depth (styk-draw `F_DEPTH`).
+            var depth = p.c.x;
+            if (vi == 0u) { depth = p.b.z; } else if (vi == 1u) { depth = p.b.w; }
+            out.world = world;
+            out.pos = clip_pos(to_target(world, g, gr));
+            out.pos.z = depth;
+            return out;
+        }
+    } else if (kind == K_DEPTH_RESET) {
+        // The run's rectangle at the far depth, before its faces are drawn.
+        world = mix(p.a.xy - vec2<f32>(margin), p.a.zw + vec2<f32>(margin), c);
+        out.world = world;
+        out.pos = clip_pos(to_target(world, g, gr));
+        out.pos.z = DEPTH_FAR;
+        return out;
     } else if (kind == K_IMAGE) {
         if ((p.kind & F_DRAWING) != 0u) {
             // A drawing tile of display level b.w: the view shows one level per cel,

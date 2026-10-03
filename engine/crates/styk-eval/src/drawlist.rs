@@ -20,8 +20,8 @@ use crate::vfx::layers::{item_extent, rounded, Extent, EMPTY};
 use crate::vfx::{Effect, FrameVfx, ObjectVfx};
 
 pub use styk_draw::{
-    argb8, CameraPose, EffectLayer, Effects, LayerKind, NO_LAYER, rgba8, sample_paint, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
-    K_COMPOSITE, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING,
+    argb8, CameraPose, EffectLayer, Effects, LayerKind, NO_LAYER, rgba8, sample_paint, window_depth, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DEPTH, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
+    K_COMPOSITE, K_DEPTH_RESET, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING,
 };
 
 /// A local primitive list with world bounds, before groups are assigned.
@@ -470,6 +470,67 @@ impl<'a> Ctx<'a> {
     }
 }
 
+impl Ctx<'_> {
+    /// A depth run: consecutive depth-tested faces of one figure (`paintDepthSurfaces`).
+    /// Their depths are normalized over the run's depth range: each mesh's whole range
+    /// and each surface's corner depths, as the editor's raster does.
+    fn depth_run(&self, out: &mut Out, items: &[Item]) {
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let (mut z0, mut z1) = (f64::INFINITY, f64::NEG_INFINITY);
+        for it in items {
+            if it.kind == ItemKind::Mesh {
+                let Some(mesh) = self.scene.mesh_of(it) else { continue };
+                if let Some(b) = mesh.bounds {
+                    (x0, y0, x1, y1) = (x0.min(b[0] as f64), y0.min(b[1] as f64), x1.max(b[2] as f64), y1.max(b[3] as f64));
+                    (z0, z1) = (z0.min(mesh.z_min as f64), z1.max(mesh.z_max as f64));
+                }
+                continue;
+            }
+            for (p, &z) in self.scene.points_of(it).iter().zip(self.scene.depths_of(it)) {
+                (x0, y0, x1, y1) = (x0.min(p[0]), y0.min(p[1]), x1.max(p[0]), y1.max(p[1]));
+                (z0, z1) = (z0.min(z), z1.max(z));
+            }
+        }
+        // `if(!(maxX>minX&&maxY>minY))return`: a run without area draws nothing.
+        if !(x1 > x0 && y1 > y0) {
+            return;
+        }
+        let (z_min, range) = (z0 as f32, (z1 - z0).max(1e-8) as f32);
+        out.push(prim(K_DEPTH_RESET, 0, NO_PAINT, [x0, y0, x1, y1], [0.0; 4], [0.0; 4]), [x0, y0, x1, y1]);
+        let face = |out: &mut Out, color: [u8; 3], p: [[f32; 2]; 3], z: [f32; 3]| {
+            let d = z.map(|z| window_depth(z, z_min, range));
+            let bounds = [p[0][0].min(p[1][0]).min(p[2][0]) as f64, p[0][1].min(p[1][1]).min(p[2][1]) as f64, p[0][0].max(p[1][0]).max(p[2][0]) as f64, p[0][1].max(p[1][1]).max(p[2][1]) as f64];
+            out.grow(bounds[0], bounds[1], bounds[2], bounds[3]);
+            out.prims.push(Prim {
+                kind: K_TRI | F_DEPTH,
+                group: 0,
+                color: rgba8(self.tint.unwrap_or(color), 1.0),
+                paint: NO_PAINT,
+                a: [p[0][0], p[0][1], p[1][0], p[1][1]],
+                b: [p[2][0], p[2][1], d[0], d[1]],
+                c: [d[2], 0.0, 0.0, 0.0],
+            });
+        };
+        for it in items {
+            if it.kind == ItemKind::Mesh {
+                let Some(mesh) = self.scene.mesh_of(it) else { continue };
+                for t in it.faces.0 as usize..it.faces.1 as usize {
+                    let v = [mesh.triangles[t * 3] as usize, mesh.triangles[t * 3 + 1] as usize, mesh.triangles[t * 3 + 2] as usize];
+                    let color = mesh.colors.get(mesh.materials[t] as usize).copied().unwrap_or([0, 0, 0]);
+                    face(out, color, v.map(|v| [mesh.positions[v * 2], mesh.positions[v * 2 + 1]]), v.map(|v| mesh.depth[v]));
+                }
+                continue;
+            }
+            // A face is a triangle, or a quad a near clip made: a fan from its first corner.
+            let (points, depths) = (self.scene.points_of(it), self.scene.depths_of(it));
+            for k in 1..points.len() - 1 {
+                let v = [0, k, k + 1];
+                face(out, it.rgb, v.map(|v| [points[v][0] as f32, points[v][1] as f32]), v.map(|v| depths[v] as f32));
+            }
+        }
+    }
+}
+
 fn tri(out: &mut Out, color: u32, paint: u32, a: [f64; 2], b: [f64; 2], c: [f64; 2]) {
     let bounds = [a[0].min(b[0]).min(c[0]), a[1].min(b[1]).min(c[1]), a[0].max(b[0]).max(c[0]), a[1].max(b[1]).max(c[1])];
     out.push(prim(K_TRI, color, paint, [a[0], a[1], b[0], b[1]], [c[0], c[1], 0.0, 0.0], [0.0; 4]), bounds);
@@ -642,7 +703,7 @@ impl Out {
         let (dx, dy) = (d[0] as f32, d[1] as f32);
         for p in &mut self.prims {
             match p.kind & 255 {
-                K_CAPSULE | K_BOX | K_POLYLINE => {
+                K_CAPSULE | K_BOX | K_POLYLINE | K_DEPTH_RESET => {
                     p.a = [p.a[0] + dx, p.a[1] + dy, p.a[2] + dx, p.a[3] + dy];
                 }
                 K_TRI => {
@@ -733,7 +794,7 @@ fn object_fx<'s>(scene: &'s Scene, it: &Item) -> Option<&'s ObjectVfx> {
 
 /// A node's own stack (`segmentVfx`): segments have node stacks, polygons do not.
 fn node_stack<'s>(fx: &'s ObjectVfx, fig: &Figure, it: &Item) -> Option<&'s [Arc<Effect>]> {
-    if fx.segments.is_empty() || it.kind == ItemKind::Poly || it.flags & crate::geometry::ITEM_SEG_BRUSH != 0 {
+    if fx.segments.is_empty() || matches!(it.kind, ItemKind::Poly | ItemKind::Mesh) || it.flags & crate::geometry::ITEM_SEG_BRUSH != 0 {
         return None;
     }
     let handle = fig.segments.get(it.index as usize)?.id;
@@ -784,8 +845,14 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         let mut nodes: Vec<Node> = Vec::new();
         let mut extents: Vec<(Extent, f64)> = Vec::new();
         let (mut with, mut without, mut largest) = (EMPTY, EMPTY, 0.0f64);
-        for it in &scene.items[a..b] {
-            let node = own.and_then(|o| node_stack(o, &scene.figures[it.figure as usize], it));
+        let mut run_end = a;
+        for (k, it) in scene.items[a..b].iter().enumerate().map(|(k, it)| (a + k, it)) {
+            // Consecutive depth-tested faces are drawn as one depth run.
+            if k >= run_end && it.depth_surface() {
+                run_end = k + scene.items[k..b].iter().take_while(|it| it.depth_surface()).count();
+                ctx.depth_run(&mut items, &scene.items[k..run_end]);
+            }
+            let node = if k < run_end { None } else { own.and_then(|o| node_stack(o, &scene.figures[it.figure as usize], it)) };
             let pad = figure_pad + node.map_or(0.0, |stack| crate::vfx::padding(stack, scale, 0.0));
             let extent = if fx { item_extent(scene, assets, it) } else { None };
             if let Some(stack) = node {
@@ -798,7 +865,7 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
                 }
                 let fx = Fx { stack: stack.to_vec(), bounds: rounded(bounds), domain: rounded(domain), scale, padding: pad };
                 nodes.push(Node { at: items.prims.len(), out, fx });
-            } else {
+            } else if k >= run_end {
                 ctx.item(&mut items, it, 0.0, [0, 0, 0]);
             }
             if let Some(e) = extent {

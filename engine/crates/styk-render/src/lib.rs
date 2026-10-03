@@ -95,6 +95,15 @@ pub struct Renderer {
     pub(crate) page_small: u32,
     /// Effect passes, created with the first frame that filters.
     pub(crate) executor: Option<effects::executor::Executor>,
+    /// Depth runs (docs/engine/spatial.md): the pipelines and multisampled depth
+    /// buffers of passes with depth-tested faces, created with the first list that has any.
+    pub(crate) depth_pipelines: Option<pipeline::DepthPipelines>,
+    pub(crate) depth_main: Option<(wgpu::Texture, [u32; 2])>,
+    pub(crate) depth_layer: Option<(wgpu::Texture, [u32; 2])>,
+    /// Ranges of the current list's prims that are depth-tested faces; empty when it has none.
+    pub(crate) depth_faces: Vec<(u32, u32)>,
+    pub(crate) prim_shader: wgpu::ShaderModule,
+    pub(crate) prim_layout: wgpu::PipelineLayout,
     pub stats: Stats,
 }
 
@@ -120,6 +129,19 @@ impl Renderer {
         }
         self.list_prims = list.prims.len() as u32;
         self.list = Some(list.clone());
+        // Where the depth-tested faces are: passes switch pipelines there.
+        self.depth_faces.clear();
+        // (A reset without faces draws nothing, with or without a depth buffer.)
+        for (i, p) in list.prims.iter().enumerate() {
+            if p.kind & 255 != styk_draw::K_TRI || p.kind & styk_draw::F_DEPTH == 0 {
+                continue;
+            }
+            let i = i as u32;
+            match self.depth_faces.last_mut() {
+                Some(last) if last.1 == i => last.1 = i + 1,
+                _ => self.depth_faces.push((i, i + 1)),
+            }
+        }
     }
 
     pub fn device(&self) -> &wgpu::Device {

@@ -48,35 +48,7 @@ impl Renderer {
             bind_group_layouts: &[Some(&layout0), Some(&layout1), Some(&layout2)],
             immediate_size: 0,
         });
-        let premultiplied = wgpu::BlendState {
-            color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
-            alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
-        };
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("styk prims"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<GpuPrim>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &wgpu::vertex_attr_array![0 => Uint32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4],
-                })],
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState { count: SAMPLES, mask: !0, alpha_to_coverage_enabled: false },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: FORMAT, blend: Some(premultiplied), write_mask: wgpu::ColorWrites::ALL })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline = prim_pipeline(&device, &pipeline_layout, &shader, None);
         let blit_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk blit"),
             entries: &[texture_entry(0, wgpu::TextureViewDimension::D2), sampler_entry(1)],
@@ -130,6 +102,12 @@ impl Renderer {
             groups: Table::new(&device, "styk groups", wgpu::TextureFormat::Rgba32Float, 16),
             points: Table::new(&device, "styk polyline points", wgpu::TextureFormat::Rg32Float, 8),
             bind0: None,
+            depth_pipelines: None,
+            depth_main: None,
+            depth_layer: None,
+            depth_faces: Vec::new(),
+            prim_shader: shader,
+            prim_layout: pipeline_layout,
             device,
             queue,
             pipeline,
@@ -158,7 +136,65 @@ impl Renderer {
     }
 }
 
+/// The primitive pipeline. With `depth`, passes have a depth attachment: depth runs
+/// (styk-draw `K_DEPTH_RESET`, `F_DEPTH`) draw their faces depth tested, everything
+/// else draws as before, in painter order.
+pub(crate) fn prim_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, shader: &wgpu::ShaderModule, depth: Option<wgpu::DepthStencilState>) -> wgpu::RenderPipeline {
+    let premultiplied = wgpu::BlendState {
+        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+        alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+    };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(if depth.is_some() { "styk prims with depth" } else { "styk prims" }),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<GpuPrim>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &wgpu::vertex_attr_array![0 => Uint32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4],
+            })],
+        },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: depth,
+        multisample: wgpu::MultisampleState { count: SAMPLES, mask: !0, alpha_to_coverage_enabled: false },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState { format: FORMAT, blend: Some(premultiplied), write_mask: wgpu::ColorWrites::ALL })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// The depth format of depth runs: the editor's mesh raster uses `depth24plus`.
+pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+
+/// The two pipelines of a pass with a depth attachment: `flat` draws every record in
+/// painter order (a depth reset writes the far depth, other records write theirs,
+/// which no later face reads before a reset); `faces` depth tests a run's faces,
+/// a face at an equal depth replacing the one before it (`less-equal`).
+pub(crate) struct DepthPipelines {
+    pub(crate) flat: wgpu::RenderPipeline,
+    pub(crate) faces: wgpu::RenderPipeline,
+}
+
 impl Renderer {
+    pub(crate) fn depth_pipelines(&mut self) -> &DepthPipelines {
+        let (device, layout, shader) = (&self.device, &self.prim_layout, &self.prim_shader);
+        self.depth_pipelines.get_or_insert_with(|| {
+            let state = |compare| wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: Some(true), depth_compare: Some(compare), stencil: Default::default(), bias: Default::default() };
+            DepthPipelines {
+                flat: prim_pipeline(device, layout, shader, Some(state(wgpu::CompareFunction::Always))),
+                faces: prim_pipeline(device, layout, shader, Some(state(wgpu::CompareFunction::LessEqual))),
+            }
+        })
+    }
+
     pub(crate) fn rebind(&mut self) {
         self.bind0 = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("styk scene"),

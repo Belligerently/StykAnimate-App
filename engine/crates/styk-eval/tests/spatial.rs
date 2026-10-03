@@ -337,3 +337,56 @@ fn spatial_poses_interpolate_as_the_editor_does() {
         }
     }
 }
+
+// ------------------------------------------------------------ draw lists
+
+/// Every depth-tested face of a fixture is encoded once, in a depth run that starts
+/// with a reset covering it, with window depths inside the run's range; an onion
+/// skin draws every face in its tint (docs/engine/spatial.md, Drawing).
+#[test]
+fn depth_surfaces_encode_as_depth_runs() {
+    use styk_eval::drawlist::{encode, encode_composed, rgba8, Ghost, Layer, Overrides, Prim, F_DEPTH, K_DEPTH_RESET, K_TRI};
+    let face = |p: &Prim| p.kind & 255 == K_TRI && p.kind & F_DEPTH != 0;
+    let mut runs = 0;
+    for name in fixtures() {
+        let prepared = styk_eval::prepare(open(&name));
+        let assets = styk_eval::assets::Assets::build(&prepared.doc);
+        for tick in 0..prepared.total_ticks {
+            let scene = build(&prepared.doc, &prepared.evaluate(tick as f64));
+            let expected: u32 = scene
+                .items
+                .iter()
+                .filter(|item| item.depth_surface())
+                .map(|item| if item.kind == ItemKind::Mesh { item.faces.1 - item.faces.0 } else { item.points.1 - item.points.0 - 2 })
+                .sum();
+            let list = encode(&prepared.doc, &assets, &scene);
+            assert_eq!(list.prims.iter().filter(|p| face(p)).count() as u32, expected, "{name} tick {tick}: depth-tested faces");
+            let mut reset: Option<[f32; 4]> = None;
+            for (i, p) in list.prims.iter().enumerate() {
+                if p.kind & 255 == K_DEPTH_RESET {
+                    reset = Some(p.a);
+                    runs += 1;
+                    assert!(list.prims.get(i + 1).is_some_and(face), "{name} tick {tick}: a reset without faces");
+                } else if face(p) {
+                    let r = reset.unwrap_or_else(|| panic!("{name} tick {tick}: a face outside a run"));
+                    assert!(list.prims[i - 1].kind & 255 == K_DEPTH_RESET || face(&list.prims[i - 1]), "{name} tick {tick}: a run interrupted");
+                    for (x, y) in [(p.a[0], p.a[1]), (p.a[2], p.a[3]), (p.b[0], p.b[1])] {
+                        assert!(x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3], "{name} tick {tick}: a face outside its reset");
+                    }
+                    for d in [p.b[2], p.b[3], p.c[0]] {
+                        assert!((0.0004..=0.9996).contains(&d), "{name} tick {tick}: window depth {d}");
+                    }
+                }
+            }
+            // The same frame as an onion skin, in one colour.
+            let tint = [12, 200, 90];
+            let ghost = Ghost { scene: &scene, opacity: 0.5, tint: Some(tint), hidden: &[] };
+            let order: Vec<Layer> = (0..scene.objects.len() as u32).map(|slot| Layer::Ghost(0, slot)).collect();
+            let hidden = vec![true; scene.objects.len()];
+            let onion = encode_composed(&prepared.doc, &assets, &scene, &Overrides { hidden: &hidden, ..Default::default() }, &[ghost], Some(&order));
+            assert!(onion.prims.iter().filter(|p| face(p)).all(|p| p.color == rgba8(tint, 1.0)), "{name} tick {tick}: an onion skin's face keeps its colour");
+            assert_eq!(onion.prims.iter().filter(|p| face(p)).count() as u32, expected, "{name} tick {tick}: onion faces");
+        }
+    }
+    assert!(runs >= 100, "only {runs} depth runs");
+}
