@@ -290,7 +290,9 @@ page repainted (the export dialog's progress repaints every frame), against well
 millisecond of drawing. So the worker draws the export's next frames ahead into free read-back
 slots (at most six frames) while earlier ones are mapped, and puts a frame on its canvas only
 when the encoder asks for it; frames drawn ahead for another order (a second GIF pass, the
-current pose) are given back unread.
+current pose) are given back unread. WebGL2 (a worker without WebGPU, as headless Chromium here)
+completes a read-back only when its device is polled: the worker polls between turns of its event
+loop until it does.
 
 **Cancellation and failure.** Cancelling, closing the dialog or a revision change rejects the
 pending request at once (the base class); the worker is asked to `release`: it frees the

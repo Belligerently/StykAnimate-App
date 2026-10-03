@@ -94,6 +94,21 @@ function layout() {
   free = Array.from({length: renderer.slots()}, (_, slot) => slot);
 }
 
+/**
+ * Resolves with `read` once settled. WebGL2 completes a read-back only when its device is
+ * polled, so the worker polls between turns of its event loop until it does.
+ */
+async function settled(read) {
+  if (!renderer.needs_poll()) return read;
+  let done = false;
+  read.then(() => { done = true; }, () => { done = true; });
+  while (!done) {
+    renderer.poll();
+    if (!done) await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  return read;
+}
+
 /** Draws tiles `first`… of the prepared frame into free slots: `[{index, slot, read}]`. */
 function draw(first, count) {
   const drawn = [];
@@ -108,7 +123,7 @@ function draw(first, count) {
 /** Gives back the slots of frames drawn ahead that the export will not ask for in turn. */
 async function discardAhead() {
   for (const tiles of ahead.values()) for (const {slot, read} of tiles) {
-    try { await read; renderer.discard(slot); } catch { /* the device is gone: the slot is never read */ }
+    try { await settled(read); renderer.discard(slot); } catch { /* the device is gone: the slot is never read */ }
     free.push(slot);
   }
   ahead.clear();
@@ -145,7 +160,7 @@ async function render(message) {
   let readMs = 0, resolveMs = 0;
   for (let at = 0; at < drawn.length; at++) {
     const {index, slot, read} = drawn[at], reading = performance.now();
-    await read;
+    await settled(read);
     check();
     const resolving = performance.now();
     readMs += resolving - reading;

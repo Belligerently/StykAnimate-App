@@ -41,6 +41,8 @@ pub struct ExportDevice {
     renderer: Option<Renderer>,
     /// Finding an adapter, getting its device, creating the renderer (ms).
     start_ms: [f64; 3],
+    /// WebGL2: read-backs complete when the device is polled.
+    polled: bool,
 }
 
 fn adapter_options<'a, 'b>(surface: Option<&'a wgpu::Surface<'b>>) -> wgpu::RequestAdapterOptions<'a, 'b> {
@@ -86,7 +88,8 @@ impl ExportDevice {
             errors.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert((memory, error.to_string()));
         }));
         let renderer = Renderer::with_edges(&device, &queue, wgpu::TextureFormat::Rgba8Unorm, Edges::Smooth);
-        Ok(ExportDevice { device, queue, surface, backend: format!("{:?} · {}", info.backend, info.name), failure, renderer: Some(renderer), start_ms: [adapted - started, deviced - adapted, clock() - deviced] })
+        let polled = info.backend == wgpu::Backend::Gl;
+        Ok(ExportDevice { device, queue, surface, backend: format!("{:?} · {}", info.backend, info.name), failure, renderer: Some(renderer), start_ms: [adapted - started, deviced - adapted, clock() - deviced], polled })
     }
 
     /// Whether the device still works (it was not lost while waiting for the export).
@@ -119,6 +122,8 @@ pub struct ExportRenderer {
     last_evaluate_ms: f64,
     /// Finding an adapter, getting its device, creating the renderer (ms).
     start_ms: [f64; 3],
+    /// WebGL2: read-backs complete when the device is polled.
+    polled: bool,
 }
 
 #[wasm_bindgen]
@@ -151,6 +156,7 @@ impl ExportRenderer {
             frames_drawn: 0,
             last_evaluate_ms: 0.0,
             start_ms: device.start_ms,
+            polled: device.polled,
         })
     }
 
@@ -257,6 +263,17 @@ impl ExportRenderer {
         }
         self.frames_drawn += (index + 1 == self.gpu.tiles().len() as u32) as u32;
         Ok(())
+    }
+
+    /// Whether read-backs complete only when polled: WebGL2 maps on [`ExportRenderer::poll`],
+    /// WebGPU through the mapping's own promise.
+    pub fn needs_poll(&self) -> bool {
+        self.polled
+    }
+
+    /// Lets WebGL2 complete the read-backs whose drawing has finished.
+    pub fn poll(&self) {
+        let _ = self.device.poll(wgpu::PollType::Poll);
     }
 
     /// Gives back read-back `slot`, mapped and not read: a frame drawn ahead that the export
