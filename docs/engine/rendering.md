@@ -140,6 +140,55 @@ Devices without WebGPU: the editor's Canvas 2D fallback draws text as vector pat
 screen's density, the engine as the WebGPU renderer does, as for polygon seams and
 generated effects.
 
+**Measured** (2026-10-03, RTX 4070 SUPER, machine shared with other work at a load
+average of 5 to 40). App parity (`scripts/engine-app-parity.mjs`, D13 limits unchanged,
+onion skins on, 1,440×900 window, Electron under Xvfb with the Linux Vulkan switches),
+the engine on WebGPU against the editor's WebGPU renderer, before (engine-rust at
+`904cad9e`) and after:
+
+| Document (steps) | Before: passing, mean beyond 2, solid pixels | After |
+| --- | --- | --- |
+| 15-Guns-Pivot-3D.styk (5 ticks) | 0/5, 0.387–0.747, 9 | 4/5, 0.185–0.294, 0 |
+| Hand-and-Face-Pivot-3D.styk (5 ticks) | 2/5, 0.166–0.431, 4 | 5/5, 0.070–0.174, 0 |
+| Vehicles-Pivot-3D.styk (5 ticks at fit, 0.3× and 3×, after playback) | 7/16, 0.039–0.566, 9 | 16/16, 0.017–0.211, 0 |
+| Impact-FX-Fight.styk (ticks 30, 108, 157, 185, 192, 205) | 0/6, 0.321–0.382, 0 | 6/6, 0.168–0.217, 0 |
+| Impact-FX-Fight.styk (ticks 30, 185 at 0.3× and 3×, after playback) | 2/5, 0.047–0.380, 4 | 5/5, 0.047–0.217, 0 |
+| Uriel 19-2-2026.piv (private corpus, lone glyphs; ticks 20, 210, 280, 370) | 2/4, 0.071–0.670, 0 | 4/4, 0.049–0.232, 0 |
+| Karate-Fighter-Movement.styk, Katana-Turntable.styk (no text; 16 and 5 steps) | 21/21, ≤ 0.005 | 21/21, unchanged |
+
+Before, the text objects' rectangles held 69–100 % of each step's sum at the fitted view
+(Impact: 5–6 % of the stage held 69–79 %, and the stage without them stays at
+0.073–0.116, so figure edges are no failing cause of their own); a text pixel differed by
+3.2–5.3 levels on average (8.9–10.6 at 0.3×), after by 1.4–2.3. The step still failing,
+15 Guns tick 0 (mean 0.294), is the cover page, 13.9 % of it text, which holds 99 % of the
+sum: the coverage rule inside the rasters above. Measured while building it, Uriel tick 210
+needed the finer curves (0.358 with masks alone, 0.101 with them) and tick 370 the opacity
+in the glyph's colour (0.304 with an isolation layer per translucent glyph: 325 groups and
+a downscaled round; 0.232 without).
+
+Web target (headless Chromium, the engine on WebGL2 against the editor's Canvas 2D
+fallback), before and after: Impact (ticks 30, 108, 185) 0/3 at 0.348–0.434 and 0/3 at
+0.414–0.506; Hand & Face (0, 252, 504) 2/3 and 1/3; 15 Guns (0, 3) 0/2 at 0.510–0.845 and
+0/2 at 0.610–1.089; Uriel (210, 370) 0/2 at 0.491–0.787 and 0/2 at 0.269–0.780; Katana 2/2
+and 2/2. The editor's own two renderers differ more than either from the engine: its
+WebGPU pictures against its Canvas 2D pictures 0.491, 0.668, 1.165 and 0.876 (Impact 30,
+Hand & Face 0, 15 Guns 0, Uriel 370), the engine on WebGL2 against them 0.414, 0.582,
+1.089 and 0.780, and against the WebGPU pictures 0.298, 0.311, 0.475 and 0.348.
+
+Cost. GPU frame (`styk gpubench`, 1,440×900 over 200 zoom levels, p50 of three
+interleaved rounds, before → after): Uriel tick 370 1.87 → 0.65 ms and tick 210 1.76 →
+1.11 ms (lone glyphs need no layer); 15 Guns 0.25 → 0.24, Impact 0.13 → 0.13, Vehicles
+0.28 → 0.27, Karate 0.24 → 0.25, Jay 0.25 → 0.24 ms. Draw-list encoding over every tick
+(`styk bench`, three interleaved rounds): Uriel 2.07–2.17 → 2.13–2.71 ms a frame (31,808
+→ 34,926 records, the finer curves), 15 Guns 1.50–2.40 → 1.09–1.65, Impact 0.22–0.27 →
+0.27–0.30, Jay unchanged (0.37–0.40). Masks: filling those of a new density takes 0.2 to
+1.9 ms of a frame (4 to 8 masks, Uriel at 2.2 times the fitted view); in the app the atlas
+held 9 masks in 2 MiB at Uriel tick 370's fitted view, at most 64 MiB. Edit frames in the
+app (the stage's timing of `render_edit`, Uriel ticks 360 to 380 with onion skins, three
+interleaved rounds at loads of 12 to 41): medians 86–412 ms before and 104–408 ms after;
+the quietest round 86–96 against 104–108 ms (the draw list holds 26 % more records:
+330,238 → 417,744 with the onion skins). Not measured: other GPUs, browsers' frame times.
+
 ## CPU (`styk-raster`)
 
 The same draw list rasterized with tiny-skia (Skia's raster backend, as Canvas
