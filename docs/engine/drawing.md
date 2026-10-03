@@ -124,9 +124,22 @@ commit 57.3/52.2, 65.7/52.6, 59.5/52.9, 79.3/79.4, 47.9/57.2 ms. Worker memory a
 strokes and a fill (`measureUserAgentSpecificMemory`): pixel worker 32.9 MiB (JavaScript
 21.5), stroke worker 7.6 (3.6), history worker 6.7 (2.9).
 
-`scripts/benchmark-drawing-engine-app.mjs` (browser, dense 2,040-tile cel, 3 rounds):
-fill 144 ms (JavaScript 184), publication 561 (801), undo and redo of large soft strokes
-from the disk tier with publication settled 815 and 978 ms (JavaScript 615 and 1,008, with
-ranges overlapping: 266–1,254 against 357–755 and 781–1,653 against 299–1,864). Back to
-back, undo and redo wait for the previous edit's publication (its last tile encoding takes
-165–230 ms in both engines), so their times depend on when publication ends.
+`scripts/benchmark-drawing-engine-app.mjs` (browser, dense 2,040-tile cel at 2×, large soft
+strokes whose undo records are on the disk tier; undo and redo through the app's commands, or
+the editor's with `--editor`; load average recorded per run). Before the fix below, undo and
+redo back to back took Rust 1,011 and 1,226 ms (688–2,243) against JavaScript 760 and 520
+(223–2,235), 4 interleaved rounds, load 14–24. Every undo or redo starts a publication of its
+revision (the playback cache's barrier); it ran during the next undo or redo, and when it
+finished there, its blob assembly in the pixel worker (150–180 ms, both engines) queued the
+replay's tile preparation and the figure update it triggers on the interface thread (the
+engine stage syncing the published asset, 0.2–0.7 s, both engines) held up the replay's
+replies. The Rust encoder is fast enough to finish that publication inside the next replay;
+the JavaScript one was usually superseded first. Publication now pauses while a replay is
+prepared (`DrawingHistory.replaying()`, docs/DRAWING.md). Since then, 10 interleaved rounds
+(load 8–22): back to back, undo 199 ms (169–499) against JavaScript 222 (140–457), redo 200
+(146–373) against 306 (151–460); with publication settled first, undo 634 and redo 659
+against 645 and 678 (these include the stage's figure update after the publication the
+benchmark awaited, in both engines). An undo or redo is now mostly its 15 history chunk reads
+(IndexedDB, decompression, checksum, decoding: 95–113 ms of history-worker time in both engines)
+and 7–9 ms of tile preparation. Across the three benchmark runs, fill medians were 96–122 ms
+(JavaScript 111–151) and publication 359–394 ms (369–674).
