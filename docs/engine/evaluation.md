@@ -129,9 +129,9 @@ with the frame and draws them.
 ## Not evaluated yet
 
 Named in `Document::unsupported` and gated in the app: property channels on
-native timelines, frame drafts, retained movieclip sources, drawings a spatial
-bone turns (`drawingRotation`). The work
-queue in the plan orders them.
+native timelines and frame drafts; a captured movieclip's retained source
+(`movieclipSource`) is not read (the engine tweens the clip's keyframes where the
+editor samples the source). The work queue in the plan orders them.
 
 ## Testing
 

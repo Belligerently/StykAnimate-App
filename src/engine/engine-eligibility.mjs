@@ -19,11 +19,10 @@ function clipReason(clips) {
   return null;
 }
 
-/** 3D meshes, one-sided surfaces and attached movieclip meshes are drawn
- * (docs/engine/spatial.md); drawings a spatial bone turns are not. */
+/** 3D meshes, one-sided surfaces, attached movieclip meshes and drawings a spatial
+ * bone turns are drawn (docs/engine/spatial.md); a movieclip's own document is read. */
 function figureReason(figure, depth) {
   const styk = figure._styk;
-  if (styk?.movieclip?.drawingRotation) return 'rotated drawings';
   if (styk?.movieclip?.document) return depth > 16 ? 'deeply nested movieclips' : documentReason(styk.movieclip.document, depth + 1);
   return null;
 }

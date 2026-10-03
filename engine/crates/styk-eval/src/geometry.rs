@@ -206,6 +206,10 @@ pub struct ObjectSpatial {
     pub mirror: bool,
     /// The pose's perspective.
     pub camera: Option<crate::spatial::Camera>,
+    /// Per segment index: the angle the pose authored for it (`authoredAngle`).
+    pub authored: Vec<f64>,
+    /// Per segment index: a spatial bone's start before perspective (`start.rawPoint`).
+    pub start_raws: Vec<Option<[f64; 3]>>,
 }
 
 impl ObjectGeometry {
@@ -383,6 +387,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let shape = obj.spatial.as_ref().and_then(|s| s.shape.as_ref());
     let mut frames: Vec<Option<crate::rig::SpatialFrame>> = if has_spatial { vec![None; n] } else { Vec::new() };
     let mut depths: Vec<crate::spatial::JointDepth> = if has_spatial { vec![Default::default(); n] } else { Vec::new() };
+    let mut authored: Vec<f64> = if has_spatial { vec![f64::NAN; n] } else { Vec::new() };
+    let mut start_raws: Vec<Option<[f64; 3]>> = if has_spatial { vec![None; n] } else { Vec::new() };
     for &i in order {
         let i = i as usize;
         let seg = &fig.segments[i];
@@ -419,6 +425,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             if has_spatial {
                 frames[i] = st.spatial;
                 depths[i] = crate::spatial::JointDepth { offset: st.depth_offset, raw: st.raw_point };
+                authored[i] = st.authored_angle;
+                start_raws[i] = st.start_raw;
             }
             start = st.start;
             angle = st.angle;
@@ -713,7 +721,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     }
     items.sort_by(|a, b| a.z.total_cmp(&b.z));
     let _ = doc;
-    let spatial = has_spatial.then(|| Arc::new(ObjectSpatial { frames, depths, figure_angle, mirror: obj.image_text_flags, camera }));
+    let spatial = has_spatial.then(|| Arc::new(ObjectSpatial { frames, depths, figure_angle, mirror: obj.image_text_flags, camera, authored, start_raws }));
     let rig = rig_plan.is_some().then(|| {
         rig_states.iter().zip(&fig.segments).map(|(state, seg)| RigJoint { space: state.and_then(|s| s.space), connector: seg.rig.as_ref().is_some_and(|r| r.connector.is_some()) }).collect()
     });
@@ -829,17 +837,88 @@ fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
     scene
 }
 
+/// The drawing a spatial bone turns a movieclip to (`rotatedDrawing`): the view its turn and
+/// tilt select in the instance's form, the roll it adds, and how it places the instance.
+struct RotatedDrawing {
+    frame: f64,
+    root: [f64; 2],
+    angle: f64,
+    scale: f64,
+    flip: f64,
+}
+
+/// `drawingSelection(asset, object).group`: the form whose views hold the instance's frame.
+fn drawing_group(clip: &Movieclip, obj: &Object) -> usize {
+    let frame = obj.movieclip.as_ref().map_or(0.0, |p| p.offset);
+    clip.drawing_sets.iter().position(|views| views.contains(&frame)).unwrap_or(0)
+}
+
+/// `rotatedDrawing` with `drawingRotationReference`, and the placement
+/// `buildMovieclipGeometrySteps` gives it: at the bone's start, turned by its roll and the
+/// figure's rotation, scaled by its stretch and its depth under perspective.
+fn rotated_drawing(clip: &Movieclip, obj: &Object, parent: &JoinedParent<'_>) -> Option<RotatedDrawing> {
+    let rotation = clip.drawing_rotation?;
+    let index = *parent.figure.plan.index_of.get(&obj.join?.handle)? as usize;
+    let spatial = parent.geometry.spatial.as_ref()?;
+    let bone = spatial.frames.get(index)?.as_ref()?;
+    let figure_angle = crate::origin::rotation(parent.figure, parent.object);
+    // The native angles of the turn and tilt controls up the bone chain disambiguate the
+    // equivalent Euler branches of side and back views.
+    let sign = if parent.object.image_text_flags { -1.0 } else { 1.0 };
+    let (mut turn, mut pitch) = (0.0, 0.0);
+    let mut current = Some(index);
+    while let Some(k) = current {
+        let Some(crate::rig::Spatial::Bone { parent: up, turn: turn_id, pitch: pitch_id, .. }) = parent.figure.segments[k].rig.as_ref().and_then(|r| r.spatial.as_ref()) else { break };
+        if spatial.frames.get(k).copied().flatten().is_none() {
+            break;
+        }
+        for (id, sum) in [(*turn_id, &mut turn), (*pitch_id, &mut pitch)] {
+            let control = *parent.figure.plan.index_of.get(&id)? as usize;
+            *sum += (spatial.authored[control] - figure_angle) * sign - parent.figure.segments[control].angle;
+        }
+        current = if *up != 0 { parent.figure.plan.index_of.get(up).map(|&i| i as usize) } else { None };
+    }
+    let [bend, turn, pitch] = crate::rig::quaternion_pose(bone.q, [bone.native_bend, turn, pitch]);
+    let steps = rotation.steps as f64;
+    let direction = (((yaw_step(turn, steps)) % steps) + steps) % steps;
+    let tilt = if pitch < -rotation.tilt_threshold { 1.0 } else if pitch > rotation.tilt_threshold { 2.0 } else { 0.0 };
+    let view = (tilt * steps + direction) as usize;
+    let frame = *clip.drawing_sets.get(drawing_group(clip, obj))?.get(view)?;
+    let camera = crate::spatial::Camera::of(parent.object, parent.geometry.root);
+    let depth_scale = match (camera, spatial.start_raws.get(index).copied().flatten()) {
+        (Some(camera), Some(raw)) => 1.0 / (1.0 - camera.k * raw[2]).max(0.05),
+        _ => 1.0,
+    };
+    let inherited = if parent.object.image_text_flags { -1.0 } else { 1.0 };
+    Some(RotatedDrawing {
+        frame,
+        root: parent.geometry.starts[index],
+        angle: obj.angles.first().copied().unwrap_or(0.0) + bend * inherited + figure_angle,
+        scale: obj.scale * bone.stretch * depth_scale,
+        flip: (if obj.image_text_flags { -1.0 } else { 1.0 }) * inherited,
+    })
+}
+
+/// `Math.floor(yaw / (2π) * steps + .5)`: the nearest of `steps` directions.
+fn yaw_step(yaw: f64, steps: f64) -> f64 {
+    (yaw / (std::f64::consts::PI * 2.0) * steps + 0.5).floor()
+}
+
 /// `buildMovieclipGeometrySteps`: the clip's scene placed at its pivot.
-fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: [f64; 2]) -> Built {
+fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: [f64; 2], parent: Option<JoinedParent<'_>>) -> Built {
     let obj = &frame.objects[slot];
-    let angle = obj.angles.first().copied().unwrap_or(0.0);
-    let scale = obj.scale;
-    let flip = if obj.image_text_flags { -1.0 } else { 1.0 };
+    let drawing = parent.as_ref().and_then(|parent| rotated_drawing(clip, obj, parent));
+    let root = drawing.as_ref().map_or(root, |d| d.root);
+    let angle = drawing.as_ref().map_or_else(|| obj.angles.first().copied().unwrap_or(0.0), |d| d.angle);
+    let scale = drawing.as_ref().map_or(obj.scale, |d| d.scale);
+    let flip = drawing.as_ref().map_or(if obj.image_text_flags { -1.0 } else { 1.0 }, |d| d.flip);
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
     let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
+    // A rotated drawing shows the frame its bone selects, whatever the clip's own time.
+    let local = drawing.as_ref().map_or(local, |d| d.frame);
     let source = clip_scene(clip, local);
     // Meshes inside the clip keep their evaluated positions: the editor places a
     // clip's points, starts and ends, and a mesh drawable has none of them.
@@ -1007,16 +1086,17 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
             let fig = &scene.figures[*fig_of.get(i)? as usize];
             let root = resolve_root(i, &built).unwrap_or(frame.objects[i].root);
             if let Some(clip) = &fig.movieclip {
+                // An attached mesh, or drawings a bone turns, read the bone the instance is
+                // joined to from its parent's geometry.
+                let parent = frame.objects[i].join.filter(|_| clip.meshes.is_some() || clip.drawing_rotation.is_some()).and_then(|j| {
+                    let geometry = &built.get(j.slot as usize)?.as_ref()?.geometry;
+                    let figure = scene.figures.get(*fig_of.get(j.slot as usize)? as usize)?;
+                    Some(JoinedParent { object: &frame.objects[j.slot as usize], figure, geometry })
+                });
                 if let Some(meshes) = &clip.meshes {
-                    // An attached mesh reads the bone it is joined to from its parent's geometry.
-                    let parent = frame.objects[i].join.and_then(|j| {
-                        let geometry = &built.get(j.slot as usize)?.as_ref()?.geometry;
-                        let figure = scene.figures.get(*fig_of.get(j.slot as usize)? as usize)?;
-                        Some(JoinedParent { object: &frame.objects[j.slot as usize], figure, geometry })
-                    });
                     return Some((i, build_clip_mesh(frame, i, fig_of[i], fig, clip, meshes, root, parent)));
                 }
-                return Some((i, build_clip(frame, i, fig, clip, root)));
+                return Some((i, build_clip(frame, i, fig, clip, root, parent)));
             }
             // IK: a pinned object draws its derived pose, from its assembly or solved on its own (`evaluateIKPose`).
             let local;

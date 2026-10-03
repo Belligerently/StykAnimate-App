@@ -274,10 +274,24 @@ pub struct Movieclip {
     /// `spatialMeshes`: one indexed mesh per local frame, drawn in place of the
     /// clip's own document ([`crate::spatial::ClipMesh`]).
     pub meshes: Option<Arc<[Arc<crate::spatial::ClipMesh>]>>,
+    /// `drawingSets`: named groups of single frames (forms), each a list of views'
+    /// frames ([`crate::geometry`]'s rotated drawings).
+    pub drawing_sets: Vec<Vec<f64>>,
+    /// `drawingRotation`: joined to a spatial bone, the clip shows the view its turn
+    /// and tilt select (`steps` directions at three tilts).
+    pub drawing_rotation: Option<DrawingRotation>,
     /// The clip's own timeline, prepared once.
     pub prepared: Arc<crate::eval::Prepared>,
     /// Evaluated local frames shared by every instance (bounded).
     pub cache: std::sync::Mutex<HashMap<u64, Arc<crate::geometry::Scene>>>,
+}
+
+/// `drawingRotation` of a movieclip (src/movieclip-drawings.mjs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawingRotation {
+    pub steps: u32,
+    /// The tilt past which the up or down views show, in radians.
+    pub tilt_threshold: f64,
 }
 
 impl std::fmt::Debug for Movieclip {

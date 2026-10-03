@@ -76,8 +76,8 @@ move: the frame's per-object offsets ([evaluation.md](evaluation.md#the-scene-ca
 join the drag translations of the draw list. Filter effects are
 drawn by the engine; the effects preview switch reaches it through
 `Stage::set_effects` and `EngineHandle::set_effects`. Documents with generated
-effects keep the JavaScript renderer, as do drawings a spatial bone turns; 3D
-meshes, surfaces and poses are drawn by the engine.
+effects keep the JavaScript renderer; 3D meshes, surfaces, poses and drawings a
+spatial bone turns are drawn by the engine.
 
 ## Testing
 

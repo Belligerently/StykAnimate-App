@@ -552,14 +552,29 @@ impl Loader {
             }
             parsed.filter(|meshes| !meshes.is_empty()).map(Arc::from)
         });
-        if m.get("drawingRotation").is_some_and(Value::truthy) {
-            self.note("rotated drawings");
-        }
+        let drawing_sets: Vec<Vec<f64>> = m
+            .get("drawingSets")
+            .and_then(Value::as_arr)
+            .into_iter()
+            .flatten()
+            .map(|set| set.get("views").and_then(Value::as_arr).into_iter().flatten().map(|view| num(view, "frame").unwrap_or(f64::NAN)).collect())
+            .collect();
+        // `validateDrawingSets` refuses rotation without 3 × steps views per set; it is left out here.
+        let drawing_rotation = m.get("drawingRotation").filter(|r| r.is_object()).and_then(|r| {
+            let rotation = DrawingRotation { steps: num(r, "steps")? as u32, tilt_threshold: num(r, "tiltThreshold")? };
+            let fits = rotation.steps >= 2 && !drawing_sets.is_empty() && drawing_sets.iter().all(|views| views.len() == rotation.steps as usize * 3);
+            if !fits {
+                self.notes.push("a movieclip's rotating drawings do not have three views per direction".to_string());
+            }
+            fits.then_some(rotation)
+        });
         Ok(Some(Arc::new(Movieclip {
             duration: num(m, "duration").unwrap_or(1.0),
             source_start: num(m, "sourceStart").unwrap_or(0.0),
             pivot: point(m.get("pivot")).unwrap_or([0.0, 0.0]),
             meshes,
+            drawing_sets,
+            drawing_rotation,
             prepared: Arc::new(crate::eval::Prepared::new(document.clone())),
             document,
             cache: Default::default(),
