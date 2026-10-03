@@ -41,5 +41,5 @@ fn recorded_frames_match() {
     }
     let expected: std::collections::BTreeMap<String, usize> = UNPORTED.iter().map(|(what, count)| (what.to_string(), *count)).collect();
     assert_eq!(unported, expected, "{identical} of {total} recorded ticks identical");
-    assert!(identical >= 391);
+    assert!(identical >= 493);
 }

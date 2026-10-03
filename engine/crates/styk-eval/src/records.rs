@@ -835,11 +835,13 @@ fn empty_objects(frame: &mut Obj) {
 /// The record of a tweened figure: `out` in `evaluatedNativeFrame`, with the keys
 /// in the order the editor writes them and the typed evaluator's values.
 fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crate::doc::Object) -> Result<Value, Error> {
-    if truthy(o.get("_stykSpatial")) || truthy(next.get("_stykSpatial")) {
-        return unported("3D poses between keys");
-    }
     let mut record = o.as_obj().cloned().unwrap_or_default();
     record.remove("runtime_segments");
+    // `interpolateSpatialPose`: the camera always, proportions when either key has any.
+    if truthy(o.get("_stykSpatial")) || truthy(next.get("_stykSpatial")) {
+        let Some(pose) = &out.spatial else { return unported("3D poses the engine did not read") };
+        record.set("_stykSpatial", spatial_record(pose));
+    }
     if let Some(stacks) = o.get("_stykVfx").filter(|v| v.truthy()) {
         record.set("_stykVfx", vfx_record(stacks, next.get("_stykVfx"), source.vfx.as_deref(), out.vfx.as_deref())?);
     }
@@ -861,6 +863,35 @@ fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crat
     record.set("angles", numbers(out.angles.iter().copied()));
     record.set("color_override_raw", Value::Num(out.color as f64));
     Ok(Value::object(record))
+}
+
+/// `interpolateSpatialPose(a, b, t)`'s record: `{camera: {strength, distance, centerX,
+/// centerY}, shape?: {[handle]: {width, taper}}}`, handles in ascending order as
+/// JavaScript keeps integer keys.
+fn spatial_record(pose: &crate::doc::SpatialPose) -> Value {
+    let mut record = Obj::new();
+    if let Some(c) = pose.camera {
+        let mut camera = Obj::new();
+        camera.set("strength", Value::Num(c.strength));
+        camera.set("distance", Value::Num(c.distance));
+        for (key, value) in [("centerX", c.center[0]), ("centerY", c.center[1])] {
+            if let Some(value) = value {
+                camera.set(key, Value::Num(value));
+            }
+        }
+        record.set("camera", Value::object(camera));
+    }
+    if let Some(shape) = &pose.shape {
+        let mut bones = Obj::new();
+        for (id, s) in shape {
+            let mut entry = Obj::new();
+            entry.set("width", Value::Num(s.width));
+            entry.set("taper", Value::Num(s.taper));
+            bones.set(&id.to_string(), Value::object(entry));
+        }
+        record.set("shape", Value::object(bones));
+    }
+    Value::object(record)
 }
 
 /// `interpolateVfx(a, b, t)` as a record: every effect of `stacks` whose identity and
