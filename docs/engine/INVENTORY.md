@@ -16,10 +16,10 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-edit` | 86 | 1213 KiB | 72 | 13 | 1 | 0 | 0 | 0 % | 31 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
-| `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
+| `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4063 KiB | 247 | 69 | 17 | 22 | 1 | 16 % | 32 % | 0 % |
+| **Total** | 356 | 4064 KiB | 241 | 75 | 17 | 22 | 1 | 16 % | 33 % | 0 % |
 
 ## Engine modules
 
@@ -258,13 +258,13 @@ Engine logic: ported to Rust.
 | `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/export-canvas.mjs` | `styk-export` | js |  |
-| `src/export-crisp.mjs` | `styk-export` | js |  |
-| `src/export-frame-core.mjs` | `styk-export` | js |  |
-| `src/export-frame-renderer.mjs` | `styk-export` | js |  |
-| `src/export-frame-worker.mjs` | `styk-export` | js |  |
-| `src/export-memory.mjs` | `styk-export` | js |  |
-| `src/export-sampling.mjs` | `styk-export` | js |  |
+| `src/export-canvas.mjs` | `styk-export` | js | frame hand-over shared by both export workers |
+| `src/export-crisp.mjs` | `styk-export` | partial | Rust: No smoothing as Edges::Crisp for documents the engine draws (styk-render, styk-export); other documents JS |
+| `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS |
+| `src/export-frame-renderer.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents |
+| `src/export-frame-worker.mjs` | `styk-export` | partial | Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs); this worker draws documents the engine does not |
+| `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); JavaScript exports keep these budgets |
+| `src/export-sampling.mjs` | `styk-export` | partial | Rust: the sampling limits mirrored in styk_export::settings; the JavaScript worker still reads these |
 | `src/gif-options.mjs` | `styk-export` | js |  |
 | `src/gif-quantize.mjs` | `styk-export` | js |  |
 | `src/image-codecs.mjs` | `styk-export` | js |  |

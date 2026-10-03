@@ -21,6 +21,7 @@ What's new in each version of StykAnimate.
 
 - Ctrl-dragging a node that uses IK stretches it like any other node.
 - A calmer top bar: the menus are in the StykAnimate menu, and your open projects take their place.
+- Exported pictures and videos look just like your animation in the editor.
 
 ### Fixed
 
@@ -30,6 +31,7 @@ What's new in each version of StykAnimate.
 
 - Pivot files open faster, and in the web app the first one no longer waits for a large download.
 - Editing large animations is faster.
+- Exporting animations with effects, particles, 3D or many figures is several times faster.
 - Animations with particles, auras, beams, smoke or explosions play and edit more smoothly.
 - Smoother playback for animations with parallax layers, a following camera, moved figure origins, Stick Nodes sprites, turning 3D drawings or animated properties.
 

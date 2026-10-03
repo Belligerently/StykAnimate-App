@@ -201,6 +201,14 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   edited by the editor only. Electron's WebGPU canvas shows nothing under Xvfb on this
   machine, so Electron app parity of new features ran the engine on WebGL2 there. A drawing stroke not
   yet published still makes its frame fall back to the JavaScript renderer.
+- **Exports through the engine** (`styk-export`, `src/engine/engine-export.mjs`): an export
+  holds a second GPU device and a second copy of the document's pictures for its duration
+  (+52–361 MiB GPU memory measured); its first frame waits for every picture (URIEL 3:
+  0.8–0.9 s); read-backs are slow while the page repaints (measured under Xvfb only), which
+  the worker hides by drawing up to six frames ahead; "No smoothing" now applies to frames
+  with effects and 3D, which the JavaScript exporter drew smooth; scene-effect camera images
+  wider than 3,968 px are upscaled. Not verified: Windows, macOS, real displays, other GPUs,
+  Firefox, Safari, packaged builds.
 - **Known divergences of the newly drawn features**: the engine tweens a captured movieclip's
   own keyframes where the editor samples its retained source (`movieclipSource`); the follow
   camera reshapes its whole path on every revision where the editor resamples incrementally
@@ -409,8 +417,9 @@ Left: opening and saving `.styk` through Rust once the engine owns the document 
 removing the remaining sidecar names from the brand and release tooling; the personal
 Windows launcher (outside the repository) must stop requiring the sidecar.
 
-**S4, export:** frames, PNG sequence, GIF, APNG, SVG, ZIP and video frames from the engine;
-the audio mix and WebCodecs encoders stay platform services.
+**S4, export:** frames, PNG sequence, GIF, APNG and video frames come from the engine for
+documents it draws (milestone log, 2026-10-03). Left: SVG export, thumbnails and library
+previews; the audio mix and WebCodecs encoders stay platform services.
 
 **S5, the engine owns the document:** `styk-edit` with history; commands ported group by
 group, each checked by a command-replay harness (the same calls run in the JavaScript
@@ -507,13 +516,17 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 21:42 | S5 the timeline's layer selection | `styk-edit` holds `_sheetSelection` as the editor does: `selectSheetLayer`, seeks selecting the chosen layer's figures on show, `keepSelectionOnSeek`, other selections dropping it, history restoring it; `setActiveLayer`. The facade hands it over with every call instead of keeping sessions off while a layer row is selected. | 1 recording (44 steps) matches the editor at every step; 8 of 8 mutations break it. App shadow with the engine's `Math`: start document 173/173, calls the engine did not see 10 → 5; owned editing the same as the editor alone. |
 | 2026-10-03 22:15 | S5 the facade: branches and records changed in place | No engine session while a branch is selected (the editor's `deleteSelection` then deletes the branch, the engine's the figure), and the records the editor changes in place, as its change events name them, are resent to the mirror before the next session (a topology edit had left sessions posing the old pose arrays). | The driver's branch step (the deletion kept): without the guard owned editing diverged (45 history entries against 32); without the resend the owned run failed the editor's pose validation and shadow showed 3 differences. With both: shadow 173/173, calls the engine did not see 7, owned editing the same as the editor alone. |
 | 2026-10-03 22:30 | S5 the figure clipboard | `styk-edit/src/figure_clipboard.rs`: `copySelection`, `cutSelection`, `pasteSelection` at the playhead (`insertionPlan`, `insert`, `_commitSheetRange` with new definitions published as the sheet's assets and removed by its undo) and `duplicateSelection`; paste and duplicate owned with the large figure class, adoption carrying the added definitions; a session pastes only the clipboard it copied. Movieclips, drawings, figures with effect clips and clipboards from another document or format version stay in the editor. The driver names drawn identities by first appearance when it compares runs. | 3 recordings (46 steps) match the editor at every step; 14 of 16 mutations break one (the others are equivalent where reachable: a join to a figure left out is dropped again when pasted, and a parent definition losing the node needs topology edits not ported yet). App shadow with the engine's `Math`: start document 182/182; owned editing (3 pastes and a duplicate adopted) the same as the editor alone. |
+| 2026-10-03 22:43 | S4 export frames from the engine (agent, reviewed and merged) | Documents the engine draws export PNG, PNG and JPEG sequences, GIF, APNG and video frames from the stage's renderer in a worker with its own GPU device (`styk-export`: settings, 2,048-px tiles, the output view, pixel resolve, read-back slots; crisp edges in `styk-render`; `ExportFrames`; `ExportDevice`/`ExportRenderer`; `engine-export.mjs`, started while the export dialog is open). Fixed on the way: the mirror's commit waited on the interface thread and lost batches when the browser refused the wait (now it reports busy and the caller retries), progress waits that missed a wake-up, a page crash when cancelling an export, WebGL2 read-backs that never completed. SVG stays JavaScript. | Engine export frames equal the stage's at the same tick, every pixel, on 7 documents (21 frames). Impact, 240 frames at 1080p through the app: PNG sequence 16.4–18.6 s against 67.2–102.3 s, MP4 13.8–19.1 against 57.6–63.7 s; URIEL 3, 60 frames: 2.6–3.7 against 82.8–86.4 s. Ten aborted exports left no worker or memory behind; a cancelled export over an existing file left it unchanged. engine:test 273; npm test 4,357/4,390 (the 6 known failures); desktop export smoke 5/5 under xvfb. |
 
-In progress: exports through the engine (agent, S4), the drawing raster engine (agent, S6).
-Next for agents: families of editor commands (builder and rig, clipboard, property-channel
-authoring, motion paths and in-betweens, text and media, movieclips and ranges), the remaining drawing
-paths (thumbnails, library previews, camera monitor, drawing workspace; S3 item 6). Next in the
-main thread: joined 3D IK targets, then more of the commands documents send outside the
-gesture set (segment edits, deleting layers and moving figures between them, adding figures
-across frames, pasting, frame clipboard); the next
-classes to flip (D15): small figure documents once a pose's boundary and adoption cost less
-than the editor's call, then 3D documents.
+In progress: the drawing raster engine (agent, S6); animated properties in editing (agent:
+record-level channels, the timeline's property edits, then documents with legacy channels).
+Next for agents: the builder and rig family (topology edits, `native-properties` entries, rig
+behaviours, segment commands), the figure-range family (the commands across frames, ordering,
+branch flips), motion paths and in-betweens, the remaining drawing paths (thumbnails, library
+previews, camera monitor, SVG export; S3 item 6). Next in the main thread: joined 3D IK
+targets, movieclip commands, the asynchronous layer commands (moving figures between layers,
+deleting layers: their planning must stay off the interface thread, D7), camera commands once
+property edits are in. The next classes to flip (D15): small figure documents once a pose's
+boundary and adoption cost less than the editor's call (measured: the editor computes a small
+pose in about 0.07 ms), then 3D documents (a 105-bone pose step costs 0.19 ms natively, two
+thirds of it the figure's 3D geometry, as in the editor).
