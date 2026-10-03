@@ -1044,6 +1044,16 @@ pub fn evaluate_clip_mesh(mesh: &ClipMesh, pose: ClipPose<'_>) -> MeshGeometry {
 /// Shares one evaluated mesh between the scene and its items.
 pub type SharedMesh = Arc<MeshGeometry>;
 
+/// Whether a document (or a movieclip in it) uses 3D: a figure mesh, a one-sided
+/// surface, an attached movieclip mesh or a pose with `_stykSpatial`.
+pub fn document_has_3d(doc: &crate::doc::Document) -> bool {
+    let poses = doc.keyframes.iter().chain(doc.frame_sources.values()).any(|frame| frame.objects.iter().any(|o| o.spatial.is_some()));
+    poses
+        || doc.figures.iter().any(|f| {
+            f.mesh.is_some() || f.polyfills.iter().any(|p| p.surface.is_some()) || f.movieclip.as_ref().is_some_and(|clip| clip.meshes.is_some() || document_has_3d(&clip.document))
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
