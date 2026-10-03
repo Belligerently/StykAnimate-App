@@ -743,7 +743,7 @@ impl Strokes {
         let seeds = seeds.list.iter().map(|(tx, ty, pixels, _)| SeedTile { tx: *tx, ty: *ty, pixels: pixels.clone() }).collect();
         let tail = tail.map(|t| dabs(&t));
         let Some(result) = self.engine.dabs(id as u64, seq, &dabs(shapes), seeds, tail.as_deref()).map_err(error)? else { return Ok(None) };
-        let items = result.tiles.into_iter().map(|(tx, ty, pixels)| Item { a: Some(Buf::Owned(Vec::from(&pixels[..]))), ..Item::new(tx, ty) }).collect();
+        let items = result.tiles.into_iter().map(|(tx, ty, pixels)| Item { a: Some(Buf::Owned(pixels)), ..Item::new(tx, ty) }).collect();
         Ok(Some(Output { items, rect: result.dirty, ..Output::default() }))
     }
     /// `end(id)`: the stroke's undo records, or `undefined` for an unknown stroke.

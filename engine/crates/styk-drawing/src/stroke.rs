@@ -776,10 +776,10 @@ impl DrawingStroke {
 
     /// Tiles changed since the last call, with their current pixels, in the order they
     /// were first marked (`dirtyTiles`).
-    pub fn take_dirty(&mut self) -> Vec<(i64, i64, Box<[u8; TILE_BYTES]>)> {
+    pub fn take_dirty(&mut self) -> Vec<(i64, i64, Vec<u8>)> {
         let items = std::mem::take(&mut self.dirty.items);
         self.dirty.present.clear();
-        items.into_iter().map(|i| (self.tiles[i].tx, self.tiles[i].ty, self.tiles[i].pixels.clone())).collect()
+        items.into_iter().map(|i| (self.tiles[i].tx, self.tiles[i].ty, self.tiles[i].pixels.to_vec())).collect()
     }
 
     /// The pixels of every tile the stroke touched, as they are now (tests and previews).
@@ -822,7 +822,7 @@ pub struct SeedTile {
 
 /// What a batch changed: the dirty tiles and the rectangle covering them.
 pub struct BatchResult {
-    pub tiles: Vec<(i64, i64, Box<[u8; TILE_BYTES]>)>,
+    pub tiles: Vec<(i64, i64, Vec<u8>)>,
     pub dirty: Option<crate::tiles::Rect>,
 }
 
