@@ -37,8 +37,12 @@ pub struct View {
     /// Workspace zoom and pan in screen pixels, before any scene camera.
     pub zoom: f64,
     pub pan: [f64; 2],
+    /// Vertical over horizontal pixels per scene unit of the camera view (`ViewParams::stretch`).
+    pub stretch: f64,
     /// The view shows the scene through its camera (playback), not the neutral workspace.
     pub camera_view: bool,
+    /// The camera image's longest side at most (`ViewParams::camera_limit`).
+    pub camera_limit: f64,
     /// The device's largest texture side.
     pub max_texture: u32,
 }
@@ -174,15 +178,16 @@ pub fn camera_plan(stack: &[Arc<Effect>], canvas: [u32; 2], camera: Option<Camer
     let padding = styk_eval::vfx::padding(stack, 1.0, longest);
     let edge = 4096f64.min(view.max_texture as f64) - 128.0;
     let c = camera.unwrap_or_default();
-    let requested = (view.zoom * if view.camera_view { 1.0 } else { c.scale }).max(0.01);
-    let resolution = requested.min(2048.0 / longest).min(edge / (cw + 2.0 * padding)).min(edge / (ch + 2.0 * padding));
+    // A stretched export keeps both axes at least at the output's density.
+    let requested = (view.zoom * if view.camera_view { view.stretch.max(1.0) } else { c.scale }).max(0.01);
+    let resolution = requested.min(view.camera_limit / longest).min(edge / (cw + 2.0 * padding)).min(edge / (ch + 2.0 * padding));
     let (width, height) = ((cw * resolution).ceil().max(1.0), (ch * resolution).ceil().max(1.0));
     let scale = width / cw;
     let reach = styk_eval::vfx::padding(stack, scale, width.max(height));
     let pad = if reach != 0.0 { reach + 2.0 } else { 0.0 };
     let space = camera_transform(camera.as_ref(), canvas, scale, [pad, pad]);
     let screen: Affine = if view.camera_view {
-        [view.zoom, 0.0, 0.0, view.zoom, view.pan[0], view.pan[1]]
+        [view.zoom, 0.0, 0.0, view.zoom * view.stretch, view.pan[0], view.pan[1]]
     } else {
         // `cameraSceneAffine`: the artboard placed where the camera looks, in the workspace.
         let (sin, cos) = c.angle.sin_cos();
@@ -388,7 +393,7 @@ mod tests {
     }
 
     fn view() -> View {
-        View { matrix: [1.25, 0.0, 0.0, 1.25, 10.0, 20.0], size: [1000, 800], zoom: 1.25, pan: [10.0, 20.0], camera_view: false, max_texture: 8192 }
+        View { matrix: [1.25, 0.0, 0.0, 1.25, 10.0, 20.0], size: [1000, 800], zoom: 1.25, pan: [10.0, 20.0], stretch: 1.0, camera_view: false, camera_limit: 2048.0, max_texture: 8192 }
     }
 
     #[test]
@@ -469,5 +474,23 @@ mod tests {
         // A capped preview: never more than 2048 pixels on its longest side.
         let near = View { zoom: 9.0, matrix: [9.0, 0.0, 0.0, 9.0, 0.0, 0.0], ..view() };
         assert_eq!(camera_plan(&stack, [960, 540], None, &near).filter.output_size[0], 2048.0);
+        // An export follows the output, within the effect surface (4096 less its margin).
+        let export = View { camera_view: true, zoom: 3.0, matrix: [3.0, 0.0, 0.0, 3.0, 0.0, 0.0], pan: [0.0; 2], camera_limit: f64::INFINITY, ..view() };
+        assert_eq!(camera_plan(&stack, [960, 540], None, &export).filter.output_size[0], 2880.0);
+        let huge = View { zoom: 8.0, matrix: [8.0, 0.0, 0.0, 8.0, 0.0, 0.0], ..export };
+        let width = camera_plan(&stack, [960, 540], None, &huge).filter.output_size[0];
+        assert!(width < 3968.0 && width > 3700.0, "{width}");
+    }
+
+    #[test]
+    fn a_stretched_export_maps_the_camera_image_onto_the_whole_output() {
+        // 960×540 exported at 1920×540: twice the density across, the same down.
+        let view = View { camera_view: true, zoom: 2.0, stretch: 0.5, matrix: [2.0, 0.0, 0.0, 1.0, 0.0, 0.0], size: [1920, 540], pan: [0.0; 2], camera_limit: f64::INFINITY, ..view() };
+        let c = camera_plan(&[blur(8.0)], [960, 540], None, &view);
+        let corner = |x: f64, y: f64| apply(c.composite.to_screen, [x, y]);
+        let s = c.composite.show;
+        assert_eq!(corner(s[0], s[1]), [0.0, 0.0]);
+        let far = corner(s[2], s[3]);
+        assert!((far[0] - 1920.0).abs() < 1e-9 && (far[1] - 540.0).abs() < 1e-9, "{far:?}");
     }
 }

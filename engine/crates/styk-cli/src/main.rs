@@ -12,6 +12,8 @@
 //!                                         session's JSON (as the app calls it)
 //!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
 //!                                         (engine/tools/records-reference.mjs wrote the folder)
+//!   styk export <file> <tick|a-b> <out>   export frames as the app's engine exports them, timed
+//!                                         (see export.rs for the options; --cpu: styk-raster)
 
 use std::path::Path;
 use std::time::Instant;
@@ -21,6 +23,7 @@ use styk_eval::eval::Prepared;
 use styk_eval::geometry::build;
 
 mod container;
+mod export;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -49,6 +52,7 @@ fn main() {
         Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
         Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3], &args[4..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
+        Some("export") if args.len() >= 4 => export::export(&args[1], &args[2], &args[3], &args[4..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
             2
@@ -557,7 +561,9 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         clear: [0.16, 0.16, 0.17, 1.0],
         zoom,
         pan,
+        stretch: 1.0,
         camera_view: !neutral,
+        camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
     };
     // --after T: the same renderer drew tick T first, as in the app, where resources outlive frames.
     if let Some(first) = option(rest, "--after").and_then(|t| t.parse::<f64>().ok()) {
@@ -677,7 +683,9 @@ fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
             clear: [0.07, 0.07, 0.09, 1.0],
             zoom,
             pan,
+            stretch: 1.0,
             camera_view: true,
+            camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
         };
         let start = Instant::now();
         let mut encoder = device.create_command_encoder(&Default::default());

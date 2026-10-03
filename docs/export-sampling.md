@@ -43,6 +43,18 @@ try {
 }
 ```
 
+The app creates its renderer through `createExportFrameRenderer(options, {stage, playback,
+revision, range, vector})` (`src/engine/engine-export.mjs`). For a document the engine draws
+(and not for SVG) it returns `EngineExportFrames`: the same interface and contract, whose
+worker joins the engine and draws the frames the stage would show with its own GPU device
+([engine rendering: exports](engine/rendering.md#exports)). The three sampling choices keep
+their meaning there: Smooth edges antialiases shapes and samples sprites to the nearest texel;
+No smoothing draws every shape fully in or out (on every frame, including those with effects,
+generated effects or 3D, which the JavaScript renderer below draws smooth); Smooth sprites
+draws twice as large and averages each 2×2 block in premultiplied colour. Other documents,
+pages that are not cross-origin isolated and workers without a GPU device use the JavaScript
+renderer described next.
+
 The report and current-pose overrides cross to a dedicated worker in bounded
 64 KiB chunks with acknowledgement, a 2 ms snapshot budget and no whole-document
 JSON pass. The worker evaluates absolute timeline ticks, user-layer visibility,
@@ -97,6 +109,13 @@ draw avoids fetching its compressed source again; image eviction limits remain
 unchanged.
 
 ## Export failure containment
+
+The engine's export renderer bounds its GPU memory by drawing frames in tiles of at most
+2,048 rendered pixels a side and reading them back through at most 64 MiB of buffers; a GPU
+out-of-memory error or a lost device climbs the same ladder below (smaller tiles, then one new
+worker with a new device, then failure), and cancellation asks its worker to free its engine
+memory and device before it ends ([engine rendering: exports](engine/rendering.md#exports)).
+What follows describes the JavaScript renderer.
 
 Raster output and encoder canvases request software storage. Smooth sprites
 renders tiles of at most 512 output pixels per side, then explicitly averages

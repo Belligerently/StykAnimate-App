@@ -26,7 +26,7 @@ fn lists() -> (DrawList, DrawList) {
 
 fn view() -> ViewParams {
     // The 960×540 canvas at half size.
-    ViewParams { matrix: [0.5, 0.0, 0.0, 0.5, 0.0, 0.0], artboard: [0.0, 0.0, 480.0, 270.0], clip_to_artboard: true, clear: [0.0; 4], zoom: 0.5, pan: [0.0; 2], camera_view: false }
+    ViewParams { matrix: [0.5, 0.0, 0.0, 0.5, 0.0, 0.0], artboard: [0.0, 0.0, 480.0, 270.0], clip_to_artboard: true, clear: [0.0; 4], zoom: 0.5, pan: [0.0; 2], stretch: 1.0, camera_view: false, camera_limit: styk_render::CAMERA_PREVIEW_LIMIT }
 }
 
 fn gpu(device: &wgpu::Device, queue: &wgpu::Queue, list: DrawList) -> Vec<u8> {

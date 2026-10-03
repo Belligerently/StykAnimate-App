@@ -204,7 +204,9 @@ impl Stage {
             clear: [0.0; 4],
             zoom,
             pan,
+            stretch: 1.0,
             camera_view: camera.is_some(),
+            camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
         };
         let target = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,

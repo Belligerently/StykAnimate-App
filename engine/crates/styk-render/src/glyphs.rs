@@ -223,19 +223,19 @@ impl GlyphMasks {
     /// instance's mask (filled now if no frame did yet) or its triangles, written to the
     /// glyph table. Returns whether the atlas texture was replaced (bind groups that hold it
     /// must be rebuilt) and whether the table was.
-    pub(crate) fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, list: &DrawList, resolution: f64) -> (bool, bool) {
+    pub(crate) fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, list: &DrawList, resolution: f64, masks: bool) -> (bool, bool) {
         self.frame += 1;
         self.filled = 0;
         self.replaced = false;
         self.rows.clear();
         let max = (PAGE.min(device.limits().max_texture_dimension_2d) as f64).min(GlyphMask::MAX_DIMENSION);
         // Pages as large as this frame's largest mask, before any is placed.
-        let largest = list.glyphs.iter().filter_map(|g| g.mask.layout(resolution, GlyphMask::MAX_DIMENSION)).map(|m| m.width.max(m.height)).filter(|&d| d as f64 <= max).max();
+        let largest = list.glyphs.iter().filter(|_| masks).filter_map(|g| g.mask.layout(resolution, GlyphMask::MAX_DIMENSION)).map(|m| m.width.max(m.height)).filter(|&d| d as f64 <= max).max();
         if let Some(largest) = largest {
             self.fit(largest);
         }
         for instance in &list.glyphs {
-            let placed = instance.mask.layout(resolution, GlyphMask::MAX_DIMENSION).filter(|m| (m.width as f64) <= max && (m.height as f64) <= max).and_then(|mask| {
+            let placed = instance.mask.layout(resolution, GlyphMask::MAX_DIMENSION).filter(|m| masks && (m.width as f64) <= max && (m.height as f64) <= max).and_then(|mask| {
                 let key = (Arc::as_ptr(&instance.triangles) as *const u8 as usize, mask.width, mask.height);
                 let (page, at) = match self.entries.get(&key) {
                     Some(e) => (e.page, e.at),
@@ -300,7 +300,8 @@ impl Renderer {
             self.glyphs.filled = 0;
             return;
         }
-        let (atlas, table) = self.glyphs.prepare(&self.device, &self.queue, encoder, list, resolution);
+        // Crisp edges draw every glyph from its outline: a mask's coverage is smooth.
+        let (atlas, table) = self.glyphs.prepare(&self.device, &self.queue, encoder, list, resolution, !self.crisp);
         if atlas {
             self.rebind_sprites();
         }

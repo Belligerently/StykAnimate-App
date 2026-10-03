@@ -33,7 +33,7 @@ function lift(record) {
 }
 
 export class EngineMirror {
-  /** @param {{handle: object, whenProgress(): Promise<void>, pump(): void}} engine from loadEngine() */
+  /** @param {{handle: object, whenProgress(seen?: number): Promise<void>, progressSeen?(): number, pump(): void}} engine from loadEngine() */
   constructor(engine) {
     this.engine = engine;
     this.stats = {definitionSyncs: 0, frameSyncs: 0, records: 0, lastMs: 0, lastRecords: 0, lastCommitMs: 0, errors: 0};
@@ -97,6 +97,9 @@ export class EngineMirror {
     const backgrounds = report.backgrounds ?? [];
     for (const index of this._layout(0, 'backgrounds', BACKGROUNDS, backgrounds, new Set())) { handle.stage_record(0, BACKGROUNDS, index, ...lift(backgrounds[index])); records++; }
     const result = JSON.parse(handle.commit_now(revision, 0));
+    // A background commit is running and this thread may not wait for it (D7): what was
+    // staged stays staged and the next commit takes it. The caller tries again later.
+    if (result.busy) { this.stats.busy = (this.stats.busy ?? 0) + 1; throw Object.assign(new Error('The engine is committing the document.'), {code: 'engine_busy'}); }
     if (result.error) { this.stats.errors++; this.reset(); throw new Error(`The engine refused the document: ${result.error}`); }
     Object.assign(this.stats, {definitionSyncs: this.stats.definitionSyncs + 1, records: this.stats.records + records, lastMs: performance.now() - started, lastRecords: records, lastCommitMs: result.ms});
     return result;
@@ -116,7 +119,11 @@ export class EngineMirror {
 
   async _syncFrames(report, revision, {frameIndices = [], sourceIds = [], figureIndices = [], allFigures = false}, signal) {
     const handle = this.engine.handle, started = performance.now();
-    this.syncDefinitions(report, revision, {figureIndices, allFigures});
+    for (;;) {
+      const seen = this.engine.progressSeen?.();
+      try { this.syncDefinitions(report, revision, {figureIndices, allFigures}); break; }
+      catch (error) { if (error.code !== 'engine_busy') throw error; await this.engine.whenProgress(seen); }
+    }
     const batch = this.nextBatch++, generation = this.frameGeneration;
     let slice = performance.now(), records = 0;
     const breathe = async () => {
@@ -154,8 +161,8 @@ export class EngineMirror {
   /** Waits for the engine to report the background commit of `revision`. */
   async _committed(revision) {
     for (;;) {
-      const text = this.engine.handle.take_committed();
-      if (text === undefined) { await this.engine.whenProgress(); continue; }
+      const seen = this.engine.progressSeen?.(), text = this.engine.handle.take_committed();
+      if (text === undefined) { await this.engine.whenProgress(seen); continue; }
       const result = JSON.parse(text);
       if (result.error) {
         // The engine kept its previous document; the next sync resends everything.

@@ -55,7 +55,7 @@
   },
   "app.applyingLayerChanges": {
     "locations": [
-      "src/app.mjs:6201"
+      "src/app.mjs:6203"
     ],
     "context": "localizedText($(\"layer-progress-label\"), (latest.phase === \"staging\" ? \"app.applyingLayerChanges\" : \"app.preservingAnimation\"), (latest.phase === \"staging\" ? {}"
   },
@@ -109,8 +109,8 @@
   },
   "app.cancel": {
     "locations": [
-      "src/app.mjs:6220",
-      "src/app.mjs:6299"
+      "src/app.mjs:6222",
+      "src/app.mjs:6301"
     ],
     "context": "`<p id=\"layer-progress-label\" data-i18n=\"app.preservingAnimation\">${messageHTML(\"app.preservingAnimation\", {})}</p><progress id=\"layer-progress\" style=\"width:10"
   },
@@ -244,7 +244,7 @@
   },
   "app.clipboardOperationCancelled": {
     "locations": [
-      "src/app.mjs:6320"
+      "src/app.mjs:6322"
     ],
     "context": "status({messageKey: \"app.clipboardOperationCancelled\", messageParams: {}});"
   },
@@ -257,7 +257,7 @@
   "app.compatibilityMode": {
     "locations": [
       "src/app.mjs:2031",
-      "src/app.mjs:6805"
+      "src/app.mjs:6807"
     ],
     "context": "if (state.renderer.stats?.backend === \"Canvas 2D fallback\") localizedText($(\"renderer-label\"), \"app.compatibilityMode\");"
   },
@@ -288,8 +288,8 @@
   },
   "app.copyingFrames": {
     "locations": [
-      "src/app.mjs:6268",
-      "src/app.mjs:6300"
+      "src/app.mjs:6270",
+      "src/app.mjs:6302"
     ],
     "context": "copy: interfaceText(\"app.copyingFrames\"),"
   },
@@ -301,8 +301,8 @@
   },
   "app.cuttingFrames": {
     "locations": [
-      "src/app.mjs:6269",
-      "src/app.mjs:6300"
+      "src/app.mjs:6271",
+      "src/app.mjs:6302"
     ],
     "context": "cut: interfaceText(\"app.cuttingFrames\"),"
   },
@@ -409,7 +409,7 @@
   },
   "app.editorReadyFileServiceUnavailable": {
     "locations": [
-      "src/app.mjs:6702"
+      "src/app.mjs:6704"
     ],
     "context": "status({messageKey: \"app.editorReadyFileServiceUnavailable\", messageParams: {}}, true);"
   },
@@ -511,8 +511,8 @@
     "locations": [
       "src/app.mjs:4382",
       "src/app.mjs:5246",
-      "src/app.mjs:6580",
-      "src/app.mjs:6596"
+      "src/app.mjs:6582",
+      "src/app.mjs:6598"
     ],
     "context": "if (builderMode?.active) return toast(interfaceText(\"app.finishTheFigureOrReturnToAnimateTo2\"), \"app.finishTheFigureOrReturnToAnimateTo2\", {});"
   },
@@ -606,7 +606,7 @@
   },
   "app.frameCopied": {
     "locations": [
-      "src/app.mjs:6316"
+      "src/app.mjs:6318"
     ],
     "context": "notify(interfaceText(\"app.frameCopied\", {count}), \"app.frameCopied\", {count});"
   },
@@ -721,7 +721,7 @@
   },
   "app.layerChangeCancelled": {
     "locations": [
-      "src/app.mjs:6238"
+      "src/app.mjs:6240"
     ],
     "context": "status({messageKey: \"app.layerChangeCancelled\", messageParams: {}});"
   },
@@ -739,7 +739,7 @@
   },
   "app.loadingThePivotConverterFirstUseOnly": {
     "locations": [
-      "src/app.mjs:6693"
+      "src/app.mjs:6695"
     ],
     "context": "if (state === \"loading\") status(stage === \"runtime\" ? {messageKey: \"app.loadingThePivotConverterFirstUseOnly\", messageParams: {}} : {messageKey: \"app.startingTh"
   },
@@ -926,8 +926,8 @@
   },
   "app.pastingFrames": {
     "locations": [
-      "src/app.mjs:6270",
-      "src/app.mjs:6300"
+      "src/app.mjs:6272",
+      "src/app.mjs:6302"
     ],
     "context": "paste: interfaceText(\"app.pastingFrames\"),"
   },
@@ -987,14 +987,14 @@
   },
   "app.preparingCanvasAndEffects": {
     "locations": [
-      "src/app.mjs:6663"
+      "src/app.mjs:6665"
     ],
     "context": "status({messageKey: \"app.preparingCanvasAndEffects\", messageParams: {}}, false, true);"
   },
   "app.preservingAnimation": {
     "locations": [
-      "src/app.mjs:6201",
-      "src/app.mjs:6220"
+      "src/app.mjs:6203",
+      "src/app.mjs:6222"
     ],
     "context": "localizedText($(\"layer-progress-label\"), (latest.phase === \"staging\" ? \"app.applyingLayerChanges\" : \"app.preservingAnimation\"), (latest.phase === \"staging\" ? {}"
   },
@@ -1022,14 +1022,14 @@
       "src/app.mjs:2181",
       "src/app.mjs:3650",
       "src/app.mjs:3909",
-      "src/app.mjs:6676",
-      "src/app.mjs:6811"
+      "src/app.mjs:6678",
+      "src/app.mjs:6813"
     ],
     "context": "onReady(){state.editingPacket=null;status({messageKey: \"app.ready\", messageParams: {}});warmPlayback();},"
   },
   "app.reconnectCanvas": {
     "locations": [
-      "src/app.mjs:6837"
+      "src/app.mjs:6839"
     ],
     "context": "localizedMarkup($(\"renderer-error\"), `<p data-i18n=\"app.theGraphicsDeviceWasResetReconnectingYourCanvas\">${messageHTML(\"app.theGraphicsDeviceWasResetReconnectin"
   },
@@ -1277,7 +1277,7 @@
   },
   "app.startingThePivotConverter": {
     "locations": [
-      "src/app.mjs:6693"
+      "src/app.mjs:6695"
     ],
     "context": "if (state === \"loading\") status(stage === \"runtime\" ? {messageKey: \"app.loadingThePivotConverterFirstUseOnly\", messageParams: {}} : {messageKey: \"app.startingTh"
   },
@@ -1337,19 +1337,19 @@
   },
   "app.theCanvasCouldNotReconnectYourAnimationIs": {
     "locations": [
-      "src/app.mjs:6749"
+      "src/app.mjs:6751"
     ],
     "context": "localizedText($(\"renderer-error\").querySelector('p'), \"app.theCanvasCouldNotReconnectYourAnimationIs\", {});"
   },
   "app.theCanvasUsesCompatibilityRenderingWhichCanBe": {
     "locations": [
-      "src/app.mjs:6815"
+      "src/app.mjs:6817"
     ],
     "context": "toasts.show({ message: interfaceText(\"app.theCanvasUsesCompatibilityRenderingWhichCanBe\", {value:reason}), messageKey: \"app.theCanvasUsesCompatibilityRenderingW"
   },
   "app.theGraphicsDeviceWasResetReconnectingYourCanvas": {
     "locations": [
-      "src/app.mjs:6837"
+      "src/app.mjs:6839"
     ],
     "context": "localizedMarkup($(\"renderer-error\"), `<p data-i18n=\"app.theGraphicsDeviceWasResetReconnectingYourCanvas\">${messageHTML(\"app.theGraphicsDeviceWasResetReconnectin"
   },
@@ -1429,14 +1429,14 @@
   },
   "app.updatingFrames": {
     "locations": [
-      "src/app.mjs:6298",
-      "src/app.mjs:6300"
+      "src/app.mjs:6300",
+      "src/app.mjs:6302"
     ],
     "context": "labels[kind] || interfaceText(\"app.updatingFrames\"),"
   },
   "app.valueCanvasCompatibilityRenderingIsActive": {
     "locations": [
-      "src/app.mjs:6809"
+      "src/app.mjs:6811"
     ],
     "context": "if (compatibility) localizedAttribute($(\"renderer-label\"), 'title', 'app.valueCanvasCompatibilityRenderingIsActive', {value:reason});"
   },
@@ -1466,7 +1466,7 @@
   },
   "app.webgpuIsUnavailable": {
     "locations": [
-      "src/app.mjs:6808"
+      "src/app.mjs:6810"
     ],
     "context": "const reason = message.reasonKey ? {messageKey:message.reasonKey, messageParams:message.reasonParams} : message.reason || {messageKey:\"app.webgpuIsUnavailable\"}"
   },
@@ -7337,8 +7337,8 @@
       "src/app-dialogs.mjs:98",
       "src/app-dialogs.mjs:147",
       "src/app-dialogs.mjs:328",
-      "src/app.mjs:6220",
-      "src/app.mjs:6299",
+      "src/app.mjs:6222",
+      "src/app.mjs:6301",
       "src/builder-surface-ui.mjs:23",
       "src/color-picker.mjs:155",
       "src/color-picker.mjs:157",
@@ -12040,14 +12040,14 @@
   },
   "errors.app.selectionChangedReopenTheColorPicker": {
     "locations": [
-      "src/app.mjs:6868",
-      "src/app.mjs:6875"
+      "src/app.mjs:6870",
+      "src/app.mjs:6877"
     ],
     "context": "if(editor.report!==report||editor.tick!==tick||[...editor.selectedUids].join(',')!==uids)throw messageError(new Error(''), \"errors.app.selectionChangedReopenThe"
   },
   "errors.app.selectionChangedReopenThePalette": {
     "locations": [
-      "src/app.mjs:6861"
+      "src/app.mjs:6863"
     ],
     "context": "if(editor.report!==report||editor.selectedUid!==uid||editor.figure!==figure||editor.tick!==tick)throw messageError(new Error(''), \"errors.app.selectionChangedRe"
   },
@@ -12077,7 +12077,7 @@
   },
   "errors.app.theGraphicsDeviceWasLost": {
     "locations": [
-      "src/app.mjs:6820"
+      "src/app.mjs:6822"
     ],
     "context": "telemetry.error(Object.assign(messageError(new Error(''), \"errors.app.theGraphicsDeviceWasLost\", {}), { name: 'GPUError', telemetryCode: 'device_lost' }), 'gpu'"
   },
@@ -17458,20 +17458,20 @@
   "errors.exportFlow.anExportIsAlreadyRunningWaitForIt": {
     "locations": [
       "src/export-flow.mjs:211",
-      "src/export-flow.mjs:333",
-      "src/export-flow.mjs:394"
+      "src/export-flow.mjs:335",
+      "src/export-flow.mjs:396"
     ],
     "context": "if ([...exportJobs].some(job => job.raster)) throw messageError(new Error(''), \"errors.exportFlow.anExportIsAlreadyRunningWaitForIt\", {});"
   },
   "errors.exportFlow.exportCancelled": {
     "locations": [
-      "src/export-flow.mjs:299"
+      "src/export-flow.mjs:301"
     ],
     "context": "throw messageError(new DOMException('', \"AbortError\"), \"errors.exportFlow.exportCancelled\", {});"
   },
   "errors.exportFlow.pngExportFailed": {
     "locations": [
-      "src/export-flow.mjs:297"
+      "src/export-flow.mjs:299"
     ],
     "context": "if (!blob) throw messageError(new Error(''), \"errors.exportFlow.pngExportFailed\", {});"
   },
@@ -17483,104 +17483,104 @@
   },
   "errors.exportFrameRenderer.anExportFrameCouldNotBeTransferred": {
     "locations": [
-      "src/export-frame-renderer.mjs:87"
+      "src/export-frame-renderer.mjs:97"
     ],
-    "context": "this._fail(Object.assign(messageError(new Error(''), \"errors.exportFrameRenderer.anExportFrameCouldNotBeTransferred\", {}),{telemetryCode:'snapshot_failed',telem"
+    "context": "if (current()) this._fail(Object.assign(messageError(new Error(''), \"errors.exportFrameRenderer.anExportFrameCouldNotBeTransferred\", {}),{telemetryCode:'snapsho"
   },
   "errors.exportFrameRenderer.exportFramesMustBeRenderedSequentially": {
     "locations": [
-      "src/export-frame-renderer.mjs:239"
+      "src/export-frame-renderer.mjs:251"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportFrameRenderer.exportFramesMustBeRenderedSequentially\", {});"
   },
   "errors.exportFrameRenderer.exportRendererRequestsMustRunSequentially": {
     "locations": [
-      "src/export-frame-renderer.mjs:110"
+      "src/export-frame-renderer.mjs:122"
     ],
     "context": "messageError(new Error(''), \"errors.exportFrameRenderer.exportRendererRequestsMustRunSequentially\", {}),"
   },
   "errors.exportFrameRenderer.exportRenderingFailed": {
     "locations": [
-      "src/export-frame-renderer.mjs:74"
+      "src/export-frame-renderer.mjs:84"
     ],
     "context": "const error = Object.assign(restoreMessageError((data.error ? new Error(data.error) : messageError(new Error(''), \"errors.exportFrameRenderer.exportRenderingFai"
   },
   "errors.exportFrameRenderer.exportRenderingTimedOut": {
     "locations": [
-      "src/export-frame-renderer.mjs:117"
+      "src/export-frame-renderer.mjs:129"
     ],
     "context": "() => this._fail(Object.assign(messageError(new Error(''), \"errors.exportFrameRenderer.exportRenderingTimedOut\", {}),{telemetryCode:'timeout',telemetryStage:ope"
   },
   "errors.exportFrameRenderer.loadTheAnimationBeforeExporting": {
     "locations": [
-      "src/export-frame-renderer.mjs:237"
+      "src/export-frame-renderer.mjs:249"
     ],
     "context": "if (!this.loaded) throw messageError(new Error(''), \"errors.exportFrameRenderer.loadTheAnimationBeforeExporting\", {});"
   },
   "errors.exportFrameRenderer.theExportRendererReturnedAnIncompleteFrame": {
     "locations": [
-      "src/export-frame-renderer.mjs:222"
+      "src/export-frame-renderer.mjs:234"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportFrameRenderer.theExportRendererReturnedAnIncompleteFrame\", {});"
   },
   "errors.exportFrameRenderer.theExportRendererReturnedAnIncompleteNativeFrame": {
     "locations": [
-      "src/export-frame-renderer.mjs:281"
+      "src/export-frame-renderer.mjs:293"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportFrameRenderer.theExportRendererReturnedAnIncompleteNativeFrame\", {});"
   },
   "errors.exportFrameRenderer.theExportRendererReturnedNoPixelFrame": {
     "locations": [
-      "src/export-frame-renderer.mjs:215"
+      "src/export-frame-renderer.mjs:227"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportFrameRenderer.theExportRendererReturnedNoPixelFrame\", {});"
   },
   "errors.exportFrameRenderer.theExportRendererStopped": {
     "locations": [
-      "src/export-frame-renderer.mjs:84"
+      "src/export-frame-renderer.mjs:94"
     ],
-    "context": "this._fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), \"errors.exportFrameRenderer.theExportRendererStopped\")),{teleme"
+    "context": "if (current()) this._fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), \"errors.exportFrameRenderer.theExportRendererSto"
   },
   "errors.exportFrameRenderer.waitForTheCurrentExportFrame": {
     "locations": [
-      "src/export-frame-renderer.mjs:157"
+      "src/export-frame-renderer.mjs:169"
     ],
     "context": "if (this.busy) throw messageError(new Error(''), \"errors.exportFrameRenderer.waitForTheCurrentExportFrame\", {});"
   },
   "errors.exportFrameWorker.chooseAnExportFrameInsideThisAnimation": {
     "locations": [
-      "src/export-frame-worker.mjs:42"
+      "src/export-frame-worker.mjs:25"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportFrameWorker.chooseAnExportFrameInsideThisAnimation\", {});"
   },
   "errors.exportFrameWorker.exportNeedsADecodedAnimationDocument": {
     "locations": [
-      "src/export-frame-worker.mjs:171"
+      "src/export-frame-worker.mjs:154"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportFrameWorker.exportNeedsADecodedAnimationDocument\", {});"
   },
   "errors.exportFrameWorker.loadTheAnimationBeforeRenderingExportFrames": {
     "locations": [
-      "src/export-frame-worker.mjs:63"
+      "src/export-frame-worker.mjs:46"
     ],
     "context": "throw messageError(new Error(''), \"errors.exportFrameWorker.loadTheAnimationBeforeRenderingExportFrames\", {});"
   },
   "errors.exportFrameWorker.losslessVideoFrameEncodingIsUnavailable": {
     "locations": [
-      "src/export-frame-worker.mjs:36",
+      "src/export-canvas.mjs:42",
       "src/native-video-frame-worker.mjs:27"
     ],
     "context": "if (blob.type !== 'image/png' || !blob.size) throw messageError(new Error(''), \"errors.exportFrameWorker.losslessVideoFrameEncodingIsUnavailable\", {});"
   },
   "errors.exportFrameWorker.theCurrentExportFrameWasNotTransferred": {
     "locations": [
-      "src/export-frame-worker.mjs:68"
+      "src/export-frame-worker.mjs:51"
     ],
     "context": "if (!frame) throw messageError(new Error(''), \"errors.exportFrameWorker.theCurrentExportFrameWasNotTransferred\", {});"
   },
   "errors.exportFrameWorker.unknownExportRendererOperation": {
     "locations": [
-      "src/export-frame-worker.mjs:179"
+      "src/export-frame-worker.mjs:162"
     ],
     "context": "else throw messageError(new Error(''), \"errors.exportFrameWorker.unknownExportRendererOperation\", {});"
   },
@@ -23748,7 +23748,7 @@
   "exportFlow.exportCancelled": {
     "locations": [
       "src/export-flow.mjs:188",
-      "src/export-flow.mjs:269"
+      "src/export-flow.mjs:271"
     ],
     "context": "status(interfaceText(\"exportFlow.exportCancelled\"));"
   },
@@ -23773,13 +23773,13 @@
   },
   "exportFlow.exportingFrame": {
     "locations": [
-      "src/export-flow.mjs:304"
+      "src/export-flow.mjs:306"
     ],
     "context": "{ title: interfaceText(\"exportFlow.exportingFrame\"), titleKey: \"exportFlow.exportingFrame\", format: 'png', start: editor.tick },"
   },
   "exportFlow.exportingVectorFrame": {
     "locations": [
-      "src/export-flow.mjs:323"
+      "src/export-flow.mjs:325"
     ],
     "context": "{ title: interfaceText(\"exportFlow.exportingVectorFrame\"), titleKey: \"exportFlow.exportingVectorFrame\", format: 'svg', start: editor.tick },"
   },
@@ -31159,7 +31159,7 @@
   "rendererStatus.deviceLost": {
     "locations": [
       "src/app.mjs:2032",
-      "src/app.mjs:6806"
+      "src/app.mjs:6808"
     ],
     "context": "else if (state.renderer.stats?.backend === \"WebGPU device lost\") localizedText($(\"renderer-label\"), \"rendererStatus.deviceLost\");"
   },
@@ -31177,7 +31177,7 @@
   },
   "rendererStatus.reconnectionFailed": {
     "locations": [
-      "src/app.mjs:6780"
+      "src/app.mjs:6782"
     ],
     "context": "fallbackReason: `Graphics reconnection failed: ${error.message}`, fallbackReasonKey:'rendererStatus.reconnectionFailed',"
   },

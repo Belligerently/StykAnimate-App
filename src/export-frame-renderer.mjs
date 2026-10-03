@@ -56,14 +56,24 @@ export class ExportFrameRenderer {
     if (signal?.aborted) this.abort();
   }
   _spawn() {
-    this.worker?.terminate();
-    this.worker = new Worker(
+    this._attach(new Worker(
       new URL("./export-frame-worker.mjs", import.meta.url),
       { type: "module", name: "StykAnimate export rendering" },
-    );
-    this.worker.addEventListener("message", ({ data }) => {
+    ));
+  }
+  /** Ends a worker this session no longer uses. */
+  _release(worker) {
+    worker?.terminate();
+  }
+  /** Makes `worker` the session's renderer: replies settle the pending request. */
+  _attach(worker) {
+    this._release(this.worker);
+    this.worker = worker;
+    // A worker being released may still speak: only the current one settles requests.
+    const current = () => this.worker === worker;
+    worker.addEventListener("message", ({ data }) => {
       const pending = this.pending;
-      if (!pending || pending.id !== data.id) {
+      if (!current() || !pending || pending.id !== data.id) {
         data.bitmap?.close();
         return;
       }
@@ -79,13 +89,13 @@ export class ExportFrameRenderer {
         pending.reject(error);
       }
     });
-    this.worker.addEventListener("error", (event) => {
+    worker.addEventListener("error", (event) => {
       event.preventDefault();
-      this._fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), "errors.exportFrameRenderer.theExportRendererStopped")),{telemetryCode:'worker_failed',telemetryStage:'encode'}));
+      if (current()) this._fail(Object.assign((event.message ? new Error(event.message) : messageError(new Error(''), "errors.exportFrameRenderer.theExportRendererStopped")),{telemetryCode:'worker_failed',telemetryStage:'encode'}));
     });
-    this.worker.addEventListener("messageerror", () =>
-      this._fail(Object.assign(messageError(new Error(''), "errors.exportFrameRenderer.anExportFrameCouldNotBeTransferred", {}),{telemetryCode:'snapshot_failed',telemetryStage:'prepare'})),
-    );
+    worker.addEventListener("messageerror", () => {
+      if (current()) this._fail(Object.assign(messageError(new Error(''), "errors.exportFrameRenderer.anExportFrameCouldNotBeTransferred", {}),{telemetryCode:'snapshot_failed',telemetryStage:'prepare'}));
+    });
   }
   _check() {
     if (this.failure) throw this.failure;
@@ -100,7 +110,9 @@ export class ExportFrameRenderer {
       this.pending.reject(error);
       this.pending = null;
     }
-    this.worker?.terminate();
+    const worker = this.worker;
+    this.worker = null;
+    this._release(worker);
     this.canvas.width = this.canvas.height = 1;
   }
   _request(operation, payload = {}) {

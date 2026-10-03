@@ -205,7 +205,7 @@ mod tests {
 
     /// Layer sizes as the renderer plans them for a 400×300 view.
     fn sizes(list: &DrawList) -> Vec<[u32; 2]> {
-        let view = crate::effects::plan::View { matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], size: [400, 300], zoom: 1.0, pan: [0.0; 2], camera_view: false, max_texture: 8192 };
+        let view = crate::effects::plan::View { matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], size: [400, 300], zoom: 1.0, pan: [0.0; 2], stretch: 1.0, camera_view: false, camera_limit: 2048.0, max_texture: 8192 };
         crate::effects::plan::plan(list, &view).iter().map(|p| p.size()).collect()
     }
 

@@ -37,11 +37,12 @@ mod view;
 
 pub use images::{decode_images, DecodedImage};
 pub use present::read_frame;
-pub use view::ViewParams;
+pub use view::{ViewParams, CAMERA_PREVIEW_LIMIT};
 
 use isolation::LayerAtlas;
 use resources::{buffer, prims_bytes, GpuPrim, Table};
 
+/// Samples per pixel of smooth edges (triangles; analytic shapes cover by distance).
 pub(crate) const SAMPLES: u32 = 4;
 pub(crate) const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 pub(crate) const MAX_LAYER_PAGES: u32 = 8;
@@ -70,6 +71,18 @@ pub struct Stats {
     pub glyph_masks: u32,
     pub glyph_masks_filled: u32,
     pub glyph_bytes: u64,
+}
+
+/// How a renderer covers shape edges.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edges {
+    /// Antialiased: four samples a pixel, analytic shapes covered by distance (the editor's
+    /// WebGPU renderer, and exports' Smooth edges and Smooth sprites).
+    Smooth,
+    /// Aliased, as Pivot's "No smoothing" exports: one sample a pixel at its centre, every
+    /// shape fully in or out, lone glyphs from their outlines, layers and drawing cels
+    /// resampled to the nearest texel. Opacity is kept. See `docs/export-sampling.md`.
+    Crisp,
 }
 
 pub struct Renderer {
@@ -125,6 +138,9 @@ pub struct Renderer {
     pub(crate) depth_faces: Vec<(u32, u32)>,
     pub(crate) prim_shader: wgpu::ShaderModule,
     pub(crate) prim_layout: wgpu::PipelineLayout,
+    /// Samples per pixel of the frame and layer passes: [`SAMPLES`], or 1 for [`Edges::Crisp`].
+    pub(crate) samples: u32,
+    pub(crate) crisp: bool,
     pub stats: Stats,
 }
 
@@ -178,6 +194,11 @@ impl Renderer {
 
     pub fn device(&self) -> &wgpu::Device {
         &self.device
+    }
+
+    /// How this renderer covers edges.
+    pub fn edges(&self) -> Edges {
+        if self.crisp { Edges::Crisp } else { Edges::Smooth }
     }
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue

@@ -23,6 +23,11 @@ try {
     acceptDownloads: true,
   });
   page.on("pageerror", (error) => errors.push(error.message));
+  // These checks compare the app's exports with the JavaScript export worker's own pixels
+  // (tests/export-sampling.browser.mjs) and drive that worker. Documents the engine draws
+  // export through the engine's renderer (src/engine/engine-export.mjs), checked by
+  // tests/engine-export.test.mjs and scripts/engine-export-parity.mjs; here it is switched off.
+  await page.addInitScript(() => localStorage.setItem("stykanimate.engine.export", "off"));
   await page.goto(service.origin);
   await page.waitForFunction(() => window.styk?.ready);
   await page.evaluate(async () => {

@@ -290,6 +290,18 @@ export async function createStageRenderer(canvas, options, create) {
       dirty.structural ||= Boolean(detail.structural);
       dirty.definition ||= Boolean(detail.definition);
     },
+    /**
+     * For an export (engine-export.mjs): why the engine cannot draw `report`, or null once
+     * its properties, figure definitions and backgrounds are current, edits in place and
+     * published drawings included (its frames come through the playback adapter first).
+     * Throws `engine_busy` while a background commit runs: the caller tries again.
+     */
+    prepareExport(report, revision) {
+      const reason = refusal({report, revision, geometry: true});
+      if (reason) return reason;
+      try { syncDefinitions({report, revision, artworkRevision: 'export'}); return null; }
+      catch (error) { side.definitions = null; if (error?.code === 'engine_busy') throw error; return String(error?.message ?? error); }
+    },
     /** The engine side of the stage, for the playback adapter and tests. */
     get engineSide() { return side; },
     destroy() { show(false); legacy.destroy(); },
