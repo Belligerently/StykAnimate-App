@@ -4,7 +4,7 @@
 //! own evaluation of it (`node engine/tools/ik-fixtures.mjs` regenerates
 //! them). The engine must draw the same joints and primitives, within the
 //! tolerance `styk compare` uses, and the solver functions must return what
-//! the JavaScript returns for the recorded inputs.
+//! the JavaScript returns for the recorded inputs, bit for bit.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -106,7 +106,7 @@ fn fixtures_with_pins_depend_on_the_solver() {
 /// what the editor's solver derived, unrounded: the same angles and lengths
 /// to nine digits, and the same number of iterations per controller.
 #[test]
-fn solved_poses_match_the_editor_closely() {
+fn solved_poses_match_the_editor_exactly() {
     let mut controllers = 0;
     for name in fixtures() {
         if NESTED.contains(&name.as_str()) {
@@ -140,12 +140,12 @@ fn solved_poses_match_the_editor_closely() {
                 let angles = object.get("angles").and_then(Value::numbers).expect("angles");
                 assert_eq!(ours.angles.len(), angles.len(), "{what}: angles");
                 for (a, b) in ours.angles.iter().zip(&angles) {
-                    near(*a, *b, &what);
+                    exact(*a, *b, &what);
                 }
                 let lengths = object.get("lengths").and_then(Value::numbers);
                 assert_eq!(ours.lengths.is_some(), lengths.is_some(), "{what}: stretched lengths");
                 for (a, b) in ours.lengths.iter().flatten().zip(lengths.iter().flatten()) {
-                    near(*a, *b, &what);
+                    exact(*a, *b, &what);
                 }
                 let outcomes = object.get("controllers").and_then(Value::as_arr).unwrap_or(&[]);
                 assert_eq!(ours.results.len(), outcomes.len(), "{what}: controllers");
@@ -155,7 +155,7 @@ fn solved_poses_match_the_editor_closely() {
                     let (_, result) = ours.results.iter().find(|(id, _)| *id == handle).unwrap_or_else(|| panic!("{what}: missing"));
                     assert_eq!(Some(result.conflict), outcome.get("conflict").and_then(Value::as_bool), "{what}: conflict");
                     assert_eq!(result.iterations as f64, number(outcome, "iterations"), "{what}: iterations");
-                    near(result.stretch, number(outcome, "stretch"), &what);
+                    exact(result.stretch, number(outcome, "stretch"), &what);
                     assert!((result.error - number(outcome, "error")).abs() <= 1e-7, "{what}: error {} != {}", result.error, number(outcome, "error"));
                     controllers += 1;
                 }
@@ -188,20 +188,21 @@ fn reference(v: Option<&Value>) -> Option<BendReference> {
     Some(BendReference { side: number(v, "side"), angle: number(v, "angle"), axis: number(v, "axis"), ratio: number(v, "ratio"), shape: v.get("shape").and_then(Value::numbers) })
 }
 
-fn near(a: f64, b: f64, what: &str) {
-    assert!((a - b).abs() <= 1e-9 * (1.0 + b.abs()), "{what}: {a} != {b}");
+/// The solver's arithmetic is the editor's, with V8's `Math` (styk-math): bit for bit.
+fn exact(a: f64, b: f64, what: &str) {
+    assert!(a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan()), "{what}: {a} != {b}");
 }
 
 fn same_reference(ours: Option<&BendReference>, theirs: Option<&BendReference>, what: &str) {
     assert_eq!(ours.is_some(), theirs.is_some(), "{what}: bend reference");
     let (Some(a), Some(b)) = (ours, theirs) else { return };
-    near(a.side, b.side, what);
-    near(a.angle, b.angle, what);
-    near(a.axis, b.axis, what);
-    near(a.ratio, b.ratio, what);
+    exact(a.side, b.side, what);
+    exact(a.angle, b.angle, what);
+    exact(a.axis, b.axis, what);
+    exact(a.ratio, b.ratio, what);
     assert_eq!(a.shape.as_ref().map(Vec::len), b.shape.as_ref().map(Vec::len), "{what}: shape");
     for (x, y) in a.shape.iter().flatten().zip(b.shape.iter().flatten()) {
-        near(*x, *y, what);
+        exact(*x, *y, what);
     }
 }
 
@@ -220,10 +221,10 @@ fn point_solver_matches_the_recorded_javascript_results() {
         let solved = ik::solve_points(&mut chain, &lengths, [target[0], target[1]], number(case, "bendDirection"), reference(case.get("bendReference")).as_ref());
         let expected = case.get("result").unwrap();
         assert_eq!(solved.iterations as f64, number(expected, "iterations"), "{what}: iterations");
-        near(solved.error, number(expected, "error"), &what);
+        exact(solved.error, number(expected, "error"), &what);
         for (ours, theirs) in chain.iter().zip(points(expected.get("points").unwrap())) {
-            near(ours[0], theirs[0], &what);
-            near(ours[1], theirs[1], &what);
+            exact(ours[0], theirs[0], &what);
+            exact(ours[1], theirs[1], &what);
         }
         same_reference(solved.bend_reference.as_ref(), reference(expected.get("bendReference")).as_ref(), &what);
     }
@@ -245,39 +246,39 @@ fn interpolation_matches_the_recorded_javascript_results() {
             let e = &theirs.controllers[id];
             let what = format!("{what}, handle {id}");
             assert_eq!((c.enabled, c.pinned, c.allow_stretch, c.chain_length), (e.enabled, e.pinned, e.allow_stretch, e.chain_length), "{what}");
-            near(c.target.x, e.target.x, &what);
-            near(c.target.y, e.target.y, &what);
-            near(c.target.rotation, e.target.rotation, &what);
+            exact(c.target.x, e.target.x, &what);
+            exact(c.target.y, e.target.y, &what);
+            exact(c.target.rotation, e.target.rotation, &what);
             assert_eq!(c.followers.keys().collect::<Vec<_>>(), e.followers.keys().collect::<Vec<_>>(), "{what}: followers");
             for (child, angle) in &c.followers {
-                near(*angle, e.followers[child], &what);
+                exact(*angle, e.followers[child], &what);
             }
             assert_eq!(c.joined_followers.is_some(), e.joined_followers.is_some(), "{what}: joined followers");
             for (uid, children) in c.joined_followers.iter().flatten() {
                 for (child, angle) in children {
-                    near(*angle, e.joined_followers.as_ref().unwrap()[uid][child], &what);
+                    exact(*angle, e.joined_followers.as_ref().unwrap()[uid][child], &what);
                 }
             }
             same_reference(c.bend_reference.as_ref(), e.bend_reference.as_ref(), &what);
             assert_eq!(c.spatial_followers.is_some(), e.spatial_followers.is_some(), "{what}: spatial followers");
             for (child, q) in c.spatial_followers.iter().flatten() {
                 for (x, y) in q.iter().zip(e.spatial_followers.as_ref().unwrap()[child]) {
-                    near(*x, y, &what);
+                    exact(*x, y, &what);
                 }
             }
             for (uid, children) in c.joined_spatial_followers.iter().flatten() {
                 for (child, q) in children {
                     for (x, y) in q.iter().zip(e.joined_spatial_followers.as_ref().unwrap()[uid][child]) {
-                        near(*x, y, &what);
+                        exact(*x, y, &what);
                     }
                 }
             }
             assert_eq!(c.spatial_target.is_some(), e.spatial_target.is_some(), "{what}: spatial target");
             if let (Some(s), Some(t)) = (&c.spatial_target, &e.spatial_target) {
-                near(s.depth, t.depth, &what);
-                near(s.swivel, t.swivel, &what);
+                exact(s.depth, t.depth, &what);
+                exact(s.swivel, t.swivel, &what);
                 for (x, y) in s.pole.iter().zip(t.pole).chain(s.normals.iter().flatten().flatten().zip(t.normals.into_iter().flatten().flatten())) {
-                    near(*x, y, &what);
+                    exact(*x, y, &what);
                 }
             }
         }

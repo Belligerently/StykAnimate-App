@@ -10,6 +10,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use styk_math::{cos, sin};
+
 use crate::doc::{Figure, Object};
 use crate::rig::{quat_multiply, spatial_point, Context, Input, RigPlan, Space, Spatial, State};
 
@@ -170,9 +172,9 @@ impl<'a> RigContext<'a> {
                 }
             };
             let b = p.bend;
-            let span = p.length * if b.abs() < 1e-8 { 1.0 } else { 2.0 * (b / 2.0).sin() / b };
+            let span = p.length * if b.abs() < 1e-8 { 1.0 } else { 2.0 * sin(b / 2.0) / b };
             let a = p.angle + b / 2.0;
-            points.at[i] = Some(p.handle.unwrap_or([p.start[0] + a.cos() * span, p.start[1] + a.sin() * span]));
+            points.at[i] = Some(p.handle.unwrap_or([p.start[0] + cos(a) * span, p.start[1] + sin(a) * span]));
         }
     }
 
@@ -424,7 +426,7 @@ pub fn authored_rig_target(start: [f64; 2], space: Option<Space>, bend: f64, tar
     let Some(space) = space else { return target };
     let (mut dx, mut dy) = (target[0] - start[0], target[1] - start[1]);
     if let Some((follow_axis, follow_scale)) = space.follow {
-        let (c, s) = (follow_axis.cos(), follow_axis.sin());
+        let (c, s) = (cos(follow_axis), sin(follow_axis));
         let mut side = -dx * s + dy * c;
         let along = if follow_scale.abs() < 1e-4 && bend.abs() < 1e-7 {
             // An edge-on fixed-length control has lost one visible coordinate.
@@ -432,7 +434,7 @@ pub fn authored_rig_target(start: [f64; 2], space: Option<Space>, bend: f64, tar
             // nearest branch.
             let radius = length.abs();
             side = (-radius).max(radius.min(side));
-            let prior = length * (angle + space.rotation - follow_axis).cos();
+            let prior = length * cos(angle + space.rotation - follow_axis);
             (if prior < 0.0 { -1.0 } else { 1.0 }) * (radius * radius - side * side).max(0.0).sqrt()
         } else {
             // The JavaScript throws below 1e-8; `solveObjectIK` keeps the
@@ -442,6 +444,6 @@ pub fn authored_rig_target(start: [f64; 2], space: Option<Space>, bend: f64, tar
         dx = along * c - side * s;
         dy = along * s + side * c;
     }
-    let (c, s) = (space.rotation.cos(), space.rotation.sin());
+    let (c, s) = (cos(space.rotation), sin(space.rotation));
     [start[0] + dx * c + dy * s, start[1] - dx * s + dy * c]
 }

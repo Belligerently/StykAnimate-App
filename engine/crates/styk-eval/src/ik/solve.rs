@@ -5,6 +5,8 @@
 
 use std::f64::consts::PI;
 
+use styk_math::{atan2, cos, sin};
+
 use super::{hypot, sign, BendReference, EPS};
 
 /// What a point solve reports (`{iterations, error, bendReference}`).
@@ -38,13 +40,13 @@ pub fn bend_reference(points: &[[f64; 2]], lengths: &[f64], previous: Option<&Be
     BendReference {
         side: if cross.abs() > total * total * 1e-7 { sign(cross) } else { previous.map(|p| p.side).unwrap_or(1.0) },
         angle: if hypot(pole[0] - base[0], pole[1] - base[1]) > EPS {
-            (pole[1] - base[1]).atan2(pole[0] - base[0])
+            atan2(pole[1] - base[1], pole[0] - base[0])
         } else {
             previous.map(|p| p.angle).unwrap_or(0.0)
         },
-        axis: if distance > EPS { dy.atan2(dx) } else { previous.map(|p| p.axis).unwrap_or(0.0) },
+        axis: if distance > EPS { atan2(dy, dx) } else { previous.map(|p| p.axis).unwrap_or(0.0) },
         ratio: if total > EPS { distance / total } else { 0.0 },
-        shape: (lengths.len() > 2).then(|| (0..lengths.len()).map(|i| (points[i + 1][1] - points[i][1]).atan2(points[i + 1][0] - points[i][0])).collect()),
+        shape: (lengths.len() > 2).then(|| (0..lengths.len()).map(|i| atan2(points[i + 1][1] - points[i][1], points[i + 1][0] - points[i][0])).collect()),
     }
 }
 
@@ -75,17 +77,17 @@ pub fn solve_points(points: &mut [[f64; 2]], lengths: &[f64], target: [f64; 2], 
         && let Some(shape) = reference.as_ref().and_then(|r| r.shape.as_ref()).filter(|shape| shape.len() == n)
     {
         for i in 0..n {
-            points[i + 1] = [points[i][0] + shape[i].cos() * lengths[i], points[i][1] + shape[i].sin() * lengths[i]];
+            points[i + 1] = [points[i][0] + cos(shape[i]) * lengths[i], points[i][1] + sin(shape[i]) * lengths[i]];
         }
     }
     let (dx, dy) = (target[0] - base[0], target[1] - base[1]);
     let distance = hypot(dx, dy);
     let fallback = match &reference {
         Some(r) => r.axis,
-        None => (points[n][1] - base[1]).atan2(points[n][0] - base[0]),
+        None => atan2(points[n][1] - base[1], points[n][0] - base[0]),
     };
-    let direction = if distance > fold_tolerance { dy.atan2(dx) } else { fallback };
-    let (ux, uy) = (direction.cos(), direction.sin());
+    let direction = if distance > fold_tolerance { atan2(dy, dx) } else { fallback };
+    let (ux, uy) = (cos(direction), sin(direction));
     // Preserve the branch of the solved limb, not the side of the old knee
     // relative to each new target position.
     if let Some(r) = &reference {
@@ -105,14 +107,14 @@ pub fn solve_points(points: &mut [[f64; 2]], lengths: &[f64], target: [f64; 2], 
         if let Some(reference) = &reference {
             // Consider the other branch only where it can preserve continuity:
             // near extension, or when the target path passes through the fold.
-            let old_x = reference.axis.cos() * reference.ratio * total;
-            let old_y = reference.axis.sin() * reference.ratio * total;
+            let old_x = cos(reference.axis) * reference.ratio * total;
+            let old_y = sin(reference.axis) * reference.ratio * total;
             let (vx, vy) = (dx - old_x, dy - old_y);
             let travel2 = vx * vx + vy * vy;
             let t = if travel2 > EPS { 0f64.max(1f64.min(-(old_x * vx + old_y * vy) / travel2)) } else { 0.0 };
             let through_fold = hypot(old_x + t * vx, old_y + t * vy) < total * 0.04 && old_x * dx + old_y * dy <= 0.0;
             if magnitude < total * 0.02 || through_fold {
-                let (pole_x, pole_y) = (reference.angle.cos(), reference.angle.sin());
+                let (pole_x, pole_y) = (cos(reference.angle), sin(reference.angle));
                 // Difference in squared knee travel, normalized by link length. A
                 // dead band keeps floating-point noise from flipping sides.
                 let improvement = -4.0 * magnitude / a * bend_direction * (-uy * pole_x + ux * pole_y);
@@ -123,7 +125,7 @@ pub fn solve_points(points: &mut [[f64; 2]], lengths: &[f64], target: [f64; 2], 
             if distance <= fold_tolerance && (a - b).abs() < EPS {
                 // Use the limit of the approaching branch at an exactly folded limb.
                 let angle = if reference.ratio > 1e-6 { reference.axis + reference.side * PI / 2.0 } else { reference.angle };
-                points[1] = [base[0] + angle.cos() * a, base[1] + angle.sin() * a];
+                points[1] = [base[0] + cos(angle) * a, base[1] + sin(angle) * a];
                 points[2] = base;
                 return Solved { iterations: 0, error: distance, bend_reference: Some(BendReference { angle, ratio: 0.0, ..reference.clone() }) };
             }
@@ -157,7 +159,7 @@ pub fn solve_points(points: &mut [[f64; 2]], lengths: &[f64], target: [f64; 2], 
         let cross = points[1..n].iter().any(|p| ((p[0] - base[0]) * uy - (p[1] - base[1]) * ux).abs() > total * 1e-7);
         if !cross {
             for (i, point) in points.iter_mut().enumerate().take(n).skip(1) {
-                let offset = (PI * i as f64 / n as f64).sin() * total * 0.05 * bend_direction;
+                let offset = sin(PI * i as f64 / n as f64) * total * 0.05 * bend_direction;
                 *point = [point[0] - uy * offset, point[1] + ux * offset];
             }
         }

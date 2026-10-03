@@ -210,6 +210,9 @@ impl Editor {
         let (x, y) = (at("root_x", root.map(|r| r[0])), at("root_y", root.map(|r| r[1])));
         copy.set("root_x", Value::Num(x));
         copy.set("root_y", Value::Num(y));
+        // Every controller target of the copy moves with it.
+        let source = Value::object(copy.clone());
+        crate::ik::translate_targets(&mut copy, 24.0, 24.0, &source, false);
         copy.set("join", Value::Null);
         let copy = Value::object(copy);
         self.transaction("Duplicate figure", |editor| {

@@ -16,6 +16,7 @@ mod authored;
 mod figures;
 mod frame;
 mod history;
+mod ik;
 mod pose;
 mod record;
 pub mod replay;
@@ -344,6 +345,9 @@ impl Editor {
         if let Some(reason) = self.unported_document() {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
+        if let Some(reason) = self.ik_gate(method)? {
+            return Err(EditError::Unported(format!("{method} {reason}")));
+        }
         match method {
             "select" | "@select" => {
                 // `select(uid, {toggle, add})` is `select(uid, -1, {toggle, add})`.
@@ -427,11 +431,7 @@ impl Editor {
         if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
             return Some("with animation origins");
         }
-        let sources = styk.and_then(|s| s.get("frameSources")).and_then(Value::as_obj).map(|table| table.values().to_vec()).unwrap_or_default();
-        let controlled = |frame: &Value| list(frame.get("objects")).iter().any(|object| object.get("_stykIK").is_some());
-        if list(self.report.get("keyframes")).iter().chain(&sources).any(controlled) {
-            return Some("with inverse kinematics");
-        }
+        // IK controllers are gated per call, on the frame on show (`ik_gate`).
         None
     }
 

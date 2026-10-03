@@ -15,19 +15,24 @@ use crate::rig::{Rig, Spatial, Weighted};
 
 use super::object::{solve_object, Outcome, Pose, Skeleton, Solution};
 use super::rig::{plain_plan, RigGroup, RigSources};
-use super::{has_pinned, Controller, Table};
+use super::{has_pinned, Angles, Controller, Table};
 
 /// `ikComponents(frame)`: object slots grouped by the joins that connect them,
 /// each group in breadth-first order from its lowest slot.
 pub fn components(frame: &Frame) -> Vec<Vec<usize>> {
-    let count = frame.objects.len();
+    components_of(&frame.objects.iter().map(|o| o.join.map(|join| join.slot as usize)).collect::<Vec<_>>())
+}
+
+/// [`components`] from each slot's join target.
+pub fn components_of(joins: &[Option<usize>]) -> Vec<Vec<usize>> {
+    let count = joins.len();
     let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); count];
-    for (slot, object) in frame.objects.iter().enumerate() {
-        if let Some(join) = object.join
-            && (join.slot as usize) < count
+    for (slot, join) in joins.iter().enumerate() {
+        if let Some(target) = *join
+            && target < count
         {
-            neighbors[slot].push(join.slot as usize);
-            neighbors[join.slot as usize].push(slot);
+            neighbors[slot].push(target);
+            neighbors[target].push(slot);
         }
     }
     let mut seen = vec![false; count];
@@ -54,10 +59,17 @@ pub fn components(frame: &Frame) -> Vec<Vec<usize>> {
 }
 
 /// A bone of the temporary skeleton: where it came from (`entries`).
-struct Entry {
-    slot: usize,
-    index: usize,
-    scale: f64,
+#[derive(Clone, Copy, Debug)]
+pub struct Entry {
+    /// The object slot of the figure it belongs to.
+    pub slot: usize,
+    /// Its index among that figure's segments.
+    pub index: usize,
+    /// Its handle id in that figure.
+    pub handle: u32,
+    /// The figure's identity.
+    pub uid: u32,
+    pub scale: f64,
 }
 
 /// `remapRigReferences`: a rig relationship with its handle references moved
@@ -149,7 +161,7 @@ impl<'a> Graph<'a> {
                 let id = graph.entries.len() as u32 + 1;
                 let scale = source.scale;
                 ids.insert(s.id, id);
-                graph.entries.push(Entry { slot, index, scale });
+                graph.entries.push(Entry { slot, index, handle: s.id, uid: source.uid, scale });
                 // Parents and rig references are filled in once every figure has its ids.
                 graph.segments.push(Segment { id, parent: 0, length: s.length * scale, bend: 0.0, rig: None, ..s.clone() });
                 graph.angles.push(source.angles.get(index).copied().unwrap_or(s.angle));
@@ -243,80 +255,180 @@ fn map_controller(graph: &Graph, skeleton: &Skeleton, by_uid: &HashMap<u32, usiz
     mapped
 }
 
-/// Solves one assembly. `None` when it cannot be compiled or no pinned
-/// controller ends at one of its handles.
-fn solve_component<'a>(frame: &'a Frame, slots: &[usize], figure_of: &dyn Fn(usize) -> Option<&'a Arc<Figure>>) -> Option<Vec<(usize, Solution)>> {
-    let graph = Graph::new(frame, slots, figure_of)?;
-    let plan = plan_figure(&graph.segments, &graph.polygons);
-    // With rig relationships anywhere in the assembly, every bone evaluates
-    // through the figure it came from (`figure._rigSources`).
-    let sources = plan.rig.is_some().then(|| RigSources {
-        groups: slots
+/// `joinedIKGraph(report, frame, slots)`: one assembly compiled into a temporary
+/// skeleton, with its pose and its controllers in the skeleton's ids, and the way
+/// back to the figures (`scatter`). Geometry solves it once; editing also maps a
+/// controller of its own into it and solves with that (`poseGraph`).
+pub struct Assembly<'a> {
+    frame: &'a Frame,
+    /// The assembly's object slots, as given.
+    pub slots: Vec<usize>,
+    graph: Graph<'a>,
+    plan: crate::doc::FigurePlan,
+    sources: Option<RigSources<'a>>,
+    by_uid: HashMap<u32, usize>,
+    /// `graph.object._stykIK`: every controller of the assembly, mapped.
+    pub controllers: Table,
+    /// Skeleton id → the slot and handle of the controller's owner.
+    owners: HashMap<u32, (usize, u32)>,
+}
+
+/// The followers of one controller's solve: by the owner's handles, and by the
+/// identity and handles of the figures joined to it.
+pub type Followers = (Angles, BTreeMap<u32, Angles>);
+
+/// What [`Assembly::scatter`] returns for one figure: its derived pose, and per
+/// controller it owns the followers of the solve, in its own handles and in those of
+/// the figures joined to it (`followers`, `joinedFollowers`).
+pub struct Scattered {
+    pub slot: usize,
+    pub solution: Solution,
+    pub followers: BTreeMap<u32, Followers>,
+}
+
+impl<'a> Assembly<'a> {
+    /// `None` when the assembly cannot be compiled (a movieclip, a missing figure,
+    /// a cyclic join or a join to a missing handle).
+    pub fn new(frame: &'a Frame, slots: &[usize], figure_of: &dyn Fn(usize) -> Option<&'a Arc<Figure>>) -> Option<Assembly<'a>> {
+        let graph = Graph::new(frame, slots, figure_of)?;
+        let plan = plan_figure(&graph.segments, &graph.polygons);
+        // With rig relationships anywhere in the assembly, every bone evaluates
+        // through the figure it came from (`figure._rigSources`).
+        let sources = plan.rig.is_some().then(|| RigSources {
+            groups: slots
+                .iter()
+                .map(|&slot| {
+                    let figure = graph.figures[&slot];
+                    RigGroup {
+                        figure,
+                        object: &frame.objects[slot],
+                        ids: graph.maps[&slot].clone(),
+                        root_id: graph.roots[&slot],
+                        plan: figure.plan.rig.clone().unwrap_or_else(|| Arc::new(plain_plan(figure.segments.len()))),
+                    }
+                })
+                .collect(),
+            of: {
+                let group_of: HashMap<usize, u32> = slots.iter().enumerate().map(|(g, &slot)| (slot, g as u32)).collect();
+                graph.entries.iter().map(|e| (group_of[&e.slot], e.index as u32)).collect()
+            },
+        });
+        let by_uid: HashMap<u32, usize> = slots.iter().map(|&slot| (frame.objects[slot].uid, slot)).collect();
+        let mut assembly = Assembly { frame, slots: slots.to_vec(), graph, plan, sources, by_uid, controllers: Table::default(), owners: HashMap::new() };
+        let mut controllers = BTreeMap::new();
+        for &slot in slots {
+            for (&handle, c) in frame.objects[slot].ik.iter().flat_map(|table| table.controllers.iter()) {
+                let Some(id) = assembly.id(slot, handle) else { continue };
+                controllers.insert(id, assembly.map_controller(slot, id, c));
+                assembly.owners.insert(id, (slot, handle));
+            }
+        }
+        assembly.controllers = Table { controllers };
+        Some(assembly)
+    }
+
+    /// The temporary skeleton.
+    pub fn skeleton(&self) -> Skeleton<'_> {
+        Skeleton { segments: &self.graph.segments, plan: &self.plan, polygons: &self.graph.polygons, sources: self.sources.as_ref() }
+    }
+
+    /// The skeleton id of `handle` of the figure in `slot` (`graph.maps.get(slot).get(handle)`).
+    pub fn id(&self, slot: usize, handle: u32) -> Option<u32> {
+        self.graph.maps.get(&slot)?.get(&handle).copied()
+    }
+
+    /// Where the skeleton's bone `index` came from (`graph.entries[index]`).
+    pub fn entry(&self, index: usize) -> Entry {
+        self.graph.entries[index]
+    }
+
+    /// The pose's scaled lengths (`graph.object.lengths`), which `poseGraph` resets to
+    /// those the gesture started with.
+    pub fn lengths_mut(&mut self) -> &mut [f64] {
+        &mut self.graph.lengths
+    }
+
+    /// `graph.chain(slot, handle, length)`: skeleton indices, base first.
+    pub fn chain(&self, slot: usize, handle: u32, length: u32) -> Vec<usize> {
+        self.id(slot, handle).map(|id| self.skeleton().chain(id, length)).unwrap_or_default()
+    }
+
+    /// `graph.mapController(slot, handle, controller)`, with `id` the handle's skeleton id.
+    pub fn map_controller(&self, slot: usize, id: u32, c: &Controller) -> Controller {
+        map_controller(&self.graph, &self.skeleton(), &self.by_uid, slot, id, c)
+    }
+
+    /// `graph.object`: the assembly's pose (unit scale, scaled lengths).
+    fn pose(&self) -> Pose<'_> {
+        let graph = &self.graph;
+        Pose {
+            scale: 1.0,
+            angles: &graph.angles,
+            lengths: Some(&graph.lengths),
+            bends: Some(&graph.bends),
+            mirror: false,
+            figure_angle: graph.angles.first().copied().unwrap_or(0.0) - graph.segments.first().map(|s| s.angle).unwrap_or(0.0),
+            shape: None,
+        }
+    }
+
+    /// The pose's angles by skeleton index (`graph.object.angles`).
+    pub fn angles(&self) -> &[f64] {
+        &self.graph.angles
+    }
+
+    /// `graph.solve(controllers)`.
+    pub fn solve(&self, controllers: &Table) -> Option<Solution> {
+        solve_object(&self.skeleton(), &self.pose(), self.graph.root, controllers)
+    }
+
+    /// `graph.scatter(solution)`: each figure's derived pose in its own slots, ids and
+    /// scale, with the results of the controllers it owns. `controllers` are those the
+    /// solution was solved with: a result's followers are theirs (`ikFollowers`).
+    pub fn scatter(&self, solution: &Solution, controllers: &Table) -> Vec<Scattered> {
+        let graph = &self.graph;
+        let mut output: Vec<Scattered> = self
+            .slots
             .iter()
             .map(|&slot| {
-                let figure = graph.figures[&slot];
-                RigGroup {
-                    figure,
-                    object: &frame.objects[slot],
-                    ids: graph.maps[&slot].clone(),
-                    root_id: graph.roots[&slot],
-                    plan: figure.plan.rig.clone().unwrap_or_else(|| Arc::new(plain_plan(figure.segments.len()))),
-                }
+                let object: &Object = &self.frame.objects[slot];
+                let angles = graph.figures[&slot].segments.iter().enumerate().map(|(i, s)| object.angles.get(i).copied().unwrap_or(s.angle)).collect();
+                Scattered { slot, solution: Solution { angles, lengths: None, results: Vec::new() }, followers: BTreeMap::new() }
             })
-            .collect(),
-        of: {
-            let group_of: HashMap<usize, u32> = slots.iter().enumerate().map(|(g, &slot)| (slot, g as u32)).collect();
-            graph.entries.iter().map(|e| (group_of[&e.slot], e.index as u32)).collect()
-        },
-    });
-    let skeleton = Skeleton { segments: &graph.segments, plan: &plan, polygons: &graph.polygons, sources: sources.as_ref() };
-    let by_uid: HashMap<u32, usize> = slots.iter().map(|&slot| (frame.objects[slot].uid, slot)).collect();
-    let mut controllers = BTreeMap::new();
-    let mut owners: HashMap<u32, (usize, u32)> = HashMap::new();
-    for &slot in slots {
-        for (&handle, c) in frame.objects[slot].ik.iter().flat_map(|table| table.controllers.iter()) {
-            let Some(&id) = graph.maps[&slot].get(&handle) else { continue };
-            controllers.insert(id, map_controller(&graph, &skeleton, &by_uid, slot, id, c));
-            owners.insert(id, (slot, handle));
+            .collect();
+        let at: HashMap<usize, usize> = self.slots.iter().enumerate().map(|(k, &slot)| (slot, k)).collect();
+        for (i, entry) in graph.entries.iter().enumerate() {
+            let result = &mut output[at[&entry.slot]].solution;
+            result.angles[entry.index] = solution.angles[i];
+            if let Some(lengths) = &solution.lengths
+                && entry.scale != 0.0
+            {
+                let own = result.lengths.get_or_insert_with(|| vec![f64::NAN; graph.figures[&entry.slot].segments.len()]);
+                own[entry.index] = lengths[i] / entry.scale;
+            }
         }
-    }
-    let pose = Pose {
-        scale: 1.0,
-        angles: &graph.angles,
-        lengths: Some(&graph.lengths),
-        bends: Some(&graph.bends),
-        mirror: false,
-        figure_angle: graph.angles.first().copied().unwrap_or(0.0) - graph.segments.first().map(|s| s.angle).unwrap_or(0.0),
-        shape: None,
-    };
-    let solution = solve_object(&skeleton, &pose, graph.root, &Table { controllers })?;
-    // `scatter(solution)`: back to each figure's own slots, ids and scale.
-    let mut output: Vec<(usize, Solution)> = slots
-        .iter()
-        .map(|&slot| {
-            let object: &Object = &frame.objects[slot];
-            let figure = graph.figures[&slot];
-            let angles = figure.segments.iter().enumerate().map(|(i, s)| object.angles.get(i).copied().unwrap_or(s.angle)).collect();
-            (slot, Solution { angles, lengths: None, results: Vec::new() })
-        })
-        .collect();
-    let at: HashMap<usize, usize> = slots.iter().enumerate().map(|(k, &slot)| (slot, k)).collect();
-    for (i, entry) in graph.entries.iter().enumerate() {
-        let result = &mut output[at[&entry.slot]].1;
-        result.angles[entry.index] = solution.angles[i];
-        if let Some(lengths) = &solution.lengths
-            && entry.scale != 0.0
-        {
-            let own = result.lengths.get_or_insert_with(|| vec![f64::NAN; graph.figures[&entry.slot].segments.len()]);
-            own[entry.index] = lengths[i] / entry.scale;
+        let skeleton = self.skeleton();
+        for (id, outcome) in &solution.results {
+            let Some(&(slot, handle)) = self.owners.get(id) else { continue };
+            let chain = outcome.chain.iter().map(|&i| graph.entries[i].index).collect();
+            if !outcome.conflict
+                && let Some(c) = controllers.get(*id)
+            {
+                let (mut own, mut joined) = (Angles::new(), BTreeMap::<u32, Angles>::new());
+                for (child, angle) in skeleton.followers(&graph.angles, *id, c) {
+                    let entry = graph.entries[child as usize - 1];
+                    if entry.slot == slot {
+                        own.insert(entry.handle, angle);
+                    } else {
+                        joined.entry(entry.uid).or_default().insert(entry.handle, angle);
+                    }
+                }
+                output[at[&slot]].followers.insert(handle, (own, joined));
+            }
+            output[at[&slot]].solution.results.push((handle, Outcome { chain, ..outcome.clone() }));
         }
+        output
     }
-    for (id, outcome) in solution.results {
-        let Some(&(slot, handle)) = owners.get(&id) else { continue };
-        let chain = outcome.chain.iter().map(|&i| graph.entries[i].index).collect();
-        output[at[&slot]].1.results.push((handle, Outcome { chain, ..outcome }));
-    }
-    Some(output)
 }
 
 /// `solveJoinedIK(report, frame)`: the derived pose of every object that
@@ -331,9 +443,9 @@ pub fn solve<'a>(frame: &'a Frame, figure_of: &dyn Fn(usize) -> Option<&'a Arc<F
         if slots.len() < 2 || !slots.iter().any(|&slot| has_pinned(&frame.objects[slot])) {
             continue;
         }
-        if let Some(solved) = solve_component(frame, &slots, figure_of) {
-            output.extend(solved);
-        }
+        let Some(assembly) = Assembly::new(frame, &slots, figure_of) else { continue };
+        let Some(solution) = assembly.solve(&assembly.controllers) else { continue };
+        output.extend(assembly.scatter(&solution, &assembly.controllers).into_iter().map(|s| (s.slot, s.solution)));
     }
     output
 }

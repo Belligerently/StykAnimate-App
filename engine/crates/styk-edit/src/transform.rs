@@ -18,12 +18,13 @@ pub(crate) const NOT_FINITE: &str = "errors.editorCamera.mustBeFinite";
 pub(crate) struct MoveOptions {
     pub from_start: bool,
     pub detach_external: bool,
+    pub move_pins: bool,
 }
 
 impl MoveOptions {
     pub(crate) fn from_value(options: &Value) -> MoveOptions {
         let flag = |key| options.get(key).is_some_and(Value::truthy);
-        MoveOptions { from_start: flag("fromStart"), detach_external: flag("detachExternal") }
+        MoveOptions { from_start: flag("fromStart"), detach_external: flag("detachExternal"), move_pins: flag("movePins") }
     }
 }
 
@@ -40,7 +41,7 @@ impl Editor {
         self.selection.uid = uid(&object);
         self.tick = rows(&self.report).get(self.frame_index).map_or(0.0, |row| row.start);
         let objects = self.frame_objects();
-        let slots = resolve_join_selection(&objects, &self.selection.uids, translation)?;
+        let slots = Editor::ik_pose_slots(&objects, resolve_join_selection(&objects, &self.selection.uids, translation)?);
         self.drag = Some(Drag {
             label: label.to_string(),
             translation,
@@ -70,6 +71,12 @@ impl Editor {
 
     /// `_objectEdit`: runs `mutate` inside the current gesture, or as a gesture of its own.
     pub(crate) fn object_edit(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+        self.object_edit_with(label, false, mutate)
+    }
+
+    /// `_objectEdit(label, mutate, {posed})`: a `posed` edit changes the pose as it is
+    /// displayed, so pinned IK solutions are baked into the gesture's figures first.
+    pub(crate) fn object_edit_with(&mut self, label: &str, posed: bool, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
         if self.object()?.is_none() {
             return Ok(false);
         }
@@ -77,8 +84,8 @@ impl Editor {
         if !active {
             self.begin_drag(label, false)?;
         }
-        let result = mutate(self).and_then(|()| {
-            self.touch();
+        let result = (if posed { self.bake_pinned() } else { Ok(()) }).and_then(|()| mutate(self)).and_then(|()| {
+            self.touch()?;
             if !active { self.commit_drag().map(|_| ()) } else { Ok(()) }
         });
         if let Err(error) = result {
@@ -88,8 +95,9 @@ impl Editor {
         Ok(true)
     }
 
-    /// `touch`: marks the gesture changed and announces the live edit.
-    fn touch(&mut self) {
+    /// `touch`: marks the gesture changed, remembers how pinned limbs now bend, and
+    /// announces the live edit.
+    fn touch(&mut self) -> Result<(), EditError> {
         let changed = match self.drag.as_mut() {
             Some(drag) => {
                 drag.changed = true;
@@ -101,8 +109,10 @@ impl Editor {
                 self.selection.uid.into_iter().collect()
             }
         };
+        self.remember_bends()?;
         let live = self.drag.is_some();
         self.emit("edit", vec![("live", Value::Bool(live)), ("changedUids", uid_array(&changed))]);
+        Ok(())
     }
 
     pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> {
@@ -187,10 +197,20 @@ impl Editor {
             }
             for &slot in &affected {
                 let object = editor.frame_objects().swap_remove(slot);
+                let id = uid(&object).unwrap();
+                // Pinned targets go with the figure only when asked (`movePins`); `fromStart`
+                // puts them back where the gesture found them first.
+                if options.move_pins || options.from_start {
+                    let source = if options.from_start { snapshots[&id].clone() } else { object.clone() };
+                    let (px, py) = if options.move_pins { (dx, dy) } else { (0.0, 0.0) };
+                    let record = editor.frame_object_mut(slot).unwrap();
+                    if crate::ik::translate_targets(record, px, py, &source, true) {
+                        record.remove("runtime_segments");
+                    }
+                }
                 if join_target(&object).is_some() {
                     continue;
                 }
-                let id = uid(&object).unwrap();
                 let (x, y) = if options.from_start {
                     match editor.drag.as_ref().unwrap().detached.get(&id) {
                         Some(root) => (root[0], root[1]),

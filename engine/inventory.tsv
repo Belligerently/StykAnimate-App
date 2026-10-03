@@ -144,7 +144,7 @@ src/editor-frame-draft.mjs	engine	styk-edit	js	commands and history
 src/editor-frames.mjs	engine	styk-edit	js	commands and history
 src/editor-handle-commands.mjs	engine	styk-edit	js	commands and history
 src/editor-handle-edit.mjs	engine	styk-edit	js	commands and history
-src/editor-ik.mjs	engine	styk-edit	js	commands and history
+src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget on flat figures, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); setNodeIK, rotateIKTarget, getIKSettings and 3D controllers still JS
 src/editor-inbetween-async.mjs	engine	styk-edit	js	commands and history
 src/editor-inbetween.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
@@ -211,12 +211,12 @@ src/hotkey-settings.mjs	ui	-	stays
 src/hotkeys.mjs	ui	-	stays	
 src/icons.mjs	ui	-	stays	
 src/ik-evaluation.mjs	engine	styk-eval::rig	ported	Rust: not needed (memoization; the engine caches whole frames)
-src/ik-joined.mjs	engine	styk-eval::rig	partial	Rust: joined assemblies and solve; validation of joins still JS
+src/ik-joined.mjs	engine	styk-eval::rig	partial	Rust: assemblies, solve and scatter with followers, used by evaluation and editing (ik::joined::Assembly); join validation still JS
 src/ik-rig.mjs	engine	styk-eval::rig	partial	Rust: rig projection, refinement, analytic spatial limb; editing helpers still JS
 src/ik-spatial.mjs	engine	styk-eval::rig	partial	Rust: evaluation; pole and capture helpers for editing still JS
 src/ik-topology.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
 src/ik-view.mjs	ui	-	stays	
-src/ik.mjs	engine	styk-eval::rig	partial	Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK); editing helpers still JS
+src/ik.mjs	engine	styk-eval::rig	partial	Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK, ikBendReference) and translateIKTargets (styk-edit); remapIKFollowers, validateIK still JS
 src/image-codecs.mjs	engine	styk-export	js	
 src/image-export-worker.mjs	engine	styk-export	js	
 src/image-export.mjs	engine	styk-export	js	

@@ -708,7 +708,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             (start, dx, dy)
         };
         let (start, dx, dy) = pos(w);
-        let angle = if dx.hypot(dy) < 1e-8 { input.angle } else { dy.atan2(dx) };
+        let angle = if hypot(dx, dy) < 1e-8 { input.angle } else { atan2(dy, dx) };
         let depth_offset = w.depth.as_deref().map(|depth| {
             let (start, dx, dy) = pos(depth);
             [start[0] + dx - root[0], start[1] + dy - root[1]]
@@ -719,7 +719,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             start,
             angle,
             authored_angle: angle,
-            length: dx.hypot(dy),
+            length: hypot(dx, dy),
             bend: 0.0,
             width: 1.0,
             handle: Some([start[0] + dx, start[1] + dy]),
@@ -751,7 +751,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
                 let (mut yy, mut zz) = (py, pz);
                 if let Some(pitch_id) = path.pitch {
                     let pitch = state_of(states, pitch_id).map(|s| s.authored_angle).unwrap_or(0.0) - path.pitch_rest_angle - delta;
-                    let (c, s) = (pitch.cos(), pitch.sin());
+                    let (c, s) = (cos(pitch), sin(pitch));
                     let old = yy;
                     yy = old * c - zz * s;
                     zz = old * s + zz * c;
@@ -761,14 +761,14 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
                 z = zz;
             }
         }
-        let (c, s) = (delta.cos(), delta.sin());
+        let (c, s) = (cos(delta), sin(delta));
         let (dx, dy) = ((x * c - y * s) * ctx.scale, (x * s + y * c) * ctx.scale);
-        let angle = dy.atan2(dx);
+        let angle = atan2(dy, dx);
         let st = State {
             start: origin,
             angle,
             authored_angle: angle,
-            length: dx.hypot(dy),
+            length: hypot(dx, dy),
             bend: 0.0,
             width: 1.0,
             handle: Some([origin[0] + dx, origin[1] + dy]),
@@ -827,11 +827,11 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         start = joint(c.start).unwrap_or(root);
         let end = joint(c.end).unwrap_or(root);
         let (dx, dy) = (end[0] - start[0], end[1] - start[1]);
-        let distance = dx.hypot(dy);
+        let distance = hypot(dx, dy);
         span = distance;
         bend = bend.clamp(-PI * 1.99, PI * 1.99);
-        let factor = if bend.abs() < EPS { 1.0 } else { 2.0 * (bend / 2.0).sin() / bend };
-        angle = if distance > EPS { dy.atan2(dx) - bend / 2.0 } else { input_angle + rotation };
+        let factor = if bend.abs() < EPS { 1.0 } else { 2.0 * sin(bend / 2.0) / bend };
+        angle = if distance > EPS { atan2(dy, dx) - bend / 2.0 } else { input_angle + rotation };
         length = distance / factor;
         inherited = angle - input_angle - if ctx.scale < 0.0 { PI } else { 0.0 };
         let raw_position = if ctx.len_flag { ctx.lengths.and_then(|l| l.get(i).copied()).unwrap_or(seg.length) } else { seg.length };
@@ -841,7 +841,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         handle = Some(if bend.abs() < EPS {
             [start[0] + dx * t, start[1] + dy * t]
         } else {
-            [start[0] + length / bend * ((angle + sweep).sin() - angle.sin()), start[1] + length / bend * (angle.cos() - (angle + sweep).cos())]
+            [start[0] + length / bend * (sin(angle + sweep) - sin(angle)), start[1] + length / bend * (cos(angle) - cos(angle + sweep))]
         });
     } else if let Some(src) = source {
         let mode_stretch = match response.map(|x| x.mode) {
@@ -862,9 +862,9 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             follow_scale = Some(amount);
             follow_axis_used = follow_axis;
             let relative = angle - follow_axis;
-            let (x, y) = (relative.cos() * amount, relative.sin());
-            let factor = x.hypot(y);
-            angle = if factor < EPS { angle } else { follow_axis + y.atan2(x) };
+            let (x, y) = (cos(relative) * amount, sin(relative));
+            let factor = hypot(x, y);
+            angle = if factor < EPS { angle } else { follow_axis + atan2(y, x) };
             length *= factor;
             width *= rig_width(amount.abs(), width_response);
         }
