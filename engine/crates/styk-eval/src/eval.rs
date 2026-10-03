@@ -449,6 +449,26 @@ pub(crate) fn evaluate_native_exact(doc: &Document, seq: &Seq, index: usize, t: 
 }
 
 fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
+    let mut frame = tween_interval(doc, seq, index, t, exact);
+    correct_origins(doc, &mut frame);
+    frame
+}
+
+/// `correctAnimationOrigins`: every unjoined figure with an animation origin is placed so
+/// that its pivot lands where its pose says, as each native interval leaves it.
+fn correct_origins(doc: &Document, frame: &mut Frame) {
+    if !frame.objects.iter().any(|o| o.origin.is_some()) {
+        return;
+    }
+    for object in frame.objects.iter_mut() {
+        let Some(figure) = doc.figure(object.figure) else { continue };
+        if let Some(root) = crate::origin::corrected_root(figure, object) {
+            Arc::make_mut(object).root = root;
+        }
+    }
+}
+
+fn tween_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
     let keys = &seq.keys;
     let Some(a) = keys.get(index) else { return Frame::default() };
     let Some(b) = keys.get(index + 1) else { return frame_of(a) };
@@ -540,6 +560,19 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
     }
     out.root = [s.value(read(&|x| x.root[0]), false), s.value(read(&|x| x.root[1]), false)];
     out.scale = s.value(read(&|x| x.scale), false);
+    // An animation origin's pivot tweens (its offset too when either key has one); the root
+    // follows it once the angles are known ([`correct_origins`]).
+    if fig.origin.is_some()
+        && let (Some(a), Some(b)) = (&o.origin, &next.origin)
+    {
+        let pivot = |k: fn(&crate::origin::PoseOrigin) -> f64| s.value(recs.map(|r| r.and_then(|x| x.origin.as_deref()).map(k)), false);
+        let mut origin = crate::origin::PoseOrigin { x: pivot(|p| p.x), y: pivot(|p| p.y), ..Default::default() };
+        if (0..2).any(|i| a.offset[i].is_some() || b.offset[i].is_some()) {
+            let offset = |i: usize| s.value(recs.map(|r| r.map(|x| x.origin.as_deref().and_then(|p| p.offset[i]).unwrap_or(0.0))), false);
+            origin.offset = [Some(offset(0)), Some(offset(1))];
+        }
+        out.origin = Some(Arc::new(origin));
+    }
     out.transparency = if auto {
         s.value(read(&|x| x.transparency), false).round()
     } else {
@@ -563,6 +596,23 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
             })
             .collect();
         out.bends = Some(bends.into());
+    }
+    // A figure with an animation origin tweens the angles of its original tree (`animationOriginLayout`
+    // or its retained support graph) rather than of its construction tree.
+    if let Some(origin) = fig.origin.as_deref() {
+        let key_object = |k: usize| s.seq.keys.get(k).and_then(|f| f.frame.object(o.uid)).filter(|x| x.figure == o.figure);
+        let sample = |read: &dyn Fn(&Object) -> f64, angular: bool| -> f64 {
+            let values = recs.map(|r| r.map(read));
+            if angular { s.angle(values, &|k| key_object(k).map(|x| read(x))) } else { s.value(values, false) }
+        };
+        match &origin.kind {
+            crate::origin::Kind::Layout(layout) => out.angles = crate::origin::tween_layout(fig, layout, &out, &sample).into(),
+            crate::origin::Kind::Support(support) => {
+                let first = o.angles.clone();
+                crate::origin::tween_support(fig, support, &first, &mut out, &sample);
+            }
+        }
+        return finish_colors(s, o, next, recs, auto, out);
     }
     let plan = &fig.plan;
     let mut angles: Vec<f64> = (0..n).map(|i| o.angles.get(i).copied().unwrap_or(fig.segments[i].angle)).collect();
@@ -597,6 +647,12 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
         done[i] = true;
     }
     out.angles = angles.into();
+    finish_colors(s, o, next, recs, auto, out)
+}
+
+/// The colour override of a tween, the last channel `tween_object` writes.
+fn finish_colors(s: &Sampler, o: &Object, next: &Object, recs: &[Option<&Object>; 4], auto: bool, mut out: Object) -> Object {
+    let t = s.t;
     out.color = color_tween(o.color, next.color, t);
     if auto {
         let mut color = 0u32;

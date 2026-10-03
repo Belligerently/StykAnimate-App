@@ -160,10 +160,10 @@ pub fn has_pinned(object: &Object) -> bool {
     object.ik.as_ref().is_some_and(|table| table.has_pinned())
 }
 
-/// `animationRotation(figure, object)` for figures without an animation origin:
-/// how far the pose turned the figure's first bone from its rest angle.
+/// `animationRotation(figure, object)`: how far the pose turned the figure from its rest
+/// angle (its first bone's, or its animation origin's rotation reference).
 pub fn figure_angle(figure: &Figure, object: &Object) -> f64 {
-    object.angles.first().copied().unwrap_or(0.0) - figure.segments.first().map(|s| s.angle).unwrap_or(0.0)
+    crate::origin::rotation(figure, object)
 }
 
 /// The derived pose of one object: what `evaluateIKPose` returns for a figure

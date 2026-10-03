@@ -12,12 +12,6 @@
 
 import {isGeneratorType} from '../vfx-registry.mjs';
 
-/** Per-pose fields the engine does not evaluate yet. Effect stacks (`_stykVfx`,
- * `_stykVfxScope`), 3D poses (`_stykSpatial`: perspective, part proportions), colour
- * transitions (`color_transition`) and Stick Nodes sprites (`_sticknodesSprite`) are
- * drawn: a pose never holds a generated effect. */
-const POSE_FIELDS = ['_stykAnimationOrigin'];
-
 /** The first effect type of an effects timeline the engine does not draw: generated
  * effects (particles, aura, beams, smoke, explosions) stay with the JavaScript renderer. */
 function clipReason(clips) {
@@ -29,14 +23,8 @@ function clipReason(clips) {
  * (docs/engine/spatial.md); drawings a spatial bone turns are not. */
 function figureReason(figure, depth) {
   const styk = figure._styk;
-  if (styk?.animationOrigin) return 'animation origins';
   if (styk?.movieclip?.drawingRotation) return 'rotated drawings';
   if (styk?.movieclip?.document) return depth > 16 ? 'deeply nested movieclips' : documentReason(styk.movieclip.document, depth + 1);
-  return null;
-}
-
-function frameReason(frame) {
-  for (const object of frame?.objects ?? []) for (const field of POSE_FIELDS) if (object[field] !== undefined) return field;
   return null;
 }
 
@@ -50,13 +38,13 @@ function metadataReason(report) {
   return null;
 }
 
-/** The first feature of `report` the engine cannot draw, or null. Whole-document scan. */
+/** The first feature of `report` the engine cannot draw, or null. Whole-document scan.
+ * Poses hold nothing the engine lacks (effect stacks, 3D poses, colour transitions, Stick
+ * Nodes sprites and animation origins are drawn), so only metadata and figures are read. */
 function documentReason(report, depth = 0) {
   const metadata = metadataReason(report);
   if (metadata) return metadata;
   for (const figure of report.figure_types ?? []) { const reason = figureReason(figure, depth); if (reason) return reason; }
-  for (const frame of report.keyframes ?? []) { const reason = frameReason(frame); if (reason) return reason; }
-  for (const frame of Object.values(report._styk?.frameSources ?? {})) { const reason = frameReason(frame); if (reason) return reason; }
   return null;
 }
 
@@ -85,8 +73,6 @@ export class EngineEligibility {
     if (this.blocked.has('document')) { this.blocked.clear(); const reason = documentReason(report); if (reason) this.blocked.set('document', reason); return this.reason = reason; }
     set('metadata', metadataReason(report));
     for (const index of dirty.figureIndices ?? []) set(`figure:${index}`, report.figure_types[index] ? figureReason(report.figure_types[index], 0) : null);
-    for (const index of dirty.frameIndices ?? []) set(`frame:${index}`, frameReason(report.keyframes[index]));
-    for (const id of dirty.sourceIds ?? []) set(`source:${id}`, frameReason(report._styk?.frameSources?.[id]));
     return this.reason = this.blocked.values().next().value ?? null;
   }
 }

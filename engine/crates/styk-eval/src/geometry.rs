@@ -372,7 +372,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     // Rigged figures evaluate in dependency order with their rig context.
     let rig_plan = plan.rig.clone();
     let mut rig_states: Vec<Option<crate::rig::State>> = if rig_plan.is_some() { vec![None; n] } else { Vec::new() };
-    let figure_angle = obj.angles.first().copied().unwrap_or(0.0) - fig.segments.first().map(|s| s.angle).unwrap_or(0.0);
+    let figure_angle = crate::origin::rotation(fig, obj);
     let order: &[u32] = match &rig_plan {
         Some(r) => &r.order,
         None => &plan.order,

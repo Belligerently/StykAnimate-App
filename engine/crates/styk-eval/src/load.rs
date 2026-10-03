@@ -400,11 +400,16 @@ impl Loader {
             Some(m) => self.movieclip(m)?,
             None => None,
         };
-        if styk.get("animationOrigin").is_some() {
-            unsupported.push("animation origins");
-        }
         let _ = version;
         let plan = plan_figure(&segments, &polyfills);
+        // The editor refuses a figure whose origin does not fit its segments; here it is left out and noted.
+        let origin = styk.get("animationOrigin").filter(|o| o.is_object()).and_then(|o| match crate::origin::compile(o, &segments) {
+            Ok(origin) => Some(Arc::new(origin)),
+            Err(reason) => {
+                self.notes.push(format!("figure {id}: {reason}"));
+                None
+            }
+        });
         // A mesh is compiled against the figure's joints once (`spatialMeshPlan`). The
         // editor rejects a file whose mesh is invalid; here it is left out and noted.
         let mesh = styk.get("spatialMesh").and_then(|mesh| match crate::spatial::MeshPlan::compile(mesh, &|id| plan.index_of.get(&id).copied()) {
@@ -428,6 +433,7 @@ impl Loader {
             movieclip,
             mesh,
             mesh_colors,
+            origin,
             plan,
             unsupported,
             base: None,
@@ -568,9 +574,6 @@ impl Loader {
         let join = o.get("join").filter(|j| j.is_object()).and_then(|j| {
             Some(Join { slot: int(j, "target_object_slot")? as u32, handle: int(j, "target_handle_id").unwrap_or(0) as u32 })
         });
-        if o.get("_stykAnimationOrigin").is_some() {
-            self.note("animation origins");
-        }
         // `validateSticknodesObject` refuses a sprite without a finite ratio and pivot; it is left out here.
         let sticknodes_sprite = o.get("_sticknodesSprite").filter(|s| s.is_object()).and_then(|s| {
             let sprite = crate::sticknodes::Sprite { ratio: num(s, "ratio")?, pivot: [num(s, "pivotX")?, num(s, "pivotY")?] };
@@ -612,6 +615,7 @@ impl Loader {
             vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
             spatial: o.get("_stykSpatial").and_then(crate::spatial::parse_pose).map(Arc::new),
             sticknodes_sprite,
+            origin: o.get("_stykAnimationOrigin").and_then(crate::origin::parse_pose).map(Arc::new),
             color_transition: o.get("color_transition").filter(|c| c.is_object()).map(|c| {
                 Arc::new(ColorTransition { from: js_uint32(num(c, "from")), to: js_uint32(num(c, "to")), t: num(c, "t").unwrap_or(f64::NAN) })
             }),

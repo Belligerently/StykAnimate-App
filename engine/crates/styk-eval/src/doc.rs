@@ -245,6 +245,9 @@ pub struct Figure {
     pub movieclip: Option<Arc<Movieclip>>,
     /// `_styk.spatialMesh`, compiled against this figure's joints ([`crate::spatial`]).
     pub mesh: Option<Arc<crate::spatial::MeshPlan>>,
+    /// `_styk.animationOrigin`: the pivot and joint basis its animation keeps after Set
+    /// Origin re-rooted its construction ([`crate::origin`]).
+    pub origin: Option<Arc<crate::origin::Origin>>,
     /// The mesh palette as this figure draws it (an instance's `meshColors` replace entries).
     pub mesh_colors: Arc<[[u8; 3]]>,
     pub plan: FigurePlan,
@@ -330,6 +333,8 @@ pub struct Object {
     /// `_sticknodesSprite`: how an imported Stick Nodes sprite stretches and pivots its
     /// picture, applied to the figure the object resolves to ([`crate::sticknodes::sprite_figure`]).
     pub sticknodes_sprite: Option<Arc<crate::sticknodes::Sprite>>,
+    /// `_stykAnimationOrigin`: where the animation pivot of a figure with an origin is.
+    pub origin: Option<Arc<crate::origin::PoseOrigin>>,
 }
 
 /// `color_transition` of a pose (`objectColor` in src/pivot/geometry.mjs): each colour is

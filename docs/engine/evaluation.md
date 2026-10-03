@@ -39,6 +39,31 @@ is the oracle while both exist.
    layers, then camera-motion impulses shake the shot.
 5. Effects resolve per object and for the scene.
 
+## Animation origins
+
+Set Origin re-roots a figure's construction tree at another joint while its animation
+keeps the original pivot and joint basis (`styk_eval::origin`, `animation-origin.mjs`,
+`animation-origin-support.mjs`). The figure's `_styk.animationOrigin` is compiled at load
+against its segments: the original tree re-derived from them (`animationOriginLayout`), or,
+once construction edits removed joints of it, the retained support graph whose removed
+bones are ghosts. A pose stores its pivot (`_stykAnimationOrigin`: `x`, `y`, a local
+`offsetX`/`offsetY` after an edit moved the pivot's vertex, and the ghosts' poses).
+
+- A native tween interpolates the pivot (and its offset when either key has one) and the
+  angles of the original tree relative to their parents there, as before Set Origin; with a
+  support graph the bones are interpolated as their own tree, ghosts included.
+- Every native interval (exact keys included) then places each unjoined figure's root so
+  its pivot lands where the pose says (`correctAnimationOrigins`), with V8's trigonometry
+  (`styk-math`). Poses a layer sheet shows directly, and edit frames, come as the editor
+  left them.
+- The figure's rotation (`animationRotation`: the rotation reference's turn) is what rigs,
+  inverse kinematics, meshes and attached movieclips read (`origin::rotation`, also behind
+  `ik::figure_angle`).
+- The evaluated frame as records still refuses documents with origins (`Records::new`),
+  so their fixtures (`engine/tools/origin-fixtures.mjs`, `tests/origin.rs`: the re-derived
+  tree with a mirrored instance and a joined figure, a real local offset, a support graph
+  with ghosts) live apart from `eval/`, which `records-fixtures.mjs` records.
+
 ## Colour transitions
 
 A pose's `color_transition` (`{from, to, t}`; no command writes one, older documents
@@ -104,8 +129,8 @@ with the frame and draws them.
 ## Not evaluated yet
 
 Named in `Document::unsupported` and gated in the app: property channels on
-native timelines, animation origins, frame drafts, retained movieclip sources,
-drawings a spatial bone turns (`drawingRotation`). The work
+native timelines, frame drafts, retained movieclip sources, drawings a spatial
+bone turns (`drawingRotation`). The work
 queue in the plan orders them.
 
 ## Testing
@@ -115,7 +140,7 @@ queue in the plan orders them.
   the shot camera and each object's parallax offset).
 - Fixture suites built by the editor's own commands:
   `engine/tools/ik-fixtures.mjs`, `eval-fixtures.mjs`, `vfx-fixtures.mjs`,
-  `spatial-fixtures.mjs` (byte-stable), checked by `cargo test -p styk-eval`.
+  `spatial-fixtures.mjs`, `origin-fixtures.mjs` (byte-stable), checked by `cargo test -p styk-eval`.
 - `npm run engine:parity -- --corpus` runs the benchmark files at every tick.
 
 ## The evaluated frame as records
