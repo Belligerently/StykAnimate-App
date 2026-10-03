@@ -564,6 +564,8 @@ pub struct CameraMotionClip {
     pub enabled: bool,
     pub muted: Vec<(f64, f64)>,
     pub params: HashMap<String, f64>,
+    /// A follow clip's figures and their weights ([`crate::follow`]).
+    pub targets: Vec<(u32, f64)>,
 }
 
 impl Document {

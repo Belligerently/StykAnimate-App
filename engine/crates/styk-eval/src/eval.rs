@@ -86,6 +86,8 @@ pub struct Prepared {
     patches: HashMap<(String, u32), Arc<Seq>>,
     /// Presence-clock spans per movieclip instance: (start, end, elapsed, rate).
     presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
+    /// Follow camera clips and their shaped paths ([`crate::follow`]).
+    follow: Option<crate::follow::Follow>,
 }
 
 /// `shortest(a)`: the angle in (-π, π], with V8's rounding (tweened angles are stored
@@ -655,7 +657,8 @@ impl Prepared {
         }
         let total_ticks = rows.last().map(|r| r.start + r.count).unwrap_or(0).max(1);
         let has_vfx = crate::vfx::has_own_vfx(&doc) || doc.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.prepared.has_vfx));
-        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new() };
+        let follow = crate::follow::Follow::new(&doc);
+        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow };
         prepared.presence = prepared.presence_index();
         prepared
     }
@@ -820,10 +823,10 @@ impl Prepared {
         let mut frame = self.evaluate_raw(tick, fractional);
         self.apply_movieclips(&mut frame, tick);
         apply_layer_order(&self.doc, &mut frame);
-        // Where the camera travels (`cameraTravelAt`) moves parallax layers; camera-motion
-        // impulses shake the finished shot on top of it. A movieclip's own frame is drawn
-        // with its instance's parallax, never its own.
-        let travel = frame.camera;
+        // Where the camera travels (`cameraTravelAt`, follow clips included) moves parallax
+        // layers; camera-motion impulses shake the finished shot on top of it. A movieclip's
+        // own frame is drawn with its instance's camera and parallax, never its own.
+        let travel = if fractional { frame.camera } else { self.travel(frame.camera, tick) };
         if !fractional {
             frame.parallax = crate::parallax::resolve(&self.doc, &frame, travel.as_ref());
         }
@@ -833,6 +836,24 @@ impl Prepared {
         if self.has_vfx {
             frame.vfx = crate::vfx::evaluate(&self.doc, &frame);
         }
+        frame
+    }
+
+    /// `cameraTravelAt`: where the camera is at `tick`, the authored `camera` moved by the
+    /// follow clips there.
+    pub fn travel(&self, camera: Option<Camera>, tick: f64) -> Option<Camera> {
+        match &self.follow {
+            Some(follow) => follow.travel(camera, tick),
+            None => camera,
+        }
+    }
+
+    /// The figures of the frame at `tick` and the authored camera: what a follow camera
+    /// samples (no effects, camera motion or parallax).
+    pub(crate) fn evaluate_figures(&self, tick: f64) -> Frame {
+        let mut frame = self.evaluate_raw(tick, false);
+        self.apply_movieclips(&mut frame, tick);
+        apply_layer_order(&self.doc, &mut frame);
         frame
     }
 

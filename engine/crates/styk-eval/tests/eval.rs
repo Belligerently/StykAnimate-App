@@ -107,3 +107,23 @@ fn parallax_fixtures_depend_on_parallax() {
     assert!(offsets > 0, "no baked offset in the fixture");
     assert!(!compare("parallax-baked-motion", document).matches(), "matches without its baked offsets");
 }
+
+/// The follow fixtures would prove nothing if their shots matched without the follow
+/// clips (their figures dropped, the clips' spans kept).
+#[test]
+fn follow_fixtures_depend_on_their_clips() {
+    let names: Vec<String> = fixtures().into_iter().filter(|name| name.starts_with("follow-")).collect();
+    assert!(names.len() >= 2, "follow fixtures are missing");
+    for name in &names {
+        let mut document = open(name);
+        let mut follows = 0;
+        for clip in document.camera_motion.iter_mut().filter(|clip| clip.kind == "follow") {
+            follows += !clip.targets.is_empty() as usize;
+            clip.targets.clear();
+        }
+        assert!(follows > 0, "{name}: no follow clip");
+        let report = compare(name, document);
+        assert!(report.shots > 0, "{name}: the reference has no shots");
+        assert!(!report.matches(), "{name}: matches without its follow clips");
+    }
+}

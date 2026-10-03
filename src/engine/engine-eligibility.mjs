@@ -46,7 +46,6 @@ function metadataReason(report) {
   if (generated) return generated;
   if (styk.animation?.channels?.length || styk.layerSheet?.legacyAnimation) return 'property channels';
   if (styk.simpleFrameDraft) return 'a frame draft';
-  if (styk.cameraMotion?.clips?.some(clip => clip.type === 'follow')) return 'follow camera';
   return null;
 }
 

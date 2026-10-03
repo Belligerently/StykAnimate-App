@@ -31,26 +31,47 @@ struct Pose {
     scene: Option<Arc<Scene>>,
     /// The draw counter when this pose was last shown.
     used: u64,
+    /// `_cameraMotionTick`: the frame's time on the camera-motion clips, when it has any.
+    motion_tick: Option<f64>,
     /// What the scene camera does to `frame`, for the generation it was worked out for.
-    shot: Option<(u64, Arc<styk_eval::parallax::Parallax>)>,
+    shot: Option<(u64, Shot)>,
+}
+
+/// The scene camera of a frame shown through it.
+#[derive(Clone)]
+struct Shot {
+    /// `cameraAtTime`: the authored camera, follow clips and camera-motion impulses.
+    camera: Option<styk_eval::doc::Camera>,
+    /// How far parallax layers move each object (`parallaxResolver`).
+    parallax: Option<Arc<styk_eval::parallax::Parallax>>,
 }
 
 impl Pose {
-    fn new(frame: Frame, used: u64) -> Pose {
-        Pose { frame, scene: None, used, shot: None }
+    fn new(frame: Frame, used: u64, motion_tick: Option<f64>) -> Pose {
+        Pose { frame, scene: None, used, motion_tick, shot: None }
     }
 
-    /// How far parallax layers move this pose's objects while the scene camera shows it
-    /// (`parallaxResolver`), worked out once per document generation.
-    fn parallax(&mut self, generation: &Generation) -> Option<Arc<styk_eval::parallax::Parallax>> {
-        if let Some((id, parallax)) = &self.shot
+    /// What the scene camera does to this pose, worked out once per document generation
+    /// (follow paths are the generation's).
+    fn shot(&mut self, generation: &Generation) -> Shot {
+        if let Some((id, shot)) = &self.shot
             && *id == generation.id
         {
-            return Some(parallax.clone());
+            return shot.clone();
         }
-        let parallax = styk_eval::parallax::resolve(&generation.prepared.doc, &self.frame, self.frame.camera.as_ref())?;
-        self.shot = Some((generation.id, parallax.clone()));
-        Some(parallax)
+        let prepared = &generation.prepared;
+        let doc = &prepared.doc;
+        let authored = self.frame.camera;
+        let (travel, camera) = match self.motion_tick {
+            Some(tick) if !doc.camera_motion.is_empty() => {
+                let travel = prepared.travel(authored, tick);
+                (travel, styk_eval::camera::at_time(travel, &doc.camera_motion, tick, doc.fps))
+            }
+            _ => (authored, authored),
+        };
+        let shot = Shot { camera, parallax: styk_eval::parallax::resolve(doc, &self.frame, travel.as_ref()) };
+        self.shot = Some((generation.id, shot.clone()));
+        shot
     }
 }
 
@@ -127,10 +148,11 @@ impl EditScene {
         }
     }
 
-    /// Reads a pose. Its effects are the ones the editor composed into it
-    /// (clips included), never sampled again here: see `docs/engine/vfx.md`.
-    fn parse(&mut self, generation: &Generation, text: &[u8], previous: Option<&Frame>) -> Result<Frame, String> {
+    /// Reads a pose and its time on the camera-motion clips. Its effects are the ones the
+    /// editor composed into it (clips included), never sampled again here: see `docs/engine/vfx.md`.
+    fn parse(&mut self, generation: &Generation, text: &[u8], previous: Option<&Frame>) -> Result<(Frame, Option<f64>), String> {
         let value: Value = styk_doc::json::parse(text).map_err(|e| e.to_string())?;
+        let motion_tick = value.get("_cameraMotionTick").and_then(Value::as_f64);
         let loader = self.loader.as_mut().expect("follow() ran");
         let doc = &generation.prepared.doc;
         let mut frame = loader.edit_frame(&value, previous, doc).map_err(|e| e.to_string())?;
@@ -138,7 +160,7 @@ impl EditScene {
         if fields || generation.prepared.has_vfx {
             frame.vfx = styk_eval::vfx::frame::composed(doc, &frame);
         }
-        Ok(frame)
+        Ok((frame, motion_tick))
     }
 
     /// Replaces the frame. `text` is a keyframe-shaped JSON record whose `objects`
@@ -146,8 +168,8 @@ impl EditScene {
     pub fn update(&mut self, generation: &Generation, text: &[u8]) -> Result<(), String> {
         self.follow(generation);
         let previous = self.current.take();
-        let frame = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
-        self.current = Some(Pose::new(frame, self.draws));
+        let (frame, motion_tick) = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
+        self.current = Some(Pose::new(frame, self.draws, motion_tick));
         Ok(())
     }
 
@@ -155,8 +177,8 @@ impl EditScene {
     pub fn update_ghost(&mut self, generation: &Generation, id: u32, text: &[u8]) -> Result<(), String> {
         self.follow(generation);
         let previous = self.ghosts.remove(&id);
-        let frame = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
-        self.ghosts.insert(id, Pose::new(frame, self.draws));
+        let (frame, motion_tick) = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
+        self.ghosts.insert(id, Pose::new(frame, self.draws, motion_tick));
         Ok(())
     }
 
@@ -164,9 +186,14 @@ impl EditScene {
         self.current.is_some()
     }
 
-    /// The camera of the edit frame.
+    /// The camera the edit frame is seen through in the camera preview (`cameraAtTime`),
+    /// as the last [`EditScene::draw_list`] with `camera` worked it out; the authored one otherwise.
     pub fn camera(&self) -> Option<styk_eval::doc::Camera> {
-        self.current.as_ref().and_then(|pose| pose.frame.camera)
+        let pose = self.current.as_ref()?;
+        match &pose.shot {
+            Some((_, shot)) => shot.camera,
+            None => pose.frame.camera,
+        }
     }
 
     /// The draw list of the current frame under `options`. `Err` names a ghost the
@@ -181,7 +208,7 @@ impl EditScene {
         let hidden = flags(options.hidden, current.frame.objects.len());
         // Through the scene camera, parallax layers move after any drag (onion skins are
         // never shown with the camera on, so they take no parallax).
-        let parallax = if options.camera { current.parallax(generation) } else { None };
+        let parallax = if options.camera { current.shot(generation).parallax } else { None };
         let moved = parallax.map(|p| p.translations(options.translations));
         let translations = moved.as_deref().unwrap_or(options.translations);
         let overrides = Overrides { hidden: &hidden, translations, background: options.background, bypass_effects: options.bypass_effects };

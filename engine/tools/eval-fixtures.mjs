@@ -120,6 +120,42 @@ const fixtures = {
     e.seek(0);
     return {document: e.serialize(), ticks: [0, 3, 5, 6, 9, 13, 15, 17], camera: true};
   },
+  /** A follow clip on two weighted figures (dead zone, look-ahead, smoothing, framing
+   * zoom, an offset, fades), over a parallax layer whose figure hangs from one of them
+   * and a shake on top: travel moves the layer, the shake only the shot. */
+  'follow-figures': () => {
+    const e = open(documentOf([limb(), limb(true), limb()], i => [180 + i * 140, 170]), {layerTimeline: true});
+    e.sheetSetDuration(40);
+    e.seek(12); e.select(1); e.moveSelection(160, -40); e.seek(30); e.select(1); e.moveSelection(120, 60);
+    e.seek(20); e.select(2); e.moveSelection(-90, 80);
+    const back = e.createLayer('Back');
+    e.assignFiguresToLayer([3], back.id);
+    e.select(3); e.joinTo(2, 33);
+    e.seek(0); e.setLayerParallax(back.id, {enabled: true, x: 0.5});
+    const follow = e.addCameraMotion('follow', {start: 2, duration: 34, targets: [{uid: 1, weight: 1}, {uid: 2, weight: 0.5}]});
+    e.setCameraMotion(follow, {params: {lag: 5, deadZone: 0.1, lookAhead: 3, zoomFit: 0.6, padding: 0.15, maxZoom: 2.5, offsetX: 20, fadeIn: 4, fadeOut: 5}});
+    const shake = e.addCameraMotion('shake', {start: 10, duration: 12});
+    e.setCameraMotion(shake, {params: {moveX: 25, moveY: 15, roll: 2, zoom: 0.05}});
+    return {document: e.serialize(), ticks: [0, 2, 3, 5, 10, 14, 18, 25, 33, 36, 39], camera: true};
+  },
+  /** A follow clip on a figure that appears late and leaves early (the camera aims at the
+   * first frame showing it, then holds the last), under a turned and scaled authored camera,
+   * overlapped by a second clip on another figure: overlapping follows blend. */
+  'follow-missing': () => {
+    const e = open(documentOf([limb(), limb()], i => [200 + i * 160, 170]), {layerTimeline: true});
+    e.sheetSetDuration(40);
+    const late = e.createLayer('Late');
+    e.assignFiguresToLayer([2], late.id);
+    e.seek(16); e.select(2); e.moveSelection(-120, 40);
+    e.seek(30); e.select(1); e.moveSelection(140, 30);
+    e.sheetClearFrames([late.id], 0, 9); e.sheetClearFrames([late.id], 25, 39);
+    e.seek(0); e.setCameraValues({x: 30, y: -20, scale: 1.3, angle_rad: 0.2});
+    const first = e.addCameraMotion('follow', {start: 0, duration: 40, targets: [{uid: 2, weight: 1}]});
+    e.setCameraMotion(first, {params: {lag: 3, lookAhead: 4, fadeIn: 0, fadeOut: 0}});
+    const second = e.addCameraMotion('follow', {start: 20, duration: 20, targets: [{uid: 1, weight: 1}]});
+    e.setCameraMotion(second, {params: {lag: 0, zoomFit: 1, padding: 0.3, maxZoom: 4, fadeIn: 6, fadeOut: 0}});
+    return {document: e.serialize(), ticks: [0, 4, 8, 10, 12, 18, 22, 26, 30, 35, 39], camera: true};
+  },
 };
 
 const args = process.argv.slice(2);

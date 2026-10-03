@@ -9,6 +9,7 @@ pub mod drawing;
 pub mod drawlist;
 pub mod edit;
 pub mod eval;
+pub mod follow;
 pub mod geometry;
 pub mod ik;
 pub mod load;

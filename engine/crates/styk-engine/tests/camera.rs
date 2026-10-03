@@ -57,3 +57,25 @@ fn edit_frames_move_parallax_layers_only_through_the_camera() {
     assert!(shift(&preview, [-70.0, -8.0]), "the front layer moves against the camera in the preview");
     assert!(shift(&dragged, [-65.0, -7.0]), "a drag adds to the parallax");
 }
+
+/// In the camera preview an edit frame is seen through the camera at its time on the
+/// camera-motion clips (`cameraAtTime`: follow travel, then impulses), the same camera
+/// a prepared frame of that tick has; without that time it is the authored camera.
+#[test]
+fn edit_frames_in_the_preview_follow_and_shake() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../styk-eval/tests/fixtures/eval/follow-figures.json");
+    let engine = Engine::new(clock, Budgets::for_device(None));
+    engine.open(&std::fs::read(path).expect("fixture"), "json", "follow-figures").expect("opens");
+    let generation = engine.generation().unwrap();
+    let shot = generation.prepared.evaluate(14.0).camera.expect("a camera");
+    let mut scene = EditScene::default();
+    let pose = |time: &str| format!(r#"{{{time}"camera":{{"is_default":true,"x":0,"y":0,"scale":1,"angle_rad":0}},"objects":[{{"unique_id":1,"figure_type_id":1,"root_x":300,"root_y":150,"scale":1,"angles":[0.8,2,0]}}]}}"#);
+    scene.update(&generation, pose(r#""_cameraMotionTick":14,"#).as_bytes()).unwrap();
+    scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().unwrap();
+    let camera = scene.camera().expect("a camera");
+    assert!(!camera.is_default && camera.x != 0.0, "the follow clip and the shake move the camera");
+    assert_eq!([camera.x, camera.y, camera.scale, camera.angle], [shot.x, shot.y, shot.scale, shot.angle], "the camera of the prepared frame");
+    scene.update(&generation, pose("").as_bytes()).unwrap();
+    scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().unwrap();
+    assert!(scene.camera().unwrap().is_default, "without a camera-motion time, the authored camera");
+}

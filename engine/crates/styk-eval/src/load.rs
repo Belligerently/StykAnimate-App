@@ -844,6 +844,13 @@ fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
             .filter_map(|r| Some((num(r, "start")?, num(r, "end")?)))
             .collect(),
         params,
+        targets: c
+            .get("targets")
+            .and_then(Value::as_arr)
+            .into_iter()
+            .flatten()
+            .filter_map(|t| Some((int(t, "uid")? as u32, num(t, "weight")?)))
+            .collect(),
     })
 }
 

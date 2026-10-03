@@ -122,6 +122,64 @@ pub struct ObjectGeometry {
     /// Per segment of a figure with rig relationships, what editing reads from its
     /// evaluation (`rigSpace`, `connector`); `None` for a figure without any.
     pub rig: Option<Arc<[RigJoint]>>,
+    /// What a follow camera frames of the object (`figureBounds`): `[x0, y0, x1, y1]` over
+    /// its visible segments' endpoints, curves and circles with half their stroke, and
+    /// every polygon's points (culled surfaces too); a movieclip's handle. `None` when
+    /// nothing is finite, and for a figure built without [`build_measured`].
+    pub extent: Option<[f64; 4]>,
+}
+
+/// `figureBounds` in src/camera-follow.mjs, accumulated point by point.
+#[derive(Clone, Copy, Debug)]
+struct Bounds {
+    rect: [f64; 4],
+    found: bool,
+}
+
+impl Bounds {
+    fn new() -> Bounds {
+        Bounds { rect: [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], found: false }
+    }
+
+    fn add(&mut self, p: [f64; 2], pad: f64) {
+        if !p[0].is_finite() || !p[1].is_finite() {
+            return;
+        }
+        self.found = true;
+        let r = &mut self.rect;
+        if p[0] - pad < r[0] {
+            r[0] = p[0] - pad;
+        }
+        if p[1] - pad < r[1] {
+            r[1] = p[1] - pad;
+        }
+        if p[0] + pad > r[2] {
+            r[2] = p[0] + pad;
+        }
+        if p[1] + pad > r[3] {
+            r[3] = p[1] + pad;
+        }
+    }
+
+    /// A segment as drawn before Stick Nodes shapes expand it: a circle by its centre and
+    /// radius, a curve by its points, a line by its ends; half its stroke around each.
+    fn segment(&mut self, it: &Item, prim: Prim, points: &[[f64; 2]]) {
+        let pad = if it.thickness.is_nan() { f64::NAN } else { it.thickness.max(0.0) / 2.0 };
+        if prim.is_circle() {
+            self.add([(it.start[0] + it.end[0]) / 2.0, (it.start[1] + it.end[1]) / 2.0], it.length.abs() / 2.0 + pad);
+        } else if !points.is_empty() {
+            for &p in points {
+                self.add(p, pad);
+            }
+        } else {
+            self.add(it.start, pad);
+            self.add(it.end, pad);
+        }
+    }
+
+    fn extent(&self) -> Option<[f64; 4]> {
+        self.found.then_some(self.rect)
+    }
 }
 
 /// A rigged joint as geometry evaluated it, for editing: the space its authored
@@ -284,7 +342,8 @@ pub fn segment_pose(obj: &Object, seg: &crate::doc::Segment, i: usize) -> (f64, 
     (angle, bend, length)
 }
 
-fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>) -> Built {
+#[allow(clippy::too_many_arguments)]
+fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: bool) -> Built {
     let obj = &frame.objects[slot];
     let n = fig.segments.len();
     let scale = obj.scale;
@@ -447,6 +506,16 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let joint_depth = |handle: u32| -> crate::spatial::JointDepth { plan.index_of.get(&handle).and_then(|&i| depths.get(i as usize)).copied().unwrap_or_default() };
     let mut surface_depths: Vec<f64> = Vec::new();
     let mut raws: Vec<Option<[f64; 3]>> = Vec::new();
+    // What a follow camera frames (`figureBounds`), only when asked for ([`build_measured`]).
+    let mut bounds = Bounds::new();
+    if measure {
+        for it in &segment_items {
+            let seg = &fig.segments[it.index as usize];
+            if seg.visible {
+                bounds.segment(it, seg.prim, &points[it.points.0 as usize..it.points.1 as usize]);
+            }
+        }
+    }
     for (pi, poly) in fig.polyfills.iter().enumerate() {
         let pp = &plan.polygons[pi];
         let p0 = points.len() as u32;
@@ -517,6 +586,11 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                     None => {}
                 }
             }
+            if measure {
+                for &p in &points[range.0 as usize..range.1 as usize] {
+                    bounds.add(p, 0.0);
+                }
+            }
             let result = crate::spatial::evaluate_surface(surface, poly.z, &points[range.0 as usize..range.1 as usize], projected, root, &joint, &joint_depth);
             if result.culled {
                 points.truncate(p0 as usize);
@@ -527,6 +601,12 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                 let d0 = surface_depths.len() as u32;
                 surface_depths.extend_from_slice(&values);
                 depth = (d0, surface_depths.len() as u32);
+            }
+        } else {
+            if measure {
+                for &p in &points[range.0 as usize..range.1 as usize] {
+                    bounds.add(p, 0.0);
+                }
             }
         }
         items.push(Item {
@@ -623,12 +703,21 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let rig = rig_plan.is_some().then(|| {
         rig_states.iter().zip(&fig.segments).map(|(state, seg)| RigJoint { space: state.and_then(|s| s.space), connector: seg.rig.as_ref().is_some_and(|r| r.connector.is_some()) }).collect()
     });
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig });
+    let extent = bounds.extent();
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig, extent });
     built.items = items;
     built.points = points;
     built.meshes = meshes;
     built.depths = surface_depths;
     built
+}
+
+/// A movieclip instance's extent for a follow camera: its handle, from the root 40 units along its angle.
+fn handle_extent(root: [f64; 2], end: [f64; 2]) -> Option<[f64; 4]> {
+    let mut bounds = Bounds::new();
+    bounds.add(root, 0.0);
+    bounds.add(end, 0.0);
+    bounds.extent()
 }
 
 /// The object a movieclip instance is joined to, for an attached mesh: its
@@ -663,7 +752,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
     };
     let angle = attachment.as_ref().map_or(local_angle, |a| a.figure_angle);
     let end = [root[0] + 40.0 * scale * styk_math::cos(angle), root[1] + 40.0 * scale * styk_math::sin(angle)];
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
     // `Math.floor(local)` clamped to the forms the clip has.
     let form = (local.floor().max(0.0) as usize).min(meshes.len() - 1);
@@ -734,7 +823,7 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
     let source = clip_scene(clip, local);
     // Meshes inside the clip keep their evaluated positions: the editor places a
@@ -799,7 +888,12 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
 
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None)
+    build_filtered(doc, frame, None, false)
+}
+
+/// [`build`] with every figure's [`ObjectGeometry::extent`]: what a follow camera samples.
+pub fn build_measured(doc: &Document, frame: &Frame) -> Scene {
+    build_filtered(doc, frame, None, true)
 }
 
 /// [`build`] for the objects in `slots` and the objects they are joined to, the others
@@ -815,10 +909,10 @@ pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
             at = frame.objects[i].join.map(|j| j.slot as usize);
         }
     }
-    build_filtered(doc, frame, Some(&needed))
+    build_filtered(doc, frame, Some(&needed), false)
 }
 
-fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Scene {
+fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: bool) -> Scene {
     let count = frame.objects.len();
     let mut scene = Scene {
         objects: vec![ObjectGeometry::default(); count],
@@ -918,7 +1012,7 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>) -> Sce
                     local.as_ref()
                 }
             };
-            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik)))
+            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik, measure)))
         };
         let results: Vec<(usize, Built)> = crate::par::map(&slots, 32, make).into_iter().flatten().collect();
         for (i, b) in results {

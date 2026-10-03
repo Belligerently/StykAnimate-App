@@ -70,8 +70,9 @@ where the JavaScript renderer's is and draws the edit frame, onion skins and
 prepared playback frames for documents the engine supports
 ([D4](decisions/0004-strangler-gate.md)). The WebGPU surface is configured with
 premultiplied alpha so the page shows through the pasteboard. Through the scene
-camera (prepared playback frames, and edit frames in the camera preview) parallax
-layers move: the frame's per-object offsets ([evaluation.md](evaluation.md#the-scene-camera))
+camera (prepared playback frames, and edit frames in the camera preview) the scene is
+seen through `cameraAtTime` (follow clips, camera-motion impulses) and parallax layers
+move: the frame's per-object offsets ([evaluation.md](evaluation.md#the-scene-camera))
 join the drag translations of the draw list. Filter effects are
 drawn by the engine; the effects preview switch reaches it through
 `Stage::set_effects` and `EngineHandle::set_effects`. Documents with generated

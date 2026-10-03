@@ -46,9 +46,24 @@ always, edit frames only in the camera preview (`cameraEnabled`). The editor app
 both at render time (`cameraAtTime`, `parallaxResolver`); the engine works them out
 with the frame and draws them.
 
-- **Travel** (`cameraTravelAt`) is where the camera is: the authored camera, tweened
-  with its baked camera-motion offset (`_parallaxMotionOffset`, tweened when either key
-  has one, like the other camera channels).
+- **Travel** (`cameraTravelAt`, `Prepared::travel`) is where the camera is: the
+  authored camera, tweened with its baked camera-motion offset (`_parallaxMotionOffset`,
+  tweened when either key has one, like the other camera channels), moved by the follow
+  clips active at the frame's time.
+- **Follow clips** (`styk_eval::follow`, `camera-follow.mjs`): per tick the followed
+  figures are evaluated in a projection of the document holding only them, the figures
+  they hang from and the camera (`followSamplingReport`), and measured from their
+  geometry (`ObjectGeometry::extent`, `figureBounds`: visible segments with half their
+  stroke, circles by radius, curves by their points, every polygon including culled
+  surfaces, a movieclip's handle). A forward pass shapes the samples per clip frame
+  (dead zone with hysteresis, look-ahead, holding the last seen target or aiming at the
+  first one ahead, a critically damped spring per axis, framing zoom) into offsets and a
+  log zoom stored in single precision, as the editor's `Float32Array`; overlapping clips
+  blend by weight. The pass is sequential: a clip's path is shaped once per prepared
+  document, lazily up to the frame asked for and 256 frames beyond, by whichever thread
+  needs it first, outside any lock (the longest path published wins: a pointer swap under
+  a spinning lock, D7). The editor keeps its paths across edits and resamples from the
+  key before a change; the engine shapes each revision's paths afresh.
 - **Parallax** (`styk_eval::parallax`, `layer-parallax.mjs`): each layer whose parallax
   is on moves by `(1 - response) × (travel - reference - baked offset)` per axis; a
   joined figure moves with the layer of its join chain's root. `Frame::parallax` holds
@@ -60,12 +75,15 @@ with the frame and draws them.
   take none: the editor shows them only with the camera off.
 - **Impulses** (`camera::at_time`, `sampleCameraMotion`) shake the shot from the
   travelled camera.
+- **Edit frames** carry their time on the camera-motion clips (`_cameraMotionTick`); in
+  the camera preview the stage draws them through `cameraAtTime` worked out against the
+  committed generation (a follow path reflects an edit once the mirror commits it).
 
 ## Not evaluated yet
 
 Named in `Document::unsupported` and gated in the app: property channels on
-native timelines, animation origins, follow cameras, frame drafts, retained
-movieclip sources, drawings a spatial bone turns (`drawingRotation`). The work
+native timelines, animation origins, frame drafts, retained movieclip sources,
+drawings a spatial bone turns (`drawingRotation`). The work
 queue in the plan orders them.
 
 ## Testing
