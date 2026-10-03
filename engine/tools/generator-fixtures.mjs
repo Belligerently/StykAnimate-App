@@ -21,7 +21,8 @@ import {here, repo, documentOf, limb, open, whole, nextKey, nextSheetKey, prune,
 const {buildGeneratorBatch, evaluateParticle, rampColor, beamTip, beamWidth, steppedTime, RECORD_FLOATS, SHAPE} = await import(`${repo}/src/vfx-generators.mjs`);
 const {GeneratorAnchors} = await import(`${repo}/src/vfx-generator-anchors.mjs`);
 const {atlasRow, ATLAS_ROWS} = await import(`${repo}/src/vfx-generator-atlas.mjs`);
-const {createVfxClip, vfxClips} = await import(`${repo}/src/vfx-clips.mjs`);
+const {createVfxClip} = await import(`${repo}/src/vfx-clips.mjs`);
+const {createVfx} = await import(`${repo}/src/vfx.mjs`);
 const {hash: particleHash, pcg} = await import(`${repo}/src/vfx-generators.mjs`);
 
 let counter = 0, state = 1;
@@ -168,6 +169,29 @@ const fixtures = {
     e.addVfxGroupEffect(b, 'smoke'); set(e, b, 2, {enabled: 0});
     e.addVfxGroupEffect(b, 'particles'); set(e, b, 3, {effectStrength: 0});
     return {document: e.serialize(), ticks: [2, 5, 7, 12, 17]};
+  },
+  /** Where generated effects sit in painter order: overlapping figures with
+   * effects behind and in front of them, scene effects behind and in front of
+   * every figure, and a connected group (a scope on a figure covering the part
+   * joined to it) whose member's effects the editor draws after everything. */
+  'placement': () => {
+    const e = sheet([limb(), limb(), [[11, 0, 70, 1.4], [22, 11, 60, 2.4]], limb()], i => [300 + i * 70, 240]);
+    e.select(3); e.joinTo(2, 22);
+    e.changeVfxStack(figure(2), stack => { stack.push({...createVfx('tint', 'scope-tint'), params: {...createVfx('tint', 'scope-tint').params, mix: .3, color: 0x3366ff}}); });
+    e.setVfxScope(figure(2), true);
+    const aura = e.addVfxClip(figure(1), 'aura', {start: 0, duration: 16});
+    set(e, aura, 0, {style: 2, density: .5, dust: 1});
+    const behind = e.addVfxClip(figure(2), 'particles', {start: 0, duration: 16});
+    set(e, behind, 0, {look: 9, rate: 2, life: 10, size: 22, speed: 3, spread: 120, layer: 1, color: 0xffcc00});
+    const member = e.addVfxClip(figure(3), 'particles', {start: 0, duration: 16});
+    set(e, member, 0, {look: 4, rate: 2, life: 10, size: 14, speed: 2, color: 0x33cc66});
+    const front = e.addVfxClip(figure(4), 'smoke', {start: 0, duration: 16});
+    set(e, front, 0, {style: 3, amount: 1.5, life: 12, size: 26});
+    const sceneBehind = e.addVfxClip(scene, 'particles', {start: 0, duration: 16});
+    set(e, sceneBehind, 0, {look: 2, rate: 3, life: 12, size: 30, speed: 2, x: .4, y: .5, layer: 1, color: 0xcc3366});
+    const sceneFront = e.addVfxClip(scene, 'explosion', {start: 2, duration: 12});
+    set(e, sceneFront, 0, {style: 1, size: .6, density: .4, x: .5, y: .45});
+    return {document: e.serialize(), ticks: [4, 8, 12]};
   },
   /** Generated effects inside a movieclip, drawn beside each instance in its
    * transform and opacity: one instance turned, scaled and mirrored at partial
