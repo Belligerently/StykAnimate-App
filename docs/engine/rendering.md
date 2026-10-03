@@ -43,7 +43,7 @@ triangles flagged `F_GLYPH_VECTOR`; `DrawList::glyphs` holds each record's
 | `view.rs` | world → output transform, artboard |
 | `effects/` | effect layers ([vfx.md](vfx.md#rendering)): `plan.rs` places each group for the view (density, crop, composite), `mod.rs` writes its group record, `executor.rs` and `passes.wgsl` run effect stacks on pooled slots |
 | `materials.rs` | the particle material atlas of generated effects: a placeholder texel until a list names a row, then the editor's procedural rows with their reduced levels (5.9 MB), sampled trilinearly |
-| `glyphs.rs`, `glyph.wgsl` | the masks of lone glyphs ([Text](#text)): each glyph filled once per mask size into an atlas of one-channel pages kept across frames, and the per-frame table that tells each `K_GLYPH` record where its mask is |
+| `glyphs.rs`, `glyph.wgsl` | the masks of lone glyphs ([Text](#text)): each glyph filled once per mask size into an atlas of one-channel pages kept across frames (at most 64 MiB), and the per-frame table that tells each `K_GLYPH` record where its mask is |
 
 Drawing cels: every display level's tiles are in the list; the vertex shader
 keeps the level `floor(-log2(pixels per cel pixel))` (0–8) and the fragment
@@ -106,10 +106,12 @@ below a raster density of 8; the engine draws it the same two ways.
   draws the glyph's triangles.
 
 **Masks** (`glyphs.rs`): one mask per glyph tessellation and mask size, shared by every
-instance, filled with four samples a texel and resolved, in pages of 4,096² one-channel
-texels (16 MiB each, at most 4: 64 MiB). They are kept across frames; when a mask does not
-fit, the least recently used page that no record of the frame samples is emptied; a
-record whose mask cannot be placed is drawn from its triangles for that frame. The masks
+instance, filled with four samples a texel and resolved, in square one-channel pages of
+1,024 texels a side, grown to the frame's largest mask (up to 4,096; growing drops the
+masks, which are filled again as they are drawn), at most 64 MiB of pages. They are kept
+across frames; when a mask does not fit, the least recently used page that no record of
+the frame samples is emptied; a record whose mask cannot be placed is drawn from its
+triangles for that frame. The masks
 are filled on the GPU in the frame's own command buffer: nothing is rasterized on the
 interface thread and nothing is waited for (D7). Entries hold their triangles, so a key
 (the triangles' allocation) is never reused while kept; a new document's glyphs age the

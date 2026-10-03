@@ -2,10 +2,12 @@
 //! textures of the editor's WebGPU renderer (`glyphTextureDescriptor`,
 //! src/renderer-glyphs.mjs). A glyph is filled once per mask size, four samples per
 //! texel, into a page of an atlas of one-channel pages, and kept across frames: every
-//! instance of that glyph and size samples the same mask. The atlas holds at most
-//! [`MAX_PAGES`] pages ([`MAX_PAGES`] × 16 MiB); when a mask does not fit, the least
-//! recently used page that no instance of the frame samples is emptied. An instance
-//! whose mask cannot be placed is drawn from its triangles for that frame.
+//! instance of that glyph and size samples the same mask. Pages are square, 1,024 texels a
+//! side until a frame needs a larger mask (then all of them grow, up to 4,096, and the masks
+//! are filled again as they are drawn); the atlas holds at most [`BUDGET`] bytes of pages.
+//! When a mask does not fit, the least recently used page that no instance of the frame
+//! samples is emptied. An instance whose mask cannot be placed is drawn from its triangles
+//! for that frame.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,10 +18,11 @@ use crate::isolation::Shelf;
 use crate::resources::Table;
 use crate::{Renderer, SAMPLES};
 
-/// The side of an atlas page, at most (smaller where the device's textures are).
+/// The side of an atlas page, at least and at most (smaller where the device's textures are).
+const SMALLEST_PAGE: u32 = 1024;
 const PAGE: u32 = 4096;
-/// Pages the atlas may hold: 64 MiB of masks at 4,096 texels a side.
-pub(crate) const MAX_PAGES: u32 = 4;
+/// Bytes of pages the atlas may hold (64 MiB: four pages of 4,096 texels a side, 64 of 1,024).
+pub(crate) const BUDGET: u64 = 64 << 20;
 const MASK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 /// Texels of the glyph table per instance (layout in prim.wgsl, `K_GLYPH`).
 const ROW_TEXELS: usize = 3;
@@ -114,7 +117,7 @@ impl GlyphMasks {
                 return Some((index as u32, [x, y], false));
             }
         }
-        if (self.pages.len() as u32) < MAX_PAGES {
+        if (self.pages.len() as u64 + 1) * (self.side as u64 * self.side as u64) <= BUDGET {
             let index = self.pages.len() as u32;
             self.grow(device, encoder, index + 1);
             let mut page = Page { shelf: Shelf { size: [self.side, self.side], page: 0, x: 0, y: 0, row: 0 }, used: 0 };
@@ -130,11 +133,19 @@ impl GlyphMasks {
         Some((index as u32, [x, y], true))
     }
 
+    /// Pages of at least `side` texels: when they are smaller, every mask is dropped and the
+    /// pages start again at that side (masks are filled again as instances draw them).
+    fn fit(&mut self, side: u32) {
+        let side = side.max(SMALLEST_PAGE).next_power_of_two();
+        if side > self.side {
+            self.entries.clear();
+            self.pages.clear();
+            self.side = side;
+        }
+    }
+
     /// Makes room for `pages` pages, keeping the masks already filled.
     fn grow(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, pages: u32) {
-        if self.pages.is_empty() && self.side == 1 {
-            self.side = PAGE.min(device.limits().max_texture_dimension_2d);
-        }
         let layers = self.texture.depth_or_array_layers();
         if pages <= layers && self.texture.width() == self.side {
             return;
@@ -218,6 +229,11 @@ impl GlyphMasks {
         self.replaced = false;
         self.rows.clear();
         let max = (PAGE.min(device.limits().max_texture_dimension_2d) as f64).min(GlyphMask::MAX_DIMENSION);
+        // Pages as large as this frame's largest mask, before any is placed.
+        let largest = list.glyphs.iter().filter_map(|g| g.mask.layout(resolution, GlyphMask::MAX_DIMENSION)).map(|m| m.width.max(m.height)).filter(|&d| d as f64 <= max).max();
+        if let Some(largest) = largest {
+            self.fit(largest);
+        }
         for instance in &list.glyphs {
             let placed = instance.mask.layout(resolution, GlyphMask::MAX_DIMENSION).filter(|m| (m.width as f64) <= max && (m.height as f64) <= max).and_then(|mask| {
                 let key = (Arc::as_ptr(&instance.triangles) as *const u8 as usize, mask.width, mask.height);
