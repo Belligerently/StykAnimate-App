@@ -160,7 +160,7 @@ async function run(mode) {
       try { e.sheetInsertKey([other], 1); } catch {}
       e.sheetInsertKey([kept], 1); e.undo(); e.clearLayerFocus();
       const uid = e.selectedUid;
-      e.selectSheetLayer(kept); e.seek(Math.min(2, e.totalTicks - 1)); e.seek(0); e.moveSelection(4, 2); e.undo();
+      e.selectSheetLayer(kept); e.seek(Math.min(2, e.totalTicks - 1)); e.seek(0); e.moveSelection(4, 2); e.undo(); e.keepSelectionOnSeek(); e.seek(1); e.seek(0);
       if (uid !== null) e.select(uid, -1);
     }));
     await step('extend a key in one batch, as the timeline does', () => page.evaluate(() => { const e = styk.editor, layer = e.activeLayerId; e.movieclipBatch('Extend keyframe', () => { const {start, end} = e.sheetSpan(layer, e.tick); e.sheetSetDuration(end - start + 1, layer, start); }); e.undo(); e.redo(); }));

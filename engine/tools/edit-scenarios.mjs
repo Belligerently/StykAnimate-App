@@ -728,6 +728,21 @@ scenario('figures-layers-sheet', app, [
     ['@batch', 'Mixed', [['addPaletteColor', '#123456'], ['seek', 5], ['sheetInsertKey', ['layer-1'], 5]]],
     ['undo'], ['undo'], ['undo'], ['redo'], ['@select', 1, -1], ['moveSelection', 4, 4], ['undo'], ['undo'], ['redo'], ['undo'], ['undo'], ['undo'],
   ], 'startup.document.json');
+  // The timeline's layer selection: a layer chosen with its contents selects its figures on
+  // show and follows them through seeks and edits, until seeking keeps the selection, a
+  // figure is selected on the canvas or another layer is chosen; the scene's row, a layer
+  // that does not exist, choosing without contents; the active layer set alone; undo
+  // restoring a followed selection a canvas click had dropped; the same figures selected in
+  // another order (kept); a layer whose first figure is joined to another.
+  scenario('sheet-selection-sheet', app, [
+    ['selectSheetLayer', 'layer-1'], ['seek', 6], ['selectSheetLayer', 'layer-2'], ['seek', 3], ['moveSelection', 5, 5], ['keepSelectionOnSeek'], ['seek', 0],
+    ['selectSheetLayer', 'scene'], ['selectSheetLayer', 'nope'], ['selectSheetLayer', 'layer-1', {contents: false}], ['seek', 6], ['selectSheetLayer', 'layer-2'], ['select', 1, -1], ['seek', 3],
+    ['setActiveLayer', 'layer-2'], ['setActiveLayer', 'layer-2'], ['setActiveLayer', 'nope'],
+    ['selectSheetLayer', 'layer-1'], ['moveSelection', 3, 3], ['seek', 2], ['undo'], ['seek', 5], ['redo'], ['seek', 1],
+    ['@seek', 8], ['@select', 1, -1], ['addFigure', 1], ['selectSheetLayer', 'layer-1'], ['seek', 2], ['seek', 9], ['keepSelectionOnSeek'], ['seek', 2], ['seek', 9],
+    ['selectSheetLayer', 'layer-1'], ['moveSelection', 2, 2], ['select', 1, -1], ['undo'], ['seek', 2], ['selectMany', [2, 1]], ['selectSheetLayer', 'layer-1'],
+    ['seek', 9], ['@select', 1, -1], ['joinTo', 4, 0], ['selectSheetLayer', 'layer-1'],
+  ], 'sheet-layers.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

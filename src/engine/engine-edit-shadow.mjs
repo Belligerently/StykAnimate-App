@@ -25,7 +25,7 @@ import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 import {layerFocusOf} from '../editor-layer-focus.mjs';
 
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
-const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
+const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
@@ -160,7 +160,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
-    selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey)});
+    selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey),
+    sheetSelection: editor._sheetSelection ? {id: editor._sheetSelection.id, contents: Boolean(editor._sheetSelection.contents)} : null});
   const counters = () => ({layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid});
 
   editor.addEventListener('change', event => {
@@ -170,12 +171,11 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     // The document changed through something the session did not run.
     if (['edit', 'history', 'document'].includes(detail?.kind)) end(`a ${detail.kind} outside the shadowed calls`);
     // Runtime state the engine does not hold (editing.md): layer focus, which locks layers
-    // and counts as a layer revision, and a timeline layer selection that follows seeks.
+    // and counts as a layer revision.
     else if (detail?.kind === 'layer-focus') end('layer focus');
-    else if (detail?.kind === 'selection' && detail.sheetSelection) end('a timeline layer selection');
   });
   /** Whether the editor holds runtime state that changes what calls do and the engine lacks. */
-  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor._sheetSelection?.contents);
+  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock);
 
   /** Brings the engine's frames to the editor's revision (playback does it only when it prepares). */
   let syncing = null;
