@@ -186,6 +186,7 @@ async function run(mode) {
       const e = styk.editor; if (e.selectedUid === null) return;
       e.copySelection(); e.pasteSelection(); e.pasteSelection({pasteMode: 'instance'}); e.duplicateSelection(); e.cutSelection(); e.pasteSelection(); e.undo(); e.undo(); e.undo();
     }));
+    await step('import a figure', () => page.evaluate(() => { const e = styk.editor, figure = e.report.figure_types[0]; if (!figure || figure._styk?.movieclip) return; e.importFigure(structuredClone(figure), {position: {x: 200, y: 150}}); e.moveSelection(10, 0); e.undo(); e.undo(); }));
     await step('add an effect clip', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid !== null && !e.getVfxClips().length) e.addVfxClip({kind: 'figure', uid: e.selectedUid}, 'glow', {start: 0, duration: 8}); }));
     await step('edit an effect clip, its parameters and keys', () => page.evaluate(() => {
       const e = styk.editor, clip = e.getVfxClips()[0]; if (!clip) return; const effect = clip.effects[0].id;
