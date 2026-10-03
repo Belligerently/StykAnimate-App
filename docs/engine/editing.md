@@ -266,8 +266,11 @@ editor), for every document with `?engineEdit=on` (or
 `localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
 keeps the editor in charge and compares. `editingClass(report)` names a document's class:
 `unported` for documents the engine does not edit at all (property channels on a native
-timeline, animation origins, a captured movieclip's own document; the engine draws them;
-a layer sheet's `legacyAnimation` is edited since 2026-10-04), `movieclips` when a
+timeline, animation origins, a captured movieclip's own document; the engine draws them),
+`channels` for documents whose layer sheet keeps saved property channels (`legacyAnimation`,
+edited since 2026-10-04; not owned by default: on `channels-figure` owned editing cost
+289.3 ms against the editor's 116.9 ms in one run, and large documents are not measured),
+`movieclips` when a
 figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
 `large figures` from 1,000 segments across its figure definitions, else `figures`. The
 calls that change the document
