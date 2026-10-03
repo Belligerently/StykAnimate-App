@@ -38,3 +38,13 @@ exactly). Geometry, whose points are rounded to single precision, and 3D quatern
 `acos`/`asin` still use the platform's functions; `acos` is to be added before the engine
 stores 3D poses between keys. A function not yet in `styk-math` is ported and recorded
 before a command uses it.
+
+Added 2026-10-03 for generated effects (their batches and particles are compared with the
+editor's bit for bit): `exp`, which is the `libm` crate's fdlibm port except that V8 returns
+`Math.E` for 1 (two million inputs: no other difference; `f64::exp` differed for 10 %;
+6,048 recorded in `exp.bin`). `Math.pow` cannot be had the same way: Node's is the
+platform's (glibc on Linux; against it, two million inputs differed only for exponents 2
+and 0.5, which V8 computes as `x * x` and a square root), so it depends on the platform
+Node runs on, and fdlibm's (`libm::pow`) differed for 9 %. Engine code uses `libm::pow`
+only where a last-bit difference cannot reach a stored value (generated-effect sizes and
+material texels, rounded to single precision and bytes).

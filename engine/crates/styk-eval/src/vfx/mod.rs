@@ -11,6 +11,7 @@
 //! ([`Effect`]) the way the editor hands it to an effect executor.
 
 pub mod clips;
+pub mod generated;
 pub mod frame;
 pub mod layers;
 pub mod padding;

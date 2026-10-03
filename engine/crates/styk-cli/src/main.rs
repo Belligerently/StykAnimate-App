@@ -5,6 +5,7 @@
 //!                                         (effects too, for a reference written with --vfx)
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
+//!   styk generators <file> <tick>…        the generated effects of frames: draws, live particles, timing
 //!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
 //!   styk edit-bench <report.json> <uid> <tick>   what a gesture costs in styk-edit on a document
 //!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
@@ -36,6 +37,7 @@ fn main() {
         },
         Some("info") if args.len() >= 2 => info(&args[1]),
         Some("layers") if args.len() >= 3 => layers(&args[1], &args[2], args[3..].iter().any(|a| a == "--all")),
+        Some("generators") if args.len() >= 3 => generators(&args[1], &args[2..]),
         Some("compare") if args.len() >= 3 => compare(&args[1], &args[2], &args[3..]),
         Some("bench") if args.len() >= 2 => bench(&args[1], &args[2..]),
         Some("render") if args.len() >= 4 => render(&args[1], &args[2], &args[3], &args[4..]),
@@ -217,6 +219,42 @@ fn layers(path: &str, tick: &str, all: bool) -> i32 {
         };
         let effects: Vec<&str> = styk_eval::drawlist::layer_effects(layer).iter().map(|e| e.kind().name()).collect();
         println!("group {g} (parent {}, depth {}, opacity {}): {prims} prims, {:?} [{}]", group.parent, group.depth, group.opacity, layer.kind, effects.join(", "));
+    }
+    0
+}
+
+/// The generated effects of frames (docs/engine/vfx.md): each draw with its shape,
+/// blend, target and live particles, and what building the batch and evaluating
+/// its particles cost (earlier-tick anchors evaluated without a cache).
+fn generators(path: &str, ticks: &[String]) -> i32 {
+    use styk_eval::vfx::generated::{self, particle};
+    let (p, _) = match load(path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
+    };
+    for tick in ticks {
+        let tick: f64 = tick.parse().unwrap_or(0.0);
+        let frame = p.evaluate(tick);
+        let scene = build(&p.doc, &frame);
+        let started = Instant::now();
+        let batch = generated::build(&p, &frame, &scene, Some(tick), Some(&generated::Evaluate), 1.0);
+        let built = started.elapsed().as_secs_f64() * 1000.0;
+        let Some(batch) = batch else {
+            println!("tick {tick}: no generated effect ({built:.2} ms)");
+            continue;
+        };
+        let started = Instant::now();
+        let mut live = 0;
+        for draw in &batch.draws {
+            let alive = (0..draw.count).filter(|&i| particle::evaluate(&batch, draw, i).is_some()).count();
+            live += alive;
+            println!("  draw {}: shape {} blend {} uid {:?} {:?}{} material {}: {alive} of {} alive", draw.record, draw.shape, draw.blend, draw.uid, draw.placement, if draw.scene { " scene" } else { "" }, draw.material, draw.count);
+        }
+        let evaluated = started.elapsed().as_secs_f64() * 1000.0;
+        println!("tick {tick}: {} draws, {live} of {} particles alive; batch {built:.2} ms, particles {evaluated:.2} ms", batch.draws.len(), batch.particles);
     }
     0
 }

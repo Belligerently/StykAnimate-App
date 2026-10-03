@@ -110,6 +110,22 @@ fn sample(stops: &[Stop], t: f64) -> Stop {
     stops[stops.len() - 1]
 }
 
+/// `samplePaint(vfxPaint(color), t)`: the colour (fractional channels, 0–255)
+/// and opacity of an effect colour at `t`.
+pub fn sample_color(color: &super::Color, t: f64) -> ([f64; 3], f64) {
+    let stops: Vec<Stop> = match color {
+        super::Color::Rgb(rgb) => solid(*rgb).stops.iter().map(Stop::from).collect(),
+        super::Color::Paint(paint) => paint.stops.iter().map(Stop::from).collect(),
+    };
+    let s = sample(&stops, t);
+    (s.color, s.opacity)
+}
+
+/// `isGradient`: a paint that is not solid and has more than one stop.
+pub fn is_gradient(color: &super::Color) -> bool {
+    matches!(color, super::Color::Paint(p) if p.kind != PaintKind::Solid && p.stops.len() > 1)
+}
+
 /// `interpolateVfxColor`. Two RGB integers mix per channel, rounded and
 /// clamped. Otherwise both become paints: different gradient kinds or stop
 /// counts keep `a`; a solid takes the other's layout; matching layouts

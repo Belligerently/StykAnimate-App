@@ -21,4 +21,12 @@ for (let i = 0; i < 2000; i++) pairs.push([(rnd() - .5) * 800, (rnd() - .5) * 80
 const atan = new Float64Array(pairs.length * 4);
 pairs.forEach(([y, x], i) => atan.set([y, x, Math.atan2(y, x), Math.hypot(y, x)], i * 4));
 writeFileSync(`${out}atan2-hypot.bin`, Buffer.from(atan.buffer));
-console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs`);
+// exp.bin: [x, Math.exp(x)]: special values, the overflow and underflow thresholds and their
+// neighbours, ordinary values, and the drag decays of generated effects (exp(-drag · age)).
+const es = [0, -0, NaN, Infinity, -Infinity, 5e-324, -5e-324, 1e-300, 709.782712893384, 709.7827128933841, -745.1332191019411, -745.1332191019412, -708.3964185322641, 1, -1, 0.5, Math.LN2, -Math.LN2];
+for (const t of [0.34657359027997264, 1.0397207708399179, 3.725290298461914e-9]) for (const d of [-2, -1, 0, 1, 2]) es.push(nudge(t, d), -nudge(t, d));
+for (let i = 0; i < 2000; i++) es.push((rnd() - .5) * 60, -rnd() * .5 * rnd() * 400, (rnd() - .5) * 10 ** (rnd() * 6 - 4));
+const exps = new Float64Array(es.length * 2);
+es.forEach((x, i) => exps.set([x, Math.exp(x)], i * 2));
+writeFileSync(`${out}exp.bin`, Buffer.from(exps.buffer));
+console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs, ${es.length} exponentials`);

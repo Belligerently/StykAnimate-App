@@ -9,7 +9,7 @@ How the Rust engine (`engine/crates/styk-eval/src/vfx/`) decides, for one tick, 
   - `scene`: the camera image's stack, the scene's per-pose stack then its clips;
   - `objects[slot]` (`FrameVfx::object`): `figure`, the stack of the object's own artwork; `attached`, the connected group it owns (its stack and member slots); `segments`, node stacks by handle id;
   - `roots`: the slots owning a drawn connected group, in compositing order (smaller groups first, so nested groups filter before the groups containing them);
-  - `generators`: generated effects inside their clip's range, with their parameters, opacity and start, never simulated;
+  - `generators`: generated effects inside their clip's range, with their parameters, opacity and start (what the editor's reference dump lists); what they draw is a separate batch ([Generated effects](#generated-effects));
   - `warnings`: connected groups nested too deep.
 - Every stack is what `activeVfx` returns, in render order: enabled filters that change their input, each an `Arc<vfx::Effect>` whose `Params` is one struct per effect type with typed fields (`f64`, `Color` for an RGB integer or a paint, an enum per option list, `bool` switches, `u32` seeds and counts). Values are those the editor hands an executor: keys sampled, poses tweened, `effectStrength` multiplied by the clip's strength and fades.
 - `vfx::padding`, `vfx::sampling_padding` and `vfx::working_slots` take such a stack (`vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots`).
@@ -38,7 +38,35 @@ How the Rust engine (`engine/crates/styk-eval/src/vfx/`) decides, for one tick, 
 | `padding.rs` | `padding`, `sampling_padding`, `working_slots` | `vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots` |
 | `parity.rs` | comparison with `frames[].vfx` of a reference dump | — |
 
-The loader (`load.rs`) reads `_stykVfx`, `_stykVfxScope` and `_styk.vfxClips` (clips cached by record, like figures and keyframes). Generator particles (`vfx-generators.mjs`), rendering and the inspector are not here.
+The loader (`load.rs`) reads `_stykVfx`, `_stykVfxScope` and `_styk.vfxClips` (clips cached by record, like figures and keyframes). Generated effects are in `vfx/generated/` ([Generated effects](#generated-effects)); rendering is the renderer's and the inspector stays in the interface.
+
+## Generated effects
+
+Particles, auras, energy beams, explosions and smoke create artwork instead of filtering it ([`VFX-GENERATORS.md`](../VFX-GENERATORS.md)). `styk_eval::vfx::generated` ports `src/vfx-generators.mjs` and its modules operation for operation, and its output is the editor's bit for bit (see Testing).
+
+| Module (`vfx/generated/`) | Holds | JavaScript |
+| --- | --- | --- |
+| `layers.rs` | the layer vocabulary: shapes, emitters, blending, rotation and size modes, `Spec` (one layer with the editor's defaults), materials, colour ramps | `vfx-generator-layers.mjs` |
+| `styles.rs` | every effect type and style compiled into layers (`compile`), `Context` | `vfx-generator-styles.mjs` |
+| `anchors.rs` | `anchor`: a target's point, bounds and outline; `Sampler`: anchors on earlier ticks; `Evaluate`, a sampler without a cache | `anchorFromGeometry`, `GeneratorAnchors` (`vfx-generator-anchors.mjs`) |
+| `batch.rs` | `build`: the frame's `Batch` (128-number layer records, the birth table, draws); `clip_tail`; `background_is_light`; `Batch::offset` | `buildGeneratorBatch`, `collectLayers`, `packBatch`, `generatorClipTail`, `backgroundIsLight`, `offsetGeneratorBatch` |
+| `particle.rs` | `evaluate`: one particle of a draw; `ramp`, `beam`, `arc_segment`, `beam_tip`, `beam_width`, `stepped_time`, the hashes and value noise | `evaluateParticle`, `rampColor`, `beamTip`, `beamWidth`, `steppedTime`, `pcg`, `hash`, `vnoise` (and the WGSL vertex shader of `vfx-generator-gpu.mjs`) |
+| `atlas.rs` | the procedural material atlas: 17 rows of eight 128-pixel cells with three reduced levels, generated on first use | `vfx-generator-atlas.mjs` |
+
+**A frame's batch** (`generated::build(prepared, frame, scene, tick, sampler, density)`): every enabled generator clip active at the frame's `_vfxTimelineTick` (from its start to its end plus `clip_tail`, the longest lifetime, jitter and trail of its layers) compiles its sampled effects into layers, then movieclip containers whose documents carry generators add theirs, evaluated at the instance's local time, in its transform and opacity, four levels deep, beside the container. Layers pack into one batch: a record per draw, a birth table (per layer, a row per tick of still-visible births: anchor, emission amount, keyed direction, speed and size; per effect, the target's outline, one per birth tick for trails) and the draws (shape, resolved blending, target, placement, material row). Trail echoes, glow halos and outlines are extra draws of the same particles. A particle is then a pure function of its record, the table, its instance index and the tick (`particle::evaluate`): nothing is simulated or kept between frames.
+
+**Anchors on earlier ticks**: particles keep the position their target had when they were born, so a batch reads the target on earlier ticks through a `Sampler`. The evaluation crate's `Evaluate` evaluates the document at each such tick; the engine keeps them across frames (Rendering). A sampler may answer `Pending` when an interactive frame's time budget is spent: the batch then uses the current pose for those births and is marked `incomplete`, to be built again.
+
+Invariants:
+
+- **The editor's arithmetic**: `f64` operation for operation, single precision where the editor stores a `Float32Array` (records, table, outlines, material texels), `Math.round` as `js_round`, V8's `sin`, `cos`, `atan2`, `hypot` and `exp` from `styk-math` (D16). Hashes are the shaders' integer PCG, bit-compatible with the editor's `hash`.
+- **Pure**: a function of the prepared document, the frame, its geometry and the sampler's answers.
+- **Materials never wait** (D7): a row another thread is generating is generated again, the first finished copy kept; rows live for the process (5.9 MB for all 17).
+
+Differences, on purpose or known:
+
+- `Math.pow` (sizes over life, trail fades, some material shapes) is fdlibm's (`libm::pow`). Node's is the platform's (glibc on Linux) with exact squares and square roots: a last-bit difference, which cannot change a stored record (single precision) or a material byte in practice; particle sizes are compared within 1e-12 relative.
+- A styled instance's nested generators are read from its base figure's movieclip (the same clip document).
 
 ## Invariants
 
@@ -228,5 +256,15 @@ cd engine && cargo build -p styk-cli
 node tools/reference.mjs <file.styk> /tmp/reference.json --every 1 --vfx
 target/debug/styk compare <file.styk> /tmp/reference.json     # adds an effects line
 ```
+
+Generated effects:
+
+```sh
+node engine/tools/generator-fixtures.mjs          # regenerate engine/crates/styk-eval/tests/fixtures/generators/ (byte-stable)
+cd engine && cargo test -p styk-eval --test generators
+target/debug/styk generators <file> <tick>…       # a frame's draws, live particles and what they cost
+```
+
+`tests/generators.rs` loads every fixture (auras, beams, explosions, smoke and particles in every style and look, clip tails, a movieclip carrying generators instanced turned, scaled, mirrored and translucent) and, at every recorded tick, requires the editor's batch bit for bit (records and table in single precision, draws) and the same live particles with every value equal (sizes within 1e-12 relative, `Math.pow`), the same beams, arc hashes and ramp colours; each fixture stops matching without its effect clips, and those with trails without earlier-tick anchors. `atlas.json` holds a hash of every material row and level, which the engine generates byte for byte.
 
 Measured when this landed: `TDD2 URIEL NEMESIS 3.styk` (40 clips), all 232 ticks: 602 stacks and 337 effects compared, no difference (nor in its geometry). The Impact FX pack (`AssetReleases/Impact-FX`: the fight scene, 240 ticks, and the 28 movieclip files) keeps its effects, all particles, inside 8 distinct movieclip documents; opened alone, each compares 18 ticks and 16 generated effects with no difference. Their geometry differs where they use 3D poses and surfaces, which the engine does not evaluate yet.

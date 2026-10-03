@@ -1167,6 +1167,7 @@ dependencies = [
  "base64",
  "flate2",
  "image",
+ "libm",
  "lyon_path",
  "lyon_tessellation",
  "rayon",

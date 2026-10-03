@@ -695,7 +695,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
 }
 
 /// The clip's own scene at a local time, shared by every instance.
-fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
+pub fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
     let key = local.to_bits();
     if let Some(s) = clip.cache.lock().unwrap().get(&key) {
         return s.clone();
