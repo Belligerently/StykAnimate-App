@@ -191,17 +191,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
-- **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4). In
-  the corpus of 457 native files, 39 need nothing more; the others use 3D meshes (387), 3D
-  poses (58), 3D surfaces (29), effects (9 with effect clips), text outlines, a follow camera
-  or property channels. Drawings are gated
-  too (both `.styk` files of the benchmark set have drawing layers): the engine draws committed drawing tiles, but a stroke not yet published lives only in
-  the JavaScript drawing resources. Order of work: effects (agent in progress), drawings,
-  meshes and surfaces, 3D poses, text outlines, channels, follow camera, parallax.
-- **Onion skins of figures with custom paints** differ: the editor keeps a segment's custom
-  paint (gradient) under the onion tint and drops only its secondary colour; the engine tints
-  everything. Found by `scripts/engine-app-parity.mjs` on Jay (drawings enabled
-  experimentally). Fix in `drawlist.rs` `Ctx::brush`.
+- **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
+  The gate itself over the corpus and the shipped asset catalogue (402 native files,
+  2026-10-03): 40 drawn by the engine; refused for 3D meshes 355, effects (a generated
+  effect) 1, 3D surfaces 1, property channels 1, and 4 failed to load in Node. 3D (agent) is
+  next, then generated effects, channels, follow camera, parallax. A drawing stroke not yet
+  published still makes its frame fall back to the JavaScript renderer.
 - **No-WebGPU devices lose the Canvas 2D fallback's seams.** The JavaScript Canvas 2D
   fallback antialiases each triangle of a polygon fill on its own, so light seams show between
   adjacent faces (asset-pack backgrounds such as `04-waterfall.styk` fail the web-target parity
@@ -210,10 +205,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   of `04-waterfall.styk` is identical, pixel for pixel, to the WebGPU renderer's). Recorded as a
   deliberate difference: where a device lacks WebGPU the picture now matches what WebGPU
   devices show.
-- **The JavaScript modules cannot be deleted yet**: commands, history and the editor's own
-  evaluation (handles, picking, the pose it sends to the engine) still run in JavaScript and
-  call the evaluation modules the engine now covers. Deleting them needs stage S5 (the engine
-  owns the document and evaluates for the editor); until then they are the oracle.
+- **Most JavaScript engine modules cannot be deleted yet**: commands, history and the
+  editor's own evaluation (handles, picking, the pose it sends to the engine) still run in
+  JavaScript and call the evaluation modules the engine covers; they go when the engine owns
+  a document class (S5, D15). Deleted so far: the Python codec runtime, sidecar and their
+  loaders (codec merge). Ported editor calls run in shadow (`?engineShadow=on`); the
+  document the app starts with has IK controllers, which `styk-edit` does not run yet.
 - **The document is held twice until S5** (D12): the editor's JavaScript objects and the
   engine's store and typed views. Measured 2026-10-02 in Electron (WebGPU), one run each after
   opening the file and letting the mirror commit, machine load 4–5 from the baseline rounds
@@ -234,8 +231,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 - **First use is slow in WebAssembly.** The first file opened after the module loads takes
   about 2.2 s where the same file then takes 0.66 s (URIEL 3). Suspects: baseline-compiler
   code before the optimizing tier is ready, and growing the shared memory. To measure.
-- **wasm-opt is not installed** on the development machine: the module is 4,376 KiB without
-  it. Bundle budget to be set once it is.
+- **wasm-opt is not installed** on the development machine: the engine module is 5,720 KiB
+  and the codec module 1,496 KiB without it. Bundle budget to be set once it is.
 - **The WebGL2 path is only verified on SwiftShader** (headless Chromium). Playwright's
   Chromium does not display a WebGPU canvas here; Electron does.
 - **Real iOS and iPadOS devices are unverified** for the engine's shared memory: the page now falls back from 2 GiB to 1 GiB and 512 MiB maxima (D14), but the actual limits of Apple devices were not measured.
@@ -252,11 +249,24 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   `cos`, `atan2` and `acos`. Drawn geometry is rounded to single precision and matches;
   before the engine stores those results in documents (baking IK poses, 3D poses between
   keys), those paths move to `styk-math` (which needs `acos`).
+- **The codec, open after the merge**: a segment edit to a figure from the synthetic
+  `figure-modern.stk` fixture does not survive `.stk` export (the export writes the
+  unedited 84 bytes; the Python oracle writes the same bytes, so the defect predates the
+  port; corpus `.stk` files round-trip edits); a fresh WebAssembly instance pays about 1 s
+  on its first import (1.39 s cold against 0.41 s warm in Node); the personal Windows
+  launcher outside the repository (`../Start-StykAnimate-webapp.ps1`) still requires the
+  sidecar files, so it would refuse a release built now (`scripts/release-launcher.test.mjs`
+  records its contract); Windows, macOS, a packaged build and CI were not run; Python is
+  still needed to build the video encoder and VfW helpers for packaging.
+- **Shadow editing in a browser compares numbers within 1e-9**: Chromium, WebKit and
+  Firefox round `Math.sin`, `cos`, `atan2` and `hypot` differently from Node and from each
+  other (D16), so a pose computed in the browser editor differs from the engine's in its
+  last digits; byte-for-byte equality is checked in Node.
 - **Running out of engine memory is not recovered**: an allocation beyond the reserved maximum traps the module, and the stage does not yet drop the engine for the session safely (a trap inside a held spin lock would block the interface).
 - **A lone UTF-16 surrogate in a JSON string** is replaced with U+FFFD by the store
   (JavaScript keeps it). No corpus file has one.
-- **Clippy is not clean in `styk-eval`**: three `approx_constant` errors in `piv.rs` (code
-  carried over from the prototype; `piv.rs` goes when `styk-piv` lands).
+- **Clippy is not clean in `styk-eval`** (18 warnings, mostly complex types and
+  `chunks_exact`) and `styk-formats` (one). New crates (`styk-edit`, `styk-math`) are clean.
 - **Small features look crisper than in the WebGPU renderer** on `hitoshi vs suzu tomiee ssj.piv`
   (section 7). Suspected cause: the JavaScript renderer draws figures from cached rasters at
   bucketed densities and resamples them. To confirm with the raster cache disabled, then
@@ -271,11 +281,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   resets the whole frame cache (tick-range invalidation, `playback-retention.mjs`, is not
   ported). Fine at the sizes measured so far; the dense-drag benchmark will decide.
 
-Resolved since the last update: WebKit runs here (the missing `libavif`, `libevent`,
-`libmanette`, `libgav1`, `libhidapi` and `libyuv` are unpacked from Ubuntu packages into
-`~/.cache/styk-webkit-libs` and linked into Playwright's WebKit `sys/lib`; nothing installed
-system-wide); pinned IK and layer-sheet movieclip replacements (geometry parity is complete on
-URIEL 3).
+Resolved since the last update: onion skins keep custom paints and draw solid paints in the
+skin's tint (`774d1b21`, `066587e3`); `piv.rs` is gone (styk-piv reads Pivot files);
+effects are drawn as GPU passes (generated effects excepted); the baseline benchmark is
+complete; the Python codec no longer ships. Earlier: WebKit runs here (missing libraries
+unpacked into `~/.cache/styk-webkit-libs`, nothing installed system-wide); pinned IK and
+layer-sheet movieclip replacements.
 
 ## 7. Parity results
 
@@ -336,12 +347,12 @@ effect executors are deleted):
 
 1. Effects rendering: done for every filter type on WebGPU and WebGL2 (milestone log). Left:
    drawing cels inside effect layers, effects in `styk-raster`.
-2. 3D, the largest remaining gate: 355 of the 402 native files in the corpus and the shipped
+2. 3D, the largest remaining gate (agent running): 355 of the 402 native files in the corpus and the shipped
    asset catalogue are kept off the engine by 3D meshes (measured 2026-10-03 with the gate
    itself). Spatial poses (`_stykSpatial`), perspective projection, surfaces (culling,
    depth order, depth-tested faces), figure meshes (skinning, view targets), movieclip
    meshes, depth-tested rendering with painter-order splitting.
-3. Generators (particle effects): simulation (`vfx-generator*.mjs`) and drawing.
+3. Generators (particle effects): simulation (`vfx-generator*.mjs`) and drawing (subagent after 3D).
 4. Property channels on native timelines (scalar, colour, style, effect parameters, camera,
    scene) and pose channels, with animation origins.
 5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
@@ -353,9 +364,11 @@ effect executors are deleted):
 8. Delete the JavaScript renderer, raster caches, stand-ins and density buckets, playback
    workers, effect executors; the eligibility gate disappears.
 
-**S1, formats:** the Rust codec in the app in place of Pyodide and the Python sidecar (agent,
-running); then the Python codec stays only as the development oracle. Later, opening and
-saving `.styk` through Rust once the engine owns the document (S5).
+**S1, formats:** done: the Rust codec runs in the app in place of Pyodide and the Python
+sidecar, and the Python codec stays only as the development oracle (milestone log, 10:05).
+Left: opening and saving `.styk` through Rust once the engine owns the document (S5);
+removing the remaining sidecar names from the brand and release tooling; the personal
+Windows launcher (outside the repository) must stop requiring the sidecar.
 
 **S4, export:** frames, PNG sequence, GIF, APNG, SVG, ZIP and video frames from the engine;
 the audio mix and WebCodecs encoders stay platform services.
@@ -417,9 +430,11 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 00:29 | S5 commands that draft the whole frame | `styk-edit`: the editor's `transaction` on a layer sheet, with `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`; figure-pose counts (`_layerUidCounts`) so that a figure appearing or disappearing bumps the layer revision as in the editor; new figures take their layer from the hints; the replay state carries the next figure identity. | 24 recordings, 476 steps: the 23 scenarios of ported calls (455 steps) match the editor at every step. |
 | 2026-10-03 00:34 | Baseline complete | Rounds 2 and 3 of the baseline benchmark; [`docs/performance/RUST-ENGINE-BASELINE.md`](performance/RUST-ENGINE-BASELINE.md). | 84 runs (7 configurations × 4 files × 3), 4 flagged busy; medians and ranges in section 5 and the report. |
 | 2026-10-03 00:45 | S5 shadow editing in the app | `styk_edit::session` (calls in, JSON out), `EngineHandle.edit_session` / `EditSession.call` in `styk-wasm`, `Engine::mirrored`, `src/engine/engine-edit-shadow.mjs` (off unless `?engineShadow=on`), `scripts/engine-edit-shadow.mjs`. D15 revised (shadow, then ownership flips per document) and D16 restated (one `Math`, Node's; browsers disagree among themselves). | Headless Chromium, real pointer drags, keyboard undo/redo and commands on four documents: 77 of 77 calls the same as the editor in each (28–53 only in last digits, Chromium's `Math`), engine 28–31 ms against the editor's 58–63 ms for those calls. The start-up document answers `Unported` throughout: it has IK controllers. |
+| 2026-10-03 10:05 | S1 the Pivot codec in WebAssembly in the app (agent, reviewed, completed and merged) | Every build opens and writes Pivot files with `styk-piv` compiled to WebAssembly (`engine/crates/styk-codec-wasm`, stable Rust) and run in a worker of the editor page; Pyodide, the PyInstaller sidecar and its scripts, `desktop/backend.cjs` and `src/codec-web-engine.mjs` are deleted; desktop samples come over two IPC calls (`desktop/samples.cjs`); `backend/` and `codecs/` stay as the development oracle. Completed here: CI builds the engine before the unit tests, a stale sweep step, the export contract doc, `scripts/smoke-native-formats.mjs`. | Web build 61.3 → 51.0 MiB raw, 17.4 → 12.5 MiB at Brotli 5 (Python runtime 13.3 / 5.8 MiB → none; WebAssembly 6.5 / 2.0 → 9.7 / 3.0 MiB: engine 5.6 MiB, codec 1.5 MiB). Import medians of three interleaved rounds, measured by the agent before → after: desktop from source (Xvfb, Canvas 2D) `svr_uriel.piv` 12.58 → 4.44 s and `tdd2 uriel nemesis.piv` 28.89 → 6.07 s; web build (headless Chromium) 23.40 → 7.37 s and 20.32 → 8.14 s; development server 2.67 → 3.05 s (the old service had a C++ scanner) and 5.47 → 4.14 s. Same documents, key order and edited-export bytes as the Python service on four files; AyameDemo.piv exports the same 2,091,013 bytes in Chrome 153, Firefox 155 and WebKit 26.6. Here: `npm test` 4,347 of 4,380 pass (the 6 known failures), `engine:test` 208, `engine:parity` all ok, Python oracle 161 pass, `web:verify` ok, desktop round trip 17 of 17. |
 
-In progress: the Rust codec in the app in place of Pyodide and the Python sidecar (agent);
-3D meshes and surfaces (agent). Next in the main
-thread: the facade (the app's gestures run in the engine, `docs/engine/editing.md`), then
-the remaining gesture paths (IK targets, rigs, movieclips on a sheet) and the next command
-groups (frames and keys, layers).
+In progress: 3D meshes, surfaces and poses in the engine (agent, resumed after a session
+limit stopped it). Next in the main thread: inverse kinematics in `styk-edit` (the shadow run
+showed the document the app starts with needs it), the remaining gesture paths (rigs, 3D
+bones, Stick Nodes curves), then flipping document ownership to the engine one document
+class at a time (D15). After the 3D agent: generated effects (particles, smoke, beams,
+explosions) as the next subagent.
