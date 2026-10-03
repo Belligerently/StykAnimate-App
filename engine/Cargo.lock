@@ -1154,6 +1154,7 @@ dependencies = [
 name = "styk-drawing-wasm"
 version = "0.1.0"
 dependencies = [
+ "js-sys",
  "styk-doc",
  "styk-drawing",
  "wasm-bindgen",

@@ -33,8 +33,9 @@ export async function drawingEngineOperation(data, post = (message, transfer) =>
       const output = withTiles(data.tiles, tiles => engineCall(g => g.prepareTiles(tiles)));
       const tiles = [];
       for (let i = 0; i < output.length; i++) {
-        const pixels = output.a(i);
-        tiles.push({tx: output.tx(i), ty: output.ty(i), pixels: pixels ? pixels.buffer : null, alphaBounds: pixels ? rectOf(output.alpha(i)) : null});
+        // A full tile stays the buffer it arrived in; uniform colours come back expanded.
+        const pixels = output.flag(i) ? data.tiles[i].pixels : output.a(i)?.buffer ?? null;
+        tiles.push({tx: output.tx(i), ty: output.ty(i), pixels, alphaBounds: pixels ? rectOf(output.alpha(i)) : null});
       }
       output.free();
       post({id, tiles}, tiles.flatMap(t => t.pixels ? [t.pixels] : []));

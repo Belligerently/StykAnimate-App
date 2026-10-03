@@ -39,7 +39,7 @@ export function drawingWorkerURL(url) {
   return next;
 }
 
-let loading = null, glue = null, failure = null;
+let loading = null, glue = null, failure = null, exports = null;
 
 async function load() {
   const module = new URL('./pkg/styk_drawing.js', import.meta.url);
@@ -47,8 +47,8 @@ async function load() {
   if (globalThis.process?.versions?.node && !globalThis.WorkerGlobalScope) {
     // Node (tests, tools): read the module from disk; fetch() has no file URLs there.
     const {readFile} = await import('node:fs/promises');
-    await bindings.default({module_or_path: await readFile(new URL('./pkg/styk_drawing_bg.wasm', import.meta.url))});
-  } else await bindings.default();
+    exports = await bindings.default({module_or_path: await readFile(new URL('./pkg/styk_drawing_bg.wasm', import.meta.url))});
+  } else exports = await bindings.default();
   if (bindings.drawingApiVersion() !== API_VERSION) throw new Error(`The drawing engine module has API ${bindings.drawingApiVersion()}, this page expects ${API_VERSION}. Reload the page.`);
   return bindings;
 }
@@ -68,6 +68,8 @@ export function loadDrawingEngine({enabled = drawingEngineEnabled()} = {}) {
 export function drawingEngine() { return glue; }
 /** Why the module did not load, if it failed. */
 export function drawingEngineFailure() { return failure; }
+/** Bytes of linear memory the module holds in this thread (it grows, it never shrinks). */
+export function drawingEngineMemory() { return exports?.memory?.buffer?.byteLength ?? 0; }
 
 /** Runs `call` on the module; a module error becomes the editor's localized error. A trap
  * (a panic aborts) leaves the instance unusable: it is replaced before the error is thrown. */

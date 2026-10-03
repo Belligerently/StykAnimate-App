@@ -22,7 +22,7 @@ use styk_drawing::lasso::{capture_mask_selection, capture_selection, Captured};
 use styk_drawing::levels::{level_store, Levels};
 use styk_drawing::mask::{flood_dense, DenseFlood, Flooded, Mask, MaskData};
 use styk_drawing::stroke::{SeedTile, StrokeEngine};
-use styk_drawing::tiles::{alpha_bounds, pixels_from, tile_changes, tiles_in_rect, Alpha, Before, Rect, Side, TileChange, TileStore, TILE, TILE_BYTES};
+use styk_drawing::tiles::{alpha_bounds, pixels_from, tile_changes, tiles_in_rect, Alpha, Before, Pixels, Rect, Side, TileChange, TileStore, TILE, TILE_BYTES};
 use styk_drawing::transform::{transform_selected_pixels, transform_tiles, Filter as Sampling};
 use styk_drawing::{clipboard, history, png, prepare};
 use wasm_bindgen::prelude::*;
@@ -72,6 +72,23 @@ pub struct Tiles {
     list: Vec<(i64, i64, Option<Vec<u8>>, Option<Vec<u8>>)>,
 }
 
+/// A buffer going out: owned, or shared with a tile (copied once, into JavaScript).
+enum Buf {
+    Owned(Vec<u8>),
+    Tile(Pixels),
+    Bytes(std::sync::Arc<[u8]>),
+}
+
+impl Buf {
+    fn slice(&self) -> &[u8] {
+        match self {
+            Buf::Owned(v) => v,
+            Buf::Tile(p) => &p[..],
+            Buf::Bytes(b) => b,
+        }
+    }
+}
+
 #[wasm_bindgen]
 impl Tiles {
     #[wasm_bindgen(constructor)]
@@ -79,8 +96,8 @@ impl Tiles {
         Tiles::default()
     }
     /// A tile with pixels (16,384 bytes or four uniform bytes).
-    pub fn push(&mut self, tx: f64, ty: f64, pixels: &[u8]) {
-        self.list.push((tx as i64, ty as i64, Some(pixels.to_vec()), None));
+    pub fn push(&mut self, tx: f64, ty: f64, pixels: Vec<u8>) {
+        self.list.push((tx as i64, ty as i64, Some(pixels), None));
     }
     /// A tile without pixels (an absent side, a seeded empty tile).
     #[wasm_bindgen(js_name = pushEmpty)]
@@ -89,8 +106,8 @@ impl Tiles {
     }
     /// A tile known by its published PNG.
     #[wasm_bindgen(js_name = pushPng)]
-    pub fn push_png(&mut self, tx: f64, ty: f64, png: &[u8]) {
-        self.list.push((tx as i64, ty as i64, None, Some(png.to_vec())));
+    pub fn push_png(&mut self, tx: f64, ty: f64, png: Vec<u8>) {
+        self.list.push((tx as i64, ty as i64, None, Some(png)));
     }
     #[wasm_bindgen(getter)]
     pub fn length(&self) -> usize {
@@ -122,11 +139,11 @@ pub struct MaskIn {
 #[wasm_bindgen]
 impl MaskIn {
     /// A byte mask read as `byte / max`.
-    pub fn dense(x: f64, y: f64, width: f64, height: f64, bytes: &[u8], max: f64) -> JsResult<MaskIn> {
+    pub fn dense(x: f64, y: f64, width: f64, height: f64, bytes: Vec<u8>, max: f64) -> JsResult<MaskIn> {
         if !safe(&[x, y, width, height]) || width < 0.0 || height < 0.0 || bytes.len() as f64 != width * height {
             return Err(key("errors.drawingLasso.invalidSelectionMask"));
         }
-        Ok(MaskIn { mask: Mask { x: x as i64, y: y as i64, width: width as i64, height: height as i64, data: MaskData::Dense { mask: bytes.to_vec(), max } } })
+        Ok(MaskIn { mask: Mask { x: x as i64, y: y as i64, width: width as i64, height: height as i64, data: MaskData::Dense { mask: bytes, max } } })
     }
     /// An even-odd polygon (`[x0, y0, x1, y1, …]`) with its bounds.
     pub fn points(x: f64, y: f64, width: f64, height: f64, points: &[f64]) -> MaskIn {
@@ -138,8 +155,8 @@ impl MaskIn {
 struct Item {
     tx: i64,
     ty: i64,
-    a: Option<Vec<u8>>,
-    b: Option<Vec<u8>>,
+    a: Option<Buf>,
+    b: Option<Buf>,
     alpha: Option<Rect>,
     alpha2: Option<Rect>,
     flag: bool,
@@ -167,8 +184,17 @@ fn rect_vec(r: Option<Rect>) -> Option<Vec<f64>> {
     r.map(|r| vec![r.x as f64, r.y as f64, r.width as f64, r.height as f64])
 }
 
-fn side_bytes(side: &Side) -> Option<Vec<u8>> {
-    side.as_slice().map(<[u8]>::to_vec)
+fn side_buf(side: &Side) -> Option<Buf> {
+    match side {
+        Side::Absent => None,
+        Side::Uniform(c) => Some(Buf::Owned(c.to_vec())),
+        Side::Full(p) => Some(Buf::Tile(p.clone())),
+    }
+}
+
+/// A buffer copied out of this module into a fresh, transferable `Uint8Array`.
+fn js_bytes(buf: Option<Buf>) -> Option<js_sys::Uint8Array> {
+    buf.map(|b| js_sys::Uint8Array::from(b.slice()))
 }
 
 #[wasm_bindgen]
@@ -184,12 +210,12 @@ impl Output {
         self.items[i].ty as f64
     }
     /// The first buffer of item `i` (pixels, or an undo record's before side), moved out.
-    pub fn a(&mut self, i: usize) -> Option<Vec<u8>> {
-        self.items[i].a.take()
+    pub fn a(&mut self, i: usize) -> Option<js_sys::Uint8Array> {
+        js_bytes(self.items[i].a.take())
     }
     /// The second buffer of item `i` (a PNG, a remainder, or an undo record's after side), moved out.
-    pub fn b(&mut self, i: usize) -> Option<Vec<u8>> {
-        self.items[i].b.take()
+    pub fn b(&mut self, i: usize) -> Option<js_sys::Uint8Array> {
+        js_bytes(self.items[i].b.take())
     }
     /// Alpha bounds `[x, y, width, height]` of item `i`'s first buffer.
     pub fn alpha(&self, i: usize) -> Option<Vec<f64>> {
@@ -230,13 +256,13 @@ impl Output {
 fn changes_output(changes: Vec<TileChange>) -> Output {
     let items = changes
         .into_iter()
-        .map(|c| Item { a: side_bytes(&c.before), b: side_bytes(&c.after), ..Item::new(c.tx as i64, c.ty as i64) })
+        .map(|c| Item { a: side_buf(&c.before), b: side_buf(&c.after), ..Item::new(c.tx as i64, c.ty as i64) })
         .collect();
     Output { items, ..Output::default() }
 }
 
 fn tiles_output(store: &TileStore) -> Output {
-    let items = store.iter().map(|t| Item { a: Some(t.pixels.to_vec()), alpha: t.alpha_bounds(), ..Item::new(t.tx as i64, t.ty as i64) }).collect();
+    let items = store.iter().map(|t| Item { a: Some(Buf::Tile(t.pixels.clone())), alpha: t.alpha_bounds(), ..Item::new(t.tx as i64, t.ty as i64) }).collect();
     Output { items, ..Output::default() }
 }
 
@@ -276,10 +302,9 @@ pub fn flood_mask(tiles: &Tiles, bounds: &[f64], x: f64, y: f64, tolerance: f64,
         return Err(key("errors.drawingWorkerOperations.invalidSelectionBounds"));
     }
     let flood = DenseFlood { x, y, color: [0.0, 0.0, 0.0, 255.0], tolerance, expansion: 0.0, gap, bounds, source: source.as_deref(), clip: None };
-    let mut out = Output::default();
     // `number(0)`: 0 when the start is outside the bounds (the JavaScript returns
     // `undefined`), 1 when it is not selectable (`null`), 2 with a selection.
-    out.numbers = vec![0.0];
+    let mut out = Output { numbers: vec![0.0], ..Output::default() };
     match flood_dense(&mut store, &flood, true).map_err(error)? {
         Flooded::Selection(Some(mask)) => {
             out.numbers[0] = 2.0;
@@ -351,8 +376,8 @@ fn captured_output(tiles: Vec<Captured>) -> Output {
     let items = tiles
         .into_iter()
         .map(|t| Item {
-            a: (!t.full).then(|| t.pixels.to_vec()),
-            b: t.remaining.as_ref().map(|r| r.to_vec()),
+            a: (!t.full).then(|| Buf::Tile(t.pixels.clone())),
+            b: t.remaining.as_ref().map(|r| Buf::Tile(r.clone())),
             alpha: t.alpha,
             alpha2: t.remaining_bounds,
             flag: t.full,
@@ -429,7 +454,7 @@ pub fn decode_tiles(blob: &[u8], shard_index: f64, shard_count: f64, levels: u32
         for k in 1..=levels {
             let level = chain.level(&store, k as usize, None);
             for t in level.iter() {
-                out.items.push(Item { a: Some(t.pixels.to_vec()), level: k, ..Item::new(t.tx as i64, t.ty as i64) });
+                out.items.push(Item { a: Some(Buf::Tile(t.pixels.clone())), level: k, ..Item::new(t.tx as i64, t.ty as i64) });
             }
             if shard.is_none() && level.len() <= 4 {
                 break;
@@ -437,7 +462,7 @@ pub fn decode_tiles(blob: &[u8], shard_index: f64, shard_count: f64, levels: u32
         }
     }
     let level_items = std::mem::take(&mut out.items);
-    out.items = decoded.into_iter().map(|t| Item { a: Some(t.pixels.to_vec()), b: Some(t.png.to_vec()), ..Item::new(t.tx as i64, t.ty as i64) }).collect();
+    out.items = decoded.into_iter().map(|t| Item { a: Some(Buf::Tile(t.pixels)), b: Some(Buf::Bytes(t.png)), ..Item::new(t.tx as i64, t.ty as i64) }).collect();
     out.items.extend(level_items);
     Ok(out)
 }
@@ -470,7 +495,7 @@ fn png_tiles(png_bytes: &[u8], crop_x: f64, crop_y: f64) -> JsResult<TileStore> 
 #[wasm_bindgen(js_name = decodeLegacy)]
 pub fn decode_legacy(png_bytes: &[u8], crop_x: f64, crop_y: f64) -> JsResult<Output> {
     let store = png_tiles(png_bytes, crop_x, crop_y)?;
-    let items = store.iter().map(|t| Item { a: Some(t.pixels.to_vec()), ..Item::new(t.tx as i64, t.ty as i64) }).collect();
+    let items = store.iter().map(|t| Item { a: Some(Buf::Tile(t.pixels.clone())), ..Item::new(t.tx as i64, t.ty as i64) }).collect();
     Ok(Output { items, ..Output::default() })
 }
 
@@ -481,7 +506,7 @@ pub fn encode_pngs(tiles: &Tiles) -> JsResult<Output> {
     let mut items = Vec::with_capacity(tiles.list.len());
     for (tx, ty, pixels, _) in &tiles.list {
         let Some(pixels) = pixels.as_ref().filter(|p| p.len() == TILE_BYTES) else { return Err(key("errors.drawingTiles.tilePixelsMustBeOneFullTile")) };
-        items.push(Item { a: Some(encoder.encode(pixels).to_vec()), ..Item::new(*tx, *ty) });
+        items.push(Item { a: Some(Buf::Bytes(encoder.encode(pixels))), ..Item::new(*tx, *ty) });
     }
     Ok(Output { items, ..Output::default() })
 }
@@ -544,12 +569,16 @@ pub fn copy_selection(tiles: &Tiles, max_bytes: f64) -> JsResult<Output> {
 /// `prepare-tiles`: replacement tiles expanded from compact undo sides, with alpha bounds.
 #[wasm_bindgen(js_name = prepareTiles)]
 pub fn prepare_tiles(tiles: &Tiles) -> JsResult<Output> {
+    let full: Vec<bool> = tiles.list.iter().map(|(_, _, pixels, _)| pixels.as_ref().is_some_and(|p| p.len() == TILE_BYTES)).collect();
     let input = tiles.list.iter().map(|(tx, ty, pixels, _)| (*tx, *ty, pixels.clone())).collect();
     let prepared = prepare::materialize(input).map_err(error)?;
     let items = prepared
         .into_iter()
-        .map(|t| match t.pixels {
-            Some((pixels, bounds)) => Item { a: Some(pixels.to_vec()), alpha: Some(bounds), ..Item::new(t.tx, t.ty) },
+        .zip(full)
+        .map(|(t, full)| match t.pixels {
+            // A full tile comes back as the caller's own buffer: its bounds suffice (`flag`).
+            Some((_, bounds)) if full => Item { alpha: Some(bounds), flag: true, ..Item::new(t.tx, t.ty) },
+            Some((pixels, bounds)) => Item { a: Some(Buf::Tile(pixels)), alpha: Some(bounds), ..Item::new(t.tx, t.ty) },
             None => Item::new(t.tx, t.ty),
         })
         .collect();
@@ -590,7 +619,7 @@ impl Publisher {
         let result = self.cache.encode(cel, keep.as_deref(), list, partial).map_err(error)?;
         let mut out = Output::default();
         for t in &result.tiles {
-            out.items.push(Item { a: Some(t.png.to_vec()), ..Item::new(t.tx as i64, t.ty as i64) });
+            out.items.push(Item { a: Some(Buf::Bytes(t.png.clone())), ..Item::new(t.tx as i64, t.ty as i64) });
         }
         for (tx, ty) in &result.missing {
             out.items.push(Item { flag: true, ..Item::new(*tx as i64, *ty as i64) });
@@ -700,7 +729,7 @@ impl Strokes {
         let seeds = seeds.list.iter().map(|(tx, ty, pixels, _)| SeedTile { tx: *tx, ty: *ty, pixels: pixels.clone() }).collect();
         let tail = tail.map(|t| dabs(&t));
         let Some(result) = self.engine.dabs(id as u64, seq, &dabs(shapes), seeds, tail.as_deref()).map_err(error)? else { return Ok(None) };
-        let items = result.tiles.into_iter().map(|(tx, ty, pixels)| Item { a: Some(pixels.to_vec()), ..Item::new(tx, ty) }).collect();
+        let items = result.tiles.into_iter().map(|(tx, ty, pixels)| Item { a: Some(Buf::Owned(Vec::from(&pixels[..]))), ..Item::new(tx, ty) }).collect();
         Ok(Some(Output { items, rect: result.dirty, ..Output::default() }))
     }
     /// `end(id)`: the stroke's undo records, or `undefined` for an unknown stroke.
