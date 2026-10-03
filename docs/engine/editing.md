@@ -249,7 +249,8 @@ compared as in shadow mode (history stays the editor's). Commands the timeline g
 it, and undoing the batch ends the next one (history the session did not record); measured
 with the driver's batch step, owned editing still matches the editor alone. A call the engine refuses, or whose
 answer the editor cannot adopt, runs in the editor alone and ends the session; an error runs
-the editor's call so that the editor raises it with its message. In shadow mode the answer's
+the editor's call so that the editor raises it with its message. If the engine itself fails a call (it
+throws), the editor runs it and engine sessions stop for the rest of the page. In shadow mode the answer's
 unchanged tracks are checked to be the editor's unchanged objects.
 
 `node scripts/engine-edit-shadow.mjs --own [--file <document.json> | --import <file.piv>]`

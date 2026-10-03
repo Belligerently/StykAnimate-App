@@ -172,9 +172,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   report.prepare = prepare;
 
+  // After the engine fails a call (it threw), editing stays with the editor for the rest of
+  // the page: the call ran in the editor, and the engine is not asked again.
+  let broken = false;
   const begin = () => {
     if (session) return session;
-    if (!ownedClass()) return null;
+    if (broken || !ownedClass()) return null;
     const side = engineSide();
     if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
@@ -324,7 +327,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
         try { text = live.call(name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
-        catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; }
+        catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
         report.calls++;
         const why = answer?.status === 'ok' ? unadoptable(answer) : null;
         if (answer?.status === 'ok' && !why) {
@@ -368,7 +371,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           report.engineMs += performance.now() - called; report.calls++;
           if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
-        } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; }
+        } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;
       return result;
