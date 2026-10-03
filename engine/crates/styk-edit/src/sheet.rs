@@ -167,7 +167,7 @@ impl Plan {
         self.sources.iter().find(|(source, _)| source == id).map(|(_, frame)| frame)
     }
 
-    fn cell(&mut self) -> String {
+    pub(crate) fn cell(&mut self) -> String {
         let id = format!("cell-{}", styk_doc::json::to_string(&Value::Num(self.next_id)));
         self.next_id += 1.0;
         id
@@ -790,7 +790,7 @@ impl Editor {
     }
 
     /// `materialize(id, key)`: an imported key becomes the pose it showed.
-    fn materialize(&self, plan: &mut Plan, id: &str, key: &Value) -> Result<(), EditError> {
+    pub(crate) fn materialize(&self, plan: &mut Plan, id: &str, key: &Value) -> Result<(), EditError> {
         let mut keys = plan.keys(id);
         let Some(at) = keys.iter().position(|k| k.get("id") == key.get("id")) else { return Ok(()) };
         if keys[at].get("sourceTick").is_none() {

@@ -527,6 +527,18 @@ scenario('figures-layers-sheet', app, [
     ['@select', 3, -1], ['addFigure', 1], ['moveSelection', 20, 10], ['@seek', 6], ['addFigure', 1], ['setLayerLocked', 'layer-2', true], ['addFigure', 1],
     ['setLayerLocked', 'layer-2', false], ['undo'], ['undo'], ['redo'],
   ], 'sheet-layers.document.json');
+  // Keys moved and copied along the timeline: a key moved, one copied back, a key made where
+  // there was none and moved, a collision with replacing off and one replacing the key it
+  // lands on, refusals, several layers at once; and imported keys, captured as poses.
+  scenario('move-frames-sheet', app, [
+    ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, -2, {copy: true}], ['sheetMoveFrames', ['layer-2'], 3, 3, 1],
+    ['sheetMoveFrames', ['layer-1'], 2, 2, 2, {replace: false}], ['sheetMoveFrames', ['layer-1'], 0, 0, -1], ['sheetMoveFrames', ['layer-1'], 4, 4, 0],
+    ['sheetMoveFrames', ['layer-1'], 2, 2, 2],
+    ['sheetMoveFrames', ['layer-1', 'layer-2'], 0, 10, 3], ['@seek', 5], ['@select', 1, -1], ['moveSelection', 4, 4], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  scenario('move-frames-imported-sheet', app, [
+    ['sheetMoveFrames', ['layer-1'], 0, 0, 3], ['sheetMoveFrames', ['layer-1'], 3, 8, 2, {copy: true}], ['undo'], ['redo'],
+  ], 'startup.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);
