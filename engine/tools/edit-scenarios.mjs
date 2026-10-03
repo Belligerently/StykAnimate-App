@@ -1,7 +1,7 @@
 import {readFileSync, writeFileSync} from 'node:fs';
 // Builds the first command-replay scenarios (engine/tests/edit/) with the editor's own fixture kit.
 //   node engine/tools/edit-scenarios.mjs && node engine/tools/edit-replay.mjs --all
-import {documentOf, limb, open, nextKey, prune} from './fixture-kit.mjs';
+import {documentOf, limb, open, nextKey, prune, Editor} from './fixture-kit.mjs';
 const out = new URL('../tests/edit', import.meta.url).pathname;
 // A native-timeline document with two limbs (one joined to the other) over two keyframes.
 const doc = documentOf([limb(true), limb()], i => [250 + i * 150, 160]);
@@ -200,3 +200,21 @@ scenario('figures-layers-sheet', app, [
   ['@seek', 3], ['@select', 3, -1], ['duplicateFigure'], ['@select', 3, -1], ['unjoinFigure'], ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 3, 11],
   ['selectMany', [1, 3]], ['deleteSelection'], ['undo'], ['undo'], ['@seek', 5], ['@select', 2, 1], ['rotateJoint', 0.3], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
 ], 'sheet-layers.document.json');
+// The document the app starts with: one figure with four enabled, unpinned IK controllers
+// (hands and feet). Posing an elbow, transforms, a duplicate (its targets move with it),
+// timeline keys; posing a hand moves its controller's target and solves the limb, which
+// styk-edit does not run yet, so the scenario ends there.
+{
+  const startup = new Editor({demo: false, ...app}).newDocument();
+  writeFileSync(`${out}/startup.document.json`, JSON.stringify(startup.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  scenario('startup-sheet', app, [
+    ['@select', 1, 2], ['poseJoint', 530, 220], ['rotateJoint', 0.2], ['bendJoint', 540, 230, {stretch: true}], ['@select', 1, 6], ['poseJoint', 520, 380],
+    ['@select', 1, -1], ['moveSelection', 10, 5], ['rotateSelection', 0.1], ['scaleSelection', 1.1], ['mirrorSelection', 'horizontal'], ['rotateFigure', -0.2],
+    ['duplicateFigure'], ['moveSelection', 30, 0], ['undo'], ['undo'], ['sheetInsertKey', ['layer-1'], 4], ['@seek', 4], ['@select', 1, 2], ['poseJoint', 500, 210], ['resetPose'],
+    ['undo'], ['undo'], ['undo'], ['redo'], ['@seek', 0], ['@select', 1, 3], ['poseJoint', 520, 300],
+  ], 'startup.document.json');
+  // Pinned controllers: selection, seeking and timeline keys run; a gesture would need the solved limb.
+  scenario('pinned-ik-sheet', app, [
+    ['@select', 1, -1], ['@seek', 2], ['sheetInsertKey', ['layer-1'], 3], ['sheetDuplicateFrameAfter'], ['undo'], ['moveSelection', 5, 5],
+  ], '../../crates/styk-eval/tests/fixtures/ik/startup-pinned.json');
+}

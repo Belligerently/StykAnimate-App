@@ -18,12 +18,13 @@ pub(crate) const NOT_FINITE: &str = "errors.editorCamera.mustBeFinite";
 pub(crate) struct MoveOptions {
     pub from_start: bool,
     pub detach_external: bool,
+    pub move_pins: bool,
 }
 
 impl MoveOptions {
     pub(crate) fn from_value(options: &Value) -> MoveOptions {
         let flag = |key| options.get(key).is_some_and(Value::truthy);
-        MoveOptions { from_start: flag("fromStart"), detach_external: flag("detachExternal") }
+        MoveOptions { from_start: flag("fromStart"), detach_external: flag("detachExternal"), move_pins: flag("movePins") }
     }
 }
 
@@ -187,10 +188,20 @@ impl Editor {
             }
             for &slot in &affected {
                 let object = editor.frame_objects().swap_remove(slot);
+                let id = uid(&object).unwrap();
+                // Pinned targets go with the figure only when asked (`movePins`); `fromStart`
+                // puts them back where the gesture found them first.
+                if options.move_pins || options.from_start {
+                    let source = if options.from_start { snapshots[&id].clone() } else { object.clone() };
+                    let (px, py) = if options.move_pins { (dx, dy) } else { (0.0, 0.0) };
+                    let record = editor.frame_object_mut(slot).unwrap();
+                    if crate::ik::translate_targets(record, px, py, &source, true) {
+                        record.remove("runtime_segments");
+                    }
+                }
                 if join_target(&object).is_some() {
                     continue;
                 }
-                let id = uid(&object).unwrap();
                 let (x, y) = if options.from_start {
                     match editor.drag.as_ref().unwrap().detached.get(&id) {
                         Some(root) => (root[0], root[1]),

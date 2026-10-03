@@ -64,7 +64,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel, gestures-sheet |
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
-| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, inverse kinematics, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
+| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, posing inverse-kinematics targets, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
 | `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go | yes, on a layer sheet; not for movieclip instances or several figures at once | figures-sheet, figures-layers-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
@@ -88,10 +88,20 @@ Every ported call runs in both of the editor's modes:
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
 A call answers `Unported`, and changes nothing, on documents with property channels on a
-native timeline, animation origins, a movieclip source or inverse-kinematics
-controllers; for joint gestures on rigged or Stick Nodes figures; for poses on a drawing
-layer; for a replaced figure joined to one outside its movieclip frame; and wherever the
-engine does not evaluate the frame as records yet ([evaluation.md](evaluation.md)).
+native timeline, animation origins or a movieclip source; for joint gestures on rigged or
+Stick Nodes figures; for poses on a drawing layer; for a replaced figure joined to one
+outside its movieclip frame; and wherever the engine does not evaluate the frame as
+records yet ([evaluation.md](evaluation.md)).
+
+Inverse-kinematics controllers (`_stykIK`) are gated per call on the frame on show
+(`styk-edit/src/ik.rs`). Controller targets move with their figure (`translateIKTargets`:
+`moveSelection` with `movePins`, a duplicate's targets offset with it), and selection,
+seeking and history run anywhere. A call answers `Unported` on a frame with a 3D
+controller or enabled controllers next to joined figures; a gesture, on a frame with an
+enabled pinned controller; `poseJoint` without `stretch`, on a controller's endpoint
+(posing the target solves the limb). Recorded in startup-sheet (the document the app
+starts with, to the step that poses a hand) and pinned-ik-sheet (to the first move of a
+figure with a pinned foot).
 
 What the facade must still account for before it calls the engine (none of it is a
 document difference the harness can see):
