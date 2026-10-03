@@ -86,8 +86,9 @@ movieclip's fractional frames) applies them at the tick:
   are boundaries of the presence clocks; effect channels make evaluation resolve effects even
   where no pose saves a stack; a follow camera's samples keep only the channels of the camera,
   of layers and of the followed figures (`followSamplingReport`).
-- Editing documents with channels stays with the editor: `styk-edit` answers `Unported`, and
-  the evaluated frame as records refuses them.
+- The evaluated frame as records composes them too, record for record
+  ([below](#the-evaluated-frame-as-records)); editing documents with channels stays with the
+  editor: `styk-edit` answers `Unported`.
 
 ## Animation origins
 
@@ -221,11 +222,25 @@ the reason.
   layers that mix imported and authored keys (the window of keys around the playhead),
   movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
   movieclips leaving the frame outside their span, layer order, 3D poses between keys
-  (`interpolateSpatialPose`'s record).
+  (`interpolateSpatialPose`'s record), hidden pose keys, and property channels (below).
 - Not yet (each answers `Unported`): figures joined to a hidden movieclip, animation
-  origins, property channels, hidden pose keys, a movieclip's own document. A tweened
-  camera keeps its baked camera-motion offset (`_parallaxMotionOffset`) as the editor
-  writes it.
+  origins, a movieclip's own document. A tweened camera keeps its baked camera-motion
+  offset (`_parallaxMotionOffset`) as the editor writes it.
+- **Property channels as records** (`styk_eval::records` `channels.rs`): where the editor
+  composes them, so do records: on the native timeline a layer sheet's imported keys sample
+  (`sampleLegacy`, with the sheet's `legacyAnimation`; a native document's own
+  `_styk.animation`), which also lasts until the channels' end, and on the frame a property
+  edit writes (`Records::compose_channels`: `at(report, tick)` with the one-key channels
+  `_sheetPropertyEntries` builds). `composePoseChannels` and `composeAnimationChannels` are
+  mirrored on the records (owners, replacements, joins re-resolved by identity, native
+  appearance, stacking anchors; effect stacks first, then fill styles, style overlays with
+  scopes winning, the camera copied with its defaults, transforms from the roots down), and
+  `animationPropertyValue` reads a property from a frame record
+  (`Records::property_value`). Values come from the drawing path's sampling
+  (`Channel::sample_at`): a key's own value as saved (a paint or stack exactly as written),
+  an interpolated one as the typed curve works it out; geometry (a joined figure's position,
+  a figure that comes loose) from the typed view of the record. The Bézier easings' `t ** 3`
+  is the platform's `pow`, as Node's (a channel value differed in its last bit with `t * t * t`).
 - Pivot's own easing unwraps each angle along the whole run of tweened keys before the
   interval. The drawing path unwraps from the previous key only (constant time, the same
   picture); records follow the editor's chain (`evaluate_native_exact`), or a stored
@@ -236,6 +251,10 @@ the reason.
   `-0.05999999999999999` (D16).
 - Harness: `engine/tools/records-reference.mjs <file> <folder>` records the editor's loaded
   report and, per tick, the snapshot (SHA-256, and the JSON for small documents);
-  `styk records <folder> [--write]` compares. `engine/tools/records-fixtures.mjs` records
-  every editor-built fixture into `tests/fixtures/records/`; `tests/records.rs` requires
-  every recorded frame to be produced and identical.
+  `styk records <folder> [--write]` compares. `--native` keeps a document's channels on its
+  native timeline (no layer sheet); `--entries <list.json>` records, per tick, the frame a
+  property edit writes there and the channels it built. `engine/tools/records-fixtures.mjs`
+  records every editor-built fixture into `tests/fixtures/records/`, the channel fixtures
+  in both forms and seven sets of property edits (`entries-*`); `tests/records.rs` requires
+  every recorded frame to be produced and identical, and every channel fixture and property
+  edit to differ somewhere without its channels.

@@ -136,7 +136,9 @@ fn interior_slope(h0: f64, h1: f64, before: f64, after: f64) -> f64 {
 }
 
 fn bezier_coordinate(t: f64, a: f64, b: f64) -> f64 {
-    3.0 * (1.0 - t).powi(2) * t * a + 3.0 * (1.0 - t) * t * t * b + t.powi(3)
+    // `(1 - t) ** 2` is `x * x` in V8; `t ** 3` is the platform's `pow` (D16), which `powf`
+    // calls: `t * t * t` rounds twice and stored channel values differed in their last bit.
+    3.0 * (1.0 - t).powi(2) * t * a + 3.0 * (1.0 - t) * t * t * b + t.powf(3.0)
 }
 
 pub fn cubic_bezier_progress(t: f64, p: [f64; 4]) -> f64 {
@@ -451,9 +453,10 @@ pub(crate) fn evaluate_native_only(doc: &Document, seq: &Seq, index: usize, t: f
 }
 
 /// [`evaluate_native`] with every stored value as the editor computes it, for
-/// records (see [`Sampler::angle`]).
-pub(crate) fn evaluate_native_exact(doc: &Document, seq: &Seq, index: usize, t: f64) -> Frame {
-    evaluate_interval(doc, seq, index, t, true, None)
+/// records (see [`Sampler::angle`]); tweening only the figures `uids` (and those they
+/// hang from) when given, as a figure's pose channel samples its track (`requestedUids`).
+pub(crate) fn evaluate_native_exact_only(doc: &Document, seq: &Seq, index: usize, t: f64, uids: Option<&[u32]>) -> Frame {
+    evaluate_interval(doc, seq, index, t, true, uids)
 }
 
 fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool, only: Option<&[u32]>) -> Frame {
@@ -753,6 +756,11 @@ impl Prepared {
         let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow, channels };
         prepared.presence = prepared.presence_index();
         prepared
+    }
+
+    /// The property channels the native timeline is evaluated with, compiled.
+    pub(crate) fn channels(&self) -> Option<&crate::channels::Compiled> {
+        self.channels.as_ref()
     }
 
     /// The pose track of a layer (or `scene`, `camera`) as a virtual native timeline.

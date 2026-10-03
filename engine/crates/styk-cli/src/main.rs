@@ -176,7 +176,7 @@ fn records(folder: &str, flags: &[String]) -> i32 {
         let (mut matched, mut unported, mut wrong) = (0, Vec::new(), Vec::new());
         for entry in &ticks {
             let tick = entry.get("tick").and_then(|t| t.as_f64()).unwrap_or(0.0);
-            let json = match records.snapshot(tick) {
+            let json = match records.recorded(entry) {
                 Ok(value) => styk_doc::json::to_string(&value),
                 Err(styk_eval::records::Error::Unported(what)) => {
                     unported.push(format!("tick {tick}: {what}"));

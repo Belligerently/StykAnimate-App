@@ -245,10 +245,28 @@ pub struct Channel {
     pub clip_end: Option<f64>,
 }
 
+/// What [`Channel::sample_at`] found: a key's own value, or one worked out between two keys.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Sampled {
+    /// The value key `index` holds (`a.value`), as saved.
+    Key(usize),
+    /// A value interpolated between keys.
+    Value(KeyValue),
+}
+
 impl Channel {
     /// `sampleAnimationChannel`: the value at `tick`, or `None` where the channel does
     /// not control the property (before its first key, inside a passthrough interval).
     pub fn sample(&self, tick: f64) -> Option<KeyValue> {
+        Some(match self.sample_at(tick)? {
+            Sampled::Key(index) => self.keys[index].value.clone(),
+            Sampled::Value(value) => value,
+        })
+    }
+
+    /// [`Channel::sample`], telling a key's own value (which a record takes as saved) from
+    /// one interpolated between keys.
+    pub fn sample_at(&self, tick: f64) -> Option<Sampled> {
         let keys = &*self.keys;
         if keys.is_empty() || tick.is_nan() || tick < keys[0].tick {
             return None;
@@ -259,15 +277,15 @@ impl Channel {
         if a.passthrough {
             return None;
         }
-        let Some(b) = b else { return Some(a.value.clone()) };
+        let Some(b) = b else { return Some(Sampled::Key(low)) };
         if b.passthrough || a.tick == tick || self.property == Property::Pose || self.property.discrete() {
-            return Some(a.value.clone());
+            return Some(Sampled::Key(low));
         }
         let fraction = (tick - a.tick) / (b.tick - a.tick);
         let auto = a.mode() == EasingMode::Auto;
         let t = if auto { fraction } else { eased_progress(Some(&a.easing.unwrap_or(Easing::LINEAR)), fraction) };
         if a.pchip {
-            return Some(KeyValue::Num(native_curve(keys, low, t, a.native_rotation)));
+            return Some(Sampled::Value(KeyValue::Num(native_curve(keys, low, t, a.native_rotation))));
         }
         // `value(get)`: a straight or Auto interpolation of one number the keys hold.
         let value = |get: &dyn Fn(&Key) -> f64| -> f64 {
@@ -295,47 +313,47 @@ impl Channel {
                     KeyValue::Param(value) => value.clone(),
                     other => ParamValue::Num(other.number()),
                 };
-                return Some(KeyValue::Param(crate::vfx::paint::interpolate(&param(a), &param(b), t)));
+                return Some(Sampled::Value(KeyValue::Param(crate::vfx::paint::interpolate(&param(a), &param(b), t))));
             }
             // A `null` scene colour returns control to the background track; it is not
             // an ARGB zero to interpolate towards.
             if a.value == KeyValue::Null || b.value == KeyValue::Null {
-                return Some(a.value.clone());
+                return Some(Sampled::Key(low));
             }
             let (av, bv) = (js_uint32(a.value.number()), js_uint32(b.value.number()));
             if a.native_value == Some(NativeValue::Color) && !auto {
-                return Some(KeyValue::Num(crate::eval::color_tween(av, bv, t) as f64));
+                return Some(Sampled::Value(KeyValue::Num(crate::eval::color_tween(av, bv, t) as f64)));
             }
             let mut out = 0u32;
             for shift in (0..32).step_by(8) {
                 let byte = crate::vfx::paint::js_round(value(&|key: &Key| ((js_uint32(key.value.number()) >> shift) & 255) as f64));
                 out |= (js_int32(byte) as u32) << shift;
             }
-            return Some(KeyValue::Num(out as f64));
+            return Some(Sampled::Value(KeyValue::Num(out as f64)));
         }
         if a.native_value == Some(NativeValue::Opacity) && !auto {
             let byte = |opacity: f64| crate::vfx::paint::js_round((1.0 - opacity) * 255.0);
             let (av, bv) = (byte(a.value.number()), byte(b.value.number()));
-            return Some(KeyValue::Num(1.0 - (av + ((bv - av) * t).trunc()) / 255.0));
+            return Some(Sampled::Value(KeyValue::Num(1.0 - (av + ((bv - av) * t).trunc()) / 255.0)));
         }
         if a.native_rotation {
             let (start, next) = (a.value.number(), b.value.number());
             let end = start + shortest_property_angle(next - start);
             if !auto {
-                return Some(KeyValue::Num(start + (end - start) * t));
+                return Some(Sampled::Value(KeyValue::Num(start + (end - start) * t)));
             }
             let previous = low.checked_sub(1).map(|i| &keys[i]).filter(|k| k.mode() == EasingMode::Auto);
             let following = keys.get(low + 2).filter(|_| b.mode() == EasingMode::Auto);
-            return Some(KeyValue::Num(auto_value(
+            return Some(Sampled::Value(KeyValue::Num(auto_value(
                 start,
                 end,
                 t,
                 b.tick - a.tick,
                 previous.map(|p| (start - shortest_property_angle(start - p.value.number()), a.tick - p.tick)),
                 following.map(|f| (end + shortest_property_angle(f.value.number() - next), f.tick - b.tick)),
-            )));
+            ))));
         }
-        Some(KeyValue::Num(value(&|key: &Key| key.value.number())))
+        Some(Sampled::Value(KeyValue::Num(value(&|key: &Key| key.value.number()))))
     }
 }
 
@@ -514,7 +532,7 @@ fn key(target: &Target, property: &Property, v: &Value, notes: &mut Vec<String>)
     })
 }
 
-fn channel(v: &Value, notes: &mut Vec<String>) -> Result<Channel, String> {
+pub(crate) fn channel(v: &Value, notes: &mut Vec<String>) -> Result<Channel, String> {
     let target = target(v.get("target").unwrap_or(&Value::Null))?;
     let name = v.get("property").and_then(Value::as_str).unwrap_or("");
     let property = Property::parse(name).filter(|p| p.supported_on(&target)).ok_or_else(|| format!("a channel of {name:?}, which cannot animate on its target"))?;
