@@ -260,7 +260,7 @@ src/movieclip-geometry.mjs	engine	styk-eval::movieclips	partial	Rust: nested cli
 src/movieclip-materialize.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-membership.mjs	engine	styk-eval::movieclips	js	
 src/movieclip-mesh-materialize.mjs	engine	styk-eval::movieclips	js	
-src/movieclip-mesh.mjs	engine	styk-eval::movieclips	js	
+src/movieclip-mesh.mjs	engine	styk-eval::spatial	partial	Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS
 src/movieclip-presence.mjs	engine	styk-eval::movieclips	partial	Rust: presence clock and continuations; editing still JS
 src/movieclip-ui.mjs	ui	-	stays	
 src/movieclips.mjs	engine	styk-eval::movieclips	partial	Rust: movieclipTime and clip sampling; capture and editing still JS
@@ -299,7 +299,7 @@ src/pivot/geometry.mjs	engine	styk-eval	partial	evaluation and world geometry. R
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
 src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS
-src/pivot/surfaces.mjs	engine	styk-eval	js	evaluation and world geometry
+src/pivot/surfaces.mjs	engine	styk-eval::spatial	ported	Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer
 src/playback-bitmap-pool.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-budget.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-cadence.mjs	engine	styk-engine::playback	js	scheduling, budgets
@@ -345,7 +345,7 @@ src/renderer-canvas-plan.mjs	engine	styk-render	js
 src/renderer-geometry.mjs	engine	styk-render	partial	Rust: draw lists for supported documents
 src/renderer-glyphs.mjs	engine	styk-render	js	
 src/renderer-handles.mjs	engine	styk-render	js	
-src/renderer-mesh-raster.mjs	engine	styk-render	js	
+src/renderer-mesh-raster.mjs	engine	styk-render	ported	Rust: objects with 3D faces drawn from rasters at the editor density (styk-render frame.rs); still used by the JavaScript renderer
 src/renderer-onion-composite.mjs	engine	styk-render	partial	Rust: onion composites for supported documents
 src/renderer-opacity.mjs	engine	styk-render	js	
 src/renderer-preview-drawing-resources.mjs	engine	styk-render	js	
@@ -363,9 +363,9 @@ src/rig-controls.mjs	ui	-	stays
 src/rig-examples-3d.mjs	engine	styk-edit	js	
 src/rig-examples.mjs	engine	styk-edit	js	
 src/rig-mechanism-examples.mjs	engine	styk-edit	js	
-src/rig-pose-choices.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/rig-pose-choices.mjs	engine	styk-eval::spatial	partial	Rust: hidden pose choices in evaluation; the choice interface still JS
 src/rig-solids.mjs	engine	styk-edit	js	
-src/rig-spatial.mjs	engine	styk-eval::rig	partial	Rust: spatial joints (quaternion frames); authoring still JS
+src/rig-spatial.mjs	engine	styk-eval::spatial	partial	Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS
 src/rig-test-ui.mjs	ui	-	stays	
 src/rig-weighted.mjs	engine	styk-eval::rig	partial	Rust: weighted joints and bindings; authoring still JS
 src/scene-order.mjs	engine	styk-render	partial	Rust: composeSceneGroups for onion skins; other scene grouping still JS
@@ -393,8 +393,8 @@ src/source-record.mjs	engine	styk-formats::container	js
 src/spatial-controls.mjs	ui	-	stays	
 src/spatial-gizmo.mjs	ui	-	stays	
 src/spatial-mesh-legacy.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
-src/spatial-mesh.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
-src/spatial-projection.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
+src/spatial-mesh.mjs	engine	styk-eval::spatial	partial	Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS
+src/spatial-projection.mjs	engine	styk-eval::spatial	partial	Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS
 src/sprite-placement-dialog.mjs	ui	-	stays	
 src/startup-blue-data.mjs	engine	styk-edit	js	
 src/startup-document.mjs	engine	styk-edit	js	
@@ -418,7 +418,7 @@ src/support-live-client.mjs	app	-	stays	telemetry, support, updates
 src/support-localization.mjs	app	-	stays	telemetry, support, updates
 src/support-media.mjs	app	-	stays	telemetry, support, updates
 src/support-ui.mjs	app	-	stays	telemetry, support, updates
-src/surface-raster.mjs	engine	styk-render	js	
+src/surface-raster.mjs	engine	styk-render	ported	Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer
 src/svg-export.mjs	engine	styk-export	js	
 src/telemetry-core.mjs	app	-	stays	telemetry, support, updates
 src/telemetry-measurements.mjs	app	-	stays	telemetry, support, updates

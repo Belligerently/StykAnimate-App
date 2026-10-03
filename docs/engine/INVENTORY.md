@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1212 KiB | 82 | 4 | 0 | 0 | 0 | 0 % | 19 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 82 | 4 | 0 | 0 | 0 | 0 % | 19 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
-| `styk-eval` | 83 | 774 KiB | 55 | 25 | 3 | 0 | 0 | 2 % | 42 % | 0 % |
+| `styk-eval` | 83 | 774 KiB | 50 | 29 | 4 | 0 | 0 | 3 % | 48 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
-| `styk-render` | 52 | 708 KiB | 40 | 12 | 0 | 0 | 0 | 0 % | 45 % | 0 % |
-| **Total** | 356 | 4062 KiB | 282 | 46 | 5 | 22 | 1 | 12 % | 25 % | 0 % |
+| `styk-render` | 52 | 708 KiB | 38 | 12 | 2 | 0 | 0 | 2 % | 45 % | 0 % |
+| **Total** | 356 | 4063 KiB | 275 | 50 | 8 | 22 | 1 | 13 % | 26 % | 0 % |
 
 ## Engine modules
 
@@ -207,7 +207,6 @@ Engine logic: ported to Rust.
 | `src/pivot/geometry-pose.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry.mjs` | `styk-eval` | partial | evaluation and world geometry. Rust: evaluatedNativeFrame, evaluatedFrame as records, buildGeometry, drawPrimitives (draw lists); picking and Canvas paths still JS |
 | `src/pivot/raster-clip.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pivot/surfaces.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
 | `src/structural-equality.mjs` | `styk-eval` | js |  |
 | `src/camera-bake-authored.mjs` | `styk-eval::camera` | js |  |
@@ -226,7 +225,6 @@ Engine logic: ported to Rust.
 | `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-membership.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-mesh-materialize.mjs` | `styk-eval::movieclips` | js |  |
-| `src/movieclip-mesh.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-presence.mjs` | `styk-eval::movieclips` | partial | Rust: presence clock and continuations; editing still JS |
 | `src/movieclips.mjs` | `styk-eval::movieclips` | partial | Rust: movieclipTime and clip sampling; capture and editing still JS |
 | `src/builder-construction.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
@@ -243,12 +241,14 @@ Engine logic: ported to Rust.
 | `src/rig-angle-path.mjs` | `styk-eval::rig` | partial | Rust: angle path sampling; authoring still JS |
 | `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation; authoring helpers still JS |
 | `src/rig-control-details.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
-| `src/rig-pose-choices.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
-| `src/rig-spatial.mjs` | `styk-eval::rig` | partial | Rust: spatial joints (quaternion frames); authoring still JS |
 | `src/rig-weighted.mjs` | `styk-eval::rig` | partial | Rust: weighted joints and bindings; authoring still JS |
 | `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
-| `src/spatial-mesh.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
-| `src/spatial-projection.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
+| `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
+| `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
+| `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation; the choice interface still JS |
+| `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS |
+| `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
+| `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
 | `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS |
 | `src/vfx-connected.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS |
 | `src/vfx-key-channels.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
@@ -349,7 +349,7 @@ Engine logic: ported to Rust.
 | `src/renderer-geometry.mjs` | `styk-render` | partial | Rust: draw lists for supported documents |
 | `src/renderer-glyphs.mjs` | `styk-render` | js |  |
 | `src/renderer-handles.mjs` | `styk-render` | js |  |
-| `src/renderer-mesh-raster.mjs` | `styk-render` | js |  |
+| `src/renderer-mesh-raster.mjs` | `styk-render` | ported | Rust: objects with 3D faces drawn from rasters at the editor density (styk-render frame.rs); still used by the JavaScript renderer |
 | `src/renderer-onion-composite.mjs` | `styk-render` | partial | Rust: onion composites for supported documents |
 | `src/renderer-opacity.mjs` | `styk-render` | js |  |
 | `src/renderer-preview-drawing-resources.mjs` | `styk-render` | js |  |
@@ -362,7 +362,7 @@ Engine logic: ported to Rust.
 | `src/renderer.mjs` | `styk-render` | partial | Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs); every other document still JS |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
-| `src/surface-raster.mjs` | `styk-render` | js |  |
+| `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
 | `src/drawing-gpu.mjs` | `styk-render::drawing` | js | GPU tiles and GPU brush |
 | `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | js |  |
 | `src/vfx-generator-atlas.mjs` | `styk-render::generators` | js |  |
