@@ -19,7 +19,7 @@ pub enum CommandKind {
     Objects { index: usize, before: Vec<Value>, after: Vec<Value> },
     /// The layer sheet and layer state before and after, and the pose sources the
     /// command captured (`kind: 'layer-sheet'`).
-    LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)> },
+    LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)>, definitions: Option<(usize, Vec<Value>)> },
     /// Paths of the layer state before and after, and the sheet when the layers' tracks
     /// changed with them (`kind: 'layers'`).
     Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, structural: bool, timing: bool },

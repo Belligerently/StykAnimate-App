@@ -65,7 +65,7 @@ fn js_slice<T: Clone>(list: &[T], start: i64, end: i64) -> Vec<T> {
 /// `remapIKFollowers(object, uidMap)`: followers in other figures follow their new
 /// identities; those not pasted are dropped. Integer keys come out in ascending order,
 /// as a JavaScript object orders them.
-fn remap_followers(object: &mut Obj, map: &[(u32, u32)]) {
+pub(crate) fn remap_followers(object: &mut Obj, map: &[(u32, u32)]) {
     let Some(controllers) = object.get("_stykIK").filter(|c| c.truthy()).and_then(Value::as_obj).cloned() else { return };
     let mut out = Obj::new();
     for (id, controller) in controllers.iter() {

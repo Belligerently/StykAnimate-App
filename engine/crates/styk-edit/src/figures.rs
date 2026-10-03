@@ -11,7 +11,7 @@ use crate::history::{Command, CommandKind};
 use crate::{EditError, Editor};
 
 /// `setOrder(frame, ids)`: the drawing order as unique ids and as slots.
-fn set_order(frame: &mut Obj, ids: &[f64]) {
+pub(crate) fn set_order(frame: &mut Obj, ids: &[f64]) {
     let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
     let slot = |id: f64| objects.iter().position(|o| num(o, "unique_id") == Some(id));
     frame.set("object_draw_order_unique_ids", Value::array(ids.iter().map(|id| Value::Num(*id)).collect()));
@@ -19,7 +19,7 @@ fn set_order(frame: &mut Obj, ids: &[f64]) {
 }
 
 /// `frameOrder(frame)`.
-fn frame_order(frame: &Obj) -> Vec<f64> {
+pub(crate) fn frame_order(frame: &Obj) -> Vec<f64> {
     let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
     match frame.get("object_draw_order").filter(|o| o.truthy()) {
         Some(order) => order.numbers().unwrap_or_default().into_iter().filter_map(|slot| objects.get(slot as usize).filter(|_| slot >= 0.0).and_then(|o| num(o, "unique_id"))).collect(),
@@ -298,7 +298,7 @@ impl Editor {
         let (selection, previous) = (self.selection_state(), self.selection.clone());
         self.selection = crate::Selection { uid: Some(identity as u32), uids: vec![identity as u32], joint: -1 };
         self.next_uid += 1;
-        if let Err(error) = self.commit_sheet_range(&Value::object(frame), &[identity as u32], &[identity as u32], "Add figure", selection) {
+        if let Err(error) = self.commit_sheet_range_with(&Value::object(frame), &[identity as u32], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection) {
             self.selection = previous;
             self.next_uid = identity;
             return Err(error);

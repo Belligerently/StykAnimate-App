@@ -112,6 +112,8 @@ pub(crate) struct Plan {
     sources: Vec<(String, Value)>,
     layers: Value,
     next_frame: u64,
+    /// Figure definitions the command adds (`assets.figure_types.added`).
+    pub(crate) definitions: Vec<Value>,
 }
 
 impl Plan {
@@ -291,10 +293,15 @@ impl Editor {
     /// `insertionOwner(editor, uid, hints)`: the layer of a figure the document has, the
     /// hinted or the active layer for a new one. It must be a user layer.
     fn owner(&self, uid: u32) -> Result<String, EditError> {
+        self.owner_with(uid, &self.new_layer_hints)
+    }
+
+    /// `insertionOwner(editor, uid, hints)` with the given hints.
+    fn owner_with(&self, uid: u32, hints: &std::collections::HashMap<u32, String>) -> Result<String, EditError> {
         let layers = self.report.path(&["_styk", "layers"]);
         let known = self.uid_counts.as_ref().is_some_and(|(counts, _)| counts.contains_key(&uid)) || layers.and_then(|l| l.path(&["assignments", &uid.to_string()])).is_some();
         let user = |id: &str| layers.and_then(|l| l.path(&["byId", id])).is_some();
-        let id = match self.new_layer_hints.get(&uid) {
+        let id = match hints.get(&uid) {
             Some(layer) => layer.clone(),
             None if known => self.layer_of(uid),
             None => {
@@ -522,19 +529,23 @@ impl Editor {
     /// the layers owning `changed` take a key holding `frame`; `inserted` figures are first
     /// assigned to their layer. Unlike a gesture's commit, nothing else of the frame is
     /// compared: the operation names what it changed.
-    pub(crate) fn commit_sheet_range(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
+    /// `_commitSheetRange(plans, payload, label, selection)` for one frame at the playhead:
+    /// `frame` keyed on the layers of the figures in `changed`, the figures in `inserted`
+    /// assigned to theirs (`hints` first), `definitions` added with it.
+    pub(crate) fn commit_sheet_range_with(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
         self.ensure_counts();
         let tick = self.tick;
         let mut ids: Vec<String> = Vec::new();
         for &uid in changed {
-            let owner = self.owner(uid)?;
+            let owner = self.owner_with(uid, hints)?;
             if !ids.contains(&owner) {
                 ids.push(owner);
             }
         }
         let mut plan = self.planner(&ids)?;
+        plan.definitions = definitions;
         for &uid in inserted {
-            plan.assign(uid, &self.owner(uid)?);
+            plan.assign(uid, &self.owner_with(uid, hints)?);
         }
         for id in &ids {
             let keys = plan.keys(id);
@@ -670,6 +681,7 @@ impl Editor {
             sources: Vec::new(),
             layers,
             next_frame: self.next_frame_identity,
+            definitions: Vec::new(),
         })
     }
 
@@ -731,6 +743,15 @@ impl Editor {
         state.set("duration", Value::Num(plan.duration));
         let after = Value::object(state);
         let after_layers = plan.layers.clone();
+        let definitions = if plan.definitions.is_empty() {
+            None
+        } else {
+            let figures = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).ok_or_else(|| EditError::Unported("figure definitions that are not a list".into()))?;
+            let index = figures.len();
+            figures.extend(plan.definitions.iter().cloned());
+            Some((index, std::mem::take(&mut plan.definitions)))
+        };
+        let definition = definitions.is_some();
         self.set_sheet(&after, &after_layers);
         if !plan.sources.is_empty() {
             let sources = self.sources_mut();
@@ -744,7 +765,7 @@ impl Editor {
         let after_selection = self.selection_state();
         let source_ids: Vec<Value> = plan.sources.iter().map(|(id, _)| Value::str(id)).collect();
         self.record(Command {
-            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources },
+            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions },
             label: label.to_string(),
             before_selection: selection,
             after_selection,
@@ -752,7 +773,7 @@ impl Editor {
             after_revision: 0,
         })?;
         self.layer_revision += 1;
-        self.emit_sheet("edit", label, source_ids);
+        self.emit_sheet("edit", label, source_ids, definition);
         Ok(true)
     }
 
@@ -852,7 +873,7 @@ impl Editor {
     }
 
     /// The event of a published or replayed sheet command: every layer view refreshes.
-    fn emit_sheet(&mut self, kind: &str, label: &str, source_ids: Vec<Value>) {
+    fn emit_sheet(&mut self, kind: &str, label: &str, source_ids: Vec<Value>, definition: bool) {
         // `{layers: true, layerRevision, ...detail}` over the base event, whose
         // `structural` and `timing` the detail sets.
         let mut event = Obj::new();
@@ -865,7 +886,7 @@ impl Editor {
         event.set("layerRevision", Value::Num(self.layer_revision as f64));
         event.set("label", Value::str(label));
         event.set("layerSheet", Value::Bool(true));
-        event.set("definition", Value::Bool(false));
+        event.set("definition", Value::Bool(definition));
         event.set("frameIndices", Value::array(Vec::new()));
         event.set("sourceIds", Value::array(source_ids));
         self.events.push(Value::object(event));
@@ -873,12 +894,26 @@ impl Editor {
 
     /// `applyLayerSheetCommand(editor, command, direction)`.
     pub(crate) fn apply_sheet_command(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
-        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources } = &command.kind else { return Ok(()) };
+        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions } = &command.kind else { return Ok(()) };
         let (sheet, layers, selection, revision) = match direction {
             Direction::Before => (before, before_layers, &command.before_selection, command.before_revision),
             Direction::After => (after, after_layers, &command.after_selection, command.after_revision),
         };
         self.set_sheet(sheet, layers);
+        // The definitions the command added go before it and come back after it.
+        if let Some((index, added)) = definitions
+            && let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr)
+        {
+            match direction {
+                Direction::Before => {
+                    figures.drain(*index..(*index + added.len()).min(figures.len()));
+                }
+                Direction::After => {
+                    let at = (*index).min(figures.len());
+                    figures.splice(at..at, added.iter().cloned());
+                }
+            }
+        }
         // `_applyFrameSourceChanges`: the command's captures exist after it, not before.
         if !sources.is_empty() {
             let table = self.sources_mut();
@@ -904,7 +939,7 @@ impl Editor {
         self.restore_selection(selection)?;
         self.revision = revision;
         let source_ids = sources.iter().map(|(id, _)| Value::str(id)).collect();
-        self.emit_sheet("history", &command.label, source_ids);
+        self.emit_sheet("history", &command.label, source_ids, definitions.is_some());
         Ok(())
     }
 

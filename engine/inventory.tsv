@@ -172,7 +172,7 @@ src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx-clips.mjs	engine	styk-edit	partial	Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS
 src/editor-vfx.mjs	engine	styk-edit	js	commands and history
-src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
+src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection: styk-edit/src/figure_clipboard.rs), _restoreSelection, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
 src/export-canvas.mjs	engine	styk-export	js	

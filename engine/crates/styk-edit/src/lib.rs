@@ -15,6 +15,7 @@
 mod audio;
 mod authored;
 mod camera_motion;
+mod figure_clipboard;
 mod figures;
 mod frame;
 mod history;
@@ -145,6 +146,8 @@ pub struct Editor {
     pub(crate) new_layer_hints: HashMap<u32, String>,
     /// `editor._sheetClipboard`: the timeline frames this editor copied.
     pub(crate) sheet_clipboard: Option<sheet_clipboard::Clipboard>,
+    /// `editor._selectionClipboard`: the figures this editor copied.
+    pub(crate) figure_clipboard: Option<figure_clipboard::FigureClipboard>,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -194,6 +197,7 @@ struct Snapshot {
     new_layer_hints: HashMap<u32, String>,
     events: usize,
     sheet_clipboard: Option<sheet_clipboard::Clipboard>,
+    figure_clipboard: Option<figure_clipboard::FigureClipboard>,
     vfx_edit: Option<Option<Value>>,
     batch: Option<history::Batch>,
     sheet_selection: Option<select::SheetSelection>,
@@ -228,6 +232,7 @@ impl Editor {
             source_table_was_present,
             new_layer_hints: HashMap::new(),
             sheet_clipboard: None,
+            figure_clipboard: None,
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -380,6 +385,7 @@ impl Editor {
             new_layer_hints: self.new_layer_hints.clone(),
             events: self.events.len(),
             sheet_clipboard: self.sheet_clipboard.clone(),
+            figure_clipboard: self.figure_clipboard.clone(),
             vfx_edit: self.vfx_edit.clone(),
             batch: self.batch.clone(),
             sheet_selection: self.sheet_selection.clone(),
@@ -402,6 +408,7 @@ impl Editor {
         self.new_layer_hints = snapshot.new_layer_hints;
         self.events.truncate(snapshot.events);
         self.sheet_clipboard = snapshot.sheet_clipboard;
+        self.figure_clipboard = snapshot.figure_clipboard;
         self.vfx_edit = snapshot.vfx_edit;
         self.batch = snapshot.batch;
         self.sheet_selection = snapshot.sheet_selection;
@@ -535,6 +542,13 @@ impl Editor {
             "moveVfxClipKeys" => self.move_vfx_clip_keys(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
             "deleteVfxClipKeys" => self.delete_vfx_clip_keys(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setVfxClipEasing" => self.set_vfx_clip_easing(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "copySelection" => match args.first().and_then(|o| o.get("wholeFigures")).is_some_and(Value::truthy) {
+                false => self.copy_selection(),
+                true => Err(EditError::Unported("copying whole figures of a branch selection".into())),
+            },
+            "cutSelection" => self.cut_selection(),
+            "pasteSelection" => self.paste_selection(&arg(0)),
+            "duplicateSelection" => self.duplicate_selection(&arg(0)),
             "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
             "updatePolygon" => match args.get(1) {
                 None => self.update_polygon(&arg(0), &Value::Null),
