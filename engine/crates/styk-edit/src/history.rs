@@ -20,6 +20,9 @@ pub enum CommandKind {
     /// The layer sheet and layer state before and after, and the pose sources the
     /// command captured (`kind: 'layer-sheet'`).
     LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)> },
+    /// Paths of the layer state before and after, and the sheet when the layers' tracks
+    /// changed with them (`kind: 'layers'`).
+    Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, structural: bool, timing: bool },
 }
 
 /// One history entry.
@@ -111,6 +114,7 @@ impl Editor {
                 );
             }
             CommandKind::LayerSheet { .. } => self.apply_sheet_command(command, direction)?,
+            CommandKind::Layers { .. } => self.apply_layers_command(command, direction)?,
         }
         Ok(())
     }

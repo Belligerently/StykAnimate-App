@@ -405,6 +405,68 @@ impl Editor {
         // Returns the evaluated frame, which the facade reads from its own copy.
         Ok(Value::Null)
     }
+
+    /// `sheetMoveFrames(ids, start, end, delta, {copy, replace})`: the keys of each layer
+    /// between `start` and `end` (a key made at `start` when there is none) move, or are
+    /// copied, by `delta` frames; keys where they land are replaced.
+    pub(crate) fn sheet_move_frames(&mut self, ids: &Value, start: f64, end: f64, delta: &Value, options: &Value) -> Result<bool, EditError> {
+        let delta = delta.as_f64().filter(|d| d.fract() == 0.0 && d.is_finite());
+        let Some(delta) = delta.filter(|d| start + d >= 0.0) else { return Err(EditError::Invalid("errors.editorLayerSheet.framesCannotMoveBeforeFrame1".into())) };
+        if delta == 0.0 {
+            return Ok(false);
+        }
+        // `{copy = false, replace = true}`
+        let copy = options.get("copy").is_some_and(Value::truthy);
+        let replace = options.get("replace").is_none_or(Value::truthy);
+        let ids = self.list(ids);
+        let mut plan = self.planner(&ids)?;
+        let finish = end + delta;
+        let tick_of = |key: &Value| num(key, "tick").unwrap_or(f64::NAN);
+        for id in &ids {
+            let mut selected: Vec<Value> = plan.keys(id).into_iter().filter(|k| tick_of(k) >= start && tick_of(k) <= end).collect();
+            if selected.is_empty() {
+                let frame = self.evaluated(start, false)?;
+                plan.write(id, start, &frame, Write::default())?;
+                selected.extend(plan.keys(id).into_iter().find(|k| tick_of(k) == start));
+            }
+            let chosen: Vec<Value> = selected.iter().map(|k| k.get("id").cloned().unwrap_or(Value::Null)).collect();
+            let is_chosen = |key: &Value| chosen.contains(&key.get("id").cloned().unwrap_or(Value::Null));
+            if !replace && plan.keys(id).iter().any(|k| (copy || !is_chosen(k)) && tick_of(k) >= start + delta && tick_of(k) <= finish) {
+                return Err(EditError::Invalid("errors.editorLayerSheet.theDestinationContainsKeyframesEnableReplaceKeyframesOn".into()));
+            }
+            let mut materialized = Vec::with_capacity(selected.len());
+            for key in &selected {
+                self.materialize(&mut plan, id, key)?;
+                materialized.push(plan.keys(id).into_iter().find(|k| k.get("id") == key.get("id")).unwrap_or_else(|| key.clone()));
+            }
+            // Only exact landing ticks replace keys; keys in between survive.
+            let landing: Vec<f64> = materialized.iter().map(|k| tick_of(k) + delta).collect();
+            let mut keys: Vec<Value> = plan.keys(id).into_iter().filter(|k| !landing.contains(&tick_of(k)) && (copy || !is_chosen(k))).collect();
+            let drawing = self.report.path(&["_styk", "layers", "byId", id, "drawing"]).is_some_and(Value::truthy);
+            for key in &materialized {
+                let source = key.path(&["value", "frameId"]).and_then(Value::as_str).and_then(|frame| plan.captured(frame).cloned().or_else(|| self.frame_by_id(frame)));
+                if copy && source.is_some() && drawing {
+                    return Err(EditError::Unported("copying the frames of a drawing layer".into()));
+                }
+                if source.as_ref().is_some_and(|frame| objects_of(frame).iter().any(|o| o.get("_stykMovieclip").is_some_and(Value::truthy))) {
+                    return Err(EditError::Unported("moving the frames of a movieclip".into()));
+                }
+                let mut moved = key.as_obj().cloned().unwrap_or_default();
+                moved.set("tick", Value::Num(tick_of(key) + delta));
+                if copy {
+                    moved.set("id", Value::str(&plan.cell()));
+                }
+                keys.push(Value::object(moved));
+            }
+            keys.sort_by(|a, b| tick_of(a).total_cmp(&tick_of(b)));
+            plan.set_keys(id, keys);
+            let track_end = plan.end(id).max(finish + 1.0);
+            plan.set_end(id, track_end);
+            plan.duration = plan.duration.max(track_end);
+        }
+        let selection = self.selection_state();
+        self.publish(plan, if copy { "Copy frames" } else { "Move frames" }, selection, None)
+    }
 }
 
 /// `validateKeyEasing(easing)`.

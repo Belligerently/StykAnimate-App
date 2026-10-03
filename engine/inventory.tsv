@@ -123,7 +123,7 @@ src/drawing-worker.mjs	engine	styk-drawing	js
 src/editable-scene-preparation.mjs	engine	styk-render	js	
 src/editor-animation.mjs	engine	styk-edit	js	commands and history
 src/editor-audio.mjs	engine	styk-edit	js	commands and history
-src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); property-channel commits still JS
+src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS
 src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
@@ -144,21 +144,21 @@ src/editor-frame-draft.mjs	engine	styk-edit	js	commands and history
 src/editor-frames.mjs	engine	styk-edit	js	commands and history
 src/editor-handle-commands.mjs	engine	styk-edit	js	commands and history
 src/editor-handle-edit.mjs	engine	styk-edit	js	commands and history
-src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget on flat figures, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); setNodeIK, rotateIKTarget, getIKSettings and 3D controllers still JS
+src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget on figures not joined to others (ik_settings.rs); setNodeIK and rotateIKTarget across joined figures (bakeGraph) still JS
 src/editor-inbetween-async.mjs	engine	styk-edit	js	commands and history
 src/editor-inbetween.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-async.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-focus.mjs	engine	styk-edit	js	commands and history
-src/editor-layer-folders.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-folders.mjs	engine	styk-edit	ported	createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); getLayerFolders reads the state
 src/editor-layer-migration.mjs	engine	styk-edit	js	commands and history
-src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS
-src/editor-layers.mjs	engine	styk-edit	js	commands and history
+src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS
+src/editor-layers.mjs	engine	styk-edit	partial	Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS
 src/editor-load.mjs	engine	styk-edit	js	commands and history
 src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
 src/editor-movieclips.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
-src/editor-range-commands.mjs	engine	styk-edit	js	commands and history
+src/editor-range-commands.mjs	engine	styk-edit	partial	Rust: adding a figure at the playhead on a layer sheet (applyFigureRange add, insert, _commitSheetRange: Editor::add_figure, commit_sheet_range); other range operations, pasting and native timelines still JS
 src/editor-ranges.mjs	engine	styk-edit	js	commands and history
 src/editor-rig-constraints.mjs	engine	styk-edit	partial	Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS
 src/editor-rig.mjs	engine	styk-edit	js	commands and history
@@ -166,13 +166,13 @@ src/editor-scene.mjs	engine	styk-edit	js	commands and history
 src/editor-selection.mjs	engine	styk-edit	js	commands and history
 src/editor-sessions.mjs	engine	styk-edit	js	commands and history
 src/editor-spatial-shape.mjs	engine	styk-edit	js	commands and history
-src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs); setSpatialFeetPinned and joined 3D IK targets still JS
+src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs), setSpatialFeetPinned (ik_settings.rs); joined 3D IK targets still JS
 src/editor-sprite-segment.mjs	engine	styk-edit	js	commands and history
 src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx-clips.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx.mjs	engine	styk-edit	js	commands and history
-src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS
+src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
 src/export-canvas.mjs	engine	styk-export	js	

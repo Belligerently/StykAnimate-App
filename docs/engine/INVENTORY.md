@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 80 | 6 | 0 | 0 | 0 | 0 % | 23 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 77 | 8 | 1 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 40 | 34 | 9 | 0 | 0 | 15 % | 53 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 34 | 13 | 5 | 0 | 0 | 9 % | 46 % | 0 % |
-| **Total** | 356 | 4063 KiB | 259 | 58 | 16 | 22 | 1 | 16 % | 28 % | 0 % |
+| **Total** | 356 | 4063 KiB | 256 | 60 | 17 | 22 | 1 | 16 % | 29 % | 0 % |
 
 ## Engine modules
 
@@ -78,7 +78,7 @@ Engine logic: ported to Rust.
 | `src/demo.mjs` | `styk-edit` | js |  |
 | `src/editor-animation.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-audio.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); property-channel commits still JS |
+| `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
@@ -99,21 +99,21 @@ Engine logic: ported to Rust.
 | `src/editor-frames.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-commands.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-handle-edit.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget on flat figures, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); setNodeIK, rotateIKTarget, getIKSettings and 3D controllers still JS |
+| `src/editor-ik.mjs` | `styk-edit` | partial | Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget on figures not joined to others (ik_settings.rs); setNodeIK and rotateIKTarget across joined figures (bakeGraph) still JS |
 | `src/editor-inbetween-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-inbetween.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-focus.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-layer-folders.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-layer-folders.mjs` | `styk-edit` | ported | createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); getLayerFolders reads the state |
 | `src/editor-layer-migration.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS |
-| `src/editor-layers.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS |
+| `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-motion-path.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-movieclips.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-range-commands.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: adding a figure at the playhead on a layer sheet (applyFigureRange add, insert, _commitSheetRange: Editor::add_figure, commit_sheet_range); other range operations, pasting and native timelines still JS |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS |
 | `src/editor-rig.mjs` | `styk-edit` | js | commands and history |
@@ -121,13 +121,13 @@ Engine logic: ported to Rust.
 | `src/editor-selection.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs); setSpatialFeetPinned and joined 3D IK targets still JS |
+| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs), setSpatialFeetPinned (ik_settings.rs); joined 3D IK targets still JS |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx.mjs` | `styk-edit` | js | commands and history |
-| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS |
+| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
 | `src/frame-draft-animation.mjs` | `styk-edit` | js |  |
 | `src/frame-timing-history.mjs` | `styk-edit` | js |  |

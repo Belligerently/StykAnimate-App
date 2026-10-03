@@ -455,6 +455,103 @@ scenario('figures-layers-sheet', app, [
   scenario('pose-choice-mechanism-sheet', app, [
     ['@select', 1, -1], ['setPoseChoice', 'Mouth', 18], ['setPoseChoice', 'Mouth', 0], ['setPoseChoice', 'Mouth', 18], ['undo'], ['redo'],
   ], '../../crates/styk-eval/tests/fixtures/spatial/mesh-mechanism.json');
+  // An IK controller's settings from the inspector: pinned and released (the limb kept as
+  // drawn), stretch, chain length and bend side, its target turned (a free limb's branches
+  // turning with it), switched off and on, chains that would share bones, and refusals.
+  scenario('ik-settings-sheet', app, [
+    ['@select', 1, 3], ['setNodeIK', {pinned: true}], ['setNodeIK', {allowStretch: true}], ['setNodeIK', {bendDirection: -1}], ['poseJoint', 240, 330], ['setNodeIK', {bendDirection: 0}],
+    ['setNodeIK', {bendDirection: 1}],
+    ['setNodeIK', {chainLength: 1}], ['setNodeIK', {chainLength: 99}], ['setNodeIK', {bogus: 1}], ['setNodeIK', {enabled: 'yes'}], ['rotateIKTarget', 0.4],
+    ['poseJoint', 250, 300], ['setNodeIK', {pinned: false}], ['rotateIKTarget', -0.3], ['rotateIKTarget', 'x'], ['setNodeIK', {enabled: false}], ['setNodeIK', {enabled: true}],
+    ['@select', 1, 2], ['setNodeIK', {enabled: true, chainLength: 1}], ['@select', 1, 1], ['setNodeIK', {enabled: true}], ['setNodeIK', {enabled: true}],
+    ['@select', 1, -1], ['setNodeIK', {enabled: true}], ['setNodeIK', {pinned: true}], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('ik-settings-pinned-sheet', app, [
+    ['@select', 1, 3], ['setNodeIK', {allowStretch: true}], ['poseJoint', 560, 330], ['setNodeIK', {pinned: false}], ['@select', 1, 5], ['setNodeIK', {chainLength: 1}],
+    ['setNodeIK', {bendDirection: 0}], ['rotateIKTarget', 0.5], ['@select', 1, 7], ['setNodeIK', {enabled: false}], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/startup-pinned.json');
+  // A planted 3D leg: its swivel (through the pole when it is the only setting), the feet
+  // planted and released at once, switched off (its record kept) and on, turned.
+  scenario('ik-settings-spatial-sheet', app, [
+    ['@select', 1, 9], ['setNodeIK', {swivel: 0.4}], ['setNodeIK', {swivel: 0.2, allowStretch: true}], ['setNodeIK', {swivel: 'x'}], ['setSpatialFeetPinned', false],
+    ['setSpatialFeetPinned', true], ['setNodeIK', {enabled: false}], ['setNodeIK', {enabled: true}], ['rotateIKTarget', 0.3], ['setNodeIK', {pinned: false}],
+    ['rotateIKTarget', -0.2], ['@select', 1, 3], ['setSpatialFeetPinned', false], ['undo'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/spatial.json');
+  // Pinned controllers whose followers were never stored: configuring one stores the
+  // followers its limb is solved with, and every other pinned controller takes its own.
+  {
+    const document = JSON.parse(readFileSync(new URL('../crates/styk-eval/tests/fixtures/ik/followers.json', import.meta.url), 'utf8'));
+    for (const frame of document.keyframes) for (const object of frame.objects) if (object._stykIK?.['22']) {
+      object._stykIK['22'].followers = {};
+      object._stykIK['12'] = {enabled: true, pinned: true, allowStretch: false, bendDirection: 1, chainLength: 1, target: {x: object.root_x + 10, y: object.root_y - 40, rotation: 0}, followers: {}};
+    }
+    writeFileSync(`${out}/ik-settings-followers.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('ik-settings-followers-sheet', app, [
+    ['@select', 1, 1], ['setNodeIK', {allowStretch: true}], ['undo'], ['@select', 1, 2], ['setNodeIK', {allowStretch: true}], ['@select', 1, 1], ['setNodeIK', {chainLength: 1}],
+    ['setNodeIK', {bendDirection: -1}], ['undo'], ['redo'],
+  ], 'ik-settings-followers.document.json');
+  // IK is not put on a joint a rig derives (a connector).
+  scenario('ik-settings-rig-sheet', app, [
+    ['@select', 1, 5], ['setNodeIK', {enabled: true}], ['@select', 1, 2], ['setNodeIK', {enabled: true}], ['setNodeIK', {chainLength: 1}], ['undo'], ['redo'],
+  ], 'rig.document.json');
+  // The layer list: renamed, coloured (a colour removed, even where there was none, is an
+  // entry), shown, hidden and locked (the scene and camera tracks too), created (at the end,
+  // first and inactive), reordered and moved; refusals; a gesture after them; history.
+  scenario('layer-list-sheet', app, [
+    ['renameLayer', 'layer-2', '  Back  '], ['renameLayer', 'scene', 'x'], ['renameLayer', 'layer-9', 'x'], ['renameLayer', 'layer-1', ''],
+    ['setLayerColor', ['layer-1', 'layer-2', 'layer-1'], 'violet'], ['setLayerColor', ['layer-2'], null], ['setLayerColor', ['layer-2'], null], ['setLayerColor', ['layer-1'], 'pink'],
+    ['setLayerVisible', 'layer-2', false], ['setLayerVisible', 'scene', false], ['setLayerLocked', 'camera', true], ['setLayerLocked', 'layer-1', 'yes'], ['setLayerVisible', 'layer-2', false],
+    ['createLayer', 'Front'], ['createLayer', null, {index: 0, activate: false}], ['createLayer', '   '], ['createLayer', 'X', {index: 9}],
+    ['reorderLayers', ['layer-2', 'layer-1', 'layer-3', 'layer-4']], ['moveLayerTo', 'layer-1', 0], ['moveLayerTo', 'layer-1', 99], ['reorderLayers', ['layer-1']],
+    ['@select', 1, -1], ['moveSelection', 5, 5], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  // Layer folders: created (with layers, empty, by default name), a layer created inside one
+  // and one between two of its layers, layers moved in and out, the stack arranged with and
+  // without a move, renamed and ungrouped; refusals; history.
+  scenario('layers-folders-sheet', app, [
+    ['createLayerFolder', 'Group', ['layer-1']], ['createLayer', 'In', {folderId: 'folder-1'}], ['createLayer', 'Between', {index: 2}], ['createLayerFolder'],
+    ['createLayerFolder', null], ['createLayerFolder', 'Bad', ['nope']], ['renameLayerFolder', 'folder-2', 'Empty'], ['renameLayerFolder', 'folder-9', 'x'],
+    ['moveLayersToFolder', ['layer-2'], 'folder-1'], ['moveLayersToFolder', ['layer-2']], ['moveLayersToFolder', ['layer-2'], 'folder-9'],
+    ['arrangeLayers', ['layer-2', 'layer-1', 'layer-3', 'layer-4']], ['arrangeLayers', ['layer-3', 'layer-2', 'layer-1', 'layer-4'], ['layer-1']],
+    ['arrangeLayers', ['layer-4', 'layer-3', 'layer-2', 'layer-1'], ['layer-2'], 'folder-2'],
+    ['arrangeLayers', ['layer-1', 'layer-2', 'layer-3', 'layer-4'], ['layer-2'], null], ['arrangeLayers', ['layer-1']],
+    ['deleteLayerFolder', 'folder-1'], ['deleteLayerFolder', 'folder-1'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  // Figures added from the library at the playhead: the first definition, a chosen one, one
+  // that does not exist; at a later tick inside a held key; the new figure posed; history.
+  scenario('add-figure-sheet', app, [
+    ['addFigure'], ['addFigure', 1], ['addFigure', 99], ['@seek', 3], ['addFigure'], ['@select', 4, 3], ['poseJoint', 300, 200], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('add-figure-layers-sheet', app, [
+    ['@select', 3, -1], ['addFigure', 1], ['moveSelection', 20, 10], ['@seek', 6], ['addFigure', 1], ['setLayerLocked', 'layer-2', true], ['addFigure', 1],
+    ['setLayerLocked', 'layer-2', false], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  // Keys moved and copied along the timeline: a key moved, one copied back, a key made where
+  // there was none and moved, a collision with replacing off and one replacing the key it
+  // lands on, refusals, several layers at once; and imported keys, captured as poses.
+  scenario('move-frames-sheet', app, [
+    ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, -2, {copy: true}], ['sheetMoveFrames', ['layer-2'], 3, 3, 1],
+    ['sheetMoveFrames', ['layer-1'], 2, 2, 2, {replace: false}], ['sheetMoveFrames', ['layer-1'], 0, 0, -1], ['sheetMoveFrames', ['layer-1'], 4, 4, 0],
+    ['sheetMoveFrames', ['layer-1'], 2, 2, 2],
+    ['sheetMoveFrames', ['layer-1', 'layer-2'], 0, 10, 3], ['@seek', 5], ['@select', 1, -1], ['moveSelection', 4, 4], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  scenario('move-frames-imported-sheet', app, [
+    ['sheetMoveFrames', ['layer-1'], 0, 0, 3], ['sheetMoveFrames', ['layer-1'], 3, 8, 2, {copy: true}], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  // The inspector's figure fields: scale, opacity, name, colour; refusals; several figures
+  // selected (shared fields edit them all, others the selected one); history.
+  scenario('update-object-sheet', app, [
+    ['@select', 1, -1], ['updateObject', {scale: 1.5}], ['updateObject', {field28: 128, name: 'Hero'}], ['updateObject', {scale: -1}], ['updateObject', {scale: 'x'}],
+    ['updateObject', {field28: 300}], ['updateObject', {unique_id: 9}], ['updateObject', {color_override_raw: 4278190335}], ['duplicateFigure'], ['selectMany', [1, 2]],
+    ['updateObject', {image_text_flags: 1}], ['updateSelection', {root_x: 5}], ['updateObject', {root_x: 300}], ['updateSelection', {name: 'Pair'}], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('update-object-native', {}, [
+    ['@select', 1, -1], ['updateObject', {scale: 0.75, root_y: 100}], ['selectMany', [1, 2]], ['updateObject', {field28: 64}], ['undo'], ['redo'],
+  ]);
+  scenario('layers-native', {}, [
+    ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
+  ]);
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

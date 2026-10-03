@@ -157,7 +157,7 @@ impl Editor {
 
     /// `context()` is a graph: the figure in `slot` belongs to joined figures that compile
     /// into one skeleton.
-    fn in_assembly(&self, slot: usize) -> Result<bool, EditError> {
+    pub(crate) fn in_assembly(&self, slot: usize) -> Result<bool, EditError> {
         let objects = self.selection_frame()?;
         if !objects.iter().any(|o| o.get("join").is_some_and(Value::truthy)) {
             return Ok(false);
@@ -682,6 +682,39 @@ pub(crate) struct Solved {
     pub solution: Solution,
     followers: BTreeMap<u32, Followers>,
     joined: bool,
+}
+
+impl Solved {
+    /// `geometry.ik.get(handle).followers`: the followers of a limb that solved.
+    pub(crate) fn followers_of(&self, handle: u32) -> Option<&BTreeMap<u32, f64>> {
+        let (_, outcome) = self.solution.results.iter().find(|(h, _)| *h == handle)?;
+        if outcome.conflict {
+            return None;
+        }
+        self.followers.get(&handle).map(|(own, _)| own)
+    }
+}
+
+/// `_bakeIKFollowers(object, geometry)`: each enabled, pinned controller of the figure takes
+/// the followers its limb is solved with.
+pub(crate) fn bake_object(record: &mut Obj, solved: &Solved) {
+    let mut controllers = record.get("_stykIK").and_then(Value::as_obj).cloned().unwrap_or_default();
+    let mut changed = false;
+    for (handle, outcome) in &solved.solution.results {
+        let key = handle.to_string();
+        let Some(c) = controllers.get(&key).filter(|c| truthy(c, "enabled") && truthy(c, "pinned")) else { continue };
+        let (Some((own, others)), false) = (solved.followers.get(handle), outcome.conflict) else { continue };
+        let mut next = c.as_obj().cloned().unwrap_or_default();
+        next.set("followers", angle_table(own));
+        if solved.joined {
+            next.set("joinedFollowers", joined_table(others));
+        }
+        controllers.set(&key, Value::object(next));
+        changed = true;
+    }
+    if changed {
+        record.set("_stykIK", Value::object(controllers));
+    }
 }
 
 /// The figures' typed views by slot, as geometry resolves them.

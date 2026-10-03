@@ -30,6 +30,16 @@ const PORTED: &[&str] = &[
     "ik-spatial-steer-sheet", "ik-spatial-side-steer-sheet", "ik-spatial-mirrored-steer-sheet", "spatial-reset-sheet",
     // Pose choices: 3D bones shown one at a time, presets over channels.
     "pose-choices-sheet", "pose-presets-sheet", "pose-choice-mechanism-sheet",
+    // IK controllers' settings: switched, pinned, stretched, chain and bend, targets turned, 3D feet.
+    "ik-settings-sheet", "ik-settings-pinned-sheet", "ik-settings-spatial-sheet", "ik-settings-rig-sheet", "ik-settings-followers-sheet",
+    // The layer list: names, colours, visibility, locks, new layers, order.
+    "layer-list-sheet", "layers-native", "layers-folders-sheet",
+    // Figures added from the library.
+    "add-figure-sheet", "add-figure-layers-sheet",
+    // Keys moved and copied along the timeline.
+    "move-frames-sheet", "move-frames-imported-sheet",
+    // The inspector's figure fields.
+    "update-object-sheet", "update-object-native",
 ];
 
 #[test]

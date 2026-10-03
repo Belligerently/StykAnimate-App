@@ -167,7 +167,7 @@ impl Plan {
         self.sources.iter().find(|(source, _)| source == id).map(|(_, frame)| frame)
     }
 
-    fn cell(&mut self) -> String {
+    pub(crate) fn cell(&mut self) -> String {
         let id = format!("cell-{}", styk_doc::json::to_string(&Value::Num(self.next_id)));
         self.next_id += 1.0;
         id
@@ -518,6 +518,49 @@ impl Editor {
         self.publish(plan, &label, selection, retain.then_some(after))
     }
 
+    /// `_commitSheetRange(plans, payload, label, selection)` for the frame at the playhead:
+    /// the layers owning `changed` take a key holding `frame`; `inserted` figures are first
+    /// assigned to their layer. Unlike a gesture's commit, nothing else of the frame is
+    /// compared: the operation names what it changed.
+    pub(crate) fn commit_sheet_range(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
+        self.ensure_counts();
+        let tick = self.tick;
+        let mut ids: Vec<String> = Vec::new();
+        for &uid in changed {
+            let owner = self.owner(uid)?;
+            if !ids.contains(&owner) {
+                ids.push(owner);
+            }
+        }
+        let mut plan = self.planner(&ids)?;
+        for &uid in inserted {
+            plan.assign(uid, &self.owner(uid)?);
+        }
+        for id in &ids {
+            let keys = plan.keys(id);
+            let end = num(&Value::object(plan.track(id).clone()), "end").unwrap_or(0.0);
+            let at_key = key_at(&keys, tick);
+            let key = at_key.map(|i| keys[i].clone());
+            let inside = tick < end;
+            // A boundary of a broken-apart movieclip frame: the pose after it is fixed first.
+            if key.as_ref().is_some_and(|k| k.get("patchOnly").is_some_and(Value::truthy))
+                && let Some(next) = at_key.and_then(|i| keys.get(i + 1)).cloned()
+            {
+                let until = num(&next, "tick").unwrap_or(tick);
+                let evaluated = self.evaluated(until, false)?;
+                plan.write(id, until, &evaluated, Write { easing: Some(&next), ..Write::default() })?;
+            }
+            let hold = key.as_ref().is_some_and(|k| matches!(k.get("interpolation").and_then(Value::as_str), Some("constant" | "hold")));
+            let at = match &key {
+                Some(key) if !self.auto_key && inside && hold => num(key, "tick").unwrap_or(tick),
+                _ => tick,
+            };
+            let held = constant();
+            plan.write(id, at, frame, Write { easing: Some(key.as_ref().unwrap_or(&held)), ..Write::default() })?;
+        }
+        self.publish(plan, label, selection, None)
+    }
+
     /// `getFrameById(report, id)`: a retained pose source, else the keyframe with that id.
     pub(crate) fn frame_by_id(&self, id: &str) -> Option<Value> {
         let retained = self.report.path(&["_styk", "frameSources", id]).filter(|frame| frame.truthy()).cloned();
@@ -747,7 +790,7 @@ impl Editor {
     }
 
     /// `materialize(id, key)`: an imported key becomes the pose it showed.
-    fn materialize(&self, plan: &mut Plan, id: &str, key: &Value) -> Result<(), EditError> {
+    pub(crate) fn materialize(&self, plan: &mut Plan, id: &str, key: &Value) -> Result<(), EditError> {
         let mut keys = plan.keys(id);
         let Some(at) = keys.iter().position(|k| k.get("id") == key.get("id")) else { return Ok(()) };
         if keys[at].get("sourceTick").is_none() {
