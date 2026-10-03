@@ -153,6 +153,18 @@ document difference the harness can see):
   edits on the other layers. The facade starts no engine session while one is on, and
   changing the focus ends the current session (measured with the driver's focus step:
   without this, owned editing inserted a key the editor refuses on a locked layer).
+- **A selected branch** (`_branchSelection`, `selectBranch`): commands act on the branch's
+  segments instead of whole figures (`deleteSelection` deletes the branch). The facade starts
+  no session while a branch is selected, and selecting one ends the current session
+  (measured with the driver's branch step: without this, owned editing deleted the whole
+  figure).
+- **Records the editor changes in place** (a topology edit rewrites the figure and every
+  pose of it, drawing edits name their figures): the mirror sees changes by identity, so the
+  facade notes what the change events name (a definition edit: every figure; one that
+  changes structure outside a sheet publication: every figure, keyframe and pose source)
+  and resends it before the next session starts (measured: after deleting a branch in the
+  editor, engine sessions posed the old pose arrays and adopting them failed the editor's
+  validation).
 - **The timeline's layer selection** (`_sheetSelection`, `styk-edit/src/select.rs`): the
   facade hands it over with every call, and the engine follows it as the editor does
   (`selectSheetLayer`, seeks selecting the layer's figures on show, `keepSelectionOnSeek`,
