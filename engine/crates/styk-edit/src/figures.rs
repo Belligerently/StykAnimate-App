@@ -304,4 +304,63 @@ impl Editor {
         }
         Ok(self.object()?.map(|(_, o)| o).unwrap_or(Value::Null))
     }
+
+    /// `updateObject(patch)`: the inspector's figure fields (several figures: `updateSelection`).
+    pub(crate) fn update_object(&mut self, patch: &Value) -> Result<bool, EditError> {
+        const SHARED: [&str; 5] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk"];
+        let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
+        if self.selected_objects()?.len() > 1 && entries.iter().all(|(k, _)| SHARED.contains(&k.as_str())) {
+            return self.update_selection(patch);
+        }
+        let given = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        for field in ["root_x", "root_y", "scale"] {
+            if let Some(value) = given(field)
+                && !value.as_f64().is_some_and(f64::is_finite)
+            {
+                return Err(EditError::Invalid(crate::transform::NOT_FINITE.into()));
+            }
+        }
+        if given("scale").and_then(|v| v.as_f64()).is_some_and(|scale| scale < 0.0) {
+            return Err(EditError::Invalid("errors.editor.scaleCannotBeNegative".into()));
+        }
+        if let Some(opacity) = given("field28")
+            && !opacity.as_f64().is_some_and(|o| o.fract() == 0.0 && (0.0..=255.0).contains(&o))
+        {
+            return Err(EditError::Invalid("errors.editor.opacityMustBeAByte".into()));
+        }
+        if ["unique_id", "figure_type_id", "object_slot", "join"].iter().any(|key| given(key).is_some()) {
+            return Err(EditError::Invalid("errors.editor.useStructuralOperationsToChangeFigureIdentityOr".into()));
+        }
+        let Some((slot, _)) = self.object()? else { return Ok(false) };
+        self.object_edit_with("Edit figure", false, |editor| {
+            let record = editor.frame_object_mut(slot).unwrap();
+            for (key, value) in &entries {
+                record.set(key, value.clone());
+            }
+            record.remove("runtime_segments");
+            Ok(())
+        })
+    }
+
+    /// `updateSelection(patch)`: names, colours, opacity, mirroring and metadata of every
+    /// selected figure, in one edit.
+    pub(crate) fn update_selection(&mut self, patch: &Value) -> Result<bool, EditError> {
+        const SHARED: [&str; 5] = ["color_override_raw", "field28", "image_text_flags", "name", "_styk"];
+        let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();
+        if entries.iter().any(|(k, _)| !SHARED.contains(&k.as_str())) {
+            return Err(EditError::Invalid("errors.editor.useGroupTransformCommandsToChangeSelectionGeometry".into()));
+        }
+        self.object_edit_with("Edit selected figures", false, |editor| {
+            let selected = editor.selection.uids.clone();
+            let slots: Vec<usize> = editor.frame_objects().iter().enumerate().filter(|(_, o)| uid(o).is_some_and(|u| selected.contains(&u))).map(|(slot, _)| slot).collect();
+            for slot in slots {
+                let record = editor.frame_object_mut(slot).unwrap();
+                for (key, value) in &entries {
+                    record.set(key, value.clone());
+                }
+                record.remove("runtime_segments");
+            }
+            Ok(())
+        })
+    }
 }

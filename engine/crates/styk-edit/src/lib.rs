@@ -414,6 +414,8 @@ impl Editor {
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
+            "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
             "addFigure" => self.add_figure((!args.is_empty()).then(|| arg(0)).as_ref()),
             "renameLayer" => self.rename_layer(&arg(0), &arg(1)).map(Value::Bool),
             "setLayerColor" => self.set_layer_color(&arg(0), &arg(1)).map(Value::Bool),

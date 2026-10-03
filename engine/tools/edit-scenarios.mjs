@@ -539,6 +539,16 @@ scenario('figures-layers-sheet', app, [
   scenario('move-frames-imported-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 3], ['sheetMoveFrames', ['layer-1'], 3, 8, 2, {copy: true}], ['undo'], ['redo'],
   ], 'startup.document.json');
+  // The inspector's figure fields: scale, opacity, name, colour; refusals; several figures
+  // selected (shared fields edit them all, others the selected one); history.
+  scenario('update-object-sheet', app, [
+    ['@select', 1, -1], ['updateObject', {scale: 1.5}], ['updateObject', {field28: 128, name: 'Hero'}], ['updateObject', {scale: -1}], ['updateObject', {scale: 'x'}],
+    ['updateObject', {field28: 300}], ['updateObject', {unique_id: 9}], ['updateObject', {color_override_raw: 4278190335}], ['duplicateFigure'], ['selectMany', [1, 2]],
+    ['updateObject', {image_text_flags: 1}], ['updateSelection', {root_x: 5}], ['updateObject', {root_x: 300}], ['updateSelection', {name: 'Pair'}], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('update-object-native', {}, [
+    ['@select', 1, -1], ['updateObject', {scale: 0.75, root_y: 100}], ['selectMany', [1, 2]], ['updateObject', {field28: 64}], ['undo'], ['redo'],
+  ]);
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

@@ -78,7 +78,7 @@ Engine logic: ported to Rust.
 | `src/demo.mjs` | `styk-edit` | js |  |
 | `src/editor-animation.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-audio.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); property-channel commits still JS |
+| `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
@@ -127,7 +127,7 @@ Engine logic: ported to Rust.
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx.mjs` | `styk-edit` | js | commands and history |
-| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS |
+| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
 | `src/frame-draft-animation.mjs` | `styk-edit` | js |  |
 | `src/frame-timing-history.mjs` | `styk-edit` | js |  |
