@@ -18,6 +18,7 @@ mod frame;
 mod history;
 mod ik;
 mod ik_settings;
+mod layers;
 mod pose;
 mod pose_choice;
 mod record;
@@ -413,6 +414,18 @@ impl Editor {
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "renameLayer" => self.rename_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "setLayerColor" => self.set_layer_color(&arg(0), &arg(1)).map(Value::Bool),
+            "setLayerVisible" => self.set_layer_flag(&arg(0), "visible", &arg(1)).map(Value::Bool),
+            "setLayerLocked" => self.set_layer_flag(&arg(0), "locked", &arg(1)).map(Value::Bool),
+            "reorderLayers" => self.reorder_layers(&arg(0)).map(Value::Bool),
+            "moveLayerTo" => self.move_layer_to(&arg(0), &arg(1)).map(Value::Bool),
+            "createLayer" => self.create_layer(&arg(0), &arg(1)),
+            "createLayerFolder" => self.create_layer_folder((!args.is_empty()).then(|| arg(0)).as_ref(), &arg(1)),
+            "renameLayerFolder" => self.rename_layer_folder(&arg(0), &arg(1)).map(Value::Bool),
+            "moveLayersToFolder" => self.move_layers_to_folder(&arg(0), &arg(1)).map(Value::Bool),
+            "arrangeLayers" => self.arrange_layers(&arg(0), (args.len() > 1).then(|| arg(1)).as_ref(), (args.len() > 2).then(|| arg(2)).as_ref()).map(Value::Bool),
+            "deleteLayerFolder" => self.delete_layer_folder(&arg(0)).map(Value::Bool),
             "rotateIKTarget" => self.rotate_ik_target(number(0)).map(Value::Bool),
             "setSpatialFeetPinned" => self.set_spatial_feet_pinned(&arg(0)).map(Value::Bool),
             "setNodeIK" => self.set_node_ik(&arg(0)).map(Value::Bool),

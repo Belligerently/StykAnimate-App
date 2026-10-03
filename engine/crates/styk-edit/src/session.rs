@@ -103,11 +103,9 @@ impl Session {
         answer.set("state", self.editor.state_value());
         let events = self.editor.take_events();
         let report = self.editor.report();
-        let sheet = |document: &Value| document.path(&["_styk", "layerSheet"]).cloned();
-        let published = match (sheet(&before), sheet(report)) {
-            (Some(old), Some(new)) => !old.same_node(&new),
-            (old, new) => old.is_some() != new.is_some(),
-        };
+        // A command published the sheet when one of its events says so, as the facade reads
+        // it: layer edits also replace the sheet (its tracks follow the layers) without it.
+        let published = events.iter().any(|event| event.get("layerSheet").is_some_and(Value::truthy));
         if published {
             // What a command publishes: the sheet (with the tracks it replaced; `trackOrder`
             // names them all), the layers and the sources its events name.

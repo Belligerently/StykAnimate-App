@@ -141,6 +141,15 @@ async function run(mode) {
     await step('undo and redo from the keyboard', async () => { await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+y'); await sleep(150); });
     await step('seek and transform through the editor', () => page.evaluate(() => { const e = styk.editor, last = Math.max(0, e.totalTicks - 1); e.seek(Math.min(3, last)); e.rotateSelection(0.25); e.scaleSelection(1.1); e.moveSelection(12, -8); e.undo(); e.redo(); }));
     await step('keys and frames of the layer timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetInsertKey(layer, Math.min(2, e.totalTicks - 1)); e.sheetDuplicateFrameAfter(); e.sheetSetEasing(layer, 0, 1, {interpolation: 'ease-in'}); e.sheetInsertFrames(layer, 1, 2); e.sheetRemoveFrames(layer, 1, 1); e.undo(); e.undo(); e.redo(); }));
+    await step('rename, colour, hide, lock, create, move and group layers', () => page.evaluate(() => {
+      const e = styk.editor, layers = () => e.report._styk?.layers;
+      const first = layers()?.order?.[0];
+      if (!first) return;
+      e.renameLayer(first, 'Renamed'); e.setLayerColor([first], 'teal'); e.setLayerVisible(first, false); e.setLayerVisible(first, true); e.setLayerLocked('scene', true);
+      const created = e.createLayer('Extra', {activate: false});
+      e.moveLayerTo(created.id, 0); const folder = e.createLayerFolder('Group', [created.id]); e.renameLayerFolder(folder.id, 'Kept');
+      e.arrangeLayers([...layers().order].reverse()); e.deleteLayerFolder(folder.id); e.setLayerLocked('scene', false); e.undo(); e.undo(); e.redo();
+    }));
     await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));
     if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
     // A hand or foot with an IK controller, when the figure has one: its target is dragged.

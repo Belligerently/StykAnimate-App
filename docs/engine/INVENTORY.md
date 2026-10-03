@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 80 | 6 | 0 | 0 | 0 | 0 % | 23 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 78 | 7 | 1 | 0 | 0 | 0 % | 24 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 40 | 34 | 9 | 0 | 0 | 15 % | 53 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 34 | 13 | 5 | 0 | 0 | 9 % | 46 % | 0 % |
-| **Total** | 356 | 4063 KiB | 259 | 58 | 16 | 22 | 1 | 16 % | 28 % | 0 % |
+| **Total** | 356 | 4063 KiB | 257 | 59 | 17 | 22 | 1 | 16 % | 28 % | 0 % |
 
 ## Engine modules
 
@@ -104,10 +104,10 @@ Engine logic: ported to Rust.
 | `src/editor-inbetween.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-focus.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-layer-folders.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-layer-folders.mjs` | `styk-edit` | ported | createLayerFolder, renameLayerFolder, moveLayersToFolder, arrangeLayers, deleteLayerFolder (styk-edit/src/layers.rs); getLayerFolders reads the state |
 | `src/editor-layer-migration.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (insert key, duplicate, easing, clear, insert, remove, duration, append) (styk-edit, not yet called by the app); movieclip, assignment, clipboard, channel and range commands still JS |
-| `src/editor-layers.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-motion-path.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-movieclips.mjs` | `styk-edit` | js | commands and history |
