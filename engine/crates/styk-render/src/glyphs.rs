@@ -111,10 +111,10 @@ impl GlyphMasks {
 
     /// A place for a `w`×`h` mask: in a page with room, a new page, or the least recently
     /// used page no instance of this frame samples, emptied. `None` when none is free.
-    fn place(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, w: u32, h: u32) -> Option<(u32, [u32; 2], bool)> {
+    fn place(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, w: u32, h: u32) -> Option<(u32, [u32; 2])> {
         for (index, page) in self.pages.iter_mut().enumerate() {
             if let Some((_, x, y)) = page.shelf.place(w, h, 1) {
-                return Some((index as u32, [x, y], false));
+                return Some((index as u32, [x, y]));
             }
         }
         if (self.pages.len() as u64 + 1) * (self.side as u64 * self.side as u64) <= BUDGET {
@@ -123,14 +123,14 @@ impl GlyphMasks {
             let mut page = Page { shelf: Shelf { size: [self.side, self.side], page: 0, x: 0, y: 0, row: 0 }, used: 0 };
             let (_, x, y) = page.shelf.place(w, h, 1)?;
             self.pages.push(page);
-            return Some((index, [x, y], true));
+            return Some((index, [x, y]));
         }
         let (index, _) = self.pages.iter().enumerate().filter(|(_, p)| p.used < self.frame).min_by_key(|(_, p)| p.used)?;
         self.entries.retain(|_, e| e.page != index as u32);
         let page = &mut self.pages[index];
         page.shelf = Shelf { size: [self.side, self.side], page: 0, x: 0, y: 0, row: 0 };
         let (_, x, y) = page.shelf.place(w, h, 1)?;
-        Some((index as u32, [x, y], true))
+        Some((index as u32, [x, y]))
     }
 
     /// Pages of at least `side` texels: when they are smaller, every mask is dropped and the
@@ -240,7 +240,7 @@ impl GlyphMasks {
                 let (page, at) = match self.entries.get(&key) {
                     Some(e) => (e.page, e.at),
                     None => {
-                        let (page, at, _) = self.place(device, encoder, mask.width, mask.height)?;
+                        let (page, at) = self.place(device, encoder, mask.width, mask.height)?;
                         self.fill(device, encoder, &instance.triangles, &mask, page, at);
                         self.entries.insert(key, Entry { page, at, _triangles: instance.triangles.clone() });
                         (page, at)
