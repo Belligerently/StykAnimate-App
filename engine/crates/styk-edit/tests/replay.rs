@@ -32,6 +32,10 @@ const PORTED: &[&str] = &[
     "pose-choices-sheet", "pose-presets-sheet", "pose-choice-mechanism-sheet",
     // IK controllers' settings: switched, pinned, stretched, chain and bend, targets turned, 3D feet.
     "ik-settings-sheet", "ik-settings-pinned-sheet", "ik-settings-spatial-sheet", "ik-settings-rig-sheet", "ik-settings-followers-sheet",
+    // The layer list: names, colours, visibility, locks, new layers, order.
+    "layer-list-sheet", "layers-native", "layers-folders-sheet",
+    // Figures added from the library.
+    "add-figure-sheet", "add-figure-layers-sheet",
 ];
 
 #[test]

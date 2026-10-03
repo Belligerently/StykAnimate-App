@@ -495,6 +495,41 @@ scenario('figures-layers-sheet', app, [
   scenario('ik-settings-rig-sheet', app, [
     ['@select', 1, 5], ['setNodeIK', {enabled: true}], ['@select', 1, 2], ['setNodeIK', {enabled: true}], ['setNodeIK', {chainLength: 1}], ['undo'], ['redo'],
   ], 'rig.document.json');
+  // The layer list: renamed, coloured (a colour removed, even where there was none, is an
+  // entry), shown, hidden and locked (the scene and camera tracks too), created (at the end,
+  // first and inactive), reordered and moved; refusals; a gesture after them; history.
+  scenario('layer-list-sheet', app, [
+    ['renameLayer', 'layer-2', '  Back  '], ['renameLayer', 'scene', 'x'], ['renameLayer', 'layer-9', 'x'], ['renameLayer', 'layer-1', ''],
+    ['setLayerColor', ['layer-1', 'layer-2', 'layer-1'], 'violet'], ['setLayerColor', ['layer-2'], null], ['setLayerColor', ['layer-2'], null], ['setLayerColor', ['layer-1'], 'pink'],
+    ['setLayerVisible', 'layer-2', false], ['setLayerVisible', 'scene', false], ['setLayerLocked', 'camera', true], ['setLayerLocked', 'layer-1', 'yes'], ['setLayerVisible', 'layer-2', false],
+    ['createLayer', 'Front'], ['createLayer', null, {index: 0, activate: false}], ['createLayer', '   '], ['createLayer', 'X', {index: 9}],
+    ['reorderLayers', ['layer-2', 'layer-1', 'layer-3', 'layer-4']], ['moveLayerTo', 'layer-1', 0], ['moveLayerTo', 'layer-1', 99], ['reorderLayers', ['layer-1']],
+    ['@select', 1, -1], ['moveSelection', 5, 5], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  // Layer folders: created (with layers, empty, by default name), a layer created inside one
+  // and one between two of its layers, layers moved in and out, the stack arranged with and
+  // without a move, renamed and ungrouped; refusals; history.
+  scenario('layers-folders-sheet', app, [
+    ['createLayerFolder', 'Group', ['layer-1']], ['createLayer', 'In', {folderId: 'folder-1'}], ['createLayer', 'Between', {index: 2}], ['createLayerFolder'],
+    ['createLayerFolder', null], ['createLayerFolder', 'Bad', ['nope']], ['renameLayerFolder', 'folder-2', 'Empty'], ['renameLayerFolder', 'folder-9', 'x'],
+    ['moveLayersToFolder', ['layer-2'], 'folder-1'], ['moveLayersToFolder', ['layer-2']], ['moveLayersToFolder', ['layer-2'], 'folder-9'],
+    ['arrangeLayers', ['layer-2', 'layer-1', 'layer-3', 'layer-4']], ['arrangeLayers', ['layer-3', 'layer-2', 'layer-1', 'layer-4'], ['layer-1']],
+    ['arrangeLayers', ['layer-4', 'layer-3', 'layer-2', 'layer-1'], ['layer-2'], 'folder-2'],
+    ['arrangeLayers', ['layer-1', 'layer-2', 'layer-3', 'layer-4'], ['layer-2'], null], ['arrangeLayers', ['layer-1']],
+    ['deleteLayerFolder', 'folder-1'], ['deleteLayerFolder', 'folder-1'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  // Figures added from the library at the playhead: the first definition, a chosen one, one
+  // that does not exist; at a later tick inside a held key; the new figure posed; history.
+  scenario('add-figure-sheet', app, [
+    ['addFigure'], ['addFigure', 1], ['addFigure', 99], ['@seek', 3], ['addFigure'], ['@select', 4, 3], ['poseJoint', 300, 200], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  scenario('add-figure-layers-sheet', app, [
+    ['@select', 3, -1], ['addFigure', 1], ['moveSelection', 20, 10], ['@seek', 6], ['addFigure', 1], ['setLayerLocked', 'layer-2', true], ['addFigure', 1],
+    ['setLayerLocked', 'layer-2', false], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  scenario('layers-native', {}, [
+    ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
+  ]);
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

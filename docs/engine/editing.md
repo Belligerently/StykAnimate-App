@@ -75,6 +75,8 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | IK settings (`styk-edit/src/ik_settings.rs`): `setNodeIK` switches a controller on (pinned where the limb is drawn, refused on a joint a rig derives and on chains that would share bones) or off (the limb kept as drawn, a 3D limb's record kept), pins and releases it (released lengths kept on the chain), sets stretch, chain length, bend side ("Both" recapturing the bend) and a 3D limb's swivel; `rotateIKTarget` turns a target (a free limb captured first, its branches turning with it); `setSpatialFeetPinned` plants or releases every foot of a 3D figure in one gesture | yes, not across joined figures | ik-settings-sheet, ik-settings-pinned-sheet, ik-settings-spatial-sheet, ik-settings-rig-sheet, ik-settings-followers-sheet |
 | `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller; across joined figures on the assembly's skeleton (`poseGraph`, `captureFor`) | yes, without perspective or 3D controllers | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet, ik-joined-unpinned-sheet, startup-join-sheet |
 | Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`); a gesture on joined figures takes in their whole assembly (`_ikPoseSlots`, `_expandIKDrag`) | yes | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet, ik-joined-sheet, ik-joined-late-sheet |
+| `addFigure(typeId)` on a layer sheet: a new figure of a library definition in the middle of the canvas at the playhead, selected, in the active layer, through the range commit (`applyFigureRange`, `insert`, `_commitSheetRange`: only the inserted figure's layer is keyed, unlike a whole-frame transaction, which also stores joined figures' roots) | yes, not for movieclips or on a native timeline | add-figure-sheet, add-figure-layers-sheet |
+| The layer list (`styk-edit/src/layers.rs`): `renameLayer`, `setLayerColor`, `setLayerVisible`, `setLayerLocked` (the scene and camera tracks too), `reorderLayers`, `moveLayerTo`, `createLayer`, and folders (`createLayerFolder`, `renameLayerFolder`, `moveLayersToFolder`, `arrangeLayers`, `deleteLayerFolder`): one `layers` history entry each, as the paths of the layer state it changed (`_layerEdit`, including its quirk of recording a removal of what was absent), the sheet's tracks following the layers | yes; run in both editors and compared, not adopted (cheap, and the session then lives through them) | layer-list-sheet, layers-folders-sheet, layers-native |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
 | `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go | yes, on a layer sheet; not for movieclip instances or several figures at once | figures-sheet, figures-layers-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
@@ -278,7 +280,16 @@ in every run (headless Chromium, the machine under other load, two rounds):
 `figures` stays with the editor: on the document the app starts with, the same run cost
 87.8 ms owned against 76.8 ms alone, a pose about 0.31 ms in the engine plus 0.49 ms to adopt
 its answer against the editor's 0.58 ms for the whole call (medians of 48 in the app; the
-answer crosses the JSON boundary and the editor's own events and caches still run). `3d`
+answer crosses the JSON boundary and the editor's own events and caches still run). Warmed
+up (`--warm`: the interactions once untimed, then timed, since the browser optimizes hot
+WebAssembly after its first calls: session calls measured in one page went from 0.24 to
+0.09–0.13 ms a pose), small figure documents still cost more owned: the start document 66.1
+against 50.5 ms, rig 123.3 against 50.9 ms, joined-chain 75.1 against 46.1 ms (startup-pinned
+95.3 against 260.2 ms). The editor computes a pose of a ten-segment figure in about 0.07 ms;
+the engine's call (0.25–0.35 ms in the app) and the adoption of its answer cannot get below
+that while both editors keep their own bookkeeping, so small documents wait for the engine
+to own the document outright (S5, phases 2 and 3). Running the animation while calling the
+session did not slow the calls (the engine's worker threads do not contend with it). `3d`
 and `movieclips` stay too: some of their calls are slower in the engine (below).
 
 What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow

@@ -229,4 +229,79 @@ impl Editor {
         })?;
         Ok(self.object()?.map(|(_, o)| o).unwrap_or(Value::Null))
     }
+
+    /// `addFigure(typeId)`: a new figure of a library definition in the middle of the
+    /// canvas, at the playhead (`applyFigureRange({kind: 'add'}, {atPlayhead: true})`), selected.
+    pub(crate) fn add_figure(&mut self, type_id: Option<&Value>) -> Result<Value, EditError> {
+        let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        // `typeId = this.report.figure_types[0]?.figure_type_id` when not given.
+        let wanted = match type_id {
+            Some(id) => id.clone(),
+            None => figures.first().and_then(|f| f.get("figure_type_id").cloned()).unwrap_or(Value::Null),
+        };
+        let figure = figures.iter().find(|f| f.get("figure_type_id").is_some_and(|id| *id == wanted && !wanted.is_null())).cloned();
+        let Some(figure) = figure else { return Err(EditError::Invalid("errors.editor.chooseAFigureFromTheLibrary".into())) };
+        if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
+            return Err(EditError::Unported("adding a movieclip".into()));
+        }
+        if !self.sheet() {
+            return Err(EditError::Unported("adding a figure on a native timeline".into()));
+        }
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        if self.next_uid > 0x7fff_fffe {
+            return Err(EditError::Invalid("errors.editorLayerSheet.objectIdentityCapacityReached".into()));
+        }
+        let (x, y) = (num(&self.report, "canvas_width").unwrap_or(f64::NAN) / 2.0, num(&self.report, "canvas_height").unwrap_or(f64::NAN) / 2.0);
+        if !x.is_finite() || !y.is_finite() {
+            return Err(EditError::Invalid("errors.editorRangeCommands.figurePositionMustBeFinite".into()));
+        }
+        let identity = self.next_uid;
+        // `createObject(figure, uid, x, y)`
+        let angles: Vec<Value> = figure.get("segments").and_then(Value::elements).map(|e| e.iter().map(|s| s.get("angle_rad").cloned().unwrap_or(Value::Null)).collect()).unwrap_or_default();
+        let mut object = Obj::new();
+        object.set("object_slot", Value::Num(0.0));
+        object.set("unique_id", Value::Num(identity as f64));
+        object.set("figure_type_id", wanted.clone());
+        object.set("root_x", Value::Num(x));
+        object.set("root_y", Value::Num(y));
+        object.set("scale", Value::Num(1.0));
+        object.set("color_override_raw", Value::Num(0.0));
+        object.set("field28", Value::Num(0.0));
+        object.set("angles", Value::array(angles));
+        object.set("len_flag", Value::Num(0.0));
+        object.set("lengths", Value::array(Vec::new()));
+        object.set("bend_flag", Value::Num(0.0));
+        object.set("bends", Value::array(Vec::new()));
+        object.set("join", Value::Null);
+        let object = Value::object(object);
+        // `insert(frame, payload)`: the frame on show with the figure added, slots following
+        // unique ids, drawn in front.
+        let mut frame = self.shown_frame()?.as_obj().cloned().unwrap_or_default();
+        let mut ids = frame_order(&frame);
+        let mut objects = objects_of(&Value::object(frame.clone()));
+        if objects.len() >= 65535 {
+            return Err(EditError::Invalid("errors.editorRangeCommands.aNativeKeyframeSupportsAtMost65535".into()));
+        }
+        objects.push(object);
+        let count = objects.len();
+        frame.set("objects", Value::array(objects));
+        ids.push(identity as f64);
+        set_order(&mut frame, &ids);
+        normalize_frame(&mut frame);
+        if frame.get("object_count").is_some() {
+            frame.set("object_count", Value::Num(count as f64));
+        }
+        // Published, the figure is selected and the next identity taken; refused, neither.
+        let (selection, previous) = (self.selection_state(), self.selection.clone());
+        self.selection = crate::Selection { uid: Some(identity as u32), uids: vec![identity as u32], joint: -1 };
+        self.next_uid += 1;
+        if let Err(error) = self.commit_sheet_range(&Value::object(frame), &[identity as u32], &[identity as u32], "Add figure", selection) {
+            self.selection = previous;
+            self.next_uid = identity;
+            return Err(error);
+        }
+        Ok(self.object()?.map(|(_, o)| o).unwrap_or(Value::Null))
+    }
 }
