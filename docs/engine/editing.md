@@ -67,7 +67,8 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`), Stick Nodes curves (a straight segment with a sagitta, which geometry reports with a bend of 1e-6) | yes, without 3D bones | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet, sticknodes-sheet |
 | Every ported call on documents with 3D bones, meshes, surfaces, perspective and part proportions | yes | spatial-mesh-perspective-sheet, spatial-mesh-sheet-sheet, spatial-surfaces-skin-sheet, spatial-surfaces-perspective-sheet, spatial-mesh-mechanism-sheet, spatial-clip-mesh-sheet |
 | 3D bones (`styk-edit/src/spatial.rs`): turned (`setSpatialPose`, `rotateJoint` without `isolate`, from the angles the bone is drawn with), dragged flat on screen or swung in depth with the depth key, the alternate side and a mid-drag switch (`poseSpatialJoint`, `_flatSpatialJoint`, `_arcSpatialJoint`), stretched, twisted (`bendJoint` → `twistSpatialJoint`); mechanisms' hinges and slides set (`setSpatialMotion`, a hinge through `setSpatialPose`) and dragged along their track (`_moveMechanicalJoint`), a driven hinge included. Results go through `quaternionPose` with `styk-math`'s `asin` | yes, without pose choices | spatial-turn-sheet, spatial-mechanism-sheet, spatial-drag-sheet, spatial-mechanism-drag-sheet |
-| 3D IK controllers (`spatialTarget`): every call on their frames, with posing a bone of a planted limb releasing it (`_releaseSpatialChain`), a posed hand or foot planting its new orientation (`_plantSpatialFollower`) and turned followers' 3D orientations (`spatialFollowers`, the editor's quirk of keeping only the last of several turned included) | yes, without steering a planted knee, twisting with 3D IK or turning a whole figure | ik-spatial-sheet, ik-spatial-side-sheet, ik-spatial-mirrored-sheet |
+| 3D IK controllers (`spatialTarget`): every call on their frames, with posing a bone of a planted limb releasing it (`_releaseSpatialChain`), a posed hand or foot planting its new orientation (`_plantSpatialFollower`) and turned followers' 3D orientations (`spatialFollowers`, the editor's quirk of keeping only the last of several turned included) | yes | ik-spatial-sheet, ik-spatial-side-sheet, ik-spatial-mirrored-sheet |
+| Steering planted 3D limbs: dragging a knee or elbow swings the limb's bend plane (`getSpatialIKPole`, `setSpatialIKPole`); twisting a bone of the limb swings its swivel and twisting the ankle or wrist marker turns the foot or hand (`twistSpatialJoint`); a whole figure turned with its 3D targets, bend planes and planted orientations (`setSpatialPose` with `wholeFigure`); `resetSpatialPose` for a bone, a mechanism or the whole rig, releasing its targets | yes | ik-spatial-steer-sheet, ik-spatial-side-steer-sheet, ik-spatial-mirrored-steer-sheet, spatial-reset-sheet |
 | Posing 3D IK targets (`styk-edit/src/spatial_ik.rs`): a planted target moves with its knee kept on its side on screen (`_flatSpatialIKPole`), the depth key pushes it in depth and a plain drag continues from there (`poseSpatialIKDepth`, `_spatialIKPointer`), `setSpatialIKTarget` sets depth, pole and swivel; a free 3D limb is captured once per gesture with its 3D target and followers' orientations (`captureSpatialIK`, `_drag.ikCapture`) and solved without following the target's orientation; IK posing on rigged figures, the drawn angles read from the rig (`RigJoint`) | yes, not across joined figures | ik-spatial-target-sheet, ik-spatial-side-target-sheet, ik-spatial-free-sheet |
 | Rig controls: a joint in a rig space takes the pointer through `authoredRigTarget` (from `styk_eval::ik::rig`; the drawn shape and rig space from geometry's `RigJoint`), an angle lock only stretches along its chord and does not turn, a connector slides (`slideConnector`, `setConnectorPosition`) and bends through the pointer (`_bendConnector`); skins, angle paths and weighted joints are not posed by hand | yes, without 3D bones and IK posing on rigged figures | rig-sheet, ik-rig-follow-sheet, ik-rig-stretch-sheet |
 | `poseJoint` on the end of a limb with an IK controller (`poseIKTarget`): a pinned target moves; an unpinned limb is captured as drawn, solved to the pointer and baked, its followers and bend kept in the controller; across joined figures on the assembly's skeleton (`poseGraph`, `captureFor`) | yes, without perspective or 3D controllers | startup-sheet, ik-unpinned-sheet, pinned-ik-sheet, ik-joined-unpinned-sheet, startup-join-sheet |
@@ -95,9 +96,8 @@ Every ported call runs in both of the editor's modes:
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
 A call answers `Unported`, and changes nothing, on documents with property channels on a
-native timeline, animation origins or a movieclip source; for steering a planted 3D
-limb's knee, twisting a bone with 3D IK, turning a whole figure with 3D IK, posing a joined
-3D IK target and pose choices; for poses on a drawing layer; for a replaced figure joined to one
+native timeline, animation origins or a movieclip source; for posing a joined 3D IK target
+and pose choices; for poses on a drawing layer; for a replaced figure joined to one
 outside its movieclip frame; and wherever the engine does not evaluate the frame as
 records yet ([evaluation.md](evaluation.md)).
 
@@ -170,11 +170,15 @@ own rounding: on the Kung-Fu Master and Karate Fighter rigs, dragging a free 3D 
 differed by up to 1.54 rad in 34 angles with Chromium's `Math` (a knee's side decided on a
 nearly degenerate limb) and was identical with the engine's (95 of 95 calls on each rig,
 measured 2026-10-03; also exact: the start-up document 94 of 94, a 3D catalogue scene 74 of
-74, joined 55 of 55, the rigged document 78 of 78, sheet-movieclip-loose 78 of 78).
+74, joined 55 of 55, the rigged document 78 of 78, sheet-movieclip-loose 78 of 78). With
+the driver's 3D steps added (a planted knee dragged, a bone twisted with the right button,
+the rig reset), measured the same day: the planted-leg fixture 140 of 140, the Kung-Fu
+Master and Karate Fighter rigs 115 of 115 each, a 3D dojo prop 94 of 94.
 
 `node scripts/engine-edit-shadow.mjs [--file <document.json>]` drives the real app in
 headless Chromium: pointer drags on joint handles and on the origin, keyboard undo and
-redo, transforms, timeline keys and frames, duplicate/join/unjoin/delete. Measured
+redo, transforms, timeline keys and frames, duplicate/join/unjoin/delete, and on a figure
+with 3D bones a planted knee, a right-button twist and resetting the rig. Measured
 2026-10-03 (WebAssembly, SwiftShader), one run each:
 
 | Document | Calls run in the engine | The same as the editor | Different | Editor time | Engine time |

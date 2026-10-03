@@ -386,6 +386,34 @@ scenario('figures-layers-sheet', app, [
       ['poseJoint', ...at(4, 4)], ['setSpatialIKTarget', {swivel: -0.2}], ['setSpatialIKTarget', {depth: 3}], ['undo'], ['redo'],
     ], 'ik-spatial-free.document.json');
   }
+  // Steering planted 3D legs: dragging the knee swings the leg's bend plane (its pole),
+  // twisting the thigh its swivel, twisting the ankle turns the foot; the whole figure turns
+  // with its targets, and the rest pose releases them.
+  for (const name of ['spatial', 'spatial-side', 'spatial-mirrored']) {
+    const fixture = `../../crates/styk-eval/tests/fixtures/ik/${name}.json`;
+    const e = open(JSON.parse(readFileSync(new URL(`../crates/styk-eval/tests/fixtures/ik/${name}.json`, import.meta.url), 'utf8')), app);
+    e.select(1, 6);
+    const k = e.geometry.objects.get(0).joints.get(7), knee = (dx, dy) => [k.x + dx, k.y + dy];
+    scenario(`ik-${name}-steer-sheet`, app, [
+      ['@select', 1, 6], ['beginDrag', 'Pose figure'], ['poseJoint', ...knee(10, 4)], ['poseJoint', ...knee(25, -6)], ['commitDrag'], ['poseJoint', ...knee(-15, 0)],
+      ['beginDrag', 'Pose figure'], ['bendJoint', ...knee(0, 0)], ['bendJoint', ...knee(40, 0)], ['bendJoint', ...knee(90, 5), {pixel: 2}], ['commitDrag'],
+      ['@select', 1, 9], ['beginDrag', 'Pose figure'], ['bendJoint', ...knee(0, 0)], ['bendJoint', ...knee(-50, 0)], ['bendJoint', ...knee(-80, 10)], ['commitDrag'],
+      ['@select', 1, 3], ['setSpatialPose', {turn: 0.4}, {wholeFigure: true}], ['setSpatialPose', {pitch: -0.2, bend: 0.1}, {wholeFigure: true}],
+      ['resetSpatialPose', true], ['undo'], ['@select', 1, 6], ['resetSpatialPose'], ['resetSpatialPose', true], ['undo'], ['undo'], ['redo'],
+    ], fixture);
+  }
+  // Resetting 3D poses: one bone, a slide and a hinge to their rest travel, the whole rig
+  // (the slide's range starting past its rest length).
+  {
+    const shifted = structuredClone(mechanism);
+    shifted.figure_types[0].segments[11]._stykRig.spatial.motion.min = 5;
+    writeFileSync(`${out}/spatial-reset.document.json`, JSON.stringify(shifted) + '\n');
+  }
+  scenario('spatial-reset-sheet', app, [
+    ['@select', 1, 11], ['setSpatialMotion', 10], ['resetSpatialPose'], ['@select', 1, 8], ['setSpatialMotion', 0.9], ['resetSpatialPose'],
+    ['@select', 1, 5], ['setSpatialPose', {turn: 0.2, pitch: 0.1}], ['resetSpatialPose'], ['setSpatialPose', {turn: -0.3}], ['@select', 1, 11], ['setSpatialMotion', 4],
+    ['resetSpatialPose', true], ['undo'], ['undo'], ['redo'],
+  ], 'spatial-reset.document.json');
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

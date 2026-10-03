@@ -852,20 +852,6 @@ pub(crate) fn release_spatial_chain(record: &mut Obj, figure: &styk_eval::doc::F
     }
 }
 
-/// Whether the figure has a planted 3D controller (`spatialTarget`) driving a limb that
-/// starts at `index` (a knee or elbow drag steers its bend), or one ending at `index`.
-pub(crate) fn spatial_ik_at(object: &Value, figure: &styk_eval::doc::Figure, index: usize) -> bool {
-    let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
-    controllers(object).iter().any(|(id, c)| {
-        let Ok(handle) = id.parse::<u32>() else { return false };
-        if !truthy(c, "enabled") || !truthy(c, "spatialTarget") {
-            return false;
-        }
-        let length = c.get("chainLength").and_then(Value::as_f64).unwrap_or(2.0).max(0.0).min(u32::MAX as f64) as u32;
-        skeleton.index(handle) == Some(index) || skeleton.chain(handle, length).contains(&index)
-    })
-}
-
 /// An array index as JavaScript objects enumerate them: first, in ascending order.
 fn index_key(key: &str) -> Option<u32> {
     if key.is_empty() || (key.len() > 1 && key.starts_with('0')) || !key.bytes().all(|b| b.is_ascii_digit()) {

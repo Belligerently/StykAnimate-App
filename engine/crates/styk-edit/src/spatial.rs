@@ -5,8 +5,9 @@
 //! hinges (`getSpatialMotion`, `setSpatialMotion`), and the canvas drags: a bone turned
 //! flat on screen or swung in depth (`poseSpatialJoint`, `_flatSpatialJoint`,
 //! `_arcSpatialJoint`), twisted about its axis (`twistSpatialJoint`), a mechanism moved
-//! along its track (`_moveMechanicalJoint`). Steering a planted 3D limb's knee, twisting
-//! with 3D IK and pose choices are not ported.
+//! along its track (`_moveMechanicalJoint`); with 3D IK, a planted knee steering its limb's
+//! bend plane, a twist swinging a planted limb's swivel or turning its foot or hand, a whole
+//! figure turned with its targets, and `resetSpatialPose`. Pose choices are not ported.
 
 use std::sync::Arc;
 
@@ -88,6 +89,8 @@ pub(crate) struct BoneGesture {
     grab: Option<[f64; 2]>,
     native_length: Option<f64>,
     pointer: Option<[f64; 2]>,
+    /// A twist of a planted 3D limb: the swivel it started from.
+    swivel: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -302,16 +305,20 @@ impl Editor {
         if whole && bone.parent != 0 {
             return Err(EditError::Invalid("errors.editorSpatial.selectTheRootArticulationToRotateTheWhole".into()));
         }
-        if whole && context.object.get("_stykIK").and_then(Value::as_obj).is_some_and(|t| t.values().iter().any(|c| c.get("spatialTarget").is_some_and(Value::truthy))) {
-            return Err(EditError::Unported("turning a whole figure with 3D IK".into()));
-        }
         let handle = context.figure.segments[index].id;
         let index_of = |id: u32| context.figure.plan.index_of.get(&id).map(|&i| i as usize);
         let channels = [("turn", index_of(bone.turn)), ("pitch", index_of(bone.pitch))];
         let slot = context.slot;
         // `wholeFigure` rewrites the controllers from the table the figure had before the
-        // edit (those without a 3D target unchanged).
-        let controllers = if whole { context.object.get("_stykIK").filter(|t| t.truthy()).cloned() } else { None };
+        // edit: the 3D targets, their bend planes and planted orientations turn with the
+        // figure about its root, as one rigid transform; the others stay as they were.
+        let controllers = if whole {
+            let delta = quat_multiply(world, inverse_quaternion(spatial_world_quaternion(frame.q, context.figure_angle, context.mirror, false)));
+            let center = context.world(spatial_point(&frame, bone.origin));
+            context.object.get("_stykIK").filter(|t| t.truthy()).map(|table| turn_spatial_targets(table, delta, center))
+        } else {
+            None
+        };
         let figure = context.figure.clone();
         self.object_edit_with("Rotate articulated joint", true, |editor| {
             crate::ik::release_spatial_chain(editor.frame_object_mut(slot).unwrap(), &figure, index);
@@ -328,6 +335,66 @@ impl Editor {
             plant_spatial_follower(record, handle, world);
             if let Some(table) = &controllers {
                 record.set("_stykIK", table.clone());
+            }
+            Ok(())
+        })
+    }
+
+    /// `resetSpatialPose(all)`: the selected bone back to rest (a mechanism to its rest travel),
+    /// or with `all` every 3D bone and slide of the figure, its 3D targets released.
+    pub(crate) fn reset_spatial_pose(&mut self, all: bool) -> Result<bool, EditError> {
+        if !all {
+            let Some(context) = self.spatial_context()? else { return Ok(false) };
+            if self.selection.joint >= 0 && Self::spatial_motion(&context, self.selection.joint as usize).is_some() {
+                return self.set_spatial_motion(0.0, false);
+            }
+            let mut rest = Obj::new();
+            for key in ["bend", "turn", "pitch"] {
+                rest.set(key, Value::Num(0.0));
+            }
+            return self.set_spatial_pose(&Value::object(rest), &Value::Null);
+        }
+        let Some(context) = self.spatial_context()? else {
+            return Err(EditError::Unported("resetting the 3D pose of a flat figure".into()));
+        };
+        let figure = context.figure.clone();
+        let definition = self.figure_value(&context.object);
+        let lengths: Vec<Value> = definition.get("segments").and_then(Value::elements).map(|e| e.iter().map(|s| s.get("length").cloned().unwrap_or(Value::Null)).collect()).unwrap_or_default();
+        let slot = context.slot;
+        self.object_edit_with("Reset articulated rig", true, |editor| {
+            let record = editor.frame_object_mut(slot).unwrap();
+            let delta = number_at(&Value::object(record.clone()), "angles", 0) - figure.segments.first().map_or(0.0, |s| s.angle);
+            let sign = if record.get("image_text_flags").is_some_and(Value::truthy) { -1.0 } else { 1.0 };
+            let index_of = |id: u32| figure.plan.index_of.get(&id).map(|&i| i as usize);
+            for (i, _) in figure.segments.iter().enumerate() {
+                let Some(b) = bone(&figure, i) else { continue };
+                for at in [Some(i), index_of(b.turn), index_of(b.pitch)].into_iter().flatten() {
+                    crate::pose::set_item_at(record, "angles", at, figure.segments[at].angle * sign + delta);
+                }
+            }
+            // Slides return to their rest position (or the nearest end of their range).
+            let slides: Vec<usize> = (0..figure.segments.len()).filter(|&i| bone(&figure, i).and_then(|b| b.motion).is_some_and(|m| !m.hinge)).collect();
+            if !slides.is_empty() {
+                if !record.get("len_flag").is_some_and(Value::truthy) {
+                    record.set("lengths", Value::array(lengths.clone()));
+                }
+                record.set("len_flag", Value::Num(1.0));
+                for i in slides {
+                    let b = bone(&figure, i).unwrap();
+                    let motion = b.motion.unwrap();
+                    let rest = norm(&[b.tip[0] - b.origin[0], b.tip[1] - b.origin[1], b.tip[2] - b.origin[2]]);
+                    crate::pose::set_item_at(record, "lengths", i, rest + js_min(motion.max, js_max(motion.min, 0.0)));
+                }
+            }
+            // Targets release when the animator restores the rest pose.
+            if let Some(table) = record.get("_stykIK").filter(|t| t.truthy()).and_then(|t| t.as_obj().cloned()) {
+                let mut released = Obj::new();
+                for (id, c) in table.iter() {
+                    let mut next = c.as_obj().cloned().unwrap_or_default();
+                    next.set("pinned", Value::Bool(false));
+                    released.set(id, Value::object(next));
+                }
+                record.set("_stykIK", Value::object(released));
             }
             Ok(())
         })
@@ -378,6 +445,44 @@ impl Editor {
             Ok(())
         })
     }
+}
+
+/// The controllers of a figure turned by `delta` about `center` (`setSpatialPose` with
+/// `wholeFigure`).
+fn turn_spatial_targets(table: &Value, delta: [f64; 4], center: [f64; 3]) -> Value {
+    let Some(entries) = table.as_obj() else { return table.clone() };
+    let mut turned = Obj::new();
+    for (id, c) in entries.iter() {
+        if !c.get("spatialTarget").is_some_and(Value::truthy) {
+            turned.set(id, c.clone());
+            continue;
+        }
+        let number = |path: &[&str]| c.path(path).and_then(Value::as_f64).unwrap_or(f64::NAN);
+        let p = quat_rotate(delta, [number(&["target", "x"]) - center[0], number(&["target", "y"]) - center[1], number(&["spatialTarget", "depth"]) - center[2]]);
+        let rotation = number(&["target", "rotation"]);
+        let rotate = |q: [f64; 4]| quat_multiply(spatial_quaternion(-rotation, 0.0, 0.0), quat_multiply(delta, quat_multiply(spatial_quaternion(rotation, 0.0, 0.0), q)));
+        let mut next = c.as_obj().cloned().unwrap_or_default();
+        let mut target = c.get("target").and_then(Value::as_obj).cloned().unwrap_or_default();
+        target.set("x", Value::Num(center[0] + p[0]));
+        target.set("y", Value::Num(center[1] + p[1]));
+        next.set("target", Value::object(target));
+        let mut spatial = c.get("spatialTarget").and_then(Value::as_obj).cloned().unwrap_or_default();
+        spatial.set("depth", Value::Num(center[2] + p[2]));
+        let pole = c.path(&["spatialTarget", "pole"]).and_then(Value::numbers).unwrap_or_default();
+        let pole = [0, 1, 2].map(|i| pole.get(i).copied().unwrap_or(f64::NAN));
+        spatial.set("pole", Value::nums(&quat_rotate(delta, pole)));
+        next.set("spatialTarget", Value::object(spatial));
+        if let Some(followers) = c.get("spatialFollowers").filter(|f| f.truthy()).and_then(|f| f.as_obj().cloned()) {
+            let mut rotated = Obj::new();
+            for (handle, q) in followers.iter() {
+                let q = q.numbers().unwrap_or_default();
+                rotated.set(handle, Value::nums(&rotate([0, 1, 2, 3].map(|i| q.get(i).copied().unwrap_or(f64::NAN)))));
+            }
+            next.set("spatialFollowers", Value::object(rotated));
+        }
+        turned.set(id, Value::object(next));
+    }
+    Value::object(turned)
 }
 
 /// `_plantSpatialFollower(object, handle, world)`: a pinned hand or foot keeps the world
@@ -441,12 +546,18 @@ impl Context {
         }
     }
 
-    fn world(&self, p: [f64; 3]) -> [f64; 3] {
+    pub(crate) fn world(&self, p: [f64; 3]) -> [f64; 3] {
         world_point(p, self.figure_angle, self.mirror, self.scale, self.root)
     }
 }
 
 impl Editor {
+    /// The definition the figure in `object` is drawn from, as the document stores it.
+    pub(crate) fn figure_value(&self, object: &Value) -> Value {
+        let figures = self.report.get("figure_types").and_then(Value::elements);
+        figures.and_then(|e| e.iter().find(|f| f.get("figure_type_id") == object.get("figure_type_id"))).unwrap_or(Value::Null)
+    }
+
     /// `poseSpatialJoint(x, y, {stretch, depth, flip, pixel, anchor})`.
     pub(crate) fn pose_spatial_joint(&mut self, x: f64, y: f64, options: &Value) -> Result<bool, EditError> {
         let Some(context) = self.spatial_context()? else { return Ok(false) };
@@ -462,8 +573,15 @@ impl Editor {
         }
         let stretch = flag("stretch");
         // A planted knee or elbow steers its 3D bend plane (`setSpatialIKPole`).
-        if !stretch && planted_limb_base(&context, index) {
-            return Err(EditError::Unported("steering a planted 3D limb".into()));
+        if !stretch && let Some(endpoint) = planted_limb_end(&context, index) {
+            let selected = self.selection.joint;
+            self.selection.joint = endpoint as i64;
+            let result = (|| {
+                let Some(pole) = self.spatial_ik_pole()? else { return Ok(false) };
+                self.set_spatial_ik_pole(x, y, Some(pole.knee[2]))
+            })();
+            self.selection.joint = selected;
+            return result;
         }
         let kind = if flag("depth") && !stretch { "arc" } else { "flat" };
         let uid = uid(&context.object).unwrap_or(0);
@@ -531,6 +649,7 @@ impl Editor {
             grab: None,
             native_length: None,
             pointer: None,
+            swivel: None,
         };
         self.keep_gesture(key, Gesture::Bone(gesture.clone()));
         Ok(gesture)
@@ -636,18 +755,54 @@ impl Editor {
         if !x.is_finite() || !y.is_finite() || !pixel.is_finite() || pixel <= 0.0 {
             return Ok(false);
         }
-        if crate::ik::spatial_ik_at(&context.object, &context.figure, index) {
-            return Err(EditError::Unported("twisting with 3D IK".into()));
-        }
         let mut gesture = self.bone_gesture(&context, index, "twist")?;
         let start = *gesture.start.get_or_insert([x, y]);
-        self.keep_gesture(format!("twist:{}:{index}", uid(&context.object).unwrap_or(0)), Gesture::Bone(gesture.clone()));
+        let key = format!("twist:{}:{index}", uid(&context.object).unwrap_or(0));
+        self.keep_gesture(key.clone(), Gesture::Bone(gesture.clone()));
         if gesture.length < 1e-6 {
             return Ok(false);
         }
         let angle = (x - start[0]) / pixel / 120.0 * std::f64::consts::PI / 2.0 * if context.mirror { -1.0 } else { 1.0 };
         let (d, h) = (gesture.direction, sin(angle / 2.0));
         let about = [d[0] * h, d[1] * h, d[2] * h, cos(angle / 2.0)];
+        let figure = context.figure.clone();
+        let handle = figure.segments[index].id;
+        let controllers = context.object.get("_stykIK").and_then(Value::as_obj).cloned().unwrap_or_default();
+        let truthy = |c: &Value, k: &str| c.get(k).is_some_and(Value::truthy);
+        // The ankle or wrist marker of a 3D limb turns its hand or foot about the forearm or shin.
+        let own = controllers.get(&handle.to_string()).cloned().unwrap_or(Value::Null);
+        if truthy(&own, "enabled") && truthy(&own, "spatialTarget") {
+            let definition = self.figure_value(&context.object);
+            let end = (0..figure.segments.len()).position(|n| {
+                matches!(self::bone(&figure, n), Some(b) if b.parent == handle && b.motion.is_none())
+                    && !definition.get("segments").and_then(|s| s.item(n)).is_some_and(|s| s.get("_stykPoseChoice").is_some_and(Value::truthy))
+            });
+            if let Some(end) = end {
+                let selected = self.selection.joint;
+                self.selection.joint = end as i64;
+                let result = (|| {
+                    let part = self.bone_gesture(&context, end, "twist")?;
+                    self.keep_gesture(format!("twist:{}:{end}", uid(&context.object).unwrap_or(0)), Gesture::Bone(part.clone()));
+                    let label = format!("Turn {}", figure.segments[end].name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| "part".into()));
+                    self.set_spatial_world_orientation(&context, end, quat_multiply(about, part.world), &part, &label, None)
+                })();
+                self.selection.joint = selected;
+                return result;
+            }
+        }
+        // A planted 3D limb holding this bone swings its bend plane (its swivel).
+        if let Some((limb, _)) = planted_limbs(&context).into_iter().find(|(_, chain)| chain.contains(&index)) {
+            let stored = controllers.get(&limb.to_string()).and_then(|c| c.path(&["spatialTarget", "swivel"])).and_then(Value::as_f64).unwrap_or(f64::NAN);
+            let swivel = *gesture.swivel.get_or_insert(stored);
+            self.keep_gesture(key, Gesture::Bone(gesture.clone()));
+            let selected = self.selection.joint;
+            self.selection.joint = figure.plan.index_of.get(&limb).map_or(-1, |&i| i as i64);
+            let mut patch = styk_doc::Obj::new();
+            patch.set("swivel", Value::Num(swivel + angle));
+            let result = self.set_spatial_ik_target(&Value::object(patch));
+            self.selection.joint = selected;
+            return result;
+        }
         self.set_spatial_world_orientation(&context, index, quat_multiply(about, gesture.world), &gesture, "Twist articulated joint", None)
     }
 
@@ -716,20 +871,28 @@ impl Editor {
     }
 }
 
-/// Whether a pinned automatic 3D controller drives a two-bone limb that starts at `index`.
-fn planted_limb_base(context: &Context, index: usize) -> bool {
+/// The pinned automatic 3D controllers of the figure, in table order, each with the chain it
+/// drives.
+fn planted_limbs(context: &Context) -> Vec<(u32, Vec<usize>)> {
     let figure = &context.figure;
     let skeleton = styk_eval::ik::Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
-    context.object.get("_stykIK").and_then(Value::as_obj).is_some_and(|table| {
-        table.iter().any(|(id, c)| {
+    let Some(table) = context.object.get("_stykIK").and_then(Value::as_obj) else { return Vec::new() };
+    table
+        .iter()
+        .filter_map(|(id, c)| {
             let truthy = |k: &str| c.get(k).is_some_and(Value::truthy);
-            let Ok(handle) = id.parse::<u32>() else { return false };
+            let handle = id.parse::<u32>().ok()?;
             if !(truthy("enabled") && truthy("pinned") && truthy("spatialTarget")) || c.get("bendDirection").and_then(Value::as_f64) != Some(0.0) {
-                return false;
+                return None;
             }
             let length = c.get("chainLength").and_then(Value::as_f64).unwrap_or(2.0).max(0.0).min(u32::MAX as f64) as u32;
-            let chain = skeleton.chain(handle, length);
-            chain.len() == 2 && chain[0] == index
+            Some((handle, skeleton.chain(handle, length)))
         })
-    })
+        .collect()
+}
+
+/// The endpoint of the first planted two-bone limb that starts at `index`.
+fn planted_limb_end(context: &Context, index: usize) -> Option<usize> {
+    let (handle, _) = planted_limbs(context).into_iter().find(|(_, chain)| chain.len() == 2 && chain[0] == index)?;
+    context.figure.plan.index_of.get(&handle).map(|&i| i as usize)
 }

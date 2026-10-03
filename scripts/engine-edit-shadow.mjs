@@ -107,15 +107,23 @@ async function run(mode) {
     const all = getPivotHandles(editor.geometry, {frame: editor.frame, selectedUid: editor.selectedUid, selectedUids: editor.selectedUids, showUnselected: state.settings.showUnselectedHandles, viewScale: state.view.scale, autoSize: true, maxDiameter: 10});
     const definition = editor.report.figure_types.find(type => type.figure_type_id === figure.figure_type_id)?.segments ?? [];
     const ik = joint => Boolean(figure._stykIK?.[definition[joint]?.segment_id]?.enabled);
-    return all.filter(handle => handle.uid === figure.unique_id && !handle.static).map(handle => { const at = worldToScreen(handle.point, options); return {joint: handle.joint, ik: handle.joint >= 0 && ik(handle.joint), x: rect.left + at.x, y: rect.top + at.y}; })
+    // The knee or elbow of a planted 3D limb: the bone its end hangs from.
+    const knees = new Set(definition.flatMap(segment => {
+      const c = figure._stykIK?.[segment.segment_id];
+      if (!c?.enabled || !c.pinned || !c.spatialTarget || c.bendDirection !== 0) return [];
+      const knee = definition.findIndex(other => other.segment_id === segment._stykRig?.spatial?.parent);
+      return knee < 0 ? [] : [knee];
+    }));
+    return all.filter(handle => handle.uid === figure.unique_id && !handle.static).map(handle => { const at = worldToScreen(handle.point, options); return {joint: handle.joint, ik: handle.joint >= 0 && ik(handle.joint),
+      knee: knees.has(handle.joint), spatial: Boolean(definition[handle.joint]?._stykRig?.spatial?.tip), x: rect.left + at.x, y: rect.top + at.y}; })
       .filter(handle => handle.x > rect.left + 60 && handle.x < rect.right - 60 && handle.y > rect.top + 60 && handle.y < rect.bottom - 60);
   });
   /** A pointer drag from a handle along a small arc, as a hand would do it. */
-  const drag = async (from, dx, dy) => {
+  const drag = async (from, dx, dy, button = 'left') => {
     await page.mouse.move(from.x, from.y); await sleep(60);
-    await page.mouse.down(); await sleep(60);
+    await page.mouse.down({button}); await sleep(60);
     for (let i = 1; i <= 12; i++) { await page.mouse.move(from.x + dx * i / 12, from.y + dy * i / 12 + Math.sin(i / 2) * 6); await sleep(16); }
-    await page.mouse.up(); await sleep(120);
+    await page.mouse.up({button}); await sleep(120);
   };
   const steps = [];
   const step = async (name, run) => { await settled(); await run(); steps.push(name); };
@@ -133,6 +141,15 @@ async function run(mode) {
   // A hand or foot with an IK controller, when the figure has one: its target is dragged.
   const target = (await handles()).find(handle => handle.ik);
   if (target) await step('drag an IK target', async () => { await settled(); const now = await handles(); await drag(now.find(h => h.joint === target.joint) ?? target, -30, 20); });
+  // A figure with 3D bones: a planted leg's knee dragged (its bend plane swings), a bone
+  // twisted with the right button (a planted leg's knee swings it instead), the rig reset.
+  const knee = (await handles()).find(handle => handle.knee);
+  if (knee) await step('drag a planted knee', async () => { const now = await handles(); await drag(now.find(h => h.joint === knee.joint) ?? knee, 25, -15); });
+  const bone = (await handles()).find(handle => handle.knee) ?? (await handles()).find(handle => handle.spatial);
+  if (bone) {
+    await step('twist a 3D bone with the right button', async () => { const now = await handles(); await drag(now.find(h => h.joint === bone.joint) ?? bone, 40, 0, 'right'); });
+    await step('reset the 3D rig', () => page.evaluate(() => styk.editor.resetSpatialPose(true)));
+  }
   await settled();
 
   const report = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__stykEditShadow ?? null, (key, value) => typeof value === 'function' ? undefined : value)));

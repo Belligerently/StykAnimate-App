@@ -6,15 +6,16 @@
 //! the rest of a gesture (`_drag.ikCapture`); the flat pole of a planted or posed 3D limb
 //! (`_flatSpatialIKPole`); pushing a target in depth (`poseSpatialIKDepth`) and the pointer
 //! offset that follows (`_spatialIKPointer`, `_clearFlatSpatialIK`, `_clearSpatialIKDepth`);
+//! the pole handle of a planted limb and steering it (`getSpatialIKPole`, `setSpatialIKPole`);
 //! `setSpatialIKTarget`.
 
 use std::collections::BTreeMap;
 
 use styk_doc::{Obj, Value};
-use styk_eval::ik::spatial::{capture_spatial_target, flat_spatial_bend, spatial_knee, spatial_pole_for, spatial_world_quaternion, spatial_world_vector};
+use styk_eval::ik::spatial::{capture_spatial_target, cross, dot, normalize, flat_spatial_bend, spatial_knee, spatial_pole_for, spatial_world_quaternion, spatial_world_vector};
 use styk_eval::ik::{self, BendReference, Pose, Skeleton, SpatialTarget, Table};
 use styk_eval::rig::{quat_multiply, spatial_point, spatial_quaternion};
-use styk_math::{hypot, norm};
+use styk_math::{cos, hypot, norm, sin};
 
 use crate::record::uid;
 use crate::{EditError, Editor};
@@ -34,6 +35,15 @@ pub(crate) struct Capture {
 pub(crate) struct SpatialCapture {
     pub spatial_followers: Option<BTreeMap<u32, [f64; 4]>>,
     pub spatial_target: Option<SpatialTarget>,
+}
+
+/// `spatialPoleHandle(...)`: where a planted 3D limb's pole handle sits, in the scene before
+/// perspective.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PoleHandle {
+    pub point: [f64; 3],
+    pub center: [f64; 3],
+    pub knee: [f64; 3],
 }
 
 /// The flat pole gesture of a 3D limb (`flat-ik:` in `spatialGesture`), in the solver's
@@ -286,6 +296,69 @@ impl Editor {
             }
         };
         Ok([x + offset[0], y + offset[1]])
+    }
+
+    /// `getSpatialIKPole()`: the pole handle of the selected 3D limb end.
+    pub(crate) fn spatial_ik_pole(&self) -> Result<Option<PoleHandle>, EditError> {
+        let Some((_, object)) = self.object()? else { return Ok(None) };
+        if self.selection.joint < 0 {
+            return Ok(None);
+        }
+        let definition = self.figure_value(&object);
+        let Some(handle) = definition.get("segments").and_then(|s| s.item(self.selection.joint as usize)).and_then(|s| s.get("segment_id").and_then(Value::as_f64)) else { return Ok(None) };
+        let handle = handle as u32;
+        let c = object.path(&["_stykIK", &handle.to_string()]).cloned().unwrap_or(Value::Null);
+        if !c.get("enabled").is_some_and(Value::truthy) || !c.get("spatialTarget").is_some_and(Value::truthy) || c.get("bendDirection").and_then(Value::as_f64) != Some(0.0) {
+            return Ok(None);
+        }
+        let Some(context) = self.spatial_context()? else { return Ok(None) };
+        let controller = ik::parse::table(object.get("_stykIK")).and_then(|t| t.get(handle).cloned()).ok_or_else(|| EditError::Unported("steering a 3D IK pole the engine cannot read".into()))?;
+        let pole = c.path(&["spatialTarget", "pole"]).and_then(Value::numbers).filter(|p| p.len() == 3).ok_or_else(|| EditError::Unported("steering a 3D IK pole that is not a vector".into()))?;
+        let pole = [pole[0], pole[1], pole[2]];
+        let swivel = c.path(&["spatialTarget", "swivel"]).filter(|v| !v.is_null()).map_or(Some(0.0), Value::as_f64).unwrap_or(f64::NAN);
+        let figure = &context.figure;
+        let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
+        let chain = skeleton.chain(handle, controller.chain_length);
+        if chain.len() != 2 || context.scale.abs() < 1e-9 {
+            return Ok(None);
+        }
+        let (Some(f0), Some(f1)) = (context.frames.get(chain[0]).copied().flatten(), context.frames.get(chain[1]).copied().flatten()) else { return Ok(None) };
+        let (Some(b0), Some(b1)) = (crate::spatial::bone(figure, chain[0]), crate::spatial::bone(figure, chain[1])) else { return Ok(None) };
+        let (base, knee, end) = (context.world(spatial_point(&f0, b0.origin)), context.world(spatial_point(&f0, b0.tip)), context.world(spatial_point(&f1, b1.tip)));
+        let axis = normalize([end[0] - base[0], end[1] - base[1], end[2] - base[2]]);
+        let along = dot(pole, axis);
+        let raw = [pole[0] - axis[0] * along, pole[1] - axis[1] * along, pole[2] - axis[2] * along];
+        let mut direction = normalize(if norm(&raw) < 1e-6 { cross(axis, if axis[0].abs() < 0.8 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] }) } else { raw });
+        let side = cross(axis, direction);
+        let (cs, sn) = (cos(swivel), sin(swivel));
+        direction = [0, 1, 2].map(|i| direction[i] * cs + side[i] * sn);
+        let center = [0, 1, 2].map(|i| (base[i] + end[i]) / 2.0);
+        let length = norm(&[knee[0] - base[0], knee[1] - base[1], knee[2] - base[2]]) + norm(&[end[0] - knee[0], end[1] - knee[1], end[2] - knee[2]]);
+        // `Math.max(20, length * .5)`
+        let radius = if (length * 0.5).is_nan() { f64::NAN } else { (length * 0.5).max(20.0) };
+        let point = [0, 1, 2].map(|i| center[i] + direction[i] * radius);
+        Ok(Some(PoleHandle { point, center, knee }))
+    }
+
+    /// `setSpatialIKPole(x, y, depth)`: the pole points from the middle of the limb toward
+    /// the pointer, unprojected at `depth`.
+    pub(crate) fn set_spatial_ik_pole(&mut self, x: f64, y: f64, depth: Option<f64>) -> Result<bool, EditError> {
+        let Some(pole) = self.spatial_ik_pole()? else { return Ok(false) };
+        let depth = depth.unwrap_or(pole.point[2]);
+        if ![x, y, depth].iter().all(|v| v.is_finite()) {
+            return Err(EditError::Invalid("errors.editorSpatial.chooseAFiniteIkPolePosition".into()));
+        }
+        let Some(context) = self.spatial_context()? else { return Ok(false) };
+        let p = context.unproject_at([x, y], depth);
+        let v = [p[0] - pole.center[0], p[1] - pole.center[1], depth - pole.center[2]];
+        let n = norm(&v);
+        if n < 1e-6 {
+            return Ok(false);
+        }
+        let mut patch = Obj::new();
+        patch.set("pole", Value::nums(&v.map(|x| x / n)));
+        patch.set("swivel", Value::Num(0.0));
+        self.set_spatial_ik_target(&Value::object(patch))
     }
 
     /// `setSpatialIKTarget(patch)`: a 3D target's depth, pole or swivel.
