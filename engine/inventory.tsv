@@ -170,7 +170,7 @@ src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatial
 src/editor-sprite-segment.mjs	engine	styk-edit	js	commands and history
 src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
-src/editor-vfx-clips.mjs	engine	styk-edit	js	commands and history
+src/editor-vfx-clips.mjs	engine	styk-edit	partial	Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS
 src/editor-vfx.mjs	engine	styk-edit	js	commands and history
 src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, undo/redo of object edits (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
@@ -498,7 +498,7 @@ src/vfx-canvas.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-clip-controls.mjs	ui	-	stays	
 src/vfx-clip-inspector.mjs	ui	-	stays	
 src/vfx-clip-timeline.mjs	ui	-	stays	
-src/vfx-clips.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS
+src/vfx-clips.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validateVfxClips for edits (styk-edit/src/vfx_clips.rs, paints excepted)
 src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
 src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)

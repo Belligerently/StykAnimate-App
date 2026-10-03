@@ -928,7 +928,18 @@ impl Editor {
             }
         };
         keep_sheet(self.report.path(&["_styk", "layerSheet"]), &mut retained);
-        for command in self.undo.iter().chain(&self.redo) {
+        // `historyCommands`: the entries of batches count as entries.
+        fn flatten<'a>(commands: impl Iterator<Item = &'a Command>, out: &mut Vec<&'a Command>) {
+            for command in commands {
+                match &command.kind {
+                    CommandKind::Batch { commands } => flatten(commands.iter(), out),
+                    _ => out.push(command),
+                }
+            }
+        }
+        let mut history = Vec::new();
+        flatten(self.undo.iter().chain(&self.redo), &mut history);
+        for command in history {
             if let CommandKind::LayerSheet { before, after, sources, .. } = &command.kind {
                 keep_sheet(Some(before), &mut retained);
                 keep_sheet(Some(after), &mut retained);

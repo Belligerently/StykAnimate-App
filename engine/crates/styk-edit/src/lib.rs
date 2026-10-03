@@ -36,6 +36,7 @@ mod spatial;
 mod spatial_ik;
 mod timeline;
 mod transform;
+mod vfx_clips;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -144,6 +145,12 @@ pub struct Editor {
     pub(crate) new_layer_hints: HashMap<u32, String>,
     /// `editor._sheetClipboard`: the timeline frames this editor copied.
     pub(crate) sheet_clipboard: Option<sheet_clipboard::Clipboard>,
+    /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
+    pub(crate) vfx_edit: Option<Option<Value>>,
+    /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
+    pub(crate) batch: Option<history::Batch>,
+    /// `editor._sheetSelection`: the layer chosen on the timeline.
+    pub(crate) sheet_selection: Option<select::SheetSelection>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
@@ -186,6 +193,10 @@ struct Snapshot {
     generated_sources: Vec<String>,
     new_layer_hints: HashMap<u32, String>,
     events: usize,
+    sheet_clipboard: Option<sheet_clipboard::Clipboard>,
+    vfx_edit: Option<Option<Value>>,
+    batch: Option<history::Batch>,
+    sheet_selection: Option<select::SheetSelection>,
 }
 
 impl Editor {
@@ -217,6 +228,9 @@ impl Editor {
             source_table_was_present,
             new_layer_hints: HashMap::new(),
             sheet_clipboard: None,
+            vfx_edit: None,
+            batch: None,
+            sheet_selection: None,
             events: Vec::new(),
             eval: RefCell::default(),
             gate: RefCell::new(None),
@@ -277,6 +291,11 @@ impl Editor {
 
     /// `editor.activeLayerId = id` when it differs (selection sets it in the editor
     /// without a new revision, so a session's document may be behind).
+    /// The timeline's layer selection as the facade holds it (`editor._sheetSelection`).
+    pub fn set_sheet_selection(&mut self, chosen: Option<(&str, bool)>) {
+        self.sheet_selection = chosen.map(|(id, contents)| select::SheetSelection { id: id.to_string(), contents });
+    }
+
     pub fn set_active_layer_id(&mut self, id: &str) {
         if self.report.path(&["_styk", "layers", "activeId"]).and_then(Value::as_str) != Some(id) && self.report.path(&["_styk", "layers"]).is_some() {
             self.set_active_layer(id);
@@ -360,6 +379,10 @@ impl Editor {
             generated_sources: self.generated_sources.clone(),
             new_layer_hints: self.new_layer_hints.clone(),
             events: self.events.len(),
+            sheet_clipboard: self.sheet_clipboard.clone(),
+            vfx_edit: self.vfx_edit.clone(),
+            batch: self.batch.clone(),
+            sheet_selection: self.sheet_selection.clone(),
         }
     }
 
@@ -378,6 +401,10 @@ impl Editor {
         self.generated_sources = snapshot.generated_sources;
         self.new_layer_hints = snapshot.new_layer_hints;
         self.events.truncate(snapshot.events);
+        self.sheet_clipboard = snapshot.sheet_clipboard;
+        self.vfx_edit = snapshot.vfx_edit;
+        self.batch = snapshot.batch;
+        self.sheet_selection = snapshot.sheet_selection;
     }
 
     fn dispatch(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
@@ -456,6 +483,58 @@ impl Editor {
             "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "selectSheetLayer" => self.select_sheet_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "keepSelectionOnSeek" => {
+                self.keep_selection_on_seek();
+                Ok(Value::Null)
+            }
+            "setActiveLayer" => self.set_active_layer_command(&arg(0)).map(Value::Bool),
+            "beginBatch" => self.begin_batch(arg(0).as_str().unwrap_or("")).map(|_| Value::Null),
+            "endBatch" => self.end_batch().map(|_| Value::Null),
+            "abortBatch" => self.abort_batch().map(|_| Value::Null),
+            // A replay step: `movieclipBatch(label, () => steps)`, returning the last step's result.
+            "@batch" => {
+                let steps: Vec<Value> = arg(1).elements().map(|e| e.iter().collect()).unwrap_or_default();
+                self.begin_batch(arg(0).as_str().unwrap_or(""))?;
+                let mut last = Value::Null;
+                for step in steps {
+                    let call: Vec<Value> = step.elements().map(|e| e.iter().collect()).unwrap_or_default();
+                    let name = call.first().and_then(Value::as_str).unwrap_or("").to_string();
+                    match self.dispatch(&name, call.get(1..).unwrap_or(&[])) {
+                        Ok(value) => last = value,
+                        Err(error) => {
+                            if matches!(error, EditError::Invalid(_)) {
+                                self.abort_batch()?;
+                            }
+                            return Err(error);
+                        }
+                    }
+                }
+                self.end_batch()?;
+                Ok(last)
+            }
+            "beginVfxClipEdit" => self.begin_vfx_clip_edit(),
+            "commitVfxClipEdit" => self.commit_vfx_clip_edit().map(Value::Bool),
+            "cancelVfxClipEdit" => self.cancel_vfx_clip_edit().map(Value::Bool),
+            "setVfxClip" => self.set_vfx_clip(&arg(0), &arg(1)).map(Value::Bool),
+            "trimVfxClipStart" => self.trim_vfx_clip_start(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteVfxClip" => self.delete_vfx_clip(&arg(0)).map(Value::Bool),
+            "moveVfxClipOrder" => self.move_vfx_clip_order(&arg(0), &arg(1)).map(Value::Bool),
+            "reorderVfxGroupEffect" => self.reorder_vfx_group_effect(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "setVfxClipParameter" => {
+                let mut values = Obj::new();
+                match arg(2).as_str() {
+                    Some(param) => values.set(param, arg(3)),
+                    None => return Err(EditError::Unported("an effect parameter name that is not text".into())),
+                }
+                self.set_vfx_clip_parameters(&arg(0), &arg(1), &Value::object(values), &arg(4)).map(Value::Bool)
+            }
+            "setVfxClipParameters" => self.set_vfx_clip_parameters(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "toggleVfxClipKey" => self.toggle_vfx_clip_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "moveVfxClipKey" => self.move_vfx_clip_key(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "moveVfxClipKeys" => self.move_vfx_clip_keys(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "deleteVfxClipKeys" => self.delete_vfx_clip_keys(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "setVfxClipEasing" => self.set_vfx_clip_easing(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
             "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
             "updatePolygon" => match args.get(1) {
                 None => self.update_polygon(&arg(0), &Value::Null),
@@ -527,6 +606,13 @@ impl Editor {
 
     /// Emits a change event: `{kind, frameIndex, tick, structural: false, timing: false, ...detail}`.
     pub(crate) fn emit(&mut self, kind: &str, detail: Vec<(&str, Value)>) {
+        // `_emit`: a seek follows the timeline's layer selection; any other selection drops it.
+        if kind == "seek" {
+            let _ = self.follow_sheet_selection();
+        }
+        if kind == "selection" && !detail.iter().any(|(key, value)| *key == "sheetSelection" && value.truthy()) {
+            self.sheet_selection = None;
+        }
         let mut object = styk_doc::Obj::new();
         object.set("kind", Value::str(kind));
         object.set("frameIndex", Value::Num(self.frame_index as f64));
