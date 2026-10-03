@@ -1,0 +1,19 @@
+[package]
+name = "styk-drawing"
+description = "The raster drawing engine: sparse tiles, brushes and strokes, fill, selections, transforms, filters, tile and history codecs."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+styk-math = { path = "../styk-math" }
+styk-doc = { path = "../styk-doc" }
+libm = "0.2.16"
+
+[features]
+# Natively, `x ** y` with the `libm` crate's pow, as WebAssembly builds compute it (measurement only).
+libm-pow = []
+
+[dev-dependencies]
+sha2 = "0.10"

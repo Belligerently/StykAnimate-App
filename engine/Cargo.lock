@@ -1143,6 +1143,26 @@ name = "styk-draw"
 version = "0.1.0"
 
 [[package]]
+name = "styk-drawing"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "sha2",
+ "styk-doc",
+ "styk-math",
+]
+
+[[package]]
+name = "styk-drawing-wasm"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "styk-doc",
+ "styk-drawing",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "styk-edit"
 version = "0.1.0"
 dependencies = [

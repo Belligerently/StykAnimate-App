@@ -10011,194 +10011,194 @@
   },
   "drawingController.alreadyDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:979"
+      "src/drawing-controller.mjs:983"
     ],
     "context": "if(action==='blank')return e.drawingKey(ids,e.tick,{blank:true});if(action==='copy-key'){if(!e.drawingKey(ids))this.onStatus(interfaceText('drawingController.al"
   },
   "drawingController.blank": {
     "locations": [
-      "src/drawing-controller.mjs:353"
+      "src/drawing-controller.mjs:357"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.brushPalette": {
     "locations": [
-      "src/drawing-controller.mjs:277"
+      "src/drawing-controller.mjs:281"
     ],
     "context": "const palette=document.createElement('div');palette.className='drawing-palette';palette.setAttribute('role','dialog');localizedAttribute(palette, 'aria-label', "
   },
   "drawingController.brushSaved": {
     "locations": [
-      "src/drawing-controller.mjs:974"
+      "src/drawing-controller.mjs:978"
     ],
     "context": "const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:interfaceText('drawingController.savedBrush'),...tip};this.library.presets=[."
   },
   "drawingController.color": {
     "locations": [
-      "src/drawing-controller.mjs:245"
+      "src/drawing-controller.mjs:249"
     ],
     "context": "return {anchor:input,title:key==='color2'?interfaceText('drawingController.secondColor'):interfaceText('drawingController.color'), titleKey: (key==='color2' ? '"
   },
   "drawingController.copyingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:985"
+      "src/drawing-controller.mjs:989"
     ],
     "context": "if(['copy-pixels','cut-pixels'].includes(action)){await this.ensureFloating();return this.pixelOperation({messageKey:'drawingController.copyingPixels'},async op"
   },
   "drawingController.createdLayer": {
     "locations": [
-      "src/drawing-controller.mjs:314"
+      "src/drawing-controller.mjs:318"
     ],
     "context": "else{layer=this.editor.createDrawingLayer();this.onStatus(interfaceText('drawingController.createdLayer', {name:layer.name}), 'drawingController.createdLayer', "
   },
   "drawingController.deleteSelection": {
     "locations": [
-      "src/drawing-controller.mjs:983"
+      "src/drawing-controller.mjs:987"
     ],
     "context": "if(action==='delete-pixels'){const s=await this.ensureFloating();if(!s)return;return this.commitSelection(s,'Delete selected pixels',{remove:true,labelKey:'draw"
   },
   "drawingController.drawing": {
     "locations": [
-      "src/drawing-controller.mjs:353",
+      "src/drawing-controller.mjs:357",
       "src/studio-shell.mjs:140"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.drawingCanvasBBrushEEraserGFillU": {
     "locations": [
-      "src/drawing-controller.mjs:355"
+      "src/drawing-controller.mjs:359"
     ],
     "context": "sync(){if(!this.active)return;try{const t=this.editor.drawingTarget();this.exposure={layerId:t.id,start:t.key.tick,end:t.end};this.lastLayer=t.id;}catch{this.ex"
   },
   "drawingController.drawingToolOptions": {
     "locations": [
-      "src/drawing-controller.mjs:285"
+      "src/drawing-controller.mjs:289"
     ],
     "context": "createQuickBar(){const bar=document.createElement('div');bar.className='drawing-quickbar';bar.setAttribute('role','toolbar');localizedAttribute(bar, 'aria-label"
   },
   "drawingController.editingHold": {
     "locations": [
-      "src/drawing-controller.mjs:353"
+      "src/drawing-controller.mjs:357"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.exposure": {
     "locations": [
-      "src/drawing-controller.mjs:353"
+      "src/drawing-controller.mjs:357"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.filled": {
     "locations": [
-      "src/drawing-controller.mjs:848"
+      "src/drawing-controller.mjs:852"
     ],
     "context": "op.check();op.received(result.tiles);await this.commitPixels(target,result.tiles,'Fill drawing',op);this.onStatus(interfaceText('drawingController.filled'), 'dr"
   },
   "drawingController.fillingDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:821"
+      "src/drawing-controller.mjs:825"
     ],
     "context": "fill(target,surface,point){return this.pixelOperation({messageKey:'drawingController.fillingDrawing'},async op=>{"
   },
   "drawingController.fillSelection": {
     "locations": [
-      "src/drawing-controller.mjs:967"
+      "src/drawing-controller.mjs:971"
     ],
     "context": "const surface=await this.owner.surface(target.figure);return this.pixelTool(target,surface,'fill-mask',{mask:m.mask,color:[...this.settings.color.slice(1).match"
   },
   "drawingController.fillShape": {
     "locations": [
-      "src/drawing-controller.mjs:557"
+      "src/drawing-controller.mjs:561"
     ],
     "context": "return this.pixelTool(g.target,g.surface,'fill-mask',{mask:clip,color:[...this.settings.color.slice(1).match(/../g).map(n=>parseInt(n,16)),Math.round(this.setti"
   },
   "drawingController.finishingStroke": {
     "locations": [
-      "src/drawing-controller.mjs:748"
+      "src/drawing-controller.mjs:752"
     ],
     "context": "const pending=this.pixelOperation({messageKey:'drawingController.finishingStroke'},async op=>{"
   },
   "drawingController.noExposure": {
     "locations": [
-      "src/drawing-controller.mjs:353"
+      "src/drawing-controller.mjs:357"
     ],
     "context": "get exposureMessage(){try{const t=this.editor.drawingTarget();return {key: 'drawingController.exposure', params: {kind: {messageKey: t.figure ? 'drawingControll"
   },
   "drawingController.operation": {
     "locations": [
-      "src/drawing-controller.mjs:174"
+      "src/drawing-controller.mjs:178"
     ],
     "context": "this.operation=op;owner.busy=true;const statusParams={label:labelKey?{messageKey:labelKey}:label};this.onStatus(interfaceText('drawingController.operation', sta"
   },
   "drawingController.paintingLayer": {
     "locations": [
-      "src/drawing-controller.mjs:313"
+      "src/drawing-controller.mjs:317"
     ],
     "context": "if(layer)this.onStatus(interfaceText('drawingController.paintingLayer', {name:layer.name}), 'drawingController.paintingLayer', {name:layer.name});"
   },
   "drawingController.pastingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:1001"
+      "src/drawing-controller.mjs:1005"
     ],
     "context": "if(action==='paste-pixels')return this.pixelOperation({messageKey:'drawingController.pastingPixels'},op=>this.getClipboard().paste('drawing-pixels',async()=>{"
   },
   "drawingController.resampled": {
     "locations": [
-      "src/drawing-controller.mjs:1029"
+      "src/drawing-controller.mjs:1033"
     ],
     "context": "this.onStatus(interfaceText('drawingController.resampled'), 'drawingController.resampled');"
   },
   "drawingController.resamplingDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:1023"
+      "src/drawing-controller.mjs:1027"
     ],
     "context": "return this.pixelOperation({messageKey:'drawingController.resamplingDrawing'},async op=>{"
   },
   "drawingController.restoringRedo": {
     "locations": [
-      "src/drawing-controller.mjs:216"
+      "src/drawing-controller.mjs:220"
     ],
     "context": "return this.pixelOperation({messageKey:direction==='undo'?'drawingController.restoringUndo':'drawingController.restoringRedo'},async op=>{op.history=true;return"
   },
   "drawingController.restoringUndo": {
     "locations": [
-      "src/drawing-controller.mjs:216"
+      "src/drawing-controller.mjs:220"
     ],
     "context": "return this.pixelOperation({messageKey:direction==='undo'?'drawingController.restoringUndo':'drawingController.restoringRedo'},async op=>{op.history=true;return"
   },
   "drawingController.sameResolution": {
     "locations": [
-      "src/drawing-controller.mjs:1021"
+      "src/drawing-controller.mjs:1025"
     ],
     "context": "if(ratio===1){this.onStatus(interfaceText('drawingController.sameResolution'), 'drawingController.sameResolution');return;}"
   },
   "drawingController.savedBrush": {
     "locations": [
-      "src/drawing-controller.mjs:974"
+      "src/drawing-controller.mjs:978"
     ],
     "context": "const preset={id:'custom-'+(Date.now()).toString(36)+n,name:base+' '+n,description:interfaceText('drawingController.savedBrush'),...tip};this.library.presets=[."
   },
   "drawingController.secondColor": {
     "locations": [
-      "src/drawing-controller.mjs:245"
+      "src/drawing-controller.mjs:249"
     ],
     "context": "return {anchor:input,title:key==='color2'?interfaceText('drawingController.secondColor'):interfaceText('drawingController.color'), titleKey: (key==='color2' ? '"
   },
   "drawingController.selected": {
     "locations": [
-      "src/drawing-controller.mjs:862"
+      "src/drawing-controller.mjs:866"
     ],
     "context": "s.presenter=selectionPresenter(s,owner);this.selection=s;if(outline)this.marquee=outline;else this.setMarquee(g.target,g.surface,g.mask??{...bounds,points:g.poi"
   },
   "drawingController.selectingPixels": {
     "locations": [
-      "src/drawing-controller.mjs:855"
+      "src/drawing-controller.mjs:859"
     ],
     "context": "return this.pixelOperation({messageKey:'drawingController.selectingPixels'},async op=>{"
   },
   "drawingController.transformSelection": {
     "locations": [
-      "src/drawing-controller.mjs:885"
+      "src/drawing-controller.mjs:889"
     ],
     "context": "applySelection(){const s=this.selection;if(!s)return;if(s.committing)return s.committing;if(!moved(s)){this.cancelSelection();return;}return this.commitSelectio"
   },
@@ -10694,7 +10694,7 @@
   },
   "drawingView.custom": {
     "locations": [
-      "src/drawing-controller.mjs:973",
+      "src/drawing-controller.mjs:977",
       "src/drawing-view.mjs:165"
     ],
     "context": "const base=interfaceText(brushMessages[this.settings.preset]?.nameKey??'drawingView.custom'),n=this.library.presets.length+1,tip=Object.fromEntries(brushKeys.fi"
@@ -13586,8 +13586,8 @@
       "src/drawing-composite-transport.mjs:43",
       "src/drawing-composite-worker.mjs:14",
       "src/drawing-composite.mjs:26",
-      "src/drawing-controller.mjs:830",
-      "src/drawing-controller.mjs:836",
+      "src/drawing-controller.mjs:834",
+      "src/drawing-controller.mjs:840",
       "src/drawing-fill.mjs:26",
       "src/drawing-fill.mjs:32",
       "src/drawing-fill.mjs:95",
@@ -13604,120 +13604,120 @@
   },
   "errors.drawingController.copySelectedPixelsFirst": {
     "locations": [
-      "src/drawing-controller.mjs:1002"
+      "src/drawing-controller.mjs:1006"
     ],
     "context": "const clip=e._drawingPixelClipboard;if(!clip)throw messageError(new Error(''), \"errors.drawingController.copySelectedPixelsFirst\", {});validatePixelClipboard(cl"
   },
   "errors.drawingController.drawingDocumentChanged": {
     "locations": [
-      "src/drawing-controller.mjs:210"
+      "src/drawing-controller.mjs:214"
     ],
     "context": "return wait?wait.then(()=>{if(report!==this.editor.report)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.drawingDocumentChange"
   },
   "errors.drawingController.drawingInputExceededTheQueueLimit": {
     "locations": [
-      "src/drawing-controller.mjs:575",
-      "src/drawing-controller.mjs:759"
+      "src/drawing-controller.mjs:579",
+      "src/drawing-controller.mjs:763"
     ],
     "context": "if(queue.length>=MAX_STROKE_SAMPLES)throw messageError(new Error(''), \"errors.drawingController.drawingInputExceededTheQueueLimit\", {});"
   },
   "errors.drawingController.drawingOperationSuperseded": {
     "locations": [
-      "src/drawing-controller.mjs:171"
+      "src/drawing-controller.mjs:175"
     ],
     "context": "op.check=()=>{if(op.abort.signal.aborted||owner!==this.owner||revision!==this.editor.revision)throw messageError(new DOMException('', 'AbortError'), \"errors.dra"
   },
   "errors.drawingController.paintADrawingBeforeFilteringIt": {
     "locations": [
-      "src/drawing-controller.mjs:890"
+      "src/drawing-controller.mjs:894"
     ],
     "context": "const e=this.editor,target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeFilteringIt\", {});"
   },
   "errors.drawingController.paintADrawingBeforeResamplingIt": {
     "locations": [
-      "src/drawing-controller.mjs:1019"
+      "src/drawing-controller.mjs:1023"
     ],
     "context": "const target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeResamplingIt\", {});"
   },
   "errors.drawingController.paintADrawingBeforeSelectingItsPixels": {
     "locations": [
-      "src/drawing-controller.mjs:958"
+      "src/drawing-controller.mjs:962"
     ],
     "context": "await this.settleFloating();const target=e.drawingTarget();if(!target.figure)throw messageError(new Error(''), \"errors.drawingController.paintADrawingBeforeSele"
   },
   "errors.drawingController.sampleAllLayersSupportsFillRegionsUpTo": {
     "locations": [
-      "src/drawing-controller.mjs:828"
+      "src/drawing-controller.mjs:832"
     ],
     "context": "if(bounds.width*bounds.height>FILL_SOURCE_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.sampleAllLayersSupportsFillRegionsUpTo\", {});"
   },
   "errors.drawingController.selectASmallerAreaTheFilterExceeds16": {
     "locations": [
-      "src/drawing-controller.mjs:540",
-      "src/drawing-controller.mjs:895"
+      "src/drawing-controller.mjs:544",
+      "src/drawing-controller.mjs:899"
     ],
     "context": "if(work&&work.pixels>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.selectASmallerAreaTheFilterExceeds16\", {});"
   },
   "errors.drawingController.selectionChanged": {
     "locations": [
-      "src/drawing-controller.mjs:870",
-      "src/drawing-controller.mjs:876"
+      "src/drawing-controller.mjs:874",
+      "src/drawing-controller.mjs:880"
     ],
     "context": "if(this.selection!==s)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.selectionChanged\", {});"
   },
   "errors.drawingController.selectPixelsBeforeFillingTheSelection": {
     "locations": [
-      "src/drawing-controller.mjs:965"
+      "src/drawing-controller.mjs:969"
     ],
     "context": "await this.settleFloating();const m=this.marquee;if(!m)throw messageError(new Error(''), \"errors.drawingController.selectPixelsBeforeFillingTheSelection\", {});"
   },
   "errors.drawingController.selectPixelsToFlip": {
     "locations": [
-      "src/drawing-controller.mjs:969"
+      "src/drawing-controller.mjs:973"
     ],
     "context": "if(action==='flip-selection-x'||action==='flip-selection-y'){const s=await this.ensureFloating();if(!s)throw messageError(new Error(''), \"errors.drawingControll"
   },
   "errors.drawingController.selectPixelsWithTheLassoFirst": {
     "locations": [
-      "src/drawing-controller.mjs:986"
+      "src/drawing-controller.mjs:990"
     ],
     "context": "const s=this.selection;if(!s)throw messageError(new Error(''), \"errors.drawingController.selectPixelsWithTheLassoFirst\", {});"
   },
   "errors.drawingController.strokeCancelled": {
     "locations": [
-      "src/drawing-controller.mjs:812"
+      "src/drawing-controller.mjs:816"
     ],
     "context": "cancel({navigation=true}={}){if(navigation)this.touchNavigation?.cancel();this.operation?.abort.abort();this.previewQueued=false;this.sequence++;const pending=t"
   },
   "errors.drawingController.theDrawingPoseIsUnavailable": {
     "locations": [
-      "src/drawing-controller.mjs:384"
+      "src/drawing-controller.mjs:388"
     ],
     "context": "geometryItem(target){let item;if(target.created||target.migratedFrom)item=buildGeometry({...this.editor.report,figure_types:[...this.editor.report.figure_types,"
   },
   "errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit": {
     "locations": [
-      "src/drawing-controller.mjs:187",
-      "src/drawing-controller.mjs:544"
+      "src/drawing-controller.mjs:191",
+      "src/drawing-controller.mjs:548"
     ],
     "context": "if((op.copiedBytes??0)+bytes.byteLength>op.maxBytes)throw messageError(new Error(''), \"errors.drawingController.theOperationExceedsTheDrawingWorkingMemoryLimit\""
   },
   "errors.drawingController.theSelectionBelongsToAnotherDrawing": {
     "locations": [
-      "src/drawing-controller.mjs:966"
+      "src/drawing-controller.mjs:970"
     ],
     "context": "const target=e.drawingTarget();if(!this.marqueeOn(target))throw messageError(new Error(''), \"errors.drawingController.theSelectionBelongsToAnotherDrawing\", {});"
   },
   "errors.drawingController.theSelectionChangedCopyItAgain": {
     "locations": [
-      "src/drawing-controller.mjs:991"
+      "src/drawing-controller.mjs:995"
     ],
     "context": "op.check();if(this.selection!==s)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingController.theSelectionChangedCopyItAgain\", {});"
   },
   "errors.drawingController.theStrokeExceedsTheDrawingWorkingMemoryLimit": {
     "locations": [
-      "src/drawing-controller.mjs:616",
-      "src/drawing-controller.mjs:618",
+      "src/drawing-controller.mjs:620",
+      "src/drawing-controller.mjs:622",
       "src/drawing-gpu.mjs:756",
       "src/drawing-pixels.mjs:88",
       "src/drawing-stroke-engine.mjs:24",
@@ -13729,20 +13729,20 @@
   },
   "errors.drawingController.unknownDrawingFilter": {
     "locations": [
-      "src/drawing-controller.mjs:889",
+      "src/drawing-controller.mjs:893",
       "src/drawing-pixels.mjs:480"
     ],
     "context": "if(!FILTER_LABELS[kind])throw messageError(new Error(''), \"errors.drawingController.unknownDrawingFilter\", {});await this.settleFloating();"
   },
   "errors.drawingController.waitForTheDrawingToFinishLoading": {
     "locations": [
-      "src/drawing-controller.mjs:813"
+      "src/drawing-controller.mjs:817"
     ],
     "context": "async barrier(options){await this.settle({selection:true});if(this.loading)throw messageError(new Error(''), \"errors.drawingController.waitForTheDrawingToFinish"
   },
   "errors.drawingController.zoomInBeforeSelectingTheAreaExceeds16": {
     "locations": [
-      "src/drawing-controller.mjs:921"
+      "src/drawing-controller.mjs:925"
     ],
     "context": "if(!bounds)return;if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingController.zoomInBeforeSelectingTheAreaExcee"
   },
@@ -13781,45 +13781,45 @@
   },
   "errors.drawingHistory.diskUnavailable": {
     "locations": [
-      "src/drawing-history.mjs:84"
+      "src/drawing-history.mjs:85"
     ],
     "context": "if(this.enabled){this.enabled=false;this.onWarning(messageError(new Error(''), 'errors.drawingHistory.diskUnavailable', {detail:error.message}));}"
   },
   "errors.drawingHistory.drawingHistoryOperationCancelled": {
     "locations": [
-      "src/drawing-history.mjs:6"
+      "src/drawing-history.mjs:7"
     ],
     "context": "const aborted=()=>messageError(new DOMException('', 'AbortError'), \"errors.drawingHistory.drawingHistoryOperationCancelled\", {});"
   },
   "errors.drawingHistory.drawingUndoDataCouldNotBeTransferred": {
     "locations": [
-      "src/drawing-history.mjs:28"
+      "src/drawing-history.mjs:29"
     ],
     "context": "worker.onmessageerror=()=>this.fail(messageError(new Error(''), \"errors.drawingHistory.drawingUndoDataCouldNotBeTransferred\", {}));"
   },
   "errors.drawingHistory.drawingUndoDiskAccessTimedOutRetryThe": {
     "locations": [
-      "src/drawing-history.mjs:31"
+      "src/drawing-history.mjs:32"
     ],
     "context": "const id=++this.next,timer=setTimeout(()=>this.fail(messageError(new Error(''), \"errors.drawingHistory.drawingUndoDiskAccessTimedOutRetryThe\", {})),30000);"
   },
   "errors.drawingHistory.drawingUndoRecordIsDamaged": {
     "locations": [
-      "src/drawing-history.mjs:117",
-      "src/drawing-history.mjs:121",
-      "src/drawing-history.mjs:123"
+      "src/drawing-history.mjs:120",
+      "src/drawing-history.mjs:124",
+      "src/drawing-history.mjs:126"
     ],
     "context": "if(result.tiles!==record.count||!Number.isInteger(result.parts)||result.parts<1||result.parts>record.count)throw messageError(new Error(''), \"errors.drawingHist"
   },
   "errors.drawingHistory.theDrawingUndoDiskCacheIsUnavailable": {
     "locations": [
-      "src/drawing-history.mjs:71"
+      "src/drawing-history.mjs:72"
     ],
     "context": "if(!this.enabled)throw messageError(new Error(''), \"errors.drawingHistory.theDrawingUndoDiskCacheIsUnavailable\", {});"
   },
   "errors.drawingHistory.theDrawingUndoWorkerStoppedRetryUndo": {
     "locations": [
-      "src/drawing-history.mjs:27"
+      "src/drawing-history.mjs:28"
     ],
     "context": "worker.onerror=event=>{event.preventDefault();this.fail((event.message ? new Error(event.message) : messageError(new Error(''), \"errors.drawingHistory.theDrawin"
   },
@@ -13840,7 +13840,7 @@
   "errors.drawingHistoryCodec.drawingUndoDataIsTruncated": {
     "locations": [
       "src/drawing-history-codec.mjs:33",
-      "src/drawing-history-database.mjs:79"
+      "src/drawing-history-database.mjs:81"
     ],
     "context": "if(offset+RECORD>bytes.length)throw messageError(new Error(''), \"errors.drawingHistoryCodec.drawingUndoDataIsTruncated\", {});"
   },
@@ -13865,55 +13865,55 @@
   },
   "errors.drawingHistoryDatabase.drawingHistoryWriteAlreadyStarted": {
     "locations": [
-      "src/drawing-history-database.mjs:49"
+      "src/drawing-history-database.mjs:51"
     ],
     "context": "await this.open();if(this.writes.has(id))throw messageError(new Error(''), \"errors.drawingHistoryDatabase.drawingHistoryWriteAlreadyStarted\", {});"
   },
   "errors.drawingHistoryDatabase.drawingHistoryWriteIsIncomplete": {
     "locations": [
-      "src/drawing-history-database.mjs:65"
+      "src/drawing-history-database.mjs:67"
     ],
     "context": "const state=this.writes.get(id);if(!state?.parts)throw messageError(new Error(''), \"errors.drawingHistoryDatabase.drawingHistoryWriteIsIncomplete\", {});"
   },
   "errors.drawingHistoryDatabase.drawingHistoryWriteIsUnavailable": {
     "locations": [
-      "src/drawing-history-database.mjs:54"
+      "src/drawing-history-database.mjs:56"
     ],
     "context": "const state=this.writes.get(id);if(!state)throw messageError(new Error(''), \"errors.drawingHistoryDatabase.drawingHistoryWriteIsUnavailable\", {});"
   },
   "errors.drawingHistoryDatabase.drawingUndoDataChecksumMismatch": {
     "locations": [
-      "src/drawing-history-database.mjs:81"
+      "src/drawing-history-database.mjs:83"
     ],
     "context": "if(bytes.length!==entry.rawBytes||!same(await digest(bytes),entry.checksum))throw messageError(new Error(''), \"errors.drawingHistoryDatabase.drawingUndoDataChec"
   },
   "errors.drawingHistoryDatabase.drawingUndoDataExpandsBeyondItsBounds": {
     "locations": [
-      "src/drawing-history-database.mjs:79"
+      "src/drawing-history-database.mjs:81"
     ],
     "context": "try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>bytes.length)throw messageError(new Error(''), \"errors.drawingHistoryDat"
   },
   "errors.drawingHistoryDatabase.drawingUndoDataIsUnavailableOrDamaged": {
     "locations": [
-      "src/drawing-history-database.mjs:75"
+      "src/drawing-history-database.mjs:77"
     ],
     "context": "if(!entry||!Number.isInteger(entry.rawBytes)||entry.rawBytes<12||entry.rawBytes>HISTORY_CHUNK_BYTES)throw messageError(new Error(''), \"errors.drawingHistoryData"
   },
   "errors.drawingHistoryDatabase.drawingUndoDataIsUnavailableTheDocumentAnd": {
     "locations": [
-      "src/drawing-history-database.mjs:70"
+      "src/drawing-history-database.mjs:72"
     ],
     "context": "if(!record?.complete)throw messageError(new Error(''), \"errors.drawingHistoryDatabase.drawingUndoDataIsUnavailableTheDocumentAnd\", {});return record;"
   },
   "errors.drawingHistoryDatabase.drawingUndoDiskCacheIsFull": {
     "locations": [
-      "src/drawing-history-database.mjs:58"
+      "src/drawing-history-database.mjs:60"
     ],
     "context": "if(this.bytes+bytes.length>this.maxBytes)throw messageError(new DOMException('', 'QuotaExceededError'), \"errors.drawingHistoryDatabase.drawingUndoDiskCacheIsFul"
   },
   "errors.drawingHistoryWorker.unknownDrawingHistoryOperation": {
     "locations": [
-      "src/drawing-history-worker.mjs:17"
+      "src/drawing-history-worker.mjs:20"
     ],
     "context": "else throw messageError(new Error(''), \"errors.drawingHistoryWorker.unknownDrawingHistoryOperation\", {});"
   },
@@ -13926,7 +13926,8 @@
   "errors.drawingLasso.invalidSelectionMask": {
     "locations": [
       "src/drawing-lasso.mjs:92",
-      "src/drawing-worker-operations.mjs:84"
+      "src/drawing-worker-operations.mjs:84",
+      "src/engine/engine-drawing-worker.mjs:148"
     ],
     "context": "if(!(mask.mask instanceof Uint8Array)||mask.mask.length!==mask.width*mask.height)throw messageError(new Error(''), \"errors.drawingLasso.invalidSelectionMask\", {"
   },
@@ -14037,7 +14038,8 @@
       "src/drawing-pixels.mjs:451",
       "src/drawing-pixels.mjs:462",
       "src/drawing-pixels.mjs:482",
-      "src/drawing-worker-operations.mjs:77"
+      "src/drawing-worker-operations.mjs:77",
+      "src/engine/engine-drawing-worker.mjs:140"
     ],
     "context": "if(bounds.width*bounds.height>DRAWING_MAX_PIXELS)throw messageError(new Error(''), \"errors.drawingPixels.invalidFilterBounds\", {});"
   },
@@ -14173,102 +14175,102 @@
   },
   "errors.drawingResources.aNewerDrawingWasRequested": {
     "locations": [
-      "src/drawing-resources.mjs:216"
+      "src/drawing-resources.mjs:217"
     ],
     "context": "if(this.decodeQueue.length>=2){const index=this.decodeQueue.findIndex(job=>!job.priority);if(index>=0)this.decodeQueue.splice(index,1)[0].reject(messageError(ne"
   },
   "errors.drawingResources.drawingChanged": {
     "locations": [
-      "src/drawing-resources.mjs:199"
+      "src/drawing-resources.mjs:200"
     ],
     "context": "if(this.disposed||e.disposed||generation!==this.generation)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingChanged\", {});"
   },
   "errors.drawingResources.drawingDocumentClosed": {
     "locations": [
-      "src/drawing-resources.mjs:186",
-      "src/drawing-resources.mjs:214",
-      "src/drawing-resources.mjs:360",
-      "src/drawing-resources.mjs:453"
+      "src/drawing-resources.mjs:187",
+      "src/drawing-resources.mjs:215",
+      "src/drawing-resources.mjs:361",
+      "src/drawing-resources.mjs:459"
     ],
     "context": "if(this.disposed)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingDocumentClosed\", {});"
   },
   "errors.drawingResources.drawingMemoryIsFullChoose1ResolutionOr": {
     "locations": [
-      "src/drawing-resources.mjs:131"
+      "src/drawing-resources.mjs:132"
     ],
     "context": "if(resident()+bytes>this.hardBudget)throw messageError(new Error(''), \"errors.drawingResources.drawingMemoryIsFullChoose1ResolutionOr\", {});"
   },
   "errors.drawingResources.drawingOperationCancelled": {
     "locations": [
-      "src/drawing-worker-client.mjs:12",
-      "src/drawing-worker-client.mjs:36"
+      "src/drawing-worker-client.mjs:13",
+      "src/drawing-worker-client.mjs:37"
     ],
     "context": "if(signal?.aborted)return Promise.reject(messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingOperationCancelled\", {}));"
   },
   "errors.drawingResources.drawingPixelsCouldNotBeTransferred": {
     "locations": [
-      "src/drawing-worker-client.mjs:33"
+      "src/drawing-worker-client.mjs:34"
     ],
     "context": "worker.onmessageerror=()=>{if(this.worker===worker)this.dispose(messageError(new Error(''), \"errors.drawingResources.drawingPixelsCouldNotBeTransferred\", {}));}"
   },
   "errors.drawingResources.drawingPublicationCancelled": {
     "locations": [
-      "src/drawing-resources.mjs:366",
-      "src/drawing-resources.mjs:373"
+      "src/drawing-resources.mjs:367",
+      "src/drawing-resources.mjs:374"
     ],
     "context": "if(signal?.aborted)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingPublicationCancelled\", {});"
   },
   "errors.drawingResources.drawingResourcesClosed": {
     "locations": [
-      "src/drawing-worker-client.mjs:44"
+      "src/drawing-worker-client.mjs:45"
     ],
     "context": "dispose(error=messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingResourcesClosed\", {})) {"
   },
   "errors.drawingResources.drawingStrokeWorkerStopped": {
     "locations": [
-      "src/drawing-resources.mjs:28"
+      "src/drawing-resources.mjs:29"
     ],
-    "context": "open(){if(!this.worker){this.worker=new Worker(new URL('./drawing-stroke-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing stroke'});this.wo"
+    "context": "open(){if(!this.worker){this.worker=new Worker(drawingWorkerURL(new URL('./drawing-stroke-worker.mjs',import.meta.url)),{type:'module',name:'StykAnimate drawing"
   },
   "errors.drawingResources.drawingWorkerCouldNotLoadRetryTheOperation": {
     "locations": [
-      "src/drawing-worker-client.mjs:24"
+      "src/drawing-worker-client.mjs:25"
     ],
     "context": "if(data.fatal){data.bitmap?.close();this.dispose(error??restoreMessageError(messageError(new Error(''), \"errors.drawingResources.drawingWorkerCouldNotLoadRetryT"
   },
   "errors.drawingResources.drawingWorkerIsBusyWaitForTheCurrent": {
     "locations": [
-      "src/drawing-worker-client.mjs:13"
+      "src/drawing-worker-client.mjs:14"
     ],
     "context": "if(this.pending.size>=this.maxPending)return Promise.reject(messageError(new Error(''), \"errors.drawingResources.drawingWorkerIsBusyWaitForTheCurrent\", {}));"
   },
   "errors.drawingResources.drawingWorkerStoppedRetryTheOperation": {
     "locations": [
-      "src/drawing-worker-client.mjs:31"
+      "src/drawing-worker-client.mjs:32"
     ],
     "context": "if(this.worker===worker)this.dispose((event.message ? new Error(event.message) : messageError(new Error(''), \"errors.drawingResources.drawingWorkerStoppedRetryT"
   },
   "errors.drawingResources.drawingWorkerTimedOutRetryTheOperation": {
     "locations": [
-      "src/drawing-worker-client.mjs:37"
+      "src/drawing-worker-client.mjs:38"
     ],
     "context": "const timeout=setTimeout(()=>this.dispose(messageError(new Error(''), \"errors.drawingResources.drawingWorkerTimedOutRetryTheOperation\", {})),120000);"
   },
   "errors.drawingResources.invalidDrawingMemoryReservation": {
     "locations": [
-      "src/drawing-resources.mjs:114"
+      "src/drawing-resources.mjs:115"
     ],
     "context": "if(!Number.isFinite(bytes)||bytes<0)throw messageError(new Error(''), \"errors.drawingResources.invalidDrawingMemoryReservation\", {});"
   },
   "errors.drawingResources.strokePixelsCouldNotBeTransferred": {
     "locations": [
-      "src/drawing-resources.mjs:28"
+      "src/drawing-resources.mjs:29"
     ],
-    "context": "open(){if(!this.worker){this.worker=new Worker(new URL('./drawing-stroke-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing stroke'});this.wo"
+    "context": "open(){if(!this.worker){this.worker=new Worker(drawingWorkerURL(new URL('./drawing-stroke-worker.mjs',import.meta.url)),{type:'module',name:'StykAnimate drawing"
   },
   "errors.drawingResources.theDrawingEncoderLostItsTileCacheTry": {
     "locations": [
-      "src/drawing-resources.mjs:426"
+      "src/drawing-resources.mjs:432"
     ],
     "context": "if(result.missing?.length)throw messageError(new Error(''), \"errors.drawingResources.theDrawingEncoderLostItsTileCacheTry\", {});"
   },
@@ -14404,7 +14406,8 @@
   },
   "errors.drawingWorkerOperations.invalidDrawingCrop": {
     "locations": [
-      "src/drawing-worker-operations.mjs:30"
+      "src/drawing-worker-operations.mjs:30",
+      "src/engine/engine-drawing-worker.mjs:73"
     ],
     "context": "if(![crop.x,crop.y].every(Number.isInteger))throw messageError(new Error(''), \"errors.drawingWorkerOperations.invalidDrawingCrop\", {});"
   },
@@ -14416,19 +14419,22 @@
   },
   "errors.drawingWorkerOperations.invalidSelectionBounds": {
     "locations": [
-      "src/drawing-worker-operations.mjs:71"
+      "src/drawing-worker-operations.mjs:71",
+      "src/engine/engine-drawing-worker.mjs:130"
     ],
     "context": "if(!validRect(data.bounds))throw messageError(new Error(''), \"errors.drawingWorkerOperations.invalidSelectionBounds\", {});"
   },
   "errors.drawingWorkerOperations.unknownDrawingWorkerOperation": {
     "locations": [
-      "src/drawing-worker-operations.mjs:132"
+      "src/drawing-worker-operations.mjs:132",
+      "src/engine/engine-drawing-worker.mjs:213"
     ],
     "context": "throw messageError(new Error(''), \"errors.drawingWorkerOperations.unknownDrawingWorkerOperation\", {});"
   },
   "errors.drawingWorkerPreview.invalidDrawingPreviewBounds": {
     "locations": [
-      "src/drawing-worker-preview.mjs:10"
+      "src/drawing-worker-preview.mjs:10",
+      "src/engine/engine-drawing-worker.mjs:60"
     ],
     "context": "if(!rect||![rect.x,rect.y].every(Number.isSafeInteger)||![rect.width,rect.height].every(n=>Number.isInteger(n)&&n>0&&n<=4096)||!Number.isInteger(level)||level<0"
   },

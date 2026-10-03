@@ -1,5 +1,6 @@
 import {messageError} from './localized-error.mjs';
 import {DrawingWorker} from './drawing-worker-client.mjs';
+import {drawingWorkerURL} from './engine/engine-drawing.mjs';
 
 import {DrawingPreviewCache} from './drawing-preview-cache.mjs';
 import {DrawingHistory} from './drawing-history.mjs';
@@ -25,7 +26,7 @@ export async function drawingBarrier(report,options={}) {
  * or fill on the pixel worker never blocks painting. The Worker is spawned
  * lazily so this stays safe in non-DOM contexts. */
 export class StrokeWorker {
-  open(){if(!this.worker){this.worker=new Worker(new URL('./drawing-stroke-worker.mjs',import.meta.url),{type:'module',name:'StykAnimate drawing stroke'});this.worker.onmessage=({data})=>this.onmessage?.(data);this.worker.onerror=event=>{event.preventDefault();this.onerror?.((event.message ? new Error(event.message) : messageError(new Error(''), "errors.drawingResources.drawingStrokeWorkerStopped")));};this.worker.onmessageerror=()=>this.onerror?.(messageError(new Error(''), "errors.drawingResources.strokePixelsCouldNotBeTransferred", {}));}}
+  open(){if(!this.worker){this.worker=new Worker(drawingWorkerURL(new URL('./drawing-stroke-worker.mjs',import.meta.url)),{type:'module',name:'StykAnimate drawing stroke'});this.worker.onmessage=({data})=>this.onmessage?.(data);this.worker.onerror=event=>{event.preventDefault();this.onerror?.((event.message ? new Error(event.message) : messageError(new Error(''), "errors.drawingResources.drawingStrokeWorkerStopped")));};this.worker.onmessageerror=()=>this.onerror?.(messageError(new Error(''), "errors.drawingResources.strokePixelsCouldNotBeTransferred", {}));}}
   post(message,transfer){if(this.closed)return;this.open();this.worker.postMessage(message,transfer??[]);}
   // dispose() stays respawnable for crash recovery; close() is permanent.
   dispose(){this.worker?.terminate();this.worker=null;}
@@ -374,6 +375,10 @@ export class DrawingResources {
       checkAbort();if(!active())return;
       const store=e.store,storeRevision=store.revision,tiles=[...store].filter(t=>!tileTransparent(t));
       const current=()=>active()&&e.store===store&&store.revision===storeRevision;
+      // An undo or redo being prepared replaces this revision when it applies: wait for it
+      // rather than finish a cel about to change. Finishing costs the blob's assembly in the
+      // worker and the figure update that follows it here; inside a replay both would delay it.
+      const replays=async()=>{for(let wait;(wait=this.history?.replaying());)await wait;};
       store.freeze();
       // Tiles keep their worker-encoded PNG until a mutation clears it, so a
       // re-publish ships pixels only for changed tiles; the worker reassembles
@@ -384,7 +389,7 @@ export class DrawingResources {
       const send=async pending=>{
         let index=0,result;
         do{
-          checkAbort();if(!current())return null;
+          await replays();checkAbort();if(!current())return null;
           const first=index===0,batch=[];let bytes=0;
           while(index<pending.length){
             const tile=pending[index];
@@ -409,6 +414,7 @@ export class DrawingResources {
             fresh=[...fresh.filter(t=>t.png),...pngs];
           }
           const partial=index<pending.length;
+          if(!partial){await replays();checkAbort();if(!current())return null;}
           result=await this.worker.request('encode-tiles',{celId:e.id,partial,...(first||!partial?{keep}:{}),tiles:fresh},{signal,transfer:fresh.map(t=>t.pixels??t.png)});
           checkAbort();if(!current())return null;
           encoded+=result.encoded??0;
@@ -425,7 +431,7 @@ export class DrawingResources {
         if(!result)return;
         if(result.missing?.length)throw messageError(new Error(''), "errors.drawingResources.theDrawingEncoderLostItsTileCacheTry", {});
       }
-      if(!current())return;
+      await replays();if(!current())return;
       // Tiles replaced since the snapshot carry stale bytes; publish again.
       if(tiles.some(t=>e.store.get(t.tx,t.ty)!==t))return;
       this.lastEncode={encoded,reused:tiles.length-encoded};

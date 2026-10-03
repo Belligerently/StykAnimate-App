@@ -263,6 +263,14 @@ are not supported.
 
 ## Runtime and performance
 
+The raster work below runs in the Rust drawing engine (`styk-drawing`,
+[docs/engine/drawing.md](engine/drawing.md)): the stroke, pixel and history
+workers each load its WebAssembly module, and the controller's brush model
+computes dab shapes with it, through the same messages and objects the
+JavaScript modules exchange. `?drawingEngine=off` (or `?engine=off`) keeps the
+JavaScript raster engine, which remains the reference the engine is checked
+against pixel for pixel; so does a build without the module.
+
 `drawing-resources.mjs` owns sparse tile stores, worker jobs and disposal for
 one report. Resident tiles are limited by a budget scaled from device memory
 (192–768 MiB; the hard ceiling for unpublished work is at least 768 MiB);
@@ -477,7 +485,13 @@ adaptively filtered rows, whichever LZ77 can reuse more of), and decoded with
 its table-driven inflate; per-tile compression streams cost more in setup than
 the work itself. Larger images keep the native streams. The blob format and
 PNG bytes stay standard, so older files and other readers are unaffected. encoding retains dirty work for retry, and the publication debounce yields to
-active strokes and scrubbing. A gesture's pin on its tile store ends inside
+active strokes and scrubbing. Publication also pauses between batches while an
+undo or redo loads and prepares its tiles (`DrawingHistory.replaying()`): the
+replay is about to replace the revision being published, and finishing it (the
+blob's assembly in the pixel worker, then the figure update it triggers on the
+interface thread, 0.2–0.7 s on a 2,040-tile cel) would land inside the replay.
+The replayed revision publishes once the replay ends, or the unchanged one if it
+fails. A gesture's pin on its tile store ends inside
 the commit, before the change broadcast — the playback/export barriers that
 broadcast triggers always see the committed tiles, and pixel commits reach
 the playback worker as sparse figure updates instead of full snapshots.

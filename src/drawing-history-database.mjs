@@ -12,7 +12,9 @@ const lockName=id=>'stykanimate-drawing-history:'+id;
 /** Temporary, session-owned disk backing. A manifest becomes readable only
  * after all chunks commit. Web Locks protect other live editors from cleanup. */
 export class DrawingHistoryDatabase {
-  constructor({name=DB_NAME,maxBytes=512*1024*1024,session=crypto.randomUUID(),externalLease=false}={}){this.name=name;this.maxBytes=maxBytes;this.session=session;this.externalLease=externalLease;this.bytes=0;this.writes=new Map();}
+  /** `codec` encodes and decodes undo chunks: the drawing raster engine's when the
+   * worker loaded it, drawing-history-codec.mjs otherwise. */
+  constructor({name=DB_NAME,maxBytes=512*1024*1024,session=crypto.randomUUID(),externalLease=false,codec={encode:encodeHistoryChunk,decode:decodeHistoryChunk}}={}){this.name=name;this.maxBytes=maxBytes;this.session=session;this.externalLease=externalLease;this.codec=codec;this.bytes=0;this.writes=new Map();}
   open(){
     if(this.opening)return this.opening;if(this.db)return Promise.resolve();
     return this.opening=this.initialize().catch(async error=>{
@@ -52,7 +54,7 @@ export class DrawingHistoryDatabase {
   }
   async append(id,tiles){
     const state=this.writes.get(id);if(!state)throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingHistoryWriteIsUnavailable", {});
-    const raw=encodeHistoryChunk(tiles),checksum=await digest(raw);
+    const raw=this.codec.encode(tiles),checksum=await digest(raw);
     const packed=new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
     const compressed=packed.length<raw.length,bytes=compressed?packed:raw;
     if(this.bytes+bytes.length>this.maxBytes)throw messageError(new DOMException('', 'QuotaExceededError'), "errors.drawingHistoryDatabase.drawingUndoDiskCacheIsFull", {});
@@ -79,7 +81,7 @@ export class DrawingHistoryDatabase {
       try{for(;;){const {done,value}=await reader.read();if(done)break;if(offset+value.length>bytes.length)throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingUndoDataExpandsBeyondItsBounds", {});bytes.set(value,offset);offset+=value.length;}if(offset!==bytes.length)throw messageError(new Error(''), "errors.drawingHistoryCodec.drawingUndoDataIsTruncated", {});}finally{await reader.cancel();}
     }
     if(bytes.length!==entry.rawBytes||!same(await digest(bytes),entry.checksum))throw messageError(new Error(''), "errors.drawingHistoryDatabase.drawingUndoDataChecksumMismatch", {});
-    return decodeHistoryChunk(bytes);
+    return this.codec.decode(bytes);
   }
   async remove(id){
     await this.open();
