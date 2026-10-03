@@ -394,6 +394,7 @@ impl Editor {
             "centerFigure" => self.center_figure().map(Value::Bool),
             "resetPose" => self.reset_pose().map(Value::Bool),
             "poseJoint" => self.pose_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),

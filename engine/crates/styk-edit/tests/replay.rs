@@ -16,8 +16,8 @@ const PORTED: &[&str] = &[
     "startup-sheet", "ik-unpinned-sheet", "pinned-ik-sheet", "ik-followers-sheet", "ik-chains-sheet",
     // IK across joined figures: pinned and free, a follower joined late, the start document joined.
     "ik-joined-sheet", "ik-joined-unpinned-sheet", "ik-joined-late-sheet", "startup-join-sheet",
-    // Stick Nodes curves.
-    "sticknodes-sheet",
+    // Stick Nodes curves; rig controls, alone and with pinned IK.
+    "sticknodes-sheet", "rig-sheet", "ik-rig-follow-sheet", "ik-rig-stretch-sheet",
 ];
 
 #[test]

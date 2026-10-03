@@ -291,6 +291,27 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 0], ['poseJoint', 330, 230], ['rotateJoint', 0.1], ['bendJoint', 340, 220], ['@select', 1, 1], ['poseJoint', 300, 300],
     ['bendJoint', 290, 310, {stretch: true}], ['@select', 1, 2], ['poseJoint', 280, 330, {stretch: true}], ['bendJoint', 270, 335], ['undo'], ['undo'], ['redo'],
   ], 'sticknodes.document.json');
+  // Rig controls: a stretch driver and the bones that follow it (posed in its space), an
+  // angle-locked bone (it only stretches), and a connector between two joints (it slides
+  // and bends along its centerline).
+  {
+    const e = open(documentOf([[[11, 0, 90, .8], [22, 11, 90, 2], [33, 22, 35, 0], [44, 0, 70, 2.4], [55, 44, 60, 1.6]]]));
+    joint(e, 22, 1); e.enableSmartStretch(true);
+    joint(e, 44, 1); e.setAngleLock('world');
+    e.select(1, 0); e.addConnector(33, 55, {position: .4});
+    writeFileSync(`${out}/rig.document.json`, JSON.stringify(prune(e.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  }
+  scenario('rig-sheet', app, [
+    ['@select', 1, 2], ['poseJoint', 300, 330], ['@select', 1, 1], ['poseJoint', 330, 300, {stretch: true}], ['@select', 1, 2], ['poseJoint', 310, 340],
+    ['@select', 1, 3], ['poseJoint', 240, 200], ['rotateJoint', 0.3], ['poseJoint', 230, 210, {stretch: true}], ['bendJoint', 228, 205],
+    ['@select', 1, 5], ['poseJoint', 280, 260], ['bendJoint', 285, 250], ['setConnectorPosition', 0.7], ['setConnectorPosition', 2],
+    ['@select', 1, 4], ['bendJoint', 220, 240], ['@select', 1, -1], ['moveSelection', 10, 5], ['undo'], ['undo'], ['redo'],
+  ], 'rig.document.json');
+  // Rigs with pinned IK: the solver works through the rig's spaces.
+  for (const fixture of ['rig-follow', 'rig-stretch']) scenario(`ik-${fixture}-sheet`, app, [
+    ['@select', 1, -1], ['moveSelection', 10, 5], ['rotateSelection', 0.1], ['@select', 1, 1], ['rotateJoint', 0.2], ['bendJoint', 260, 200],
+    ['undo'], ['undo'], ['redo'],
+  ], `../../crates/styk-eval/tests/fixtures/ik/${fixture}.json`);
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],

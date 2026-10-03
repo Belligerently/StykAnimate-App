@@ -119,6 +119,18 @@ pub struct ObjectGeometry {
     /// What a spatial rig's joints carry besides their positions; `None` for
     /// a figure without one.
     pub spatial: Option<Arc<ObjectSpatial>>,
+    /// Per segment of a figure with rig relationships, what editing reads from its
+    /// evaluation (`rigSpace`, `connector`); `None` for a figure without any.
+    pub rig: Option<Arc<[RigJoint]>>,
+}
+
+/// A rigged joint as geometry evaluated it, for editing: the space its authored
+/// angle is in (`rigSpace`, which `authoredRigTarget` inverts) and whether it is a
+/// connector sliding between two joints.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RigJoint {
+    pub space: Option<crate::rig::Space>,
+    pub connector: bool,
 }
 
 /// The 3D side of an evaluated figure: what surfaces, meshes and attached
@@ -608,7 +620,10 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     items.sort_by(|a, b| a.z.total_cmp(&b.z));
     let _ = doc;
     let spatial = has_spatial.then(|| Arc::new(ObjectSpatial { frames, depths, figure_angle, mirror: obj.image_text_flags, camera }));
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial });
+    let rig = rig_plan.is_some().then(|| {
+        rig_states.iter().zip(&fig.segments).map(|(state, seg)| RigJoint { space: state.and_then(|s| s.space), connector: seg.rig.as_ref().is_some_and(|r| r.connector.is_some()) }).collect()
+    });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig });
     built.items = items;
     built.points = points;
     built.meshes = meshes;
@@ -648,7 +663,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
     };
     let angle = attachment.as_ref().map_or(local_angle, |a| a.figure_angle);
     let end = [root[0] + 40.0 * scale * styk_math::cos(angle), root[1] + 40.0 * scale * styk_math::sin(angle)];
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
     let Some(local) = obj.clip_time else { return built };
     // `Math.floor(local)` clamped to the forms the clip has.
     let form = (local.floor().max(0.0) as usize).min(meshes.len() - 1);
@@ -719,7 +734,7 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None });
     let Some(local) = obj.clip_time else { return built };
     let source = clip_scene(clip, local);
     // Meshes inside the clip keep their evaluated positions: the editor places a

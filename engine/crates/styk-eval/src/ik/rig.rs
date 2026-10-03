@@ -423,27 +423,40 @@ impl<'a> RigContext<'a> {
 /// and `bend` are the joint's evaluated state; `angle` and `length` its
 /// authored channels (length scaled).
 pub fn authored_rig_target(start: [f64; 2], space: Option<Space>, bend: f64, target: [f64; 2], angle: f64, length: f64) -> [f64; 2] {
-    let Some(space) = space else { return target };
+    // The JavaScript throws for a collapsed driver; `solveObjectIK` keeps the authored
+    // angle before it gets here, so the solver never sees `None`.
+    authored_rig_target_with(start, space, bend, target, Some((angle, length))).unwrap_or(target)
+}
+
+/// `authoredRigTarget(shape, x, y, pose)`, `pose` being the joint's authored angle and
+/// scaled length when the edge-on case may lift the pointer (a drag without stretch).
+/// `None` where the JavaScript throws: a stretch driver collapsed below 1e-8.
+pub fn authored_rig_target_with(start: [f64; 2], space: Option<Space>, bend: f64, target: [f64; 2], pose: Option<(f64, f64)>) -> Option<[f64; 2]> {
+    let Some(space) = space else { return Some(target) };
     let (mut dx, mut dy) = (target[0] - start[0], target[1] - start[1]);
     if let Some((follow_axis, follow_scale)) = space.follow {
         let (c, s) = (cos(follow_axis), sin(follow_axis));
         let mut side = -dx * s + dy * c;
-        let along = if follow_scale.abs() < 1e-4 && bend.abs() < 1e-7 {
-            // An edge-on fixed-length control has lost one visible coordinate.
-            // Lift the remaining one onto its authored circle, keeping the
-            // nearest branch.
-            let radius = length.abs();
-            side = (-radius).max(radius.min(side));
-            let prior = length * cos(angle + space.rotation - follow_axis);
-            (if prior < 0.0 { -1.0 } else { 1.0 }) * (radius * radius - side * side).max(0.0).sqrt()
-        } else {
-            // The JavaScript throws below 1e-8; `solveObjectIK` keeps the
-            // authored angle before it gets here.
-            (dx * c + dy * s) / follow_scale
+        let along = match pose {
+            Some((angle, length)) if follow_scale.abs() < 1e-4 && bend.abs() < 1e-7 => {
+                // An edge-on fixed-length control has lost one visible coordinate.
+                // Lift the remaining one onto its authored circle, keeping the
+                // nearest branch.
+                let radius = length.abs();
+                side = (-radius).max(radius.min(side));
+                let prior = length * cos(angle + space.rotation - follow_axis);
+                (if prior < 0.0 { -1.0 } else { 1.0 }) * (radius * radius - side * side).max(0.0).sqrt()
+            }
+            _ => {
+                if follow_scale.abs() < 1e-8 {
+                    return None;
+                }
+                (dx * c + dy * s) / follow_scale
+            }
         };
         dx = along * c - side * s;
         dy = along * s + side * c;
     }
     let (c, s) = (cos(space.rotation), sin(space.rotation));
-    [start[0] + dx * c + dy * s, start[1] - dx * s + dy * c]
+    Some([start[0] + dx * c + dy * s, start[1] - dx * s + dy * c])
 }
