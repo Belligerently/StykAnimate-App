@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 67 | 17 | 2 | 0 | 0 | 1 % | 40 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 66 | 17 | 3 | 0 | 0 | 2 % | 40 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4068 KiB | 214 | 86 | 33 | 22 | 1 | 20 % | 36 % | 0 % |
+| **Total** | 356 | 4068 KiB | 213 | 86 | 34 | 22 | 1 | 20 % | 36 % | 0 % |
 
 ## Engine modules
 
@@ -93,7 +93,7 @@ Engine logic: ported to Rust.
 | `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-drawing.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-duplicate-drag.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-figure-transform.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-figure-transform.mjs` | `styk-edit` | ported | beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag, createFigureHandleTransform, figureHandleTransform (styk-edit/src/figure_transform.rs); rotateOriginSupport only reached by documents with animation origins, which the engine does not edit |
 | `src/editor-frame-clipboard.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-frame-draft.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-frames.mjs` | `styk-edit` | js | commands and history |

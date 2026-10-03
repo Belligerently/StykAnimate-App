@@ -138,7 +138,7 @@ src/editor-combine.mjs	engine	styk-edit	js	commands and history
 src/editor-disconnect.mjs	engine	styk-edit	js	commands and history
 src/editor-drawing.mjs	engine	styk-edit	js	commands and history
 src/editor-duplicate-drag.mjs	engine	styk-edit	js	commands and history
-src/editor-figure-transform.mjs	engine	styk-edit	js	commands and history
+src/editor-figure-transform.mjs	engine	styk-edit	ported	beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag, createFigureHandleTransform, figureHandleTransform (styk-edit/src/figure_transform.rs); rotateOriginSupport only reached by documents with animation origins, which the engine does not edit
 src/editor-frame-clipboard.mjs	engine	styk-edit	js	commands and history
 src/editor-frame-draft.mjs	engine	styk-edit	js	commands and history
 src/editor-frames.mjs	engine	styk-edit	js	commands and history

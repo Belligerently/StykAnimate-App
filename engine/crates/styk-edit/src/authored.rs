@@ -44,6 +44,7 @@ impl Editor {
             spatial_ik_captures: HashMap::new(),
             ik_resume: HashMap::new(),
             handle_edit: None,
+            figure_handle: None,
             authored: true,
         });
         Ok(true)
@@ -121,6 +122,7 @@ impl Editor {
             spatial_ik_captures: HashMap::new(),
             ik_resume: HashMap::new(),
             handle_edit: None,
+            figure_handle: None,
             authored: true,
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());

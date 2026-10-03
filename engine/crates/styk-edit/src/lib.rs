@@ -16,6 +16,7 @@ mod audio;
 mod authored;
 mod camera_motion;
 mod figure_clipboard;
+mod figure_transform;
 mod figures;
 mod frame;
 mod handle_edit;
@@ -100,6 +101,8 @@ pub(crate) struct Drag {
     pub ik_resume: HashMap<String, Option<[f64; 2]>>,
     /// A Handle Edit Mode gesture (`_drag.handleEdit`).
     pub handle_edit: Option<handle_edit::HandleEdit>,
+    /// A whole-figure transform by a handle (`_drag.figureHandle`).
+    pub figure_handle: Option<figure_transform::FigureHandle>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -463,6 +466,10 @@ impl Editor {
             "editHandlePosition" => self.edit_handle_position(number(0), number(1), &arg(2)).map(Value::Bool),
             "commitHandleEditDrag" => self.finish_handle_edit_drag(true).map(Value::Bool),
             "cancelHandleEditDrag" => self.finish_handle_edit_drag(false).map(Value::Bool),
+            "beginFigureHandleDrag" => self.begin_figure_handle_drag(arg(0).as_f64(), arg(1).as_f64(), &arg(2)).map(Value::Bool),
+            "transformFigureHandle" => self.transform_figure_handle(number(0), number(1), &arg(2)).map(Value::Bool),
+            "commitFigureHandleDrag" => self.finish_figure_handle_drag(true).map(Value::Bool),
+            "cancelFigureHandleDrag" => self.finish_figure_handle_drag(false).map(Value::Bool),
             "beginTranslationDrag" => self.begin_drag(arg(0).as_str().unwrap_or("Move figures"), true).map(Value::Bool),
             "moveSelection" => self.move_selection(arg(0).as_f64().unwrap_or(f64::NAN), arg(1).as_f64().unwrap_or(f64::NAN), &arg(2)).map(Value::Bool),
             "rotateSelection" => self.rotate_selection(number(0), &arg(1)).map(Value::Bool),

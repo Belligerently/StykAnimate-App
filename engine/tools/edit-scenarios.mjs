@@ -892,6 +892,27 @@ scenario('figures-layers-sheet', app, [
     scenario('handle-edit-full-turn-sheet', app, [
       ['@select', 1, 1], ['editHandlePosition', 330, 260], ['editHandlePosition', 335, 250, {bend: true}], ['undo'], ['redo'],
     ], 'full-turn.document.json');
+    // Whole figures turned and scaled by a handle about the dragged figure's origin: joined
+    // figures follow, the selection orbits it, crossings of a half turn accumulate, Ctrl keeps
+    // the scale and Shift the angle, back at the start the figures are as they were.
+    scenario('figure-transform-native', {}, [
+      ['@select', 1, 1], ['transformFigureHandle', 330, 260], ['beginFigureHandleDrag', 250, 120], ['transformFigureHandle', 150, 170],
+      ['transformFigureHandle', 200, 260], ['transformFigureHandle', 280, 200], ['transformFigureHandle', 260, 110, {ctrlKey: true}], ['transformFigureHandle', 240, 100, {shiftKey: true}],
+      ['commitFigureHandleDrag'], ['beginFigureHandleDrag', 250, 120, {rotate: false}], ['transformFigureHandle', 150, 170], ['transformFigureHandle', 250, 120], ['commitFigureHandleDrag'],
+      ['beginFigureHandleDrag', null, null, {scale: false, label: 'Turn figure'}], ['transformFigureHandle', 120, 200], ['cancelFigureHandleDrag'],
+      ['beginFigureHandleDrag', 200, 170], ['@select', 1, -1], ['transformFigureHandle', 10, 10], ['selectMany', [3, 1]], ['beginFigureHandleDrag', null, null, {joint: 1}], ['transformFigureHandle', 260, 300],
+      ['commitFigureHandleDrag'], ['@select', 1, 1], ['beginFigureHandleDrag'], ['@select', 2, 1], ['transformFigureHandle', 300, 300], ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'joined-chain.document.json');
+    scenario('figure-transform-sheet', app, [
+      ['@seek', 3], ['@select', 2, 1], ['transformFigureHandle', 400, 300], ['@select', 1, 2], ['beginFigureHandleDrag'], ['transformFigureHandle', 260, 330],
+      ['transformFigureHandle', 150, 120, {shiftKey: true}], ['transformFigureHandle', 170, 110, {rotate: false}], ['commitFigureHandleDrag'], ['@seek', 6], ['@select', 3, 1], ['transformFigureHandle', 500, 260],
+      ['@seek', 4], ['@select', 2, 1], ['beginFigureHandleDrag', 330.5, 260.25], ['transformFigureHandle', 280, 300], ['transformFigureHandle', 330.5, 260.25], ['commitFigureHandleDrag'], ['undo'], ['undo'], ['redo'],
+      ['@seek', 0], ['@select', 3, -1], ['unjoinFigure'], ['moveSelection', 101.37, 13.11], ['selectMany', [3, 1]], ['beginFigureHandleDrag', 250.3, 120.7, {joint: 1}], ['transformFigureHandle', 170, 190],
+      ['transformFigureHandle', 250.3, 120.7], ['commitFigureHandleDrag'],
+    ], 'joined-chain.document.json');
+    scenario('figure-transform-ik-sheet', app, [
+      ['@select', 1, 1], ['transformFigureHandle', 330, 260], ['@select', 2, 2], ['transformFigureHandle', 640, 330, {ctrlKey: true}], ['undo'], ['redo'],
+    ], '../../crates/styk-eval/tests/fixtures/ik/stretch.json');
     scenario('handle-edit-startup-sheet', app, [
       ['@select', 1, 3], ['editHandlePosition', 520, 300], ['@select', 1, 0], ['editHandlePosition', 470, 260, {bend: true}], ['undo'], ['redo'],
     ], 'startup.document.json');

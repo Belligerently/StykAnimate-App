@@ -57,6 +57,7 @@ impl Editor {
             spatial_ik_captures: HashMap::new(),
             ik_resume: HashMap::new(),
             handle_edit: None,
+            figure_handle: None,
             authored: false,
         });
         Ok(true)

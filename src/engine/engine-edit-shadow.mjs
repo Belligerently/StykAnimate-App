@@ -23,10 +23,11 @@
  */
 import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 import {layerFocusOf} from '../editor-layer-focus.mjs';
+import {figureHandleTransform} from '../editor-figure-transform.mjs';
 
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
-  'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag',
+  'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
@@ -43,7 +44,7 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
 const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'importFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch', 'beginAnimationEdit']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
-  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'editHandlePosition', 'commitHandleEditDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
+  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'editHandlePosition', 'commitHandleEditDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
   'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection', 'importFigure',
   // Property edits publish the sheet; a scrub's previews are compared, not adopted.
@@ -293,7 +294,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
 
   const originals = new Map();
   /** What the editor does with an owned call's answer instead of computing it. */
-  const adopt = (name, answer, selection) => {
+  const adopt = (name, answer, selection, args) => {
     const {state} = answer, edit = editor._authoredPoseEdit, drag = editor._drag;
     // The frame a gesture the call began and ended itself drafted: the one on show.
     const shown = answer.retained && !editor._authoredPoseEdit ? editor.evaluatedFrame : null;
@@ -315,6 +316,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         objects[slot] = figure; edit.owned.add(slot);
       }
     }
+    // A handle transform accumulates the turns it crossed: the editor's own state keeps up.
+    if (name === 'transformFigureHandle' && answer.drag && drag?.figureHandle) figureHandleTransform(drag.figureHandle.transform, {x: args[0], y: args[1]}, {...drag.figureHandle, ...args[2]});
     const engineSelection = state.selectedUid !== editor.selectedUid || state.selectedJoint !== editor.selectedJoint
       || JSON.stringify(state.selectedUids) !== JSON.stringify([...editor.selectedUids]);
     if (engineSelection) {
@@ -399,7 +402,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (answer?.status === 'ok' && !why) {
           depth++;
           const adopting = performance.now();
-          try { return adopt(name, answer, selection); }
+          try { return adopt(name, answer, selection, args); }
           finally {
             depth--; report.owned++; report.ownedMs += performance.now() - called;
             const entry = (report.byCall ??= {})[name] ??= {calls: 0};
