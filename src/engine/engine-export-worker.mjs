@@ -102,10 +102,11 @@ async function settled(read) {
   if (!renderer.needs_poll()) return read;
   let done = false;
   read.then(() => { done = true; }, () => { done = true; });
-  while (!done) {
+  while (!done && !releasing) {
     renderer.poll();
     if (!done) await new Promise(resolve => setTimeout(resolve, 1));
   }
+  check();
   return read;
 }
 
@@ -197,8 +198,12 @@ async function operate(message) {
 async function release() {
   releasing = true;
   await running.catch(() => {});
-  try { renderer?.dispose(); renderer?.free(); } catch { /* the device may be gone already */ }
-  try { device?.dispose(); device?.free(); } catch { /* never taken by an export */ }
+  try { renderer?.dispose(); device?.dispose(); } catch { /* the device may be gone already */ }
+  // Destroying the device rejects the read-backs still pending, and their answers run through
+  // the module: let them run now, while this thread may still call it (after its destructor
+  // below a call would write through a stack the shared memory has taken back).
+  for (let turn = 0; turn < 4; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+  try { renderer?.free(); device?.free(); } catch { /* already freed */ }
   renderer = device = null;
   if (canvas) canvas.width = canvas.height = 1;
   canvas = context = tile = frameDocument = null;

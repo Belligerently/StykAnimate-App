@@ -175,6 +175,11 @@ async function launch() {
   const env = {...process.env, STYK_STARTUP_VIEW: 'editor', STYK_USER_DATA_DIR: profile, STYK_LIBRARY_DIR: path.join(profile, 'library')};
   delete env.ELECTRON_RUN_AS_NODE;
   const app = await _electron.launch({executablePath: createRequire(path.join(root, 'package.json'))('electron'), args: [...options('--electron-arg'), root], cwd: root, env, timeout: 60000});
+  // The app's own output (crashes, GPU process messages) goes beside the report.
+  const output = [];
+  app.process().stdout?.on('data', chunk => output.push(String(chunk)));
+  app.process().stderr?.on('data', chunk => output.push(String(chunk)));
+  launch.output = output;
   const page = await app.firstWindow({timeout: 60000});
   await page.setViewportSize({width: 1440, height: 900}).catch(() => {});
   return {app, page, close: async () => { await app.close().catch(() => {}); await rm(profile, {recursive: true, force: true}); }};
@@ -290,6 +295,8 @@ const session = await launch();
 const errors = [];
 session.page.on('pageerror', error => errors.push(`pageerror ${error.message.slice(0, 300)}`));
 session.page.on('console', message => { if (message.type() === 'error') errors.push(message.text().slice(0, 300)); });
+session.page.on('crash', () => { console.error('[export] the page crashed'); errors.push('page crashed'); });
+const step = name => console.error(`[export] ${new Date().toISOString().slice(11, 19)} ${name}`);
 try {
   report.document = await openDocument(session.page);
   const [cw, ch] = report.document.canvas;
@@ -437,6 +444,7 @@ try {
     const hash = bytes => createHash('sha256').update(bytes).digest('hex');
     report.integrity = [];
     for (const how of ['cancel', 'failure']) {
+      step(`integrity: ${how}`);
       await writeFile(target, previous);
       await session.app.evaluate(({dialog}, file) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: file}); }, target);
       const memoryBefore = await session.page.evaluate(() => styk.state.renderer.engineSide?.engine.memoryBytes ?? null);
@@ -481,7 +489,10 @@ try {
     });
     const results = [];
     const range = Array.from({length: 6}, (_, i) => Math.min(i, Math.max(0, report.document.ticks - 1)));
-    for (let i = 0; i < 10; i++) results.push(await renderFrames(session.page, {kind: 'engine', width, height, smoothing: 'edges', ticks: range, keep: false, abortAfter: 1}));
+    for (let i = 0; i < 10; i++) {
+      step(`cancel ${i}`);
+      results.push(await renderFrames(session.page, {kind: 'engine', width, height, smoothing: 'edges', ticks: range, keep: false, abortAfter: 1}));
+    }
     await new Promise(resolve => setTimeout(resolve, 6000));
     const after = await session.page.evaluate(() => ({workers: [...window.__exportWorkers].map(w => w.__name), released: window.__exportReleased, memory: styk.state.renderer.engineSide?.engine.memoryBytes ?? null}));
     report.cancel = {aborted: results.filter(r => r.error?.name === 'AbortError').length, framesBeforeAbort: results.map(r => r.frames.length),
@@ -493,6 +504,7 @@ try {
 } finally {
   report.errors = errors;
   await session.close();
+  await writeFile(path.join(out, 'app-output.log'), (launch.output ?? []).join(''));
   await writeFile(path.join(out, 'report.json'), JSON.stringify(report, null, 2));
 }
 if (report.problems.length) { console.error(report.problems.join('\n')); process.exitCode = 1; }

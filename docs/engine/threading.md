@@ -34,9 +34,13 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   `ExportRenderer` (`styk-wasm`) takes the device, pins the export's revision
   (`styk_engine::export::ExportFrames`),
   asks the preparation workers for the next frames and its pictures, draws and reads
-  back. It ends with `release`: the renderer is freed, the device destroyed and the
+  back. It ends with `release`: the device is destroyed, the read-backs it rejects
+  settle (their answers run through the module), then the renderer is freed and the
   thread's stack and thread-local storage given back (`__wbindgen_thread_destroy`)
-  before the worker closes; a worker that does not answer within 5 s is terminated
+  before the worker closes, with no turn of its event loop in between (a call into the
+  module after the destructor writes through a stack the shared memory has taken back:
+  cancelling an export of URIEL 3 crashed the page that way until the answers were
+  let through first); a worker that does not answer within 5 s is terminated
   (what it held then stays allocated in the shared memory). Pages that are not
   cross-origin isolated export with the JavaScript renderer.
 

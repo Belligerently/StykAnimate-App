@@ -41,6 +41,13 @@ scene complexity; the browser calculates a target from the final dimensions
 and frame rate. See the [quality-control contract](EXPORT-FORMATS.md) for
 mappings and verification.
 
+For a document the engine draws, the frames come from the engine's export
+renderer ([engine rendering: exports](engine/rendering.md#exports)); opening
+the dialog starts its worker and GPU device, so the export does not wait for
+them (`prewarmExportRenderer`; a worker no export takes within a minute is
+released). Progress, Cancel and Stop exporting behave as with the JavaScript
+renderer.
+
 ## Quick presets
 
 Quick presets (`src/export-presets.mjs`, `#export-presets`) are tiles for where
