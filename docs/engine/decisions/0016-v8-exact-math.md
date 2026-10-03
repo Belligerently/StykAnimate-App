@@ -8,7 +8,7 @@ Editing commands store the results of trigonometry in documents (rotated roots a
 
 ## Decision
 
-`styk-math` provides `sin`, `cos` and `atan2` ported from fdlibm 5.3 as V8 has it (`src/base/ieee754.cc`, over the `libm` crate's `atan` and a vendored copy of its `rem_pio2_large`), and V8's `hypot`. Engine code whose results are stored in documents uses it; `f64::sin` and friends are not used there. `styk-eval`'s inverse-kinematics solver takes `hypot` from it too.
+`styk-math` provides `sin`, `cos` and `atan2` ported from fdlibm 5.3 as V8 has it (`src/base/ieee754.cc`, over the `libm` crate's `atan` and a vendored copy of its `rem_pio2_large`), and V8's `hypot`. Engine code whose results are stored in documents uses it; `f64::sin` and friends are not used there. `styk-eval`'s inverse-kinematics solver and rig constraints take all four from it.
 
 ## Evidence
 
@@ -31,8 +31,10 @@ and requires everything else to be equal.
 
 The engine gives the same numbers natively and in WebAssembly, on every platform and
 in every browser, which the JavaScript engine does not. Evaluation tweens angles
-through `styk_math::shortest`; geometry, the IK solver and 3D quaternions still use the
-platform's functions where results are only drawn, and move to `styk-math` before the
-engine stores them (baking IK poses, 3D poses between keys; `acos` is to be added the
-same way). A function not yet in `styk-math` is ported and recorded before a command
-uses it.
+through `styk_math::shortest`, and the IK solver and rig constraints use `styk-math`
+throughout: posing a limb by its IK target stores the solved angles, and since the switch
+the solver returns the editor's numbers bit for bit (`tests/ik.rs` compares them
+exactly). Geometry, whose points are rounded to single precision, and 3D quaternion
+`acos`/`asin` still use the platform's functions; `acos` is to be added before the engine
+stores 3D poses between keys. A function not yet in `styk-math` is ported and recorded
+before a command uses it.

@@ -8,6 +8,8 @@
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 
+use styk_math::{atan2, cos, sin};
+
 use crate::doc::{FigurePlan, Polyfill, Segment};
 
 use super::layout::spatial_bone;
@@ -119,7 +121,7 @@ fn chord(skeleton: &Skeleton, pose: &Pose, i: usize, lengths: Option<&[f64]>) ->
     let s = &skeleton.segments[i];
     let bend = pose.bend(i, s);
     let length = lengths.map(|l| l[i]).unwrap_or_else(|| pose.length(i, s)) * pose.scale;
-    (bend, length * if bend.abs() < EPS { 1.0 } else { 2.0 * (bend / 2.0).sin() / bend })
+    (bend, length * if bend.abs() < EPS { 1.0 } else { 2.0 * sin(bend / 2.0) / bend })
 }
 
 /// `solveObjectIK(figure, object, root, layout, controllers)`.
@@ -144,7 +146,7 @@ pub fn solve_object(skeleton: &Skeleton, pose: &Pose, root: [f64; 2], controller
         let p = points.get(skeleton, s.parent).unwrap_or(root);
         let (bend, signed) = chord(skeleton, pose, i, lengths);
         let a = angles[i] + bend / 2.0;
-        points.at[i] = Some([p[0] + a.cos() * signed, p[1] + a.sin() * signed]);
+        points.at[i] = Some([p[0] + cos(a) * signed, p[1] + sin(a) * signed]);
     };
     let rig = skeleton.plan.rig.as_deref().map(|plan| {
         let handles = active.iter().flat_map(|(id, c)| std::iter::once(*id).chain(c.spatial_followers.iter().flat_map(|table| table.keys().copied())));
@@ -243,7 +245,7 @@ pub fn solve_object(skeleton: &Skeleton, pose: &Pose, root: [f64; 2], controller
                 continue;
             }
             let (dx, dy) = (positions[j + 1][0] - positions[j][0], positions[j + 1][1] - positions[j][1]);
-            let mut a = dy.atan2(dx) - bend / 2.0 - if signed < 0.0 { PI } else { 0.0 };
+            let mut a = atan2(dy, dx) - bend / 2.0 - if signed < 0.0 { PI } else { 0.0 };
             if let Some(state) = rig_sample.as_ref().and_then(|s| s.states[i]) {
                 // The solved direction is in rendered space: invert the joint's
                 // derived local space to find the authored angle that draws it.
@@ -254,7 +256,7 @@ pub fn solve_object(skeleton: &Skeleton, pose: &Pose, root: [f64; 2], controller
                     // Same association as the JavaScript: (start + next) - previous.
                     let aim = [state.start[0] + positions[j + 1][0] - positions[j][0], state.start[1] + positions[j + 1][1] - positions[j][1]];
                     let authored = authored_rig_target(state.start, state.space, state.bend, aim, angles[i], length);
-                    a = (authored[1] - state.start[1]).atan2(authored[0] - state.start[0]) - state.bend / 2.0 - if pose.scale < 0.0 { PI } else { 0.0 };
+                    a = atan2(authored[1] - state.start[1], authored[0] - state.start[0]) - state.bend / 2.0 - if pose.scale < 0.0 { PI } else { 0.0 };
                 }
             }
             let delta = wrap(a - angles[i]);

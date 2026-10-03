@@ -345,7 +345,7 @@ impl Editor {
         if let Some(reason) = self.unported_document() {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
-        if let Some(reason) = self.ik_gate(method, args)? {
+        if let Some(reason) = self.ik_gate(method)? {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
         match method {

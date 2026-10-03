@@ -5,6 +5,7 @@
 use std::f64::consts::PI;
 
 use styk_doc::Value;
+use styk_math::{atan2, cos, hypot, sin};
 
 const EPS: f64 = 1e-8;
 const SPATIAL_EPS: f64 = 1e-9;
@@ -471,17 +472,17 @@ pub fn quat_rotate(q: [f64; 4], p: [f64; 3]) -> [f64; 3] {
 
 pub fn spatial_quaternion(bend: f64, turn: f64, pitch: f64) -> [f64; 4] {
     let (x, y, z) = (pitch / 2.0, turn / 2.0, bend / 2.0);
-    let (cx, sx, cy, sy, cz, sz) = (x.cos(), x.sin(), y.cos(), y.sin(), z.cos(), z.sin());
+    let (cx, sx, cy, sy, cz, sz) = (cos(x), sin(x), cos(y), sin(y), cos(z), sin(z));
     [sx * cy * cz - cx * sy * sz, cx * sy * cz + sx * cy * sz, cx * cy * sz - sx * sy * cz, cx * cy * cz + sx * sy * sz]
 }
 
 fn axis_quaternion(axis: [f64; 3], angle: f64) -> [f64; 4] {
-    let h = (angle / 2.0).sin() / (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
-    [axis[0] * h, axis[1] * h, axis[2] * h, (angle / 2.0).cos()]
+    let h = sin(angle / 2.0) / (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+    [axis[0] * h, axis[1] * h, axis[2] * h, cos(angle / 2.0)]
 }
 
 fn wrap(a: f64) -> f64 {
-    a.sin().atan2(a.cos())
+    atan2(sin(a), cos(a))
 }
 
 pub fn spatial_point(f: &SpatialFrame, point: [f64; 3]) -> [f64; 3] {
@@ -502,14 +503,14 @@ pub fn spatial_point(f: &SpatialFrame, point: [f64; 3]) -> [f64; 3] {
 fn view_interpolation(f: &SpatialFrame, count: usize) -> (usize, usize, f64, f64, f64, f64) {
     let [x, y, z, w] = f.q;
     let (fx, fz) = (2.0 * (w * y - x * z), 1.0 - 2.0 * (x * x + y * y));
-    let horizontal = fx.hypot(fz);
-    let yaw = if horizontal > 1e-9 { fx.atan2(fz) } else { 0.0 };
+    let horizontal = hypot(fx, fz);
+    let yaw = if horizontal > 1e-9 { atan2(fx, fz) } else { 0.0 };
     let c = count as f64;
     let phase = (yaw / (2.0 * PI) * c + c) % c;
     let index = phase.floor() as usize % count;
     let u = phase - phase.floor();
     let confidence = ((horizontal - 0.05) / 0.2).clamp(0.0, 1.0);
-    (index, (index + 1) % count, u * u * (3.0 - 2.0 * u), yaw.cos(), yaw.sin(), confidence * confidence * (3.0 - 2.0 * confidence))
+    (index, (index + 1) % count, u * u * (3.0 - 2.0 * u), cos(yaw), sin(yaw), confidence * confidence * (3.0 - 2.0 * confidence))
 }
 
 fn view_corrected(point: [f64; 3], views: &[[f64; 3]], f: &SpatialFrame) -> [f64; 3] {
@@ -651,12 +652,12 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             (start, dx, dy)
         };
         let (start, dx, dy) = pos(w);
-        let angle = if dx.hypot(dy) < 1e-8 { input.angle } else { dy.atan2(dx) };
+        let angle = if hypot(dx, dy) < 1e-8 { input.angle } else { atan2(dy, dx) };
         let s = State {
             start,
             angle,
             authored_angle: angle,
-            length: dx.hypot(dy),
+            length: hypot(dx, dy),
             bend: 0.0,
             width: 1.0,
             handle: Some([start[0] + dx, start[1] + dy]),
@@ -688,7 +689,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
                 let (mut yy, mut zz) = (py, pz);
                 if let Some(pitch_id) = path.pitch {
                     let pitch = state_of(states, pitch_id).map(|s| s.authored_angle).unwrap_or(0.0) - path.pitch_rest_angle - delta;
-                    let (c, s) = (pitch.cos(), pitch.sin());
+                    let (c, s) = (cos(pitch), sin(pitch));
                     let old = yy;
                     yy = old * c - zz * s;
                     zz = old * s + zz * c;
@@ -698,14 +699,14 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
                 z = zz;
             }
         }
-        let (c, s) = (delta.cos(), delta.sin());
+        let (c, s) = (cos(delta), sin(delta));
         let (dx, dy) = ((x * c - y * s) * ctx.scale, (x * s + y * c) * ctx.scale);
-        let angle = dy.atan2(dx);
+        let angle = atan2(dy, dx);
         let st = State {
             start: origin,
             angle,
             authored_angle: angle,
-            length: dx.hypot(dy),
+            length: hypot(dx, dy),
             bend: 0.0,
             width: 1.0,
             handle: Some([origin[0] + dx, origin[1] + dy]),
@@ -762,11 +763,11 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         start = joint(c.start).unwrap_or(root);
         let end = joint(c.end).unwrap_or(root);
         let (dx, dy) = (end[0] - start[0], end[1] - start[1]);
-        let distance = dx.hypot(dy);
+        let distance = hypot(dx, dy);
         span = distance;
         bend = bend.clamp(-PI * 1.99, PI * 1.99);
-        let factor = if bend.abs() < EPS { 1.0 } else { 2.0 * (bend / 2.0).sin() / bend };
-        angle = if distance > EPS { dy.atan2(dx) - bend / 2.0 } else { input_angle + rotation };
+        let factor = if bend.abs() < EPS { 1.0 } else { 2.0 * sin(bend / 2.0) / bend };
+        angle = if distance > EPS { atan2(dy, dx) - bend / 2.0 } else { input_angle + rotation };
         length = distance / factor;
         inherited = angle - input_angle - if ctx.scale < 0.0 { PI } else { 0.0 };
         let raw_position = if ctx.len_flag { ctx.lengths.and_then(|l| l.get(i).copied()).unwrap_or(seg.length) } else { seg.length };
@@ -776,7 +777,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
         handle = Some(if bend.abs() < EPS {
             [start[0] + dx * t, start[1] + dy * t]
         } else {
-            [start[0] + length / bend * ((angle + sweep).sin() - angle.sin()), start[1] + length / bend * (angle.cos() - (angle + sweep).cos())]
+            [start[0] + length / bend * (sin(angle + sweep) - sin(angle)), start[1] + length / bend * (cos(angle) - cos(angle + sweep))]
         });
     } else if let Some(src) = source {
         let mode_stretch = match response.map(|x| x.mode) {
@@ -797,9 +798,9 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
             follow_scale = Some(amount);
             follow_axis_used = follow_axis;
             let relative = angle - follow_axis;
-            let (x, y) = (relative.cos() * amount, relative.sin());
-            let factor = x.hypot(y);
-            angle = if factor < EPS { angle } else { follow_axis + y.atan2(x) };
+            let (x, y) = (cos(relative) * amount, sin(relative));
+            let factor = hypot(x, y);
+            angle = if factor < EPS { angle } else { follow_axis + atan2(y, x) };
             length *= factor;
             width *= rig_width(amount.abs(), width_response);
         }
@@ -864,7 +865,7 @@ pub fn evaluate(ctx: &Context, states: &mut [Option<State>], i: usize, input: In
 fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: &crate::doc::Segment, input: &Input) -> State {
     let idx = |id: u32| ctx.index_of.get(&id).map(|&x| x as usize);
     let get = |id: u32| idx(id).and_then(|k| states[k]).and_then(|s| s.spatial);
-    let (cs, sn) = (ctx.figure_angle.cos(), ctx.figure_angle.sin());
+    let (cs, sn) = (cos(ctx.figure_angle), sin(ctx.figure_angle));
     let sign = if ctx.mirror { -1.0 } else { 1.0 };
     let root = ctx.root;
     let scale = ctx.scale;
@@ -937,12 +938,12 @@ fn evaluate_spatial(ctx: &Context, states: &[Option<State>], sp: &Spatial, seg: 
     };
     let handle = project(point);
     let (dx, dy) = (handle[0] - start[0], handle[1] - start[1]);
-    let angle = if dx.hypot(dy) < SPATIAL_EPS { input.angle } else { dy.atan2(dx) };
+    let angle = if hypot(dx, dy) < SPATIAL_EPS { input.angle } else { atan2(dy, dx) };
     State {
         start,
         angle,
         authored_angle: input.angle,
-        length: dx.hypot(dy),
+        length: hypot(dx, dy),
         bend: 0.0,
         width: 1.0,
         handle: Some(handle),

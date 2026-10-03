@@ -10,6 +10,7 @@ use std::f64::consts::PI;
 use crate::rig::{quat_multiply, quat_rotate, spatial_quaternion};
 
 use super::norm;
+use styk_math::{atan2, cos, sin};
 
 /// `inverseQuaternion`.
 pub fn inverse_quaternion(q: [f64; 4]) -> [f64; 4] {
@@ -39,7 +40,7 @@ fn normalize_unguarded<const N: usize>(v: [f64; N]) -> [f64; N] {
 /// `spatialWorldVector(v, figure, object, inverse)`: between the figure's rest
 /// frame and scene space (its rotation and mirroring; depth is unchanged).
 pub fn spatial_world_vector(v: [f64; 3], figure_angle: f64, mirror: bool, inverse: bool) -> [f64; 3] {
-    let (c, s) = (figure_angle.cos(), figure_angle.sin());
+    let (c, s) = (cos(figure_angle), sin(figure_angle));
     let m = if mirror { -1.0 } else { 1.0 };
     if inverse { [v[0] * c + v[1] * s, (-v[0] * s + v[1] * c) * m, v[2]] } else { [v[0] * c - v[1] * m * s, v[0] * s + v[1] * m * c, v[2]] }
 }
@@ -73,7 +74,7 @@ pub fn spatial_knee(base: [f64; 3], end: [f64; 3], pole: [f64; 3], swivel: f64, 
     }
     let direction = normalize(direction);
     let side = cross(axis, direction);
-    let (cs, sn) = (swivel.cos(), swivel.sin());
+    let (cs, sn) = (cos(swivel), sin(swivel));
     let along = (a * a - b * b + d * d) / (2.0 * d);
     let height = (a * a - along * along).max(0.0).sqrt();
     let bend = [direction[0] * cs + side[0] * sn, direction[1] * cs + side[1] * sn, direction[2] * cs + side[2] * sn];
@@ -102,8 +103,8 @@ pub fn spatial_ik_orientation(axis: [f64; 3], normal: [f64; 3], direction: [f64;
     let aim = normalize(direction);
     let swing = between_vectors(normalize(axis), aim);
     let turned = quat_rotate(swing, normal);
-    let angle = dot(aim, cross(turned, plane)).atan2(dot(turned, plane)) / 2.0;
-    let twist = [aim[0] * angle.sin(), aim[1] * angle.sin(), aim[2] * angle.sin(), angle.cos()];
+    let angle = atan2(dot(aim, cross(turned, plane)), dot(turned, plane)) / 2.0;
+    let twist = [aim[0] * sin(angle), aim[1] * sin(angle), aim[2] * sin(angle), cos(angle)];
     quat_multiply(twist, swing)
 }
 
@@ -113,9 +114,9 @@ pub fn interpolate_quaternion(a: [f64; 4], b: [f64; 4], t: f64) -> [f64; 4] {
     let sign = if d < 0.0 { -1.0 } else { 1.0 };
     let d = 1f64.min(d.abs());
     let angle = d.acos();
-    let sin = angle.sin();
-    let x = if sin > 1e-6 { ((1.0 - t) * angle).sin() / sin } else { 1.0 - t };
-    let y = (if sin > 1e-6 { (t * angle).sin() / sin } else { t }) * sign;
+    let sine = sin(angle);
+    let x = if sine > 1e-6 { sin((1.0 - t) * angle) / sine } else { 1.0 - t };
+    let y = (if sine > 1e-6 { sin(t * angle) / sine } else { t }) * sign;
     let v = [a[0] * x + b[0] * y, a[1] * x + b[1] * y, a[2] * x + b[2] * y, a[3] * x + b[3] * y];
     let n = norm(&v);
     // The JavaScript falls back to a three-component [0, 0, 1]; its missing w is NaN here.
@@ -136,7 +137,7 @@ pub struct Euler {
 }
 
 fn shortest(a: f64) -> f64 {
-    a.sin().atan2(a.cos())
+    atan2(sin(a), cos(a))
 }
 
 /// `quaternionPose(q, previous)`: of the two Euler triples that produce `q`,
@@ -148,11 +149,11 @@ pub fn quaternion_pose(q: [f64; 4], previous: Euler) -> Euler {
     let (pitch, bend);
     if sy.abs() > 1.0 - 1e-10 {
         pitch = previous.pitch;
-        let a = quat_multiply([x, y, z, w], [-(pitch / 2.0).sin(), 0.0, 0.0, (pitch / 2.0).cos()]);
-        bend = 2.0 * a[2].atan2(a[3]);
+        let a = quat_multiply([x, y, z, w], [-sin(pitch / 2.0), 0.0, 0.0, cos(pitch / 2.0)]);
+        bend = 2.0 * atan2(a[2], a[3]);
     } else {
-        pitch = (2.0 * (w * x + y * z)).atan2(1.0 - 2.0 * (x * x + y * y));
-        bend = (2.0 * (w * z + x * y)).atan2(1.0 - 2.0 * (y * y + z * z));
+        pitch = atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
+        bend = atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
     }
     let near = |p: Euler| Euler {
         pitch: previous.pitch + shortest(p.pitch - previous.pitch),

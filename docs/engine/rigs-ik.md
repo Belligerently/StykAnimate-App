@@ -66,9 +66,9 @@ cargo build -p styk-eval --target wasm32-unknown-unknown
 `tests/ik.rs` loads every fixture and:
 
 - compares joints and primitives with the editor's dump within `parity::TOLERANCE` (2e-3);
-- compares what the solver derived (each reference's `frames[].ik`, unrounded): angles and stretched lengths within 1e-9, and the same iteration count per controller. The position tolerance alone would hide a wrong threshold or a missing iteration;
+- compares what the solver derived (each reference's `frames[].ik`, unrounded): angles and stretched lengths bit for bit (the solver's trigonometry is `styk-math`'s, [D16](decisions/0016-v8-exact-math.md)), and the same iteration count per controller. The position tolerance alone would hide a wrong threshold or a missing iteration;
 - checks that each fixture with a pin stops matching when its controllers are removed;
-- replays recorded inputs of `solveIKPoints` and `interpolateIK` (`vectors.json`, within 1e-9).
+- replays recorded inputs of `solveIKPoints` and `interpolateIK` (`vectors.json`, bit for bit).
 
 The fixtures are built with the editor's own commands, except `movieclip` (the clip is captured by the editor, its instance placed by hand) and `legacy-tables` and `conflict` (states the commands no longer write but evaluation still handles).
 

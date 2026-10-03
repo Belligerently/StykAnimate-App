@@ -11,6 +11,8 @@ const PORTED: &[&str] = &[
     "keys-sheet", "frames-sheet", "frames-movieclip-sheet", "frames-timed-clip-sheet",
     // Commands that draft the whole frame.
     "figures-sheet", "figures-layers-sheet",
+    // Inverse-kinematics controllers: the document the app starts with, posing unpinned limbs.
+    "startup-sheet", "ik-unpinned-sheet",
 ];
 
 #[test]

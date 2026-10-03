@@ -64,7 +64,8 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `beginDrag(label, {scope})`, `beginTranslationDrag`, `commitDrag`, `cancelDrag` | yes | move-native, drag-cancel, gestures-sheet |
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
-| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, posing inverse-kinematics targets, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
+| `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`) | yes, without rigs, pinned inverse kinematics, 3D bones or Stick Nodes curves | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet |
+| `poseJoint` on the end of a limb with an unpinned IK controller (`poseIKTarget`): the limb as drawn captured, solved to the pointer, the solution baked into the pose, followers and bend kept in the controller | yes, on figures of their own without perspective | startup-sheet, ik-unpinned-sheet |
 | `sheetInsertKey`, `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`, `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`: the layer timeline's keys and frames, clips on the document's clock retimed | yes, without drawing layers and audio ripple | keys-sheet, frames-sheet, frames-movieclip-sheet, frames-timed-clip-sheet |
 | `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go | yes, on a layer sheet; not for movieclip instances or several figures at once | figures-sheet, figures-layers-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
@@ -96,12 +97,14 @@ records yet ([evaluation.md](evaluation.md)).
 Inverse-kinematics controllers (`_stykIK`) are gated per call on the frame on show
 (`styk-edit/src/ik.rs`). Controller targets move with their figure (`translateIKTargets`:
 `moveSelection` with `movePins`, a duplicate's targets offset with it), and selection,
-seeking and history run anywhere. A call answers `Unported` on a frame with a 3D
-controller or enabled controllers next to joined figures; a gesture, on a frame with an
-enabled pinned controller; `poseJoint` without `stretch`, on a controller's endpoint
-(posing the target solves the limb). Recorded in startup-sheet (the document the app
-starts with, to the step that poses a hand) and pinned-ik-sheet (to the first move of a
-figure with a pinned foot).
+seeking and history run anywhere, and dragging the end of a limb whose controller is
+not pinned solves the limb with `styk_eval::ik::solve_object` and bakes it (`poseIKTarget`,
+bit for bit). A call answers `Unported` on a frame with a 3D controller or enabled
+controllers next to joined figures; a gesture, on a frame with an enabled pinned
+controller; posing a target of a figure in perspective. Recorded in startup-sheet (the
+document the app starts with, run to its end), ik-unpinned-sheet (a foot whose branches
+follow the target, a three-bone chain that stretches, drags, a cancel, undo) and
+pinned-ik-sheet (to the first move of a figure with a pinned foot).
 
 What the facade must still account for before it calls the engine (none of it is a
 document difference the harness can see):
@@ -155,12 +158,15 @@ redo, transforms, timeline keys and frames, duplicate/join/unjoin/delete. Measur
 | sheet-layers (two layers, held key) | 77 | 77 | 0 | 59.9 ms | 30.2 ms |
 | sheet-movieclip-loose (a movieclip) | 77 | 77 | 0 | 62.6 ms | 30.6 ms |
 | sheet-mixed-keys (imported and authored keys) | 77 | 77 | 0 | 57.9 ms | 27.8 ms |
+| the document the app starts with (unpinned IK on every limb) | 73 | 72 | 0 | 64.9 ms | 27.9 ms |
 
 "The same" means equal keys, order, strings and integers, and numbers within 1e-9
 relative: 28 to 53 of the 77 calls differ from Chromium's editor in the last digits of a
 pose, because Chromium's `Math` is not Node's ([D16](decisions/0016-v8-exact-math.md)).
-The engine time includes the JSON boundary. On the document the app starts with every
-call answers `Unported`: it has inverse-kinematics controllers, the next thing to port.
+The engine time includes the JSON boundary. On the document the app starts with (measured
+2026-10-03 after IK posing was ported) the one call left to JavaScript is `unjoinFigure`
+after a join, refused with IK on joined figures; the session then ends and the next one
+starts from the editor's state.
 
 ## What a gesture costs in the engine
 

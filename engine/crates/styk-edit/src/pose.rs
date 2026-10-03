@@ -1,7 +1,8 @@
 //! Posing joints (`poseJoint`, `rotateJoint`, `bendJoint`, `_rotateJoint`,
 //! `_poseSnapState`) and the rotation targets of a joint (`rotationEdits` in
-//! src/pivot/structure.mjs). Rig controls, inverse kinematics, 3D bones and
-//! Stick Nodes curves are not ported: those calls answer `Unported`.
+//! src/pivot/structure.mjs). Posing the end of a limb with an IK controller goes to
+//! [`crate::ik`]. Rig controls, pinned inverse kinematics, 3D bones and Stick Nodes
+//! curves are not ported: those calls answer `Unported`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -257,6 +258,14 @@ impl Editor {
             return Err(EditError::Invalid("errors.editor.snapToleranceCannotBeNegative".into()));
         }
         let Some(Joint { slot, object, segments, joint }) = context else { return Ok(false) };
+        // A stretch drag poses the node directly, like one without a controller.
+        let handle = segments.get(joint).map(|s| id_of(s, "segment_id")).filter(|&h| h.fract() == 0.0 && (1.0..=u32::MAX as f64).contains(&h));
+        if !options.stretch
+            && let Some(handle) = handle
+            && object.path(&["_stykIK", &handle.to_string()]).is_some_and(|c| c.get("enabled").is_some_and(Value::truthy))
+        {
+            return self.pose_ik_target(slot, handle as u32, x, y);
+        }
         let Some(segment) = segments.get(joint) else { return Ok(false) };
         if is_static(segment) {
             return Ok(false);

@@ -1,7 +1,7 @@
 import {readFileSync, writeFileSync} from 'node:fs';
 // Builds the first command-replay scenarios (engine/tests/edit/) with the editor's own fixture kit.
 //   node engine/tools/edit-scenarios.mjs && node engine/tools/edit-replay.mjs --all
-import {documentOf, limb, open, nextKey, prune, Editor} from './fixture-kit.mjs';
+import {documentOf, limb, open, joint, nextKey, prune, Editor} from './fixture-kit.mjs';
 const out = new URL('../tests/edit', import.meta.url).pathname;
 // A native-timeline document with two limbs (one joined to the other) over two keyframes.
 const doc = documentOf([limb(true), limb()], i => [250 + i * 150, 160]);
@@ -213,6 +213,26 @@ scenario('figures-layers-sheet', app, [
     ['duplicateFigure'], ['moveSelection', 30, 0], ['undo'], ['undo'], ['sheetInsertKey', ['layer-1'], 4], ['@seek', 4], ['@select', 1, 2], ['poseJoint', 500, 210], ['resetPose'],
     ['undo'], ['undo'], ['undo'], ['redo'], ['@seek', 0], ['@select', 1, 3], ['poseJoint', 520, 300],
   ], 'startup.document.json');
+  // Unpinned controllers: dragging the end of a limb solves it (poseIKTarget). A leg whose
+  // foot branches follow the target (static artwork, a construction pivot, a polygon), on
+  // Both; a three-bone chain on one side that stretches out of reach.
+  {
+    const fixed = {is_static: true, aux_code: 1};
+    const leg = [[11, 0, 90, .8], [12, 11, 20, .3, fixed], [22, 11, 90, 2], [23, 22, .00027, -1.6, fixed], [24, 23, 18, 1.1, fixed],
+      [33, 23, 35, 0], [34, 33, 10, .2, fixed], [35, 23, 25, 1.5, fixed], [41, 22, 16, 1.1, fixed]];
+    const document = documentOf([leg, [[1, 0, 60, .3], [2, 1, 55, .9], [3, 2, 50, 1.4], [4, 3, 20, 0]]], i => [220 + i * 260, 140]);
+    document.figure_types[0].polyfills = [{polyfill_id: 1, segment_ids: [22, 35, 34, 33], color_rgb: [10, 35, 65], alpha_raw: 0, z_order: 0}];
+    const e = open(document);
+    joint(e, 22, 1); e.setNodeIK({enabled: true, pinned: false});
+    joint(e, 3, 2); e.setNodeIK({enabled: true, pinned: false, chainLength: 3, bendDirection: 1, allowStretch: true});
+    writeFileSync(`${out}/ik-unpinned.document.json`, JSON.stringify(prune(e.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
+  }
+  scenario('ik-unpinned-sheet', app, [
+    ['@select', 1, 2], ['poseJoint', 260, 270], ['beginDrag', 'Pose figure'], ['poseJoint', 280, 290], ['poseJoint', 300, 300], ['poseJoint', 330, 320], ['commitDrag'],
+    ['undo'], ['redo'], ['@select', 2, 2], ['poseJoint', 560, 230], ['poseJoint', 600, 300], ['beginDrag', 'Pose figure'], ['poseJoint', 540, 200], ['poseJoint', 520, 215], ['cancelDrag'],
+    ['@seek', 5], ['@select', 1, 2], ['poseJoint', 240, 280], ['poseJoint', 250, 300, {stretch: true}], ['@select', 1, -1], ['moveSelection', 12, -6], ['@select', 2, 2], ['poseJoint', 470, 250],
+    ['undo'], ['undo'], ['undo'], ['redo'], ['@seek', 0], ['@select', 1, 5], ['poseJoint', 230, 330],
+  ], 'ik-unpinned.document.json');
   // Pinned controllers: selection, seeking and timeline keys run; a gesture would need the solved limb.
   scenario('pinned-ik-sheet', app, [
     ['@select', 1, -1], ['@seek', 2], ['sheetInsertKey', ['layer-1'], 3], ['sheetDuplicateFrameAfter'], ['undo'], ['moveSelection', 5, 5],
