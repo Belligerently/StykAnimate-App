@@ -18,6 +18,9 @@ const PORTED: &[&str] = &[
     "ik-joined-sheet", "ik-joined-unpinned-sheet", "ik-joined-late-sheet", "startup-join-sheet",
     // Stick Nodes curves; rig controls, alone and with pinned IK.
     "sticknodes-sheet", "rig-sheet", "ik-rig-follow-sheet", "ik-rig-stretch-sheet",
+    // Documents with 3D bones, meshes, surfaces, perspective and part proportions.
+    "spatial-mesh-perspective-sheet", "spatial-mesh-sheet-sheet", "spatial-surfaces-skin-sheet", "spatial-surfaces-perspective-sheet",
+    "spatial-mesh-mechanism-sheet", "spatial-clip-mesh-sheet",
 ];
 
 #[test]

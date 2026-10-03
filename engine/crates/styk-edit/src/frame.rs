@@ -23,8 +23,6 @@ pub(crate) struct Cache {
     /// the editor's report makes it a different one).
     report: Option<Value>,
     prepared: Option<Arc<Prepared>>,
-    /// Whether `prepared` has 3D poses, meshes or surfaces (`document_has_3d`), found once.
-    has_3d: Option<bool>,
     /// Evaluated frames by tick and by whether movieclips were sampled; a few recent ones.
     frames: Vec<(u64, bool, Value)>,
 }
@@ -54,7 +52,6 @@ impl Editor {
         let mut cache = self.eval.borrow_mut();
         cache.loader = loader;
         cache.prepared = Some(prepared);
-        cache.has_3d = None;
         cache.report = Some(self.report.clone());
         cache.frames.clear();
     }
@@ -65,8 +62,7 @@ impl Editor {
         if cache.prepared.is_none() || !cache.report.as_ref().is_some_and(|report| report.same_node(&self.report)) {
             let document = cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
             cache.prepared = Some(Arc::new(Prepared::new(Arc::new(document))));
-            cache.has_3d = None;
-            cache.report = Some(self.report.clone());
+                cache.report = Some(self.report.clone());
             cache.frames.clear();
         }
         Ok(cache.prepared.clone().unwrap())
@@ -152,11 +148,6 @@ impl Editor {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
-        }
-        // The engine evaluates 3D, but no command replay covers editing it yet.
-        let has_3d = *self.eval.borrow_mut().has_3d.get_or_insert_with(|| styk_eval::spatial::document_has_3d(&prepared.doc));
-        if has_3d {
-            return Err(EditError::Unported("geometry with 3D".into()));
         }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;

@@ -312,6 +312,12 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, -1], ['moveSelection', 10, 5], ['rotateSelection', 0.1], ['@select', 1, 1], ['rotateJoint', 0.2], ['bendJoint', 260, 200],
     ['undo'], ['undo'], ['redo'],
   ], `../../crates/styk-eval/tests/fixtures/ik/${fixture}.json`);
+  // 3D documents: transforms, timeline keys and history on figures with 3D bones, meshes,
+  // surfaces, perspective and part proportions.
+  for (const fixture of ['mesh-perspective', 'mesh-sheet', 'surfaces-skin', 'surfaces-perspective', 'mesh-mechanism', 'clip-mesh']) scenario(`spatial-${fixture}-sheet`, app, [
+    ['@select', 1, -1], ['moveSelection', 12, -6], ['rotateSelection', 0.15], ['scaleSelection', 1.1], ['mirrorSelection', 'horizontal'], ['rotateFigure', -0.1],
+    ['centerFigure'], ['@seek', 2], ['sheetInsertKey', ['layer-1'], 2], ['moveSelection', -5, 5], ['resetPose'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], `../../crates/styk-eval/tests/fixtures/spatial/${fixture}.json`);
   // The start document with a copy joined to a hand, then unjoined.
   scenario('startup-join-sheet', app, [
     ['@select', 1, -1], ['duplicateFigure'], ['joinTo', 1, 4], ['@select', 1, 3], ['poseJoint', 520, 300], ['@select', 2, 3], ['poseJoint', 560, 320],
