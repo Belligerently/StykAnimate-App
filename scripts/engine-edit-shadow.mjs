@@ -182,6 +182,10 @@ async function run(mode) {
       e.addPolygon(ids.slice(0, 3)); const index = e.figure.polyfills.length - 1;
       e.updatePolygon(index, {zOrder: -3}); e.updatePolygon(index, {handleIds: [ids[0], ids[1], ids[3]]}); e.removePolygon(index); e.undo(); e.undo();
     }));
+    await step('copy, paste, duplicate and cut figures', () => page.evaluate(() => {
+      const e = styk.editor; if (e.selectedUid === null) return;
+      e.copySelection(); e.pasteSelection(); e.pasteSelection({pasteMode: 'instance'}); e.duplicateSelection(); e.cutSelection(); e.pasteSelection(); e.undo(); e.undo(); e.undo();
+    }));
     await step('add an effect clip', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid !== null && !e.getVfxClips().length) e.addVfxClip({kind: 'figure', uid: e.selectedUid}, 'glow', {start: 0, duration: 8}); }));
     await step('edit an effect clip, its parameters and keys', () => page.evaluate(() => {
       const e = styk.editor, clip = e.getVfxClips()[0]; if (!clip) return; const effect = clip.effects[0].id;
@@ -276,8 +280,11 @@ try {
       return null;
     };
     const differences = [];
+    // Identities the editor draws (effect clips, their effects) are named by where they first
+    // appear: other parts of the app draw identities too, at moments that differ between runs.
+    const drawn = text => { const names = new Map(); return text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, id => { if (!names.has(id)) names.set(id, `id-${names.size + 1}`); return names.get(id); }); };
     for (const phase of ['after', 'undone']) for (const key of ['document', 'undo', 'redo', 'selection']) {
-      const [a, b] = [alone, owned].map(run => key === 'document' ? JSON.parse(run.outcome[phase][key]) : run.outcome[phase][key]);
+      const [a, b] = [alone, owned].map(run => key === 'document' ? JSON.parse(drawn(run.outcome[phase][key])) : run.outcome[phase][key]);
       const found = near(a, b, `${phase} ${key}`);
       if (found) differences.push(found);
     }

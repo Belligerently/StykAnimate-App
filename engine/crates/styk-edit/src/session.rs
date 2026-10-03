@@ -138,6 +138,12 @@ impl Session {
                 }
             }
             answer.set("sources", Value::object(sources));
+            // Figure definitions the publication added (a paste's copies), after the others.
+            let count = |document: &Value| document.get("figure_types").and_then(Value::array_len).unwrap_or(0);
+            if count(report) > count(&before) {
+                let added: Vec<Value> = report.get("figure_types").and_then(Value::elements).map(|e| e.iter().skip(count(&before)).collect()).unwrap_or_default();
+                answer.set("definitions", Value::array(added));
+            }
             // A committed gesture's draft stays on show (`_authoredCommitPreview`), with what
             // the commit itself changed in it (joined figures' roots from geometry): its figures.
             if let Some(frame) = self.editor.retained_frame().filter(|frame| !retained.as_ref().is_some_and(|old| old.same_node(frame))) {

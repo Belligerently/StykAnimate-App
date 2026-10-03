@@ -31,7 +31,7 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
   'renameLayer', 'setLayerColor', 'setLayerVisible', 'setLayerLocked', 'reorderLayers', 'moveLayerTo', 'createLayer', 'createLayerFolder', 'renameLayerFolder',
   'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'setCameraMotion', 'deleteCameraMotion',
-  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'addPolygon', 'updatePolygon', 'removePolygon',
+  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'copySelection', 'cutSelection', 'pasteSelection', 'duplicateSelection', 'addPolygon', 'updatePolygon', 'removePolygon',
   'beginVfxClipEdit', 'commitVfxClipEdit', 'cancelVfxClipEdit', 'setVfxClip', 'trimVfxClipStart', 'deleteVfxClip', 'moveVfxClipOrder', 'reorderVfxGroupEffect',
   'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
@@ -41,7 +41,7 @@ const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'dupl
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
   'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
-  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames']);
+  'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection']);
 
 /** A switch set in the address (`?query=on|off`), else in local storage: 'on', 'off' or null. */
 const choice = (query, key) => {
@@ -151,12 +151,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   // session that ends inside it does not restart until it closes. `closing` collects the
   // batch's own change event, which the editor sends after the batch's last call.
   let batching = false, closing = null;
-  // The timeline clipboard the session copied (the editor's object): a session starts
-  // with none, and pastes only when the editor's clipboard is that one.
-  let copied = null;
+  // The timeline and figure clipboards the session copied (the editor's objects): a session
+  // starts with none, and pastes only when the editor's clipboard is that one.
+  let copied = null, copiedFigures = null;
   const end = why => {
     if (!session) return;
-    session.free(); session = null; copied = null;
+    session.free(); session = null; copied = null; copiedFigures = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
@@ -324,7 +324,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (!answer.drag) { editor._drag = null; editor._authoredPoseEdit = null; }
         editor._authoredCommitPreview = preview;
         try {
-          adoptLayerSheet(editor, {sheet: answer.sheet, trackOrder: answer.trackOrder, layers: answer.layers, sources: answer.sources, nextFrame: state.nextFrameIdentity},
+          adoptLayerSheet(editor, {sheet: answer.sheet, trackOrder: answer.trackOrder, layers: answer.layers, sources: answer.sources, nextFrame: state.nextFrameIdentity, definitions: answer.definitions},
             detail.label, {selection: drag?.beforeSelection ?? selection, retainGeometry: Boolean(preview)});
         } finally { editor._authoredCommitPreview = null; }
       } else if (kind === 'seek') originals.get('seek').call(editor, tick);
@@ -332,6 +332,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     // A gesture that ended without publishing (nothing changed).
     if (!answer.drag && editor._drag && !published) { editor._drag = null; editor._authoredPoseEdit = null; editor._invalidate(); }
     if (name === 'duplicateFigure' || name === 'addFigure') return editor.object;
+    if (name === 'pasteSelection' || name === 'duplicateSelection') return editor.selectedObjects;
     if (name === 'sheetAppendFrame') return editor.evaluatedFrame;
     return answer.result;
   };
@@ -357,6 +358,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       let live = begin(), before = null, payload = null;
       if (live && (name === 'undo' && !live.can_undo() || name === 'redo' && !live.can_redo())) { end('history the session did not record'); live = null; }
       if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
+      if (live && name === 'pasteSelection' && (editor._selectionClipboard ?? editor._figureClipboard ?? null) !== copiedFigures) { end('a figure clipboard the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         const given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
@@ -416,6 +418,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
           if (name === 'sheetCopyFrames' && session && !thrown) copied = editor._sheetClipboard;
+          if ((name === 'copySelection' || name === 'cutSelection') && session && !thrown) copiedFigures = editor._selectionClipboard ?? null;
         } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;

@@ -1,0 +1,428 @@
+//! The figure clipboard on a layer sheet (src/editor.mjs `copySelection`, `cutSelection`,
+//! `pasteSelection`, `duplicateSelection`; src/editor-range-commands.mjs `insertionPlan`
+//! and `insert` for a paste at the playhead, committed by `_commitSheetRange`).
+//!
+//! The clipboard belongs to the editor that copied: a session pastes only what it copied
+//! itself (the facade checks that the editor's clipboard is that object). Movieclips,
+//! drawings, figures with effect clips (pasted with new random identities in a batch) and
+//! clipboards from another document or an older format answer `Unported` when pasted.
+
+use std::collections::HashMap;
+
+use styk_doc::{Obj, Value};
+
+use crate::frame::objects_of;
+use crate::record::{num, uid};
+use crate::{EditError, Editor};
+
+/// `editor._selectionClipboard`, as far as pasting it in the same document reads it.
+#[derive(Clone, Debug)]
+pub(crate) struct FigureClipboard {
+    objects: Vec<Value>,
+    figures: Vec<Value>,
+    layers: Vec<(u32, String)>,
+    order: Vec<u32>,
+    source_version: Value,
+    pub(crate) offset: f64,
+    pastes: f64,
+    unported: Option<&'static str>,
+}
+
+fn invalid(key: &str) -> EditError {
+    EditError::Invalid(key.into())
+}
+
+/// `snapshotPoseObject(object)`: the pose without its evaluation caches.
+pub(crate) fn snapshot_pose_object(object: &Value) -> Obj {
+    let mut out = Obj::new();
+    for (key, value) in object.as_obj().map(|o| o.iter().collect::<Vec<_>>()).unwrap_or_default() {
+        if &**key != "runtime_segments" && &**key != "_movieclipSample" {
+            out.set(key, value.clone());
+        }
+    }
+    out
+}
+
+/// `remapVfxOwner(owner, typeId)`: effects on a node of the figure's definition move with
+/// the figure to its new definition.
+fn remap_vfx_owner(object: &mut Obj, type_id: f64, source_type: f64) {
+    let Some(table) = object.get("_stykVfx").filter(|t| t.truthy()).and_then(Value::as_obj).cloned() else { return };
+    let mut next = Obj::new();
+    for (key, stack) in table.iter() {
+        if &**key == "figure" {
+            next.set(key, stack.clone());
+            continue;
+        }
+        let (scope, id) = key.split_once('/').unwrap_or((key, ""));
+        let handle: f64 = id.parse().unwrap_or(f64::NAN);
+        if scope != "*" && scope.parse::<f64>().ok() != Some(source_type) {
+            next.set(key, stack.clone());
+            continue;
+        }
+        let scope = if scope == "*" { "*".to_string() } else { styk_doc::json::to_string(&Value::Num(type_id)) };
+        next.set(&format!("{scope}/{}", styk_doc::json::to_string(&Value::Num(handle))), stack.clone());
+    }
+    if next.is_empty() {
+        object.remove("_stykVfx");
+    } else {
+        object.set("_stykVfx", Value::object(next));
+    }
+}
+
+/// `insert(frame, payload)`: the frame with the pasted figures, slots following unique ids,
+/// pasted joins following their remapped parents, drawn in front.
+fn insert(frame: &Value, pasted: &[Value], order: &[u32]) -> Result<Value, EditError> {
+    let before = objects_of(frame);
+    let replacements: HashMap<u32, Value> = pasted.iter().filter_map(|o| Some((uid(o)?, o.clone()))).collect();
+    let mut objects: Vec<Value> = before.iter().map(|o| uid(o).and_then(|u| replacements.get(&u).cloned()).unwrap_or_else(|| o.clone())).collect();
+    let present: Vec<u32> = before.iter().filter_map(uid).collect();
+    objects.extend(pasted.iter().filter(|o| uid(o).is_some_and(|u| !present.contains(&u))).cloned());
+    if objects.len() > 65535 {
+        return Err(invalid("errors.editorRangeCommands.aNativeKeyframeSupportsAtMost65535"));
+    }
+    let id_of = |o: &Value| num(o, "unique_id").unwrap_or(f64::NAN);
+    objects.sort_by(|a, b| id_of(a).partial_cmp(&id_of(b)).unwrap_or(std::cmp::Ordering::Equal));
+    let slots: Vec<f64> = objects.iter().map(id_of).collect();
+    let slot_of = |u: f64| slots.iter().position(|s| *s == u).map(|s| Value::Num(s as f64));
+    let objects: Vec<Value> = objects
+        .into_iter()
+        .enumerate()
+        .map(|(i, object)| {
+            let join = object.get("join").filter(|j| j.truthy());
+            let parent = join.and_then(|j| {
+                if uid(&object).is_some_and(|u| replacements.contains_key(&u)) {
+                    j.get("target_unique_id").cloned()
+                } else {
+                    num(j, "target_object_slot").filter(|s| *s >= 0.0).and_then(|s| before.get(s as usize)).and_then(|p| p.get("unique_id").cloned())
+                }
+            });
+            let parent_slot = parent.as_ref().and_then(Value::as_f64).and_then(slot_of);
+            let consistent = num(&object, "object_slot") == Some(i as f64)
+                && join.is_none_or(|j| j.get("target_object_slot") == parent_slot.as_ref() && j.get("target_unique_id") == parent.as_ref());
+            if consistent {
+                return object;
+            }
+            let mut record = object.as_obj().cloned().unwrap_or_default();
+            record.set("object_slot", Value::Num(i as f64));
+            if let Some(join) = join.and_then(Value::as_obj).cloned() {
+                let mut join = join;
+                match parent {
+                    Some(parent) => join.set("target_unique_id", parent),
+                    None => {
+                        join.remove("target_unique_id");
+                    }
+                }
+                match parent_slot {
+                    Some(slot) => join.set("target_object_slot", slot),
+                    None => {
+                        join.remove("target_object_slot");
+                    }
+                }
+                record.set("join", Value::object(join));
+            }
+            Value::object(record)
+        })
+        .collect();
+    let mut out = frame.as_obj().cloned().unwrap_or_default();
+    let mut ids = crate::figures::frame_order(&out);
+    ids.extend(order.iter().filter(|u| !present.contains(u)).map(|u| *u as f64));
+    let count = objects.len();
+    out.set("objects", Value::array(objects));
+    crate::figures::set_order(&mut out, &ids);
+    if out.contains("object_count") {
+        out.set("object_count", Value::Num(count as f64));
+    }
+    Ok(Value::object(out))
+}
+
+impl Editor {
+    /// `copySelection({wholeFigures})`: the selected figures, their definitions, layers and
+    /// drawing order. Returns how many were copied.
+    pub(crate) fn copy_selection(&mut self) -> Result<Value, EditError> {
+        let selected = self.selected_objects()?;
+        if selected.is_empty() {
+            return Ok(Value::Num(0.0));
+        }
+        let ids: Vec<u32> = selected.iter().filter_map(uid).collect();
+        // Joined figures keep where geometry draws them.
+        let roots: Option<Vec<(u32, [f64; 2])>> = if selected.iter().any(|o| o.get("join").is_some_and(Value::truthy)) {
+            let (_, frame, scene) = self.evaluate()?;
+            Some(frame.objects.iter().filter_map(|o| scene.objects.iter().find(|g| g.uid == o.uid).map(|g| (o.uid, g.root))).collect())
+        } else {
+            None
+        };
+        let shown = self.selection_frame()?;
+        let definitions: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        let mut types: Vec<Value> = Vec::new();
+        for object in &selected {
+            let type_id = object.get("figure_type_id").cloned().unwrap_or(Value::Null);
+            if !types.contains(&type_id) {
+                types.push(type_id);
+            }
+        }
+        let figures: Vec<Value> = types.iter().map(|t| definitions.iter().find(|f| f.get("figure_type_id") == Some(t)).cloned().unwrap_or(Value::Null)).collect();
+        let mut unported = None;
+        if figures.iter().any(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
+            unported = Some("pasting movieclips");
+        }
+        if figures.iter().any(|f| f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)) {
+            unported = Some("pasting drawings");
+        }
+        let effect_clips = self.report.path(&["_styk", "vfxClips", "clips"]).and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default();
+        if effect_clips.iter().any(|c| c.path(&["target", "kind"]).and_then(Value::as_str) != Some("scene") && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some_and(|u| ids.contains(&(u as u32)))) {
+            unported = Some("pasting figures with effect clips");
+        }
+        let objects: Vec<Value> = selected
+            .iter()
+            .map(|object| {
+                let mut out = snapshot_pose_object(object);
+                if let Some(root) = roots.as_ref().and_then(|r| r.iter().find(|(u, _)| Some(*u) == uid(object))).map(|(_, root)| *root) {
+                    out.set("root_x", Value::Num(root[0]));
+                    out.set("root_y", Value::Num(root[1]));
+                }
+                if let Some(join) = out.get("join").filter(|j| j.truthy()).and_then(Value::as_obj).cloned() {
+                    let target = num(&Value::object(join.clone()), "target_object_slot").filter(|s| *s >= 0.0).and_then(|s| shown.get(s as usize)).and_then(uid);
+                    match target.filter(|t| ids.contains(t)) {
+                        Some(target) => {
+                            let mut join = join;
+                            join.set("target_unique_id", Value::Num(target as f64));
+                            out.set("join", Value::object(join));
+                        }
+                        None => out.set("join", Value::Null),
+                    }
+                }
+                out.remove("runtime_segments");
+                Value::object(out)
+            })
+            .collect();
+        let frame = self.shown_frame()?;
+        let order: Vec<u32> = crate::figures::frame_order(frame.as_obj().unwrap_or(&Obj::new())).into_iter().map(|u| u as u32).filter(|u| ids.contains(u)).collect();
+        let layers = ids.iter().map(|&u| (u, self.layer_of(u))).collect();
+        let count = objects.len();
+        self.figure_clipboard = Some(FigureClipboard { objects, figures, layers, order, source_version: self.report.get("version").cloned().unwrap_or(Value::Null), offset: 24.0, pastes: 0.0, unported });
+        Ok(Value::Num(count as f64))
+    }
+
+    /// `cutSelection()`: copied, then deleted; pasting puts it back where it was.
+    pub(crate) fn cut_selection(&mut self) -> Result<Value, EditError> {
+        let count = self.copy_selection()?;
+        if count.as_f64() == Some(0.0) {
+            return Ok(Value::Num(0.0));
+        }
+        if let Some(clipboard) = self.figure_clipboard.as_mut() {
+            clipboard.offset = 0.0;
+        }
+        self.delete_selection()?;
+        Ok(count)
+    }
+
+    /// `pasteSelection({newIdentities, pasteMode, pasteDepth, offset})`: the clipboard's
+    /// figures at the playhead, each paste a little further along. Returns the selected
+    /// figures.
+    pub(crate) fn paste_selection(&mut self, options: &Value) -> Result<Value, EditError> {
+        let Some(clipboard) = self.figure_clipboard.clone() else { return Ok(Value::array(Vec::new())) };
+        if self.tick.fract() != 0.0 {
+            return Err(EditError::Unported("pasting between frames".into()));
+        }
+        let offset = options.get("offset").filter(|o| !o.is_null()).cloned();
+        let default_offset = clipboard.offset * (clipboard.pastes + 1.0);
+        let inserted = self.paste_figures(&clipboard, options, offset.as_ref(), default_offset, "Paste figures")?;
+        if !inserted.is_empty() && offset.as_ref().is_none_or(|o| o.as_f64() != Some(0.0))
+            && let Some(clipboard) = self.figure_clipboard.as_mut()
+        {
+            clipboard.pastes += 1.0;
+        }
+        Ok(Value::array(self.selected_objects()?))
+    }
+
+    /// `duplicateSelection({pasteMode, offset})`: copied and pasted with new identities as
+    /// instances of the same definitions, the clipboard left as it was.
+    pub(crate) fn duplicate_selection(&mut self, options: &Value) -> Result<Value, EditError> {
+        if options.get("wholeFigures").is_some_and(Value::truthy) {
+            return Err(EditError::Unported("duplicating whole figures of a branch selection".into()));
+        }
+        let kept = self.figure_clipboard.clone();
+        let result = (|| {
+            if self.copy_selection()?.as_f64() == Some(0.0) {
+                return Ok(Value::array(Vec::new()));
+            }
+            let mut paste = Obj::new();
+            paste.set("newIdentities", Value::Bool(true));
+            paste.set("pasteMode", options.get("pasteMode").filter(|m| !m.is_null()).cloned().unwrap_or_else(|| Value::str("instance")));
+            if let Some(offset) = options.get("offset") {
+                paste.set("offset", offset.clone());
+            }
+            self.paste_selection(&Value::object(paste))
+        })();
+        self.figure_clipboard = kept;
+        result
+    }
+
+    /// `applyFigureRange({kind: 'paste', …}, {atPlayhead: true})` on a layer sheet:
+    /// `insertionPlan`, `insert` and `_commitSheetRange`. Returns the pasted identities.
+    fn paste_figures(&mut self, clipboard: &FigureClipboard, options: &Value, offset: Option<&Value>, default_offset: f64, label: &str) -> Result<Vec<u32>, EditError> {
+        if !self.sheet() {
+            return Err(EditError::Unported("pasting figures on a native timeline".into()));
+        }
+        if let Some(reason) = clipboard.unported {
+            return Err(EditError::Unported(reason.into()));
+        }
+        let paste_mode = match options.get("pasteMode").filter(|m| !m.is_null()) {
+            None => "default".to_string(),
+            Some(mode) => mode.as_str().unwrap_or("?").to_string(),
+        };
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        if !["default", "unique", "instance"].contains(&paste_mode.as_str()) {
+            return Err(invalid("errors.editorRangeCommands.chooseAValidFigurePasteMode"));
+        }
+        let depth = options.get("pasteDepth").filter(|d| !d.is_null()).map_or("same".to_string(), |d| d.as_str().unwrap_or("?").to_string());
+        if !["same", "front"].contains(&depth.as_str()) {
+            return Err(invalid("errors.editorRangeCommands.chooseAValidFigurePasteDepth"));
+        }
+        let version = self.report.get("version").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        let source_version = clipboard.source_version.as_f64().unwrap_or(f64::NAN);
+        if source_version != version {
+            return Err(EditError::Unported("a clipboard from another format version".into()));
+        }
+        let new_identities = options.get("newIdentities").is_some_and(Value::truthy);
+        let definitions_now: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        let mut next_type = definitions_now.iter().filter_map(|f| num(f, "figure_type_id")).fold(1.0f64, |a, t| a.max(t + 1.0));
+        let mut next_uid = self.next_uid;
+        // Every figure takes a new identity (movieclips, which may keep theirs, are not pasted here).
+        let mut uid_map: Vec<(u32, u32)> = Vec::new();
+        for object in &clipboard.objects {
+            if next_uid > 0x7ffffffe {
+                return Err(invalid("errors.editorLayerSheet.objectIdentityCapacityReached"));
+            }
+            uid_map.push((uid(object).unwrap_or(0), next_uid as u32));
+            next_uid += 1;
+        }
+        let renamed = |old: u32| uid_map.iter().find(|(from, _)| *from == old).map(|(_, to)| *to);
+        // Definitions: the copied ones themselves (instances), else new copies.
+        let independent = paste_mode != "instance";
+        let mut added: Vec<Value> = Vec::new();
+        let mut types: Vec<(f64, Value, HashMap<i64, usize>)> = Vec::new();
+        for original in &clipboard.figures {
+            let type_id = num(original, "figure_type_id").unwrap_or(f64::NAN);
+            let existing = if independent { None } else { definitions_now.iter().find(|f| num(f, "figure_type_id") == Some(type_id)).cloned() };
+            let figure = match existing {
+                Some(figure) => figure,
+                None => {
+                    let mut copy = original.as_obj().cloned().unwrap_or_default();
+                    copy.set("figure_type_id", Value::Num(next_type));
+                    next_type += 1.0;
+                    let copy = Value::object(copy);
+                    added.push(copy.clone());
+                    copy
+                }
+            };
+            let indices = original.get("segments").and_then(Value::elements).map(|e| e.iter().enumerate().filter_map(|(i, s)| Some((num(&s, "segment_id")? as i64, i))).collect()).unwrap_or_default();
+            types.push((type_id, figure, indices));
+        }
+        let offset = match offset {
+            Some(Value::Num(n)) => *n,
+            Some(_) => f64::NAN,
+            None => default_offset,
+        };
+        if !offset.is_finite() {
+            return Err(invalid("errors.editorRangeCommands.pasteOffsetMustBeFinite"));
+        }
+        let mut hints: HashMap<u32, String> = HashMap::new();
+        let mut objects: Vec<Obj> = Vec::new();
+        for original in &clipboard.objects {
+            let Some((_, figure, indices)) = types.iter().find(|(t, _, _)| num(original, "figure_type_id") == Some(*t)) else {
+                return Err(EditError::Unported("a copied figure without its definition".into()));
+            };
+            let mut object = snapshot_pose_object(original);
+            object.remove("_stykMovieclipPart");
+            let new_type = num(figure, "figure_type_id").unwrap_or(f64::NAN);
+            remap_vfx_owner(&mut object, new_type, num(original, "figure_type_id").unwrap_or(f64::NAN));
+            let old = uid(original).unwrap_or(0);
+            let new = renamed(old).unwrap_or(old);
+            object.set("unique_id", Value::Num(new as f64));
+            object.set("figure_type_id", Value::Num(new_type));
+            object.set("root_x", Value::Num(num(original, "root_x").unwrap_or(f64::NAN) + offset));
+            object.set("root_y", Value::Num(num(original, "root_y").unwrap_or(f64::NAN) + offset));
+            crate::ik::translate_targets(&mut object, offset, offset, &Value::object(snapshot_pose_object(original)), false);
+            crate::sheet_clipboard::remap_followers(&mut object, &uid_map);
+            let segments: Vec<Value> = figure.get("segments").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+            for (field, enabled, fallback) in [("angles", true, "angle_rad"), ("lengths", object.get("len_flag").is_some_and(Value::truthy), "length"), ("bends", object.get("bend_flag").is_some_and(Value::truthy), "bend_rad")] {
+                if !enabled {
+                    continue;
+                }
+                let values = segments
+                    .iter()
+                    .map(|segment| {
+                        let at = num(segment, "segment_id").and_then(|id| indices.get(&(id as i64)).copied());
+                        at.and_then(|i| original.get(field).and_then(|v| v.item(i))).filter(|v| !v.is_null()).or_else(|| segment.get(fallback).filter(|v| !v.is_null()).cloned()).unwrap_or(Value::Num(0.0))
+                    })
+                    .collect();
+                object.set(field, Value::array(values));
+            }
+            if let Some(join) = object.get("join").filter(|j| j.truthy()).and_then(Value::as_obj).cloned() {
+                match num(&Value::object(join.clone()), "target_unique_id").and_then(|t| renamed(t as u32)) {
+                    Some(target) => {
+                        let mut join = join;
+                        join.set("target_unique_id", Value::Num(target as f64));
+                        object.set("join", Value::object(join));
+                    }
+                    None => object.set("join", Value::Null),
+                }
+            }
+            if new_identities
+                && let Some((_, layer)) = clipboard.layers.iter().find(|(u, _)| *u == old)
+                && self.layer_exists(layer)
+            {
+                hints.insert(new, layer.clone());
+            }
+            object.remove("runtime_segments");
+            objects.push(object);
+        }
+        // A join whose parent was not copied, or whose node the parent's definition lacks, is dropped.
+        for (i, original) in clipboard.objects.iter().enumerate() {
+            if !objects[i].get("join").is_some_and(Value::truthy) {
+                continue;
+            }
+            let parent = original.get("join").and_then(|j| num(j, "target_unique_id")).and_then(|t| clipboard.objects.iter().find(|o| num(o, "unique_id") == Some(t)));
+            let handle = objects[i].get("join").and_then(|j| num(j, "target_handle_id"));
+            let has_handle = parent.and_then(|p| types.iter().find(|(t, _, _)| num(p, "figure_type_id") == Some(*t))).is_some_and(|(_, figure, _)| {
+                handle == Some(0.0) || figure.get("segments").and_then(Value::elements).is_some_and(|s| s.iter().any(|seg| num(&seg, "segment_id") == handle))
+            });
+            if !has_handle {
+                objects[i].set("join", Value::Null);
+            }
+        }
+        let order: Vec<u32> = clipboard.order.iter().filter_map(|u| renamed(*u)).collect();
+        let shown = self.shown_frame()?;
+        if depth == "front" {
+            let mut depths: HashMap<String, f64> = HashMap::new();
+            for object in objects_of(&shown) {
+                let layer = uid(&object).map(|u| self.layer_of(u)).unwrap_or_default();
+                let z = num(&object, "_stykZIndex").unwrap_or(0.0);
+                let entry = depths.entry(layer).or_insert(-1_000_000.0);
+                *entry = entry.max(z);
+            }
+            let active = self.active_layer();
+            let destination = if self.report.path(&["_styk", "layers", "byId", &active]).is_some() { active } else { self.report.path(&["_styk", "layers", "defaultLayerId"]).and_then(Value::as_str).unwrap_or("").to_string() };
+            for object in objects.iter_mut() {
+                let layer = uid(&Value::object(object.clone())).and_then(|u| hints.get(&u).cloned()).unwrap_or_else(|| destination.clone());
+                object.set("_stykZIndex", Value::Num((depths.get(&layer).copied().unwrap_or(0.0) + 1.0).min(1_000_000.0)));
+            }
+        }
+        let pasted: Vec<Value> = objects.into_iter().map(Value::object).collect();
+        let frame = insert(&shown, &pasted, &order)?;
+        let inserted: Vec<u32> = pasted.iter().filter_map(uid).collect();
+        // Published, the pasted figures are selected and the identities taken; refused, neither.
+        let (selection, previous, previous_next) = (self.selection_state(), self.selection.clone(), self.next_uid);
+        self.selection = crate::Selection { uid: order.last().copied(), uids: order.clone(), joint: -1 };
+        self.next_uid = next_uid;
+        if let Err(error) = self.commit_sheet_range_with(&frame, &inserted, &order, &hints, added, label, selection) {
+            self.selection = previous;
+            self.next_uid = previous_next;
+            return Err(error);
+        }
+        Ok(order)
+    }
+}

@@ -743,6 +743,32 @@ scenario('figures-layers-sheet', app, [
     ['selectSheetLayer', 'layer-1'], ['moveSelection', 2, 2], ['select', 1, -1], ['undo'], ['seek', 2], ['selectMany', [2, 1]], ['selectSheetLayer', 'layer-1'],
     ['seek', 9], ['@select', 1, -1], ['joinTo', 4, 0], ['selectSheetLayer', 'layer-1'],
   ], 'sheet-layers.document.json');
+  // The figure clipboard: nothing to paste; a figure copied and pasted (a copy of its
+  // definition, each paste further along; as an instance in place; a unique copy in
+  // front), two joined figures together, one joined to a figure left out (unjoined where
+  // drawn), on another layer, cut and pasted back, duplicated (the clipboard kept, its
+  // layer kept, also when another layer is active), pasted at a later frame; refusals;
+  // history.
+  scenario('figure-clipboard-sheet', app, [
+    ['pasteSelection'], ['@select', 1, -1], ['copySelection'], ['pasteSelection'], ['pasteSelection'], ['pasteSelection', {pasteMode: 'instance', offset: 0}],
+    ['selectMany', [1, 2]], ['copySelection'], ['pasteSelection', {pasteMode: 'unique', pasteDepth: 'front'}],
+    ['pasteSelection', {pasteMode: 'bogus'}], ['pasteSelection', {pasteDepth: 'x'}], ['pasteSelection', {offset: 'x'}],
+    ['@select', 3, -1], ['copySelection'], ['setActiveLayer', 'layer-2'], ['pasteSelection'], ['@select', 2, -1], ['cutSelection'], ['pasteSelection'],
+    ['@select', 1, -1], ['duplicateSelection'], ['pasteSelection'], ['duplicateSelection', {offset: 10}], ['@seek', 3], ['pasteSelection'],
+    ['@select', 3, -1], ['setActiveLayer', 'layer-1'], ['duplicateSelection'], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  // Effects on a node of the copied figure follow it to its new definition.
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    document.keyframes[0].objects[0]._stykVfx = {figure: [createVfx('tint', 'fx-whole')], '1/3': [createVfx('glow', 'fx-node')], '*/5': [createVfx('outline', 'fx-any')]};
+    writeFileSync(`${out}/figure-vfx.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('figure-clipboard-vfx-sheet', app, [
+    ['@select', 1, -1], ['copySelection'], ['pasteSelection'], ['pasteSelection', {pasteMode: 'instance'}], ['undo'], ['undo'], ['redo'],
+  ], 'figure-vfx.document.json');
+  scenario('figure-clipboard-ik-sheet', app, [
+    ['selectMany', [2, 3]], ['copySelection'], ['pasteSelection', {pasteMode: 'instance'}], ['@select', 5, 0], ['poseJoint', 340, 290], ['undo'], ['undo'], ['redo'],
+  ], 'ik-joined-unpinned.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);
