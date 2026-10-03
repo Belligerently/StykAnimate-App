@@ -814,6 +814,21 @@ scenario('figures-layers-sheet', app, [
     ['@seek', 3], ['@select', 4, -1], ['renameMovieclip', '  Walk cycle  '], ['renameMovieclip', 'Walk cycle'], ['renameMovieclip', '   '], ['renameMovieclip', 'x'.repeat(121)],
     ['renameMovieclip', 12], ['@select', 1, -1], ['renameMovieclip', 'Nope'], ['undo'], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');
+  // A movieclip instance's playback on the frame on show: mode, speed and offset, restart
+  // keys; refusals (speed, mode, placement, clock, restart order, a figure that is not a
+  // movieclip, a drawing the clip does not have); history.
+  scenario('movieclip-playback-sheet', app, [
+    ['@seek', 3], ['@select', 4, -1], ['setMovieclipPlayback', {speed: 0}], ['setMovieclipPlayback', {mode: 'x'}], ['setMovieclipPlayback', {start: -1}],
+    ['setMovieclipPlayback', {clock: 'x'}], ['setMovieclipPlayback', {restarts: [{tick: 5, offset: 0}, {tick: 2, offset: 0}]}], ['setMovieclipPlayback', {restarts: [{tick: 2, offset: 1}]}],
+    ['setMovieclipPlayback', {speed: 2}], ['setMovieclipPlayback', {mode: 'once'}],
+    ['setMovieclipDrawing', 4, 0, 0], ['undo'], ['undo'], ['redo'], ['@select', 1, -1], ['setMovieclipPlayback', {mode: 'once'}],
+  ], 'sheet-movieclip.document.json');
+  // A clip on the document's clock: its placement and restart keys.
+  scenario('movieclip-playback-timed-sheet', app, [
+    ['@seek', 3], ['@select', 4, -1], ['setMovieclipPlayback', {start: -1}], ['setMovieclipPlayback', {end: 1}], ['setMovieclipPlayback', {start: 2, end: 2}],
+    ['setMovieclipPlayback', {restarts: [{tick: 5, offset: 0}, {tick: 2, offset: 0}]}], ['setMovieclipPlayback', {restarts: [{tick: 2, offset: -1}]}],
+    ['setMovieclipPlayback', {restarts: [{tick: 2, offset: 1}, {tick: 4, offset: 0}]}], ['setMovieclipPlayback', {start: 2, end: 6, speed: 1.5}], ['undo'], ['redo'],
+  ], 'sheet-movieclip-timed.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

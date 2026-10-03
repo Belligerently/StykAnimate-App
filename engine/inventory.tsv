@@ -155,7 +155,7 @@ src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl.
 src/editor-layers.mjs	engine	styk-edit	partial	Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS
 src/editor-load.mjs	engine	styk-edit	js	commands and history
 src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
-src/editor-movieclips.mjs	engine	styk-edit	partial	Rust: renameMovieclip and the movieclip-definition history entry (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback and the other commands still JS
+src/editor-movieclips.mjs	engine	styk-edit	partial	Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames and the other commands still JS
 src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
 src/editor-range-commands.mjs	engine	styk-edit	partial	Rust: adding a figure at the playhead on a layer sheet (applyFigureRange add, insert, _commitSheetRange: Editor::add_figure, commit_sheet_range); other range operations, pasting and native timelines still JS

@@ -12,6 +12,17 @@ use crate::{EditError, Editor};
 
 const HISTORY_LIMIT: usize = 80;
 
+/// `a === b` for two values: numbers by value, text by content, containers by identity.
+pub(crate) fn js_strict_eq(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Num(x), Value::Num(y)) => x == y,
+        (Value::Bool(x), Value::Bool(y)) => x == y,
+        (Value::Null, Value::Null) => true,
+        (x @ (Value::Str(_) | Value::Blob(_)), y @ (Value::Str(_) | Value::Blob(_))) => x.text() == y.text(),
+        (x, y) => x.same_node(y),
+    }
+}
+
 /// What a history entry changed.
 #[derive(Clone, Debug)]
 pub enum CommandKind {

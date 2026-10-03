@@ -545,6 +545,8 @@ impl Editor {
             "deleteVfxClipKeys" => self.delete_vfx_clip_keys(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setVfxClipEasing" => self.set_vfx_clip_easing(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
             "renameMovieclip" => self.rename_movieclip(&arg(0)),
+            "setMovieclipPlayback" => self.set_movieclip_playback(&arg(0), &arg(1)),
+            "setMovieclipDrawing" => self.set_movieclip_drawing(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setLayerParallax" => self.set_layer_parallax(&arg(0), &arg(1)).map(Value::Bool),
             "setFPS" => self.set_fps(&arg(0)).map(Value::Bool),
             "setCanvasSize" => self.set_canvas_size(&arg(0), &arg(1)).map(Value::Bool),
