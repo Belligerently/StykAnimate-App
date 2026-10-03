@@ -26,6 +26,7 @@ mod pose;
 mod pose_choice;
 mod palette;
 mod polygons;
+mod project;
 mod record;
 pub mod replay;
 mod select;
@@ -542,6 +543,9 @@ impl Editor {
             "moveVfxClipKeys" => self.move_vfx_clip_keys(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
             "deleteVfxClipKeys" => self.delete_vfx_clip_keys(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setVfxClipEasing" => self.set_vfx_clip_easing(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "setFPS" => self.set_fps(&arg(0)).map(Value::Bool),
+            "setCanvasSize" => self.set_canvas_size(&arg(0), &arg(1)).map(Value::Bool),
+            "updateProject" => self.update_project(&arg(0)).map(Value::Bool),
             "copySelection" => match args.first().and_then(|o| o.get("wholeFigures")).is_some_and(Value::truthy) {
                 false => self.copy_selection(),
                 true => Err(EditError::Unported("copying whole figures of a branch selection".into())),

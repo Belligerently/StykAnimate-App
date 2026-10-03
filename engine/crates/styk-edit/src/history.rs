@@ -36,6 +36,8 @@ pub enum CommandKind {
     /// The effect clips before (none when there were none) and after, and the sheet when
     /// the clips lengthened it (`kind: 'vfx-clips'`).
     VfxClips { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
+    /// Fields of the document before (absent ones as none) and after (`kind: 'fields'`).
+    Fields { before: Vec<(String, Option<Value>)>, after: Vec<(String, Value)>, timing: bool },
     /// Entries recorded inside `movieclipBatch`, undone and redone together (`kind: 'movieclip-batch'`).
     Batch { commands: Vec<Command> },
 }
@@ -193,6 +195,7 @@ impl Editor {
             CommandKind::Palette { .. } => self.apply_palette_command(command, direction)?,
             CommandKind::Audio { .. } => self.apply_audio_command(command, direction)?,
             CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
+            CommandKind::Fields { .. } => self.apply_fields_command(command, direction)?,
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
                 for child in ordered {
