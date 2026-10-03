@@ -28,6 +28,8 @@ pub enum CommandKind {
     /// The camera motion table before (none when there was none) and after, and the sheet
     /// when the clips lengthened it (`kind: 'camera-motion'`).
     CameraMotion { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
+    /// The project palette before and after, absent when there is none (`kind: 'palette'`).
+    Palette { before: Option<Value>, after: Option<Value> },
 }
 
 /// One history entry.
@@ -121,6 +123,7 @@ impl Editor {
             CommandKind::LayerSheet { .. } => self.apply_sheet_command(command, direction)?,
             CommandKind::Layers { .. } => self.apply_layers_command(command, direction)?,
             CommandKind::CameraMotion { .. } => self.apply_camera_command(command, direction)?,
+            CommandKind::Palette { .. } => self.apply_palette_command(command, direction)?,
             CommandKind::Figure { index, before, after } => {
                 if let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr)
                     && let Some(slot) = figures.get_mut(*index)

@@ -22,6 +22,7 @@ mod ik_settings;
 mod layers;
 mod pose;
 mod pose_choice;
+mod palette;
 mod record;
 pub mod replay;
 mod select;
@@ -415,6 +416,10 @@ impl Editor {
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "addPaletteColor" => self.add_palette_color(&arg(0)).map(Value::Bool),
+            "addPaletteColors" => self.add_palette_colors(&arg(0)),
+            "removePaletteColor" => self.remove_palette_color(&arg(0)).map(Value::Bool),
+            "movePaletteColor" => self.move_palette_color(&arg(0), &arg(1)).map(Value::Bool),
             "setCameraMotion" => self.set_camera_motion(&arg(0), &arg(1)).map(Value::Bool),
             "deleteCameraMotion" => self.delete_camera_motion(&arg(0)).map(Value::Bool),
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),

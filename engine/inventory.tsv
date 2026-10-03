@@ -133,7 +133,7 @@ src/editor-camera-motion.mjs	engine	styk-edit	partial	Rust: setCameraMotion, del
 src/editor-camera.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-async.mjs	engine	styk-edit	js	commands and history
 src/editor-clipboard-sparse.mjs	engine	styk-edit	js	commands and history
-src/editor-colors.mjs	engine	styk-edit	js	commands and history
+src/editor-colors.mjs	engine	styk-edit	partial	Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs); recolouring figures (editFigureColors and its range operation) still JS
 src/editor-combine.mjs	engine	styk-edit	js	commands and history
 src/editor-disconnect.mjs	engine	styk-edit	js	commands and history
 src/editor-drawing.mjs	engine	styk-edit	js	commands and history

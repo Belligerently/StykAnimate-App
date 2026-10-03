@@ -582,6 +582,13 @@ scenario('figures-layers-sheet', app, [
       ['setLayerLocked', 'camera', false], ['deleteCameraMotion', shake], ['deleteCameraMotion', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
     ], 'camera-motion.document.json');
   }
+  // The project palette: colours added as hex text (short, upper-case) and as bytes, one
+  // already there, several at once, reordered (also past the end), removed; refusals.
+  scenario('palette-sheet', app, [
+    ['addPaletteColor', '#FF0000'], ['addPaletteColor', [0, 128, 255]], ['addPaletteColor', 'abc'], ['addPaletteColor', '#ff0000'], ['addPaletteColor', 'red'],
+    ['addPaletteColors', ['#123456', '#ff0000', '#123456', [1, 2, 3]]], ['movePaletteColor', '#123456', 0], ['movePaletteColor', '#123456', 99], ['movePaletteColor', '#999999', 0],
+    ['removePaletteColor', '#aabbcc'], ['removePaletteColor', [0, 128, 255]], ['addPaletteColor', [300, 0, 0]], ['addPaletteColors', []], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);
