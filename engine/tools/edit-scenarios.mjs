@@ -233,8 +233,24 @@ scenario('figures-layers-sheet', app, [
     ['@seek', 5], ['@select', 1, 2], ['poseJoint', 240, 280], ['poseJoint', 250, 300, {stretch: true}], ['@select', 1, -1], ['moveSelection', 12, -6], ['@select', 2, 2], ['poseJoint', 470, 250],
     ['undo'], ['undo'], ['undo'], ['redo'], ['@seek', 0], ['@select', 1, 5], ['poseJoint', 230, 330],
   ], 'ik-unpinned.document.json');
-  // Pinned controllers: selection, seeking and timeline keys run; a gesture would need the solved limb.
+  // Pinned controllers: the limb is drawn solved. Moving the figure leaves the targets; a
+  // pinned end moves its target; posing bakes the solution first; a stretch drag moves the pin.
   scenario('pinned-ik-sheet', app, [
     ['@select', 1, -1], ['@seek', 2], ['sheetInsertKey', ['layer-1'], 3], ['sheetDuplicateFrameAfter'], ['undo'], ['moveSelection', 5, 5],
+    ['@select', 1, 3], ['poseJoint', 530, 300], ['@select', 1, 2], ['rotateJoint', 0.3], ['@select', 1, 3], ['poseJoint', 540, 320, {stretch: true}],
+    ['@select', 1, 0], ['bendJoint', 480, 250], ['@select', 1, -1], ['rotateSelection', 0.1], ['beginDrag', 'Move figures'], ['moveSelection', 3, 3], ['moveSelection', 3, 3],
+    ['commitDrag'], ['undo'], ['undo'], ['redo'], ['@seek', 0], ['@select', 1, 7], ['poseJoint', 500, 420], ['@select', 1, 6], ['rotateJoint', -0.2],
   ], '../../crates/styk-eval/tests/fixtures/ik/startup-pinned.json');
+  // A pinned foot whose branches follow the target: turning a follower changes its offset,
+  // turning the thigh leaves the target's orientation planted.
+  scenario('ik-followers-sheet', app, [
+    ['@select', 1, -1], ['moveSelection', 20, -10], ['@select', 1, 2], ['poseJoint', 350, 280], ['@select', 1, 5], ['rotateJoint', 0.3],
+    ['@select', 1, 0], ['rotateJoint', -0.2], ['@select', 1, 2], ['poseJoint', 380, 330, {stretch: true}], ['@seek', 4], ['@select', 1, 5],
+    ['beginDrag', 'Pose figure'], ['rotateJoint', 0.1], ['rotateJoint', 0.1], ['commitDrag'], ['undo'], ['redo'], ['@select', 1, -1], ['mirrorSelection', 'horizontal'], ['undo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/followers.json');
+  // Pinned chains of four bones (FABRIK), on Both and on one side.
+  scenario('ik-chains-sheet', app, [
+    ['@select', 1, -1], ['moveSelection', 15, 10], ['@select', 2, -1], ['rotateSelection', 0.2], ['@select', 1, 1], ['rotateJoint', 0.2],
+    ['@select', 2, 3], ['poseJoint', 600, 300], ['@seek', 6], ['@select', 1, 0], ['bendJoint', 230, 140], ['undo'], ['undo'], ['redo'],
+  ], '../../crates/styk-eval/tests/fixtures/ik/chain-long.json');
 }

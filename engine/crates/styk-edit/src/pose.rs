@@ -202,6 +202,11 @@ impl Editor {
         let Some(segment) = figure.and_then(|f| f.segments.get(joint)) else { return Ok(None) };
         let start = geometry.starts.get(joint).copied().unwrap_or([f64::NAN; 2]);
         let (angle, bend, _) = styk_eval::geometry::segment_pose(evaluated, segment, joint);
+        // A pinned limb is drawn with its solved angles.
+        let angle = match figure.and_then(|f| crate::ik::solved_angles(f, evaluated)) {
+            Some(angles) => angles.get(joint).copied().unwrap_or(angle),
+            None => angle,
+        };
         Ok(Some(Shape { start, angle, bend }))
     }
 
@@ -221,17 +226,20 @@ impl Editor {
         }
     }
 
-    /// `_rotateJoint(delta, includeJoint, {isolate})` on the native frame at the playhead.
-    fn rotate_joint_by(&mut self, slot: usize, joint: usize, delta: f64, include_joint: bool, isolate: bool) {
+    /// `_rotateJoint(delta, includeJoint, {isolate})` (`_applyJointRotation`) on the frame being edited.
+    fn rotate_joint_by(&mut self, slot: usize, joint: usize, delta: f64, include_joint: bool, isolate: bool) -> Result<(), EditError> {
         let objects = self.frame_objects();
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-        for (object_slot, segment) in rotation_targets(&objects, &figures, slot, joint, isolate) {
+        let targets = rotation_targets(&objects, &figures, slot, joint, isolate);
+        self.rotate_ik_followers(slot, joint, &targets, delta, include_joint)?;
+        for (object_slot, segment) in targets {
             if (include_joint || object_slot != slot || segment != joint)
                 && let Some(record) = self.frame_object_mut(object_slot)
             {
                 add_angle(record, segment, delta);
             }
         }
+        Ok(())
     }
 
     pub(crate) fn rotate_joint(&mut self, delta: f64, options: &Value) -> Result<bool, EditError> {
@@ -241,10 +249,7 @@ impl Editor {
             return Ok(false);
         }
         let isolate = options.get("isolate").is_some_and(Value::truthy);
-        self.object_edit("Rotate joint", |editor| {
-            editor.rotate_joint_by(slot, joint, delta, true, isolate);
-            Ok(())
-        })
+        self.object_edit_with("Rotate joint", true, |editor| editor.rotate_joint_by(slot, joint, delta, true, isolate))
     }
 
     pub(crate) fn pose_joint(&mut self, x: f64, y: f64, options: &Value) -> Result<bool, EditError> {
@@ -271,10 +276,18 @@ impl Editor {
             return Ok(false);
         }
         let Some(shape) = self.shape(&object, joint)? else { return Ok(false) };
+        // Stretching the end of a pinned limb: its pin follows the stretched end.
+        let pin = handle.filter(|&h| {
+            options.stretch && object.path(&["_stykIK", &h.to_string()]).is_some_and(|c| c.get("enabled").is_some_and(Value::truthy) && c.get("pinned").is_some_and(Value::truthy))
+        });
+        let pinned = match pin {
+            Some(handle) => Some(self.pinned_limb(&object, handle as u32)?),
+            None => None,
+        };
         let angle = atan2(y - shape.start[1], x - shape.start[0]) - shape.bend / 2.0;
-        self.object_edit("Pose joint", |editor| {
+        self.object_edit_with("Pose joint", true, |editor| {
             let defaults = editor.snap_state(&segments, joint);
-            editor.rotate_joint_by(slot, joint, shortest(angle - shape.angle), true, options.isolate);
+            editor.rotate_joint_by(slot, joint, shortest(angle - shape.angle), true, options.isolate)?;
             let record = editor.frame_object_mut(slot).unwrap();
             let scale = field(record, "scale");
             if options.stretch && scale.abs() > 1e-8 {
@@ -292,7 +305,20 @@ impl Editor {
                 if options.snap && defaults.length_enabled && (length - defaults.length).abs() * scale.abs() * chord <= options.snap_tolerance {
                     length = defaults.length;
                 }
+                // The rest of a limb displayed beyond its reach keeps the length shown.
+                if let Some(limb) = &pinned
+                    && let Some(solved) = &limb.solved_lengths
+                {
+                    for &i in &limb.chain {
+                        set_item(record, "lengths", i, solved[i]);
+                    }
+                }
                 set_item(record, "lengths", joint, length);
+                if let (Some(limb), Some(handle)) = (&pinned, pin) {
+                    let ratio = if reached > 1e-8 { length / reached } else { 0.0 };
+                    let tip = [shape.start[0] + (x - shape.start[0]) * ratio, shape.start[1] + (y - shape.start[1]) * ratio];
+                    crate::ik::follow_stretched(record, handle as u32, &limb.points, tip);
+                }
             }
             Ok(())
         })
@@ -316,7 +342,7 @@ impl Editor {
         let distance = hypot(x - shape.start[0], y - shape.start[1]);
         let mut bend = if distance < 1e-8 { shape.bend } else { 2.0 * shortest(atan2(y - shape.start[1], x - shape.start[0]) - shape.angle) };
         let segment_length = segment.get("length").and_then(Value::as_f64).unwrap_or(f64::NAN);
-        self.object_edit("Bend joint", |editor| {
+        self.object_edit_with("Bend joint", true, |editor| {
             let defaults = editor.snap_state(&segments, joint);
             let chord = |value: f64| if value.abs() < 1e-7 { 1.0 } else { (2.0 * sin(value / 2.0) / value).abs() };
             {
@@ -350,7 +376,7 @@ impl Editor {
                     set_item(record, "lengths", joint, length);
                 }
             }
-            editor.rotate_joint_by(slot, joint, bend - shape.bend, false, options.isolate);
+            editor.rotate_joint_by(slot, joint, bend - shape.bend, false, options.isolate)?;
             let record = editor.frame_object_mut(slot).unwrap();
             if !record.get("bend_flag").is_some_and(Value::truthy) {
                 record.set("bends", Value::array(segments.iter().map(|s| Value::Num(s.get("bend_rad").and_then(Value::as_f64).unwrap_or(0.0))).collect()));

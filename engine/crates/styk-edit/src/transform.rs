@@ -71,6 +71,12 @@ impl Editor {
 
     /// `_objectEdit`: runs `mutate` inside the current gesture, or as a gesture of its own.
     pub(crate) fn object_edit(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+        self.object_edit_with(label, false, mutate)
+    }
+
+    /// `_objectEdit(label, mutate, {posed})`: a `posed` edit changes the pose as it is
+    /// displayed, so pinned IK solutions are baked into the gesture's figures first.
+    pub(crate) fn object_edit_with(&mut self, label: &str, posed: bool, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
         if self.object()?.is_none() {
             return Ok(false);
         }
@@ -78,8 +84,8 @@ impl Editor {
         if !active {
             self.begin_drag(label, false)?;
         }
-        let result = mutate(self).and_then(|()| {
-            self.touch();
+        let result = (if posed { self.bake_pinned() } else { Ok(()) }).and_then(|()| mutate(self)).and_then(|()| {
+            self.touch()?;
             if !active { self.commit_drag().map(|_| ()) } else { Ok(()) }
         });
         if let Err(error) = result {
@@ -89,8 +95,9 @@ impl Editor {
         Ok(true)
     }
 
-    /// `touch`: marks the gesture changed and announces the live edit.
-    fn touch(&mut self) {
+    /// `touch`: marks the gesture changed, remembers how pinned limbs now bend, and
+    /// announces the live edit.
+    fn touch(&mut self) -> Result<(), EditError> {
         let changed = match self.drag.as_mut() {
             Some(drag) => {
                 drag.changed = true;
@@ -102,8 +109,10 @@ impl Editor {
                 self.selection.uid.into_iter().collect()
             }
         };
+        self.remember_bends()?;
         let live = self.drag.is_some();
         self.emit("edit", vec![("live", Value::Bool(live)), ("changedUids", uid_array(&changed))]);
+        Ok(())
     }
 
     pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> {
