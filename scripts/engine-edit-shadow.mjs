@@ -150,6 +150,16 @@ async function run(mode) {
       e.moveLayerTo(created.id, 0); const folder = e.createLayerFolder('Group', [created.id]); e.renameLayerFolder(folder.id, 'Kept');
       e.arrangeLayers([...layers().order].reverse()); e.deleteLayerFolder(folder.id); e.setLayerLocked('scene', false); e.undo(); e.undo(); e.redo();
     }));
+    await step('focus a layer with its lock, and follow a timeline layer', () => page.evaluate(() => {
+      const e = styk.editor, kept = e.activeLayerId, other = e.report._styk?.layers?.order?.find(id => id !== kept);
+      if (!other) return;
+      e.setLayerFocus([kept], {lock: true});
+      try { e.sheetInsertKey([other], 1); } catch {}
+      e.sheetInsertKey([kept], 1); e.undo(); e.clearLayerFocus();
+      const uid = e.selectedUid;
+      e.selectSheetLayer(kept); e.seek(Math.min(2, e.totalTicks - 1)); e.seek(0); e.moveSelection(4, 2); e.undo();
+      if (uid !== null) e.select(uid, -1);
+    }));
     await step('extend a key in one batch, as the timeline does', () => page.evaluate(() => { const e = styk.editor, layer = e.activeLayerId; e.movieclipBatch('Extend keyframe', () => { const {start, end} = e.sheetSpan(layer, e.tick); e.sheetSetDuration(end - start + 1, layer, start); }); e.undo(); e.redo(); }));
     await step('move and copy keys along the timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetMoveFrames(layer, 0, 0, 1); e.sheetMoveFrames(layer, 1, 1, 1, {copy: true}); e.undo(); e.undo(); e.redo(); }));
     await step('edit a figure from the inspector', () => page.evaluate(() => { const e = styk.editor; e.updateObject({scale: 1.2}); e.updateObject({field28: 200, name: 'Inspected'}); e.undo(); }));

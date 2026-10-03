@@ -145,8 +145,11 @@ document difference the harness can see):
   altogether). The engine counts them from the document when first needed; the editor's
   set of figures *ever seen* can be larger after figures were deleted and collected.
 - **Layer focus locks and the timeline's layer selection** (`_sheetSelection`) are
-  runtime state of the JavaScript editor; the facade runs selection and seeking in
-  JavaScript while either is on.
+  runtime state of the JavaScript editor: a focus lock refuses edits on the other layers,
+  and a layer selection is followed by seeks. The facade starts no engine session while
+  a focus lock or a followed layer selection is on, and changing either ends the current
+  session (measured with the driver's focus step: without this, owned editing inserted a
+  key the editor refuses on a locked layer).
 - **`runtime_segments`** are not in the engine's copy (the mirror strips them). The
   editor's history snapshots keep them, so on a native timeline a gesture that moves a
   figure with `runtime_segments` and puts it back is a change in JavaScript and none in

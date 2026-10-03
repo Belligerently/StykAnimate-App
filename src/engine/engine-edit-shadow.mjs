@@ -22,6 +22,7 @@
  * Anything else (an unported command, a load, an asynchronous edit) ends it.
  */
 import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
+import {layerFocusOf} from '../editor-layer-focus.mjs';
 
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
@@ -158,7 +159,13 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (depth > 0) { events?.push(plain(detail ?? null)); return; }
     // The document changed through something the session did not run.
     if (['edit', 'history', 'document'].includes(detail?.kind)) end(`a ${detail.kind} outside the shadowed calls`);
+    // Runtime state the engine does not hold (editing.md): layer focus, which locks layers
+    // and counts as a layer revision, and a timeline layer selection that follows seeks.
+    else if (detail?.kind === 'layer-focus') end('layer focus');
+    else if (detail?.kind === 'selection' && detail.sheetSelection) end('a timeline layer selection');
   });
+  /** Whether the editor holds runtime state that changes what calls do and the engine lacks. */
+  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor._sheetSelection?.contents);
 
   /** Brings the engine's frames to the editor's revision (playback does it only when it prepares). */
   let syncing = null;
@@ -177,7 +184,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   let broken = false;
   const begin = () => {
     if (session) return session;
-    if (broken || !ownedClass()) return null;
+    if (broken || !ownedClass() || runtimeState()) return null;
     const side = engineSide();
     if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
