@@ -1,7 +1,7 @@
 //! Parity with the JavaScript editor: compares what this engine evaluates with
 //! a reference dump written by `engine/tools/reference.mjs` (every drawable and
-//! every joint of the sampled ticks, and the effects when the dump has them:
-//! see [`crate::vfx::parity`]).
+//! every joint of the sampled ticks, the effects when the dump has them (see
+//! [`crate::vfx::parity`]), and what the scene camera does when it is shown).
 //!
 //! `styk compare` and the fixture tests share this one comparison, so a
 //! tolerance cannot drift between them.
@@ -36,6 +36,8 @@ pub struct Report {
     pub total_ticks: Option<(u32, u32)>,
     /// Effects, for references written with `--vfx`.
     pub vfx: crate::vfx::parity::Counts,
+    /// Ticks whose shot camera and parallax offsets were compared (`--camera`).
+    pub shots: usize,
     /// One entry per tick with differences, in tick order.
     pub bad_frames: Vec<FrameReport>,
 }
@@ -81,11 +83,51 @@ pub fn compare(prepared: &Prepared, reference: &Value) -> Report {
         if let Some(effects) = frame.get("vfx") {
             crate::vfx::parity::compare(prepared, &evaluated, effects, &mut report.vfx, &mut problems);
         }
+        if let Some(shot) = frame.get("shot") {
+            report.shots += 1;
+            shot_matches(&evaluated, shot, &mut problems);
+        }
         if !problems.is_empty() {
             report.bad_frames.push(FrameReport { tick, problems });
         }
     }
     report
+}
+
+/// Camera values and parallax offsets: the same arithmetic as the editor's, up to the
+/// last bits of `Math.exp` and `Math.log` (follow clips' zoom).
+fn close_value(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 1e-9 * a.abs().max(1.0)
+}
+
+/// The shot camera (`cameraAtTime`) and each object's parallax offset against the
+/// reference's `shot`. A missing or default camera is the identity, as drawing sees it.
+fn shot_matches(frame: &crate::eval::Frame, shot: &Value, problems: &mut Vec<String>) {
+    let identity = [0.0, 0.0, 1.0, 0.0];
+    let expected = match shot.get("camera").filter(|c| !c.is_null()) {
+        Some(c) if c.get("isDefault") != Some(&Value::Bool(true)) => ["x", "y", "scale", "angle"].map(|k| c.get(k).and_then(Value::as_f64).unwrap_or(f64::NAN)),
+        _ => identity,
+    };
+    let ours = match frame.camera {
+        Some(c) if !c.is_default => [c.x, c.y, c.scale, c.angle],
+        _ => identity,
+    };
+    if (0..4).any(|k| !close_value(expected[k], ours[k])) {
+        problems.push(format!("shot camera {expected:?} vs {ours:?}"));
+    }
+    let offsets = items(shot.get("parallax"));
+    if offsets.len() != frame.objects.len() {
+        problems.push(format!("parallax: {} objects in the reference, {} in the engine", offsets.len(), frame.objects.len()));
+        return;
+    }
+    for (slot, expected) in offsets.iter().enumerate() {
+        let expected = point(Some(expected)).unwrap_or([f64::NAN; 2]);
+        let ours = frame.parallax.as_ref().map_or([0.0, 0.0], |p| p.slots[slot]);
+        // Lines are capped; a frame with any problem already counts as differing.
+        if (!close_value(expected[0], ours[0]) || !close_value(expected[1], ours[1])) && problems.len() < LINES {
+            problems.push(format!("parallax of slot {slot}: {expected:?} vs {ours:?}"));
+        }
+    }
 }
 
 /// Depths are ratios along a figure's reference axis or scene units over a
@@ -206,6 +248,9 @@ fn drawables(scene: &Scene, expected: &[Value], meshes: &[Value], report: &mut R
                 why.push(format!("surface depth {k} {} vs {}", depth[k], ours[k]));
             }
         } else {
+            if let Some(corners) = e.get("image") {
+                image_corners(scene, it, corners, &mut why);
+            }
             if let (Some(start), Some(end)) = (point(e.get("start")), point(e.get("end"))) {
                 if !close(start, it.start) {
                     why.push(format!("start {start:?} vs {:?}", it.start));
@@ -226,6 +271,37 @@ fn drawables(scene: &Scene, expected: &[Value], meshes: &[Value], report: &mut R
                 problems.push(format!("#{i} {} uid {} seg/poly {}: {}", it.kind.name(), uid, it.index, why.join("; ")));
             }
         }
+    }
+}
+
+/// Where a picture is drawn (`--images`): the corners of its displayed rectangle under
+/// drawGeometry's transform, from the asset the item's figure holds (a Stick Nodes sprite's
+/// stretched one), sized by its displayed size, else its recorded one.
+fn image_corners(scene: &Scene, it: &crate::geometry::Item, expected: &Value, why: &mut Vec<String>) {
+    let fig = &scene.figures[it.figure as usize];
+    let Some(seg) = fig.segments.get(it.index as usize) else { return };
+    let Some(a) = fig.image(seg.asset).filter(|a| a.anchor_length != 0.0) else {
+        why.push("image: no anchored asset in the engine".into());
+        return;
+    };
+    let Some([w, h]) = a.display_size.or(a.size) else {
+        why.push("image: no size in the engine".into());
+        return;
+    };
+    let mirror = seg.mirror != it.image_text_flags;
+    let start = if seg.reverse { it.end } else { it.start };
+    let scale = (it.end[0] - it.start[0]).hypot(it.end[1] - it.start[1]) / a.anchor_length;
+    let angle = (if mirror { it.angle + a.anchor_angle - std::f64::consts::PI } else { it.angle - a.anchor_angle }) + if seg.reverse { std::f64::consts::PI } else { 0.0 };
+    let (sin, cos) = (styk_math::sin(angle), styk_math::cos(angle));
+    let mx = if mirror { -1.0 } else { 1.0 };
+    let corner = |x: f64, y: f64| {
+        let (px, py) = (mx * scale * (x - a.anchor_start[0]), scale * (y - a.anchor_start[1]));
+        [start[0] + px * cos - py * sin, start[1] + px * sin + py * cos]
+    };
+    let ours = [corner(0.0, 0.0), corner(w, 0.0), corner(0.0, h), corner(w, h)];
+    let expected: Vec<[f64; 2]> = expected.elements().map(|c| c.iter().filter_map(|p| point(Some(&p))).collect()).unwrap_or_default();
+    if expected.len() != 4 || expected.iter().zip(&ours).any(|(e, o)| !close(*e, *o)) {
+        why.push(format!("image corners {expected:?} vs {ours:?}"));
     }
 }
 

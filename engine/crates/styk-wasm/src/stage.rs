@@ -172,7 +172,7 @@ impl Stage {
             .collect();
         // Generated effects evaluate earlier anchors for at most 6 ms a frame, as the editor does
         // (`INTERACTIVE_SAMPLING_MS`); the rest refine over the next frames (`refining`).
-        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
         let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
         let scene_camera = if camera { self.edit.camera() } else { None };
         self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)

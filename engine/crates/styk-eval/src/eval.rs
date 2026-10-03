@@ -66,6 +66,9 @@ pub struct Frame {
     /// Every effect to draw at this tick, resolved ([`crate::vfx::evaluate`]).
     /// `None` when there is none, and always for a document without effects.
     pub vfx: Option<Arc<crate::vfx::FrameVfx>>,
+    /// How far parallax layers move each object while the scene camera is shown
+    /// ([`crate::parallax`]); `None` when nothing moves.
+    pub parallax: Option<Arc<crate::parallax::Parallax>>,
 }
 
 /// A document plus the timing tables evaluation needs, built once per revision.
@@ -83,6 +86,8 @@ pub struct Prepared {
     patches: HashMap<(String, u32), Arc<Seq>>,
     /// Presence-clock spans per movieclip instance: (start, end, elapsed, rate).
     presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
+    /// Follow camera clips and their shaped paths ([`crate::follow`]).
+    follow: Option<crate::follow::Follow>,
 }
 
 /// `shortest(a)`: the angle in (-π, π], with V8's rounding (tweened angles are stored
@@ -428,6 +433,7 @@ fn frame_of(key: &KeyRef) -> Frame {
         background_color: k.background_color,
         pose_vfx: k.vfx.clone(),
         vfx: None,
+        parallax: None,
     }
 }
 
@@ -443,6 +449,26 @@ pub(crate) fn evaluate_native_exact(doc: &Document, seq: &Seq, index: usize, t: 
 }
 
 fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
+    let mut frame = tween_interval(doc, seq, index, t, exact);
+    correct_origins(doc, &mut frame);
+    frame
+}
+
+/// `correctAnimationOrigins`: every unjoined figure with an animation origin is placed so
+/// that its pivot lands where its pose says, as each native interval leaves it.
+fn correct_origins(doc: &Document, frame: &mut Frame) {
+    if !doc.origins {
+        return;
+    }
+    for object in frame.objects.iter_mut() {
+        let Some(figure) = doc.figure(object.figure) else { continue };
+        if let Some(root) = crate::origin::corrected_root(figure, object) {
+            Arc::make_mut(object).root = root;
+        }
+    }
+}
+
+fn tween_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool) -> Frame {
     let keys = &seq.keys;
     let Some(a) = keys.get(index) else { return Frame::default() };
     let Some(b) = keys.get(index + 1) else { return frame_of(a) };
@@ -477,15 +503,20 @@ fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: boo
         objects.push(Arc::new(tween_object(&sampler, fig, o, next, &recs, auto)));
     }
     let camera = match (a.frame.camera, b.frame.camera) {
-        (Some(_), Some(_)) => {
+        (Some(ca), Some(cb)) => {
             let cams = frames.map(|f| f.map(|f| f.camera.unwrap_or_default()));
             let get = |k: fn(&Camera) -> f64| cams.map(|c| c.as_ref().map(k));
+            // A baked parallax offset tweens when either key has one; a key without one is at zero.
+            let motion_offset = (ca.motion_offset.is_some() || cb.motion_offset.is_some()).then(|| {
+                [sampler.value(get(|c| c.motion_offset.map_or(0.0, |o| o[0])), false), sampler.value(get(|c| c.motion_offset.map_or(0.0, |o| o[1])), false)]
+            });
             Some(Camera {
                 x: sampler.value(get(|c| c.x), false),
                 y: sampler.value(get(|c| c.y), false),
                 scale: sampler.value(get(|c| c.scale), false),
                 angle: sampler.angle(get(|c| c.angle), &|k| keys.get(k).map(|f| f.frame.camera.unwrap_or_default().angle)),
                 is_default: false,
+                motion_offset,
             })
         }
         _ => a.frame.camera,
@@ -496,6 +527,7 @@ fn evaluate_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: boo
         tick: 0.0,
         pose_vfx: a.frame.vfx.as_ref().map(|stacks| crate::vfx::interpolate(stacks, b.frame.vfx.as_ref(), t)),
         vfx: None,
+        parallax: None,
         origins: vec![None; objects.len()],
         continuations: a.frame.continuations.clone(),
         background_color: a.frame.background_color,
@@ -528,6 +560,19 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
     }
     out.root = [s.value(read(&|x| x.root[0]), false), s.value(read(&|x| x.root[1]), false)];
     out.scale = s.value(read(&|x| x.scale), false);
+    // An animation origin's pivot tweens (its offset too when either key has one); the root
+    // follows it once the angles are known ([`correct_origins`]).
+    if fig.origin.is_some()
+        && let (Some(a), Some(b)) = (&o.origin, &next.origin)
+    {
+        let pivot = |k: fn(&crate::origin::PoseOrigin) -> f64| s.value(recs.map(|r| r.and_then(|x| x.origin.as_deref()).map(k)), false);
+        let mut origin = crate::origin::PoseOrigin { x: pivot(|p| p.x), y: pivot(|p| p.y), ..Default::default() };
+        if (0..2).any(|i| a.offset[i].is_some() || b.offset[i].is_some()) {
+            let offset = |i: usize| s.value(recs.map(|r| r.map(|x| x.origin.as_deref().and_then(|p| p.offset[i]).unwrap_or(0.0))), false);
+            origin.offset = [Some(offset(0)), Some(offset(1))];
+        }
+        out.origin = Some(Arc::new(origin));
+    }
     out.transparency = if auto {
         s.value(read(&|x| x.transparency), false).round()
     } else {
@@ -551,6 +596,23 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
             })
             .collect();
         out.bends = Some(bends.into());
+    }
+    // A figure with an animation origin tweens the angles of its original tree (`animationOriginLayout`
+    // or its retained support graph) rather than of its construction tree.
+    if let Some(origin) = fig.origin.as_deref() {
+        let key_object = |k: usize| s.seq.keys.get(k).and_then(|f| f.frame.object(o.uid)).filter(|x| x.figure == o.figure);
+        let sample = |read: &dyn Fn(&Object) -> f64, angular: bool| -> f64 {
+            let values = recs.map(|r| r.map(read));
+            if angular { s.angle(values, &|k| key_object(k).map(|x| read(x))) } else { s.value(values, false) }
+        };
+        match &origin.kind {
+            crate::origin::Kind::Layout(layout) => out.angles = crate::origin::tween_layout(fig, layout, &out, &sample).into(),
+            crate::origin::Kind::Support(support) => {
+                let first = o.angles.clone();
+                crate::origin::tween_support(fig, support, &first, &mut out, &sample);
+            }
+        }
+        return finish_colors(s, o, next, recs, auto, out);
     }
     let plan = &fig.plan;
     let mut angles: Vec<f64> = (0..n).map(|i| o.angles.get(i).copied().unwrap_or(fig.segments[i].angle)).collect();
@@ -585,6 +647,12 @@ fn tween_object(s: &Sampler, fig: &Figure, o: &Object, next: &Object, recs: &[Op
         done[i] = true;
     }
     out.angles = angles.into();
+    finish_colors(s, o, next, recs, auto, out)
+}
+
+/// The colour override of a tween, the last channel `tween_object` writes.
+fn finish_colors(s: &Sampler, o: &Object, next: &Object, recs: &[Option<&Object>; 4], auto: bool, mut out: Object) -> Object {
+    let t = s.t;
     out.color = color_tween(o.color, next.color, t);
     if auto {
         let mut color = 0u32;
@@ -645,7 +713,8 @@ impl Prepared {
         }
         let total_ticks = rows.last().map(|r| r.start + r.count).unwrap_or(0).max(1);
         let has_vfx = crate::vfx::has_own_vfx(&doc) || doc.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.prepared.has_vfx));
-        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new() };
+        let follow = crate::follow::Follow::new(&doc);
+        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow };
         prepared.presence = prepared.presence_index();
         prepared
     }
@@ -810,12 +879,37 @@ impl Prepared {
         let mut frame = self.evaluate_raw(tick, fractional);
         self.apply_movieclips(&mut frame, tick);
         apply_layer_order(&self.doc, &mut frame);
+        // Where the camera travels (`cameraTravelAt`, follow clips included) moves parallax
+        // layers; camera-motion impulses shake the finished shot on top of it. A movieclip's
+        // own frame is drawn with its instance's camera and parallax, never its own.
+        let travel = if fractional { frame.camera } else { self.travel(frame.camera, tick) };
+        if !fractional {
+            frame.parallax = crate::parallax::resolve(&self.doc, &frame, travel.as_ref());
+        }
         if !self.doc.camera_motion.is_empty() {
-            frame.camera = crate::camera::at_time(frame.camera, &self.doc.camera_motion, tick, self.doc.fps);
+            frame.camera = crate::camera::at_time(travel, &self.doc.camera_motion, tick, self.doc.fps);
         }
         if self.has_vfx {
             frame.vfx = crate::vfx::evaluate(&self.doc, &frame);
         }
+        frame
+    }
+
+    /// `cameraTravelAt`: where the camera is at `tick`, the authored `camera` moved by the
+    /// follow clips there.
+    pub fn travel(&self, camera: Option<Camera>, tick: f64) -> Option<Camera> {
+        match &self.follow {
+            Some(follow) => follow.travel(camera, tick),
+            None => camera,
+        }
+    }
+
+    /// The figures of the frame at `tick` and the authored camera: what a follow camera
+    /// samples (no effects, camera motion or parallax).
+    pub(crate) fn evaluate_figures(&self, tick: f64) -> Frame {
+        let mut frame = self.evaluate_raw(tick, false);
+        self.apply_movieclips(&mut frame, tick);
+        apply_layer_order(&self.doc, &mut frame);
         frame
     }
 
@@ -1149,6 +1243,7 @@ impl Prepared {
             background_color,
             pose_vfx,
             vfx: None,
+            parallax: None,
         }
     }
 }

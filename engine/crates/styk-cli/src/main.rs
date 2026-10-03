@@ -292,10 +292,16 @@ fn generators(path: &str, ticks: &[String]) -> i32 {
 
 /// A frame's draw list as the app's playback prepares it: its generated effects
 /// included (earlier-tick anchors evaluated without a cache), effects optionally off.
-fn encode_frame(p: &Prepared, assets: &styk_eval::assets::Assets, tick: f64, frame: &styk_eval::eval::Frame, scene: &styk_eval::geometry::Scene, no_effects: bool) -> styk_eval::drawlist::DrawList {
+fn encode_frame(p: &Prepared, assets: &styk_eval::assets::Assets, tick: f64, frame: &styk_eval::eval::Frame, scene: &styk_eval::geometry::Scene, no_effects: bool, camera: bool) -> styk_eval::drawlist::DrawList {
     use styk_eval::vfx::generated;
-    let batch = if no_effects { None } else { generated::build(p, frame, scene, Some(tick), Some(&generated::Evaluate), 1.0) };
-    let overrides = styk_eval::drawlist::Overrides { bypass_effects: no_effects, generators: batch.as_ref(), ..Default::default() };
+    let mut batch = if no_effects { None } else { generated::build(p, frame, scene, Some(tick), Some(&generated::Evaluate), 1.0) };
+    // Through the scene camera parallax layers move, and generated effects beside a figure with it.
+    let parallax = frame.parallax.as_ref().filter(|_| camera);
+    let translations = parallax.map(|p| p.translations(&[])).unwrap_or_default();
+    if let (Some(batch), Some(parallax), Some(layers)) = (batch.as_mut(), parallax, p.doc.layers.as_deref()) {
+        batch.offset(|uid| Some(parallax.of_uid(layers, uid)));
+    }
+    let overrides = styk_eval::drawlist::Overrides { translations: &translations, bypass_effects: no_effects, generators: batch.as_ref(), ..Default::default() };
     styk_eval::drawlist::encode_with(&p.doc, assets, scene, &overrides)
 }
 
@@ -452,7 +458,7 @@ fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     let started = Instant::now();
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = encode_frame(&p, &assets, tick, &frame, &scene, false);
+    let list = encode_frame(&p, &assets, tick, &frame, &scene, false, true);
     let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
     let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
@@ -530,9 +536,11 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     renderer.prepare_sprites(&assets);
     renderer.upload_images(&assets, &images);
     let started = Instant::now();
+    // --neutral: the editor's workspace (no scene camera in the view; the camera image sits on the camera rectangle).
+    let neutral = rest.iter().any(|a| a == "--neutral");
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, false));
+    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, false, !neutral));
     let encode_ms = started.elapsed().as_secs_f64() * 1000.0;
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);
     let zoom = option(rest, "--zoom").and_then(|z| z.parse::<f64>().ok()).unwrap_or_else(|| ((w as f64 - 40.0) / cw).min((h as f64 - 40.0) / ch));
@@ -541,8 +549,6 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
         .unwrap_or([cw / 2.0, ch / 2.0]);
     let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
-    // --neutral: the editor's workspace (no scene camera in the view; the camera image sits on the camera rectangle).
-    let neutral = rest.iter().any(|a| a == "--neutral");
     let matrix = camera_matrix(&p.doc, if neutral { None } else { scene.camera.as_ref() }, zoom, pan);
     let view = ViewParams {
         matrix,
@@ -556,7 +562,7 @@ fn render(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
     // --after T: the same renderer drew tick T first, as in the app, where resources outlive frames.
     if let Some(first) = option(rest, "--after").and_then(|t| t.parse::<f64>().ok()) {
         let earlier_frame = p.evaluate(first);
-        let earlier = std::sync::Arc::new(encode_frame(&p, &assets, first, &earlier_frame, &build(&p.doc, &earlier_frame), false));
+        let earlier = std::sync::Arc::new(encode_frame(&p, &assets, first, &earlier_frame, &build(&p.doc, &earlier_frame), false, !neutral));
         renderer.set_list(&earlier);
         let mut encoder = device.create_command_encoder(&Default::default());
         renderer.render(&mut encoder, &view, [w, h]);
@@ -650,7 +656,7 @@ fn gpubench(path: &str, tick: &str, no_effects: bool) -> i32 {
     let tick: f64 = tick.parse().unwrap_or(0.0);
     let frame = p.evaluate(tick);
     let scene = build(&p.doc, &frame);
-    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, no_effects));
+    let list = std::sync::Arc::new(encode_frame(&p, &assets, tick, &frame, &scene, no_effects, true));
     renderer.set_list(&list);
     let (w, h) = (1440u32, 900u32);
     let (cw, ch) = (p.doc.canvas[0] as f64, p.doc.canvas[1] as f64);

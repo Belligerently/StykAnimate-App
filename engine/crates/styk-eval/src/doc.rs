@@ -150,6 +150,9 @@ pub struct ImageAsset {
     pub anchor_angle: f64,
     /// Displayed size in figure units (decoded pixel size unless overridden).
     pub display_size: Option<[f64; 2]>,
+    /// The asset's own `width` and `height`, when it records them (a Stick Nodes
+    /// sprite is sized from them).
+    pub size: Option<[f64; 2]>,
     /// Index into `Document::images`.
     pub image: Option<u32>,
     /// Smooth sampling (authored drawings); Pivot sprites sample nearest.
@@ -242,6 +245,9 @@ pub struct Figure {
     pub movieclip: Option<Arc<Movieclip>>,
     /// `_styk.spatialMesh`, compiled against this figure's joints ([`crate::spatial`]).
     pub mesh: Option<Arc<crate::spatial::MeshPlan>>,
+    /// `_styk.animationOrigin`: the pivot and joint basis its animation keeps after Set
+    /// Origin re-rooted its construction ([`crate::origin`]).
+    pub origin: Option<Arc<crate::origin::Origin>>,
     /// The mesh palette as this figure draws it (an instance's `meshColors` replace entries).
     pub mesh_colors: Arc<[[u8; 3]]>,
     pub plan: FigurePlan,
@@ -268,10 +274,24 @@ pub struct Movieclip {
     /// `spatialMeshes`: one indexed mesh per local frame, drawn in place of the
     /// clip's own document ([`crate::spatial::ClipMesh`]).
     pub meshes: Option<Arc<[Arc<crate::spatial::ClipMesh>]>>,
+    /// `drawingSets`: named groups of single frames (forms), each a list of views'
+    /// frames ([`crate::geometry`]'s rotated drawings).
+    pub drawing_sets: Vec<Vec<f64>>,
+    /// `drawingRotation`: joined to a spatial bone, the clip shows the view its turn
+    /// and tilt select (`steps` directions at three tilts).
+    pub drawing_rotation: Option<DrawingRotation>,
     /// The clip's own timeline, prepared once.
     pub prepared: Arc<crate::eval::Prepared>,
     /// Evaluated local frames shared by every instance (bounded).
     pub cache: std::sync::Mutex<HashMap<u64, Arc<crate::geometry::Scene>>>,
+}
+
+/// `drawingRotation` of a movieclip (src/movieclip-drawings.mjs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawingRotation {
+    pub steps: u32,
+    /// The tilt past which the up or down views show, in radians.
+    pub tilt_threshold: f64,
 }
 
 impl std::fmt::Debug for Movieclip {
@@ -321,6 +341,24 @@ pub struct Object {
     pub vfx_connected: Option<Arc<[Arc<crate::vfx::Effect>]>>,
     /// Perspective and part proportions of a 3D pose (`_stykSpatial`).
     pub spatial: Option<Arc<SpatialPose>>,
+    /// `color_transition`: the object's colours part way between two overrides, in place
+    /// of its own override ([`crate::geometry::object_rgb`]).
+    pub color_transition: Option<Arc<ColorTransition>>,
+    /// `_sticknodesSprite`: how an imported Stick Nodes sprite stretches and pivots its
+    /// picture, applied to the figure the object resolves to ([`crate::sticknodes::sprite_figure`]).
+    pub sticknodes_sprite: Option<Arc<crate::sticknodes::Sprite>>,
+    /// `_stykAnimationOrigin`: where the animation pivot of a figure with an origin is.
+    pub origin: Option<Arc<crate::origin::PoseOrigin>>,
+}
+
+/// `color_transition` of a pose (`objectColor` in src/pivot/geometry.mjs): each colour is
+/// mixed with both overrides and taken `t` of the way from the first to the second.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorTransition {
+    /// ARGB overrides, as `color_override_raw`.
+    pub from: u32,
+    pub to: u32,
+    pub t: f64,
 }
 
 /// `_stykSpatial` (src/spatial-projection.mjs): what a pose adds to a spatial rig.
@@ -375,11 +413,14 @@ pub struct Camera {
     pub scale: f64,
     pub angle: f64,
     pub is_default: bool,
+    /// `_parallaxMotionOffset`: the screen impulse a camera-motion bake folded into
+    /// this camera, which parallax layers do not follow ([`crate::parallax`]).
+    pub motion_offset: Option<[f64; 2]>,
 }
 
 impl Default for Camera {
     fn default() -> Self {
-        Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: true }
+        Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: true, motion_offset: None }
     }
 }
 
@@ -506,6 +547,18 @@ pub struct Layers {
     pub hidden: Vec<String>,
     pub camera_visible: bool,
     pub scene_visible: bool,
+    /// The layers with parallax on (`byId[id].parallax.enabled`), in `order`.
+    pub parallax: Vec<(String, LayerParallax)>,
+}
+
+/// `byId[id].parallax` of a layer whose parallax is on (src/layer-parallax.mjs).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayerParallax {
+    /// How much of the camera's travel the layer follows on each axis (1 = all of it).
+    pub x: f64,
+    pub y: f64,
+    /// The camera position at which the layer sits where it was drawn.
+    pub reference: [f64; 2],
 }
 
 impl Layers {
@@ -539,6 +592,8 @@ pub struct Document {
     pub unsupported: Vec<String>,
     /// Non-fatal notes from loading.
     pub notes: Vec<String>,
+    /// A figure has an animation origin ([`crate::origin`]): native intervals correct roots.
+    pub origins: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -549,6 +604,8 @@ pub struct CameraMotionClip {
     pub enabled: bool,
     pub muted: Vec<(f64, f64)>,
     pub params: HashMap<String, f64>,
+    /// A follow clip's figures and their weights ([`crate::follow`]).
+    pub targets: Vec<(u32, f64)>,
 }
 
 impl Document {

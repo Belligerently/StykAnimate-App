@@ -98,6 +98,8 @@ fn with_figures(mut document: Document, change: &dyn Fn(&mut Figure)) -> Documen
                 source_start: clip.source_start,
                 pivot: clip.pivot,
                 meshes: clip.meshes.clone(),
+                drawing_sets: clip.drawing_sets.clone(),
+                drawing_rotation: clip.drawing_rotation,
                 prepared: Arc::new(styk_eval::eval::Prepared::new(nested.clone())),
                 document: nested,
                 cache: Default::default(),
@@ -146,6 +148,8 @@ fn without_meshes(document: Document) -> Document {
                 source_start: clip.source_start,
                 pivot: clip.pivot,
                 meshes: None,
+                drawing_sets: clip.drawing_sets.clone(),
+                drawing_rotation: clip.drawing_rotation,
                 prepared: clip.prepared.clone(),
                 document: clip.document.clone(),
                 cache: Default::default(),
@@ -170,17 +174,48 @@ fn has_surfaces(document: &Document) -> bool {
     document.figures.iter().any(|f| f.polyfills.iter().any(|p| p.surface.is_some()))
 }
 
+fn has_drawings(document: &Document) -> bool {
+    document.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.drawing_rotation.is_some()))
+}
+
+/// The document with no movieclip turning its drawings with a bone.
+fn without_drawings(document: Document) -> Document {
+    with_figures(document, &|figure| {
+        if let Some(clip) = &figure.movieclip
+            && clip.drawing_rotation.is_some()
+        {
+            figure.movieclip = Some(Arc::new(Movieclip {
+                duration: clip.duration,
+                source_start: clip.source_start,
+                pivot: clip.pivot,
+                meshes: clip.meshes.clone(),
+                drawing_sets: clip.drawing_sets.clone(),
+                drawing_rotation: None,
+                prepared: clip.prepared.clone(),
+                document: clip.document.clone(),
+                cache: Default::default(),
+            }));
+        }
+    })
+}
+
 fn has_poses(document: &Document) -> bool {
     document.keyframes.iter().chain(document.frame_sources.values()).any(|frame| frame.objects.iter().any(|o| o.spatial.is_some()))
 }
 
-/// A fixture that passed without its meshes, its surfaces or its 3D poses would prove nothing.
+/// A fixture that passed without its meshes, its surfaces, its rotated drawings or its 3D
+/// poses would prove nothing.
 #[test]
 fn fixtures_depend_on_their_features() {
-    let (mut meshes, mut surfaces, mut poses) = (0, 0, 0);
+    let (mut meshes, mut surfaces, mut poses, mut drawings) = (0, 0, 0, 0);
     for name in fixtures() {
         let document = open(&name);
-        assert!(has_meshes(&document) || has_surfaces(&document), "{name}: neither a mesh nor a surface");
+        assert!(has_meshes(&document) || has_surfaces(&document) || has_drawings(&document), "{name}: neither a mesh, a surface nor rotated drawings");
+        if has_drawings(&document) {
+            drawings += 1;
+            let report = compare(&name, without_drawings(open(&name)));
+            assert!(!report.matches(), "{name}: matches without its rotated drawings");
+        }
         if has_meshes(&document) {
             meshes += 1;
             let report = compare(&name, without_meshes(open(&name)));
@@ -197,7 +232,7 @@ fn fixtures_depend_on_their_features() {
             assert!(!report.matches(), "{name}: matches without its perspective and proportions");
         }
     }
-    assert!(meshes >= 10 && surfaces >= 3 && poses >= 5, "{meshes} fixtures with meshes, {surfaces} with surfaces, {poses} with 3D poses");
+    assert!(meshes >= 10 && surfaces >= 3 && poses >= 5 && drawings >= 1, "{meshes} fixtures with meshes, {surfaces} with surfaces, {poses} with 3D poses, {drawings} with rotated drawings");
 }
 
 /// The fixtures about one part of a mesh or a rig stop matching without that part.

@@ -296,7 +296,9 @@ impl Loader {
             unsupported: Vec::new(),
             notes: Vec::new(),
             figure_index: HashMap::new(),
+            origins: false,
         };
+        doc.origins = doc.figures.iter().any(|f| f.origin.is_some());
         doc.reindex_figures();
         self.resolve_styles(&mut doc);
         // Frames whose styled figures were resolved are cached resolved: the next read of an
@@ -418,11 +420,16 @@ impl Loader {
             Some(m) => self.movieclip(m)?,
             None => None,
         };
-        if styk.get("animationOrigin").is_some() {
-            unsupported.push("animation origins");
-        }
         let _ = version;
         let plan = plan_figure(&segments, &polyfills);
+        // The editor refuses a figure whose origin does not fit its segments; here it is left out and noted.
+        let origin = styk.get("animationOrigin").filter(|o| o.is_object()).and_then(|o| match crate::origin::compile(o, &segments) {
+            Ok(origin) => Some(Arc::new(origin)),
+            Err(reason) => {
+                self.notes.push(format!("figure {id}: {reason}"));
+                None
+            }
+        });
         // A mesh is compiled against the figure's joints once (`spatialMeshPlan`). The
         // editor rejects a file whose mesh is invalid; here it is left out and noted.
         let mesh = styk.get("spatialMesh").and_then(|mesh| match crate::spatial::MeshPlan::compile(mesh, &|id| plan.index_of.get(&id).copied()) {
@@ -446,6 +453,7 @@ impl Loader {
             movieclip,
             mesh,
             mesh_colors,
+            origin,
             plan,
             unsupported,
             base: None,
@@ -546,7 +554,11 @@ impl Loader {
             })
         });
         let image = if tiles.is_some() { None } else { self.image(a, &["data_url", "data_base64", "data_uri"]) };
-        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, image, smooth, tiles }
+        let size = match (num(a, "width"), num(a, "height")) {
+            (Some(w), Some(h)) => Some([w, h]),
+            _ => None,
+        };
+        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, size, image, smooth, tiles }
     }
 
     fn movieclip(&mut self, m: &Value) -> Result<Option<Arc<Movieclip>>, Error> {
@@ -560,14 +572,29 @@ impl Loader {
             }
             parsed.filter(|meshes| !meshes.is_empty()).map(Arc::from)
         });
-        if m.get("drawingRotation").is_some_and(Value::truthy) {
-            self.note("rotated drawings");
-        }
+        let drawing_sets: Vec<Vec<f64>> = m
+            .get("drawingSets")
+            .and_then(Value::as_arr)
+            .into_iter()
+            .flatten()
+            .map(|set| set.get("views").and_then(Value::as_arr).into_iter().flatten().map(|view| num(view, "frame").unwrap_or(f64::NAN)).collect())
+            .collect();
+        // `validateDrawingSets` refuses rotation without 3 × steps views per set; it is left out here.
+        let drawing_rotation = m.get("drawingRotation").filter(|r| r.is_object()).and_then(|r| {
+            let rotation = DrawingRotation { steps: num(r, "steps")? as u32, tilt_threshold: num(r, "tiltThreshold")? };
+            let fits = rotation.steps >= 2 && !drawing_sets.is_empty() && drawing_sets.iter().all(|views| views.len() == rotation.steps as usize * 3);
+            if !fits {
+                self.notes.push("a movieclip's rotating drawings do not have three views per direction".to_string());
+            }
+            fits.then_some(rotation)
+        });
         Ok(Some(Arc::new(Movieclip {
             duration: num(m, "duration").unwrap_or(1.0),
             source_start: num(m, "sourceStart").unwrap_or(0.0),
             pivot: point(m.get("pivot")).unwrap_or([0.0, 0.0]),
             meshes,
+            drawing_sets,
+            drawing_rotation,
             prepared: Arc::new(crate::eval::Prepared::new(document.clone())),
             document,
             cache: Default::default(),
@@ -582,10 +609,16 @@ impl Loader {
         let join = o.get("join").filter(|j| j.is_object()).and_then(|j| {
             Some(Join { slot: int(j, "target_object_slot")? as u32, handle: int(j, "target_handle_id").unwrap_or(0) as u32 })
         });
-        for (key, feature) in [("_stykAnimationOrigin", "animation origins"), ("_sticknodesSprite", "Stick Nodes sprites")] {
-            if o.get(key).is_some() {
-                self.note(feature);
+        // `validateSticknodesObject` refuses a sprite without a finite ratio and pivot; it is left out here.
+        let sticknodes_sprite = o.get("_sticknodesSprite").filter(|s| s.is_object()).and_then(|s| {
+            let sprite = crate::sticknodes::Sprite { ratio: num(s, "ratio")?, pivot: [num(s, "pivotX")?, num(s, "pivotY")?] };
+            if !sprite.ratio.is_finite() || !sprite.pivot.iter().all(|p| p.is_finite()) {
+                return None;
             }
+            Some(Arc::new(sprite))
+        });
+        if o.get("_sticknodesSprite").is_some() && sticknodes_sprite.is_none() {
+            self.notes.push(format!("object {uid}: a Stick Nodes sprite without a finite ratio and pivot is drawn unstretched"));
         }
         let movieclip = o.get("_stykMovieclip").filter(|v| v.is_object()).map(playback);
         Some(Object {
@@ -616,6 +649,11 @@ impl Loader {
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
             vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
             spatial: o.get("_stykSpatial").and_then(crate::spatial::parse_pose).map(Arc::new),
+            sticknodes_sprite,
+            origin: o.get("_stykAnimationOrigin").and_then(crate::origin::parse_pose).map(Arc::new),
+            color_transition: o.get("color_transition").filter(|c| c.is_object()).map(|c| {
+                Arc::new(ColorTransition { from: js_uint32(num(c, "from")), to: js_uint32(num(c, "to")), t: num(c, "t").unwrap_or(f64::NAN) })
+            }),
         })
     }
 
@@ -682,6 +720,7 @@ impl Loader {
             background_color: key.background_color,
             pose_vfx: key.vfx,
             vfx: None,
+            parallax: None,
         })
     }
 
@@ -699,6 +738,7 @@ impl Loader {
             scale: num(c, "scale").unwrap_or(1.0),
             angle: num(c, "angle_rad").unwrap_or(0.0),
             is_default: truthy(c.get("is_default")),
+            motion_offset: c.get("_parallaxMotionOffset").filter(|p| p.is_object()).map(|p| [num(p, "x").unwrap_or(0.0), num(p, "y").unwrap_or(0.0)]),
         });
         let styk = k.get("_styk");
         let mut frame = Keyframe {
@@ -796,7 +836,7 @@ impl Loader {
 }
 
 fn layers(l: &Value) -> Layers {
-    let order = l.get("order").and_then(Value::as_arr).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    let order: Vec<String> = l.get("order").and_then(Value::as_arr).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect();
     let mut assignments = HashMap::new();
     if let Some(Value::Obj(map)) = l.get("assignments") {
         for (uid, layer) in map.iter() {
@@ -814,6 +854,9 @@ fn layers(l: &Value) -> Layers {
         _ => vec![],
     };
     let fixed_visible = |id: &str| l.get("fixed").and_then(|f| f.get(id)).and_then(|v| v.get("visible")) != Some(&Value::Bool(false));
+    // `parallaxResolver`: the layers of `order` whose parallax is on. The editor refuses a
+    // file whose parallax is malformed (`validateParallax`); such a layer is left still here.
+    let parallax = order_parallax(l, &order);
     Layers {
         order,
         assignments,
@@ -821,7 +864,22 @@ fn layers(l: &Value) -> Layers {
         hidden,
         camera_visible: fixed_visible("camera"),
         scene_visible: fixed_visible("scene"),
+        parallax,
     }
+}
+
+fn order_parallax(l: &Value, order: &[String]) -> Vec<(String, LayerParallax)> {
+    order
+        .iter()
+        .filter_map(|id| {
+            let p = l.get("byId")?.get(id)?.get("parallax")?;
+            if !truthy(p.get("enabled")) {
+                return None;
+            }
+            let reference = p.get("reference")?;
+            Some((id.clone(), LayerParallax { x: num(p, "x")?, y: num(p, "y")?, reference: [num(reference, "x")?, num(reference, "y")?] }))
+        })
+        .collect()
 }
 
 fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
@@ -842,6 +900,13 @@ fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
             .filter_map(|r| Some((num(r, "start")?, num(r, "end")?)))
             .collect(),
         params,
+        targets: c
+            .get("targets")
+            .and_then(Value::as_arr)
+            .into_iter()
+            .flatten()
+            .filter_map(|t| Some((int(t, "uid")? as u32, num(t, "weight")?)))
+            .collect(),
     })
 }
 
@@ -903,18 +968,32 @@ fn source_unshared(source: &Value) -> bool {
 }
 
 impl Loader {
-    /// Gives a styled object the figure its style overlay resolves to, sharing
-    /// identical overlays. Returns whether the object changed.
+    /// Gives an object the figure it draws with: its style overlay resolved, then its
+    /// Stick Nodes sprite's stretch and pivot applied to the figure's pictures, sharing
+    /// identical results. Returns whether the object changed.
     fn styled_object(&mut self, base: &Arc<Figure>, object: &mut Arc<Object>) -> bool {
-        let Some(style) = object.style.clone() else { return false };
+        let (style, sprite) = (object.style.clone(), object.sticknodes_sprite.clone());
+        if style.is_none() && sprite.is_none() {
+            return false;
+        }
         if object.figure_override.as_ref().is_some_and(|resolved| resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base))) {
             return false;
         }
+        let mut key = style.as_ref().map_or_else(String::new, |style| style.key.clone());
+        if let Some(sprite) = &sprite {
+            key.push_str(&format!("\u{1}sprite {:x} {:x} {:x}", sprite.ratio.to_bits(), sprite.pivot[0].to_bits(), sprite.pivot[1].to_bits()));
+        }
         let resolved = self
             .styled
-            .entry((Arc::as_ptr(base) as usize, style.key.clone()))
+            .entry((Arc::as_ptr(base) as usize, key))
             .or_insert_with(|| {
-                let mut figure = crate::style::resolve(base, &style);
+                let mut figure = match &style {
+                    Some(style) => crate::style::resolve(base, style),
+                    None => (**base).clone(),
+                };
+                if let Some(sprite) = &sprite {
+                    crate::sticknodes::sprite_figure(&mut figure, sprite);
+                }
                 figure.base = Some(base.clone());
                 (base.clone(), Arc::new(figure))
             })
@@ -929,14 +1008,15 @@ impl Loader {
     fn resolve_styles(&mut self, doc: &mut Document) {
         let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
         let mut fix = |frame: &mut Arc<Keyframe>| {
-            // Only styled objects are looked up: most frames have none.
             let stale = |object: &Arc<Object>| {
-                object.style.is_some()
-                    && match (&object.figure_override, figures.get(&object.figure)) {
-                        (_, None) => false,
-                        (Some(resolved), Some(base)) => !resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
-                        (None, Some(_)) => true,
-                    }
+                if object.style.is_none() && object.sticknodes_sprite.is_none() {
+                    return false;
+                }
+                match (&object.figure_override, figures.get(&object.figure)) {
+                    (_, None) => false,
+                    (Some(resolved), Some(base)) => !resolved.base.as_ref().is_some_and(|b| Arc::ptr_eq(b, base)),
+                    (None, Some(_)) => true,
+                }
             };
             if !frame.objects.iter().any(stale) {
                 return;
@@ -954,6 +1034,14 @@ impl Loader {
         for k in doc.frame_sources.values_mut() {
             fix(k);
         }
+    }
+}
+
+/// `Number(value) >>> 0`: JavaScript's ToUint32 of a number (zero for none, NaN or infinity).
+fn js_uint32(value: Option<f64>) -> u32 {
+    match value {
+        Some(v) if v.is_finite() => v.trunc().rem_euclid(4294967296.0) as u32,
+        _ => 0,
     }
 }
 

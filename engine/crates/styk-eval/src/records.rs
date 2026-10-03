@@ -262,10 +262,6 @@ impl<'a> Records<'a> {
         let mut frame = a.as_obj().cloned().unwrap_or_default();
         frame.set("objects", Value::array(objects));
         if truthy(a.get("camera")) && truthy(b.get("camera")) {
-            let parallax = |f: &Value| truthy(f.path(&["camera", "_parallaxMotionOffset"]));
-            if parallax(&a) || parallax(&b) {
-                return unported("camera parallax offsets");
-            }
             let camera = typed.camera.unwrap_or_default();
             let mut record = Obj::new();
             record.set("is_default", Value::Bool(false));
@@ -273,6 +269,13 @@ impl<'a> Records<'a> {
             record.set("y", Value::Num(camera.y));
             record.set("scale", Value::Num(camera.scale));
             record.set("angle_rad", Value::Num(camera.angle));
+            // A baked camera-motion impulse tweens when either key has one.
+            if let Some([x, y]) = camera.motion_offset {
+                let mut offset = Obj::new();
+                offset.set("x", Value::Num(x));
+                offset.set("y", Value::Num(y));
+                record.set("_parallaxMotionOffset", Value::object(offset));
+            }
             frame.set("camera", Value::object(record));
         }
         frame.set("background_id", Value::Num(typed.background as f64));

@@ -9,7 +9,10 @@
 //
 //   node scripts/engine-app-parity.mjs [--file <project>] [--ticks 0,10,20] [--onion] [--play]
 //        [--target web|electron] [--renderer canvas|gpu] [--label <name>] [--url http://127.0.0.1:47831]
-//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4] [--no-effects] [--no-onion]
+//        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4] [--no-effects] [--no-onion] [--preview]
+//
+// --preview captures each tick again in the camera preview (Ctrl+Play): the scene seen
+// through its camera, with camera motion and parallax layers, as playback shows it.
 //
 // Without --file it uses the document the app starts with. The web target runs
 // headless Chromium, where the JavaScript renderer is its Canvas 2D fallback;
@@ -158,6 +161,16 @@ async function capture(browser, origin, engine) {
     }
   }
   await page.evaluate(() => styk.fit());
+  if (flag('--preview')) {
+    // The camera preview presents the prepared playback frame of the tick, or draws it through the camera.
+    const preview = () => page.evaluate(() => { if (!styk.state.previewing) document.querySelector('[data-action="play"]').dispatchEvent(new MouseEvent('click', {bubbles: true, ctrlKey: true})); return styk.state.previewing; });
+    for (const tick of list) {
+      await page.evaluate(tick => styk.editor.seek(tick), tick);
+      if (!await preview()) throw new Error('the camera preview did not start');
+      await shoot(`preview-${tick}`);
+    }
+    await page.evaluate(() => { if (styk.state.previewing) document.querySelector('[data-action="play"]').click(); });
+  }
   if (flag('--onion')) {
     await page.evaluate(async () => { if (!styk.state.onion) await styk.actions['toggle-onion'](); });
     for (const tick of list) {

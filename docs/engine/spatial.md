@@ -34,10 +34,12 @@ the JavaScript editor is the oracle while both exist
   Drawables gain `ItemKind::Mesh` (a painter-order bucket of a mesh's faces:
   `Item::mesh`, `Item::faces`), and a polygon that is a depth-tested surface carries
   one depth per point (`Item::depth`). `Item::depth_surface` is `depthSurface`.
-- `Document::unsupported` no longer names 3D; it names `rotated drawings` (a
-  movieclip whose drawings a spatial bone turns, `drawingRotation`), which the engine
-  does not evaluate. The interface's gate (`src/engine/engine-eligibility.mjs`)
-  refuses those documents and no other 3D.
+- `Document::unsupported` names no 3D feature, and the interface's gate
+  (`src/engine/engine-eligibility.mjs`) refuses no 3D document: drawings a spatial bone
+  turns (`drawingRotation`) are evaluated too (step 6 below). `Movieclip::drawing_sets`
+  and `Movieclip::drawing_rotation` hold a clip's forms and their rotation;
+  `ObjectSpatial` keeps each joint's authored angle and a bone's start before perspective
+  (`start.rawPoint`) for them.
 
 ## Evaluation (`styk_eval::spatial`, `rig.rs`, `geometry.rs`)
 
@@ -80,7 +82,17 @@ decided by a tolerance of 2e-7 relative to the face, so the last bits matter.
    weights); otherwise placed flat by the instance's angle, scale and reflection. The
    form is `floor(local time)` clamped to the clip's forms. Faces are kept by their
    outward winding and clipped like surfaces.
-6. **Records** (`records.rs`): a tween of `_stykSpatial` is written as
+6. **Rotated drawings** (`geometry::rotated_drawing`, `rotatedDrawing`,
+   `drawingRotationReference`, `buildMovieclipGeometrySteps`): a movieclip joined to a
+   spatial bone shows the single frame its bone selects in the instance's form
+   (`drawingSelection`: the set holding the instance's frame): the bone's rotation as bend,
+   turn and pitch on the Euler branch nearest the native angles of its turn and tilt
+   controls up the chain (`rig::quaternion_pose`, `quaternionPose`), the turn rounded to one
+   of `steps` directions and the pitch past the tilt threshold choosing the up or down
+   views. The instance is placed at the bone's start, turned by the bend (reflected with its
+   parent) and the figure's rotation, scaled by the bone's stretch and, in perspective, by
+   its depth (`1 / max(.05, 1 - k z)`), all with V8's trigonometry (`styk-math`).
+7. **Records** (`records.rs`): a tween of `_stykSpatial` is written as
    `interpolateSpatialPose`'s record (camera, then proportions in ascending handle
    order), from the typed tween.
 
@@ -146,7 +158,7 @@ their size, colours, bounds and depth ranges):
 | All 183 `.stkz` figures and `.stykmov` clips of `AssetReleases/` | 183 | 4,627 | 7,608 | 0 |
 | `15-Guns-Pivot-3D.styk` (every tick) | 6 | 169 | 1,958 | 0 |
 
-**Fixtures** (`engine/tools/spatial-fixtures.mjs`, `tests/spatial.rs`): 13 projects built
+**Fixtures** (`engine/tools/spatial-fixtures.mjs`, `tests/spatial.rs`): 14 projects built
 with the editor's commands (meshes authored as the asset builders author them and
 converted by the editor's own converter): native skin surfaces, surfaces under
 perspective and clipped at the near plane, the Box solid's one-sided faces, skinned
@@ -154,7 +166,9 @@ and blended meshes, proportions, perspective and near clipping, eight-view verti
 splitting by other primitives, mirrored and recoloured instances, mechanical joints
 and a hidden expression, a mesh on a layer sheet, a mesh inside a movieclip, attached
 clip meshes (bone-owned with views and turns, near-clipped; flat, mirrored,
-recoloured, translucent). Every fixture matches; each stops matching without its
+recoloured, translucent), drawings a head bone turns (two forms of eight directions at
+three tilts, a form picked with the drawing control, mirrored, in perspective). Every
+fixture matches; each stops matching without its
 meshes, its surfaces or its 3D poses, and without the part it is about (view
 targets, blended vertices, the depth-order offset, splitting primitives, instance
 palettes, reflection, mechanical joints, the hidden expression, depth guides); three
@@ -255,9 +269,6 @@ of it the multisampled depth buffer of the layer pages); none without 3D.
 
 ## Open
 
-- **Rotated drawings** (`drawingRotation`: a movieclip whose drawings a spatial bone
-  turns) are not evaluated; their documents keep the JavaScript renderer (none in the
-  corpus or the catalogue).
 - The web target's JavaScript renderer is the Canvas 2D fallback, which draws depth
   runs through a WebGL 2 compositor at the context's scale with a resampled tile grid;
   the engine draws them like WebGPU devices there.
