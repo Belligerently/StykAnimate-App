@@ -160,13 +160,13 @@ src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
 src/editor-range-commands.mjs	engine	styk-edit	js	commands and history
 src/editor-ranges.mjs	engine	styk-edit	js	commands and history
-src/editor-rig-constraints.mjs	engine	styk-edit	js	commands and history
+src/editor-rig-constraints.mjs	engine	styk-edit	partial	Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS
 src/editor-rig.mjs	engine	styk-edit	js	commands and history
 src/editor-scene.mjs	engine	styk-edit	js	commands and history
 src/editor-selection.mjs	engine	styk-edit	js	commands and history
 src/editor-sessions.mjs	engine	styk-edit	js	commands and history
 src/editor-spatial-shape.mjs	engine	styk-edit	js	commands and history
-src/editor-spatial.mjs	engine	styk-edit	js	commands and history
+src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs); setSpatialFeetPinned and joined 3D IK targets still JS
 src/editor-sprite-segment.mjs	engine	styk-edit	js	commands and history
 src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
@@ -363,7 +363,7 @@ src/rig-controls.mjs	ui	-	stays
 src/rig-examples-3d.mjs	engine	styk-edit	js	
 src/rig-examples.mjs	engine	styk-edit	js	
 src/rig-mechanism-examples.mjs	engine	styk-edit	js	
-src/rig-pose-choices.mjs	engine	styk-eval::spatial	partial	Rust: hidden pose choices in evaluation; the choice interface still JS
+src/rig-pose-choices.mjs	engine	styk-eval::spatial	partial	Rust: hidden pose choices in evaluation; poseChoiceGroups and applyChannelPoseChoice for setPoseChoice (styk-edit/src/pose_choice.rs); the 3D panel's reading of groups and validation still JS
 src/rig-solids.mjs	engine	styk-edit	js	
 src/rig-spatial.mjs	engine	styk-eval::spatial	partial	Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS
 src/rig-test-ui.mjs	ui	-	stays	
@@ -501,15 +501,15 @@ src/vfx-clip-timeline.mjs	ui	-	stays
 src/vfx-clips.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validation of edits still JS
 src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
 src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
-src/vfx-generator-anchors.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	js	
-src/vfx-generator-atlas.mjs	engine	styk-render::generators	js	
-src/vfx-generator-canvas.mjs	engine	styk-render::generators	js	
-src/vfx-generator-frame.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-gpu.mjs	engine	styk-render::generators	js	
-src/vfx-generator-layers.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generator-styles.mjs	engine	styk-eval::generators	js	particle simulation and looks
-src/vfx-generators.mjs	engine	styk-eval::generators	js	particle simulation and looks
+src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-atlas.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-canvas.mjs	engine	styk-render::generators	partial	Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it
+src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-gpu.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-layers.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-styles.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generators.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
 src/vfx-gizmos.mjs	ui	-	stays	
 src/vfx-gpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer
 src/vfx-icons.mjs	ui	-	stays	

@@ -132,6 +132,12 @@ fn chord(skeleton: &Skeleton, pose: &Pose, i: usize, lengths: Option<&[f64]>) ->
 /// skeleton. Disjoint chains may share a base; of overlapping chains the one
 /// nearer the root (then the lower handle) wins and the other reports a conflict.
 pub fn solve_object(skeleton: &Skeleton, pose: &Pose, root: [f64; 2], controllers: &Table) -> Option<Solution> {
+    solve_object_with(skeleton, pose, root, controllers, true)
+}
+
+/// [`solve_object`] with `followTargetOrientation`: when false, the outgoing branches keep
+/// their own angles instead of the target's orientation (a 3D target posed while unpinned).
+pub fn solve_object_with(skeleton: &Skeleton, pose: &Pose, root: [f64; 2], controllers: &Table, follow: bool) -> Option<Solution> {
     let segments = skeleton.segments;
     let mut active: Vec<(u32, &Controller)> =
         controllers.controllers.iter().filter(|(id, c)| c.active() && skeleton.index(**id).is_some()).map(|(id, c)| (*id, c)).collect();
@@ -299,8 +305,8 @@ pub fn solve_object(skeleton: &Skeleton, pose: &Pose, root: [f64; 2], controller
         }
         // Only the next articulated group follows the target. Construction artwork
         // attached to the constrained bone keeps inheriting its solved rotation.
-        let followers = skeleton.followers(pose.angles, id, c);
-        let attachments = skeleton.attachments(pose.angles, id, c, &followers);
+        let followers = if follow { skeleton.followers(pose.angles, id, c) } else { HashMap::new() };
+        let attachments = if follow { skeleton.attachments(pose.angles, id, c, &followers) } else { HashMap::new() };
         let chain_set: HashSet<usize> = chain.iter().copied().collect();
         let mut affected: Vec<usize> = chain.clone();
         let mut visited: HashSet<usize> = chain_set.clone();
@@ -332,7 +338,7 @@ pub fn solve_object(skeleton: &Skeleton, pose: &Pose, root: [f64; 2], controller
             q += 1;
         }
         if let Some(rig) = &rig {
-            for (&child, q) in c.spatial_followers.iter().flatten() {
+            for (&child, q) in c.spatial_followers.iter().flatten().filter(|_| follow) {
                 let Some(i) = skeleton.index(child).filter(|&i| spatial_bone(&segments[i])) else { continue };
                 let mut descendants: Vec<usize> = Vec::new();
                 let mut queue: Vec<usize> = skeleton.children(i).iter().map(|&k| k as usize).collect();

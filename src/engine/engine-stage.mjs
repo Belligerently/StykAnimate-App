@@ -213,6 +213,9 @@ export async function createStageRenderer(canvas, options, create) {
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
       Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
     Object.assign(side.stats, {frames: side.stats.frames + 1, lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
+    // Generated effects whose trails are still being sampled refine on the next frame, as
+    // the JavaScript renderer's incomplete batches do (6 ms of sampling a frame).
+    if (side.stage.refining()) queueMicrotask(() => options.onInvalidate?.());
     return drawn;
   };
 

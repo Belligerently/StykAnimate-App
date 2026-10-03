@@ -10,6 +10,8 @@
 //! one nesting depth into an atlas in a single pass, then composites each with
 //! a `COMPOSITE` record at its place in the parent's painter order.
 
+mod generators;
+
 use std::f64::consts::PI;
 use std::sync::Arc;
 
@@ -21,7 +23,7 @@ use crate::vfx::{Effect, FrameVfx, ObjectVfx};
 
 pub use styk_draw::{
     argb8, CameraPose, EffectLayer, Effects, LayerKind, NO_LAYER, rgba8, sample_paint, window_depth, DrawList, Group, Pass, Prim, SharedDrawList, F_CLOSED, F_DEPTH, F_DRAWING, F_RING_FILL, F_SMOOTH, F_TINT, K_ARC, K_BG_IMAGE, K_BOX, K_CAPSULE,
-    K_COMPOSITE, K_DEPTH_RESET, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING,
+    K_COMPOSITE, K_DEPTH_RESET, K_DISC, K_FILL_VIEW, K_IMAGE, K_POLYLINE, K_RING, K_TRI, NO_PAINT, P_ANGULAR, P_DIAMOND, P_LINEAR, P_RADIAL, P_RADIAL_RING, K_PARTICLE, K_BEAM, F_ADD,
 };
 
 /// A local primitive list with world bounds, before groups are assigned.
@@ -701,6 +703,9 @@ pub struct Overrides<'a> {
     pub background: Option<u32>,
     /// Draw without effects (the editor's effects preview is off).
     pub bypass_effects: bool,
+    /// The frame's generated effects ([`crate::vfx::generated::build`]), drawn beside
+    /// their targets (not in onion skins), unless effects are bypassed.
+    pub generators: Option<&'a crate::vfx::generated::Batch>,
 }
 
 impl Out {
@@ -1049,7 +1054,7 @@ struct Open {
 /// Places the runs `range` of an encoded scene under `base` (the root, a ghost's
 /// group or the camera image), opening and closing the groups of movieclip
 /// owners and connected effect groups along the way.
-fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize), base: usize, hidden: &[bool]) {
+fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize), base: usize, hidden: &[bool], mut walker: Option<&mut generators::Walker<'_>>) {
     let mut members = Memberships::default();
     let steps: Vec<Vec<Step<'_>>> = (range.0..range.1).map(|k| path(scene, &mut members, &scene.items[encoded.runs[k].0], hidden, encoded.fx)).collect();
     let steps_of = |k: usize| &steps[k - range.0];
@@ -1113,6 +1118,28 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
         };
         b.measure(open.target, rounded(with), rounded(domain), largest);
     };
+    // The identity of each of the editor's layout entries that a run begins: generated
+    // effects are placed between entries (`scheduleWalker`). An entry is one object, a
+    // movieclip container's runs, or a connected run, which the editor draws as its root's
+    // when the root is in it and as its first part's otherwise (`connectedVfxGeometry`).
+    let slot_uid = |k: usize| scene.objects.get(scene.items[encoded.runs[k].0].slot as usize).map_or(u32::MAX, |o| o.uid);
+    let entry_uid = |k: usize| -> Option<u32> {
+        let first = steps_of(k).first().map(|s| s.level);
+        if k > range.0 && first.is_some() && steps_of(k - 1).first().map(|s| s.level) == first {
+            return None;
+        }
+        match first {
+            Some(Level::Connected { clip: TOP, root }) => {
+                let mut end = k + 1;
+                while end < range.1 && steps_of(end).first().map(|s| s.level) == first {
+                    end += 1;
+                }
+                let has_root = (k..end).any(|j| scene.items[encoded.runs[j].0].slot == root);
+                Some(if has_root { scene.objects.get(root as usize).map_or(u32::MAX, |o| o.uid) } else { slot_uid(k) })
+            }
+            _ => Some(slot_uid(k)),
+        }
+    };
     let mut stack: Vec<Open> = Vec::new();
     for k in range.0..range.1 {
         let path = steps_of(k);
@@ -1123,6 +1150,11 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
                 measure(b, &open, k);
             }
             b.close(open.target, open.opacity, open.isolated);
+        }
+        if let Some(walker) = walker.as_deref_mut()
+            && let Some(uid) = entry_uid(k)
+        {
+            walker.object(b, base, uid);
         }
         for (index, s) in path.iter().enumerate().skip(common) {
             let parent = stack.last().map(|o| o.target).unwrap_or(base);
@@ -1182,6 +1214,15 @@ pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides
     let bypass = overrides.bypass_effects;
     let current = encode_scene(assets, scene, overrides.hidden, overrides.translations, None, bypass);
     let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| encode_scene(assets, ghost.scene, ghost.hidden, &[], ghost.tint, bypass)).collect();
+    // Generated effects: each draw encoded once, placed in the frame and in the camera image.
+    let batch = overrides.generators.filter(|_| !bypass);
+    let (generator_outs, materials) = batch.map(generators::encode).unwrap_or_default();
+    let hidden_uids: std::collections::HashSet<u32> = match batch {
+        Some(_) => overrides.hidden.iter().enumerate().filter(|&(_, &h)| h).filter_map(|(slot, _)| scene.objects.get(slot).map(|o| o.uid)).collect(),
+        None => Default::default(),
+    };
+    let walker = |outs| batch.map(|batch| generators::Walker::new(batch, outs, &hidden_uids)).filter(|w| !w.is_empty());
+    let mut frame_walker = walker(&generator_outs);
     let mut b = Builder::new();
     let mut root = Out::new();
     background(doc, assets, scene, overrides.background, &mut root);
@@ -1191,15 +1232,15 @@ pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides
     let whole = (0, current.runs.len());
     let mut deferred: Vec<(u32, u32)> = Vec::new();
     match order {
-        None => place(&mut b, scene, &current, whole, 0, overrides.hidden),
+        None => place(&mut b, scene, &current, whole, 0, overrides.hidden, frame_walker.as_mut()),
         Some(order) => {
             // The ghost whose group is open, and that group.
             let mut open: Option<(u32, usize)> = None;
             // Consecutive steps of the current frame are placed together (a connected run spans them).
             let mut pending: Option<(usize, usize)> = None;
-            let flush = |b: &mut Builder, pending: &mut Option<(usize, usize)>| {
+            let flush = |b: &mut Builder, pending: &mut Option<(usize, usize)>, walker: Option<&mut generators::Walker<'_>>| {
                 if let Some(range) = pending.take() {
-                    place(b, scene, &current, range, 0, overrides.hidden);
+                    place(b, scene, &current, range, 0, overrides.hidden, walker);
                 }
             };
             for layer in order {
@@ -1210,7 +1251,7 @@ pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides
                             match &mut pending {
                                 Some((_, end)) if *end == range.0 => *end = range.1,
                                 _ => {
-                                    flush(&mut b, &mut pending);
+                                    flush(&mut b, &mut pending, frame_walker.as_mut());
                                     pending = Some(range);
                                 }
                             }
@@ -1221,21 +1262,32 @@ pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides
                             deferred.push((ghost, slot));
                             continue;
                         }
-                        flush(&mut b, &mut pending);
+                        flush(&mut b, &mut pending, frame_walker.as_mut());
                         place_ghost(&mut b, &mut open, ghosts, &ghost_scenes, ghost, slot);
                     }
                 }
             }
-            flush(&mut b, &mut pending);
+            flush(&mut b, &mut pending, frame_walker.as_mut());
             close_ghost(&mut b, &mut open, ghosts);
         }
+    }
+    if let Some(walker) = &mut frame_walker {
+        walker.end(&mut b, 0);
     }
     if let Some(stack) = camera_stack {
         let camera = b.open_layer(0, 1.0, stack.clone(), LayerKind::Camera { canvas: doc.canvas, camera: scene_camera(doc, scene) });
         let mut fill = Out::new();
         background(doc, assets, scene, None, &mut fill);
         b.add(camera, fill);
-        place(&mut b, scene, &current, whole, camera, overrides.hidden);
+        // The camera image draws the generated effects again, from the start (`CameraVfx`).
+        let mut camera_walker = walker(&generator_outs);
+        if let Some(walker) = &mut camera_walker {
+            walker.begin(&mut b, camera);
+        }
+        place(&mut b, scene, &current, whole, camera, overrides.hidden, camera_walker.as_mut());
+        if let Some(walker) = &mut camera_walker {
+            walker.end(&mut b, camera);
+        }
         b.close(camera, 1.0, true);
         let mut open: Option<(u32, usize)> = None;
         for &(ghost, slot) in &deferred {
@@ -1244,7 +1296,7 @@ pub fn encode_composed(doc: &Document, assets: &Assets, scene: &Scene, overrides
         close_ghost(&mut b, &mut open, ghosts);
     }
     let (prims, paints, points, groups, passes, layers) = b.finish();
-    DrawList { prims, paints, points, groups, passes, background_prims, layers }
+    DrawList { prims, paints, points, groups, passes, background_prims, layers, materials }
 }
 
 fn close_ghost(b: &mut Builder, open: &mut Option<(u32, usize)>, ghosts: &[Ghost<'_>]) {
@@ -1264,7 +1316,7 @@ fn place_ghost(b: &mut Builder, open: &mut Option<(u32, usize)>, ghosts: &[Ghost
         close_ghost(b, open, ghosts);
         *open = Some((ghost, b.open(0, source.opacity)));
     }
-    place(b, source.scene, &scenes[ghost as usize], range, open.expect("opened above").1, source.hidden);
+    place(b, source.scene, &scenes[ghost as usize], range, open.expect("opened above").1, source.hidden, None);
 }
 
 /// Collects prims per isolation group, then orders them deepest first.

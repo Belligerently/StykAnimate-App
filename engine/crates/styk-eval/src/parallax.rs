@@ -25,9 +25,21 @@ use crate::eval::Frame;
 pub struct Parallax {
     /// World-space offset of each object, by slot.
     pub slots: Vec<[f64; 2]>,
+    /// The offset of each layer whose parallax is on.
+    layers: Vec<(String, [f64; 2])>,
+    /// The uid at the root of each joined object's chain, by the object's uid.
+    roots: HashMap<u32, u32>,
 }
 
 impl Parallax {
+    /// The offset of the object `uid` (`parallax(uid)`): the layer of its join chain's root
+    /// in this frame, or its own layer when it is not in the frame (generated effects look
+    /// their targets up by identity).
+    pub fn of_uid(&self, layers: &crate::doc::Layers, uid: u32) -> [f64; 2] {
+        let layer = layers.layer_of(self.roots.get(&uid).copied().unwrap_or(uid));
+        self.layers.iter().find(|(id, _)| id == layer).map_or([0.0, 0.0], |&(_, d)| d)
+    }
+
     /// `drag` (the session's per-slot translations) with every object's parallax
     /// offset added, as one translation per moved slot.
     pub fn translations(&self, drag: &[(u32, [f64; 2])]) -> Vec<(u32, [f64; 2])> {
@@ -72,7 +84,8 @@ pub fn resolve(doc: &Document, frame: &Frame, travel: Option<&Camera>) -> Option
             offsets.iter().find(|(id, _)| *id == layer).map_or([0.0, 0.0], |&(_, d)| d)
         })
         .collect();
-    Some(Arc::new(Parallax { slots }))
+    let layers = offsets.into_iter().map(|(id, d)| (id.to_string(), d)).collect();
+    Some(Arc::new(Parallax { slots, layers, roots }))
 }
 
 /// The uid at the root of each joined object's chain, by the joined object's uid.

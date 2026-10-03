@@ -15,6 +15,7 @@
 //! interface thread may not wait on a lock, so every shared structure is taken
 //! with [`sync::Shared::lock`], which spins for the few instructions a holder needs.
 
+pub mod anchors;
 pub mod edit;
 mod frames;
 mod images;
@@ -70,6 +71,9 @@ pub struct Generation {
     pub prepared: Arc<Prepared>,
     pub assets: Arc<Assets>,
     pub open_ms: f64,
+    /// Where generated effects' targets were on earlier ticks, kept across frames;
+    /// `None` for a document without generated effects (set by [`Engine::publish`]).
+    pub anchors: Option<Arc<anchors::Anchors>>,
 }
 
 impl Generation {
@@ -164,7 +168,7 @@ impl Engine {
         let lineage = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
         let doc = prepared.doc.clone();
         let ticks = prepared.total_ticks;
-        let id = self.publish(Generation { id: 0, lineage, revision: 0, prepared, assets, open_ms });
+        let id = self.publish(Generation { id: 0, lineage, revision: 0, prepared, assets, open_ms, anchors: None });
         Ok(Opened {
             generation: id,
             name: doc.name.clone(),
@@ -185,6 +189,10 @@ impl Engine {
     pub(crate) fn publish(&self, mut generation: Generation) -> u64 {
         let id = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
         generation.id = id;
+        let generators = styk_eval::vfx::generated::has_generators(&generation.prepared.doc);
+        if generators {
+            generation.anchors = Some(Arc::new(anchors::Anchors::new()));
+        }
         let generation = Arc::new(generation);
         let image_count = generation.prepared.doc.images.len();
         {
@@ -209,6 +217,17 @@ impl Engine {
             for cel in cels {
                 let generation = generation.clone();
                 state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel)));
+            }
+            // Generated effects: their particle materials are generated in the background, once
+            // per process, so the interface thread finds them ready when it first draws one.
+            if generators {
+                for row in 0..styk_eval::vfx::generated::atlas::ROWS {
+                    if styk_eval::vfx::generated::atlas::ready(row).is_none() {
+                        state.tasks.push_back(Box::new(move |_: &Engine| {
+                            styk_eval::vfx::generated::atlas::row(row);
+                        }));
+                    }
+                }
             }
             state.current = Some(generation);
         }

@@ -191,6 +191,10 @@ impl Bounds {
 pub struct RigJoint {
     pub space: Option<crate::rig::Space>,
     pub connector: bool,
+    /// The joint as the rig evaluated it, drawn or not: angle, bend and scaled length.
+    pub angle: f64,
+    pub bend: f64,
+    pub length: f64,
 }
 
 /// The 3D side of an evaluated figure: what surfaces, meshes and attached
@@ -723,7 +727,17 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let _ = doc;
     let spatial = has_spatial.then(|| Arc::new(ObjectSpatial { frames, depths, figure_angle, mirror: obj.image_text_flags, camera, authored, start_raws }));
     let rig = rig_plan.is_some().then(|| {
-        rig_states.iter().zip(&fig.segments).map(|(state, seg)| RigJoint { space: state.and_then(|s| s.space), connector: seg.rig.as_ref().is_some_and(|r| r.connector.is_some()) }).collect()
+        rig_states
+            .iter()
+            .zip(&fig.segments)
+            .map(|(state, seg)| RigJoint {
+                space: state.and_then(|s| s.space),
+                connector: seg.rig.as_ref().is_some_and(|r| r.connector.is_some()),
+                angle: state.map_or(f64::NAN, |s| s.angle),
+                bend: state.map_or(f64::NAN, |s| s.bend),
+                length: state.map_or(f64::NAN, |s| s.length),
+            })
+            .collect()
     });
     let extent = bounds.extent();
     let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig, extent });
@@ -822,7 +836,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
 }
 
 /// The clip's own scene at a local time, shared by every instance.
-fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
+pub fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
     let key = local.to_bits();
     if let Some(s) = clip.cache.lock().unwrap().get(&key) {
         return s.clone();

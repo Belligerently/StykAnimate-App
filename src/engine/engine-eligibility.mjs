@@ -10,17 +10,10 @@
  * only looks at the records an edit names.
  */
 
-import {isGeneratorType} from '../vfx-registry.mjs';
-
-/** The first effect type of an effects timeline the engine does not draw: generated
- * effects (particles, aura, beams, smoke, explosions) stay with the JavaScript renderer. */
-function clipReason(clips) {
-  for (const clip of clips ?? []) for (const effect of clip.effects ?? []) if (isGeneratorType(effect.type)) return `generated effects (${effect.type})`;
-  return null;
-}
-
-/** 3D meshes, one-sided surfaces, attached movieclip meshes and drawings a spatial
- * bone turns are drawn (docs/engine/spatial.md); a movieclip's own document is read. */
+/** Every effect of an effects timeline is drawn, generated effects included
+ * (docs/engine/vfx.md), and so are 3D meshes, one-sided surfaces, attached movieclip
+ * meshes and drawings a spatial bone turns (docs/engine/spatial.md); a movieclip's own
+ * document is read. */
 function figureReason(figure, depth) {
   const styk = figure._styk;
   if (styk?.movieclip?.document) return depth > 16 ? 'deeply nested movieclips' : documentReason(styk.movieclip.document, depth + 1);
@@ -30,8 +23,6 @@ function figureReason(figure, depth) {
 function metadataReason(report) {
   const styk = report._styk;
   if (!styk) return null;
-  const generated = clipReason(styk.vfxClips?.clips);
-  if (generated) return generated;
   if (styk.animation?.channels?.length || styk.layerSheet?.legacyAnimation) return 'property channels';
   if (styk.simpleFrameDraft) return 'a frame draft';
   return null;

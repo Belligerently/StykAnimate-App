@@ -51,6 +51,11 @@ impl Editor {
             changed: false,
             detached: HashMap::new(),
             rotation_targets: HashMap::new(),
+            spatial_gestures: HashMap::new(),
+            spatial_kinds: HashMap::new(),
+            ik_captures: HashMap::new(),
+            spatial_ik_captures: HashMap::new(),
+            ik_resume: HashMap::new(),
             authored: false,
         });
         Ok(true)

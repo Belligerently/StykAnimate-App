@@ -24,6 +24,13 @@ struct Work {
 struct DepthRuns {
     flat: wgpu::RenderPipeline,
     faces: wgpu::RenderPipeline,
+    flat_add: wgpu::RenderPipeline,
+    ranges: Vec<(u32, u32)>,
+}
+
+/// Where the list's prims add light (styk-draw `F_ADD`) and the additive pipeline.
+struct Additive {
+    pipeline: wgpu::RenderPipeline,
     ranges: Vec<(u32, u32)>,
 }
 
@@ -40,11 +47,32 @@ fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAtt
     wgpu::RenderPassDepthStencilAttachment { view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }
 }
 
-/// Draws prims `range` of the list in one instanced draw, split where depth-tested faces
-/// need the depth pipeline (`depth`: the flat and faces pipelines of a pass with a depth
-/// buffer, and the list's face ranges).
-fn draw_prims(pass: &mut wgpu::RenderPass<'_>, base: &wgpu::RenderPipeline, depth: Option<&DepthRuns>, range: std::ops::Range<u32>) {
-    let Some(DepthRuns { flat, faces, ranges }) = depth else {
+/// Draws prims `range` of the list in one instanced draw, split where generated effects
+/// add light (`additive`) and where depth-tested faces need the depth pipeline (`depth`:
+/// the flat and faces pipelines of a pass with a depth buffer, and the list's face ranges).
+fn draw_prims(pass: &mut wgpu::RenderPass<'_>, base: &wgpu::RenderPipeline, additive: Option<&Additive>, depth: Option<&DepthRuns>, range: std::ops::Range<u32>) {
+    let Some(add) = additive else { return draw_painted(pass, base, depth, range) };
+    let mut at = range.start;
+    let first = add.ranges.partition_point(|&(_, end)| end <= range.start);
+    for &(start, end) in &add.ranges[first..] {
+        if start >= range.end {
+            break;
+        }
+        if start > at {
+            draw_painted(pass, base, depth, at..start);
+        }
+        pass.set_pipeline(depth.map_or(&add.pipeline, |d| &d.flat_add));
+        pass.draw(0..6, start.max(at)..end.min(range.end));
+        at = end.min(range.end);
+    }
+    if range.end > at {
+        draw_painted(pass, base, depth, at..range.end);
+    }
+}
+
+/// [`draw_prims`] for prims blended over the target.
+fn draw_painted(pass: &mut wgpu::RenderPass<'_>, base: &wgpu::RenderPipeline, depth: Option<&DepthRuns>, range: std::ops::Range<u32>) {
+    let Some(DepthRuns { flat, faces, ranges, .. }) = depth else {
         pass.set_pipeline(base);
         pass.draw(0..6, range);
         return;
@@ -284,8 +312,9 @@ impl Renderer {
         let depth_runs = (!self.depth_faces.is_empty()).then(|| {
             let ranges = self.depth_faces.clone();
             let pipelines = self.depth_pipelines();
-            DepthRuns { flat: pipelines.flat.clone(), faces: pipelines.faces.clone(), ranges }
+            DepthRuns { flat: pipelines.flat.clone(), faces: pipelines.faces.clone(), flat_add: pipelines.flat_add.clone(), ranges }
         });
+        let additive = (!self.add_ranges.is_empty()).then(|| Additive { pipeline: self.additive_pipeline(), ranges: self.add_ranges.clone() });
         let (mut layer_depth, mut frame_depth) = (false, false);
         let mut from = root.0 + bg;
         for (r, _) in rounds.iter().enumerate() {
@@ -322,7 +351,7 @@ impl Renderer {
                     pass.set_bind_group(1, &self.sprite_bind, &[]);
                     pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
                     pass.set_vertex_buffer(0, self.prims.slice(..));
-                    draw_prims(&mut pass, &self.pipeline, face_runs, start..end);
+                    draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, start..end);
                 }
                 // The filtered groups of this depth, before the next depth composites them.
                 if let Some(executor) = &mut self.executor {
@@ -370,7 +399,7 @@ impl Renderer {
             pass.set_bind_group(2, &self.layer_binds[1], &[]);
             pass.set_vertex_buffer(0, self.prims.slice(..));
             if r == 0 && bg > 0 {
-                draw_prims(&mut pass, &self.pipeline, face_runs, root.0..root.0 + bg);
+                draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, root.0..root.0 + bg);
             }
             if until > from {
                 if view.clip_to_artboard {
@@ -381,10 +410,10 @@ impl Renderer {
                     let y1 = a[3].clamp(0.0, size[1] as f64).ceil() as u32;
                     if x1 > x0 && y1 > y0 {
                         pass.set_scissor_rect(x0, y0, x1 - x0, y1 - y0);
-                        draw_prims(&mut pass, &self.pipeline, face_runs, from..until);
+                        draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, from..until);
                     }
                 } else {
-                    draw_prims(&mut pass, &self.pipeline, face_runs, from..until);
+                    draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, from..until);
                 }
             }
             from = until;
@@ -412,6 +441,7 @@ impl Renderer {
             effect_bytes: fx.slot_bytes,
             layer_bytes,
             depth_bytes,
+            material_bytes: self.materials.bytes(),
         };
     }
 

@@ -18,6 +18,18 @@ const PORTED: &[&str] = &[
     "ik-joined-sheet", "ik-joined-unpinned-sheet", "ik-joined-late-sheet", "startup-join-sheet",
     // Stick Nodes curves; rig controls, alone and with pinned IK.
     "sticknodes-sheet", "rig-sheet", "ik-rig-follow-sheet", "ik-rig-stretch-sheet",
+    // Documents with 3D bones, meshes, surfaces, perspective and part proportions.
+    "spatial-mesh-perspective-sheet", "spatial-mesh-sheet-sheet", "spatial-surfaces-skin-sheet", "spatial-surfaces-perspective-sheet",
+    "spatial-mesh-mechanism-sheet", "spatial-clip-mesh-sheet",
+    // 3D bones: turned, dragged, twisted; mechanisms' hinges and slides.
+    "spatial-turn-sheet", "spatial-mechanism-sheet", "spatial-drag-sheet", "spatial-mechanism-drag-sheet",
+    // A planted 3D leg (spatial IK target): Both, a side, mirrored.
+    "ik-spatial-sheet", "ik-spatial-side-sheet", "ik-spatial-mirrored-sheet",
+    // Posing 3D IK targets: planted (flat pole, depth push, swivel, pole and depth), bent to a side, free.
+    "ik-spatial-target-sheet", "ik-spatial-side-target-sheet", "ik-spatial-free-sheet",
+    "ik-spatial-steer-sheet", "ik-spatial-side-steer-sheet", "ik-spatial-mirrored-steer-sheet", "spatial-reset-sheet",
+    // Pose choices: 3D bones shown one at a time, presets over channels.
+    "pose-choices-sheet", "pose-presets-sheet", "pose-choice-mechanism-sheet",
 ];
 
 #[test]

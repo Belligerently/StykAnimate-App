@@ -20,7 +20,7 @@ fn encode(name: &str, tick: f64, bypass: bool) -> DrawList {
     let assets = Assets::build(&prepared.doc);
     let frame = prepared.evaluate(tick);
     let scene = build(&prepared.doc, &frame);
-    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: bypass };
+    let overrides = Overrides { hidden: &[], translations: &[], background: None, bypass_effects: bypass, generators: None };
     encode_composed(&prepared.doc, &assets, &scene, &overrides, &[], None)
 }
 

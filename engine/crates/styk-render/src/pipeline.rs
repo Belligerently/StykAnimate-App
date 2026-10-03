@@ -37,7 +37,8 @@ impl Renderer {
         });
         let layout1 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk sprites"),
-            entries: &[texture_entry(0, wgpu::TextureViewDimension::D2Array), sampler_entry(1)],
+            // Sprites and drawings, then the particle materials of generated effects.
+            entries: &[texture_entry(0, wgpu::TextureViewDimension::D2Array), sampler_entry(1), texture_entry(2, wgpu::TextureViewDimension::D2), sampler_entry(3)],
         });
         let layout2 = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk layers"),
@@ -48,7 +49,7 @@ impl Renderer {
             bind_group_layouts: &[Some(&layout0), Some(&layout1), Some(&layout2)],
             immediate_size: 0,
         });
-        let pipeline = prim_pipeline(&device, &pipeline_layout, &shader, None);
+        let pipeline = prim_pipeline(&device, &pipeline_layout, &shader, None, false);
         let blit_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("styk blit"),
             entries: &[texture_entry(0, wgpu::TextureViewDimension::D2), sampler_entry(1)],
@@ -87,7 +88,9 @@ impl Renderer {
             ..Default::default()
         });
         let (sprites, sprite_view) = array_texture(&device, "styk sprites", [1, 1], 1, false);
-        let sprite_bind = Self::sprite_bind(&device, &layout1, &sprite_view, &linear);
+        let materials = crate::materials::Materials::placeholder(&device);
+        let material_sampler = crate::materials::sampler(&device);
+        let sprite_bind = Self::sprite_bind(&device, &layout1, &sprite_view, &linear, &materials.view, &material_sampler);
         let make_layers = |label: &str| {
             let (texture, view) = array_texture(&device, label, [1, 1], 1, true);
             LayerAtlas { texture, view, size: [1, 1], pages: 1 }
@@ -117,7 +120,12 @@ impl Renderer {
             layout1,
             layout2,
             sprites,
+            sprite_view,
             sprite_bind,
+            materials,
+            material_sampler,
+            pipeline_add: None,
+            add_ranges: Vec::new(),
             nearest,
             linear,
             layers,
@@ -131,21 +139,28 @@ impl Renderer {
             page_frame: [0, 0],
             page_small: 0,
             executor: None,
-            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0, effect_layers: 0, effect_passes: 0, effect_bytes: 0, layer_bytes: 0, depth_bytes: 0 },
+            stats: Stats { prims: 0, groups: 0, passes: 0, downscaled: false, rounds: 0, effect_layers: 0, effect_passes: 0, effect_bytes: 0, layer_bytes: 0, depth_bytes: 0, material_bytes: 0 },
         }
     }
 }
 
 /// The primitive pipeline. With `depth`, passes have a depth attachment: depth runs
 /// (styk-draw `K_DEPTH_RESET`, `F_DEPTH`) draw their faces depth tested, everything
-/// else draws as before, in painter order.
-pub(crate) fn prim_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, shader: &wgpu::ShaderModule, depth: Option<wgpu::DepthStencilState>) -> wgpu::RenderPipeline {
+/// else draws as before, in painter order. `additive` adds colour and alpha to the
+/// target (styk-draw `F_ADD`, generated effects that add light).
+pub(crate) fn prim_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, shader: &wgpu::ShaderModule, depth: Option<wgpu::DepthStencilState>, additive: bool) -> wgpu::RenderPipeline {
+    let dst_factor = if additive { wgpu::BlendFactor::One } else { wgpu::BlendFactor::OneMinusSrcAlpha };
     let premultiplied = wgpu::BlendState {
-        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
-        alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
+        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor, operation: wgpu::BlendOperation::Add },
+        alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor, operation: wgpu::BlendOperation::Add },
     };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(if depth.is_some() { "styk prims with depth" } else { "styk prims" }),
+        label: Some(match (depth.is_some(), additive) {
+            (false, false) => "styk prims",
+            (true, false) => "styk prims with depth",
+            (false, true) => "styk additive prims",
+            (true, true) => "styk additive prims with depth",
+        }),
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module: shader,
@@ -181,6 +196,8 @@ pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth2
 pub(crate) struct DepthPipelines {
     pub(crate) flat: wgpu::RenderPipeline,
     pub(crate) faces: wgpu::RenderPipeline,
+    /// `flat` with additive blending, for generated effects in a pass with faces.
+    pub(crate) flat_add: wgpu::RenderPipeline,
 }
 
 impl Renderer {
@@ -189,10 +206,17 @@ impl Renderer {
         self.depth_pipelines.get_or_insert_with(|| {
             let state = |compare| wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: Some(true), depth_compare: Some(compare), stencil: Default::default(), bias: Default::default() };
             DepthPipelines {
-                flat: prim_pipeline(device, layout, shader, Some(state(wgpu::CompareFunction::Always))),
-                faces: prim_pipeline(device, layout, shader, Some(state(wgpu::CompareFunction::LessEqual))),
+                flat: prim_pipeline(device, layout, shader, Some(state(wgpu::CompareFunction::Always)), false),
+                faces: prim_pipeline(device, layout, shader, Some(state(wgpu::CompareFunction::LessEqual)), false),
+                flat_add: prim_pipeline(device, layout, shader, Some(state(wgpu::CompareFunction::Always)), true),
             }
         })
+    }
+
+    /// The additive pipeline, created with the first list that adds light.
+    pub(crate) fn additive_pipeline(&mut self) -> wgpu::RenderPipeline {
+        let (device, layout, shader) = (&self.device, &self.prim_layout, &self.prim_shader);
+        self.pipeline_add.get_or_insert_with(|| prim_pipeline(device, layout, shader, None, true)).clone()
     }
 
     pub(crate) fn rebind(&mut self) {

@@ -21,15 +21,22 @@ pub fn decode_images(doc: &Document, assets: &Assets) -> Vec<DecodedImage> {
 
 
 impl Renderer {
-    pub(crate) fn sprite_bind(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, view: &wgpu::TextureView, linear: &wgpu::Sampler) -> wgpu::BindGroup {
+    pub(crate) fn sprite_bind(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, view: &wgpu::TextureView, linear: &wgpu::Sampler, materials: &wgpu::TextureView, material_sampler: &wgpu::Sampler) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("styk sprites"),
             layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(linear) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(materials) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(material_sampler) },
             ],
         })
+    }
+
+    /// Binds the sprite atlas and the particle materials again (either was replaced).
+    pub(crate) fn rebind_sprites(&mut self) {
+        self.sprite_bind = Self::sprite_bind(&self.device, &self.layout1, &self.sprite_view, &self.linear, &self.materials.view, &self.material_sampler);
     }
 
     /// Allocates the sprite atlas for a document (pages from its asset layout).
@@ -38,7 +45,8 @@ impl Renderer {
         let size = if assets.pages == 0 { [1, 1] } else { [PAGE, PAGE] };
         let (texture, view) = array_texture(&self.device, "styk sprites", size, pages, false);
         self.sprites = texture;
-        self.sprite_bind = Self::sprite_bind(&self.device, &self.layout1, &view, &self.linear);
+        self.sprite_view = view;
+        self.rebind_sprites();
     }
 
     /// Uploads decoded images into the atlas prepared by [`prepare_sprites`].

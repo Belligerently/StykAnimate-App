@@ -501,13 +501,12 @@ fn wrap(a: f64) -> f64 {
 }
 
 /// `quaternionPose(q, previous)`: the bend, turn and pitch of a rotation, on the Euler
-/// branch nearest `previous` (`[bend, turn, pitch]`). `asin` is the platform's: the result
-/// only chooses a drawing.
+/// branch nearest `previous` (`[bend, turn, pitch]`), with V8's trigonometry.
 pub fn quaternion_pose(q: [f64; 4], previous: [f64; 3]) -> [f64; 3] {
     let n = norm(&q);
     let [x, y, z, w] = q.map(|v| v / n);
     let sy = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0);
-    let turn = sy.asin();
+    let turn = styk_math::asin(sy);
     let [prev_bend, prev_turn, prev_pitch] = previous;
     let (pitch, bend) = if sy.abs() > 1.0 - 1e-10 {
         let pitch = prev_pitch;

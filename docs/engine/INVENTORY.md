@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 82 | 4 | 0 | 0 | 0 | 0 % | 19 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 80 | 6 | 0 | 0 | 0 | 0 % | 23 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
-| `styk-eval` | 83 | 774 KiB | 50 | 29 | 4 | 0 | 0 | 3 % | 48 % | 0 % |
+| `styk-eval` | 83 | 774 KiB | 45 | 29 | 9 | 0 | 0 | 15 % | 48 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
-| `styk-render` | 52 | 708 KiB | 38 | 12 | 2 | 0 | 0 | 2 % | 45 % | 0 % |
-| **Total** | 356 | 4063 KiB | 275 | 50 | 8 | 22 | 1 | 13 % | 26 % | 0 % |
+| `styk-render` | 52 | 708 KiB | 34 | 13 | 5 | 0 | 0 | 9 % | 46 % | 0 % |
+| **Total** | 356 | 4063 KiB | 264 | 53 | 16 | 22 | 1 | 16 % | 27 % | 0 % |
 
 ## Engine modules
 
@@ -115,13 +115,13 @@ Engine logic: ported to Rust.
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-range-commands.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-rig-constraints.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS |
 | `src/editor-rig.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-scene.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-selection.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-spatial.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs); setSpatialFeetPinned and joined 3D IK targets still JS |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
@@ -215,11 +215,6 @@ Engine logic: ported to Rust.
 | `src/camera-motion-bake-worker.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-motion-bake.mjs` | `styk-eval::camera` | js |  |
 | `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: camera presets (shake, handheld, wobble, impact, zoom pulse); follow camera still JS |
-| `src/vfx-generator-anchors.mjs` | `styk-eval::generators` | js | particle simulation and looks |
-| `src/vfx-generator-frame.mjs` | `styk-eval::generators` | js | particle simulation and looks |
-| `src/vfx-generator-layers.mjs` | `styk-eval::generators` | js | particle simulation and looks |
-| `src/vfx-generator-styles.mjs` | `styk-eval::generators` | js | particle simulation and looks |
-| `src/vfx-generators.mjs` | `styk-eval::generators` | js | particle simulation and looks |
 | `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry; clip effects and drawings still JS |
 | `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | js |  |
@@ -245,7 +240,7 @@ Engine logic: ported to Rust.
 | `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
 | `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
 | `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
-| `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation; the choice interface still JS |
+| `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation; poseChoiceGroups and applyChannelPoseChoice for setPoseChoice (styk-edit/src/pose_choice.rs); the 3D panel's reading of groups and validation still JS |
 | `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames and 3D pose tweens (rig.rs, styk_eval::spatial); authoring still JS |
 | `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
@@ -258,6 +253,11 @@ Engine logic: ported to Rust.
 | `src/vfx-registry.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags) |
 | `src/vfx-user-presets.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
 | `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS |
+| `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/export-canvas.mjs` | `styk-export` | js |  |
 | `src/export-crisp.mjs` | `styk-export` | js |  |
 | `src/export-frame-core.mjs` | `styk-export` | js |  |
@@ -364,10 +364,10 @@ Engine logic: ported to Rust.
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
 | `src/drawing-gpu.mjs` | `styk-render::drawing` | js | GPU tiles and GPU brush |
-| `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | js |  |
-| `src/vfx-generator-atlas.mjs` | `styk-render::generators` | js |  |
-| `src/vfx-generator-canvas.mjs` | `styk-render::generators` | js |  |
-| `src/vfx-generator-gpu.mjs` | `styk-render::generators` | js |  |
+| `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-atlas.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
+| `src/vfx-generator-canvas.mjs` | `styk-render::generators` | partial | Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it |
+| `src/vfx-generator-gpu.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/content-hash.mjs` | `styk-render::images` | js | image decoding and variants |
 | `src/image-resources.mjs` | `styk-render::images` | partial | image decoding and variants. Rust: decoding and atlas upload for supported documents |
 | `src/preview-image-worker.mjs` | `styk-render::images` | js | image decoding and variants |

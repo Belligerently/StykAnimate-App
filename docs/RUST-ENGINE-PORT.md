@@ -193,10 +193,10 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
   `node engine/tools/gate-census.mjs` (2026-10-03, the gate itself on each file loaded as
-  the app loads it): of 382 native documents (the asset catalogue, the private corpus and
-  the repository's fixtures; Pivot figures left out), the engine draws 370; 10 have
-  generated effects (agent running) and 2 do not load in Node (`svr_uriel.piv` exceeds
-  Node's string limit; the unrepaired Jay file is invalid). No file uses the other gated
+  the app loads it): of 384 native documents (the asset catalogue, the private corpus and
+  the repository's fixtures; Pivot figures left out), the engine draws 383 since generated
+  effects are drawn; the unrepaired Jay file is invalid ("Pose array does not match its
+  figure"). No file uses the other gated
   features, which users can still create: property channels on native timelines, animation
   origins, follow camera, layer parallax, Stick Nodes sprites, colour transitions, frame
   drafts, rotated movieclip drawings (`drawingRotation`). A drawing stroke not yet
@@ -206,8 +206,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   app parity in their captions only (15 Guns 0 of 5 steps, Hand & Face 2 of 5, Vehicles 7 of
   16; their 3D regions within 0.00–0.17 levels beyond the D13 quantum, no solid pixels).
   Needs its own work item.
-- **3D editing is not ported**: `styk-edit` refuses documents with 3D (`geometry with 3D`)
-  until command replays cover spatial poses, twists and 3D IK.
+- **3D editing is ported except joined 3D IK targets**: posing a 3D IK target on joined
+  figures and `setSpatialFeetPinned` still run in the editor alone.
 - **No-WebGPU devices lose the Canvas 2D fallback's seams.** The JavaScript Canvas 2D
   fallback antialiases each triangle of a polygon fill on its own, so light seams show between
   adjacent faces (asset-pack backgrounds such as `04-waterfall.styk` fail the web-target parity
@@ -223,16 +223,17 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   loaders (codec merge). Ported editor calls run in shadow (`?engineShadow=on`): on the
   document the app starts with, its pinned variant, a foot with followers and a joined
   assembly every call the shadow script makes now runs in the engine with no difference.
-  Still unported in `styk-edit`: rig controls, 3D bones and controllers, drawing layers,
-  audio ripple, multi-figure and movieclip-instance variants of the frame-drafting
-  commands, and every command outside the gesture and timeline set.
-- **Engine-owned editing costs more than the editor on joint poses** (`?engineEdit=on`,
-  opt-in): on AyameDemo.piv 36 pointer-drag poses took 200.6 ms in the engine (plus 16 ms
-  adoption) against the editor's 53.8 ms, while frame-drafting commands were several times
-  faster. Causes: every new session prepares the whole document's typed views (about
-  100 ms there) instead of sharing the mirror's, and every gesture call evaluates the whole
-  frame's geometry where the editor rebuilds what changed. Fixing both decides when
-  ownership becomes the default for a document class (D15).
+  Still unported in `styk-edit`: posing 3D IK targets (and steering a planted knee,
+  twisting with 3D IK), pose choices, drawing layers, audio ripple, multi-figure and
+  movieclip-instance variants of the frame-drafting commands, and every command outside
+  the gesture and timeline set.
+- **Engine-owned editing still costs more than the editor on joint poses** (`?engineEdit=on`,
+  opt-in): on AyameDemo.piv's 515-segment figure a pose call takes 1.2 ms in WebAssembly
+  (0.39 ms natively) plus 0.45 ms adoption against the editor's 0.7 ms; all owned calls
+  together cost what the editor's do (899 against 898 ms), frame-drafting commands three
+  to six times less. Left: each call converts and draws the posed figure whole where the
+  editor rebuilds what changed, and the answer carries the whole figure (14 KB). That
+  decides when ownership becomes the default for a document class (D15).
 - **The document is held twice until S5** (D12): the editor's JavaScript objects and the
   engine's store and typed views. Measured 2026-10-02 in Electron (WebGPU), one run each after
   opening the file and letting the mirror commit, machine load 4–5 from the baseline rounds
@@ -258,19 +259,23 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 - **The WebGL2 path is only verified on SwiftShader** (headless Chromium). Playwright's
   Chromium does not display a WebGPU canvas here; Electron does.
 - **Real iOS and iPadOS devices are unverified** for the engine's shared memory: the page now falls back from 2 GiB to 1 GiB and 512 MiB maxima (D14), but the actual limits of Apple devices were not measured.
-- **Effects, open after the GPU port**: generated effects (particles, aura, beams, smoke,
-  explosions) are not drawn by the engine and gate their documents; drawing cels inside
+- **Effects, open after the GPU port**: drawing cels inside
   an effect layer are sampled bilinearly where the editor uses Canvas 2D smoothing (URIEL 3
   ticks 61–64 differ by 4–26 solid pixels under blur, bloom and glow); a drawing layer's
   onion skin is missing in the engine (tick 46); `styk-raster` ignores effect layers (and
   would draw a scene stack's frame twice); `previewRasterScale` is not followed; effect
   layers may reach 3,968 px (60 MiB) with two to eight pages per atlas; a still frame can
   lack a drawing cel until the next redraw because nothing redraws while images decode.
-- **Some evaluation trigonometry is still the platform's** (D16): tweens, the IK solver
-  and rig constraints use `styk-math` (the solver now matches the editor bit for bit), but
-  geometry and 3D quaternions use `f64::sin`, `cos`, `atan2`, `acos` and `asin`. Drawn
-  geometry is rounded to single precision and matches; before the engine stores 3D poses
-  between keys, those paths move to `styk-math` (which needs `acos` and `asin`).
+  Generated effects drawn by the editor's Canvas 2D fallback (tinted sprites, an 8- or
+  32-step colour ramp, a 4,000-particle preview budget) differ from its WebGPU renderer, so
+  web parity (the engine on WebGL2 against the fallback) cannot pass on them; the engine
+  draws them as on WebGPU devices. `Math.pow` has no V8-exact counterpart (Node uses the
+  platform's); the engine uses `libm::pow` only where a last-bit difference cannot reach a
+  stored value (D16). URIEL 3's explosion targets an object the document does not contain,
+  so neither renderer draws it: an effect with a missing target draws nothing, silently.
+- **Some evaluation trigonometry is still the platform's** (D16): tweens, the IK solver,
+  rig constraints and 3D quaternions use `styk-math` (now with `asin` and `acos`), but
+  geometry uses `f64::sin` and `cos`; its points are rounded to single precision and match.
 - **The codec, open after the merge**: a segment edit to a figure from the synthetic
   `figure-modern.stk` fixture does not survive `.stk` export (the export writes the
   unedited 84 bytes; the Python oracle writes the same bytes, so the defect predates the
@@ -305,7 +310,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 Resolved since the last update: onion skins keep custom paints and draw solid paints in the
 skin's tint (`774d1b21`, `066587e3`); `piv.rs` is gone (styk-piv reads Pivot files);
-effects are drawn as GPU passes (generated effects excepted); the baseline benchmark is
+effects are drawn as GPU passes, generated effects included; the baseline benchmark is
 complete; the Python codec no longer ships. Earlier: WebKit runs here (missing libraries
 unpacked into `~/.cache/styk-webkit-libs`, nothing installed system-wide); pinned IK and
 layer-sheet movieclip replacements.
@@ -372,7 +377,8 @@ effect executors are deleted):
    drawing cels inside effect layers, effects in `styk-raster`.
 2. 3D: done (milestone log). Left: rotated movieclip drawings (`drawingRotation`), an
    indexed face format (each face is a 64-byte draw-list record), `previewRasterScale`.
-3. Generators (particle effects): simulation (`vfx-generator*.mjs`) and drawing (agent running).
+3. Generators (particle effects): done (milestone log). Left: the JavaScript generator
+   modules go with the JavaScript renderer (item 8).
 3a. Captions and text drawn as the WebGPU renderer draws them (glyph textures), which the
    3D catalogue scenes exposed.
 4. Property channels on native timelines (scalar, colour, style, effect parameters, camera,
@@ -460,8 +466,19 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 12:01 | S5 engine-owned editing (opt-in) | `?engineEdit=on`: the editor facade runs the calls that change the document in the engine only and adopts their results (the gesture's draft and snapshots, the published sheet through the editor's own `publish` via `adoptLayerSheet`, the committed draft kept on show, selection, next identity); selection, seeking, begin/cancel and history run in both. Session answers carry the replaced tracks only, the gesture's snapshot set and the retained draft. `scripts/engine-edit-shadow.mjs --own` compares a run with the editor alone and one with the engine owning; `--import` opens native files through the page. D15 records the step. | Eight documents (the start-up document, startup-pinned, followers, joined, joined-chain, sheet-layers, sheet-movieclip-loose, and AyameDemo.piv imported, 48.7 MB): 39–65 calls adopted each, documents, history labels and selection the same as with the editor alone, also after undoing everything (28–996 numbers differ in their last digits, D16). Two adoption defects found and fixed on the way (the kept draft, joined roots refreshed at commit). Cost on AyameDemo: see section 6. Shadow mode unchanged (start-up document 77 of 77). `npm test` 4,347 of 4,380 (the 6 known failures). |
 | 2026-10-03 12:02 | S3 3D (agent, reviewed and merged) | `styk_eval::spatial` (pose tweens, perspective with near-plane clipping, part proportions, hidden pose choices, surface culling and depth, mesh skinning and splitting, bone-attached movieclip meshes; all through `styk-math`), a depth-tested face run kind in `styk-draw`, drawn by `styk-render` (two depth pipeline variants, depth buffers only for passes with faces, objects with faces drawn from rasters at the editor's density) and `styk-raster` (four-sample depth); records of 3D pose tweens; `engine/tools/spatial-fixtures.mjs` (13 editor-built projects, 120 recorded tweens); the gate lets 3D through except rotated movieclip drawings; `docs/engine/spatial.md`. `styk-edit` refuses 3D documents until replays cover them. | The agent's runs: catalogue drawn by the engine 349 of 358 files (16 before); geometry over all 175 `.styk` scenes (3,215 frames, 92,332 primitives, 323,521 joints) and 183 `.stkz`/`.stykmov` files: 0 mismatches; URIEL 3 and Jay unchanged; records 512 of 512 ticks; Electron parity: Karate fighter 16 of 16 steps, turntables and fixtures pass, 15 Guns, Hand & Face and Vehicles fail in captions only (section 6); web: seven 3D documents pass. Jay (no 3D) cost unchanged (evaluation 1.08 → 0.99 ms, GPU p50 0.26 → 0.27 ms). Here on the merged tree: `engine:test` and `engine:parity` all ok, `npm run check`, shadow 77 of 77 and engine-owned editing on the start-up document unchanged. |
 
-In progress: generated effects (particles, aura, beams, smoke, explosions) in the engine
-(agent). Next in the main thread: rig controls and 3D gestures in `styk-edit` (now that
-the engine evaluates rigs and 3D), and the two costs that keep engine-owned editing opt-in
-(sessions sharing the mirror's prepared document, gestures evaluating only what they
-need), then making it the default for the start-up document class (D15).
+| 2026-10-03 12:21 | S5 rig controls | `styk-edit` poses rigged figures: geometry keeps each rigged joint's space and connector state (`RigJoint`); the pointer goes through `authoredRigTarget` in a rig space (`authored_rig_target_with` reports a collapsed driver), angle locks only stretch, connectors slide (`slideConnector`, `setConnectorPosition`) and bend through the pointer. | rig-sheet 23 of 23 steps, two rigged IK fixtures 9 of 9 each; each rig path breaks rig-sheet when removed. App: a rigged document 77 of 77 shadowed calls the same; engine-owned editing matches the editor alone. |
+| 2026-10-03 12:44 | S5 cheaper poses | Rotation targets with sets instead of list scans, a figure's angles changed in one pass, the drag's rotation targets cached (as `_drag.rotationTargets`), joint gestures reading the geometry of the posed figure only (`geometry::build_only`), the 3D check once per document, sessions starting from the mirror's loader and prepared views. | Native pose step on AyameDemo's 515-segment figure 8.42 → 0.39 ms (`styk edit-bench`). App, engine-owned, 36 pointer poses: 200.6 → 56.1 ms in the engine (+15.9 ms adoption) against the editor's 25.3 ms; all owned calls 899 ms against 898 ms. Still opt-in (section 6). |
+| 2026-10-03 12:50 | S3 gate census | `engine/tools/gate-census.mjs`: each native document loaded as the app loads it, then the gate. | 382 documents (catalogue, private corpus, fixtures): 370 drawn by the engine, 10 refused for generated effects, 2 do not load in Node. |
+| 2026-10-03 13:30 | S5 3D documents, 3D bones, 3D IK frames | The blanket refusal of documents with 3D goes; `styk-edit/src/spatial.rs` turns 3D bones (`setSpatialPose`, `rotateJoint`), drags them flat or in depth (alternate side, mid-drag switch), stretches and twists them, and sets or drags mechanisms' hinges and slides; `styk-math` gains V8-exact `asin` and `acos` (the `libm` crate's: 0 of 15,073 recorded inputs differ, the platform's 1,046 and 605). Frames with 3D IK controllers run every call except posing a 3D target, steering a planted knee, twisting with 3D IK and whole-figure turns; posing a bone of a planted limb releases it, a posed foot plants its orientation, turned followers' 3D orientations follow. | 50 recordings, 948 steps: the 49 scenarios of ported calls (927 steps) match the editor at every step; 13 new 3D scenarios, each new path breaking one when removed. App shadow: a 3D catalogue scene 73 of 73, the Kung-Fu Master and Karate Fighter rigs 78 of 78 each, none different; engine-owned editing on the 3D scene matches the editor alone. |
+| 2026-10-03 14:07 | S5 posing 3D IK targets; exact comparison in the browser | `styk-edit/src/spatial_ik.rs`: a planted 3D target moves with its knee kept on its side on screen (`_flatSpatialIKPole`), the depth key pushes it in depth and a plain drag continues from there, `setSpatialIKTarget` sets depth, pole and swivel, a free 3D limb is captured once per gesture and solved without following the target's orientation; IK posing on rigged figures reads drawn angles from the rig (`RigJoint` carries each joint's evaluated angle, bend and length). The shadow driver gains `--exact-math`: the page's `Math` is replaced by the engine's (exported from `styk-wasm`), so a difference is told from Chromium's rounding. | Three recordings replay bit for bit, each path breaking one when removed. App shadow with the engine's `Math`: the Kung-Fu Master and Karate Fighter rigs 95 of 95 each (with Chromium's `Math` a free 3D foot drag differed by 1.54 rad on a nearly straight leg), a 3D scene 74 of 74, the start document 94 of 94, five other documents exact. |
+| 2026-10-03 14:42 | S5 steering planted 3D limbs | Dragging a planted knee or elbow swings the limb's bend plane (`getSpatialIKPole`, `setSpatialIKPole`); twisting a bone of a planted limb swings its swivel and twisting the ankle or wrist marker turns the foot or hand; a whole figure turns with its 3D targets, bend planes and planted orientations; `resetSpatialPose` for a bone, a mechanism or the whole rig. No 3D IK path of the gestures is refused now except posing a joined 3D target. The shadow driver adds a planted-knee drag, a right-button twist and a rig reset on figures with 3D bones. | 4 new recordings (102 steps) match the editor at every step; 7 of 8 mutations break one (the eighth, not keeping the foot's twist reference, is equivalent: a planted foot's drawn orientation does not move between samples of one gesture). App shadow with the engine's `Math`: the planted-leg fixture 140 of 140, the two martial-artist rigs 115 of 115 each, a 3D dojo prop 94 of 94. |
+| 2026-10-03 14:43 | S3 generated effects (agent, reviewed and merged) | `styk_eval::vfx::generated` (every style of particles, auras, beams, smoke and explosions; layers, anchors on earlier ticks, nested movieclip generators, batches, per-particle evaluation, the 17-row material atlas; V8-exact `exp` in `styk-math`), `K_PARTICLE`, `K_BEAM` and `F_ADD` in `styk-draw`, drawn by `styk-render` (an additive pipeline variant, the material atlas) and `styk-raster`; an anchor cache per generation in `styk-engine` with a 6 ms budget on edit frames (`Stage::refining` asks the app to draw again); `engine/tools/generator-fixtures.mjs` in `engine:parity`; the gate no longer refuses generated effects. | 8 editor-built fixtures, 32 ticks, 8,428 particles bit-exact (sizes within 1e-12: `pow`); the atlas byte-exact. Electron app parity: every fixture passes (35 steps, mean ≤ 0.067, no solid pixel); Impact-FX-Fight 0 of 6 from caption and figure edges (the same with effects off in both); URIEL 3 2 of 4 from a cel not yet uploaded. Gate census 373 → 383 of 384. Engine module +373 KiB. |
+| 2026-10-03 15:05 | S5 pose choices | `styk-edit/src/pose_choice.rs`: `setPoseChoice` for groups of 3D bones shown one at a time or all hidden and for presets over existing channels, the selection read back from the channels as `poseChoiceGroups` does; the shadow driver picks another choice on rigs that have them. | 3 recordings (33 steps) match the editor at every step; 7 of 7 mutations break one. App shadow with the engine's `Math` on a Hand-and-Face demo scene: 100 of 100 calls the same; engine-owned editing there matches the editor alone (3.1 MB document, 16 history entries, and after undoing everything). |
+
+In progress: the remaining S3 gate features (agent: parallax,
+follow camera, colour transitions, Stick Nodes sprites, animation origins, rotated movieclip
+drawings, then property channels); captions drawn from glyph textures (agent). Next in the
+main thread: joined 3D IK targets, then more of the commands documents send outside the
+gesture set (`setNodeIK`, `rotateIKTarget`, `setSpatialFeetPinned`, segment edits), and the
+remaining per-call cost before engine-owned editing becomes the default for a document
+class (D15).

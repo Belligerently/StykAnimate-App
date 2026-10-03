@@ -91,8 +91,7 @@ decided by a tolerance of 2e-7 relative to the face, so the last bits matter.
    of `steps` directions and the pitch past the tilt threshold choosing the up or down
    views. The instance is placed at the bone's start, turned by the bend (reflected with its
    parent) and the figure's rotation, scaled by the bone's stretch and, in perspective, by
-   its depth (`1 / max(.05, 1 - k z)`). `asin` is the platform's there: it only picks a
-   drawing.
+   its depth (`1 / max(.05, 1 - k z)`), all with V8's trigonometry (`styk-math`).
 7. **Records** (`records.rs`): a tween of `_stykSpatial` is written as
    `interpolateSpatialPose`'s record (camera, then proportions in ascending handle
    order), from the typed tween.

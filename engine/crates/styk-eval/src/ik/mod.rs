@@ -35,7 +35,7 @@ use std::f64::consts::PI;
 use crate::doc::{Figure, Object};
 
 pub use interpolate::{interpolate, tween, Channel};
-pub use object::{solve_object, Outcome, Pose, Skeleton, Solution};
+pub use object::{solve_object, solve_object_with, Outcome, Pose, Skeleton, Solution};
 pub use solve::{bend_reference, solve_points, Solved};
 
 /// `MAX_IK_CHAIN`: the most bones one chain may drive.
