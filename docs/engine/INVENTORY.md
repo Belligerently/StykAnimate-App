@@ -84,7 +84,7 @@ Engine logic: ported to Rust.
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal), removePolygon, editDefinition (styk-edit/src/polygons.rs); polygon colour and opacity on a figure on show, surfaces, figure style and the builder's segment commands still JS |
-| `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
+| `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
 | `src/editor-camera.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-sparse.mjs` | `styk-edit` | js | commands and history |

@@ -793,6 +793,21 @@ scenario('figures-layers-sheet', app, [
       ['importFigure', file, {position: {x: 'a', y: 0}}], ['moveSelection', 5, 5], ['undo'], ['undo'], ['undo'], ['redo'],
     ], 'startup.document.json');
   }
+  // Layer parallax: switched on with linked axes (the other axis following the one given),
+  // unlinked, its reference the camera on show (also where the camera has moved); refusals;
+  // history.
+  scenario('layer-parallax-sheet', app, [
+    ['setLayerParallax', 'layer-2', {enabled: true, x: 0.5}], ['setLayerParallax', 'layer-2', {y: 2}], ['setLayerParallax', 'layer-2', {linked: false, x: 1}],
+    ['setLayerParallax', 'layer-2', {y: 3}], ['setLayerParallax', 'layer-2', {x: 5}], ['setLayerParallax', 'layer-2', {foo: 1}], ['setLayerParallax', 'scene', {x: 1}],
+    ['setLayerParallax', 'layer-2', {reference: {x: 10, y: 'a'}}], ['setLayerLocked', 'layer-2', true], ['setLayerParallax', 'layer-2', {x: 1}], ['setLayerLocked', 'layer-2', false],
+    ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
+  {
+    const document = JSON.parse(readFileSync(`${out}/sheet-layers.document.json`, 'utf8'));
+    for (const frame of document.keyframes) frame.camera = {is_default: false, x: 40, y: -20, scale: 1, angle_rad: 0};
+    writeFileSync(`${out}/parallax-camera.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('layer-parallax-camera-sheet', app, [['setLayerParallax', 'layer-1', {enabled: true}], ['undo'], ['redo']], 'parallax-camera.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);
