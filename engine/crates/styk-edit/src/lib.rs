@@ -24,6 +24,7 @@ mod layers;
 mod pose;
 mod pose_choice;
 mod palette;
+mod polygons;
 mod record;
 pub mod replay;
 mod select;
@@ -455,6 +456,13 @@ impl Editor {
             "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
+            "updatePolygon" => match args.get(1) {
+                None => self.update_polygon(&arg(0), &Value::Null),
+                Some(Value::Null) => Err(EditError::Unported("a polygon change that is null".into())),
+                Some(patch) => self.update_polygon(&arg(0), patch),
+            },
+            "removePolygon" => self.remove_polygon(&arg(0)),
             "sheetCopyFrames" => match arg(1).as_f64() {
                 Some(start) => self.sheet_copy_frames(&arg(0), start, &arg(2)),
                 None => Err(EditError::Unported("copying frames from a frame that is not a number".into())),

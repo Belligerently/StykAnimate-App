@@ -641,6 +641,36 @@ scenario('figures-layers-sheet', app, [
   scenario('audio-none-sheet', app, [
     ['deleteAudioTrack', 'audio-a'], ['setAudioTrack', 'audio-a', {mute: true}], ['setAudioClip', 'clip-1', {start: 1}], ['deleteAudioClip', 'clip-1'],
   ], 'startup.document.json');
+  // Polygons of the selected figure's definition: created (defaults; a closing repeat of
+  // the first handle; colour, opacity and order given), reshaped, reordered and deleted;
+  // refusals (the same cycle in either direction, too few, repeated or unknown handles,
+  // colour, opacity and order out of range, unknown fields, missing polygons); a pose
+  // gesture in progress committed first; history.
+  scenario('polygons-sheet', app, [
+    ['@select', 1, -1], ['addPolygon', [0, 2, 3]], ['addPolygon', [3, 2, 0]], ['addPolygon', [1, 4, 5, 1], {color: '#FF8800', opacity: 0.5, zOrder: 3}],
+    ['addPolygon', [1, 1, 2]], ['addPolygon', [1, 2]], ['addPolygon', [1, 2, 999]], ['addPolygon', 'x'], ['addPolygon', [0, 2, 4], {color: 'red'}],
+    ['addPolygon', [0, 2, 4], {opacity: 2}], ['addPolygon', [0, 2, 4], {zOrder: 1e39}], ['updatePolygon', 0, {handleIds: [0, 2, 4]}], ['updatePolygon', 0, {zOrder: -5}],
+    ['updatePolygon', 0, {handleIds: [5, 4, 1]}], ['updatePolygon', 5, {zOrder: 1}], ['updatePolygon', 0, {fill: 1}], ['updatePolygon', 0, {surface: null}], ['updatePolygon', 0, {}],
+    ['removePolygon', 0], ['removePolygon', 9], ['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['addPolygon', [0, 3, 4]],
+    ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
+  // A definition from a native file: polygons without identities (they take theirs from
+  // their place when one is deleted), native order arrays (dropped by any edit), a next
+  // identity past the largest (kept for the next polygon).
+  {
+    const document = JSON.parse(readFileSync(`${out}/startup.document.json`, 'utf8'));
+    const figure = document.figure_types[0];
+    figure.polyfills = [[0, 2, 3], [1, 4, 5], [6, 7, 8]].map((ids, i) => ({segment_ids: ids, color_rgb: [40 * i, 80, 120], alpha_raw: 0, color_alpha: 1, z_order: -i, z_order_runtime_raw: -i - 1}));
+    figure.segment_z_raw = figure.segments.map((_, i) => i);
+    figure.poly_z_raw = [0, 1, 2];
+    writeFileSync(`${out}/polygons.document.json`, JSON.stringify(document) + '\n');
+  }
+  scenario('polygons-native-file-sheet', app, [
+    ['@select', 1, -1], ['removePolygon', 2], ['addPolygon', [0, 4, 5]], ['removePolygon', 1], ['addPolygon', [0, 7, 8]], ['undo'], ['undo'], ['redo'],
+  ], 'polygons.document.json');
+  scenario('polygons-native', {}, [
+    ['@select', 1, -1], ['addPolygon', [0, 11, 22]], ['addPolygon', [11, 22, 33], {zOrder: 0.5}], ['updatePolygon', 1, {zOrder: 2}], ['updatePolygon', 0, {handleIds: [0, 44, 55]}], ['removePolygon', 1], ['undo'], ['redo'],
+  ]);
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);

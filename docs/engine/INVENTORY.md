@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 270 KiB | 36 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 74 | 11 | 1 | 0 | 0 | 0 % | 29 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 73 | 12 | 1 | 0 | 0 | 0 % | 30 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 122 KiB | 15 | 0 | 0 | 0 | 0 | 0 % | 0 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4063 KiB | 249 | 67 | 17 | 22 | 1 | 16 % | 31 % | 0 % |
+| **Total** | 356 | 4063 KiB | 248 | 68 | 17 | 22 | 1 | 16 % | 31 % | 0 % |
 
 ## Engine modules
 
@@ -83,7 +83,7 @@ Engine logic: ported to Rust.
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal), removePolygon, editDefinition (styk-edit/src/polygons.rs); polygon colour and opacity on a figure on show, surfaces, figure style and the builder's segment commands still JS |
 | `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
 | `src/editor-camera.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |

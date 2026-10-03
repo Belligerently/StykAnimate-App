@@ -169,6 +169,12 @@ async function run(mode) {
     }));
     await step('move and copy keys along the timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetMoveFrames(layer, 0, 0, 1); e.sheetMoveFrames(layer, 1, 1, 1, {copy: true}); e.undo(); e.undo(); e.redo(); }));
     await step('edit a figure from the inspector', () => page.evaluate(() => { const e = styk.editor; e.updateObject({scale: 1.2}); e.updateObject({field28: 200, name: 'Inspected'}); e.undo(); }));
+    await step('create, reshape and delete a polygon', () => page.evaluate(() => {
+      const e = styk.editor, figure = e.figure; if (!figure) return;
+      const ids = [0, ...figure.segments.slice(0, 3).map(segment => segment.segment_id)]; if (ids.length < 4) return;
+      e.addPolygon(ids.slice(0, 3)); const index = e.figure.polyfills.length - 1;
+      e.updatePolygon(index, {zOrder: -3}); e.updatePolygon(index, {handleIds: [ids[0], ids[1], ids[3]]}); e.removePolygon(index); e.undo(); e.undo();
+    }));
     await step('edit a segment from the inspector', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1); e.updateSegment({color_rgb: [10, 20, 30]}); e.updateSegment({angle_rad: 1}); e.undo(); e.select(e.selectedUid, -1); }));
     await step('edit and delete a camera motion clip', () => page.evaluate(() => { const e = styk.editor, clip = e.getCameraMotions()[0]; if (!clip) return; e.setCameraMotion(clip.id, {start: clip.start + 1}); e.setCameraMotion(clip.id, {enabled: !clip.enabled}); e.deleteCameraMotion(clip.id); e.undo(); }));
     await step('add, reorder and remove project colours', () => page.evaluate(() => { const e = styk.editor; e.addPaletteColor('#3366cc'); e.addPaletteColors(['#ff8800', [10, 200, 30]]); e.movePaletteColor('#ff8800', 0); e.removePaletteColor('#3366cc'); e.undo(); }));
