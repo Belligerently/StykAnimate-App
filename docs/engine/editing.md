@@ -278,7 +278,16 @@ in every run (headless Chromium, the machine under other load, two rounds):
 `figures` stays with the editor: on the document the app starts with, the same run cost
 87.8 ms owned against 76.8 ms alone, a pose about 0.31 ms in the engine plus 0.49 ms to adopt
 its answer against the editor's 0.58 ms for the whole call (medians of 48 in the app; the
-answer crosses the JSON boundary and the editor's own events and caches still run). `3d`
+answer crosses the JSON boundary and the editor's own events and caches still run). Warmed
+up (`--warm`: the interactions once untimed, then timed, since the browser optimizes hot
+WebAssembly after its first calls: session calls measured in one page went from 0.24 to
+0.09–0.13 ms a pose), small figure documents still cost more owned: the start document 66.1
+against 50.5 ms, rig 123.3 against 50.9 ms, joined-chain 75.1 against 46.1 ms (startup-pinned
+95.3 against 260.2 ms). The editor computes a pose of a ten-segment figure in about 0.07 ms;
+the engine's call (0.25–0.35 ms in the app) and the adoption of its answer cannot get below
+that while both editors keep their own bookkeeping, so small documents wait for the engine
+to own the document outright (S5, phases 2 and 3). Running the animation while calling the
+session did not slow the calls (the engine's worker threads do not contend with it). `3d`
 and `movieclips` stay too: some of their calls are slower in the engine (below).
 
 What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow

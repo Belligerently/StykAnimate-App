@@ -4,7 +4,7 @@
 // keyboard undo and redo) and through the editor's timeline commands, and reports how
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
-//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--url http://127.0.0.1:47831] [--out <report.json>]
+//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -20,6 +20,7 @@
 // them, and after undoing everything, must be the same. Prints what each call cost both.
 // --own --default: the second run is the app's default (the engine owns editing for the
 // document classes it edits by default, and stays out of the others).
+// --warm: the interactions run once untimed before the timed round (warmed-up code).
 import {spawn} from 'node:child_process';
 import {readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -130,42 +131,54 @@ async function run(mode) {
   const steps = [];
   const step = async (name, run) => { await settled(); await run(); steps.push(name); };
 
-  const first = await handles();
-  const joints = first.filter(handle => handle.joint >= 0), origin0 = first.find(handle => handle.joint < 0);
-  if (joints[0]) await step('drag a joint handle', () => drag(joints[0], 40, -30));
-  if (joints[1]) await step('drag another joint handle', async () => { const now = await handles(); const handle = now.find(h => h.joint === joints[1].joint) ?? joints[1]; await drag(handle, -30, 25); });
-  if (origin0) await step('drag the figure by its origin', async () => { const now = await handles(); await drag(now.find(h => h.joint < 0) ?? origin0, 50, 20); });
-  await step('undo and redo from the keyboard', async () => { await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+y'); await sleep(150); });
-  await step('seek and transform through the editor', () => page.evaluate(() => { const e = styk.editor, last = Math.max(0, e.totalTicks - 1); e.seek(Math.min(3, last)); e.rotateSelection(0.25); e.scaleSelection(1.1); e.moveSelection(12, -8); e.undo(); e.redo(); }));
-  await step('keys and frames of the layer timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetInsertKey(layer, Math.min(2, e.totalTicks - 1)); e.sheetDuplicateFrameAfter(); e.sheetSetEasing(layer, 0, 1, {interpolation: 'ease-in'}); e.sheetInsertFrames(layer, 1, 2); e.sheetRemoveFrames(layer, 1, 1); e.undo(); e.undo(); e.redo(); }));
-  await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));
-  if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
-  // A hand or foot with an IK controller, when the figure has one: its target is dragged.
-  const target = (await handles()).find(handle => handle.ik);
-  if (target) await step('drag an IK target', async () => { await settled(); const now = await handles(); await drag(now.find(h => h.joint === target.joint) ?? target, -30, 20); });
-  // The inspector's IK settings on that limb: pinned and released, its target turned, the
-  // bend side changed.
-  if (target) await step('change the IK settings of a limb', () => page.evaluate(joint => {
-    const e = styk.editor; e.select(e.selectedUid, joint);
-    const pinned = Boolean(e.getIKSettings().pinned);
-    e.setNodeIK({pinned: !pinned}); e.rotateIKTarget(0.2); e.setNodeIK({bendDirection: -1}); e.setNodeIK({pinned});
-  }, target.joint));
-  // A figure with 3D bones: a planted leg's knee dragged (its bend plane swings), a bone
-  // twisted with the right button (a planted leg's knee swings it instead), the rig reset.
-  const knee = (await handles()).find(handle => handle.knee);
-  if (knee) await step('drag a planted knee', async () => { const now = await handles(); await drag(now.find(h => h.joint === knee.joint) ?? knee, 25, -15); });
-  const bone = (await handles()).find(handle => handle.knee) ?? (await handles()).find(handle => handle.spatial);
-  if (bone) {
-    await step('twist a 3D bone with the right button', async () => { const now = await handles(); await drag(now.find(h => h.joint === bone.joint) ?? bone, 40, 0, 'right'); });
-    await step('reset the 3D rig', () => page.evaluate(() => styk.editor.resetSpatialPose(true)));
+  /** The interactions, once. */
+  const interactions = async () => {
+    const first = await handles();
+    const joints = first.filter(handle => handle.joint >= 0), origin0 = first.find(handle => handle.joint < 0);
+    if (joints[0]) await step('drag a joint handle', () => drag(joints[0], 40, -30));
+    if (joints[1]) await step('drag another joint handle', async () => { const now = await handles(); const handle = now.find(h => h.joint === joints[1].joint) ?? joints[1]; await drag(handle, -30, 25); });
+    if (origin0) await step('drag the figure by its origin', async () => { const now = await handles(); await drag(now.find(h => h.joint < 0) ?? origin0, 50, 20); });
+    await step('undo and redo from the keyboard', async () => { await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+y'); await sleep(150); });
+    await step('seek and transform through the editor', () => page.evaluate(() => { const e = styk.editor, last = Math.max(0, e.totalTicks - 1); e.seek(Math.min(3, last)); e.rotateSelection(0.25); e.scaleSelection(1.1); e.moveSelection(12, -8); e.undo(); e.redo(); }));
+    await step('keys and frames of the layer timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetInsertKey(layer, Math.min(2, e.totalTicks - 1)); e.sheetDuplicateFrameAfter(); e.sheetSetEasing(layer, 0, 1, {interpolation: 'ease-in'}); e.sheetInsertFrames(layer, 1, 2); e.sheetRemoveFrames(layer, 1, 1); e.undo(); e.undo(); e.redo(); }));
+    await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));
+    if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
+    // A hand or foot with an IK controller, when the figure has one: its target is dragged.
+    const target = (await handles()).find(handle => handle.ik);
+    if (target) await step('drag an IK target', async () => { await settled(); const now = await handles(); await drag(now.find(h => h.joint === target.joint) ?? target, -30, 20); });
+    // The inspector's IK settings on that limb: pinned and released, its target turned, the
+    // bend side changed.
+    if (target) await step('change the IK settings of a limb', () => page.evaluate(joint => {
+      const e = styk.editor; e.select(e.selectedUid, joint);
+      const pinned = Boolean(e.getIKSettings().pinned);
+      e.setNodeIK({pinned: !pinned}); e.rotateIKTarget(0.2); e.setNodeIK({bendDirection: -1}); e.setNodeIK({pinned});
+    }, target.joint));
+    // A figure with 3D bones: a planted leg's knee dragged (its bend plane swings), a bone
+    // twisted with the right button (a planted leg's knee swings it instead), the rig reset.
+    const knee = (await handles()).find(handle => handle.knee);
+    if (knee) await step('drag a planted knee', async () => { const now = await handles(); await drag(now.find(h => h.joint === knee.joint) ?? knee, 25, -15); });
+    const bone = (await handles()).find(handle => handle.knee) ?? (await handles()).find(handle => handle.spatial);
+    if (bone) {
+      await step('twist a 3D bone with the right button', async () => { const now = await handles(); await drag(now.find(h => h.joint === bone.joint) ?? bone, 40, 0, 'right'); });
+      await step('reset the 3D rig', () => page.evaluate(() => styk.editor.resetSpatialPose(true)));
+    }
+    // A rig with pose choices: another choice picked, as the 3D panel's choice menu does.
+    const choice = await page.evaluate(async () => {
+      const {poseChoiceGroups} = await import('/src/rig-pose-choices.mjs');
+      const e = styk.editor, group = poseChoiceGroups(e.figure, e.object)[0], other = group?.choices.find(c => c.id !== group.value);
+      return other ? [group.name, other.id] : null;
+    });
+    if (choice) await step('choose a rig pose', () => page.evaluate(([name, id]) => styk.editor.setPoseChoice(name, id), choice));
+  };
+  // --warm: once untimed, so that both editors run warmed-up code (the browser optimizes
+  // hot WebAssembly and JavaScript after their first calls), then again, timed.
+  if (args.includes('--warm')) {
+    await interactions();
+    await settled();
+    await page.evaluate(() => { const r = globalThis.__stykEditShadow; if (r) Object.assign(r, {calls: 0, compared: 0, rounded: 0, skipped: 0, jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0, ownableMs: 0, byCall: {}}); });
+    steps.length = 0;
   }
-  // A rig with pose choices: another choice picked, as the 3D panel's choice menu does.
-  const choice = await page.evaluate(async () => {
-    const {poseChoiceGroups} = await import('/src/rig-pose-choices.mjs');
-    const e = styk.editor, group = poseChoiceGroups(e.figure, e.object)[0], other = group?.choices.find(c => c.id !== group.value);
-    return other ? [group.name, other.id] : null;
-  });
-  if (choice) await step('choose a rig pose', () => page.evaluate(([name, id]) => styk.editor.setPoseChoice(name, id), choice));
+  await interactions();
   await settled();
 
   const report = await page.evaluate(() => JSON.parse(JSON.stringify(globalThis.__stykEditShadow ?? null, (key, value) => typeof value === 'function' ? undefined : value)));
