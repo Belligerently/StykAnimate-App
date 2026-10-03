@@ -150,6 +150,7 @@ async function run(mode) {
       e.moveLayerTo(created.id, 0); const folder = e.createLayerFolder('Group', [created.id]); e.renameLayerFolder(folder.id, 'Kept');
       e.arrangeLayers([...layers().order].reverse()); e.deleteLayerFolder(folder.id); e.setLayerLocked('scene', false); e.undo(); e.undo(); e.redo();
     }));
+    await step('move and copy keys along the timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetMoveFrames(layer, 0, 0, 1); e.sheetMoveFrames(layer, 1, 1, 1, {copy: true}); e.undo(); e.undo(); e.redo(); }));
     await step('add a figure from the library', () => page.evaluate(() => { const e = styk.editor; e.addFigure(e.report.figure_types[0]?.figure_type_id); e.moveSelection(-30, 15); e.undo(); }));
     await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));
     if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });

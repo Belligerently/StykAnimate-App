@@ -435,6 +435,7 @@ impl Editor {
             "setSpatialMotion" => self.set_spatial_motion(number(0), arg(1).get("fraction").is_some_and(Value::truthy)).map(Value::Bool),
             "rotateJoint" => self.rotate_joint(number(0), &arg(1)).map(Value::Bool),
             "bendJoint" => self.bend_joint(number(0), number(1), &arg(2)).map(Value::Bool),
+            "sheetMoveFrames" => self.sheet_move_frames(&arg(0), number(1), number(2), &arg(3), &arg(4)).map(Value::Bool),
             "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetDuplicateFrameAfter" => self.sheet_duplicate_frame_after(&arg(0), &arg(1)).map(Value::Bool),
             "sheetSetEasing" => self.sheet_set_easing(&arg(0), number(1), number(2), &arg(3)).map(Value::Bool),

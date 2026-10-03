@@ -36,6 +36,8 @@ const PORTED: &[&str] = &[
     "layer-list-sheet", "layers-native", "layers-folders-sheet",
     // Figures added from the library.
     "add-figure-sheet", "add-figure-layers-sheet",
+    // Keys moved and copied along the timeline.
+    "move-frames-sheet", "move-frames-imported-sheet",
 ];
 
 #[test]
