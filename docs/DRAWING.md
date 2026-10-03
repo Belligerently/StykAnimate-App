@@ -485,7 +485,13 @@ adaptively filtered rows, whichever LZ77 can reuse more of), and decoded with
 its table-driven inflate; per-tile compression streams cost more in setup than
 the work itself. Larger images keep the native streams. The blob format and
 PNG bytes stay standard, so older files and other readers are unaffected. encoding retains dirty work for retry, and the publication debounce yields to
-active strokes and scrubbing. A gesture's pin on its tile store ends inside
+active strokes and scrubbing. Publication also pauses between batches while an
+undo or redo loads and prepares its tiles (`DrawingHistory.replaying()`): the
+replay is about to replace the revision being published, and finishing it (the
+blob's assembly in the pixel worker, then the figure update it triggers on the
+interface thread, 0.2–0.7 s on a 2,040-tile cel) would land inside the replay.
+The replayed revision publishes once the replay ends, or the unchanged one if it
+fails. A gesture's pin on its tile store ends inside
 the commit, before the change broadcast — the playback/export barriers that
 broadcast triggers always see the committed tiles, and pixel commits reach
 the playback worker as sparse figure updates instead of full snapshots.

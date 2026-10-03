@@ -13805,9 +13805,9 @@
   },
   "errors.drawingHistory.drawingUndoRecordIsDamaged": {
     "locations": [
-      "src/drawing-history.mjs:118",
-      "src/drawing-history.mjs:122",
-      "src/drawing-history.mjs:124"
+      "src/drawing-history.mjs:120",
+      "src/drawing-history.mjs:124",
+      "src/drawing-history.mjs:126"
     ],
     "context": "if(result.tiles!==record.count||!Number.isInteger(result.parts)||result.parts<1||result.parts>record.count)throw messageError(new Error(''), \"errors.drawingHist"
   },
@@ -14190,7 +14190,7 @@
       "src/drawing-resources.mjs:187",
       "src/drawing-resources.mjs:215",
       "src/drawing-resources.mjs:361",
-      "src/drawing-resources.mjs:454"
+      "src/drawing-resources.mjs:459"
     ],
     "context": "if(this.disposed)throw messageError(new DOMException('', 'AbortError'), \"errors.drawingResources.drawingDocumentClosed\", {});"
   },
@@ -14270,7 +14270,7 @@
   },
   "errors.drawingResources.theDrawingEncoderLostItsTileCacheTry": {
     "locations": [
-      "src/drawing-resources.mjs:427"
+      "src/drawing-resources.mjs:432"
     ],
     "context": "if(result.missing?.length)throw messageError(new Error(''), \"errors.drawingResources.theDrawingEncoderLostItsTileCacheTry\", {});"
   },
