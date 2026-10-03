@@ -10,7 +10,7 @@ use std::f64::consts::PI;
 use crate::rig::{quat_multiply, quat_rotate, spatial_quaternion};
 
 use super::norm;
-use styk_math::{atan2, cos, sin};
+use styk_math::{acos, asin, atan2, cos, sin};
 
 /// `inverseQuaternion`.
 pub fn inverse_quaternion(q: [f64; 4]) -> [f64; 4] {
@@ -113,7 +113,7 @@ pub fn interpolate_quaternion(a: [f64; 4], b: [f64; 4], t: f64) -> [f64; 4] {
     let d = 0.0 + a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
     let sign = if d < 0.0 { -1.0 } else { 1.0 };
     let d = 1f64.min(d.abs());
-    let angle = d.acos();
+    let angle = acos(d);
     let sine = sin(angle);
     let x = if sine > 1e-6 { sin((1.0 - t) * angle) / sine } else { 1.0 - t };
     let y = (if sine > 1e-6 { sin(t * angle) / sine } else { t }) * sign;
@@ -145,7 +145,7 @@ fn shortest(a: f64) -> f64 {
 pub fn quaternion_pose(q: [f64; 4], previous: Euler) -> Euler {
     let [x, y, z, w] = normalize_unguarded(q);
     let sy = (-1f64).max(1f64.min(2.0 * (w * y - z * x)));
-    let turn = sy.asin();
+    let turn = asin(sy);
     let (pitch, bend);
     if sy.abs() > 1.0 - 1e-10 {
         pitch = previous.pitch;

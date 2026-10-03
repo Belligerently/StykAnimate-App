@@ -34,7 +34,8 @@ in every browser, which the JavaScript engine does not. Evaluation tweens angles
 through `styk_math::shortest`, and the IK solver and rig constraints use `styk-math`
 throughout: posing a limb by its IK target stores the solved angles, and since the switch
 the solver returns the editor's numbers bit for bit (`tests/ik.rs` compares them
-exactly). Geometry, whose points are rounded to single precision, and 3D quaternion
-`acos`/`asin` still use the platform's functions; `acos` is to be added before the engine
-stores 3D poses between keys. A function not yet in `styk-math` is ported and recorded
-before a command uses it.
+exactly). `asin` and `acos` were added for 3D poses (`quaternionPose`, slerp): the
+`libm` crate's agree with V8 on all 15,073 recorded inputs, the platform's differ on
+1,046 and 605 of them. Geometry, whose points are rounded to single precision, still uses
+the platform's functions. A function not yet in `styk-math` is ported and recorded before
+a command uses it.

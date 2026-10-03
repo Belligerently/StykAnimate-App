@@ -2,7 +2,7 @@
 // What V8's Math returns, for styk-math's tests (engine/crates/styk-math/tests/v8.rs).
 //   node engine/tools/math-fixtures.mjs
 // sincos.bin: [x, Math.sin(x), Math.cos(x)] per input; atan2-hypot.bin: [y, x, Math.atan2(y, x),
-// Math.hypot(y, x)]. Little-endian doubles. Inputs come from a fixed sequence, so the files only
+// Math.hypot(y, x)]; asin-acos.bin: [x, Math.asin(x), Math.acos(x)]. Little-endian doubles. Inputs come from a fixed sequence, so the files only
 // change if V8's results do. Ordinary angles, tiny and large values, every n·π/2 up to 64 and its
 // neighbours, the kernel's switch points and special values.
 import {writeFileSync} from 'node:fs';
@@ -21,4 +21,12 @@ for (let i = 0; i < 2000; i++) pairs.push([(rnd() - .5) * 800, (rnd() - .5) * 80
 const atan = new Float64Array(pairs.length * 4);
 pairs.forEach(([y, x], i) => atan.set([y, x, Math.atan2(y, x), Math.hypot(y, x)], i * 4));
 writeFileSync(`${out}atan2-hypot.bin`, Buffer.from(atan.buffer));
-console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs`);
+// asin and acos: the whole domain, fdlibm's switch points (|x| = 0.5, 0.975, 2^-26) and
+// their neighbours, values next to ±1, out of range and special values.
+const unit = [0, -0, NaN, Infinity, -Infinity, 1, -1, 5e-324, -5e-324, 2 ** -26, -(2 ** -26), 2 ** -27, 1e-300, 1.0000000000000002, -1.0000000000000002, 2, -3];
+for (const point of [0.5, 0.975, 1, 2 ** -26]) for (const d of [-3, -2, -1, 0, 1, 2, 3]) unit.push(nudge(point, d), -nudge(point, d));
+for (let i = 0; i < 3000; i++) unit.push(rnd() * 2 - 1, 0.45 + rnd() * 0.1, 0.97 + rnd() * 0.03, -(0.97 + rnd() * 0.03), (rnd() - .5) * 10 ** (-rnd() * 20));
+const inverse = new Float64Array(unit.length * 3);
+unit.forEach((x, i) => inverse.set([x, Math.asin(x), Math.acos(x)], i * 3));
+writeFileSync(`${out}asin-acos.bin`, Buffer.from(inverse.buffer));
+console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs, ${unit.length} asin and acos inputs`);

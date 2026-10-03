@@ -266,11 +266,9 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   would draw a scene stack's frame twice); `previewRasterScale` is not followed; effect
   layers may reach 3,968 px (60 MiB) with two to eight pages per atlas; a still frame can
   lack a drawing cel until the next redraw because nothing redraws while images decode.
-- **Some evaluation trigonometry is still the platform's** (D16): tweens, the IK solver
-  and rig constraints use `styk-math` (the solver now matches the editor bit for bit), but
-  geometry and 3D quaternions use `f64::sin`, `cos`, `atan2`, `acos` and `asin`. Drawn
-  geometry is rounded to single precision and matches; before the engine stores 3D poses
-  between keys, those paths move to `styk-math` (which needs `acos` and `asin`).
+- **Some evaluation trigonometry is still the platform's** (D16): tweens, the IK solver,
+  rig constraints and 3D quaternions use `styk-math` (now with `asin` and `acos`), but
+  geometry uses `f64::sin` and `cos`; its points are rounded to single precision and match.
 - **The codec, open after the merge**: a segment edit to a figure from the synthetic
   `figure-modern.stk` fixture does not survive `.stk` export (the export writes the
   unedited 84 bytes; the Python oracle writes the same bytes, so the defect predates the
