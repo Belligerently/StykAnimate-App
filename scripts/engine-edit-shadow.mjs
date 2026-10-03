@@ -174,6 +174,7 @@ async function run(mode) {
       if (other) e.sheetPasteFrames([other], 2);
       e.undo();
     }));
+    await step('drag frames to another layer', () => page.evaluate(() => { const e = styk.editor, order = e.report._styk?.layers?.order ?? []; if (order.length < 2) return; e.sheetTransferFrames([order[0]], [order[1]], 0, 1, 3, {copy: true}); e.undo(); }));
     await step('move and copy keys along the timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetMoveFrames(layer, 0, 0, 1); e.sheetMoveFrames(layer, 1, 1, 1, {copy: true}); e.undo(); e.undo(); e.redo(); }));
     await step('edit a figure from the inspector', () => page.evaluate(() => { const e = styk.editor; e.updateObject({scale: 1.2}); e.updateObject({field28: 200, name: 'Inspected'}); e.undo(); }));
     await step('create, reshape and delete a polygon', () => page.evaluate(() => {

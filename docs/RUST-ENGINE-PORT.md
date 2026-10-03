@@ -522,6 +522,7 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-03 23:29 | S5 layer parallax | `setLayerParallax` (`styk-edit/src/layers.rs`): a figure layer's response to camera travel, validated as `validateParallax`, one `layers` entry. | 2 recordings (17 steps) match the editor at every step; 3 of 3 mutations break one. App shadow with the engine's `Math`: start document 196/196; owned editing the same as the editor alone. |
 | 2026-10-03 23:37 | S5 renaming movieclips | `renameMovieclip` with the `movieclip-definition` history entry (`styk-edit/src/movieclips.rs`); shadowed in the app. | 1 recording (12 steps) matches the editor at every step; 5 of 5 mutations break it. |
 | 2026-10-03 23:49 | S5 movieclip playback on a frame | `setMovieclipPlayback` and `setMovieclipDrawing` on the frame on show with `validatePlayback` (`styk-edit/src/movieclips.rs`); shadowed in the app. | 2 recordings (27 steps) match the editor at every step; 6 of 6 mutations break one. |
+| 2026-10-03 23:59 | S5 frames dragged between rows | `sheetTransferFrames` as one call (`styk-edit/src/sheet_clipboard.rs`): copy, clear when moving and paste in one batch, the clipboard left as it was; compared in the app. | 1 recording (11 steps) matches the editor at every step; 3 of 3 mutations break it. App shadow with the engine's `Math`: start document 198/198; owned editing the same as the editor alone. |
 
 In progress: the drawing raster engine (agent, S6); animated properties in editing (agent:
 record-level channels, the timeline's property edits, then documents with legacy channels).

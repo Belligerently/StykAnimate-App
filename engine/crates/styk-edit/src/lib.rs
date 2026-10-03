@@ -570,6 +570,10 @@ impl Editor {
                 Some(start) => self.sheet_copy_frames(&arg(0), start, &arg(2)),
                 None => Err(EditError::Unported("copying frames from a frame that is not a number".into())),
             },
+            "sheetTransferFrames" => match (arg(2).as_f64(), arg(3).as_f64()) {
+                (Some(start), Some(end)) => self.sheet_transfer_frames(&arg(0), &arg(1), start, end, &arg(4), &arg(5)),
+                _ => Err(EditError::Unported("transferring frames of a range that is not numbers".into())),
+            },
             "sheetPasteFrames" => self.sheet_paste_frames(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "sheetMoveFrames" => self.sheet_move_frames(&arg(0), number(1), number(2), &arg(3), &arg(4)).map(Value::Bool),
             "sheetInsertKey" => self.sheet_insert_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),

@@ -829,6 +829,14 @@ scenario('figures-layers-sheet', app, [
     ['setMovieclipPlayback', {restarts: [{tick: 5, offset: 0}, {tick: 2, offset: 0}]}], ['setMovieclipPlayback', {restarts: [{tick: 2, offset: -1}]}],
     ['setMovieclipPlayback', {restarts: [{tick: 2, offset: 1}, {tick: 4, offset: 0}]}], ['setMovieclipPlayback', {start: 2, end: 6, speed: 1.5}], ['undo'], ['redo'],
   ], 'sheet-movieclip-timed.document.json');
+  // Frames dragged to another row of the timeline: moved, copied back, refusals (a layer that
+  // does not exist, a locked one); the clipboard left as it was (nothing to paste after);
+  // history.
+  scenario('sheet-transfer-sheet', app, [
+    ['sheetTransferFrames', ['layer-1'], ['layer-2'], 0, 3, 8], ['sheetTransferFrames', ['layer-2'], ['layer-1'], 8, 9, 12, {copy: true}], ['sheetPasteFrames', ['layer-1'], 0],
+    ['sheetTransferFrames', ['layer-1'], ['nope'], 0, 1, 2], ['setLayerLocked', 'layer-2', true], ['sheetTransferFrames', ['layer-1'], ['layer-2'], 0, 1, 2],
+    ['setLayerLocked', 'layer-2', false], ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-layers.document.json');
   scenario('layers-native', {}, [
     ['setLayerVisible', 'layer-1', false], ['createLayer', 'Second'], ['renameLayer', 'layer-1', 'Main'], ['moveLayerTo', 'layer-2', 0], ['undo'], ['undo'], ['redo'],
   ]);
