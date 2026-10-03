@@ -153,10 +153,6 @@ impl Editor {
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
         }
-        // The engine draws property channels; editing documents that have them is not ported.
-        if prepared.doc.animation.is_some() {
-            return Err(EditError::Unported("geometry with property channels".into()));
-        }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().loader.edit_frame(&record, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
         let scene = match slots {

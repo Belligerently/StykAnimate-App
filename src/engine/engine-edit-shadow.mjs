@@ -76,14 +76,15 @@ const LARGE = 1000;
 
 /**
  * A document's editing class (D15, docs/engine/editing.md): `unported` for documents the
- * engine does not edit at all (property channels, animation origins, a captured
- * movieclip's own document), `movieclips` when a figure is a movieclip, `3d` when a figure
+ * engine does not edit at all (property channels on a native timeline, animation origins, a
+ * captured movieclip's own document; a layer sheet's `legacyAnimation` is edited), `movieclips`
+ * when a figure is a movieclip, `3d` when a figure
  * has 3D bones or a mesh, else `large figures` from LARGE segments across its figure
  * definitions and `figures` below.
  */
 export function editingClass(report) {
   const figures = report?.figure_types ?? [], styk = report?._styk;
-  if (styk?.animation?.channels?.length || styk?.layerSheet?.legacyAnimation || styk?.movieclipSource || figures.some(figure => figure?._styk?.animationOrigin)) return 'unported';
+  if (styk?.animation?.channels?.length || styk?.movieclipSource || figures.some(figure => figure?._styk?.animationOrigin)) return 'unported';
   if (figures.some(figure => figure?._styk?.movieclip)) return 'movieclips';
   if (figures.some(figure => figure?.segments?.some(segment => segment?._stykRig?.spatial))) return '3d';
   return figures.reduce((sum, figure) => sum + (figure?.segments?.length ?? 0), 0) >= LARGE ? 'large figures' : 'figures';

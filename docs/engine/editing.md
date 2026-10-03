@@ -65,6 +65,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `moveSelection(dx, dy, {fromStart, detachExternal})`, joined roots refreshed from the engine's geometry | yes | move-native, move-joined, drag-cancel, move-sheet |
 | `rotateSelection`, `scaleSelection`, `scaleSelected`, `mirrorSelection` (whole figures), `rotateFigure`, `centerFigure`, `resetPose`: pivots from the engine's geometry | yes | rotate-native, transform-native, transform-joined, gestures-sheet |
 | `poseJoint`, `rotateJoint`, `bendJoint` (with `stretch`, `isolate`, snapping back to the definition), rotations carried into joined figures (`rotationEdits`), Stick Nodes curves (a straight segment with a sagitta, which geometry reports with a bend of 1e-6) | yes, without 3D bones | pose-native, pose-joints, pose-joined, pose-snap, gestures-sheet, sticknodes-sheet |
+| Every ported call on documents with property channels as the app holds them (a layer sheet's `legacyAnimation`): the frames a call drafts, captures and materializes are composed as the editor composes them (`styk_eval::records`) | yes | channels-figure-sheet, channels-pose-sheet, channels-vfx-sheet, channels-camera-scene-sheet, channels-movieclip-sheet, channels-style-sheet, channels-curves-sheet, channels-outline-sheet, channels-follow-sheet |
 | Every ported call on documents with 3D bones, meshes, surfaces, perspective and part proportions | yes | spatial-mesh-perspective-sheet, spatial-mesh-sheet-sheet, spatial-surfaces-skin-sheet, spatial-surfaces-perspective-sheet, spatial-mesh-mechanism-sheet, spatial-clip-mesh-sheet |
 | 3D bones (`styk-edit/src/spatial.rs`): turned (`setSpatialPose`, `rotateJoint` without `isolate`, from the angles the bone is drawn with), dragged flat on screen or swung in depth with the depth key, the alternate side and a mid-drag switch (`poseSpatialJoint`, `_flatSpatialJoint`, `_arcSpatialJoint`), stretched, twisted (`bendJoint` → `twistSpatialJoint`); mechanisms' hinges and slides set (`setSpatialMotion`, a hinge through `setSpatialPose`) and dragged along their track (`_moveMechanicalJoint`), a driven hinge included. Results go through `quaternionPose` with `styk-math`'s `asin` | yes | spatial-turn-sheet, spatial-mechanism-sheet, spatial-drag-sheet, spatial-mechanism-drag-sheet |
 | Pose choices (`styk-edit/src/pose_choice.rs`, `setPoseChoice`): a group of 3D bones shown one at a time or all hidden (`_stykPoseChoice`), a group of presets over existing angle and length channels (`figure._styk.poseChoices`, `applyChannelPoseChoice`); what is selected read back from the channels as `poseChoiceGroups` does | yes | pose-choices-sheet, pose-presets-sheet, pose-choice-mechanism-sheet |
@@ -111,9 +112,9 @@ Every ported call runs in both of the editor's modes:
   (refusals and their cancel events), movieclip-sheet and movieclip-loose-sheet.
 - **On a native timeline** (tools and tests): the keyframe at the playhead is edited in place.
 
-A call answers `Unported`, and changes nothing, on documents with property channels (on a
-native timeline, or a layer sheet's `legacyAnimation`, which the engine draws but does not
-edit), animation origins or a movieclip source; for posing a joined 3D IK target and
+A call answers `Unported`, and changes nothing, on documents with property channels on a
+native timeline (a layer sheet's `legacyAnimation`, which every document opened in the app
+has instead, is edited), animation origins or a movieclip source; for posing a joined 3D IK target and
 configuring or turning IK targets across joined figures;
 for poses on a drawing layer; for a replaced figure joined to one
 outside its movieclip frame; and wherever the engine does not evaluate the frame as
@@ -217,7 +218,11 @@ the property calls among them (`beginAnimationEdit` 4, `previewAnimationEdit` 6,
 `setBackgroundColor`, `setSceneBackground`, `updateFigureStyle` and `setVfxParameter` 1 each);
 owned editing the same as the editor alone (106,877 bytes, 55 history entries, and after
 undoing everything). The previews are compared: an engine composing a preview with the edit's
-first value instead of its last was caught (2 previews different).
+first value instead of its last was caught (2 previews different). On documents saved with
+property channels (the channel fixtures as the app holds them), the same day: `channels-figure`
+184 of 184 calls the same, owned editing the same as the editor alone (70,724 bytes, 46
+history entries, and after undoing everything); `channels-pose` 152 of 152; `channels-vfx`
+184 of 184.
 
 `node scripts/engine-edit-shadow.mjs [--file <document.json>]` drives the real app in
 headless Chromium: pointer drags on joint handles and on the origin, keyboard undo and
@@ -254,8 +259,9 @@ The engine runs ported calls in the editor's place while a session lives (the sa
 editor), for every document with `?engineEdit=on` (or
 `localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
 keeps the editor in charge and compares. `editingClass(report)` names a document's class:
-`unported` for documents the engine does not edit at all (property channels, animation
-origins, a captured movieclip's own document; the engine draws them), `movieclips` when a
+`unported` for documents the engine does not edit at all (property channels on a native
+timeline, animation origins, a captured movieclip's own document; the engine draws them;
+a layer sheet's `legacyAnimation` is edited since 2026-10-04), `movieclips` when a
 figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
 `large figures` from 1,000 segments across its figure definitions, else `figures`. The
 calls that change the document

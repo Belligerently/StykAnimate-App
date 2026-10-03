@@ -44,6 +44,8 @@ const PORTED: &[&str] = &[
     "camera-motion-sheet", "palette-sheet", "audio-sheet", "audio-none-sheet", "sheet-clipboard-sheet", "sheet-clipboard-empty-sheet", "sheet-clipboard-ik-sheet", "polygons-sheet", "polygons-native", "polygons-native-file-sheet", "vfx-clips-sheet", "batch-sheet", "sheet-selection-sheet", "figure-clipboard-sheet", "figure-clipboard-ik-sheet", "figure-clipboard-vfx-sheet",
     // Property edits on a layer sheet: inspector scrubs, keyed values, scene colours, outlines, polygon opacity, effects.
     "property-scrub-sheet", "property-autokey-sheet", "property-keys-sheet", "property-locked-sheet", "scene-color-sheet", "figure-style-sheet", "polygon-opacity-sheet", "vfx-parameter-sheet",
+    // Documents with property channels (a layer sheet's legacyAnimation).
+    "channels-figure-sheet", "channels-pose-sheet", "channels-vfx-sheet", "channels-camera-scene-sheet", "channels-movieclip-sheet", "channels-style-sheet", "channels-curves-sheet", "channels-outline-sheet", "channels-follow-sheet",
 ];
 
 #[test]

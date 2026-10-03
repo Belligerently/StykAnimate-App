@@ -87,8 +87,9 @@ movieclip's fractional frames) applies them at the tick:
   where no pose saves a stack; a follow camera's samples keep only the channels of the camera,
   of layers and of the followed figures (`followSamplingReport`).
 - The evaluated frame as records composes them too, record for record
-  ([below](#the-evaluated-frame-as-records)); editing documents with channels stays with the
-  editor: `styk-edit` answers `Unported`.
+  ([below](#the-evaluated-frame-as-records)), so `styk-edit` edits documents whose channels
+  are a layer sheet's `legacyAnimation` (every document opened in the app); channels on a
+  native timeline are still edited by the editor alone.
 
 ## Animation origins
 

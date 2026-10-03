@@ -115,3 +115,5 @@ scenario('polygon-opacity-sheet', app, [
     ['undo'], ['undo'], ['redo'],
   ], 'property-vfx.document.json');
 }
+// The same commands on documents with property channels.
+await import('./edit-scenarios-channels.mjs');

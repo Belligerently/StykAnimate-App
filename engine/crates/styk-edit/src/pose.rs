@@ -222,8 +222,10 @@ impl Editor {
 
     /// The selected segment as the geometry at the playhead draws it.
     fn shape(&self, object: &Value, joint: usize) -> Result<Option<Shape>, EditError> {
-        // The selected figure's geometry, and that of the figures it hangs from.
-        let slot = self.frame_objects().iter().position(|o| uid(o) == uid(object));
+        // The selected figure's geometry, and that of the figures it hangs from: its slot in
+        // the frame geometry is built from (the frame on show, whose slots a layer sheet's
+        // composition may order differently from the keyframe's).
+        let slot = self.selection_frame()?.iter().position(|o| uid(o) == uid(object));
         let (prepared, frame, scene) = self.evaluate_only(slot.as_ref().map(std::slice::from_ref))?;
         let Some(id) = uid(object) else { return Ok(None) };
         let Some(evaluated) = frame.objects.iter().find(|o| o.uid == id) else { return Ok(None) };
