@@ -38,6 +38,8 @@ const PORTED: &[&str] = &[
     "add-figure-sheet", "add-figure-layers-sheet",
     // Keys moved and copied along the timeline.
     "move-frames-sheet", "move-frames-imported-sheet",
+    // The inspector's figure fields.
+    "update-object-sheet", "update-object-native",
 ];
 
 #[test]

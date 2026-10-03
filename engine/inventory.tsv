@@ -123,7 +123,7 @@ src/drawing-worker.mjs	engine	styk-drawing	js
 src/editable-scene-preparation.mjs	engine	styk-render	js	
 src/editor-animation.mjs	engine	styk-edit	js	commands and history
 src/editor-audio.mjs	engine	styk-edit	js	commands and history
-src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (styk-edit, not yet called by the app); property-channel commits still JS
+src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS
 src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
 src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
@@ -172,7 +172,7 @@ src/editor-style-topology.mjs	engine	styk-edit	js	commands and history
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx-clips.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx.mjs	engine	styk-edit	js	commands and history
-src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS
+src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), undo/redo of object edits (styk-edit, phase 1, not yet called by the app); every other command still JS; Rust: updateObject, updateSelection, addFigure (styk-edit)
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
 src/export-canvas.mjs	engine	styk-export	js	
