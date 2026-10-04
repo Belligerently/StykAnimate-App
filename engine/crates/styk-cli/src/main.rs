@@ -14,6 +14,8 @@
 //!                                         (engine/tools/records-reference.mjs wrote the folder)
 //!   styk export <file> <tick|a-b> <out>   export frames as the app's engine exports them, timed
 //!                                         (see export.rs for the options; --cpu: styk-raster)
+//!   styk raster-parity <file>…            styk-raster against styk-render on the same draw lists,
+//!                                         by the app-parity rule D13 (see raster_parity.rs)
 
 use std::path::Path;
 use std::time::Instant;
@@ -24,6 +26,7 @@ use styk_eval::geometry::build;
 
 mod container;
 mod export;
+mod raster_parity;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -53,6 +56,7 @@ fn main() {
         Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3], &args[4..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         Some("export") if args.len() >= 4 => export::export(&args[1], &args[2], &args[3], &args[4..]),
+        Some("raster-parity") if args.len() >= 2 => raster_parity::run(&args[1..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
             2
