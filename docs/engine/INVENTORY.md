@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 87 | 1227 KiB | 62 | 22 | 3 | 0 | 0 | 1 % | 47 % | 0 % |
+| `styk-edit` | 87 | 1227 KiB | 59 | 25 | 3 | 0 | 0 | 1 % | 50 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 82 | 760 KiB | 36 | 37 | 9 | 0 | 0 | 16 % | 58 % | 0 % |
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4068 KiB | 208 | 91 | 34 | 22 | 1 | 20 % | 38 % | 0 % |
+| **Total** | 356 | 4068 KiB | 205 | 94 | 34 | 22 | 1 | 20 % | 39 % | 0 % |
 
 ## Engine modules
 
@@ -66,7 +66,7 @@ Engine logic: ported to Rust.
 | `src/drawing-worker-preview.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
 | `src/drawing-worker.mjs` | `styk-drawing` | partial | Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS |
 | `src/animation-history.mjs` | `styk-edit` | js |  |
-| `src/builder-appearance.mjs` | `styk-edit` | js |  |
+| `src/builder-appearance.mjs` | `styk-edit` | partial | Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view) |
 | `src/builder-session.mjs` | `styk-edit` | js |  |
 | `src/clipboard-asset-plan.mjs` | `styk-edit` | js |  |
 | `src/clipboard-assets.mjs` | `styk-edit` | js |  |
@@ -80,10 +80,10 @@ Engine logic: ported to Rust.
 | `src/editor-audio.mjs` | `styk-edit` | partial | Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS |
 | `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-builder-branch.mjs` | `styk-edit` | partial | Rust: updateBuilderSegmentStyle (shapes and the construction flag in the definition, colours recoloured and opacity and thickness keyed on the figure on show, definition styles with a branch's polygons), updateSegmentBranchStyle, setBranchCaps, setBranchFill (styk-edit/src/builder.rs); changeBranchThickness and splitting still JS |
+| `src/editor-builder-style.mjs` | `styk-edit` | partial | Rust: setPolygonOpacity (styk-edit/src/builder.rs); the draw order (moveBuilderOrder, setBuilderOrder) still JS |
 | `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs); polygon colour on a figure on show, surfaces, figure definition style and the builder's segment commands still JS |
+| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs) and on the definition, updateSegmentStyle, convertSegment (styk-edit/src/builder.rs); surfaces and the builder's segment topology commands still JS |
 | `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
 | `src/editor-camera.mjs` | `styk-edit` | partial | Rust: copyCamera, pasteCamera, setCameraValues, resetCamera, transformCamera, alignCameraToView, locateCamera, locateHandle and camera drags on a layer sheet (styk-edit/src/camera_commands.rs); native-timeline camera snapshots, centerCamera (figure bounds) and applyCameraToFigures still JS |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |

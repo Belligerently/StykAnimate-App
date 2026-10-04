@@ -231,6 +231,19 @@ async function run(mode) {
       e.trimVfxClipStart(clip.id, 2); e.undo(); e.deleteVfxClip(clip.id); e.undo();
     }));
     await step('edit a segment from the inspector', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1); e.updateSegment({color_rgb: [10, 20, 30]}); e.updateSegment({angle_rad: 1}); e.undo(); e.select(e.selectedUid, -1); }));
+    // The builder's segment styles: shapes and the construction flag in the definition, opacity
+    // and thickness keyed and colours recoloured on the figure on show, caps, the figure's name.
+    await step('style segments as the builder does', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 2) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      e.select(uid, 1);
+      attempt(() => e.convertSegment('circle')); attempt(() => e.convertSegment('line'));
+      attempt(() => e.updateBuilderSegmentStyle({opacity: 0.6})); attempt(() => e.updateBuilderSegmentStyle({thickness: 5}, {branch: true}));
+      attempt(() => e.updateBuilderSegmentStyle({color: '#aa3300'})); attempt(() => e.updateBuilderSegmentStyle({static: true}));
+      attempt(() => e.setBranchCaps(true)); attempt(() => e.setBranchFill()); attempt(() => e.updateFigureStyle({name: 'Built'}));
+      for (let i = 0; i < 4; i++) e.undo();
+      e.select(uid, -1);
+    }));
     await step('move a handle in Handle Edit Mode', () => page.evaluate(() => {
       const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1);
       const p = e.geometry.objects.get(e.selectedSlot)?.joints.get(e.figure?.segments[1]?.segment_id); if (!p) return;

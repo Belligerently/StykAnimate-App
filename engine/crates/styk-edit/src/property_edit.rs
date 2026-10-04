@@ -671,7 +671,7 @@ impl Editor {
         }
         let object = self.object()?;
         let (true, Some((_, object)), false) = (self.options.property_channels, object, fields.contains("name")) else {
-            return Err(EditError::Unported("a figure definition's style".into()));
+            return self.figure_definition_style(fields);
         };
         if !self.sheet() {
             return Err(EditError::Unported("updateFigureStyle on a native timeline".into()));

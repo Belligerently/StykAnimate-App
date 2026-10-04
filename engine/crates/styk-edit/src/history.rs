@@ -56,6 +56,8 @@ pub enum CommandKind {
     Batch { commands: Vec<Command> },
     /// Native keyframes patched by a figure operation across frames (`kind: 'figure-range'`).
     FigureRange { changes: Vec<crate::range::FrameChange>, structural: bool },
+    /// Paths of a figure definition before and after (`kind: 'native-properties'`, `scope: 'figure'`).
+    NativeProperties { index: usize, before: crate::builder::Patch, after: crate::builder::Patch },
 }
 
 /// `editor._movieclipBatch` in progress: its entries, label, the revision before it and the
@@ -214,6 +216,7 @@ impl Editor {
             CommandKind::Fields { .. } => self.apply_fields_command(command, direction)?,
             CommandKind::MovieclipDefinition { .. } => self.apply_movieclip_definition(command, direction)?,
             CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
+            CommandKind::NativeProperties { .. } => self.apply_native_properties(command, direction)?,
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
                 for child in ordered {

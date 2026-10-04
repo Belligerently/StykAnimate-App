@@ -16,7 +16,7 @@ fn invalid(key: &str) -> EditError {
 }
 
 /// `x >>> 0`.
-fn to_uint32(x: f64) -> u32 {
+pub(crate) fn to_uint32(x: f64) -> u32 {
     if x.is_finite() { x.trunc().rem_euclid(4294967296.0) as u32 } else { 0 }
 }
 
@@ -50,7 +50,7 @@ fn rgb_of(color: f64) -> [f64; 3] {
 }
 
 /// `styleColor(rgb)`: three bytes packed as `0xRRGGBB`.
-fn style_color(rgb: [f64; 3]) -> f64 {
+pub(crate) fn style_color(rgb: [f64; 3]) -> f64 {
     let [r, g, b] = rgb.map(|v| if v.is_nan() { 0 } else { to_int32(v) });
     ((r.wrapping_shl(16)) | (g.wrapping_shl(8)) | b) as u32 as f64
 }
@@ -121,7 +121,7 @@ impl Stop {
 }
 
 impl Paint {
-    fn value(&self) -> Value {
+    pub(crate) fn value(&self) -> Value {
         let stops = self
             .stops
             .iter()
@@ -140,13 +140,13 @@ impl Paint {
         Value::object(out)
     }
 
-    fn solid(&self) -> bool {
+    pub(crate) fn solid(&self) -> bool {
         self.kind == "solid"
     }
 }
 
 /// `normalizePaint(paint)`.
-fn normalize_paint(paint: &Value) -> Result<Paint, EditError> {
+pub(crate) fn normalize_paint(paint: &Value) -> Result<Paint, EditError> {
     let kind = paint.get("type").and_then(Value::as_str).filter(|t| ["solid", "linear", "radial", "angular", "diamond"].contains(t));
     let Some(kind) = kind.filter(|_| paint.truthy()) else { return Err(invalid("errors.paint.invalidPaintType")) };
     let finite = |v: Option<&Value>, min: f64, max: f64| match v.and_then(Value::as_f64) {
@@ -224,7 +224,7 @@ fn sample_paint(p: &Paint, t: f64) -> [f64; 3] {
 }
 
 /// `usesSegmentColors(report, figure, object)`: format 5, or a figure or instance that colours its segments.
-fn uses_segment_colors(version: f64, figure: &Value, object: &Value) -> bool {
+pub(crate) fn uses_segment_colors(version: f64, figure: &Value, object: &Value) -> bool {
     let segments = |v: &Value| v.path(&["_styk", "colorMode"]).and_then(Value::as_str) == Some("segments");
     version >= 5.0 || segments(figure) || segments(object)
 }
@@ -248,7 +248,7 @@ fn mix_color(base: [f64; 3], raw: f64) -> [f64; 3] {
     [0, 1, 2].map(|i| ((base[i] * 256.0 + k * (c[i] - base[i])) / 256.0).floor())
 }
 
-fn override_raw(object: &Value) -> f64 {
+pub(crate) fn override_raw(object: &Value) -> f64 {
     object.get("color_override_raw").map_or(f64::NAN, |v| v.as_f64().unwrap_or(f64::NAN))
 }
 
@@ -285,7 +285,7 @@ fn displayed_segment_paint(version: f64, figure: &Value, object: &Value, segment
 }
 
 /// `polygonIdentity(polygon, index)`.
-fn polygon_identity(polygon: &Value, index: usize) -> f64 {
+pub(crate) fn polygon_identity(polygon: &Value, index: usize) -> f64 {
     polygon.get("polyfill_id").filter(|v| !v.is_null()).and_then(Value::as_f64).unwrap_or(index as f64 + 1.0)
 }
 

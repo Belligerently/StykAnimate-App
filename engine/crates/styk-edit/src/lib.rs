@@ -14,6 +14,7 @@
 
 mod audio;
 mod authored;
+mod builder;
 mod camera_commands;
 mod camera_motion;
 mod figure_clipboard;
@@ -466,6 +467,9 @@ impl Editor {
             return result;
         }
         if let Some(result) = self.range_call(method, args) {
+            return result;
+        }
+        if let Some(result) = self.builder_call(method, args) {
             return result;
         }
         match method {

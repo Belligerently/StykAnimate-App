@@ -246,3 +246,5 @@ scenario('recolor-mesh-sheet', app, [
 scenario('recolor-native', {}, [
   ['@select', 1, -1], ['setFigureColor', '#ff0000'], ['replaceFigureColor', '#ff0000', '#00ff00'], ['resetFigureColors'], ['undo'], ['undo'], ['redo'],
 ], 'two-limbs.document.json');
+// The figure builder and rig commands.
+await import('./edit-scenarios-builder.mjs');

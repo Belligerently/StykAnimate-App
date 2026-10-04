@@ -22,7 +22,7 @@ src/background-dialog.mjs	ui	-	stays
 src/base64.mjs	engine	styk-formats::container	ported	Rust: styk-doc JSON base64
 src/browser-recovery.mjs	platform	-	stays	file, storage and network services
 src/builder-aids.mjs	ui	-	stays	
-src/builder-appearance.mjs	engine	styk-edit	js	
+src/builder-appearance.mjs	engine	styk-edit	partial	Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view)
 src/builder-construction.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/builder-context-menu.mjs	ui	-	stays	
 src/builder-duplicate-preview.mjs	ui	-	stays	
@@ -125,10 +125,10 @@ src/editor-animation.mjs	engine	styk-edit	partial	Rust: addAnimationKeys on a la
 src/editor-audio.mjs	engine	styk-edit	partial	Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS
 src/editor-authored-pose.mjs	engine	styk-edit	partial	Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS
 src/editor-branch-style.mjs	engine	styk-edit	js	commands and history
-src/editor-builder-branch.mjs	engine	styk-edit	js	commands and history
-src/editor-builder-style.mjs	engine	styk-edit	js	commands and history
+src/editor-builder-branch.mjs	engine	styk-edit	partial	Rust: updateBuilderSegmentStyle (shapes and the construction flag in the definition, colours recoloured and opacity and thickness keyed on the figure on show, definition styles with a branch's polygons), updateSegmentBranchStyle, setBranchCaps, setBranchFill (styk-edit/src/builder.rs); changeBranchThickness and splitting still JS
+src/editor-builder-style.mjs	engine	styk-edit	partial	Rust: setPolygonOpacity (styk-edit/src/builder.rs); the draw order (moveBuilderOrder, setBuilderOrder) still JS
 src/editor-builder-topology.mjs	engine	styk-edit	js	commands and history
-src/editor-builder.mjs	engine	styk-edit	partial	Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs); polygon colour on a figure on show, surfaces, figure definition style and the builder's segment commands still JS
+src/editor-builder.mjs	engine	styk-edit	partial	Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs) and on the definition, updateSegmentStyle, convertSegment (styk-edit/src/builder.rs); surfaces and the builder's segment topology commands still JS
 src/editor-camera-motion.mjs	engine	styk-edit	partial	Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS
 src/editor-camera.mjs	engine	styk-edit	partial	Rust: copyCamera, pasteCamera, setCameraValues, resetCamera, transformCamera, alignCameraToView, locateCamera, locateHandle and camera drags on a layer sheet (styk-edit/src/camera_commands.rs); native-timeline camera snapshots, centerCamera (figure bounds) and applyCameraToFigures still JS
 src/editor-clipboard-async.mjs	engine	styk-edit	js	commands and history

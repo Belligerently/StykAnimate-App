@@ -51,6 +51,8 @@ const PORTED: &[&str] = &[
     "range-ik-pinned-sheet", "range-ik-joined-sheet", "range-ik-followers-sheet", "range-movieclip-sheet",
     // Recolouring figures: palettes, gradients and paints, styles, polygons, format 4, mesh colours.
     "recolor-sheet", "recolor-format4-sheet", "recolor-mesh-sheet", "recolor-native",
+    // The builder: segment styles, branch caps and fills, the figure's name and outline.
+    "builder-styles-sheet", "builder-styles-native", "builder-styles-override-native",
 ];
 
 #[test]
