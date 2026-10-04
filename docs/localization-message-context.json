@@ -21940,55 +21940,55 @@
   "errors.thumbnailRenderer.thumbnailSuperseded": {
     "locations": [
       "src/thumbnail-renderer.mjs:9",
-      "src/thumbnail-worker.mjs:47"
+      "src/thumbnail-worker.mjs:48"
     ],
     "context": "messageError(new DOMException('', \"AbortError\"), \"errors.thumbnailRenderer.thumbnailSuperseded\", {});"
   },
   "errors.thumbnailWorker.invalidInbetweenPreviewOptions": {
     "locations": [
-      "src/thumbnail-worker.mjs:126"
+      "src/thumbnail-worker.mjs:127"
     ],
     "context": "throw messageError(new Error(''), \"errors.thumbnailWorker.invalidInbetweenPreviewOptions\", {});"
   },
   "errors.thumbnailWorker.invalidStoredFramePreviewMode": {
     "locations": [
-      "src/thumbnail-worker.mjs:98"
+      "src/thumbnail-worker.mjs:99"
     ],
     "context": "if (message.storedFrames !== undefined && typeof message.storedFrames !== 'boolean') throw messageError(new Error(''), \"errors.thumbnailWorker.invalidStoredFram"
   },
   "errors.thumbnailWorker.invalidThumbnailTime": {
     "locations": [
-      "src/thumbnail-worker.mjs:99"
+      "src/thumbnail-worker.mjs:100"
     ],
     "context": "if(message.tick!==undefined&&(!Number.isInteger(message.tick)||message.tick<0||message.tick>10000000))throw messageError(new Error(''), \"errors.thumbnailWorker."
   },
   "errors.thumbnailWorker.thumbnailDimensionsExceed512Pixels": {
     "locations": [
-      "src/thumbnail-worker.mjs:110"
+      "src/thumbnail-worker.mjs:111"
     ],
     "context": "throw messageError(new RangeError(''), \"errors.thumbnailWorker.thumbnailDimensionsExceed512Pixels\", {});"
   },
   "errors.thumbnailWorker.thumbnailDocumentIsUnavailable": {
     "locations": [
-      "src/thumbnail-worker.mjs:83"
+      "src/thumbnail-worker.mjs:84"
     ],
     "context": "if (!report) throw messageError(new Error(''), \"errors.thumbnailWorker.thumbnailDocumentIsUnavailable\", {});"
   },
   "errors.thumbnailWorker.thumbnailFrameIsUnavailable": {
     "locations": [
-      "src/thumbnail-worker.mjs:101"
+      "src/thumbnail-worker.mjs:102"
     ],
     "context": "throw messageError(new RangeError(''), \"errors.thumbnailWorker.thumbnailFrameIsUnavailable\", {});"
   },
   "errors.thumbnailWorker.thumbnailWorkerAlreadyHasAPendingFrame": {
     "locations": [
-      "src/thumbnail-worker.mjs:96"
+      "src/thumbnail-worker.mjs:97"
     ],
     "context": "throw messageError(new Error(''), \"errors.thumbnailWorker.thumbnailWorkerAlreadyHasAPendingFrame\", {});"
   },
   "errors.thumbnailWorker.unknownThumbnailOperation": {
     "locations": [
-      "src/thumbnail-worker.mjs:94"
+      "src/thumbnail-worker.mjs:95"
     ],
     "context": "if (operation !== \"render\") throw messageError(new Error(''), \"errors.thumbnailWorker.unknownThumbnailOperation\", {});"
   },

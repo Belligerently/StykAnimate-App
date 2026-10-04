@@ -28,6 +28,7 @@ import {drawExportScene} from './export-frame-core.mjs';
 import {sceneVfxPlan,sceneVfxBounds} from './vfx-scene.mjs';
 import {connectedVfxGeometry} from './vfx-connected.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
+import {parallaxResolver} from './layer-parallax.mjs';
 import {canvasGenerators,canvasGeneratorWalker} from './vfx-generator-frame.mjs';
 
 let report,
@@ -208,9 +209,11 @@ async function receive(message) {
         bounds: backgroundBounds(frame, width, height, true, frameReport),
       });
       for (const onion of onions) drawGeometry(context, onion, resources);
-      const generators = canvasGenerators(frameReport, frame, geometry, null);
-      if (generators) drawParallaxGeometry(context, { drawables }, resources, () => ({x: 0, y: 0}), undefined, canvasGeneratorWalker(generators, context));
-      else drawGeometry(context, { drawables }, resources);
+      // Seen through the scene camera, parallax layers move with its travel, as in
+      // playback, exports and the frames drawn with scene effects above.
+      const parallax = parallaxResolver(frameReport, frame);
+      const generators = canvasGenerators(frameReport, frame, geometry, parallax);
+      drawParallaxGeometry(context, { drawables }, resources, parallax, undefined, generators ? canvasGeneratorWalker(generators, context) : undefined);
       context.restore();
       }
       check();
