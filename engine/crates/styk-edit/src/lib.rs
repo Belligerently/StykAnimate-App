@@ -26,6 +26,7 @@ mod history;
 mod ik;
 mod ik_settings;
 mod layers;
+mod motion_path;
 mod movieclips;
 mod pose;
 mod pose_choice;
@@ -113,6 +114,8 @@ pub(crate) struct Drag {
     pub segment_value_options: Option<Value>,
     /// A camera drag (`_drag.camera`).
     pub camera: Option<camera_commands::CameraDrag>,
+    /// A motion-path edit (`_drag.motionPath`: the session is the gesture).
+    pub motion_path: Option<Box<motion_path::Session>>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -513,6 +516,10 @@ impl Editor {
         }
         self.property_gate(method)?;
         self.camera_gate(method)?;
+        self.motion_path_gate(method)?;
+        if let Some(result) = self.motion_path_call(method, args) {
+            return result;
+        }
         if let Some(result) = self.property_call(method, args) {
             return result;
         }

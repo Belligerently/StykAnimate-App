@@ -76,7 +76,7 @@ fn frame_order(frame: &Value) -> Vec<f64> {
 
 /// `poseObjectSignature(object, frame)`: a pose without its slot and caches, its
 /// join named by the figure it joins.
-fn signature(object: &Value, frame_objects: &[Value]) -> String {
+pub(crate) fn signature(object: &Value, frame_objects: &[Value]) -> String {
     let mut fields = object.as_obj().cloned().unwrap_or_default();
     fields.remove("runtime_segments");
     fields.remove("_movieclipSample");
@@ -132,6 +132,7 @@ pub(crate) fn constant() -> Value {
 }
 
 /// The planner of one command: the tracks it replaces, the pose sources it captures.
+#[derive(Clone, Debug)]
 pub(crate) struct Plan {
     pub before: Value,
     /// Replaced tracks, in the order the command first touched them.
@@ -212,25 +213,41 @@ impl Plan {
     /// `capture(frame, id)`: the layer's figures of `frame` (and what they are joined
     /// to) as a new pose source.
     pub(crate) fn capture(&mut self, frame: &Value, id: &str) -> Value {
+        let frame_id = format!("frame-{}", self.next_frame);
+        self.next_frame += 1;
+        let source = self.source_of(frame, id, &frame_id);
+        self.sources.push((frame_id.clone(), source));
+        let mut value = Obj::new();
+        value.set("frameId", Value::str(&frame_id));
+        Value::object(value)
+    }
+
+    /// The pose source `frame_id`, which this plan captured, captured again from `frame`: a
+    /// motion-path gesture's later pointer moves rewrite it in place (`_sheetPoseDraftWrite`).
+    pub(crate) fn recapture(&mut self, frame: &Value, id: &str, frame_id: &str) {
+        let source = self.source_of(frame, id, frame_id);
+        if let Some((_, captured)) = self.sources.iter_mut().find(|(captured, _)| captured == frame_id) {
+            *captured = source;
+        }
+    }
+
+    /// What `capture` stores: the layer's figures of `frame`, what they are joined to and
+    /// their movieclip continuations, named `frame_id`.
+    fn source_of(&self, frame: &Value, id: &str, frame_id: &str) -> Value {
         let layers = Some(&self.layers);
         let owned = |uid: f64| layer_of(layers, uid as u32) == id;
         let uids: Vec<f64> = if fixed(id) { Vec::new() } else { objects_of(frame).iter().filter_map(|o| num(o, "unique_id")).filter(|u| owned(*u)).collect() };
         let steps: Vec<Value> = if fixed(id) { Vec::new() } else { continuations(frame).into_iter().filter(|step| num(step, "uid").is_some_and(owned)).collect() };
-        let frame_id = format!("frame-{}", self.next_frame);
-        self.next_frame += 1;
         let mut source = snapshot_pose_frame_of(frame, Some(&uids)).as_obj().cloned().unwrap_or_default();
         let mut styk = source.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
-        styk.set("frameId", Value::str(&frame_id));
+        styk.set("frameId", Value::str(frame_id));
         if steps.is_empty() {
             styk.remove("movieclipContinuations");
         } else {
             styk.set("movieclipContinuations", Value::array(steps));
         }
         source.set("_styk", Value::object(styk));
-        self.sources.push((frame_id.clone(), Value::object(source)));
-        let mut value = Obj::new();
-        value.set("frameId", Value::str(&frame_id));
-        Value::object(value)
+        Value::object(source)
     }
 
     /// `write(id, tick, frame, {blank, easing, extend})`: a key at `tick` holding the

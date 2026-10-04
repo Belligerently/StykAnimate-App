@@ -25,7 +25,7 @@ use crate::frame::objects_of;
 use crate::record::{join_target, uid};
 use crate::{EditError, Editor};
 
-fn controllers(object: &Value) -> Vec<(std::sync::Arc<str>, Value)> {
+pub(crate) fn controllers(object: &Value) -> Vec<(std::sync::Arc<str>, Value)> {
     object.get("_stykIK").and_then(Value::as_obj).map(|table| table.iter().map(|(id, c)| (id.clone(), c.clone())).collect()).unwrap_or_default()
 }
 
@@ -795,7 +795,7 @@ pub(crate) fn displayed_angle(prepared: &Prepared, frame: &Frame, scene: &Scene,
 
 /// Followers of figures joined to a controller's owner, as the editor stores them
 /// (`joinedFollowers`: by identity, then by handle).
-fn joined_table(joined: &BTreeMap<u32, BTreeMap<u32, f64>>) -> Value {
+pub(crate) fn joined_table(joined: &BTreeMap<u32, BTreeMap<u32, f64>>) -> Value {
     let mut table = Obj::new();
     for (uid, angles) in joined {
         table.set(&uid.to_string(), angle_table(angles));
@@ -811,7 +811,7 @@ pub(crate) struct PinnedLimb {
 }
 
 /// `hasPinnedIK(object)`.
-fn has_pinned(object: &Value) -> bool {
+pub(crate) fn has_pinned(object: &Value) -> bool {
     controllers(object).iter().any(|(_, c)| truthy(c, "enabled") && truthy(c, "pinned"))
 }
 
@@ -842,7 +842,7 @@ pub(crate) fn follow_stretched(record: &mut Obj, handle: u32, limb: &[[f64; 2]],
 }
 
 /// `object._stykIK = {...object._stykIK, [key]: next}`.
-fn set_controller(record: &mut Obj, key: &str, next: Obj) {
+pub(crate) fn set_controller(record: &mut Obj, key: &str, next: Obj) {
     set_controller_value(record, key, Value::object(next));
 }
 
@@ -895,7 +895,7 @@ fn index_key(key: &str) -> Option<u32> {
 
 /// `object[key] = value` in JavaScript's key order: an existing key keeps its place, a new
 /// index key goes among the index keys in ascending order, any other key last.
-fn assign(object: &mut Obj, key: &str, value: Value) {
+pub(crate) fn assign(object: &mut Obj, key: &str, value: Value) {
     let Some(n) = index_key(key).filter(|_| !object.contains(key)) else {
         object.set(key, value);
         return;
@@ -914,7 +914,7 @@ fn assign(object: &mut Obj, key: &str, value: Value) {
 }
 
 /// Angles by handle, as the editor stores followers (index keys, ascending).
-fn angle_table(angles: &BTreeMap<u32, f64>) -> Value {
+pub(crate) fn angle_table(angles: &BTreeMap<u32, f64>) -> Value {
     let mut table = Obj::new();
     for (handle, angle) in angles {
         table.set(&handle.to_string(), Value::Num(*angle));
@@ -923,7 +923,7 @@ fn angle_table(angles: &BTreeMap<u32, f64>) -> Value {
 }
 
 /// `_rememberIKBends`' test that a solved bend is the one the gesture began with.
-fn same_bend(reference: &BendReference, baseline: &Value) -> bool {
+pub(crate) fn same_bend(reference: &BendReference, baseline: &Value) -> bool {
     let number = |key: &str| baseline.get(key).and_then(Value::as_f64);
     let close = |a: f64, b: Option<f64>| {
         let d = a - b.unwrap_or(f64::NAN);
@@ -939,7 +939,7 @@ fn same_bend(reference: &BendReference, baseline: &Value) -> bool {
 }
 
 /// `ikBendReference`'s result as the editor stores it in a controller.
-fn reference_value(reference: &BendReference) -> Value {
+pub(crate) fn reference_value(reference: &BendReference) -> Value {
     let mut value = Obj::new();
     value.set("side", Value::Num(reference.side));
     value.set("angle", Value::Num(reference.angle));

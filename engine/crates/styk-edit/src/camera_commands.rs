@@ -34,7 +34,7 @@ pub(crate) struct CameraDrag {
 }
 
 /// `cameraValues(camera)`: every value present, a default camera when none.
-fn camera_values(camera: Option<&Value>) -> Value {
+pub(crate) fn camera_values(camera: Option<&Value>) -> Value {
     let camera = camera.filter(|c| !c.is_null() && !c.get("is_default").is_some_and(Value::truthy));
     let mut out = match camera.and_then(Value::as_obj) {
         Some(object) => object.clone(),
@@ -480,6 +480,7 @@ impl Editor {
             figure_handle: None,
             segment_value_options: None,
             camera: Some(CameraDrag { indices: selected, current: baseline.clone(), baseline, entries: Vec::new(), preview: None }),
+            motion_path: None,
         });
         self.retained = None;
         Ok(true)

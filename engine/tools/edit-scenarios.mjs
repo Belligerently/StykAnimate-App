@@ -1100,3 +1100,5 @@ scenario('figures-layers-sheet', app, [
 }
 // Property edits on a layer sheet (inspector scrubs, keyed values, scene colours, effects).
 await import('./edit-scenarios-property.mjs');
+// Motion-path edits on a layer sheet (trail points dragged at their own ticks, falloffs).
+await import('./edit-scenarios-motion-path.mjs');
