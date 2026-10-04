@@ -241,6 +241,74 @@ async function run(mode) {
       e.addVfxGroupEffect(clip.id, 'particles'); e.addVfxClip({kind: 'scene'}, 'smoke'); for (let i = 0; i < 5; i++) e.undo();
     }));
     await step('edit a segment from the inspector', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1); e.updateSegment({color_rgb: [10, 20, 30]}); e.updateSegment({angle_rad: 1}); e.undo(); e.select(e.selectedUid, -1); }));
+    // The builder's segment styles: shapes and the construction flag in the definition, opacity
+    // and thickness keyed and colours recoloured on the figure on show, caps, the figure's name.
+    await step('style segments as the builder does', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 2) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      e.select(uid, 1);
+      attempt(() => e.convertSegment('circle')); attempt(() => e.convertSegment('line'));
+      attempt(() => e.updateBuilderSegmentStyle({opacity: 0.6})); attempt(() => e.updateBuilderSegmentStyle({thickness: 5}, {branch: true}));
+      attempt(() => e.updateBuilderSegmentStyle({color: '#aa3300'})); attempt(() => e.updateBuilderSegmentStyle({static: true}));
+      attempt(() => e.setBranchCaps(true)); attempt(() => e.setBranchFill()); attempt(() => e.updateFigureStyle({name: 'Built'}));
+      for (let i = 0; i < 4; i++) e.undo();
+      e.select(uid, -1);
+    }));
+    // The figure's own drawing order: a segment raised, lowered, placed; a polygon to the front.
+    await step('order the figure\'s segments as the builder does', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 2) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      e.select(uid, 1);
+      attempt(() => e.moveBuilderOrder({kind: 'segment'}, 'front')); attempt(() => e.moveBuilderOrder({kind: 'segment'}, 'down', {branch: true}));
+      attempt(() => e.setBuilderOrder({kind: 'segment', index: 1}, 2)); attempt(() => e.orderSelection(1));
+      if (e.figure?.polyfills?.length) attempt(() => e.moveBuilderOrder({kind: 'polygon', index: 0}, 'front'));
+      for (let i = 0; i < 5; i++) e.undo();
+      e.select(uid, -1);
+    }));
+    // Rig relationships: Smart Stretch, a behaviour merged into a joint, angle locks measured on
+    // the figure on show, parts bound to a driver.
+    await step('relate parts of the rig', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 3) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      e.select(uid, 0); attempt(() => e.enableSmartStretch(true)); attempt(() => e.setRigBehavior({stretch: {min: 0.5}}));
+      e.select(uid, 1); attempt(() => e.setAngleLock('world')); attempt(() => e.setRigBehavior({response: {mode: 'rigid'}}));
+      e.select(uid, 2); attempt(() => e.bindStretchParts(e.figure.segments[0].segment_id)); attempt(() => e.setAngleLock('parent'));
+      attempt(() => e.setSecondaryAngleReference(e.figure.segments[0].segment_id));
+      for (let i = 0; i < 6; i++) e.undo();
+      e.select(uid, -1);
+    }));
+    // The figure's topology as the builder edits it: segments added and drawn, split, flipped,
+    // duplicated, moved in the hierarchy, unsplit and deleted, rig joints appended.
+    await step('change the figure\'s topology as the builder does', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 3) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      const ids = () => e.figure.segments.map(segment => segment.segment_id);
+      e.select(uid, 1); attempt(() => e.addSegment({length: 30, angle: 0.4})); attempt(() => e.addSegments([{length: 20, angle: 1}, {length: 15, angle: 1.4}]));
+      e.select(uid, 1); attempt(() => e.splitSegment(0.5)); attempt(() => e.mirrorSegment('horizontal')); attempt(() => e.duplicateSegmentBranch({angleOffset: 0.3}));
+      e.select(uid, 2); attempt(() => e.moveBuilderSegment(ids()[2], {parentId: ids()[0]})); attempt(() => e.unsplitSegment());
+      e.select(uid, e.figure.segments.length - 1); attempt(() => e.deleteSingleSegment()); attempt(() => e.deleteSegment());
+      e.select(uid, 0); attempt(() => e.addConnector(ids()[0], ids()[1])); attempt(() => e.addWeightedJoint(ids()[0], [{joint: ids()[1], weight: 0.5}]));
+      attempt(() => e.replaceFigureDefinition(e.figure.figure_type_id, {...structuredClone(e.figure), name: 'Swapped', segments: e.figure.segments.slice(0, -1)}, {label: 'Edit text'}));
+      for (let i = 0; i < 13; i++) e.undo();
+      e.select(uid, -1);
+    }));
+    // The Rig tool's drags: a joint repositioned, a branch turned, a joint bent with its branch,
+    // a cancelled drag; each commit changes the definition and every pose of it.
+    await step('drag joints with the Rig tool', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 3) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      const end = joint => e.geometry.objects.get(e.selectedSlot)?.segments[joint]?.end;
+      e.select(uid, 1); let p = end(1);
+      if (p) attempt(() => { if (e.beginRigDrag({})) { e.editRigJoint(p.x + 12, p.y - 6); e.editRigJoint(p.x + 16, p.y - 4); e.commitDrag(); } });
+      e.select(uid, 2); p = end(2);
+      if (p) attempt(() => e.editRigJoint(p.x - 10, p.y + 8, {reposition: false}));
+      p = end(2);
+      if (p) attempt(() => { if (e.beginRigDrag({bend: true})) { e.bendJoint(p.x + 6, p.y + 6); e.commitDrag(); } });
+      p = end(2);
+      if (p) attempt(() => { if (e.beginRigDrag({})) { e.editRigJoint(p.x + 5, p.y + 5); e.cancelRigDrag(); } });
+      for (let i = 0; i < 3; i++) e.undo();
+      e.select(uid, -1);
+    }));
     await step('move a handle in Handle Edit Mode', () => page.evaluate(() => {
       const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1);
       const p = e.geometry.objects.get(e.selectedSlot)?.joints.get(e.figure?.segments[1]?.segment_id); if (!p) return;

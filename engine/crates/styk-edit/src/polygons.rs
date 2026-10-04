@@ -23,7 +23,7 @@ fn finite(value: Option<&Value>, minimum: f64, maximum: f64) -> Result<f64, Edit
 }
 
 /// `rgb(value)`: `#rrggbb` or three bytes.
-fn rgb(value: Option<&Value>) -> Result<Value, EditError> {
+pub(crate) fn rgb(value: Option<&Value>) -> Result<Value, EditError> {
     let bad = || invalid("errors.editorBuilderBranch.colorMustBeASixDigitHexColor");
     if let Some(text) = value.and_then(Value::as_str) {
         let hex = text.strip_prefix('#').filter(|h| h.len() == 6 && h.bytes().all(|b| b.is_ascii_hexdigit())).ok_or_else(bad)?;
@@ -151,7 +151,7 @@ impl Editor {
 
     /// `editDefinition(editor, label, mutate)`: the selected figure's definition changed as
     /// one `figure` entry; the changed definition, or `false` when nothing changed.
-    fn edit_definition(&mut self, label: &str, mutate: impl FnOnce(&Value, &mut Obj) -> Result<(), EditError>) -> Result<Value, EditError> {
+    pub(crate) fn edit_definition(&mut self, label: &str, mutate: impl FnOnce(&Value, &mut Obj) -> Result<(), EditError>) -> Result<Value, EditError> {
         let Some((index, before)) = self.selected_definition()? else { return Ok(Value::Bool(false)) };
         if self.drag.is_some() {
             self.commit_drag()?;

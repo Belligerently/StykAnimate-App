@@ -285,10 +285,15 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   loaders (codec merge). Ported editor calls run in shadow (`?engineShadow=on`): on the
   document the app starts with, its pinned variant, a foot with followers and a joined
   assembly every call the shadow script makes now runs in the engine with no difference.
-  Still unported in `styk-edit`: posing 3D IK targets (and steering a planted knee,
-  twisting with 3D IK), pose choices, drawing layers, audio ripple, multi-figure and
-  movieclip-instance variants of the frame-drafting commands, and every command outside
-  the gesture and timeline set.
+  Still unported in `styk-edit`: joined 3D IK targets, motion paths (in progress), origins
+  (`setOrigin` and the `editor-origin-*` commands; documents with origins are refused),
+  creating, splitting, making unique, breaking apart and placing movieclips, effect presets
+  and scopes with attached parts, centring the camera and aligning figures (the app passes a
+  bounds function), the asynchronous layer commands (D7), in-betweens (native timelines
+  only), and from the builder: branch thickness, sprite segments, the native property
+  gestures, drawing a new figure, repairing a session after eviction. Topology edits run in
+  the engine and are compared, but their answers are not adopted: an owned session ends and
+  the editor runs them.
 - **Engine-owned editing still costs more than the editor on joint poses** (`?engineEdit=on`,
   opt-in): on AyameDemo.piv's 515-segment figure a pose call takes 1.2 ms in WebAssembly
   (0.39 ms natively) plus 0.45 ms adoption against the editor's 0.7 ms; all owned calls
@@ -613,10 +618,13 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 07:30 | S5 effect stacks | `styk-edit/src/vfx_stack.rs`: `addVfx`, `removeVfx`, `resetVfx`, `duplicateVfx`, `moveVfx`, `reorderVfx`, `pasteVfx` on figures, segments and the scene (new identities from the editor, D18; which effects the scene takes, `Kind::on_scene`, in the `styk-eval` registry); `setVfxParameter` shares their target checks. Presets, `setVfxScope` and pasting with attached parts stay JavaScript. | 1 recording (31 steps) matches the editor at every step; 9 of 9 mutations break it. App shadow with the engine's `Math`: start document 324/324, channels-figure 279/279; owned editing the same as the editor alone. |
 | 2026-10-04 08:00 | S5 effect clips added, copied and pasted | `styk-edit/src/vfx_clips.rs`: `addVfxClip` (generated effects timed at the playhead, `GENERATOR_DURATIONS`), `copyVfxClip` (effects sampled between number and colour keys), `pasteVfxClip` (keys or values), `duplicateVfxClip`, `addVfxGroupEffect`; `src/editor-vfx-clips.mjs` draws its identities and seeds through `editorDraws` (D18). Presets stay JavaScript. | 1 recording (40 steps) matches the editor at every step; 12 of 14 mutations break it (the other two are equivalent here: effect identities are unique, the at-key guard matters only for paint colours). App shadow with the engine's `Math`: start document 336/336, the new calls among them; owned editing the same as the editor alone. |
 | 2026-10-04 08:40 | S3 item 7: the CPU rasterizer | `styk-raster` draws as `styk-render` does: four-sample edges blended per sample, the GPU's depth rules (24-bit), glyph masks, every effect pass from the recipes `styk-render` records (`effects/recipe.rs`; `styk-render`'s `gpu` feature leaves the shared arithmetic without wgpu). Thumbnails and library previews where the stage cannot draw them and exports without a GPU device are drawn on the CPU in their workers (`?engineCpu=on` forces it). `styk raster-parity` compares it with the GPU. | Parity in section 7 (thumbnails 899/899 at three sizes, exports 677/677, deep 3D 1,244/1,244 thumbnails). Native timings against the tiny-skia renderer, machine load 9–12: 15 Guns export frame 386–578 → 95–101 ms, Impact 219–235 → 79–126 ms; slower where effects and multisampling are now drawn (section 6). In the app, CPU thumbnails 8.9–27.7 ms at 320×192 against 2.3–3.8 ms on the GPU. WebAssembly module +109 KiB (8,092,410 bytes). |
+| 2026-10-04 09:30 | S5 builder and rig family | `styk-edit/src/builder.rs` (segment styles, branch caps and fill, polygon opacity, figure name and outline, drawing order keyed after a live preview or written into the definition), `rig_behavior.rs` (rig validation as `rigConstraintPlan`, `setRigBehavior`, Smart Stretch, stretch bindings, angle lock, secondary angle reference), `topology.rs` (add, delete, mirror, move, split, duplicate segments; rig joints, connectors and weighted joints; `replaceFigureDefinition`; topology history with its repair, validation and rollback), `rig_drag.rs` (Rig tool drags). JavaScript fix: moving a segment in the builder repacks every pose in the new order. | 22 recordings (734 steps) match the editor at every step; 98 of 101 mutations break them (3 equivalent). App shadow with the engine's `Math`: start document 395/395, `rig.document.json` 319 the same, channels-figure 260/260; owned editing the same as the editor alone on all three. Engine and adoption against the editor alone: `moveBuilderOrder` ×3 3.8 + 5.6 ms against 9.1 ms, `setBuilderOrder` 1.1 + 1.4 against 4.4 ms. |
 
-In progress: the builder and rig family (agent), motion paths and in-betweens (agent). Next
-for agents: generated effects in the editor's tools, then the camera monitor on WebGL2. Next in the main thread: `centerCamera`, joined 3D
-IK targets, the remaining movieclip commands (create, split, make unique, break apart,
+In progress: motion paths (agent). Next for agents: origins (`setOrigin`, the
+`editor-origin-*` commands and the records evaluator's origin refusal), then the camera
+monitor on WebGL2. Next in the main thread: app sessions captured for native replay (an
+owned session on the start document refuses `setNodeIK` where the shadow does not), joined
+3D IK targets, centring the camera and aligning figures, the remaining movieclip commands (create, split, make unique, break apart,
 placing, playback across frames of clips on the document's clock), the asynchronous layer
 commands (moving figures between layers, deleting layers: their planning must stay off the
 interface thread, D7). The next classes to flip (D15): small figure and movieclip documents

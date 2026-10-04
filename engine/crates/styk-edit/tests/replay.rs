@@ -51,6 +51,15 @@ const PORTED: &[&str] = &[
     "range-ik-pinned-sheet", "range-ik-joined-sheet", "range-ik-followers-sheet", "range-movieclip-sheet",
     // Recolouring figures: palettes, gradients and paints, styles, polygons, format 4, mesh colours.
     "recolor-sheet", "recolor-format4-sheet", "recolor-mesh-sheet", "recolor-native",
+    // The builder: segment styles, branch caps and fills, the figure's name and outline.
+    "builder-styles-sheet", "builder-styles-native", "builder-styles-override-native", "builder-order-sheet", "builder-order-native",
+    // Rig relationships: Smart Stretch, behaviours, angle locks, stretch parts, IK refusals.
+    "rig-behavior-sheet", "rig-behavior-native", "rig-behavior-ik-sheet",
+    // The figure's topology: segments added, deleted, unsplit, flipped, moved, split, duplicated; rig joints appended.
+    "topology-sheet", "topology-native", "topology-joined-sheet", "topology-joined-native", "topology-ik-sheet", "topology-followers-sheet",
+    "topology-rig-sheet", "topology-vfx-sheet", "topology-sticknodes-sheet",
+    // Rig edits by dragging: repositioned, turned, stretched, slid and bent joints.
+    "rig-drag-sheet", "rig-drag-native", "rig-drag-plain-sheet", "replace-definition-sheet", "replace-definition-joined-native",
 ];
 
 #[test]

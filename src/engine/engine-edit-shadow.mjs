@@ -26,6 +26,9 @@ import {layerFocusOf} from '../editor-layer-focus.mjs';
 import {figureHandleTransform} from '../editor-figure-transform.mjs';
 import {withDraws} from '../editor-draws.mjs';
 
+/** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
+const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSegment', 'unsplitSegment', 'mirrorSegment', 'mirrorSegmentBranch', 'moveBuilderSegment',
+  'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint', 'replaceFigureDefinition'];
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames'];
@@ -52,7 +55,15 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   // Figures changed across frames, figure order, branch flips (styk-edit/src/range.rs).
   ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
   // Recolouring (styk-edit/src/recolor.rs).
-  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors'];
+  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors',
+  // The builder's segment styles (styk-edit/src/builder.rs).
+  'updateBuilderSegmentStyle', 'updateSegmentStyle', 'updateSegmentBranchStyle', 'convertSegment', 'setBranchCaps', 'setBranchFill', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder',
+  // Rig relationships (styk-edit/src/rig_behavior.rs).
+  'setRigBehavior', 'enableSmartStretch', 'bindStretchParts', 'setAngleLock', 'setSecondaryAngleReference',
+  // Rig edits by dragging (styk-edit/src/rig_drag.rs).
+  'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
+  // The figure's topology (styk-edit/src/topology.rs).
+  ...TOPOLOGY];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold), or clipboard text (numbers in text cannot be compared within the
  * browsers' last-digit differences, D16): a view, not compared. */
@@ -65,7 +76,9 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   // Property edits publish the sheet; a scrub's previews are compared, not adopted.
   'addAnimationKeys', 'addAnimationKey', 'commitAnimationEdit', 'setSceneColor', 'setSceneBackground', 'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter',
   ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
-  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx']);
+  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
+  // Style and draw-order edits recoloured or keyed on the figure on show publish the sheet; definition edits run in the editor.
+  'updateBuilderSegmentStyle', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder']);
 const RANGE = new Set([...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames']);
 /** A frame range as the app passes it on a layer sheet (`rangeFrames()`: an array carrying the
  * timeline's chosen ticks as `sheetTicks`), which JSON would drop: `{"@array", sheetTicks}`. */
@@ -417,7 +430,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       let live = begin(), before = null, payload = null;
       // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
       if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
-      if (live && (RANGE.has(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
+      if (live && (RANGE.has(name) || TOPOLOGY.includes(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
       if (live && (name === 'undo' && !live.can_undo() || name === 'redo' && !live.can_redo())) { end('history the session did not record'); live = null; }
       if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
       if (live && name === 'pasteSelection' && (editor._selectionClipboard ?? editor._figureClipboard ?? null) !== copiedFigures) { end('a figure clipboard the session did not copy'); live = null; }

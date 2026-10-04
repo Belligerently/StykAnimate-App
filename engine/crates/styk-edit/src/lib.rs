@@ -14,6 +14,7 @@
 
 mod audio;
 mod authored;
+mod builder;
 mod camera_commands;
 mod camera_motion;
 mod figure_clipboard;
@@ -38,6 +39,8 @@ mod range_plan;
 mod recolor;
 mod record;
 pub mod replay;
+mod rig_behavior;
+mod rig_drag;
 mod select;
 pub mod session;
 mod sheet;
@@ -46,6 +49,7 @@ mod sheet_frames;
 mod spatial;
 mod spatial_ik;
 mod timeline;
+mod topology;
 mod transform;
 mod vfx_clips;
 mod vfx_stack;
@@ -113,6 +117,8 @@ pub(crate) struct Drag {
     pub segment_value_options: Option<Value>,
     /// A camera drag (`_drag.camera`).
     pub camera: Option<camera_commands::CameraDrag>,
+    /// A rig edit by dragging (`_drag.rig`).
+    pub rig: Option<rig_drag::RigDrag>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -517,6 +523,15 @@ impl Editor {
             return result;
         }
         if let Some(result) = self.range_call(method, args) {
+            return result;
+        }
+        if let Some(result) = self.builder_call(method, args) {
+            return result;
+        }
+        if let Some(result) = self.rig_call(method, args) {
+            return result;
+        }
+        if let Some(result) = self.topology_call(method, args) {
             return result;
         }
         match method {

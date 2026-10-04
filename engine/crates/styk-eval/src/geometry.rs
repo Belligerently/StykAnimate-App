@@ -197,6 +197,8 @@ pub struct RigJoint {
     pub angle: f64,
     pub bend: f64,
     pub length: f64,
+    /// The angle the pose authored for it before the rig's own turns (`authoredAngle`).
+    pub authored: f64,
 }
 
 /// The 3D side of an evaluated figure: what surfaces, meshes and attached
@@ -746,6 +748,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                 angle: state.map_or(f64::NAN, |s| s.angle),
                 bend: state.map_or(f64::NAN, |s| s.bend),
                 length: state.map_or(f64::NAN, |s| s.length),
+                authored: state.map_or(f64::NAN, |s| s.authored_angle),
             })
             .collect()
     });
