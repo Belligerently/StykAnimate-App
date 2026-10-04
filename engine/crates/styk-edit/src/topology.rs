@@ -318,6 +318,83 @@ fn format_number(n: f64) -> String {
     styk_doc::json::to_string(&Value::Num(n))
 }
 
+/// The existing topology owner's raw definition checks, shared by sparse
+/// commands that must validate a currently mirrored definition before a live commit.
+pub(crate) fn validate_definition(figure: &Value) -> Result<Vec<Value>, EditError> {
+    let segments = items(figure.get("segments"));
+    if segments.len() > MAX_SEGMENTS {
+        return Err(invalid("errors.editorBuilderBranch.aNativePivotFigureSupportsAtMost30"));
+    }
+    let mut parents: Vec<(f64, f64)> = Vec::new();
+    let mut seen: HashSet<u64> = HashSet::new();
+    for s in &segments {
+        if let Some(paint) = s.get("paint").filter(|p| p.truthy()) {
+            crate::recolor::normalize_paint(paint)?;
+        }
+        let id = s.get("segment_id").and_then(Value::as_f64).filter(|n| n.fract() == 0.0 && *n > 0.0 && *n <= 65535.0);
+        let Some(id) = id.filter(|id| !seen.contains(&key_of(*id))) else { return Err(invalid("errors.model.invalidOrRepeatedSegmentHandle")) };
+        seen.insert(key_of(id));
+        parents.push((id, given(s, "parent_id").unwrap_or(f64::NAN)));
+        definition_float32(s.get("length"))?;
+        definition_finite(s.get("angle_rad"))?;
+        definition_float32(s.get("thickness"))?;
+    }
+    let parent_of: HashMap<u64, f64> = parents.iter().map(|(id, p)| (key_of(*id), *p)).collect();
+    let mut done: HashSet<u64> = HashSet::from([0]);
+    for (id, _) in &parents {
+        if done.contains(&key_of(*id)) {
+            continue;
+        }
+        let mut chain = Vec::new();
+        let mut p = *id;
+        while !done.contains(&key_of(p)) {
+            if !parent_of.contains_key(&key_of(p)) || chain.contains(&key_of(p)) {
+                return Err(invalid("errors.model.figureHasAMissingParentOrACycle"));
+            }
+            chain.push(key_of(p));
+            p = parent_of[&key_of(p)];
+        }
+        done.extend(chain);
+    }
+    if segments.iter().any(|s| s.get("_stykRig").is_some_and(Value::truthy)) {
+        crate::rig_behavior::validate_rig(&segments)?;
+    }
+    let ids: HashSet<u64> = segments.iter().filter_map(|s| handle(s.get("segment_id"))).map(key_of).chain([0]).collect();
+    for polygon in items(figure.get("polyfills")) {
+        if let Some(surface) = polygon.get("_stykSurface") {
+            let basis = numbers(surface.get("basis"));
+            let distinct = basis.iter().enumerate().all(|(i, a)| !basis[..i].contains(a));
+            if !surface.truthy() || !surface.get("basis").is_some_and(Value::is_array) || basis.len() != 3 || !distinct || basis.iter().any(|b| b.fract() != 0.0 || !ids.contains(&key_of(*b))) {
+                return Err(invalid("errors.surfaces.faceVisibilityNeedsThreeDistinctExistingReferenceJoints"));
+            }
+            if let Some(depth) = surface.get("depth") {
+                let depth = numbers(Some(depth));
+                if depth.is_empty() || depth.len() > 1024 || depth.iter().any(|d| d.fract() != 0.0 || !ids.contains(&key_of(*d))) {
+                    return Err(invalid("errors.surfaces.faceDepthNeedsExistingReferenceJointsUpTo"));
+                }
+            }
+        }
+        if let Some(order) = polygon.get("z_order") {
+            definition_float32(Some(order))?;
+        }
+    }
+    Ok(segments)
+}
+
+fn definition_finite(value: Option<&Value>) -> Result<f64, EditError> {
+    match value {
+        Some(Value::Num(n)) if n.is_finite() => Ok(*n),
+        _ => Err(invalid("errors.model.mustBeAFiniteNumber")),
+    }
+}
+fn definition_float32(value: Option<&Value>) -> Result<(), EditError> {
+    let n = definition_finite(value)?;
+    if !((n as f32) as f64).is_finite() {
+        return Err(invalid("errors.model.exceedsTheNativeFloat32Range"));
+    }
+    Ok(())
+}
+
 impl Editor {
     /// The selected figure's definition and its index (`editor.figure`).
     pub(crate) fn topology_figure(&self) -> Result<Option<(usize, Value)>, EditError> {
@@ -664,75 +741,9 @@ impl Editor {
     fn validate_topology(&self, index: usize, before: &Snapshot) -> Result<(), EditError> {
         let figure = self.report.get("figure_types").and_then(|f| f.item(index)).unwrap_or(Value::Null);
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
-        let segments = items(figure.get("segments"));
-        if segments.len() > MAX_SEGMENTS {
-            return Err(invalid("errors.editorBuilderBranch.aNativePivotFigureSupportsAtMost30"));
-        }
-        let finite = |value: Option<&Value>| match value {
-            Some(Value::Num(n)) if n.is_finite() => Ok(*n),
-            _ => Err(invalid("errors.model.mustBeAFiniteNumber")),
-        };
-        let float32 = |value: Option<&Value>| {
-            let n = finite(value)?;
-            if !((n as f32) as f64).is_finite() {
-                return Err(invalid("errors.model.exceedsTheNativeFloat32Range"));
-            }
-            Ok(())
-        };
-        let mut parents: Vec<(f64, f64)> = Vec::new();
-        let mut seen: HashSet<u64> = HashSet::new();
-        for s in &segments {
-            if let Some(paint) = s.get("paint").filter(|p| p.truthy()) {
-                crate::recolor::normalize_paint(paint)?;
-            }
-            let id = s.get("segment_id").and_then(Value::as_f64).filter(|n| n.fract() == 0.0 && *n > 0.0 && *n <= 65535.0);
-            let Some(id) = id.filter(|id| !seen.contains(&key_of(*id))) else { return Err(invalid("errors.model.invalidOrRepeatedSegmentHandle")) };
-            seen.insert(key_of(id));
-            parents.push((id, given(s, "parent_id").unwrap_or(f64::NAN)));
-            float32(s.get("length"))?;
-            finite(s.get("angle_rad"))?;
-            float32(s.get("thickness"))?;
-        }
-        let parent_of: HashMap<u64, f64> = parents.iter().map(|(id, p)| (key_of(*id), *p)).collect();
-        let mut done: HashSet<u64> = HashSet::from([0]);
-        for (id, _) in &parents {
-            if done.contains(&key_of(*id)) {
-                continue;
-            }
-            let mut chain = Vec::new();
-            let mut p = *id;
-            while !done.contains(&key_of(p)) {
-                if !parent_of.contains_key(&key_of(p)) || chain.contains(&key_of(p)) {
-                    return Err(invalid("errors.model.figureHasAMissingParentOrACycle"));
-                }
-                chain.push(key_of(p));
-                p = parent_of[&key_of(p)];
-            }
-            done.extend(chain);
-        }
-        if segments.iter().any(|s| s.get("_stykRig").is_some_and(Value::truthy)) {
-            crate::rig_behavior::validate_rig(&segments)?;
-        }
+        let segments = validate_definition(&figure)?;
         let ids: HashSet<u64> = segments.iter().filter_map(|s| handle(s.get("segment_id"))).map(key_of).chain([0]).collect();
         let at = |id: f64| segments.iter().position(|s| handle(s.get("segment_id")) == Some(id));
-        for polygon in items(figure.get("polyfills")) {
-            if let Some(surface) = polygon.get("_stykSurface") {
-                let basis = numbers(surface.get("basis"));
-                let distinct = basis.iter().enumerate().all(|(i, a)| !basis[..i].contains(a));
-                if !surface.truthy() || !surface.get("basis").is_some_and(Value::is_array) || basis.len() != 3 || !distinct || basis.iter().any(|b| b.fract() != 0.0 || !ids.contains(&key_of(*b))) {
-                    return Err(invalid("errors.surfaces.faceVisibilityNeedsThreeDistinctExistingReferenceJoints"));
-                }
-                if let Some(depth) = surface.get("depth") {
-                    let depth = numbers(Some(depth));
-                    if depth.is_empty() || depth.len() > 1024 || depth.iter().any(|d| d.fract() != 0.0 || !ids.contains(&key_of(*d))) {
-                        return Err(invalid("errors.surfaces.faceDepthNeedsExistingReferenceJointsUpTo"));
-                    }
-                }
-            }
-            if let Some(order) = polygon.get("z_order") {
-                float32(Some(order))?;
-            }
-        }
         for entry in &before.frames {
             let objects = items(frame_at(&self.report, &entry.place).and_then(|f| f.get("objects")));
             for object in &objects {
@@ -744,7 +755,7 @@ impl Editor {
                         let values = object.get(key).filter(|v| v.is_array()).map(|v| items(Some(v)));
                         let Some(values) = values.filter(|v| v.len() == segments.len()) else { return Err(invalid("errors.model.poseArrayDoesNotMatchItsFigure")) };
                         for value in &values {
-                            if key == "lengths" { float32(Some(value))? } else { finite(Some(value)).map(|_| ())? }
+                            if key == "lengths" { definition_float32(Some(value))? } else { definition_finite(Some(value)).map(|_| ())? }
                         }
                     }
                     for (id, controller) in object.get("_stykIK").and_then(Value::as_obj).map(|o| o.iter().map(|(k, v)| (js_number(k), v.clone())).collect::<Vec<_>>()).unwrap_or_default() {

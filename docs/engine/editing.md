@@ -687,8 +687,8 @@ The remaining recorded origin range/join and 2D rig families now use the existin
 range, pose and history owners. Sixty-three additional recordings match all 9,764
 steps, including fractional shown frames, live commit/cancel and undo/redo; their
 63 evaluated-record groups cover 647 ticks. Saved pose/handle/connector operations
-admit only the recorded rig combinations. Future 3D, pose-choice and attachment
-combinations remain explicit atomic refusals. `slideConnector` has a native command
+admit only the recorded rig combinations. Unrecorded 3D, pose-choice and attachment
+combinations remain explicit atomic refusals; recorded spatial choices are described below. `slideConnector` has a native command
 entry but is not added to the app facade by this milestone.
 
 Raw nested rig metadata is validated through `styk_eval::rig::validate_2d` before
@@ -696,6 +696,27 @@ origin commands can commit a live gesture. The compiler and editor record 102
 malformed refusals and 27 accepted boundaries/unknown-field cases; inactive null,
 false and zero connector metadata retain JavaScript truthiness. The native-frame
 history carrier is `CommandKind::Frame {index, before, after, structural}`.
+
+The recorded origin angle-lock definition lifecycle admits world, figure, parent,
+off and secondary reference patches through the same raw validator, before a live
+translation commits. Invalid proposed definitions retain the editor's recorded
+commit-before-error behavior. Angle posing still uses the narrower world-only
+gate; definition support does not admit figure/parent posing. Thirteen tapes match
+2,158 steps, with 42 atomic malformed/complex guards and three actual-source mutants.
+
+Spatial origin choices use the same typed basis, pose-choice and history owners.
+Twenty-four tapes match 2,724 steps, covering visibility, channel presets, mixed
+choices, six joined cases, retained support, a non-first origin handle, mirrors and
+fractional reads. Admission permits one selected typed origin instance and ordinary
+joined ancestors/followers; another spatial instance, native property channels,
+saved/projection/IK/mechanical/mesh/skin/optional-metadata cases remain refused.
+Raw definition validation is factored from the existing topology owner, retaining
+the shared VFX owner remapper. Schema evidence covers five accepted and 26 rejected
+editor loads; 57 command refusals are atomic and three source mutants are caught.
+These tapes compare existing history flags/labels/undo-redo and shown frames at
+every step, without claiming full enumerable command carriers or new full returns.
+The 37 derived record groups cover 357 exact ticks; all 186 affected JSON regenerate
+twice byte-stable. No public crate API, app adoption or class gate changes.
 
 Inspector `animationValue` reads accept finite fractional playhead ticks and use
 the existing shown-frame/channel sampler, including exact target scope. Stored key

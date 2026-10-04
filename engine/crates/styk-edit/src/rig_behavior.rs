@@ -800,9 +800,8 @@ impl Editor {
         lock.set("mode", mode.cloned().unwrap_or(Value::Null));
         lock.set("angle", Value::Num(shape.angle));
         lock.set("multiplier", Value::Num(1.0));
-        let rotation = animation_rotation(&figure, &object)?;
         if mode.and_then(Value::as_str) == Some("figure") {
-            lock.set("restAngle", Value::Num(rotation));
+            lock.set("restAngle", Value::Num(self.rig_animation_rotation(&figure, &object)?));
         }
         if mode.and_then(Value::as_str) == Some("parent") {
             let ids: HashMap<u64, usize> = segments.iter().enumerate().filter_map(|(i, s)| id_key(s.get("segment_id")).map(|k| (k, i))).collect();
@@ -817,7 +816,7 @@ impl Editor {
             let parent_shape = self.drawn_joint(parent)?.ok_or_else(|| EditError::Unported("an angle lock on a figure the engine does not draw".into()))?;
             lock.set("reference", segments[parent].get("segment_id").cloned().unwrap_or(Value::Null));
             lock.set("restAngle", Value::Num(parent_shape.angle));
-            lock.set("figureRestAngle", Value::Num(rotation));
+            lock.set("figureRestAngle", Value::Num(self.rig_animation_rotation(&figure, &object)?));
         }
         lock.set("secondary", Value::Null);
         let mut patch = Obj::new();
@@ -852,7 +851,7 @@ impl Editor {
         let delta = match lock.get("figureRestAngle") {
             None => 0.0,
             // `rotation - null` is the rotation.
-            Some(rest) => animation_rotation(&figure, &object)? - if rest.is_null() { 0.0 } else { rest.as_f64().unwrap_or(f64::NAN) },
+            Some(rest) => self.rig_animation_rotation(&figure, &object)? - if rest.is_null() { 0.0 } else { rest.as_f64().unwrap_or(f64::NAN) },
         };
         let mut secondary = Obj::new();
         secondary.set("reference", reference);
@@ -863,6 +862,16 @@ impl Editor {
         let mut patch = Obj::new();
         patch.set("angleLock", Value::object(inner));
         self.set_rig_behavior(Some(&Value::object(patch)))
+    }
+
+    /// Origin definitions use the existing typed support/layout rotation owner.
+    /// Ordinary figures retain the same raw numeric contract as before.
+    fn rig_animation_rotation(&self, figure: &Value, object: &Value) -> Result<f64, EditError> {
+        if figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) {
+            self.origin_rotation(figure, object)
+        } else {
+            animation_rotation(figure, object)
+        }
     }
 
     /// The selected figure's segment `index` as its geometry draws it: angle, rig-evaluated

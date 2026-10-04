@@ -596,6 +596,8 @@ impl Editor {
             if matches!(method, "joinTo" | "unjoinFigure" | "joinFigure") {
                 self.origin_range_gate(&self.selection_frame()?, &self.selection.uids, if method == "unjoinFigure" { None } else { arg(0).as_f64().map(|id| id as u32) })?;
             }
+            if origin::choice_call(method) { self.origin_choice_gate()?; }
+            if origin::constraint_call(method) { self.origin_constraint_gate(method, args)?; }
             if origin::rig_pose_call(method) { self.origin_rig_pose_gate(method, reason == "with animation origins and property channels")?; }
             else if origin::posing_call(method) { self.origin_pose_gate()?; }
             if origin::rig_tool_call(method) { self.origin_rig_gate()?; }

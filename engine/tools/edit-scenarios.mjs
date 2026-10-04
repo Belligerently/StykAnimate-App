@@ -1167,6 +1167,8 @@ await import('./edit-scenarios-origin-join.mjs');
 await import('./edit-scenarios-origin-rig.mjs');
 await import('./edit-scenarios-origin-rig-pose.mjs');
 await import('./edit-scenarios-origin-rig-inactive.mjs');
+await import('./edit-scenarios-origin-angle-lock.mjs');
+await import('./edit-scenarios-origin-pose-choice.mjs');
 await import('./origin-rig-invalid-fixtures.mjs');
 
 // Movieclip definitions, sparse capture and editable conversion.

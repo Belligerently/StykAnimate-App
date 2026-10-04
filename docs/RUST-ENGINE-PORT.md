@@ -232,6 +232,28 @@ allocate no full carrier. No app/class gate changes or deletion. Portable mobile
 changes: `CommandKind::LayerSheet.retain_geometry`, `styk_eval::vfx::remap_owner` and
 offline `replay_worker_with_source_budget`. Logs: `tmp/root-verification-temp/canonical-bake-*`.
 
+Recorded origin angle-lock definitions and spatial pose choices are integrated as
+offline/worker command prerequisites. Thirteen angle-lock recordings cover 2,158
+steps; 24 spatial choice/preset/mixed recordings cover 2,724, including six joined
+families. Both preserve raw definition validation, typed origin bases, retained
+support, fractional displayed frames and live commit/cancel behavior. Figure/parent
+angle-lock references are admitted only for recorded definition changes; posing
+with those references still refuses. Spatial admission is restricted to the one
+recorded selected origin instance. Native property projection/authoring, complex
+metadata and additional spatial instances remain refused. Existing history
+flags/labels and undo/redo are covered; these recordings do not certify full
+enumerable history carriers or new complete return views. No public crate API,
+app adoption or class gate changes. Evidence: `tmp/root-verification-temp/origin-constraints-choice-*`.
+
+The full background checkpoint on immutable committed `9728e86e` passed all 47
+stages, 615 tests in its eleven-crate release selection and 358 repository containers
+at 19:06 CEST. After every generator and CLI build, all 127 release test executables
+are fresh in 0.22 s, without recompilation. Changed production inputs required
+legitimate release compilation in this loaded run; this is no performance result.
+The next regular checkpoint starts no earlier than 19:54 CEST. Retain its existing
+isolated target and locked dependencies. Logs: `checkpoint-9728e86e.log` and
+`checkpoint-9728e86e-post-regeneration-fresh.log` under `tmp/root-verification-temp/`.
+
 | Stage | State |
 | --- | --- |
 | S0 plan, baseline | Done (sections 1–5; baseline worktree `tmp/baseline-worktree` at `96ebce85`). |
@@ -239,7 +261,7 @@ offline `replay_worker_with_source_budget`. Logs: `tmp/root-verification-temp/ca
 | S2 store, evaluation, geometry | Done for every feature the gate checks: IK (2D, 3D, joined), channels, meshes, follow camera, text, movieclip replacements, effects as records. Camera motion now uses V8-exact maths. |
 | S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Original drawing-cel stage views now match Electron and software web; auxiliary monitor/onion, private web and crisp parity remain open. Worker monitor and exact in-between sample prerequisites are assembled; actual-shown/resource ordering and audited D7 work remain. Left: item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
 | S4 export, thumbnails, previews | Done for documents the engine draws, on the GPU or the CPU; SVG stays JavaScript by design. |
-| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 461 command recordings include recorded movieclip/native scalar/optional selection and origin sheet motion prerequisites, plus explicit unsupported guards. Canonical worker Session app adoption is pending. Origins admit recorded whole/joint/handle/topology/saved-channel/range/join/2D-rig calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
+| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 498 command recordings include recorded movieclip/native scalar/optional selection and origin motion, angle-lock definition and spatial-choice prerequisites, plus explicit unsupported guards. Canonical worker Session app adoption is pending. Other origin families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
 | S6 drawing raster engine | Done: `styk-drawing` (D17) runs in the drawing workers by default (`?drawingEngine=off` to compare). |
 | S7 | Not started: dead machinery, final screenshots, interleaved benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, Windows CI. |
 
@@ -275,8 +297,9 @@ without owning.
    Joint/handle and saved x/y/scale/rotation channel recordings now match, including shown
    frames and future target/ancestor guards. Ranges/joins and recorded 2D rig combinations
    now match. Optional selection metadata, native scalar authoring and recorded sheet motion paths
-   are assembled, as are five recorded native origin motion families; next: saved native
-   origin motion and complex rig/pose-choice/spatial combinations. Every admitted command needs its own
+   are assembled, including five native and two saved-native origin motion families,
+   recorded angle-lock definition changes and spatial pose choices. Next: shared native
+   property projection/authored publication and unrecorded complex combinations. Every admitted command needs its own
    recorded replay and app comparison; class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
@@ -315,8 +338,14 @@ without owning.
 - Benchmarks not yet run: the final interleaved benchmark set and the performance report;
   numbers in the milestone log are single runs on a shared, loaded machine.
 - `wasm-opt` is not installed: the WebAssembly modules are not size-optimized.
-- Native motion still refuses saved channels and unrecorded ordinary/complex targets
-  before mutation; its five admitted remote-time families do not change app adoption.
+- Native motion admits five remote-time and two saved-native families; native property
+  projection/authoring and unrecorded ordinary/complex targets remain refused. The actual
+  eight propertyChannels:true live tapes preserve their options and expose the shared
+  marker-adoption/authored-pose gap; their port and canonical worker admission remain open.
+- Cache and quiet actor source reviews found no-progress Busy retry gaps when
+  Atomics.waitAsync is absent. Corrections must preserve coalescing, cancellation and
+  the publication barrier before these pending patches can merge. Global last-owner
+  retirement/physical accounting and shutdown ACK remain separate D7 obligations.
 - Section 6 lists the rest: auxiliary cel previews/monitor and crisp export, CPU rasterizer on nearly coplanar 3D
   faces, out-of-memory not recovered, `svr_uriel.piv` too large for the reference tool,
   Clippy warnings in `styk-eval`, the codec's `.stk` segment-edit defect.
@@ -686,7 +715,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   own keyframes where the editor samples its retained source (`movieclipSource`); the follow
   camera reshapes its whole path on every revision where the editor resamples incrementally
   (edit frames use the committed path); records (`styk_eval::records`) now match animation origins, but editing remains limited to
-  recorded whole-figure, topology, joint/handle, saved transform-channel, range/join and constrained 2D-rig families until remaining command replays land; onion-skin ghosts get no
+  recorded whole-figure, topology, joint/handle, saved transform-channel, range/join,
+  constrained 2D-rig, angle-lock definitions and spatial pose-choice families until remaining command replays land; onion-skin ghosts get no
   parallax (the editor never shows onion skins with the camera on).
 - **Captions**: text is drawn as the WebGPU renderer draws it ([rendering.md](engine/rendering.md#text)).
   One step still fails: 15 Guns tick 0 (mean 0.294, its cover page), because Chromium's
@@ -723,6 +753,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Follow UI sessions refuse cold ticks/revisions instead of evaluating them on the interface
   thread; native bake replays do not certify UI admission. Still unported in `styk-edit`:
   unrecorded complex origin definitions and motion-path/pose-choice/spatial combinations
+  beyond the recorded angle-lock and single-selected-spatial-instance prerequisites
   (range/join and recorded 2D-rig calls now match alongside whole/joint/handle/saved-channel/topology families),
   concurrent stale Bake, unrecorded movieclip/IK/draft combinations, remaining effect
   attachments and origin/projection combinations. Recorded effect presets/scopes and
@@ -916,6 +947,17 @@ single-child run may carry outer/child effects, but multiple children and ordina
 retain their existing policy. Auxiliary onion/monitor, private web and crisp failures
 above remain explicit. Focused verification uses 632 native tests for the shared draw
 type, 31 JS tests, check and shipping Wasm, without another full checkpoint or cost claim.
+
+**Origin angle-lock definitions and spatial choices** (2026-10-04): 37 added tapes
+match 4,882 steps; the 97 affected CLI recordings match 11,029, with no partial
+or Unported outcomes in that admitted set. All 186 affected JSON regenerate twice
+byte-stable, including 37 derived groups / 357 exact ticks. Focused checks pass
+163 edit tests, two records tests, 134 JavaScript tests with one skip, syntax/locales
+and shipping Wasm (9,717 KiB, SHA `b743a015efd0`). Source review preserves canonical
+Bake/history/source changes through two narrow dispatch/validator adaptations.
+Six actual lane mutants are caught and restored. This is offline/worker command
+coverage; app adoption, complete enumerable history/returns, class gates and dense
+UI cost are not certified. No public crate API changed.
 
 **Origin records and editing** (2026-10-04): 15 specific record groups, 466 ticks
 and 4,112 property values match byte for byte. Twenty-one added recordings cover 441
@@ -1245,3 +1287,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 18:31 | S5 recorded saved-native origin motion | Extend the existing native Draft/channel/source/history owners for the two previously recorded saved-origin motion families. Live scalar order remains transient; repeated writes reuse source IDs, with canonical registration at commit. Authoritative and motion display reads remain separate worker prerequisites. Portable pin addition: Records::new_native_draft. Wasm 9,604 KiB (+16 KiB), SHA e06a24b83579. No app adoption, class gate, deletion or performance claim. | Independently reviewed 16-path freeze; 286 touched edit/eval tests, 92 focused JS tests, check and shipping build pass. All 67 affected JSON regenerate byte-stable. CLI admits 32 affected tapes / 6,165 exact steps, including the two saved tapes / 366 calls, and retains nine explicit guards. Fourteen affected capture tapes / 138 steps and 19 worker insertion tapes / 153 steps also match. Actual 42 draft displays, 122 lifecycle states and eight enumerable Animation commands certify ordering/registration/retention; four real lane mutants fail and restore. Initial owning-crate run catches an obsolete select-refusal expectation; remove only the newly recorded selection refusal, preserving all five unrecorded mutator/atomicity checks, and rerun the full touched crates green. Full checkpoint remains active on immutable 9728e86e. Logs: tmp/root-verification-temp/saved-native-*. |
 
 | 2026-10-04 19:02 | S5 awaited worker Bake and canonical history/record observation | Integrate independently reviewed 173-path canonical and 14-path TOP freezes with three reviewed adaptations preserving saved-native sources and current generator lists. Bake reuses Records/materializer, plural expansion, native capture and checked SheetPlan/history owners; optional replay record capture is disabled on normal calls. Portable pin changes: CommandKind::LayerSheet.retain_geometry, styk_eval::vfx::remap_owner and replay_worker_with_source_budget. Wasm 9,701 KiB (+97 KiB), SHA 055ecc07c3d8. No app adoption, class gate, deletion or performance claim. | Shared-type validation passes 659 native tests and 194 focused JS tests. Final corrective slice passes 153 owning edit tests, check, 159 JSON artifacts regenerated twice byte-stable and the same shipping Wasm bytes. CLI default 37 families/234 exact calls, Frame/Ranges observer 27, native VFX reads 24, original remappers 16, separate explicit 1 GiB object-limit 4; default/runtime source allowance remains 128 MiB. Final native/sheet remapped-effect stored/preview pictures pass software web 4/4 mean .017499 and default Electron GPU 4/4 mean .024497, zero solids, unchanged D13. Final CLI initially disproves stale-refusal lane claim: step 2 actually differs. Preserve failed evidence; add actual yield-time rename metadata and generic pre-dispatch capability refusal, with all original 159 JSON fields preserved and a failing-before regression plus independent review. Stale trace now 1/4 then explicitly unported at step 2; actor/yield parity remains open. Full checkpoint continues on immutable 9728e86e. Logs: tmp/root-verification-temp/canonical-bake-*. |
+
+| 2026-10-04 19:30 | S5 recorded origin angle-lock definitions and spatial choices | Integrate independently reviewed angle45/spatial80 freezes as one focused batch, preserving canonical Bake/history/source changes with two reviewed dispatch/validator adaptations. Same typed origin, raw definition, choice, support and history owners; figure/parent posing, multiple spatial instances and unrecorded native-projection/complex metadata remain refused. No public crate API or mobile pin signature change. Wasm 9,717 KiB (+16 KiB), SHA b743a015efd0. No app adoption, class gate, deletion or performance claim. | 163 owning edit tests, two records tests, 134 focused JS tests plus one skip, check (1,996 files/7,010 messages) and shipping build pass. CLI 97 affected admitted tapes/11,029 exact steps, including 37 new/4,882 steps; all 37 derived groups/357 ticks match. All 186 JSON regenerate twice byte-stable. Six actual lane source mutants fail and restore; 42 angle and 57 choice atomic guards, schema five accepted/26 rejected loads. Existing labels/flags/undo-redo and shown frames are covered, full enumerable history/new returns remain separate. Full committed 9728e86e checkpoint green: 47 stages, 615 release-selection tests and 358 containers; all 127 release test executables fresh after regeneration in 0.22 s. Next regular no earlier than 19:54 CEST. Logs: tmp/root-verification-temp/origin-constraints-choice-*. |

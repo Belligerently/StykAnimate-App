@@ -8,7 +8,7 @@ use crate::record::{num, uid};
 use crate::{EditError, Editor};
 
 pub(crate) fn recorded_call(method: &str) -> bool {
-    posing_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
+    choice_call(method) || posing_call(method) || constraint_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
         "commitDrag" | "cancelDrag" | "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" |
         "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" | "setOrigin" | "mirrorSegment" | "mirrorSegmentBranch" | "splitSegment" | "splitSegmentBranch" | "splitBuilderSegments" | "unsplitSegment" |
         "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
@@ -23,7 +23,7 @@ pub(crate) fn motion_call(method: &str) -> bool {
 }
 
 pub(crate) fn recorded_channel_call(method: &str) -> bool {
-    property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
+    choice_call(method) || constraint_call(method) || property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
         "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" | "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" |
         "poseJoint" | "rotateJoint" | "bendJoint" | "undo" | "redo")
 }
@@ -37,6 +37,16 @@ pub(crate) fn posing_call(method: &str) -> bool {
     matches!(method, "poseJoint" | "rotateJoint" | "bendJoint" | "beginHandleEditDrag" | "editHandlePosition" | "commitHandleEditDrag" | "cancelHandleEditDrag" |
         "beginFigureHandleDrag" | "transformFigureHandle" | "commitFigureHandleDrag" | "cancelFigureHandleDrag")
 }
+
+pub(crate) fn choice_call(method: &str) -> bool { method == "setPoseChoice" }
+
+/// Only the recorded sparse 2D angle-lock definition changes, not general rig patches.
+pub(crate) fn constraint_call(method: &str) -> bool {
+    matches!(method, "setAngleLock" | "setSecondaryAngleReference" | "setRigBehavior")
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum RigScope { Plain, Pose, Angle }
 
 pub(crate) fn rig_tool_call(method: &str) -> bool {
     matches!(method, "beginRigDrag" | "editRigJoint" | "commitRigDrag" | "cancelRigDrag")
@@ -129,12 +139,92 @@ impl Editor {
     pub(crate) fn origin_rig_pose_gate(&self, method: &str, saved_channels: bool) -> Result<(), EditError> {
         let objects = self.selection_frame()?;
         let slots = Self::ik_pose_slots(&objects, crate::select::resolve_join_selection(&objects, &self.selection.uids, false)?);
-        let has_rig = self.origin_plain_slots_with_rig(&objects, &slots, true)?;
+        let has_rig = self.origin_plain_slots_with_rig(&objects, &slots, RigScope::Pose)?;
         if has_rig && slots.iter().any(|&slot| objects[slot].get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| !controllers.is_empty())) {
             return Err(EditError::Unported("an unrecorded animation-origin rig with IK controllers".into()));
         }
         if !has_rig && saved_channels && matches!(method, "beginFigureHandleDrag" | "transformFigureHandle" | "commitFigureHandleDrag" | "cancelFigureHandleDrag") {
             return Err(EditError::Unported("an unrecorded saved-origin channel figure-handle gesture without a 2D rig".into()));
+        }
+        Ok(())
+    }
+
+    /// The recorded spatial visibility/preset owner has its own narrow admission;
+    /// it does not admit other spatial gestures, IK, meshes or saved channels.
+    pub(crate) fn origin_choice_gate(&self) -> Result<(), EditError> {
+        if self.selection.uids.len() != 1 || self.selection.joint >= 0 ||
+            self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.is_some() || self.selection_metadata.branch.is_some() ||
+            (!self.sheet() && (self.options.property_channels || self.options.layer_timeline)) ||
+            self.report.path(&["_styk", "simpleFrameDraft"]).is_some() ||
+            self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).is_some_and(|n| n > 0) ||
+            self.report.path(&["_styk", "layerSheet", "legacyAnimation", "channels"]).and_then(Value::array_len).is_some_and(|n| n > 0) {
+            return Err(EditError::Unported("an unrecorded origin pose-choice selection or saved channels".into()));
+        }
+        if self.drag.as_ref().is_some_and(|drag| drag.translation || drag.handle_edit.is_some() || drag.figure_handle.is_some() || drag.segment_value_options.is_some() || drag.camera.is_some() || drag.rig.is_some() || drag.motion_path.is_some()) {
+            return Err(EditError::Unported("an origin pose choice during an unrecorded gesture".into()));
+        }
+        let objects = self.selection_frame()?;
+        let slots = crate::select::resolve_join_selection(&objects, &self.selection.uids, true)
+            .map_err(|_| EditError::Unported("an invalid origin pose-choice hierarchy".into()))?;
+        let selected = self.object()?.and_then(|(_, object)| crate::record::uid(&object));
+        for slot in slots {
+            let object = &objects[slot];
+            if object.get("_stykSpatial").is_some_and(Value::truthy) || object.get("_stykIK").filter(|controllers| controllers.truthy()).is_some_and(|controllers| !controllers.as_obj().is_some_and(|controllers| controllers.is_empty())) {
+                return Err(EditError::Unported("an unrecorded projected or IK origin pose choice".into()));
+            }
+            let Some(figure) = self.figure_of(object) else { return Err(EditError::Unported("an origin pose choice without a figure".into())) };
+            if ["spatialMesh", "drawing", "movieclip"].iter().any(|key| figure.path(&["_styk", key]).is_some_and(Value::truthy)) {
+                return Err(EditError::Unported("an unrecorded origin pose-choice mesh, drawing or movieclip".into()));
+            }
+            if selected != crate::record::uid(object) {
+                self.origin_plain_slots_in(&objects, &[slot])?;
+            } else {
+                let segments = crate::topology::validate_definition(&figure)
+                    .map_err(|error| EditError::Unported(format!("an invalid origin pose-choice definition: {error}")))?;
+                if segments.iter().any(|segment| segment.get("_stykRig").is_some_and(|rig| !rig.as_obj().is_some_and(|rig|
+                    !rig.is_empty() && rig.keys().all(|key| key.as_ref() == "spatial") && rig.get("spatial").is_some_and(|spatial|
+                        spatial.get("origin").is_some_and(Value::truthy) && spatial.get("bindings").is_none() && spatial.get("motion").is_none())))) {
+                    return Err(EditError::Unported("an unrecorded origin pose-choice rig relationship".into()));
+                }
+                crate::pose_choice::validate_choices(&figure, &segments)
+                    .map_err(|error| EditError::Unported(format!("an invalid origin pose-choice schema: {error}")))?;
+            }
+            if figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) {
+                self.origin_figure(&figure)?;
+                if !object.get("_stykAnimationOrigin").is_some_and(Value::truthy) {
+                    return Err(EditError::Unported("an unrecorded origin pose choice without a pivot".into()));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A sparse definition change reuses the selected component, strict typed rig
+    /// validation and typed origin owner before its existing history body may commit
+    /// a translation. Figure/parent locks do not open the separate posing gate.
+    pub(crate) fn origin_constraint_gate(&self, method: &str, args: &[Value]) -> Result<(), EditError> {
+        if method == "setRigBehavior" && !args.first().and_then(Value::as_obj).is_some_and(|patch|
+            !patch.is_empty() && patch.keys().all(|key| key.as_ref() == "angleLock")) {
+            return Err(EditError::Unported("an unrecorded animation-origin rig behavior patch".into()));
+        }
+        if self.drag.as_ref().is_some_and(|drag| !drag.translation) {
+            return Err(EditError::Unported("an animation-origin constraint change during an unrecorded gesture".into()));
+        }
+        let objects = self.selection_frame()?;
+        let slots = crate::select::resolve_join_selection(&objects, &self.selection.uids, true)
+            .map_err(|_| EditError::Unported("an invalid animation-origin constraint hierarchy".into()))?;
+        self.origin_plain_slots_with_rig(&objects, &slots, RigScope::Angle)?;
+        for slot in slots {
+            let object = &objects[slot];
+            if object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| !controllers.is_empty()) {
+                return Err(EditError::Unported("an unrecorded animation-origin constraint with IK controllers".into()));
+            }
+            if let Some(figure) = self.figure_of(object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+                self.origin_figure(&figure)?;
+                if !object.get("_stykAnimationOrigin").is_some_and(Value::truthy) {
+                    return Err(EditError::Unported("an unrecorded animation-origin constraint pose without a pivot".into()));
+                }
+            }
         }
         Ok(())
     }
@@ -189,7 +279,7 @@ impl Editor {
     }
 
     fn origin_plain_slots_in(&self, objects: &[Value], slots: &[usize]) -> Result<(), EditError> {
-        self.origin_plain_slots_with_rig(objects, slots, false).map(|_| ())
+        self.origin_plain_slots_with_rig(objects, slots, RigScope::Plain).map(|_| ())
     }
 
     /// Motion edits resolve their component in the remote frame, not the current
@@ -207,7 +297,7 @@ impl Editor {
         Ok(())
     }
 
-    fn origin_plain_slots_with_rig(&self, objects: &[Value], slots: &[usize], allow_rig: bool) -> Result<bool, EditError> {
+    fn origin_plain_slots_with_rig(&self, objects: &[Value], slots: &[usize], scope: RigScope) -> Result<bool, EditError> {
         let mut has_rig = false;
         let mut validated = std::collections::HashSet::new();
         for &slot in slots {
@@ -220,16 +310,16 @@ impl Editor {
                     let rig = segment.get("_stykRig").filter(|rig| rig.truthy());
                     figure_has_rig |= rig.is_some();
                     has_rig |= rig.is_some();
-                    let unrecorded = rig.is_some_and(|rig| !allow_rig || !rig.as_obj().is_some_and(|rig| !rig.is_empty() &&
-                        rig.keys().all(|key| ["stretch", "follow", "angleLock", "connector"].contains(&key.as_ref())) &&
+                    let unrecorded = rig.is_some_and(|rig| scope == RigScope::Plain || !rig.as_obj().is_some_and(|rig| !rig.is_empty() &&
+                        rig.keys().all(|key| if scope == RigScope::Angle { key.as_ref() == "angleLock" } else { ["stretch", "follow", "angleLock", "connector"].contains(&key.as_ref()) }) &&
                         rig.get("follow").is_none_or(|follow| follow.get("mode").and_then(Value::as_str) == Some("stretch")) &&
-                        rig.get("angleLock").is_none_or(|lock| lock.get("mode").and_then(Value::as_str) == Some("world"))));
+                        rig.get("angleLock").is_none_or(|lock| lock.get("mode").and_then(Value::as_str).is_some_and(|mode| if scope == RigScope::Angle { ["world", "figure", "parent"].contains(&mode) } else { mode == "world" }))));
                     unrecorded || segment.get("_stykPoseChoice").is_some_and(Value::truthy)
                 }))) ||
                 object.get("_stykSpatial").is_some_and(Value::truthy) ||
                 object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| controllers.iter().any(|(_, controller)| controller.get("spatialTarget").is_some_and(Value::truthy)));
             if complex { return Err(EditError::Unported("origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition".into())); }
-            if allow_rig && figure_has_rig && let Some(figure) = figure
+            if scope != RigScope::Plain && figure_has_rig && let Some(figure) = figure
                 && validated.insert(num(&figure, "figure_type_id").unwrap_or(f64::NAN).to_bits())
             {
                 styk_eval::rig::validate_2d(&figure).map_err(|error| EditError::Unported(format!("an animation-origin rig unavailable for editing: {error}")))?;
@@ -562,3 +652,11 @@ mod tests {
 #[cfg(test)]
 #[path = "origin_rig_validation_tests.rs"]
 mod validation_tests;
+
+#[cfg(test)]
+#[path = "origin_angle_tests.rs"]
+mod angle_tests;
+
+#[cfg(test)]
+#[path = "origin_pose_choice_tests.rs"]
+mod choice_tests;
