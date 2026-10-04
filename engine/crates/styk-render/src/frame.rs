@@ -11,12 +11,44 @@ use crate::{Renderer, Stats, ViewParams, FORMAT, UNIFORM_STRIDE};
 
 /// One effect run of a frame: a filtered group's layer at `at` on `page` of its depth's atlas.
 struct Work {
+    group: usize,
     round: usize,
     depth: u32,
     page: u32,
     at: [u32; 2],
     size: [u32; 2],
     run: Run,
+}
+
+/// Receipt of the composite operations just encoded for one owning target.
+/// Uses the same published shader group record; no document/effect scan or
+/// pixel readback. Opacity-zero, unplaced and clipped sources are not consumed.
+fn consume_gpu_sources(prims: &[styk_draw::Prim], placed: &[GpuGroup], sources: &mut [bool], page: Option<u32>, root_clip: Option<[f32;4]>) {
+    for p in prims {
+        if p.kind & 255 != K_COMPOSITE || p.color >> 24 == 0 { continue; }
+        let parent = p.group as usize;
+        let child = p.b[0].to_bits() as usize;
+        if !sources.get(child).copied().unwrap_or(false) { continue; }
+        let Some(child) = placed.get(child).map(|g| g.0) else { continue };
+        if child[6] < 0.0 || child[22] <= child[20] || child[23] <= child[21]
+            || child[12]*child[15]-child[13]*child[14] == 0.0 { continue; }
+        let clip = if parent == 0 { root_clip } else {
+            let Some(group) = placed.get(parent).map(|g| g.0) else { continue };
+            if page != Some(group[6] as u32) || group[6] < 0.0 { continue; }
+            Some([group[8],group[9],group[10],group[11]])
+        };
+        let Some(clip) = clip else { continue };
+        if clip[2] <= clip[0] || clip[3] <= clip[1] { continue; }
+        // These are the compositor vertex owner's actual published f32 corners.
+        let quad = [[child[20],child[21]],[child[22],child[21]],[child[22],child[23]],[child[20],child[23]]].map(|[x,y]| {
+            let at = [child[12]*x+child[14]*y+child[16],child[13]*x+child[15]*y+child[17]];
+            [(at[0] as f64-clip[0] as f64)/(clip[2] as f64-clip[0] as f64),
+             (at[1] as f64-clip[1] as f64)/(clip[3] as f64-clip[1] as f64)]
+        });
+        if crate::paint::PaintQuad(quad).pixel_area([0.0,0.0]) > 0.0 {
+            if let Some(source) = sources.get_mut(parent) { *source = true; }
+        }
+    }
 }
 
 /// What passes of a list with depth runs draw with: the flat and faces pipelines
@@ -162,6 +194,8 @@ impl Renderer {
 
     /// Renders the current draw list into the offscreen frame.
     pub fn render(&mut self, encoder: &mut wgpu::CommandEncoder, view: &ViewParams, size: [u32; 2]) {
+        self.root_gpu_source = false;
+        let foreground = matches!(self.paint_context, crate::paint::PaintContext::CanvasForeground { .. });
         let size = [size[0].max(1), size[1].max(1)];
         self.ensure_output(size);
         let Some(list) = self.list.clone() else {
@@ -174,6 +208,8 @@ impl Renderer {
         // Lone glyphs: the masks this view calls for (filled now when no frame has yet).
         self.prepare_glyphs(encoder, &list, plan::raster_resolution(view.matrix[0].hypot(view.matrix[1])));
         let n = list.groups.len();
+        // Local execution receipt, never a second retained scene or cache.
+        let mut gpu_sources = foreground.then(|| vec![false; n]);
         let max_depth = list.groups.iter().map(|g| g.depth).max().unwrap_or(0);
         // Where every group is drawn for this view (effects::plan), then where it lands in the atlas.
         let planned = plan::plan_with_grid(&list, &plan::View {
@@ -235,7 +271,7 @@ impl Renderer {
                     let f = effects::scaled(filter, slot.scale);
                     let run = executor.record(stack, Frame { scale: f.scale, origin: f.origin, output_size: f.output_size }, at);
                     biggest = [biggest[0].max(at[0]), biggest[1].max(at[1])];
-                    work.push(Work { round: r, depth: list.groups[g].depth, page: slot.page, at: [slot.offset[0] as u32, slot.offset[1] as u32], size: at, run });
+                    work.push(Work { group: g, round: r, depth: list.groups[g].depth, page: slot.page, at: [slot.offset[0] as u32, slot.offset[1] as u32], size: at, run });
                 }
             }
             executor.prepare(&self.device, &self.queue, biggest);
@@ -270,6 +306,7 @@ impl Renderer {
             }
         }
         let root = list.passes.iter().find(|p| p.depth == 0).map(|p| (p.start, p.end)).unwrap_or((0, 0));
+        let root = if foreground { (root.0 + list.background_prims.min(root.1-root.0), root.1) } else { root };
         let slots_needed = passes.len() as u64 + 1;
         if slots_needed > self.uniform_slots {
             self.uniform_slots = slots_needed.next_power_of_two();
@@ -282,7 +319,17 @@ impl Renderer {
             let o = i * UNIFORM_STRIDE as usize;
             uniform_data[o..o + std::mem::size_of::<GpuView>()].copy_from_slice(bytemuck::bytes_of(&v));
         }
-        let v = view.gpu([size[0] as f32, size[1] as f32, 0.0, 0.0], self.crisp);
+        let mut v = view.gpu([size[0] as f32, size[1] as f32, 0.0, 0.0], self.crisp);
+        if let crate::paint::PaintContext::CanvasDirect { background_bounds } | crate::paint::PaintContext::CanvasForeground { background_bounds } = self.paint_context {
+            let paint = crate::paint::PaintQuad::rectangle(view.matrix, background_bounds);
+            let q = paint.0.map(|p|p.map(|v|v as f32));
+            v.inv_t[2] = 1.0;
+            v.inv_t[3] = if paint.canvas_alpha(view.matrix,[0,0]).is_some() { 1.0 } else { 0.0 };
+            v.canvas_clip = crate::paint::CanvasClip::new(view.artboard).rect();
+            v.background_bounds = background_bounds.map(|v|v as f32);
+            v.paint_quad0 = [q[0][0],q[0][1],q[1][0],q[1][1]];
+            v.paint_quad1 = [q[2][0],q[2][1],q[3][0],q[3][1]];
+        }
         let o = passes.len() * UNIFORM_STRIDE as usize;
         uniform_data[o..o + std::mem::size_of::<GpuView>()].copy_from_slice(bytemuck::bytes_of(&v));
         self.queue.write_buffer(&self.uniforms, 0, &uniform_data);
@@ -298,7 +345,7 @@ impl Renderer {
         for (r, round) in rounds.iter().enumerate() {
             round_of[round.first..round.end].fill(r);
         }
-        let bg = list.background_prims.min(root.1 - root.0);
+        let bg = if foreground { 0 } else { list.background_prims.min(root.1 - root.0) };
         let mut stops = vec![root.1; rounds.len()];
         let mut next = 1;
         for i in root.0 + bg..root.1 {
@@ -358,6 +405,9 @@ impl Renderer {
                     pass.set_bind_group(2, &self.layer_binds[(depth as usize + 1) % 2], &[]);
                     pass.set_vertex_buffer(0, self.prims.slice(..));
                     draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, start..end);
+                    if let Some(sources) = &mut gpu_sources {
+                        consume_gpu_sources(&list.prims[start as usize..end as usize], &placed, sources, Some(page_index), None);
+                    }
                 }
                 // The filtered groups of this depth, before the next depth composites them.
                 if let Some(executor) = &mut self.executor {
@@ -367,6 +417,9 @@ impl Renderer {
                         let place = wgpu::TexelCopyTextureInfo { texture: atlas, mip_level: 0, origin: wgpu::Origin3d { x: w.at[0], y: w.at[1], z: w.page }, aspect: wgpu::TextureAspect::All };
                         encoder.copy_texture_to_texture(place, executor.slot_texture(&self.device, 0).as_image_copy(), extent);
                         executor.encode(&self.device, encoder, &w.run);
+                        if let Some(sources) = &mut gpu_sources {
+                            sources[w.group] |= w.run.steps.iter().any(|step| matches!(step, effects::recipe::Step::Pass { .. }));
+                        }
                         encoder.copy_texture_to_texture(executor.slot_texture(&self.device, w.run.result).as_image_copy(), place, extent);
                     }
                 }
@@ -418,9 +471,19 @@ impl Renderer {
                     if x1 > x0 && y1 > y0 {
                         pass.set_scissor_rect(x0, y0, x1 - x0, y1 - y0);
                         draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, from..until);
+                        if let Some(sources) = &mut gpu_sources {
+                            consume_gpu_sources(&list.prims[from as usize..until as usize], &placed, sources, None, Some([
+                                crate::paint::CanvasClip::new(view.artboard).rect()[0].max(x0 as f32),
+                                crate::paint::CanvasClip::new(view.artboard).rect()[1].max(y0 as f32),
+                                crate::paint::CanvasClip::new(view.artboard).rect()[2].min(x1 as f32),
+                                crate::paint::CanvasClip::new(view.artboard).rect()[3].min(y1 as f32)]));
+                        }
                     }
                 } else {
                     draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, from..until);
+                    if let Some(sources) = &mut gpu_sources {
+                        consume_gpu_sources(&list.prims[from as usize..until as usize], &placed, sources, None, Some([0.0,0.0,size[0] as f32,size[1] as f32]));
+                    }
                 }
             }
             // WebGL resolves a multisampled attachment with gl.blit_framebuffer,
@@ -428,6 +491,7 @@ impl Renderer {
             // too, after the artboard has clipped every drawn scene primitive.
             pass.set_scissor_rect(0, 0, size[0], size[1]);
             from = until;
+            self.root_gpu_source = gpu_sources.as_ref().is_some_and(|sources| sources.first() == Some(&true));
         }
         // Depth buffers live while frames use them (a document with 3D faces).
         if !layer_depth {
@@ -479,4 +543,59 @@ impl Renderer {
         });
     }
 
+}
+
+
+#[cfg(test)]
+mod source_receipt_tests {
+    use super::*;
+    fn groups() -> Vec<GpuGroup> {
+        let mut record = [0.0;effects::GROUP_FLOATS];
+        record[6]=0.0;record[8..12].copy_from_slice(&[0.0,0.0,10.0,10.0]);
+        record[12]=1.0;record[15]=1.0;record[20..24].copy_from_slice(&[0.0,0.0,10.0,10.0]);
+        vec![GpuGroup::default(),GpuGroup(record),GpuGroup(record)]
+    }
+    fn composite(parent:u32,child:u32,alpha:u8)->styk_draw::Prim {
+        styk_draw::Prim {kind:K_COMPOSITE,group:parent,color:(alpha as u32)<<24,paint:styk_draw::NO_PAINT,
+            a:[0.0;4],b:[f32::from_bits(child),0.0,0.0,0.0],c:[0.0;4]}
+    }
+    #[test]
+    fn only_completed_consumed_sources_reach_root() {
+        let g=groups();let p=composite(0,1,255);let mut sources=[false;3];
+        consume_gpu_sources(&[p],&g,&mut sources,None,Some([0.0,0.0,20.0,20.0]));
+        assert!(!sources[0],"a composite is not evidence of GPU effect execution");
+        sources[1]=true;
+        consume_gpu_sources(&[p],&g,&mut sources,None,Some([0.0,0.0,20.0,20.0]));
+        assert!(sources[0]);
+    }
+    #[test]
+    fn skipped_composites_never_consume_a_source() {
+        let g=groups();
+        for (p,clip) in [(composite(0,1,0),[0.0,0.0,20.0,20.0]),(composite(0,1,255),[20.0,20.0,30.0,30.0])] {
+            let mut sources=[false,true,false];consume_gpu_sources(&[p],&g,&mut sources,None,Some(clip));assert!(!sources[0]);
+        }
+        for at in [6usize,12] {
+            let mut g=g.clone();g[1].0[at]=-1.0;
+            if at==12 {g[1].0[12]=0.0;}
+            let mut sources=[false,true,false];consume_gpu_sources(&[composite(0,1,255)],&g,&mut sources,None,Some([0.0,0.0,20.0,20.0]));assert!(!sources[0]);
+        }
+    }
+    #[test]
+    fn a_rotated_bbox_corner_does_not_consume_a_clipped_source() {
+        let mut g=groups();
+        // Diamond (0,5),(5,0),(10,5),(5,10): its bounds intersect
+        // the clip at0..1,0..1, but its actual composite misses it.
+        g[1].0[12]=0.5;g[1].0[13]=-0.5;g[1].0[14]=0.5;g[1].0[15]=0.5;g[1].0[16]=0.0;g[1].0[17]=5.0;
+        let mut sources=[false,true,false];
+        consume_gpu_sources(&[composite(0,1,255)],&g,&mut sources,None,Some([0.0,0.0,1.0,1.0]));assert!(!sources[0]);
+        consume_gpu_sources(&[composite(0,1,255)],&g,&mut sources,None,Some([4.0,4.0,6.0,6.0]));assert!(sources[0]);
+    }
+    #[test]
+    fn nested_consumption_uses_actual_parent_page_and_opacity() {
+        let g=groups();let mut sources=[false,false,true];
+        consume_gpu_sources(&[composite(1,2,255)],&g,&mut sources,Some(1),None);assert!(!sources[1]);
+        consume_gpu_sources(&[composite(1,2,0)],&g,&mut sources,Some(0),None);assert!(!sources[1]);
+        consume_gpu_sources(&[composite(1,2,255)],&g,&mut sources,Some(0),None);assert!(sources[1]);assert!(!sources[0]);
+        consume_gpu_sources(&[composite(0,1,255)],&g,&mut sources,None,Some([0.0,0.0,20.0,20.0]));assert!(sources[0]);
+    }
 }

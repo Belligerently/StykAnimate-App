@@ -49,6 +49,14 @@ impl MonitorFrame {
         MonitorFrame { engine, generation, source: Source::Edit { scene: scene.snapshot(), hidden, translations, effects } }
     }
 
+    /// Only the successfully prepared Edit snapshot's typed solid owner.
+    pub fn plain_solid_background(&self) -> bool {
+        match &self.source {
+            Source::Edit { scene, .. } => scene.plain_solid_background(&self.generation.prepared.doc),
+            Source::Prepared { .. } => false,
+        }
+    }
+
     /// Called on the auxiliary worker, after its pictures have decoded. Camera travel,
     /// parallax and effects follow the displayed pose; onion skins are omitted.
     pub fn prepare(&mut self) -> Result<Option<(Arc<DrawList>, Option<Camera>)>, String> {

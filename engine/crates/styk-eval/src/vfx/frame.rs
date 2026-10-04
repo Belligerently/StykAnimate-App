@@ -118,6 +118,8 @@ fn add_segment(segments: &mut Vec<(u32, Stack)>, handle: u32, effects: &[Arc<Eff
 /// What one object contributes before connected groups are planned.
 struct Owner {
     vfx: ObjectVfx,
+    // Export also sees active unused scopes; drawing still uses only ObjectVfx.
+    export_active: bool,
     /// `_stykVfxScope === 1` after clips (a clip including attached parts sets it).
     scope: bool,
     /// The connected stack before `activeVfx` (its identities leave the root's own stack).
@@ -134,16 +136,22 @@ impl Owner {
 /// The effects of `frame` (evaluated at `frame.tick` from `doc`), or `None`
 /// when nothing is to be drawn.
 pub fn evaluate(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
-    evaluate_with(doc, frame, true)
+    evaluate_with(doc, frame, true, None)
+}
+
+/// Capture export metadata in the same owner/clip sampling pass, without
+/// retaining an otherwise-empty rendered FrameVfx or resampling effects.
+pub(crate) fn evaluate_for_export(doc: &Document, frame: &Frame, export: &mut Vec<bool>) -> Option<Arc<FrameVfx>> {
+    evaluate_with(doc, frame, true, Some(export))
 }
 
 /// `vfxRenderFrame` inherits retained source filters, while the generated-effect
 /// census reads only the local document and its nested movieclip definitions.
-pub(crate) fn inherited_filters(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
-    evaluate_with(doc, frame, false)
+pub(crate) fn inherited_filters(doc: &Document, frame: &Frame, export: &mut Vec<bool>) -> Option<Arc<FrameVfx>> {
+    evaluate_with(doc, frame, false, Some(export))
 }
 
-fn evaluate_with(doc: &Document, frame: &Frame, include_generators: bool) -> Option<Arc<FrameVfx>> {
+fn evaluate_with(doc: &Document, frame: &Frame, include_generators: bool, export: Option<&mut Vec<bool>>) -> Option<Arc<FrameVfx>> {
     let tick = frame.tick;
     let clips = doc.vfx_clips.as_deref();
     let mut out = FrameVfx::default();
@@ -155,7 +163,11 @@ fn evaluate_with(doc: &Document, frame: &Frame, include_generators: bool) -> Opt
             extend_active(&mut out.scene, &effects);
         }
     }
-    let mut owners: Vec<Option<Owner>> = frame.objects.iter().map(|object| owner(doc, clips, object, tick)).collect();
+    let mut owners: Vec<Option<Owner>> = frame.objects.iter().map(|object| owner(doc, clips, object, tick, export.is_some())).collect();
+    if let Some(export) = export {
+        export.clear();
+        export.extend(owners.iter().map(|owner| owner.as_ref().is_some_and(|owner| owner.export_active)));
+    }
     if owners.iter().any(|o| o.as_ref().is_some_and(Owner::roots)) {
         connect(frame, &mut owners, &mut out);
     }
@@ -193,7 +205,7 @@ pub fn composed(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
         .objects
         .iter()
         .map(|object| {
-            let mut owner = owner(doc, None, object, frame.tick)?;
+            let mut owner = owner(doc, None, object, frame.tick, false)?;
             // `connectedStack`: the composed group stack, or the figure's own.
             if let Some(connected) = &object.vfx_connected {
                 owner.connected = connected.to_vec();
@@ -217,7 +229,7 @@ pub fn composed(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
 }
 
 /// One object's stacks: its per-pose stacks, then its clips in order.
-fn owner(doc: &Document, clips: Option<&Clips>, object: &crate::doc::Object, tick: f64) -> Option<Owner> {
+fn owner(doc: &Document, clips: Option<&Clips>, object: &crate::doc::Object, tick: f64, capture_export: bool) -> Option<Owner> {
     let own_clips = clips.and_then(|c| c.by_uid.get(&object.uid).map(|_| c));
     let container = doc.figure(object.figure).and_then(|f| f.movieclip.as_ref());
     let inner = container.filter(|clip| clip.prepared.has_vfx).zip(object.clip_time);
@@ -226,6 +238,13 @@ fn owner(doc: &Document, clips: Option<&Clips>, object: &crate::doc::Object, tic
     }
     let pose_figure: &[Arc<Effect>] = object.vfx.as_deref().map_or(&[], |p| p.figure());
     let mut vfx = ObjectVfx::default();
+    // Regular drawables retain all pose scopes. Movieclip drawables retain
+    // their child's pose; the outer owner carries only container figure and
+    // inner Scene stacks (movieclip-geometry.mjs), never container node scopes.
+    let mut export_active = capture_export && object.vfx.as_ref().is_some_and(|pose| {
+        if container.is_some() { active(pose.figure()).next().is_some() }
+        else { pose.entries.iter().any(|(_, stack)| active(stack).next().is_some()) }
+    });
     // A container composites the clip's own scene effects first (`buildMovieclipGeometrySteps`).
     if let Some((clip, local)) = inner
         && let Some(scene) = clip.prepared.evaluate_clip(clip.source_start + local).vfx
@@ -233,6 +252,7 @@ fn owner(doc: &Document, clips: Option<&Clips>, object: &crate::doc::Object, tic
         vfx.figure.extend(scene.scene.iter().cloned());
     }
     extend_active(&mut vfx.figure, pose_figure);
+    export_active |= capture_export && !vfx.figure.is_empty();
     if container.is_none()
         && let Some(pose) = &object.vfx
     {
@@ -248,6 +268,7 @@ fn owner(doc: &Document, clips: Option<&Clips>, object: &crate::doc::Object, tic
     let mut connected: Vec<Arc<Effect>> = if object.vfx_scope { pose_figure.to_vec() } else { Vec::new() };
     for clip in own_clips.into_iter().flat_map(|c| c.of(object.uid)) {
         let Some(effects) = applied(clip, tick, Some(object.figure)) else { continue };
+        export_active |= capture_export && (container.is_none() || matches!(clip.target, Target::Figure { .. })) && effects.iter().any(|effect| is_active(effect));
         match clip.target {
             Target::Figure { .. } => {
                 extend_active(&mut vfx.figure, &effects);
@@ -263,7 +284,7 @@ fn owner(doc: &Document, clips: Option<&Clips>, object: &crate::doc::Object, tic
         }
     }
     vfx.segments.retain(|(_, stack)| !stack.is_empty());
-    Some(Owner { vfx, scope, connected })
+    Some(Owner { vfx, export_active, scope, connected })
 }
 
 /// Connected groups (`connectedVfxGeometry`): each object whose scope covers

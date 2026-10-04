@@ -2,6 +2,7 @@
 // decode is drawn again once they can be shown, without a loop on the interface thread.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {waitForPictures, ensureCameraFrames, cancelCameraFrames, recordCameraChange} from '../src/engine/engine-stage.mjs';
 
 /** A stage side whose last frame lacks pictures as `pending` says, and an engine whose progress counter the test advances. */
@@ -193,4 +194,21 @@ test('one dense dirty event is conservatively bounded even when every identity r
   assert.equal(s.cameraDirty.allFrames, true);
   assert.equal(s.cameraDirty.frameIndices.size, 0);
   assert.equal(visited, 257, 'the rest is covered by a worker-side full resend, not a dense UI walk');
+});
+
+
+test('actual nonthreaded monitor presentation records success before a threaded route switch',()=>{
+  const source=readFileSync(new URL('../src/engine/engine-stage.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('    drawCameraMonitor(target,'),end=source.indexOf('    /**',start);
+  const method=source.slice(start,end).trim().replace(/,$/,'');
+  const side={engine:{threaded:false},monitor:true,monitorCanvas:{width:278,height:139},stage:{render_monitor(){return true;}}};
+  const draw=Function('side','engineShown','options','probed','EngineCameraMonitor',`return ({${method}}).drawCameraMonitor;`)(side,true,{},()=>true,class{
+    draw(target,view,afterSourcePaint){assert.equal(typeof Object.values(view).find(value=>typeof value==='function'),'undefined');afterSourcePaint(true);return true;}
+  });
+  const calls=[],target={save(){},restore(){},setTransform(){},drawImage(){calls.push('paint');}};
+  const view={width:278,height:139,zoom:.25,panX:0,panY:0,dpr:1};
+  draw(target,view,gpu=>calls.push(gpu));assert.deepEqual(calls,['paint',false]);
+  side.engine.threaded=true;draw(target,view,gpu=>calls.push(gpu));assert.deepEqual(calls,['paint',false,true]);
+  side.engine.threaded=false;target.drawImage=()=>{throw Error('surface lost');};
+  assert.throws(()=>draw(target,view,()=>assert.fail('no completed paint')),/surface lost/);
 });

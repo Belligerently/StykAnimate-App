@@ -60,6 +60,9 @@ pub struct Item {
     pub rgb: [u8; 3],
     pub alpha: f64,
     pub opacity: f64,
+    /// Export's `hasDrawableVfx` source decision, including unused active scopes
+    /// and the active figure/Scene effects of every outer movieclip owner.
+    pub export_vfx: bool,
     pub z: f64,
     /// Range in [`Scene::points`] (bent lines and polygons).
     pub points: (u32, u32),
@@ -548,6 +551,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             mesh: NO_MESH,
             faces: (0, 0),
             depth: (0, 0),
+            export_vfx: false,
         });
         // A curved Stick Nodes segment draws along its sagitta curve.
         if let Some(shape) = crate::sticknodes::shape_for(seg, obj)
@@ -707,6 +711,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             mesh: NO_MESH,
             faces: (0, 0),
             depth,
+            export_vfx: false,
         });
     }
     // The figure's mesh: evaluated once after its bones, then split where the
@@ -752,6 +757,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                     mesh: 0,
                     faces: drawable.faces,
                     depth: (0, 0),
+                    export_vfx: false,
                 });
             }
             meshes.push(Arc::new(mesh));
@@ -887,6 +893,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
             mesh: 0,
             faces: drawable.faces,
             depth: (0, 0),
+            export_vfx: false,
         });
     }
     built.meshes.push(Arc::new(geometry));
@@ -1228,7 +1235,18 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
         scene.depths.extend_from_slice(&b.depths);
         let transition_base = scene.transitions.len() as u32;
         scene.transitions.extend_from_slice(&b.transitions);
+        let export_vfx = frame.export_vfx.get(slot as usize).copied().unwrap_or_else(|| {
+            // Editor-composed frames already carry sampled clips in their typed
+            // pose scopes; no timeline sampling is needed here.
+            let object = &frame.objects[slot as usize];
+            let container = scene.figures[fig_of[slot as usize] as usize].movieclip.is_some();
+            object.vfx.as_ref().is_some_and(|pose| {
+                if container { crate::vfx::active(pose.figure()).next().is_some() }
+                else { pose.entries.iter().any(|(_, stack)| crate::vfx::active(stack).next().is_some()) }
+            }) || frame.vfx.as_ref().and_then(|vfx| vfx.object(slot)).is_some_and(|vfx| !vfx.figure.is_empty() || vfx.attached.is_some() || !vfx.segments.is_empty())
+        });
         for mut it in b.items {
+            it.export_vfx |= export_vfx;
             it.points = (it.points.0 + base, it.points.1 + base);
             it.depth = (it.depth.0 + depth_base, it.depth.1 + depth_base);
             if it.mesh != NO_MESH {

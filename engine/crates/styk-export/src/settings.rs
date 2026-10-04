@@ -40,6 +40,12 @@ impl Smoothing {
     pub fn edges(self) -> Edges {
         if self == Smoothing::None { Edges::Crisp } else { Edges::Smooth }
     }
+
+    /// `exportSVG`: composited effects/generated/3D frames are smooth even when
+    /// No smoothing was requested. Plain artwork keeps the requested policy.
+    pub fn edges_for(self, list: &styk_draw::DrawList) -> Edges {
+        if list.composited_export { Edges::Smooth } else { self.edges() }
+    }
 }
 
 /// A validated export frame size and sampling.

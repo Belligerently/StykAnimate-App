@@ -6,6 +6,22 @@ use crate::resources::*;
 use crate::{Edges, Renderer, Stats, FORMAT, SAMPLES, UNIFORM_STRIDE};
 
 impl Renderer {
+    /// Explicitly change edge coverage for an export frame. Keep the resident
+    /// list, images, glyphs and effect caches; only sample-dependent pipelines
+    /// and targets need rebuilding. Ordinary rendering never calls this.
+    pub fn set_edges(&mut self, edges: Edges) {
+        if self.edges() == edges { return; }
+        self.crisp = edges == Edges::Crisp;
+        self.samples = if self.crisp { 1 } else { SAMPLES };
+        self.pipeline = prim_pipeline(&self.device, &self.prim_layout, &self.prim_shader, None, false, self.samples);
+        self.pipeline_add = None;
+        self.depth_pipelines = None;
+        self.msaa_main = None;
+        self.msaa_layer = None;
+        self.depth_main = None;
+        self.depth_layer = None;
+    }
+
     /// A renderer with smooth edges, presenting into `present_format`.
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, present_format: wgpu::TextureFormat) -> Renderer {
         Renderer::with_edges(device, queue, present_format, Edges::Smooth)
@@ -130,6 +146,8 @@ impl Renderer {
             samples,
             crisp: edges == Edges::Crisp,
             drawing_grid: crate::DrawingGrid::World,
+            paint_context: crate::paint::PaintContext::Native,
+            root_gpu_source: false,
             device,
             queue,
             pipeline,

@@ -47,6 +47,10 @@ impl ViewParams {
             inv_t: [ie as f32, i_f as f32, 0.0, 0.0],
             target,
             artboard: self.artboard.map(|v| v as f32),
+            canvas_clip: [0.0;4],
+            background_bounds: [0.0;4],
+            paint_quad0: [0.0;4],
+            paint_quad1: [0.0;4],
         }
     }
 }

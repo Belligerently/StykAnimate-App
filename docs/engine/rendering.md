@@ -532,6 +532,69 @@ keys, native-boundary refusals and retained worker-monitor pixels while preservi
 document/history/selection. Auxiliary cel pixel parity remains separately open; this
 identity correction does not change its clipping or sampling policy.
 
+The direct Canvas monitor now has an explicit portable paint context. An actual-Shown
+Edit ticket selects `PaintContext::CanvasDirect`; prepared playback and ordinary GPU,
+export and library paths keep the Native default. `styk_eval::view::background_bounds`
+matches the existing camera-aware background owner without preparing another frame.
+GPU and CPU apply the Canvas artboard mask at each root paint/composite, preserving
+isolated-child opacity and painter order. Solid rectangle coverage uses the original
+matrix classification, including tiny nonzero skew, and transformed backgrounds keep
+all four paint corners. General rotated analytic coverage remains separate work.
+No primitive kind, draw-list format, stored field or parity threshold changes.
+
+Portable mobile pin additions are `BackgroundBounds`, `background_bounds`,
+`styk_render::paint::{PaintContext, CanvasClip, PaintQuad, mask_premultiplied,
+background_image_bounds, rect_pixel_area}` and the explicit Renderer/Raster
+paint-context setters. The shared private GPU view uniform and shader carry this
+context together; clients must rebuild both. The browser-private
+`MonitorRequest::direct_canvas` stays in styk-wasm. Current generation/cache epoch/weak frame identity and monitor ticket owners
+remain unchanged. Active scene-effects camera-image composition, the full drawing-cel
+monitor residual, auxiliary onion, crisp export and complete D7 remain open.
+
+The composed shipping build is 10,124,565 bytes (9,887 KiB, SHA `b155e35fe6a6`).
+Shared-type checks pass 743 native tests, 45 focused JavaScript tests and check;
+all 3,618 fixture JSON stay byte-stable. The actual adapter passes six direct monitor
+cases each on web, default Electron and forced CPU web, plus both tiny-angle cases
+on web at DPR 1. Maximum means are .057554, .072203, .057554 and .025180 respectively,
+with zero solid pixels and unchanged D13. Four original default Electron cel stage
+views remain byte-identical to the preserved prior captures. A separate full cel
+monitor diagnostic still fails on web at mean .362844 and Electron at .710108;
+these diagnostics are not included in the 24 passing comparisons. The Electron
+corner-overlap result varies within D13 from isolated source evidence; its cause
+is not established, so no deterministic pixel or performance improvement is claimed.
+Logs and source/artifact receipts: `tmp/root-verification-temp/renderer-publication-*`.
+
+The recorded ordinary solid-background camera-monitor correction now splits the
+existing root paint from its foreground. `CanvasForeground` omits only the single
+resolved solid root fill; the same ready frame and draw list still produce the
+foreground on the preview worker. Its 19-scalar descriptor carries the exact solid
+rectangle, colour, camera matrix, clip and DPR with that bitmap. SceneFX, non-solid
+backgrounds and generated/glyph/depth sources retain their existing routes.
+
+The renderer records a GPU source only after its effect execution succeeds and the
+owning composite actually consumes it, including transformed show bounds, clip,
+opacity and nested consumption. Hidden, unplaced or clipped sources cannot set the
+receipt. A direct source uses the recorded `ImageData` bitmap adaptation; a completed
+GPU source keeps its existing GPU bitmap. CPU preparation reuses the pixels already
+drawn. GPU direct-source adaptation still draws on both GPU and CPU in the worker;
+this is bounded existing work, not a claimed speed improvement.
+
+The monitor records an actual successful paint on its DOM canvas. Only a GPU source
+that is this canvas's first successful paint schedules the existing invalidation
+once. Document/stage switches and backing-size changes preserve that history, so
+empty-to-undo and DPR restore follow the editor's destination. The old nonthreaded
+route records success only after `drawImage` completes. Context recovery controls
+use synthetic DOM events; they do not certify physical device loss.
+
+Additional mobile pin notes: `PaintContext::CanvasForeground` changes exhaustive enum
+matches; `Renderer::root_gpu_source`, `drawlist::plain_solid_background` and the
+EditScene/MonitorFrame predicates are portable additions. The public paint helpers
+include `PaintQuad::rectangle`, `pixel_area` and `canvas_alpha(matrix, pixel)`.
+The DPR monitor argument, `monitor_background`, `monitor_pixels` and completion
+callback belong to styk-wasm/browser adapters. Primitive records remain 64 bytes.
+Final composed source/artifact and app receipts are recorded with the renderer
+milestone in the plan; earlier failing captures above remain historical evidence.
+
 **Home and project pictures** are read from the stage's canvas (`stagePicture` in `src/app.mjs`):
 the engine's canvas where the engine draws the scene. They need no path of their own.
 
@@ -678,6 +741,28 @@ scene camera, at the export's size and sampling, without onion skins. The encode
 GIF, APNG and ZIP writers, WebCodecs, FFmpeg, the audio mix) are unchanged and receive the
 same canvases and PNG frames as before. SVG stays vector output from the JavaScript exporter,
 and so do documents the gate refuses (`engine-eligibility.mjs`).
+
+Composited No smoothing frames preserve the editor's existing `exportSVG` fallback
+policy. Active effect scopes (including its broad owner scan), a truthy generator
+batch even with zero emitted particles, or visible mesh/depth artwork select smooth
+whole-frame output. Nested scene/container effects propagate through the same typed
+VFX/geometry owners. Ordinary frames retain crisp edges. The decision is host metadata
+on the live draw list, not a serialized primitive-format change.
+
+Mobile pin changes: public `Frame.export_vfx: Vec<bool>`, `geometry::Item.export_vfx:
+bool` and `DrawList.composited_export: bool` affect exhaustive struct literals. Frame
+and DrawList callers may use Default; Item callers must supply its new field.
+`Smoothing::edges_for`, `Raster::set_edges` and `Renderer::set_edges` are additive.
+GPU mode changes reset sample-dependent base/additive/depth pipelines and targets
+while retaining the list, pictures, glyphs, atlas and effects. Actual retained
+Smooth→Crisp→Smooth tests include image, depth and additive primitives.
+
+The 25 Editor/browser policy records preserve the original 22 inputs byte for byte.
+Composited synthetic None output is byte-identical to the original smooth output;
+CPU/GPU differ by D13 mean 0.0004, maximum 3, zero solids. The plain drawing No smoothing
+sampling gap is separate: CPU versus JavaScript mean 0.5124, zero solids, with the
+original and corrected CLI output byte-identical. No policy or threshold was expanded
+to conceal that existing gap.
 
 **Why SVG stays JavaScript.** An SVG export (`src/svg-export.mjs`) is editable vectors: one group
 per object (`data-object-id`, `data-movieclip-id`) with its opacity, strokes with their caps and

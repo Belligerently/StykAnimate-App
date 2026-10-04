@@ -35,7 +35,7 @@ const unchanged = (...paths) => spawnSync('git', ['status', '--porcelain', '--un
 const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.length ? ['cargo'] : []), ...rest, '--manifest-path', 'engine/Cargo.toml']];
 
 // Fixture suites (fast: a few seconds once built).
-run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit', '-p', 'styk-math', '-p', 'styk-drawing'));
+run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-export', '-p', 'styk-piv', '-p', 'styk-edit', '-p', 'styk-math', '-p', 'styk-drawing'));
 
 // Fixture generators are byte-stable: regenerating changes nothing.
 const editFixtureFolders = {'movieclip-native-vfx-fixtures': 'engine/tests/movieclip-native-vfx', 'movieclip-bake-fixtures': 'engine/tests/movieclip-bake', 'vfx-owner-edge-fixtures': 'engine/tests/vfx-owner-edges', 'movieclip-timed-sheet-planning-fixtures': 'engine/tests/movieclip-timed-sheet', 'movieclip-timed-sheet-commands-fixtures': 'engine/tests/movieclip-timed-sheet-commands', 'movieclip-timed-sheet-expansion-fixtures': 'engine/tests/movieclip-timed-sheet-expansion', 'movieclip-sheet-extension-fixtures': 'engine/tests/movieclip-sheet-extension', 'movieclip-native-extension-fixtures': 'engine/tests/movieclip-native-extension', 'movieclip-insertion-fixtures': 'engine/tests/movieclip-insertion', 'movieclip-admission-fixtures': 'engine/tests/movieclip-admission', 'movieclip-key-capacity-fixtures': 'engine/tests/movieclip-key-capacity', 'layer-migration-fixtures': 'engine/tests/layer-migration', 'layer-sheet-migration-fixtures': 'engine/tests/layer-sheet-migration', 'history-fixtures': 'engine/tests/history', 'history-readiness-fixtures': 'engine/tests/history-readiness', 'publication-fixtures': 'engine/tests/publication', 'native-layer-publication-fixtures': 'engine/tests/native-layer-publication', 'publication-selection-fixtures': 'engine/tests/publication-selection'};
@@ -44,6 +44,15 @@ for (const tool of ['movieclip-native-vfx-fixtures', 'movieclip-bake-fixtures', 
   run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
     check: () => unchanged('engine/crates/styk-eval/tests/fixtures', ...(editFixtureFolders[tool] ? [editFixtureFolders[tool]] : []))});
 }
+
+// Recorded Canvas paint/sampling and composited-export source decisions stay byte-stable.
+for (const [tool, folder] of [
+  ['clip-paint-fixtures', 'engine/crates/styk-eval/tests/fixtures/clip-paint'],
+  ['canvas-paint-fixtures', 'engine/crates/styk-raster/tests/fixtures/canvas-paint'],
+  ['drawing-root-sampling-fixtures', 'engine/crates/styk-raster/tests/fixtures/drawing-root-sampling'],
+  ['export-policy-fixtures', 'engine/crates/styk-export/tests/fixtures/policy'],
+]) run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
+  check: () => unchanged(folder)});
 
 // The drawing raster engine's recordings of the JavaScript drawing engine (strokes, fills,
 // selections, transforms, filters, levels, codecs) are byte-stable too; styk-drawing's

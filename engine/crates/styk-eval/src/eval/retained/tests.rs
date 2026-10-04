@@ -606,6 +606,7 @@ fn spare_frame_capacities_and_playback_buffers_are_actual_allocations() {
             Arc::new(Frame {
                 objects: Vec::with_capacity(63),
                 draw_order: Vec::with_capacity(127),
+                export_vfx: Vec::with_capacity(47),
                 origins,
                 continuations,
                 ..Default::default()

@@ -41,6 +41,9 @@ struct Aux {
 pub(crate) struct MonitorRequest {
     pub frame: MonitorFrame,
     pub grid: DrawingGrid,
+    /// The browser's immediate Canvas monitor reference is used only for the
+    /// actual shown Edit snapshot. The worker resolves its scene-effect branch.
+    pub direct_canvas: bool,
 }
 
 /// What a monitor list of the edit frame was built from.
@@ -235,7 +238,8 @@ impl Stage {
                 (MonitorFrame::edit(self.engine.clone(), generation, scene, hidden.clone(), translations.clone(), *effects), DrawingGrid::Destination)
             },
         };
-        Box::into_raw(Box::new(MonitorRequest { frame, grid })) as usize
+        let direct_canvas = matches!(&self.shown, Shown::Edit { .. });
+        Box::into_raw(Box::new(MonitorRequest { frame, grid, direct_canvas })) as usize
     }
 
     /// A message which failed to transfer never reached the worker: release its ticket.

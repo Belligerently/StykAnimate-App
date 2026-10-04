@@ -16,6 +16,40 @@ Read this section, then the [milestone log](#milestone-log) (last entries), sect
 section 8. Work is active; the isolated lanes below are not integrated until reviewed.
 `git log engine-rust` has the detail of every committed step.
 
+**Priority correction (user, 2026-10-04 22:37 CEST):** finish the current renderer/raster
+cel and crisp-export change first. Then open `figures`, `movieclips` and `channels` in
+that order. For each class, list at most about five concrete blockers, fix only those,
+run the required class-gate checkpoint, verify the actual app and cost, then flip and
+commit. Stop opening general offline prerequisites. A prerequisite is allowed only when
+it blocks the next class flip, engine-1 or a deletion; name that outcome in its commit
+body. Otherwise preserve it under open problems. D7, D13, D15, D16, the focused/checkpoint
+verification policy and the prohibition on pushing or releasing remain unchanged.
+
+Every new commit must advance an inventory status, `OWNED_CLASSES`, a deleted JavaScript
+module or a measured benchmark number. Each milestone records all four counters and
+their changes. Starting counters at `5928c21a`: inventory **176 js / 122 partial /
+35 ported / 22 verified / 1 removed** (356 engine modules); **2 owned classes**
+(`large figures`, `3d`); **2 deleted JavaScript modules** (1 engine, 1 platform);
+**0/28 engine-1 matrix cells measured**
+(cold start and build-size measurements also pending). Historical milestones retain
+their original scope and evidence.
+
+**Latest app milestone (2026-10-05 00:04 CEST):** the recorded ordinary solid-background
+camera monitor and composited No smoothing export correction are integrated and verified
+on the shipping package `9a94cb89d2c9` (10,201,677 bytes). Main passes 793 native tests
+(two existing diagnostics ignored), 55 focused JavaScript tests, check (2,000 files),
+31 actual preview cases and six export comparisons under unchanged D13. All 3,660
+existing fixture JSON stay byte-stable over two regeneration rounds. The app uses the
+new Rust filtered-source production/consumption and bitmap presentation; `vfx-canvas`
+advances **js→partial**, limited to that recorded ordinary monitor subset.
+Current counters: **175 js / 123 partial / 35 ported / 22 verified / 1 removed**;
+**2 owned classes**, **2 deleted JavaScript modules**, **engine-1 0/28**. A new affected
+export measurement records warm frame medians **17.6 ms engine / 93.3 ms JavaScript**,
+with separate fresh-renderer startup/first-frame costs and load 2.7–3.1. This is not
+baseline-0/engine-1. The next action is the `figures` checkpoint and its three blockers
+below. SceneFX monitor, auxiliary onion and plain drawing No smoothing remain open;
+no general prerequisite lane is resumed.
+
 ### Verification of the handed-over state
 
 Verified at `35f4c734` (the commit that adds this section changes documentation only):
@@ -314,10 +348,15 @@ merge. Its first compile-only attempt ended with tool exit 143 and no wrapper co
 or test failure; the log is preserved. The same exact HEAD/cache continuation passed at
 21:23 CEST: 56 stages, 691 release-selected native tests and 358 containers. After all
 generators, all 136 release executables remain fresh in 0.23 s with no compilation.
-The next regular checkpoint started at 22:02 CEST on committed 4f4808c0 in the same
-persistent isolated target; it is running independently while reviewed work merges.
-Next regular run is no earlier than 2026-10-05 00:02 CEST. Any actual checkpoint failure
-still requires the documented bisect/fix-forward process from last green805688d5.
+The next regular checkpoint on committed `4f4808c0` passed at 23:12 CEST in the same
+persistent isolated target: **58 stages, 730 release-selected tests, two explicit
+diagnostics ignored, and 358 container comparisons**. The shared Rust changes required
+release relinking; after all generators, all **137 release executables remain fresh in
+0.29 s**, with no compilation. Main was still `5928c21a`; this certifies `4f4808c0`, not
+the later native commit or pending renderer. Logs: `tmp/root-verification-temp/checkpoint-4f4808c0.log`
+and `checkpoint-4f4808c0-post-regeneration-fresh.log`. Next regular run is no earlier
+than 2026-10-05 00:02 CEST. An actual later failure requires bisect/fix-forward from
+last green `4f4808c0`; the class gate still requires its own matching committed HEAD.
 
 ### Where the port stands
 
@@ -374,8 +413,8 @@ isolated target and locked dependencies. Logs: `checkpoint-9728e86e.log` and
 | S7 | Not started: dead machinery, final screenshots, interleaved benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, Windows CI. |
 
 Inventory (`docs/engine/INVENTORY.md`, rendered from `engine/inventory.tsv`): 356 modules,
-4,053 KiB of engine source at the start; 176 js, 122 partial, 35 ported, 22 verified, 1
-removed; 20 % covered by Rust, 48 % partly covered, 0 % deleted. `styk-edit` alone: 89
+4,053 KiB of engine source at the start; 175 js, 123 partial, 35 ported, 22 verified, 1
+removed; 20 % covered by Rust, 49 % partly covered, 0 % deleted. `styk-edit` alone: 89
 modules, 46 js, 39 partial, 4 ported.
 
 **Document classes the engine edits by default** (D15, `OWNED_CLASSES` in
@@ -391,14 +430,43 @@ without owning.
 
 ### Next steps, in priority order
 
+The following immediate sequence supersedes the broader historical list below:
+
+1. **Completed:** the scoped ordinary monitor clip/paint/source and composited
+   No smoothing correction passes on the actual app, with unchanged D13. One
+   inventory row advances js→partial and the affected paired export cost is measured.
+   Original regressions and rejected prototypes remain preserved; proceed directly
+   to `figures`, without opening another general renderer prerequisite.
+2. Flip **`figures`**. Three concrete blockers remain: fresh parity/cost evidence for
+   the existing compact adoption route; explicit default classes-mode adoption proof
+   (`--default` currently permits zero owned calls); and the required committed-HEAD
+   class checkpoint with matching final renderer/package identities.
+   Older small-figure cost results precede compact responses; measure the existing
+   `--own --warm --exact-math` route on startup, rig and joined-chain before changing
+   source. Include the owned run's JavaScript fallback cost (`ownableMs`) and match call
+   counts, so a refused call cannot masquerade as a speed gain. If cost still fails,
+   fix the measured response/adoption owner only. No new functional command defect
+   was established by the read-only gate audits. General
+   Stage geometry/upload work already runs for this class before ownership and is not
+   established as a new blocker caused by this flip.
+3. Flip **`movieclips`**, then **`channels`**, each with at most about five concrete
+   blockers, their own recorded/app verification, class checkpoint and cost evidence.
+4. Run idle engine-1 with no subagents, report all before/after cells against baseline-0,
+   then delete dead JavaScript in checkpointed steps. Final platform/interface checks
+   remain required. Every commit and milestone follows the four-counter rule above.
+
+The historical subsystem follow-ups below remain tracked, but do not authorize new
+prerequisite work outside that sequence.
+
 1. **Close the remaining cel backend gaps**. Electron sampling, tight ink bounds and
    destination-grid sampling are corrected and verified: original software-web
    `drawing-cels` passes fitted/0.3×/2×/3× views. Auxiliary edit-monitor and some onion
-   previews still fail. The uncommitted direct Canvas root clip/background patch passes
-   focused original and corner/tiny-angle cases but regresses the original Electron full
-   cel monitor. Resolve its actual Canvas operation path before committing that patch.
-   Finish the active scene-effects camera-image branch and its recorded source placement,
-   retaining the reviewed transient-refusal retry and one-paint-per-draw corrections.
+   previews still fail. The recorded ordinary solid-background monitor root clip,
+   foreground-source and DOM paint-history correction now passes the full CEL,
+   corner/tiny-angle and DPR/undo/source-switch app cases. The original failures remain
+   evidence. The scene-effects camera-image branch and its recorded source placement
+   remain a later benchmark/deletion blocker; do not resume them before the class flips.
+   Preserve the reviewed transient-refusal retry and one-paint-per-draw corrections.
    Private web retries time out in the animation-frame settle even
    with resource flags ready. Native crisp export differs identically before and after.
    Investigate the existing owners without changing D13 or readiness checks. The other
@@ -445,6 +513,17 @@ without owning.
 
 ### Open problems and unverified areas
 
+- **Parked after the 22:37 user correction:** private Core typed encode/dispose
+  (`tmp/engine-worktrees/core-typed-encode`), Static/owned-cache preparation
+  (`tmp/engine-worktrees/static-owned-cache`), native async early-completion scaffold
+  (`tmp/engine-worktrees/origin-async-preflight`) and packed pose storage normalization
+  (`tmp/engine-worktrees/native-storage-normalize`). Their recordings, diagnostic
+  failures, source drafts and exact restored mutation evidence are preserved. None is
+  an app milestone or authorized for immediate integration. Resume one only after
+  identifying the concrete next class flip, engine-1 or deletion it blocks. The actual
+  packed save/reopen bug remains recorded: byte-stable native roundtrip passes while
+  authored-pose evaluation differs. It does not currently block the `figures` flip.
+
 - Not verified at all: Windows and macOS builds, packaged desktop builds, CI for the engine
   (no Windows CI), real phones and tablets (iOS shared-memory limits, Android), GPUs other
   than this machine's, Firefox and Safari. Electron's WebGPU canvas shows nothing under Xvfb
@@ -487,10 +566,10 @@ without owning.
 | `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Complete recorded source/capture/insertion/extension stack and canonical worker Bake/TOP/strict-history observer integrated. The concurrent stale trace explicitly refuses its recorded interleaving at step 2. All immutable dependency/source/evidence freezes remain preserved. This agent now owns the isolated FrameCache D7 work below. |
 | `tmp/engine-worktrees/frame-cache-d7` (detached at `011ac7ea`) | Reviewed single Storage owner, one-shot UI reads and Applied/Unchanged/Busy controls with finite coalesced playback retry integrated. Dense reset/trim/stale disposal moves outside State; portable encoded retained-buffer accounting is reviewed and integrated without a runtime caller. Final-owner retention/aggregate charging/shutdown remain open. Independent target/dependencies, no main/mobile edits or cache clean. |
 | `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query integrated. Independent layer/movie and assembled-main reviews completed; exact frozen source manifests retained for the integrated dependency stack. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver integrated. Reviewed destination-grid cel fix and single-child correction integrated from immutable 18-path freeze; original software-web and default Electron GPU 4/4 pass on main. Auxiliary clip/paint mismatch has an independent reproduction; coherent helper13/source02/source03 CanvasDirect32 is reviewed but uncommitted because the original full cel Electron monitor regresses. The independently verified scoped publication candidate is a separate native milestone. Pending shipping artifact passes 20 focused monitor cases and four original stage views; actual Canvas GPU-source operations are under diagnosis before any renderer commit. SceneFX camera-image and residual cel/onion/crisp differences remain open. Immutable evidence retained; no early gate flips. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver integrated. Reviewed destination-grid cel fix and single-child correction integrated from immutable 18-path freeze; original software-web and default Electron GPU 4/4 pass on main. Auxiliary clip/paint mismatch has an independent reproduction; coherent CanvasDirect32, exact root sampling and recorded real-source/DOM-history corrections are integrated and verified on main shipping9a94cb89. Main Electron10/web10/lifecycle11 and six composited exports pass unchanged D13; immutable rejected prototypes and exact Legacy before/after evidence are preserved. The source19 final freeze is tmp/styk-cel-monitor-real-source-final-20261005. SceneFX camera-image and residual cel/onion/crisp differences remain open. Immutable evidence retained; no early gate flips. |
 | `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera/origin range/rig/pose and strict-validation preparation integrated into main after review/focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
 | `tmp/engine-worktrees/movie-integration` (detached at `7ff82b2c`) | Separate clean dependency integration: reviewed movieclip/layer/history/readiness/publication/selection stack. Exact reviewed/focused-tested dependency snapshot has been integrated; preserve its immutable inputs/evidence, no runtime gate. |
-| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Committed `53e3bdd9` green at 16:36 CEST; post-regeneration whole release target fresh in 0.43 s. Committed `9728e86e` checkpoint green at 19:06 CEST, all 127 release executables fresh after regeneration in 0.22 s; Corrected `805688d5` checkpoint started 19:59 CEST; compile-only exit 143 attempt preserved. Same HEAD/cache continuation passed at 21:23 CEST: 56 stages, 691 release-selected tests and 358 containers. All 136 release executables remain fresh after regeneration in 0.23 s. Next regular run no earlier than 21:59 CEST. |
+| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Earlier checkpoints `53e3bdd9`, `9728e86e` and `805688d5` passed; the interrupted `805688d5` compile attempt remains preserved. Committed `4f4808c0` passed at 23:12 CEST: 58 stages, 730 release-selected tests, two explicitly ignored diagnostics and 358 containers. All 137 release test executables remain fresh after regeneration in 0.29 s (0.34 s wall time). Main was `5928c21a` at completion; this result does not certify that later commit or the pending renderer. Next regular run no earlier than 2026-10-05 00:02 CEST; class gates, engine-1 and deletion still require their own committed-HEAD checkpoint. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
@@ -797,8 +876,10 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   holds a second GPU device and a second copy of the document's pictures for its duration
   (+52–361 MiB GPU memory measured); its first frame waits for every picture (URIEL 3:
   0.8–0.9 s); read-backs are slow while the page repaints (measured under Xvfb only), which
-  the worker hides by drawing up to six frames ahead; "No smoothing" now applies to frames
-  with effects and 3D, which the JavaScript exporter drew smooth; scene-effect camera images
+  the worker hides by drawing up to six frames ahead. Composited No smoothing now
+  preserves the editor's smooth fallback; ordinary plain drawing No smoothing still
+  fails CPU/JS D13 at mean 0.5124 (byte-identical before/after this correction).
+  Scene-effect camera images
   wider than 3,968 px are upscaled. Not verified: Windows, macOS, real displays, other GPUs,
   Firefox, Safari, packaged builds.
 - **Drawing raster engine** (`styk-drawing`, D17): custom pressure curves use libm's `pow` in
@@ -997,6 +1078,24 @@ layer-sheet movieclip replacements.
 ## 7. Parity results
 
 Current numbers; each milestone that changes them updates this section.
+
+**App-used ordinary monitor and composited export (2026-10-05):** all 793 native tests
+pass (two existing ignored diagnostics), 55 affected JavaScript tests and check pass;
+shipping Wasm SHA `9a94cb89d2c9`, 10,201,677 bytes. Four fixture generators run twice and
+preserve all 3,660 existing JSON. Main Electron10/10 and software-web10/10 monitor
+comparisons pass; full CEL means 0.028777 and 0.169556, all six corner/tiny-camera
+Electron cases pixel-identical. Eleven actual lifecycle cases pass, including
+empty→undo, live colour, both filter transitions and actual DPR2→1 (DPR2 mean 0.117618).
+Synthetic context events certify only the existing DOM recovery path. Every comparison
+has zero solid differences and no page errors; D13 is unchanged. Six actual main
+No smoothing exports pass at mean 0.2298, max 50, zero solids. Their warm medians are
+17.6/93.3 ms engine/JS; six interleaved fresh-renderer rounds give median total
+615.5/680 ms, startup 412/448 ms and first frame 202.5/232.0 ms (load 2.7–3.1).
+These measurements are separate from engine-1 and do not close plain drawing crisp,
+SceneFX monitor, auxiliary onion, global D7 or class gates. Source and artifact guards
+remain exact. Evidence: `tmp/root-verification-temp/current-renderer-*`, the final
+CEL freeze `tmp/styk-cel-monitor-real-source-final-20261005` and composited policy
+freeze `/tmp/styk-composited-export-policy-20261004`.
 
 **Cache/Session foundation (2026-10-04):** 708 shared-type native tests pass; 104
 focused JavaScript tests, check and final Wasm pass. All 59 new handoff/quiet/live/
@@ -1312,8 +1411,8 @@ and class flips, before starting deletion.
 effect executors are deleted):
 
 1. Effects rendering: done for every filter type on WebGPU, WebGL2 and the CPU (milestone
-   log). Electron drawing cels inside effect layers pass; software web and native crisp
-   export gaps remain (section 6).
+   log). Recorded ordinary solid-background CEL monitors pass on Electron and
+   software web; SceneFX/onion and plain drawing crisp gaps remain (section 6).
 2. 3D: done (milestone log). Left: rotated movieclip drawings (`drawingRotation`), an
    indexed face format (each face is a 64-byte draw-list record), `previewRasterScale`.
 3. Generators (particle effects): done (milestone log). Left: the JavaScript generator
@@ -1509,3 +1608,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 21:35 | S5 scoped pre-publication generation and assets | Commit the independently reviewed five-path native candidate separately from the held Renderer32 patch. Same worker Mirror guard/CommitMarker/Loader and final State exchange; borrowed exact prebuilt generation/assets, single consuming commit and worker retirement. Working displays reuse the acknowledged generation; identical stored JSON still publishes genuine history revisions. Add portable WorkerPublication/WorkerEditPublication and Engine::prepare_record_publication_worker/prepare_edit_publication_worker APIs; mobile pin may move after downstream review. Actual Editor glyph pairing, Core Ready/Shown adoption, raw-ready charging and physical D7 remain open. | Fresh touched-crate run: all 182 styk-engine tests pass. Original isolated 117 focused tests and three actual source mutants caught/restored; all five root source hashes match that immutable freeze. Previously verified unchanged check, recorded CLI 50 admitted tapes/6,581 exact steps/nine guards and 13 derived groups/147 ticks remain green. No command recording, JavaScript or app adoption changed. Full committed 805688d5 checkpoint passes 56 stages/691 release-selected tests/358 containers; all 136 release executables fresh after regeneration in 0.23 s. Original Electron CEL regression blocks the separate renderer commit and is preserved in the handoff. Logs: tmp/root-verification-temp/scoped-candidate-* and renderer-publication-*. |
 | 2026-10-04 22:02 | S5 guarded typed Scene/assets pairing and private Frame allocation observation | Batch two independently reviewed, disjoint freezes with one reviewed vfx module declaration adaptation. Opt-in pairing borrows the same guarded after-Cache Loader and exact candidate assets, preserving image namespace and actual imported glyph identities; six malformed/missing typed sheets refuse atomically through the existing checked planner. Private Frame observation reuses existing allocation visitors and a strongly held source baseline; it exposes gaps and has no runtime caller or charge. Mobile additions: GuardedTypedCache, GuardedPublication::typed_cache_worker, Engine::prepare_edit_typed_publication_worker; Frame observers remain private. No Core/Stage/app adoption, budget, gate, deletion or performance claim. | Touched edit/engine/eval tests: 528 pass, two explicit diagnostics ignored; npm check and generator syntax pass. Two typed regeneration runs preserve all 3,634 captured engine JSON. Pinned shipping-profile threaded Wasm typecheck passes; pkg remains unchanged. Actual recorded typed namespace/glyph comparisons and refusal guards pass in native tests. Independently reviewed typed scope correction closes six real failed-before cases; Frame allocator ledger and 18 actual source mutants remain preserved. Exact 23-source composition plus parity registration verified unchanged. Renderer32 remains uncommitted due to original full-CEL Electron regression. Full checkpoint last green805688d5; next eligible21:59 CEST. Evidence: tmp/root-verification-temp/typed-frame-*. |
 | 2026-10-04 22:17 | S5 recorded native TRUE worker lifecycle and current-ready raw retention | Batch independently reviewed TRUE11 plus corrected strict Worker/Core/CLI8 with Raw9 and four scoped typed-test contexts; preserve three earlier owning prerequisite adaptations and all newer typed Loader/CommitMarker owners. Same AuthoredDrag/Draft/Records/response/history/source and guard; one-shot host errors remain exact. Strict replay compares actual initial heads before dispatch and validates lossless counters. Continue SAME receiver charge for current raw record after terminal ACK; detached aliases block preparation until physical worker disposal and wake only original Core. No new budget, public runtime route, gate, deletion or performance claim. Mobile addition: replay::replay_session_live_worker; legacy APIs unchanged. | 381 touched edit/engine/CLI tests, zero ignored; check and pinned threaded Wasm typecheck pass. Four generators twice keep all 3,635 captured JSON stable. Actual rebuilt CLI TRUE8/93 + old10/115 + conventional20/2,562 exact; six pairing/refusal guards and eight malformed initial cases exit nonzero. Independent Raw composition65cc33b6 and strict-initial13993953 reviews clean, preserving all original freezes/source mutants. Source27 + checkpoint script union exact; no app adoption or pkg rebuild. Full checkpoint4f4808c0 started22:02 CEST in persistent isolated target, last green805688d5; merges continue. Logs: tmp/root-verification-temp/true-raw-*. |
+| 2026-10-05 00:04 | Preserve drawing edges and effects in camera previews and exports | App uses the recorded ordinary solid-background CanvasForeground source/paint path, actual completed GPU-source consumption and DOM-canvas paint history; resize/undo/source switches preserve the editor's pixels. Composited No smoothing follows the existing exportSVG policy; retained CPU/GPU mode changes preserve images/atlas/depth/additive artwork. Mobile API changes: Frame.export_vfx, Item.export_vfx, DrawList.composited_export (update exhaustive literals); portable background/paint helpers and CanvasForeground enum match; edges_for/set_edges, root_gpu_source and worker predicates additive. Browser metadata/DPR/callback stay in styk-wasm/adapters. **Counters:** inventory 176 js/122 partial→175 js/123 partial (35 ported/22 verified/1 removed unchanged); OWNED_CLASSES 2→2; deleted JS modules 2→2; engine-1 0/28→0/28, new affected export medians 17.6/93.3 ms engine/JS. Next: figures checkpoint and its three recorded blockers; general prerequisite lanes stay parked. | Composed main: 793 native tests pass, two existing diagnostics ignored; 55 affected JS tests, check2,000, shipping Wasm9a94cb89/10,201,677B. Four generators twice preserve3,660JSON. Actual Electron10/web10/lifecycle11 pass unchanged D13, zero solids/errors; full CEL .028777/.169556, six Electron corners exact, actual DPR2 .117618 and restoredDPR1 .025672. Six main composited None exports pass .2298/max50/zero solids; paired fresh medians total615.5/680ms, startup412/448ms, first202.5/232ms, load2.7–3.1. Plain drawing None .5124 remains pre-existing and byte-identical; SceneFX/onion/globalD7 remain open. Independently reviewed production/adaptations/source18 plus two corrections (final source19); source/pkg snapshots unchanged. Full checkpoint last green4f4808c0; required figures checkpoint starts on this committed milestone. Evidence current-renderer-* plus final source19 and export-policy freezes. |

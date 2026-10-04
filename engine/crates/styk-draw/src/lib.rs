@@ -337,6 +337,9 @@ pub struct Pass {
 
 #[derive(Clone, Debug, Default)]
 pub struct DrawList {
+    /// ExportSVG's whole-frame Canvas fallback: No smoothing still composites
+    /// effects, generated artwork and 3D smoothly. Host metadata, not a prim flag.
+    pub composited_export: bool,
     pub prims: Vec<Prim>,
     pub paints: Vec<[f32; 4]>,
     /// Polyline vertices referenced by `K_POLYLINE` records.

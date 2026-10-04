@@ -383,3 +383,47 @@ test('a cold shown epoch retains its accepted monitor picture and rejects late n
   monitor.destroy();
   assert.equal(accepted.closed, 1);
 });
+
+test('root descriptor and source bitmap are accepted together and painted in the owning order', async () => {
+  let version=1,finish;
+  const monitor=new EngineCameraMonitor({monitor_version:()=>version,monitor_address:()=>1}, {previews:async()=>({usable:true,request(message){message();return new Promise(resolve=>finish=resolve);}})});
+  const calls=[];
+  const target={save(){calls.push('save');},restore(){calls.push('restore');},setTransform(...v){calls.push(['base',...v]);},
+    beginPath(){calls.push('path');},rect(...v){calls.push(['clip-rect',...v]);},clip(){calls.push('clip');},
+    transform(...v){calls.push(['camera',...v]);},fillRect(...v){calls.push(['solid',...v]);},drawImage(v){calls.push(['foreground',v]);}};
+  const view={width:278,height:139,zoom:.2574074074074074,panX:15.444444444444443,panY:0,dpr:1};
+  const bitmap={close(){this.closed=true;}},background={rect:[0,0,960,540],style:'rgba(16,16,24,1)',matrix:[.2574074074074074,0,0,.2574074074074074,15.444444444444443,0],clip:[15.444444444444443,0,247.1111111111111,139],dpr:1};
+  monitor.draw(target,view);await new Promise(resolve=>setImmediate(resolve));finish({bitmap,rootBackground:background,gpuSource:true});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls.length,0,'answer acceptance never paints an extra frame');
+  monitor.draw(target,view);
+  assert.deepEqual(calls,['save',['base',1,0,0,1,0,0],'path',['clip-rect',...background.clip],'clip',['camera',...background.matrix],['solid',...background.rect],'restore','save',['base',1,0,0,1,0,0],['foreground',bitmap],'restore']);
+  assert.equal(target.fillStyle,background.style);assert.equal(monitor.stats.drawn,1);
+  calls.length=0;version=0;monitor.draw(target,view);assert.equal(calls.filter(v=>Array.isArray(v)&&v[0]==='solid').length,1,'compatible cold surface repeats both paired operations once');
+  calls.length=0;monitor.draw(target,{...view,dpr:2});assert.equal(calls.length,0,'cold DPR change cannot reuse the previous paint descriptor');
+  monitor.destroy();assert.equal(bitmap.closed,true);
+});
+
+test('DPR replacement refuses a late descriptor without advancing the accepted head', async () => {
+  const requests=[];
+  const monitor=new EngineCameraMonitor({monitor_version:()=>1,monitor_address:()=>1},{previews:async()=>({usable:true,request(message){message();return new Promise(resolve=>requests.push(resolve));}})});
+  const target={save(){},restore(){},setTransform(){},drawImage(){assert.fail('a stale paint must not be presented');}};
+  const view={width:278,height:139,zoom:.25,panX:0,panY:0,dpr:1};
+  monitor.draw(target,view);await new Promise(resolve=>setImmediate(resolve));monitor.draw(target,{...view,dpr:2});
+  const stale={closed:0,close(){this.closed++;}};requests[0]({bitmap:stale,rootBackground:{dpr:1}});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(stale.closed,1);assert.equal(monitor.picture,null);assert.equal(monitor.stats.drawn,0);monitor.destroy();
+});
+
+
+test('only a successfully painted accepted GPU source notifies the destination owner',()=>{
+  let version=1,notified=0,fail=false;
+  const monitor=new EngineCameraMonitor({monitor_version:()=>version});
+  const view={width:278,height:139,zoom:.25,panX:0,panY:0,dpr:1};
+  monitor.picture={key:JSON.stringify([1,278,139,.25,0,0,1]),bitmap:{close(){}},gpuSource:true};
+  const target={save(){},restore(){},setTransform(){},drawImage(){if(fail)throw Error('lost destination');}};
+  const notify=gpu=>{if(gpu)notified++;};
+  monitor.draw(target,view,notify);assert.equal(notified,1);
+  monitor.picture.gpuSource=false;monitor.draw(target,view,notify);assert.equal(notified,1);
+  monitor.picture.gpuSource=true;fail=true;assert.throws(()=>monitor.draw(target,view,notify),/lost destination/);assert.equal(notified,1);
+  fail=false;version=0;monitor.draw(target,{...view,dpr:2},notify);assert.equal(notified,1,'incompatible cold picture never notifies');
+  monitor.destroy();monitor.draw(target,view,notify);assert.equal(notified,1,'disposed work cannot notify');
+});

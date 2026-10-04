@@ -27,9 +27,9 @@ function monitorState(canvas, options) {
   let state=monitorStates.get(canvas);
   if(!state){
     state={retryAt:0};monitorStates.set(canvas,state);
-    canvas.addEventListener?.('contextlost',()=>{state.lost=true;state.options.onRecovery?.('camera','started');});
+    canvas.addEventListener?.('contextlost',()=>{state.lost=true;state.painted=false;state.options.onRecovery?.('camera','started');});
     canvas.addEventListener?.('contextrestored',()=>{
-      state.lost=false;state.retryAt=0;playbackGeometry.delete(canvas);state.options.onRecovery?.('camera','recovered');
+      state.lost=false;state.retryAt=0;state.painted=false;playbackGeometry.delete(canvas);state.options.onRecovery?.('camera','recovered');
       state.options.onInvalidate?.();
     });
   }
@@ -110,13 +110,18 @@ export function drawCameraMonitor(canvas, options) {
   const view={scale,x:(width-report.canvas_width*scale)/2,y:(height-report.canvas_height*scale)/2};
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
   // The engine draws the frame it drew on the stage, on the stage's device (engine-stage.mjs).
-  if(options.stage?.drawCameraMonitor?.(ctx,{width:canvas.width,height:canvas.height,zoom:scale*dpr,panX:view.x*dpr,panY:view.y*dpr})){
+  if(options.stage?.drawCameraMonitor?.(ctx,{width:canvas.width,height:canvas.height,zoom:scale*dpr,panX:view.x*dpr,panY:view.y*dpr,dpr},gpuSource=>{
+    // Only a GPU foreground that is this destination's first actual paint
+    // needs the startup settle. Preserve prior direct/empty presentation.
+    const first=!state.painted;state.painted=true;
+    if(first&&gpuSource)options.onInvalidate?.();
+  })){
     if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;
   }
   if(prepared){
     let source=monitorSurfaces.get(prepared.renderer);
     if(!source){source=new MonitorPreparedSource(prepared.renderer);monitorSurfaces.set(prepared.renderer,source);}
-    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids,hiddenKey:prepared.hiddenKey})){if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;}
+    if(source.render(ctx,{key:prepared.key,report,view,dpr,hiddenUids,hiddenKey:prepared.hiddenKey})){state.painted=true;if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;}
   }
   if(!geometry) {
     let cached=playbackGeometry.get(canvas);
@@ -131,7 +136,7 @@ export function drawCameraMonitor(canvas, options) {
     if(surface.width!==w)surface.width=w;if(surface.height!==h)surface.height=h;
     const effectContext=surface.getContext('2d');configureVfxSoftwareResources(effectContext,{owner:ctx});
     drawExportScene(effectContext,report,frame,{...geometry,drawables:geometry.drawables.filter(item=>!hiddenUids?.has(item.obj.unique_id)&&layerVisible(report,item.obj.unique_id))},resources);
-    ctx.drawImage(surface,view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);state.retryAt=0;return true;
+    ctx.drawImage(surface,view.x,view.y,report.canvas_width*scale,report.canvas_height*scale);state.painted=true;state.retryAt=0;return true;
   }
   ctx.save();
   try {
@@ -149,6 +154,7 @@ export function drawCameraMonitor(canvas, options) {
   }
   walker?.end();
   } finally {ctx.restore();}
+  state.painted=true;
   if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;
   } catch(error) {
     // The monitor is auxiliary. A failure must not abort the editor's frame or

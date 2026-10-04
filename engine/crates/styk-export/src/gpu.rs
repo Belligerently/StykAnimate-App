@@ -105,6 +105,7 @@ impl GpuExport {
 
     /// Draws tile `index` of `list` seen through `camera`, and copies it into read-back `slot`.
     pub fn draw(&mut self, doc: &Document, list: &Arc<DrawList>, camera: Option<&Camera>, index: usize, slot: usize) {
+        self.renderer.set_edges(self.settings.smoothing.edges_for(list));
         let tile = self.tiles[index];
         let view = tile_view(doc, camera, &self.settings, &tile);
         self.renderer.set_list(list);

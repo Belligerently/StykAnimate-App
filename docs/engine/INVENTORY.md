@@ -18,8 +18,8 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-eval` | 81 | 758 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 740 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
-| `styk-render` | 52 | 708 KiB | 32 | 15 | 5 | 0 | 0 | 9 % | 57 % | 0 % |
-| **Total** | 356 | 4053 KiB | 176 | 122 | 35 | 22 | 1 | 20 % | 48 % | 0 % |
+| `styk-render` | 52 | 708 KiB | 31 | 16 | 5 | 0 | 0 | 9 % | 61 % | 0 % |
+| **Total** | 356 | 4053 KiB | 175 | 123 | 35 | 22 | 1 | 20 % | 49 % | 0 % |
 
 ## Engine modules
 
@@ -260,7 +260,7 @@ Engine logic: ported to Rust.
 | `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/export-canvas.mjs` | `styk-export` | js | frame hand-over shared by both export workers |
-| `src/export-crisp.mjs` | `styk-export` | partial | Rust: No smoothing as Edges::Crisp for documents the engine draws (styk-render, styk-export); other documents JS |
+| `src/export-crisp.mjs` | `styk-export` | partial | Rust: recorded exportSVG composited-frame policy keeps effects, truthy generator batches and visible mesh/depth artwork smooth with No smoothing; ordinary frames use Edges::Crisp; plain drawing image-sampling parity and exports of gated documents remain open |
 | `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS |
 | `src/export-frame-renderer.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents |
 | `src/export-frame-worker.mjs` | `styk-export` | partial | Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs, on the GPU or with styk-raster without a device); this worker draws documents the engine does not and exports whose engine worker cannot start |
@@ -359,7 +359,7 @@ Engine logic: ported to Rust.
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
 | `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: edit/onion/playback/fractional views, worker monitor and exact prepared shown tickets; scoped prebuilt generation/assets candidate, recorded opt-in guarded typed glyph/image pairing and private typed Frame/encoded allocation observations are verified prerequisites with no runtime adoption or complete physical bound; ordinary-loader/Core pairing, auxiliary clip/paint/cel/scene-effect/onion/crisp parity, no-thread and last-owner/physical D7 remain |
+| `src/renderer.mjs` | `styk-render` | partial | Rust: edit/onion/playback/fractional views, exact prepared shown tickets and recorded ordinary solid-background monitor clip/paint/source presentation; scoped prebuilt generation/assets and guarded typed glyph/image pairing remain opt-in prerequisites; ordinary-loader/Core pairing, SceneFX monitor, auxiliary onion/plain drawing crisp, no-thread and last-owner/physical D7 remain |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
@@ -375,7 +375,7 @@ Engine logic: ported to Rust.
 | `src/preview-images.mjs` | `styk-render::images` | js | image decoding and variants |
 | `src/vfx-camera-gpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
 | `src/vfx-camera.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-canvas.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
+| `src/vfx-canvas.mjs` | `styk-render::vfx` | partial | Rust: ordinary solid-background camera-monitor filtered-source execution/consumption and CPU/GPU result presentation through the existing worker, CanvasForeground and completed root-source receipt; SceneFX, tiled fallbacks, unadmitted sources and broader Canvas surface/cache lifetimes remain JS |
 | `src/vfx-cpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
 | `src/vfx-gpu.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: effect layers planned per view and filtered on the GPU (effects/plan.rs); still used by the JavaScript renderer |
 | `src/vfx-scene.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: scene stack over the camera image (effects); Canvas 2D path still JS |
@@ -458,7 +458,7 @@ Interface: stays in JS.
 | `src/builder-mode.mjs` |  | stays |  |
 | `src/builder-outliner.mjs` |  | stays |  |
 | `src/builder-surface-ui.mjs` |  | stays |  |
-| `src/camera-monitor.mjs` |  | stays | draws through the engine stage/worker where the engine draws; retains the last accepted same-view bitmap while its shown ticket is cold |
+| `src/camera-monitor.mjs` |  | stays | draws through the engine stage/worker; constant-size solid paint with retained foreground; successful paint history follows the actual DOM canvas, preserving resize/undo/source switches; keeps accepted same-view pixels while the shown ticket is cold |
 | `src/camera-motion-graph.mjs` |  | stays |  |
 | `src/camera-motion-localization.mjs` |  | stays |  |
 | `src/camera-motion-timeline.mjs` |  | stays |  |

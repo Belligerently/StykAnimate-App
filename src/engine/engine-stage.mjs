@@ -433,11 +433,11 @@ export async function createStageRenderer(canvas, options, create) {
      * draw the last frame or cannot present to a second canvas whose pictures reach the page
      * (WebGL2): the caller draws it.
      */
-    drawCameraMonitor(target, {width, height, zoom, panX, panY}) {
+    drawCameraMonitor(target, {width, height, zoom, panX, panY, dpr = 1}, afterSourcePaint) {
       if (!engineShown || side.failed) { side.workerMonitor?.destroy(); side.workerMonitor = null; return false; }
       if (side.engine.threaded) {
         side.workerMonitor ??= new EngineCameraMonitor(side.stage, {invalidate: () => options.onInvalidate?.()});
-        return side.workerMonitor.draw(target, {width, height, zoom, panX, panY});
+        return side.workerMonitor.draw(target, {width, height, zoom, panX, panY, dpr}, afterSourcePaint);
       }
       if (side.monitor === undefined) {
         side.monitorCanvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height));
@@ -454,6 +454,7 @@ export async function createStageRenderer(canvas, options, create) {
       target.setTransform(1, 0, 0, 1, 0, 0);
       target.drawImage(canvas, 0, 0);
       target.restore();
+      afterSourcePaint?.(false);
       return true;
     },
     /**

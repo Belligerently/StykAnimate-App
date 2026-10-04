@@ -94,6 +94,7 @@ impl Visitor<'_> {
         }
         self.allocations.buffer(&frame.objects)?;
         self.allocations.buffer(&frame.draw_order)?;
+        self.allocations.buffer(&frame.export_vfx)?;
         self.allocations.buffer(&frame.origins)?;
         self.allocations.buffer(&frame.continuations)?;
         for object in &frame.objects {

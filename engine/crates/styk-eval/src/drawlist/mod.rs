@@ -686,6 +686,14 @@ impl Fx {
     }
 }
 
+/// Whether the resolved background owner is exactly one solid paint. A
+/// degenerate gradient, missing-image fallback or transition is not admitted.
+pub fn plain_solid_background(doc: &Document, scene: &Scene) -> bool {
+    if doc.layers.as_ref().is_some_and(|l| !l.scene_visible) || scene.background_color.is_some() { return true; }
+    let (a, _, mix) = scene.background;
+    mix <= 0.0 && doc.backgrounds.iter().find(|b|b.id==a).is_some_and(|b|matches!(b.kind,BackgroundKind::Solid { .. }))
+}
+
 /// The background layers (`drawBackground`), as view-filling primitives.
 fn background(doc: &Document, assets: &Assets, scene: &Scene, editor_color: Option<u32>, out: &mut Out) {
     // `sceneBackgroundColor`: a hidden Scene layer is transparent; a colour key replaces the fill.
@@ -1414,6 +1422,15 @@ fn encode_layers(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Ove
     }).collect();
     // Generated effects: each draw encoded once, placed in the frame and in the camera image.
     let batch = overrides.generators.filter(|_| !bypass);
+    // The exportSVG predicate runs on visible source drawables, not on emitted
+    // GPU primitives: active unused effect scopes and a truthy zero-output
+    // generator batch still require the whole-frame Canvas export branch.
+    let composited_export = camera_stack.is_some() || batch.is_some() || scene.items.iter().any(|it| {
+        !overrides.hidden.get(it.slot as usize).copied().unwrap_or(false) && (
+            (!bypass && it.export_vfx) || it.kind == ItemKind::Mesh ||
+            (it.kind == ItemKind::Poly && scene.figures[it.figure as usize].polyfills.get(it.index as usize).and_then(|poly| poly.surface.as_ref()).is_some_and(|surface| surface.depth_test))
+        )
+    });
     let (generator_outs, materials) = batch.map(generators::encode).unwrap_or_default();
     let hidden_uids: std::collections::HashSet<u32> = match batch {
         Some(_) => overrides.hidden.iter().enumerate().filter(|&(_, &h)| h).filter_map(|(slot, _)| scene.objects.get(slot).map(|o| o.uid)).collect(),
@@ -1504,7 +1521,7 @@ fn encode_layers(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Ove
         close_ghost(&mut b, &mut open, ghosts);
     }
     let (prims, paints, points, groups, passes, layers, glyphs) = b.finish();
-    DrawList { prims, paints, points, groups, passes, background_prims, layers, materials, glyphs }
+    DrawList { composited_export, prims, paints, points, groups, passes, background_prims, layers, materials, glyphs }
 }
 
 fn close_ghost(b: &mut Builder, open: &mut Option<(u32, usize)>, ghosts: &[Ghost<'_>]) {

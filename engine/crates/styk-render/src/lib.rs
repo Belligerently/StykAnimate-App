@@ -4,7 +4,7 @@
 //!   instance attributes and the tables shaders look up (gradients, isolation group
 //!   placements, polyline vertices) are float textures, so the same pipeline runs on
 //!   WebGPU, Vulkan/Metal/DX12 and WebGL2, which has no storage buffers.
-//! * Draw lists are view independent: pan/zoom only rewrites a 96-byte uniform.
+//! * Draw lists are view independent: pan/zoom only rewrites a small view uniform.
 //! * Translucent figures are isolated in an atlas: one pass per nesting depth
 //!   (ping-ponging between two atlases), not one pass per figure. When the
 //!   layers of a frame do not fit the atlas, they are drawn in rounds, each at
@@ -33,6 +33,7 @@ use styk_draw::DrawList;
 pub use wgpu;
 
 pub mod effects;
+pub mod paint;
 #[cfg(feature = "gpu")]
 mod frame;
 #[cfg(feature = "gpu")]
@@ -168,6 +169,9 @@ pub struct Renderer {
     pub(crate) samples: u32,
     pub(crate) crisp: bool,
     pub(crate) drawing_grid: DrawingGrid,
+    pub(crate) paint_context: paint::PaintContext,
+    /// Set only by completed effect execution plus actual parent consumption.
+    pub(crate) root_gpu_source: bool,
     pub stats: Stats,
 }
 
@@ -176,6 +180,14 @@ impl Renderer {
     /// Selects the portable pixel-grid policy for eligible filtered drawings.
     /// The current draw list, decoded images and raster caches stay shared.
     pub fn set_drawing_grid(&mut self, grid: DrawingGrid) { self.drawing_grid = grid; }
+
+    /// Explicit root painter policy. Child targets remain Native; their
+    /// completed composite receives the root clip exactly once.
+    pub fn set_paint_context(&mut self, context: paint::PaintContext) { self.paint_context = context; }
+
+    /// Whether this last foreground frame actually consumed a completed GPU
+    /// effect source at the root. Ordinary views leave this receipt false.
+    pub fn root_gpu_source(&self) -> bool { self.root_gpu_source }
 
     /// Uploads a draw list unless it is already resident.
     pub fn set_list(&mut self, list: &Arc<DrawList>) {

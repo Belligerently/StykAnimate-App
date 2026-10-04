@@ -71,6 +71,7 @@ impl CpuExport {
 
     /// Draws tile `index` of `list` seen through `camera` into `slot`.
     pub fn draw(&mut self, doc: &Document, list: &DrawList, camera: Option<&Camera>, index: usize, slot: usize) {
+        self.raster.set_edges(self.settings.smoothing.edges_for(list));
         let tile = self.tiles[index];
         let view = tile_view(doc, camera, &self.settings, &tile);
         self.slots[slot] = self.raster.render(list, &self.images, &view, tile.size).pixels;

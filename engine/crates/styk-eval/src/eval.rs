@@ -71,6 +71,9 @@ pub struct Frame {
     /// Every effect to draw at this tick, resolved ([`crate::vfx::evaluate`]).
     /// `None` when there is none, and always for a document without effects.
     pub vfx: Option<Arc<crate::vfx::FrameVfx>>,
+    /// Export's `hasDrawableVfx`, by object slot, including active saved scopes
+    /// which paint no effect. Metadata only; [`Frame::vfx`] keeps its render semantics.
+    pub export_vfx: Vec<bool>,
     /// How far parallax layers move each object while the scene camera is shown
     /// ([`crate::parallax`]); `None` when nothing moves.
     pub parallax: Option<Arc<crate::parallax::Parallax>>,
@@ -445,6 +448,7 @@ fn frame_of(key: &KeyRef) -> Frame {
         background_color: k.background_color,
         pose_vfx: k.vfx.clone(),
         vfx: None,
+        export_vfx: Vec::new(),
         parallax: None,
     }
 }
@@ -569,6 +573,7 @@ fn tween_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool, 
         retained_vfx_tick: a.frame.retained_vfx_tick,
         pose_vfx: a.frame.vfx.as_ref().map(|stacks| crate::vfx::interpolate(stacks, b.frame.vfx.as_ref(), t)),
         vfx: None,
+        export_vfx: Vec::new(),
         parallax: None,
         origins: vec![None; objects.len()],
         continuations: a.frame.continuations.clone(),
@@ -964,15 +969,17 @@ impl Prepared {
             frame.camera = crate::camera::at_time(travel, &self.doc.camera_motion, tick, self.doc.fps);
         }
         if self.has_vfx {
+            let mut export_vfx = Vec::new();
             if self.doc.vfx_clips.is_none()
                 && let (Some(source), Some(source_tick)) = (self.retained_effect_source(), frame.retained_vfx_tick)
             {
                 let mut timed = frame.clone();
                 timed.tick = source_tick;
-                frame.vfx = crate::vfx::frame::inherited_filters(source, &timed);
+                frame.vfx = crate::vfx::frame::inherited_filters(source, &timed, &mut export_vfx);
             } else {
-                frame.vfx = crate::vfx::evaluate(&self.doc, &frame);
+                frame.vfx = crate::vfx::frame::evaluate_for_export(&self.doc, &frame, &mut export_vfx);
             }
+            frame.export_vfx = export_vfx;
         }
         frame
     }
@@ -1435,6 +1442,7 @@ impl Prepared {
             background_color,
             pose_vfx,
             vfx: None,
+            export_vfx: Vec::new(),
             parallax: None,
         }
     }

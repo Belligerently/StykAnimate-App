@@ -207,7 +207,7 @@ export class EngineCameraMonitor {
     this.stats = {requests: 0, drawn: 0, lastMs: 0, captureMs: 0, backend: null, cpu: false, gpuRefusal: null};
   }
 
-  draw(target, view) {
+  draw(target, view, afterSourcePaint) {
     if (this.disposed || this.refused) return false;
     const version = this.stage.monitor_version();
     if (!version) {
@@ -217,15 +217,16 @@ export class EngineCameraMonitor {
       // accepted picture while its shown source is cold, only at the same view.
       const previous = this.picture && JSON.parse(this.picture.key);
       if (previous && previous[1] === view.width && previous[2] === view.height
-          && previous[3] === view.zoom && previous[4] === view.panX && previous[5] === view.panY) this._paint(target);
+          && previous[3] === view.zoom && previous[4] === view.panX && previous[5] === view.panY
+          && (previous[6] ?? 1) === (view.dpr ?? 1)) this._paint(target, afterSourcePaint);
       // The stage owns the cold pose and its existing progress waiter schedules
       // another draw. No monitor pose may be prepared on the interface thread.
       return true;
     }
-    const key = JSON.stringify([version, view.width, view.height, view.zoom, view.panX, view.panY]);
+    const key = JSON.stringify([version, view.width, view.height, view.zoom, view.panX, view.panY, view.dpr ?? 1]);
     this.key = key;
     if (this.picture?.key === key) {
-      this._paint(target);
+      this._paint(target, afterSourcePaint);
       return true;
     }
     if (this.pending && this.pending.key !== key) this.pending.controller.abort();
@@ -238,8 +239,17 @@ export class EngineCameraMonitor {
     return true;
   }
 
-  _paint(target) {
+  _paint(target, afterSourcePaint) {
+    const background = this.picture.rootBackground;
+    if (background) {
+      target.save();
+      target.setTransform(background.dpr,0,0,background.dpr,0,0);
+      target.beginPath();target.rect(...background.clip);target.clip();
+      target.transform(...background.matrix);target.fillStyle=background.style;
+      target.fillRect(...background.rect);target.restore();
+    }
     target.save(); target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(this.picture.bitmap, 0, 0); target.restore();
+    afterSourcePaint?.(Boolean(this.picture.gpuSource));
   }
 
   async _render(request, view, version, signal) {
@@ -263,7 +273,7 @@ export class EngineCameraMonitor {
       if (answer.refused) { if (answer.refused !== 'stale') this.refused = true; return; }
       if (!bitmap) { this.refused = true; return; }
       this.picture?.bitmap.close();
-      this.picture = {key: request.key, bitmap};
+      this.picture = {key: request.key, bitmap, rootBackground: answer.rootBackground, gpuSource: answer.gpuSource};
       this.stats.drawn++;
       this.stats.lastMs = performance.now() - started;
       bitmap = null;

@@ -21,6 +21,8 @@ pub(crate) struct Target {
     split: Vec<[Px; 4]>,
     /// Entries of `split` no pixel uses.
     free: Vec<u32>,
+    /// Only the root target has the host's explicit per-paint Canvas clip.
+    canvas_clip: Option<styk_render::paint::CanvasClip>,
 }
 
 /// A colour component `v` (0–1) as the target stores it: to the nearest level, halves to
@@ -40,9 +42,27 @@ fn blend(dst: Px, src: [f32; 4], add: bool) -> Px {
     [quantize(src[0] + dst[0] as f32 * K * keep), quantize(src[1] + dst[1] as f32 * K * keep), quantize(src[2] + dst[2] as f32 * K * keep), quantize(src[3] + dst[3] as f32 * K * keep)]
 }
 
+/// Canvas paints use packed premultiplied byte arithmetic. Isolated child
+/// targets keep the ordinary native blend policy; their composite is clipped
+/// once, when it is painted into the root.
+#[inline]
+fn canvas_blend(dst: Px, src: [f32; 4], add: bool) -> Px {
+    let src = src.map(|v| (v.clamp(0.0, 1.0) * 255.0 + 0.5).floor() as u32);
+    let keep = if add { 256 } else { 256 - src[3] };
+    std::array::from_fn(|c| (src[c] + ((dst[c] as u32 * keep) >> 8)).min(255) as u8)
+}
+
 impl Target {
     pub fn new(width: usize, height: usize, samples: usize, clear: Px) -> Target {
-        Target { width, height, samples, pixels: vec![clear; width * height], index: vec![0; width * height], split: Vec::new(), free: Vec::new() }
+        Target { width, height, samples, pixels: vec![clear; width * height], index: vec![0; width * height], split: Vec::new(), free: Vec::new(), canvas_clip: None }
+    }
+
+    pub fn set_canvas_clip(&mut self, clip: styk_render::paint::CanvasClip) { self.canvas_clip = Some(clip); }
+
+    /// The background's fillRect coverage and the clip are independent masks,
+    /// combined before masking the paint, as Canvas's clip blitter does.
+    pub fn blend_paint(&mut self, i: usize, coverage: u8, src: [f32; 4]) {
+        self.blend_inner(i, self.full(), src, false, Some(coverage));
     }
 
     /// The mask of every sample of a pixel.
@@ -54,6 +74,19 @@ impl Target {
     /// Blends `src` (premultiplied) into the samples `mask` names of pixel `i` (bit `k`: sample `k`).
     #[inline]
     pub fn blend(&mut self, i: usize, mask: u8, src: [f32; 4], add: bool) {
+        self.blend_inner(i, mask, src, add, None);
+    }
+
+    #[inline]
+    fn blend_inner(&mut self, i: usize, mask: u8, mut src: [f32; 4], add: bool, paint: Option<u8>) {
+        let blend = if let Some(clip) = self.canvas_clip {
+            let alpha = clip.alpha([i % self.width, i / self.width]);
+            let alpha = paint.map_or(alpha, |paint| ((paint as u32 * alpha as u32 + 127) / 255) as u8);
+            src = styk_render::paint::mask_premultiplied(src, alpha);
+            canvas_blend
+        } else {
+            blend
+        };
         if mask == 0 || (src[3] <= 0.0 && src[0] <= 0.0 && src[1] <= 0.0 && src[2] <= 0.0) {
             return;
         }
@@ -111,6 +144,10 @@ impl Target {
     /// over the whole pixel, which `blend` would give too.
     #[inline]
     pub fn set_opaque(&mut self, i: usize, px: Px) {
+        if self.canvas_clip.is_some() {
+            self.blend(i, self.full(), px.map(|v|v as f32 / 255.0), false);
+            return;
+        }
         self.pixels[i] = px;
         let at = self.index[i];
         if at != 0 {
@@ -140,6 +177,26 @@ impl Target {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn canvas_clip_is_per_paint_and_only_on_root_composite() {
+        let clip = styk_render::paint::CanvasClip::new([0.305555555555554,0.0,1.0,1.0]);
+        let mut direct = Target::new(1,1,4,[0;4]); direct.set_canvas_clip(clip);
+        for _ in 0..2 { direct.blend(0,15,[0.0,0.0,0.0,127.0/255.0],false); }
+        assert_eq!(direct.resolve()[0][3],145,"each independent translucent paint is clipped");
+        let mut child = Target::new(1,1,4,[0;4]);
+        for _ in 0..2 { child.blend(0,15,[0.0,0.0,0.0,127.0/255.0],false); }
+        let px = child.resolve()[0];
+        let mut root = Target::new(1,1,4,[0;4]); root.set_canvas_clip(clip);
+        root.blend(0,15,px.map(|v|v as f32/255.0),false);
+        assert_eq!(root.resolve()[0][3],132,"the completed native child is clipped once");
+    }
+    #[test]
+    fn canvas_fill_combines_independent_paint_and_clip_masks() {
+        let mut root = Target::new(1,1,4,[0;4]);
+        root.set_canvas_clip(styk_render::paint::CanvasClip::new([0.44444444444444,0.0,1.0,1.0]));
+        root.blend_paint(0,142,[1.0;4]);
+        assert_eq!(root.resolve()[0],[79;4]);
+    }
 
     #[test]
     fn complementary_samples_leave_no_seam() {

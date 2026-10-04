@@ -261,6 +261,11 @@ impl EditScene {
         }
     }
 
+    /// Worker-only resolved background owner, after this snapshot prepared.
+    pub fn plain_solid_background(&self, doc: &styk_eval::doc::Document) -> bool {
+        self.current.as_ref().and_then(|pose|pose.scene.as_deref()).is_some_and(|scene|styk_eval::drawlist::plain_solid_background(doc,scene))
+    }
+
     /// Exact motion time whose follow path is still cold. The caller schedules
     /// worker frame tickets and retries after engine progress; it keeps its last draw.
     pub fn camera_pending(&self) -> Option<f64> { self.camera_pending }

@@ -21,14 +21,14 @@ What's new in each version of StykAnimate.
 
 - Ctrl-dragging a node that uses IK stretches it like any other node.
 - A calmer top bar: the menus are in the StykAnimate menu, and your open projects take their place.
-- Exports and previews look just like your animation in the editor, on every computer.
+- Exports preserve effects and 3D artwork when No smoothing is selected.
 
 ### Fixed
 
 - Undoing a timeline change made of several steps keeps your selection and shows the right frame.
 - Timeline and camera previews show the correct frame and parallax layer positions.
 - Moving a segment while building a figure no longer bends other parts of the figure.
-- Fixed blur, glow and outlines losing fine brush detail on drawing layers.
+- Fixed fine brush detail on drawing layers and clipped edges in camera previews with blur, glow or outlines.
 - Fixed errors when adjusting motion paths on joined figures.
 - Failed attempts to add figures or movieclips keep the project and figure joins unchanged.
 - Fixed an inspector error when viewing between frames.

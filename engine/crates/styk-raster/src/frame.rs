@@ -63,10 +63,11 @@ pub(crate) struct Frame<'a> {
     pub stats: Stats,
     /// Bytes the targets being drawn hold now.
     pub held: usize,
+    paint_context: styk_render::paint::PaintContext,
 }
 
 impl<'a> Frame<'a> {
-    pub fn new(list: &'a DrawList, images: &'a Images, view: &'a ViewParams, size: [u32; 2], crisp: bool, glyphs: Vec<Option<Placed>>, drawing_grid: crate::DrawingGrid) -> Frame<'a> {
+    pub fn new(list: &'a DrawList, images: &'a Images, view: &'a ViewParams, size: [u32; 2], crisp: bool, glyphs: Vec<Option<Placed>>, drawing_grid: crate::DrawingGrid, paint_context: styk_render::paint::PaintContext) -> Frame<'a> {
         let n = list.groups.len().max(1);
         let planned = plan::plan_with_grid(
             list,
@@ -83,7 +84,9 @@ impl<'a> Frame<'a> {
             p: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             show: [0.0, 0.0, size[0] as f64, size[1] as f64],
             filter: None,
-            canvas: false,
+            // Direct Canvas monitor paints use the same high-quality cel sampler
+            // as isolated Canvas layers. Ordinary GPU/Prepared roots stay native.
+            canvas: matches!(paint_context, styk_render::paint::PaintContext::CanvasDirect { .. } | styk_render::paint::PaintContext::CanvasForeground { .. }),
         };
         let mut layers = vec![root; n];
         let mut matrices: Vec<Affine> = vec![view.matrix; n];
@@ -118,7 +121,7 @@ impl<'a> Frame<'a> {
                 *run = (0, 0);
             }
         }
-        Frame { list, images, crisp, samples: if crisp { 1 } else { 4 }, layers, runs, glyphs, view, stats: Stats::default(), held: 0 }
+        Frame { list, images, crisp, samples: if crisp { 1 } else { 4 }, layers, runs, glyphs, view, stats: Stats::default(), held: 0, paint_context }
     }
 
     /// Draws the frame: group 0 into a target of the view's size cleared to `clear`.
@@ -127,6 +130,9 @@ impl<'a> Frame<'a> {
         let c = self.view.clear;
         let clear = [quantize(c[0] as f32), quantize(c[1] as f32), quantize(c[2] as f32), quantize(c[3] as f32)];
         let mut target = Target::new(w, h, self.samples, clear);
+        if matches!(self.paint_context, styk_render::paint::PaintContext::CanvasDirect { .. } | styk_render::paint::PaintContext::CanvasForeground { .. }) {
+            target.set_canvas_clip(styk_render::paint::CanvasClip::new(self.view.artboard));
+        }
         self.hold(target.bytes() as isize);
         self.group(0, &mut target);
         let bytes = target.bytes();
@@ -154,7 +160,7 @@ impl<'a> Frame<'a> {
         } else {
             full
         };
-        let mut i = start;
+        let mut i = start + if g == 0 && matches!(self.paint_context, styk_render::paint::PaintContext::CanvasForeground { .. }) { background.min(end-start) } else { 0 };
         while i < end {
             let p = self.list.prims[i];
             let clip = if i - start < background { full } else { scissor };
@@ -620,8 +626,39 @@ impl<'a> Frame<'a> {
 
     /// The artboard filled with a colour, paint or background picture (a group's whole layer).
     fn fill(&self, target: &mut Target, g: usize, layer: &Layer, clip: [i64; 4], p: &Prim) {
+        if g == 0 && p.kind & 255 == K_FILL_VIEW {
+            if let styk_render::paint::PaintContext::CanvasDirect { background_bounds } = self.paint_context {
+                let paint = styk_render::paint::PaintQuad::rectangle(self.view.matrix, background_bounds);
+                // Only the independently certified axis-aligned fillRect takes
+                // the packed coverage path. Rotated quads retain existing coverage.
+                if paint.canvas_alpha(self.view.matrix,[0,0]).is_some() {
+                    for y in clip[1]..clip[3] { for x in clip[0]..clip[2] {
+                        let alpha = paint.canvas_alpha(self.view.matrix,[x as usize,y as usize]).expect("axis-aligned above");
+                        if alpha == 0 { continue; }
+                        let (cx,cy) = (x as f64+0.5,y as f64+0.5);
+                        let inv = layer.inv;
+                        let w = [(inv[0]*cx+inv[2]*cy+inv[4]) as f32,(inv[1]*cx+inv[3]*cy+inv[5]) as f32];
+                        target.blend_paint(y as usize*target.width+x as usize, alpha, premul(self.base(p,w)));
+                    }}
+                    return;
+                }
+            }
+        }
         let r = if g == 0 { self.view.artboard.map(|v| v as f32) } else { [0.0, 0.0, target.width as f32, target.height as f32] };
-        let corners = [[r[0], r[1]], [r[2], r[1]], [r[0], r[3]], [r[2], r[3]]];
+        let mut corners = [[r[0], r[1]], [r[2], r[1]], [r[0], r[3]], [r[2], r[3]]];
+        if g == 0 {
+            if let styk_render::paint::PaintContext::CanvasDirect { background_bounds } = self.paint_context {
+                if p.kind & 255 == K_FILL_VIEW {
+                    let q = styk_render::paint::PaintQuad::rectangle(self.view.matrix, background_bounds).0.map(|p|p.map(|v|v as f32));
+                    corners = [q[0],q[1],q[3],q[2]];
+                } else {
+                    // A Canvas bitmap is painted by pixel centre, then clipped;
+                    // its fitted/raster domain is tested below without applying
+                    // native artboard MSAA a second time.
+                    corners = [[0.0,0.0],[target.width as f32,0.0],[0.0,target.height as f32],[target.width as f32,target.height as f32]];
+                }
+            }
+        }
         let width = target.width;
         let inv = layer.inv;
         let bg = p.kind & 255 == K_BG_IMAGE;
@@ -633,6 +670,11 @@ impl<'a> Frame<'a> {
         let page = PAGE as f32;
         let origin = [(rect[0] * page).round() - 1.0, (rect[1] * page).round() - 1.0];
         let base = unpack(p.color);
+        let image_bounds = if g == 0 && bg {
+            if let styk_render::paint::PaintContext::CanvasDirect { background_bounds } = self.paint_context {
+                Some(styk_render::paint::background_image_bounds([p.a[0] as f64,p.a[1] as f64],[(rect[2]-rect[0]) as f64*PAGE as f64,(rect[3]-rect[1]) as f64*PAGE as f64],background_bounds))
+            } else { None }
+        } else { None };
         // An opaque colour (the usual background) covering a whole pixel replaces what is there.
         let solid = (texture.is_none() && p.paint == NO_PAINT).then(|| premul(base)).filter(|c| c[3] >= 1.0);
         let opaque = solid.map(|c| [quantize(c[0]), quantize(c[1]), quantize(c[2]), 255]);
@@ -644,6 +686,7 @@ impl<'a> Frame<'a> {
             }
             let (cx, cy) = (x as f64 + 0.5, y as f64 + 0.5);
             let w = [(inv[0] * cx + inv[2] * cy + inv[4]) as f32, (inv[1] * cx + inv[3] * cy + inv[5]) as f32];
+            if image_bounds.is_some_and(|b| w[0] < b[0] as f32 || w[1] < b[1] as f32 || w[0] >= (b[0]+b[2]) as f32 || w[1] >= (b[1]+b[3]) as f32) { return; }
             let src = match texture {
                 Some(texture) => {
                     let uv = [(w[0] / p.a[0]).clamp(0.0, 1.0), (w[1] / p.a[1]).clamp(0.0, 1.0)];

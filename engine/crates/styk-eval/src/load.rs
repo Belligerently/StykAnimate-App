@@ -779,6 +779,7 @@ impl Loader {
             background_color: key.background_color,
             pose_vfx: key.vfx,
             vfx: None,
+            export_vfx: Vec::new(),
             parallax: None,
         })
     }

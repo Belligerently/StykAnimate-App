@@ -42,6 +42,10 @@ pub(crate) struct GpuView {
     pub(crate) inv_t: [f32; 4],
     pub(crate) target: [f32; 4],
     pub(crate) artboard: [f32; 4],
+    pub(crate) canvas_clip: [f32; 4],
+    pub(crate) background_bounds: [f32; 4],
+    pub(crate) paint_quad0: [f32; 4],
+    pub(crate) paint_quad1: [f32; 4],
 }
 
 /// Texels per row of a lookup table (`TABLE_WIDTH` in prim.wgsl).
@@ -175,4 +179,3 @@ pub(crate) fn prims_bytes(prims: &[Prim]) -> &[u8] {
     const _: () = assert!(std::mem::size_of::<Prim>() == std::mem::size_of::<GpuPrim>());
     unsafe { std::slice::from_raw_parts(prims.as_ptr() as *const u8, std::mem::size_of_val(prims)) }
 }
-

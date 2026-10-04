@@ -153,7 +153,7 @@ async function inbetween({id, address, revision, index, ratio, mode, count, opac
 }
 
 /** The frame displayed by the stage, captured by shared pointers and prepared here. */
-async function monitor({id, address, width, height, zoom, panX, panY}) {
+async function monitor({id, address, width, height, zoom, panX, panY, dpr = 1}) {
   previews.monitor_begin(address);
   const started = performance.now();
   try {
@@ -161,9 +161,23 @@ async function monitor({id, address, width, height, zoom, panX, panY}) {
       if (releasing || cancelled.has(id)) throw new DOMException('The preview was superseded.', 'AbortError');
       if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
       canvasSize(width, height);
-      const seen = Atomics.load(progress, 0), status = previews.monitor(width, height, zoom, panX, panY);
+      const seen = Atomics.load(progress, 0), status = previews.monitor(width, height, zoom, panX, panY, dpr);
       if (status === 2) return {refused: 'stale'};
-      if (status === 0) return {bitmap: picture(), width, height};
+      if (status === 0) {
+        const values = Array.from(previews.monitor_background());
+        const rootBackground = values.length === 19 ? {
+          rect: values.slice(0,4), style: `rgba(${values[4]},${values[5]},${values[6]},${values[7]/255})`,
+          matrix: values.slice(8,14), clip: values.slice(14,18), dpr: values[18]
+        } : null;
+        let bitmap;
+        const pixels = previews.monitor_pixels();
+        if (pixels) {
+          const image = new ImageData(width,height);previews.picture(image.data);
+          bitmap = await createImageBitmap(image);
+        } else bitmap = picture();
+        if (releasing || cancelled.has(id)) { bitmap.close(); throw new DOMException('The preview was superseded.', 'AbortError'); }
+        return {bitmap,width,height,rootBackground,gpuSource: Boolean(rootBackground && !pixels)};
+      }
       await whenProgress(seen);
     }
   } finally { cancelled.delete(id); previews.monitor_end(); }

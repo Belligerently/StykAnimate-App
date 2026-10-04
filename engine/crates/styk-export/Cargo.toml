@@ -13,5 +13,6 @@ styk-render = { path = "../styk-render" }
 styk-raster = { path = "../styk-raster" }
 
 [dev-dependencies]
+styk-doc = { path = "../styk-doc" }
 pollster = "0.4"
 styk-engine = { path = "../styk-engine" }

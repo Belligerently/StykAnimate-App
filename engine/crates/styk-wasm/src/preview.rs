@@ -76,6 +76,9 @@ pub struct Previews {
     engine: Option<Engine>,
     thumbnails: Option<DocumentThumbnails>,
     monitor: Option<MonitorRequest>,
+    /// Constant descriptor and result-source receipt of the same monitor packet.
+    monitor_background: Option<[f64; 19]>,
+    monitor_pixels: bool,
 }
 
 /// A picture drawn, as JSON for the worker (`extra` adds fields).
@@ -85,7 +88,7 @@ fn drawn(width: u32, height: u32, started: f64, evaluated: f64, extra: &str) -> 
 
 impl Previews {
     fn with(gpu: Option<Gpu>, backend: String) -> Previews {
-        Previews { gpu, backend, raster: Raster::new(Edges::Smooth), library_images: None, picture: (0, 0, Vec::new()), library: None, samples: Vec::new(), engine: None, thumbnails: None, monitor: None }
+        Previews { gpu, backend, raster: Raster::new(Edges::Smooth), library_images: None, picture: (0, 0, Vec::new()), library: None, samples: Vec::new(), engine: None, thumbnails: None, monitor: None, monitor_background: None, monitor_pixels: false }
     }
 }
 
@@ -257,12 +260,15 @@ impl Previews {
     /// Draws the stage's displayed pose through the camera, on transparency. Executed
     /// only in the preview worker, including the first camera/parallax preparation.
     /// 0: drawn; 1: pictures pending; 2: a newer document generation superseded it.
-    pub fn monitor(&mut self, width: u32, height: u32, zoom: f64, pan_x: f64, pan_y: f64) -> Result<u32, JsError> {
+    pub fn monitor(&mut self, width: u32, height: u32, zoom: f64, pan_x: f64, pan_y: f64, dpr: f64) -> Result<u32, JsError> {
+        self.monitor_background = None;
+        self.monitor_pixels = false;
+        if !dpr.is_finite() || dpr <= 0.0 || dpr > 2.0 { return Err(js_error("Invalid monitor DPR.")); }
         if width == 0 || height == 0 || width > 2048 || height > 2048 || !zoom.is_finite() || zoom <= 0.0 || !pan_x.is_finite() || !pan_y.is_finite() {
             return Err(js_error("Invalid camera monitor size or view."));
         }
         let Some(request) = self.monitor.as_ref() else { return Ok(STALE) };
-        let (engine, generation, grid) = (request.frame.engine.clone(), request.frame.generation.clone(), request.grid);
+        let (engine, generation, grid, direct_canvas) = (request.frame.engine.clone(), request.frame.generation.clone(), request.grid, request.direct_canvas);
         if engine.generation().is_none_or(|g| g.id != generation.id) { return Ok(STALE) }
         self.pin(&engine, &generation)?;
         let pictures = self.thumbnails.as_mut().expect("pinned above");
@@ -273,13 +279,66 @@ impl Previews {
         let pan = [pan_x, pan_y];
         let framing = Framing { matrix: styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan), artboard: [pan_x, pan_y, pan_x + doc.canvas[0] as f64 * zoom, pan_y + doc.canvas[1] as f64 * zoom], zoom, pan };
         let view = view_of(framing, [0.0; 4], true, true);
-        self.draw_document(&generation, &list, &view, width, height, grid)?;
+        // The no-scene-effects Canvas branch clips each owning paint. Active
+        // scene effects present a camera bitmap without this outer clip; that
+        // independent contract remains Native until separately certified.
+        let scene_image = list.layers.iter().any(|layer| matches!(layer.kind, styk_draw::LayerKind::Camera { .. }));
+        let paint = if direct_canvas && !scene_image {
+            let background_bounds = styk_eval::view::background_bounds(doc, camera.as_ref(), true, [0.0,0.0,doc.canvas[0] as f64,doc.canvas[1] as f64]).rect;
+            let root = list.passes.iter().find(|p|p.depth==0).map(|p|(p.start,p.end));
+            // This candidate admits only recorded ordinary vectors/decoded cels.
+            // Foreign source kinds retain their existing full-frame route.
+            let ordinary = list.prims.iter().all(|p| match p.kind & 255 {
+                styk_draw::K_FILL_VIEW | styk_draw::K_COMPOSITE | styk_draw::K_CAPSULE | styk_draw::K_BOX | styk_draw::K_ARC | styk_draw::K_DISC | styk_draw::K_RING | styk_draw::K_POLYLINE => true,
+                styk_draw::K_TRI => p.kind & (styk_draw::F_DEPTH | styk_draw::F_GLYPH_VECTOR) == 0,
+                styk_draw::K_IMAGE => p.kind & styk_draw::F_DRAWING != 0,
+                _ => false,
+            });
+            let solid = root.and_then(|(start,end)|list.prims.get(start as usize).filter(|p|
+                ordinary && self.monitor.as_ref().is_some_and(|request|request.frame.plain_solid_background())
+                && list.background_prims==1 && start<end && p.group==0 && p.kind==styk_draw::K_FILL_VIEW && p.paint==styk_draw::NO_PAINT));
+            if let Some(solid) = solid {
+                let m = styk_eval::view::camera_matrix(doc,camera.as_ref(),zoom/dpr,[pan_x/dpr,pan_y/dpr]);
+                let c = solid.color;
+                self.monitor_background = Some([
+                    background_bounds[0],background_bounds[1],background_bounds[2],background_bounds[3],
+                    (c&255) as f64,(c>>8&255) as f64,(c>>16&255) as f64,(c>>24) as f64,
+                    m[0],m[1],m[2],m[3],m[4],m[5],
+                    pan_x/dpr,pan_y/dpr,doc.canvas[0] as f64*(zoom/dpr),doc.canvas[1] as f64*(zoom/dpr),dpr]);
+                styk_render::paint::PaintContext::CanvasForeground { background_bounds }
+            } else { styk_render::paint::PaintContext::CanvasDirect { background_bounds } }
+        } else { styk_render::paint::PaintContext::Native };
+        self.draw_document(&generation, &list, &view, width, height, grid, paint)?;
+        if self.monitor_background.is_some() {
+            // The receipt comes from successful execution/consumption, not the
+            // presence of saved filters or the chosen graphics backend.
+            let gpu_source = self.gpu.as_ref().is_some_and(|gpu|gpu.renderer.root_gpu_source());
+            if !gpu_source {
+                // The CPU draw already produced this exact foreground above.
+                // A GPU direct-source draw needs its existing raster adaptation.
+                if self.gpu.is_some() {
+                    self.raster.set_drawing_grid(grid);
+                    self.raster.set_paint_context(paint);
+                    self.picture = (width,height,self.raster.render(&list,&self.thumbnails.as_ref().expect("pinned above").images,&view,[width,height]).straight());
+                }
+                self.monitor_pixels = true;
+            }
+        }
         Ok(READY)
     }
 
     /// The request finished or was cancelled. Images stay with the preview worker's
     /// pinned document, reused by thumbnails and the next monitor frame.
-    pub fn monitor_end(&mut self) { self.monitor = None; }
+    pub fn monitor_end(&mut self) { self.monitor = None; self.monitor_background = None; self.monitor_pixels = false; }
+
+    /// Constant-size metadata paired with the just-drawn foreground bitmap.
+    pub fn monitor_background(&self) -> Box<[f64]> {
+        self.monitor_background.map_or_else(||Vec::new().into_boxed_slice(),|v|v.to_vec().into_boxed_slice())
+    }
+
+    /// Direct source pixels must use createImageBitmap(ImageData), not a 2D
+    /// OffscreenCanvas conversion with a different destination backing lifetime.
+    pub fn monitor_pixels(&self) -> bool { self.monitor_pixels }
 
     /// Explicit in-between samples, including hidden and one-tick native intervals,
     /// prepared here using one typed sampling view of the pinned generation.
@@ -294,7 +353,7 @@ impl Previews {
         let preview = pictures.preview.get_or_insert_with(|| InbetweenPreview::new(generation.clone()));
         let (list, camera) = preview.sample(index as usize, ratio, Onions { mode, count, opacity, ahead }, clock).map_err(js_error)?;
         let view = view_of(card(&generation.prepared.doc, camera.as_ref(), width, height), CARD, true, true);
-        self.draw_document(&generation, &list, &view, width, height, DrawingGrid::Destination)?;
+        self.draw_document(&generation, &list, &view, width, height, DrawingGrid::Destination, styk_render::paint::PaintContext::Native)?;
         Ok(READY)
     }
 
@@ -336,6 +395,7 @@ impl Previews {
         let view = view_of(framing, CARD, true, true);
         // The thumbnail worker paints directly on its fitted Canvas destination.
         self.raster.set_drawing_grid(DrawingGrid::Destination);
+        self.raster.set_paint_context(styk_render::paint::PaintContext::Native);
         self.picture = (width, height, self.raster.render(&frame.list, &thumbnails.images, &view, [width, height]).straight());
         // Drawn: its place among the frames prepared ahead is free again.
         let _ = thumbnails.frames.take(tick);
@@ -421,7 +481,7 @@ impl Previews {
 
     /// Monitor and in-between frames share this worker's existing atlas/device and
     /// the pinned document's decoded pictures; library files reuse the same device.
-    fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid) -> Result<(), JsError> {
+    fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid, paint: styk_render::paint::PaintContext) -> Result<(), JsError> {
         let pictures = self.thumbnails.as_ref().expect("a document is pinned");
         if let Some(gpu) = self.gpu.as_mut() {
             let layout = (generation.lineage, generation.assets.pages, pictures.images.len());
@@ -431,9 +491,11 @@ impl Previews {
                 gpu.atlas = Some(layout);
             }
             gpu.renderer.set_drawing_grid(grid);
+            gpu.renderer.set_paint_context(paint);
             gpu.draw(list, view, width, height)?;
         } else {
             self.raster.set_drawing_grid(grid);
+            self.raster.set_paint_context(paint);
             self.picture = (width, height, self.raster.render(list, &pictures.images, view, [width, height]).straight());
         }
         Ok(())
@@ -453,6 +515,7 @@ impl Previews {
             }
             let images = &self.library_images.as_ref().expect("set above").1;
             self.raster.set_drawing_grid(DrawingGrid::Destination);
+            self.raster.set_paint_context(styk_render::paint::PaintContext::Native);
             self.picture = (size, size, self.raster.render(list, images, &view, [size, size]).straight());
             return Ok(());
         };
@@ -463,6 +526,7 @@ impl Previews {
             gpu.atlas = Some((preview.lineage, preview.assets().pages, images.len()));
         }
         gpu.renderer.set_drawing_grid(DrawingGrid::Destination);
+        gpu.renderer.set_paint_context(styk_render::paint::PaintContext::Native);
         gpu.draw(list, &view, size, size)
     }
 }

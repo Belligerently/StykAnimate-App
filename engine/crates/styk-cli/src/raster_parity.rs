@@ -394,7 +394,7 @@ fn document(gpu: &Gpu, checker: &mut Checker, file: &str, sizes: &[[u32; 2]], ex
             let gpu_pixels = exporter.frame_blocking(doc, &frame.list, frame.camera.as_ref(), false)?;
             let tile = Tile { x: 0, y: 0, size, valid: size };
             let view = styk_export::view::tile_view(doc, frame.camera.as_ref(), &settings, &tile);
-            let raster = if smoothing.edges() == Edges::Crisp { &mut crisp_raster } else { &mut smooth_raster };
+            let raster = if smoothing.edges_for(&frame.list) == Edges::Crisp { &mut crisp_raster } else { &mut smooth_raster };
             checker.check(file, &stem, tick, name.to_string(), size, &gpu_pixels, &mut || cpu_frame(raster, &frame.list, &cpu_images, &view, size));
         }
     }

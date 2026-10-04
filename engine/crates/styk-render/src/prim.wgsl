@@ -11,6 +11,10 @@ struct View {
     inv_t: vec4<f32>,
     dest: vec4<f32>,     // target width, height, page index, depth
     artboard: vec4<f32>, // screen-space artboard rect (x0, y0, x1, y1)
+    canvas_clip: vec4<f32>, // explicit root Canvas clip, already converted by its owner
+    background_bounds: vec4<f32>, // world x, y, width, height
+    paint_quad0: vec4<f32>, // transformed fill rectangle corners 0, 1
+    paint_quad1: vec4<f32>, // transformed fill rectangle corners 2, 3
 };
 
 struct Prim {
@@ -422,7 +426,7 @@ fn vs_main(in: VsIn) -> VsOut {
             // remains (between 1 and 1/2) with 'high' smoothing, which Chromium samples from the
             // level's own reductions, trilinearly, at a level of detail of log2(1 / scale) - 1/2
             // (measured): past 2^-1/2, up to half of the next level is blended in.
-            if (g != 0u && gr.canvas > 0.5) {
+            if ((g == 0u && view.inv_t.z > 0.5) || (g != 0u && gr.canvas > 0.5)) {
                 // Exactly 1× remains bilinear, including fractional translations; any
                 // enlargement uses Mitchell (the editor's imageSmoothingQuality 'high').
                 if (tile_pixels > 1.0) {
@@ -482,7 +486,18 @@ fn vs_main(in: VsIn) -> VsOut {
     } else if (kind == K_FILL_VIEW || kind == K_BG_IMAGE) {
         // The artboard on screen; a group's whole layer (the camera image's background).
         if (g == 0u) {
-            let s = mix(view.artboard.xy, view.artboard.zw, c);
+            var s = mix(view.artboard.xy, view.artboard.zw, c);
+            if (view.inv_t.z > 0.5) {
+                if (kind == K_BG_IMAGE || view.inv_t.w > 0.5) {
+                    // One full-sample paint with independent coverage and clip
+                    // masks; native artboard MSAA must not clip it a second time.
+                    s = c * view.dest.xy;
+                } else {
+                    // Keep the complete rotated paint quad and its ordinary
+                    // native coverage; no geometric-area approximation.
+                    s = mix(mix(view.paint_quad0.xy, view.paint_quad0.zw, c.x), mix(view.paint_quad1.zw, view.paint_quad1.xy, c.x), c.y);
+                }
+            }
             out.world = to_world(s);
             out.pos = clip_pos(s);
         } else {
@@ -740,8 +755,7 @@ fn beam_color(p: Prim, uv: vec2<f32>, prm: vec4<f32>, aa: f32) -> vec4<f32> {
     return vec4<f32>(min(vec3<f32>(1.0), rgb) * alpha, alpha);
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn shade_primitive(in: VsOut) -> vec4<f32> {
     let pos = in.pos.xy;
     if (pos.x < in.clip.x || pos.y < in.clip.y || pos.x > in.clip.z || pos.y > in.clip.w) {
         discard;
@@ -894,4 +908,53 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return premul(base);
     }
     return vec4<f32>(0.0);
+}
+
+// The explicit Canvas policy is applied only at the root owning paint or
+// completed isolated composite. Child pass uniforms leave this policy off.
+fn canvas_clip_alpha(pos: vec2<f32>) -> f32 {
+    let p = floor(pos);
+    let size = clamp(min(view.canvas_clip.zw, p + vec2<f32>(1.0)) - max(view.canvas_clip.xy, p), vec2<f32>(0.0), vec2<f32>(1.0));
+    return floor(size.x * size.y * 255.0 + 0.5);
+}
+
+fn canvas_fill_alpha(pos: vec2<f32>) -> f32 {
+    let low = floor(min(view.paint_quad0.xy, view.paint_quad1.xy) * 256.0 + vec2<f32>(0.5));
+    let high = floor(max(view.paint_quad0.xy, view.paint_quad1.xy) * 256.0 + vec2<f32>(0.5));
+    let p = floor(pos) * 256.0;
+    let size = clamp(min(high, p + vec2<f32>(256.0)) - max(low, p), vec2<f32>(0.0), vec2<f32>(256.0));
+    if (size.x == 0.0 || size.y == 0.0) { return 0.0; }
+    let thin = floor(low / 256.0) == floor((high - vec2<f32>(1.0)) / 256.0);
+    if (thin.y) { return floor((size.y - 1.0) * size.x / 256.0); }
+    if (size.x == 256.0) { return select(size.y - select(0.0, 1.0, thin.y), 255.0, size.y == 256.0); }
+    if (size.y == 256.0) { return size.x - select(0.0, 1.0, thin.x); }
+    return floor((size.y - select(0.0, 1.0, thin.y)) * size.x / 256.0);
+}
+
+fn canvas_image_bounds(p: Prim) -> vec4<f32> {
+    let b = view.background_bounds;
+    if (all(b.xy >= vec2<f32>(0.0)) && all(b.xy + b.zw <= p.a.xy)) { return vec4<f32>(0.0, 0.0, p.a.xy); }
+    let source = (p.c.zw - p.c.xy) * vec2<f32>(textureDimensions(sprites).xy);
+    let density = min(min(source.x / p.a.x, source.y / p.a.y), min(min(16382.0 / b.z, 16382.0 / b.w), sqrt(31.0 * 1024.0 * 1024.0 / (b.z * b.w))));
+    let low = floor(b.xy * density);
+    return vec4<f32>(low / density, max(vec2<f32>(1.0), ceil((b.xy + b.zw) * density) - low) / density);
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let src = shade_primitive(in);
+    if (view.inv_t.z < 0.5 || in.head.y != 0u) { return src; }
+    let kind = in.head.x & 255u;
+    var alpha = canvas_clip_alpha(in.pos.xy);
+    if (kind == K_FILL_VIEW && view.inv_t.w > 0.5) {
+        alpha = floor((alpha * canvas_fill_alpha(in.pos.xy) + 127.0) / 255.0);
+    } else if (kind == K_BG_IMAGE) {
+        let p = Prim(in.head.x, in.head.y, in.head.z, in.head.w, in.a, in.b, in.c);
+        let bounds = canvas_image_bounds(p);
+        let w = to_world(in.pos.xy);
+        if (any(w < bounds.xy) || any(w >= bounds.xy + bounds.zw)) { return vec4<f32>(0.0); }
+    }
+    // The pinned Canvas byte-mask blitter uses alpha+1 with a right shift.
+    let paint = floor(clamp(src, vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0 + vec4<f32>(0.5));
+    return floor(paint * (alpha + 1.0) / 256.0) / 255.0;
 }

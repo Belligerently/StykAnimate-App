@@ -87,6 +87,7 @@ fn blank(base: &Frame) -> Frame {
         background_color: None,
         pose_vfx: None,
         vfx: None,
+        export_vfx: Vec::new(),
         parallax: None,
     }
 }
@@ -184,6 +185,7 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
         background_color: base.background_color,
         pose_vfx: base.pose_vfx.clone(),
         vfx: base.vfx.clone(),
+        export_vfx: Vec::new(),
         parallax: base.parallax.clone(),
     };
     for &(index, channel) in &channels {
