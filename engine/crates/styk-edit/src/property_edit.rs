@@ -258,7 +258,7 @@ fn check_tick(tick: &Value) -> Result<f64, EditError> {
 }
 
 /// `checkedTick(tick)` of the layer sheet.
-fn checked_tick(tick: &Value) -> Result<f64, EditError> {
+pub(crate) fn checked_tick(tick: &Value) -> Result<f64, EditError> {
     integer(tick).filter(|t| *t >= 0.0 && *t < MAX_TICK).ok_or_else(|| invalid("errors.editorLayerSheet.chooseAValidWholeFrame"))
 }
 
@@ -387,11 +387,17 @@ impl Editor {
     /// tick (the frame on show at the playhead). On a layer sheet no `_styk.animation`
     /// channel exists, so an exact target reads the same.
     pub(crate) fn animation_value(&self, target: &Value, property: &str, tick: &Value) -> Result<Option<Value>, EditError> {
-        let tick = check_tick(tick)?;
-        let frame = if tick == self.tick { self.shown_frame()? } else { self.evaluated(tick, true)? };
+        let frame = self.animation_frame_at(tick)?;
         let target = normalize_target(target)?;
         channel_id(&target, property)?;
         self.with_records(|records| Ok(records.property_value(&frame, &target, property)?))
+    }
+
+    /// The same property target view used by `animationValue`: the live frame at
+    /// the playhead, otherwise the existing evaluated-record cache at the given tick.
+    pub(crate) fn animation_frame_at(&self, tick: &Value) -> Result<Value, EditError> {
+        let tick = check_tick(tick)?;
+        if tick == self.tick { self.shown_frame() } else { self.evaluated(tick, true) }
     }
 
     /// `addAnimationKeys(entries)` on a layer sheet: a missing value is the one on show.

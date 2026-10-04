@@ -517,13 +517,20 @@ impl Editor {
         // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
         let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
         if let Some(reason) = self.unported_document() {
-            if reason != "with animation origins" || !origin::recorded_call(method) {
+            let recorded = match reason {
+                "with animation origins" => origin::recorded_call(method),
+                "with animation origins and property channels" => origin::recorded_channel_call(method),
+                _ => false,
+            };
+            if !recorded {
                 return Err(EditError::Unported(format!("{method} {reason}")));
             }
             // Branch mirrors enter topology/range paths, outside this gesture milestone.
             if matches!(method, "mirrorSelection" | "mirrorFigure") && self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
                 return Err(EditError::Unported(format!("{method} of an origin branch")));
             }
+            if origin::posing_call(method) { self.origin_pose_gate()?; }
+            if origin::property_call(method) { self.origin_property_gate(method, args)?; }
         }
         if let Some(reason) = self.ik_gate(method)? {
             return Err(EditError::Unported(format!("{method} {reason}")));

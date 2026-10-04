@@ -1134,3 +1134,7 @@ await import('./edit-scenarios-motion-path.mjs');
 await import('./edit-scenarios-origin.mjs');
 
 await import('./edit-scenarios-origin-topology.mjs');
+
+await import('./edit-scenarios-origin-pose.mjs');
+await import('./edit-scenarios-origin-channels.mjs');
+await import('./origin-channels-guard-fixtures.mjs');

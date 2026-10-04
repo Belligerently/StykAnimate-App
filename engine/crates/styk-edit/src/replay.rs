@@ -55,7 +55,10 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         let call: Vec<Value> = step.get("call").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let method = call.first().and_then(Value::as_str).unwrap_or("").to_string();
         editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
-        let result = editor.call(&method, &call[1..]);
+        // A replay-only read verifies the live pose using the existing snapshot owner.
+        let result = if method == "@frame" {
+            editor.shown_frame().map(|frame| Value::str(&styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&frame))))
+        } else { editor.call(&method, &call[1..]) };
         let mut differences = Vec::new();
         let recorded_error = step.get("error").filter(|e| !e.is_null());
         match (&result, recorded_error) {

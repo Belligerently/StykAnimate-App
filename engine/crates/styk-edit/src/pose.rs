@@ -314,9 +314,17 @@ impl Editor {
                 }
             }
         }
+        let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|items| items.iter().collect()).unwrap_or_default();
         for (object_slot, segments) in by_object {
             if let Some(record) = self.frame_object_mut(object_slot) {
                 add_angles(record, &segments, delta);
+                // Turning a parent's branch turns each joined child's hidden
+                // angular dependencies once, in the editor's target order.
+                if object_slot != slot {
+                    if let Some(figure) = figures.iter().find(|figure| num(figure, "figure_type_id") == record.get("figure_type_id").and_then(Value::as_f64)) {
+                        crate::origin::rotate_support(figure, record, delta);
+                    }
+                }
             }
         }
         Ok(())

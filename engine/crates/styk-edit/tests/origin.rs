@@ -27,7 +27,7 @@ fn unproven_origin_commands_refuse_atomically_during_a_gesture() {
     editor.call("beginTranslationDrag", &[]).unwrap();
     editor.call("moveSelection", &[styk_doc::Value::Num(4.0), styk_doc::Value::Num(-2.0)]).unwrap();
     let before = (editor.report_json(), editor.state());
-    for method in ["poseJoint", "rotateJoint", "bendJoint", "applyFigureRange", "moveSelectionInFrames", "addAnimationKeys", "beginAnimationEdit", "beginMotionPathEdit", "editHandlePosition", "transformFigureHandle", "joinTo", "duplicateFigure", "deleteSelection"] {
+    for method in ["applyFigureRange", "moveSelectionInFrames", "beginMotionPathEdit", "joinTo", "duplicateFigure", "deleteSelection"] {
         assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))), "{method}");
         assert_eq!((editor.report_json(), editor.state()), before, "{method} changed state on refusal");
     }
@@ -41,7 +41,7 @@ fn unproven_origin_commands_refuse_atomically_during_a_gesture() {
 }
 
 #[test]
-fn origin_documents_with_saved_property_channels_remain_refused() {
+fn malformed_origin_documents_with_saved_property_channels_remain_refused() {
     let bytes = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/origin-gestures-layout-sheet.document.json")).unwrap();
     let mut report = styk_doc::json::parse(&bytes).unwrap();
     let mut animation = styk_doc::Obj::new();

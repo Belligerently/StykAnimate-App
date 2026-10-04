@@ -44,8 +44,17 @@ Latest origin milestone: 353 Rust tests and `npm run check` pass; all 1,000 exis
 fixture files regenerate unchanged, with 222 recorded commands replaying fully. Whole-figure
 gestures, Set Origin and recorded topology preserve retained support. The app compares
 47 calls exactly, including Set Origin/history; affected Electron and web pictures pass
-6/6 each. Full repository parity is queued against the committed snapshot; broader origin
-commands and class ownership remain open. No JavaScript was deleted.
+6/6 each. Full repository parity passed on `d1087e39`: all fixture generators, 222 recordings and
+441 containers. Broader origin commands and class ownership remain open. No JavaScript was deleted.
+
+Latest origin pose/channel milestone: 365 Rust tests pass; all 1,097 fixture hashes are
+stable and 246 recordings replay fully. Thirteen joint/handle recordings and eleven saved
+channel recordings add 2,770 exact steps, including shown-frame reads. Future target and
+attachment-ancestor guards preserve live state on unsupported or malformed combinations.
+The app compares 142 calls exactly; forced ownership adopts 67 and compares 75, with
+identical document, 79 history entries, selection and full undo. Edited pose/channel
+pictures pass 12/12 on each of web and Electron. Engine wasm is 8,713 KiB; no public crate
+signature or field changed, no class gate opened and no JavaScript deleted.
 
 ### Where the port stands
 
@@ -56,7 +65,7 @@ commands and class ownership remain open. No JavaScript was deleted.
 | S2 store, evaluation, geometry | Done for every feature the gate checks: IK (2D, 3D, joined), channels, meshes, follow camera, text, movieclip replacements, effects as records. Camera motion now uses V8-exact maths. |
 | S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Drawing cels under effects now match Electron; software web and crisp parity remain open. Left: the camera monitor on WebGL2, in-between previews, then item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
 | S4 export, thumbnails, previews | Done for documents the engine draws, on the GPU or the CPU; SVG stays JavaScript by design. |
-| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 222 command recordings replay in full. Origins admit recorded whole-figure and topology calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
+| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 246 command recordings replay in full. Origins admit recorded whole-figure, joint/handle, topology and saved transform-channel calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
 | S6 drawing raster engine | Done: `styk-drawing` (D17) runs in the drawing workers by default (`?drawingEngine=off` to compare). |
 | S7 | Not started: dead machinery, final screenshots, interleaved benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, Windows CI. |
 
@@ -86,8 +95,9 @@ without owning.
    command lanes can proceed independently.
 2. **Finish animation-origin editing.** Records, whole-figure synchronization, local
    offsets, support rotation/reflection/reset, Set Origin and recorded topology now match.
-   Review the frozen joint/handle slice next, then saved channels, ranges, joins, motion paths
-   and complex rig/pose-choice/spatial combinations. Every admitted command needs its own
+   Joint/handle and saved x/y/scale/rotation channel recordings now match, including shown
+   frames and future target/ancestor guards. Next: ranges, joins, motion paths and complex
+   rig/pose-choice/spatial combinations. Every admitted command needs its own
    recorded replay and app comparison; class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Owners: `styk-edit/src/session.rs` (smaller answers:
@@ -135,11 +145,11 @@ without owning.
 | Branch / worktree | State |
 | --- | --- |
 | `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
-| `engine-origin-records` in `/tmp/styk-engine-origin-records-20261004` | Records/gesture/topology/correction integrated; frozen pose/handle slice reviewed for next integration, saved-channel work active. |
-| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact session responses/adoption and effect command snapshots reviewed; worker layer-planning prerequisite active. |
-| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source evaluation prerequisite and sheet command snapshots awaiting review; native pose-channel prerequisite active. |
-| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Follow-camera, exact log, readiness and measured-bounds snapshots frozen for review; joined motion-path correction and joined 3D IK active. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache and camera-readiness snapshots frozen for review; typed draft/mirror work active. No early gate flips. |
+| `engine-origin-records` in `/tmp/styk-engine-origin-records-20261004` | Records/gesture/topology, pose/handle and saved transform-channel slices integrated; range/join recordings and narrow native frame publication active. |
+| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption, effects, worker layer planning and sheet kernel reviewed; malformed-input correction, history budgets and asynchronous publication ownership active. |
+| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native command, joined crop oracle fix and presence-break snapshots reviewed; active-layer capture/history followup active. |
+| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Follow-camera, exact log, readiness, measured bounds, joined motion-path/3D IK and branch thickness reviewed; native builder tokens frozen, sprite/new-figure ownership active. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness and WebGL resolve snapshots reviewed; cel backend proof and typed draft/mirror ownership active. No early gate flips. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
@@ -438,7 +448,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   own keyframes where the editor samples its retained source (`movieclipSource`); the follow
   camera reshapes its whole path on every revision where the editor resamples incrementally
   (edit frames use the committed path); records (`styk_eval::records`) now match animation origins, but editing remains limited to
-  recorded whole-figure/topology families until the remaining command replays land; onion-skin ghosts get no
+  recorded whole-figure, topology, joint/handle and saved transform-channel families until the remaining command replays land; onion-skin ghosts get no
   parallax (the editor never shows onion skins with the camera on).
 - **Captions**: text is drawn as the WebGPU renderer draws it ([rendering.md](engine/rendering.md#text)).
   One step still fails: 15 Guns tick 0 (mean 0.294, its cover page), because Chromium's
@@ -467,8 +477,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   loaders (codec merge). Ported editor calls run in shadow (`?engineShadow=on`): on the
   document the app starts with, its pinned variant, a foot with followers and a joined
   assembly every call the shadow script makes now runs in the engine with no difference.
-  Still unported in `styk-edit`: joined 3D IK targets, motion paths (in progress), origin joints/handles, saved channels, ranges and complex definitions
-  (whole-figure gestures, `setOrigin` and recorded support/topology repair now match),
+  Still unported in `styk-edit`: joined 3D IK targets, motion paths (in progress), origin ranges/joins and complex definitions
+  (whole-figure/joint/handle gestures, saved transform channels, `setOrigin` and recorded support/topology repair now match),
   creating, splitting, making unique, breaking apart and placing movieclips, effect presets
   and scopes with attached parts, centring the camera and aligning figures (the app passes a
   bounds function), the asynchronous layer commands (D7), in-betweens (native timelines
@@ -656,6 +666,21 @@ shadow with exact math: 47 compared, zero rounded/mismatches/page errors, includ
 ticks 0/3/6 plus onions pass 6/6 each (means 0.0333–0.0370 and 0.0405–0.0520 respectively,
 zero solid pixels). No class flip or performance claim; unrecorded families still refuse.
 
+**Origin joints, handles and saved transform channels** (2026-10-04): 13 pose recordings
+(998 steps) and 11 channel recordings (1,772 steps, including 870 shown-frame reads) match
+exactly; all 246 recordings replay. Six actual source mutants expose omitted ghost updates,
+wrong target ticks or skipped attachment ancestors. Complex origin poses have 99 atomic
+refusals, invalid channel previews 40, and future/malformed target guards 14. Root runs:
+365 Rust tests, wasm build and `npm run check` pass; all 1,097 fixture hashes regenerate
+unchanged. The stricter app driver requires each requested command to be compared and
+rejects numeric rounding with exact math or page errors. Shadow: 142 exact, zero rounded
+or different. Forced ownership: 67 adopted and 75 exact, with identical 289,729-byte
+document, 79 history entries, selection and full undo. Edited pose pictures pass 6/6 each
+(web mean 0.0747–0.0857; Electron 0.0837–0.0923); edited saved-channel pictures pass 6/6
+each (web 0.0286–0.0472; Electron 0.0168–0.0310), zero solid pixels throughout. No class
+flip or loaded-machine performance claim. Public crate API unchanged; no mobile pin move
+is needed for signatures. Full repository parity will run on the committed snapshot.
+
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
 the JavaScript renderer being its Canvas 2D fallback, WebGL2 for the engine), 29 documents
 (the repository's eligible test projects and asset packs, `svr_uriel.piv`, `hitoshi vs suzu
@@ -695,7 +720,7 @@ effect executors are deleted):
    3D catalogue scenes exposed.
 4. Property channels on native timelines (scalar, colour, style, effect parameters, camera,
    scene) and pose channels, with animation origins. Records for animation origins now match;
-   saved-channel editing remains gated pending recordings.
+   recorded saved origin x/y/scale/rotation editing matches, including future target and ancestor guards; unrecorded channel combinations remain gated.
 5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
    transitions, Stick Nodes sprites, frame drafts, retained movieclip sources,
    `runtime_segments` fallbacks.
@@ -842,7 +867,8 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 10:40 | S5 the editor's camera under camera motion | `styk_eval::camera::impulse` and `moved` compute `sampleCameraMotion` and `cameraAtTime` with V8's `Math` in the editor's order of operations (`styk-math` gains `log1p`, fdlibm's as V8 has it: the `libm` crate's musl rewrite differed for 17 of 12,129 inputs; seeds wrap as ToInt32); `styk-edit` composes the editor's camera from them, so handle nudges and baking the camera no longer refuse frames a motion clip moves. Follow clips still refuse. | `camera-motion-handles-sheet` (37 steps, every preset, overlapping clips, muted ranges, a seed at the top of its range, a bake over 61 frames) matches the editor at every step; the muted-range, frame-rate and seed mutants break it; 8 last-bit mutants (platform functions, radians in another order) cannot show there because the baked camera reaches the document through single-precision pose fields, and `styk-math`'s tests pin the functions (12,129 `log1p` inputs bit for bit). |
 | 2026-10-04 10:50 | S5 motion paths; S3 a still frame redrawn once its pictures arrive | Merged: `styk-edit/src/motion_path.rs` (motion-path edits on a layer sheet: origins, joints, IK targets, movieclip instances, the camera, falloffs of each shape; pointer moves compared in the app, the commit owned), and the stage's picture wait (`styk_engine::Uploaded`, `Stage::pictures_pending`, `waitForPictures` in `src/engine/engine-stage.mjs`: a frame drawn while its pictures decode is drawn once more when they arrive, through `Atomics.waitAsync`, at most a minute); `scripts/engine-app-parity.mjs --electron-arg`. | Motion paths: 14 recordings (370 steps) match at every step, 16 of 18 mutations break them (one more only the weights test, one unreachable); shadow with the engine's `Math` 392/392, owned the same as the editor alone. Pictures: URIEL 3 opened at ticks 44 and 45, 23,783 and 21,232 solid pixels before, both pass after (mean 0.009, 0.091); 9–13 extra frames within the first 1.3 s (load 13–19). |
 | 2026-10-04 11:34 | S3 drawing cels under effects (handoff reviewed and completed for Electron) | Parent atlas rows remain intact through translation; exact density selection, two-texel neighbour borders and Canvas minification/Mitchell enlargement are shared by GPU and CPU. Existing decode work derives tight alpha bounds; bounded stage/export queues reject stale preparation through a cache epoch. App captures wait for live artwork and refinement. Platform-neutral API changes for a mobile pin: `DrawingTiles` adds `bounds`, `decoded_bounds`, `artwork_bounds()`; `Placement` adds `canvas`; drawing `BORDER=2` makes slots 68×68 (+6.2% bytes), sprites unchanged. Engine wasm 8,591 KiB, +24 KiB from takeover. | 342 Rust tests; full parity including 201 byte-stable command recordings and 441 containers; check clean, npm test six known failures. Electron synthetic 4/4 + private 5/5; native private thumbnails 132/132 + synthetic smooth 4/4. Stable software web synthetic fails 0/4; private web settle timeout and pre-existing crisp export remain open. Final microbenchmark attempts at load 10.27–12.77 were too variable to interpret; no performance claim, idle engine-1 still pending. |
-| 2026-10-04 12:03 | S5 animation-origin records, whole figures and topology | `styk_eval::records` shares typed origin arithmetic at exact/fractional keys and scalar previews while preserving raw keys, unknown fields and COW nodes. `styk-edit::origin` synchronizes pivots/offsets/ghosts through gestures; `origin_topology` reroots and repairs/compacts support and joined poses through recorded construction edits. The typed compiler validates raw support before a live gesture can commit. `setOrigin` enters the shadow topology facade; no adoption/class flip. No public crate signatures or fields changed; stricter malformed-support refusal is portable. Engine wasm 8,705 KiB, +114 KiB from cel milestone. | 353 Rust tests and check pass; npm test retains 4,378 pass/6 known failures/26 skip/1 todo. Fifteen origin record groups (466 ticks/4,112 values), 21 new recordings (1,285 steps), four source mutants caught; 68 malformed descriptors/136 atomic refusals. All 222 recordings and 1,000 existing fixture hashes stable. App shadow 47 exact incl. Set Origin/history; prior forced prerequisite 6 adopted+32 exact, full undo identical. Electron/web pictures 6/6 each. Full repository parity queued on the committed snapshot; remaining origin families stay gated. |
+| 2026-10-04 12:03 | S5 animation-origin records, whole figures and topology | `styk_eval::records` shares typed origin arithmetic at exact/fractional keys and scalar previews while preserving raw keys, unknown fields and COW nodes. `styk-edit::origin` synchronizes pivots/offsets/ghosts through gestures; `origin_topology` reroots and repairs/compacts support and joined poses through recorded construction edits. The typed compiler validates raw support before a live gesture can commit. `setOrigin` enters the shadow topology facade; no adoption/class flip. No public crate signatures or fields changed; stricter malformed-support refusal is portable. Engine wasm 8,705 KiB, +114 KiB from cel milestone. | 353 Rust tests and check pass; npm test retains 4,378 pass/6 known failures/26 skip/1 todo. Fifteen origin record groups (466 ticks/4,112 values), 21 new recordings (1,285 steps), four source mutants caught; 68 malformed descriptors/136 atomic refusals. All 222 recordings and 1,000 existing fixture hashes stable. App shadow 47 exact incl. Set Origin/history; prior forced prerequisite 6 adopted+32 exact, full undo identical. Electron/web pictures 6/6 each. Full repository parity passed on the committed snapshot: all fixture generators, 222 recordings and 441 containers; remaining origin families stay gated. |
 
 Work is active in the isolated lanes listed in the handoff. Frozen uncommitted snapshots
 are review inputs, not completed milestones or class ownership evidence.
+| 2026-10-04 12:54 | S5 origin joints, handles and saved transform channels | Shared typed origin synchronization preserves retained ghosts through posing and both handle gesture owners. Saved x/y/scale/rotation channel edits compare stored and shown poses; admission inspects actual future key targets and attachment ancestors before changing live state. The app driver requires requested calls and exact numeric equality. Public crate API unchanged; engine wasm 8,713 KiB (+8 KiB). No class flip or deletion. | 365 Rust tests, build and check pass; 24 new recordings/2,770 exact steps, all 246 replays and 1,097 fixture hashes stable; six actual source mutants caught. Atomic refusals cover 99 complex poses, 40 invalid previews and 14 future/malformed target cases. App shadow 142 exact; forced ownership 67 adopted+75 exact, identical document/79 history entries/selection/full undo. Edited pictures web 12/12 and Electron 12/12. Full repository parity follows on the committed snapshot. |

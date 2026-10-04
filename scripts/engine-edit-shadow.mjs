@@ -4,7 +4,8 @@
 // keyboard undo and redo) and through the editor's timeline commands, and reports how
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
-//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm] [--origin] [--url http://127.0.0.1:47831] [--out <report.json>]
+//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
+//        [--origin] [--origin-pose] [--origin-channels] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -54,6 +55,12 @@ const browser = await chromium.launch();
 const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
+const requiredCalls = [
+  ...(args.includes('--origin') ? ['setOrigin'] : []),
+  ...(args.includes('--origin-pose') ? ['poseJoint', 'rotateJoint', 'bendJoint', 'editHandlePosition', 'transformFigureHandle'] : []),
+  ...(args.includes('--origin-channels') ? ['beginAnimationEdit', 'previewAnimationEdit', 'commitAnimationEdit', 'cancelAnimationEdit', 'addAnimationKey', 'addAnimationKeys'] : []),
+];
+const missingCalls = report => requiredCalls.filter(name => !(report?.comparedByCall?.[name] > 0));
 /** Writes the sessions a run captured (`report.captures`) into `--capture`'s folder. */
 async function saveCaptures(report, run) {
   if (!captureFolder || !report?.captures?.length) return;
@@ -162,6 +169,39 @@ async function run(mode) {
       const handle = e.figure.segments.find(segment => segment.segment_id !== e.figure._styk.animationOrigin.handleId)?.segment_id;
       if (handle === undefined) throw new Error('The origin check needs another native handle.');
       e.setOrigin(handle); e.undo(); e.redo(); e.undo();
+    }));
+    if (args.includes('--origin-pose')) await step('pose origin joints and both handle gestures', () => page.evaluate(() => {
+      const e = styk.editor, object = e.evaluatedFrame.objects.find(object => e.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.animationOrigin);
+      if (!object) throw new Error('The pose check needs a figure with an animation origin.');
+      const select = handle => {
+        const figure = e.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id);
+        const joint = figure.segments.findIndex(segment => segment.segment_id === handle);
+        if (joint < 0) throw new Error(`The recorded origin pose check needs handle ${handle}.`);
+        e.select(object.unique_id, joint);
+      };
+      const tip = () => e.geometry.objects.get(e.selectedSlot).segments[e.selectedJoint].end;
+      select(44);
+      let p = tip();
+      e.beginDrag('Origin joint check'); e.poseJoint(p.x + 13.25, p.y - 8.125, {snap: false}); e.rotateJoint(.19);
+      p = tip(); e.bendJoint(p.x - 9, p.y + 15, {snap: false}); e.commitDrag(); e.undo(); e.redo();
+      select(22); p = tip();
+      e.beginHandleEditDrag({bend: false}); e.editHandlePosition(p.x + 7, p.y - 9); e.commitHandleEditDrag(); e.undo(); e.redo();
+      p = tip(); e.beginHandleEditDrag({bend: true}); e.editHandlePosition(p.x + 12, p.y + 15); e.cancelHandleEditDrag();
+      select(33); p = tip();
+      e.beginFigureHandleDrag(); e.transformFigureHandle(p.x + 20, p.y - 30, {ctrlKey: true}); e.commitFigureHandleDrag(); e.undo(); e.redo();
+      p = tip(); e.beginFigureHandleDrag(p.x, p.y, {rotate: true, scale: true});
+      e.transformFigureHandle(p.x + 11, p.y + 17, {shiftKey: true}); e.cancelFigureHandleDrag();
+    }));
+    if (args.includes('--origin-channels')) await step('scrub and key the saved origin channels', () => page.evaluate(() => {
+      const e = styk.editor, object = e.evaluatedFrame.objects.find(object => e.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.animationOrigin);
+      if (!object || !e.report._styk?.layerSheet) throw new Error('The channel check needs an origin figure on a layer sheet.');
+      e.select(object.unique_id, -1);
+      const target = {kind: 'figure', uid: object.unique_id};
+      e.beginAnimationEdit(target, 'rotation'); e.previewAnimationEdit(-.4); e.previewAnimationEdit(.73); e.commitAnimationEdit(); e.undo(); e.redo();
+      e.beginAnimationEdit(target, 'scale'); e.previewAnimationEdit(1.4); e.cancelAnimationEdit();
+      const tick = Math.min(8, Math.max(0, e.totalTicks - 1));
+      e.addAnimationKey(target, 'scale', tick, .91); e.undo(); e.redo();
+      e.addAnimationKeys([{target, property: 'x', tick, value: 260.25}, {target, property: 'rotation', tick, value: .52}]); e.undo(); e.redo();
     }));
     const first = await handles();
     const joints = first.filter(handle => handle.joint >= 0), origin0 = first.find(handle => handle.joint < 0);
@@ -491,7 +531,7 @@ async function run(mode) {
   if (args.includes('--warm')) {
     await interactions();
     await settled();
-    await page.evaluate(() => { const r = globalThis.__stykEditShadow; if (r) Object.assign(r, {calls: 0, compared: 0, rounded: 0, skipped: 0, jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0, ownableMs: 0, byCall: {}}); });
+    await page.evaluate(() => { const r = globalThis.__stykEditShadow; if (r) Object.assign(r, {calls: 0, compared: 0, rounded: 0, skipped: 0, jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0, ownableMs: 0, byCall: {}, comparedByCall: {}}); });
     steps.length = 0;
   }
   await interactions();
@@ -533,7 +573,7 @@ try {
     const near = (x, y, at) => {
       if (typeof x === 'number' && typeof y === 'number') {
         if (x === y) return null;
-        if (Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y))) { rounded++; return null; }
+        if (!exactMath && Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y))) { rounded++; return null; }
         return `${at}: ${x} against ${y}`;
       }
       if (x === null || y === null || typeof x !== 'object' || typeof y !== 'object') return x === y ? null : `${at}: ${JSON.stringify(x)?.slice(0, 200)} against ${JSON.stringify(y)?.slice(0, 200)}`;
@@ -563,11 +603,13 @@ try {
     }
     if (alone.report) console.log(`  all owned calls: editor alone ${ms(alone.report.ownableMs)} ms, engine owning ${ms(report.ownedMs)} ms`);
     for (const problem of [...alone.problems, ...problems].slice(0, 5)) console.log(`  page: ${problem}`);
+    if (missingCalls(alone.report).length) console.log(`  required calls not compared: ${missingCalls(alone.report).join(', ')}`);
     const out = option('--out');
     if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, differences, problems}, null, 1));
     console.log(`  mode ${report.mode}`);
-    failed = differences.length > 0 || report.mismatches.length > 0 || (report.owned === 0 && !args.includes('--default')) || problems.length > 0
-      || (args.includes('--origin') && !(report.comparedByCall?.setOrigin > 0));
+    failed = differences.length > 0 || report.mismatches.length > 0 || alone.report.mismatches.length > 0
+      || (report.owned === 0 && !args.includes('--default')) || problems.length > 0 || alone.problems.length > 0
+      || missingCalls(alone.report).length > 0 || (exactMath && (report.rounded > 0 || alone.report.rounded > 0));
   } else {
   const {report, steps, refused, problems} = await run('engineShadow=on');
   if (!report) throw new Error('Shadow editing was not installed (is ?engineShadow=on honoured?)');
@@ -583,8 +625,9 @@ try {
   for (const [what, count] of Object.entries(report.unported)) console.log(`  not ported ${count}×: ${what}`);
   for (const mismatch of report.mismatches.slice(0, 8)) console.log(`  ${mismatch.call}(${JSON.stringify(mismatch.args ?? []).slice(0, 80)}):\n    ${mismatch.problems.join('\n    ').slice(0, 1500)}`);
   for (const problem of problems.slice(0, 5)) console.log(`  page: ${problem}`);
-  failed = report.mismatches.length > 0 || report.compared === 0
-    || (args.includes('--origin') && !(report.comparedByCall?.setOrigin > 0));
+  failed = report.mismatches.length > 0 || report.compared === 0 || problems.length > 0
+    || missingCalls(report).length > 0 || (exactMath && report.rounded > 0);
+  if (missingCalls(report).length) console.log(`  required calls not compared: ${missingCalls(report).join(', ')}`);
   }
 } finally {
   await browser.close();

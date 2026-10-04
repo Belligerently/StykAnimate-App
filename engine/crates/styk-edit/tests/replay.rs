@@ -12,6 +12,17 @@ const PORTED: &[&str] = &[
     "origin-reroot-offsets-native", "origin-reroot-offsets-sheet", "origin-reroot-support-native", "origin-reroot-support-sheet",
     "origin-topology-layout-native", "origin-topology-layout-sheet", "origin-topology-offsets-native", "origin-topology-offsets-sheet",
     "origin-topology-support-native", "origin-topology-support-sheet",
+    "origin-pose-layout-native", "origin-pose-layout-sheet", "origin-pose-layout-autokey-sheet",
+    "origin-pose-offsets-native", "origin-pose-offsets-sheet", "origin-pose-offsets-autokey-sheet",
+    "origin-pose-support-native", "origin-pose-support-sheet", "origin-pose-support-autokey-sheet",
+    "origin-pose-support-pinned-native", "origin-pose-support-pinned-sheet", "origin-pose-support-free-native", "origin-pose-support-free-sheet",
+    // Origin figure scalar edits and saved channels, including live preview pose reads.
+    "origin-channels-future-sheet",
+    "origin-channels-layout-sheet", "origin-channels-layout-autokey-sheet",
+    "origin-channels-offsets-sheet", "origin-channels-offsets-autokey-sheet",
+    "origin-channels-support-sheet", "origin-channels-support-autokey-sheet",
+    "origin-channels-saved-layout-sheet", "origin-channels-saved-layout-autokey-sheet",
+    "origin-channels-saved-support-sheet", "origin-channels-saved-support-autokey-sheet",
     "move-native", "move-joined", "drag-cancel", "selection-native", "rotate-native", "transform-joined", "pose-native", "pose-joints", "pose-joined", "pose-snap",
     // The app's configuration: gestures on a layer sheet.
     "move-sheet", "gestures-sheet", "autokey-sheet", "layers-sheet", "locked-sheet", "movieclip-sheet", "movieclip-loose-sheet",

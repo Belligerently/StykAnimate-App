@@ -159,6 +159,7 @@ impl Editor {
         let (cos, sin) = (styk_math::cos(radians), styk_math::sin(radians));
         let origin = edit.transform.origin;
         let unchanged = radians.abs() < EPS && (factor - 1.0).abs() < EPS;
+        let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|items| items.iter().collect()).unwrap_or_default();
         for (slot, before) in &edit.targets {
             let Some(object) = self.frame_object_mut(*slot) else { continue };
             if let Some(support) = before.get("_stykAnimationOrigin").filter(|o| o.truthy()) {
@@ -190,6 +191,9 @@ impl Editor {
                 // `before.angles[index] + radians`: a hole (null) adds as 0.
                 let value = if angle.is_null() { 0.0 } else { angle.as_f64().unwrap_or(f64::NAN) };
                 set_value(object, index, Value::Num(value + radians));
+            }
+            if let Some(figure) = figures.iter().find(|figure| num(figure, "figure_type_id") == object.get("figure_type_id").and_then(Value::as_f64)) {
+                crate::origin::rotate_support(figure, object, radians);
             }
             object.remove("runtime_segments");
         }
