@@ -58,6 +58,8 @@ const PORTED: &[&str] = &[
     // The figure's topology: segments added, deleted, unsplit, flipped, moved, split, duplicated; rig joints appended.
     "topology-sheet", "topology-native", "topology-joined-sheet", "topology-joined-native", "topology-ik-sheet", "topology-followers-sheet",
     "topology-rig-sheet", "topology-vfx-sheet", "topology-sticknodes-sheet",
+    // Rig edits by dragging: repositioned, turned, stretched, slid and bent joints.
+    "rig-drag-sheet", "rig-drag-native", "rig-drag-plain-sheet", "replace-definition-sheet", "replace-definition-joined-native",
 ];
 
 #[test]

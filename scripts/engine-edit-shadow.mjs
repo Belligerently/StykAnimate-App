@@ -267,7 +267,25 @@ async function run(mode) {
       e.select(uid, 2); attempt(() => e.moveBuilderSegment(ids()[2], {parentId: ids()[0]})); attempt(() => e.unsplitSegment());
       e.select(uid, e.figure.segments.length - 1); attempt(() => e.deleteSingleSegment()); attempt(() => e.deleteSegment());
       e.select(uid, 0); attempt(() => e.addConnector(ids()[0], ids()[1])); attempt(() => e.addWeightedJoint(ids()[0], [{joint: ids()[1], weight: 0.5}]));
-      for (let i = 0; i < 12; i++) e.undo();
+      attempt(() => e.replaceFigureDefinition(e.figure.figure_type_id, {...structuredClone(e.figure), name: 'Swapped', segments: e.figure.segments.slice(0, -1)}, {label: 'Edit text'}));
+      for (let i = 0; i < 13; i++) e.undo();
+      e.select(uid, -1);
+    }));
+    // The Rig tool's drags: a joint repositioned, a branch turned, a joint bent with its branch,
+    // a cancelled drag; each commit changes the definition and every pose of it.
+    await step('drag joints with the Rig tool', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 3) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      const end = joint => e.geometry.objects.get(e.selectedSlot)?.segments[joint]?.end;
+      e.select(uid, 1); let p = end(1);
+      if (p) attempt(() => { if (e.beginRigDrag({})) { e.editRigJoint(p.x + 12, p.y - 6); e.editRigJoint(p.x + 16, p.y - 4); e.commitDrag(); } });
+      e.select(uid, 2); p = end(2);
+      if (p) attempt(() => e.editRigJoint(p.x - 10, p.y + 8, {reposition: false}));
+      p = end(2);
+      if (p) attempt(() => { if (e.beginRigDrag({bend: true})) { e.bendJoint(p.x + 6, p.y + 6); e.commitDrag(); } });
+      p = end(2);
+      if (p) attempt(() => { if (e.beginRigDrag({})) { e.editRigJoint(p.x + 5, p.y + 5); e.cancelRigDrag(); } });
+      for (let i = 0; i < 3; i++) e.undo();
       e.select(uid, -1);
     }));
     await step('move a handle in Handle Edit Mode', () => page.evaluate(() => {

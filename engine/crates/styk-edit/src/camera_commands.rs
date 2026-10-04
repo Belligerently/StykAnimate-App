@@ -377,6 +377,7 @@ impl Editor {
             figure_handle: None,
             segment_value_options: None,
             camera: Some(CameraDrag { indices: selected, current: baseline.clone(), baseline, entries: Vec::new(), preview: None }),
+            rig: None,
         });
         self.retained = None;
         Ok(true)

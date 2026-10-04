@@ -176,6 +176,58 @@ scenario('topology-vfx-sheet', app, [
 scenario('topology-sticknodes-sheet', app, [
   ['@select', 1, 1], ['splitSegment', 0.4], ['@select', 1, 3], ['deleteSingleSegment'], ['@select', 1, 0], ['mirrorSegmentBranch', 'horizontal'], ['undo'], ['undo'], ['redo'],
 ], 'sticknodes.document.json');
+// Rig edits by dragging, on the rig document: a joint repositioned (its children refitted), a
+// branch turned, a joint turned alone and stretched, an angle-locked joint stretched along its
+// chord, a connector slid, a joint bent with its branch, a step back at the start, cancels, a
+// gesture without a change, refusals; each commit one topology entry of the definition.
+const rigDragSteps = [
+  // A follower that does not deform keeps its pose when its parent's joint moves.
+  ['@select', 1, 2], ['setRigBehavior', {follow: {mode: 'rigid'}}],
+  ['@select', 1, 1], ['beginRigDrag', {}], ['editRigJoint', 340, 300], ['editRigJoint', 345, 310], ['commitRigDrag'], ['@select', 1, 2], ['editRigJoint', 372, 335],
+  // A step that turns fewer joints than the last puts the others back.
+  ['@select', 1, 0], ['beginRigDrag', {reposition: false}], ['editRigJoint', 335, 235], ['editRigJoint', 332, 238, {isolate: true}], ['commitDrag'],
+  // A bend gesture without a change records nothing.
+  ['@select', 1, 4], ['beginRigDrag', {bend: true}], ['commitDrag'],
+  ['@select', 1, 0], ['editRigJoint', 330, 240, {reposition: false}],
+  ['beginRigDrag', {reposition: false}], ['editRigJoint', 320, 245, {isolate: true}], ['editRigJoint', 318, 250, {stretch: true, isolate: true}], ['commitDrag'],
+  ['@select', 1, 3], ['editRigJoint', 240, 190, {stretch: true}],
+  ['@select', 1, 5], ['beginRigDrag', {}], ['editRigJoint', 300, 290], ['commitDrag'],
+  ['@select', 1, 4], ['beginRigDrag', {bend: true}], ['bendJoint', 255, 262], ['bendJoint', 250, 265, {stretch: true}], ['commitDrag'],
+  ['@select', 1, 2], ['beginRigDrag', {}], ['editRigJoint', 'x', 0], ['beginRigDrag', {}], ['editRigJoint', 370, 320], ['cancelRigDrag'],
+  ['beginRigDrag', {}], ['editRigJoint', 365, 330], ['cancelDrag'], ['beginRigDrag', {}], ['commitRigDrag'], ['commitRigDrag'], ['cancelRigDrag'],
+  ['beginRigDrag', {}], ['editRigJoint', 360, 320], ['@select', 1, 1], ['undo'],
+  ['undo'], ['undo'], ['redo'], ['undo'], ['undo'], ['undo'], ['redo'],
+];
+scenario('rig-drag-sheet', app, rigDragSteps, 'rig.document.json');
+scenario('rig-drag-native', {}, rigDragSteps, 'rig.document.json');
+// The Rig tool on a figure without relationships: the definition and every pose follow.
+scenario('rig-drag-plain-sheet', app, [
+  // A stretched pose: the definition and the other poses take the stretch as a ratio.
+  ['@select', 1, 1], ['updateSegment', {length: 120}], ['editRigJoint', 360, 110, {reposition: false, stretch: true}],
+  // A static joint bent with the branch below it.
+  ['updateBuilderSegmentStyle', {static: true}], ['beginRigDrag', {bend: true}], ['bendJoint', 365, 125], ['commitDrag'],
+  ['@select', 1, 1], ['beginRigDrag', {}], ['editRigJoint', 330, 120], ['commitRigDrag'], ['@select', 1, 3], ['editRigJoint', 230, 260, {reposition: false, stretch: true}],
+  ['@select', 1, 6], ['beginRigDrag', {bend: true}], ['bendJoint', 350, 120], ['commitDrag'], ['undo'], ['undo'], ['redo'],
+], 'builder.document.json');
+// A definition replaced (the text editor's apply, the builder's discard): poses keep their
+// handles' offsets (a stretched and a bent pose included), a removed handle's joined figure stays
+// where it was drawn; refusals; history.
+{
+  const builder = JSON.parse(readFileSync(`${out}/builder.document.json`, 'utf8')).figure_types[0];
+  const replaced = {...structuredClone(builder), name: 'Replaced', segments: builder.segments.filter(s => s.segment_id !== 77)
+    .map(s => s.segment_id === 22 ? {...s, angle_rad: s.angle_rad + 0.3, length: 60, bend_rad: 0.2} : s)};
+  replaced.segments.push({...structuredClone(builder.segments[0]), segment_id: 99, parent_id: 33, length: 25, angle_rad: 0.4});
+  scenario('replace-definition-sheet', app, [
+    ['@select', 1, 1], ['updateSegment', {length: 45}], ['updateSegment', {bend_rad: 0.3}], ['@select', 1, 6],
+    ['replaceFigureDefinition', 1, replaced], ['replaceFigureDefinition', 99, replaced], ['replaceFigureDefinition', 1, {segments: []}],
+    ['replaceFigureDefinition', 1, replaced, {label: 'Edit text'}], ['undo'], ['undo'], ['redo'],
+  ], 'builder.document.json');
+  const chain = JSON.parse(readFileSync(`${out}/joined-chain.document.json`, 'utf8')).figure_types[0];
+  const trimmed = {...structuredClone(chain), segments: chain.segments.filter(s => s.segment_id !== 33)};
+  scenario('replace-definition-joined-native', {}, [
+    ['@select', 1, 5], ['replaceFigureDefinition', 1, trimmed], ['undo'], ['redo'],
+  ], 'joined-chain.document.json');
+}
 // An enabled IK controller refuses a relationship that would derive its joint.
 scenario('rig-behavior-ik-sheet', app, [
   ['@select', 1, 3], ['setAngleLock', 'world'], ['setRigBehavior', {weighted: {origin: 3, anchors: [{joint: 2, weight: 1}]}}], ['bindStretchParts', 1],

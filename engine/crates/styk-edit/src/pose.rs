@@ -17,17 +17,17 @@ use crate::{EditError, Editor};
 
 /// A segment as the geometry drew it (`geometry.objects.get(slot).segments[joint]`).
 #[derive(Clone, Debug)]
-struct Shape {
-    start: [f64; 2],
-    angle: f64,
-    bend: f64,
+pub(crate) struct Shape {
+    pub start: [f64; 2],
+    pub angle: f64,
+    pub bend: f64,
     /// The drawn (scaled) length and end, and the centerline's points (a rigged joint).
-    length: f64,
-    end: [f64; 2],
-    points: Vec<[f64; 2]>,
+    pub length: f64,
+    pub end: [f64; 2],
+    pub points: Vec<[f64; 2]>,
     /// `rigSpace`: the space a rigged joint's authored angle is in.
-    space: Option<styk_eval::rig::Space>,
-    connector: bool,
+    pub space: Option<styk_eval::rig::Space>,
+    pub connector: bool,
 }
 
 /// Whether a segment's rig relationship has `path` (`segment._stykRig?.…`).
@@ -218,6 +218,13 @@ impl Editor {
         }
         let joint = self.selection.joint as usize;
         Ok(Some(Joint { slot, object, segments, joint }))
+    }
+
+    /// Every segment of `object` as the geometry at the playhead draws it
+    /// (`geometry.objects.get(slot).segments`).
+    pub(crate) fn shapes(&self, object: &Value) -> Result<Vec<Option<Shape>>, EditError> {
+        let count = self.figure_value(object).get("segments").and_then(Value::array_len).unwrap_or(0);
+        (0..count).map(|joint| self.shape(object, joint)).collect()
     }
 
     /// The selected segment as the geometry at the playhead draws it.
@@ -480,7 +487,9 @@ impl Editor {
             return self.twist_spatial_joint(x, y, raw_options.get("pixel").and_then(Value::as_f64).unwrap_or(1.0));
         }
         let primitive = segment.get("primitive_code").and_then(Value::as_f64).unwrap_or_else(|| ((segment.get("flags").and_then(Value::as_f64).unwrap_or(0.0) as i64) & 255) as f64);
-        if is_static(segment) || !(primitive == 0.0 || primitive == 6.0) {
+        // A rig bend gesture (`_drag.rig.bend`) bends static joints too and turns its branch itself.
+        let rig_bend = self.rig_drag().filter(|r| r.bend).map(|r| r.branch.clone());
+        if (is_static(segment) && rig_bend.is_none()) || !(primitive == 0.0 || primitive == 6.0) {
             return Ok(false);
         }
         let Some(shape) = self.shape(&object, joint)? else { return Ok(false) };
@@ -524,7 +533,21 @@ impl Editor {
                     set_item(record, "lengths", joint, length);
                 }
             }
-            editor.rotate_joint_by(slot, joint, bend - shape.bend, false, options.isolate)?;
+            match &rig_bend {
+                Some(branch) => {
+                    if !options.isolate {
+                        let record = editor.frame_object_mut(slot).unwrap();
+                        let mut angles: Vec<Value> = record.get("angles").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+                        for &i in branch {
+                            if i != joint && let Some(a) = angles.get_mut(i) {
+                                *a = Value::Num(a.as_f64().unwrap_or(f64::NAN) + (bend - shape.bend));
+                            }
+                        }
+                        record.set("angles", Value::array(angles));
+                    }
+                }
+                None => editor.rotate_joint_by(slot, joint, bend - shape.bend, false, options.isolate)?,
+            }
             let record = editor.frame_object_mut(slot).unwrap();
             if !record.get("bend_flag").is_some_and(Value::truthy) {
                 record.set("bends", Value::array(segments.iter().map(|s| Value::Num(s.get("bend_rad").and_then(Value::as_f64).unwrap_or(0.0))).collect()));
@@ -539,7 +562,7 @@ impl Editor {
 impl Editor {
     /// `slideConnector(x, y)`: the connector's position from the pointer projected onto its
     /// drawn centerline (curves included); ties keep the first interval.
-    fn slide_connector(&mut self, slot: usize, object: &Value, joint: usize, x: f64, y: f64) -> Result<bool, EditError> {
+    pub(crate) fn slide_connector(&mut self, slot: usize, object: &Value, joint: usize, x: f64, y: f64) -> Result<bool, EditError> {
         rig_finite(x, -1e9, 1e9, "Joint X")?;
         rig_finite(y, -1e9, 1e9, "Joint Y")?;
         let Some(shape) = self.shape(object, joint)? else { return Ok(false) };

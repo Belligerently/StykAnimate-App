@@ -40,6 +40,7 @@ mod recolor;
 mod record;
 pub mod replay;
 mod rig_behavior;
+mod rig_drag;
 mod select;
 pub mod session;
 mod sheet;
@@ -115,6 +116,8 @@ pub(crate) struct Drag {
     pub segment_value_options: Option<Value>,
     /// A camera drag (`_drag.camera`).
     pub camera: Option<camera_commands::CameraDrag>,
+    /// A rig edit by dragging (`_drag.rig`).
+    pub rig: Option<rig_drag::RigDrag>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).

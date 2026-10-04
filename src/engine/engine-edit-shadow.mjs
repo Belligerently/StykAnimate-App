@@ -27,7 +27,7 @@ import {figureHandleTransform} from '../editor-figure-transform.mjs';
 
 /** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
 const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSegment', 'unsplitSegment', 'mirrorSegment', 'mirrorSegmentBranch', 'moveBuilderSegment',
-  'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint'];
+  'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint', 'replaceFigureDefinition'];
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames'];
@@ -55,6 +55,8 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'updateBuilderSegmentStyle', 'updateSegmentStyle', 'updateSegmentBranchStyle', 'convertSegment', 'setBranchCaps', 'setBranchFill', 'setPolygonOpacity',
   // Rig relationships (styk-edit/src/rig_behavior.rs).
   'setRigBehavior', 'enableSmartStretch', 'bindStretchParts', 'setAngleLock', 'setSecondaryAngleReference',
+  // Rig edits by dragging (styk-edit/src/rig_drag.rs).
+  'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
   // The figure's topology (styk-edit/src/topology.rs).
   ...TOPOLOGY];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the

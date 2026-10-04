@@ -131,6 +131,8 @@ fn numbers(value: Option<&Value>) -> Vec<f64> {
 #[derive(Default)]
 pub(crate) struct TopologyOptions {
     pub segment_map: Vec<(f64, Vec<f64>)>,
+    /// A replaced definition (`replaceFigureDefinition`) keeps its own count and order arrays.
+    pub replaced: bool,
 }
 
 impl TopologyOptions {
@@ -357,7 +359,17 @@ impl Editor {
     /// of it changed by `mutate`, repaired and validated, as one `topology` history entry.
     /// `false` without a figure.
     pub(crate) fn topology_edit(&mut self, label: &str, options: TopologyOptions, mutate: impl FnOnce(&mut Editor, usize) -> Result<(), EditError>) -> Result<bool, EditError> {
-        let Some((index, figure)) = self.topology_figure()? else { return Ok(false) };
+        self.topology_edit_of(None, label, options, mutate)
+    }
+
+    /// [`Editor::topology_edit`] of definition `definition` (`_topologyEdit(…, {definition})`), else
+    /// of the selected figure's.
+    pub(crate) fn topology_edit_of(&mut self, definition: Option<usize>, label: &str, options: TopologyOptions, mutate: impl FnOnce(&mut Editor, usize) -> Result<(), EditError>) -> Result<bool, EditError> {
+        let chosen = match definition {
+            Some(index) => self.report.get("figure_types").and_then(|f| f.item(index)).map(|figure| (index, figure)),
+            None => self.topology_figure()?,
+        };
+        let Some((index, figure)) = chosen else { return Ok(false) };
         if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
             return Err(invalid("errors.editor.openTheMovieclipToEditItsFigures"));
         }
@@ -387,7 +399,7 @@ impl Editor {
         }
         // `_invalidate()`: the committed draft kept on show is evaluated again.
         self.retained = None;
-        if let Some(figure) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).and_then(|f| f.get_mut(index)).and_then(Value::make_obj) {
+        if let Some(figure) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).and_then(|f| f.get_mut(index)).and_then(Value::make_obj).filter(|_| !options.replaced) {
             let count = figure.get("segments").and_then(Value::array_len).unwrap_or(0);
             figure.set("segment_count", Value::Num(count as f64));
             figure.remove("segment_z_raw");
@@ -743,6 +755,7 @@ impl Editor {
             "duplicateSegment" => self.duplicate_segment(arg(0), false),
             "duplicateSegmentBranch" => self.duplicate_segment(arg(0), true),
             "addConnector" => self.add_connector(arg(0), arg(1), arg(2)),
+            "replaceFigureDefinition" => self.replace_figure_definition(arg(0), arg(1), arg(2)),
             "addWeightedJoint" => self.add_weighted_joint(arg(0), arg(1)),
             _ => return None,
         })
@@ -909,7 +922,7 @@ impl Editor {
 
     /// `canonicalizeChildren(report, frame, roots)`: figures joined below the instances placed
     /// again where their parents' handles now are.
-    fn canonicalize_children(&mut self, place: &Place, roots: &[usize]) -> Result<(), EditError> {
+    pub(crate) fn canonicalize_children(&mut self, place: &Place, roots: &[usize]) -> Result<(), EditError> {
         let objects = items(frame_at(&self.report, place).and_then(|f| f.get("objects")));
         let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
         for (slot, object) in objects.iter().enumerate() {
@@ -1667,7 +1680,7 @@ impl Editor {
         let allocated = new_handles(&segments, targets.queue.len())?;
         let split: Vec<(usize, f64)> = targets.queue.iter().copied().zip(allocated.iter().copied()).collect();
         let new_id = |index: usize| split.iter().find(|(i, _)| *i == index).map(|(_, id)| *id);
-        let options = TopologyOptions { segment_map: split.iter().map(|&(i, id)| (num(&segments[i], "segment_id").unwrap_or(f64::NAN), vec![num(&segments[i], "segment_id").unwrap_or(f64::NAN), id])).collect() };
+        let options = TopologyOptions { segment_map: split.iter().map(|&(i, id)| (num(&segments[i], "segment_id").unwrap_or(f64::NAN), vec![num(&segments[i], "segment_id").unwrap_or(f64::NAN), id])).collect(), replaced: false };
         let label = if whole { "Split segment branch" } else { "Split segment" };
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
         let selected_handle = new_id(selected);
@@ -1871,7 +1884,7 @@ impl Editor {
         let selected_parent = given(&selected, "parent_id");
         let label = format!("Duplicate {}", if whole { "segment branch" } else { "segment" });
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
-        let topology = TopologyOptions { segment_map: remap.iter().map(|&(from, to)| (from, vec![from, to])).collect() };
+        let topology = TopologyOptions { segment_map: remap.iter().map(|&(from, to)| (from, vec![from, to])).collect(), replaced: false };
         self.topology_edit(&label, topology, |editor, at| {
             let figure = editor.figure_at(at);
             let all = items(figure.get("segments"));
@@ -1986,6 +1999,114 @@ impl Editor {
         result.set("handleIds", Value::array(ids.iter().map(|id| map(*id).map_or(Value::Null, Value::Num)).collect()));
         result.set("selectedHandleId", map(selected_id).map_or(Value::Null, Value::Num));
         Ok(Value::object(result))
+    }
+
+    /// `replaceFigureDefinition(figureTypeId, definition, {label})`: a definition replaced, every
+    /// pose keeping its handles' offsets from the old definition, figures joined to a handle
+    /// that is gone staying where they were drawn. Returns the definition stored.
+    fn replace_figure_definition(&mut self, type_id: Option<&Value>, definition: Option<&Value>, options: Option<&Value>) -> Result<Value, EditError> {
+        let type_id = type_id.cloned().unwrap_or(Value::Null);
+        let figures = items(self.report.get("figure_types"));
+        let Some(index) = figures.iter().position(|f| f.get("figure_type_id").is_some_and(|id| crate::history::js_strict_eq(id, &type_id))) else {
+            return Err(invalid("errors.editor.theFigureDefinitionDoesNotExist"));
+        };
+        let definition = definition.cloned().unwrap_or(Value::Null);
+        let new_segments = items(definition.get("segments"));
+        if !definition.truthy() || !definition.get("segments").is_some_and(Value::is_array) || new_segments.is_empty() {
+            return Err(invalid("errors.editor.aFigureNeedsAtLeastOneSegment"));
+        }
+        let label = match options.and_then(|o| o.get("label")) {
+            None => "Edit figure definition".to_string(),
+            Some(Value::Str(text)) => text.to_string(),
+            Some(_) => return Err(EditError::Unported("a definition label that is not text".into())),
+        };
+        let mut replacement = definition.as_obj().cloned().ok_or_else(|| EditError::Unported("a definition that is not an object".into()))?;
+        replacement.set("figure_type_id", type_id.clone());
+        replacement.set("segment_count", Value::Num(new_segments.len() as f64));
+        let replacement = Value::object(replacement);
+        let old = figures[index].clone();
+        let old_segments = items(old.get("segments"));
+        let old_index = |id: Option<f64>| id.and_then(|id| old_segments.iter().rposition(|s| handle(s.get("segment_id")) == Some(id)));
+        let handles: HashSet<u64> = new_segments.iter().filter_map(|s| handle(s.get("segment_id"))).map(key_of).chain([0]).collect();
+        let selected_type = self.object()?.and_then(|(_, o)| o.get("figure_type_id").cloned());
+        let stored = replacement.clone();
+        let options = TopologyOptions { replaced: true, ..TopologyOptions::default() };
+        self.topology_edit_of(Some(index), &label, options, |editor, at| {
+            for place in places(&editor.report) {
+                let objects = items(frame_at(&editor.report, &place).and_then(|f| f.get("objects")));
+                let detached: Vec<usize> = (0..objects.len())
+                    .filter(|&slot| {
+                        let join = objects[slot].get("join").filter(|j| j.truthy());
+                        join.is_some_and(|j| !handle(j.get("target_handle_id")).is_some_and(|h| handles.contains(&key_of(h))))
+                            && join_target(&objects[slot]).and_then(|p| objects.get(p)).is_some_and(|p| p.get("figure_type_id").is_some_and(|id| crate::history::js_strict_eq(id, &type_id)))
+                    })
+                    .collect();
+                let joints = if detached.is_empty() { HashMap::new() } else { editor.component_joints(&place, &detached)? };
+                let Some(list) = objects_mut(&mut editor.report, &place) else { continue };
+                for slot in detached {
+                    if let Some(geometry) = joints.get(&slot) {
+                        let root = geometry.root();
+                        set(&mut list[slot], "root_x", Value::Num(root[0]));
+                        set(&mut list[slot], "root_y", Value::Num(root[1]));
+                    }
+                    set(&mut list[slot], "join", Value::Null);
+                }
+                for object in list.iter_mut() {
+                    if !object.get("figure_type_id").is_some_and(|id| crate::history::js_strict_eq(id, &type_id)) {
+                        continue;
+                    }
+                    let pose = Pose::of(object);
+                    let at_old = |s: &Value| old_index(handle(s.get("segment_id")));
+                    let angles = new_segments
+                        .iter()
+                        .map(|s| {
+                            let angle = given(s, "angle_rad").unwrap_or(f64::NAN);
+                            match at_old(s) {
+                                None => angle,
+                                Some(i) => angle + pose.angles.get(i).copied().unwrap_or(f64::NAN) - given(&old_segments[i], "angle_rad").unwrap_or(f64::NAN),
+                            }
+                        })
+                        .collect();
+                    let lengths = pose.lengths.as_ref().map(|lengths| {
+                        new_segments
+                            .iter()
+                            .map(|s| {
+                                let length = given(s, "length").unwrap_or(f64::NAN);
+                                match at_old(s) {
+                                    None => length,
+                                    Some(i) => {
+                                        let base = given(&old_segments[i], "length").unwrap_or(f64::NAN);
+                                        let own = lengths.get(i).copied().unwrap_or(f64::NAN);
+                                        if base.abs() > 1e-9 { length * own / base } else { own }
+                                    }
+                                }
+                            })
+                            .collect()
+                    });
+                    let bends = pose.bends.as_ref().map(|bends| {
+                        new_segments
+                            .iter()
+                            .map(|s| {
+                                let bend = given(s, "bend_rad").unwrap_or(0.0);
+                                bend + match at_old(s) {
+                                    None => 0.0,
+                                    Some(i) => bends.get(i).copied().unwrap_or(f64::NAN) - given(&old_segments[i], "bend_rad").unwrap_or(0.0),
+                                }
+                            })
+                            .collect()
+                    });
+                    Pose { angles, lengths, bends }.write(object);
+                }
+            }
+            if let Some(slot) = editor.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).and_then(|f| f.get_mut(at)) {
+                *slot = stored.clone();
+            }
+            if selected_type.as_ref().is_some_and(|t| crate::history::js_strict_eq(t, &type_id)) {
+                editor.selection.joint = editor.selection.joint.min(new_segments.len() as i64 - 1);
+            }
+            Ok(())
+        })?;
+        Ok(self.figure_at(index))
     }
 
     /// `appendRigJoint(editor, definition, label)`: a rig joint (a connector, a weighted joint)

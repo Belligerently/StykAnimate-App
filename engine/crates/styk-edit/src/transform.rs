@@ -60,6 +60,7 @@ impl Editor {
             figure_handle: None,
             segment_value_options: None,
             camera: None,
+            rig: None,
             authored: false,
         });
         Ok(true)
@@ -126,6 +127,9 @@ impl Editor {
     }
 
     pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> {
+        if self.rig_drag().is_some() {
+            return self.commit_rig_drag();
+        }
         if self.camera_drag().is_some() {
             return self.commit_camera_drag();
         }
@@ -165,6 +169,9 @@ impl Editor {
     }
 
     pub(crate) fn cancel_drag(&mut self) -> Result<bool, EditError> {
+        if self.rig_drag().is_some() {
+            return self.cancel_rig_drag();
+        }
         if self.camera_drag().is_some() {
             return self.cancel_camera_drag();
         }

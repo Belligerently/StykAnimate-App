@@ -567,6 +567,9 @@ impl Editor {
     /// The rig commands by their JavaScript names; `None` for other calls.
     pub(crate) fn rig_call(&mut self, method: &str, args: &[Value]) -> Option<Result<Value, EditError>> {
         let arg = |i: usize| args.get(i);
+        if let Some(result) = self.rig_drag_call(method, args) {
+            return Some(result);
+        }
         Some(match method {
             "setRigBehavior" => self.set_rig_behavior(arg(0)).map(Value::Bool),
             "enableSmartStretch" => self.enable_smart_stretch(arg(0)).map(Value::Bool),
