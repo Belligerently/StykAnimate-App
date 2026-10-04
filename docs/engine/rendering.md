@@ -364,6 +364,13 @@ either way (collection, other GPU users of the process).
 | Mascot 01-classic.stkz | 410–438 ms, 14–17 ms, 75–93 ms, 1.7–2.0 ms | 846–876 ms, 942–1,125 ms, 2.8–3.7 ms |
 | Dojo 01-dojo-back-wall.stkz | 300–803 ms, 24–34 ms, 75–145 ms, 1.7–2.0 ms | 747–909 ms, 958–1,034 ms, 6.1–9.8 ms |
 
+The camera monitor's time on the interface thread (`drawCameraMonitor`, 278×139, 60 paused frames
+after a seek each, two interleaved rounds, load averages 20–27): Bamboo-Training-Grounds-Demo.styk
+engine median 0.49–0.66 ms (90th percentile 0.71–1.10, worst 1.69) against JavaScript 75–127 ms
+(132–196, worst 260); Vehicles-Pivot-3D.styk engine 0.46–0.53 ms (0.69–0.77, worst 3.85) against
+JavaScript 19–40 ms (43–79, worst 106). The JavaScript monitor redraws the scene with Canvas 2D on
+the interface thread; the engine's submits a draw on the stage's device and copies its canvas.
+
 Not measured: other GPUs, Windows, macOS, a real display, the web build in browsers with WebGPU,
 packaged builds.
 
