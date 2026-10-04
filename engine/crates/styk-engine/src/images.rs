@@ -1,10 +1,59 @@
 //! Image pixels, decoded in the background and handed to the renderer in pieces.
 
+use std::collections::HashSet;
 use std::sync::Arc;
+
+use styk_draw::{DrawList, K_BG_IMAGE, K_IMAGE};
+use styk_eval::assets::{AtlasEntry, Assets, PAGE};
 
 use crate::{Engine, Generation};
 
 pub use styk_eval::assets::DecodedImage;
+
+/// Which places of a sprite atlas hold their pixels: what a renderer that takes decoded
+/// images a slice at a time ([`Engine::take_images`]) has uploaded, so it can tell
+/// whether a frame it drew lacks some of its pictures and should be drawn again once
+/// they arrive (the stage, `styk-wasm`). A few bytes per picture of the document.
+#[derive(Default)]
+pub struct Uploaded {
+    places: HashSet<u64>,
+}
+
+/// An atlas place by its page and corner (the gutter excluded), as records name it.
+fn place(layer: u32, x: u32, y: u32) -> u64 {
+    (layer as u64) << 32 | (y as u64) << 16 | x as u64
+}
+
+/// The place a record's atlas rectangle starts at: its page and `uv` corner.
+fn record_place(layer: f32, u0: f32, v0: f32) -> u64 {
+    let page = PAGE as f32;
+    place(layer as u32, (u0 * page).round() as u32, (v0 * page).round() as u32)
+}
+
+impl Uploaded {
+    /// The atlas was allocated again: it holds nothing.
+    pub fn clear(&mut self) {
+        self.places.clear();
+    }
+
+    /// `image` was written into the atlas `assets` lays out.
+    pub fn record(&mut self, assets: &Assets, image: &DecodedImage) {
+        let entry: Option<&AtlasEntry> = if image.drawing { assets.drawing.get(image.index as usize) } else { assets.atlas.get(image.index as usize) };
+        if let Some(e) = entry.filter(|e| e.valid) {
+            self.places.insert(place(e.layer, e.x, e.y));
+        }
+    }
+
+    /// Whether `list` samples an atlas place that holds no pixels yet: a picture or a
+    /// drawing cel tile (every display level of a cel is in a list) not uploaded.
+    pub fn lacks(&self, list: &DrawList) -> bool {
+        list.prims.iter().any(|p| match p.kind & 255 {
+            K_IMAGE => !self.places.contains(&record_place(p.b[2], p.c[0], p.c[1])),
+            K_BG_IMAGE => !self.places.contains(&record_place(p.a[2], p.c[0], p.c[1])),
+            _ => false,
+        })
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct Store {
@@ -95,5 +144,12 @@ impl Engine {
     pub fn images_pending(&self) -> usize {
         let state = self.inner.state.lock();
         state.images.remaining + state.images.ready.len()
+    }
+
+    /// Images of the open document still being decoded, and decoded ones waiting for
+    /// [`Engine::take_images`].
+    pub fn images_backlog(&self) -> (usize, usize) {
+        let state = self.inner.state.lock();
+        (state.images.remaining, state.images.ready.len())
     }
 }

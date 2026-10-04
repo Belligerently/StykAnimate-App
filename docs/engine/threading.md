@@ -17,7 +17,11 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   (48–384 MiB by `navigator.deviceMemory`), evicting what is farthest ahead
   of the playhead first. `set_hidden` re-keys frames by what is hidden.
 - Images: decoded on workers (`take_images` hands them to the renderer a few
-  megabytes per frame); drawing cels decode one task each.
+  megabytes per frame); drawing cels decode one task each. The stage remembers which
+  atlas places it uploaded (`Uploaded`); a frame drawn while some picture it shows is
+  still on its way is drawn again once it can be shown (`Stage::pictures_pending`:
+  on the next frame for pictures decoded and waiting, else after the progress counter
+  advances; `waitForPictures` in `engine-stage.mjs`).
 - `styk-wasm`: `EngineHandle` (commands and queries over wasm-bindgen),
   `Stage` (a wgpu surface on a canvas, edit frames and ghosts, prepared
   frames), `worker_run` (a worker's loop).

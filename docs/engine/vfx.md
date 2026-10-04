@@ -263,7 +263,7 @@ The memory is bounded but the bound is large: a layer is at most 3,968 pixels on
 
 - Drawing cels inside effect layers are resampled bilinearly, not with Canvas 2D's high-quality smoothing (URIEL ticks 61 to 64).
 - `previewRasterScale` (the editor lowering all raster densities under memory pressure) is not followed.
-- Not caused by effects, seen while measuring: the stage uploads decoded images only when it draws (8 MiB per frame) and nothing asks for another frame while images are pending, so a still frame can lack a drawing cel until the next redraw (headless: 3,606 images pending at the first capture, the cel appears once none is and the frame is drawn again); a drawing layer's onion skin past its last drawing is not drawn (tick 46).
+- Fixed since, not caused by effects: a still frame could lack a drawing cel until the next redraw, because the stage uploads decoded images only when it draws and nothing drew again while they decoded; the stage now draws again once the pictures a shown frame needs arrive ([rendering.md](rendering.md#in-the-app)).
 
 ## Changing it
 

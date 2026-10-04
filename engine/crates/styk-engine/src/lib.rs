@@ -35,7 +35,7 @@ use styk_eval::assets::Assets;
 use styk_eval::eval::Prepared;
 
 pub use frames::{FrameData, FrameStats};
-pub use images::DecodedImage;
+pub use images::{DecodedImage, Uploaded};
 use sync::Shared;
 
 /// A monotonic clock in milliseconds. The engine cannot read one itself on every
