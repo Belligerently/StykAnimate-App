@@ -55,6 +55,9 @@ const PORTED: &[&str] = &[
     "builder-styles-sheet", "builder-styles-native", "builder-styles-override-native",
     // Rig relationships: Smart Stretch, behaviours, angle locks, stretch parts, IK refusals.
     "rig-behavior-sheet", "rig-behavior-native", "rig-behavior-ik-sheet",
+    // The figure's topology: segments added, deleted, unsplit, flipped, moved, split, duplicated; rig joints appended.
+    "topology-sheet", "topology-native", "topology-joined-sheet", "topology-joined-native", "topology-ik-sheet", "topology-followers-sheet",
+    "topology-rig-sheet", "topology-vfx-sheet", "topology-sticknodes-sheet",
 ];
 
 #[test]

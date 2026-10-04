@@ -48,6 +48,7 @@ mod sheet_frames;
 mod spatial;
 mod spatial_ik;
 mod timeline;
+mod topology;
 mod transform;
 mod vfx_clips;
 
@@ -474,6 +475,9 @@ impl Editor {
             return result;
         }
         if let Some(result) = self.rig_call(method, args) {
+            return result;
+        }
+        if let Some(result) = self.topology_call(method, args) {
             return result;
         }
         match method {

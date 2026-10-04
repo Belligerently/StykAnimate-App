@@ -2,7 +2,7 @@
 // segment styles, branch caps and circle fills, the figure's name and outline (one
 // `native-properties` or `figure` history entry, or recoloured and keyed on the figure on show
 // as the app does it). Run by engine/tools/edit-scenarios-range.mjs.
-import {writeFileSync} from 'node:fs';
+import {readFileSync, writeFileSync} from 'node:fs';
 import {documentOf} from './fixture-kit.mjs';
 
 const out = new URL('../tests/edit', import.meta.url).pathname;
@@ -18,7 +18,7 @@ const scenario = (name, editor, steps, document) => writeFileSync(`${out}/${name
     [11, 0, 90, -0.8, {flag_bits: {raw: 0, low_byte: 0, high_byte: 0, set_bits: [], is_static: false}}],
     [22, 11, 80, -1.6, {secondary: {rgb: [200, 40, 40], a: 0}}],
     [33, 22, 30, -1.4, {primitive_code: 1, segment_kind: 'circle', segment_type: 'circle', flags: 1}],
-    [44, 0, 70, 2.4, {primitive_code: 6, segment_kind: 'squareLine', flags: 6,
+    [44, 0, 70, 2.4, {primitive_code: 6, segment_kind: 'squareLine', flags: 6, bend_rad: 0.5,
       paint: {type: 'linear', angle: 0, stops: [{offset: 0, color: [43, 43, 43], opacity: 1}, {offset: 1, color: [10, 120, 240], opacity: 0.5}]}}],
     [55, 44, 60, 1.6, {primitive_code: 3, segment_kind: 'circleFill', segment_type: 'circle', flags: 3}],
     [66, 55, 20, 0.4, {primitive_code: 4, segment_kind: 'circleClear', segment_type: 'circle', flags: 4}],
@@ -109,6 +109,73 @@ const rigSteps = [
 ];
 scenario('rig-behavior-sheet', app, rigSteps, 'rig.document.json');
 scenario('rig-behavior-native', {}, rigSteps, 'rig.document.json');
+// Topology: segments added and drawn as a chain (taking their parent's colour and width as
+// shown), deleted alone (Delete and Ctrl+Delete, which refits the children to the joints they
+// reached) or with their branch, flipped, moved in the hierarchy, split and duplicated; style
+// overlays and polygons follow the handles; refusals; history.
+const topologySteps = [
+  ['@select', 1, 1], ['updateBuilderSegmentStyle', {opacity: 0.5}], ['updateBuilderSegmentStyle', {color: '#cc3311'}],
+  ['addSegment', {length: 40, angle: 0.5}], ['addSegments', [{length: 30, angle: 1}, {length: 20, angle: 1.5, type: 'circle'}]],
+  ['addSegment', {length: -1}], ['addSegment', {type: 'image'}], ['addSegment', {parentId: 999}], ['addSegment', {length: 'x'}], ['addSegments', []],
+  ['addSegment', {parentId: 0, length: 25, angle: -1, thickness: 3, type: 'squareLine'}],
+  ['@select', 1, 6], ['deleteSingleSegment'], ['deleteSingleSegment', {preserveEndpoints: 'x'}],
+  ['@select', 1, 1], ['splitSegment', 0.25], ['@select', 1, 1], ['unsplitSegment'],
+  ['@select', 1, 3], ['mirrorSegment', 'horizontal'], ['mirrorSegmentBranch', 'vertical'], ['mirrorSegment', 'diagonal'], ['@select', 1, 0], ['mirrorSegment'],
+  // A bent pose split in two is a smooth pair of arcs: unsplitting it merges their bends again.
+  ['@select', 1, 4], ['updateSegment', {bend_rad: 0.6}], ['splitSegment', 0.5], ['unsplitSegment'], ['@select', 1, 4], ['duplicateSegment', {flip: true}], ['@select', 1, 3],
+  ['moveBuilderSegment', 66, {parentId: 11}], ['moveBuilderSegment', 11, {parentId: 66}], ['moveBuilderSegment', 44, {parentId: 0, beforeId: 11}],
+  ['moveBuilderSegment', 999, {}], ['moveBuilderSegment', 55, {parentId: 999}],
+  ['@select', 1, 0], ['splitSegmentBranch'], ['splitBuilderSegments', {fraction: 2}], ['splitBuilderSegments', {branch: 'x'}],
+  ['duplicateSegment', {}], ['duplicateSegmentBranch', {angleOffset: 0.4, flip: true}], ['duplicateSegment', {parentId: 999}], ['duplicateSegment', {flip: 'y'}],
+  ['@select', 1, 2], ['deleteSegment', {}], ['deleteSegment', {handleIds: [999]}],
+  ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'],
+];
+scenario('topology-sheet', app, topologySteps, 'builder.document.json');
+scenario('topology-native', {}, topologySteps.slice(2), 'builder.document.json');
+// Figures joined to a removed handle stay where they were drawn; figures joined below a flipped
+// or refitted segment are placed again on its handle.
+scenario('topology-joined-sheet', app, [
+  ['@select', 1, 2], ['deleteSingleSegment'], ['undo'], ['@select', 2, 1], ['mirrorSegment', 'vertical'], ['@select', 2, 1], ['unsplitSegment'],
+  ['@seek', 6], ['@select', 1, 1], ['deleteSegment', {}], ['@select', 2, 0], ['splitSegment', 0.5], ['undo'], ['undo'], ['undo'], ['redo'],
+], 'joined-chain.document.json');
+scenario('topology-joined-native', {}, [
+  ['@select', 1, 2], ['deleteSingleSegment'], ['undo'], ['@select', 2, 1], ['mirrorSegment', 'vertical'], ['@select', 2, 1], ['unsplitSegment'],
+  ['@select', 1, 1], ['deleteSegment', {}], ['undo'], ['undo'], ['redo'],
+], 'joined-chain.document.json');
+// Inverse-kinematics controllers follow their handles: a chain split, a hand gaining a part, a
+// removed end dropping its controller.
+// Followers a controller captured keep their offsets; new ones are taken from the pose.
+{
+  const document = JSON.parse(readFileSync(`${out}/ik-settings-followers.document.json`, 'utf8'));
+  for (const frame of document.keyframes) for (const object of frame.objects) object._stykIK['22'].followers = {33: 0.25, 35: 1.25};
+  writeFileSync(`${out}/topology-followers.document.json`, JSON.stringify(document) + '\n');
+}
+scenario('topology-followers-sheet', app, [
+  ['@select', 1, 0], ['addSegment', {length: 12, angle: 0.3}], ['@select', 1, 3], ['splitSegment', 0.5], ['@select', 1, 8], ['deleteSingleSegment'], ['undo'], ['undo'], ['redo'],
+], 'topology-followers.document.json');
+scenario('topology-ik-sheet', app, [
+  ['@select', 1, 2], ['splitSegment', 0.5], ['@select', 1, 4], ['addSegment', {length: 15, angle: 0.2}], ['@select', 1, 6], ['deleteSingleSegment'],
+  ['@select', 1, 8], ['unsplitSegment'], ['@select', 1, 0], ['duplicateSegmentBranch', {}], ['undo'], ['undo'], ['undo'], ['redo'],
+], 'startup.document.json');
+// Rigs: deleting a stretch driver its parts follow is refused (and changes nothing), a branch
+// duplicated with its relationships renamed, joints appended (a connector between two handles as
+// they are on show, a weighted joint), refusals, an angle-locked joint flipped.
+scenario('topology-rig-sheet', app, [
+  ['@select', 1, 1], ['deleteSingleSegment'], ['duplicateSegmentBranch', {}], ['undo'],
+  // The committed draft kept on show after a gesture is evaluated again after a topology edit.
+  ['@select', 1, 2], ['beginDrag', 'Pose joint'], ['rotateJoint', 0.2], ['commitDrag'], ['@select', 1, 4], ['splitSegment', 0.5], ['addConnector', 11, 33], ['undo'], ['undo'],
+  ['@select', 1, 0], ['addConnector', 11, 55, {position: 0.3}], ['addConnector', 11, 11], ['addConnector', 11, 999], ['addConnector', 11, 55, {position: 2}],
+  ['addWeightedJoint', 11, [{joint: 55, weight: 0.5}]], ['addWeightedJoint', 11, [{joint: 999, weight: 1}]],
+  ['@select', 1, 3], ['splitSegment', 0.5], ['mirrorSegment', 'horizontal'], ['@select', 1, 4], ['unsplitSegment'],
+  ['undo'], ['undo'], ['undo'], ['redo'], ['undo'], ['undo'],
+], 'rig.document.json');
+// Effect stacks on a node and Stick Nodes shapes follow the handles they name.
+scenario('topology-vfx-sheet', app, [
+  ['@select', 1, 2], ['splitSegment', 0.5], ['@select', 1, 4], ['deleteSingleSegment'], ['@select', 1, 1], ['duplicateSegment', {}], ['undo'], ['undo'], ['redo'],
+], 'figure-vfx.document.json');
+scenario('topology-sticknodes-sheet', app, [
+  ['@select', 1, 1], ['splitSegment', 0.4], ['@select', 1, 3], ['deleteSingleSegment'], ['@select', 1, 0], ['mirrorSegmentBranch', 'horizontal'], ['undo'], ['undo'], ['redo'],
+], 'sticknodes.document.json');
 // An enabled IK controller refuses a relationship that would derive its joint.
 scenario('rig-behavior-ik-sheet', app, [
   ['@select', 1, 3], ['setAngleLock', 'world'], ['setRigBehavior', {weighted: {origin: 3, anchors: [{joint: 2, weight: 1}]}}], ['bindStretchParts', 1],

@@ -58,6 +58,8 @@ pub enum CommandKind {
     FigureRange { changes: Vec<crate::range::FrameChange>, structural: bool },
     /// Paths of a figure definition before and after (`kind: 'native-properties'`, `scope: 'figure'`).
     NativeProperties { index: usize, before: crate::builder::Patch, after: crate::builder::Patch },
+    /// A figure definition and the poses it changed, before and after (`kind: 'topology'`).
+    Topology { index: usize, before: crate::topology::Snapshot, after: crate::topology::Snapshot },
 }
 
 /// `editor._movieclipBatch` in progress: its entries, label, the revision before it and the
@@ -217,6 +219,7 @@ impl Editor {
             CommandKind::MovieclipDefinition { .. } => self.apply_movieclip_definition(command, direction)?,
             CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
             CommandKind::NativeProperties { .. } => self.apply_native_properties(command, direction)?,
+            CommandKind::Topology { .. } => self.apply_topology(command, direction)?,
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
                 for child in ordered {

@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 87 | 1227 KiB | 59 | 25 | 3 | 0 | 0 | 1 % | 50 % | 0 % |
+| `styk-edit` | 87 | 1227 KiB | 56 | 28 | 3 | 0 | 0 | 1 % | 52 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
-| `styk-eval` | 82 | 760 KiB | 36 | 37 | 9 | 0 | 0 | 16 % | 58 % | 0 % |
+| `styk-eval` | 82 | 760 KiB | 35 | 38 | 9 | 0 | 0 | 16 % | 59 % | 0 % |
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4069 KiB | 205 | 94 | 34 | 22 | 1 | 20 % | 39 % | 0 % |
+| **Total** | 356 | 4069 KiB | 201 | 98 | 34 | 22 | 1 | 20 % | 40 % | 0 % |
 
 ## Engine modules
 
@@ -80,10 +80,10 @@ Engine logic: ported to Rust.
 | `src/editor-audio.mjs` | `styk-edit` | partial | Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS |
 | `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS |
 | `src/editor-branch-style.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder-branch.mjs` | `styk-edit` | partial | Rust: updateBuilderSegmentStyle (shapes and the construction flag in the definition, colours recoloured and opacity and thickness keyed on the figure on show, definition styles with a branch's polygons), updateSegmentBranchStyle, setBranchCaps, setBranchFill (styk-edit/src/builder.rs); changeBranchThickness and splitting still JS |
+| `src/editor-builder-branch.mjs` | `styk-edit` | partial | Rust: updateBuilderSegmentStyle (shapes and the construction flag in the definition, colours recoloured and opacity and thickness keyed on the figure on show, definition styles with a branch's polygons), updateSegmentBranchStyle, setBranchCaps, setBranchFill (styk-edit/src/builder.rs), splitBuilderSegments, splitSegmentBranch (styk-edit/src/topology.rs); changeBranchThickness still JS |
 | `src/editor-builder-style.mjs` | `styk-edit` | partial | Rust: setPolygonOpacity (styk-edit/src/builder.rs); the draw order (moveBuilderOrder, setBuilderOrder) still JS |
-| `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs) and on the definition, updateSegmentStyle, convertSegment (styk-edit/src/builder.rs); surfaces and the builder's segment topology commands still JS |
+| `src/editor-builder-topology.mjs` | `styk-edit` | partial | Rust: deleteSingleSegment, unsplitSegment (Ctrl+Delete refitting the children), mirrorSegment, mirrorSegmentBranch, moveBuilderSegment, componentGeometry and canonicalizeChildren for joined figures (styk-edit/src/topology.rs); figures with animation origins and IK across joined figures still JS |
+| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs) and on the definition, updateSegmentStyle, convertSegment (styk-edit/src/builder.rs), duplicateSegment, duplicateSegmentBranch (styk-edit/src/topology.rs); fitting a new polygon surface still JS |
 | `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
 | `src/editor-camera.mjs` | `styk-edit` | partial | Rust: copyCamera, pasteCamera, setCameraValues, resetCamera, transformCamera, alignCameraToView, locateCamera, locateHandle and camera drags on a layer sheet (styk-edit/src/camera_commands.rs); native-timeline camera snapshots, centerCamera (figure bounds) and applyCameraToFigures still JS |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |
@@ -115,7 +115,7 @@ Engine logic: ported to Rust.
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: applyFigureRange on a layer sheet (_commitSheetRange) and on a native timeline (the figure-range history entry), the *InFrames commands except paste and align, insertionPlan for adding, insert (styk-edit/src/range.rs, sheet.rs); pasting across frames, movieclips and figures with effect clips still JS |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); setRigBehavior, enableSmartStretch, bindStretchParts, setAngleLock, setSecondaryAngleReference with the rig's validation (styk-edit/src/rig_behavior.rs); appending rig joints (addConnector, addWeightedJoint) still JS |
+| `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); setRigBehavior, enableSmartStretch, bindStretchParts, setAngleLock, setSecondaryAngleReference with the rig's validation (styk-edit/src/rig_behavior.rs); addConnector, addWeightedJoint (styk-edit/src/topology.rs); Smart Stretch on a connector still JS |
 | `src/editor-rig.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-scene.mjs` | `styk-edit` | partial | Rust: setSceneColor and setSceneBackground on a layer sheet (styk-edit/src/property_edit.rs); native-timeline scene edits, background imports and the rest still JS |
 | `src/editor-selection.mjs` | `styk-edit` | partial | Rust: orderSelection on whole figures, bringToFront and sendToBack through the range operation (styk-edit/src/range.rs); ordering one figure's segments, alignSelection and the selection helpers still JS |
@@ -123,7 +123,7 @@ Engine logic: ported to Rust.
 | `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs), setSpatialFeetPinned (ik_settings.rs); joined 3D IK targets still JS |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-style-topology.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-style-topology.mjs` | `styk-edit` | partial | Rust: style overlays, Stick Nodes shapes and effect owners following the handles of a topology edit (styk-edit/src/topology.rs); channels a changed handle animates and reversed gradients (setOrigin) still JS |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS |
 | `src/editor-vfx.mjs` | `styk-edit` | partial | Rust: setVfxParameter (styk-edit/src/property_edit.rs); adding, pasting, presets and stack edits still JS |
@@ -151,7 +151,7 @@ Engine logic: ported to Rust.
 | `src/text-authoring-worker.mjs` | `styk-edit` | js |  |
 | `src/text-authoring.mjs` | `styk-edit` | js |  |
 | `src/text-font-compat.mjs` | `styk-edit` | js |  |
-| `src/topology-history.mjs` | `styk-edit` | js |  |
+| `src/topology-history.mjs` | `styk-edit` | partial | Rust: topology entries' snapshots of the definition and the poses they touch, undo and redo (styk-edit/src/topology.rs); the history byte budget still JS |
 | `src/playback-bitmap-pool.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-budget.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-cadence.mjs` | `styk-engine::playback` | js | scheduling, budgets |
@@ -231,7 +231,7 @@ Engine logic: ported to Rust.
 | `src/ik-joined.mjs` | `styk-eval::rig` | partial | Rust: assemblies, solve and scatter with followers, used by evaluation and editing (ik::joined::Assembly); join validation still JS |
 | `src/ik-rig.mjs` | `styk-eval::rig` | partial | Rust: rig projection, refinement, analytic spatial limb; editing helpers still JS |
 | `src/ik-spatial.mjs` | `styk-eval::rig` | partial | Rust: evaluation; pole and capture helpers for editing still JS |
-| `src/ik-topology.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
+| `src/ik-topology.mjs` | `styk-eval::rig` | partial | Rust: controllers and 3D shapes following the handles of one figure (styk-edit/src/topology.rs); IK across joined figures still JS |
 | `src/ik.mjs` | `styk-eval::rig` | partial | Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK, ikBendReference) and translateIKTargets (styk-edit); remapIKFollowers, validateIK still JS |
 | `src/rig-angle-path.mjs` | `styk-eval::rig` | partial | Rust: angle path sampling (styk_eval::rig); validateAnglePath (styk-edit/src/rig_behavior.rs); authoring still JS |
 | `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS |

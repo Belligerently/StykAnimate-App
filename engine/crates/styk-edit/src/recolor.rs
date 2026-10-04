@@ -308,7 +308,7 @@ fn alpha_byte(opacity: f64) -> f64 {
 
 /// `resolveInstanceFigure(figure, object)` for what recolouring reads: the segments and
 /// polygons with the instance's overrides (`_stykStyle.segments`, `.polygons`).
-fn resolve(figure: &Value, object: &Value) -> Result<(Vec<Value>, Vec<Value>), EditError> {
+pub(crate) fn resolve(figure: &Value, object: &Value) -> Result<(Vec<Value>, Vec<Value>), EditError> {
     let list = |key: &str| figure.get(key).and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default();
     let (mut segments, mut polygons) = (list("segments"), list("polyfills"));
     let Some(style) = object.get("_stykStyle").filter(|s| !s.is_null()) else { return Ok((segments, polygons)) };

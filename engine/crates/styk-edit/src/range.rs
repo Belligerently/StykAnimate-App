@@ -657,7 +657,7 @@ impl Editor {
 
     /// The joints of the figures at `slots` of a frame record (`buildGeometry` on the part of
     /// the frame they hang from).
-    fn joints_of(&self, record: &Value, slots: &[usize]) -> Result<HashMap<usize, Joints>, EditError> {
+    pub(crate) fn joints_of(&self, record: &Value, slots: &[usize]) -> Result<HashMap<usize, Joints>, EditError> {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));

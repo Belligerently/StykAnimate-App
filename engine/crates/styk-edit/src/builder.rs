@@ -206,16 +206,17 @@ fn polygons_of(figure: &Value) -> Vec<Value> {
 }
 
 /// `branch(figure, selectedIndex, whole, polygons)`: the selected segment and, with `whole`,
-/// every segment below it in the document's order, and the polygons whose every handle
-/// belongs to the branch or its pivot.
+/// every segment below it in the document's order, the order they were reached in, and the
+/// polygons whose every handle belongs to the branch or its pivot.
 pub(crate) struct Branch {
     pub indices: Vec<usize>,
+    pub queue: Vec<usize>,
     pub polygons: Vec<usize>,
 }
 
 pub(crate) fn branch(figure: &Value, selected: usize, whole: bool, polygons: bool) -> Branch {
     let segments = segments_of(figure);
-    let Some(segment) = segments.get(selected) else { return Branch { indices: Vec::new(), polygons: Vec::new() } };
+    let Some(segment) = segments.get(selected) else { return Branch { indices: Vec::new(), queue: Vec::new(), polygons: Vec::new() } };
     let id = |s: &Value| s.get("segment_id").cloned().unwrap_or(Value::Null);
     let key = |v: &Value| styk_doc::json::to_string(v);
     let mut children: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
@@ -249,7 +250,7 @@ pub(crate) fn branch(figure: &Value, selected: usize, whole: bool, polygons: boo
     } else {
         Vec::new()
     };
-    Branch { indices, polygons }
+    Branch { indices, queue, polygons }
 }
 
 /// `finite(value, label, min, max)` of src/editor-builder-branch.mjs.
@@ -571,6 +572,8 @@ impl Editor {
         }
         let after = Patch { entries, remove_empty: Vec::new() };
         self.apply_definition_patch(index, &after);
+        // `_invalidateFigure`: the committed draft kept on show is evaluated again.
+        self.retained = None;
         self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
         self.emit("edit", vec![("label", Value::str(label)), ("definition", Value::Bool(true))]);
         Ok(true)
@@ -593,6 +596,7 @@ impl Editor {
             return Err(invalid("errors.nativePropertyEdit.thePropertyTargetNoLongerExists"));
         }
         self.apply_definition_patch(*index, patch);
+        self.retained = None;
         self.restore_selection(selection)?;
         self.revision = revision;
         self.emit("history", vec![("label", Value::str(&command.label)), ("definition", Value::Bool(true)), ("animation", Value::Bool(false))]);
@@ -863,6 +867,7 @@ impl Editor {
             return Ok(false);
         }
         self.apply_definition_patch(index, &after);
+        self.retained = None;
         self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
         self.emit("edit", vec![("label", Value::str(label)), ("definition", Value::Bool(true))]);
         Ok(true)

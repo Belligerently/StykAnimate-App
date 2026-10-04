@@ -25,6 +25,9 @@ import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 import {layerFocusOf} from '../editor-layer-focus.mjs';
 import {figureHandleTransform} from '../editor-figure-transform.mjs';
 
+/** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
+const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSegment', 'unsplitSegment', 'mirrorSegment', 'mirrorSegmentBranch', 'moveBuilderSegment',
+  'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint'];
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames'];
@@ -51,7 +54,9 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   // The builder's segment styles (styk-edit/src/builder.rs).
   'updateBuilderSegmentStyle', 'updateSegmentStyle', 'updateSegmentBranchStyle', 'convertSegment', 'setBranchCaps', 'setBranchFill', 'setPolygonOpacity',
   // Rig relationships (styk-edit/src/rig_behavior.rs).
-  'setRigBehavior', 'enableSmartStretch', 'bindStretchParts', 'setAngleLock', 'setSecondaryAngleReference'];
+  'setRigBehavior', 'enableSmartStretch', 'bindStretchParts', 'setAngleLock', 'setSecondaryAngleReference',
+  // The figure's topology (styk-edit/src/topology.rs).
+  ...TOPOLOGY];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold), or clipboard text (numbers in text cannot be compared within the
  * browsers' last-digit differences, D16): a view, not compared. */
@@ -417,7 +422,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       let live = begin(), before = null, payload = null;
       // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
       if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
-      if (live && (RANGE.has(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
+      if (live && (RANGE.has(name) || TOPOLOGY.includes(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
       if (live && (name === 'undo' && !live.can_undo() || name === 'redo' && !live.can_redo())) { end('history the session did not record'); live = null; }
       if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
       if (live && name === 'pasteSelection' && (editor._selectionClipboard ?? editor._figureClipboard ?? null) !== copiedFigures) { end('a figure clipboard the session did not copy'); live = null; }

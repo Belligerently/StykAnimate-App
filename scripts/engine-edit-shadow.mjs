@@ -256,6 +256,20 @@ async function run(mode) {
       for (let i = 0; i < 6; i++) e.undo();
       e.select(uid, -1);
     }));
+    // The figure's topology as the builder edits it: segments added and drawn, split, flipped,
+    // duplicated, moved in the hierarchy, unsplit and deleted, rig joints appended.
+    await step('change the figure\'s topology as the builder does', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 3) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      const ids = () => e.figure.segments.map(segment => segment.segment_id);
+      e.select(uid, 1); attempt(() => e.addSegment({length: 30, angle: 0.4})); attempt(() => e.addSegments([{length: 20, angle: 1}, {length: 15, angle: 1.4}]));
+      e.select(uid, 1); attempt(() => e.splitSegment(0.5)); attempt(() => e.mirrorSegment('horizontal')); attempt(() => e.duplicateSegmentBranch({angleOffset: 0.3}));
+      e.select(uid, 2); attempt(() => e.moveBuilderSegment(ids()[2], {parentId: ids()[0]})); attempt(() => e.unsplitSegment());
+      e.select(uid, e.figure.segments.length - 1); attempt(() => e.deleteSingleSegment()); attempt(() => e.deleteSegment());
+      e.select(uid, 0); attempt(() => e.addConnector(ids()[0], ids()[1])); attempt(() => e.addWeightedJoint(ids()[0], [{joint: ids()[1], weight: 0.5}]));
+      for (let i = 0; i < 12; i++) e.undo();
+      e.select(uid, -1);
+    }));
     await step('move a handle in Handle Edit Mode', () => page.evaluate(() => {
       const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1);
       const p = e.geometry.objects.get(e.selectedSlot)?.joints.get(e.figure?.segments[1]?.segment_id); if (!p) return;
