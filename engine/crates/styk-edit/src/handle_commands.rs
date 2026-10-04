@@ -132,33 +132,11 @@ impl Editor {
         let view = options.get("view").cloned().unwrap_or(Value::Null);
         let zoom = view.get("scale").filter(|v| !v.is_null()).map_or(1.0, |v| v.as_f64().unwrap_or(f64::NAN));
         let (mut a, mut b, mut c, mut d) = (zoom, 0.0, 0.0, zoom);
-        // `effectiveCamera`: the frame's camera unless switched off or its track hidden.
-        let camera_enabled = options.get("cameraEnabled").is_none_or(Value::truthy);
-        let camera_shown = self.report.path(&["_styk", "layers", "fixed", "camera", "visible"]).is_none_or(|v| !matches!(v, Value::Bool(false)));
-        if camera_enabled && camera_shown {
-            let frame = self.shown_frame()?;
-            // `cameraAtTime` adds camera motion clips to the frame's camera at the tick the frame
-            // was evaluated at (`_cameraMotionTick`, which the engine's records leave out): none
-            // contributing there leaves it as it is.
-            let clips: Vec<Value> = self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-            let tick = self.authored.as_ref().map_or(self.tick, |edit| edit.tick);
-            if clips.iter().any(|clip| clip.get("type").and_then(Value::as_str) == Some("follow") || motion_contributes(clip, tick)) {
-                return Err(EditError::Unported("nudging a handle through camera motion".into()));
-            }
-            let camera = frame.get("camera").cloned().filter(|c| !c.is_null());
-            if !camera_is_identity(camera.clone()) {
-                let camera = camera.unwrap();
-                let number = |key: &str, fallback: f64| camera.get(key).filter(|v| !v.is_null()).map_or(fallback, |v| v.as_f64().unwrap_or(f64::NAN));
-                // `inverseCameraScale`
-                let inverse = (1.0f32 / (number("scale", 1.0) as f32)) as f64;
-                if !inverse.is_finite() || inverse <= 0.0 {
-                    return Err(EditError::Invalid("errors.background.cameraScaleExceedsTheNativeRenderingRange".into()));
-                }
-                let scale = inverse * zoom;
-                let angle = -number("angle_rad", 0.0);
-                let (ca, sa) = (styk_math::cos(angle) * scale, styk_math::sin(angle) * scale);
-                (a, b, c, d) = (ca, sa, -sa, ca);
-            }
+        let frame = self.shown_frame()?;
+        let tick = self.authored.as_ref().map_or(self.tick, |edit| edit.tick);
+        if let Some(camera) = self.effective_camera(&frame, options.get("cameraEnabled").is_none_or(Value::truthy), tick)? {
+            let [ca, sa, mc, md] = camera_linear(&camera, zoom)?;
+            (a, b, c, d) = (ca, sa, mc, md);
         }
         if let Some(rotation) = view.get("rotation").and_then(Value::as_f64).filter(|r| *r != 0.0) {
             let (r, s) = (styk_math::cos(rotation), styk_math::sin(rotation));
@@ -540,6 +518,39 @@ fn relative_reference(figures: &[Option<Figure>], slot: usize, joint: usize) -> 
     0.0
 }
 
+/// The linear part of `cameraMatrix` for a camera that is not the identity, at workspace zoom
+/// `zoom`: `[a, b, -b, a]` from the inverse camera scale (`inverseCameraScale`) and angle.
+pub(crate) fn camera_linear(camera: &Value, zoom: f64) -> Result<[f64; 4], EditError> {
+    let number = |key: &str, fallback: f64| camera.get(key).filter(|v| !v.is_null()).map_or(fallback, |v| v.as_f64().unwrap_or(f64::NAN));
+    let inverse = (1.0f32 / (number("scale", 1.0) as f32)) as f64;
+    if !inverse.is_finite() || inverse <= 0.0 {
+        return Err(EditError::Invalid("errors.background.cameraScaleExceedsTheNativeRenderingRange".into()));
+    }
+    let scale = inverse * zoom;
+    let angle = -number("angle_rad", 0.0);
+    let (a, b) = (styk_math::cos(angle) * scale, styk_math::sin(angle) * scale);
+    Ok([a, b, -b, a])
+}
+
+impl Editor {
+    /// `effectiveCamera(report, frame, cameraEnabled)` when it is not the identity: the frame's
+    /// camera unless switched off or its track hidden. `cameraAtTime` adds camera motion
+    /// clips at the tick the frame was evaluated at (`_cameraMotionTick`, which the engine's
+    /// records leave out): a clip moving the camera there, or a follow clip, is not ported.
+    pub(crate) fn effective_camera(&self, frame: &Value, enabled: bool, tick: f64) -> Result<Option<Value>, EditError> {
+        let shown = self.report.path(&["_styk", "layers", "fixed", "camera", "visible"]).is_none_or(|v| !matches!(v, Value::Bool(false)));
+        if !enabled || !shown {
+            return Ok(None);
+        }
+        let clips: Vec<Value> = self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        if clips.iter().any(|clip| clip.get("type").and_then(Value::as_str) == Some("follow") || motion_contributes(clip, tick)) {
+            return Err(EditError::Unported("camera motion at this frame".into()));
+        }
+        let camera = frame.get("camera").cloned().filter(|c| !c.is_null());
+        Ok(if camera_is_identity(camera.clone()) { None } else { camera })
+    }
+}
+
 /// Whether a camera motion clip moves the camera at `tick` (`sampleCameraMotion` skips it otherwise).
 fn motion_contributes(clip: &Value, tick: f64) -> bool {
     let number = |key: &str| clip.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
@@ -549,7 +560,7 @@ fn motion_contributes(clip: &Value, tick: f64) -> bool {
     clip.get("enabled").is_some_and(Value::truthy) && !(age < 0.0) && !(age >= number("duration")) && !muted
 }
 
-fn camera_is_identity(camera: Option<Value>) -> bool {
+pub(crate) fn camera_is_identity(camera: Option<Value>) -> bool {
     let Some(camera) = camera.filter(|c| !c.is_null()) else { return true };
     if camera.get("is_default").is_some_and(Value::truthy) {
         return true;

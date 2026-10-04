@@ -347,6 +347,109 @@ impl Editor {
         result
     }
 
+    /// `applyCameraToFigures(indices, {ticks})` on a layer sheet (`applyAuthoredCameraToFigures`):
+    /// at each chosen frame whose camera is not the identity, every figure keyed where the
+    /// camera shows it (root, scale and rotation through the inverse camera) and the camera
+    /// keyed back to the identity. Returns how many frames changed.
+    pub(crate) fn apply_camera_to_figures(&mut self, indices: &Value, options: &Value) -> Result<Value, EditError> {
+        self.camera_sheet("applyCameraToFigures")?;
+        self.finish_gesture()?;
+        if self.report.path(&["_styk", "layers", "fixed", "camera", "visible"]).is_some_and(|v| matches!(v, Value::Bool(false))) {
+            return Ok(Value::Num(0.0));
+        }
+        let parsed = crate::range::Indices::parse(indices_of(indices).as_ref());
+        let ticks: Vec<f64> = match options.get("ticks").filter(|t| !t.is_null()) {
+            Some(ticks) => ticks.elements().map(|e| e.iter().map(|t| t.as_f64().unwrap_or(f64::NAN)).collect()).unwrap_or_default(),
+            None => self.sheet_edit_times(parsed.as_ref())?,
+        };
+        // `_frameIndices(indices)` checks the indices even when ticks are given.
+        self.frame_indices(parsed.as_ref())?;
+        let mut times: Vec<f64> = Vec::new();
+        for tick in ticks {
+            if !times.iter().any(|t| *t == tick || (t.is_nan() && tick.is_nan())) {
+                times.push(tick);
+            }
+        }
+        times.sort_by(f64::total_cmp);
+        let end = crate::timeline::total_ticks(&crate::timeline::rows(&self.report));
+        if times.iter().any(|t| t.fract() != 0.0 || !(*t >= 0.0 && *t < end)) {
+            return Err(EditError::Invalid("errors.cameraBakeAuthored.chooseWholeDisplayFramesInsideThisAnimation".into()));
+        }
+        let figures = crate::sheet::items(self.report.get("figure_types"));
+        let (cx, cy) = (num(&self.report, "canvas_width").unwrap_or(640.0) / 2.0, num(&self.report, "canvas_height").unwrap_or(480.0) / 2.0);
+        // Every value is read before any key is written; one entry a channel, its ticks in order.
+        let mut points: Vec<(String, Value, &'static str, Vec<(f64, Value)>)> = Vec::new();
+        let mut put = |target: &Value, property: &'static str, tick: f64, value: f64| -> Result<(), EditError> {
+            let id = crate::property_edit::channel_id(target, property)?;
+            let value = crate::property_edit::validate_value(target, property, Some(&Value::Num(value)))?;
+            match points.iter_mut().find(|(i, ..)| *i == id) {
+                Some((_, _, _, values)) => match values.iter_mut().find(|(t, _)| *t == tick) {
+                    Some(slot) => slot.1 = value,
+                    None => values.push((tick, value)),
+                },
+                None => points.push((id, target.clone(), property, vec![(tick, value)])),
+            }
+            Ok(())
+        };
+        let mut changed = 0usize;
+        for &tick in &times {
+            let frame = self.evaluated(tick, true)?;
+            let Some(camera) = self.effective_camera(&frame, true, tick)? else { continue };
+            let [a, b, c, d] = crate::handle_commands::camera_linear(&camera, 1.0)?;
+            let number = |key: &str, fallback: f64| camera.get(key).filter(|v| !v.is_null()).map_or(fallback, |v| v.as_f64().unwrap_or(f64::NAN));
+            let (px, py) = (cx + number("x", 0.0), cy + number("y", 0.0));
+            let (e, f) = (0.0 + cx * 1.0 - a * px + b * py, 0.0 + cy * 1.0 - b * px - a * py);
+            let scale = (1.0f32 / (number("scale", 1.0) as f32)) as f64;
+            let angle = number("angle_rad", 0.0);
+            let roots = self.frame_roots(&frame)?;
+            for object in crate::frame::objects_of(&frame) {
+                let Some(id) = uid(&object) else { continue };
+                let mut target = Obj::new();
+                target.set("kind", Value::str("figure"));
+                target.set("uid", Value::Num(id as f64));
+                let target = Value::object(target);
+                let root = roots.iter().find(|(u, _)| *u == id).map(|(_, r)| *r).unwrap_or([num(&object, "root_x").unwrap_or(f64::NAN), num(&object, "root_y").unwrap_or(f64::NAN)]);
+                put(&target, "x", tick, a * root[0] + c * root[1] + e)?;
+                put(&target, "y", tick, b * root[0] + d * root[1] + f)?;
+                put(&target, "scale", tick, num(&object, "scale").unwrap_or(f64::NAN) * scale)?;
+                let base = figures.iter().find(|fig| fig.get("figure_type_id") == object.get("figure_type_id")).and_then(|fig| fig.get("segments").and_then(|s| s.item(0))).and_then(|seg| seg.get("angle_rad").filter(|v| !v.is_null()).and_then(Value::as_f64)).unwrap_or(0.0);
+                let first = object.get("angles").and_then(|angles| angles.item(0)).filter(|v| !v.is_null()).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                put(&target, "rotation", tick, first - base - angle)?;
+            }
+            let mut target = Obj::new();
+            target.set("kind", Value::str("camera"));
+            let target = Value::object(target);
+            for property in ["x", "y", "scale", "rotation"] {
+                put(&target, property, tick, if property == "scale" { 1.0 } else { 0.0 })?;
+            }
+            changed += 1;
+        }
+        if changed == 0 {
+            return Ok(Value::Num(0.0));
+        }
+        let mut entries = Vec::new();
+        for (_, target, property, values) in points {
+            for (tick, value) in values {
+                let mut entry = Obj::new();
+                entry.set("target", target.clone());
+                entry.set("property", Value::str(property));
+                entry.set("tick", Value::Num(tick));
+                entry.set("value", value);
+                entries.push(Value::object(entry));
+            }
+        }
+        self.sheet_property_entries(&entries, "Apply camera to figures")?;
+        Ok(Value::Num(changed as f64))
+    }
+
+    /// Each figure's root as `buildGeometry(report, frame)` places it, by identity.
+    fn frame_roots(&self, frame: &Value) -> Result<Vec<(u32, [f64; 2])>, EditError> {
+        let prepared = self.prepared()?;
+        let typed = self.eval.borrow_mut().loader.edit_frame(frame, None, &prepared.doc).map_err(|error| EditError::Invalid(error.to_string()))?;
+        let scene = styk_eval::geometry::build(&prepared.doc, &typed);
+        Ok(scene.objects.iter().filter(|g| g.resolved).map(|g| (g.uid, g.root)).collect())
+    }
+
     /// `beginCameraDrag({indices, label})`.
     pub(crate) fn begin_camera_drag(&mut self, options: &Value) -> Result<bool, EditError> {
         self.camera_sheet("beginCameraDrag")?;

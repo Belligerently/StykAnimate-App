@@ -254,7 +254,7 @@ async function run(mode) {
       try {
         if (e.beginCameraDrag()) { e.updateCameraDrag({x: 12, y: -6}); e.updateCameraDrag({x: 20, scale: 1.1}); e.commitCameraDrag(); }
         e.updateCameraDrag({angle_rad: 0.05}); e.cancelCameraDrag();
-        e.setCameraValues({x: 15}); e.transformCamera({y: 4, scale: 1.05}); e.copyCamera(); e.resetCamera(); e.pasteCamera(); e.locateCamera(1); e.undo();
+        e.setCameraValues({x: 15}); e.transformCamera({y: 4, scale: 1.05}); e.copyCamera(); e.resetCamera(); e.pasteCamera(); e.locateCamera(1); e.applyCameraToFigures(); e.undo(); e.undo();
       } catch {}
     }));
     await step('edit and delete a camera motion clip', () => page.evaluate(() => { const e = styk.editor, clip = e.getCameraMotions()[0]; if (!clip) return; e.setCameraMotion(clip.id, {start: clip.start + 1}); e.setCameraMotion(clip.id, {enabled: !clip.enabled}); e.deleteCameraMotion(clip.id); e.undo(); }));

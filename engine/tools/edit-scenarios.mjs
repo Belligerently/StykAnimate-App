@@ -989,6 +989,14 @@ scenario('figures-layers-sheet', app, [
       ['@seek', 6], ['@select', 3, -1], ['locateHandle', -1, {uid: 2, jointIndex: 2}], ['@select', 1, 1], ['locateHandle', -1], ['locateHandle', 1], ['locateHandle', -1, {handleId: 0}], ['locateHandle', -1, {uid: 2, jointIndex: 1, editMode: true}], ['locateHandle', 5],
       ['undo'], ['undo'], ['undo'], ['redo'],
     ], 'camera-chain.document.json');
+    // The camera baked into the figures: each figure keyed where the camera shows it and the
+    // camera keyed back to the identity, at the playhead, on chosen keyframes or ticks; frames
+    // whose camera is already the identity left alone; refusals; a hidden camera track.
+    scenario('camera-bake-sheet', app, [
+      ['applyCameraToFigures'], ['applyCameraToFigures'], ['@seek', 6], ['applyCameraToFigures', [0, 1]], ['setCameraValues', {x: 25, angle_rad: -0.2, scale: 0.9}, [0, 1]],
+      ['applyCameraToFigures', [0], {ticks: [2, 4]}], ['applyCameraToFigures', [5]], ['applyCameraToFigures', [0], {ticks: [1.5]}], ['applyCameraToFigures', [0], {ticks: [99]}], ['applyCameraToFigures', [7], {ticks: [2]}],
+      ['setLayerVisible', 'camera', false], ['applyCameraToFigures'], ['setLayerVisible', 'camera', true], ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'camera-chain.document.json');
     scenario('handle-commands-ik-sheet', app, [
       ['@select', 1, 1], ['nudgeHandle', 6, 2], ['segmentValues', {relative: true}], ['setSegmentValues', {angle: 20}, {relative: true}], ['@select', 1, 2], ['alignHandle', 0, 1],
       ['@select', 2, 1], ['setSegmentValues', {length: 70}], ['undo'], ['redo'],

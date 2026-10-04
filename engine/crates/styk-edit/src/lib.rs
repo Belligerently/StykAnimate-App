@@ -503,6 +503,7 @@ impl Editor {
             "alignCameraToView" => self.align_camera_to_view(&arg(0), &arg(1)),
             "locateCamera" => self.locate_camera(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), arg(1).as_str().unwrap_or(if arg(1).is_null() { "position" } else { "" }), &arg(2)),
             "locateHandle" => self.locate_handle(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), &arg(1)).map(Value::Bool),
+            "applyCameraToFigures" => self.apply_camera_to_figures(&arg(0), &arg(1)),
             "beginCameraDrag" => self.begin_camera_drag(&arg(0)).map(Value::Bool),
             "updateCameraDrag" => self.update_camera_drag(&arg(0), &arg(1)).map(Value::Bool),
             "commitCameraDrag" => self.commit_camera_drag().map(Value::Bool),
