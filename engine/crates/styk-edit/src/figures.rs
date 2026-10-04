@@ -153,6 +153,28 @@ impl Editor {
         })
     }
 
+    /// `sheetDeleteFigures(selected)`: with a movieclip among them, the selected figures leave
+    /// the cell at the playhead as replacements by nothing, so the clips' membership changes
+    /// without the surrounding motion being sampled again; the selection is emptied.
+    fn sheet_delete_figures(&mut self, selected: &[u32]) -> Result<bool, EditError> {
+        let mut ids: Vec<String> = Vec::new();
+        for &figure in selected {
+            let layer = self.layer_of(figure);
+            if !ids.contains(&layer) {
+                ids.push(layer);
+            }
+        }
+        let mut plan = self.planner(&ids)?;
+        let tick = self.tick;
+        for &figure in selected {
+            let layer = self.layer_of(figure);
+            self.replace_at(&mut plan, &layer, tick, figure, &crate::sheet::create_frame(&[]), None, tick + 1.0)?;
+        }
+        let selection = self.selection_state();
+        self.selection = crate::Selection { uid: None, uids: Vec::new(), joint: -1 };
+        self.publish(plan, "Delete figures", selection, None)
+    }
+
     /// `deleteSelection()`: the selected figures leave the frame; figures joined to
     /// them stay where the join held them.
     pub(crate) fn delete_selection(&mut self) -> Result<bool, EditError> {
@@ -163,7 +185,7 @@ impl Editor {
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let clip = |object: &Value| figures.iter().find(|f| num(f, "figure_type_id") == num(object, "figure_type_id")).is_some_and(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy));
         if self.sheet() && self.selected_objects()?.iter().any(clip) {
-            return Err(EditError::Unported("deleting a movieclip instance".into()));
+            return self.sheet_delete_figures(&selected);
         }
         let roots = self.roots()?;
         let gone = |object: &Value| uid(object).is_some_and(|u| selected.contains(&u));

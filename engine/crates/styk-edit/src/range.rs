@@ -435,20 +435,30 @@ impl Editor {
                 (None, None) => None,
             };
             let Some(mut planned) = planned else { continue };
-            // Movieclips are inserted, deleted and retimed through their frame replacements.
+            // On a layer sheet movieclips are deleted through frame replacements and duplicated
+            // onto the presence clock; on a native timeline they are not ported.
             let before = objects_of(&target.frame);
             let after = objects_of(&planned.frame);
-            if before.iter().chain(&after).filter(|o| uid(o).is_some_and(|u| planned.changed.contains(&u))).any(movieclip) {
-                return Err(EditError::Unported("figure-range operations on movieclips".into()));
+            if !authored && before.iter().chain(&after).filter(|o| uid(o).is_some_and(|u| planned.changed.contains(&u))).any(movieclip) {
+                return Err(EditError::Unported("figure-range operations on movieclips on a native timeline".into()));
             }
             if let Some(payload) = payload.as_ref().filter(|_| matches!(request, Request::Duplicate { .. })) {
                 // Copies leave a broken-apart movieclip's part behind.
                 let objects: Vec<Value> = after
                     .into_iter()
                     .map(|o| match uid(&o).filter(|u| payload.order.contains(u)) {
-                        Some(_) if o.get("_stykMovieclipPart").is_some() => {
+                        Some(_) if o.get("_stykMovieclipPart").is_some() || (self.sheet() && o.get("_stykMovieclip").is_some_and(Value::truthy)) => {
                             let mut record = o.as_obj().cloned().unwrap();
                             record.remove("_stykMovieclipPart");
+                            // A duplicated movieclip plays on the presence clock from its start.
+                            if let Some(previous) = record.get("_stykMovieclip").filter(|p| p.truthy()).cloned().filter(|_| self.sheet()) {
+                                let mut playback = Obj::new();
+                                playback.set("clock", Value::str("presence"));
+                                playback.set("offset", Value::Num(0.0));
+                                playback.set("speed", previous.get("speed").filter(|v| !v.is_null()).cloned().unwrap_or(Value::Num(1.0)));
+                                playback.set("mode", previous.get("mode").filter(|v| !v.is_null()).cloned().unwrap_or(Value::str("loop")));
+                                record.set("_stykMovieclip", Value::object(playback));
+                            }
                             Value::object(record)
                         }
                         _ => o,
@@ -470,7 +480,9 @@ impl Editor {
             if !self.sheet() {
                 return Err(EditError::Unported("figure-range operations on property channels of a native timeline".into()));
             }
+            let befores: Vec<Value> = plans.iter().map(|(t, _)| t.frame.clone()).collect();
             let entries: Vec<(f64, Value, Vec<u32>)> = plans.into_iter().map(|(t, p)| (t.tick, p.frame, p.changed)).collect();
+            let deletion = matches!(request, Request::Delete).then_some((uids.as_slice(), befores.as_slice()));
             let (previous_selection, previous_next) = (self.selection.clone(), self.next_uid);
             let hints = payload.as_ref().map(|p| p.hints.clone()).unwrap_or_default();
             if let Some(payload) = &payload {
@@ -478,7 +490,7 @@ impl Editor {
                 self.selection = crate::Selection { uid: payload.order.last().copied(), uids: payload.order.clone(), joint: -1 };
                 self.next_uid = payload.next_uid;
             }
-            if let Err(error) = self.commit_sheet_range(&entries, &inserted, &hints, Vec::new(), &label, selection) {
+            if let Err(error) = self.commit_sheet_range(&entries, &inserted, &hints, Vec::new(), &label, selection, None, deletion) {
                 self.selection = previous_selection;
                 self.next_uid = previous_next;
                 return Err(error);
@@ -854,7 +866,7 @@ impl Editor {
         }
         let selection = self.selection_state();
         let count = entries.len();
-        self.commit_sheet_range(&entries, &[], &HashMap::new(), Vec::new(), "Move figures across frames", selection)?;
+        self.commit_sheet_range(&entries, &[], &HashMap::new(), Vec::new(), "Move figures across frames", selection, None, None)?;
         Ok(Value::Num(count as f64))
     }
 

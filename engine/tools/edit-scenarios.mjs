@@ -213,6 +213,31 @@ scenario('frames-movieclip-sheet', app, [
     ['previewAnimationEdit', 1.4], ['commitAnimationEdit'], ['addAnimationKeys', [{target: {kind: 'figure', uid: 4}, property: 'rotation', tick: 6, value: 0.3}]],
     ['undo'], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');
+  // Movieclip instances copied and pasted: beside the one on show (a new identity carrying on
+  // from where the copy was, the definition shared), where it was deleted (it keeps its
+  // identity and starts again), as a unique copy (a new definition), duplicated; history.
+  scenario('figure-clipboard-clip-sheet', app, [
+    ['@seek', 2], ['@select', 4, -1], ['copySelection'], ['pasteSelection'], ['@seek', 6], ['@select', 4, -1], ['deleteSelection'], ['pasteSelection'],
+    ['pasteSelection', {pasteMode: 'unique'}], ['@select', 4, -1], ['duplicateSelection'], ['pasteSelection', {newIdentities: true, offset: 10}],
+    ['undo'], ['undo'], ['undo'], ['redo'],
+    // A delete between keys restores the replacements after it; a paste where the clip was
+    // deleted lands on its own layer while another is active.
+    ['@seek', 2], ['@select', 4, -1], ['deleteSelection'], ['createLayer', 'Other'], ['pasteSelection'], ['pasteSelection'], ['undo'], ['undo'], ['undo'], ['undo'],
+    // A clip played once is gone from view after its end but still in its cell: a paste there
+    // takes a new identity.
+    ['sheetInsertFrames', ['scene', 'camera', 'layer-1'], 6, 8], ['@seek', 2], ['@select', 4, -1], ['setMovieclipPlayback', {mode: 'once'}], ['copySelection'],
+    ['@seek', 12], ['pasteSelection'],
+    // A clip pasted with another figure onto a held cell keys the playhead.
+    ['sheetSetEasing', ['layer-1'], 0, 0, {interpolation: 'constant'}], ['@seek', 1], ['addFigure', 1], ['@select', 4, -1], ['selectMany', [4, 10]], ['copySelection'], ['@seek', 3], ['pasteSelection'],
+  ], 'sheet-movieclip.document.json');
+  // Range operations on a movieclip instance on a layer sheet: ordered, flipped, turned,
+  // duplicated (the copy restarts on the presence clock), deleted at the playhead and across
+  // keys (replacements by nothing); history.
+  scenario('range-clip-sheet', app, [
+    ['@seek', 2], ['@select', 4, -1], ['setMovieclipPlayback', {offset: 3, speed: 2}], ['duplicateInFrames', [0]], ['undo'], ['undo'], ['@select', 4, -1],
+    ['orderFiguresInFrames', 1, [0]], ['mirrorFiguresInFrames', 'horizontal', [0]], ['rotateFiguresInFrames', 0.3, [0]], ['duplicateInFrames', [0]], ['@select', 4, -1], ['deleteFiguresInFrames', [0]], ['undo'], ['@seek', 6], ['@select', 4, -1], ['deleteFiguresInFrames', [0, 1]],
+    ['undo'], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
   scenario('move-frames-presence-clip-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, 3, {copy: true}], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');

@@ -31,6 +31,35 @@ fn json(value: Option<&Value>) -> String {
     value.map(styk_doc::json::to_string).unwrap_or_default()
 }
 
+/// `createFrame(objects)` (src/demo.mjs): a frame of `objects` alone, each in its slot.
+pub(crate) fn create_frame(objects: &[Value]) -> Value {
+    let mut frame = Obj::new();
+    frame.set("duration_raw", Value::Num(1.0));
+    for key in ["background_id", "background_id_b", "background_mix"] {
+        frame.set(key, Value::Num(0.0));
+    }
+    let mut camera = Obj::new();
+    camera.set("is_default", Value::Bool(true));
+    for (key, value) in [("x", 0.0), ("y", 0.0), ("scale", 1.0), ("angle_rad", 0.0)] {
+        camera.set(key, Value::Num(value));
+    }
+    frame.set("camera", Value::object(camera));
+    let placed: Vec<Value> = objects
+        .iter()
+        .enumerate()
+        .map(|(slot, object)| {
+            let mut object = object.as_obj().cloned().unwrap_or_default();
+            object.set("object_slot", Value::Num(slot as f64));
+            Value::object(object)
+        })
+        .collect();
+    let (order, ids): (Vec<Value>, Vec<Value>) = placed.iter().enumerate().map(|(i, o)| (Value::Num(i as f64), o.get("unique_id").cloned().unwrap_or(Value::Null))).unzip();
+    frame.set("objects", Value::array(placed));
+    frame.set("object_draw_order", Value::array(order));
+    frame.set("object_draw_order_unique_ids", Value::array(ids));
+    Value::object(frame)
+}
+
 /// `continuations(frame)`.
 pub(crate) fn continuations(frame: &Value) -> Vec<Value> {
     items(frame.path(&["_styk", "movieclipContinuations"]))
@@ -529,15 +558,26 @@ impl Editor {
     /// `frame` keyed on the layers of the figures in `changed`, the figures in `inserted`
     /// assigned to theirs (`hints` first), `definitions` added with it.
     pub(crate) fn commit_sheet_range_with(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
-        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection)
+        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection, None, None)
+    }
+
+    /// [`Editor::commit_sheet_range_with`] for figures a command inserted (`payload.objects`;
+    /// `paste` for a paste): movieclips alone inside a layer's span become replacements of
+    /// their own, and a pasted movieclip is keyed at the playhead rather than on a held key.
+    pub(crate) fn commit_sheet_insertion(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState, payload: &[Value], paste: bool) -> Result<bool, EditError> {
+        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection, Some((payload, paste)), None)
     }
 
     /// `_commitSheetRange(plans, payload, label, selection)`: each planned frame `(tick, frame,
     /// changed)` keyed on the layers owning its changed figures (a held cell at its key unless
     /// auto key is on), the figures in `inserted` first assigned to their layer (`hints` first),
     /// `definitions` added with it. Unlike a gesture's commit, nothing else of a frame is
-    /// compared: the operation names what it changed.
-    pub(crate) fn commit_sheet_range(&mut self, plans: &[(f64, Value, Vec<u32>)], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
+    /// compared: the operation names what it changed. `payload`: the figures an insertion
+    /// added and whether it pastes them (see [`Editor::commit_sheet_insertion`]). `deletion`:
+    /// the figures a deletion removes and each plan's frame before it; where a movieclip
+    /// instance is among them, they leave as replacements by nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn commit_sheet_range(&mut self, plans: &[(f64, Value, Vec<u32>)], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState, payload: Option<(&[Value], bool)>, deletion: Option<(&[u32], &[Value])>) -> Result<bool, EditError> {
         self.ensure_counts();
         let mut ids: Vec<String> = Vec::new();
         for &uid in plans.iter().flat_map(|(_, _, changed)| changed) {
@@ -551,8 +591,20 @@ impl Editor {
         for &uid in inserted {
             plan.assign(uid, &self.owner_with(uid, hints)?);
         }
-        for (tick, frame, changed) in plans {
+        for (index, (tick, frame, changed)) in plans.iter().enumerate() {
             let tick = *tick;
+            if let Some((uids, befores)) = deletion {
+                let before = befores.get(index).map(objects_of).unwrap_or_default();
+                if before.iter().any(|o| uid(o).is_some_and(|u| changed.contains(&u)) && o.get("_stykMovieclip").is_some_and(Value::truthy)) {
+                    for &removed in uids {
+                        if before.iter().any(|o| uid(o) == Some(removed)) {
+                            let owner = self.owner_with(removed, hints)?;
+                            self.replace_at(&mut plan, &owner, tick, removed, &create_frame(&[]), None, tick + 1.0)?;
+                        }
+                    }
+                    continue;
+                }
+            }
             let mut layers: Vec<String> = Vec::new();
             for &uid in changed {
                 let owner = self.owner_with(uid, hints)?;
@@ -566,6 +618,27 @@ impl Editor {
                 let at_key = key_at(&keys, tick);
                 let key = at_key.map(|i| keys[i].clone());
                 let inside = tick < end;
+                let clip = |object: &Value| object.get("_stykMovieclip").is_some_and(Value::truthy);
+                // Inserting movieclips alone changes which figures a cell shows, not the motion
+                // of those around them: each is a replacement until the next key.
+                if let Some((objects, _)) = payload.filter(|(objects, _)| inside && !objects.is_empty() && objects.iter().all(|o| clip(o) && !o.get("join").is_some_and(Value::truthy))) {
+                    let until = keys.iter().find(|k| num(k, "tick").is_some_and(|t| t > tick)).and_then(|k| num(k, "tick")).unwrap_or(end);
+                    for object in objects {
+                        let Some(inserted) = uid(object) else { continue };
+                        if self.owner_with(inserted, hints)? == *id {
+                            self.replace_at(&mut plan, id, tick, inserted, &create_frame(std::slice::from_ref(object)), Some(("replacementUid", Value::Num(inserted as f64))), until)?;
+                        }
+                    }
+                    continue;
+                }
+                let mut clip_paste = false;
+                if let Some((objects, true)) = payload {
+                    for object in objects.iter().filter(|o| clip(o)) {
+                        if let Some(inserted) = uid(object) {
+                            clip_paste |= self.owner_with(inserted, hints)? == *id;
+                        }
+                    }
+                }
                 // A boundary of a broken-apart movieclip frame: the pose after it is fixed first.
                 if key.as_ref().is_some_and(|k| k.get("patchOnly").is_some_and(Value::truthy))
                     && let Some(next) = at_key.and_then(|i| keys.get(i + 1)).cloned()
@@ -576,7 +649,7 @@ impl Editor {
                 }
                 let hold = key.as_ref().is_some_and(|k| matches!(k.get("interpolation").and_then(Value::as_str), Some("constant" | "hold")));
                 let at = match &key {
-                    Some(key) if !self.auto_key && inside && hold => num(key, "tick").unwrap_or(tick),
+                    Some(key) if !self.auto_key && !clip_paste && inside && hold => num(key, "tick").unwrap_or(tick),
                     _ => tick,
                 };
                 let held = constant();
@@ -584,6 +657,82 @@ impl Editor {
             }
         }
         self.publish(plan, label, selection, None)
+    }
+
+    /// `replaceAt(editor, plan, id, tick, uid, frame, options, end)`: from `tick` until `end`,
+    /// layer `id` shows `frame` in place of figure `uid` (a movieclip frame replacement on the
+    /// key there, a replacement-only key made where there is none), the replacements in force
+    /// before restored at `end`.
+    pub(crate) fn replace_at(&self, plan: &mut Plan, id: &str, tick: f64, replaced: u32, frame: &Value, extra: Option<(&str, Value)>, end: f64) -> Result<(), EditError> {
+        if tick.fract() != 0.0 || !(0.0..MAX_SHEET_TICKS).contains(&tick) {
+            return Err(EditError::Invalid("errors.editorLayerSheet.chooseAValidWholeFrame".into()));
+        }
+        if tick >= plan.end(id) {
+            return Ok(());
+        }
+        // The key at `time`, made (replacement only) when there is none.
+        let boundary = |editor: &Editor, plan: &mut Plan, time: f64| -> Result<usize, EditError> {
+            let mut keys = plan.keys(id);
+            if let Some(at) = keys.iter().position(|k| num(k, "tick") == Some(time)) {
+                return Ok(at);
+            }
+            let empty = !objects_of(&editor.evaluated(time, false)?).iter().filter_map(uid).any(|u| editor.layer_of(u) == id);
+            let mut key = Obj::new();
+            key.set("id", Value::str(&plan.cell()));
+            key.set("tick", Value::Num(time));
+            key.set("interpolation", Value::str("constant"));
+            key.set("patchOnly", Value::Bool(true));
+            let mut value = Obj::new();
+            value.set("frameId", Value::Null);
+            key.set("value", Value::object(value));
+            key.set("empty", Value::Bool(empty));
+            keys.push(Value::object(key));
+            keys.sort_by(|a, b| num(a, "tick").unwrap_or(0.0).total_cmp(&num(b, "tick").unwrap_or(0.0)));
+            let at = keys.iter().position(|k| num(k, "tick") == Some(time)).unwrap();
+            plan.set_keys(id, keys);
+            Ok(at)
+        };
+        let keys = plan.keys(id);
+        let previous = key_at(&keys, tick).map(|i| items(keys[i].get("movieclipPatches"))).unwrap_or_default();
+        if end < plan.end(id) && !keys.iter().any(|k| num(k, "tick") == Some(end)) {
+            let at = boundary(self, plan, end)?;
+            if !previous.is_empty() {
+                let mut keys = plan.keys(id);
+                if let Some(key) = keys[at].make_obj() {
+                    key.set("movieclipPatches", Value::array(previous.clone()));
+                }
+                plan.set_keys(id, keys);
+            }
+        }
+        let frame_id = plan.capture(frame, id).get("frameId").cloned().unwrap_or(Value::Null);
+        let at = boundary(self, plan, tick)?;
+        let mut patches: Vec<Value> = previous.into_iter().filter(|p| num(p, "uid") != Some(replaced as f64)).collect();
+        let mut patch = Obj::new();
+        patch.set("uid", Value::Num(replaced as f64));
+        patch.set("frameId", frame_id);
+        if let Some((key, value)) = extra {
+            patch.set(key, value);
+        }
+        patches.push(Value::object(patch));
+        // Whether the layer shows anything there once the replacements are in force.
+        let mut members: Vec<u32> = objects_of(&self.evaluated(tick, false)?).iter().filter_map(uid).filter(|u| self.layer_of(*u) == id).collect();
+        for patch in &patches {
+            let removed = num(patch, "uid").map(|u| u as u32);
+            members.retain(|u| Some(*u) != removed);
+            let source = patch.get("frameId").and_then(Value::as_str).and_then(|frame| plan.captured(frame).cloned().or_else(|| self.frame_by_id(frame)));
+            for added in source.map(|s| objects_of(&s)).unwrap_or_default().iter().filter_map(uid) {
+                if !members.contains(&added) {
+                    members.push(added);
+                }
+            }
+        }
+        let mut keys = plan.keys(id);
+        if let Some(key) = keys[at].make_obj() {
+            key.set("movieclipPatches", Value::array(patches));
+            key.set("empty", Value::Bool(members.is_empty()));
+        }
+        plan.set_keys(id, keys);
+        Ok(())
     }
 
     /// `getFrameById(report, id)`: a retained pose source, else the keyframe with that id.

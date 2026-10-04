@@ -113,7 +113,7 @@ Engine logic: ported to Rust.
 | `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames and the other commands still JS |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: applyFigureRange on a layer sheet (_commitSheetRange) and on a native timeline (the figure-range history entry), the *InFrames commands except paste and align, insertionPlan for adding, insert (styk-edit/src/range.rs, sheet.rs); pasting across frames, movieclips and figures with effect clips still JS |
+| `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: applyFigureRange on a layer sheet (_commitSheetRange) and on a native timeline (the figure-range history entry), the *InFrames commands except paste and align, insertionPlan for adding and pasting at the playhead (movieclip instances included), insert, replaceAt for movieclips (styk-edit/src/range.rs, sheet.rs, figure_clipboard.rs); pasting across frames, movieclips on a native timeline and figures with effect clips still JS |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS |
 | `src/editor-rig.mjs` | `styk-edit` | js | commands and history |
