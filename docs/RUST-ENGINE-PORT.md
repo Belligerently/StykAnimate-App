@@ -58,7 +58,17 @@ signature or field changed, no class gate opened and no JavaScript deleted.
 The complete generator adds 54 evaluated-record files for these scenarios: 179 groups /
 2,225 ticks match Rust and all 373 record JSON regenerate byte-stable. The first full run
 exposed their omission from `e5bb439f`; every other stage passed. The fixture-only
-correction is committed before repeating the complete suite.
+correction is committed at `94a2fcfb`; the complete suite passes on that snapshot.
+
+Compact session responses are verified with 367 Rust tests, 18 JavaScript adoption tests,
+full fixture/regeneration/246 command/441 container parity and `npm run check` (1,982 files).
+Owned calls request `changesOnly`; shadow and existing native callers keep full responses.
+The origin app run adopts 62 calls and compares 65 exactly, preserving the 730,987-byte
+document, 79 history entries, selection and full undo. Engine wasm is 8,724 KiB. The
+startup retry passes: 165 adopted + 295 exact, identical 290,105-byte document, 80 history
+entries, selection and full undo. The preceding browser crash produced no comparison
+result; the successful retry used root-disk temporary files. No class flip or performance
+claim. The public Rust call signature is unchanged; the JSON response protocol adds compact fields.
 
 ### Where the port stands
 
@@ -104,8 +114,9 @@ without owning.
    rig/pose-choice/spatial combinations. Every admitted command needs its own
    recorded replay and app comparison; class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
-3. **Flip the next classes (D15).** Owners: `styk-edit/src/session.rs` (smaller answers:
-   only the changed figures and tracks), `src/engine/engine-edit-shadow.mjs` (adoption).
+3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
+   in `styk-edit/src/session.rs` and `src/engine/engine-edit-shadow.mjs`; next measure each
+   document class after the remaining command and readiness prerequisites.
    Measure with `node scripts/engine-edit-shadow.mjs --own --warm --exact-math` per class
    (`--file`), flip a class only when its calls cost no more than the editor's and the owned
    run is "the same as the editor alone". Trap: this machine is shared and loaded; compare
@@ -149,18 +160,30 @@ without owning.
 | Branch / worktree | State |
 | --- | --- |
 | `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
-| `engine-origin-records` in `/tmp/styk-engine-origin-records-20261004` | Records/gesture/topology, pose/handle and saved transform-channel slices integrated; range/join recordings and narrow native frame publication active. |
-| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption, effects, worker layer planning and sheet kernel reviewed; malformed-input correction, history budgets and asynchronous publication ownership active. |
-| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native command, joined crop oracle fix and presence-break snapshots reviewed; active-layer capture/history followup active. |
-| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Follow-camera, exact log, readiness, measured bounds, joined motion-path/3D IK and branch thickness reviewed; native builder tokens frozen, sprite/new-figure ownership active. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness and WebGL resolve snapshots reviewed; cel backend proof and typed draft/mirror ownership active. No early gate flips. |
-| `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: reviewed compact answers and camera 00–10/capacity fix combined while main was frozen; 40 focused JavaScript tests pass. Rust integration verification active; no copied tree is treated as a milestone. |
+| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Earlier record/pose/channel slices integrated; range/join and constrained rig-pose snapshots reviewed. Shared strict rig validation and optional selection metadata active; the isolated worktree was moved with all 7,980 entries/hash/link/status checks preserved to avoid tmpfs quota. |
+| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption integrated; effects, worker layer planning, corrected sheet kernel and history budgets reviewed. Warm-history readiness and asynchronous publication ownership active. |
+| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands active. |
+| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure snapshots reviewed. Handle/pick queries reviewed; body/snapping and geometry cache byte bounds active. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting frozen for review, canonical worker receiver/typed draft active. No early gate flips. |
+| `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: reviewed compact answers and camera 00–11 combined, with 40 focused JavaScript tests and Rust integration suites passing. A separately isolated crisp owner prototype passes 16 CPU/GPU cases; original-renderer comparison remains pending. No copied tree is treated as a milestone. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
 Other historical stale worktree registrations were reported at takeover and preserved.
 
 ### Standing rules
+
+**Verification policy (user correction, 2026-10-04):** per reviewed patch or milestone,
+run focused crate tests (whole workspace only for a shared-type change), affected command
+replays and their fixture regeneration, `npm run check` and touched JavaScript tests.
+Run affected app parity/shadow only for app-visible behavior or adoption. Commit when
+these pass; safely batch two or three independent patches before focused verification.
+Full `engine:parity` runs on a committed HEAD in the background at most about once every
+two hours; continue merging without waiting. It is required before a document-class
+gate, engine-1 and each deletion step. A failing checkpoint is bisected across commits
+since the last green run and fixed forward; never rewrite history. Checkpoints need an
+immutable source snapshot so concurrent merges cannot change their tested bytes. Keep
+its target cache and flags stable.
 
 - The user explicitly superseded the original two-subagent cap during takeover: use all
   available slots for independent, bounded work (currently five child lanes plus root).
@@ -688,7 +711,20 @@ flip or loaded-machine performance claim. Public crate API unchanged; no mobile 
 is needed for signatures. The first full run passed Rust suites, all command generators
 and 441 containers, but found 54 omitted derived record JSON. The fixture-only correction
 adds them: 179 record groups / 2,225 ticks match Rust with zero unported ticks; all 373
-record JSON regenerate byte-stable. The complete suite is repeated after committing them.
+record JSON regenerate byte-stable. The complete suite passed on `94a2fcfb`: all fixture
+generators, 246 recordings and 441 containers.
+
+**Compact owned responses** (2026-10-04): 18 families / 483 native calls reconstruct full
+answers from compact COW draft, retained-frame and sheet deltas; 18 JavaScript adoption
+tests preserve untouched references, runtime movieclip samples, ordering/removal and
+frame metadata, including a 1,320-segment fixture. Root: 367 Rust tests, full parity, wasm
+build and JavaScript checks pass. Actual origin app: 62 adopted + 65 exact comparisons,
+zero rounding/differences/page errors; identical 730,987-byte document, 79 history entries,
+selection and full undo. Startup retry passes with 165 adopted + 295 exact, identical
+290,105-byte document, 80 history entries, selection and full undo; the prior crash has
+no comparison result. No class flip or performance claim. Engine wasm 8,724 KiB (SHA-256 `47253e0cbc70…`), unstripped. Additive
+`changesOnly` JSON fields leave public Rust call signatures and full shadow responses
+unchanged; mobile consumers can keep the default protocol.
 
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
 the JavaScript renderer being its Canvas 2D fallback, WebGL2 for the engine), 29 documents
@@ -879,7 +915,9 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 12:03 | S5 animation-origin records, whole figures and topology | `styk_eval::records` shares typed origin arithmetic at exact/fractional keys and scalar previews while preserving raw keys, unknown fields and COW nodes. `styk-edit::origin` synchronizes pivots/offsets/ghosts through gestures; `origin_topology` reroots and repairs/compacts support and joined poses through recorded construction edits. The typed compiler validates raw support before a live gesture can commit. `setOrigin` enters the shadow topology facade; no adoption/class flip. No public crate signatures or fields changed; stricter malformed-support refusal is portable. Engine wasm 8,705 KiB, +114 KiB from cel milestone. | 353 Rust tests and check pass; npm test retains 4,378 pass/6 known failures/26 skip/1 todo. Fifteen origin record groups (466 ticks/4,112 values), 21 new recordings (1,285 steps), four source mutants caught; 68 malformed descriptors/136 atomic refusals. All 222 recordings and 1,000 existing fixture hashes stable. App shadow 47 exact incl. Set Origin/history; prior forced prerequisite 6 adopted+32 exact, full undo identical. Electron/web pictures 6/6 each. Full repository parity passed on the committed snapshot: all fixture generators, 222 recordings and 441 containers; remaining origin families stay gated. |
 
 | 2026-10-04 12:54 | S5 origin joints, handles and saved transform channels | Shared typed origin synchronization preserves retained ghosts through posing and both handle gesture owners. Saved x/y/scale/rotation channel edits compare stored and shown poses; admission inspects actual future key targets and attachment ancestors before changing live state. The app driver requires requested calls and exact numeric equality. Public crate API unchanged; engine wasm 8,713 KiB (+8 KiB). No class flip or deletion. | 365 Rust tests, build and check pass; 24 new recordings/2,770 exact steps, all 246 replays and 1,097 fixture hashes stable; six actual source mutants caught. Atomic refusals cover 99 complex poses, 40 invalid previews and 14 future/malformed target cases. App shadow 142 exact; forced ownership 67 adopted+75 exact, identical document/79 history entries/selection/full undo. Edited pictures web 12/12 and Electron 12/12. Full repository parity follows on the committed snapshot. |
-| 2026-10-04 13:25 | S5 complete the origin pose/channel fixture set | Include the 54 evaluated-record JSON generated from the previous milestone’s new scenarios. The first full parity run exposed their omission from `e5bb439f`; production source, crate API and eligibility are unchanged. Root preparation is isolated in `engine-root-integration`. | The exact Rust record suite passes all 179 groups / 2,225 ticks with zero unported ticks; all 373 record JSON regenerate byte-stable. The preceding full run passed Rust suites, command regeneration and 441 containers; its only failure was the missing files. Complete parity repeats on this committed fixture set. |
+| 2026-10-04 13:22 | S5 complete the origin pose/channel fixture set | Include the 54 evaluated-record JSON generated from the previous milestone’s new scenarios. The first full parity run exposed their omission from `e5bb439f`; production source, crate API and eligibility are unchanged. Root preparation is isolated in `engine-root-integration`. | The exact Rust record suite passes all 179 groups / 2,225 ticks with zero unported ticks; all 373 record JSON regenerate byte-stable. The preceding full run passed Rust suites, command regeneration and 441 containers; its only failure was the missing files. Complete parity passed on this committed fixture set: all generators, 246 command recordings and 441 containers. |
+| 2026-10-04 14:01 | S5 compact owned session responses | Session view `changesOnly` returns changed COW draft/retained figures, sheet fields, explicit order/removal and retained metadata; adopted result views are not duplicated. Full shadow/native responses remain default. Public Rust signatures unchanged; additive JSON protocol, portable/mobile pin note. User focused-merge/checkpoint verification policy recorded in handoff. | 18 recorded families / 483 native reconstruction calls and 18 JavaScript adoption tests pass. Root 367 Rust tests, wasm build (8,724 KiB), check (1,982 files) and full parity/246 recordings/441 containers pass. Origin app 62 adopted + 65 exact, 730,987-byte document/79 entries/full undo identical; startup retry 165 adopted + 295 exact, 290,105-byte document/80 entries/full undo identical, no rounding/differences/page errors. Earlier startup browser crash has no result; no class flip or performance claim. |
 
 Work is active in the isolated lanes listed in the handoff. Frozen uncommitted snapshots
 are review inputs, not completed milestones or class ownership evidence.
+

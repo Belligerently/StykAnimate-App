@@ -44,7 +44,9 @@ impl EditSession {
 
     /// Runs one editor call: its JavaScript name, its arguments as a JSON array and
     /// the editor's view before it (JSON). Answers with JSON: status, result, state,
-    /// events, the gesture's draft and what a command published.
+    /// events, the gesture's draft and what a command published. With `changesOnly: true`
+    /// in the view, unchanged COW figures and sheet fields are omitted (the app's owned
+    /// adoption path); default responses stay complete for shadow comparison.
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         self.session.call(method, args, view)
     }

@@ -361,6 +361,18 @@ adopts what they produced and does not compute it:
   draft or, for a gesture the call began and ended itself, of the frame it showed;
 - the selection, the next figure identity, the live-edit events and a seek the call made.
 
+Owned calls request `changesOnly: true` in the existing session view. The response
+contains only changed COW draft/retained figures and sheet fields, with explicit order,
+removal and retained-frame metadata when needed. The facade reconstructs the publication
+from its current records, preserving untouched identities and runtime movieclip samples.
+Full responses remain the default for shadow comparison and native session consumers;
+public Rust signatures are unchanged. Eighteen recorded families / 483 native calls and
+18 JavaScript adoption tests compare the compact and full paths. The actual origin app
+run adopts 62 calls and compares 65 exactly, with document/history/selection/full undo
+identical. The startup app retry adopts 165 and compares 295 exactly, preserving its
+290,105-byte document, 80 history entries, selection and full undo. This protocol change
+does not open another document class.
+
 Selecting, seeking, starting and cancelling a gesture, and undo and redo run in both and are
 compared as in shadow mode (history stays the editor's). A motion-path gesture's begin, pointer
 moves, falloff changes and cancel run in both too, since the app draws the live trail from the

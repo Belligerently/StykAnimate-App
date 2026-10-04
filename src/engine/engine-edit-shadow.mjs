@@ -379,7 +379,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       // Back at its start, a handle gesture restores what it moved (restoring the unmoved changes nothing).
       for (const state of drag.handleEdit?.states ?? []) state.moved = true;
       for (const figure of answer.draft) {
-        const slot = objects.findIndex(object => object.unique_id === figure.unique_id); if (slot < 0) continue;
+        const slot = objects[figure.object_slot]?.unique_id === figure.unique_id ? figure.object_slot : objects.findIndex(object => object.unique_id === figure.unique_id); if (slot < 0) continue;
         if (objects[slot]._movieclipSample !== undefined) figure._movieclipSample = objects[slot]._movieclipSample;
         objects[slot] = figure; edit.owned.add(slot);
       }
@@ -411,15 +411,38 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         let preview = null;
         const drafted = edit && drag ? edit.frame : shown;
         if (answer.retained && drafted) {
-          const samples = new Map(drafted.objects.map(object => [object.unique_id, object._movieclipSample]));
-          for (const object of answer.retained) if (samples.get(object.unique_id) !== undefined) object._movieclipSample = samples.get(object.unique_id);
-          // Geometry rebuilds: the commit may have moved joined figures' roots.
-          preview = {frame: {...drafted, objects: answer.retained}, geometry: null, incremental: null};
+          const byUid = new Map(drafted.objects.map(object => [object.unique_id, object]));
+          for (const object of answer.retained) if (byUid.get(object.unique_id)?._movieclipSample !== undefined) object._movieclipSample = byUid.get(object.unique_id)._movieclipSample;
+          let objects = answer.retained;
+          if (answer.retainedChanges) {
+            for (const object of answer.retained) byUid.set(object.unique_id, object);
+            objects = (answer.retainedOrder ?? drafted.objects.map(object => object.unique_id)).map(uid => byUid.get(uid));
+          }
+          // Geometry rebuilds: the commit may have moved joined figures' roots. Figures the
+          // call did not replace keep their identity and runtime movieclip sample.
+          let frame = {...drafted, ...answer.retainedFields, objects};
+          for (const key of answer.retainedRemoved ?? []) delete frame[key];
+          if (answer.retainedFieldOrder) {
+            const fields = new Set(answer.retainedFieldOrder);
+            // Engine records omit the JavaScript frame's runtime effect/camera clocks.
+            // Reorder its saved fields while keeping that runtime state on the preview.
+            frame = {...Object.fromEntries(answer.retainedFieldOrder.map(key => [key, frame[key]])),
+              ...Object.fromEntries(Object.entries(frame).filter(([key]) => !fields.has(key)))};
+          }
+          preview = {frame, geometry: null, incremental: null};
         }
         if (!answer.drag) { editor._drag = null; editor._authoredPoseEdit = null; }
         editor._authoredCommitPreview = preview;
         try {
-          adoptLayerSheet(editor, {sheet: answer.sheet, trackOrder: answer.trackOrder, layers: answer.layers, sources: answer.sources, nextFrame: state.nextFrameIdentity, definitions: answer.definitions},
+          const beforeSheet = editor.report._styk.layerSheet;
+          let sheet = answer.sheet;
+          if (answer.changesOnly) {
+            sheet = {...beforeSheet, ...sheet};
+            for (const key of answer.sheetRemoved ?? []) delete sheet[key];
+            if (answer.sheetOrder) sheet = Object.fromEntries(answer.sheetOrder.map(key => [key, sheet[key]]));
+          }
+          adoptLayerSheet(editor, {sheet, trackOrder: answer.trackOrder ?? Object.keys(beforeSheet.tracks),
+            layers: Object.hasOwn(answer, 'layers') ? answer.layers : editor.report._styk.layers, sources: answer.sources, nextFrame: state.nextFrameIdentity, definitions: answer.definitions},
             detail.label, {selection: drag?.beforeSelection ?? selection, retainGeometry: Boolean(preview)});
         } finally { editor._authoredCommitPreview = null; }
       } else if (kind === 'seek') originals.get('seek').call(editor, tick);
@@ -468,7 +491,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (given.some(value => value === undefined || typeof value === 'function' || value instanceof Set || name === 'undo' || name === 'redo')) payload = name === 'undo' || name === 'redo' ? '[]' : null;
         else try { payload = JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
-        else before = JSON.stringify(view());
+        else before = JSON.stringify({...view(), ...(own && OWNED.has(name) ? {changesOnly: true} : {})});
       }
       if (!live) report.skipped++;
       // The engine runs the call in the editor's place.
