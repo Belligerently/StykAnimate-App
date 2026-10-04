@@ -265,3 +265,42 @@ fn materials_are_the_editors_bytes() {
     }
     assert!(wrong.is_empty(), "differ from the editor: {wrong:?}");
 }
+
+/// `generatorBatchBounds`: every live particle's centre and every beam's ends, placed by
+/// their draw's transform, lie inside the batch's bounds (each grown by its reach); a batch
+/// with nothing alive has none.
+#[test]
+fn batch_bounds_hold_every_live_particle() {
+    let (mut checked, mut empty) = (0, 0);
+    for name in fixtures() {
+        let prepared = prepared(&name);
+        let reference = json(&folder().join(format!("{name}.batches.json")));
+        for frame in reference.get("frames").and_then(Value::elements).expect("frames").into_iter() {
+            let tick = frame.get("tick").and_then(Value::as_f64).unwrap();
+            let Some(batch) = batch_at(&prepared, tick, Some(&Evaluate)) else { continue };
+            let bounds = batch.bounds();
+            let mut alive = false;
+            for draw in &batch.draws {
+                let [a, b, c, d, e, f] = batch.matrix(draw);
+                let points: Vec<[f64; 2]> = if draw.shape == generated::layers::BEAM || draw.shape == generated::layers::ARC {
+                    let r = batch.record(draw);
+                    vec![[r[36] as f64, r[37] as f64], particle::beam_tip(r, particle::stepped_time(r))]
+                } else {
+                    (0..draw.count).filter_map(|i| particle::evaluate(&batch, draw, i)).map(|p| [p.x, p.y]).collect()
+                };
+                for [x, y] in points {
+                    alive = true;
+                    let (px, py) = (a * x + c * y + e, b * x + d * y + f);
+                    let [x0, y0, w, h] = bounds.unwrap_or_else(|| panic!("{name} tick {tick}: live particles but no bounds"));
+                    assert!(px >= x0 - 1e-6 && py >= y0 - 1e-6 && px <= x0 + w + 1e-6 && py <= y0 + h + 1e-6, "{name} tick {tick}: ({px}, {py}) outside {bounds:?}");
+                    checked += 1;
+                }
+            }
+            if !alive {
+                assert!(bounds.is_none(), "{name} tick {tick}: bounds without anything alive");
+                empty += 1;
+            }
+        }
+    }
+    assert!(checked > 1000, "only {checked} particles checked ({empty} empty batches)");
+}

@@ -51,6 +51,15 @@ impl Renderer {
         self.rebind_sprites();
     }
 
+    /// Samples `other`'s sprite atlas: the same texture, not a copy. A second renderer on
+    /// the same device draws another view of the same document with the pictures `other`
+    /// uploads (the stage's camera monitor). Call it again after `other` prepares a new atlas.
+    pub fn share_sprites(&mut self, other: &Renderer) {
+        self.sprites = other.sprites.clone();
+        self.sprite_view = other.sprite_view.clone();
+        self.rebind_sprites();
+    }
+
     /// Uploads decoded images into the atlas prepared by [`prepare_sprites`].
     pub fn upload_images<'a>(&mut self, assets: &Assets, images: impl IntoIterator<Item = &'a DecodedImage>) {
         if assets.pages == 0 {

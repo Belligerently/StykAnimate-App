@@ -82,6 +82,58 @@ impl Batch {
         self.draws.iter().filter(|d| d.material >= 0).map(|d| d.material as u32)
     }
 
+    /// `generatorBatchBounds`: the stage rectangle the batch's live particles and beams
+    /// cover (x, y, width, height), each grown by its reach (`particleExtent`, a beam's
+    /// width and glow), or `None` when nothing is alive.
+    pub fn bounds(&self) -> Option<[f64; 4]> {
+        use super::particle::{beam_tip, evaluate, stepped_time};
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for draw in &self.draws {
+            let r = self.record(draw);
+            let v = |i: usize| r[i] as f64;
+            let (mut lx0, mut ly0, mut lx1, mut ly1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+            let mut grow = |x: f64, y: f64, reach: f64| {
+                lx0 = lx0.min(x - reach);
+                ly0 = ly0.min(y - reach);
+                lx1 = lx1.max(x + reach);
+                ly1 = ly1.max(y + reach);
+            };
+            if draw.shape == BEAM || draw.shape == ARC {
+                let tip = beam_tip(r, stepped_time(r));
+                let pad = (v(56) + v(122)) * 4.0 + v(63) + 16.0;
+                grow(v(36), v(37), pad);
+                grow(tip[0], tip[1], pad);
+            } else {
+                for i in 0..draw.count {
+                    if let Some(p) = evaluate(self, draw, i) {
+                        let speed = styk_math::hypot(p.vx, p.vy);
+                        // `particleExtent`.
+                        let reach = match draw.shape {
+                            RING => p.size * (1.0 + v(23) * 2.0),
+                            STREAK => p.size + speed * v(22),
+                            SPRITE => p.size.max(p.size * v(125) + 0.5 * speed * v(22)),
+                            SQUARE | CHUNK => p.size * 1.42,
+                            _ => p.size * v(125).max(1.0),
+                        };
+                        grow(p.x, p.y, reach);
+                    }
+                }
+            }
+            if lx0 > lx1 {
+                continue;
+            }
+            let [a, b, c, d, e, f] = self.matrix(draw);
+            for [x, y] in [[lx0, ly0], [lx1, ly0], [lx0, ly1], [lx1, ly1]] {
+                let (px, py) = (a * x + c * y + e, b * x + d * y + f);
+                x0 = x0.min(px);
+                y0 = y0.min(py);
+                x1 = x1.max(px);
+                y1 = y1.max(py);
+            }
+        }
+        (x0 <= x1).then(|| [x0, y0, x1 - x0, y1 - y0])
+    }
+
     /// `offsetGeneratorBatch`: draws beside `uid` move by `offset(uid)` (a live drag).
     pub fn offset(&mut self, offset: impl Fn(u32) -> Option<[f64; 2]>) {
         for draw in &self.draws {

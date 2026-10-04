@@ -160,3 +160,31 @@ fn layers_are_anchored_on_whole_units() {
     }
     assert!(seen > 0);
 }
+
+#[test]
+fn artwork_bounds_reach_as_far_as_the_effects_on_it() {
+    // Node stacks and movieclip containers' stacks pad the artwork's bounds (a library
+    // preview is fitted to them, `drawableVfxPadding`); without effects only the strokes do.
+    use styk_eval::drawlist::artwork_bounds;
+    use styk_eval::vfx::layers::{item_extent, rounded, EMPTY};
+    for name in ["segments", "movieclip"] {
+        let doc = styk_eval::open(&folder().join(format!("{name}.json"))).unwrap();
+        let prepared = styk_eval::prepare(doc);
+        let assets = Assets::build(&prepared.doc);
+        let scene = build(&prepared.doc, &prepared.evaluate(0.0));
+        let mut plain = EMPTY;
+        for it in &scene.items {
+            if let Some(e) = item_extent(&scene, &assets, it) {
+                e.include(&mut plain, 0.0);
+            }
+        }
+        let plain = rounded(plain);
+        let padded = artwork_bounds(&assets, &scene).expect("artwork");
+        assert!(contains(padded, plain), "{name}: {padded:?} holds {plain:?}");
+        assert!(padded[2] > plain[2] && padded[3] > plain[3], "{name}: the effects reach beyond the artwork ({padded:?} against {plain:?})");
+        let mut without = scene.clone();
+        without.vfx = None;
+        without.clip_vfx.iter_mut().for_each(|v| *v = None);
+        assert_eq!(artwork_bounds(&assets, &without), Some(plain), "{name}: without effects, the strokes alone");
+    }
+}

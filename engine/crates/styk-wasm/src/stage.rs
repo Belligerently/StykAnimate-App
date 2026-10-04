@@ -14,20 +14,37 @@ use crate::js_error;
 /// sprites fills its atlas over a few frames instead of stalling one.
 const IMAGE_UPLOAD_BYTES: usize = 8 << 20;
 
+/// What the stage drew last: the camera monitor shows the same frame (`views.rs`).
+#[derive(Clone, Default)]
+pub(crate) enum Shown {
+    #[default]
+    Nothing,
+    Edit { hidden: Vec<u32>, translations: Vec<(u32, [f64; 2])> },
+    Prepared(u32),
+}
+
 #[wasm_bindgen]
 pub struct Stage {
-    engine: Engine,
+    pub(crate) engine: Engine,
+    pub(crate) instance: wgpu::Instance,
+    /// The device presents through WebGPU (a second canvas can share it), not WebGL2.
+    pub(crate) is_webgpu: bool,
     surface: wgpu::Surface<'static>,
-    config: wgpu::SurfaceConfiguration,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    renderer: Renderer,
+    pub(crate) config: wgpu::SurfaceConfiguration,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) renderer: Renderer,
     backend: String,
     /// The document lineage and page count the sprite atlas is allocated for.
-    atlas_of: Option<(u64, u32)>,
-    edit: EditScene,
+    pub(crate) atlas_of: Option<(u64, u32)>,
+    pub(crate) edit: EditScene,
     /// Effects are drawn (the editor's effects preview is on).
-    effects: bool,
+    pub(crate) effects: bool,
+    /// Edit and ghost poses received, so a camera monitor list knows when it is stale.
+    pub(crate) edits: u64,
+    pub(crate) shown: Shown,
+    /// The camera monitor and frame thumbnails, drawn on this device (`views.rs`).
+    pub(crate) views: crate::views::Views,
 }
 
 #[wasm_bindgen]
@@ -75,7 +92,24 @@ impl Stage {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, &queue, format);
-        Ok(Stage { engine: engine.engine.clone(), surface, config, device, queue, renderer, backend: format!("{:?} · {}", info.backend, info.name), atlas_of: None, edit: EditScene::default(), effects: true })
+        let is_webgpu = info.backend == wgpu::Backend::BrowserWebGpu;
+        Ok(Stage {
+            engine: engine.engine.clone(),
+            instance,
+            is_webgpu,
+            surface,
+            config,
+            device,
+            queue,
+            renderer,
+            backend: format!("{:?} · {}", info.backend, info.name),
+            atlas_of: None,
+            edit: EditScene::default(),
+            effects: true,
+            edits: 0,
+            shown: Shown::Nothing,
+            views: Default::default(),
+        })
     }
 
     /// Turns effects on or off (the editor's effects preview).
@@ -108,13 +142,18 @@ impl Stage {
         let Some(generation) = self.engine.generation() else { return Ok(false) };
         let frame = if wait { self.engine.frame_now(tick) } else { self.engine.frame(tick) };
         let Some(frame) = frame else { return Ok(false) };
-        self.draw(&generation, &frame.list, if camera { frame.camera } else { None }, zoom, [pan_x, pan_y], clip_to_artboard)
+        let drawn = self.draw(&generation, &frame.list, if camera { frame.camera } else { None }, zoom, [pan_x, pan_y], clip_to_artboard)?;
+        if drawn {
+            self.shown = Shown::Prepared(tick);
+        }
+        Ok(drawn)
     }
 
     /// Replaces the frame the editor is showing: keyframe-shaped JSON whose `objects`
     /// are poses, or `null` for an object unchanged since the last call.
     pub fn edit_frame(&mut self, json: &str) -> Result<(), JsError> {
         let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        self.edits += 1;
         self.edit.update(&generation, json.as_bytes()).map_err(js_error)
     }
 
@@ -122,6 +161,7 @@ impl Stage {
     /// form as [`Stage::edit_frame`].
     pub fn edit_ghost(&mut self, id: u32, json: &str) -> Result<(), JsError> {
         let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        self.edits += 1;
         self.edit.update_ghost(&generation, id, json.as_bytes()).map_err(js_error)
     }
 
@@ -175,10 +215,16 @@ impl Stage {
         let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
         let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
         let scene_camera = if camera { self.edit.camera() } else { None };
-        self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)
+        let drawn = self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)?;
+        if drawn {
+            self.shown = Shown::Edit { hidden: hidden.to_vec(), translations };
+        }
+        Ok(drawn)
     }
 
-    fn draw(&mut self, generation: &Arc<Generation>, list: &Arc<styk_eval::drawlist::DrawList>, camera: Option<styk_eval::doc::Camera>, zoom: f64, pan: [f64; 2], clip_to_artboard: bool) -> Result<bool, JsError> {
+    /// Lays the sprite atlas out for `generation` and uploads a slice of the pictures decoded
+    /// since (the camera monitor and thumbnails sample the same atlas).
+    pub(crate) fn sync_images(&mut self, generation: &Generation) {
         let layout = (generation.lineage, generation.assets.pages);
         if self.atlas_of != Some(layout) {
             // Another project, or more atlas pages than before: the texture is allocated
@@ -193,6 +239,10 @@ impl Stage {
         if !images.is_empty() {
             self.renderer.upload_images(&generation.assets, images.iter().map(|image| &**image));
         }
+    }
+
+    fn draw(&mut self, generation: &Arc<Generation>, list: &Arc<styk_eval::drawlist::DrawList>, camera: Option<styk_eval::doc::Camera>, zoom: f64, pan: [f64; 2], clip_to_artboard: bool) -> Result<bool, JsError> {
+        self.sync_images(generation);
         let doc = &generation.prepared.doc;
         let m = styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan);
         // The artboard is the scene rectangle under the workspace view alone: the camera moves the scene inside it.

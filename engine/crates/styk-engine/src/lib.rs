@@ -12,6 +12,8 @@
 //! - [`Engine::frame`] returns a prepared frame if one is ready.
 //!
 //! - [`Engine::export_frames`] pins a revision for an export ([`export`]).
+//! - [`thumbnails`] draws small pictures of frames and library files on the CPU, on
+//!   the thread that asks.
 //!
 //! Nothing here blocks the calling thread except [`Engine::work`]. The browser's
 //! interface thread may not wait on a lock, so every shared structure is taken
@@ -24,6 +26,7 @@ mod frames;
 mod images;
 pub mod mirror;
 mod sync;
+pub mod thumbnails;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
