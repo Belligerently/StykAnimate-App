@@ -314,6 +314,63 @@ async function run(mode) {
       e.undo(); e.undo();
     }));
     if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
+    // Motion paths: trail points dragged at another tick than the playhead (the figure's origin,
+    // a joint, the end of a limb with IK), a falloff reshaping the keys nearby and its influence
+    // changed mid-gesture, a cancelled gesture, history.
+    await step('drag motion-path points and reshape an arc', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid, figure = e.figure;
+      if (uid === null || !figure || !e.report._styk?.layerSheet || e.totalTicks < 2) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      const last = Math.max(0, Math.ceil(e.totalTicks) - 1), other = e.tick >= 1 ? 0 : Math.min(2, last);
+      const root = e.geometry.objects.get(e.selectedSlot)?.root ?? {x: 400, y: 300};
+      const node = (handleId, joint) => ({kind: 'node', uid, handleId, joint});
+      const trail = (target, tick, points, options) => attempt(() => {
+        if (!e.beginMotionPathEdit(target, tick, options)) return;
+        for (const [x, y, more] of points) e.updateMotionPathEdit({x, y}, more);
+        e.commitMotionPathEdit();
+      });
+      trail(node(0, -1), other, [[root.x + 14, root.y - 6], [root.x + 20, root.y - 2]]);
+      const joint = figure.segments.findIndex((s, i) => i > 0 && !s.is_static && !(s.aux_code & 1) && !e.object?._stykIK?.[s.segment_id]?.enabled);
+      if (joint > 0) {
+        const id = figure.segments[joint].segment_id;
+        trail(node(id, joint), other, [[root.x + 60, root.y + 40]]);
+        trail(node(id, joint), last, [[root.x + 50, root.y + 50], [root.x + 55, root.y + 45, {stretch: true}]], {falloff: {radius: 3, shape: 'smooth'}});
+      }
+      const ik = figure.segments.findIndex(s => e.object?._stykIK?.[s.segment_id]?.enabled);
+      if (ik >= 0) trail(node(figure.segments[ik].segment_id, ik), other, [[root.x - 40, root.y + 70]], {falloff: {radius: 2, shape: 'linear'}});
+      attempt(() => {
+        if (!e.beginMotionPathEdit(node(0, -1), last)) return;
+        e.updateMotionPathEdit({x: root.x + 8, y: root.y + 8}); e.setMotionPathFalloff({radius: 4, shape: 'sharp'}); e.setMotionPathFalloff({radius: 6, shape: 'flat'});
+        e.updateMotionPathEdit({x: root.x + 10, y: root.y + 4}); e.commitMotionPathEdit();
+      });
+      attempt(() => { if (e.beginMotionPathEdit(node(0, -1), other, {falloff: {radius: 2}})) { e.updateMotionPathEdit({x: root.x - 30, y: root.y}); e.cancelMotionPathEdit(); } });
+      // A gesture that ends as it began changes nothing.
+      attempt(() => { if (e.beginMotionPathEdit(node(0, -1), other)) e.commitMotionPathEdit(); });
+      e.undo(); e.undo(); e.redo();
+    }));
+    // The same with the paths shown, as people do it: a trail point dragged with the pointer,
+    // then reshaped with the right button (the saved falloff).
+    await step('drag a motion-path point with the pointer, and reshape with the right button', async () => {
+      const point = await page.evaluate(async () => {
+        const {editor: e, state, actions} = styk, uid = e.selectedUid;
+        if (uid === null || !e.report._styk?.layerSheet || e.totalTicks < 2) return null;
+        e.select(uid, -1);
+        if (!state.motionPaths) actions['toggle-motion-paths']();
+        for (let i = 0; i < 8; i++) await new Promise(resolve => requestAnimationFrame(resolve));
+        const {samplePathPoint} = await import('/src/motion-path.mjs');
+        const {worldToScreen} = await import('/src/renderer.mjs');
+        const tick = e.tick >= 1 ? 0 : Math.min(2, Math.ceil(e.totalTicks) - 1);
+        const world = samplePathPoint(e.report, {kind: 'node', uid, handleId: 0, joint: -1}, tick);
+        if (!world || !Number.isFinite(world.x)) return null;
+        const rect = (document.querySelector('#overlay') ?? document.querySelector('#viewport')).getBoundingClientRect();
+        const at = worldToScreen(world, {report: e.report, frame: e.evaluatedFrame, view: state.view, cameraEnabled: false});
+        return {x: rect.left + at.x, y: rect.top + at.y};
+      });
+      if (!point) return;
+      await drag(point, 30, 20);
+      await drag(point, -20, 25, 'right');
+      await page.evaluate(() => { const {state, actions, editor} = styk; if (state.motionPaths) actions['toggle-motion-paths'](); editor.undo(); });
+    });
     // A hand or foot with an IK controller, when the figure has one: its target is dragged.
     const target = (await handles()).find(handle => handle.ik);
     if (target) await step('drag an IK target', async () => { await settled(); const now = await handles(); await drag(now.find(h => h.joint === target.joint) ?? target, -30, 20); });

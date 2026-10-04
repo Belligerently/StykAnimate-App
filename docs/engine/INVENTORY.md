@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 88 | 1228 KiB | 62 | 23 | 3 | 0 | 0 | 1 % | 47 % | 0 % |
+| `styk-edit` | 89 | 1231 KiB | 61 | 24 | 4 | 0 | 0 | 2 % | 51 % | 0 % |
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
-| `styk-eval` | 82 | 760 KiB | 36 | 37 | 9 | 0 | 0 | 16 % | 58 % | 0 % |
+| `styk-eval` | 81 | 757 KiB | 35 | 37 | 9 | 0 | 0 | 16 % | 59 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4044 KiB | 203 | 96 | 34 | 22 | 1 | 20 % | 40 % | 0 % |
+| **Total** | 356 | 4044 KiB | 201 | 97 | 35 | 22 | 1 | 20 % | 41 % | 0 % |
 
 ## Engine modules
 
@@ -110,7 +110,7 @@ Engine logic: ported to Rust.
 | `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard and frames dragged between rows, clips on the presence clock included (sheetCopyFrames, sheetPasteFrames, sheetTransferFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, channel and range commands still JS; _sheetPropertyEntries (styk-edit/src/property_edit.rs) |
 | `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-motion-path.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-motion-path.mjs` | `styk-edit` | partial | commands and history. Rust: beginMotionPathEdit, updateMotionPathEdit, commitMotionPathEdit, cancelMotionPathEdit, setMotionPathFalloff and motionPathFalloff on a layer sheet (styk-edit/src/motion_path.rs): origins, joints, IK targets pinned and free, movieclip replacements and the camera, falloffs of each shape; native-timeline and animation-channel commits, rigged and 3D figures, followers of pinned limbs in joined assemblies, and the live trail (motionPathReport, the display frame) still JS |
 | `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show, playback across every frame for clips on the presence clock with restartMovieclip and removeMovieclipRestart (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames of clips on the document's clock and the other commands still JS |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
@@ -135,6 +135,7 @@ Engine logic: ported to Rust.
 | `src/frame-timing-history.mjs` | `styk-edit` | js |  |
 | `src/media-authoring.mjs` | `styk-edit` | js |  |
 | `src/media-image-worker.mjs` | `styk-edit` | js |  |
+| `src/motion-path-falloff.mjs` | `styk-edit` | ported | motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay |
 | `src/native-property-edit.mjs` | `styk-edit` | js |  |
 | `src/native-property-ranges.mjs` | `styk-edit` | js |  |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
@@ -187,7 +188,6 @@ Engine logic: ported to Rust.
 | `src/layer-folders.mjs` | `styk-eval` | js |  |
 | `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS |
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
-| `src/motion-path-falloff.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/motion-path.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/native-pose-projection.mjs` | `styk-eval` | js |  |
 | `src/native-property-projection.mjs` | `styk-eval` | js |  |

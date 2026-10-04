@@ -52,7 +52,9 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   // Figures changed across frames, figure order, branch flips (styk-edit/src/range.rs).
   ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
   // Recolouring (styk-edit/src/recolor.rs).
-  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors'];
+  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors',
+  // Motion-path edits on a layer sheet (styk-edit/src/motion_path.rs).
+  'beginMotionPathEdit', 'updateMotionPathEdit', 'commitMotionPathEdit', 'cancelMotionPathEdit', 'setMotionPathFalloff'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold), or clipboard text (numbers in text cannot be compared within the
  * browsers' last-digit differences, D16): a view, not compared. */
@@ -65,7 +67,10 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   // Property edits publish the sheet; a scrub's previews are compared, not adopted.
   'addAnimationKeys', 'addAnimationKey', 'commitAnimationEdit', 'setSceneColor', 'setSceneBackground', 'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter',
   ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
-  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx']);
+  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
+  // A motion-path gesture's pointer moves run in both (the app reads the editor's session for
+  // its live trail); what its commit publishes is adopted.
+  'commitMotionPathEdit']);
 const RANGE = new Set([...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames']);
 /** A frame range as the app passes it on a layer sheet (`rangeFrames()`: an array carrying the
  * timeline's chosen ticks as `sheetTicks`), which JSON would drop: `{"@array", sheetTicks}`. */
@@ -365,7 +370,11 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (name === 'commitAnimationEdit') { editor._animationEdit = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
     let published = false;
     for (const {kind, frameIndex, tick, ...detail} of answer.events) {
-      if (kind === 'edit' && detail.live) {
+      // A motion-path gesture that ended without changing anything: the editor's ends with it.
+      if (kind === 'edit' && detail.motionPath && !detail.live && !detail.layerSheet) {
+        if (editor._drag?.motionPath) editor._drag = null;
+        editor._emit('edit', detail);
+      } else if (kind === 'edit' && detail.live) {
         if (drag) { drag.changed = true; editor._invalidateObjects(detail.changedUids, null, {pose: true}); }
         else editor._invalidate();
         editor._emit('edit', detail);
@@ -397,7 +406,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   /** Why the editor cannot adopt every effect of this answer (then it runs the call itself), or null. */
   const unadoptable = answer => {
-    const other = answer.events.find(({kind, live, layerSheet}) => !(kind === 'seek' || kind === 'edit' && (live || layerSheet)));
+    const other = answer.events.find(({kind, live, layerSheet, motionPath}) => !(kind === 'seek' || kind === 'edit' && (live || layerSheet || motionPath)));
     if (other) return `a ${other.kind} event`;
     if (answer.events.filter(event => event.layerSheet).length > 1) return 'two publications';
     if (answer.draft && !(editor._authoredPoseEdit && editor._drag && answer.drag)) return `a gesture the editor did not begin (drag ${Boolean(editor._drag)}, draft ${Boolean(editor._authoredPoseEdit)}, engine ${JSON.stringify(answer.drag)})`;
