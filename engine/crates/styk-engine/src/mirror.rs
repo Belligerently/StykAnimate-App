@@ -21,6 +21,7 @@ mod root;
 mod candidate;
 pub use candidate::WorkerPublication;
 pub use root::{EditPublicationAdmission, WorkerEditPublication};
+pub(crate) use root::{ReadyCharge, SessionRoot};
 pub use transfer::{Packet, PacketKind, RecordAck, RecordGuard, RecordLengths, TransferError, MAX_RECORD_PACKET_BYTES, MAX_RECORD_RETAINED_BYTES, MAX_RECORD_CHANGES};
 
 /// Dense metadata transported independently from the document's small properties.
@@ -308,14 +309,18 @@ fn resolved(tree: &mut Value, target: RecordTarget, value: Option<Value>, pendin
 
 /// Only the small in-flight identity stays staged while a worker owns changes.
 /// Every error path retires that marker on this worker; discard can invalidate it.
-struct CommitMarker<'a> { engine: &'a Engine, batch: u32, cancelled: Arc<std::sync::atomic::AtomicBool> }
+struct CommitMarker<'a> {
+    engine: &'a Engine, batch: u32, cancelled: Arc<std::sync::atomic::AtomicBool>,
+    wake: Option<std::sync::Weak<crate::session::Core>>,
+}
 impl Drop for CommitMarker<'_> {
     fn drop(&mut self) {
         let retired = {
             let mut staged = self.engine.inner.staged.lock();
             if staged.get(&self.batch).is_some_and(|owner| Arc::ptr_eq(&owner.cancelled, &self.cancelled)) { staged.remove(&self.batch) } else { None }
         };
-        drop(retired);
+        if let Some(retired) = retired { retired.retire_worker(); }
+        if let Some(core) = self.wake.as_ref().and_then(|core| core.upgrade()) { core.schedule(); }
     }
 }
 
@@ -356,7 +361,10 @@ impl Engine {
                 staged.remove(&batch)
             } else { None }
         };
-        self.spawn_retained(move |_| { drop(retired); drop(node); });
+        self.spawn_retained(move |_| {
+            if let Some(retired) = retired { retired.retire_worker(); }
+            drop(node);
+        });
         Err(TransferError::Stale)
     }
 
@@ -364,7 +372,17 @@ impl Engine {
     /// by the existing retained cleanup lane, including across publication/stop.
     /// Guarded preparation remains cancellable until atomic publication.
     pub fn discard_batch(&self, batch: u32) {
-        let changes = {
+        if let Some(changes) = self.extract_discarded_batch(batch) {
+            self.spawn_retained(move |_| changes.retire_worker());
+        }
+    }
+    // The Core already runs on the durable worker. Share the exact extraction
+    // boundary, then dispose immediately there rather than detaching another job.
+    pub(crate) fn discard_batch_worker(&self, batch: u32) {
+        if let Some(changes) = self.extract_discarded_batch(batch) { changes.retire_worker(); }
+    }
+    fn extract_discarded_batch(&self, batch: u32) -> Option<transfer::Batch> {
+        {
             let _state = self.inner.state.lock();
             let changes = self.inner.staged.lock().remove(&batch);
             if let Some(changes) = &changes {
@@ -372,9 +390,6 @@ impl Engine {
                 if let Some(transfer) = &changes.transfer { transfer.cancel(); }
             }
             changes
-        };
-        if let Some(changes) = changes {
-            self.spawn_retained(move |_| drop(changes));
         }
     }
 

@@ -222,10 +222,10 @@ are integrated as scoped prerequisites. Shared-type checks pass 708 native tests
 SHA `e5c3d8b2a7ca`). All 59 handoff/quiet/live/complete-return JSON regenerate twice
 byte-stable and their four generators are included in full checkpoints. Quiet traces
 compare 80 actual calls; ten ordinary native/sheet live tapes compare all 115 calls
-including complete returns and actual displayed frames. Eight native
-propertyChannels:true tapes explicitly refuse and five async preflight tapes remain
-unadmitted. Core runtime requests remain quiet-only; portable live capability coupling,
-ready/shown ACK and app exclusive writer transfer remain open.
+including complete returns and actual displayed frames. At that milestone the eight
+native propertyChannels:true tapes still refused; the later recorded-worker milestone
+below closes them and portable Core live coupling. Five async preflight tapes remain
+unadmitted. Ready/shown ACK and app exclusive writer transfer remain open.
 The same finite progress owner handles 16 ms Busy retries. Review exposed and corrected
 both no-progress lock liveness and cancellation during a Ready retry; actual failed-before
 regressions and independent review are retained. Actual prepared-ticket/cache app checks
@@ -246,10 +246,12 @@ app-picture claim here. Twelve recorded live methods use the same moved Session 
 final State guard. Actual history transitions publish even identical stored JSON;
 working-only operations preserve the Mirror stored root/Loader. Current/prior Scenes
 retain the same reservation, and committed prior roots remain through terminal ACK.
-Current ready raw charging after ACK, encoded/shown readiness, typed glyph identity,
-renderer CPU upload/final release and shutdown remain open. Native scalar projection
-matches 204 curves/1,620 samples and 200 missing-property first writes, but the original
-eight propertyChannels:true command tapes remain refused pending authored publication.
+Current-ready raw charging after ACK is now corrected through the SAME receiver
+reservation and original-Core retirement wake. Encoded/shown readiness, renderer CPU
+upload/final release and shutdown remain open. Native scalar projection matches 204
+curves/1,620 samples and 200 missing-property first writes; its eight recorded
+propertyChannels:true live tapes now match the same Worker/Core/strict replay owner.
+Legacy calls and wider native combinations remain guarded.
 The portable encoded allocation helper has no runtime caller or physical-cap claim.
 Mobile API additions: WorkerSession::prepare_worker_history, Handle::submit_live,
 Records::pose_source_frame (row hints require verified unique IDs), and
@@ -274,6 +276,27 @@ regenerations with all 3,634 captured JSON stable, and the pinned threaded Wasm 
 The shipping package was not rebuilt. These are prerequisites without Core/Stage/app
 adoption, class gate, physical-cap certification or deletion.
 
+Recorded native TRUE lifecycle and current-ready raw charging are integrated as one
+reviewed batch. The same response builder dispatches the original worker checked
+native owner, preserves original options/returns and propagates one-shot host errors.
+All 18 live families / 208 complete calls match Worker/Core/strict CLI; 20 conventional
+recordings also match 2,562 steps. The strict offline CLI checks actual initial
+state/history/display/runtime before dispatch and lossless counters before casts.
+Eight malformed initial inputs refuse with zero calls; original failed-before evidence
+and the additive correction are preserved. Portable mobile addition:
+replay::replay_session_live_worker; no legacy public call signature changes.
+
+Raw admission keeps canonical/prepared/response/current heads as one charged union;
+terminal ACK rescopes to the actual current raw record only after worker physical
+disposal. Hard Arc::get_mut uniqueness includes Weak aliases; detached aliases defer
+preparation with Busy, and drop-first retirement wakes only the original Core without
+self-polling. Receiver stays 1 GiB, editing/materialization 128 MiB. This is receiver/
+current-ready raw scope, not Editor history, typed/encoded memory or whole D7. Focused
+checks pass 381 edit/engine/CLI tests, check, four generator runs twice with all 3,635
+captured JSON stable, actual CLI positives/guards and pinned threaded Wasm typecheck.
+Shipping pkg, app call sites/classes and gates remain unchanged; no picture, cost or
+performance claim. Evidence: tmp/root-verification-temp/true-raw-*.
+
 The separate, still-uncommitted Renderer32 patch passes its 24 focused pictures on
 shipping Wasm `b155e35fe6a6` and its shared-type native checks, but MUST NOT be committed
 yet: the original full cel monitor regresses on default Electron. The exact before
@@ -291,8 +314,10 @@ merge. Its first compile-only attempt ended with tool exit 143 and no wrapper co
 or test failure; the log is preserved. The same exact HEAD/cache continuation passed at
 21:23 CEST: 56 stages, 691 release-selected native tests and 358 containers. After all
 generators, all 136 release executables remain fresh in 0.23 s with no compilation.
-Next regular run is no earlier than 21:59 CEST. Any actual
-checkpoint failure still requires the documented bisect/fix-forward process.
+The next regular checkpoint started at 22:02 CEST on committed 4f4808c0 in the same
+persistent isolated target; it is running independently while reviewed work merges.
+Next regular run is no earlier than 2026-10-05 00:02 CEST. Any actual checkpoint failure
+still requires the documented bisect/fix-forward process from last green805688d5.
 
 ### Where the port stands
 
@@ -384,10 +409,12 @@ without owning.
    frames and future target/ancestor guards. Ranges/joins and recorded 2D rig combinations
    now match. Optional selection metadata, native scalar authoring and recorded sheet motion paths
    are assembled, including five native and two saved-native origin motion families,
-   recorded angle-lock definition changes and spatial pose choices. Next: authored native
-   property-channel publication using the integrated scalar projector, and unrecorded
-   complex combinations. Every admitted command needs its own
-   recorded replay and app comparison; class ownership remains closed. Isolated lanes
+   recorded angle-lock definition changes and spatial pose choices. The authored native
+   property-channel lifecycle now matches its eight original worker recordings through
+   AuthoredDrag/Draft/Records and strict Worker/Core replay; retain its narrow ordinary
+   target scope. Finish unrecorded complex combinations. Every admitted command needs
+   its own recorded replay; app comparisons cover changed app behavior or adoption under
+   the current focused verification policy. Class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
    in `styk-edit/src/session.rs` and `src/engine/engine-edit-shadow.mjs`; next measure each
@@ -426,9 +453,10 @@ without owning.
   numbers in the milestone log are single runs on a shared, loaded machine.
 - `wasm-opt` is not installed: the WebAssembly modules are not size-optimized.
 - Native motion admits five remote-time and two saved-native families; native scalar
-  projection is integrated as a private prerequisite, while authored property-channel commands and unrecorded ordinary/complex targets remain refused. The actual
-  eight propertyChannels:true live tapes preserve their options and expose the shared
-  marker-adoption/authored-pose gap; their port and canonical worker admission remain open.
+  projection and the eight recorded native TRUE live families are integrated through
+  the same authored worker publication, preserving original options and complete views.
+  Wider ordinary/complex targets and browser owner admission remain refused; five
+  recorded asynchronous preflight tapes still require their awaited worker protocol.
 - Cache and quiet actor no-progress Busy retry gaps are corrected through the same
   finite progress owner. The pre-Ready Busy cancellation race is also corrected before
   integration. Portable Core live coupling is integrated; encoded readiness, exclusive
@@ -441,9 +469,10 @@ without owning.
   those actual Editor glyph identities. Native/nested/background imports and additional
   typed heads remain refused. Private Frame allocation observation covers only its
   explicitly visited branches, with no runtime admission or complete physical bound.
-  Actual current-ready raw roots outlive terminal ACK with zero
-  receiver charge. Preserve the existing 1 GiB receiver budget when fixing that lifetime;
-  the editing materialization/source allowance is a separate unchanged 128 MiB owner.
+  Current-ready raw roots now remain charged after terminal ACK through their existing
+  1 GiB receiver owner and exact worker disposal. This scope excludes Editor history/
+  clipboards, typed/encoded physical union and browser drain. The editing materialization/
+  source allowance remains a separate unchanged 128 MiB owner.
 - Section 6 lists the rest: auxiliary cel previews/monitor and crisp export, CPU rasterizer on nearly coplanar 3D
   faces, out-of-memory not recovered, `svr_uriel.piv` too large for the reference tool,
   Clippy warnings in `styk-eval`, the codec's `.stk` segment-edit defect.
@@ -1253,6 +1282,24 @@ Core/Stage/app adoption, whole physical union, last-owner release and other type
 families remain open. Shipping pkg, app behavior, document-class gates and budgets are
 unchanged. Evidence: `tmp/root-verification-temp/typed-frame-*`.
 
+
+### Recorded native worker commands and raw-ready lifetime (2026-10-04)
+
+The exact 27-source union passes 381 touched edit/engine/CLI tests with zero ignored,
+check and pinned threaded Wasm typecheck. Four actual Editor generators regenerate
+all 3,635 captured JSON twice unchanged. The actual rebuilt CLI matches native TRUE8/93,
+old native/sheet10/115 and conventional20/2,562; six paired-input guards and eight
+malformed initial observations exit nonzero. Initial comparisons precede the first
+call, including a corrupt display later overwritten by a redundant correct observation.
+Independent review verified the original TRUE/Raw patches, initial correction and four
+required typed test contexts without losing newer typed Loader retirement.
+
+Core tests retain all 18/208 complete calls plus exact current raw charge after ACK,
+original-owner wake, detached alias barriers, cancellation/close and State allocation
+watches. Original source mutants and failed-before logs are preserved as isolated
+proof, not rerun or performance evidence for this union. Browser app paths/gates,
+shipping pkg and budgets are unchanged. Evidence: `tmp/root-verification-temp/true-raw-*`.
+
 ## 8. Work queue
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
@@ -1461,3 +1508,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 20:35 | S5 portable Core live coupling, native scalar projection and retained encoded accounting | Batch three independently reviewed native owners. Preserve the same Session, Mirror stored/history transition, SceneBudget and terminal-ACK roots. Adopt original native curves through marker/Draft/Records/typed sampler and share one Resolved allocation visitor; Scene saturation and all budgets stay exact. Mobile additions: WorkerSession::prepare_worker_history, Handle::submit_live, Records::pose_source_frame with unique-ID hint precondition, drawlist retained_bytes_checked/RetainedBytesError. Browser writer, current raw charge, glyph identity, upload/Shown/release and stop remain open. | Focused edit/eval/engine: 505 tests, one diagnostic ignored; JS: 59 tests; check: 1,999 files; pinned threaded Wasm compile passes. Rebuilt CLI: 50 admitted tapes / 6,581 exact steps, nine explicit guards. Projection: 204 curves / 1,620 samples / 200 missing first writes. All 3,577 source JSON stay stable; 13 new derived groups / 147 ticks / 26 JSON regenerate twice stable (421 groups total). Shipping pkg rebuild deferred to renderer app milestone; no app adoption, picture, gate, deletion or performance claim. Exact 34-source composition and six owning adaptations reviewed. Checkpoint805688d5 compile-only exit 143 attempt preserved; same HEAD/cache continuation running, next regular run 21:59 CEST. Evidence: tmp/root-verification-temp/core-projection-accounting-*. |
 | 2026-10-04 21:35 | S5 scoped pre-publication generation and assets | Commit the independently reviewed five-path native candidate separately from the held Renderer32 patch. Same worker Mirror guard/CommitMarker/Loader and final State exchange; borrowed exact prebuilt generation/assets, single consuming commit and worker retirement. Working displays reuse the acknowledged generation; identical stored JSON still publishes genuine history revisions. Add portable WorkerPublication/WorkerEditPublication and Engine::prepare_record_publication_worker/prepare_edit_publication_worker APIs; mobile pin may move after downstream review. Actual Editor glyph pairing, Core Ready/Shown adoption, raw-ready charging and physical D7 remain open. | Fresh touched-crate run: all 182 styk-engine tests pass. Original isolated 117 focused tests and three actual source mutants caught/restored; all five root source hashes match that immutable freeze. Previously verified unchanged check, recorded CLI 50 admitted tapes/6,581 exact steps/nine guards and 13 derived groups/147 ticks remain green. No command recording, JavaScript or app adoption changed. Full committed 805688d5 checkpoint passes 56 stages/691 release-selected tests/358 containers; all 136 release executables fresh after regeneration in 0.23 s. Original Electron CEL regression blocks the separate renderer commit and is preserved in the handoff. Logs: tmp/root-verification-temp/scoped-candidate-* and renderer-publication-*. |
 | 2026-10-04 22:02 | S5 guarded typed Scene/assets pairing and private Frame allocation observation | Batch two independently reviewed, disjoint freezes with one reviewed vfx module declaration adaptation. Opt-in pairing borrows the same guarded after-Cache Loader and exact candidate assets, preserving image namespace and actual imported glyph identities; six malformed/missing typed sheets refuse atomically through the existing checked planner. Private Frame observation reuses existing allocation visitors and a strongly held source baseline; it exposes gaps and has no runtime caller or charge. Mobile additions: GuardedTypedCache, GuardedPublication::typed_cache_worker, Engine::prepare_edit_typed_publication_worker; Frame observers remain private. No Core/Stage/app adoption, budget, gate, deletion or performance claim. | Touched edit/engine/eval tests: 528 pass, two explicit diagnostics ignored; npm check and generator syntax pass. Two typed regeneration runs preserve all 3,634 captured engine JSON. Pinned shipping-profile threaded Wasm typecheck passes; pkg remains unchanged. Actual recorded typed namespace/glyph comparisons and refusal guards pass in native tests. Independently reviewed typed scope correction closes six real failed-before cases; Frame allocator ledger and 18 actual source mutants remain preserved. Exact 23-source composition plus parity registration verified unchanged. Renderer32 remains uncommitted due to original full-CEL Electron regression. Full checkpoint last green805688d5; next eligible21:59 CEST. Evidence: tmp/root-verification-temp/typed-frame-*. |
+| 2026-10-04 22:17 | S5 recorded native TRUE worker lifecycle and current-ready raw retention | Batch independently reviewed TRUE11 plus corrected strict Worker/Core/CLI8 with Raw9 and four scoped typed-test contexts; preserve three earlier owning prerequisite adaptations and all newer typed Loader/CommitMarker owners. Same AuthoredDrag/Draft/Records/response/history/source and guard; one-shot host errors remain exact. Strict replay compares actual initial heads before dispatch and validates lossless counters. Continue SAME receiver charge for current raw record after terminal ACK; detached aliases block preparation until physical worker disposal and wake only original Core. No new budget, public runtime route, gate, deletion or performance claim. Mobile addition: replay::replay_session_live_worker; legacy APIs unchanged. | 381 touched edit/engine/CLI tests, zero ignored; check and pinned threaded Wasm typecheck pass. Four generators twice keep all 3,635 captured JSON stable. Actual rebuilt CLI TRUE8/93 + old10/115 + conventional20/2,562 exact; six pairing/refusal guards and eight malformed initial cases exit nonzero. Independent Raw composition65cc33b6 and strict-initial13993953 reviews clean, preserving all original freezes/source mutants. Source27 + checkpoint script union exact; no app adoption or pkg rebuild. Full checkpoint4f4808c0 started22:02 CEST in persistent isolated target, last green805688d5; merges continue. Logs: tmp/root-verification-temp/true-raw-*. |

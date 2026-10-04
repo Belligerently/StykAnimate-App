@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use styk_doc::Value;
+use styk_doc::{Obj, Value};
 
 use crate::frame::objects_of;
 use crate::record::{join_target, same, uid};
@@ -55,7 +55,9 @@ impl Editor {
     }
 
     /// `commitAuthoredPoseDrag`: nothing changed, or the draft goes to the layer sheet.
-    pub(crate) fn commit_authored_drag(&mut self) -> Result<bool, EditError> {
+    pub(crate) fn commit_authored_drag(&mut self) -> Result<bool, EditError> { self.commit_authored_drag_checked(&mut || Ok(())) }
+    pub(crate) fn commit_authored_drag_checked(&mut self, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         let (Some(drag), Some(_)) = (self.drag.as_ref(), self.authored.as_ref()) else { return Ok(false) };
         let before = drag.before.clone();
         self.synchronize_origins(&before)?;
@@ -73,7 +75,7 @@ impl Editor {
             self.retained = None;
             return Ok(false);
         }
-        let committed = self.finish_authored_drag(&ids, &after);
+        let committed = self.finish_authored_drag(&ids, &after, check);
         if committed.is_err() {
             // The draft is released on failure too, or every seek would retry it.
             self.cancel_authored_drag()?;
@@ -81,7 +83,7 @@ impl Editor {
         committed
     }
 
-    fn finish_authored_drag(&mut self, ids: &[u32], after: &[Value]) -> Result<bool, EditError> {
+    fn finish_authored_drag(&mut self, ids: &[u32], after: &[Value], check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
         self.validate_spatial_joins()?;
         // A pose stores where its joined figures sit as well as their joins.
         if after.iter().any(|o| join_target(o).is_some()) {
@@ -99,7 +101,144 @@ impl Editor {
         }
         let before = self.drag.as_ref().map(|drag| drag.before.clone()).unwrap_or_default();
         self.synchronize_origins(&before)?;
-        self.commit_sheet_pose()
+        if self.sheet() { self.commit_sheet_pose() } else { self.commit_native_authored_drag_checked(check) }
+    }
+
+    /// Native `splitPosePropertyChanges` for the recorded unjoined whole-figure
+    /// translation family. The existing Authored frame and scalar Draft are the
+    /// only working heads; capture/source membership/history keep their owners.
+    fn commit_native_authored_drag_checked(
+        &mut self,
+        check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<bool, EditError> {
+        check()?;
+        let edit = self.authored.as_ref().ok_or_else(|| {
+            EditError::Unported("a native authored commit without its draft".into())
+        })?;
+        let drag = self.drag.as_ref().unwrap();
+        if edit.transaction || !self.options.property_channels {
+            return Err(EditError::Unported(
+                "an unrecorded native authored transaction".into(),
+            ));
+        }
+        let source = edit.source.clone();
+        let shown = edit.frame.clone();
+        let tick = edit.tick;
+        let ids = drag.before.iter().filter_map(uid).collect::<Vec<_>>();
+        let label = drag.label.clone();
+        let selection = drag.before_selection.clone();
+        let before = objects_of(&source);
+        let mut normalized = objects_of(&shown);
+        let mut entries = Vec::new();
+        let mut shape_ids = Vec::new();
+        let channels = self
+            .report
+            .path(&["_styk", "animation", "channels"])
+            .and_then(Value::elements)
+            .map(|items| items.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        self.with_records(|records| {
+            for object in &mut normalized {
+                check()?;
+                let Some(id) = uid(object).filter(|id| ids.contains(id)) else {
+                    continue;
+                };
+                let original = before
+                    .iter()
+                    .find(|old| uid(old) == Some(id))
+                    .ok_or_else(|| {
+                        EditError::Unported(
+                            "a native authored translation without its original pose".into(),
+                        )
+                    })?;
+                let mut target = Obj::new();
+                target.set("kind", Value::str("figure"));
+                target.set("uid", Value::Num(id as f64));
+                let target = Value::object(target);
+                for (property, field) in [("x", "root_x"), ("y", "root_y")] {
+                    let authored = channels.iter().any(|channel| {
+                        channel.path(&["target", "kind"]).and_then(Value::as_str) == Some("figure")
+                            && channel.path(&["target", "uid"]).and_then(Value::as_f64)
+                                == Some(id as f64)
+                            && channel.get("property").and_then(Value::as_str) == Some(property)
+                            && channel.get("keys").and_then(Value::array_len).unwrap_or(0) > 0
+                    });
+                    if !authored {
+                        continue;
+                    }
+                    let value = records
+                        .property_value(&shown, &target, property)?
+                        .ok_or_else(|| {
+                            EditError::Unported(
+                                "an absent native authored translation target".into(),
+                            )
+                        })?;
+                    let old = records.property_value(&source, &target, property)?.unwrap();
+                    if value != old
+                        && (value.as_f64().unwrap() - old.as_f64().unwrap()).abs() >= 1e-9
+                    {
+                        let mut entry = Obj::new();
+                        entry.set("target", target.clone());
+                        entry.set("property", Value::str(property));
+                        entry.set("tick", Value::Num(tick));
+                        entry.set("value", value);
+                        entries.push(Value::object(entry));
+                        object
+                            .make_obj()
+                            .unwrap()
+                            .set(field, original.get(field).unwrap().clone());
+                    }
+                }
+                // The admitted translation changes only roots. Reuse the same JS
+                // round owner for the source's 1e9 comparable numeric shape.
+                let shape = ["root_x", "root_y"].iter().any(|field| {
+                    let compare = |value: &Value| {
+                        crate::range_plan::js_round(
+                            value.get(field).unwrap().as_f64().unwrap() * 1e9,
+                        ) / 1e9
+                    };
+                    compare(object) != compare(original)
+                });
+                object.make_obj().unwrap().remove("runtime_segments");
+                if shape {
+                    shape_ids.push(id);
+                }
+            }
+            Ok(())
+        })?;
+        let mut draft = crate::property_edit::NativeAnimationDraft::new(self);
+        if !shape_ids.is_empty() {
+            check()?;
+            let mut frame = shown.as_obj().unwrap().clone();
+            frame.set("objects", Value::array(normalized));
+            let selected = shape_ids.iter().map(|id| *id as f64).collect::<Vec<_>>();
+            let (source_id, captured) =
+                self.native_pose_source(&Value::object(frame), Some(&selected), None)?;
+            draft.write_source(source_id.clone(), captured);
+            for id in shape_ids {
+                let mut target = Obj::new();
+                target.set("kind", Value::str("figure"));
+                target.set("uid", Value::Num(id as f64));
+                let mut value = Obj::new();
+                value.set("frameId", Value::str(&source_id));
+                let mut entry = Obj::new();
+                entry.set("target", Value::object(target));
+                entry.set("property", Value::str("pose"));
+                entry.set("tick", Value::Num(tick));
+                entry.set("value", Value::object(value));
+                entries.push(Value::object(entry));
+            }
+        }
+        for entry in &entries {
+            draft.put_checked(self, entry, check)?;
+        }
+        check()?;
+        self.drag = None;
+        self.authored = None;
+        let changed =
+            draft.publish_checked(self, &label, selection, "Add animation keys", check)?;
+        self.retained = Some(shown);
+        Ok(changed)
     }
 
     /// Structural joins use the editor's single native-frame transaction. Other

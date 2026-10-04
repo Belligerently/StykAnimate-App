@@ -23,7 +23,7 @@ impl NativeEdit {
         out.set("target", edit.target.clone());out.set("property", Value::str(&edit.property));
         out.set("exactTarget", Value::Bool(edit.exact));out.set("tick", Value::Num(edit.tick));
         out.set("before", self.before.clone().unwrap_or(Value::Null));
-        if let Some(channel) = &self.before_channel { out.set("beforeChannel", channel.clone()); }
+        out.set("beforeChannel", self.before_channel.clone().unwrap_or(Value::Null));
         out.set("initialValue", edit.initial.clone());out.set("selection", edit.selection.history_value());
         out.set("changed", Value::Bool(edit.changed));
         Value::object(out)
@@ -41,6 +41,15 @@ fn own_channel(editor: &Editor, id: &str) -> Option<Value> {
     items(editor.report.path(&["_styk", "animation", "channels"]))
         .into_iter()
         .find(|channel| channel.get("id").and_then(Value::as_str) == Some(id))
+}
+/// Shared native channel header admission; values/order stay with typed Records.
+fn native_channel_header(channel: &Value, properties: &[&str], ids: &mut std::collections::HashSet<String>) -> bool {
+    let property = channel.get("property").and_then(Value::as_str).unwrap_or("");
+    let target = channel.get("target").unwrap_or(&Value::Null);
+    target.get("kind").and_then(Value::as_str) == Some("figure")
+        && properties.contains(&property)
+        && normalize_target(target).and_then(|target| channel_id(&target, property)).is_ok_and(|id|
+            channel.get("id").and_then(Value::as_str) == Some(id.as_str()) && ids.insert(id))
 }
 fn native_method(method: &str) -> bool {
     matches!(
@@ -146,6 +155,11 @@ impl Draft {
         }
     }
     pub(crate) fn put(&mut self, editor: &Editor, entry: &Value) -> Result<(Value, usize, usize), EditError> {
+        self.put_checked(editor, entry, &mut || Ok(()))
+    }
+
+    pub(crate) fn put_checked(&mut self, editor: &Editor, entry: &Value, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<(Value, usize, usize), EditError> {
+        check()?;
         if entry
             .get("exactTarget")
             .is_some_and(|value| !matches!(value, Value::Bool(_)))
@@ -161,8 +175,13 @@ impl Draft {
         let channel_index = match self.channels.iter().position(|channel| channel.get("id").and_then(Value::as_str) == Some(&id)) {
             Some(index) => index,
             None => {
-                let mut channel = if editor.options.property_channels && property != "pose" {
-                    let mut channel = editor.native_property_channel_checked(&target, property, &mut || Ok(()))?.as_obj().unwrap().clone();
+                let mut channel = if editor.options.property_channels && property == "pose" && target.get("kind").and_then(Value::as_str) == Some("figure") {
+                    let mut channel = editor.native_baseline_pose_checked(target.get("uid").and_then(Value::as_f64).unwrap() as u32, check)?.as_obj().unwrap().clone();
+                    channel.set("source", Value::str("authored"));
+                    self.changed = true;
+                    channel
+                } else if editor.options.property_channels && property != "pose" {
+                    let mut channel = editor.native_property_channel_checked(&target, property, check)?.as_obj().unwrap().clone();
                     channel.set("source", Value::str("authored"));
                     self.changed = true;
                     channel
@@ -331,12 +350,17 @@ impl Draft {
     /// `recordAnimation`: finalize only at commit, register captures through the
     /// existing source/membership owner, then record the same Animation carrier.
     pub(crate) fn publish(self, editor: &mut Editor, label: &str, selection: SelectionState) -> Result<bool, EditError> {
+        self.publish_checked(editor,label,selection,label,&mut || Ok(()))
+    }
+    pub(crate) fn publish_checked(self, editor: &mut Editor, label: &str, selection: SelectionState, event_label: &str, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         let sources = self.sources.clone();
         let (before, after, changed) = self.finish();
         if !changed { return Ok(false); }
         editor.publish_native_pose_sources(&sources)?;
-        editor.record_native_animation(before, after, label, selection, false)?;
-        editor.emit("edit", vec![("label", Value::str(label)), ("animation", Value::Bool(true)), ("timing", Value::Bool(true))]);
+        check()?;
+        editor.record_native_animation_checked(before, after, label, selection, false, check)?;
+        editor.emit("edit", vec![("label", Value::str(event_label)), ("animation", Value::Bool(true)), ("timing", Value::Bool(true))]);
         Ok(true)
     }
     fn finish(mut self) -> (Option<Value>, Value, bool) {
@@ -399,26 +423,14 @@ impl Editor {
                 .and_then(|animation| animation.get("channels")),
         )
         .iter()
-        .all(|channel| {
-            let property = channel
-                .get("property")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            let target = channel.get("target").unwrap_or(&Value::Null);
-            target.get("kind").and_then(Value::as_str) == Some("figure")
-                && ["x", "y", "scale", "rotation"].contains(&property)
-                && normalize_target(target)
-                    .and_then(|target| channel_id(&target, property))
-                    .is_ok_and(|id| {
-                        channel.get("id").and_then(Value::as_str) == Some(id.as_str())
-                            && ids.insert(id)
-                    })
-        })
+        .all(|channel| native_channel_header(channel, &["x", "y", "scale", "rotation"], &mut ids))
     }
+
     pub(crate) fn native_transform_gate(
         &self,
         method: &str,
         args: &[Value],
+        projected_native: bool,
     ) -> Result<(), EditError> {
         if self.sheet() || !crate::origin::property_call(method) {
             return Ok(());
@@ -431,7 +443,7 @@ impl Editor {
                 "native scalar authoring with optional selection metadata".into(),
             ));
         }
-        if !self.recorded_native_transform_call(method) {
+        if !self.recorded_native_transform_call(method) && !projected_native {
             return Err(EditError::Unported(
                 "unrecorded native channel authoring or projection".into(),
             ));
@@ -501,7 +513,7 @@ impl Editor {
         // Reuse the recorded property target/ancestor owner at the actual key tick,
         // before a begin/add operation can commit any existing live gesture.
         self.origin_property_gate(method, args)?;
-        if self.drag.is_some()
+        if !projected_native && self.drag.is_some()
             && self
                 .report
                 .path(&["_styk", "animation", "channels"])
@@ -557,8 +569,20 @@ impl Editor {
         selection: SelectionState,
         structural: bool,
     ) -> Result<bool, EditError> {
+        self.record_native_animation_checked(before, after, label, selection, structural, &mut || Ok(()))
+    }
+    pub(crate) fn record_native_animation_checked(
+        &mut self,
+        before: Option<Value>,
+        after: Value,
+        label: &str,
+        selection: SelectionState,
+        structural: bool,
+        check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<bool, EditError> {
+        check()?;
         self.assign_native_animation(Some(&after));
-        self.record(Command {
+        self.record_checked(Command {
             kind: CommandKind::Animation {
                 before,
                 after,
@@ -572,7 +596,7 @@ impl Editor {
             layer_changes: Vec::new(),
             captured_source_bytes: 0,
             layers: false,
-        })?;
+        }, &mut || check())?;
         Ok(true)
     }
     // Extracted from the immutable native movieclip Animation history owner;
@@ -665,17 +689,13 @@ impl Editor {
         }
         Ok(Value::array(result))
     }
-    pub(super) fn begin_native_animation_edit(
-        &mut self,
-        target: &Value,
-        property: &Value,
-        exact: bool,
-    ) -> Result<Value, EditError> {
+    pub(super) fn begin_native_animation_edit_checked(&mut self, target: &Value, property: &Value, exact: bool, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
+        check()?;
         if self.property_edit.is_some() {
-            self.commit_animation_edit()?;
+            self.commit_animation_edit_checked(check)?;
         }
         if self.drag.is_some() {
-            self.commit_drag()?;
+            self.commit_drag_checked(check)?;
         }
         let target = normalize_target(target)?;
         let property = property.as_str().unwrap_or("");
@@ -704,10 +724,8 @@ impl Editor {
         });
         Ok(Value::Null) // The existing replay/facade treats the edit record as a view.
     }
-    pub(super) fn preview_native_animation_edit(
-        &mut self,
-        value: Option<Value>,
-    ) -> Result<Value, EditError> {
+    pub(super) fn preview_native_animation_edit_checked(&mut self, value: Option<Value>, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
+        check()?;
         let Some(edit) = self.property_edit.clone() else {
             return Err(invalid(
                 "errors.editorAnimation.beginAPropertyEditBeforePreviewingIt",
@@ -749,7 +767,7 @@ impl Editor {
             entry.set("value", value.clone());
             entry.set("exactTarget", Value::Bool(edit.exact));
             let mut draft = Draft::new(self);
-            let (key, channel_index, _) = draft.put(self, &Value::object(entry))?;
+            let (key, channel_index, _) = draft.put_checked(self, &Value::object(entry), check)?;
             let (_, after, changed) = draft.finish();
             if !changed {
                 return Ok(value);
@@ -778,7 +796,8 @@ impl Editor {
         );
         Ok(value)
     }
-    pub(super) fn commit_native_animation_edit(&mut self) -> Result<bool, EditError> {
+    pub(super) fn commit_native_animation_edit_checked(&mut self, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         let Some(edit) = self.property_edit.take() else {
             return Ok(false);
         };
@@ -809,12 +828,13 @@ impl Editor {
         }
         let after = animation(self)
             .ok_or_else(|| EditError::Unported("an unavailable native animation edit".into()))?;
-        self.record_native_animation(
+        self.record_native_animation_checked(
             native.before,
             after,
             &format!("Animate {}", edit.property),
             edit.selection,
             false,
+            check,
         )?;
         self.emit(
             "edit",
@@ -844,3 +864,6 @@ impl Editor {
         Ok(true)
     }
 }
+
+#[cfg(test)]
+mod live_tests;

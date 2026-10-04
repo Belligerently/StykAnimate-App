@@ -337,12 +337,13 @@ impl Editor {
     }
 
     /// Before a call: an open property edit allows only its own calls, and history cancels it.
-    pub(crate) fn property_gate(&mut self, method: &str) -> Result<(), EditError> {
+    pub(crate) fn property_gate_checked(&mut self, method: &str, projected_native: bool) -> Result<(), EditError> {
         if self.property_edit.is_none() {
             return Ok(());
         }
         match method {
             "beginAnimationEdit" | "previewAnimationEdit" | "commitAnimationEdit" | "cancelAnimationEdit" => Ok(()),
+            "seek" | "@seek" if projected_native => Ok(()),
             "centerCamera" | "alignFiguresInFrames" => Ok(()), // Their recorded owner finishes this edit before measuring.
             "undo" | "redo" => self.cancel_animation_edit().map(|_| ()),
             "addAnimationKeys" | "addAnimationKey" if !self.sheet() => Ok(()),
@@ -351,7 +352,7 @@ impl Editor {
     }
 
     /// Runs a property call by its JavaScript name; `None` for other names.
-    pub(crate) fn property_call(&mut self, method: &str, args: &[Value]) -> Option<Result<Value, EditError>> {
+    pub(crate) fn property_call_checked(&mut self, method: &str, args: &[Value], check: &mut dyn FnMut() -> Result<(), EditError>) -> Option<Result<Value, EditError>> {
         let arg = |i: usize| args.get(i).cloned();
         let sheet = self.sheet();
         if !sheet && ["setSceneColor", "setSceneBackground", "setBackgroundColor", "setVfxParameter"].contains(&method) {
@@ -375,10 +376,10 @@ impl Editor {
             }
             "beginAnimationEdit" => {
                 let exact = arg(2).is_some_and(|o| o.get("exactTarget").is_some_and(Value::truthy));
-                self.begin_animation_edit(&arg(0).unwrap_or(Value::Null), &arg(1).unwrap_or(Value::Null), exact)
+                self.begin_animation_edit_checked(&arg(0).unwrap_or(Value::Null), &arg(1).unwrap_or(Value::Null), exact, check)
             }
-            "previewAnimationEdit" => self.preview_animation_edit(arg(0)),
-            "commitAnimationEdit" => self.commit_animation_edit().map(Value::Bool),
+            "previewAnimationEdit" => self.preview_animation_edit_checked(arg(0), check),
+            "commitAnimationEdit" => self.commit_animation_edit_checked(check).map(Value::Bool),
             "cancelAnimationEdit" => self.cancel_animation_edit().map(Value::Bool),
             "setSceneColor" => self.set_scene_color(&arg(0).unwrap_or(Value::Null), arg(1).as_ref()),
             "setSceneBackground" => self.set_scene_background(&arg(0).unwrap_or(Value::Null), arg(1).as_ref()),
@@ -563,8 +564,9 @@ impl Editor {
     }
 
     /// `beginAnimationEdit(target, property, {exactTarget})` on a layer sheet.
-    fn begin_animation_edit(&mut self, target: &Value, property: &Value, exact: bool) -> Result<Value, EditError> {
-        if !self.sheet() { return self.begin_native_animation_edit(target, property, exact); }
+    pub(crate) fn begin_animation_edit_checked(&mut self, target: &Value, property: &Value, exact: bool, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
+        check()?;
+        if !self.sheet() { return self.begin_native_animation_edit_checked(target, property, exact, check); }
         if self.property_edit.is_some() {
             self.commit_animation_edit()?;
         }
@@ -608,8 +610,9 @@ impl Editor {
 
     /// `previewAnimationEdit(value)` on a layer sheet: the frame on show at the edit's start
     /// with the value composed is shown until the edit ends.
-    fn preview_animation_edit(&mut self, value: Option<Value>) -> Result<Value, EditError> {
-        if !self.sheet() { return self.preview_native_animation_edit(value); }
+    pub(crate) fn preview_animation_edit_checked(&mut self, value: Option<Value>, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
+        check()?;
+        if !self.sheet() { return self.preview_native_animation_edit_checked(value, check); }
         let Some(edit) = self.property_edit.clone() else { return Err(invalid("errors.editorAnimation.beginAPropertyEditBeforePreviewingIt")) };
         let validated = validate_value(&edit.target, &edit.property, value.as_ref())?;
         let changed = !strictly_equal(&validated, Some(&edit.initial));
@@ -634,8 +637,10 @@ impl Editor {
     }
 
     /// `commitAnimationEdit()` on a layer sheet: the edited value keyed at the edit's tick.
-    pub(crate) fn commit_animation_edit(&mut self) -> Result<bool, EditError> {
-        if !self.sheet() { return self.commit_native_animation_edit(); }
+    pub(crate) fn commit_animation_edit(&mut self, ) -> Result<bool, EditError> { self.commit_animation_edit_checked(&mut || Ok(())) }
+    pub(crate) fn commit_animation_edit_checked(&mut self, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
+        if !self.sheet() { return self.commit_native_animation_edit_checked(check); }
         let Some(edit) = self.property_edit.take() else { return Ok(false) };
         self.retained = None;
         if !edit.changed {

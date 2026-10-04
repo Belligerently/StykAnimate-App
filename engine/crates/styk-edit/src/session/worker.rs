@@ -84,6 +84,16 @@ impl WorkerSession {
     pub fn revision(&self) -> u64 { self.session.revision() }
     pub fn history_checkpoint_worker(&self) -> Option<f64> { self.session.history_checkpoint_worker() }
     pub fn operation_epoch(&self) -> u64 { self.epoch }
+    // Offline replay observes the exact moved owner's initial heads before
+    // dispatch. Reuse the same serializers and worker display preparation;
+    // this exposes no UI capability and publishes no operation or report.
+    pub(crate) fn initial_observation_worker(
+        &mut self, check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<(Value, Value, WorkerFrame, Value), EditError> {
+        let display = display_worker(&mut self.session.editor, check)?;
+        Ok((self.session.editor.state_value(), self.session.editor.history_value(),
+            display, runtime(&self.session.editor)))
+    }
     /// Reuses the same history owner during worker attach/readiness. It does
     /// not expose mutable Session access or import foreign command entries.
     pub fn prepare_worker_history(
@@ -108,7 +118,7 @@ impl WorkerSession {
         let mut display = None;
         let publication = self.session.editor.prepare_worker_publication(|editor, check| {
             check()?;
-            let answer = call_values(editor, method, args, view, true);
+            let answer = call_values(editor, method, args, view, true, Some(&mut *check))?;
             check()?;
             display = Some(display_worker(editor, check)?);
             Ok(answer)
@@ -134,7 +144,7 @@ impl WorkerSession {
         let mut observed = Value::Null;
         let publication = self.session.editor.prepare_worker_operation(|editor, check| {
             check()?;
-            let answer = call_values(editor, method, args, view, true);
+            let answer = call_values(editor, method, args, view, true, Some(&mut *check))?;
             check()?;
             observed = runtime(editor);
             display = Some(display_worker(editor, check)?);

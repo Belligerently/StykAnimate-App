@@ -267,12 +267,14 @@ impl Editor {
         Ok(Value::array(frame.into_iter().filter(|o| uid(o).is_some_and(|u| self.selection.uids.contains(&u))).collect()))
     }
 
-    pub(crate) fn seek(&mut self, tick: f64) -> Result<Value, EditError> {
+    pub(crate) fn seek(&mut self, tick: f64) -> Result<Value, EditError> { self.seek_checked(tick,&mut || Ok(())) }
+    pub(crate) fn seek_checked(&mut self, tick: f64, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
+        check()?;
         if !tick.is_finite() {
             return Err(EditError::Invalid("errors.editorCamera.mustBeFinite".into()));
         }
         if self.drag.is_some() {
-            self.commit_drag()?;
+            self.commit_drag_checked(check)?;
         }
         let rows = rows(&self.report);
         let next = tick.clamp(0.0, (total_ticks(&rows) - 1.0).max(0.0));

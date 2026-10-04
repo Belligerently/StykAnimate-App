@@ -388,6 +388,8 @@ fn recorded_sheet_images_keep_the_exact_editor_namespace_and_scene() {
             );
             row.set("decodeIndices", Value::array(decoded));
             let transaction = guard(&engine);
+            // This tooling scope has no persistent Core/current-ready owner.
+            let mut raw_scope = None;
             let admission = engine
                 .stage_live_session_publication_worker(
                     7,
@@ -395,6 +397,11 @@ fn recorded_sheet_images_keep_the_exact_editor_namespace_and_scene() {
                     &prepared,
                     prepared.result(),
                     Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    SessionRoot {
+                        current: None,
+                        charge: &mut raw_scope,
+                        wake: std::sync::Weak::new(),
+                    },
                     || Ok(()),
                 )
                 .unwrap();
@@ -613,6 +620,7 @@ fn actual_imported_editor_glyphs_encode_with_the_paired_candidate_assets() {
         after.get("canonicalState").unwrap()
     );
     let transaction = guard(&engine);
+    let mut raw_scope = None;
     let admission = engine
         .stage_live_session_publication_worker(
             7,
@@ -620,6 +628,11 @@ fn actual_imported_editor_glyphs_encode_with_the_paired_candidate_assets() {
             &prepared,
             prepared.result(),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            SessionRoot {
+                current: None,
+                charge: &mut raw_scope,
+                wake: std::sync::Weak::new(),
+            },
             || Ok(()),
         )
         .unwrap();
@@ -749,6 +762,7 @@ fn typed_after_cache_cancellation_stale_lineage_and_drop_preserve_the_acknowledg
             )
             .unwrap();
         let transaction = guard(&engine);
+        let mut raw_scope = None;
         let admission = engine
             .stage_live_session_publication_worker(
                 7,
@@ -756,6 +770,11 @@ fn typed_after_cache_cancellation_stale_lineage_and_drop_preserve_the_acknowledg
                 &prepared,
                 prepared.result(),
                 Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                SessionRoot {
+                    current: None,
+                    charge: &mut raw_scope,
+                    wake: std::sync::Weak::new(),
+                },
                 || Ok(()),
             )
             .unwrap();
@@ -963,6 +982,7 @@ fn typed_cancel_after_actual_scene_encode_uses_the_same_final_state_linearizatio
                 .prepare_quiet("importFigure", &Value::array(args), &Value::Null, || Ok(()))
                 .unwrap();
             let transaction = guard(&worker);
+            let mut raw_scope = None;
             let admission = worker
                 .stage_live_session_publication_worker(
                     7,
@@ -970,6 +990,11 @@ fn typed_cancel_after_actual_scene_encode_uses_the_same_final_state_linearizatio
                     &prepared,
                     prepared.result(),
                     Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    SessionRoot {
+                        current: None,
+                        charge: &mut raw_scope,
+                        wake: std::sync::Weak::new(),
+                    },
                     || Ok(()),
                 )
                 .unwrap();

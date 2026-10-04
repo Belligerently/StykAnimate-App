@@ -67,6 +67,18 @@ fn native(dense: bool) -> (Engine, Handle, Stamp, Epochs) {
 fn drain(engine: &Engine) {
     while engine.step() {}
 }
+// After terminal/failure disposal, only the actual receiver-ready raw head
+// remains charged. Close/no-ready still require exactly zero, not a loose bound.
+fn assert_current_raw_charge(engine: &Engine) {
+    let core = engine.inner.session.lock().clone();
+    let expected = core.as_ref().map_or(0, |core| {
+        let worker = core.worker.lock().unwrap();
+        worker.ready.as_ref().map_or(0, |ready| {
+            styk_doc::retained_bytes_checked(&[&ready.record], |_| Ok::<_, ()>(())).unwrap() + 256
+        })
+    });
+    assert_eq!(engine.inner.record_budget.retained_bytes(), expected);
+}
 fn owner_report(engine: &Engine) -> Value {
     let core = engine.inner.session.lock().clone().unwrap();
     let worker = core.worker.lock().unwrap();
@@ -200,7 +212,7 @@ fn quiet_owner_stays_unchanged_until_ready_and_retires_only_after_terminal_ack()
         assert!(handle.terminal(request).unwrap());
         drain(&engine);
         assert_eq!(handle.poll().phase, Phase::Idle);
-        assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert_current_raw_charge(&engine);
     }
 }
 
@@ -230,7 +242,7 @@ fn sparse_project_response_refuses_absent_settings_and_other_history_without_mut
         assert!(owner_report(&engine).same_node(&before));
         assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
         assert_eq!(core.worker.lock().unwrap().session.as_ref().unwrap().history_checkpoint_worker(), checkpoint);
-        assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert_current_raw_charge(&engine);
         handle.terminal(request).unwrap(); drain(&engine);
         let request = handle.submit_project_fields(stamp, epochs, "setFPS", "[31]", "{}").unwrap();
         drain(&engine);assert_eq!(handle.poll().error, Some(Error::InvalidInput));
@@ -276,7 +288,7 @@ fn one_packet_ack_dense_single_figure_and_bounded_queue_do_not_walk_on_submit() 
     commit(&engine, &handle, request, epochs);
     assert!(handle.terminal(request).unwrap());
     drain(&engine);
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
     let oversized = " ".repeat(MAX_SESSION_CONTROL_BYTES);
     assert_eq!(
         handle.submit(stamp, epochs, "select", &oversized, "null"),
@@ -308,7 +320,7 @@ fn cancellation_at_queued_streaming_and_ready_preserves_same_session_and_engine(
         assert!(owner_report(&engine).same_node(&before));
         assert!(engine.mirrored().unwrap().1.same_node(&before));
         assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
-        assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert_current_raw_charge(&engine);
         assert!(handle.terminal(request).unwrap());
         drain(&engine);
         let next = handle
@@ -341,7 +353,7 @@ fn postcommit_cancel_retains_both_heads_until_ack_without_rollback_or_reexecutio
     assert!(engine.inner.record_budget.retained_bytes() > 0);
     assert!(handle.terminal(request).unwrap());
     drain(&engine);
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
 }
 
 #[test]
@@ -428,7 +440,7 @@ fn stop_and_new_lineage_dispose_unacked_cursor_and_session_on_durable_worker() {
         drain(&engine);
         assert!(engine.inner.session.lock().is_none());
         assert_eq!(handle.poll().phase, Phase::Closed);
-        assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert_current_raw_charge(&engine);
         assert_eq!(
             handle.submit(stamp, epochs, "setFPS", "[31]", "null"),
             Err(Error::Closed)
@@ -471,7 +483,7 @@ fn stop_with_unacked_128_mib_figure_retires_cursor_and_charge_on_worker() {
     drain(&engine);
     assert_eq!(handle.poll().phase, Phase::Closed);
     assert!(engine.inner.session.lock().is_none());
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
 }
 
 #[test]
@@ -752,7 +764,7 @@ fn recorded_quiet_editor_outcomes_history_and_exact_raw_document_match_every_ack
             );
             assert!(handle.terminal(request).unwrap());
             drain(&engine);
-            assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+            assert_current_raw_charge(&engine);
             calls += 1;
         }
     }
@@ -835,7 +847,7 @@ fn actor_cancel_at_actual_final_state_lock_refuses_engine_and_session_exchange()
     assert!(engine.mirrored().unwrap().1.same_node(&before));
     assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
     drain(&engine);
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
     assert!(handle.terminal(request).unwrap());
     drain(&engine);
 }
@@ -877,7 +889,7 @@ fn actor_cancel_after_final_paired_exchange_before_header_keeps_exactly_one_comm
     drop(worker);
     assert!(handle.terminal(request).unwrap());
     drain(&engine);
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
 }
 
 #[test]
@@ -926,7 +938,7 @@ fn expiry_from_another_worker_cannot_close_a_valid_paired_commit_before_stamp_up
     assert!(engine.inner.session.lock().is_some());
     handle.close();
     drain(&engine);
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
 }
 
 #[test]
@@ -975,7 +987,7 @@ fn every_interface_actor_wake_completes_while_state_and_session_slot_are_held() 
     drop((slot, state));
     drain(&engine);
     assert!(engine.inner.session.lock().is_none());
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
 }
 
 #[test]
@@ -1055,7 +1067,7 @@ fn one_shot_cancel_after_final_stream_check_wakes_without_ack_or_later_control()
     assert!(owner_report(&engine).same_node(&before));
     assert!(engine.mirrored().unwrap().1.same_node(&before));
     assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
     assert!(core.worker.lock().unwrap().pending.is_none());
 }
 
@@ -1114,7 +1126,7 @@ fn unacked_request_timeout_and_wrong_initial_stamp_preserve_exact_owner() {
     assert_eq!(handle.poll().error, Some(Error::TimedOut));
     assert!(owner_report(&engine).same_node(&before));
     assert!(engine.mirrored().unwrap().1.same_node(&before));
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert_current_raw_charge(&engine);
     assert!(handle.terminal(request).unwrap());
     drain(&engine);
     assert_eq!(handle.poll().phase, Phase::Idle);
@@ -1303,7 +1315,7 @@ fn fresh_bootstrap_cancel_stale_activation_and_foreign_warm_history_leave_origin
             json::to_string(&engine.mirrored().unwrap().1),
             json::to_string(&before)
         );
-        assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert_current_raw_charge(&engine);
     }
     let (engine, stamp, epochs, state, fresh) = fresh_bootstrap("native");
     for history in [
@@ -1371,9 +1383,8 @@ fn recorded_live_core_keeps_stored_working_ready_and_complete_returns_exact_thro
     let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/session-live");
     let mut paths: Vec<_> = std::fs::read_dir(folder).unwrap().map(|e| e.unwrap().path())
         .filter(|path| path.extension().is_some_and(|e| e == "json")
-            && !path.file_name().unwrap().to_str().unwrap().contains("preflight")
-            && !path.file_name().unwrap().to_str().unwrap().starts_with("native-channels")).collect();
-    paths.sort();assert_eq!(paths.len(), 10);
+            && !path.file_name().unwrap().to_str().unwrap().contains("preflight")).collect();
+    paths.sort();assert_eq!(paths.len(), 18);
     let mut calls = 0;
     for path in paths {
         let reference = parsed(&std::fs::read_to_string(&path).unwrap());
@@ -1442,12 +1453,12 @@ fn recorded_live_core_keeps_stored_working_ready_and_complete_returns_exact_thro
             assert!(engine.inner.record_budget.retained_bytes() > 0);
             assert!(handle.terminal(request).unwrap());drain(&engine);
             assert_eq!(handle.poll().phase, Phase::Idle);
-            assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+            assert_current_raw_charge(&engine);
             if let Some(old) = previous_ready { assert!(old.upgrade().is_none(), "prior ready disposed on worker after ACK"); }
         }
         handle.close();drain(&engine);assert!(engine.inner.session.lock().is_none());
     }
-    assert_eq!(calls, 115);
+    assert_eq!(calls, 208);
 }
 
 #[test]
@@ -1479,10 +1490,10 @@ fn working_only_final_cancel_before_or_after_state_exchange_preserves_exact_line
             assert!(owner_report(&engine).same_node(&before));
             assert_eq!(core.worker.lock().unwrap().session.as_ref().unwrap().operation_epoch(), 0);
             assert!(core.worker.lock().unwrap().ready.is_none());
-            assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+            assert_current_raw_charge(&engine);
         }
         assert!(handle.terminal(request).unwrap());drain(&engine);
-        assert_eq!(handle.poll().phase, Phase::Idle);assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert_eq!(handle.poll().phase, Phase::Idle);assert_current_raw_charge(&engine);
     }
 }
 
@@ -1536,7 +1547,7 @@ fn dense_live_stream_stale_ready_and_close_retire_candidates_without_losing_live
         }
         assert!(engine.mirrored().unwrap().1.same_node(&stored));
         assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
-        assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert_current_raw_charge(&engine);
         assert!(engine.inner.session.lock().is_none());
     }
 }
@@ -1575,3 +1586,6 @@ fn recorded_quiet_history_after_live_refreshes_actual_ready_and_retains_previous
     }
     handle.close();drain(&engine);
 }
+
+#[path = "session_raw_tests.rs"]
+mod raw;

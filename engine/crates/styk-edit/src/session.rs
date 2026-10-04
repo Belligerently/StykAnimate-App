@@ -151,7 +151,7 @@ impl Session {
     /// Arguments and view must also be decoded/admitted on that worker; this
     /// method does not enable an owning editor on both UI and worker.
     pub fn call_values(&mut self, method: &str, args: &Value, view: &Value) -> Value {
-        call_values(&mut self.editor, method, args, view, false)
+        call_values(&mut self.editor, method, args, view, false, None).expect("legacy response has no host cancellation callback")
     }
 
     /// Borrow the canonical COW report on its owning worker. The host pairs this
@@ -190,7 +190,7 @@ impl Session {
         self.editor.prepare_worker_publication(
             |editor, check| {
                 check()?;
-                let answer = call_values(editor, method, args, view, true);
+                let answer = call_values(editor, method, args, view, true, Some(&mut *check))?;
                 check()?;
                 Ok(answer)
             },
@@ -210,7 +210,7 @@ impl Session {
 }
 
 /// Shared by legacy JSON calls and canonical worker transactions.
-fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, worker_preparation: bool) -> Value {
+fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, worker_preparation: bool, check: Option<&mut dyn FnMut() -> Result<(), EditError>>) -> Result<Value, EditError> {
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
@@ -226,7 +226,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         if let Err(error) = editor.sync_selection_metadata(view) {
             answer.set("status", Value::str("unported"));
             answer.set("reason", Value::str(&format!("{error:?}")));
-            return Value::object(answer);
+            return Ok(Value::object(answer));
         }
         editor.set_auto_key(flag(view, "autoKey"));
         // Selecting changes the active layer without a new revision of the document.
@@ -243,7 +243,30 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let result = if !worker_preparation && !editor.sheet() && (method == "addFigure" || crate::movieclip_native::native_movieclip_method(method)) {
         Err(EditError::Unported(if method == "addFigure" { "native movieclip insertion requires worker preparation" } else { "native movieclip editing requires worker preparation" }.into()))
     } else {
-        editor.call(method, &args).and_then(|result| {
+        let result = if let Some(check) = check {
+            // A recorded Invalid belongs in the canonical JSON response. Host
+            // cancellation must instead escape the same preparation operation,
+            // including a one-shot failure that later checks would not repeat.
+            // This stack-local error retains no callback or authoritative state.
+            let mut interrupted = None;
+            let mut checked = || match check() {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    let forwarded = match &error {
+                        EditError::Invalid(message) => EditError::Invalid(message.clone()),
+                        EditError::Unported(message) => EditError::Unported(message.clone()),
+                    };
+                    interrupted = Some(error);
+                    Err(forwarded)
+                }
+            };
+            let result = editor.call_worker_checked(method, &Value::array(args), &mut checked);
+            if let Some(error) = interrupted { return Err(error); }
+            result
+        } else {
+            editor.call(method, &args)
+        };
+        result.and_then(|result| {
             // Legacy facades read these views locally. The exclusive worker has
             // the sole owner, so it returns the recorded view from that owner.
             if worker_preparation && matches!(method, "seek" | "@seek") { editor.shown_frame() }
@@ -391,7 +414,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     } else { editor.draft_figures() };
     answer.set("draft", figures.map_or(Value::Null, Value::array));
     answer.set("drag", editor.drag_value());
-    Value::object(answer)
+    Ok(Value::object(answer))
 }
 
 #[cfg(test)]

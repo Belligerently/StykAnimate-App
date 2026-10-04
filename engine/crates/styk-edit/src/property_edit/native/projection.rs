@@ -1,6 +1,6 @@
 //! `projectNativePropertyChannel`: worker-only materialization through the same
 //! native pose marker/source and typed Records property/composition owners.
-use super::{channel_id, easing, items, normalize_target, own_channel};
+use super::{channel_id, easing, items, native_channel_header, normalize_target, own_channel};
 use crate::{EditError, Editor};
 use styk_doc::{Obj, Value};
 
@@ -41,7 +41,7 @@ impl Editor {
             ));
         }
         let uid = target.get("uid").and_then(Value::as_f64).unwrap() as u32;
-        let pose = self.native_baseline_pose(uid)?;
+        let pose = self.native_baseline_pose_checked(uid, check)?;
         let native = pose.get("source").and_then(Value::as_str) == Some("native");
         let raw_frames = if native {
             items(self.report.get("keyframes"))
@@ -163,5 +163,282 @@ impl Editor {
             channel.set("keys", Value::array(keys));
             Ok(Value::object(channel))
         })
+    }
+    /// Recorded worker-only ordinary native live families; no class/UI gate.
+    pub(crate) fn native_projected_call(&self, method: &str, args: &[Value]) -> bool {
+        if !self.options.property_channels
+            || self.options.layer_timeline
+            || self.sheet()
+            || self.selection_metadata.polygon.is_some()
+            || self.selection_metadata.segments.is_some()
+            || self.selection_metadata.branch.is_some()
+            || self.tick.fract() != 0.0
+            || self.selection.uids.len() > 1
+            || self.selection.joint >= 0
+            || self.native_token.is_some()
+            || ![
+                "select",
+                "@select",
+                "beginDrag",
+                "moveSelection",
+                "commitDrag",
+                "cancelDrag",
+                "beginAnimationEdit",
+                "previewAnimationEdit",
+                "commitAnimationEdit",
+                "cancelAnimationEdit",
+                "seek",
+                "@seek",
+                "undo",
+                "redo",
+            ]
+            .contains(&method)
+        {
+            return false;
+        }
+        if self.property_edit.is_some()
+            && [
+                "select",
+                "@select",
+                "beginDrag",
+                "moveSelection",
+                "commitDrag",
+                "cancelDrag",
+                "undo",
+                "redo",
+            ]
+            .contains(&method)
+        {
+            return false;
+        }
+        if self.drag.is_some()
+            && [
+                "select",
+                "@select",
+                "beginDrag",
+                "beginAnimationEdit",
+                "seek",
+                "@seek",
+                "undo",
+                "redo",
+                "commitAnimationEdit",
+                "cancelAnimationEdit",
+            ]
+            .contains(&method)
+        {
+            return false;
+        }
+        if self.drag.as_ref().is_some_and(|drag| {
+            !drag.authored
+                || drag.camera.is_some()
+                || drag.rig.is_some()
+                || drag.motion_path.is_some()
+                || drag.figure_handle.is_some()
+                || drag.handle_edit.is_some()
+        }) || self
+            .property_edit
+            .as_ref()
+            .is_some_and(|edit| edit.native.is_none())
+        {
+            return false;
+        }
+        let empty_options = |value: &Value| value.as_obj().is_some_and(|object| object.is_empty());
+        if ["select", "@select"].contains(&method) {
+            if args
+                .get(1)
+                .is_some_and(|joint| joint.as_f64() != Some(-1.0))
+                || args.get(2).is_some_and(|options| !empty_options(options))
+            {
+                return false;
+            }
+        }
+        if method == "beginAnimationEdit" {
+            let Some(target) = args.first() else {
+                return false;
+            };
+            if target.get("kind").and_then(Value::as_str) != Some("figure")
+                || target.as_obj().is_none_or(|object| {
+                    object
+                        .iter()
+                        .any(|(field, _)| !["kind", "uid"].contains(&field.as_ref()))
+                })
+                || !args
+                    .get(1)
+                    .and_then(Value::as_str)
+                    .is_some_and(|property| ["x", "y"].contains(&property))
+                || args.get(2).is_some_and(|options| !empty_options(options))
+            {
+                return false;
+            }
+        }
+        if ["seek", "@seek"].contains(&method)
+            && !args
+                .first()
+                .and_then(Value::as_f64)
+                .is_some_and(|tick| tick.is_finite() && tick.fract() == 0.0)
+        {
+            return false;
+        }
+        if ["beginDrag", "moveSelection"].contains(&method) && self.tick.fract() != 0.0 {
+            return false;
+        }
+        if method == "beginDrag" && args.first().is_some_and(|label| label.as_str().is_none()) {
+            return false;
+        }
+        if method == "moveSelection" && args.get(2).is_some_and(|options| !empty_options(options)) {
+            return false;
+        }
+        if method == "beginDrag" && args.get(1).is_some_and(|options| !empty_options(options)) {
+            return false;
+        }
+        true
+    }
+
+    pub(crate) fn native_projected_gate(
+        &self,
+        method: &str,
+        args: &[Value],
+        check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<(), EditError> {
+        if !self.native_projected_call(method, args) {
+            return Err(EditError::Unported(
+                "unrecorded worker native projected lifecycle".into(),
+            ));
+        }
+        if self.report.path(&["_styk", "movieclipSource"]).is_some()
+            || self.report.path(&["_styk", "simpleFrameDraft"]).is_some()
+        {
+            return Err(EditError::Unported(
+                "a native projected lifecycle inside a retained or saved draft".into(),
+            ));
+        }
+        if self
+            .report
+            .get("_styk")
+            .is_some_and(|metadata| !metadata.is_object())
+            || self
+                .report
+                .path(&["_styk", "animation"])
+                .is_some_and(|animation| {
+                    !animation.is_null()
+                        && (!animation.is_object()
+                            || animation.get("channels").is_some_and(|channels| {
+                                !channels.is_null() && !channels.is_array()
+                            }))
+                })
+            || self
+                .report
+                .path(&["_styk", "frameSources"])
+                .is_some_and(|sources| !sources.is_object())
+        {
+            return Err(EditError::Unported(
+                "malformed native projected owner headers".into(),
+            ));
+        }
+        if ["vfxClips", "cameraMotion"]
+            .iter()
+            .any(|field| self.report.path(&["_styk", field]).is_some())
+        {
+            return Err(EditError::Unported(
+                "an unrecorded native projected effect or camera-motion document".into(),
+            ));
+        }
+        // The worker-only slice excludes wider definitions and future/retained
+        // pose dependencies before committing any existing live draft. The
+        // existing typed Records compiler retains all numeric/schema checks.
+        for figure in items(self.report.get("figure_types")) {
+            check()?;
+            if [
+                "animationOrigin",
+                "poseChoices",
+                "spatialMesh",
+                "movieclip",
+                "drawing",
+            ]
+            .iter()
+            .any(|field| figure.path(&["_styk", field]).is_some_and(Value::truthy))
+                || items(figure.get("segments")).iter().any(|segment| {
+                    segment.get("_stykRig").is_some_and(Value::truthy)
+                        || segment.get("_stykPoseChoice").is_some_and(Value::truthy)
+                })
+            {
+                return Err(EditError::Unported(
+                    "a complex native projected definition".into(),
+                ));
+            }
+        }
+        let frames = items(self.report.get("keyframes"));
+        let retained = self
+            .report
+            .path(&["_styk", "frameSources"])
+            .and_then(Value::as_obj)
+            .map(|sources| {
+                sources
+                    .iter()
+                    .map(|(_, frame)| frame.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut native_ids = std::collections::HashSet::new();
+        for frame in &frames {
+            check()?;
+            if !frame
+                .path(&["_styk", "frameId"])
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty() && native_ids.insert(id))
+            {
+                return Err(EditError::Unported(
+                    "unavailable or nonunique native projected frame identities".into(),
+                ));
+            }
+        }
+        for frame in frames.iter().chain(&retained) {
+            check()?;
+            if frame.get("_stykVfx").is_some() {
+                return Err(EditError::Unported(
+                    "an unrecorded native projected scene effect".into(),
+                ));
+            }
+            for object in items(frame.get("objects")) {
+                check()?;
+                if ["join", "_stykIK", "_stykSpatial", "_stykStyle", "_stykVfx"]
+                    .iter()
+                    .any(|field| object.get(field).is_some_and(Value::truthy))
+                {
+                    return Err(EditError::Unported(
+                        "an unrecorded native projected pose dependency".into(),
+                    ));
+                }
+            }
+        }
+        let mut ids = std::collections::HashSet::new();
+        for channel in items(self.report.path(&["_styk", "animation", "channels"])) {
+            check()?;
+            if !native_channel_header(&channel, &["x", "y", "pose"], &mut ids) {
+                return Err(EditError::Unported(
+                    "an unrecorded native projected channel family".into(),
+                ));
+            }
+        }
+        let shown = self.selection_frame()?;
+        if ["select", "@select", "beginAnimationEdit"].contains(&method) {
+            let target = if method == "beginAnimationEdit" {
+                args.first().and_then(|target| target.get("uid"))
+            } else {
+                args.first()
+            };
+            let target = target.and_then(Value::as_f64).filter(|uid| {
+                uid.is_finite() && uid.fract() == 0.0 && (0.0..=u32::MAX as f64).contains(uid)
+            });
+            if !shown
+                .iter()
+                .any(|object| object.get("unique_id").and_then(Value::as_f64) == target)
+            {
+                return Err(EditError::Unported(
+                    "an unrecorded absent native projected target".into(),
+                ));
+            }
+        }
+        Ok(())
     }
 }

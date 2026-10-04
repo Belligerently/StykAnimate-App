@@ -1,7 +1,7 @@
 //! Canonical worker Editor roots in the same guarded mirror batch owner.
 //! No raw root setter, serialized document, alternate diff, store or Loader.
 use std::collections::LinkedList;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::sync::atomic::AtomicBool;
 
 use styk_doc::Value;
@@ -20,6 +20,32 @@ pub(super) struct Root {
     pub(super) after: Value,
     pub(super) charge: Arc<Charge>,
     pub(super) stored: bool,
+    pub(super) wake: Option<Weak<crate::session::Core>>,
+}
+
+// Private worker continuation of the SAME receiver reservation. This accounts
+// only receiver/current-ready raw values, not Editor history or typed storage.
+pub(crate) struct ReadyCharge { charge: Arc<Charge> }
+impl ReadyCharge {
+    pub(crate) fn unique(&mut self) -> bool { Arc::get_mut(&mut self.charge).is_some() }
+    pub(crate) fn rescope(owner: &mut Option<Self>, current: Option<&Value>) -> Result<bool, MirrorError> {
+        let Some(continuation) = owner.as_mut() else { return Ok(true) };
+        let Some(charge) = Arc::get_mut(&mut continuation.charge) else { return Ok(false) };
+        if let Some(current) = current {
+            let bytes = styk_doc::retained_bytes_checked(&[current], |_| Ok::<_, MirrorError>(()))?
+                .checked_add(256).ok_or_else(|| MirrorError::Record("retained raw size overflow".into()))?;
+            charge.grow_to(bytes).map_err(|error| MirrorError::Record(error.to_string()))?;
+            charge.shrink_to(bytes);
+        } else {
+            drop(owner.take()); // no current raw head remains, including first failure
+        }
+        Ok(true)
+    }
+}
+pub(crate) struct SessionRoot<'a> {
+    pub(crate) current: Option<&'a Value>,
+    pub(crate) charge: &'a mut Option<ReadyCharge>,
+    pub(crate) wake: Weak<crate::session::Core>,
 }
 
 /// Opaque admission of one exact prepared Editor root. Keep this strong lease
@@ -106,7 +132,7 @@ impl Engine {
         &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
         response: &Value, check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
-        self.stage_publication_response_worker(batch, guard, prepared, response, None, false, true, None, check)
+        self.stage_publication_response_worker(batch, guard, prepared, response, None, false, true, None, None, check)
     }
 
     /// The actor aliases its prebuilt small cancellation atom into the SAME
@@ -114,10 +140,10 @@ impl Engine {
     /// acquiring State/staged or detaching any payload on that interface.
     pub(crate) fn stage_session_publication_response_worker(
         &self, batch: u32, guard: RecordGuard, prepared: &styk_edit::session::WorkerPrepared,
-        response: &Value, cancelled: Arc<AtomicBool>, check: impl FnMut() -> Result<(), MirrorError>,
+        response: &Value, cancelled: Arc<AtomicBool>, session: SessionRoot<'_>, check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
         self.stage_publication_response_worker(batch, guard, prepared.publication(), response, Some(cancelled),
-            false, true, prepared.display().map(|display| &display.record), check)
+            false, true, prepared.display().map(|display| &display.record), Some(session), check)
     }
     /// The exclusive actor's exact working candidate can differ from the
     /// canonical stored root during native previews without a revision change.
@@ -125,15 +151,15 @@ impl Engine {
     pub(crate) fn stage_live_session_publication_worker(
         &self, batch: u32, guard: RecordGuard,
         prepared: &styk_edit::session::WorkerPrepared, response: &Value,
-        cancelled: Arc<AtomicBool>, check: impl FnMut() -> Result<(), MirrorError>,
+        cancelled: Arc<AtomicBool>, session: SessionRoot<'_>, check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
         let stored = prepared.revision() != prepared.before_revision();
         self.stage_publication_response_worker(batch, guard, prepared.publication(), response,
-            Some(cancelled), true, stored, prepared.display().map(|display| &display.record), check)
+            Some(cancelled), true, stored, prepared.display().map(|display| &display.record), Some(session), check)
     }
     fn stage_publication_response_worker(
         &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
-        response: &Value, cancelled: Option<Arc<AtomicBool>>, live: bool, stored: bool, display_record: Option<&Value>, mut check: impl FnMut() -> Result<(), MirrorError>,
+        response: &Value, cancelled: Option<Arc<AtomicBool>>, live: bool, stored: bool, display_record: Option<&Value>, mut session: Option<SessionRoot<'_>>, mut check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
         check()?;
         let canonical_before = {
@@ -152,31 +178,42 @@ impl Engine {
             }
             mirror.tree.clone()
         };
-        let budget = {
-            let staged = self.inner.staged.lock();
-            staged.get(&batch).map(|owner| owner.budget.clone())
-        }
-        .unwrap_or_else(|| Arc::new(Budget::default()));
-        let mut charge = Charge::new(self.inner.record_budget.clone(), budget.clone())
-            .map_err(|error| MirrorError::Record(error.to_string()))?;
-        charge
-            .grow(256)
-            .map_err(|error| MirrorError::Record(error.to_string()))?;
-        let mut accounted = 0;
+        let existing = session.as_ref().and_then(|session| session.charge.as_ref());
+        let budget = existing.map(|continuation| continuation.charge.budget()).unwrap_or_else(|| {
+            let staged_budget = {
+                let staged = self.inner.staged.lock();
+                staged.get(&batch).map(|owner| owner.budget.clone())
+            };
+            staged_budget.unwrap_or_else(|| Arc::new(Budget::default()))
+        });
+        let mut fresh = None;
         let no_display = Value::Null;
+        let current = session.as_ref().and_then(|session| session.current).unwrap_or(&no_display);
+        let wake = session.as_ref().map(|session| session.wake.clone());
+        let slot = match session.as_mut() {
+            Some(session) => &mut *session.charge,
+            None => &mut fresh,
+        };
+        if slot.is_none() {
+            *slot = Some(ReadyCharge { charge: Arc::new(Charge::new(self.inner.record_budget.clone(), budget.clone())
+                .map_err(|error| MirrorError::Record(error.to_string()))?) });
+        }
+        let charge_owner = &mut slot.as_mut().expect("existing or admitted reservation").charge;
+        let charge = Arc::get_mut(charge_owner).ok_or(MirrorError::Transaction(
+            "the Session raw retirement has not been physically disposed"))?;
+        charge.grow_to(256).map_err(|error| MirrorError::Record(error.to_string()))?;
         styk_doc::retained_bytes_checked(
             &[
                 &canonical_before, prepared.before_report(), prepared.report(), prepared.result(),
                 prepared.state(), prepared.history(), prepared.events(),
                 prepared.before_state(), prepared.before_history(),
-                response, display_record.unwrap_or(&no_display),
+                response, display_record.unwrap_or(&no_display), current,
             ],
             |bytes| {
                 check()?;
                 charge
-                    .grow(bytes.saturating_sub(accounted))
+                    .grow_to(bytes.checked_add(256).ok_or_else(|| MirrorError::Record("retained raw size overflow".into()))?)
                     .map_err(|error| MirrorError::Record(error.to_string()))?;
-                accounted = bytes;
                 if !self.record_guard_current(guard) {
                     return Err(MirrorError::Transaction(
                         "the prepared Editor belongs to a stale generation",
@@ -186,7 +223,7 @@ impl Engine {
             },
         )?;
         check()?;
-        let charge = Arc::new(charge);
+        let charge = charge_owner.clone();
         let admission = EditPublicationAdmission {
             batch,
             guard,
@@ -207,6 +244,7 @@ impl Engine {
                 after: admission.after.clone(),
                 charge,
                 stored,
+                wake,
             }),
             cancelled,
         )

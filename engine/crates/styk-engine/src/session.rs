@@ -15,7 +15,7 @@ use styk_edit::{
     session::{RevisionCounters, Session, WorkerSession, WorkerPrepared, WorkerFrame},
 };
 
-use crate::mirror::{EditPublicationAdmission, MirrorError, RecordGuard};
+use crate::mirror::{EditPublicationAdmission, MirrorError, RecordGuard, ReadyCharge, SessionRoot};
 use crate::planning::{CHUNK_BYTES, Chunks};
 use crate::{Engine, Inner, PublicationRetirement};
 
@@ -163,6 +163,9 @@ struct Worker {
     // Actual prepared editing display on the durable worker. It is not the
     // browser's Shown owner; no dense payload crosses a UI handle here.
     ready: Option<WorkerFrame>,
+    // One continuation of the same receiver charge; never a second ready budget.
+    ready_charge: Option<ReadyCharge>,
+    rescope_due: bool,
 }
 pub(crate) struct Core {
     engine: Weak<Inner>,
@@ -273,7 +276,9 @@ impl Core {
         self.deadline
             .store((engine.now() + TIMEOUT_MS).to_bits(), Ordering::Release);
     }
-    fn schedule(self: &Arc<Self>) {
+    pub(crate) fn schedule(self: &Arc<Self>) {
+        #[cfg(test)]
+        crate::allocation::before_lock(self.as_ref() as *const Self as usize);
         // Record every producer wake before coalescing. A cancellation can
         // arrive after the worker's last check while its task is still queued.
         self.wake_pending.store(true, Ordering::Release);
@@ -307,7 +312,7 @@ impl Core {
     }
     fn fail(&self, engine: &Engine, worker: &mut Worker, request: u64, error: Error) {
         if let Some(pending) = worker.pending.take() {
-            engine.discard_batch(pending.batch);
+            engine.discard_batch_worker(pending.batch);
             drop(pending); // all candidate/cursor/charged retirement disposal is worker-only
         }
         if !worker.active {
@@ -334,10 +339,11 @@ impl Core {
     }
     fn dispose(&self, engine: &Engine, worker: &mut Worker) {
         if let Some(pending) = worker.pending.take() {
-            engine.discard_batch(pending.batch);
+            engine.discard_batch_worker(pending.batch);
             drop(pending);
         }
         drop((worker.session.take(), worker.ready.take()));
+        drop(worker.ready_charge.take()); // raw ready is physically gone FIRST
         let retired = {
             let mut mail = self.mailbox.lock().unwrap_or_else(|e| e.into_inner());
             mail.phase = Phase::Closed;
@@ -365,11 +371,15 @@ impl Core {
         drop(detached); // Session is already absent; no UI last-strong payload
         engine.notify_progress();
     }
-    fn prepare(&self, engine: &Engine, worker: &mut Worker, input: Input) -> Result<(), Error> {
+    fn prepare(self: &Arc<Self>, engine: &Engine, worker: &mut Worker, input: Input) -> Result<(), Error> {
         if input.stamp != worker.stamp || input.epochs.shown != worker.epochs.shown {
             return Err(Error::Stale);
         }
         self.check(engine, input.stamp)?;
+        if worker.ready_charge.as_mut().is_some_and(|charge| !charge.unique()) {
+            return Err(Error::Busy); // no mutation while a detached alias owns old raw heads
+        }
+        worker.rescope_due = true;
         let args = json::parse(input.args.as_bytes()).map_err(|_| Error::InvalidInput)?;
         let view = json::parse(input.view.as_bytes()).map_err(|_| Error::InvalidInput)?;
         if input.project_fields && !view.is_null() {
@@ -407,14 +417,19 @@ impl Core {
             .ok_or(Error::Closed)?;
         let check = || self.check(engine, input.stamp).map_err(|_|
             MirrorError::Transaction("the Session request was cancelled or superseded"));
+        let raw = SessionRoot { current: worker.ready.as_ref().map(|ready| &ready.record),
+            charge: &mut worker.ready_charge, wake: Arc::downgrade(self) };
         let admission = if input.live {
             engine.stage_live_session_publication_worker(batch, guard, &prepared, &response,
-                self.batch_cancelled.clone(), check)
+                self.batch_cancelled.clone(), raw, check)
         } else {
             engine.stage_session_publication_response_worker(batch, guard, &prepared, &response,
-                self.batch_cancelled.clone(), check)
+                self.batch_cancelled.clone(), raw, check)
         }.map_err(owner)?;
-        let cursor = Chunks::new(response).map_err(owner)?;
+        let cursor = match Chunks::new(response) {
+            Ok(cursor) => cursor,
+            Err(error) => { engine.discard_batch_worker(batch); return Err(owner(error)) }
+        };
         worker.pending = Some(Pending {
             request: input.request,
             batch,
@@ -548,6 +563,10 @@ impl Core {
             self.queued.store(false, Ordering::Release);
             return;
         }
+        // Detached retirement wakes this SAME Core even while request == 0.
+        // A failed uniqueness barrier stays deferred, without polling/self-wake.
+        worker.rescope_due = true;
+        Self::rescope(&mut worker);
         let (input, initialization, control) = {
             let mut mail = self.mailbox.lock().unwrap_or_else(|e| e.into_inner());
             (
@@ -617,6 +636,7 @@ impl Core {
                 self.fail(engine, &mut worker, request, error);
             }
         }
+        Self::rescope(&mut worker); // after all Pending/candidate/raw dispositions
         drop(worker);
         self.queued.store(false, Ordering::Release);
         let again = {
@@ -627,6 +647,13 @@ impl Core {
             // Preserve the pending bit for the next task to consume. Merely
             // retaining a Failed/Success cancellation does not create a wake.
             self.schedule();
+        }
+    }
+    fn rescope(worker: &mut Worker) {
+        if !worker.rescope_due || worker.pending.is_some() { return }
+        if matches!(ReadyCharge::rescope(&mut worker.ready_charge,
+            worker.ready.as_ref().map(|ready| &ready.record)), Ok(true)) {
+            worker.rescope_due = false;
         }
     }
 }
@@ -884,6 +911,8 @@ impl Engine {
                 epochs,
                 pending: None,
                 ready: None,
+                ready_charge: None,
+                rescope_due: false,
             },
             Mailbox {
                 request: 1,
@@ -924,6 +953,7 @@ impl Engine {
         let stamp = worker.stamp;
         let epochs = worker.epochs;
         drop(worker.ready.take());
+        drop(worker.ready_charge.take());
         core.closed.store(true, Ordering::Release);
         {
             let mut mail = core.mailbox.lock().unwrap_or_else(|e| e.into_inner());
@@ -985,6 +1015,8 @@ impl Engine {
                 epochs,
                 pending: None,
                 ready: None,
+                ready_charge: None,
+                rescope_due: false,
             },
             Mailbox::default(),
             0,

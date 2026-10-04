@@ -7,6 +7,9 @@ use styk_doc::Value;
 
 use crate::{EditError, Editor, Options, Selection};
 
+mod live;
+pub use live::replay_session_live_worker;
+
 /// What a replay found.
 #[derive(Debug, Default)]
 pub struct Outcome {

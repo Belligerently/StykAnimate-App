@@ -7,6 +7,7 @@
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 //!   styk generators <file> <tick>…        the generated effects of frames: draws, live particles, timing
 //!   styk edit-replay [--worker [--max-source-bytes N]] <reference.json>…    editing commands against the JS editor's recording
+//!   styk edit-replay --live-worker <session.json> <returns.json>…  strict paired live worker traces
 //!   styk edit-session <capture.json>      an app edit session the shadow facade captured,
 //!                                         replayed natively (each answer's status)
 //!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
@@ -61,7 +62,7 @@ fn main() {
         Some("export") if args.len() >= 4 => export::export(&args[1], &args[2], &args[3], &args[4..]),
         Some("raster-parity") if args.len() >= 2 => raster_parity::run(&args[1..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay [--worker [--max-source-bytes N]] <reference.json>... | edit-session <capture.json>");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay [--worker [--max-source-bytes N]] <reference.json>... | edit-replay --live-worker <session.json> <returns.json>... | edit-session <capture.json>");
             2
         }
     };
@@ -71,6 +72,7 @@ fn main() {
 /// Replays command recordings (engine/tools/edit-replay.mjs) in styk-edit. Exit code 1
 /// when any step the engine runs differs from the editor's.
 fn edit_replay(files: &[String]) -> i32 {
+    if files.first().is_some_and(|flag| flag=="--live-worker") { return edit_live_replay(&files[1..]); }
     let worker = files.iter().any(|arg| arg == "--worker");
     let mut references = Vec::new();
     let mut max_source_bytes = 128 * 1024 * 1024;
@@ -105,6 +107,31 @@ fn edit_replay(files: &[String]) -> i32 {
                 println!("{file}: {error}");
                 failed = true;
             }
+        }
+    }
+    i32::from(failed)
+}
+
+/// Paired original Session and complete-return traces, through the canonical
+/// exclusive worker capability. This explicit offline mode refuses partial ports.
+fn edit_live_replay(files: &[String]) -> i32 {
+    if files.is_empty() || files.len()%2!=0 || files.iter().any(|file|file.starts_with("--")) {
+        eprintln!("edit-replay --live-worker requires original/complete-return file pairs"); return 2;
+    }
+    let read=|file:&str| std::fs::read(file).map_err(|error|error.to_string())
+        .and_then(|bytes|styk_doc::json::parse(&bytes).map_err(|error|error.to_string()));
+    let mut failed=false;
+    for pair in files.chunks_exact(2) {
+        let outcome=read(&pair[0]).and_then(|original|read(&pair[1])
+            .and_then(|returns|styk_edit::replay::replay_session_live_worker(&original,&returns)));
+        match outcome {
+            Ok(outcome)=>{
+                println!("{}: {}/{} complete worker calls match",outcome.scenario,outcome.matched,outcome.steps);
+                if let Some((step,reason))=&outcome.unported { println!("  step {step} not ported ({reason})"); }
+                for mismatch in &outcome.mismatches { println!("  {mismatch}"); }
+                failed|=!outcome.passed() || outcome.unported.is_some() || outcome.matched!=outcome.steps;
+            }
+            Err(error)=>{println!("{}: {error}",pair[0]);failed=true;}
         }
     }
     i32::from(failed)

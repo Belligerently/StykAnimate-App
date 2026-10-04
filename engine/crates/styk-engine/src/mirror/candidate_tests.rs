@@ -180,7 +180,9 @@ fn recorded_working_and_identical_byte_history_commit_borrow_the_exact_generatio
         let args = Value::array(call.iter().skip(1).collect());let before_document = json::to_string(session.report());
         let before = engine.generation().unwrap();let prepared = session.prepare_live(method, &args, &Value::Null, || Ok(())).unwrap();
         let stored = prepared.revision() != prepared.before_revision();let transaction = guard(&engine);
-        let admission = engine.stage_live_session_publication_worker(7, transaction, &prepared, prepared.result(), Arc::new(std::sync::atomic::AtomicBool::new(false)), || Ok(())).unwrap();
+        let mut charge = None;
+        let admission = engine.stage_live_session_publication_worker(7, transaction, &prepared, prepared.result(), Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            super::SessionRoot { current: None, charge: &mut charge, wake: std::sync::Weak::new() }, || Ok(())).unwrap();
         let (publication, display, _) = session.guard(prepared, || Ok(())).unwrap_or_else(|(error, _)| panic!("{error}"));
         let candidate = engine.prepare_edit_publication_worker(7, transaction, publication, admission)
             .unwrap_or_else(|(error, _, _)| panic!("{error}"));

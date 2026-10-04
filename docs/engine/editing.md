@@ -196,9 +196,10 @@ Separately, consuming `Session::into_worker` produces the portable exclusive
 operations using the same editor, publication, history, source and SceneBudget owners.
 The actual editor's working document and shown frame remain separate. Ten ordinary
 native/sheet lifecycle tapes compare all 115 calls, complete returns, state, events,
-display, exported history fields/weights and runtime flags. Eight native
-`propertyChannels:true` tapes retain their first-selection refusal; five asynchronous
-preflight tapes are evidence for a future protocol, not admitted live calls. This
+display, exported history fields/weights and runtime flags. Eight recorded native
+`propertyChannels:true` tapes now also match all 93 calls through the same exclusive
+worker and Core owner; their original options are preserved. Five asynchronous
+preflight tapes remain evidence for a future protocol, not admitted live calls. This
 capability is coupled to Core's portable `Handle::submit_live` for the twelve recorded
 methods. It remains outside browser ready/shown tickets and app writer transfer.
 
@@ -209,8 +210,17 @@ revision changes publish the stored root even when the committed JSON is identic
 Each ready display and displaced display uses the same SceneBudget reservation.
 Quiet undo/redo after a live gesture uses that same display owner. Ready is a raw/typed
 Frame and Scene here; no encoded DrawList or actual Stage presentation is certified.
-After terminal ACK, the current ready display remains alive while the pending raw
-admission can return to zero. Persistent current charging and physical leases remain open.
+After terminal ACK, the current ready display remains alive and its raw record stays
+charged to the SAME receiver reservation. Admission counts current, canonical,
+prepared and response raw heads as one shared union before cloning. It grows only the
+positive delta, then shrinks to the actual current raw head after worker disposal of
+all detached aliases. `Arc::get_mut` supplies the hard uniqueness barrier including
+Weak aliases. New preparation returns Busy before Session mutation while an alias
+survives; existing drop-first retirement wakes only the original Core, including idle
+request-zero recovery, without polling or another queue. Close/no-ready releases the
+charge after the physical ready drop. The receiver cap remains 1 GiB, separate from
+128 MiB editing/materialization. This covers receiver/current-ready raw storage;
+Editor history/clipboards, typed/encoded ownership, physical union and leases remain open.
 
 `WorkerSession::prepare_worker_history` is the additive portable history entry point;
 `Handle::submit_live` adds portable Core submission. Existing browser bindings do not
@@ -220,12 +230,28 @@ the recorded oracle rather than substituting the editor's working document for d
 The private native property projector adopts the original scalar curve through the
 existing marker/source, Draft, Records, typed channel sampler and Animation/history
 owners. Recorded automatic easing, rotation winding and source ordering are preserved.
-This primitive does not admit the eight `propertyChannels:true` command recordings;
-authored-pose publication is still required. Cold baseline/presence/typed preparation
+The recorded worker-only lifecycle now dispatches through the existing checked native
+owner, AuthoredDrag and guarded publication; legacy calls and wider native combinations
+remain refused. Cold baseline/presence/typed preparation
 between cancellation checks is not certified as bounded dense work.
 The additive `Records::pose_source_frame(id, native_index)` lookup preserves retained
 source precedence. A row hint requires verified unique native frame identities; raw or
 unvalidated records must use `None` for first-match semantics.
+
+The Session's single response builder borrows the existing worker check callback only
+for worker preparation. Original host cancellation/Invalid/Unported errors escape that
+preparation even if a later callback succeeds; recorded editor Invalid stays canonical
+JSON. Legacy calls keep the same serializer and dispatcher. Complete original returns,
+actual displayed records, exported history and source/cancel lifecycle are compared.
+
+Portable offline tool addition: `replay::replay_session_live_worker(&Value, &Value)`
+consumes one fresh Session and checks its actual initial document/state/history/display/
+runtime before the first call, then every prepared and guarded step. Counters must be
+lossless nonnegative whole JavaScript integers; counts also fit platform `usize` before
+casts. `styk edit-replay --live-worker <session> <returns> [pairs...]` exits nonzero for
+any refusal, mismatch or invalid pair. Its original recordings are separate immutable
+inputs; foreign warm history is not fabricated. This adds a portable replay API for the
+mobile pin and worker command support; browser capability/class gates are unchanged.
 
 `mirror::{WorkerPublication, WorkerEditPublication}` provide an opaque scoped worker
 candidate. Preparation retains the same Mirror guard, CommitMarker and Loader, and

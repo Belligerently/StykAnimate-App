@@ -30,11 +30,13 @@ impl MoveOptions {
 
 impl Editor {
     /// `beginDrag(label, {scope})`: snapshots the figures the gesture may change.
-    pub(crate) fn begin_drag(&mut self, label: &str, translation: bool) -> Result<bool, EditError> {
+    pub(crate) fn begin_drag(&mut self, label: &str, translation: bool) -> Result<bool, EditError> { self.begin_drag_checked(label, translation, &mut || Ok(())) }
+    pub(crate) fn begin_drag_checked(&mut self, label: &str, translation: bool, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         if self.drag.is_some() {
-            self.commit_drag()?;
+            self.commit_drag_checked(check)?;
         }
-        if self.sheet() {
+        if self.sheet() || self.options.property_channels {
             return self.begin_authored_drag(label, translation);
         }
         let Some((_, object)) = self.object()? else { return Ok(false) };
@@ -88,17 +90,19 @@ impl Editor {
 
     /// `_objectEdit(label, mutate, {posed})`: a `posed` edit changes the pose as it is
     /// displayed, so pinned IK solutions are baked into the gesture's figures first.
-    pub(crate) fn object_edit_with(&mut self, label: &str, posed: bool, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+    pub(crate) fn object_edit_with(&mut self, label: &str, posed: bool, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> { self.object_edit_with_checked(label, posed, mutate, &mut || Ok(())) }
+    pub(crate) fn object_edit_with_checked(&mut self, label: &str, posed: bool, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         if self.object()?.is_none() {
             return Ok(false);
         }
         let active = self.drag.is_some();
         if !active {
-            self.begin_drag(label, false)?;
+            self.begin_drag_checked(label, false, check)?;
         }
         let result = (if posed { self.bake_pinned() } else { Ok(()) }).and_then(|()| mutate(self)).and_then(|()| {
             self.touch()?;
-            if !active { self.commit_drag().map(|_| ()) } else { Ok(()) }
+            if !active { self.commit_drag_checked(check).map(|_| ()) } else { Ok(()) }
         });
         if let Err(error) = result {
             self.cancel_drag()?;
@@ -128,7 +132,9 @@ impl Editor {
         Ok(())
     }
 
-    pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> {
+    pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> { self.commit_drag_checked(&mut || Ok(())) }
+    pub(crate) fn commit_drag_checked(&mut self, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         if self.rig_drag().is_some() {
             return self.commit_rig_drag();
         }
@@ -140,7 +146,7 @@ impl Editor {
         }
         let Some(drag) = self.drag.as_ref() else { return Ok(false) };
         if drag.authored {
-            return self.commit_authored_drag();
+            return self.commit_authored_drag_checked(check);
         }
         let before = drag.before.clone();
         self.synchronize_origins(&before)?;
@@ -202,12 +208,14 @@ impl Editor {
     }
 
     /// `moveSelection`: translates connected roots once, including when a selected figure is a joined child.
-    pub(crate) fn move_selection(&mut self, dx: f64, dy: f64, options: &Value) -> Result<bool, EditError> {
+    pub(crate) fn move_selection(&mut self, dx: f64, dy: f64, options: &Value) -> Result<bool, EditError> { self.move_selection_checked(dx, dy, options, &mut || Ok(())) }
+    pub(crate) fn move_selection_checked(&mut self, dx: f64, dy: f64, options: &Value, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         if !dx.is_finite() || !dy.is_finite() {
             return Err(EditError::Invalid(NOT_FINITE.into()));
         }
         let options = MoveOptions::from_value(options);
-        self.object_edit("Move figures", |editor| {
+        self.object_edit_with_checked("Move figures", false, |editor| {
             if !options.detach_external {
                 editor.expand_translation_drag()?;
             }
@@ -267,7 +275,7 @@ impl Editor {
                 record.remove("runtime_segments");
             }
             Ok(())
-        })
+        }, check)
     }
 
     fn scene(&self) -> Result<styk_eval::geometry::Scene, EditError> {

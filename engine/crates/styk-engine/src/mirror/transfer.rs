@@ -44,6 +44,19 @@ impl Charge {
         self.bytes += bytes;
         Ok(())
     }
+    pub(super) fn budget(&self) -> Arc<Budget> { self.batch.clone() }
+    pub(super) fn grow_to(&mut self, bytes: usize) -> Result<(), TransferError> {
+        self.grow(bytes.saturating_sub(self.bytes))
+    }
+    // Only the owning worker, after every displaced raw head is physically
+    // dropped, may shrink the SAME reservation. No replacement allowance.
+    pub(super) fn shrink_to(&mut self, bytes: usize) {
+        assert!(bytes <= self.bytes);
+        let released = self.bytes - bytes;
+        self.global.bytes.fetch_sub(released, Ordering::SeqCst);
+        self.batch.bytes.fetch_sub(released, Ordering::SeqCst);
+        self.bytes = bytes;
+    }
 }
 impl Drop for Charge {
     fn drop(&mut self) {
@@ -135,6 +148,11 @@ impl Batch {
     pub(crate) fn with_budget(budget: Arc<Budget>) -> Self {
         Self { changes: LinkedList::new(), guard: None, transfer: None, cancelled: Arc::new(AtomicBool::new(false)), committing: false, budget, charges: LinkedList::new(), root: None }
     }
+    pub(crate) fn retire_worker(self) {
+        let wake = self.root.as_ref().and_then(|root| root.wake.clone());
+        drop(self); // all raw heads/charge aliases FIRST, original Core wake SECOND
+        if let Some(core) = wake.and_then(|core| core.upgrade()) { core.schedule(); }
+    }
 }
 
 /// The existing staged owner, with a bounded index of guarded batches. Legacy
@@ -157,6 +175,17 @@ impl std::ops::DerefMut for Staged {
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.batches }
 }
 impl Staged {
+    fn retire_worker(self) {
+        // Actor roots are guarded; this existing index bounds wake extraction.
+        let wakes: [_; MAX_RECORD_TRANSFERS] = std::array::from_fn(|index| {
+            self.guarded[index].and_then(|(id, _)| self.get(&id))
+                .and_then(|batch| batch.root.as_ref()).and_then(|root| root.wake.clone())
+        });
+        drop(self);
+        for core in wakes.into_iter().flatten().filter_map(|core| core.upgrade()) {
+            core.schedule();
+        }
+    }
     pub(crate) fn remove(&mut self, batch: &u32) -> Option<Batch> {
         for entry in &mut self.guarded { if entry.is_some_and(|(id, _)| id == *batch) { *entry = None; } }
         self.batches.remove(batch)
@@ -469,7 +498,9 @@ impl Engine {
                 }
             }
         }
-        if !retired.is_empty() { self.spawn_retained(move |_| drop(retired)); }
+        if !retired.is_empty() { self.spawn_retained(move |_| {
+            for batch in retired { batch.retire_worker(); }
+        }); }
     }
 
     pub(crate) fn stop_record_batches(&self) {
@@ -477,10 +508,13 @@ impl Engine {
         let replacement = Staged::default();
         // Build the empty disposal job before locking. Publish its pointer and
         // the stop flag together, so no worker can return before cleanup exists.
-        let payload = Arc::new(Mutex::new(None));
+        let payload = Arc::new(Mutex::new(None::<Staged>));
         let worker_payload = payload.clone();
         let mut node: LinkedList<Box<dyn FnOnce(&Engine) + Send>> = LinkedList::new();
-        node.push_back(Box::new(move |_| drop(worker_payload.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take())));
+        node.push_back(Box::new(move |_| {
+            let retired = worker_payload.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+            if let Some(retired) = retired { retired.retire_worker(); }
+        }));
         {
             let mut state = self.inner.state.lock();
             if self.inner.stopping.load(Ordering::SeqCst) { return }

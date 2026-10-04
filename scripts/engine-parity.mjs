@@ -87,12 +87,23 @@ run('native transform projection fixtures regenerate unchanged', process.execPat
   ['engine/tools/native-transform-projection-fixtures.mjs'], {quiet: true,
     check: () => unchanged('engine/tests/edit')});
 
+run('native transform live fixtures regenerate unchanged', process.execPath,
+  ['engine/tools/native-transform-projection-live-fixtures.mjs'], {quiet: true,
+    check: () => unchanged('engine/tests/edit')});
+
 run('typed pairing fixtures regenerate unchanged', process.execPath,
   ['engine/tools/typed-pairing-fixtures.mjs'], {quiet: true,
     check: () => unchanged('engine/tests/typed-pairing')});
 
 // Containers: every native file in the repository, against the JavaScript reader.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});
+// Complete-return recordings identify the admitted live-worker pairs; async
+// preflight tapes have no admitted return recording and remain explicit guards.
+const livePairs = readdirSync(path.join(root, 'engine/tests/session-live-return'))
+  .filter(name => name.endsWith('.json')).sort()
+  .flatMap(name => [`engine/tests/session-live/${name}`, `engine/tests/session-live-return/${name}`]);
+run('live worker command replays', 'engine/target/release/styk',
+  ['edit-replay', '--live-worker', ...livePairs], {quiet: true});
 const natives = [];
 const walk = dir => {
   for (const entry of readdirSync(path.join(root, dir), {withFileTypes: true})) {

@@ -408,36 +408,92 @@ impl Editor {
     /// Native reference keys projected onto this figure's lifetime. The
     /// evaluator owns their curves; publication saves only frame references.
     pub(crate) fn native_baseline_pose(&self, selected: u32) -> Result<Value, EditError> {
-        if let Some(channel) = poses(&self.report).into_iter().find(|c| c.get("property").and_then(Value::as_str) == Some("pose") && c.path(&["target", "kind"]).and_then(Value::as_str) == Some("figure") && c.path(&["target", "uid"]).and_then(Value::as_f64) == Some(selected as f64)) {
-            return Ok(channel);
+        self.native_baseline_pose_checked(selected, &mut || Ok(()))
+    }
+
+    /// The same native marker/lifetime owner; only worker preparation forwards
+    /// its borrowed cancellation check. Ordinary callers retain their wrapper.
+    pub(crate) fn native_baseline_pose_checked(
+        &self,
+        selected: u32,
+        check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<Value, EditError> {
+        check()?;
+        for channel in poses(&self.report) {
+            check()?;
+            if channel.get("property").and_then(Value::as_str) == Some("pose")
+                && channel.path(&["target", "kind"]).and_then(Value::as_str) == Some("figure")
+                && channel.path(&["target", "uid"]).and_then(Value::as_f64) == Some(selected as f64)
+            {
+                return Ok(channel);
+            }
         }
-        let keys = self.native_pose_markers()?;
-        let present = items(self.report.get("keyframes")).iter().enumerate().filter_map(|(index, frame)| {
-            items(frame.get("objects")).iter().any(|object| uid(object) == Some(selected)).then_some(index)
-        }).collect::<Vec<_>>();
+        let keys = self.native_pose_markers_checked(check)?;
+        let mut present = Vec::new();
+        for (index, frame) in items(self.report.get("keyframes")).iter().enumerate() {
+            check()?;
+            for object in items(frame.get("objects")) {
+                check()?;
+                if uid(&object) == Some(selected) {
+                    present.push(index);
+                    break;
+                }
+            }
+        }
+        check()?;
         let sequence = project_pose_keys(&keys, &present);
         let mut descriptor = object(&[
             ("id", Value::str(&channel_id(selected))),
-            ("target", object(&[("kind", Value::str("figure")), ("uid", Value::Num(selected as f64))])),
+            (
+                "target",
+                object(&[
+                    ("kind", Value::str("figure")),
+                    ("uid", Value::Num(selected as f64)),
+                ]),
+            ),
             ("property", Value::str("pose")),
             ("source", Value::str("native")),
             ("keys", Value::array(sequence)),
-        ]).as_obj().unwrap().clone();
-        if self.options.property_channels { descriptor.set("nativeProperties", Value::Bool(true)); }
+        ])
+        .as_obj()
+        .unwrap()
+        .clone();
+        if self.options.property_channels {
+            descriptor.set("nativeProperties", Value::Bool(true));
+        }
         Ok(Value::object(descriptor))
     }
 
     /// `nativePoseChannel` marker keys are shared by figure lifetime projection
     /// and a newly authored native layer. The typed native timeline owns timing.
     fn native_pose_markers(&self) -> Result<Vec<Value>, EditError> {
+        self.native_pose_markers_checked(&mut || Ok(()))
+    }
+
+    fn native_pose_markers_checked(
+        &self,
+        check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<Vec<Value>, EditError> {
+        check()?;
         let prepared = self.prepared()?;
+        check()?;
         let rows = styk_eval::eval::native_timeline(&prepared.doc);
         let frames = items(self.report.get("keyframes"));
         let mut keys = Vec::new();
         for (row, frame) in rows.iter().zip(&frames) {
-            let id = frame.path(&["_styk", "frameId"]).and_then(Value::as_str).unwrap();
-            let mut key =
-                object(&[("id", Value::str(&format!("native:pose:{id}"))), ("tick", Value::Num(row.start as f64)), ("value", object(&[("frameId", Value::str(id))]))]).as_obj().cloned().unwrap();
+            check()?;
+            let id = frame
+                .path(&["_styk", "frameId"])
+                .and_then(Value::as_str)
+                .unwrap();
+            let mut key = object(&[
+                ("id", Value::str(&format!("native:pose:{id}"))),
+                ("tick", Value::Num(row.start as f64)),
+                ("value", object(&[("frameId", Value::str(id))])),
+            ])
+            .as_obj()
+            .cloned()
+            .unwrap();
             if let Some(easing) = frame.path(&["_styk", "easing"]).and_then(Value::as_obj) {
                 for (k, v) in easing.iter() {
                     key.set(k, v.clone());

@@ -9,6 +9,89 @@ use styk_edit::{HistoryLimits, session::Session};
 fn clock() -> f64 {
     0.0
 }
+#[test]
+fn session_union_reuses_one_charge_and_counts_actual_shared_packed_sections_once() {
+    let (engine, mut session) = opened();
+    let before = session.report().clone();
+    let prepared = candidate(&mut session, "setFPS", "[31]");
+    let packed = Value::nums(&[0.125; 4096]);
+    let blob = Value::Blob(Arc::new(styk_doc::Blob { prefix: Arc::from("raw:"), bytes: vec![17; 8192].into() }));
+    let current = Value::array(vec![packed.clone(), blob.clone(), before.clone()]);
+    let response = Value::array(vec![packed, blob, prepared.result().clone()]);
+    let union = styk_doc::retained_bytes_checked(&[&before, prepared.before_report(), prepared.report(),
+        prepared.result(), prepared.state(), prepared.history(), prepared.events(),
+        prepared.before_state(), prepared.before_history(), &response, &current], |_| Ok::<_, ()>(())).unwrap() + 256;
+    let naive = [&response, &current].into_iter().map(|value|
+        styk_doc::retained_bytes_checked(&[value], |_| Ok::<_, ()>(())).unwrap()).sum::<usize>();
+    assert!(naive > union, "actual shared sections must distinguish union from a per-head sum");
+    let mut continuation = None;let transaction = guard(&engine);
+    let admission = engine.stage_publication_response_worker(7, transaction, &prepared, &response,
+        None, false, true, None, Some(SessionRoot { current: Some(&current), charge: &mut continuation, wake: std::sync::Weak::new() }), || Ok(())).unwrap();
+    assert_eq!(engine.inner.record_budget.retained_bytes(), union);
+    let identity = Arc::as_ptr(&continuation.as_ref().unwrap().charge);
+    let batch_budget = continuation.as_ref().unwrap().charge.budget();
+    assert!(!ReadyCharge::rescope(&mut continuation, Some(&current)).unwrap());
+    engine.discard_batch_worker(7);drop(admission);
+    assert!(ReadyCharge::rescope(&mut continuation, Some(&current)).unwrap());
+    let current_bytes = styk_doc::retained_bytes_checked(&[&current], |_| Ok::<_, ()>(())).unwrap() + 256;
+    assert_eq!(engine.inner.record_budget.retained_bytes(), current_bytes);
+    let admission = engine.stage_publication_response_worker(8, transaction, &prepared, &response,
+        None, false, true, None, Some(SessionRoot { current: Some(&current), charge: &mut continuation, wake: std::sync::Weak::new() }), || Ok(())).unwrap();
+    assert_eq!(Arc::as_ptr(&continuation.as_ref().unwrap().charge), identity, "same allocation, not a replacement ready charge");
+    assert!(Arc::ptr_eq(&continuation.as_ref().unwrap().charge.budget(), &batch_budget));
+    assert_eq!(engine.inner.record_budget.retained_bytes(), union, "reserve additional bytes only");
+    engine.discard_batch_worker(8);drop(admission);drop(continuation);
+    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+}
+
+#[test]
+fn same_charge_hard_uniqueness_barrier_includes_weak_aliases_and_preserves_one_gib_boundary() {
+    use super::super::transfer::{MAX_RECORD_RETAINED_BYTES, TransferError};
+    assert_eq!(MAX_RECORD_RETAINED_BYTES, 1024 * 1024 * 1024);
+    let global = Arc::new(Budget::default());let batch = Arc::new(Budget::default());
+    let mut owner = Some(ReadyCharge { charge: Arc::new(Charge::new(global.clone(), batch.clone()).unwrap()) });
+    let charge = Arc::get_mut(&mut owner.as_mut().unwrap().charge).unwrap();
+    charge.grow_to(MAX_RECORD_RETAINED_BYTES - 1).unwrap();
+    charge.grow_to(MAX_RECORD_RETAINED_BYTES).unwrap();
+    assert_eq!(charge.grow_to(MAX_RECORD_RETAINED_BYTES + 1), Err(TransferError::Capacity));
+    assert_eq!((global.retained_bytes(), batch.retained_bytes()), (MAX_RECORD_RETAINED_BYTES, MAX_RECORD_RETAINED_BYTES));
+    let weak = Arc::downgrade(&owner.as_ref().unwrap().charge);
+    assert!(!owner.as_mut().unwrap().unique());
+    assert!(!ReadyCharge::rescope(&mut owner, None).unwrap());
+    assert_eq!(global.retained_bytes(), MAX_RECORD_RETAINED_BYTES);
+    drop(weak);assert!(ReadyCharge::rescope(&mut owner, None).unwrap());
+    assert!(owner.is_none());assert_eq!((global.retained_bytes(), batch.retained_bytes()), (0, 0));
+}
+
+#[test]
+fn actor_union_capacity_refusal_preserves_current_reservation_and_atomic_counter_rollback() {
+    use super::super::transfer::MAX_RECORD_RETAINED_BYTES;
+    for short in [false, true] {
+        let (engine, mut session) = opened();let prepared = candidate(&mut session, "setFPS", "[31]");
+        let current = Value::nums(&[0.5; 4096]);let response = prepared.result();
+        let canonical = session.report();
+        let full = styk_doc::retained_bytes_checked(&[canonical, prepared.before_report(), prepared.report(), prepared.result(),
+            prepared.state(), prepared.history(), prepared.events(), prepared.before_state(), prepared.before_history(), response, &current], |_| Ok::<_, ()>(())).unwrap() + 256;
+        let mut continuation = Some(ReadyCharge { charge: Arc::new(Charge::new(engine.inner.record_budget.clone(), Arc::new(Budget::default())).unwrap()) });
+        ReadyCharge::rescope(&mut continuation, Some(&current)).unwrap();
+        let previous = engine.inner.record_budget.retained_bytes();
+        let mut other = Charge::new(engine.inner.record_budget.clone(), Arc::new(Budget::default())).unwrap();
+        other.grow(MAX_RECORD_RETAINED_BYTES - full + usize::from(short)).unwrap();
+        let result = engine.stage_publication_response_worker(7, guard(&engine), &prepared, response,
+            None, false, true, None, Some(SessionRoot { current: Some(&current), charge: &mut continuation, wake: std::sync::Weak::new() }), || Ok(()));
+        if short {
+            assert!(result.err().unwrap().to_string().contains("full"));
+            assert!(!engine.inner.staged.lock().contains_key(&7));
+        } else {
+            let admission = result.unwrap();assert_eq!(engine.inner.record_budget.retained_bytes(), MAX_RECORD_RETAINED_BYTES);
+            engine.discard_batch_worker(7);drop(admission);
+        }
+        assert!(ReadyCharge::rescope(&mut continuation, Some(&current)).unwrap());
+        assert_eq!(engine.inner.record_budget.retained_bytes(), MAX_RECORD_RETAINED_BYTES - full + usize::from(short) + previous);
+        drop(other);assert_eq!(engine.inner.record_budget.retained_bytes(), previous);
+        drop(continuation);assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    }
+}
 fn parse(text: &str) -> Value {
     json::parse(text.as_bytes()).unwrap()
 }

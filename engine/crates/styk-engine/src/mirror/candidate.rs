@@ -237,7 +237,8 @@ impl Engine {
                     budget: owner.budget.clone(), charges: std::mem::take(&mut owner.charges), root: owner.root.take() }
             } else { staged.remove(&batch).unwrap_or_else(|| empty.take().expect("prebuilt empty batch")) }
         };
-        let marker = staged.guard.map(|_| CommitMarker { engine: self, batch, cancelled: staged.cancelled.clone() });
+        let marker = staged.guard.map(|_| CommitMarker { engine: self, batch, cancelled: staged.cancelled.clone(),
+            wake: staged.root.as_ref().and_then(|root| root.wake.clone()) });
         if staged.cancelled.load(std::sync::atomic::Ordering::SeqCst) || staged.guard.is_some_and(|guard| !self.record_guard_current(guard)) {
             return Err(MirrorError::Transaction("the lifted transfer belongs to another document generation"));
         }

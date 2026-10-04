@@ -135,8 +135,12 @@ uses bounded UI controls and worker-owned preparation/retirement. Its deferred r
 and final cancellation/expiry checks share existing task and State owners. The guarded
 quiet payload charge stays with the worker until terminal ACK, including cancellation
 after publication. Portable Core live submission now uses the same exclusive Session,
-display and final State guard. Current ready remains alive after terminal ACK; its raw
-charge lifetime and actual renderer release still need the existing owning protocol.
+display and final State guard. Current ready remains alive after terminal ACK and keeps
+its SAME raw receiver charge. Detached raw aliases keep the full union reserved until
+worker physical disposal; the original-Core drop-first wake then rescopes current-only.
+Hard uniqueness defers preparation without self-polling. Close/no-ready drops physical
+ready before releasing the charge. Actual typed/encoded physical union, renderer release
+and shutdown still need their owning protocol; the receiver remains 1 GiB.
 This scoped foundation does not certify live Stage preparation, all renderer last-owner
 drops, global stop or no-thread pumping.
 

@@ -500,9 +500,39 @@ impl Editor {
     /// Runs one editor call by its JavaScript name, with JSON arguments; returns what
     /// the JavaScript method returns.
     pub fn call(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
+        self.call_checked_impl(method, args, false, &mut || Ok(()))
+    }
+
+    /// Worker-only native projection/authored preparation. The callback is
+    /// borrowed into the existing dispatch/owners; never stored on the Editor.
+    pub(crate) fn call_worker_checked(
+        &mut self,
+        method: &str,
+        args: &Value,
+        check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<Value, EditError> {
+        let args = args
+            .elements()
+            .map(|items| items.iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        if !self.options.property_channels || self.sheet() {
+            check()?;
+            return self.call(method, &args);
+        }
+        self.call_checked_impl(method, &args, true, check)
+    }
+
+    fn call_checked_impl(
+        &mut self,
+        method: &str,
+        args: &[Value],
+        worker: bool,
+        check: &mut dyn FnMut() -> Result<(), EditError>,
+    ) -> Result<Value, EditError> {
         let snapshot = self.snapshot();
-        let result = self.dispatch(method, args);
-        if matches!(result, Err(EditError::Unported(_))) {
+        let result = check().and_then(|()| self.dispatch_checked(method, args, worker, check));
+        let result = result.and_then(|value| check().map(|()| value));
+        if matches!(result, Err(EditError::Unported(_))) || (worker && result.is_err()) {
             self.restore(snapshot);
         }
         result
@@ -571,17 +601,19 @@ impl Editor {
         }
     }
 
-    fn dispatch(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
+    fn dispatch_checked(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
+        let projected_native=worker && self.native_projected_call(method,args);
+        if worker && self.options.property_channels && !self.sheet() { self.native_projected_gate(method,args,check)?; }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
         // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
         let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
         self.selection_metadata_gate(method)?;
-        self.native_transform_gate(method, args)?;
+        self.native_transform_gate(method, args, projected_native)?;
         if let Some(reason) = self.unported_document() {
             let recorded = match reason {
                 "with animation origins" => origin::recorded_call(method) || select::metadata_recorded_call(method),
                 "with animation origins and property channels" => origin::recorded_channel_call(method) || select::metadata_recorded_call(method),
-                _ => self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method),
+                _ => self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method) || projected_native,
             };
             if !recorded {
                 return Err(EditError::Unported(format!("{method} {reason}")));
@@ -610,13 +642,13 @@ impl Editor {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
         self.native_property_gate(method)?;
-        self.property_gate(method)?;
+        self.property_gate_checked(method,projected_native)?;
         self.camera_gate(method)?;
         self.motion_path_gate(method)?;
         if let Some(result) = self.motion_path_call(method, args) {
             return result;
         }
-        if let Some(result) = self.property_call(method, args) {
+        if let Some(result) = self.property_call_checked(method, args, check) {
             return result;
         }
         if let Some(result) = self.range_call(method, args) {
@@ -642,16 +674,16 @@ impl Editor {
             "selectPolygon" => self.select_polygon(select::index(args.first()).and_then(|id| u32::try_from(id).ok()), select::index(args.get(1))).map(Value::Bool),
             "toggleSegment" => self.toggle_segment(select::index(args.first()).and_then(|id| u32::try_from(id).ok()), select::index(args.get(1))).map(Value::Bool),
             "selectBranch" => self.select_branch(select::index(args.first()).and_then(|id| u32::try_from(id).ok()), select::index(args.get(1))).map(Value::Bool),
-            "seek" | "@seek" => self.seek(arg(0).as_f64().unwrap_or(0.0)),
+            "seek" | "@seek" => self.seek_checked(arg(0).as_f64().unwrap_or(0.0),check),
             "beginDrag" => {
                 let translation = match arg(1).get("scope").and_then(Value::as_str) {
                     None | Some("selection") => false,
                     Some("translation") => true,
                     Some(other) => return Err(EditError::Unported(format!("beginDrag with scope {other}"))),
                 };
-                self.begin_drag(arg(0).as_str().unwrap_or("Pose figure"), translation).map(Value::Bool)
+                self.begin_drag_checked(arg(0).as_str().unwrap_or("Pose figure"), translation, check).map(Value::Bool)
             }
-            "commitDrag" => self.commit_drag().map(Value::Bool),
+            "commitDrag" => self.commit_drag_checked(check).map(Value::Bool),
             "cancelDrag" => self.cancel_drag().map(Value::Bool),
             "beginHandleEditDrag" => self.begin_handle_edit_drag(&arg(0)).map(Value::Bool),
             "editHandlePosition" => self.edit_handle_position(number(0), number(1), &arg(2)).map(Value::Bool),
@@ -685,7 +717,7 @@ impl Editor {
             "copySegmentValues" => self.copy_segment_values(&arg(0)),
             "pasteSegmentValues" => { let text = args.first().cloned(); self.paste_segment_values(text.as_ref(), &arg(1)).map(Value::Bool) }
             "beginTranslationDrag" => self.begin_drag(arg(0).as_str().unwrap_or("Move figures"), true).map(Value::Bool),
-            "moveSelection" => self.move_selection(arg(0).as_f64().unwrap_or(f64::NAN), arg(1).as_f64().unwrap_or(f64::NAN), &arg(2)).map(Value::Bool),
+            "moveSelection" => self.move_selection_checked(arg(0).as_f64().unwrap_or(f64::NAN), arg(1).as_f64().unwrap_or(f64::NAN), &arg(2), check).map(Value::Bool),
             "rotateSelection" => self.rotate_selection(number(0), &arg(1)).map(Value::Bool),
             "scaleSelection" => self.scale_selection(number(0), &arg(1), false).map(Value::Bool),
             "scaleSelected" => self.scale_selection(number(0), &arg(1), true).map(Value::Bool),
@@ -764,7 +796,7 @@ impl Editor {
                 for step in steps {
                     let call: Vec<Value> = step.elements().map(|e| e.iter().collect()).unwrap_or_default();
                     let name = call.first().and_then(Value::as_str).unwrap_or("").to_string();
-                    match self.dispatch(&name, call.get(1..).unwrap_or(&[])) {
+                    match self.dispatch_checked(&name, call.get(1..).unwrap_or(&[]), worker, check) {
                         Ok(value) => last = value,
                         Err(error) => {
                             if matches!(error, EditError::Invalid(_)) {
