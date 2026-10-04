@@ -14,7 +14,7 @@ fn filtered(effects: Vec<Effect>) -> DrawList {
     let square = |a: [f32; 2], b: [f32; 2], c: [f32; 2]| Prim { kind: K_TRI, group: 1, color: 0xff00_00ff, paint: NO_PAINT, a: [a[0], a[1], b[0], b[1]], b: [c[0], c[1], 0.0, 0.0], c: [0.0; 4] };
     let composite = Prim { kind: K_COMPOSITE, group: 0, color: 0xffff_ffff, paint: NO_PAINT, a: [0.0, 0.0, 64.0, 64.0], b: [f32::from_bits(1), 0.0, 0.0, 0.0], c: [0.0; 4] };
     let stack: Effects = Arc::new(effects.into_iter().map(Arc::new).collect::<Vec<_>>());
-    let layer = EffectLayer { effects: Some(stack), kind: LayerKind::Entry { bounds: [4.0, 4.0, 56.0, 56.0], domain: [20.0, 20.0, 24.0, 24.0], scale: 1.0, padding: 16.0 } };
+    let layer = EffectLayer { effects: Some(stack), kind: LayerKind::Entry { bounds: [4.0, 4.0, 56.0, 56.0], domain: [20.0, 20.0, 24.0, 24.0], scale: 1.0, padding: 16.0, single_drawing: false } };
     DrawList {
         prims: vec![square([20.0, 20.0], [44.0, 20.0], [44.0, 44.0]), square([20.0, 20.0], [44.0, 44.0], [20.0, 44.0]), composite],
         groups: vec![

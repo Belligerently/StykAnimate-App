@@ -175,9 +175,9 @@ Engine logic: ported to Rust.
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
 | `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS |
 | `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
-| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: supported thumbnails, worker fractional previews and camera monitor on GPU/CPU with bounded resource/order tickets; refused documents and direct no-thread fallback remain JS |
+| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; auxiliary onion/monitor parity, actual-shown readiness, refused documents and no-thread fallback remain |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of documents the engine draws (styk_wasm::views; styk-raster where the stage cannot draw them); the worker draws in-between previews and refused documents |
+| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained |
 | `src/animation-origin-validation.mjs` | `styk-eval` | partial | Rust: typed origin compiler validates retained support indices, numbers, bindings and capacity against 68 editor refusals; cooperative import/object validation still JS |
 | `src/animation-pose.mjs` | `styk-eval` | partial | Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS; plus composePoseChannels and handleOrientation (styk_eval::channels::pose); composePoseChannels on records (styk_eval::records) |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
@@ -359,11 +359,11 @@ Engine logic: ported to Rust.
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
 | `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: supported edit/onion/playback views plus fractional prepared samples, common record lifting, worker camera monitor and bounded stale publication retirement; software drawing-cell gap, no-thread fallback and remaining class/draft eligibility pending |
+| `src/renderer.mjs` | `styk-render` | partial | Rust: supported edit/onion/playback views, fractional prepared samples, common record lifting, worker monitor and stale publication retirement; original software-web cel stage parity fixed; auxiliary clip/paint, no-thread, audited D7 and class/draft eligibility remain |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
-| `src/drawing-gpu.mjs` | `styk-render::drawing` | partial | Rust: committed cel display, exact box levels, tile seams, Canvas-style effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes and GPU brush still JS |
+| `src/drawing-gpu.mjs` | `styk-render::drawing` | partial | Rust: committed cel display, exact box levels/tile seams and explicit destination-grid software single-drawing effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes/GPU brush, auxiliary onion/monitor and crisp gaps remain |
 | `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-atlas.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-canvas.mjs` | `styk-render::generators` | partial | Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it |

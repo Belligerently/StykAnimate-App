@@ -88,7 +88,7 @@ src/drawing-composite.mjs	engine	styk-drawing	js
 src/drawing-controller.mjs	ui	-	stays	
 src/drawing-fill.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
 src/drawing-flatten.mjs	engine	styk-drawing	js	
-src/drawing-gpu.mjs	engine	styk-render::drawing	partial	Rust: committed cel display, exact box levels, tile seams, Canvas-style effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes and GPU brush still JS
+src/drawing-gpu.mjs	engine	styk-render::drawing	partial	Rust: committed cel display, exact box levels/tile seams and explicit destination-grid software single-drawing effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes/GPU brush, auxiliary onion/monitor and crisp gaps remain
 src/drawing-history-codec.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
 src/drawing-history-database.mjs	engine	styk-drawing	js	
 src/drawing-history-worker.mjs	engine	styk-drawing	partial	Rust: the history worker encodes undo chunks with styk-drawing; the worker shell is JS
@@ -357,7 +357,7 @@ src/renderer-raster-capture.mjs	engine	styk-render	js
 src/renderer-upload.mjs	engine	styk-render	js	
 src/renderer-vector-raster.mjs	engine	styk-render	js	
 src/renderer-vfx-vector.mjs	engine	styk-render	partial	Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it
-src/renderer.mjs	engine	styk-render	partial	Rust: supported edit/onion/playback views plus fractional prepared samples, common record lifting, worker camera monitor and bounded stale publication retirement; software drawing-cell gap, no-thread fallback and remaining class/draft eligibility pending
+src/renderer.mjs	engine	styk-render	partial	Rust: supported edit/onion/playback views, fractional prepared samples, common record lifting, worker monitor and stale publication retirement; original software-web cel stage parity fixed; auxiliary clip/paint, no-thread, audited D7 and class/draft eligibility remain
 src/rig-angle-path.mjs	engine	styk-eval::rig	partial	Rust: angle path sampling (styk_eval::rig); validateAnglePath (styk-edit/src/rig_behavior.rs); authoring still JS
 src/rig-constraints.mjs	engine	styk-eval::rig	partial	Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS
 src/rig-control-details.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
@@ -435,9 +435,9 @@ src/text-font-compat.mjs	engine	styk-edit	js
 src/text-preview.mjs	ui	-	stays	
 src/theme-bootstrap.js	ui	-	stays	
 src/theme.mjs	ui	-	stays	
-src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	partial	Rust: supported thumbnails, worker fractional previews and camera monitor on GPU/CPU with bounded resource/order tickets; refused documents and direct no-thread fallback remain JS
+src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	partial	Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; auxiliary onion/monitor parity, actual-shown readiness, refused documents and no-thread fallback remain
 src/thumbnail-validity.mjs	engine	styk-engine::thumbnails	js	
-src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: thumbnails of documents the engine draws (styk_wasm::views; styk-raster where the stage cannot draw them); the worker draws in-between previews and refused documents
+src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained
 src/timeline-header.mjs	ui	-	stays	
 src/timeline-host.mjs	ui	-	stays	
 src/timeline-hotkeys.mjs	ui	-	stays	

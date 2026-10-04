@@ -40,6 +40,16 @@ thumbnails 132/132 and synthetic smooth comparisons 4/4 pass. Software web parit
 synthetic crisp export remain open, as detailed in sections 6 and 7. No ownership gate
 was changed and no JavaScript was deleted.
 
+The later destination-grid cel milestone closes the original software-web stage gap:
+all four fitted/0.3×/2×/3× views pass on the final shipping build, while default Electron
+GPU remains unchanged. The same drawing/effect owners carry an explicit destination
+grid for software edit and preview paths; prepared/default GPU paths retain the world
+grid. Shared-type validation passes 632 native tests, 31 focused JavaScript tests and
+check. The two new editor-built fixtures regenerate byte-stable. Camera-monitor clipping,
+some auxiliary onion previews, private web verification and crisp export remain open;
+this is not comprehensive renderer or D7 certification. Details and mobile API notes
+are in `docs/engine/rendering.md` and the latest milestone below.
+
 Latest origin milestone: 353 Rust tests and `npm run check` pass; all 1,000 existing
 fixture files regenerate unchanged, with 222 recorded commands replaying fully. Whole-figure
 gestures, Set Origin and recorded topology preserve retained support. The app compares
@@ -176,7 +186,7 @@ remain the next command work. Logs: `tmp/root-verification-temp/native-motion-*`
 | S0 plan, baseline | Done (sections 1–5; baseline worktree `tmp/baseline-worktree` at `96ebce85`). |
 | S1 formats | Done: the Rust codec runs in the app in place of Pyodide and the Python sidecar; the Python codec is a development oracle only. Left: `.styk` open/save through Rust once the engine owns the document; sidecar names in brand and release tooling. |
 | S2 store, evaluation, geometry | Done for every feature the gate checks: IK (2D, 3D, joined), channels, meshes, follow camera, text, movieclip replacements, effects as records. Camera motion now uses V8-exact maths. |
-| S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Drawing cels under effects now match Electron; software web and crisp parity remain open. Worker monitor and exact in-between sample prerequisites are assembled; actual-shown/resource ordering remains. Left: item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
+| S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Original drawing-cel stage views now match Electron and software web; auxiliary monitor/onion, private web and crisp parity remain open. Worker monitor and exact in-between sample prerequisites are assembled; actual-shown/resource ordering and audited D7 work remain. Left: item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
 | S4 export, thumbnails, previews | Done for documents the engine draws, on the GPU or the CPU; SVG stays JavaScript by design. |
 | S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 461 command recordings include recorded movieclip/native scalar/optional selection and origin sheet motion prerequisites, plus explicit unsupported guards. Canonical worker Session app adoption is pending. Origins admit recorded whole/joint/handle/topology/saved-channel/range/join/2D-rig calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
 | S6 drawing raster engine | Done: `styk-drawing` (D17) runs in the drawing workers by default (`?drawingEngine=off` to compare). |
@@ -201,8 +211,11 @@ without owning.
 ### Next steps, in priority order
 
 1. **Close the remaining cel backend gaps**. Electron sampling, tight ink bounds and
-   stale preparation are corrected and verified. Software web `drawing-cels` still fails
-   fitted/0.3×/2×/3× views; private web retries time out in the animation-frame settle even
+   destination-grid sampling are corrected and verified: original software-web
+   `drawing-cels` passes fitted/0.3×/2×/3× views. Auxiliary edit-monitor and some onion
+   previews still fail. An empty-background monitor reproduces fractional clip/paint
+   coverage independently of cel filtering; fix the existing clip/background owner.
+   Private web retries time out in the animation-frame settle even
    with resource flags ready. Native crisp export differs identically before and after.
    Investigate the existing owners without changing D13 or readiness checks. The other
    command lanes can proceed independently.
@@ -253,7 +266,7 @@ without owning.
 - `wasm-opt` is not installed: the WebAssembly modules are not size-optimized.
 - Native motion still refuses saved channels and unrecorded ordinary/complex targets
   before mutation; its five admitted remote-time families do not change app adoption.
-- Section 6 lists the rest: software web drawing cels and crisp export, CPU rasterizer on nearly coplanar 3D
+- Section 6 lists the rest: auxiliary cel previews/monitor and crisp export, CPU rasterizer on nearly coplanar 3D
   faces, out-of-memory not recovered, `svr_uriel.piv` too large for the reference tool,
   Clippy warnings in `styk-eval`, the codec's `.stk` segment-edit defect.
 
@@ -266,7 +279,7 @@ without owning.
 | `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption integrated; effects, worker layer planning, corrected sheet kernel and history budgets reviewed. Warm-history readiness and prepared publication reviewed; native migration frozen/independently reviewed; raw selection-guard correction frozen. Those source prerequisites and canonical root publication are integrated; durable quiet/live Session actor and guarded fresh bootstrap active, no app gate. |
 | `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands and Break Apart reviewed; sheet extension reviewed; native extension, insertion, corrected import error priority and explicit IK/saved-draft admission frozen and independently reviewed; that complete source stack is integrated; bake source frozen/reviewed, central strict replay/history integration pending, further effects/limits recordings active. |
 | `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query integrated. Independent layer/movie and assembled-main reviews completed; exact frozen source manifests retained for the integrated dependency stack. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver reviewed. Atomic paired publication/retirement, stale ACK disposal and decoder task-order corrections frozen and reviewed; fractional playback and bounded ticket fix integrated with focused checks. Isolated destination-grid CEL candidate passes original software-web 4/4; single-child clip, auxiliary/default GPU evidence and review pending. No early gate flips. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver integrated. Reviewed destination-grid cel fix and single-child correction integrated from immutable 18-path freeze; original software-web and default Electron GPU 4/4 pass on main. Auxiliary background clip/paint mismatch has an independent empty-scene reproduction and continues in `tmp/engine-worktrees/cel-grid`; immutable primary and additive evidence retained. No early gate flips. |
 | `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera/origin range/rig/pose and strict-validation preparation integrated into main after review/focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
 | `tmp/engine-worktrees/movie-integration` (detached at `7ff82b2c`) | Separate clean dependency integration: reviewed movieclip/layer/history/readiness/publication/selection stack. Exact reviewed/focused-tested dependency snapshot has been integrated; preserve its immutable inputs/evidence, no runtime gate. |
 | `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Full checkpoint of committed `53e3bdd9` green at 16:36 CEST; post-regeneration whole release target fresh in 0.43 s. Next regular run no earlier than 17:54 CEST. |
@@ -531,9 +544,24 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
   closest-joint order are portable prerequisites. Durable Session publication,
   actual-shown/resource ordering and per-class adoption cost still need the shared
-  worker boundary. A broad owned sheet shadow attempt stalled without a result while
-  the narrow duplicate/paste check passes; retry and diagnose complete flow before class
+  worker boundary. Broad owned sheet shadow attempts have no final comparison while
+  the narrow duplicate/paste check passes. A bounded 180 s retry on `77d2e83b` completed
+  its first warm-up round and began the next before timing out; it demonstrates progress,
+  not a confirmed hang. Retry complete flow before class
   adoption. These additions do not open ownership or document-class gates.
+
+- **D7 source audit, still open:** the interface calls JSON/edit-scene parsing, geometry
+  and draw-list encoding through `Stage::edit_frame`; definitions-only mirror sync calls
+  `commit_now` and rebuilds typed views/assets. Frame-cache invalidation, insertion and
+  eviction allocate, sort or release dense payloads while holding shared `State`, which
+  interface readiness reads also lock. No-thread `Engine::step` time slicing occurs
+  between whole jobs, and monitor camera preparation can run inline. Atlas uploads can
+  exceed the nominal 8 MiB slice with one large image; their UI duration is unmeasured.
+  Prepared stage keys discard generation, so an old ticket can draw a newer same-tick
+  frame. Worker stop has no cleanup acknowledgement. Use the existing worker/session,
+  frame/cache and retained-task owners to close these paths before gates or deletion;
+  the quiet worker actor alone does not certify them. Static findings are separate from
+  Chromium GPU load or delayed animation frames, which do not establish UI lock duration.
 
 - **Prepared playback and hardware-headless capture:** the reviewed renderer batch now
   keeps exact fractional samples in the existing worker frame cache; shipping default
@@ -683,8 +711,15 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 - **Effects and cels, remaining backend gaps**: two-texel neighbour borders, Canvas
   minification/Mitchell enlargement, exact level selection, intact atlas references and
   tight alpha bounds now fix private Electron ticks 46 and 61–64 and all four synthetic
-  views. Headless software Canvas web parity still fails the synthetic views (means
-  0.3473–1.3455, at most four solid pixels). Private web verification is unresolved: two
+  views. Destination-grid sampling now makes original headless software Canvas stage
+  views pass 4/4 (means 0.0682–0.1261, zero solid pixels); default GPU output remains
+  byte-identical. Auxiliary 320×192 onion views still fail at mean 0.288346 and the
+  278×139 edit monitor at 0.714171. A real editor-built empty background independently
+  reproduces the monitor's 278 fractional-border pixels (mean 0.352518): Canvas clips
+  before painting the background, while the engine paints one unclipped edge. CPU World
+  and Destination outputs agree exactly with captured WebGL on that empty scene. Fixing
+  this confirmed owner mismatch will not by itself close the remaining cel differences.
+  Private web verification is unresolved: two
   bounded retries timed out at tick 46 in the six-animation-frame settle, with all tracked
   resources ready; the cause is not established. Native crisp export of the synthetic
   fixture fails identically on the pre-change CLI (mean 0.2999, max 222, no solid pixels),
@@ -815,6 +850,17 @@ headless web synthetic views 0/4 pass (mean 0.3473–1.3455, max 109, up to four
 private web captures remain unverified after animation-frame settle timeouts. The app
 harness now waits for currently referenced live cels, preview jobs, uploads and engine
 refinement; two equal images alone do not establish readiness. No threshold was changed.
+
+**Destination-grid cel correction** (2026-10-04): the final main shipping build passes
+the same four original software-web views (mean 0.0682–0.1261, zero solids) and all four
+default Electron GPU views (mean 0.0004–0.0049, max 19, zero solids). All four legacy web
+captures and all four default GPU engine captures remain byte-identical to the retained
+original outputs. Two editor-built single/multiple-child fixtures regenerate unchanged;
+seven eligibility and two plan regressions fail on the relevant source mutants. The
+single-child run may carry outer/child effects, but multiple children and ordinary onions
+retain their existing policy. Auxiliary onion/monitor, private web and crisp failures
+above remain explicit. Focused verification uses 632 native tests for the shared draw
+type, 31 JS tests, check and shipping Wasm, without another full checkpoint or cost claim.
 
 **Origin records and editing** (2026-10-04): 15 specific record groups, 466 ticks
 and 4,112 property values match byte for byte. Twenty-one added recordings cover 441
@@ -1134,3 +1180,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 17:05 | S3/S5 recorded worker movieclips, history, canonical publication and fractional rendering | Integrate reviewed renderer and movie/layer/history/selection owners, bounded native/sheet planning, canonical COW root admission/paired publication with terminal-ACK retirement, exact displaced-generation cleanup, native scalar authoring and recorded origin sheet motion. Preserve retained movieclip/VFX source clocks and one checked SheetPlan/history owner. Fix atomic insertion/capacity refusal and bounded new-ID selection exchange in the editor/facade. Portable mobile API changes: checked Engine stage/layer/publication APIs, opaque admission and prepared/guarded editor publication, history limits/checkpoints, selection/motion accessors, retained source/effect fields; FrameData.tick is f64 and PlanError::Unported carries String (details in editing/threading). Wasm 9,528 KiB (+624 KiB). No class gate or deletion. | 615 shared-type native tests, final seven planner unit tests, 307 focused JS tests, check/changelog and shipping Wasm pass. All 3,153 affected JSON stay stable; 88 new evaluated groups / 798 ticks (371 / 4,032 total). CLI 75 new admitted tapes / 6,446 exact steps + 64 worker tapes / 643 steps; 16 guards remain explicit, 461 ordinary tapes total. Software stored/fractional preview 4/4, zero solids; actual duplicate/paste 3 adopted + 6 exact, same 22,810-byte document / six history entries / selection / full undo. Broad app run stalled without result; wrong alias and empty-focus attempts retained. Independent full source reviews and actual source mutants retained. Full committed 53e3bdd9 checkpoint green (421 tests / 358 containers); complete post-regeneration release target fresh in 0.43 s, cold isolated first run 2,297.5 s. Next checkpoint no earlier than 17:54 CEST; no performance claim. |
 
 | 2026-10-04 17:20 | S5 recorded native origin motion and exact row-splice history | Five no-channel native remote-time origin families reuse the checked frame/membership/attached-layer/history owners. Keep native one-tick shown poses held and raw samples distinct in the existing bounded cache, with scalar channels on the fractional clock. Portable mobile API additions: FrameSlice, CommandKind::Ranges (exhaustive matches need updating), Records::evaluated_editor_with. Wasm 9,582 KiB (+54 KiB). No app gate, adoption change, deletion or performance claim. | Shared-type checks: 623 native tests; 79 focused JS tests, check and shipping Wasm pass. All 65 motion JSON regenerate byte-stable. Thirty admitted affected CLI tapes / 5,799 exact steps include five new native admissions / 969 steps; 11 explicit guards remain. Actual worker weights and enumerable history match 22 editor commands; five raw/shown fractional cases preserve scalar x=635 at tick 3.5. Initial cfgtest private-field access corrected through the existing history summary, no public test helper added. Independent source review passes; full suite remains reserved for committed checkpoints. |
+
+| 2026-10-04 17:38 | S3 destination-grid drawing-cel correction | Integrate the independently reviewed 18-path freeze through the existing drawing entry, placement/filter, Raster and Renderer owners. Explicit destination grid for direct software edits/previews; world grid remains default for prepared/GPU paths. Single-child drawing clips retain child/outer effects; multiple-child entries keep existing policy. Mobile pin additions: LayerKind::Entry.single_drawing, DrawingGrid, plan_with_grid and Renderer/Raster grid setters (rendering.md). Wasm 9,584 KiB (+2 KiB). No class gate, deletion or performance claim. | Shared-type checks pass 632 native tests, 31 focused JS tests, check and shipping Wasm. Two editor-built fixtures regenerate byte-stable; actual eligibility/plan source mutations are caught. Final main software-web original cel 4/4 and default Electron GPU 4/4 pass, zero solids; all four Legacy web and default GPU engine RGBA captures remain byte-identical. Dense single-child and serialized child-Blur/outer-Tint each pass 1/1. Auxiliary onion .288346 and edit-monitor .714171 remain failed; an actual empty-background monitor isolates 278 fractional clip/paint border pixels independently. Source audit records remaining D7/UI and stale-ticket paths; broad figures retry makes progress through one warm-up round then times out at 180 s without comparison. Full suite reserved for committed checkpoints. Logs: tmp/root-verification-temp/cel-destination-*. |

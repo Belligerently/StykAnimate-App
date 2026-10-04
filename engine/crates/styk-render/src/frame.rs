@@ -176,7 +176,7 @@ impl Renderer {
         let n = list.groups.len();
         let max_depth = list.groups.iter().map(|g| g.depth).max().unwrap_or(0);
         // Where every group is drawn for this view (effects::plan), then where it lands in the atlas.
-        let planned = plan::plan(&list, &plan::View {
+        let planned = plan::plan_with_grid(&list, &plan::View {
             matrix: view.matrix,
             size,
             zoom: view.zoom,
@@ -185,7 +185,7 @@ impl Renderer {
             camera_view: view.camera_view,
             camera_limit: view.camera_limit,
             max_texture: self.device.limits().max_texture_dimension_2d,
-        });
+        }, self.drawing_grid);
         let sizes: Vec<[u32; 2]> = planned.iter().map(plan::Placement::size).collect();
         let largest = sizes.iter().skip(1).fold([0u32, 0u32], |a, s| [a[0].max(s[0]), a[1].max(s[1])]);
         // Pages hold the frame and grow for larger layers (effect layers at the editor's density, the

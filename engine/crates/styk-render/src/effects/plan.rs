@@ -28,6 +28,16 @@ use styk_eval::view::{apply, camera_transform, compose, invert};
 
 pub type Affine = [f64; 6];
 
+/// The pixel grid used by eligible filtered drawing entries. Ordinary GPU
+/// presentation and prepared playback retain the world raster grid. Direct
+/// Canvas presentation paints one current drawing on its destination grid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DrawingGrid {
+    #[default]
+    World,
+    Destination,
+}
+
 /// The view a frame is drawn for.
 #[derive(Clone, Copy, Debug)]
 pub struct View {
@@ -253,6 +263,12 @@ fn density(m: Affine) -> f64 {
 
 /// Places every group of `list` for `view`. Index 0 is the frame itself.
 pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
+    plan_with_grid(list, view, DrawingGrid::World)
+}
+
+/// Uses the same layer owner with an explicit portable drawing presentation
+/// policy. The default [`plan`] preserves ordinary GPU and tool output.
+pub fn plan_with_grid(list: &DrawList, view: &View, drawing_grid: DrawingGrid) -> Vec<Placement> {
     let screen = [0.0, 0.0, view.size[0] as f64, view.size[1] as f64];
     let max = view.max_texture as f64;
     let physical = view.matrix[0].hypot(view.matrix[1]);
@@ -294,7 +310,10 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
                     }
                 }
             }
-            Some(LayerKind::Entry { bounds, domain, scale, padding }) => {
+            Some(LayerKind::Entry { bounds, domain, scale, single_drawing: true, .. }) if drawing_grid == DrawingGrid::Destination => {
+                destination_layer(parent, stack, bounds, domain, scale, max)
+            }
+            Some(LayerKind::Entry { bounds, domain, scale, padding, .. }) => {
                 // What of the parent is drawn, in world units. The grid itself is the
                 // editor's for the view (the camera image reuses the view's rasters).
                 let region = mapped(invert(parent.space), parent.rect);
@@ -315,20 +334,7 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
                 }
             }
             Some(LayerKind::Nested { bounds, domain, scale }) => {
-                let space = parent.space;
-                let ps = density(space);
-                let pad = styk_eval::vfx::padding(stack, ps * scale, 0.0) + 2.0;
-                let b = mapped(space, [bounds[0], bounds[1], bounds[0] + bounds[2], bounds[1] + bounds[3]]);
-                let full = [b[0].floor() - pad, b[1].floor() - pad, b[2].ceil() + pad, b[3].ceil() + pad];
-                let margin = styk_eval::vfx::sampling_padding(stack, ps * scale, 0.0) + 2.0;
-                let rect = capped(intersect(full, outward(grow(parent.rect, margin))), max);
-                let anchor = apply(space, [domain[0], domain[1]]);
-                let filter = (!stack.is_empty()).then(|| Filter {
-                    scale: ps * scale,
-                    origin: [rect[0] - anchor[0], rect[1] - anchor[1]],
-                    output_size: [domain[2] * ps, domain[3] * ps],
-                });
-                Placement { space, rect, filter, camera: None, canvas: true }
+                destination_layer(parent, stack, bounds, domain, scale, max)
             }
             Some(LayerKind::Camera { canvas, camera }) => {
                 let c = camera_plan(stack, canvas, camera, view);
@@ -338,6 +344,25 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
         out.push(placement);
     }
     out
+}
+
+/// `withVfx` on the destination's current affine grid. Nested artwork and
+/// explicitly eligible direct drawing entries share this exact owner.
+fn destination_layer(parent: Placement, stack: &[Arc<Effect>], bounds: [f64; 4], domain: [f64; 4], scale: f64, max: f64) -> Placement {
+    let space = parent.space;
+    let ps = density(space);
+    let pad = styk_eval::vfx::padding(stack, ps * scale, 0.0) + 2.0;
+    let b = mapped(space, [bounds[0], bounds[1], bounds[0] + bounds[2], bounds[1] + bounds[3]]);
+    let full = [b[0].floor() - pad, b[1].floor() - pad, b[2].ceil() + pad, b[3].ceil() + pad];
+    let margin = styk_eval::vfx::sampling_padding(stack, ps * scale, 0.0) + 2.0;
+    let rect = capped(intersect(full, outward(grow(parent.rect, margin))), max);
+    let anchor = apply(space, [domain[0], domain[1]]);
+    let filter = (!stack.is_empty()).then(|| Filter {
+        scale: ps * scale,
+        origin: [rect[0] - anchor[0], rect[1] - anchor[1]],
+        output_size: [domain[2] * ps, domain[3] * ps],
+    });
+    Placement { space, rect, filter, camera: None, canvas: true }
 }
 
 /// `a ∘ b⁻¹`, for composites: a child's layer pixels into its parent's.
@@ -402,12 +427,58 @@ mod tests {
     }
 
     #[test]
+    fn drawing_destination_grid_is_explicit_and_keeps_unmarked_entries_unchanged() {
+        let root = Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0,0.0,800.0,600.0], layer: u32::MAX };
+        let entry = |layer| Group { parent: 0, depth: 1, opacity: 1.0, bounds: [40.0,40.0,470.0,330.0], layer };
+        let layer = |single_drawing| EffectLayer { effects: stack(vec![blur(4.0)]), kind: LayerKind::Entry { bounds:[36.0,36.0,439.0,295.0],domain:[37.0,37.0,437.0,293.0],scale:0.56,padding:1.0,single_drawing } };
+        let list = list(vec![root,entry(0),entry(1)],vec![layer(true),layer(false)]);
+        let view = View {matrix:[0.8703703703703703,0.0,0.0,0.8703703703703703,152.0,16.0],size:[1096,502], ..view()};
+        let default = plan(&list,&view);
+        let world = plan_with_grid(&list,&view,DrawingGrid::World);
+        assert_eq!(default[1].space,world[1].space);
+        assert_eq!(default[1].rect,world[1].rect);
+        assert_eq!(default[1].filter,world[1].filter);
+        assert_eq!(world[1].space,[1.0,0.0,0.0,1.0,-36.0,-36.0]);
+        let destination = plan_with_grid(&list,&view,DrawingGrid::Destination);
+        assert_eq!(destination[1].space,view.matrix);
+        assert_eq!(destination[1].filter.unwrap().scale,view.matrix[0]*0.56);
+        assert_eq!(destination[2].space,world[2].space,"ordinary artwork and onions stay on their world grid");
+        assert_eq!(destination[2].rect,world[2].rect);
+        assert_eq!(destination[2].filter,world[2].filter);
+        assert!(!destination[0].canvas,"plain cel sampling remains unchanged");
+    }
+
+    #[test]
+    fn destination_drawing_reuses_the_affine_nested_filter_owner() {
+        let root = Group {parent:0,depth:0,opacity:1.0,bounds:[0.0,0.0,800.0,600.0],layer:u32::MAX};
+        let group = |layer| Group {parent:0,depth:1,opacity:1.0,bounds:[40.0,40.0,470.0,330.0],layer};
+        let effects = stack(vec![blur(4.0)]);
+        let bounds=[36.0,36.0,439.0,295.0];let domain=[37.0,37.0,437.0,293.0];
+        let list=list(vec![root,group(0),group(1)],vec![
+            EffectLayer {effects:effects.clone(),kind:LayerKind::Entry {bounds,domain,scale:0.56,padding:1.0,single_drawing:true}},
+            EffectLayer {effects,kind:LayerKind::Nested {bounds,domain,scale:0.56}},
+        ]);
+        for (matrix,camera_view) in [
+            ([0.87,0.0,0.0,0.87,152.0,16.0],false),
+            ([-0.87,0.0,0.0,0.87,850.0,16.0],false),
+            ([0.81,0.31,-0.31,0.81,152.0,16.0],false),
+            ([1.2,0.1,-0.1,1.2,20.0,30.0],true),
+        ] {
+            let placements=plan_with_grid(&list,&View {matrix,camera_view,..view()},DrawingGrid::Destination);
+            assert_eq!(placements[1].space,placements[2].space);
+            assert_eq!(placements[1].rect,placements[2].rect);
+            assert_eq!(placements[1].filter,placements[2].filter);
+            assert_eq!(placements[1].canvas,placements[2].canvas);
+        }
+    }
+
+    #[test]
     fn entries_and_nested_layers_share_a_grid() {
         let root = Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0; 4], layer: NO_LAYER };
         let entry = Group { parent: 0, depth: 1, opacity: 1.0, bounds: [100.0, 100.0, 300.0, 300.0], layer: 0 };
         let node = Group { parent: 1, depth: 2, opacity: 1.0, bounds: [150.0, 150.0, 200.0, 200.0], layer: 1 };
         let layers = vec![
-            EffectLayer { effects: stack(vec![blur(4.0)]), kind: LayerKind::Entry { bounds: [90.0, 90.0, 220.0, 220.0], domain: [97.0, 97.0, 206.0, 206.0], scale: 1.0, padding: 13.0 } },
+            EffectLayer { effects: stack(vec![blur(4.0)]), kind: LayerKind::Entry { bounds: [90.0, 90.0, 220.0, 220.0], domain: [97.0, 97.0, 206.0, 206.0], scale: 1.0, padding: 13.0, single_drawing: false } },
             EffectLayer { effects: stack(vec![blur(2.0)]), kind: LayerKind::Nested { bounds: [140.0, 140.0, 70.0, 70.0], domain: [147.0, 147.0, 56.0, 56.0], scale: 0.5 } },
         ];
         let plans = plan(&list(vec![root, entry, node], layers), &view());
@@ -450,7 +521,7 @@ mod tests {
     fn plain_groups_inherit_their_parents_drawing_sampler() {
         let group = |parent, depth, layer| Group { parent, depth, opacity: 0.5, bounds: [110.0, 110.0, 160.0, 160.0], layer };
         let layers = vec![
-            EffectLayer { effects: stack(vec![blur(2.0)]), kind: LayerKind::Entry { bounds: [90.0, 90.0, 100.0, 100.0], domain: [100.0, 100.0, 80.0, 80.0], scale: 1.0, padding: 10.0 } },
+            EffectLayer { effects: stack(vec![blur(2.0)]), kind: LayerKind::Entry { bounds: [90.0, 90.0, 100.0, 100.0], domain: [100.0, 100.0, 80.0, 80.0], scale: 1.0, padding: 10.0, single_drawing: false } },
             EffectLayer { effects: stack(vec![blur(1.0)]), kind: LayerKind::Nested { bounds: [100.0, 100.0, 80.0, 80.0], domain: [110.0, 110.0, 60.0, 60.0], scale: 1.0 } },
             EffectLayer { effects: None, kind: LayerKind::Raster { bounds: [90.0, 90.0, 100.0, 100.0] } },
             EffectLayer { effects: stack(vec![blur(2.0)]), kind: LayerKind::Camera { canvas: [960, 540], camera: None } },
@@ -474,7 +545,7 @@ mod tests {
         let root = Group { parent: 0, depth: 0, opacity: 1.0, bounds: [0.0; 4], layer: NO_LAYER };
         let far = Group { parent: 0, depth: 1, opacity: 1.0, bounds: [5000.0, 0.0, 5100.0, 100.0], layer: 0 };
         let wide = Group { parent: 0, depth: 1, opacity: 1.0, bounds: [-2000.0, 0.0, 3000.0, 100.0], layer: 1 };
-        let entry = |x: f64, w: f64| EffectLayer { effects: stack(vec![blur(10.0)]), kind: LayerKind::Entry { bounds: [x, 0.0, w, 100.0], domain: [x + 30.0, 30.0, w - 60.0, 40.0], scale: 1.0, padding: 30.0 } };
+        let entry = |x: f64, w: f64| EffectLayer { effects: stack(vec![blur(10.0)]), kind: LayerKind::Entry { bounds: [x, 0.0, w, 100.0], domain: [x + 30.0, 30.0, w - 60.0, 40.0], scale: 1.0, padding: 30.0, single_drawing: false } };
         let plans = plan(&list(vec![root, far, wide], vec![entry(4970.0, 160.0), entry(-2030.0, 5060.0)]), &view());
         assert!(!plans[1].drawn(), "entirely off screen");
         let w = plans[2];

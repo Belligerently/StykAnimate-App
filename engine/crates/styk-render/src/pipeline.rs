@@ -129,6 +129,7 @@ impl Renderer {
             prim_layout: pipeline_layout,
             samples,
             crisp: edges == Edges::Crisp,
+            drawing_grid: crate::DrawingGrid::World,
             device,
             queue,
             pipeline,

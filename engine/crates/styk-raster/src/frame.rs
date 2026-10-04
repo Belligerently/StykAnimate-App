@@ -66,11 +66,12 @@ pub(crate) struct Frame<'a> {
 }
 
 impl<'a> Frame<'a> {
-    pub fn new(list: &'a DrawList, images: &'a Images, view: &'a ViewParams, size: [u32; 2], crisp: bool, glyphs: Vec<Option<Placed>>) -> Frame<'a> {
+    pub fn new(list: &'a DrawList, images: &'a Images, view: &'a ViewParams, size: [u32; 2], crisp: bool, glyphs: Vec<Option<Placed>>, drawing_grid: crate::DrawingGrid) -> Frame<'a> {
         let n = list.groups.len().max(1);
-        let planned = plan::plan(
+        let planned = plan::plan_with_grid(
             list,
             &plan::View { matrix: view.matrix, size, zoom: view.zoom, pan: view.pan, stretch: view.stretch, camera_view: view.camera_view, camera_limit: view.camera_limit, max_texture: MAX_TEXTURE },
+            drawing_grid,
         );
         let det = view.matrix[0] * view.matrix[3] - view.matrix[1] * view.matrix[2];
         let root = Layer {

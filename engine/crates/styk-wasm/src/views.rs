@@ -21,7 +21,7 @@ use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
 use styk_engine::thumbnails::monitor::MonitorFrame;
 use styk_eval::doc::Camera;
-use styk_render::{Renderer, ViewParams, wgpu};
+use styk_render::{DrawingGrid, Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
 use crate::js_error;
@@ -34,6 +34,13 @@ struct Aux {
     renderer: Renderer,
     /// The stage atlas (lineage, pages) the renderer samples.
     shared: Option<(u64, u32)>,
+}
+
+/// Browser presentation of the actual shown source. The shared native frame
+/// still owns all preparation and cancellation; this only selects its painter grid.
+pub(crate) struct MonitorRequest {
+    pub frame: MonitorFrame,
+    pub grid: DrawingGrid,
 }
 
 /// What a monitor list of the edit frame was built from.
@@ -132,7 +139,8 @@ impl Aux {
     }
 
     /// Draws `list` under `view` into the canvas, at `width × height`.
-    fn draw(&mut self, stage: &Stage, list: &Arc<DrawList>, view: &ViewParams, width: u32, height: u32) -> bool {
+    fn draw(&mut self, stage: &Stage, list: &Arc<DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid) -> bool {
+        self.renderer.set_drawing_grid(grid);
         if self.shared != stage.atlas_of {
             self.renderer.share_sprites(&stage.renderer);
             self.shared = stage.atlas_of;
@@ -220,25 +228,25 @@ impl Stage {
     /// runs on the interface thread. Made only when a queued request is sent.
     pub fn monitor_address(&self) -> usize {
         let Some(generation) = self.engine.generation() else { return 0 };
-        let request = match &self.shown {
+        let (frame, grid) = match &self.shown {
             Shown::Nothing => return 0,
             Shown::Prepared(shown_generation, tick) => {
                 if *shown_generation != generation.id { return 0; }
-                MonitorFrame::prepared_sample_at(self.engine.clone(), generation, *tick)
+                (MonitorFrame::prepared_sample_at(self.engine.clone(), generation, *tick), DrawingGrid::World)
             }
             Shown::Edit { generation: shown_generation, scene, effects, hidden, translations, .. } => {
                 if *shown_generation != generation.id { return 0; }
-                MonitorFrame::edit(self.engine.clone(), generation, scene, hidden.clone(), translations.clone(), *effects)
+                (MonitorFrame::edit(self.engine.clone(), generation, scene, hidden.clone(), translations.clone(), *effects), DrawingGrid::Destination)
             },
         };
-        Box::into_raw(Box::new(request)) as usize
+        Box::into_raw(Box::new(MonitorRequest { frame, grid })) as usize
     }
 
     /// A message which failed to transfer never reached the worker: release its ticket.
     pub fn forget_monitor(&self, address: usize) {
         if address != 0 {
             // SAFETY: the caller owns the untransferred address produced above.
-            drop(unsafe { Box::from_raw(address as *mut MonitorFrame) });
+            drop(unsafe { Box::from_raw(address as *mut MonitorRequest) });
         }
     }
     /// Gives the camera monitor a canvas (`canvas`, drawn by a renderer of its own that
@@ -263,6 +271,7 @@ impl Stage {
         if self.views.monitor.is_none() {
             return Ok(false);
         }
+        let grid = if matches!(self.shown, Shown::Prepared(..)) { DrawingGrid::World } else { DrawingGrid::Destination };
         let (list, camera) = match self.shown.clone() {
             Shown::Nothing => return Ok(false),
             // Never evaluated here: the stage drew this tick from the cache a moment ago.
@@ -296,7 +305,7 @@ impl Stage {
             pan,
         };
         let mut monitor = self.views.monitor.take().expect("checked above");
-        let drawn = monitor.draw(self, &list, &view_of(framing, [0.0; 4]), width, height);
+        let drawn = monitor.draw(self, &list, &view_of(framing, [0.0; 4]), width, height, grid);
         self.views.monitor = Some(monitor);
         Ok(drawn)
     }
@@ -361,7 +370,7 @@ impl Stage {
         }
         let framing = card(&generation.prepared.doc, frame.camera.as_ref(), width, height);
         let mut thumbnails = self.views.thumbnails.take().expect("checked above");
-        let drawn = thumbnails.draw(self, &frame.list, &view_of(framing, CARD), width, height);
+        let drawn = thumbnails.draw(self, &frame.list, &view_of(framing, CARD), width, height, DrawingGrid::Destination);
         self.views.thumbnails = Some(thumbnails);
         if drawn {
             // Drawn: its place among the frames prepared ahead is free again.

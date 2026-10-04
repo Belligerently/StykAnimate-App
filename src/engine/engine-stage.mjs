@@ -316,6 +316,7 @@ export async function createStageRenderer(canvas, options, create) {
     });
     const dpr = legacy.dpr || 1, view = request.view ?? {};
     side.stage.set_effects(request.vfxEnabled !== false);
+    side.stage.set_canvas_drawing(legacy.softwarePlayback === true);
     const drawn = side.stage.render_edit((view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
       Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
@@ -374,6 +375,7 @@ export async function createStageRenderer(canvas, options, create) {
       const tick = engineTick(key);
       if (tick === null) { const result = legacy.renderPrepared(key, options); if (result) show(false); return result; }
       const dpr = legacy.dpr || 1, view = options.view ?? {}, seen = side.engine.progressSeen();
+      side.stage.set_canvas_drawing(false);
       const drawn = side.stage.render_sample(tick, (view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, options.cameraEnabled !== false, true);
       if (drawn) { show(true); awaitPictures(seen); }
       return drawn;

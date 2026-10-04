@@ -103,6 +103,41 @@ settling with tracked resources ready; they remain unverified. These remain open
 backend-parity gaps. The final diagnostic timing attempt ran at load 10.27–12.77 and
 was too variable to support a cost claim; the idle engine-1 matrix is pending.
 
+The later destination-grid correction passes those same four software-web stage views
+on the final main build: mean 0.0682–0.1261, zero solid differences. Default Electron GPU
+passes all four views and its engine RGBA output is byte-identical to the retained
+original captures; all four software-web legacy captures are also byte-identical.
+The draw-list entry marks exactly one published drawing image before tile expansion.
+`DrawingGrid::Destination` uses the existing nested placement/filter owner for direct
+software edit frames, thumbnails and in-between previews, including a single drawing
+inside a movieclip with child/outer effects. Multiple children and ordinary onion
+entries retain their existing policy. `DrawingGrid::World` remains the portable default
+for prepared playback and ordinary GPU rendering. The private monitor request carries
+this policy beside the same captured `MonitorFrame`; it does not rebuild a snapshot.
+
+Final main acceptance additionally passes the real dense single-child movieclip and
+the serialized child-Blur/outer-Tint fixture (mean 0.0682 and 0.001352 respectively,
+zero solids). Shared-type validation passes 632 native tests and 31 focused JavaScript
+tests; both new editor-built fixtures regenerate byte for byte. Eligibility and plan
+regressions expose the relevant actual source mutations. The shipping engine is
+9,584 KiB (`79ce084e8d9d`); no cost comparison is certified by these loaded runs.
+
+Auxiliary software-WebGL onion views at 320×192 still fail (mean 0.288346), as does
+the 278×139 edit monitor (0.714171). An actual empty-background editor monitor
+independently reproduces 278 fractional-border pixels (mean 0.352518): Canvas applies
+the rectangular clip before background painting, whereas the engine draws one edge.
+Native CPU World and Destination outputs are byte-identical to each other and captured
+WebGL for that empty scene. This isolates a separate clip/paint owner issue; removing
+those border pixels alone would leave the full cel monitor above D13. CPU diagnostics
+are not substituted for browser acceptance. Private web and crisp export remain open.
+
+Mobile pin additions: `LayerKind::Entry.single_drawing: bool` in `styk-draw`;
+`DrawingGrid::{World, Destination}` and `effects::plan::plan_with_grid` in `styk-render`;
+`Renderer::set_drawing_grid` and `Raster::set_drawing_grid` (the latter reuses that same
+portable enum). Update exhaustive entry construction. Primitive records remain 64
+bytes and no shader/sampler format changed. `Stage::set_canvas_drawing` and the private
+monitor wrapper are confined to `styk-wasm`; native callers keep the world-grid default.
+
 Regression coverage lives in the eval and engine `tests/drawing_bounds.rs`, the eval
 drawing/translation tests, and `styk-raster/tests/drawing_sampling.rs` (24 CPU/GPU
 sampling cases). Bounds tests include late shared-cel decoding, stale same-tick

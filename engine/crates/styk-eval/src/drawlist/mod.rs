@@ -646,6 +646,9 @@ struct ObjectOut {
     /// The object holds depth-tested faces or text that is not a lone glyph, which the
     /// editor draws from a raster of the object's own (`requiresCompatibilityTexture`).
     raster: bool,
+    /// One current drawing image, before expansion into tiles. This describes
+    /// the editor entry, not the number or kinds of emitted primitives.
+    single_drawing: bool,
     /// `objectBounds` of the object (x, y, width, height), with effect padding;
     /// measured when the frame has effects, depth-tested faces or text.
     bounds: [f64; 4],
@@ -926,7 +929,7 @@ fn node_stack<'s>(fx: &'s ObjectVfx, fig: &Figure, it: &Item) -> Option<&'s [Arc
     fx.segments.iter().find(|(h, _)| *h == handle).map(|(_, stack)| &stack[..]).filter(|s| !s.is_empty())
 }
 
-fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &[(u32, [f64; 2])], tint: Option<[u8; 3]>, bypass: bool) -> Encoded {
+fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &[(u32, [f64; 2])], tint: Option<[u8; 3]>, bypass: bool, current_drawing: bool) -> Encoded {
     let ctx = Ctx { scene, assets, tint };
     let mut runs: Vec<(usize, usize)> = Vec::new();
     let mut of_slot: std::collections::HashMap<u32, (usize, usize)> = std::collections::HashMap::new();
@@ -960,6 +963,9 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
             return None;
         }
         let fig = &scene.figures[first.figure as usize];
+        let single_drawing = current_drawing && b == a + 1
+            && first.kind == ItemKind::Image
+            && fig.image(fig.segments[first.index as usize].asset).is_some_and(|asset| asset.tiles.is_some());
         let mut outline = Out::new();
         let mut outline_alpha = 1.0;
         if let Some(o) = &fig.outline {
@@ -1039,7 +1045,7 @@ fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &
         // A lone glyph is one primitive: its opacity is in its colour (`glyphTextureDescriptor`),
         // with no isolation layer.
         let opacity = if glyph.is_some() { 1.0 } else { opacity };
-        Some(ObjectOut { opacity, outline_alpha, outline, items, nodes, figure, extents, has_fx, raster, bounds })
+        Some(ObjectOut { opacity, outline_alpha, outline, items, nodes, figure, extents, has_fx, raster, single_drawing, bounds })
     };
     let objects: Vec<Option<ObjectOut>> = crate::par::map(&runs, 16, encode_run);
     Encoded { runs, objects, of_slot, fx }
@@ -1218,6 +1224,7 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
     // Top-level entries: runs sharing their outermost level, or one object. An
     // entry holding effects anywhere is drawn on its own raster, like the editor's.
     let mut entry_fx = vec![false; range.1 - range.0];
+    let mut entry_drawing = vec![false; range.1 - range.0];
     let mut connected_domains: std::collections::HashMap<Level, [f64; 4]> = std::collections::HashMap::new();
     if encoded.fx {
         let mut start = range.0;
@@ -1230,6 +1237,8 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
             }
             let any = (start..end).any(|k| encoded.objects[k].as_ref().is_some_and(|o| o.has_fx || steps_of(k).iter().any(|s| !s.stack.is_empty())));
             entry_fx[start - range.0..end - range.0].fill(any);
+            let single = end == start + 1 && encoded.objects[start].as_ref().is_some_and(|object| object.single_drawing);
+            entry_drawing[start - range.0..end - range.0].fill(single);
             start = end;
         }
         // Connected runs share one domain: every drawn member's artwork.
@@ -1324,7 +1333,7 @@ fn place(b: &mut Builder, scene: &Scene, encoded: &Encoded, range: (usize, usize
             } else if raster && !filtered {
                 (b.open_layer(parent, s.opacity, Vec::new(), LayerKind::Raster { bounds: [0.0; 4] }), true)
             } else if entry {
-                (b.open_layer(parent, s.opacity, s.stack.to_vec(), LayerKind::Entry { bounds: [0.0; 4], domain: [0.0; 4], scale: s.scale, padding: 0.0 }), true)
+                (b.open_layer(parent, s.opacity, s.stack.to_vec(), LayerKind::Entry { bounds: [0.0; 4], domain: [0.0; 4], scale: s.scale, padding: 0.0, single_drawing: entry_drawing[k - range.0] }), true)
             } else if filtered {
                 (b.open_layer(parent, s.opacity, s.stack.to_vec(), LayerKind::Nested { bounds: [0.0; 4], domain: [0.0; 4], scale: s.scale }), true)
             } else {
@@ -1391,14 +1400,14 @@ pub fn encode_preview(doc: &Document, assets: &Assets, scene: &Scene, overrides:
 
 fn encode_layers(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>, ghosts: &[Ghost<'_>], order: Option<&[Layer]>, preview: bool) -> DrawList {
     let bypass = overrides.bypass_effects;
-    let current = encode_scene(assets, scene, overrides.hidden, overrides.translations, None, bypass);
+    let current = encode_scene(assets, scene, overrides.hidden, overrides.translations, None, bypass, true);
     let camera_stack = if bypass { None } else { scene.vfx.as_ref().map(|v| &v.scene).filter(|s| !s.is_empty()) };
     // The software preview's scene-effect path moves its combined ghost/current
     // picture by the current camera's parallax. Ordinary preview ghosts stay still.
     let offsets: std::collections::HashMap<_, _> = if preview && camera_stack.is_some() { overrides.translations.iter().filter_map(|(slot, delta)| scene.objects.get(*slot as usize).map(|object| (object.uid, *delta))).collect() } else { Default::default() };
     let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| {
         let translations: Vec<_> = if preview && camera_stack.is_some() { ghost.scene.objects.iter().filter_map(|object| offsets.get(&object.uid).map(|delta| (object.slot, *delta))).collect() } else { Vec::new() };
-        encode_scene(assets, ghost.scene, ghost.hidden, &translations, ghost.tint, bypass)
+        encode_scene(assets, ghost.scene, ghost.hidden, &translations, ghost.tint, bypass, preview)
     }).collect();
     // Generated effects: each draw encoded once, placed in the frame and in the camera image.
     let batch = overrides.generators.filter(|_| !bypass);
@@ -1652,7 +1661,7 @@ impl Builder {
         let target = match fx {
             Some(f) if layered => {
                 let kind = if entry {
-                    LayerKind::Entry { bounds: f.bounds, domain: f.domain, scale: f.scale, padding: f.padding }
+                    LayerKind::Entry { bounds: f.bounds, domain: f.domain, scale: f.scale, padding: f.padding, single_drawing: o.single_drawing }
                 } else {
                     LayerKind::Nested { bounds: f.bounds, domain: f.domain, scale: f.scale }
                 };

@@ -27,14 +27,14 @@ use std::sync::Arc;
 use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::thumbnails::library::{fitted, LibraryPreview, Sample, SAMPLE, SIZE};
 use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
-use styk_engine::thumbnails::monitor::MonitorFrame;
 use styk_engine::thumbnails::inbetween::{InbetweenPreview, Onions};
 use styk_engine::{Engine, Generation};
 use styk_raster::{Edges, Images, Raster};
-use styk_render::{Renderer, ViewParams, wgpu};
+use styk_render::{DrawingGrid, Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
 use crate::{clock, js_error};
+use crate::views::MonitorRequest;
 
 /// What [`Previews::thumbnail`] answers.
 const READY: u32 = 0;
@@ -75,7 +75,7 @@ pub struct Previews {
     /// The engine whose open document frame thumbnails show ([`Previews::adopt_engine`]).
     engine: Option<Engine>,
     thumbnails: Option<DocumentThumbnails>,
-    monitor: Option<MonitorFrame>,
+    monitor: Option<MonitorRequest>,
 }
 
 /// A picture drawn, as JSON for the worker (`extra` adds fields).
@@ -245,13 +245,13 @@ impl Previews {
     /// never a JSON copy of the document or a pose prepared on the interface thread.
     pub fn monitor_begin(&mut self, address: usize) {
         // SAFETY: the stage made this address in this memory; this request consumes it once.
-        self.monitor = Some(unsafe { *Box::from_raw(address as *mut MonitorFrame) });
+        self.monitor = Some(unsafe { *Box::from_raw(address as *mut MonitorRequest) });
     }
 
     /// Releases a snapshot which did not reach a running request (worker release).
     pub fn forget_monitor(address: usize) {
         // SAFETY: as in monitor_begin; a dropped message's address is consumed once.
-        drop(unsafe { Box::from_raw(address as *mut MonitorFrame) });
+        drop(unsafe { Box::from_raw(address as *mut MonitorRequest) });
     }
 
     /// Draws the stage's displayed pose through the camera, on transparency. Executed
@@ -262,18 +262,18 @@ impl Previews {
             return Err(js_error("Invalid camera monitor size or view."));
         }
         let Some(request) = self.monitor.as_ref() else { return Ok(STALE) };
-        let (engine, generation) = (request.engine.clone(), request.generation.clone());
+        let (engine, generation, grid) = (request.frame.engine.clone(), request.frame.generation.clone(), request.grid);
         if engine.generation().is_none_or(|g| g.id != generation.id) { return Ok(STALE) }
         self.pin(&engine, &generation)?;
         let pictures = self.thumbnails.as_mut().expect("pinned above");
         for image in pictures.frames.take_images(usize::MAX) { pictures.images.add_shared(&generation.assets, image); }
         if pictures.frames.images_pending() > 0 { return Ok(WAIT) }
-        let Some((list, camera)) = self.monitor.as_mut().expect("present above").prepare().map_err(js_error)? else { return Ok(STALE) };
+        let Some((list, camera)) = self.monitor.as_mut().expect("present above").frame.prepare().map_err(js_error)? else { return Ok(STALE) };
         let doc = &generation.prepared.doc;
         let pan = [pan_x, pan_y];
         let framing = Framing { matrix: styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan), artboard: [pan_x, pan_y, pan_x + doc.canvas[0] as f64 * zoom, pan_y + doc.canvas[1] as f64 * zoom], zoom, pan };
         let view = view_of(framing, [0.0; 4], true, true);
-        self.draw_document(&generation, &list, &view, width, height)?;
+        self.draw_document(&generation, &list, &view, width, height, grid)?;
         Ok(READY)
     }
 
@@ -294,7 +294,7 @@ impl Previews {
         let preview = pictures.preview.get_or_insert_with(|| InbetweenPreview::new(generation.clone()));
         let (list, camera) = preview.sample(index as usize, ratio, Onions { mode, count, opacity, ahead }, clock).map_err(js_error)?;
         let view = view_of(card(&generation.prepared.doc, camera.as_ref(), width, height), CARD, true, true);
-        self.draw_document(&generation, &list, &view, width, height)?;
+        self.draw_document(&generation, &list, &view, width, height, DrawingGrid::Destination)?;
         Ok(READY)
     }
 
@@ -334,6 +334,8 @@ impl Previews {
         let doc = &thumbnails.frames.generation().prepared.doc;
         let framing = card(doc, frame.camera.as_ref(), width, height);
         let view = view_of(framing, CARD, true, true);
+        // The thumbnail worker paints directly on its fitted Canvas destination.
+        self.raster.set_drawing_grid(DrawingGrid::Destination);
         self.picture = (width, height, self.raster.render(&frame.list, &thumbnails.images, &view, [width, height]).straight());
         // Drawn: its place among the frames prepared ahead is free again.
         let _ = thumbnails.frames.take(tick);
@@ -419,7 +421,7 @@ impl Previews {
 
     /// Monitor and in-between frames share this worker's existing atlas/device and
     /// the pinned document's decoded pictures; library files reuse the same device.
-    fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32) -> Result<(), JsError> {
+    fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid) -> Result<(), JsError> {
         let pictures = self.thumbnails.as_ref().expect("a document is pinned");
         if let Some(gpu) = self.gpu.as_mut() {
             let layout = (generation.lineage, generation.assets.pages, pictures.images.len());
@@ -428,8 +430,12 @@ impl Previews {
                 gpu.renderer.upload_images(&generation.assets, pictures.images.decoded());
                 gpu.atlas = Some(layout);
             }
+            gpu.renderer.set_drawing_grid(grid);
             gpu.draw(list, view, width, height)?;
-        } else { self.picture = (width, height, self.raster.render(list, &pictures.images, view, [width, height]).straight()); }
+        } else {
+            self.raster.set_drawing_grid(grid);
+            self.picture = (width, height, self.raster.render(list, &pictures.images, view, [width, height]).straight());
+        }
         Ok(())
     }
 
@@ -446,6 +452,7 @@ impl Previews {
                 self.library_images = Some((preview.lineage, images));
             }
             let images = &self.library_images.as_ref().expect("set above").1;
+            self.raster.set_drawing_grid(DrawingGrid::Destination);
             self.picture = (size, size, self.raster.render(list, images, &view, [size, size]).straight());
             return Ok(());
         };
@@ -455,6 +462,7 @@ impl Previews {
             gpu.renderer.upload_images(preview.assets(), images.iter());
             gpu.atlas = Some((preview.lineage, preview.assets().pages, images.len()));
         }
+        gpu.renderer.set_drawing_grid(DrawingGrid::Destination);
         gpu.draw(list, &view, size, size)
     }
 }

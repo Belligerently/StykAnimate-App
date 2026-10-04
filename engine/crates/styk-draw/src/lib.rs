@@ -230,6 +230,11 @@ pub enum LayerKind {
         scale: f64,
         /// The largest effect padding of one item, which caps the raster density.
         padding: f64,
+        /// This entry is one current published drawing image, whose direct Canvas
+        /// presentation filters on the destination's pixel grid. Onion rasters
+        /// retain the ordinary world grid. A renderer's explicit presentation
+        /// policy decides whether this eligibility is used.
+        single_drawing: bool,
     },
     /// Artwork inside an entry, filtered on the entry's own pixel grid (`withVfx`).
     Nested { bounds: [f64; 4], domain: [f64; 4], scale: f64 },

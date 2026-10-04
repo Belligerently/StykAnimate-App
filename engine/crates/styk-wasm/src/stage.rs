@@ -131,6 +131,12 @@ impl Stage {
         self.effects = on;
     }
 
+    /// The selected browser presenter uses direct Canvas drawing semantics.
+    /// Prepared playback explicitly restores the portable world-grid policy.
+    pub fn set_canvas_drawing(&mut self, direct: bool) {
+        self.renderer.set_drawing_grid(if direct { styk_render::DrawingGrid::Destination } else { styk_render::DrawingGrid::World });
+    }
+
     /// The graphics backend and adapter in use, for the status line and reports.
     pub fn backend(&self) -> String {
         self.backend.clone()

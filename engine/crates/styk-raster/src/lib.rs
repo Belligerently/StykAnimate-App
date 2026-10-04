@@ -48,7 +48,7 @@ use styk_draw::DrawList;
 use styk_eval::assets::{Assets, DecodedImage, PAGE};
 
 pub use frame::Stats;
-pub use styk_render::{Edges, ViewParams};
+pub use styk_render::{DrawingGrid, Edges, ViewParams};
 
 use shade::Texture;
 
@@ -152,19 +152,24 @@ impl Frame {
 /// masks across frames.
 pub struct Raster {
     edges: Edges,
+    drawing_grid: DrawingGrid,
     glyphs: glyphs::Masks,
     pub stats: Stats,
 }
 
 impl Raster {
     pub fn new(edges: Edges) -> Raster {
-        Raster { edges, glyphs: glyphs::Masks::default(), stats: Stats::default() }
+        Raster { edges, drawing_grid: DrawingGrid::World, glyphs: glyphs::Masks::default(), stats: Stats::default() }
     }
 
     /// How this renderer covers edges.
     pub fn edges(&self) -> Edges {
         self.edges
     }
+
+    /// Uses the same layer/filter owner with an explicit drawing pixel grid.
+    /// Defaults to the GPU-compatible world grid.
+    pub fn set_drawing_grid(&mut self, grid: DrawingGrid) { self.drawing_grid = grid; }
 
     /// Draws `list` seen through `view` at `size`, with `images`.
     pub fn render(&mut self, list: &DrawList, images: &Images, view: &ViewParams, size: [u32; 2]) -> Frame {
@@ -173,7 +178,7 @@ impl Raster {
         // Lone glyphs: the masks this view calls for (filled now when no frame has yet).
         let resolution = styk_render::effects::plan::raster_resolution(view.matrix[0].hypot(view.matrix[1]));
         let glyphs = if list.glyphs.is_empty() { Vec::new() } else { self.glyphs.prepare(list, resolution, !crisp) };
-        let mut frame = frame::Frame::new(list, images, view, size, crisp, glyphs);
+        let mut frame = frame::Frame::new(list, images, view, size, crisp, glyphs, self.drawing_grid);
         let pixels = frame.draw();
         self.stats = frame::Stats { glyph_masks: self.glyphs.count() as u32, glyph_masks_filled: self.glyphs.filled, glyph_bytes: self.glyphs.bytes(), ..frame.stats };
         let mut bytes = Vec::with_capacity(pixels.len() * 4);

@@ -56,6 +56,7 @@ pub use images::{decode_images, DecodedImage};
 #[cfg(feature = "gpu")]
 pub use present::read_frame;
 pub use view::{ViewParams, CAMERA_PREVIEW_LIMIT};
+pub use effects::plan::DrawingGrid;
 
 #[cfg(feature = "gpu")]
 use isolation::LayerAtlas;
@@ -166,11 +167,16 @@ pub struct Renderer {
     /// Samples per pixel of the frame and layer passes: [`SAMPLES`], or 1 for [`Edges::Crisp`].
     pub(crate) samples: u32,
     pub(crate) crisp: bool,
+    pub(crate) drawing_grid: DrawingGrid,
     pub stats: Stats,
 }
 
 #[cfg(feature = "gpu")]
 impl Renderer {
+    /// Selects the portable pixel-grid policy for eligible filtered drawings.
+    /// The current draw list, decoded images and raster caches stay shared.
+    pub fn set_drawing_grid(&mut self, grid: DrawingGrid) { self.drawing_grid = grid; }
+
     /// Uploads a draw list unless it is already resident.
     pub fn set_list(&mut self, list: &Arc<DrawList>) {
         if self.list.as_ref().is_some_and(|l| Arc::ptr_eq(l, list)) {
@@ -230,4 +236,3 @@ impl Renderer {
         &self.queue
     }
 }
-
