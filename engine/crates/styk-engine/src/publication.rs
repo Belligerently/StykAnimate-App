@@ -96,7 +96,25 @@ impl Prepared {
     }
 }
 
+fn authorized(state: &State, guard: Option<(&RecordGuard, &AtomicBool)>, stopping: &AtomicBool) -> bool {
+    guard.is_none_or(|(guard, cancelled)| guard.current(state)
+        && !cancelled.load(Ordering::SeqCst) && !stopping.load(Ordering::SeqCst))
+}
+
 impl Engine {
+    /// Working-only Session publication uses the same final current/cancel
+    /// predicate without preparing or replacing the stored Engine generation.
+    /// The supplied callback only swaps prebuilt editing/ready heads.
+    pub(crate) fn exchange_session_working_worker<F, R>(
+        &self, guard: RecordGuard, cancelled: &AtomicBool, exchange: &mut Option<F>,
+    ) -> Option<R> where F: FnOnce() -> R {
+        #[cfg(test)]
+        crate::allocation::before_lock(cancelled as *const AtomicBool as usize);
+        let state = self.inner.state.lock();
+        if !authorized(&state, Some((&guard, cancelled)), &self.inner.stopping) { return None; }
+        Some(exchange.take().expect("one guarded working head exchange")())
+    }
+
     /// Prepares and retires on this worker. The final shared lock performs only
     /// guard checks, the supplied zero-allocation/drop head exchange, and swaps.
     /// Refusal leaves `exchange` untouched for worker retention/disposal.
@@ -111,13 +129,13 @@ impl Engine {
         loop {
             let current = {
                 let state = self.inner.state.lock();
-                if guard.as_ref().is_some_and(|(guard, cancelled)| !guard.current(&state) || cancelled.load(Ordering::SeqCst) || self.inner.stopping.load(Ordering::SeqCst)) { return None }
+                if !authorized(&state, guard.as_ref().map(|(guard, cancelled)| (guard, cancelled.as_ref())), &self.inner.stopping) { return None }
                 state.current.clone()
             };
             let mut prepared = Prepared::new(generation.clone(), current);
             let result = {
                 let mut state = self.inner.state.lock();
-                if !prepared.current(&state) || guard.as_ref().is_some_and(|(guard, cancelled)| !guard.current(&state) || cancelled.load(Ordering::SeqCst) || self.inner.stopping.load(Ordering::SeqCst)) {
+                if !prepared.current(&state) || !authorized(&state, guard.as_ref().map(|(guard, cancelled)| (guard, cancelled.as_ref())), &self.inner.stopping) {
                     None
                 } else {
                     let exchanged = exchange.take().expect("the callback runs only once")();

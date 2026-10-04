@@ -447,7 +447,7 @@ impl Engine {
         Ok(committed)
     }
 
-    fn commit_locked_with<F, R>(&self, mut mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32, guard: Option<RecordGuard>, expected_root: Option<(&Value, &Value, &Arc<transfer::Charge>)>, exchange: &mut Option<F>) -> Result<(Committed, crate::PublicationRetirement, R), MirrorError>
+    fn commit_locked_with<F, R>(&self, mut mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32, guard: Option<RecordGuard>, expected_root: Option<(&Value, &Value, &Arc<transfer::Charge>, bool)>, exchange: &mut Option<F>) -> Result<(Committed, crate::PublicationRetirement, R), MirrorError>
     where F: FnOnce() -> R {
         let mut empty = Some(transfer::Batch::default());
         let mut staged = {
@@ -460,7 +460,7 @@ impl Engine {
             }
             match (staged.get(&batch).and_then(|batch| batch.root.as_ref()), expected_root) {
                 (None, None) => {},
-                (Some(root), Some((before, after, charge))) if root.before.same_node(before) && root.after.same_node(after) && Arc::ptr_eq(&root.charge, charge) && mirror.tree.same_node(before) => {},
+                (Some(root), Some((before, after, charge, stored))) if root.before.same_node(before) && root.after.same_node(after) && Arc::ptr_eq(&root.charge, charge) && root.stored == stored && mirror.tree.same_node(before) => {},
                 _ => return Err(MirrorError::Transaction("a prepared root requires its exact guarded Editor publication")),
             }
             if staged.get(&batch).and_then(|batch| batch.transfer.as_ref()).is_some_and(|transfer| !transfer.acknowledged()) {
@@ -476,6 +476,17 @@ impl Engine {
         let _retirement = staged.guard.map(|_| CommitMarker { engine: self, batch, cancelled: staged.cancelled.clone() });
         if staged.cancelled.load(std::sync::atomic::Ordering::SeqCst) || staged.guard.is_some_and(|guard| !self.record_guard_current(guard)) {
             return Err(MirrorError::Transaction("the lifted transfer belongs to another document generation"));
+        }
+        if expected_root.is_some_and(|(_, _, _, stored)| !stored) {
+            // A working-only operation preserves the stored root/Loader/cache.
+            // Reuse the exact final State/current/cancellation linearization.
+            let guard = staged.guard.expect("working publication is guarded");
+            let exchanged = self.exchange_session_working_worker(guard, &staged.cancelled, exchange)
+                .ok_or(MirrorError::Transaction("the working Session was superseded before publication"))?;
+            let mut retirement = crate::PublicationRetirement::empty();
+            retirement.record_charges.append(&mut staged.charges);
+            return Ok((Committed { generation: guard.generation, revision: guard.revision,
+                converted: Default::default(), ms: self.now() - started }, retirement, exchanged));
         }
         let (tree, reset) = match staged.root.take() {
             Some(root) => (root.after, false),

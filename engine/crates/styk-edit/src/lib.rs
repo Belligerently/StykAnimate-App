@@ -945,3 +945,6 @@ fn next_frame_identity(report: &Value) -> u64 {
 
 #[cfg(test)]
 mod native_motion_history_tests;
+
+#[cfg(test)]
+mod native_projection_tests;

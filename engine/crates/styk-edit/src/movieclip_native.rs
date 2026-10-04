@@ -407,8 +407,8 @@ impl Editor {
 
     /// Native reference keys projected onto this figure's lifetime. The
     /// evaluator owns their curves; publication saves only frame references.
-    fn native_baseline_pose(&self, selected: u32) -> Result<Value, EditError> {
-        if let Some(channel) = poses(&self.report).into_iter().find(|c| c.path(&["target", "uid"]).and_then(Value::as_f64) == Some(selected as f64)) {
+    pub(crate) fn native_baseline_pose(&self, selected: u32) -> Result<Value, EditError> {
+        if let Some(channel) = poses(&self.report).into_iter().find(|c| c.get("property").and_then(Value::as_str) == Some("pose") && c.path(&["target", "kind"]).and_then(Value::as_str) == Some("figure") && c.path(&["target", "uid"]).and_then(Value::as_f64) == Some(selected as f64)) {
             return Ok(channel);
         }
         let keys = self.native_pose_markers()?;
@@ -416,13 +416,15 @@ impl Editor {
             items(frame.get("objects")).iter().any(|object| uid(object) == Some(selected)).then_some(index)
         }).collect::<Vec<_>>();
         let sequence = project_pose_keys(&keys, &present);
-        Ok(object(&[
+        let mut descriptor = object(&[
             ("id", Value::str(&channel_id(selected))),
             ("target", object(&[("kind", Value::str("figure")), ("uid", Value::Num(selected as f64))])),
             ("property", Value::str("pose")),
             ("source", Value::str("native")),
             ("keys", Value::array(sequence)),
-        ]))
+        ]).as_obj().unwrap().clone();
+        if self.options.property_channels { descriptor.set("nativeProperties", Value::Bool(true)); }
+        Ok(Value::object(descriptor))
     }
 
     /// `nativePoseChannel` marker keys are shared by figure lifetime projection

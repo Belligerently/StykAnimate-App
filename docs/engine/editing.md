@@ -175,8 +175,9 @@ and inherited effect evaluation intact; downstream struct literals need the new 
 The Engine's existing Core can own one moved Session. Quiet requests prepare on workers,
 stream bounded packets, and wait for packet and readiness acknowledgements. Final
 publication exchanges the canonical Engine and editor heads under the same State and
-cancellation guard. Normal success retains displaced roots and their admission charge
-until terminal ACK; explicit cancellation/close cleans them up on the owning worker.
+cancellation guard. Committed quiet and live requests retain displaced roots and their
+admission charge until terminal ACK, including cancellation after publication. Close
+retires them on the owning worker.
 Fresh bootstrap preserves loaded revision/serial/saved counters; attaching
 an existing Session preserves its history and exact warm checkpoint. Unsupported warm,
 clipboard, live, metadata and absent-field states refuse before transfer or mutation.
@@ -198,7 +199,33 @@ native/sheet lifecycle tapes compare all 115 calls, complete returns, state, eve
 display, exported history fields/weights and runtime flags. Eight native
 `propertyChannels:true` tapes retain their first-selection refusal; five asynchronous
 preflight tapes are evidence for a future protocol, not admitted live calls. This
-capability is not yet coupled to Core live requests or browser ready/shown tickets.
+capability is coupled to Core's portable `Handle::submit_live` for the twelve recorded
+methods. It remains outside browser ready/shown tickets and app writer transfer.
+
+Core moves the same Session into its WorkerSession capability during initialization,
+attachment and detachment. Working-only operations exchange the editor/display heads
+without publishing a stored Mirror root or rebuilding its Loader. Actual history
+revision changes publish the stored root even when the committed JSON is identical.
+Each ready display and displaced display uses the same SceneBudget reservation.
+Quiet undo/redo after a live gesture uses that same display owner. Ready is a raw/typed
+Frame and Scene here; no encoded DrawList or actual Stage presentation is certified.
+After terminal ACK, the current ready display remains alive while the pending raw
+admission can return to zero. Persistent current charging and physical leases remain open.
+
+`WorkerSession::prepare_worker_history` is the additive portable history entry point;
+`Handle::submit_live` adds portable Core submission. Existing browser bindings do not
+activate it. Preserve complete return values, events, history and displayed frames from
+the recorded oracle rather than substituting the editor's working document for display.
+
+The private native property projector adopts the original scalar curve through the
+existing marker/source, Draft, Records, typed channel sampler and Animation/history
+owners. Recorded automatic easing, rotation winding and source ordering are preserved.
+This primitive does not admit the eight `propertyChannels:true` command recordings;
+authored-pose publication is still required. Cold baseline/presence/typed preparation
+between cancellation checks is not certified as bounded dense work.
+The additive `Records::pose_source_frame(id, native_index)` lookup preserves retained
+source precedence. A row hint requires verified unique native frame identities; raw or
+unvalidated records must use `None` for first-match semantics.
 
 Portable mobile pin additions: `RevisionCounters`, `Session::{start_worker_prepared,
 revision,history_checkpoint_worker,into_worker}`, `WorkerSession`, `WorkerPrepared`,

@@ -6,11 +6,12 @@ use std::mem::size_of;
 use std::sync::Arc;
 
 use super::{ObjectSpatial, RigJoint, Scene};
-use crate::doc::Paint;
 use crate::spatial::MeshGeometry;
-use crate::vfx::{Effect, FrameVfx, ParamKind, ParamValue};
+use crate::vfx::FrameVfx;
 
 mod budget;
+mod resolved;
+pub(crate) use resolved::{Resolved, arc_allocation};
 pub use budget::SceneBudget;
 use budget::Reservation;
 
@@ -129,44 +130,6 @@ fn spatial(value: &ObjectSpatial) -> usize {
 fn mesh(value: &MeshGeometry) -> usize {
     [arc::<MeshGeometry>(), buffer(&value.positions), buffer(&value.depth), buffer(&value.triangles), buffer(&value.materials), buffer(&value.z), buffer(&value.colors)]
         .into_iter().fold(0usize, usize::saturating_add)
-}
-
-/// Sampling may allocate new effects/paints retained only by the scene. Count
-/// every reachable resolved payload conservatively, even a source-owned Arc.
-/// The parameter list is the registry's finite static schema; paints hold only
-/// a flat stop vector. There is no recursive shape walk or effect evaluation.
-#[derive(Default)]
-struct Resolved {
-    bytes: usize,
-    effects: HashSet<*const Effect>,
-    paints: HashSet<*const Paint>,
-    ids: HashSet<*const u8>,
-}
-
-impl Resolved {
-    fn effect(&mut self, effect: &Arc<Effect>) {
-        if !self.effects.insert(Arc::as_ptr(effect)) {
-            return;
-        }
-        self.bytes = self.bytes.saturating_add(arc::<Effect>());
-        if self.ids.insert(Arc::as_ptr(&effect.id) as *const u8) {
-            self.bytes = self.bytes.saturating_add(effect.id.len()).saturating_add(2 * size_of::<usize>());
-        }
-        for (index, spec) in effect.kind().specs().iter().enumerate() {
-            if spec.kind == ParamKind::Color
-                && let ParamValue::Paint(paint) = effect.params.get(index)
-                && self.paints.insert(Arc::as_ptr(&paint))
-            {
-                self.bytes = self.bytes.saturating_add(arc::<Paint>()).saturating_add(buffer(&paint.stops));
-            }
-        }
-    }
-
-    fn stack(&mut self, effects: &[Arc<Effect>]) {
-        for effect in effects {
-            self.effect(effect);
-        }
-    }
 }
 
 /// The evaluated containers/stacks, including resolved payloads above.

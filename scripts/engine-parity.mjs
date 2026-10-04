@@ -83,6 +83,10 @@ for (const [tool, folder] of [
 ]) run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
   check: () => unchanged(`engine/tests/${folder}`)});
 
+run('native transform projection fixtures regenerate unchanged', process.execPath,
+  ['engine/tools/native-transform-projection-fixtures.mjs'], {quiet: true,
+    check: () => unchanged('engine/tests/edit')});
+
 // Containers: every native file in the repository, against the JavaScript reader.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});
 const natives = [];

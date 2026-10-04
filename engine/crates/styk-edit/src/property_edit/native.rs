@@ -1,6 +1,7 @@
 //! Native saved transform curves, inside the existing property-edit/history owner.
-//! Projection of native properties is deliberately unavailable here. The authoring
+//! Native projection is explicit worker preparation with a borrowed check. The
 //! draft is transient COW metadata; displayed poses use the existing Records cache.
+mod projection;
 use super::{
     Edit, channel_id, check_tick, invalid, items, normalize_target, strictly_equal, tick_of,
     validate_value,
@@ -157,19 +158,25 @@ impl Draft {
         let property = entry.get("property").and_then(Value::as_str).unwrap_or("");
         let tick = check_tick(&tick_of(entry, editor.tick))?;
         let id = channel_id(&target, property)?;
-        let channel_index = self
-            .channels
-            .iter()
-            .position(|channel| channel.get("id").and_then(Value::as_str) == Some(&id))
-            .unwrap_or_else(|| {
-                let mut channel = Obj::new();
-                channel.set("id", Value::str(&id));
-                channel.set("target", target.clone());
-                channel.set("property", Value::str(property));
-                channel.set("keys", Value::array(Vec::new()));
+        let channel_index = match self.channels.iter().position(|channel| channel.get("id").and_then(Value::as_str) == Some(&id)) {
+            Some(index) => index,
+            None => {
+                let mut channel = if editor.options.property_channels && property != "pose" {
+                    let mut channel = editor.native_property_channel_checked(&target, property, &mut || Ok(()))?.as_obj().unwrap().clone();
+                    channel.set("source", Value::str("authored"));
+                    self.changed = true;
+                    channel
+                } else {
+                    let mut channel = Obj::new();
+                    channel.set("id", Value::str(&id)); channel.set("target", target.clone());
+                    channel.set("property", Value::str(property)); channel.set("keys", Value::array(Vec::new()));
+                    channel
+                };
+                channel.remove("useBasePose");
                 self.channels.push(Value::object(channel));
                 self.channels.len() - 1
-            });
+            }
+        };
         let mut channel = self.channels[channel_index]
             .as_obj()
             .cloned()

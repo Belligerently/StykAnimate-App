@@ -234,6 +234,33 @@ budgets are unchanged; dense final owners, aggregate physical charging, presente
 shutdown ACK and all other D7 paths remain open. Portable API/pin additions are detailed
 in editing.md and threading.md. No class gate, deletion or performance claim.
 
+The portable Core live coupling and native scalar projection/accounting prerequisites
+are now integrated. Focused edit/eval/engine checks pass 505 tests (one loaded-machine
+diagnostic remains ignored), 59 JavaScript tests, check and the pinned threaded Wasm
+compile check. The rebuilt CLI admits 50 affected recordings / 6,581 exact steps;
+nine explicit guards remain. Projection regeneration preserves 3,577 source JSON;
+13 new derived groups / 147 ticks (26 JSON) regenerate twice byte-stable. There are
+421 evaluated-record groups. Existing app bindings do not activate live Core requests;
+shipping pkg regeneration is deferred to the next renderer app milestone, with no new
+app-picture claim here. Twelve recorded live methods use the same moved Session and
+final State guard. Actual history transitions publish even identical stored JSON;
+working-only operations preserve the Mirror stored root/Loader. Current/prior Scenes
+retain the same reservation, and committed prior roots remain through terminal ACK.
+Current ready raw charging after ACK, encoded/shown readiness, typed glyph identity,
+renderer CPU upload/final release and shutdown remain open. Native scalar projection
+matches 204 curves/1,620 samples and 200 missing-property first writes, but the original
+eight propertyChannels:true command tapes remain refused pending authored publication.
+The portable encoded allocation helper has no runtime caller or physical-cap claim.
+Mobile API additions: WorkerSession::prepare_worker_history, Handle::submit_live,
+Records::pose_source_frame (row hints require verified unique IDs), and
+styk_eval::drawlist::{retained_bytes_checked, RetainedBytesError}.
+
+The corrected committed 805688d5 background checkpoint remains independent of this
+merge. Its first compile-only attempt ended with tool exit 143 and no wrapper completion
+or test failure; the log is preserved. The same exact HEAD/cache continuation is running;
+no parity result is claimed. Next regular run is no earlier than 21:59 CEST. Any actual
+checkpoint failure still requires the documented bisect/fix-forward process.
+
 ### Where the port stands
 
 Awaited native/sheet movieclip Bake and full canonical record observation are integrated:
@@ -321,8 +348,9 @@ without owning.
    frames and future target/ancestor guards. Ranges/joins and recorded 2D rig combinations
    now match. Optional selection metadata, native scalar authoring and recorded sheet motion paths
    are assembled, including five native and two saved-native origin motion families,
-   recorded angle-lock definition changes and spatial pose choices. Next: shared native
-   property projection/authored publication and unrecorded complex combinations. Every admitted command needs its own
+   recorded angle-lock definition changes and spatial pose choices. Next: authored native
+   property-channel publication using the integrated scalar projector, and unrecorded
+   complex combinations. Every admitted command needs its own
    recorded replay and app comparison; class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
@@ -361,14 +389,15 @@ without owning.
 - Benchmarks not yet run: the final interleaved benchmark set and the performance report;
   numbers in the milestone log are single runs on a shared, loaded machine.
 - `wasm-opt` is not installed: the WebAssembly modules are not size-optimized.
-- Native motion admits five remote-time and two saved-native families; native property
-  projection/authoring and unrecorded ordinary/complex targets remain refused. The actual
+- Native motion admits five remote-time and two saved-native families; native scalar
+  projection is integrated as a private prerequisite, while authored property-channel commands and unrecorded ordinary/complex targets remain refused. The actual
   eight propertyChannels:true live tapes preserve their options and expose the shared
   marker-adoption/authored-pose gap; their port and canonical worker admission remain open.
 - Cache and quiet actor no-progress Busy retry gaps are corrected through the same
   finite progress owner. The pre-Ready Busy cancellation race is also corrected before
-  integration. Core live readiness, exclusive app writer transfer and actual shown/query
-  ordering remain open. Global last-owner retirement/physical accounting and shutdown
+  integration. Portable Core live coupling is integrated; encoded readiness, exclusive
+  app writer transfer and actual shown/query ordering remain open. Global last-owner
+  retirement/physical accounting and shutdown
   ACK remain separate D7 obligations.
 - Section 6 lists the rest: auxiliary cel previews/monitor and crisp export, CPU rasterizer on nearly coplanar 3D
   faces, out-of-memory not recovered, `svr_uriel.piv` too large for the reference tool,
@@ -380,14 +409,14 @@ without owning.
 | --- | --- |
 | `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
 | `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Record/pose/channel/range/join/2D-rig, strict validation, optional selection, native scalar lifecycle, sheet motion and native/saved-native motion integrated. Angle45 and spatial80 are reviewed and integrated. Native property-channel projection diagnosis/recording continues in `tmp/engine-worktrees/origin-native-saved`. Historical worktree and immutable snapshots remain preserved. |
-| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Canonical root/history/publication prerequisites integrated. Quiet actor, one-shot admission, expiry/input and final bounded-retry/cancellation corrections reviewed and integrated. Portable same-Session live/display capability and complete-return recordings integrated; Core live coupling and actual-shown ACK continue independently. No app gate. |
+| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Canonical root/history/publication prerequisites integrated. Quiet actor, one-shot admission, expiry/input and final bounded-retry/cancellation corrections reviewed and integrated. Portable same-Session live/display capability and complete-return recordings and portable Core live coupling integrated; scoped prebuilt generation/assets and actual-shown ACK continue independently. No app gate. |
 | `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Complete recorded source/capture/insertion/extension stack and canonical worker Bake/TOP/strict-history observer integrated. The concurrent stale trace explicitly refuses its recorded interleaving at step 2. All immutable dependency/source/evidence freezes remain preserved. This agent now owns the isolated FrameCache D7 work below. |
-| `tmp/engine-worktrees/frame-cache-d7` (detached at `011ac7ea`) | Reviewed single Storage owner, one-shot UI reads and Applied/Unchanged/Busy controls with finite coalesced playback retry integrated. Dense reset/trim/stale disposal moves outside State; encoded retained-buffer accounting continues as a separate prerequisite. Final-owner retention/aggregate charging/shutdown remain open. Independent target/dependencies, no main/mobile edits or cache clean. |
+| `tmp/engine-worktrees/frame-cache-d7` (detached at `011ac7ea`) | Reviewed single Storage owner, one-shot UI reads and Applied/Unchanged/Busy controls with finite coalesced playback retry integrated. Dense reset/trim/stale disposal moves outside State; portable encoded retained-buffer accounting is reviewed and integrated without a runtime caller. Final-owner retention/aggregate charging/shutdown remain open. Independent target/dependencies, no main/mobile edits or cache clean. |
 | `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query integrated. Independent layer/movie and assembled-main reviews completed; exact frozen source manifests retained for the integrated dependency stack. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver integrated. Reviewed destination-grid cel fix and single-child correction integrated from immutable 18-path freeze; original software-web and default Electron GPU 4/4 pass on main. Auxiliary clip/paint mismatch has an independent reproduction; source-derived CanvasDirect candidate02 is frozen and passes four actual fractional corner monitors, with broader direct/bitmap/nested/default checks active. SceneFX camera-image and residual cel/onion/crisp differences remain open. Immutable evidence retained; no early gate flips. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver integrated. Reviewed destination-grid cel fix and single-child correction integrated from immutable 18-path freeze; original software-web and default Electron GPU 4/4 pass on main. Auxiliary clip/paint mismatch has an independent reproduction; coherent helper13/source02/source03 CanvasDirect32 is independently reviewed, with 20 final isolated actual views passing; root composition preserves current tickets and awaits main artifact verification. SceneFX camera-image and residual cel/onion/crisp differences remain open. Immutable evidence retained; no early gate flips. |
 | `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera/origin range/rig/pose and strict-validation preparation integrated into main after review/focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
 | `tmp/engine-worktrees/movie-integration` (detached at `7ff82b2c`) | Separate clean dependency integration: reviewed movieclip/layer/history/readiness/publication/selection stack. Exact reviewed/focused-tested dependency snapshot has been integrated; preserve its immutable inputs/evidence, no runtime gate. |
-| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Committed `53e3bdd9` green at 16:36 CEST; post-regeneration whole release target fresh in 0.43 s. Committed `9728e86e` checkpoint green at 19:06 CEST, all 127 release executables fresh after regeneration in 0.22 s; next regular run no earlier than 19:54 CEST. |
+| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Committed `53e3bdd9` green at 16:36 CEST; post-regeneration whole release target fresh in 0.43 s. Committed `9728e86e` checkpoint green at 19:06 CEST, all 127 release executables fresh after regeneration in 0.22 s; Corrected `805688d5` checkpoint started 19:59 CEST; compile-only exit 143 attempt preserved and same HEAD/cache continuation running, no test result yet. Next regular run no earlier than 21:59 CEST. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
@@ -647,8 +676,9 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Canonical worker adoption and query readiness:** effect presets/scopes/paints now
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
-  closest-joint order are portable prerequisites. Durable Session publication,
-  actual-shown/resource ordering and per-class adoption cost still need the shared
+  closest-joint order are portable prerequisites. Portable quiet/live Core publication
+  is integrated; current-ready charge rescoping, exact Editor/Mirror glyph identities,
+  encoded worker display and durable actual Stage release remain open. Actual-shown/resource ordering and per-class adoption cost still need the shared
   worker boundary. Broad owned sheet shadow attempts have no final comparison while
   the narrow duplicate/paste check passes. A bounded 180 s retry on `77d2e83b` completed
   its first warm-up round and began the next before timing out; it demonstrates progress,
@@ -904,6 +934,15 @@ that admission. Actual prepared-cache keys, Busy-safe controls and retained came
 monitor checks pass; affected remapped-effect stored/fractional views pass web 4/4
 (mean .017499) and Electron 4/4 (.024497), zero solids and no page errors. Thresholds
 are unchanged. No app writer transfer, live Core coupling or class gate is certified.
+
+**Core/projection/accounting follow-up (2026-10-04):** 505 focused edit/eval/engine tests,
+59 JavaScript tests, check and threaded Wasm compile pass. Rebuilt CLI: 50 admitted tapes /
+6,581 exact steps plus nine explicit guards; all 13 new evaluated groups / 147 ticks
+match. The source and derived JSON regenerate twice byte-stable. Core's actual tests
+compare all 115 supported live complete returns/displays and quiet history after live.
+Three reviewed source patches and six owning merge adaptations preserve current cache,
+replay and Bake owners. No browser adoption, app picture, class gate, physical cap or
+performance claim. Eight native-channel authoring tapes remain unadmitted.
 
 **Containers** (`engine/tools/container-parity.mjs`, `styk container roundtrip`): 461 native
 files decode to the same document as `src/native-container.mjs`; all 448 version 2 files are
@@ -1330,3 +1369,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 19:55 | S3/S5 nonblocking cache, quiet canonical actor and exclusive live Session foundation | Integrate independently reviewed cache, quiet-actor and portable-live freezes with reviewed shared-owner adaptations. One Storage/cache owner; one-shot UI readiness/admission; dense cache work outside State; same finite progress owner for coalesced Busy retries. The quiet Core pairs editor/mirror publication and worker retirement; portable live capability consumes the same Session and guards actual working displays with a private epoch. Close inherited expiry/input defects and no-progress/Ready-Busy cancellation regressions before integration. Mobile API additions in editing/threading; browser bindings confined to styk-wasm. Wasm 9,862 KiB (+145 KiB), SHA e5c3d8b2a7ca. No class gate, deletion or performance claim. | 708 shared-type native tests, 104 unique affected JS tests, final project13, check (1,999 files/7,010 messages), shipping Wasm and independently reviewed actual source mutants pass. All 59 Editor-built JSON regenerate twice byte-stable; four generators join full checkpoints. CLI22 admitted tapes/1,456 exact steps. Quiet80 editor calls and portable live115 supported calls compare full state/events/document/display/complete returns and exported history fields/weights; eight native-channel and five async-preflight tapes remain unadmitted. Actual main cache/ticket/monitor controls pass with six malformed and three cold/native refusals preserving shown/document/history/selection. Final remapped-effect software web4/4 mean .017499 and default Electron4/4 .024497, zero solids, unchanged D13. Correct pre-Ready Busy abort through per-attempt cancellation/view checks after actual failed-before2vs1 regression; no postcommit rollback/resubmit. State allocation/drop and held-lock probes certify scoped cache paths, not whole D7. Dense last owners/physical leases/shutdown, Core live coupling/ready-shown and app writer transfer remain open. Full checkpoint last green9728e86e; next starts on committed HEAD after this milestone. Logs: tmp/root-verification-temp/cache-quiet-live-*. |
 
 | 2026-10-04 19:58 | Correct the shared progress-helper staging omission | Immediate postcommit status identifies verified src/engine/engine.mjs left unstaged by the manually assembled100-path list. Supply its unchanged independently reviewed helper in a new commit; no history rewrite. The previous65e1db72 snapshot is incomplete and must not be pinned. No crate API, gates, budgets or thresholds change. | All47 affected progress/playback/bootstrap/project JavaScript tests and npm check (1,999 files/7,010 messages) pass on the exact corrected sources. No native/app rebuild needed because those bytes are unchanged. Original milestone evidence preserved with omission diagnosis; background checkpoint starts only on corrected committed HEAD. Stage future source lists from the union of every contributing source manifest, then assert only known unrelated paths remain unstaged. Logs: tmp/root-verification-temp/cache-quiet-live-progress-stage-correction-*. |
+| 2026-10-04 20:35 | S5 portable Core live coupling, native scalar projection and retained encoded accounting | Batch three independently reviewed native owners. Preserve the same Session, Mirror stored/history transition, SceneBudget and terminal-ACK roots. Adopt original native curves through marker/Draft/Records/typed sampler and share one Resolved allocation visitor; Scene saturation and all budgets stay exact. Mobile additions: WorkerSession::prepare_worker_history, Handle::submit_live, Records::pose_source_frame with unique-ID hint precondition, drawlist retained_bytes_checked/RetainedBytesError. Browser writer, current raw charge, glyph identity, upload/Shown/release and stop remain open. | Focused edit/eval/engine: 505 tests, one diagnostic ignored; JS: 59 tests; check: 1,999 files; pinned threaded Wasm compile passes. Rebuilt CLI: 50 admitted tapes / 6,581 exact steps, nine explicit guards. Projection: 204 curves / 1,620 samples / 200 missing first writes. All 3,577 source JSON stay stable; 13 new derived groups / 147 ticks / 26 JSON regenerate twice stable (421 groups total). Shipping pkg rebuild deferred to renderer app milestone; no app adoption, picture, gate, deletion or performance claim. Exact 34-source composition and six owning adaptations reviewed. Checkpoint805688d5 compile-only exit 143 attempt preserved; same HEAD/cache continuation running, next regular run 21:59 CEST. Evidence: tmp/root-verification-temp/core-projection-accounting-*. |

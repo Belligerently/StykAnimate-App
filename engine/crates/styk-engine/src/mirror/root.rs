@@ -19,6 +19,7 @@ pub(super) struct Root {
     pub(super) before: Value,
     pub(super) after: Value,
     pub(super) charge: Arc<Charge>,
+    pub(super) stored: bool,
 }
 
 /// Opaque admission of one exact prepared Editor root. Keep this strong lease
@@ -32,6 +33,8 @@ pub struct EditPublicationAdmission {
     before: Value,
     after: Value,
     charge: Arc<Charge>,
+    editor_before: Option<Value>,
+    stored: bool,
 }
 
 impl Engine {
@@ -57,30 +60,43 @@ impl Engine {
         &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
         response: &Value, check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
-        self.stage_publication_response_worker(batch, guard, prepared, response, None, check)
+        self.stage_publication_response_worker(batch, guard, prepared, response, None, false, true, None, check)
     }
 
     /// The actor aliases its prebuilt small cancellation atom into the SAME
     /// Batch owner. UI cancellation reaches final paired publication without
     /// acquiring State/staged or detaching any payload on that interface.
     pub(crate) fn stage_session_publication_response_worker(
-        &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
+        &self, batch: u32, guard: RecordGuard, prepared: &styk_edit::session::WorkerPrepared,
         response: &Value, cancelled: Arc<AtomicBool>, check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
-        self.stage_publication_response_worker(batch, guard, prepared, response, Some(cancelled), check)
+        self.stage_publication_response_worker(batch, guard, prepared.publication(), response, Some(cancelled),
+            false, true, prepared.display().map(|display| &display.record), check)
+    }
+    /// The exclusive actor's exact working candidate can differ from the
+    /// canonical stored root during native previews without a revision change.
+    /// Both roots are borrowed from their existing owners and share one charge.
+    pub(crate) fn stage_live_session_publication_worker(
+        &self, batch: u32, guard: RecordGuard,
+        prepared: &styk_edit::session::WorkerPrepared, response: &Value,
+        cancelled: Arc<AtomicBool>, check: impl FnMut() -> Result<(), MirrorError>,
+    ) -> Result<EditPublicationAdmission, MirrorError> {
+        let stored = prepared.revision() != prepared.before_revision();
+        self.stage_publication_response_worker(batch, guard, prepared.publication(), response,
+            Some(cancelled), true, stored, prepared.display().map(|display| &display.record), check)
     }
     fn stage_publication_response_worker(
         &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
-        response: &Value, cancelled: Option<Arc<AtomicBool>>, mut check: impl FnMut() -> Result<(), MirrorError>,
+        response: &Value, cancelled: Option<Arc<AtomicBool>>, live: bool, stored: bool, display_record: Option<&Value>, mut check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
         check()?;
-        {
+        let canonical_before = {
             let mirror = self
                 .inner
                 .mirror
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if !mirror.tree.same_node(prepared.before_report())
+            if (!live && !mirror.tree.same_node(prepared.before_report()))
                 || prepared.before_revision() != guard.revision
                 || !self.record_guard_current(guard)
             {
@@ -88,7 +104,8 @@ impl Engine {
                     "the prepared Editor does not own this mirror generation",
                 ));
             }
-        }
+            mirror.tree.clone()
+        };
         let budget = {
             let staged = self.inner.staged.lock();
             staged.get(&batch).map(|owner| owner.budget.clone())
@@ -100,12 +117,13 @@ impl Engine {
             .grow(256)
             .map_err(|error| MirrorError::Record(error.to_string()))?;
         let mut accounted = 0;
+        let no_display = Value::Null;
         styk_doc::retained_bytes_checked(
             &[
-                prepared.before_report(), prepared.report(), prepared.result(),
+                &canonical_before, prepared.before_report(), prepared.report(), prepared.result(),
                 prepared.state(), prepared.history(), prepared.events(),
                 prepared.before_state(), prepared.before_history(),
-                response,
+                response, display_record.unwrap_or(&no_display),
             ],
             |bytes| {
                 check()?;
@@ -126,9 +144,11 @@ impl Engine {
         let admission = EditPublicationAdmission {
             batch,
             guard,
-            before: prepared.before_report().clone(),
+            before: canonical_before,
             after: prepared.report().clone(),
             charge: charge.clone(),
+            editor_before: live.then(|| prepared.before_report().clone()),
+            stored,
         };
         self.stage_guarded_cancelled_owner(
             batch,
@@ -140,6 +160,7 @@ impl Engine {
                 before: admission.before.clone(),
                 after: admission.after.clone(),
                 charge,
+                stored,
             }),
             cancelled,
         )
@@ -164,11 +185,24 @@ impl Engine {
         (super::Committed, PublicationRetirement, RetiredPublication),
         (MirrorError, GuardedPublication<'a>, PublicationRetirement),
     > {
+        self.commit_edit_publication_with_worker(batch, guard, publication, admission, |retired| retired)
+            .map_err(|(error, publication, retirement, _)| (error, publication, retirement))
+    }
+
+    /// Same final root/cancel owner, with an additional prebuilt ready-head swap.
+    /// The callback only exchanges pointers/scalars; all retirements return to
+    /// the durable actor. Refusal returns the uncalled callback on its worker.
+    pub(crate) fn commit_edit_publication_with_worker<'a, F, R>(
+        &self, batch: u32, guard: RecordGuard, publication: GuardedPublication<'a>,
+        admission: EditPublicationAdmission, ready_exchange: F,
+    ) -> Result<(super::Committed, PublicationRetirement, R),
+        (MirrorError, GuardedPublication<'a>, PublicationRetirement, F)>
+    where F: FnOnce(RetiredPublication) -> R {
         let started = self.now();
         let mut retained = PublicationRetirement::empty();
         let admitted = admission.batch == batch
             && admission.guard == guard
-            && admission.before.same_node(publication.before_report())
+            && admission.editor_before.as_ref().unwrap_or(&admission.before).same_node(publication.before_report())
             && admission.after.same_node(publication.report());
         retained.root_admission = Some(admission);
         if !admitted {
@@ -178,6 +212,7 @@ impl Engine {
                 ),
                 publication,
                 retained,
+                ready_exchange,
             ));
         }
         let mirror = self
@@ -185,15 +220,14 @@ impl Engine {
             .mirror
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let before = publication.before_report().clone();
+        let before = retained.root_admission.as_ref().expect("admitted above").before.clone();
         let after = publication.report().clone();
         let revision = publication.revision();
         let mut publication = Some(publication);
+        let mut ready_exchange = Some(ready_exchange);
         let mut exchange = Some(|| {
-            publication
-                .take()
-                .expect("one guarded head exchange")
-                .commit()
+            let retired = publication.take().expect("one guarded head exchange").commit();
+            ready_exchange.take().expect("one ready head exchange")(retired)
         });
         match self.commit_locked_with(
             mirror,
@@ -209,6 +243,7 @@ impl Engine {
                     .as_ref()
                     .expect("admitted above")
                     .charge,
+                retained.root_admission.as_ref().expect("admitted above").stored,
             )),
             &mut exchange,
         ) {
@@ -222,6 +257,7 @@ impl Engine {
                     error,
                     publication.take().expect("refused before head exchange"),
                     retained,
+                    ready_exchange.take().expect("refused before ready head exchange"),
                 ))
             }
         }

@@ -619,11 +619,29 @@ impl<'a> Records<'a> {
         Value::object(out)
     }
 
-    /// `poseSourceFrame(report, id)`.
-    fn source(&self, id: &str) -> Option<Value> {
+    /// `poseSourceFrame(report, id)`: one canonical COW source lookup owner.
+    /// A native marker caller may supply its row index to avoid rescanning the
+    /// timeline. Retained sources always take precedence, and a hint is used
+    /// only when that row's identity matches; an absent/wrong hint has exactly
+    /// the ordinary lookup result. Supply a hint only after verifying that native
+    /// frame identities are unique, as the editor loader does. Callers of raw or
+    /// unvalidated records must pass `None` to preserve first-match lookup.
+    /// No index, source store or evaluator is added.
+    pub fn pose_source_frame(&self, id: &str, native_index: Option<usize>) -> Option<Value> {
         let retained = self.tree.path(&["_styk", "frameSources"]).and_then(|sources| sources.get(id)).filter(|frame| frame.truthy());
-        // Else the native keyframe that carries the id.
-        retained.cloned().or_else(|| items(self.tree.get("keyframes")).into_iter().find(|frame| frame.path(&["_styk", "frameId"]).and_then(Value::as_str) == Some(id)))
+        retained.cloned().or_else(|| {
+            let frames = self.tree.get("keyframes")?;
+            if let Some(frame) = native_index.and_then(|index| frames.item(index))
+                .filter(|frame| frame.path(&["_styk", "frameId"]).and_then(Value::as_str) == Some(id))
+            {
+                return Some(frame);
+            }
+            frames.elements()?.iter().find(|frame| frame.path(&["_styk", "frameId"]).and_then(Value::as_str) == Some(id))
+        })
+    }
+
+    fn source(&self, id: &str) -> Option<Value> {
+        self.pose_source_frame(id, None)
     }
 
     /// `baseSample(id, track)`: a layer's pose from its keys.

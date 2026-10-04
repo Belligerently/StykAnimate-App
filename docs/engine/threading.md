@@ -133,9 +133,22 @@ Existing integer and explicit worker preparation APIs remain available.
 The quiet Session actor described in [editing.md](editing.md#quiet-actor-and-exclusive-live-capability-2026-10-04)
 uses bounded UI controls and worker-owned preparation/retirement. Its deferred registry
 and final cancellation/expiry checks share existing task and State owners. The guarded
-quiet payload charge stays with the worker until terminal ACK or cancellation cleanup. This scoped
-foundation does not certify live Stage preparation, all renderer last-owner drops,
-global stop or no-thread pumping.
+quiet payload charge stays with the worker until terminal ACK, including cancellation
+after publication. Portable Core live submission now uses the same exclusive Session,
+display and final State guard. Current ready remains alive after terminal ACK; its raw
+charge lifetime and actual renderer release still need the existing owning protocol.
+This scoped foundation does not certify live Stage preparation, all renderer last-owner
+drops, global stop or no-thread pumping.
+
+The portable `styk_eval::drawlist::{retained_bytes_checked, RetainedBytesError}` helper
+observes the encoded payload on workers. It includes all seven buffer capacities,
+Arc layout padding, shared effect/paint payloads and unique glyph triangle slices;
+opaque effects and overflowing sizes refuse explicitly. The original Scene saturating
+accounting and logical eviction policy are unchanged. This helper has no runtime
+admission or readiness caller and is not a complete physical-memory bound. Frame,
+derived Figure, Prepared/Generation/Assets, mutable caches, scratch allocations and
+renderer ownership remain separate accounting and disposal obligations. See the
+owning [drawlist contract](../../engine/crates/styk-eval/src/drawlist/README.md).
 
 `Engine::plan_layers(revision, LayerRequest)` uses the existing worker task lane and
 returns `LayerJob`. Polling gives bounded chunks and progress, ACK admits the next chunk,

@@ -3,15 +3,16 @@
 //! The interface owns a weak control handle. It never locks the Session or owns
 //! its prepared heads/cursor/retirements. Quiet commands use invisible bounded
 //! staging, readiness ACK, paired publication, then terminal success ACK.
-//! This foundation deliberately refuses persistent live gestures.
+//! Recorded live gestures use the same moved Session capability and final
+//! current/cancel owner. Browser ready-ticket/shown admission remains separate.
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use styk_doc::json;
-use styk_edit::publication::{PreparedPublication, RetiredPublication};
+use styk_edit::publication::RetiredPublication;
 use styk_edit::{
     EditError, HistoryLimits,
-    session::{RevisionCounters, Session},
+    session::{RevisionCounters, Session, WorkerSession, WorkerPrepared, WorkerFrame},
 };
 
 use crate::mirror::{EditPublicationAdmission, MirrorError, RecordGuard};
@@ -102,6 +103,7 @@ struct Input {
     args: String,
     view: String,
     project_fields: bool,
+    live: bool,
 }
 /// Only scalar evidence from the foreign owner's actual history. The UI never
 /// exports, sums or hashes its entries to initialize a fresh Rust owner.
@@ -145,18 +147,22 @@ struct Pending {
     epochs: Epochs,
     phase: Phase,
     sequence: u32,
-    prepared: Option<PreparedPublication>,
+    prepared: Option<WorkerPrepared>,
     admission: Option<EditPublicationAdmission>,
     cursor: Option<Chunks>,
     engine_retired: Option<PublicationRetirement>,
     editor_retired: Option<RetiredPublication>,
+    ready_retired: Option<WorkerFrame>,
 }
 struct Worker {
-    session: Option<Session>,
+    session: Option<WorkerSession>,
     active: bool,
     stamp: Stamp,
     epochs: Epochs,
     pending: Option<Pending>,
+    // Actual prepared editing display on the durable worker. It is not the
+    // browser's Shown owner; no dense payload crosses a UI handle here.
+    ready: Option<WorkerFrame>,
 }
 pub(crate) struct Core {
     engine: Weak<Inner>,
@@ -229,7 +235,7 @@ impl Core {
             )
             .map_err(owner)?;
         self.check(engine, worker.stamp)?;
-        worker.session = Some(session);
+        worker.session = Some(session.into_worker());
         let mut mail = self
             .mailbox
             .lock()
@@ -331,7 +337,7 @@ impl Core {
             engine.discard_batch(pending.batch);
             drop(pending);
         }
-        drop(worker.session.take());
+        drop((worker.session.take(), worker.ready.take()));
         let retired = {
             let mut mail = self.mailbox.lock().unwrap_or_else(|e| e.into_inner());
             mail.phase = Phase::Closed;
@@ -373,13 +379,21 @@ impl Core {
             return Err(Error::InvalidInput);
         }
         let session = worker.session.as_mut().ok_or(Error::Closed)?;
-        let prepared = session
-            .prepare_worker_call_values(&input.method, &args, &view, || {
-                self.edit_check(engine, input.stamp)
-            })
-            .map_err(owner)?;
+        let prepared = if input.live {
+            session.prepare_live(&input.method, &args, &view, || self.edit_check(engine, input.stamp))
+        } else {
+            session.prepare_quiet(&input.method, &args, &view, || self.edit_check(engine, input.stamp))
+        }.map_err(owner)?;
         let response = if input.project_fields {
-            prepared.project_fields_response_worker(&input.method).map_err(owner)?
+            prepared.publication().project_fields_response_worker(&input.method).map_err(owner)?
+        } else if input.live {
+            let mut response = styk_doc::Obj::new();
+            response.set("kind", styk_doc::Value::str("session-live"));
+            response.set("answer", prepared.result().clone());
+            response.set("history", prepared.publication().history().clone());
+            response.set("runtime", prepared.runtime().clone());
+            response.set("stored", styk_doc::Value::Bool(prepared.revision() != prepared.before_revision()));
+            styk_doc::Value::object(response)
         } else { prepared.result().clone() };
         self.check(engine, input.stamp)?;
         let guard = RecordGuard {
@@ -391,13 +405,15 @@ impl Core {
         let batch = 0x8000_0000u32
             .checked_add(u32::try_from(input.request).map_err(|_| Error::Closed)?)
             .ok_or(Error::Closed)?;
-        let admission = engine
-            .stage_session_publication_response_worker(batch, guard, &prepared, &response, self.batch_cancelled.clone(), || {
-                self.check(engine, input.stamp).map_err(|_| {
-                    MirrorError::Transaction("the Session request was cancelled or superseded")
-                })
-            })
-            .map_err(owner)?;
+        let check = || self.check(engine, input.stamp).map_err(|_|
+            MirrorError::Transaction("the Session request was cancelled or superseded"));
+        let admission = if input.live {
+            engine.stage_live_session_publication_worker(batch, guard, &prepared, &response,
+                self.batch_cancelled.clone(), check)
+        } else {
+            engine.stage_session_publication_response_worker(batch, guard, &prepared, &response,
+                self.batch_cancelled.clone(), check)
+        }.map_err(owner)?;
         let cursor = Chunks::new(response).map_err(owner)?;
         worker.pending = Some(Pending {
             request: input.request,
@@ -411,6 +427,7 @@ impl Core {
             cursor: Some(cursor),
             engine_retired: None,
             editor_retired: None,
+            ready_retired: None,
         });
         Ok(())
     }
@@ -461,8 +478,8 @@ impl Core {
         self.check(engine, worker.stamp)?;
         let session = worker.session.as_mut().ok_or(Error::Closed)?;
         let prepared = pending.prepared.take().ok_or(Error::Ack)?;
-        let publication = match session
-            .guard_worker_publication_checked(prepared, || self.edit_check(engine, worker.stamp))
+        let (publication, display, runtime) = match session
+            .guard(prepared, || self.edit_check(engine, worker.stamp))
         {
             Ok(publication) => publication,
             Err((error, prepared)) => {
@@ -470,16 +487,25 @@ impl Core {
                 return Err(owner(error));
             }
         };
+        drop(runtime); // small observation; response already retains its exact view
         let admission = pending.admission.take().ok_or(Error::Ack)?;
+        let ready = &mut worker.ready;
+        let exchange = move |retired| {
+            let previous = if let Some(display) = display {
+                ready.replace(display)
+            } else { None };
+            (retired, previous)
+        };
         self.committing.store(true, Ordering::Release);
-        let result = engine.commit_edit_publication_worker(
+        let result = engine.commit_edit_publication_with_worker(
             pending.batch,
             pending.guard,
             publication,
             admission,
+            exchange,
         );
         match result {
-            Ok((committed, engine_retired, editor_retired)) => {
+            Ok((committed, engine_retired, (editor_retired, ready_retired))) => {
                 #[cfg(test)]
                 crate::allocation::before_lock(&self.committing as *const AtomicBool as usize);
                 worker.stamp.generation = committed.generation;
@@ -492,6 +518,7 @@ impl Core {
                 pending.phase = Phase::Success;
                 pending.engine_retired = Some(engine_retired);
                 pending.editor_retired = Some(editor_retired);
+                pending.ready_retired = ready_retired;
                 let success = Success {
                     request: pending.request,
                     stamp: worker.stamp,
@@ -502,9 +529,9 @@ impl Core {
                 mail.phase = Phase::Success;
                 mail.success = Some(success);
             }
-            Err((error, publication, retirement)) => {
+            Err((error, publication, retirement, exchange)) => {
                 self.committing.store(false, Ordering::Release);
-                drop((publication, retirement)); // caller is the durable owning worker
+                drop((publication, retirement, exchange)); // caller is the durable owning worker
                 return Err(owner(error));
             }
         }
@@ -554,9 +581,10 @@ impl Core {
             .is_some_and(|pending| pending.phase == Phase::Success)
             && self.cancellation.load(Ordering::Acquire) != 0
         {
-            if let Some(pending) = worker.pending.as_mut() {
-                drop((pending.engine_retired.take(), pending.editor_retired.take()));
-            }
+            // Every committed operation now owns an actual ready display.
+            // Keep both charged retirements and the prior ready head through
+            // terminal acceptance/retirement ACK; cancellation cannot make a
+            // consumer the last dense owner before that barrier.
         } else if let Err(error) = self.check(engine, worker.stamp) {
             if input.is_some()
                 || initialization.is_some()
@@ -615,7 +643,7 @@ impl Handle {
         args: &str,
         view: &str,
     ) -> Result<u64, Error> {
-        self.submit_inner(stamp, epochs, method, args, view, false)
+        self.submit_inner(stamp, epochs, method, args, view, false, false)
     }
     /// Narrow application response: <=3 ordered scalar root fields from the
     /// actual prepared history command, plus bounded scalar history/state.
@@ -626,10 +654,22 @@ impl Handle {
         if !matches!(method, "setFPS" | "setCanvasSize" | "updateProject" | "undo" | "redo") {
             return Err(Error::InputBudget);
         }
-        self.submit_inner(stamp, epochs, method, args, view, true)
+        self.submit_inner(stamp, epochs, method, args, view, true, false)
+    }
+    /// Recorded exclusive live stream. Browser presentation/adoption remains
+    /// unadmitted until its actual ready/Shown ACK uses this same owner.
+    pub fn submit_live(
+        &self, stamp: Stamp, epochs: Epochs, method: &str, args: &str,
+    ) -> Result<u64, Error> {
+        if !matches!(method, "select" | "beginDrag" | "moveSelection" | "commitDrag"
+            | "cancelDrag" | "beginAnimationEdit" | "previewAnimationEdit"
+            | "commitAnimationEdit" | "cancelAnimationEdit" | "seek" | "undo" | "redo") {
+            return Err(Error::InputBudget);
+        }
+        self.submit_inner(stamp, epochs, method, args, "null", false, true)
     }
     fn submit_inner(
-        &self, stamp: Stamp, epochs: Epochs, method: &str, args: &str, view: &str, project_fields: bool,
+        &self, stamp: Stamp, epochs: Epochs, method: &str, args: &str, view: &str, project_fields: bool, live: bool,
     ) -> Result<u64, Error> {
         if method.len() > 128
             || method
@@ -667,6 +707,7 @@ impl Handle {
             args,
             view,
             project_fields,
+            live,
         });
         core.request.store(request, Ordering::Release);
         core.cancellation.store(0, Ordering::Release);
@@ -842,6 +883,7 @@ impl Engine {
                 stamp,
                 epochs,
                 pending: None,
+                ready: None,
             },
             Mailbox {
                 request: 1,
@@ -881,6 +923,7 @@ impl Engine {
         let session = worker.session.take().ok_or(Error::Closed)?;
         let stamp = worker.stamp;
         let epochs = worker.epochs;
+        drop(worker.ready.take());
         core.closed.store(true, Ordering::Release);
         {
             let mut mail = core.mailbox.lock().unwrap_or_else(|e| e.into_inner());
@@ -899,7 +942,7 @@ impl Engine {
         };
         drop(detached);
         drop(worker);
-        Ok((session, stamp, epochs))
+        Ok((session.into_session(), stamp, epochs))
     }
     /// Worker-only handoff of the SAME existing Session. No second editor is built.
     /// Warm history uses its original exact checkpoint/settings. Failure returns
@@ -936,11 +979,12 @@ impl Engine {
         let core = Core::new(
             self,
             Worker {
-                session: Some(session),
+                session: Some(session.into_worker()),
                 active: false,
                 stamp,
                 epochs,
                 pending: None,
+                ready: None,
             },
             Mailbox::default(),
             0,
@@ -951,7 +995,7 @@ impl Engine {
         if let Err(error) = self.install_session_core(&core, stamp) {
             let session = worker.session.take().expect("unattached owner");
             drop(worker);
-            return Err((error, session));
+            return Err((error, session.into_session()));
         }
         // Reserve the canonical slot BEFORE any warm-history preparation. A
         // racing admission Busy must return exactly the original Session.
@@ -967,7 +1011,7 @@ impl Engine {
                 if active.as_ref().is_some_and(|owner| Arc::ptr_eq(owner, &core)) { active.take() } else { None }
             };
             drop(detached);
-            return Err((owner(error), session));
+            return Err((owner(error), session.into_session()));
         }
         drop(worker);
         Ok((

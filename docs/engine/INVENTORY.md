@@ -15,11 +15,11 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
 | `styk-edit` | 89 | 1233 KiB | 46 | 39 | 4 | 0 | 0 | 2 % | 64 % | 0 % |
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
-| `styk-eval` | 81 | 758 KiB | 27 | 45 | 9 | 0 | 0 | 16 % | 67 % | 0 % |
+| `styk-eval` | 81 | 758 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 740 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 32 | 15 | 5 | 0 | 0 | 9 % | 57 % | 0 % |
-| **Total** | 356 | 4053 KiB | 177 | 121 | 35 | 22 | 1 | 20 % | 48 % | 0 % |
+| **Total** | 356 | 4053 KiB | 176 | 122 | 35 | 22 | 1 | 20 % | 48 % | 0 % |
 
 ## Engine modules
 
@@ -65,7 +65,7 @@ Engine logic: ported to Rust.
 | `src/drawing-worker-operations.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
 | `src/drawing-worker-preview.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
 | `src/drawing-worker.mjs` | `styk-drawing` | partial | Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS |
-| `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 JSON history weights, exact warm readiness checkpoint, count/byte trimming and source retirement; quiet canonical Core actor and exclusive portable live capability integrated; exact warm checkpoints preserved, app handoff/readiness pending |
+| `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 history weights and warm checkpoints; same exclusive Session coupled to portable quiet/live Core with terminal-ACK retirement; actual browser shown/release and persistent current charge pending |
 | `src/builder-appearance.mjs` | `styk-edit` | partial | Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view) |
 | `src/builder-session.mjs` | `styk-edit` | js |  |
 | `src/clipboard-asset-plan.mjs` | `styk-edit` | js |  |
@@ -136,7 +136,7 @@ Engine logic: ported to Rust.
 | `src/media-authoring.mjs` | `styk-edit` | js |  |
 | `src/media-image-worker.mjs` | `styk-edit` | js |  |
 | `src/motion-path-falloff.mjs` | `styk-edit` | ported | motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay |
-| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property token lifecycle through the owning builder/project mutation layer and exclusive portable live Session; native propertyChannels:true projection and app facade/worker adoption pending |
+| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated, native propertyChannels:true authored-pose commands and app facade/worker adoption pending |
 | `src/native-property-ranges.mjs` | `styk-edit` | js |  |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
 | `src/polygon-draft.mjs` | `styk-edit` | js |  |
@@ -179,7 +179,7 @@ Engine logic: ported to Rust.
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
 | `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained |
 | `src/animation-origin-validation.mjs` | `styk-eval` | partial | Rust: typed origin compiler validates retained support indices, numbers, bindings and capacity against 68 editor refusals; cooperative import/object validation still JS |
-| `src/animation-pose.mjs` | `styk-eval` | partial | Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS; plus composePoseChannels and handleOrientation (styk_eval::channels::pose); composePoseChannels on records (styk_eval::records) |
+| `src/animation-pose.mjs` | `styk-eval` | partial | Rust: virtual pose tracks, pose sampling/composition and orientation; canonical COW source lookup with verified unique-ID row hints; editing helpers still JS |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
 | `src/color-palette.mjs` | `styk-eval` | js |  |
 | `src/connected-timeline.mjs` | `styk-eval` | js |  |
@@ -190,7 +190,7 @@ Engine logic: ported to Rust.
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
 | `src/motion-path.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/native-pose-projection.mjs` | `styk-eval` | js |  |
-| `src/native-property-projection.mjs` | `styk-eval` | js |  |
+| `src/native-property-projection.mjs` | `styk-eval` | partial | Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded |
 | `src/object-identity.mjs` | `styk-eval` | js |  |
 | `src/onion-range.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/onion-skin.mjs` | `styk-eval` | partial | onion sampling and motion-path projection. Rust: ghost drawing, tint and order; sampling still JS |
@@ -359,7 +359,7 @@ Engine logic: ported to Rust.
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
 | `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: supported edit/onion/playback views, fractional prepared samples, common record lifting, worker monitor, actual prepared shown identity/epoch guards and stale publication retirement; original software-web cel stage parity fixed; auxiliary clip/paint, no-thread, audited D7 and class/draft eligibility remain |
+| `src/renderer.mjs` | `styk-render` | partial | Rust: edit/onion/playback/fractional views, worker monitor and exact prepared shown tickets; original software-web cel stage fixed; portable retained encoded allocation helper has no runtime caller; auxiliary clip/paint, no-thread, last-owner/physical D7 and eligibility remain |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |

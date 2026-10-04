@@ -11,6 +11,8 @@
 //! a `COMPOSITE` record at its place in the parent's painter order.
 
 mod generators;
+mod retained;
+pub use retained::{RetainedBytesError, retained_bytes_checked};
 
 use std::collections::HashSet;
 use std::f64::consts::PI;

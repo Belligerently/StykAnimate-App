@@ -54,6 +54,20 @@ fn runtime(editor: &Editor) -> Value {
     Value::object(value)
 }
 
+// One display preparation owner for quiet and live operations. A quiet
+// operation after a gesture must replace its actual ready candidate too.
+fn display_worker(
+    editor: &mut Editor, check: &mut dyn FnMut() -> Result<(), EditError>,
+) -> Result<WorkerFrame, EditError> {
+    check()?;
+    let record = editor.shown_frame()?;
+    let (prepared, frame, scene) = editor.evaluate()?;
+    check()?;
+    let scene = prepared.doc.scene_budget.retain_worker(Arc::new(scene))
+        .map_err(|_| EditError::Unported("the worker display exceeds its lineage scene budget".into()))?;
+    Ok(WorkerFrame { record, prepared, frame: Arc::new(frame), scene })
+}
+
 impl Session {
     /// Consumes the SAME Session on its owning worker. No direct mutable session
     /// access remains until explicit worker detach returns that owner.
@@ -70,6 +84,14 @@ impl WorkerSession {
     pub fn revision(&self) -> u64 { self.session.revision() }
     pub fn history_checkpoint_worker(&self) -> Option<f64> { self.session.history_checkpoint_worker() }
     pub fn operation_epoch(&self) -> u64 { self.epoch }
+    /// Reuses the same history owner during worker attach/readiness. It does
+    /// not expose mutable Session access or import foreign command entries.
+    pub fn prepare_worker_history(
+        &mut self, limits: crate::HistoryLimits, checkpoint: f64,
+        check: impl FnMut() -> Result<(), EditError>,
+    ) -> Result<(), EditError> {
+        self.session.prepare_worker_history(limits, checkpoint, check)
+    }
     /// Worker detach moves the original owner, preserving every live baseline,
     /// history entry, counter and source. The host must retain its actor guards.
     pub fn into_session(mut self) -> Session {
@@ -83,9 +105,16 @@ impl WorkerSession {
         check: impl FnMut() -> Result<(), EditError>,
     ) -> Result<WorkerPrepared, EditError> {
         if self.epoch == u64::MAX { return Err(EditError::Invalid("the Session operation epoch is exhausted".into())); }
-        let publication = self.session.prepare_worker_call_values(method, args, view, check)?;
+        let mut display = None;
+        let publication = self.session.editor.prepare_worker_publication(|editor, check| {
+            check()?;
+            let answer = call_values(editor, method, args, view, true);
+            check()?;
+            display = Some(display_worker(editor, check)?);
+            Ok(answer)
+        }, check)?;
         Ok(WorkerPrepared { publication, identity: self.identity.clone(), epoch: self.epoch,
-            live: false, display: None, runtime: Value::Null })
+            live: false, display, runtime: Value::Null })
     }
 
     /// Recorded live lifecycle only. The owning Session supplies all view state;
@@ -108,12 +137,7 @@ impl WorkerSession {
             let answer = call_values(editor, method, args, view, true);
             check()?;
             observed = runtime(editor);
-            let record = editor.shown_frame()?;
-            let (prepared, frame, scene) = editor.evaluate()?;
-            check()?;
-            let scene = prepared.doc.scene_budget.retain_worker(Arc::new(scene))
-                .map_err(|_| EditError::Unported("the live display exceeds its lineage scene budget".into()))?;
-            display = Some(WorkerFrame { record, prepared, frame: Arc::new(frame), scene });
+            display = Some(display_worker(editor, check)?);
             Ok(answer)
         }, check, true)?;
         Ok(WorkerPrepared { publication, identity: self.identity.clone(), epoch: self.epoch,

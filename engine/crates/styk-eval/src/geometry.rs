@@ -9,6 +9,7 @@
 use std::sync::Arc;
 
 mod cache;
+pub(crate) use cache::{Resolved, arc_allocation};
 pub use cache::{ClipSceneCache, RetainedScene, SceneBudget};
 
 use crate::doc::*;

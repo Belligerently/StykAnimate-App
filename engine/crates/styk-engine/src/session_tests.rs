@@ -322,7 +322,7 @@ fn cancellation_at_queued_streaming_and_ready_preserves_same_session_and_engine(
 }
 
 #[test]
-fn postcommit_cancel_retires_both_heads_without_rollback_or_reexecution() {
+fn postcommit_cancel_retains_both_heads_until_ack_without_rollback_or_reexecution() {
     let (engine, handle, stamp, epochs) = empty();
     let request = handle
         .submit(stamp, epochs, "setFPS", "[31]", "null")
@@ -338,9 +338,10 @@ fn postcommit_cancel_retires_both_heads_without_rollback_or_reexecution() {
     assert_eq!(poll.success, Some(success));
     assert!(owner_report(&engine).same_node(&after));
     assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
-    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    assert!(engine.inner.record_budget.retained_bytes() > 0);
     assert!(handle.terminal(request).unwrap());
     drain(&engine);
+    assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
 }
 
 #[test]
@@ -726,7 +727,7 @@ fn recorded_quiet_editor_outcomes_history_and_exact_raw_document_match_every_ack
                 let worker = core.worker.lock().unwrap();
                 let prepared = worker.pending.as_ref().unwrap().prepared.as_ref().unwrap();
                 assert_eq!(
-                    prepared.history(),
+                    prepared.publication().history(),
                     step.get("history").unwrap(),
                     "{label}: exact history/checkpoint"
                 );
@@ -870,7 +871,8 @@ fn actor_cancel_after_final_paired_exchange_before_header_keeps_exactly_one_comm
     let core = handle.core.upgrade().unwrap();
     let worker = core.worker.lock().unwrap();
     let pending = worker.pending.as_ref().unwrap();
-    assert!(pending.engine_retired.is_none() && pending.editor_retired.is_none());
+    assert!(pending.engine_retired.is_some() && pending.editor_retired.is_some());
+    assert!(engine.inner.record_budget.retained_bytes() > 0);
     assert_eq!(worker.stamp.sequence, request);
     drop(worker);
     assert!(handle.terminal(request).unwrap());
@@ -1229,7 +1231,7 @@ fn asynchronous_fresh_bootstrap_reserves_same_owner_then_requires_guarded_activa
             .prepared
             .as_ref()
             .unwrap()
-            .before_history();
+            .publication().before_history();
         assert_eq!(
             original.get("revision").unwrap().as_f64(),
             Some(history.counters.revision as f64)
@@ -1328,4 +1330,248 @@ fn fresh_bootstrap_cancel_stale_activation_and_foreign_warm_history_leave_origin
         Err(Error::InputBudget)
     ));
     assert!(engine.inner.session.lock().is_none());
+}
+
+
+fn opened_live_trace(reference: &Value) -> (Engine, Handle, Stamp, Epochs) {
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let initial = first.get("history").unwrap();
+    let counter = |key| initial.get(key).unwrap().as_f64().unwrap() as u64;
+    let counters = RevisionCounters { revision: counter("revision"), serial: counter("revisionSerial"), saved: counter("savedRevision") };
+    let engine = Engine::new(clock, Budgets::for_device(None));
+    engine.stage(0, Change::Reset).unwrap();
+    engine.stage(0, Change::Properties(first.get("document").unwrap().as_str().unwrap().as_bytes().to_vec())).unwrap();
+    engine.commit(counters.revision, 0).unwrap();
+    let (_, tree, loader, prepared) = engine.mirrored_for_editing().unwrap();
+    let mut state = first.get("state").unwrap().as_obj().unwrap().clone();
+    for (key, value) in reference.get("options").unwrap().as_obj().unwrap().iter() { state.set(key, value.clone()); }
+    for key in ["activeLayerId", "sheetSelection"] {
+        if let Some(value) = first.get("selection").unwrap().get(key) { state.set(key, value.clone()); }
+    }
+    let session = Session::start_worker_prepared(tree, &json::to_string(&Value::object(state)), loader, prepared, counters).unwrap();
+    let limits = reference.get("historyLimits").unwrap();
+    let limits = HistoryLimits { count: limits.get("count").unwrap().as_f64().unwrap() as usize, bytes: limits.get("bytes").unwrap().as_f64().unwrap() };
+    let epochs = Epochs { shown: 71, view: 4, gesture: 0 };
+    let (handle, stamp) = engine.attach_session_worker(session, limits, 0.0, epochs)
+        .unwrap_or_else(|(error, _)| panic!("{error}"));
+    (engine, handle, stamp, epochs)
+}
+fn live_history_entries(actual: &Value, expected: &Value, label: &str) {
+    assert_eq!(actual.array_len(), expected.array_len(), "{label}");
+    for (a, e) in actual.elements().unwrap().iter().zip(expected.elements().unwrap().iter()) {
+        for (key, value) in a.as_obj().unwrap().iter() {
+            if &**key == "children" { live_history_entries(value, e.get(key).unwrap(), label); }
+            else { assert_eq!(Some(value), e.get(key), "{label}: history {key}"); }
+        }
+    }
+}
+
+#[test]
+fn recorded_live_core_keeps_stored_working_ready_and_complete_returns_exact_through_ack() {
+    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/session-live");
+    let mut paths: Vec<_> = std::fs::read_dir(folder).unwrap().map(|e| e.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|e| e == "json")
+            && !path.file_name().unwrap().to_str().unwrap().contains("preflight")
+            && !path.file_name().unwrap().to_str().unwrap().starts_with("native-channels")).collect();
+    paths.sort();assert_eq!(paths.len(), 10);
+    let mut calls = 0;
+    for path in paths {
+        let reference = parsed(&std::fs::read_to_string(&path).unwrap());
+        let name = path.file_name().unwrap().to_str().unwrap();
+        let returns = fixture(&format!("session-live-return/{name}"));
+        let (engine, handle, mut stamp, epochs) = opened_live_trace(&reference);
+        let initial = reference.get("steps").unwrap().item(0).unwrap();
+        let mut document = initial.get("document").unwrap().as_str().unwrap().to_owned();
+        let mut display = initial.get("frame").unwrap().as_str().unwrap().to_owned();
+        let core = handle.core.upgrade().unwrap();
+        for (index, step) in reference.get("steps").unwrap().elements().unwrap().iter().enumerate().skip(1) {
+            calls += 1;
+            let call = step.get("call").unwrap().elements().unwrap();
+            let method = call.get(0).unwrap();let method = method.as_str().unwrap();
+            let args = Value::array(call.iter().skip(1).collect());
+            let before = owner_report(&engine);
+            let stored_before = engine.mirrored().unwrap().1;
+            let generation = engine.generation().unwrap();
+            let previous_ready = core.worker.lock().unwrap().ready.as_ref().map(|ready| Arc::downgrade(&ready.frame));
+            let request = handle.submit_live(stamp, epochs, method, &json::to_string(&args)).unwrap();
+            let (response, _) = staged(&engine, &handle, request);
+            assert!(owner_report(&engine).same_node(&before), "{name} step{index} prepared published");
+            assert!(engine.mirrored().unwrap().1.same_node(&stored_before));
+            assert!(Arc::ptr_eq(&engine.generation().unwrap(), &generation));
+            let answer = response.get("answer").unwrap();
+            assert_eq!(answer.get("state"), step.get("state"), "{name} step{index}");
+            assert_eq!(answer.get("events"), step.get("events"), "{name} step{index}");
+            let expected_return = returns.get("steps").unwrap().item(index - 1).unwrap();
+            if step.get("error").unwrap().is_null() {
+                assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+                assert_eq!(expected_return.get("resultDefined"), Some(&Value::Bool(true)));
+                assert_eq!(json::to_string(answer.get("result").unwrap()), expected_return.get("resultJSON").unwrap().as_str().unwrap(), "{name} step{index} complete return");
+            } else {
+                assert_eq!(answer.get("status").and_then(Value::as_str), Some("error"));
+                assert_eq!(answer.get("error"), step.get("error").unwrap().get("key"));
+            }
+            let history = response.get("history").unwrap();let expected = step.get("history").unwrap();
+            for key in ["size", "revision", "revisionSerial", "savedRevision"] { assert_eq!(history.get(key), expected.get(key)); }
+            for key in ["undo", "redo"] { live_history_entries(history.get(key).unwrap(), expected.get(key).unwrap(), name); }
+            for (key, value) in response.get("runtime").unwrap().as_obj().unwrap().iter() { assert_eq!(Some(value), step.get("live").unwrap().get(key)); }
+            if let Some(next) = step.get("document") { document = next.as_str().unwrap().to_owned(); }
+            if let Some(next) = step.get("frame") { display = next.as_str().unwrap().to_owned(); }
+            let pointer = &engine.inner.state as *const _ as usize;
+            let (success, allocations) = crate::allocation::watch(pointer, || commit(&engine, &handle, request, epochs));
+            assert_eq!((allocations.allocations, allocations.deallocations), (0, 0), "{name} step{index}: {allocations:?}");
+            stamp = success.stamp;
+            assert_eq!(json::to_string(&owner_report(&engine)), document, "{name} step{index} working report");
+            if response.get("stored").and_then(Value::as_bool) == Some(true) {
+                assert_eq!(json::to_string(&engine.mirrored().unwrap().1), document);
+                assert!(!Arc::ptr_eq(&generation, &engine.generation().unwrap()));
+            } else {
+                assert!(engine.mirrored().unwrap().1.same_node(&stored_before), "{name} step{index}: changed stored root without history");
+                assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
+            }
+            {
+                let worker = core.worker.lock().unwrap();
+                assert_eq!(worker.session.as_ref().unwrap().operation_epoch(), index as u64);
+                let ready = worker.ready.as_ref().unwrap();
+                assert_eq!(json::to_string(&ready.record), display, "{name} step{index}: actual prepared display");
+                assert_eq!(ready.frame.objects.len(), ready.scene.scene().objects.len());
+                if let Some(old) = previous_ready.as_ref() {
+                    let old = old.upgrade().expect("old ready retained through terminal ACK");
+                    assert!(Arc::ptr_eq(&old, &worker.pending.as_ref().unwrap().ready_retired.as_ref().unwrap().frame));
+                }
+            }
+            assert!(engine.inner.record_budget.retained_bytes() > 0);
+            assert!(handle.terminal(request).unwrap());drain(&engine);
+            assert_eq!(handle.poll().phase, Phase::Idle);
+            assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+            if let Some(old) = previous_ready { assert!(old.upgrade().is_none(), "prior ready disposed on worker after ACK"); }
+        }
+        handle.close();drain(&engine);assert!(engine.inner.session.lock().is_none());
+    }
+    assert_eq!(calls, 115);
+}
+
+#[test]
+fn working_only_final_cancel_before_or_after_state_exchange_preserves_exact_linearization() {
+    for after in [false, true] {
+        let reference = fixture("session-live/native-drag-commit.json");
+        let (engine, handle, stamp, epochs) = opened_live_trace(&reference);
+        let before = owner_report(&engine);let stored_before = engine.mirrored().unwrap().1;
+        let generation = engine.generation().unwrap();
+        let request = handle.submit_live(stamp, epochs, "select", "[1,-1]").unwrap();
+        staged(&engine, &handle, request);assert!(handle.ready(request, epochs).unwrap());
+        let core = handle.core.upgrade().unwrap();
+        let pointer = if after { &core.committing as *const AtomicBool as usize } else { Arc::as_ptr(&core.batch_cancelled) as usize };
+        let barriers = Arc::new([std::sync::Barrier::new(2), std::sync::Barrier::new(2)]);
+        let pause = barriers.clone();let worker_engine = engine.clone();let worker_core = core.clone();
+        let worker = std::thread::spawn(move || crate::allocation::with_pause(pointer, 1, pause, || worker_core.advance(&worker_engine)));
+        barriers[0].wait();handle.cancel(request);barriers[1].wait();worker.join().unwrap();drain(&engine);
+        let result = handle.poll();
+        assert!(engine.mirrored().unwrap().1.same_node(&stored_before));
+        assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
+        if after {
+            assert_eq!(result.phase, Phase::Success);
+            assert_eq!(core.worker.lock().unwrap().session.as_ref().unwrap().operation_epoch(), 1);
+            assert!(core.worker.lock().unwrap().ready.is_some());
+            assert!(engine.inner.record_budget.retained_bytes() > 0, "postcommit cancel retains live retirement through terminal ACK");
+        } else {
+            assert_eq!(result.phase, Phase::Failed);
+            assert_eq!(result.error, Some(Error::Owner("a staged record is not valid: the working Session was superseded before publication".into())));
+            assert!(owner_report(&engine).same_node(&before));
+            assert_eq!(core.worker.lock().unwrap().session.as_ref().unwrap().operation_epoch(), 0);
+            assert!(core.worker.lock().unwrap().ready.is_none());
+            assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        }
+        assert!(handle.terminal(request).unwrap());drain(&engine);
+        assert_eq!(handle.poll().phase, Phase::Idle);assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+    }
+}
+
+
+#[test]
+fn dense_live_stream_stale_ready_and_close_retire_candidates_without_losing_live_baseline() {
+    for close_unacked in [false, true] {
+        let (engine, handle, mut stamp, epochs) = native(true);
+        let stored = engine.mirrored().unwrap().1;let generation = engine.generation().unwrap();
+        let core = handle.core.upgrade().unwrap();
+        for (method, args) in [("select", "[1,-1]"), ("beginDrag", r#"["Dense live"]"#)] {
+            let request = handle.submit_live(stamp, epochs, method, args).unwrap();
+            staged(&engine, &handle, request);stamp = commit(&engine, &handle, request, epochs).stamp;
+            handle.terminal(request).unwrap();drain(&engine);
+        }
+        let before = owner_report(&engine);
+        let (ready, budget) = {
+            let worker = core.worker.lock().unwrap();let frame = worker.ready.as_ref().unwrap();
+            (Arc::downgrade(&frame.frame), frame.prepared.doc.scene_budget.clone())
+        };
+        assert_eq!(budget.retained_entries(), 1);
+        let request = handle.submit_live(stamp, epochs, "moveSelection", "[8,5]").unwrap();
+        if close_unacked {
+            drain(&engine);let first = handle.poll();
+            assert_eq!(first.phase, Phase::Streaming);assert!(first.packet.is_some());
+            assert!(engine.inner.record_budget.retained_bytes() > 0);
+            handle.close();drain(&engine);
+            assert_eq!(handle.poll().phase, Phase::Closed);
+            assert!(core.worker.lock().unwrap().session.is_none());
+            assert!(core.worker.lock().unwrap().ready.is_none());
+            assert!(ready.upgrade().is_none());assert_eq!(budget.retained_entries(), 0);
+        } else {
+            let (_, packets) = staged(&engine, &handle, request);
+            assert!(packets > 1, "one dense changed figure is sliced by the existing Chunks owner");
+            assert!(owner_report(&engine).same_node(&before));
+            let wrong = Epochs { gesture: epochs.gesture + 1, ..epochs };
+            handle.ready(request, wrong).unwrap();drain(&engine);
+            assert_eq!(handle.poll().error, Some(Error::Stale));
+            assert!(owner_report(&engine).same_node(&before));
+            assert!(ready.upgrade().is_some());assert_eq!(budget.retained_entries(), 1);
+            assert_eq!(core.worker.lock().unwrap().session.as_ref().unwrap().operation_epoch(), 2);
+            handle.terminal(request).unwrap();drain(&engine);
+            // Failed transport did not cancel or rebuild the actual Drag owner.
+            // Execute its real cancellation through the same ordered stream.
+            let cancel = handle.submit_live(stamp, epochs, "cancelDrag", "[]").unwrap();
+            let (response, _) = staged(&engine, &handle, cancel);
+            assert_eq!(response.get("runtime").unwrap().get("drag"), Some(&Value::Bool(false)));
+            commit(&engine, &handle, cancel, epochs);handle.terminal(cancel).unwrap();drain(&engine);
+            handle.close();drain(&engine);assert!(core.worker.lock().unwrap().ready.is_none());
+            assert_eq!(budget.retained_entries(), 0);
+        }
+        assert!(engine.mirrored().unwrap().1.same_node(&stored));
+        assert!(Arc::ptr_eq(&generation, &engine.generation().unwrap()));
+        assert_eq!(engine.inner.record_budget.retained_bytes(), 0);
+        assert!(engine.inner.session.lock().is_none());
+    }
+}
+
+
+#[test]
+fn recorded_quiet_history_after_live_refreshes_actual_ready_and_retains_previous_until_ack() {
+    let reference = fixture("session-live/native-drag-commit.json");
+    let (engine, handle, mut stamp, epochs) = opened_live_trace(&reference);
+    let core = handle.core.upgrade().unwrap();
+    let mut document = reference.get("steps").unwrap().item(0).unwrap().get("document").unwrap().as_str().unwrap().to_owned();
+    let mut display = reference.get("steps").unwrap().item(0).unwrap().get("frame").unwrap().as_str().unwrap().to_owned();
+    for (index, step) in reference.get("steps").unwrap().elements().unwrap().iter().enumerate().skip(1).take(7) {
+        let call = step.get("call").unwrap().elements().unwrap();
+        let method = call.get(0).unwrap();let method = method.as_str().unwrap();
+        let args = json::to_string(&Value::array(call.iter().skip(1).collect()));
+        let quiet = matches!(method, "undo" | "redo");
+        let previous = core.worker.lock().unwrap().ready.as_ref().map(|ready| Arc::downgrade(&ready.frame));
+        let request = if quiet { handle.submit(stamp, epochs, method, &args, "null") }
+            else { handle.submit_live(stamp, epochs, method, &args) }.unwrap();
+        let (response, _) = staged(&engine, &handle, request);
+        let answer = if quiet { &response } else { response.get("answer").unwrap() };
+        assert_eq!(answer.get("state"), step.get("state"), "step{index}");
+        assert_eq!(answer.get("events"), step.get("events"), "step{index}");
+        if let Some(next) = step.get("document") { document = next.as_str().unwrap().to_owned(); }
+        if let Some(next) = step.get("frame") { display = next.as_str().unwrap().to_owned(); }
+        let pointer = &engine.inner.state as *const _ as usize;
+        let (done, allocations) = crate::allocation::watch(pointer, || commit(&engine, &handle, request, epochs));
+        assert_eq!((allocations.allocations, allocations.deallocations), (0, 0));stamp = done.stamp;
+        assert_eq!(json::to_string(&owner_report(&engine)), document, "step{index}");
+        let worker = core.worker.lock().unwrap();
+        assert_eq!(json::to_string(&worker.ready.as_ref().unwrap().record), display, "step{index} actual quiet/live ready");
+        if let Some(previous) = &previous { assert!(previous.upgrade().is_some(), "prior ready retained through ACK"); }
+        drop(worker);handle.terminal(request).unwrap();drain(&engine);
+        if let Some(previous) = previous { assert!(previous.upgrade().is_none(), "prior ready retired after ACK"); }
+    }
+    handle.close();drain(&engine);
 }
