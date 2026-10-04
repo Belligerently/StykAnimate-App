@@ -19,9 +19,9 @@ const COLORS: [&str; 6] = ["blue", "violet", "rose", "orange", "green", "teal"];
 /// `None` when the key does not exist; its value `None` when it is `undefined`.
 #[derive(Clone, Debug)]
 pub struct LayerChange {
-    path: Vec<String>,
-    before: Option<Value>,
-    after: Option<Option<Value>>,
+    pub(crate) path: Vec<String>,
+    pub(crate) before: Option<Value>,
+    pub(crate) after: Option<Option<Value>>,
 }
 
 /// `{exists, value}` as `JSON.stringify` prints it, to tell a change from none.
@@ -139,6 +139,52 @@ fn path(keys: &[&str]) -> Vec<String> {
 }
 
 impl Editor {
+    /// `_registerFrameSources`: register membership and defer source storage/assignment
+    /// history until the next real command. The source table remains its only owner.
+    pub(crate) fn register_frame_sources(&mut self, frames: &[Value], captured: bool) -> Result<bool, EditError> {
+        for frame in frames {
+            if let Some(id) = frame.path(&["_styk", "frameId"]).and_then(Value::as_str)
+                && !self.generated_sources.iter().any(|known| known == id)
+            {
+                self.generated_sources.push(id.to_string());
+                if captured {
+                    self.pending_source_bytes += 256 + crate::frame::objects_of(frame).iter().map(|object| {
+                        512 + 8 * ["angles", "lengths", "bends"].iter().map(|key| object.get(key).and_then(Value::array_len).unwrap_or(0)).sum::<usize>()
+                    }).sum::<usize>();
+                }
+            }
+        }
+        self.track_frames(&[], frames, true)
+    }
+
+    /// Capture and write the assignment of a never-seen figure in `_trackLayerCommand`.
+    pub(crate) fn capture_layer_assignment(&mut self, uid: u32, layer: &str) -> Option<LayerChange> {
+        if layer == self.layer_of(uid) {
+            return None;
+        }
+        let path = vec!["assignments".into(), uid.to_string()];
+        let before = get_path(&self.layer_state(), &path).cloned();
+        let after = Some(Some(Value::str(layer)));
+        write_path(self.layer_state_mut()?, &path, after.as_ref());
+        Some(LayerChange { path, before, after })
+    }
+
+    /// `_applyLayerChanges` for source assignments attached to a native animation entry.
+    /// `layers` entries apply their own changes instead, as the JavaScript history does.
+    pub(crate) fn apply_attached_layer_changes(&mut self, changes: &[LayerChange], direction: Direction) {
+        if changes.is_empty() {
+            return;
+        }
+        if let Some(state) = self.layer_state_mut() {
+            for change in changes {
+                let side = if direction == Direction::Before { change.before.clone().map(Some) } else { change.after.clone() };
+                write_path(state, &change.path, side.as_ref());
+            }
+        }
+        self.layer_revision += 1;
+        self.layer_event_pending = true;
+    }
+
     /// `ensureLayerState(report)`: a document without layers gets the default state.
     fn ensure_layer_state(&mut self) -> Result<(), EditError> {
         let report = self.report.make_obj().ok_or_else(|| EditError::Unported("a document that is not an object".into()))?;
@@ -245,7 +291,7 @@ impl Editor {
         }
         self.layer_revision += 1;
         let after_selection = self.selection_state();
-        self.record(Command { kind: CommandKind::Layers { changes, sheet: sheet_patch, structural, timing }, label: label.into(), before_selection, after_selection, before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::Layers { changes, sheet: sheet_patch, structural, timing }, label: label.into(), before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit_layers("edit", label, structural, timing, true);
         Ok(true)
     }
@@ -253,6 +299,7 @@ impl Editor {
     /// The events of a layer edit and of its undo and redo, decorated with the layer
     /// revision as `_emit` decorates them.
     fn emit_layers(&mut self, kind: &str, label: &str, structural: bool, timing: bool, edit: bool) {
+        self.layer_event_pending = false;
         let mut event = Obj::new();
         event.set("kind", Value::str(kind));
         event.set("frameIndex", Value::Num(self.frame_index as f64));

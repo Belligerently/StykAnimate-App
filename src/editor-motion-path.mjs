@@ -82,7 +82,8 @@ function applyRotation(session, report, targets, delta) {
   const figure = report.figure_types.find(f => f.figure_type_id === object.figure_type_id);
   const slots = componentSlots(working, slot);
   const graph = slots.length > 1 ? joinedIKGraph(report, working, slots) : null;
-  const source = graph?.object ?? object, layout = graph?.layout ?? ikLayout(figure);
+  const followerFigure = graph?.figure ?? figure;
+  const source = graph?.object ?? object, layout = graph?.layout ?? ikLayout(followerFigure);
   const selected = new Set(targets.map(([s, i]) => `${s}:${i}`));
   const entryAt = i => graph?.entries[i] ?? {slot, index: i, handle: figure.segments[i].segment_id, uid: working.objects[slot].unique_id};
   if (delta && session.baseline.some(hasPinnedIK)) for (const [id, c] of Object.entries(source._stykIK ?? {})) {
@@ -93,13 +94,14 @@ function applyRotation(session, report, targets, delta) {
     const ownerObject = working.objects[owner.slot], current = ownerObject._stykIK?.[owner.handle];
     if (!current) continue;
     let next;
-    const followers = ikFollowers(figure, source, id, c, layout);
-    for (const i of ikFollowerIndices(figure, id, layout)) {
+    // Follower indices and offsets belong to the same skeleton as the layout.
+    const followers = ikFollowers(followerFigure, source, id, c, layout);
+    for (const i of ikFollowerIndices(followerFigure, id, layout)) {
       const child = entryAt(i);
       if (child.slot === slot && child.index === target.joint) continue;
       if (!selected.has(`${child.slot}:${child.index}`)) continue;
       next ??= {...current, followers: {...current.followers}, joinedFollowers: {...current.joinedFollowers}};
-      const angle = (followers[child.handle] ?? followers[figure.segments[i]?.segment_id] ?? 0) + delta;
+      const angle = followers[followerFigure.segments[i].segment_id] + delta;
       if (child.slot === owner.slot) next.followers[child.handle] = angle;
       else next.joinedFollowers[child.uid] = {...next.joinedFollowers[child.uid], [child.handle]: angle};
     }

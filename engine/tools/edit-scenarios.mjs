@@ -1138,3 +1138,23 @@ await import('./edit-scenarios-origin-topology.mjs');
 await import('./edit-scenarios-origin-pose.mjs');
 await import('./edit-scenarios-origin-channels.mjs');
 await import('./origin-channels-guard-fixtures.mjs');
+
+await import('./edit-scenarios-camera-bake-order.mjs');
+
+await import('./edit-scenarios-camera-follow.mjs');
+
+await import('./edit-scenarios-measured-bounds.mjs');
+
+await import('./edit-scenarios-motion-path-joined.mjs');
+
+await import('./edit-scenarios-joined-spatial-ik.mjs');
+
+await import('./edit-scenarios-branch-thickness.mjs');
+
+await import('./edit-scenarios-native-builder.mjs');
+
+await import('./edit-scenarios-sprite-segment.mjs');
+
+await import('./edit-scenarios-draw-capacity.mjs');
+
+await import('./edit-scenarios-draw-new-figure.mjs');

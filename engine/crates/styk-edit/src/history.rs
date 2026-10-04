@@ -36,6 +36,9 @@ pub enum CommandKind {
     Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, structural: bool, timing: bool },
     /// A figure definition before and after (`kind: 'figure'`).
     Figure { index: usize, before: Value, after: Value },
+    /// Definitions inserted beside the existing library and one native keyframe
+    /// before and after (`kind: 'figure-splice'`).
+    FigureSplice { index: usize, figure_index: usize, before: Value, after: Value },
     /// The camera motion table before (none when there was none) and after, and the sheet
     /// when the clips lengthened it (`kind: 'camera-motion'`).
     CameraMotion { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
@@ -83,6 +86,12 @@ pub struct Command {
     pub(crate) after_selection: SelectionState,
     pub before_revision: u64,
     pub after_revision: u64,
+    /// Assignments captured with pose sources, attached by `_record` to this command.
+    pub(crate) layer_changes: Vec<crate::layers::LayerChange>,
+    /// Newly captured source storage, charged after the command estimate.
+    pub(crate) captured_source_bytes: usize,
+    /// Independent enumerable `command.layers` metadata from membership tracking.
+    pub(crate) layers: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -96,14 +105,12 @@ impl Editor {
     /// only a dropped redo branch used are collected.
     pub(crate) fn record(&mut self, mut command: Command) -> Result<(), EditError> {
         if let CommandKind::LayerSheet { sources, .. } = &command.kind {
-            for (id, _) in sources {
-                if !self.generated_sources.contains(id) {
-                    self.generated_sources.push(id.clone());
-                }
-            }
             let frames: Vec<Value> = sources.iter().map(|(_, frame)| frame.clone()).collect();
-            self.track_frames(&[], &frames, true)?;
+            command.layers |= self.register_frame_sources(&frames, false)?;
         }
+        command.layers |= !self.pending_source_layer_changes.is_empty();
+        command.layer_changes.append(&mut self.pending_source_layer_changes);
+        command.captured_source_bytes += std::mem::take(&mut self.pending_source_bytes);
         let collect = !self.redo.is_empty();
         command.before_revision = self.revision;
         self.revision_serial += 1;
@@ -145,7 +152,7 @@ impl Editor {
         let batch = self.batch.take().unwrap();
         if !batch.commands.is_empty() {
             let after_selection = self.selection_state();
-            self.record(Command { kind: CommandKind::Batch { commands: batch.commands }, label: batch.label.clone(), before_selection: batch.before_selection, after_selection, before_revision: 0, after_revision: 0 })?;
+            self.record(Command { kind: CommandKind::Batch { commands: batch.commands }, label: batch.label.clone(), before_selection: batch.before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
             if let Some(command) = self.undo.last_mut() {
                 command.before_revision = batch.revision;
             }
@@ -237,6 +244,26 @@ impl Editor {
                 self.restore_selection(selection)?;
                 self.revision = revision;
                 self.emit("history", vec![("label", Value::str(&command.label)), ("definition", Value::Bool(true)), ("animation", Value::Bool(false))]);
+            }
+            CommandKind::FigureSplice { index, figure_index, before, after } => {
+                let (previous, value) = if direction == Direction::Before { (after, before) } else { (before, after) };
+                self.ensure_counts();
+                let removed = previous.get("figures").and_then(Value::array_len).unwrap_or(0);
+                let inserted: Vec<_> = value.get("figures").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+                if let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr) {
+                    figures.splice(*figure_index..*figure_index + removed, inserted);
+                }
+                if let Some(frame) = self.report.make_obj().and_then(|r| r.get_mut("keyframes")).and_then(Value::make_arr).and_then(|f| f.get_mut(*index)) {
+                    *frame = value.get("frame").cloned().unwrap_or(Value::Null);
+                }
+                let previous_frame = previous.get("frame").cloned().unwrap_or(Value::Null);
+                let next_frame = value.get("frame").cloned().unwrap_or(Value::Null);
+                self.track_frames(&[previous_frame], &[next_frame], false)?;
+                self.apply_attached_layer_changes(&command.layer_changes, direction);
+                self.retained = None;
+                self.restore_selection(selection)?;
+                self.revision = revision;
+                self.emit("history", vec![("label", Value::str(&command.label)), ("structural", Value::Bool(true)), ("definition", Value::Bool(true)), ("animation", Value::Bool(false))]);
             }
         }
         Ok(())

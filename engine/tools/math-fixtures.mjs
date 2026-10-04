@@ -48,4 +48,16 @@ for (let i = 0; i < 3000; i++) ls.push(rnd() * 4.8 - 0.8, (rnd() - .5) * 10 ** (
 const logs = new Float64Array(ls.length * 2);
 ls.forEach((x, i) => logs.set([x, Math.log1p(x)], i * 2));
 writeFileSync(`${out}log1p.bin`, Buffer.from(logs.buffer));
-console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs, ${unit.length} asin and acos inputs, ${es.length} exponentials, ${ls.length} log1p inputs`);
+// log.bin: [x, Math.log(x)]. Independent full-range inputs and fdlibm's normalization
+// branches, plus follow-camera fit ratios and maximum zoom. Preserve signed-zero/domain
+// behavior and subnormals, not only the camera's ordinary positive range.
+const ns = [0, -0, NaN, Infinity, -Infinity, -1, 5e-324, 2.2250738585072014e-308, 1.7976931348623157e308, 1e-6, 1, 2, 3, 20];
+const fromHigh = word => new Float64Array(new BigUint64Array([BigInt(word) << 32n]).buffer)[0];
+for (const point of [1, Math.SQRT2, Math.SQRT1_2, fromHigh(0x3ff6147a), fromHigh(0x3ff6b851), fromHigh(0x3ff6a09c), fromHigh(0x3ff00002), fromHigh(0x3ff6147a) / 2, 2.2250738585072014e-308, 1e-6])
+  for (const d of [-3, -2, -1, 0, 1, 2, 3]) ns.push(nudge(point, d));
+for (let exponent = -1074; exponent <= 1023; exponent++) ns.push(2 ** exponent, (2 ** exponent) * 1.37);
+for (let i = 0; i < 5000; i++) ns.push(1 + rnd() * 19, 10 ** (rnd() * 620 - 310), .5 + rnd(), rnd() * 4);
+const natural = new Float64Array(ns.length * 2);
+ns.forEach((x, i) => natural.set([x, Math.log(x)], i * 2));
+writeFileSync(`${out}log.bin`, Buffer.from(natural.buffer));
+console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs, ${unit.length} asin and acos inputs, ${es.length} exponentials, ${ls.length} log1p inputs, ${ns.length} logarithms`);

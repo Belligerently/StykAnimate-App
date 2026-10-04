@@ -29,6 +29,8 @@ What's new in each version of StykAnimate.
 - Timeline previews show parallax layers where playback shows them.
 - Moving a segment while building a figure no longer bends other parts of the figure.
 - Fixed blur, glow and outlines losing fine brush detail on drawing layers.
+- Fixed errors when adjusting motion paths on joined figures.
+- Failed attempts to draw a new figure keep the project unchanged.
 
 ### Performance
 

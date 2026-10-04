@@ -16624,7 +16624,7 @@
   },
   "errors.editorMotionPath.reduceTheFullCircleBendBeforeStretchingThis": {
     "locations": [
-      "src/editor-motion-path.mjs:280",
+      "src/editor-motion-path.mjs:282",
       "src/editor.mjs:1164",
       "src/editor.mjs:1201"
     ],
@@ -16632,7 +16632,7 @@
   },
   "errors.editorMotionPath.theDocumentChangedDuringTheMotionPathGesture": {
     "locations": [
-      "src/editor-motion-path.mjs:789"
+      "src/editor-motion-path.mjs:791"
     ],
     "context": "if (session.documentToken !== this._documentToken) { this.cancelMotionPathEdit(); throw messageError(new Error(''), \"errors.editorMotionPath.theDocumentChangedD"
   },
@@ -17913,25 +17913,25 @@
   },
   "errors.geometry.chooseANonnegativeGeometryPreparationSliceDuration": {
     "locations": [
-      "src/pivot/geometry.mjs:991"
+      "src/pivot/geometry.mjs:993"
     ],
     "context": "if (!Number.isFinite(sliceMs) || sliceMs < 0) throw messageError(new Error(''), \"errors.geometry.chooseANonnegativeGeometryPreparationSliceDuration\", {});"
   },
   "errors.geometry.geometryPreparationWasCancelledOrSuperseded": {
     "locations": [
-      "src/pivot/geometry.mjs:994"
+      "src/pivot/geometry.mjs:996"
     ],
     "context": "throw messageError(new DOMException('', 'AbortError'), \"errors.geometry.geometryPreparationWasCancelledOrSuperseded\", {});"
   },
   "errors.geometry.theTemporaryDrawingCanvasIsUnavailable": {
     "locations": [
-      "src/pivot/geometry.mjs:1105"
+      "src/pivot/geometry.mjs:1107"
     ],
     "context": "if (!temp || temp.isContextLost?.()) throw Object.assign(messageError(new Error(''), \"errors.geometry.theTemporaryDrawingCanvasIsUnavailable\", {}), { telemetryC"
   },
   "errors.geometry.theTemporaryDrawingCanvasWasLostWhileRendering": {
     "locations": [
-      "src/pivot/geometry.mjs:1111"
+      "src/pivot/geometry.mjs:1113"
     ],
     "context": "if (temp.isContextLost?.()) throw Object.assign(messageError(new Error(''), \"errors.geometry.theTemporaryDrawingCanvasWasLostWhileRendering\", {}), { telemetryCo"
   },

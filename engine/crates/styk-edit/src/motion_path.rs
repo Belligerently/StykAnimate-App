@@ -1131,12 +1131,32 @@ impl Editor {
                     for (&id, c) in &graph.controllers.controllers {
                         let Some(endpoint) = skeleton.index(id).filter(|_| c.active()) else { continue };
                         let owner = graph.entry(endpoint);
-                        if !selected.contains(&(owner.slot, owner.index)) && objects[owner.slot].path(&["_stykIK", &owner.handle.to_string()]).is_some_and(Value::truthy) {
-                            // The editor reads these followers with the dragged figure's own definition
-                            // and the assembly's layout (`ikFollowers(figure, graph.object, …)`): it
-                            // throws once the assembly has more segments than that figure.
-                            return Err(unported("of joined figures (the editor reads them with another figure's definition)"));
+                        if selected.contains(&(owner.slot, owner.index)) { continue; }
+                        let key = owner.handle.to_string();
+                        let current = objects[owner.slot].path(&["_stykIK", &key]).cloned().unwrap_or(Value::Null);
+                        if !current.truthy() { continue; }
+                        let followers = skeleton.followers(graph.angles(), id, c);
+                        let mut next: Option<Obj> = None;
+                        for i in skeleton.follower_indices(id) {
+                            let child = graph.entry(i);
+                            if (child.slot == slot && child.index as f64 == joint) || !selected.contains(&(child.slot, child.index)) { continue; }
+                            let next = next.get_or_insert_with(|| follower_copy(&current));
+                            let angle = Value::Num(followers.get(&skeleton.segments[i].id).copied().unwrap_or(f64::NAN) + delta);
+                            let handle = child.handle.to_string();
+                            if child.slot == owner.slot {
+                                let mut table = next.get("followers").and_then(Value::as_obj).cloned().unwrap_or_default();
+                                assign(&mut table, &handle, angle);
+                                next.set("followers", Value::object(table));
+                            } else {
+                                let uid = child.uid.to_string();
+                                let mut table = next.get("joinedFollowers").and_then(Value::as_obj).cloned().unwrap_or_default();
+                                let mut own = table.get(&uid).and_then(Value::as_obj).cloned().unwrap_or_default();
+                                assign(&mut own, &handle, angle);
+                                assign(&mut table, &uid, Value::object(own));
+                                next.set("joinedFollowers", Value::object(table));
+                            }
                         }
+                        if let Some(next) = next { updates.push((owner.slot, key, next)); }
                     }
                 }
                 false => {

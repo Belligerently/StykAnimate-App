@@ -17,12 +17,16 @@
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync} from 'node:fs';
 import path from 'node:path';
+import {captureEditBounds} from '../../src/engine/engine-edit-bounds.mjs';
+import {recordedBounds} from './edit-bounds-callbacks.mjs';
+import {nativePropertyReplay} from './edit-native-property.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const repo = path.resolve(here, '../..');
 const {Editor} = await import(`${repo}/src/editor.mjs`);
 const {withDraws} = await import(`${repo}/src/editor-draws.mjs`);
+const {cameraAtTime} = await import(`${repo}/src/camera-motion.mjs`);
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 /** The report as the mirror sends it (src/engine/engine-mirror.mjs strips the same caches). */
@@ -40,8 +44,8 @@ const plain = (value, depth = 4) => {
  * app's frame ranges on a layer sheet carry `sheetTicks` (JSON drops them; the shadow facade
  * sends them the same way). */
 const decode = value => Array.isArray(value) ? value.map(decode) : value === null || typeof value !== 'object' ? value
-  : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
-  : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
+  : recordedBounds(value) ?? (Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
+  : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)])));
 
 export function replay(scenario, base = repo) {
   const document = typeof scenario.document === 'string' ? JSON.parse(readFileSync(path.resolve(base, scenario.document), 'utf8')) : structuredClone(scenario.document);
@@ -64,10 +68,21 @@ export function replay(scenario, base = repo) {
   const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: []}];
   // ["@batch", label, steps]: the steps inside one `movieclipBatch`, as the timeline runs
   // several commands; recorded as one step, returning the last step's result.
+  let measured = null;
+  const nativeProperty = nativePropertyReplay(editor);
   const run = ([name, ...args]) => {
     if (name === '@frame') return JSON.stringify(snapshotPoseFrame(editor.evaluatedFrame));
-    if (name === '@batch') { let last; return editor.movieclipBatch(args[0], () => { for (const step of args[1]) last = run(step); return last; }); }
-    return editor[name === '@seek' ? 'seek' : name === '@select' ? 'select' : name](...args.map(decode));
+    // Read the existing camera owner, including follow travel, without view changes.
+    if (name === '@cameraAtTime') return cameraAtTime(editor.report, editor.evaluatedFrame);
+    if (name.startsWith('@native')) return nativeProperty(name, args.map(decode));
+    if (name === '@batch') {
+      let last;
+      try { return editor.movieclipBatch(args[0], () => { for (const step of args[1]) last = run(step); return last; }); }
+      finally { measured = null; } // Nested tapes are not a top-level call's argument list.
+    }
+    const decoded = args.map(decode), capture = captureEditBounds(name, decoded, editor);
+    measured = capture;
+    return editor[name === '@seek' ? 'seek' : name === '@select' ? 'select' : name](...(capture?.args ?? decoded));
   };
   // What the editor draws at random comes from a fixed sequence, and each step records it
   // (`draws`) for the engine to be handed the same values (D18).
@@ -81,11 +96,13 @@ export function replay(scenario, base = repo) {
   };
   scenario.steps.forEach((call, index) => {
     events.length = 0;
+    measured = null;
     let result, error = null, draws = [];
     try { ({result, draws} = withDraws(() => run(call), source)); }
     catch (caught) { error = {message: caught.message, key: caught.messageKey ?? null}; draws = caught?.draws ?? []; }
     const text = reportJSON(editor);
-    steps.push({step: index + 1, call, ...(draws.length ? {draws} : {}), result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});
+    const boundsArgs = measured?.payload();
+    steps.push({step: index + 1, call, ...(boundsArgs ? {boundsArgs: JSON.parse(boundsArgs)} : {}), ...(draws.length ? {draws} : {}), result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});
     previous = text;
   });
   return {scenario: scenario.name, editor: scenario.editor ?? {}, steps};

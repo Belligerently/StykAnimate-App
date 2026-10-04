@@ -15,6 +15,7 @@
 mod audio;
 mod authored;
 mod builder;
+mod bounds;
 mod camera_commands;
 mod camera_motion;
 mod figure_clipboard;
@@ -136,6 +137,8 @@ pub(crate) struct Authored {
     pub tick: f64,
     /// A command's draft of the whole frame (`transaction`): figures may come and go.
     pub transaction: bool,
+    /// Appended definitions of an authored transaction (`beforeFigures`).
+    pub definitions_start: Option<usize>,
 }
 
 pub struct Editor {
@@ -158,6 +161,8 @@ pub struct Editor {
     pub(crate) revision_serial: u64,
     /// `editor.layerRevision`: named by the events of layer-sheet commands.
     pub(crate) layer_revision: u64,
+    /// `_layerEventPending`: membership changes decorate the next edit/history event.
+    pub(crate) layer_event_pending: bool,
     /// `editor._nextFrameIdentity`: the number of the next pose source (`frame-N`).
     pub(crate) next_frame_identity: u64,
     /// `editor._nextUid`: the unique id of the next new figure.
@@ -170,6 +175,9 @@ pub struct Editor {
     pub(crate) auto_key: bool,
     /// Pose sources this session captured, in order (`_generatedFrameSources`).
     pub(crate) generated_sources: Vec<String>,
+    /// `_pendingSourceLayerChanges` and `_pendingSourceBytes`, consumed by the next record.
+    pub(crate) pending_source_layer_changes: Vec<layers::LayerChange>,
+    pub(crate) pending_source_bytes: usize,
     /// Whether the document came with a pose-source table (`_sourceTableWasPresent`).
     pub(crate) source_table_was_present: bool,
     /// The layer of each figure in the last published poses (`_newLayerHints`).
@@ -198,10 +206,14 @@ pub struct Editor {
     pub(crate) sheet_selection: Option<select::SheetSelection>,
     /// `editor._animationEdit` on a layer sheet, with its `_sheetPropertyPreview`.
     pub(crate) property_edit: Option<property_edit::Edit>,
+    pub(crate) native_token: Option<builder::native::Token>,
+    pub(crate) native_token_serial: u64,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
     pub(crate) eval: RefCell<frame::Cache>,
+    /// Mirror sessions use worker-published follow paths and never rebuild their projections.
+    pub(crate) worker_prepared_only: bool,
     /// The last document checked for unported features, and the answer.
     gate: RefCell<Option<(Value, Option<&'static str>)>>,
 }
@@ -238,7 +250,10 @@ struct Snapshot {
     counters: [u64; 6],
     uid_counts: Option<(HashMap<u32, i64>, std::collections::HashSet<u32>)>,
     generated_sources: Vec<String>,
+    pending_source_layer_changes: Vec<layers::LayerChange>,
+    pending_source_bytes: usize,
     new_layer_hints: HashMap<u32, String>,
+    layer_event_pending: bool,
     events: usize,
     sheet_clipboard: Option<sheet_clipboard::Clipboard>,
     figure_clipboard: Option<figure_clipboard::FigureClipboard>,
@@ -250,6 +265,8 @@ struct Snapshot {
     batch: Option<history::Batch>,
     sheet_selection: Option<select::SheetSelection>,
     property_edit: Option<property_edit::Edit>,
+    native_token: Option<builder::native::Token>,
+    native_token_serial: u64,
 }
 
 impl Editor {
@@ -273,11 +290,14 @@ impl Editor {
             saved_revision: 0,
             revision_serial: 0,
             layer_revision: 0,
+            layer_event_pending: false,
             next_frame_identity,
             next_uid: 1,
             uid_counts: None,
             auto_key: options.auto_key,
             generated_sources: Vec::new(),
+            pending_source_layer_changes: Vec::new(),
+            pending_source_bytes: 0,
             source_table_was_present,
             new_layer_hints: HashMap::new(),
             sheet_clipboard: None,
@@ -291,8 +311,11 @@ impl Editor {
             batch: None,
             sheet_selection: None,
             property_edit: None,
+            native_token: None,
+            native_token_serial: 0,
             events: Vec::new(),
             eval: RefCell::default(),
+            worker_prepared_only: false,
             gate: RefCell::new(None),
         }
     }
@@ -470,7 +493,10 @@ impl Editor {
             counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid],
             uid_counts: self.uid_counts.clone(),
             generated_sources: self.generated_sources.clone(),
+            pending_source_layer_changes: self.pending_source_layer_changes.clone(),
+            pending_source_bytes: self.pending_source_bytes,
             new_layer_hints: self.new_layer_hints.clone(),
+            layer_event_pending: self.layer_event_pending,
             events: self.events.len(),
             sheet_clipboard: self.sheet_clipboard.clone(),
             figure_clipboard: self.figure_clipboard.clone(),
@@ -482,6 +508,8 @@ impl Editor {
             batch: self.batch.clone(),
             sheet_selection: self.sheet_selection.clone(),
             property_edit: self.property_edit.clone(),
+            native_token: self.native_token.clone(),
+            native_token_serial: self.native_token_serial,
         }
     }
 
@@ -498,7 +526,10 @@ impl Editor {
         [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid] = snapshot.counters;
         self.uid_counts = snapshot.uid_counts;
         self.generated_sources = snapshot.generated_sources;
+        self.pending_source_layer_changes = snapshot.pending_source_layer_changes;
+        self.pending_source_bytes = snapshot.pending_source_bytes;
         self.new_layer_hints = snapshot.new_layer_hints;
+        self.layer_event_pending = snapshot.layer_event_pending;
         self.events.truncate(snapshot.events);
         self.sheet_clipboard = snapshot.sheet_clipboard;
         self.figure_clipboard = snapshot.figure_clipboard;
@@ -510,6 +541,8 @@ impl Editor {
         self.batch = snapshot.batch;
         self.sheet_selection = snapshot.sheet_selection;
         self.property_edit = snapshot.property_edit;
+        self.native_token = snapshot.native_token;
+        self.native_token_serial = snapshot.native_token_serial;
     }
 
     fn dispatch(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
@@ -535,6 +568,7 @@ impl Editor {
         if let Some(reason) = self.ik_gate(method)? {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
+        self.native_property_gate(method)?;
         self.property_gate(method)?;
         self.camera_gate(method)?;
         self.motion_path_gate(method)?;
@@ -588,6 +622,8 @@ impl Editor {
             "setCameraValues" => self.set_camera_values(&arg(0), &arg(1)),
             "resetCamera" => self.reset_camera(&arg(0)),
             "transformCamera" => self.transform_camera(&arg(0), &arg(1)),
+            "centerCamera" => self.center_camera(arg(0).as_str().unwrap_or(if args.is_empty() { "both" } else { "" }), &arg(1), &arg(2)),
+            "alignSelection" => self.align_selection(arg(0).as_str().unwrap_or(""), arg(1).as_str().unwrap_or(""), &arg(2)),
             "alignCameraToView" => self.align_camera_to_view(&arg(0), &arg(1)),
             "locateCamera" => self.locate_camera(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), arg(1).as_str().unwrap_or(if arg(1).is_null() { "position" } else { "" }), &arg(2)),
             "locateHandle" => self.locate_handle(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), &arg(1)).map(Value::Bool),
@@ -815,6 +851,12 @@ impl Editor {
 
     /// Emits a change event: `{kind, frameIndex, tick, structural: false, timing: false, ...detail}`.
     pub(crate) fn emit(&mut self, kind: &str, detail: Vec<(&str, Value)>) {
+        let mut detail = detail;
+        if self.layer_event_pending && ["edit", "history", "document"].contains(&kind) {
+            detail.insert(0, ("layers", Value::Bool(true)));
+            detail.insert(1, ("layerRevision", Value::Num(self.layer_revision as f64)));
+            self.layer_event_pending = false;
+        }
         // `_emit`: a seek follows the timeline's layer selection; any other selection drops it.
         if kind == "seek" {
             let _ = self.follow_sheet_selection();

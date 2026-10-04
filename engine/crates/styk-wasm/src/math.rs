@@ -40,3 +40,8 @@ pub fn math_asin(x: f64) -> f64 {
 pub fn math_acos(x: f64) -> f64 {
     styk_math::acos(x)
 }
+
+#[wasm_bindgen]
+pub fn math_log(x: f64) -> f64 {
+    styk_math::log(x)
+}

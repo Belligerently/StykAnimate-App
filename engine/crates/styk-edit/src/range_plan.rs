@@ -82,6 +82,7 @@ pub(crate) enum Kind {
     Duplicate { map: Vec<(u32, u32)>, offset: f64 },
     Rotate(f64),
     Center,
+    Align { axis: String, edge: String, bounds: crate::bounds::Shared },
     Delete,
     Detach,
     Reset,
@@ -113,7 +114,7 @@ impl Joints {
 pub(crate) type GeometryOf<'a> = dyn Fn(&Value, &[usize]) -> Result<HashMap<usize, Joints>, EditError> + 'a;
 
 /// Children by parent slot, and the slots parents first.
-type Hierarchy = (HashMap<usize, Vec<usize>>, Vec<usize>);
+pub(crate) type Hierarchy = (HashMap<usize, Vec<usize>>, Vec<usize>);
 
 /// What planning one frame reads besides the frame: the document's figure definitions,
 /// figure layers and the geometry of a frame's figures.
@@ -137,7 +138,7 @@ pub(crate) struct Planned {
 }
 
 /// `hierarchy(objects)`: children by parent slot and the slots parents first.
-fn hierarchy(objects: &[Value]) -> Result<Hierarchy, EditError> {
+pub(crate) fn hierarchy(objects: &[Value]) -> Result<Hierarchy, EditError> {
     let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut ready = Vec::new();
     for (slot, object) in objects.iter().enumerate() {
@@ -691,6 +692,17 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
             if changes.changes.is_empty() {
                 return Ok(None);
             }
+        }
+        Kind::Align { axis, edge, bounds } => {
+            get_hierarchy()?;
+            let groups = crate::bounds::groups(&objects, uids)?;
+            if groups.len() < 2 { return Ok(None); }
+            let position = if axis == "x" { "root_x" } else { "root_y" };
+            for (root, target, position_at) in crate::bounds::offsets(&objects, &groups, axis, edge, bounds)? {
+                let value = native_finite(Some(given(&objects[root], position).unwrap_or(f64::NAN) + target - position_at))?;
+                changes.patch(root, vec![(position, Value::Num(value))], &[]);
+            }
+            if changes.changes.is_empty() { return Ok(None); }
         }
         Kind::Center => {
             let mut roots: HashMap<usize, usize> = HashMap::new();

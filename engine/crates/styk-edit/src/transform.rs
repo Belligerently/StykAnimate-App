@@ -68,7 +68,7 @@ impl Editor {
     }
 
     /// `_expandTranslationDrag`: a pose gesture that starts moving takes in whole connected figures.
-    fn expand_translation_drag(&mut self) -> Result<(), EditError> {
+    pub(crate) fn expand_translation_drag(&mut self) -> Result<(), EditError> {
         let Some(drag) = self.drag.as_ref().filter(|d| !d.translation) else { return Ok(()) };
         // On a draft the selection frame is the draft itself.
         let objects = self.frame_objects();
@@ -153,6 +153,10 @@ impl Editor {
             self.drag = None;
             return Ok(false);
         }
+        if let Err(error) = self.validate_spatial_joins() {
+            self.cancel_drag()?;
+            return Err(error);
+        }
         // Native Pivot stores final attachment coordinates as well as join links.
         if after.iter().any(|o| join_target(o).is_some()) {
             let roots = self.roots_of(&ids)?;
@@ -172,7 +176,7 @@ impl Editor {
         }
         let drag = self.drag.take().unwrap();
         let after_selection = self.selection_state();
-        self.record(Command { kind: CommandKind::Objects { index, before: drag.before, after }, label: drag.label.clone(), before_selection: drag.before_selection, after_selection, before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::Objects { index, before: drag.before, after }, label: drag.label.clone(), before_selection: drag.before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(&drag.label)), ("changedUids", uid_array(&ids))]);
         Ok(true)
     }

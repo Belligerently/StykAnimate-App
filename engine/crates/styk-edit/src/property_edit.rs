@@ -339,6 +339,7 @@ impl Editor {
         }
         match method {
             "beginAnimationEdit" | "previewAnimationEdit" | "commitAnimationEdit" | "cancelAnimationEdit" => Ok(()),
+            "centerCamera" | "alignFiguresInFrames" => Ok(()), // Their recorded owner finishes this edit before measuring.
             "undo" | "redo" => self.cancel_animation_edit().map(|_| ()),
             other => Err(EditError::Unported(format!("{other} during a property edit"))),
         }

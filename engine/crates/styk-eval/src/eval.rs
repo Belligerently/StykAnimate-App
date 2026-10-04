@@ -954,6 +954,16 @@ impl Prepared {
         }
     }
 
+    /// Reads the follow paths workers have already published, without evaluating or shaping
+    /// a frame. The outer `None` means an active path is cold; `Some(None)` is ready with no
+    /// camera. Interactive hosts must refuse or defer a cold query rather than call `travel`.
+    pub fn travel_ready(&self, camera: Option<Camera>, tick: f64) -> Option<Option<Camera>> {
+        match &self.follow {
+            Some(follow) => follow.travel_ready(camera, tick),
+            None => Some(camera),
+        }
+    }
+
     /// The figures of the frame at `tick` and the authored camera: what a follow camera
     /// samples (no effects, camera motion or parallax).
     pub(crate) fn evaluate_figures(&self, tick: f64) -> Frame {

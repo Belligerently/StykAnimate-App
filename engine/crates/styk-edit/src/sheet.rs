@@ -386,9 +386,9 @@ impl Editor {
     /// in `next` now do. A figure that appears or disappears altogether changes the
     /// layers' membership, which is one more layer revision; the layer hints of the
     /// last publication are used once and dropped.
-    pub(crate) fn track_frames(&mut self, previous: &[Value], next: &[Value], record: bool) -> Result<(), EditError> {
+    pub(crate) fn track_frames(&mut self, previous: &[Value], next: &[Value], record: bool) -> Result<bool, EditError> {
         if previous.is_empty() && next.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         self.ensure_counts();
         let mut delta: Vec<(u32, i64)> = Vec::new();
@@ -405,14 +405,15 @@ impl Editor {
             let (counts, seen) = self.uid_counts.as_ref().unwrap();
             let before = counts.get(&id).copied().unwrap_or(0);
             let count = before + amount;
-            let membership = (before > 0) != (count > 0);
+            let mut membership = (before > 0) != (count > 0);
             if count > 0 && record && !seen.contains(&id) {
                 // A figure never seen takes the hinted layer, else the active one.
                 let layers = self.report.path(&["_styk", "layers"]);
                 let active = layers.and_then(|l| l.get("activeId")).and_then(Value::as_str).filter(|active| layers.and_then(|l| l.path(&["byId", active])).is_some());
                 let layer = self.new_layer_hints.get(&id).cloned().or_else(|| active.map(str::to_string)).unwrap_or_else(|| layers.and_then(|l| l.get("defaultLayerId")).and_then(Value::as_str).unwrap_or("").to_string());
-                if layer != self.layer_of(id) {
-                    return Err(EditError::Unported("a new figure whose layer was not planned".into()));
+                if let Some(change) = self.capture_layer_assignment(id, &layer) {
+                    self.pending_source_layer_changes.push(change);
+                    membership = true;
                 }
             }
             let (counts, seen) = self.uid_counts.as_mut().unwrap();
@@ -427,8 +428,9 @@ impl Editor {
         self.new_layer_hints.clear();
         if changed {
             self.layer_revision += 1;
+            self.layer_event_pending = true;
         }
-        Ok(())
+        Ok(changed)
     }
 
     /// `_commitSheetPose(edit, drag)`: keys the draft on every layer whose figures changed.
@@ -436,6 +438,7 @@ impl Editor {
         self.ensure_counts();
         let (Some(edit), Some(drag)) = (self.authored.as_ref(), self.drag.as_ref()) else { return Ok(false) };
         let transaction = edit.transaction;
+        let definitions_start = edit.definitions_start;
         let (before, after, tick) = (edit.source.clone(), edit.frame.clone(), edit.tick);
         let (old, current) = (objects_of(&before), objects_of(&after));
         let find = |objects: &[Value], id: u32| objects.iter().find(|o| uid(o) == Some(id)).cloned();
@@ -573,6 +576,11 @@ impl Editor {
         }
         self.drag = None;
         self.authored = None;
+        if let Some(start) = definitions_start
+            && let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr)
+        {
+            plan.definitions = figures.split_off(start);
+        }
         self.publish(plan, &label, selection, retain.then_some(after))
     }
 
@@ -877,7 +885,14 @@ impl Editor {
         self.ensure_counts();
         // Imported spans whose ends changed are frozen as poses: an unchanged
         // imported span keeps evaluating from the import.
-        for (id, _) in plan.tracks.clone() {
+        // Object.entries(plan.state.tracks): existing table order, then appended tracks.
+        // Touch order can differ (figure keys before camera keys in a camera bake), and
+        // materializing imported endpoints assigns observable frame-source identities.
+        let changed: std::collections::HashSet<&str> = plan.tracks.iter().map(|(id, _)| id.as_str()).collect();
+        let before_tracks = plan.before.get("tracks").and_then(Value::as_obj);
+        let mut materialize_ids: Vec<String> = before_tracks.map(|tracks| tracks.keys().filter(|id| changed.contains(&***id)).map(|id| id.to_string()).collect()).unwrap_or_default();
+        materialize_ids.extend(plan.tracks.iter().filter(|(id, _)| before_tracks.is_none_or(|tracks| tracks.get(id).is_none())).map(|(id, _)| id.clone()));
+        for id in materialize_ids {
             let previous: Vec<Value> = items(plan.before.path(&["tracks", &id, "keys"])).into_iter().filter(|k| !k.get("patchOnly").is_some_and(Value::truthy)).collect();
             let current: Vec<Value> = plan.keys(&id).into_iter().filter(|k| !k.get("patchOnly").is_some_and(Value::truthy)).collect();
             let name = |key: Option<&Value>| key.and_then(|k| k.get("id")).cloned();
@@ -956,6 +971,9 @@ impl Editor {
             after_selection,
             before_revision: 0,
             after_revision: 0,
+            layer_changes: Vec::new(),
+            captured_source_bytes: 0,
+            layers: false,
         })?;
         self.layer_revision += 1;
         self.emit_sheet("edit", label, source_ids, definition);
@@ -1059,6 +1077,7 @@ impl Editor {
 
     /// The event of a published or replayed sheet command: every layer view refreshes.
     fn emit_sheet(&mut self, kind: &str, label: &str, source_ids: Vec<Value>, definition: bool) {
+        self.layer_event_pending = false;
         // `{layers: true, layerRevision, ...detail}` over the base event, whose
         // `structural` and `timing` the detail sets.
         let mut event = Obj::new();
@@ -1118,7 +1137,7 @@ impl Editor {
         match direction {
             Direction::Before => self.track_frames(&frames, &[], false)?,
             Direction::After => self.track_frames(&[], &frames, false)?,
-        }
+        };
         self.layer_revision += 1;
         self.retained = None;
         self.restore_selection(selection)?;

@@ -168,6 +168,29 @@ fn number_at(value: &Value, key: &str, index: usize) -> f64 {
 }
 
 impl Editor {
+    /// `validateSpatialJoins`: perspective belongs to a single spatial figure,
+    /// except for a drawing attached to a spatial bone. Inspect authored records;
+    /// validation must happen before attachment geometry is evaluated or published.
+    pub(crate) fn validate_spatial_joins(&self) -> Result<(), EditError> {
+        let objects = self.frame_objects();
+        for object in &objects {
+            let Some(join) = object.get("join").filter(|join| join.truthy()) else { continue };
+            let strength = |value: &Value| value.path(&["_stykSpatial", "camera", "strength"]).is_some_and(Value::truthy);
+            let parent = join.get("target_object_slot").and_then(Value::as_f64).and_then(|slot| objects.get(slot as usize));
+            let projected_drawing = parent.is_some_and(|parent| {
+                let figure = self.figure_value(object);
+                let drawing = figure.path(&["_styk", "movieclip"]).is_some_and(|asset| asset.get("drawingRotation").is_some_and(Value::truthy) || asset.get("spatialMeshes").is_some_and(Value::truthy));
+                drawing && self.figure_value(parent).get("segments").and_then(Value::elements).is_some_and(|segments| {
+                    segments.iter().any(|segment| segment.get("segment_id") == join.get("target_handle_id") && segment.path(&["_stykRig", "spatial", "origin"]).is_some_and(Value::truthy))
+                })
+            });
+            if strength(object) || parent.is_some_and(strength) && !projected_drawing {
+                return Err(EditError::Invalid("errors.spatialProjection.perspectiveRequiresASingleSpatialFigureOrA".into()));
+            }
+        }
+        Ok(())
+    }
+
     /// The selected figure's 3D context, when it is posed here.
     pub(crate) fn spatial_context(&self) -> Result<Option<Context>, EditError> {
         let Some((slot, _)) = self.object()? else { return Ok(None) };

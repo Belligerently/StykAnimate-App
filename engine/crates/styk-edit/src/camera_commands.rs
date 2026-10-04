@@ -166,10 +166,14 @@ impl Editor {
 
     /// `cameraEdit(editor, label, indices, update)`: the changed cameras keyed; returns how many.
     fn camera_edit(&mut self, indices: Option<&Value>, update: impl Fn(&Value) -> Option<Value>) -> Result<Value, EditError> {
+        self.camera_edit_at(indices, |_, target| Ok(update(&target.camera)))
+    }
+
+    fn camera_edit_at(&mut self, indices: Option<&Value>, mut update: impl FnMut(&Editor, &Target) -> Result<Option<Value>, EditError>) -> Result<Value, EditError> {
         self.finish_gesture()?;
         let (mut before, mut after) = (Vec::new(), Vec::new());
         for entry in self.camera_targets(indices)? {
-            let Some(value) = update(&entry.camera) else { continue };
+            let Some(value) = update(self, &entry)? else { continue };
             let next = checked(&value)?;
             if styk_doc::json::to_string(&entry.camera) == styk_doc::json::to_string(&next) {
                 continue;
@@ -186,6 +190,53 @@ impl Editor {
         }
         self.add_animation_keys(Some(&Value::array(entries)))?;
         Ok(Value::Num(after.len() as f64))
+    }
+
+    /// `centerCamera` with the editor's default callback. Its `objectBounds` returns a
+    /// rectangle as x/y/width/height, which the caller rejects for missing min/max fields:
+    /// no keys change, but cameraEdit still finishes gestures and checks its targets.
+    /// Supplied callbacks use the measurements already requested by the JavaScript owner.
+    pub(crate) fn center_camera(&mut self, axis: &str, indices: &Value, options: &Value) -> Result<Value, EditError> {
+        self.camera_sheet("centerCamera")?;
+        if !["both", "x", "y"].contains(&axis) {
+            return Err(EditError::Invalid("errors.editorCamera.cameraCenteringAxisMustBeBothXOr".into()));
+        }
+        let measured = options.get("boundsOf").and_then(|value| value.get("@measuredBounds"));
+        if options.get("boundsOf").is_some() && measured.is_none() {
+            return Err(EditError::Invalid("errors.editorCamera.provideAFigureBoundsFunction".into()));
+        }
+        let measurements = if measured.is_some() {
+            Some(crate::bounds::Measurements::for_call(self, "centerCamera", &[Value::str(axis), indices.clone()], options)?)
+        } else { None };
+        if self.selection.uids.is_empty() {
+            if let Some(bounds) = &measurements { bounds.borrow().finish()?; }
+            return Ok(Value::Num(0.0));
+        }
+        let result = self.camera_edit_at(indices_of(indices).as_ref(), |editor, target| {
+            let Some(bounds) = &measurements else { return Ok(None) };
+            let frame = editor.evaluated(target.tick, true)?;
+            let (mut min, mut max) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+            let objects = crate::frame::objects_of(&frame);
+            // `geometry.objects` is populated parents first, in the existing hierarchy
+            // traversal; callbacks see that order rather than native object-slot order.
+            let (_, order) = crate::range_plan::hierarchy(&objects).map_err(|_| EditError::Unported("bounds requests with unresolved joins".into()))?;
+            for slot in order {
+                let object = &objects[slot];
+                let Some(id) = uid(&object).filter(|id| editor.selection.uids.contains(id)) else { continue };
+                let raw = bounds.borrow_mut().request(id)?;
+                let b = [num(&raw, "minX"), num(&raw, "minY"), num(&raw, "maxX"), num(&raw, "maxY")];
+                if !b.iter().all(|v| v.is_some_and(f64::is_finite)) { continue; }
+                min = [min[0].min(b[0].unwrap()), min[1].min(b[1].unwrap())];
+                max = [max[0].max(b[2].unwrap()), max[1].max(b[3].unwrap())];
+            }
+            if !min[0].is_finite() { return Ok(None); }
+            let mut next = target.camera.as_obj().cloned().unwrap_or_default();
+            if axis != "y" { next.set("x", Value::Num((min[0] + max[0] - num(&editor.report, "canvas_width").unwrap_or(f64::NAN)) / 2.0)); }
+            if axis != "x" { next.set("y", Value::Num((min[1] + max[1] - num(&editor.report, "canvas_height").unwrap_or(f64::NAN)) / 2.0)); }
+            Ok(Some(Value::object(next)))
+        })?;
+        if let Some(bounds) = &measurements { bounds.borrow().finish()?; }
+        Ok(result)
     }
 
     /// `copyCamera()`.
@@ -591,7 +642,7 @@ impl Editor {
         if self.camera_drag().is_none() {
             return Ok(());
         }
-        const ALLOWED: [&str; 14] = ["updateCameraDrag", "commitCameraDrag", "cancelCameraDrag", "beginCameraDrag", "commitDrag", "cancelDrag", "copyCamera", "pasteCamera", "setCameraValues", "resetCamera", "transformCamera", "alignCameraToView", "locateCamera", "locateHandle"];
+        const ALLOWED: [&str; 15] = ["updateCameraDrag", "commitCameraDrag", "cancelCameraDrag", "beginCameraDrag", "commitDrag", "cancelDrag", "copyCamera", "pasteCamera", "setCameraValues", "resetCamera", "transformCamera", "centerCamera", "alignCameraToView", "locateCamera", "locateHandle"];
         if ALLOWED.contains(&method) { Ok(()) } else { Err(EditError::Unported(format!("{method} during a camera drag"))) }
     }
 }

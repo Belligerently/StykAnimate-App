@@ -88,13 +88,16 @@ impl Editor {
         if !GESTURES.contains(&method) {
             return Ok(None);
         }
-        // A target is placed in the scene before the figure's perspective projects it.
-        if method == "poseJoint"
-            && let Some((_, object)) = self.object()?
+        // Only the recorded target path is admitted around IK in perspective.
+        if method == "poseJoint" && let Some((_, object)) = self.object()?
             && object.get("_stykIK").is_some()
             && object.path(&["_stykSpatial", "camera", "strength"]).is_some_and(Value::truthy)
         {
-            return Ok(Some("posing an IK target in perspective".into()));
+            let definition = self.figure_value(&object);
+            let handle = (self.selection.joint >= 0).then(|| definition.get("segments").and_then(|s| s.item(self.selection.joint as usize))).flatten().and_then(|s| s.get("segment_id").and_then(Value::as_f64));
+            if !handle.is_some_and(|h| object.path(&["_stykIK", &(h as u32).to_string(), "enabled"]).is_some_and(Value::truthy)) {
+                return Ok(Some("posing a bone in perspective around IK".into()));
+            }
         }
         Ok(None)
     }
@@ -114,9 +117,6 @@ impl Editor {
         };
         let [x, y] = context.as_ref().map_or([x, y], |c| c.unproject_at([x, y], depth));
         let graph = self.in_assembly(slot)?;
-        if graph && (truthy(&shown, "spatialTarget") || context.as_ref().is_some_and(|c| c.frames.iter().any(Option::is_some))) {
-            return Err(EditError::Unported("posing a joined 3D IK target".into()));
-        }
         self.object_edit("Move IK target", |editor| {
             let current = editor.frame_objects().get(slot).and_then(|o| o.path(&["_stykIK", &key]).cloned()).unwrap_or(Value::Null);
             if !truthy(&current, "pinned") {
@@ -129,7 +129,7 @@ impl Editor {
             target.set("y", Value::Num(y));
             next.set("target", Value::object(target));
             // A planted 3D limb's knee keeps its side on screen (`_flatSpatialIKPole`).
-            if let Some(spatial) = current.get("spatialTarget").filter(|s| s.truthy()).and_then(crate::spatial_ik::parse_spatial_target) {
+            if !graph && let Some(spatial) = current.get("spatialTarget").filter(|s| s.truthy()).and_then(crate::spatial_ik::parse_spatial_target) {
                 let length = current.get("chainLength").and_then(Value::as_f64).unwrap_or(f64::NAN).max(0.0).min(u32::MAX as f64) as u32;
                 let bend = current.get("bendDirection").and_then(Value::as_f64).unwrap_or(f64::NAN);
                 if let Some(pole) = editor.flat_spatial_ik_pole(slot, handle, length, bend, [x, y], &spatial)? {
@@ -184,7 +184,7 @@ impl Editor {
     }
 
     /// `_expandIKDrag(slots)`: the gesture's snapshots take in these figures too.
-    fn expand_drag(&mut self, slots: &[usize]) {
+    pub(crate) fn expand_drag(&mut self, slots: &[usize]) {
         let objects = self.frame_objects();
         let Some(drag) = self.drag.as_mut() else { return };
         let slot_of = |o: &Value| o.get("object_slot").and_then(Value::as_f64).unwrap_or(f64::NAN);
@@ -198,6 +198,40 @@ impl Editor {
         drag.before.sort_by(|a, b| slot_of(a).total_cmp(&slot_of(b)));
     }
 
+    /// `captureFor` for an assembly, using the geometry already evaluated for the call.
+    pub(crate) fn capture_joined(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, assembly: &Assembly<'_>, slot: usize, handle: u32, spec: &crate::spatial_ik::CaptureSpec) -> Result<crate::spatial_ik::Capture, EditError> {
+        let unported = |what: &str| EditError::Unported(format!("capturing a joined IK limb {what}"));
+        let id = assembly.id(slot, handle).ok_or_else(|| unported("without a handle"))?;
+        let geometry_of = |slot: usize| scene.objects.iter().find(|g| g.uid == frame.objects[slot].uid && g.resolved);
+        let chain = assembly.chain(slot, handle, spec.chain_length);
+        if chain.is_empty() { return Err(unported("without a chain")); }
+        let solved = solve_frame(prepared, frame, scene);
+        let (mut followers, mut joined, mut spatial, mut joined_spatial) = (BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, f64>>::new(), BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, [f64; 4]>>::new());
+        for i in assembly.skeleton().follower_indices(id) {
+            let entry = assembly.entry(i);
+            let angle = displayed_angle(prepared, frame, scene, &solved, entry.slot, entry.index) - spec.rotation;
+            if entry.slot == slot { followers.insert(entry.handle, angle); } else { joined.entry(entry.uid).or_default().insert(entry.handle, angle); }
+            if let Some(s) = geometry_of(entry.slot).and_then(|g| g.spatial.as_ref())
+                && let Some(f) = s.frames.get(entry.index).copied().flatten()
+            {
+                let q = styk_eval::rig::quat_multiply(styk_eval::rig::spatial_quaternion(-spec.rotation, 0.0, 0.0), styk_eval::ik::spatial::spatial_world_quaternion(f.q, s.figure_angle, s.mirror, false));
+                if entry.slot == slot { spatial.insert(entry.handle, q); } else { joined_spatial.entry(entry.uid).or_default().insert(entry.handle, q); }
+            }
+        }
+        let mut points = Vec::with_capacity(chain.len() + 1); let mut lengths = Vec::with_capacity(chain.len());
+        for (k, &i) in chain.iter().enumerate() {
+            let entry = assembly.entry(i); let geometry = geometry_of(entry.slot).ok_or_else(|| unported("of an unresolved figure"))?;
+            let (start, end) = (geometry.starts[entry.index], geometry.ends[entry.index]);
+            if k == 0 { points.push(start); } points.push(end); lengths.push(hypot(end[0] - start[0], end[1] - start[1]));
+        }
+        let geometry = geometry_of(slot).ok_or_else(|| unported("of an unresolved owner"))?;
+        let figure = figure_of(prepared, frame, slot).ok_or_else(|| unported("without a definition"))?;
+        let index = figure.plan.index_of.get(&handle).copied().ok_or_else(|| unported("without a joint"))? as usize;
+        let raw = geometry.spatial.as_ref().and_then(|s| s.depths.get(index)).and_then(|d| d.raw);
+        let target = raw.map_or(geometry.ends[index], |p| [p[0], p[1]]);
+        Ok(crate::spatial_ik::Capture { target, followers, joined_followers: Some(joined), bend_direction: spec.bend_direction.unwrap_or(f64::NAN), bend_reference: ik::bend_reference(&points, &lengths, spec.bend_reference.as_ref()), spatial_followers: (!spatial.is_empty()).then_some(spatial), joined_spatial_followers: (!joined_spatial.is_empty()).then_some(joined_spatial), spatial_target: None })
+    }
+
     /// The joined branch of `poseIKTarget` for an unpinned controller (`poseGraph`): the
     /// limb is captured across the assembly (`captureFor`), solved with the captured
     /// controller pinned at the pointer, and every figure of the assembly takes its part
@@ -207,51 +241,22 @@ impl Editor {
         let (prepared, frame, scene) = self.evaluate()?;
         let mut assembly = assembly_of(&prepared, &frame, slot).ok_or_else(|| unported("outside an assembly"))?;
         self.expand_drag(&assembly.slots.clone());
-        let solved = solve_frame(&prepared, &frame, &scene);
         let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let key = handle.to_string();
         let current = object.path(&["_stykIK", &key]).cloned().unwrap_or(Value::Null);
         let controller = ik::parse::table(object.get("_stykIK")).and_then(|t| t.get(handle).cloned()).ok_or_else(|| unported("with a controller the engine cannot read"))?;
         let id = assembly.id(slot, handle).ok_or_else(|| unported("of a handle outside the assembly"))?;
-        let geometry_of = |slot: usize| {
-            let uid = frame.objects[slot].uid;
-            scene.objects.iter().find(|g| g.uid == uid && g.resolved)
-        };
-        // captureFor(editor, geometry, handle, controller, graph)
-        let chain = assembly.chain(slot, handle, controller.chain_length);
-        if chain.is_empty() {
-            return Err(unported("without a chain"));
-        }
-        let rotation = controller.target.rotation;
-        let (mut followers, mut joined) = (BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, f64>>::new());
-        for i in assembly.skeleton().follower_indices(id) {
-            let entry = assembly.entry(i);
-            let angle = displayed_angle(&prepared, &frame, &scene, &solved, entry.slot, entry.index) - rotation;
-            if entry.slot == slot {
-                followers.insert(entry.handle, angle);
-            } else {
-                joined.entry(entry.uid).or_default().insert(entry.handle, angle);
-            }
-        }
-        let mut points = Vec::with_capacity(chain.len() + 1);
-        let mut lengths = Vec::with_capacity(chain.len());
-        for (k, &i) in chain.iter().enumerate() {
-            let entry = assembly.entry(i);
-            let geometry = geometry_of(entry.slot).ok_or_else(|| unported("of a figure the engine does not draw"))?;
-            let (start, end) = (geometry.starts[entry.index], geometry.ends[entry.index]);
-            if k == 0 {
-                points.push(start);
-            }
-            points.push(end);
-            lengths.push(hypot(end[0] - start[0], end[1] - start[1]));
-        }
-        let captured = ik::bend_reference(&points, &lengths, controller.bend_reference.as_ref());
+        let spec = crate::spatial_ik::CaptureSpec { rotation: controller.target.rotation, chain_length: controller.chain_length, bend_direction: Some(controller.bend_direction), bend_reference: controller.bend_reference.clone(), swivel: 0.0 };
+        let capture = self.capture_joined(&prepared, &frame, &scene, &assembly, slot, handle, &spec)?;
+        let (followers, joined, captured, rotation) = (capture.followers.clone(), capture.joined_followers.clone().unwrap_or_default(), capture.bend_reference.clone(), spec.rotation);
         let temporary = Controller {
             pinned: true,
             target: Target { x, y, rotation },
             followers: followers.clone(),
             joined_followers: Some(joined.clone()),
             bend_reference: Some(captured.clone()),
+            spatial_followers: capture.spatial_followers.clone().or(controller.spatial_followers.clone()),
+            joined_spatial_followers: capture.joined_spatial_followers.clone().or(controller.joined_spatial_followers.clone()),
             ..controller
         };
         // The lengths the gesture began with, scaled into the skeleton.
@@ -299,6 +304,8 @@ impl Editor {
         next.set("target", Value::object(target));
         next.set("followers", angle_table(&followers));
         next.set("joinedFollowers", joined_table(&joined));
+        if let Some(q) = &capture.spatial_followers { next.set("spatialFollowers", crate::spatial_ik::quaternion_table(q)); }
+        if let Some(q) = &capture.joined_spatial_followers { next.set("joinedSpatialFollowers", crate::spatial_ik::joined_quaternion_table(q)); }
         match current.get("bendDirection") {
             Some(direction) => next.set("bendDirection", direction.clone()),
             None => {
@@ -693,6 +700,12 @@ impl Solved {
         }
         self.followers.get(&handle).map(|(own, _)| own)
     }
+    pub(crate) fn joined_followers_of(&self, handle: u32) -> Option<&BTreeMap<u32, BTreeMap<u32, f64>>> {
+        let (_, outcome) = self.solution.results.iter().find(|(h, _)| *h == handle)?;
+        if outcome.conflict || !self.joined { return None; }
+        self.followers.get(&handle).map(|(_, joined)| joined)
+    }
+
 }
 
 /// `_bakeIKFollowers(object, geometry)`: each enabled, pinned controller of the figure takes
@@ -725,7 +738,7 @@ fn figure_of<'a>(prepared: &'a Prepared, frame: &'a Frame, slot: usize) -> Optio
 
 /// `context()`: the assembly of joined figures that `slot` belongs to, when there is one
 /// of two figures or more and it compiles.
-fn assembly_of<'a>(prepared: &'a Prepared, frame: &'a Frame, slot: usize) -> Option<Assembly<'a>> {
+pub(crate) fn assembly_of<'a>(prepared: &'a Prepared, frame: &'a Frame, slot: usize) -> Option<Assembly<'a>> {
     if !frame.objects.iter().any(|o| o.join.is_some()) {
         return None;
     }

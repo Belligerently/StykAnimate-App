@@ -231,7 +231,7 @@ export class Editor extends EventTarget {
       this._propertyChannelCache.frames.clear();this._propertyChannelCache.values.clear();this._propertyChannelCache.dependencies.clear();
       this._propertyChannelCache.indices=new WeakMap();this._propertyChannelCache.coordinates=new WeakMap();
     } else if (!viewOnly) this._propertyChannelCache = null;
-    if (!viewOnly) {invalidateEvaluationCaches(this.report);if(!retainGeometry)this._seekGeometry?.clear();}
+    if (!viewOnly) {invalidateEvaluationCaches(this.report,{retainGeometry});if(!retainGeometry)this._seekGeometry?.clear();}
     const preview = this._authoredCommitPreview;
     this._geometry = preview?.geometry ?? null; this._evaluated = preview?.frame ?? null; this._incremental = preview?.incremental ?? null;
     if (timing) this._timeline = null;
@@ -1573,7 +1573,7 @@ export class Editor extends EventTarget {
       const typeId = Math.max(0, ...this.report.figure_types.map(f => f.figure_type_id)) + 1;
       const segments = prepared.map((item,i) => make(item,i+1,item.parentId ?? (i ? i : 0),[106,77,234],i+1));
       const figure = {figure_type_id:typeId,name:specs.length>1?'Chain':([1,3,4].includes(code)?'Circle':'Line'),segment_count:segments.length,segments,polyfills:[],image_assets:[],text_assets:[]};
-      this.report.figure_types.push(figure); const uid = this._identity(), order = frameOrder(this.frame);
+      const uid = this._identity(), order = frameOrder(this.frame); this.report.figure_types.push(figure);
       this.frame.objects.push(createObject(figure, uid, x, y)); setOrder(this.frame, [...order, uid]); normalizeFrame(this.frame);
       this.selectedUid = uid; this.selectedJoint = segments.length - 1;
       this._record({kind: this._authoredPoseEdit?.transaction ? 'import' : 'figure-splice', label: 'Draw figure', index: this.frameIndex, figureIndex, before,

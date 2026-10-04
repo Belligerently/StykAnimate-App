@@ -139,7 +139,11 @@ impl Editor {
         }
         let Some(at) = self.controller_at()? else { return Ok(false) };
         if self.in_assembly(at.slot)? {
-            return Err(EditError::Unported("configuring IK on joined figures".into()));
+            // The joined foot command changes only an existing controller's pin.
+            if entries.len() == 1 && entries[0].0 == "pinned" && truthy(&at.controller, "enabled") && truthy(&at.controller, "spatialTarget") {
+                return self.set_joined_pin(at, &entries[0].1);
+            }
+            return Err(EditError::Unported("configuring IK on joined figures beyond the recorded pin lifecycle".into()));
         }
         let figure = self.typed_figure(at.slot)?;
         let (settings, max) = self.ik_settings(&at, &figure);
@@ -266,6 +270,67 @@ impl Editor {
                 crate::ik::set_controller_value(record, &key, Value::object(next.clone()));
             }
             record.remove("runtime_segments");
+            Ok(())
+        })
+    }
+
+    /// `setNodeIK({pinned})` on a joined assembly: bake its displayed pose once, preserve
+    /// released rest lengths only along this controller's chain, and capture re-pinning.
+    fn set_joined_pin(&mut self, at: At, pinned: &Value) -> Result<bool, EditError> {
+        let Value::Bool(pinned) = pinned else { return Err(EditError::Invalid("errors.editorIk.invalidIkSetting".into())) };
+        let unported = |what: &str| EditError::Unported(format!("pinning a joined IK limb {what}"));
+        let (prepared, frame, scene) = self.evaluate()?;
+        let assembly = crate::ik::assembly_of(&prepared, &frame, at.slot).ok_or_else(|| unported("without an assembly"))?;
+        let figure = frame.objects[at.slot].figure_override.as_ref().or_else(|| prepared.doc.figure(frame.objects[at.slot].figure)).ok_or_else(|| unported("without a definition"))?;
+        let (settings, _) = self.ik_settings(&at, figure);
+        let spec = spec_of(&settings);
+        let max = assembly.chain(at.slot, at.handle, MAX_CHAIN).len();
+        if spec.chain_length == 0 || spec.chain_length as usize > max { return Err(EditError::Invalid("errors.editorIk.chainLengthMustBeBetween1And".into())); }
+        let id = assembly.id(at.slot, at.handle).ok_or_else(|| unported("without a handle"))?;
+        let chain = assembly.chain(at.slot, at.handle, spec.chain_length);
+        for (&other, controller) in &assembly.controllers.controllers {
+            if other != id && controller.enabled && assembly.skeleton().chain(other, controller.chain_length).iter().any(|i| chain.contains(i)) {
+                return Err(EditError::Invalid("errors.editorIk.ikChainsCannotShareBonesShortenTheChain".into()));
+            }
+        }
+        let solved = crate::ik::solve_frame(&prepared, &frame, &scene);
+        let mut next = settings.clone(); next.set("pinned", Value::Bool(*pinned));
+        if let Some(s) = solved.get(&frame.objects[at.slot].uid) {
+            if let Some(f) = s.followers_of(at.handle) { next.set("followers", crate::ik::angle_table(f)); }
+            if let Some(f) = s.joined_followers_of(at.handle) { next.set("joinedFollowers", crate::ik::joined_table(f)); }
+        }
+        let capture = if *pinned && !truthy(&at.controller, "pinned") { Some(self.capture_joined(&prepared, &frame, &scene, &assembly, at.slot, at.handle, &spec)?) } else { None };
+        let released: Vec<_> = if !*pinned { chain.iter().map(|&i| assembly.entry(i)).collect() } else { Vec::new() };
+        let slots = assembly.slots.clone(); let key = at.handle.to_string();
+        self.object_edit_with("Configure IK", false, |editor| {
+            editor.expand_drag(&slots);
+            for &slot in &slots {
+                let Some(s) = solved.get(&frame.objects[slot].uid) else { continue };
+                let definition = frame.objects[slot].figure_override.as_ref().or_else(|| prepared.doc.figure(frame.objects[slot].figure)).ok_or_else(|| unported("without a definition"))?;
+                let record = editor.frame_object_mut(slot).ok_or_else(|| unported("outside the frame"))?;
+                crate::ik::bake_object(record, s); record.set("angles", Value::nums(&s.solution.angles));
+                let indices: Vec<usize> = released.iter().filter(|entry| entry.slot == slot).map(|entry| entry.index).collect();
+                if let Some(lengths) = s.solution.lengths.as_ref().filter(|_| !indices.is_empty()) {
+                    let flagged = record.get("len_flag").is_some_and(Value::truthy);
+                    let rest: Vec<f64> = definition.segments.iter().enumerate().map(|(i, s)| if flagged { record.get("lengths").and_then(|v| v.item(i)).and_then(|v| v.as_f64()).unwrap_or(f64::NAN) } else { s.length }).collect();
+                    if indices.iter().any(|&i| lengths.get(i).copied().unwrap_or(f64::NAN) != rest[i]) {
+                        let mut updated = rest;
+                        for &i in &indices { updated[i] = lengths.get(i).copied().unwrap_or(f64::NAN); }
+                        record.set("len_flag", Value::Num(1.0)); record.set("lengths", Value::nums(&updated));
+                    }
+                }
+                record.remove("runtime_segments");
+            }
+            if let Some(capture) = &capture {
+                let mut target = Obj::new(); target.set("x", Value::Num(capture.target[0])); target.set("y", Value::Num(capture.target[1])); target.set("rotation", Value::Num(spec.rotation));
+                next.set("target", Value::object(target)); next.set("followers", crate::ik::angle_table(&capture.followers));
+                next.set("joinedFollowers", crate::ik::joined_table(capture.joined_followers.as_ref().unwrap()));
+                if let Some(q) = &capture.spatial_followers { next.set("spatialFollowers", crate::spatial_ik::quaternion_table(q)); }
+                if let Some(q) = &capture.joined_spatial_followers { next.set("joinedSpatialFollowers", crate::spatial_ik::joined_quaternion_table(q)); }
+                next.set("bendDirection", Value::Num(capture.bend_direction)); next.set("bendReference", crate::ik::reference_value(&capture.bend_reference));
+            }
+            let record = editor.frame_object_mut(at.slot).ok_or_else(|| unported("outside the frame"))?;
+            crate::ik::set_controller(record, &key, next.clone()); record.remove("runtime_segments");
             Ok(())
         })
     }

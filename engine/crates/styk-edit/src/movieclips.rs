@@ -333,7 +333,7 @@ impl Editor {
             None => figures.push(figure.clone()),
         }
         let selection = self.selection_state();
-        self.record(Command { kind: CommandKind::MovieclipDefinition { index, before, after: Some(figure) }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::MovieclipDefinition { index, before, after: Some(figure) }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("structural", Value::Bool(true)), ("timing", Value::Bool(true)), ("definition", Value::Bool(true)), ("label", Value::str(label))]);
         Ok(())
     }

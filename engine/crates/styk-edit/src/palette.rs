@@ -102,7 +102,7 @@ impl Editor {
             }
         }
         let selection = self.selection_state();
-        self.record(Command { kind: CommandKind::Palette { before, after }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::Palette { before, after }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(label)), ("palette", Value::Bool(true))]);
         Ok(true)
     }

@@ -28,7 +28,7 @@ impl Editor {
         let connected = resolve_join_selection(&objects, &self.selection.uids, true)?;
         let slots = if translation { connected } else { resolve_join_selection(&objects, &self.selection.uids, false)? };
         let slots = Editor::ik_pose_slots(&objects, slots);
-        self.authored = Some(Authored { frame: source.clone(), source, tick: self.tick, transaction: false });
+        self.authored = Some(Authored { frame: source.clone(), source, tick: self.tick, transaction: false, definitions_start: None });
         self.drag = Some(Drag {
             label: label.to_string(),
             translation,
@@ -82,6 +82,7 @@ impl Editor {
     }
 
     fn finish_authored_drag(&mut self, ids: &[u32], after: &[Value]) -> Result<bool, EditError> {
+        self.validate_spatial_joins()?;
         // A pose stores where its joined figures sit as well as their joins.
         if after.iter().any(|o| join_target(o).is_some()) {
             let roots = self.roots_of(ids)?;
@@ -115,7 +116,8 @@ impl Editor {
             self.tick = (self.tick + 0.5).floor();
         }
         let source = self.shown_frame()?;
-        self.authored = Some(Authored { frame: source.clone(), source: source.clone(), tick: self.tick, transaction: true });
+        let definitions_start = self.report.get("figure_types").and_then(Value::array_len).unwrap_or(0);
+        self.authored = Some(Authored { frame: source.clone(), source: source.clone(), tick: self.tick, transaction: true, definitions_start: Some(definitions_start) });
         self.drag = Some(Drag {
             label: label.to_string(),
             translation: false,
@@ -140,6 +142,9 @@ impl Editor {
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());
         if result.is_err() {
+            if let Some(figures) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr) {
+                figures.truncate(definitions_start);
+            }
             self.cancel_authored_drag()?;
         }
         result

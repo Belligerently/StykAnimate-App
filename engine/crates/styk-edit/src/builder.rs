@@ -11,6 +11,7 @@ use styk_doc::{Obj, Value};
 use crate::history::{Command, CommandKind, Direction};
 use crate::record::num;
 use crate::{EditError, Editor};
+pub(crate) mod native;
 
 /// `kinds`: a segment's `segment_kind` by its primitive code.
 pub(crate) const KINDS: [&str; 7] = ["line", "circle", "image", "circleFill", "circleClear", "text", "squareLine"];
@@ -208,6 +209,7 @@ fn polygons_of(figure: &Value) -> Vec<Value> {
 /// `branch(figure, selectedIndex, whole, polygons)`: the selected segment and, with `whole`,
 /// every segment below it in the document's order, the order they were reached in, and the
 /// polygons whose every handle belongs to the branch or its pivot.
+#[derive(Clone)]
 pub(crate) struct Branch {
     pub indices: Vec<usize>,
     pub queue: Vec<usize>,
@@ -574,7 +576,7 @@ impl Editor {
         self.apply_definition_patch(index, &after);
         // `_invalidateFigure`: the committed draft kept on show is evaluated again.
         self.retained = None;
-        self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(label)), ("definition", Value::Bool(true))]);
         Ok(true)
     }
@@ -605,6 +607,7 @@ impl Editor {
 
     /// The builder's style commands by their JavaScript names; `None` for other calls.
     pub(crate) fn builder_call(&mut self, method: &str, args: &[Value]) -> Option<Result<Value, EditError>> {
+        if let Some(result) = self.native_property_call(method, args) { return Some(result); }
         let given = |i: usize| args.get(i);
         Some(match method {
             "updateBuilderSegmentStyle" => self.update_builder_segment_style(given(0), given(1)),
@@ -625,6 +628,7 @@ impl Editor {
             }
             "setBranchCaps" => self.set_branch_caps(given(0)).map(Value::Bool),
             "setBranchFill" => self.set_branch_fill(given(0)).map(Value::Bool),
+            "changeBranchThickness" => self.change_branch_thickness(given(0)),
             "setPolygonOpacity" => self.set_polygon_opacity(given(0), given(1)),
             "moveBuilderOrder" => self.move_builder_order(given(0).unwrap_or(&Value::Null), given(1).unwrap_or(&Value::Null), given(2)),
             "setBuilderOrder" => self.set_builder_order(given(0).unwrap_or(&Value::Null), given(1).unwrap_or(&Value::Null), given(2)),
@@ -766,6 +770,43 @@ impl Editor {
         self.native_properties(label, selected.index, entries).map(Value::Bool)
     }
 
+    /// `changeBranchThickness(delta)`: increment every descendant in source order,
+    /// clamped to Pivot's numeric-action range and rounded as `Math.fround`.
+    fn change_branch_thickness(&mut self, delta: Option<&Value>) -> Result<Value, EditError> {
+        let delta = branch_finite(delta, f64::NEG_INFINITY, f64::INFINITY)?;
+        let Some(selected) = self.builder_selection()? else { return Ok(Value::Bool(false)) };
+        let segments = segments_of(&selected.figure);
+        let indices = branch(&selected.figure, selected.joint, true, false).indices;
+        let increment = |width: f64| {
+            let value = width + delta;
+            // Math.max(0, -0) yields +0; do not preserve a negative zero here.
+            let clamped = if value <= 0.0 { 0.0 } else if value >= 1000.0 { 1000.0 } else { value };
+            (clamped as f32) as f64
+        };
+        if self.options.property_channels {
+            let uid = selected.object.get("unique_id").cloned().unwrap_or(Value::Null);
+            let type_id = selected.figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
+            let mut entries = Vec::with_capacity(indices.len());
+            for index in indices {
+                let target = segment_target(&uid, segments[index].get("segment_id").cloned().unwrap_or(Value::Null), &type_id);
+                let shown = self.animation_value(&target, "thickness", &Value::Num(self.tick))?.and_then(|v| v.as_f64()).ok_or_else(|| EditError::Unported("branch thickness without a displayed numeric width".into()))?;
+                let mut entry = Obj::new();
+                entry.set("target", target);
+                entry.set("property", Value::str("thickness"));
+                entry.set("value", Value::Num(increment(shown)));
+                entries.push(Value::object(entry));
+            }
+            return self.add_animation_keys(Some(&Value::array(entries)));
+        }
+        let mut entries = Vec::with_capacity(indices.len() * 2);
+        for index in indices {
+            let value = increment(num(&segments[index], "thickness").unwrap_or(f64::NAN));
+            entries.push(field(segment_path(index, "thickness"), Value::Num(value)));
+            entries.push(field(segment_path(index, "visible"), Value::Bool(value > 0.01 || code(&segments[index]) > 0.0)));
+        }
+        self.native_properties("Change branch thickness", selected.index, entries).map(Value::Bool)
+    }
+
     /// `setBranchCaps(square)`: the selected branch's segments of the selected one's shape given
     /// square or round caps.
     fn set_branch_caps(&mut self, square: Option<&Value>) -> Result<bool, EditError> {
@@ -870,7 +911,7 @@ impl Editor {
         }
         self.apply_definition_patch(index, &after);
         self.retained = None;
-        self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(label)), ("definition", Value::Bool(true))]);
         Ok(true)
     }
@@ -964,6 +1005,22 @@ fn drawables(figure: &Value, object: Option<&Value>) -> Result<Vec<Drawable>, Ed
     }
     out.sort_by(|a, b| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
     Ok(out)
+}
+
+/// `normalizeBuilderOrder`: append-only topology edits make room in the native
+/// combined sequence while preserving the existing stable order.
+pub(crate) fn normalize_builder_order(figure: &mut Value) -> Result<usize, EditError> {
+    let entries = drawables(figure, None)?;
+    let root = figure.make_obj().ok_or_else(|| invalid("errors.editorBuilderStyle.selectAnExistingSegmentOrPolygon"))?;
+    for (place, entry) in entries.iter().enumerate() {
+        if let Some(item) = root.get_mut(if entry.polygon { "polyfills" } else { "segments" }).and_then(Value::make_arr).and_then(|items| items.get_mut(entry.index)).and_then(Value::make_obj) {
+            item.set("z_order", Value::Num(place as f64 + 1.0));
+            item.set("z_order_runtime_raw", Value::Num(place as f64));
+        }
+    }
+    root.remove("segment_z_raw");
+    root.remove("poly_z_raw");
+    Ok(entries.len())
 }
 
 /// `resolveTarget(figure, target, selectedJoint)`: `(polygon, index)` of an existing drawable.
@@ -1246,7 +1303,7 @@ impl Editor {
         }
         self.apply_definition_patch(index, &after);
         self.retained = None;
-        self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(label)), ("definition", Value::Bool(true))]);
         Ok(true)
     }

@@ -49,6 +49,34 @@ and after), and emit change events the interface listens to.
   Then frames and keys, layers and the layer sheet, figures and the builder, movieclips,
   effects and clips, camera, drawings' metadata, clipboard, sessions.
 
+### Camera and builder prerequisites (2026-10-04)
+
+The camera owner includes V8-exact logarithms and the native editor follows cached travel.
+`Prepared::travel_ready` reads worker preparation only; `Pose::shot` retains the source
+key for that view. A browser edit session refuses a cold follow tick or a changed report
+instead of preparing the path on the interface thread. Native read/bake replays match;
+canonical worker session publication remains required before app bake adoption.
+
+Measured bounds are captured once from the callback the editor already runs and sent as
+bounded data (8,192 samples, receiver/UID/tick/range order preserved). Centering/alignment
+shadow those completed measurements; the callback still belongs to the editor. Joined
+spatial IK, branch thickness, native-property tokens, sprite insertion and drawing a new
+figure have focused recorded native/sheet coverage; their remaining origin/native-channel
+branches refuse explicitly, and no facade/class gate opens from this prerequisite.
+`CommandKind::FigureSplice` preserves library insertion and native-frame undo/redo.
+
+The joined pinned motion-path oracle correction is exercised in the app through cancel,
+commit and history (one adopted + 11 exact calls). Measured bounds compare eight calls;
+new-figure identity-capacity refusal compares two and preserves the whole project.
+Electron follow pictures pass all nine stored/preview/onion captures (mean 0.0553–0.0884,
+zero solid pixels). The strict follow app check still refuses cold paths and baking at
+new revisions; it does not certify adoption until worker publication is connected.
+Forty-five admitted recordings match all 1,290 steps; four guard recordings confirm refusal.
+The 41 derived evaluated groups / 362 ticks are included. Public portable additions are
+`styk_math::log`, `Prepared::travel_ready`, `Pose::shot` and `CommandKind::FigureSplice`;
+`math_log` is a browser export only in `styk-wasm`. The logarithm test reads its generated
+binary at runtime so identical regeneration does not invalidate release compilation.
+
 ## Status of phase 1
 
 `engine/crates/styk-edit` holds an `Editor` over the report as the mirror receives it, with

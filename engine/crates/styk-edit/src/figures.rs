@@ -63,7 +63,7 @@ fn set_join_field(object: &mut Obj, key: &str, value: Option<Value>) {
 
 /// `normalizeFrame(frame)`: slots follow unique ids, joins follow their figures, the
 /// drawing order keeps naming the same figures.
-fn normalize_frame(frame: &mut Obj) {
+pub(crate) fn normalize_frame(frame: &mut Obj) {
     let ids = frame_order(frame);
     let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
     let mut records: Vec<Obj> = objects
@@ -521,7 +521,7 @@ impl Editor {
         if let Some(slot) = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).and_then(|f| f.get_mut(figure_index)) {
             *slot = after.clone();
         }
-        self.record(Command { kind: CommandKind::Figure { index: figure_index, before, after }, label: "Edit segment style".into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::Figure { index: figure_index, before, after }, label: "Edit segment style".into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str("Edit segment style")), ("definition", Value::Bool(true))]);
         Ok(true)
     }

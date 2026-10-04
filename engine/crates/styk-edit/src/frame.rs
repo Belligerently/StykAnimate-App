@@ -60,9 +60,15 @@ impl Editor {
     pub(crate) fn prepared(&self) -> Result<Arc<Prepared>, EditError> {
         let mut cache = self.eval.borrow_mut();
         if cache.prepared.is_none() || !cache.report.as_ref().is_some_and(|report| report.same_node(&self.report)) {
+            if self.worker_prepared_only && self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::elements)
+                .is_some_and(|clips| clips.iter().any(|clip| clip.get("type").and_then(Value::as_str) == Some("follow")
+                    && clip.get("targets").and_then(Value::array_len).is_some_and(|count| count > 0)))
+            {
+                return Err(EditError::Unported("follow projections require this revision's worker-prepared document".into()));
+            }
             let document = cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
             cache.prepared = Some(Arc::new(Prepared::new(Arc::new(document))));
-                cache.report = Some(self.report.clone());
+            cache.report = Some(self.report.clone());
             cache.frames.clear();
         }
         Ok(cache.prepared.clone().unwrap())
@@ -191,4 +197,17 @@ pub(crate) fn layer_of(layers: Option<&Value>, uid: u32) -> String {
     let Some(state) = layers else { return "layer-1".into() };
     let assigned = state.get("assignments").and_then(|a| a.get(&uid.to_string()));
     assigned.or_else(|| state.get("defaultLayerId")).and_then(Value::as_str).unwrap_or("").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn camera_without_motion_does_not_prepare_typed_document() {
+        let report = styk_doc::json::parse(br#"{"_styk":{"cameraMotion":{"clips":[]}}}"#).unwrap();
+        let mut editor = crate::Editor::new(report, crate::Options::default());
+        editor.worker_prepared_only = true;
+        let frame = styk_doc::json::parse(br#"{"camera":{"is_default":false,"x":4}}"#).unwrap();
+        assert_eq!(editor.camera_at_time(&frame, 90_000.0).unwrap(), frame.get("camera").cloned());
+        assert!(editor.eval.borrow().prepared.is_none(), "empty camera clips prepared the document");
+    }
 }

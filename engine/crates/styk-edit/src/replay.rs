@@ -50,6 +50,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         outcome.mismatches.push("step 0: the loaded document does not survive the engine's store byte for byte".into());
         return Ok(outcome);
     }
+    let mut native_token = Value::Null;
     for step in &steps[1..] {
         let number = step.get("step").and_then(Value::as_f64).unwrap_or(0.0) as usize;
         let call: Vec<Value> = step.get("call").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
@@ -58,7 +59,26 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         // A replay-only read verifies the live pose using the existing snapshot owner.
         let result = if method == "@frame" {
             editor.shown_frame().map(|frame| Value::str(&styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&frame))))
-        } else { editor.call(&method, &call[1..]) };
+        } else if method == "@cameraAtTime" {
+            editor.shown_frame().and_then(|frame| editor.camera_at_time(&frame, editor.tick)).map(|camera| camera.unwrap_or(Value::Null))
+        } else if method.starts_with("@native") {
+            let arg = |i: usize| call.get(i).cloned().unwrap_or(Value::Null);
+            let (name, args) = match method.as_str() {
+                "@nativeBegin" => ("beginNativePropertyEdit", call[1..].to_vec()),
+                "@nativePreview" => ("previewNativePropertyEdit", vec![call.get(2).cloned().unwrap_or_else(|| native_token.clone()), arg(1)]),
+                "@nativeCommit" => ("commitNativePropertyEdit", vec![call.get(1).cloned().unwrap_or_else(|| native_token.clone())]),
+                "@nativeCancel" => ("cancelNativePropertyEdit", vec![call.get(1).cloned().unwrap_or_else(|| native_token.clone())]),
+                "@nativeGet" => ("getNativePropertyValue", call[1..].to_vec()),
+                "@nativeCan" => ("canEditNativeProperty", call[1..].to_vec()),
+                _ => (method.as_str(), call[1..].to_vec()),
+            };
+            let result = editor.call(name, &args);
+            if method == "@nativeBegin" && let Ok(value) = &result { native_token = value.get("token").cloned().unwrap_or(Value::Null); }
+            result
+        } else {
+            let measured: Option<Vec<Value>> = step.get("boundsArgs").and_then(Value::elements).map(|e| e.iter().collect());
+            editor.call(&method, measured.as_deref().unwrap_or(&call[1..]))
+        };
         let mut differences = Vec::new();
         let recorded_error = step.get("error").filter(|e| !e.is_null());
         match (&result, recorded_error) {

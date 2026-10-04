@@ -5,7 +5,7 @@
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
 //   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
-//        [--origin] [--origin-pose] [--origin-channels] [--url http://127.0.0.1:47831] [--out <report.json>]
+//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -56,6 +56,10 @@ const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
 const requiredCalls = [
+  ...(args.includes('--camera-follow') ? ['nudgeHandle', 'setCameraMotion', 'applyCameraToFigures'] : []),
+  ...(args.includes('--joined-motion') ? ['beginMotionPathEdit', 'updateMotionPathEdit', 'commitMotionPathEdit', 'cancelMotionPathEdit'] : []),
+  ...(args.includes('--bounds') ? ['centerCamera', 'alignFiguresInFrames'] : []),
+  ...(args.includes('--capacity') ? ['addSegment'] : []),
   ...(args.includes('--origin') ? ['setOrigin'] : []),
   ...(args.includes('--origin-pose') ? ['poseJoint', 'rotateJoint', 'bendJoint', 'editHandlePosition', 'transformFigureHandle'] : []),
   ...(args.includes('--origin-channels') ? ['beginAnimationEdit', 'previewAnimationEdit', 'commitAnimationEdit', 'cancelAnimationEdit', 'addAnimationKey', 'addAnimationKeys'] : []),
@@ -86,7 +90,7 @@ async function run(mode) {
   await page.evaluate(() => { document.querySelector('.styk-privacy [data-decline]')?.click(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); });
   if (exactMath) await page.evaluate(async () => {
     const m = await import('/src/engine/pkg/styk_engine.js');
-    Object.assign(Math, {sin: m.math_sin, cos: m.math_cos, atan2: m.math_atan2, asin: m.math_asin, acos: m.math_acos,
+    Object.assign(Math, {sin: m.math_sin, cos: m.math_cos, atan2: m.math_atan2, asin: m.math_asin, acos: m.math_acos, log: m.math_log,
       hypot: (...values) => values.length === 2 ? m.math_hypot(+values[0], +values[1]) : m.math_norm(Float64Array.from(values, Number))});
     globalThis.__stykExactMath = true;
   });
@@ -155,6 +159,7 @@ async function run(mode) {
   // shadow like any other answer) is noted and the run goes on.
   const refused = [];
   const step = async (name, run) => {
+    if (args.includes('--verbose')) console.log(`${mode}: ${name}`);
     await settled();
     try { await run(); steps.push(name); }
     catch (error) { const message = String(error?.message ?? error).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0]; refused.push(`${name}: ${message}`); }
@@ -162,6 +167,51 @@ async function run(mode) {
 
   /** The interactions, once. */
   const interactions = async () => {
+    if (args.includes('--camera-follow')) {
+      await step('nudge a handle under camera follow', () => page.evaluate(() => {
+        const e = styk.editor;
+        if (!e.report._styk?.cameraMotion?.clips?.some(clip => clip.type === 'follow')) throw new Error('The camera check needs a follow clip.');
+        e.seek(2); e.select(1, 1); e.nudgeHandle(3, -2);
+      }));
+      await step('change camera follow parameters', () => page.evaluate(() => {
+        const e = styk.editor, follow = e.report._styk.cameraMotion.clips.find(clip => clip.type === 'follow');
+        e.setCameraMotion(follow.id, {params: {lag: 8, lookAhead: 0}});
+      }));
+      await step('bake camera follow into figures', () => page.evaluate(() => styk.editor.applyCameraToFigures([0], {ticks: [1, 3, 4, 6]})));
+      await step('undo and redo camera follow edits', () => page.evaluate(() => { const e = styk.editor; e.undo(); e.undo(); e.redo(); }));
+    }
+    if (args.includes('--joined-motion')) await step('turn a joined motion path with pinned followers', () => page.evaluate(async () => {
+      const e = styk.editor, {buildGeometry} = await import('/src/pivot/geometry.mjs');
+      const target = {kind: 'node', uid: 3, handleId: 33, joint: 0};
+      e.select(3, 0); e.seek(5);
+      if (!e.beginMotionPathEdit(target, 2)) throw new Error('The joined motion check needs its recorded target.');
+      const shape = buildGeometry(e.report, e._drag.working).objects.get(2).segments[0];
+      const turn = radians => ({x: shape.start.x + (shape.end.x - shape.start.x) * Math.cos(radians) - (shape.end.y - shape.start.y) * Math.sin(radians),
+        y: shape.start.y + (shape.end.x - shape.start.x) * Math.sin(radians) + (shape.end.y - shape.start.y) * Math.cos(radians)});
+      e.updateMotionPathEdit(turn(.25)); e.updateMotionPathEdit(shape.end); e.cancelMotionPathEdit();
+      if (!e.beginMotionPathEdit(target, 2)) throw new Error('The joined motion target stopped being editable.');
+      e.updateMotionPathEdit(turn(.25)); e.updateMotionPathEdit(turn(.35), {isolate: true}); e.commitMotionPathEdit(); e.undo(); e.redo();
+    }));
+    if (args.includes('--bounds')) await step('center and align using measured app bounds', () => page.evaluate(async () => {
+      const e = styk.editor, {objectBounds} = await import('/src/renderer-geometry.mjs');
+      const boundsOf = geometry => {
+        const rect = objectBounds([...geometry.segments.map(segment => ({...segment, type: segment.seg.segment_type || 'line'})),
+          ...geometry.polys, ...(geometry.meshDrawables ?? [])], styk.state.renderer?.resources ?? {});
+        return {minX: rect.x, minY: rect.y, maxX: rect.x + rect.width, maxY: rect.y + rect.height};
+      };
+      e.selectMany([2, 3]); e.centerCamera('both', [0, 1], {boundsOf}); e.undo(); e.redo();
+      e.selectMany([1, 3]); e.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf}); e.undo(); e.redo();
+    }));
+    if (args.includes('--capacity')) await step('refuse a new figure at identity capacity atomically', () => page.evaluate(() => {
+      const e = styk.editor; e.select(null);
+      const snapshot = () => JSON.stringify({document: e.report, nextUid: e._nextUid, undo: e._undo.length, redo: e._redo.length,
+        revision: e.revision, layerRevision: e.layerRevision, dragging: e.dragging, dirty: e.dirty}, (key, value) => key === 'runtime_segments' ? undefined : value);
+      const before = snapshot(); let rejected = false;
+      try { e.addSegment({length: 5}); }
+      catch (error) { rejected = error.messageKey === 'errors.editorLayerSheet.objectIdentityCapacityReached'; if (!rejected) throw error; }
+      if (!rejected || snapshot() !== before) throw new Error('The capacity refusal changed the project or its history.');
+    }));
+    if (args.includes('--focused')) return;
     if (args.includes('--origin')) await step('set a figure origin and replay its history', () => page.evaluate(() => {
       const e = styk.editor, object = e.evaluatedFrame.objects.find(object => e.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.animationOrigin);
       if (!object) throw new Error('The origin check needs a figure with an animation origin.');

@@ -1,4 +1,5 @@
-//! `Math.sin`, `Math.cos`, `Math.atan2`, `Math.hypot`, `Math.asin`, `Math.acos` and `Math.exp`
+//! `Math.sin`, `Math.cos`, `Math.atan2`, `Math.hypot`, `Math.asin`, `Math.acos`, `Math.exp`,
+//! `Math.log` and `Math.log1p`
 //! exactly as Node's V8 computes them.
 //!
 //! The editor stores the results of its arithmetic in documents, and the harnesses
@@ -12,11 +13,12 @@
 //! answer on every platform, natively and in WebAssembly. `asin`, `acos` and `exp` are the
 //! `libm` crate's, which agree with V8's fdlibm on every recorded input (the platform's differ
 //! on 7 %, 4 % and 10 % of them; V8 returns `Math.E` for `exp(1)`). `tests/v8.rs` checks all
-//! seven functions against recorded Node results.
+//! these functions against recorded Node results (`Math.log` in `tests/log.rs`).
 
 // Vendored as it is upstream.
 #[allow(clippy::all)]
 mod rem_pio2_large;
+mod log;
 
 const fn word(bits: u64) -> f64 {
     f64::from_bits(bits)
@@ -327,6 +329,12 @@ pub fn exp(x: f64) -> f64 {
         return std::f64::consts::E;
     }
     libm::exp(x)
+}
+
+/// `Math.log(x)`: fdlibm's logarithm with V8's normalization and rounding order.
+/// `libm::log` rewrites its branches and differs by one bit on recorded inputs.
+pub fn log(x: f64) -> f64 {
+    log::log(x)
 }
 
 /// `Math.log1p(x)`: fdlibm's `log1p` as V8 has it in `ieee754::log1p` (FreeBSD's msun). The

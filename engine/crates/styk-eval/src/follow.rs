@@ -167,6 +167,15 @@ impl Follow {
     /// at `tick`. Overlapping clips share one frame: their weights blend toward each
     /// target instead of adding up.
     pub fn offset(&self, tick: f64) -> [f64; 3] {
+        self.offset_with(tick, true).expect("blocking path is always prepared")
+    }
+
+    /// Reads only paths workers have already published; never shapes or samples a frame.
+    fn offset_ready(&self, tick: f64) -> Option<[f64; 3]> {
+        self.offset_with(tick, false)
+    }
+
+    fn offset_with(&self, tick: f64, prepare: bool) -> Option<[f64; 3]> {
         let (mut x, mut y, mut zoom, mut total) = (0.0, 0.0, 0.0, 0.0);
         for clip in &self.clips {
             let age = tick - clip.start;
@@ -180,8 +189,8 @@ impl Follow {
             let i = age.floor();
             let t = age - i;
             let next = (clip.duration - 1.0).min(i + 1.0);
-            let path = clip.path(next as usize, self.canvas);
-            let (a, b) = (path.frames[i as usize].map(f64::from), path.frames[next as usize].map(f64::from));
+            let path = if prepare { clip.path(next as usize, self.canvas) } else { clip.path.get() };
+            let (a, b) = (path.frames.get(i as usize)?.map(f64::from), path.frames.get(next as usize)?.map(f64::from));
             x += weight * (a[0] + (b[0] - a[0]) * t);
             y += weight * (a[1] + (b[1] - a[1]) * t);
             zoom += weight * (a[2] + (b[2] - a[2]) * t);
@@ -192,30 +201,38 @@ impl Follow {
             y /= total;
             zoom /= total;
         }
-        [x, y, zoom]
+        Some([x, y, zoom])
     }
 
     /// `cameraTravelAt`: the authored camera `base` moved by the follow clips at `tick`.
     pub fn travel(&self, base: Option<Camera>, tick: f64) -> Option<Camera> {
-        let [fx, fy, fz] = self.offset(tick);
-        let none = |v: f64| v == 0.0 || v.is_nan();
-        if none(fx) && none(fy) && none(fz) {
-            return base;
-        }
-        let c = match base {
-            Some(c) if !c.is_default => c,
-            _ => Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: false, motion_offset: None },
-        };
-        let (cos, sin) = (styk_math::cos(c.angle), styk_math::sin(c.angle));
-        Some(Camera {
-            x: c.x + c.scale * (cos * fx - sin * fy),
-            y: c.y + c.scale * (sin * fx + cos * fy),
-            scale: c.scale * fz.exp(),
-            angle: c.angle,
-            is_default: false,
-            motion_offset: c.motion_offset,
-        })
+        moved(base, self.offset(tick))
     }
+
+    /// `None` is cold; `Some(None)` is a ready path with no camera.
+    pub fn travel_ready(&self, base: Option<Camera>, tick: f64) -> Option<Option<Camera>> {
+        Some(moved(base, self.offset_ready(tick)?))
+    }
+}
+
+fn moved(base: Option<Camera>, [fx, fy, fz]: [f64; 3]) -> Option<Camera> {
+    let none = |v: f64| v == 0.0 || v.is_nan();
+    if none(fx) && none(fy) && none(fz) {
+        return base;
+    }
+    let c = match base {
+        Some(c) if !c.is_default => c,
+        _ => Camera { x: 0.0, y: 0.0, scale: 1.0, angle: 0.0, is_default: false, motion_offset: None },
+    };
+    let (cos, sin) = (styk_math::cos(c.angle), styk_math::sin(c.angle));
+    Some(Camera {
+        x: c.x + c.scale * (cos * fx - sin * fy),
+        y: c.y + c.scale * (sin * fx + cos * fy),
+        scale: c.scale * styk_math::exp(fz),
+        angle: c.angle,
+        is_default: false,
+        motion_offset: c.motion_offset,
+    })
 }
 
 fn smooth(t: f64) -> f64 {
@@ -366,8 +383,8 @@ impl Clip {
                 if p.zoom_fit > 0.0 && (target.size[0] > 0.0 || target.size[1] > 0.0) {
                     let room = js_max(0.05, 1.0 - 2.0 * p.padding);
                     let fit = js_max(target.size[0] / (width * room), target.size[1] / (height * room)) / scale;
-                    let limit = p.max_zoom.ln();
-                    zoom = p.zoom_fit * js_max(-limit, js_min(limit, js_max(1e-6, fit).ln()));
+                    let limit = styk_math::log(p.max_zoom);
+                    zoom = p.zoom_fit * js_max(-limit, js_min(limit, styk_math::log(js_max(1e-6, fit))));
                 }
             }
             let s = &mut path.state;
@@ -527,5 +544,41 @@ impl<T> Latest<T> {
     fn offer(&self, next: Arc<T>, better: impl FnOnce(&T, &T) -> bool) {
         let replaced = self.with(|value| if better(&next, value) { Some(std::mem::replace(value, next)) } else { None });
         drop(replaced);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn cold_late_dense_queries_do_not_publish_samples_or_shapes() {
+        let mut tree = styk_doc::json::parse(include_bytes!("../tests/fixtures/eval/follow-figures.json")).unwrap();
+        let figures = tree.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap();
+        for figure in figures {
+            let object = figure.make_obj().unwrap();
+            let segments = object.get_mut("segments").unwrap().make_arr().unwrap();
+            let template = segments[0].clone();
+            for index in 0..200 {
+                let mut segment = template.clone();
+                let segment = segment.make_obj().unwrap();
+                segment.set("segment_id", styk_doc::Value::Num(1000.0 + index as f64));
+                segment.set("parent_id", styk_doc::Value::Num(0.0));
+                segments.push(styk_doc::Value::object(segment.clone()));
+            }
+        }
+        let mut doc = crate::from_value(&tree, "readiness").unwrap();
+        for clip in doc.camera_motion.iter_mut().filter(|clip| clip.kind == "follow") { clip.duration = 100_000.0; }
+        let follow = super::Follow::new(&doc).unwrap();
+        for _ in 0..100 { assert!(follow.travel_ready(None, 90_000.0).is_none()); }
+        for clip in &follow.clips {
+            let path = clip.path.get();
+            assert!(path.frames.is_empty() && path.samples.is_empty(), "cold reads shaped or sampled a target");
+        }
+        let expected = follow.travel(None, 3.0);
+        let lengths: Vec<_> = follow.clips.iter().map(|clip| { let path = clip.path.get(); (path.frames.len(), path.samples.len()) }).collect();
+        assert_eq!(follow.travel_ready(None, 3.0), Some(expected));
+        assert_eq!(follow.travel_ready(None, 3.25), Some(follow.travel(None, 3.25)));
+        assert!(follow.travel_ready(None, 90_000.0).is_none());
+        assert_eq!(lengths, follow.clips.iter().map(|clip| { let path = clip.path.get(); (path.frames.len(), path.samples.len()) }).collect::<Vec<_>>());
+        assert_eq!(follow.travel_ready(None, -1.0), Some(None), "inactive clips must not need shaping");
     }
 }

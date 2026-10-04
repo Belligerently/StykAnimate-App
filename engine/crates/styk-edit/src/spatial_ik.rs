@@ -26,9 +26,11 @@ pub(crate) struct Capture {
     /// `unprojectJoint(geometry.joints.get(handle))`: the end of the limb before perspective.
     pub target: [f64; 2],
     pub followers: BTreeMap<u32, f64>,
+    pub joined_followers: Option<BTreeMap<u32, BTreeMap<u32, f64>>>,
     pub bend_direction: f64,
     pub bend_reference: BendReference,
     pub spatial_followers: Option<BTreeMap<u32, [f64; 4]>>,
+    pub joined_spatial_followers: Option<BTreeMap<u32, BTreeMap<u32, [f64; 4]>>>,
     pub spatial_target: Option<SpatialTarget>,
 }
 
@@ -87,6 +89,12 @@ pub(crate) fn quaternion_table(table: &BTreeMap<u32, [f64; 4]>) -> Value {
     for (id, q) in table {
         value.set(&id.to_string(), Value::nums(q));
     }
+    Value::object(value)
+}
+
+pub(crate) fn joined_quaternion_table(table: &BTreeMap<u32, BTreeMap<u32, [f64; 4]>>) -> Value {
+    let mut value = Obj::new();
+    for (uid, q) in table { value.set(&uid.to_string(), quaternion_table(q)); }
     Value::object(value)
 }
 
@@ -190,7 +198,7 @@ impl Editor {
         let bend_reference = ik::bend_reference(&points, &lengths, spec.bend_reference.as_ref());
         let bend_direction = spec.bend_direction.unwrap_or(bend_direction);
         let spatial = self.capture_spatial(slot, &chain, &follower_indices, rotation, spec.swivel)?;
-        Ok(Capture { target, followers, bend_direction, bend_reference, spatial_followers: spatial.spatial_followers, spatial_target: spatial.spatial_target })
+        Ok(Capture { target, followers, joined_followers: None, bend_direction, bend_reference, spatial_followers: spatial.spatial_followers, joined_spatial_followers: None, spatial_target: spatial.spatial_target })
     }
 
     /// `captureSpatialIK(figure, object, geometry, chain, followers, rotation, swivel)`.

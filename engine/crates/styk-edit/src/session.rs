@@ -70,6 +70,7 @@ impl Session {
     pub fn start_prepared(report: Value, state: &str, loader: styk_eval::load::Loader, prepared: std::sync::Arc<styk_eval::eval::Prepared>) -> Result<Session, String> {
         let mut session = Session::start(report, state)?;
         session.editor.adopt_prepared(loader, prepared);
+        session.editor.worker_prepared_only = true;
         Ok(session)
     }
 

@@ -20,6 +20,16 @@ use styk_doc::{Obj, Value};
 use crate::history::{Command, CommandKind, Direction};
 use crate::record::{join_target, num, uid};
 use crate::{EditError, Editor};
+mod sprite;
+mod new_figure;
+
+struct StrokeSpec {
+    parent: Option<Value>,
+    length: f64,
+    angle: f64,
+    thickness: Option<f64>,
+    code: f64,
+}
 
 const EPS: f64 = 1e-9;
 const MAX_SEGMENTS: usize = 30000;
@@ -426,7 +436,7 @@ impl Editor {
             figure.remove("poly_z_raw");
         }
         let after = self.topology_snapshot(index, &identities);
-        self.record(Command { kind: CommandKind::Topology { index, before, after }, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::Topology { index, before, after }, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(label)), ("structural", Value::Bool(true)), ("definition", Value::Bool(true))]);
         Ok(true)
     }
@@ -762,6 +772,7 @@ impl Editor {
             "setOrigin" => self.set_origin(arg(0)).map(Value::Bool),
             "addSegment" => self.add_segments(&Value::array(vec![arg(0).cloned().unwrap_or_else(|| Value::object(Obj::new()))])).map(|r| r.item(0).unwrap_or(Value::Null)),
             "addSegments" => self.add_segments(arg(0).unwrap_or(&Value::Null)),
+            "addSpriteSegment" => self.add_sprite_segment(arg(0).unwrap_or(&Value::Null), arg(1)),
             "deleteSegment" => self.delete_segment(arg(0)).map(Value::Bool),
             "deleteSingleSegment" => self.delete_single_segment(arg(0)).map(Value::Bool),
             "unsplitSegment" => {
@@ -1007,13 +1018,6 @@ impl Editor {
         if count + list.len() > MAX_SEGMENTS {
             return Err(invalid("errors.editorRigConstraints.figureSegmentCapacityReached"));
         }
-        struct Spec {
-            parent: Option<Value>,
-            length: f64,
-            angle: f64,
-            thickness: Option<f64>,
-            code: f64,
-        }
         let check = |value: Option<&Value>| match value {
             Some(Value::Num(n)) if n.is_finite() => Ok(*n),
             _ => Err(invalid("errors.editorCamera.mustBeFinite")),
@@ -1042,9 +1046,9 @@ impl Editor {
             if ![0.0, 1.0, 3.0, 4.0, 6.0].contains(&code) {
                 return Err(invalid("errors.editor.chooseALineOrCircleSegment"));
             }
-            prepared.push(Spec { parent: field("parentId").cloned(), length, angle, thickness, code });
+            prepared.push(StrokeSpec { parent: field("parentId").cloned(), length, angle, thickness, code });
         }
-        let Some((index, figure)) = selected else { return Err(EditError::Unported("drawing a new figure".into())) };
+        let Some((index, figure)) = selected else { return self.add_drawn_figure(specs, &prepared, &list[0]) };
         let segments = items(figure.get("segments"));
         let object = self.object()?.map(|(_, o)| o).unwrap_or(Value::Null);
         let id_of = |s: &Value| s.get("segment_id").cloned().unwrap_or(Value::Null);

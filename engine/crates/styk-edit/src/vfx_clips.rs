@@ -389,7 +389,7 @@ impl Editor {
             }
         }
         let after_selection = self.selection_state();
-        self.record(Command { kind: CommandKind::VfxClips { before, after, sheet: patch }, label: label.into(), before_selection, after_selection, before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::VfxClips { before, after, sheet: patch }, label: label.into(), before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         self.emit("edit", vec![("label", Value::str(label)), ("vfxClips", Value::Bool(true)), ("timing", Value::Bool(true)), ("frameIndices", Value::array(Vec::new()))]);
         Ok(true)
     }

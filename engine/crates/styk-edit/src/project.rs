@@ -50,7 +50,7 @@ impl Editor {
         }
         let selection = self.selection_state();
         let after = patch.iter().map(|(key, value)| (key.to_string(), value.clone())).collect();
-        self.record(Command { kind: CommandKind::Fields { before, after, timing }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0 })?;
+        self.record(Command { kind: CommandKind::Fields { before, after, timing }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
         let fields = Value::array(patch.iter().map(|(key, _)| Value::str(key)).collect());
         self.emit("edit", vec![("label", Value::str(label)), ("timing", Value::Bool(timing)), ("projectFields", fields)]);
         Ok(true)

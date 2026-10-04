@@ -85,6 +85,7 @@ pub(crate) enum Request {
     Scale { value: Value, relative: bool },
     Rotate { radians: Value, center: Value },
     Center,
+    Align { axis: String, edge: String, bounds: crate::bounds::Shared },
     Reset,
     /// Recolouring (its label comes with the options).
     Recolor(Box<crate::recolor::Recolor>),
@@ -104,6 +105,7 @@ impl Request {
             Request::Scale { .. } => "Scale figures across frames",
             Request::Rotate { .. } => "Rotate figures across frames",
             Request::Center => "Center figures across frames",
+            Request::Align { .. } => "Align figures across frames",
             Request::Reset => "Reset poses across frames",
             Request::Recolor(_) => "Edit figure colors",
         }
@@ -298,6 +300,12 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
             native_finite(Some(canvas[1]))?;
             Kind::Center
         }
+        Request::Align { axis, edge, bounds } => {
+            if !["x", "y"].contains(&axis.as_str()) || !["start", "center", "end"].contains(&edge.as_str()) {
+                return Err(invalid("errors.rangeFigureOperations.chooseAnAlignmentAxisAndEdge"));
+            }
+            Kind::Align { axis: axis.clone(), edge: edge.clone(), bounds: bounds.clone() }
+        }
         Request::Delete => Kind::Delete,
         Request::Detach => Kind::Detach,
         Request::Reset => Kind::Reset,
@@ -338,6 +346,15 @@ impl Editor {
             "scaleFiguresInFrames" => self.apply_figure_range(Request::Scale { value: arg(0), relative: arg(2).get("relative").is_some_and(Value::truthy) }, range_args(args, 1)),
             "rotateFiguresInFrames" => self.apply_figure_range(Request::Rotate { radians: arg(0), center: arg(2).get("center").cloned().unwrap_or(Value::Null) }, range_args(args, 1)),
             "centerFiguresInFrames" => self.apply_figure_range(Request::Center, range_args(args, 0)),
+            "alignFiguresInFrames" => {
+                let bounds = crate::bounds::Measurements::for_call(self, method, &args[..3.min(args.len())], &arg(3));
+                bounds.and_then(|bounds| {
+                    let request = Request::Align { axis: arg(0).as_str().unwrap_or("").to_string(), edge: arg(1).as_str().unwrap_or("").to_string(), bounds: bounds.clone() };
+                    let result = self.apply_figure_range(request, range_args(args, 2))?;
+                    bounds.borrow().finish()?;
+                    Ok(result)
+                })
+            }
             "resetPoseInFrames" => self.apply_figure_range(Request::Reset, range_args(args, 0)),
             "bringToFront" => self.partition_layers(true),
             "sendToBack" => self.partition_layers(false),
@@ -381,6 +398,9 @@ impl Editor {
         }
         if self.drag.is_some() {
             self.commit_drag()?;
+        }
+        if matches!(request, Request::Align { .. }) && self.property_edit.is_some() {
+            self.commit_animation_edit()?;
         }
         let (authored, targets) = self.range_targets(&options)?;
         if targets.is_empty() {
@@ -511,7 +531,7 @@ impl Editor {
                 }
             }
             let after_selection = self.selection_state();
-            self.record(Command { kind: CommandKind::FigureRange { changes, structural }, label: label.clone(), before_selection: selection, after_selection, before_revision: 0, after_revision: 0 })?;
+            self.record(Command { kind: CommandKind::FigureRange { changes, structural }, label: label.clone(), before_selection: selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
             self.emit(
                 "edit",
                 vec![

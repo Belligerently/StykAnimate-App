@@ -25,18 +25,19 @@ import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 import {layerFocusOf} from '../editor-layer-focus.mjs';
 import {figureHandleTransform} from '../editor-figure-transform.mjs';
 import {withDraws} from '../editor-draws.mjs';
+import {captureEditBounds} from './engine-edit-bounds.mjs';
 
 /** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
 const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSegment', 'unsplitSegment', 'mirrorSegment', 'mirrorSegmentBranch', 'moveBuilderSegment',
   'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint', 'replaceFigureDefinition', 'setOrigin'];
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
-  'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames'];
+  'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames', 'alignFiguresInFrames'];
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
   'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'segmentValues', 'beginSegmentValueEdit', 'setSegmentValues', 'copySegmentValues', 'pasteSegmentValues',
-  'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'applyCameraToFigures',
+  'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'centerCamera', 'alignSelection', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'applyCameraToFigures',
   // These draw identities or seeds (D18): the editor runs them and hands the engine what it drew.
   'addCameraMotion', 'copyCameraMotion', 'pasteCameraMotion', 'duplicateCameraMotion', 'randomizeCameraMotion', 'addVfx', 'duplicateVfx', 'pasteVfx',
   'addVfxClip', 'copyVfxClip', 'pasteVfxClip', 'duplicateVfxClip', 'addVfxGroupEffect',
@@ -473,7 +474,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     editor[name] = function shadowed(...args) {
       // A ported call made by another call belongs to it.
       if (depth > 0) return original.apply(this, args);
-      let live = begin(), before = null, payload = null;
+      let live = begin(), before = null, payload = null, measured = null;
       // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
       if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
       if (live && (RANGE.has(name) || TOPOLOGY.includes(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
@@ -488,14 +489,17 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         let given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
         if (RANGE_CALLS.includes(name)) given = given.map(value => value === undefined ? null : value);
+        measured = captureEditBounds(name, given, this);
         if (given.some(value => value === undefined || typeof value === 'function' || value instanceof Set || name === 'undo' || name === 'redo')) payload = name === 'undo' || name === 'redo' ? '[]' : null;
-        else try { payload = JSON.stringify(given, frameRanges); } catch { payload = null; }
+        else try { payload = measured ? measured.payload() : JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
         else before = JSON.stringify({...view(), ...(own && OWNED.has(name) ? {changesOnly: true} : {})});
       }
       if (!live) report.skipped++;
       // The engine runs the call in the editor's place.
-      if (live && own && OWNED.has(name)) {
+      // Callback bounds have no owning query yet: observe only the measurements the editor
+      // itself requested, never evaluate the range a second time to prepare an owned call.
+      if (live && own && OWNED.has(name) && !measured) {
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
         try { text = call(live, name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
@@ -528,7 +532,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       const started = performance.now();
       let result, thrown, draws = [];
       // What the editor draws at random during the call goes to the engine with it (D18).
-      try { ({result, draws} = withDraws(() => original.apply(this, args))); } catch (error) { thrown = error; draws = error?.draws ?? []; } finally { depth--; }
+      try { ({result, draws} = withDraws(() => original.apply(this, measured?.args ?? args))); } catch (error) { thrown = error; draws = error?.draws ?? []; } finally { depth--; }
       const captured = events; events = null;
       report.jsMs += performance.now() - started;
       // What the calls the engine would own cost the editor (compared with `ownedMs`).
@@ -538,6 +542,10 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         entry.calls++; entry.editorMs = (entry.editorMs ?? 0) + performance.now() - started;
       }
       if (live && typeof result?.then === 'function') { end('an asynchronous call'); live = null; }
+      if (live && measured) {
+        payload = measured.payload();
+        if (payload === null) { end('bounds callback measurements unavailable'); live = null; }
+      }
       if (live) {
         try {
           const called = performance.now(), answer = JSON.parse(call(live, name, payload, draws.length ? JSON.stringify({...JSON.parse(before), draws}) : before));
