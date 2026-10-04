@@ -2,7 +2,8 @@
 // What V8's Math returns, for styk-math's tests (engine/crates/styk-math/tests/v8.rs).
 //   node engine/tools/math-fixtures.mjs
 // sincos.bin: [x, Math.sin(x), Math.cos(x)] per input; atan2-hypot.bin: [y, x, Math.atan2(y, x),
-// Math.hypot(y, x)]; asin-acos.bin: [x, Math.asin(x), Math.acos(x)]; exp.bin: [x, Math.exp(x)].
+// Math.hypot(y, x)]; asin-acos.bin: [x, Math.asin(x), Math.acos(x)]; exp.bin: [x, Math.exp(x)];
+// log1p.bin: [x, Math.log1p(x)].
 // Little-endian doubles. Inputs come from a fixed sequence, so the files only
 // change if V8's results do. Ordinary angles, tiny and large values, every n·π/2 up to 64 and its
 // neighbours, the kernel's switch points and special values.
@@ -38,4 +39,13 @@ for (let i = 0; i < 2000; i++) es.push((rnd() - .5) * 60, -rnd() * .5 * rnd() * 
 const exps = new Float64Array(es.length * 2);
 es.forEach((x, i) => exps.set([x, Math.exp(x)], i * 2));
 writeFileSync(`${out}exp.bin`, Buffer.from(exps.buffer));
-console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs, ${unit.length} asin and acos inputs, ${es.length} exponentials`);
+// log1p.bin: [x, Math.log1p(x)]: special values, -1 and below, fdlibm's switch points (2^-54,
+// 2^-29, 1 + x near √2 and √2/2, 2^53) and their neighbours, ordinary values, and the zoom
+// range of camera motion clips (-0.8 to 4).
+const ls = [0, -0, NaN, Infinity, -Infinity, -1, -1.0000000000000002, -0.9999999999999999, -2, 5e-324, -5e-324, 1e-300, 1e300, 1.7976931348623157e308, 2 ** 53, 2 ** 53 + 2, 2 ** 1023];
+for (const t of [2 ** -54, 2 ** -29, 0.41421356237309503, -0.2928932188134524, 0.414213562373095, Math.SQRT2 - 1, Math.SQRT1_2 - 1, 2 ** 53]) for (const d of [-3, -2, -1, 0, 1, 2, 3]) ls.push(nudge(t, d), -nudge(t, d));
+for (let i = 0; i < 3000; i++) ls.push(rnd() * 4.8 - 0.8, (rnd() - .5) * 10 ** (rnd() * 8 - 6), rnd() * 10 ** (rnd() * 20), -rnd());
+const logs = new Float64Array(ls.length * 2);
+ls.forEach((x, i) => logs.set([x, Math.log1p(x)], i * 2));
+writeFileSync(`${out}log1p.bin`, Buffer.from(logs.buffer));
+console.log(`${xs.length} sine and cosine inputs, ${pairs.length} atan2 and hypot pairs, ${unit.length} asin and acos inputs, ${es.length} exponentials, ${ls.length} log1p inputs`);

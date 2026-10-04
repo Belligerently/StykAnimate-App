@@ -36,6 +36,13 @@ fn exponential() {
     assert!(cases.len() > 12_000 && wrong.is_empty(), "{} of {} differ: {:#?}", wrong.len(), cases.len() / 2, &wrong[..wrong.len().min(10)]);
 }
 
+#[test]
+fn logarithm_of_one_plus() {
+    let cases = read("log1p.bin");
+    let wrong: Vec<String> = cases.chunks_exact(2).filter(|c| !same(styk_math::log1p(c[0]), c[1])).map(|c| format!("log1p({:e}) = {:e} (V8 {:e})", c[0], styk_math::log1p(c[0]), c[1])).collect();
+    assert!(cases.len() > 24_000 && wrong.is_empty(), "{} of {} differ: {:#?}", wrong.len(), cases.len() / 2, &wrong[..wrong.len().min(10)]);
+}
+
 /// The platform's functions are not V8's: the reason this crate exists. If this
 /// starts failing, std became V8-exact on this platform and the crate could go.
 #[test]

@@ -328,3 +328,82 @@ pub fn exp(x: f64) -> f64 {
     }
     libm::exp(x)
 }
+
+/// `Math.log1p(x)`: fdlibm's `log1p` as V8 has it in `ieee754::log1p` (FreeBSD's msun). The
+/// `libm` crate's is musl's rewrite, which differed from Node for about 1 in 1,000 inputs.
+pub fn log1p(x: f64) -> f64 {
+    const LN2_HI: f64 = 6.93147180369123816490e-01;
+    const LN2_LO: f64 = 1.90821492927058770002e-10;
+    const TWO54: f64 = 1.80143985094819840000e+16;
+    const LP: [f64; 7] = [6.666666666666735130e-01, 3.999999999940941908e-01, 2.857142874366239149e-01, 2.222219843214978396e-01, 1.818357216161805012e-01, 1.531383769920937332e-01, 1.479819860511658591e-01];
+    let hx = high(x) as i32;
+    let ax = hx & 0x7fffffff;
+    let mut k = 1i32;
+    let (mut f, mut hu, mut c) = (0.0, 0i32, 0.0);
+    if hx < 0x3fda827a {
+        // 1 + x < √2
+        if ax >= 0x3ff00000 {
+            // x <= -1
+            return if x == -1.0 { f64::NEG_INFINITY } else { (x - x) / (x - x) };
+        }
+        if ax < 0x3e200000 {
+            // |x| < 2^-29
+            return if TWO54 + x > 0.0 && ax < 0x3c900000 { x } else { x - x * x * 0.5 };
+        }
+        if hx > 0 || hx <= 0xbfd2bec4u32 as i32 {
+            // √2/2 <= 1 + x < √2
+            k = 0;
+            f = x;
+            hu = 1;
+        }
+    }
+    if hx >= 0x7ff00000 {
+        return x + x;
+    }
+    if k != 0 {
+        let mut u;
+        if hx < 0x43400000 {
+            u = 1.0 + x;
+            hu = high(u) as i32;
+            k = (hu >> 20) - 1023;
+            // The correction term.
+            c = if k > 0 { 1.0 - (u - x) } else { x - (u - 1.0) };
+            c /= u;
+        } else {
+            u = x;
+            hu = high(u) as i32;
+            k = (hu >> 20) - 1023;
+            c = 0.0;
+        }
+        hu &= 0x000fffff;
+        let with_high = |value: f64, word: i32| f64::from_bits(((word as u32 as u64) << 32) | (value.to_bits() & 0xffffffff));
+        if hu < 0x6a09e {
+            // u ≲ √2: normalize u.
+            u = with_high(u, hu | 0x3ff00000);
+        } else {
+            // Normalize u / 2.
+            k += 1;
+            u = with_high(u, hu | 0x3fe00000);
+            hu = (0x00100000 - hu) >> 2;
+        }
+        f = u - 1.0;
+    }
+    let hfsq = 0.5 * f * f;
+    let k = k as f64;
+    if hu == 0 {
+        // |f| < 2^-20
+        if f == 0.0 {
+            if k == 0.0 {
+                return 0.0;
+            }
+            c += k * LN2_LO;
+            return k * LN2_HI + c;
+        }
+        let r = hfsq * (1.0 - 0.66666666666666666 * f);
+        return if k == 0.0 { f - r } else { k * LN2_HI - ((r - (k * LN2_LO + c)) - f) };
+    }
+    let s = f / (2.0 + f);
+    let z = s * s;
+    let r = z * (LP[0] + z * (LP[1] + z * (LP[2] + z * (LP[3] + z * (LP[4] + z * (LP[5] + z * LP[6]))))));
+    if k == 0.0 { f - (hfsq - s * (hfsq + r)) } else { k * LN2_HI - ((hfsq - (s * (hfsq + r) + (k * LN2_LO + c))) - f) }
+}

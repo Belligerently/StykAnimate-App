@@ -127,7 +127,7 @@ impl Editor {
     }
 
     /// `screenVectorToWorld(dx, dy, {report, frame, view, cameraEnabled})`: the linear part of
-    /// the workspace transform (`cameraMatrix`) inverted. Camera motion clips are not ported.
+    /// the workspace transform (`cameraMatrix`) inverted. Follow clips are not ported.
     fn screen_vector_to_world(&self, dx: f64, dy: f64, options: &Value) -> Result<[f64; 2], EditError> {
         let view = options.get("view").cloned().unwrap_or(Value::Null);
         let zoom = view.get("scale").filter(|v| !v.is_null()).map_or(1.0, |v| v.as_f64().unwrap_or(f64::NAN));
@@ -534,30 +534,42 @@ pub(crate) fn camera_linear(camera: &Value, zoom: f64) -> Result<[f64; 4], EditE
 
 impl Editor {
     /// `effectiveCamera(report, frame, cameraEnabled)` when it is not the identity: the frame's
-    /// camera unless switched off or its track hidden. `cameraAtTime` adds camera motion
+    /// camera unless switched off or its track hidden. `cameraAtTime` adds the camera motion
     /// clips at the tick the frame was evaluated at (`_cameraMotionTick`, which the engine's
-    /// records leave out): a clip moving the camera there, or a follow clip, is not ported.
+    /// records leave out); follow clips (`cameraTravelAt`) are not ported.
     pub(crate) fn effective_camera(&self, frame: &Value, enabled: bool, tick: f64) -> Result<Option<Value>, EditError> {
         let shown = self.report.path(&["_styk", "layers", "fixed", "camera", "visible"]).is_none_or(|v| !matches!(v, Value::Bool(false)));
         if !enabled || !shown {
             return Ok(None);
         }
+        let mut camera = frame.get("camera").cloned().filter(|c| !c.is_null());
         let clips: Vec<Value> = self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-        if clips.iter().any(|clip| clip.get("type").and_then(Value::as_str) == Some("follow") || motion_contributes(clip, tick)) {
-            return Err(EditError::Unported("camera motion at this frame".into()));
+        if !clips.is_empty() {
+            if clips.iter().any(|clip| clip.get("type").and_then(Value::as_str) == Some("follow")) {
+                return Err(EditError::Unported("camera motion that follows figures".into()));
+            }
+            let typed: Vec<_> = clips.iter().filter_map(styk_eval::load::camera_motion_clip).collect();
+            let fps = self.report.get("fps").and_then(Value::as_f64).unwrap_or(24.0);
+            if let Some(impulse) = styk_eval::camera::impulse(&typed, tick, fps) {
+                camera = Some(moved_camera(camera, &impulse));
+            }
         }
-        let camera = frame.get("camera").cloned().filter(|c| !c.is_null());
         Ok(if camera_is_identity(camera.clone()) { None } else { camera })
     }
 }
 
-/// Whether a camera motion clip moves the camera at `tick` (`sampleCameraMotion` skips it otherwise).
-fn motion_contributes(clip: &Value, tick: f64) -> bool {
-    let number = |key: &str| clip.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
-    let age = tick - number("start");
-    let muted = clip.get("mutedRanges").and_then(Value::elements).is_some_and(|ranges| ranges.iter().any(|r| tick >= num(&r, "start").unwrap_or(f64::NAN) && tick < num(&r, "end").unwrap_or(f64::NAN)));
-    // `age < 0 || age >= duration` skips; NaN compares false there, so the clip counts.
-    clip.get("enabled").is_some_and(Value::truthy) && !(age < 0.0) && !(age >= number("duration")) && !muted
+/// `cameraAtTime`'s camera: `{...c, is_default: false, scale, x, y, angle_rad}`, `c` the
+/// frame's camera (nothing for the default camera) moved by the impulse.
+fn moved_camera(camera: Option<Value>, impulse: &styk_eval::camera::Impulse) -> Value {
+    let mut c = camera.filter(|c| !c.get("is_default").is_some_and(Value::truthy)).and_then(|c| c.as_obj().cloned()).unwrap_or_default();
+    let number = |c: &Obj, key: &str, fallback: f64| c.get(key).filter(|v| !v.is_null()).map_or(fallback, |v| v.as_f64().unwrap_or(f64::NAN));
+    let [x, y, scale, angle] = styk_eval::camera::moved([number(&c, "x", 0.0), number(&c, "y", 0.0), number(&c, "scale", 1.0), number(&c, "angle_rad", 0.0)], impulse);
+    c.set("is_default", Value::Bool(false));
+    c.set("scale", Value::Num(scale));
+    c.set("x", Value::Num(x));
+    c.set("y", Value::Num(y));
+    c.set("angle_rad", Value::Num(angle));
+    Value::object(c)
 }
 
 pub(crate) fn camera_is_identity(camera: Option<Value>) -> bool {

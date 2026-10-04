@@ -899,7 +899,8 @@ fn order_parallax(l: &Value, order: &[String]) -> Vec<(String, LayerParallax)> {
         .collect()
 }
 
-fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
+/// A camera motion clip of `_styk.cameraMotion.clips`.
+pub fn camera_motion_clip(c: &Value) -> Option<CameraMotionClip> {
     let params = match c.get("params") {
         Some(Value::Obj(map)) => map.iter().filter_map(|(k, v)| Some((k.to_string(), v.as_f64()?))).collect(),
         _ => HashMap::new(),

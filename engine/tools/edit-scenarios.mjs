@@ -4,6 +4,7 @@ import {readFileSync, writeFileSync} from 'node:fs';
 import {documentOf, limb, open, joint, nextKey, prune, Editor} from './fixture-kit.mjs';
 import {createVfxClip} from '../../src/vfx-clips.mjs';
 import {createVfx} from '../../src/vfx.mjs';
+import {createCameraMotion} from '../../src/camera-motion.mjs';
 const out = new URL('../tests/edit', import.meta.url).pathname;
 // A native-timeline document with two limbs (one joined to the other) over two keyframes.
 const doc = documentOf([limb(true), limb()], i => [250 + i * 150, 160]);
@@ -1073,6 +1074,26 @@ scenario('figures-layers-sheet', app, [
     const cameraSteps = [['@select', 1, 1], ['nudgeHandle', 5, -3], ['nudgeHandle', 4, 2, {view: {scale: 2, rotation: -0.4}}], ['nudgeHandle', 3, 3, {cameraEnabled: false}], ['@select', 1, -1], ['nudgeHandle', -6, 2], ['@seek', 6], ['@select', 2, 1], ['nudgeHandle', 2, 7], ['@seek', 4], ['nudgeHandle', 1, 2], ['undo'], ['redo']];
     scenario('handle-commands-camera-native', {}, cameraSteps, 'camera-chain.document.json');
     scenario('handle-commands-camera-sheet', app, cameraSteps, 'camera-chain.document.json');
+    // Camera motion clips moving the camera where handles are nudged and the camera is baked:
+    // each preset, overlapping, a muted range, a seed at the top of its range.
+    {
+      const document = JSON.parse(readFileSync(`${out}/camera-chain.document.json`, 'utf8'));
+      const clips = [
+        {...createCameraMotion('shake', 'motion-shake', 0, 40), params: {...createCameraMotion('shake', 'x').params, seed: 2147483600}},
+        {...createCameraMotion('impact', 'motion-impact', 2, 30), params: {...createCameraMotion('impact', 'x').params, direction: 30}},
+        {...createCameraMotion('wobble', 'motion-wobble', 4, 40), params: {...createCameraMotion('wobble', 'x').params, phase: 45}},
+        createCameraMotion('pulse', 'motion-pulse', 1, 50),
+        {...createCameraMotion('handheld', 'motion-handheld', 5, 50), mutedRanges: [{start: 6, end: 7}, {start: 40, end: 45}]},
+      ];
+      document._styk = {...document._styk, cameraMotion: {version: 1, clips}};
+      writeFileSync(`${out}/camera-motion-chain.document.json`, JSON.stringify(document) + '\n');
+    }
+    scenario('camera-motion-handles-sheet', app, [
+      ...cameraSteps, ['@seek', 2], ['@select', 1, 1], ['nudgeHandle', 3, -2], ['nudgeHandle', 2, 1, {view: {scale: 1.5, rotation: 0.3, flip: true}}], ['@seek', 3], ['nudgeHandle', -4, 1],
+      ['@seek', 5], ['@select', 2, 1], ['nudgeHandle', 1, 3], ['@seek', 6], ['nudgeHandle', 2, 2], ['@seek', 7], ['nudgeHandle', -1, -1],
+      ['applyCameraToFigures', [0], {ticks: [1, 2, 3, 4, 5, 6, 7]}], ['@seek', 3], ['applyCameraToFigures'], ['undo'], ['undo'], ['redo'], ['undo'],
+      ['sheetInsertFrames', ['layer-1'], 6, 56], ['applyCameraToFigures', [0], {ticks: Array.from({length: 61}, (_, i) => i + 1)}], ['undo'], ['redo'],
+    ], 'camera-motion-chain.document.json');
     // Camera commands on a layer sheet: values copied, typed (one key or several, refusals),
     // transformed, reset, pasted, aligned with the canvas view, taken from the neighbouring key;
     // camera drags previewed, committed, cancelled, begun by a move, ended by another command;
