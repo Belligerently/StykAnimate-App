@@ -52,11 +52,20 @@ const OUTLINE_FIELDS: [&str; 3] = ["outlineColor", "outlineWidth", "outlineOpaci
 
 /// Channel records read into typed channels, with each pose channel's track.
 pub(super) fn bind(prepared: &Prepared, records: &[Value]) -> Result<Vec<Bound>, Error> {
+    bind_with(prepared, records, false)
+}
+
+pub(super) fn bind_draft(prepared: &Prepared, records: &[Value]) -> Result<Vec<Bound>, Error> {
+    bind_with(prepared, records, true)
+}
+
+fn bind_with(prepared: &Prepared, records: &[Value], draft: bool) -> Result<Vec<Bound>, Error> {
     let mut notes = Vec::new();
     records
         .iter()
         .map(|record| {
-            let channel = crate::channels::channel(record, &mut notes).map_err(|why| Error::Unported(format!("a property channel the engine does not read ({why})")))?;
+            let read = if draft { crate::channels::draft_channel } else { crate::channels::channel };
+            let channel = read(record, &mut notes).map_err(|why| Error::Unported(format!("a property channel the engine does not read ({why})")))?;
             let track = (channel.property == Property::Pose).then(|| crate::channels::pose::track(&prepared.doc, &channel));
             Ok(Bound { record: record.clone(), channel, track })
         })

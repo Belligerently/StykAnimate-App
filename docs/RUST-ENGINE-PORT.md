@@ -176,8 +176,25 @@ fractional-read cases keep native held shown poses distinct from raw samples whi
 scalar channels retain tick 3.5. Wasm is 9,582 KiB (`cdbde8b50169`). No app gate or
 adoption changes: native motion is an offline/worker prerequisite. Mobile pin additions:
 `FrameSlice`, `CommandKind::Ranges` (update exhaustive matches), and additive
-`Records::evaluated_editor_with`. Saved native motion and complex origin combinations
-remain the next command work. Logs: `tmp/root-verification-temp/native-motion-*`.
+`Records::evaluated_editor_with`. The subsequent saved-native milestone below extends
+the two recorded saved-motion families; complex origin combinations remain guarded.
+Logs: `tmp/root-verification-temp/native-motion-*`.
+
+Saved native origin motion now also matches both original layout/support recordings,
+183 calls each, with authoritative and transient motion-frame reads kept separate.
+The existing native draft, channel sampler, pose-source table and Animation/history
+owners retain scalar insertion order during preview, rewrite allocated source IDs in
+place, and register sources only at commit. Forty-two actual draft displays and 122
+source lifecycle states additionally certify ordering, allocation and retention; eight
+complete history records match the editor. Focused edit/eval checks pass 286 tests,
+92 JavaScript tests, check and shipping Wasm (9,604 KiB, SHA `e06a24b83579`);
+all 67 affected motion JSON regenerate byte-stable.
+The 32 admitted affected CLI tapes match 6,165 steps, with nine explicit guards;
+14 capture tapes / 138 steps and 19 worker insertion tapes / 153 steps also match.
+An older refusal test was narrowed only for the newly recorded selection admission;
+its five unrecorded mutation refusals remain intact. No app adoption or class gate
+changes. Portable mobile pin addition: `Records::new_native_draft`; layer sheets
+remain excluded from that entry point. Evidence: `tmp/root-verification-temp/saved-native-*`.
 
 Prepared playback keys now bind generation, cache epoch and exact sample, with one
 coherent native read and a second identity check at the drawing boundary. Hidden,
@@ -1029,7 +1046,9 @@ effect executors are deleted):
    3D catalogue scenes exposed.
 4. Property channels on native timelines (scalar, colour, style, effect parameters, camera,
    scene) and pose channels, with animation origins. Records for animation origins now match;
-   recorded saved origin x/y/scale/rotation editing matches, including future target and ancestor guards; unrecorded channel combinations remain gated.
+   recorded saved origin x/y/scale/rotation editing and the two saved native origin
+   motion families match, including future target and ancestor guards; scalar-only
+   motion, native property projection and unrecorded complex combinations remain gated.
 5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
    transitions, Stick Nodes sprites, frame drafts, retained movieclip sources,
    `runtime_segments` fallbacks; exact fractional prepared playback remains required.
@@ -1200,3 +1219,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 17:38 | S3 destination-grid drawing-cel correction | Integrate the independently reviewed 18-path freeze through the existing drawing entry, placement/filter, Raster and Renderer owners. Explicit destination grid for direct software edits/previews; world grid remains default for prepared/GPU paths. Single-child drawing clips retain child/outer effects; multiple-child entries keep existing policy. Mobile pin additions: LayerKind::Entry.single_drawing, DrawingGrid, plan_with_grid and Renderer/Raster grid setters (rendering.md). Wasm 9,584 KiB (+2 KiB). No class gate, deletion or performance claim. | Shared-type checks pass 632 native tests, 31 focused JS tests, check and shipping Wasm. Two editor-built fixtures regenerate byte-stable; actual eligibility/plan source mutations are caught. Final main software-web original cel 4/4 and default Electron GPU 4/4 pass, zero solids; all four Legacy web and default GPU engine RGBA captures remain byte-identical. Dense single-child and serialized child-Blur/outer-Tint each pass 1/1. Auxiliary onion .288346 and edit-monitor .714171 remain failed; an actual empty-background monitor isolates 278 fractional clip/paint border pixels independently. Source audit records remaining D7/UI and stale-ticket paths; broad figures retry makes progress through one warm-up round then times out at 180 s without comparison. Full suite reserved for committed checkpoints. Logs: tmp/root-verification-temp/cel-destination-*. |
 
 | 2026-10-04 18:16 | S3 prepared generation/epoch/sample tickets and retained actual monitor frame | Bind existing cached frames and metadata coherently to one generation/cache epoch, validate again at native drawing, and advance only the successful scalar shown head. Prepared monitor workers refuse newer hidden/effect/resource sources and retain the accepted same-view bitmap while cold. Preserve explicit worker wait results after immediate cache eviction. Portable pin additions: FrameSnapshot; Engine prepared_frame/frame_matches/frame_epoch_current/prepared_frame_now_at; MonitorFrame prepared_ticket. Browser-only ticket/getter exports stay in styk-wasm. Wasm 9,588 KiB (+4 KiB), SHA d155ab99b159. No class gate, deletion or performance claim. | 140 owning-engine tests, 35 focused playback/stage/preview JS tests, check/changelog and final shipping build pass. Four actual-source mutants fail and restore hash-exact. Independent review identifies and closes the tiny-cache wait compatibility regression before commit. Final actual app verifies generation and hidden/effect epochs, six malformed keys and three native-boundary/cold refusals, unchanged actual shown surface/ownership/document/history/selection, and retained worker-monitor pixels. Original software-web stored/preview ticks 3 and 3.5 pass 4/4 (means .017812–.044503); default Electron GPU passes 4/4 (.032218–.034970), zero solids and unchanged D13. Initial one-shot driver requests were displaced by normal UI prefetch; successful driver follows existing repeated bounded request protocol, without synchronous preparation. Full checkpoint continues on committed 9728e86e in its persistent target. Broader live-readiness/State/retirement D7 and auxiliary pixel gaps remain open. Logs: tmp/root-verification-temp/prepared-ticket-*. |
+
+| 2026-10-04 18:31 | S5 recorded saved-native origin motion | Extend the existing native Draft/channel/source/history owners for the two previously recorded saved-origin motion families. Live scalar order remains transient; repeated writes reuse source IDs, with canonical registration at commit. Authoritative and motion display reads remain separate worker prerequisites. Portable pin addition: Records::new_native_draft. Wasm 9,604 KiB (+16 KiB), SHA e06a24b83579. No app adoption, class gate, deletion or performance claim. | Independently reviewed 16-path freeze; 286 touched edit/eval tests, 92 focused JS tests, check and shipping build pass. All 67 affected JSON regenerate byte-stable. CLI admits 32 affected tapes / 6,165 exact steps, including the two saved tapes / 366 calls, and retains nine explicit guards. Fourteen affected capture tapes / 138 steps and 19 worker insertion tapes / 153 steps also match. Actual 42 draft displays, 122 lifecycle states and eight enumerable Animation commands certify ordering/registration/retention; four real lane mutants fail and restore. Initial owning-crate run catches an obsolete select-refusal expectation; remove only the newly recorded selection refusal, preserving all five unrecorded mutator/atomicity checks, and rerun the full touched crates green. Full checkpoint remains active on immutable 9728e86e. Logs: tmp/root-verification-temp/saved-native-*. |

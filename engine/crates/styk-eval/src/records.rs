@@ -103,12 +103,31 @@ impl<'a> Records<'a> {
     /// `tree` is the document `prepared` was built from.
     pub fn new(tree: &'a Value, prepared: &'a Prepared) -> Result<Records<'a>, Error> {
         let styk = tree.get("_styk");
-        let clips = |path: &[&str]| items(styk.and_then(|s| s.path(path)));
         let legacy_channels = match styk.and_then(|s| s.get("layerSheet")) {
             Some(sheet) => sheet.path(&["legacyAnimation", "channels"]),
             None => styk.and_then(|s| s.path(&["animation", "channels"])),
         };
         let legacy = channels::bind_compiled(prepared, &items(legacy_channels))?;
+        Self::from_bound(tree, prepared, legacy)
+    }
+
+    /// A validated live native editor draft on its owning worker. `tree` and
+    /// `prepared` are the same COW projection including its transient sources.
+    /// The caller must own the draft's validated canonical keys and validate
+    /// each new write before this read. Only finalized key ordering is deferred:
+    /// pose tracks sort their own copy; scalar sampling retains insertion order
+    /// until commit, using the same typed channel sampler. This does not admit
+    /// unordered persisted documents or provide an interface-thread query.
+    pub fn new_native_draft(tree: &'a Value, prepared: &'a Prepared, draft: &[Value]) -> Result<Records<'a>, Error> {
+        if tree.path(&["_styk", "layerSheet"]).is_some() {
+            return unported("a native channel draft on a layer sheet");
+        }
+        Self::from_bound(tree, prepared, channels::bind_draft(prepared, draft)?)
+    }
+
+    fn from_bound(tree: &'a Value, prepared: &'a Prepared, legacy: Vec<Bound>) -> Result<Records<'a>, Error> {
+        let styk = tree.get("_styk");
+        let clips = |path: &[&str]| items(styk.and_then(|s| s.path(path)));
         let doc = &prepared.doc;
         let mut rows = timeline_rows(doc.version, doc.keyframes.iter().map(|k| k.duration));
         // The last row lasts as long as the channels (`animationEndTick`), the camera and

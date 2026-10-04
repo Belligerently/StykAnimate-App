@@ -113,9 +113,18 @@ attached-layer changes and UTF-16 history weights use the existing checked owner
 Twenty-two actual editor commands certify both their enumerable history and the
 worker's retained weights. A native one-tick shown row holds its pose while scalar
 channels keep the fractional clock; raw sampling remains distinct in the same bounded
-cache, through `Records::evaluated_editor_with`. Saved native motion, ordinary native
-targets and unrecorded complex combinations remain explicit atomic refusals. This
-does not open an app ownership gate.
+cache, through `Records::evaluated_editor_with`.
+
+The two recorded saved-native origin motion families extend the same private native
+draft and pose-source owners. `Records::new_native_draft` composes validated transient
+channels with the same immutable tree/Prepared projection, preserving live scalar-key
+insertion order until commit; finalized channels still require normal ordering.
+Repeated pointer writes reuse allocated source IDs, and only commit publishes their
+registration and the ordinary Animation history entry. Separate `@frame` and
+`@motionFrame` observations preserve authoritative and transient displays. Scalar-only
+native motion, property projection, ordinary native targets and unrecorded complex
+combinations remain atomic refusals. These worker prerequisites do not open an app
+ownership gate.
 
 Portable mobile pin additions include `HistoryLimits`, worker history configuration,
 preparation and application methods, `Editor::set_revision_counters`,
@@ -128,6 +137,8 @@ Browser bindings remain confined to `styk-wasm`.
 The native motion milestone additionally exports `FrameSlice` and the
 `CommandKind::Ranges` variant; downstream exhaustive matches need the new variant.
 `Records::evaluated_editor_with` is an additive portable evaluation entry point.
+The saved-native milestone adds portable `Records::new_native_draft` and changes no
+public `styk-edit` API.
 
 Evaluation also adds `MovieclipSource`, `Document::movieclip_source` and
 `Frame`/`Keyframe::retained_vfx_tick`. These portable fields keep cropped source clocks

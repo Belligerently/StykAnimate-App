@@ -26,11 +26,11 @@ fn snapshot(editor: &mut styk_edit::Editor) -> (String, styk_doc::Value, styk_do
 }
 
 #[test]
-fn native_saved_channels_camera_and_optional_metadata_remain_atomic_refusals() {
+fn native_property_projection_camera_and_optional_metadata_remain_atomic_refusals() {
     use styk_edit::{EditError, Editor, Options};
     use styk_doc::Value;
     for name in ["origin-motion-saved-layout-native", "origin-motion-saved-support-native"] {
-        let mut editor = Editor::new(report(name), Options::default());
+        let mut editor = Editor::new(report(name), Options { property_channels: true, ..Options::default() });
         editor.take_events(); let before = snapshot(&mut editor);
         assert!(matches!(editor.call("beginMotionPathEdit", &[target(), Value::Num(3.0)]), Err(EditError::Unported(_))));
         assert_eq!(snapshot(&mut editor), before);

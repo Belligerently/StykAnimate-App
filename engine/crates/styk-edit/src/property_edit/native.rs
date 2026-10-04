@@ -92,15 +92,18 @@ fn clear_native(key: &mut Obj) {
 
 /// `draftAnimation`/`putKey` for the recorded scalar subset. Channels and keys
 /// stay in saved order; only a touched channel and its key array are copied.
-struct Draft {
+#[derive(Clone, Debug)]
+pub(crate) struct Draft {
     before: Option<Value>,
     after: Obj,
     channels: Vec<Value>,
     touched: Vec<usize>,
     changed: bool,
+    /// The same transient `draftAnimation.sources`, not a published source store.
+    sources: Vec<(String, Value)>,
 }
 impl Draft {
-    fn new(editor: &Editor) -> Self {
+    pub(crate) fn new(editor: &Editor) -> Self {
         let before = animation(editor);
         let mut after = before
             .as_ref()
@@ -126,9 +129,10 @@ impl Draft {
             channels,
             touched: Vec::new(),
             changed: false,
+            sources: Vec::new(),
         }
     }
-    fn put(&mut self, editor: &Editor, entry: &Value) -> Result<(Value, usize, usize), EditError> {
+    pub(crate) fn put(&mut self, editor: &Editor, entry: &Value) -> Result<(Value, usize, usize), EditError> {
         if entry
             .get("exactTarget")
             .is_some_and(|value| !matches!(value, Value::Bool(_)))
@@ -197,7 +201,7 @@ impl Draft {
             .cloned()
             .unwrap_or_else(|| {
                 Value::str(if previous.is_some() {
-                    "linear"
+                    if property == "pose" && editor.report.get("auto_easing").is_some_and(Value::truthy) { "auto" } else { "linear" }
                 } else {
                     "constant"
                 })
@@ -282,6 +286,39 @@ impl Draft {
             self.touched.push(channel_index);
         }
         Ok((key, channel_index, at))
+    }
+    pub(crate) fn channels(&self) -> &[Value] { &self.channels }
+    #[cfg(test)]
+    pub(crate) fn sources(&self) -> &[(String, Value)] { &self.sources }
+    pub(crate) fn write_source(&mut self, id: String, source: Value) {
+        if let Some((_, value)) = self.sources.iter_mut().find(|(known, _)| *known == id) { *value = source; }
+        else { self.sources.push((id, source)); }
+    }
+    /// Read-only worker projection of this same draft, as `refreshSession` does.
+    pub(crate) fn project_report(&self, canonical: &Value) -> Value {
+        let mut report = canonical.clone();
+        // The typed channel reader requires canonical ordering. Finalize a COW
+        // projection only; the live draft retains the editor's insertion order.
+        let (_, after, _) = self.clone().finish();
+        let metadata = report.make_obj().unwrap().get_mut("_styk").and_then(Value::make_obj).unwrap();
+        metadata.set("animation", after);
+        if !self.sources.is_empty() {
+            if metadata.get("frameSources").is_none() { metadata.set("frameSources", Value::object(Obj::new())); }
+            let table = metadata.get_mut("frameSources").and_then(Value::make_obj).unwrap();
+            for (id, source) in &self.sources { table.set(id, source.clone()); }
+        }
+        report
+    }
+    /// `recordAnimation`: finalize only at commit, register captures through the
+    /// existing source/membership owner, then record the same Animation carrier.
+    pub(crate) fn publish(self, editor: &mut Editor, label: &str, selection: SelectionState) -> Result<bool, EditError> {
+        let sources = self.sources.clone();
+        let (before, after, changed) = self.finish();
+        if !changed { return Ok(false); }
+        editor.publish_native_pose_sources(&sources)?;
+        editor.record_native_animation(before, after, label, selection, false)?;
+        editor.emit("edit", vec![("label", Value::str(label)), ("animation", Value::Bool(true)), ("timing", Value::Bool(true))]);
+        Ok(true)
     }
     fn finish(mut self) -> (Option<Value>, Value, bool) {
         for at in &self.touched {

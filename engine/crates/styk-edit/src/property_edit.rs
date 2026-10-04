@@ -21,6 +21,7 @@ use crate::sheet::{constant, fixed, items, key_at, num, Write};
 use crate::{EditError, Editor};
 
 mod native;
+pub(crate) use native::Draft as NativeAnimationDraft;
 
 /// `MAX_TICK` of the editor's animation keys and `MAX_SHEET_TICKS` of the sheet.
 const MAX_TICK: f64 = 10_000_000.0;
@@ -329,7 +330,7 @@ impl Editor {
     }
 
     /// The evaluated frame as records of the current document.
-    fn with_records<T>(&self, run: impl FnOnce(&Records) -> Result<T, EditError>) -> Result<T, EditError> {
+    pub(crate) fn with_records<T>(&self, run: impl FnOnce(&Records) -> Result<T, EditError>) -> Result<T, EditError> {
         let prepared = self.prepared()?;
         let records = Records::new(&self.report, &prepared)?;
         run(&records)

@@ -68,6 +68,10 @@ run('edit recordings regenerate unchanged', process.execPath, ['engine/tools/edi
     && unchanged('engine/tests/edit')});
 run('native motion history and reads regenerate unchanged', process.execPath, ['engine/tools/origin-motion-native-history.mjs'], {quiet: true,
   check: () => unchanged('engine/tests/edit/origin-motion-native-history.json', 'engine/tests/edit/origin-motion-native-reads.json')});
+run('saved native motion history regenerates unchanged', process.execPath, ['engine/tools/origin-motion-native-saved-history.mjs'], {quiet: true,
+  check: () => unchanged('engine/tests/edit/origin-motion-native-saved-history.json')});
+run('native draft displays regenerate unchanged', process.execPath, ['engine/tools/origin-motion-draft-records.mjs'], {quiet: true,
+  check: () => unchanged('engine/tests/edit/origin-motion-draft-records.json')});
 
 // Containers: every native file in the repository, against the JavaScript reader.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});

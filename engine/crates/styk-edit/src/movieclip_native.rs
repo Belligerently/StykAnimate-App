@@ -176,26 +176,42 @@ impl Editor {
         })
     }
 
-    /// `captureFrameSource`: snapshot in the record owner, then assign/register
-    /// one identity. Existing source IDs remain assets across history changes.
-    pub(crate) fn capture_native_pose(&mut self, frame: &Value, selected: Option<&[f64]>) -> Result<String, EditError> {
-        if self.next_frame_identity > 9_007_199_254_740_991 {
-            return Err(EditError::Invalid("errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded".into()));
-        }
+    /// Snapshot and identity assignment are shared by captured assets and the
+    /// motion draft. Rewrites supply their allocated ID and never advance it.
+    pub(crate) fn native_pose_source(&mut self, frame: &Value, selected: Option<&[f64]>, identity: Option<&str>) -> Result<(String, Value), EditError> {
+        let id = match identity {
+            Some(id) => id.to_string(),
+            None => {
+                if self.next_frame_identity > 9_007_199_254_740_991 {
+                    return Err(EditError::Invalid("errors.clipboardLegacyUpgrade.frameIdentityCapacityExceeded".into()));
+                }
+                let id = format!("frame-{}", self.next_frame_identity); self.next_frame_identity += 1; id
+            }
+        };
         let mut source = styk_eval::records::snapshot_pose_frame_of(frame, selected).as_obj().cloned().unwrap();
-        let id = format!("frame-{}", self.next_frame_identity);
-        self.next_frame_identity += 1;
         let mut metadata = source.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
-        metadata.set("frameId", Value::str(&id));
-        source.set("_styk", Value::object(metadata));
-        let source = Value::object(source);
+        metadata.set("frameId", Value::str(&id)); source.set("_styk", Value::object(metadata));
+        Ok((id, Value::object(source)))
+    }
+
+    /// The canonical source table and its existing registration/accounting owner.
+    /// Initialize retention before insertion, so a first capture is counted once.
+    pub(crate) fn publish_native_pose_sources(&mut self, sources: &[(String, Value)]) -> Result<(), EditError> {
+        if sources.is_empty() { return Ok(()); }
         self.ensure_counts();
         let styk = self.report.make_obj().and_then(|r| r.get_mut("_styk")).and_then(Value::make_obj).unwrap();
-        if styk.get("frameSources").is_none() {
-            styk.set("frameSources", Value::object(Obj::new()));
-        }
-        styk.get_mut("frameSources").and_then(Value::make_obj).unwrap().set(&id, source.clone());
-        self.register_frame_sources(&[source], true)?;
+        if styk.get("frameSources").is_none() { styk.set("frameSources", Value::object(Obj::new())); }
+        let table = styk.get_mut("frameSources").and_then(Value::make_obj).unwrap();
+        for (id, source) in sources { table.set(id, source.clone()); }
+        self.register_frame_sources(&sources.iter().map(|(_, source)| source.clone()).collect::<Vec<_>>(), true)?;
+        Ok(())
+    }
+
+    /// `captureFrameSource`: snapshot, assign and register one identity. Existing
+    /// source IDs remain assets across history changes.
+    pub(crate) fn capture_native_pose(&mut self, frame: &Value, selected: Option<&[f64]>) -> Result<String, EditError> {
+        let (id, source) = self.native_pose_source(frame, selected, None)?;
+        self.publish_native_pose_sources(&[(id.clone(), source)])?;
         Ok(id)
     }
 

@@ -31,11 +31,13 @@ fn unrecorded_saved_origin_channel_commands_refuse_atomically() {
 }
 
 #[test]
-fn saved_native_origin_scalar_channels_remain_refused() {
+fn saved_native_origin_unrecorded_scalar_mutations_remain_refused() {
     let report = styk_doc::json::parse(&std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../styk-eval/tests/fixtures/records/channels-origin-support-native/report.json")).unwrap()).unwrap();
     let mut editor = styk_edit::Editor::new(report, styk_edit::Options::default());
     let before = (editor.report_json(), editor.state());
-    for method in ["select", "moveSelection", "poseJoint", "beginAnimationEdit", "addAnimationKey", "addAnimationKeys"] {
+    // Recorded saved native motion admits selection/history. Its authored-pose
+    // header does not admit these scalar or ordinary pose mutations.
+    for method in ["moveSelection", "poseJoint", "beginAnimationEdit", "addAnimationKey", "addAnimationKeys"] {
         assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))), "{method}");
         assert_eq!((editor.report_json(), editor.state()), before, "{method} changed state on refusal");
     }

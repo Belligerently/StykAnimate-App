@@ -13,7 +13,8 @@
 //! displayed solution of pinned limbs baked first and followers of pinned limbs turned), the end
 //! of a limb with an IK controller (a pinned target moves; a free limb is solved and baked, across
 //! joined figures too), and the camera. Recorded native origin figures reuse the same pose math,
-//! Objects history and shared native row-splice owner; saved native channels, native camera,
+//! Objects history and shared native row-splice owner. Recorded saved native origin
+//! pose/transform channels use the same private animation draft and Animation history. Native camera,
 //! ordinary native targets, rigged and 3D figures, and keys whose figures a movieclip replacement placed stay `Unported`.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -30,7 +31,7 @@ use crate::frame::objects_of;
 use crate::ik::{angle_table, assign, bake_object, controllers, displayed_angle, has_pinned, joined_table, reference_value, same_bend, set_controller, solve_frame, translate_targets};
 use crate::record::{join_target, num, uid};
 use crate::select::{resolve_join_selection, SelectionState};
-use crate::sheet::{constant, continuations, fixed, key_at, signature, Plan, Write};
+use crate::sheet::{constant, continuations, fixed, items, key_at, signature, Plan, Write};
 use crate::timeline::{rows, total_ticks, Row};
 use crate::{Drag, EditError, Editor};
 
@@ -163,12 +164,14 @@ struct Posed {
     written: bool,
     /// The keys written per track (`sub.sheet.writes`), in the order first written.
     writes: Vec<(String, Entry)>,
+    /// The channel owners this sub captured, with their stable frame IDs.
+    source_ids: Vec<(String, String)>,
     /// Whether each track's key may be written here (`sub.claims`).
     claims: Vec<(String, bool)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Mode { Sheet, Key, Split, Native }
+enum Mode { Sheet, Key, Split, Native, Channels }
 
 /// An open motion-path edit (`editor._drag` with `motionPath`).
 #[derive(Clone, Debug)]
@@ -182,6 +185,8 @@ pub(crate) struct Session {
     falloff: Option<Falloff>,
     mode: Mode,
     plan: Option<Plan>,
+    draft: Option<crate::property_edit::NativeAnimationDraft>,
+    channel_touched: Vec<String>,
     /// The grabbed frame first, then a falloff's other writes by priority.
     posed: Vec<Posed>,
     /// The figures joined to the target (`component`).
@@ -437,6 +442,16 @@ impl Editor {
             let high = session.posed.iter().map(|posed| posed.tick).fold(f64::NEG_INFINITY, f64::max);
             [session.keys.iter().copied().filter(|tick| *tick < low).fold(0.0, f64::max),
                 session.keys.iter().copied().filter(|tick| *tick > high).map(|tick| tick + 1.0).fold(total, f64::min)]
+        } else if session.mode == Mode::Channels {
+            let draft = session.draft.as_ref().expect("channel session");
+            session.channel_touched.iter().fold([session.tick, session.tick + 1.0], |range, id| {
+                let keys = draft.channels().iter().find(|channel| channel.get("id").and_then(Value::as_str) == Some(id.as_str()))
+                    .map(|channel| items(channel.get("keys"))).unwrap_or_default();
+                let visible = keys.iter().filter(|key| !truthy(key,"hidden")).filter_map(|key| num(key,"tick")).collect::<Vec<_>>();
+                let before = visible.iter().copied().filter(|tick| *tick < session.tick).reduce(f64::max).unwrap_or(session.tick);
+                let after = visible.iter().copied().filter(|tick| *tick > session.tick).reduce(f64::min).unwrap_or(total);
+                [range[0].min(before), range[1].max(after)]
+            })
         } else if session.mode != Mode::Sheet {
             let timeline = rows(&self.report); let index = session.posed[0].index;
             let low = timeline[index.saturating_sub(2)].start;
@@ -450,12 +465,17 @@ impl Editor {
         let report = if let Some(plan) = &session.plan { plan.virtual_report(&self.report)? } else { self.native_motion_report(session, false)? };
         let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
         let prepared = Prepared::new(Arc::new(doc));
-        Ok(Some(styk_eval::records::Records::new(&report, &prepared)?.evaluated(self.tick)?))
+        let records = match &session.draft {
+            Some(draft) => styk_eval::records::Records::new_native_draft(&report, &prepared, draft.channels())?,
+            None => styk_eval::records::Records::new(&report, &prepared)?,
+        };
+        Ok(Some(records.evaluated(self.tick)?))
     }
 
     /// A native gesture projects its same posed records over the canonical COW
     /// report only for the worker display query; no preview becomes another store.
     fn native_motion_report(&self, session: &Session, commit: bool) -> Result<Value, EditError> {
+        if session.mode == Mode::Channels { return Ok(session.draft.as_ref().expect("channel session").project_report(&self.report)); }
         let mut report = self.report.clone();
         if session.mode == Mode::Key {
             let posed = &session.posed[0];
@@ -558,6 +578,10 @@ impl Editor {
     }
 
     fn commit_native_motion(&mut self, session: Session) -> Result<bool, EditError> {
+        if session.mode == Mode::Channels {
+            self.drag = None;
+            return session.draft.expect("channel session").publish(self, &session.label, session.before_selection);
+        }
         if session.mode == Mode::Key {
             let posed = &session.posed[0];
             let stored = self.report.get("keyframes").and_then(|frames| frames.item(posed.index)).unwrap();
@@ -577,6 +601,77 @@ impl Editor {
         for frame in &change.after { self.check_native_motion_records(frame, &session.component)?; }
         self.drag = None;
         self.commit_native_ranges(vec![change], &session.label, session.before_selection, false, timing)
+    }
+
+    /// Per-call admission for the two saved native origin motion recordings.
+    /// Channel headers only; the existing typed Records owner validates their keys.
+    pub(crate) fn recorded_native_motion_call(&self, method: &str) -> bool {
+        if self.sheet() || self.options.property_channels || self.options.layer_timeline ||
+            self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.is_some() || self.selection_metadata.branch.is_some() ||
+            self.report.path(&["_styk","movieclipSource"]).is_some() || self.report.path(&["_styk","simpleFrameDraft"]).is_some() ||
+            !(CALLS.contains(&method) || ["select","@select","seek","@seek","undo","redo"].contains(&method)) ||
+            !items(self.report.get("figure_types")).iter().any(|figure| figure.path(&["_styk","animationOrigin"]).is_some_and(Value::truthy)) { return false; }
+        let Some(animation) = self.report.path(&["_styk","animation"]).filter(|value| value.is_object()) else { return false };
+        let Some(channels) = animation.get("channels").and_then(Value::elements) else { return false };
+        // These recordings already own an authored figure pose. Scalar-only
+        // native motion needs its separate capture/projection recording first.
+        if !channels.iter().any(|channel| channel.get("property").and_then(Value::as_str) == Some("pose") &&
+            channel.path(&["target","kind"]).and_then(Value::as_str) == Some("figure") && channel.get("keys").and_then(Value::array_len).unwrap_or(0) > 0) { return false; }
+        let mut ids = HashSet::new();
+        channels.iter().all(|channel| {
+            let property = channel.get("property").and_then(Value::as_str).unwrap_or("");
+            let target = channel.get("target").unwrap_or(&Value::Null);
+            let kind = target.get("kind").and_then(Value::as_str);
+            let recorded = kind == Some("figure") && ["pose","x","y","scale","rotation"].contains(&property) || kind == Some("layer") && property == "pose";
+            recorded && (property != "pose" || ["useBasePose","maskedRanges","orderAnchor","clipEnd"].iter().all(|field| channel.get(field).is_none())) && channel.get("source").is_none_or(|source| source.as_str() == Some("authored")) &&
+                crate::property_edit::normalize_target(target).and_then(|target| crate::property_edit::channel_id(&target,property))
+                    .is_ok_and(|id| channel.get("id").and_then(Value::as_str) == Some(id.as_str()) && ids.insert(id))
+        })
+    }
+
+    /// `writeChannels`: repeated writes retain one source identity per owner/sub.
+    /// Saved scalar curves are re-keyed from the posed frame through Records.
+    fn write_channels(&mut self, session: &mut Session, index: usize, changed: &[u32]) -> Result<(), EditError> {
+        let canonical = items(self.report.path(&["_styk","animation","channels"]));
+        let mut owners: Vec<(String, Value)> = Vec::new();
+        for uid in changed {
+            let independent = canonical.iter().any(|channel| channel.path(&["target","kind"]).and_then(Value::as_str) == Some("figure") && channel.path(&["target","uid"]).and_then(Value::as_f64) == Some(*uid as f64) && channel.get("property").and_then(Value::as_str) == Some("pose"));
+            let mut target = Obj::new();
+            if independent { target.set("kind",Value::str("figure")); target.set("uid",Value::Num(*uid as f64)); }
+            else { target.set("kind",Value::str("layer")); target.set("id",Value::str(&self.layer_of(*uid))); }
+            let target = Value::object(target); let key = crate::property_edit::channel_id(&target,"pose")?;
+            if !owners.iter().any(|(id,_)| *id == key) { owners.push((key,target)); }
+        }
+        let posed = &mut session.posed[index]; let draft = session.draft.as_mut().expect("channel session");
+        for (key, target) in owners {
+            let capture = if target.get("kind").and_then(Value::as_str) == Some("figure") { vec![num(&target,"uid").unwrap()] }
+                else { let layer = target.get("id").and_then(Value::as_str).unwrap(); objects_of(&posed.working).iter().filter_map(uid).filter(|id| self.layer_of(*id) == layer).map(|id| id as f64).collect() };
+            let known = posed.source_ids.iter().find(|(owner,_)| *owner == key).map(|(_,id)| id.as_str());
+            let (id, source) = self.native_pose_source(&posed.working,Some(&capture),known)?;
+            if known.is_none() {
+                posed.source_ids.push((key.clone(),id.clone()));
+                let mut entry = Obj::new(); entry.set("target",target); entry.set("property",Value::str("pose")); entry.set("tick",Value::Num(posed.tick));
+                let mut value = Obj::new(); value.set("frameId",Value::str(&id)); entry.set("value",Value::object(value)); entry.set("exactTarget",Value::Bool(true));
+                draft.put(self,&Value::object(entry))?;
+                if !session.channel_touched.contains(&key) { session.channel_touched.push(key); }
+            }
+            draft.write_source(id,source);
+        }
+        let values = self.with_records(|records| {
+            let mut values = Vec::new();
+            for channel in canonical.iter().filter(|channel| channel.get("property").and_then(Value::as_str) != Some("pose") && channel.get("keys").and_then(Value::array_len).unwrap_or(0)>0 && channel.path(&["target","uid"]).and_then(Value::as_f64).is_some_and(|id| changed.contains(&(id as u32)))) {
+                let target = channel.get("target").unwrap(); let property = channel.get("property").and_then(Value::as_str).unwrap();
+                if let Some(value) = records.property_value(&posed.working,target,property)? { values.push((channel.clone(),value)); }
+            }
+            Ok(values)
+        })?;
+        for (channel,value) in values {
+            let id = channel.get("id").and_then(Value::as_str).unwrap().to_string();
+            let mut entry = Obj::new(); entry.set("target",channel.get("target").unwrap().clone()); entry.set("property",channel.get("property").unwrap().clone()); entry.set("tick",Value::Num(posed.tick)); entry.set("value",value); entry.set("exactTarget",Value::Bool(true));
+            draft.put(self,&Value::object(entry))?;
+            if !session.channel_touched.contains(&id) { session.channel_touched.push(id); }
+        }
+        Ok(())
     }
 
     /// Whether a motion-path edit is open.
@@ -616,13 +711,14 @@ impl Editor {
 
     /// `beginMotionPathEdit(target, tick, {label, falloff})`: never seeks.
     fn begin_motion_path_edit(&mut self, target: &Value, tick: &Value, options: &Value) -> Result<bool, EditError> {
-        if !self.sheet() && self.unported_document() != Some("with animation origins") {
+        let saved = self.recorded_native_motion_call("beginMotionPathEdit");
+        if !self.sheet() && !saved && self.unported_document() != Some("with animation origins") {
             return Err(EditError::Unported("a native motion-path document outside its origin recordings".into()));
         }
-        if self.drag.is_some() && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels")) {
+        if (!self.sheet() && (self.drag.is_some() || self.property_edit.is_some())) || (self.drag.is_some() && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels"))) {
             return Err(EditError::Unported("an origin motion-path begin during another live gesture".into()));
         }
-        if !self.sheet() && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) != 0 {
+        if !self.sheet() && !saved && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) != 0 {
             return Err(EditError::Unported("an authored native motion-path edit".into()));
         }
         let total = total_ticks(&rows(&self.report));
@@ -700,7 +796,7 @@ impl Editor {
         let timeline = rows(&self.report);
         let index = timeline.iter().rposition(|row| row.start <= tick).unwrap_or(0);
         let row = timeline[index];
-        let mode = if self.sheet() { Mode::Sheet } else if falloff.is_some() { Mode::Native } else if tick <= row.start { Mode::Key } else { Mode::Split };
+        let mode = if self.sheet() { Mode::Sheet } else if saved { Mode::Channels } else if falloff.is_some() { Mode::Native } else if tick <= row.start { Mode::Key } else { Mode::Split };
         let falloff_mode = falloff.is_some();
         let mut session = Session {
             label,
@@ -711,6 +807,8 @@ impl Editor {
             falloff,
             mode,
             plan: if mode == Mode::Sheet { Some(self.planner(&owners)?) } else { None },
+            draft: if mode == Mode::Channels { Some(crate::property_edit::NativeAnimationDraft::new(self)) } else { None },
+            channel_touched: Vec::new(),
             posed: Vec::new(),
             component,
             claims: HashSet::new(),
@@ -726,7 +824,7 @@ impl Editor {
         } else {
             self.check_figures(&session, &source)?;
             let stored = self.report.get("keyframes").and_then(|frames| frames.item(index)).unwrap_or(Value::Null);
-            let baseline_frame = if mode == Mode::Sheet { &source } else { &stored };
+            let baseline_frame = if matches!(mode, Mode::Sheet | Mode::Channels) { &source } else { &stored };
             let baseline = if session.target.camera { Vec::new() } else { objects_of(baseline_frame).iter().filter(|o| uid(o).is_some_and(|u| session.component.contains(&u))).map(snapshot_object).collect() };
             let mut working = styk_eval::records::snapshot_pose_frame_of(&source, None);
             if mode == Mode::Key { copy_frame_identity(&mut working, &stored); }
@@ -807,7 +905,16 @@ impl Editor {
                 keys.push(at);
             }
         }
-        if session.mode != Mode::Sheet { keys = rows(&self.report).into_iter().filter(|row| row.count > 0.0).map(|row| row.start).collect(); }
+        if session.mode == Mode::Channels {
+            let channels = items(self.report.path(&["_styk","animation","channels"]));
+            let independent = channels.iter().any(|channel| channel.path(&["target","kind"]).and_then(Value::as_str) == Some("figure") &&
+                channel.path(&["target","uid"]).and_then(Value::as_f64) == session.target.uid && channel.get("property").and_then(Value::as_str) == Some("pose"));
+            for channel in channels {
+                let owns = channel.path(&["target","kind"]).and_then(Value::as_str) == Some("figure") && channel.path(&["target","uid"]).and_then(Value::as_f64) == session.target.uid ||
+                    !independent && channel.path(&["target","kind"]).and_then(Value::as_str) == Some("layer") && channel.path(&["target","id"]).and_then(Value::as_str) == Some(track.as_str()) && channel.get("property").and_then(Value::as_str) == Some("pose");
+                if owns { for key in items(channel.get("keys")).iter().filter(|key| !truthy(key,"hidden")) { if let Some(tick) = num(key,"tick") && !keys.contains(&tick) { keys.push(tick); } } }
+            }
+        } else if session.mode != Mode::Sheet { keys = rows(&self.report).into_iter().filter(|row| row.count > 0.0).map(|row| row.start).collect(); }
         keys.sort_by(f64::total_cmp);
         session.keys = keys.clone();
         let total = total_ticks(&rows(&self.report));
@@ -970,6 +1077,7 @@ impl Editor {
             for id in &owners { self.draft_write(plan, posed, id, &changed)?; }
         }
         let changed = changed_uids(posed, None);
+        if session.mode == Mode::Channels { self.write_channels(session, 0, &changed)?; }
         self.emit("edit", vec![("live", Value::Bool(true)), ("motionPath", Value::Bool(true)), ("changedUids", uid_array(&changed))]);
         Ok(true)
     }
@@ -1023,13 +1131,14 @@ impl Editor {
 
     /// `writeFalloff`: a write's poses recorded into the sheet plan; edges write the unchanged
     /// component so that the original pose holds there.
-    fn write_falloff(&self, session: &mut Session, index: usize) -> Result<(), EditError> {
-        if session.mode != Mode::Sheet { return Ok(()); }
+    fn write_falloff(&mut self, session: &mut Session, index: usize) -> Result<(), EditError> {
+        if !matches!(session.mode, Mode::Sheet | Mode::Channels) { return Ok(()); }
         let edge = session.posed[index].kind == Kind::Edge;
         if !edge && !session.posed[index].moved {
             return Ok(());
         }
         let changed = if edge { if session.target.camera { Vec::new() } else { session.component.clone() } } else { session.posed[index].changed.clone() };
+        if session.mode == Mode::Channels { return self.write_channels(session, index, &changed); }
         let mut owners: Vec<String> = Vec::new();
         for &id in &changed {
             let layer = self.layer_of(id);
@@ -1706,7 +1815,7 @@ impl Editor {
                 session.posed[index].changed = changed_uids(posed, Some(&session.component));
             }
         }
-        if session.mode != Mode::Sheet { return self.commit_native_motion(session); }
+        if !matches!(session.mode, Mode::Sheet | Mode::Channels) { return self.commit_native_motion(session); }
         // Captured again after the bends settle, so that the stored sources include them.
         for index in 0..session.posed.len() {
             if session.posed[index].moved
@@ -1716,6 +1825,7 @@ impl Editor {
                 return Err(error);
             }
         }
+        if session.mode == Mode::Channels { return self.commit_native_motion(session); }
         self.drag = None;
         if !session.posed.iter().any(|p| !p.writes.is_empty()) {
             self.emit("edit", vec![("motionPath", Value::Bool(true))]);
@@ -1824,6 +1934,7 @@ impl Posed {
             changed: Vec::new(),
             written: false,
             writes: Vec::new(),
+            source_ids: Vec::new(),
             claims: Vec::new(),
         }
     }
@@ -1927,3 +2038,7 @@ fn stored_candidate(stored: &Value, working: &Value, ids: &[u32], camera: bool) 
     if camera { candidate.set("camera", working.get("camera").cloned().unwrap_or(Value::Null)); }
     candidate.set("objects", Value::array(objects)); Value::object(candidate)
 }
+
+#[cfg(test)]
+#[path = "native_saved_motion_tests.rs"]
+mod native_saved_motion_tests;
