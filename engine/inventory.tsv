@@ -320,7 +320,7 @@ src/playback-upload.mjs	engine	styk-engine::playback	js	worker preparation, pack
 src/playback-vector-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-window.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-worker.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy)
-src/playback.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames; one-shot State/Storage readiness and finite coalesced Busy controls, dense cache work outside State; physical lease/final-drop/shutdown work open
+src/playback.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames; one-shot State/Storage readiness and shared finite progress/coalesced Busy controls, dense cache work outside State; physical lease/final-drop/shutdown work open
 src/polygon-draft.mjs	engine	styk-edit	js	
 src/polygon-preview.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/pose-property-split.mjs	engine	styk-edit	js	

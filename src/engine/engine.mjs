@@ -40,7 +40,7 @@ let loading = null;
  * Loads the engine once per page.
  * @param {{workers?: number, deviceMemory?: number}} [options]
  * @returns {Promise<{handle: EngineHandle, workers: number, threaded: boolean, createStage(canvas: HTMLCanvasElement): Promise<Stage>,
- *   open(bytes: Uint8Array, extension: string, name: string): Promise<object>, whenProgress(seen?: number): Promise<void>, progressSeen(): number, destroy(): void}>}
+ *   open(bytes: Uint8Array, extension: string, name: string): Promise<object>, whenProgress(seen?: number, timeoutMs?: number): Promise<void>, progressSeen(): number, destroy(): void}>}
  */
 export function loadEngine(options = {}) {
   return loading ??= load(options).catch(error => { loading = null; throw error; });
@@ -67,6 +67,26 @@ export function createEngineMemory(initial, maxima = MEMORY_MAXIMA) {
     catch (error) { failure = error; }
   }
   throw new Error(`The engine could not reserve its memory: ${failure?.message ?? failure}`);
+}
+
+/** The existing progress wait owner. A timeout rechecks readiness, never changes
+ * the counter. Interface waits are finite and at most the default 250 ms. */
+export function waitForEngineProgress(progress, threaded, seen, timeoutMs = 250) {
+  const timeout = Number.isFinite(timeoutMs) ? Math.max(0, Math.min(250, timeoutMs)) : 250;
+  if (Atomics.load(progress, 0) !== seen || timeout === 0) return Promise.resolve();
+  if (threaded && typeof Atomics.waitAsync === 'function') {
+    const waiting = Atomics.waitAsync(progress, 0, seen, timeout);
+    return waiting.async ? waiting.value.then(() => {}) : Promise.resolve();
+  }
+  const deadline = performance.now() + timeout;
+  return new Promise(resolve => {
+    const check = () => {
+      const remaining = deadline - performance.now();
+      if (Atomics.load(progress, 0) !== seen || remaining <= 0) resolve();
+      else setTimeout(check, Math.min(4, remaining));
+    };
+    setTimeout(check, Math.min(4, timeout));
+  });
 }
 
 async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.navigator?.deviceMemory} = {}) {
@@ -110,19 +130,12 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
   /**
    * Resolves when background work has finished something since the counter read `seen`
    * (by default, since the call). Pass a value read before checking for a result, or work
-   * finishing in between is only noticed at the 250 ms timeout.
+   * finishing in between is only noticed at the timeout (default 250 ms).
+   * A shorter timeout also retries Busy admission when no progress was published.
    */
-  const whenProgress = (seen = progressSeen()) => {
+  const whenProgress = (seen = progressSeen(), timeoutMs = 250) => {
     pump();
-    if (Atomics.load(progress, 0) !== seen) return Promise.resolve();
-    if (threaded && typeof Atomics.waitAsync === 'function') {
-      const waiting = Atomics.waitAsync(progress, 0, seen, 250);
-      return waiting.async ? waiting.value.then(() => {}) : Promise.resolve();
-    }
-    return new Promise(resolve => {
-      const check = () => Atomics.load(progress, 0) !== seen ? resolve() : setTimeout(check, 4);
-      setTimeout(check, 4);
-    });
+    return waitForEngineProgress(progress, threaded, seen, timeoutMs);
   };
   return {
     handle, workers: pool.length, threaded, pump, whenProgress, progressSeen,
