@@ -235,6 +235,11 @@ async function run(mode) {
       e.beginVfxClipEdit(); e.setVfxClipParameter(clip.id, effect, 'radius', 24); e.setVfxClipParameter(clip.id, effect, 'radius', 26); e.commitVfxClipEdit();
       e.trimVfxClipStart(clip.id, 2); e.undo(); e.deleteVfxClip(clip.id); e.undo();
     }));
+    await step('copy, paste and duplicate an effect clip, add generated effects', () => page.evaluate(() => {
+      const e = styk.editor, clip = e.getVfxClips()[0]; if (!clip || e.selectedUid === null) return; const figure = {kind: 'figure', uid: e.selectedUid};
+      e.copyVfxClip(clip.id); e.pasteVfxClip(figure); e.pasteVfxClip(figure, {animation: false}); e.duplicateVfxClip(clip.id);
+      e.addVfxGroupEffect(clip.id, 'particles'); e.addVfxClip({kind: 'scene'}, 'smoke'); for (let i = 0; i < 5; i++) e.undo();
+    }));
     await step('edit a segment from the inspector', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1); e.updateSegment({color_rgb: [10, 20, 30]}); e.updateSegment({angle_rad: 1}); e.undo(); e.select(e.selectedUid, -1); }));
     await step('move a handle in Handle Edit Mode', () => page.evaluate(() => {
       const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1);

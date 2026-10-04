@@ -56,7 +56,7 @@ impl Editor {
     }
 
     /// `createVfx(type, id)`: an effect of `type` with its default parameters.
-    fn create_vfx(&self, kind: &str, id: &str) -> Result<Value, EditError> {
+    pub(crate) fn create_vfx(&self, kind: &str, id: &str) -> Result<Value, EditError> {
         if Kind::from_name(kind).is_none() {
             return Err(invalid("errors.vfx.chooseAnAvailableEffect"));
         }

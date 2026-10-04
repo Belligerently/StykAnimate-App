@@ -173,6 +173,9 @@ pub struct Editor {
     pub(crate) camera_clipboard: Option<Value>,
     /// `editor._cameraMotionClipboard`: the last copied camera motion clip.
     pub(crate) camera_motion_clipboard: Option<Value>,
+    /// `editor._vfxClipClipboard` and `_vfxClipClipboardValues`: the last copied effect clip
+    /// and its effects as they were at the playhead (`None` where they cannot be sampled here).
+    pub(crate) vfx_clip_clipboard: Option<(Value, Option<Value>)>,
     /// What the editor drew at random for the call being made (`[kind, value]` in order:
     /// `uuid`, `seed`, `random`; src/editor-draws.mjs, D18), handed over with the call.
     pub(crate) draws: std::collections::VecDeque<(String, Value)>,
@@ -231,6 +234,7 @@ struct Snapshot {
     segment_values_clipboard: Option<String>,
     camera_clipboard: Option<Value>,
     camera_motion_clipboard: Option<Value>,
+    vfx_clip_clipboard: Option<(Value, Option<Value>)>,
     vfx_edit: Option<Option<Value>>,
     batch: Option<history::Batch>,
     sheet_selection: Option<select::SheetSelection>,
@@ -270,6 +274,7 @@ impl Editor {
             segment_values_clipboard: None,
             camera_clipboard: None,
             camera_motion_clipboard: None,
+            vfx_clip_clipboard: None,
             draws: Default::default(),
             vfx_edit: None,
             batch: None,
@@ -319,8 +324,7 @@ impl Editor {
         self.draw("seed")?.as_f64().ok_or_else(|| EditError::Unported("a seed that is not a number".into()))
     }
 
-    /// `editorDraws.random()` (the seeds new generator effects draw; not ported yet).
-    #[allow(dead_code)]
+    /// `editorDraws.random()`.
     pub(crate) fn draw_random(&mut self) -> Result<f64, EditError> {
         self.draw("random")?.as_f64().ok_or_else(|| EditError::Unported("a fraction that is not a number".into()))
     }
@@ -462,6 +466,7 @@ impl Editor {
             segment_values_clipboard: self.segment_values_clipboard.clone(),
             camera_clipboard: self.camera_clipboard.clone(),
             camera_motion_clipboard: self.camera_motion_clipboard.clone(),
+            vfx_clip_clipboard: self.vfx_clip_clipboard.clone(),
             vfx_edit: self.vfx_edit.clone(),
             batch: self.batch.clone(),
             sheet_selection: self.sheet_selection.clone(),
@@ -489,6 +494,7 @@ impl Editor {
         self.segment_values_clipboard = snapshot.segment_values_clipboard;
         self.camera_clipboard = snapshot.camera_clipboard;
         self.camera_motion_clipboard = snapshot.camera_motion_clipboard;
+        self.vfx_clip_clipboard = snapshot.vfx_clip_clipboard;
         self.vfx_edit = snapshot.vfx_edit;
         self.batch = snapshot.batch;
         self.sheet_selection = snapshot.sheet_selection;
@@ -658,6 +664,11 @@ impl Editor {
             "deleteVfxClip" => self.delete_vfx_clip(&arg(0)).map(Value::Bool),
             "moveVfxClipOrder" => self.move_vfx_clip_order(&arg(0), &arg(1)).map(Value::Bool),
             "reorderVfxGroupEffect" => self.reorder_vfx_group_effect(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "addVfxClip" => self.add_vfx_clip(&arg(0), &arg(1), &arg(2)),
+            "copyVfxClip" => self.copy_vfx_clip(&arg(0)).map(Value::Bool),
+            "pasteVfxClip" => self.paste_vfx_clip(&arg(0), &arg(1)),
+            "duplicateVfxClip" => self.duplicate_vfx_clip(&arg(0)),
+            "addVfxGroupEffect" => self.add_vfx_group_effect(&arg(0), &arg(1)),
             "setVfxClipParameter" => {
                 let mut values = Obj::new();
                 match arg(2).as_str() {

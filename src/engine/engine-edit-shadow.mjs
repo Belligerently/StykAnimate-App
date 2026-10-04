@@ -36,6 +36,7 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'applyCameraToFigures',
   // These draw identities or seeds (D18): the editor runs them and hands the engine what it drew.
   'addCameraMotion', 'copyCameraMotion', 'pasteCameraMotion', 'duplicateCameraMotion', 'randomizeCameraMotion', 'addVfx', 'duplicateVfx', 'pasteVfx',
+  'addVfxClip', 'copyVfxClip', 'pasteVfxClip', 'duplicateVfxClip', 'addVfxGroupEffect',
   'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
@@ -189,10 +190,10 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   let batching = false, closing = null;
   // The timeline, figure and segment-value clipboards the session copied (the editor's own): a
   // session starts with none, and pastes only when the editor's clipboard is that one.
-  let copied = null, copiedFigures = null, copiedValues = null, copiedCamera = null, copiedMotion = null;
+  let copied = null, copiedFigures = null, copiedValues = null, copiedCamera = null, copiedMotion = null, copiedVfxClip = null;
   const end = why => {
     if (!session) return;
-    session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null; copiedCamera = null; copiedMotion = null;
+    session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null; copiedCamera = null; copiedMotion = null; copiedVfxClip = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
@@ -423,6 +424,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && name === 'pasteSegmentValues' && args[0] == null && (editor._segmentValuesClipboard ?? null) !== copiedValues) { end('segment values the session did not copy'); live = null; }
       if (live && name === 'pasteCamera' && (editor._cameraClipboard ?? null) !== copiedCamera) { end('a camera the session did not copy'); live = null; }
       if (live && name === 'pasteCameraMotion' && (editor._cameraMotionClipboard ?? null) !== copiedMotion) { end('a camera motion clip the session did not copy'); live = null; }
+      if (live && name === 'pasteVfxClip' && (editor._vfxClipClipboard ?? null) !== copiedVfxClip) { end('an effect clip the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         let given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
@@ -488,6 +490,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           if (name === 'copySegmentValues' && session && !thrown) copiedValues = editor._segmentValuesClipboard ?? null;
           if (name === 'copyCamera' && session && !thrown) copiedCamera = editor._cameraClipboard ?? null;
           if (name === 'copyCameraMotion' && session && !thrown) copiedMotion = editor._cameraMotionClipboard ?? null;
+          if ((name === 'copyVfxClip' || name === 'duplicateVfxClip') && session && !thrown) copiedVfxClip = editor._vfxClipClipboard ?? null;
         } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;

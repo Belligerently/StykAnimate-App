@@ -2,9 +2,10 @@
 //! strength, fades and effects, its parameters and their keys, its place among the clips
 //! of its target, deleting it; and the gizmo edit that previews several changes and records
 //! them once (`beginVfxClipEdit`). Each change is one `vfx-clips` history entry, the layer
-//! sheet lengthened to the last timed clip (`publish`). Commands that make new identities
-//! or seeds (adding, pasting, duplicating clips and effects) stay in JavaScript, as do
-//! paint colours, connected scopes and sampling between keys.
+//! sheet lengthened to the last timed clip (`publish`). Adding, copying, pasting and
+//! duplicating clips and adding effects to them take the identities and seeds the editor
+//! drew (D18). Paint colours, connected scopes and paint sampled between keys stay in
+//! JavaScript.
 //!
 //! The clips are checked as `validateVfxClips` checks them. A clip the document already
 //! holds was checked when it arrived (the editor keeps a set of checked clips), so only
@@ -15,6 +16,7 @@ use styk_doc::{Obj, Value};
 use styk_eval::vfx::{Kind, ParamKind};
 
 use crate::history::{Command, CommandKind, Direction};
+use crate::property_edit::normalize_target;
 use crate::{EditError, Editor};
 
 const CLIP_LIMIT: usize = 4096;
@@ -771,5 +773,211 @@ impl Editor {
         let mut patch = Obj::new();
         patch.set("keys", table);
         self.set_vfx_clip(id, &Value::object(patch))
+    }
+}
+
+/// `GENERATOR_DURATIONS[type] ?? 48` (src/vfx-presets.mjs): how many frames a newly added
+/// generated effect lasts.
+fn generator_duration(kind: &str) -> f64 {
+    match kind {
+        "aura" | "smoke" => 72.0,
+        "explosion" => 36.0,
+        _ => 48.0,
+    }
+}
+
+/// `interpolateVfxColor(a, b, t)` for two `0xRRGGBB` numbers: each channel mixed and rounded.
+fn mix_colors(a: f64, b: f64, t: f64) -> f64 {
+    let (a, b) = (a as i64 as u32, b as i64 as u32);
+    let mut value = 0u32;
+    for shift in [0, 8, 16] {
+        let (x, y) = (f64::from(a >> shift & 255), f64::from(b >> shift & 255));
+        let channel = js_round(js_max(0.0, js_min(255.0, x + (y - x) * t)));
+        if !channel.is_nan() {
+            value |= (channel as u32) << shift;
+        }
+    }
+    f64::from(value)
+}
+
+/// `sampleVfxKeys(keys, tick, fallback, property)` for a channel with keys; `None` for paint
+/// colours between keys.
+fn sample_channel(keys: &[Value], tick: f64, found: &Descriptor) -> Option<Value> {
+    let at = |k: &Value| k.get("tick").and_then(Value::as_f64).unwrap_or(f64::NAN);
+    let low = keys.partition_point(|k| at(k) <= tick).saturating_sub(1);
+    let a = &keys[low];
+    let value = a.get("value").cloned().unwrap_or(Value::Null);
+    let Some(b) = keys.get(low + 1) else { return Some(value) };
+    if tick <= at(a) || found.discrete {
+        return Some(value);
+    }
+    let t = styk_eval::eval::eased_progress(styk_eval::load::easing(Some(a)).as_ref(), (tick - at(a)) / (at(b) - at(a)));
+    match (value.as_f64(), b.get("value").and_then(Value::as_f64)) {
+        (Some(x), Some(y)) if found.color => Some(Value::Num(mix_colors(x, y, t))),
+        (Some(x), Some(y)) => Some(Value::Num(x + (y - x) * t)),
+        _ => None,
+    }
+}
+
+/// `sampleVfxClip(clip, tick)`: the clip's effects with their keyed parameters at the clip's
+/// time; `None` where a paint colour is sampled between keys.
+fn sampled_effects(clip: &Value, tick: f64) -> Option<Value> {
+    let number = |key: &str| clip.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
+    let age = js_max(0.0, tick - number("start") + number("offset"));
+    let keys = clip.get("keys").and_then(Value::as_obj).cloned().unwrap_or_default();
+    let mut effects = Vec::new();
+    for effect in list(clip.get("effects")) {
+        let mut result = effect.clone();
+        for (property, channel) in keys.iter() {
+            let found = descriptor(property)?;
+            let channel = list(Some(channel));
+            if effect.get("id").and_then(Value::as_str) != Some(found.id.as_str()) || channel.is_empty() {
+                continue;
+            }
+            let value = sample_channel(&channel, age, &found)?;
+            result = if found.param == "enabled" {
+                with(&result, "enabled", Value::Bool(value.truthy()))
+            } else {
+                let params = with(result.get("params").unwrap_or(&Value::Null), &found.param, value);
+                with(&result, "params", params)
+            };
+        }
+        effects.push(result);
+    }
+    Some(Value::array(effects))
+}
+
+impl Editor {
+    /// `seeded(effect)`: a generated effect still at the default seed gets one the editor drew.
+    fn seeded(&mut self, effect: Value) -> Result<Value, EditError> {
+        let generator = effect.get("type").and_then(Value::as_str).and_then(Kind::from_name).is_some_and(Kind::is_generator);
+        if !generator || effect.path(&["params", "seed"]).and_then(Value::as_f64) != Some(1.0) {
+            return Ok(effect);
+        }
+        let seed = 1.0 + (self.draw_random()? * 65534.0).floor();
+        let params = with(effect.get("params").unwrap_or(&Value::Null), "seed", Value::Num(seed));
+        Ok(with(&effect, "params", params))
+    }
+
+    /// `addVfxClip(target, type, {start, duration, includeAttached})` (`createVfxClip`): a clip
+    /// of one effect on `target`, for the whole animation unless timed; a generated effect
+    /// starts at the playhead's frame for its usual length. Returns the clip's identity.
+    pub(crate) fn add_vfx_clip(&mut self, target: &Value, kind: &Value, options: &Value) -> Result<Value, EditError> {
+        let target = normalize_target(target)?;
+        let options = match options {
+            Value::Null => Obj::new(),
+            other => other.as_obj().cloned().ok_or_else(|| EditError::Unported("effect clip options that are not an object".into()))?,
+        };
+        let name = kind.as_str().unwrap_or("");
+        let generator = Kind::from_name(name).is_some_and(Kind::is_generator);
+        // `generatorTiming`: only when neither the start nor the length is given.
+        let timed = generator && options.get("start").is_none() && options.get("duration").is_none();
+        let start = if timed { Value::Num(js_max(0.0, self.tick.floor())) } else { options.get("start").cloned().unwrap_or(Value::Num(0.0)) };
+        let duration = if timed { Value::Num(generator_duration(name)) } else { options.get("duration").cloned().unwrap_or(Value::Null) };
+        let include = if target.get("kind").and_then(Value::as_str) == Some("figure") { options.get("includeAttached").cloned().unwrap_or(Value::Bool(false)) } else { Value::Bool(false) };
+        let id = self.draw_uuid()?;
+        let effect_id = self.draw_uuid()?;
+        let effect = self.create_vfx(name, &effect_id)?;
+        let effect = self.seeded(effect)?;
+        if include.truthy() {
+            return Err(EditError::Unported("an effect clip that includes attached figures".into()));
+        }
+        let mut clip = Obj::new();
+        clip.set("id", Value::str(&id));
+        clip.set("name", Value::str(""));
+        clip.set("target", target);
+        clip.set("start", start);
+        clip.set("duration", duration);
+        clip.set("offset", Value::Num(0.0));
+        clip.set("enabled", Value::Bool(true));
+        clip.set("strength", Value::Num(1.0));
+        clip.set("fadeIn", Value::Num(0.0));
+        clip.set("fadeOut", Value::Num(0.0));
+        clip.set("includeAttached", include);
+        clip.set("effects", Value::array(vec![effect]));
+        clip.set("keys", Value::object(Obj::new()));
+        let mut clips = self.vfx_clips();
+        clips.push(Value::object(clip));
+        self.publish_vfx(clips, "Add effect clip")?;
+        Ok(Value::str(&id))
+    }
+
+    /// `copyVfxClip(id)`: the clip kept for pasting, with its effects as they are at the playhead.
+    pub(crate) fn copy_vfx_clip(&mut self, id: &Value) -> Result<bool, EditError> {
+        let clip = self.vfx_clip(id)?;
+        let values = sampled_effects(&clip, self.tick);
+        self.vfx_clip_clipboard = Some((clip, values));
+        Ok(true)
+    }
+
+    /// `pasteVfxClip(target, {animation, start})`: the copied clip on `target` with new
+    /// identities, its keys (or its effects as they were when copied, without keys); a timed
+    /// clip starts at `start` (the playhead's frame). Returns the new clip's identity.
+    pub(crate) fn paste_vfx_clip(&mut self, target: &Value, options: &Value) -> Result<Value, EditError> {
+        let Some((source, values)) = self.vfx_clip_clipboard.clone() else { return Err(invalid("errors.editorVfxClips.copyAnEffectClipFirst")) };
+        let options = options.as_obj().cloned().unwrap_or_default();
+        let animation = options.get("animation").is_none_or(Value::truthy);
+        let start = options.get("start").cloned().unwrap_or(Value::Num(self.tick.floor()));
+        let effects = list(source.get("effects"));
+        let mut ids: Vec<(Option<Value>, String)> = Vec::new();
+        for effect in &effects {
+            ids.push((effect.get("id").cloned(), self.draw_uuid()?));
+        }
+        let id = self.draw_uuid()?;
+        let target = normalize_target(target)?;
+        let fresh = |old: Option<&Value>| ids.iter().rev().find(|(k, _)| object_is(k.as_ref(), old)).map(|(_, id)| id.clone());
+        let chosen = if animation { effects } else { list(Some(&values.ok_or_else(|| EditError::Unported("effect values copied between paint keys".into()))?)) };
+        let mut renamed = Vec::new();
+        for effect in &chosen {
+            let id = fresh(effect.get("id")).ok_or_else(|| EditError::Unported("copied effect values of an effect the clip does not hold".into()))?;
+            renamed.push(with(effect, "id", Value::str(&id)));
+        }
+        let mut keys = Obj::new();
+        if animation {
+            for (property, channel) in source.get("keys").and_then(Value::as_obj).cloned().unwrap_or_default().iter() {
+                let found = descriptor(property).ok_or_else(|| EditError::Unported("effect keys of an unknown parameter".into()))?;
+                let id = fresh(Some(&Value::str(&found.id))).ok_or_else(|| EditError::Unported("effect keys of an effect the clip does not hold".into()))?;
+                let (property, _) = property_of(found.kind.name(), &id, &found.param)?;
+                keys.set(&property, channel.clone());
+            }
+        }
+        let mut clip = source.as_obj().cloned().unwrap_or_default();
+        clip.set("id", Value::str(&id));
+        clip.set("target", target);
+        clip.set("effects", Value::array(renamed));
+        clip.set("keys", Value::object(keys));
+        if !matches!(clip.get("duration"), Some(Value::Null)) {
+            clip.set("start", start);
+        }
+        let mut clips = self.vfx_clips();
+        clips.push(Value::object(clip));
+        self.publish_vfx(clips, if animation { "Paste effect animation" } else { "Paste effect values" })?;
+        Ok(Value::str(&id))
+    }
+
+    /// `duplicateVfxClip(id)`: copied, then pasted on the same target after the clip.
+    pub(crate) fn duplicate_vfx_clip(&mut self, id: &Value) -> Result<Value, EditError> {
+        self.copy_vfx_clip(id)?;
+        let clip = self.vfx_clip(id)?;
+        let number = |key: &str| clip.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
+        let start = if matches!(clip.get("duration"), Some(Value::Null)) { 0.0 } else { number("start") + number("duration") };
+        let mut options = Obj::new();
+        options.set("start", Value::Num(start));
+        self.paste_vfx_clip(clip.get("target").unwrap_or(&Value::Null), &Value::object(options))
+    }
+
+    /// `addVfxGroupEffect(id, type)`: another effect at the end of the clip's group. Returns
+    /// the effect's identity.
+    pub(crate) fn add_vfx_group_effect(&mut self, id: &Value, kind: &Value) -> Result<Value, EditError> {
+        let clip = self.vfx_clip(id)?;
+        let effect_id = self.draw_uuid()?;
+        let effect = self.create_vfx(kind.as_str().unwrap_or(""), &effect_id)?;
+        let effect = self.seeded(effect)?;
+        let mut effects = list(clip.get("effects"));
+        effects.push(effect.clone());
+        let mut patch = Obj::new();
+        patch.set("effects", Value::array(effects));
+        self.set_vfx_clip(id, &Value::object(patch))?;
+        Ok(effect.get("id").cloned().unwrap_or(Value::Null))
     }
 }

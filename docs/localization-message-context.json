@@ -17394,52 +17394,52 @@
   },
   "errors.editorVfxClips.anEffectKeyAlreadyExistsHere": {
     "locations": [
-      "src/editor-vfx-clips.mjs:94",
-      "src/editor-vfx-clips.mjs:103"
+      "src/editor-vfx-clips.mjs:95",
+      "src/editor-vfx-clips.mjs:104"
     ],
     "context": "moveVfxClipKey(id,property,from,to){const c=find(this,id),keys=c.keys[property]??[],time=Math.max(0,Math.round(to));if(keys.some(k=>k.tick===time&&k.tick!==from"
   },
   "errors.editorVfxClips.chooseAnEffectOrder": {
     "locations": [
-      "src/editor-vfx-clips.mjs:55",
-      "src/editor-vfx-clips.mjs:80",
+      "src/editor-vfx-clips.mjs:56",
+      "src/editor-vfx-clips.mjs:81",
       "src/editor-vfx.mjs:35"
     ],
     "context": "moveVfxClipOrder(id,delta){if(![-1,1].includes(delta))throw messageError(new Error(''), \"errors.editorVfxClips.chooseAnEffectOrder\", {});const clips=[...vfxClip"
   },
   "errors.editorVfxClips.chooseAnEffectPreset": {
     "locations": [
-      "src/editor-vfx-clips.mjs:41"
+      "src/editor-vfx-clips.mjs:42"
     ],
     "context": "addVfxGroup(target,preset,options={}){const p=VFX_PRESETS[preset];if(!p)throw messageError(new Error(''), \"errors.editorVfxClips.chooseAnEffectPreset\", {});cons"
   },
   "errors.editorVfxClips.copyAnEffectClipFirst": {
     "locations": [
-      "src/editor-vfx-clips.mjs:57"
+      "src/editor-vfx-clips.mjs:58"
     ],
     "context": "pasteVfxClip(target,{animation=true,start=Math.floor(this.tick)}={}){const source=this._vfxClipClipboard;if(!source)throw messageError(new Error(''), \"errors.ed"
   },
   "errors.editorVfxClips.selectAnEffect": {
     "locations": [
-      "src/editor-vfx-clips.mjs:84"
+      "src/editor-vfx-clips.mjs:85"
     ],
     "context": "setVfxClipParameters(id,effectId,values,{key=false,tick=this.tick}={}){const c=find(this,id),effect=c.effects.find(e=>e.id===effectId);if(!effect)throw messageE"
   },
   "errors.editorVfxClips.selectAnEffectClip": {
     "locations": [
-      "src/editor-vfx-clips.mjs:32"
+      "src/editor-vfx-clips.mjs:33"
     ],
     "context": "function find(editor,id){const c=vfxClips(editor.report).find(c=>c.id===id);if(!c)throw messageError(new Error(''), \"errors.editorVfxClips.selectAnEffectClip\", "
   },
   "errors.editorVfxClips.unlockBeforeEditingEffects": {
     "locations": [
-      "src/editor-vfx-clips.mjs:11"
+      "src/editor-vfx-clips.mjs:12"
     ],
     "context": "function unlocked(editor,target){const layer=editor.getLayer(target.kind==='scene'?'scene':editor.layerForUid(target.uid));if(layer?.locked)throw messageError(n"
   },
   "errors.editorVfxClips.unsupportedEffectClipProperty": {
     "locations": [
-      "src/editor-vfx-clips.mjs:44"
+      "src/editor-vfx-clips.mjs:45"
     ],
     "context": "setVfxClip(id,patch){const c=find(this,id);if(Object.keys(patch).some(k=>!['name','start','duration','offset','enabled','strength','fadeIn','fadeOut','includeAt"
   },

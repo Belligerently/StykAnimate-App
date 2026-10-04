@@ -814,6 +814,26 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 3], ['beginDrag', 'Pose joint'], ['poseJoint', 520, 300], ['setVfxClip', 'clip-glow', {name: 'Kept'}],
     ['deleteVfxClip', 'clip-scene'], ['deleteVfxClip', 'nope'], ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'vfx-clips.document.json');
+  // Effect clips added (whole animation, generated effects at the playhead for their usual
+  // length with a drawn seed, timing given, scopes, refusals, a locked layer), copied with
+  // their effects sampled between number and colour keys, pasted with their keys or values,
+  // duplicated after themselves, effects added to a group; identities and seeds drawn by
+  // the editor (D18); history.
+  {
+    const figure = {kind: 'figure', uid: 1}, scene = {kind: 'scene'}, segment = {kind: 'segment', uid: 1, handleId: 22};
+    scenario('vfx-clip-add-sheet', app, [
+      ['pasteVfxClip', figure], ['@seek', 3], ['addVfxClip', figure, 'glow'], ['addVfxClip', figure, 'particles'], ['addVfxClip', scene, 'smoke', {start: 1, duration: 10}],
+      ['addVfxClip', segment, 'aura', {duration: 12}], ['addVfxClip', figure, 'explosion', {includeAttached: false}], ['@seek', 7.5], ['addVfxClip', scene, 'beam'], ['@seek', 3], ['addVfxClip', scene, 'tint', {includeAttached: true}],
+      ['addVfxClip', figure, 'bogus'], ['addVfxClip', figure, 'tint', {start: 2}], ['addVfxClip', {kind: 'camera'}, 'tint'],
+      ['copyVfxClip', 'clip-glow'], ['pasteVfxClip', figure], ['pasteVfxClip', scene, {animation: false, start: 5}], ['copyVfxClip', 'nope'],
+      ['duplicateVfxClip', 'clip-glow'], ['duplicateVfxClip', 'clip-tint'], ['duplicateVfxClip', 'nope'],
+      ['@seek', 2], ['setVfxClipParameters', 'clip-tint', 'fx-tint', {color: 255}, {key: true}], ['@seek', 6], ['setVfxClipParameters', 'clip-tint', 'fx-tint', {color: 65280, mix: 0.4}, {key: true}],
+      ['@seek', 4], ['copyVfxClip', 'clip-tint'], ['pasteVfxClip', figure, {animation: false}], ['pasteVfxClip', segment, {start: 9}],
+      ['addVfxGroupEffect', 'clip-group', 'beam'], ['addVfxGroupEffect', 'clip-group', 'tint'], ['addVfxGroupEffect', 'clip-group', 'bogus'], ['addVfxGroupEffect', 'nope', 'tint'],
+      ['setLayerLocked', 'layer-1', true], ['addVfxClip', figure, 'tint'], ['setLayerLocked', 'layer-1', false],
+      ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'vfx-clips.document.json');
+  }
   // Batches (`movieclipBatch`, as the timeline runs several commands as one): a key extended,
   // easing over two ranges, a batch that records nothing, one that fails half way (its first
   // entry undone), a pose gesture, entries of different kinds; history across them.
