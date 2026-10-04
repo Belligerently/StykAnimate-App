@@ -320,9 +320,9 @@ fn tick_of(entry: &Value, fallback: f64) -> Value {
 }
 
 impl Editor {
-    /// The frame a property edit on show composes (`editor._sheetPropertyPreview`).
+    /// The frame a property edit or a camera drag on show composes (`editor._sheetPropertyPreview`).
     pub fn property_preview(&self) -> Option<Value> {
-        self.property_edit.as_ref().and_then(|edit| edit.preview.clone())
+        self.property_edit.as_ref().and_then(|edit| edit.preview.clone()).or_else(|| self.camera_drag().and_then(|drag| drag.preview.clone()))
     }
 
     /// The evaluated frame as records of the current document.
@@ -587,7 +587,7 @@ impl Editor {
     }
 
     /// `commitAnimationEdit()` on a layer sheet: the edited value keyed at the edit's tick.
-    fn commit_animation_edit(&mut self) -> Result<bool, EditError> {
+    pub(crate) fn commit_animation_edit(&mut self) -> Result<bool, EditError> {
         let Some(edit) = self.property_edit.take() else { return Ok(false) };
         self.retained = None;
         if !edit.changed {
@@ -609,7 +609,7 @@ impl Editor {
     }
 
     /// `sheetEditTimes(indices)`: the ticks a range edit keys, from keyframe indices.
-    fn sheet_edit_times(&self, options: Option<&Value>) -> Result<Vec<f64>, EditError> {
+    pub(crate) fn sheet_edit_times(&self, options: Option<&Value>) -> Result<Vec<f64>, EditError> {
         let indices: Vec<Value> = match options.and_then(|o| o.get("indices")) {
             None => vec![Value::Num(self.frame_index as f64)],
             Some(list) => items(Some(list)),

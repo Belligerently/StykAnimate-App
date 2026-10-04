@@ -150,9 +150,10 @@ impl Session {
                 answer.set("retained", frame.get("objects").cloned().unwrap_or(Value::Null));
             }
         }
-        // What a property edit shows while the inspector scrubs (`_sheetPropertyPreview`), for
-        // the app to compare: the frame, without the clip sample times evaluation adds.
-        if method == "previewAnimationEdit"
+        // What a property edit shows while the inspector scrubs, or a camera drag while it moves
+        // (`_sheetPropertyPreview`), for the app to compare: the frame, without the clip sample
+        // times evaluation adds.
+        if (method == "previewAnimationEdit" || method == "updateCameraDrag")
             && let Some(preview) = self.editor.property_preview()
         {
             let mut frame = preview.as_obj().cloned().unwrap_or_default();

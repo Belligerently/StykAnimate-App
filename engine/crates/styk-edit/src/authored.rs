@@ -46,6 +46,7 @@ impl Editor {
             handle_edit: None,
             figure_handle: None,
             segment_value_options: None,
+            camera: None,
             authored: true,
         });
         Ok(true)
@@ -125,6 +126,7 @@ impl Editor {
             handle_edit: None,
             figure_handle: None,
             segment_value_options: None,
+            camera: None,
             authored: true,
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());

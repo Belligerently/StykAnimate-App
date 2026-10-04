@@ -260,7 +260,7 @@ impl Editor {
 
     /// `buildGeometry(report, frame).objects.get(slot)?.joints.get(handle)` for a figure of
     /// another frame.
-    fn joint_in_frame(&self, record: &Value, id: u32, handle: f64) -> Result<Option<[f64; 2]>, EditError> {
+    pub(crate) fn joint_in_frame(&self, record: &Value, id: u32, handle: f64) -> Result<Option<[f64; 2]>, EditError> {
         if !crate::frame::objects_of(record).iter().any(|o| uid(o) == Some(id)) {
             return Ok(None);
         }

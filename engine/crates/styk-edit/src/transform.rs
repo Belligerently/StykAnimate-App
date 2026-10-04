@@ -59,6 +59,7 @@ impl Editor {
             handle_edit: None,
             figure_handle: None,
             segment_value_options: None,
+            camera: None,
             authored: false,
         });
         Ok(true)
@@ -125,6 +126,9 @@ impl Editor {
     }
 
     pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> {
+        if self.camera_drag().is_some() {
+            return self.commit_camera_drag();
+        }
         let Some(drag) = self.drag.as_ref() else { return Ok(false) };
         if drag.authored {
             return self.commit_authored_drag();
@@ -161,6 +165,9 @@ impl Editor {
     }
 
     pub(crate) fn cancel_drag(&mut self) -> Result<bool, EditError> {
+        if self.camera_drag().is_some() {
+            return self.cancel_camera_drag();
+        }
         if self.drag.as_ref().is_some_and(|drag| drag.authored) {
             return self.cancel_authored_drag();
         }

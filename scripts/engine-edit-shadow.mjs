@@ -242,6 +242,14 @@ async function run(mode) {
         e.setSegmentValues({bend: 10}); e.copySegmentValues(); e.select(e.selectedUid, 2); e.pasteSegmentValues(); e.locateEditedHandle(1); e.undo();
       } catch {}
     }));
+    await step('move the camera and type its values', () => page.evaluate(() => {
+      const e = styk.editor;
+      try {
+        if (e.beginCameraDrag()) { e.updateCameraDrag({x: 12, y: -6}); e.updateCameraDrag({x: 20, scale: 1.1}); e.commitCameraDrag(); }
+        e.updateCameraDrag({angle_rad: 0.05}); e.cancelCameraDrag();
+        e.setCameraValues({x: 15}); e.transformCamera({y: 4, scale: 1.05}); e.copyCamera(); e.resetCamera(); e.pasteCamera(); e.locateCamera(1); e.undo();
+      } catch {}
+    }));
     await step('edit and delete a camera motion clip', () => page.evaluate(() => { const e = styk.editor, clip = e.getCameraMotions()[0]; if (!clip) return; e.setCameraMotion(clip.id, {start: clip.start + 1}); e.setCameraMotion(clip.id, {enabled: !clip.enabled}); e.deleteCameraMotion(clip.id); e.undo(); }));
     await step('set a layer parallax', () => page.evaluate(() => { const e = styk.editor, layer = e.report._styk?.layers?.order?.[0]; if (!layer) return; e.setLayerParallax(layer, {enabled: true, x: 0.5}); e.setLayerParallax(layer, {linked: false, y: 2}); e.undo(); e.undo(); }));
     await step('change the project settings', () => page.evaluate(() => { const e = styk.editor, {fps, canvas_width: width, canvas_height: height} = e.report; e.setFPS(fps + 1); e.updateProject({canvas_width: width + 10}); e.setCanvasSize(width, height); e.undo(); e.undo(); e.undo(); }));

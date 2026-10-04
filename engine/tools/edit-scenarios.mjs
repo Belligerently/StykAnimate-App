@@ -948,6 +948,21 @@ scenario('figures-layers-sheet', app, [
     const cameraSteps = [['@select', 1, 1], ['nudgeHandle', 5, -3], ['nudgeHandle', 4, 2, {view: {scale: 2, rotation: -0.4}}], ['nudgeHandle', 3, 3, {cameraEnabled: false}], ['@select', 1, -1], ['nudgeHandle', -6, 2], ['@seek', 6], ['@select', 2, 1], ['nudgeHandle', 2, 7], ['@seek', 4], ['nudgeHandle', 1, 2], ['undo'], ['redo']];
     scenario('handle-commands-camera-native', {}, cameraSteps, 'camera-chain.document.json');
     scenario('handle-commands-camera-sheet', app, cameraSteps, 'camera-chain.document.json');
+    // Camera commands on a layer sheet: values copied, typed (one key or several, refusals),
+    // transformed, reset, pasted, aligned with the canvas view, taken from the neighbouring key;
+    // camera drags previewed, committed, cancelled, begun by a move, ended by another command;
+    // a handle's figure moved to where the handle is on the neighbouring key.
+    scenario('camera-commands-sheet', app, [
+      ['pasteCamera'], ['copyCamera'], ['setCameraValues', {x: 40}], ['setCameraValues', {scale: 1.5, angle_rad: 0.1}, [0, 1]], ['setCameraValues', {x: 40}, [0, 1]], ['setCameraValues', {}], ['setCameraValues', {bogus: 1}],
+      ['setCameraValues', {x: 'a'}], ['setCameraValues', {scale: -1}], ['setCameraValues', {x: 1e40}], ['setCameraValues', {x: 1}, [7]], ['transformCamera', {x: 5, y: -3, angle_rad: 0.05, scale: 1.1}],
+      ['resetCamera'], ['resetCamera'], ['copyCamera'], ['undo'], ['undo'], ['pasteCamera'], ['@seek', 3], ['setCameraValues', {y: 12}], ['alignCameraToView', {x: 20, y: 10, scale: 1.2, width: 800, height: 600}],
+      ['alignCameraToView', {x: 0, y: 0, scale: 0, width: 1, height: 1}], ['@seek', 0], ['locateCamera', 1], ['locateCamera', -1, 'rotation'], ['locateCamera', 1, 'bogus'], ['locateCamera', 3], ['@seek', 6], ['locateCamera', -1, 'rotation'], ['locateCamera', -1, 'scale'], ['locateCamera', -1, 'pose'], ['@seek', 0],
+      ['beginCameraDrag'], ['updateCameraDrag', {x: 10, y: 5}], ['updateCameraDrag', {x: 20, scale: 1.2}], ['updateCameraDrag', {angle_rad: 0.1}, {fromStart: false}], ['commitCameraDrag'],
+      ['beginCameraDrag'], ['updateCameraDrag', {x: 10}], ['updateCameraDrag', {y: 5}], ['copyCamera'], ['cancelCameraDrag'], ['beginCameraDrag', {indices: [0, 1], label: 'Pan camera'}], ['updateCameraDrag', {x: -15}], ['cancelCameraDrag'], ['updateCameraDrag', {y: 7}], ['commitDrag'],
+      ['updateCameraDrag', {bogus: 1}], ['beginCameraDrag'], ['updateCameraDrag', {x: 3}], ['setCameraValues', {x: 1}], ['beginCameraDrag'], ['commitCameraDrag'], ['copyCamera'],
+      ['@seek', 6], ['@select', 3, -1], ['locateHandle', -1, {uid: 2, jointIndex: 2}], ['@select', 1, 1], ['locateHandle', -1], ['locateHandle', 1], ['locateHandle', -1, {handleId: 0}], ['locateHandle', -1, {uid: 2, jointIndex: 1, editMode: true}], ['locateHandle', 5],
+      ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'camera-chain.document.json');
     scenario('handle-commands-ik-sheet', app, [
       ['@select', 1, 1], ['nudgeHandle', 6, 2], ['segmentValues', {relative: true}], ['setSegmentValues', {angle: 20}, {relative: true}], ['@select', 1, 2], ['alignHandle', 0, 1],
       ['@select', 2, 1], ['setSegmentValues', {length: 70}], ['undo'], ['redo'],

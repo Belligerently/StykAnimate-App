@@ -14,6 +14,7 @@
 
 mod audio;
 mod authored;
+mod camera_commands;
 mod camera_motion;
 mod figure_clipboard;
 mod figure_transform;
@@ -106,6 +107,8 @@ pub(crate) struct Drag {
     pub figure_handle: Option<figure_transform::FigureHandle>,
     /// The options of a segment value edit (`_drag.segmentValueOptions`).
     pub segment_value_options: Option<Value>,
+    /// A camera drag (`_drag.camera`).
+    pub camera: Option<camera_commands::CameraDrag>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -162,6 +165,8 @@ pub struct Editor {
     pub(crate) figure_clipboard: Option<figure_clipboard::FigureClipboard>,
     /// `editor._segmentValuesClipboard`: the last copied `Angle:Bend:Length`.
     pub(crate) segment_values_clipboard: Option<String>,
+    /// `editor._cameraClipboard`: the last copied camera.
+    pub(crate) camera_clipboard: Option<Value>,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -215,6 +220,7 @@ struct Snapshot {
     sheet_clipboard: Option<sheet_clipboard::Clipboard>,
     figure_clipboard: Option<figure_clipboard::FigureClipboard>,
     segment_values_clipboard: Option<String>,
+    camera_clipboard: Option<Value>,
     vfx_edit: Option<Option<Value>>,
     batch: Option<history::Batch>,
     sheet_selection: Option<select::SheetSelection>,
@@ -252,6 +258,7 @@ impl Editor {
             sheet_clipboard: None,
             figure_clipboard: None,
             segment_values_clipboard: None,
+            camera_clipboard: None,
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -407,6 +414,7 @@ impl Editor {
             sheet_clipboard: self.sheet_clipboard.clone(),
             figure_clipboard: self.figure_clipboard.clone(),
             segment_values_clipboard: self.segment_values_clipboard.clone(),
+            camera_clipboard: self.camera_clipboard.clone(),
             vfx_edit: self.vfx_edit.clone(),
             batch: self.batch.clone(),
             sheet_selection: self.sheet_selection.clone(),
@@ -432,6 +440,7 @@ impl Editor {
         self.sheet_clipboard = snapshot.sheet_clipboard;
         self.figure_clipboard = snapshot.figure_clipboard;
         self.segment_values_clipboard = snapshot.segment_values_clipboard;
+        self.camera_clipboard = snapshot.camera_clipboard;
         self.vfx_edit = snapshot.vfx_edit;
         self.batch = snapshot.batch;
         self.sheet_selection = snapshot.sheet_selection;
@@ -449,6 +458,7 @@ impl Editor {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
         self.property_gate(method)?;
+        self.camera_gate(method)?;
         if let Some(result) = self.property_call(method, args) {
             return result;
         }
@@ -479,6 +489,18 @@ impl Editor {
             "transformFigureHandle" => self.transform_figure_handle(number(0), number(1), &arg(2)).map(Value::Bool),
             "commitFigureHandleDrag" => self.finish_figure_handle_drag(true).map(Value::Bool),
             "cancelFigureHandleDrag" => self.finish_figure_handle_drag(false).map(Value::Bool),
+            "copyCamera" => self.copy_camera(),
+            "pasteCamera" => self.paste_camera(&arg(0)),
+            "setCameraValues" => self.set_camera_values(&arg(0), &arg(1)),
+            "resetCamera" => self.reset_camera(&arg(0)),
+            "transformCamera" => self.transform_camera(&arg(0), &arg(1)),
+            "alignCameraToView" => self.align_camera_to_view(&arg(0), &arg(1)),
+            "locateCamera" => self.locate_camera(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), arg(1).as_str().unwrap_or(if arg(1).is_null() { "position" } else { "" }), &arg(2)),
+            "locateHandle" => self.locate_handle(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), &arg(1)).map(Value::Bool),
+            "beginCameraDrag" => self.begin_camera_drag(&arg(0)).map(Value::Bool),
+            "updateCameraDrag" => self.update_camera_drag(&arg(0), &arg(1)).map(Value::Bool),
+            "commitCameraDrag" => self.commit_camera_drag().map(Value::Bool),
+            "cancelCameraDrag" => self.cancel_camera_drag().map(Value::Bool),
             "nudgeHandle" => self.nudge_handle(number(0), number(1), &arg(2)).map(Value::Bool),
             "alignHandle" => self.align_handle(number(0), number(1), &arg(2)).map(Value::Bool),
             "locateEditedHandle" => self.locate_edited_handle(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), &arg(1)).map(Value::Bool),

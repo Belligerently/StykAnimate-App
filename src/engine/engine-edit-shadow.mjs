@@ -29,6 +29,7 @@ import {figureHandleTransform} from '../editor-figure-transform.mjs';
 const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
   'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'segmentValues', 'beginSegmentValueEdit', 'setSegmentValues', 'copySegmentValues', 'pasteSegmentValues',
+  'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
@@ -46,7 +47,7 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
 const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'importFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch', 'beginAnimationEdit', 'copySegmentValues']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
-  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'editHandlePosition', 'commitHandleEditDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'setSegmentValues', 'pasteSegmentValues', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
+  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'editHandlePosition', 'commitHandleEditDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'setSegmentValues', 'pasteSegmentValues', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'alignCameraToView', 'locateCamera', 'locateHandle', 'commitCameraDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
   'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection', 'importFigure',
   // Property edits publish the sheet; a scrub's previews are compared, not adopted.
@@ -170,10 +171,10 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   let batching = false, closing = null;
   // The timeline, figure and segment-value clipboards the session copied (the editor's own): a
   // session starts with none, and pastes only when the editor's clipboard is that one.
-  let copied = null, copiedFigures = null, copiedValues = null;
+  let copied = null, copiedFigures = null, copiedValues = null, copiedCamera = null;
   const end = why => {
     if (!session) return;
-    session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null;
+    session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null; copiedCamera = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
@@ -297,6 +298,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   const originals = new Map();
   /** What the editor does with an owned call's answer instead of computing it. */
   const adopt = (name, answer, selection, args) => {
+    // A camera drag the engine committed: the editor's ends, and its preview with it.
+    if ((name === 'commitCameraDrag' || name === 'commitDrag') && editor._drag?.camera) { editor._drag = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
     const {state} = answer, edit = editor._authoredPoseEdit, drag = editor._drag;
     // The frame a gesture the call began and ended itself drafted: the one on show.
     const shown = answer.retained && !editor._authoredPoseEdit ? editor.evaluatedFrame : null;
@@ -385,6 +388,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
       if (live && name === 'pasteSelection' && (editor._selectionClipboard ?? editor._figureClipboard ?? null) !== copiedFigures) { end('a figure clipboard the session did not copy'); live = null; }
       if (live && name === 'pasteSegmentValues' && args[0] == null && (editor._segmentValuesClipboard ?? null) !== copiedValues) { end('segment values the session did not copy'); live = null; }
+      if (live && name === 'pasteCamera' && (editor._cameraClipboard ?? null) !== copiedCamera) { end('a camera the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         const given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
@@ -446,6 +450,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           if (name === 'sheetCopyFrames' && session && !thrown) copied = editor._sheetClipboard;
           if ((name === 'copySelection' || name === 'cutSelection') && session && !thrown) copiedFigures = editor._selectionClipboard ?? null;
           if (name === 'copySegmentValues' && session && !thrown) copiedValues = editor._segmentValuesClipboard ?? null;
+          if (name === 'copyCamera' && session && !thrown) copiedCamera = editor._cameraClipboard ?? null;
         } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;
