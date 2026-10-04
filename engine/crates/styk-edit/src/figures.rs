@@ -27,6 +27,28 @@ pub(crate) fn frame_order(frame: &Obj) -> Vec<f64> {
     }
 }
 
+/// `createObject(figure, uid, x, y)` (src/demo.mjs): a figure of a definition in its
+/// definition's pose.
+pub(crate) fn create_object(figure: &Value, identity: u32, x: f64, y: f64) -> Value {
+    let angles: Vec<Value> = figure.get("segments").and_then(Value::elements).map(|e| e.iter().map(|s| s.get("angle_rad").cloned().unwrap_or(Value::Null)).collect()).unwrap_or_default();
+    let mut object = Obj::new();
+    object.set("object_slot", Value::Num(0.0));
+    object.set("unique_id", Value::Num(identity as f64));
+    object.set("figure_type_id", figure.get("figure_type_id").cloned().unwrap_or(Value::Null));
+    object.set("root_x", Value::Num(x));
+    object.set("root_y", Value::Num(y));
+    object.set("scale", Value::Num(1.0));
+    object.set("color_override_raw", Value::Num(0.0));
+    object.set("field28", Value::Num(0.0));
+    object.set("angles", Value::array(angles));
+    object.set("len_flag", Value::Num(0.0));
+    object.set("lengths", Value::array(Vec::new()));
+    object.set("bend_flag", Value::Num(0.0));
+    object.set("bends", Value::array(Vec::new()));
+    object.set("join", Value::Null);
+    Value::object(object)
+}
+
 /// `{...join, [key]: value}` on a figure's join, in place.
 fn set_join_field(object: &mut Obj, key: &str, value: Option<Value>) {
     let Some(mut join) = object.get("join").filter(|j| j.truthy()).and_then(Value::as_obj).cloned() else { return };
@@ -259,24 +281,7 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorRangeCommands.figurePositionMustBeFinite".into()));
         }
         let identity = self.next_uid;
-        // `createObject(figure, uid, x, y)`
-        let angles: Vec<Value> = figure.get("segments").and_then(Value::elements).map(|e| e.iter().map(|s| s.get("angle_rad").cloned().unwrap_or(Value::Null)).collect()).unwrap_or_default();
-        let mut object = Obj::new();
-        object.set("object_slot", Value::Num(0.0));
-        object.set("unique_id", Value::Num(identity as f64));
-        object.set("figure_type_id", wanted.clone());
-        object.set("root_x", Value::Num(x));
-        object.set("root_y", Value::Num(y));
-        object.set("scale", Value::Num(1.0));
-        object.set("color_override_raw", Value::Num(0.0));
-        object.set("field28", Value::Num(0.0));
-        object.set("angles", Value::array(angles));
-        object.set("len_flag", Value::Num(0.0));
-        object.set("lengths", Value::array(Vec::new()));
-        object.set("bend_flag", Value::Num(0.0));
-        object.set("bends", Value::array(Vec::new()));
-        object.set("join", Value::Null);
-        let object = Value::object(object);
+        let object = create_object(&figure, identity as u32, x, y);
         // `insert(frame, payload)`: the frame on show with the figure added, slots following
         // unique ids, drawn in front.
         let mut frame = self.shown_frame()?.as_obj().cloned().unwrap_or_default();

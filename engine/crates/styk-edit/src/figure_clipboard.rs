@@ -73,7 +73,7 @@ fn remap_vfx_owner(object: &mut Obj, type_id: f64, source_type: f64) {
 
 /// `insert(frame, payload)`: the frame with the pasted figures, slots following unique ids,
 /// pasted joins following their remapped parents, drawn in front.
-fn insert(frame: &Value, pasted: &[Value], order: &[u32]) -> Result<Value, EditError> {
+pub(crate) fn insert(frame: &Value, pasted: &[Value], order: &[u32]) -> Result<Value, EditError> {
     let before = objects_of(frame);
     let replacements: HashMap<u32, Value> = pasted.iter().filter_map(|o| Some((uid(o)?, o.clone()))).collect();
     let mut objects: Vec<Value> = before.iter().map(|o| uid(o).and_then(|u| replacements.get(&u).cloned()).unwrap_or_else(|| o.clone())).collect();

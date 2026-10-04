@@ -30,6 +30,8 @@ mod palette;
 mod polygons;
 mod project;
 mod property_edit;
+mod range;
+mod range_plan;
 mod record;
 pub mod replay;
 mod select;
@@ -438,6 +440,9 @@ impl Editor {
         }
         self.property_gate(method)?;
         if let Some(result) = self.property_call(method, args) {
+            return result;
+        }
+        if let Some(result) = self.range_call(method, args) {
             return result;
         }
         match method {

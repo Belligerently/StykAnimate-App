@@ -46,6 +46,9 @@ const PORTED: &[&str] = &[
     "property-scrub-sheet", "property-autokey-sheet", "property-keys-sheet", "property-locked-sheet", "scene-color-sheet", "figure-style-sheet", "polygon-opacity-sheet", "vfx-parameter-sheet",
     // Documents with property channels (a layer sheet's legacyAnimation).
     "channels-figure-sheet", "channels-pose-sheet", "channels-vfx-sheet", "channels-camera-scene-sheet", "channels-movieclip-sheet", "channels-style-sheet", "channels-curves-sheet", "channels-outline-sheet", "channels-follow-sheet",
+    // Figures changed across frames, figure order, joins, branch flips (transform-native ends with one).
+    "range-appearance-sheet", "range-appearance-colors-sheet", "range-order-sheet", "range-joins-sheet", "range-transforms-sheet", "range-autokey-sheet", "range-locked-sheet", "range-branch-sheet", "range-native", "transform-native",
+    "range-ik-pinned-sheet", "range-ik-joined-sheet", "range-ik-followers-sheet", "range-movieclip-sheet",
 ];
 
 #[test]

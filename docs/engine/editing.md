@@ -99,8 +99,11 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Handle Edit Mode (`styk-edit/src/handle_edit.rs`): `beginHandleEditDrag({label, bend})`, `editHandlePosition(x, y, {bend})` (one edit outside a gesture), `commitHandleEditDrag`, `cancelHandleEditDrag`; the segments meeting the handle keep their arcs (`handleEditSegmentPose`, a bend edit keeping the tangent at the moved end), figures joined at the handle move with it, a gesture back at its start restores what it moved; angles of pinned limbs as solved, stretched lengths kept; rigged figures refused, movieclips `Unported` | yes | handle-edit-native, handle-edit-sheet, handle-edit-startup-sheet, handle-edit-ik-sheet, handle-edit-chain-sheet, handle-edit-sticknodes-sheet, handle-edit-full-turn-sheet |
 | `joinTo`, `unjoinFigure`, `joinFigure`, `deleteSelection`, `deleteFigure`, `duplicateFigure`: the editor's `transaction`, a draft of the whole frame in which figures come and go | yes, on a layer sheet; not for movieclip instances or several figures at once | figures-sheet, figures-layers-sheet |
 | Property edits on a layer sheet (`styk-edit/src/property_edit.rs`): `addAnimationKeys`, `addAnimationKey`, the sheet branches of `beginAnimationEdit`, `previewAnimationEdit`, `commitAnimationEdit` and `cancelAnimationEdit`, and the commands that reach `_sheetPropertyEntries` there: `setSceneColor`, `setSceneBackground`, `setBackgroundColor`, `updateFigureStyle` with property channels, `updatePolygon`'s opacity, `setVfxParameter`. Per tick, the frame there with the one-key channels the entries build composed (`styk_eval::records::Records::compose_channels`) is written as a key of each layer they touch, through the planner and `publish` (a held cell at its key unless auto key is on); a value left out is the one on show (`animationValue`, `Records::property_value`). A scrub's preview (`_sheetPropertyPreview`) is the frame on show until the edit ends; the session holds it the same way and its answer to `previewAnimationEdit` carries it, which the app compares and does not adopt. While an edit is open only its own calls run in the engine; undo and redo cancel it first. Owned with the class: what the commands publish is adopted, `beginAnimationEdit`, `previewAnimationEdit` and `cancelAnimationEdit` run in both and are compared | yes, without fill styles and effect colours given as paints, keys holding movieclip frame replacements, polygon colours (`editFigureColors`) and native timelines | property-scrub-sheet, property-autokey-sheet, property-keys-sheet, property-locked-sheet, scene-color-sheet, figure-style-sheet, polygon-opacity-sheet, vfx-parameter-sheet |
+| Figures changed across frames (`styk-edit/src/range.rs`, `range_plan.rs`: `applyFigureRange`, `planFigureFrameOperation`): `updateFiguresInFrames` (colour override, transparency, opacity; an override drops a colour transition), `orderFiguresInFrames`, `joinFiguresInFrames`, `detachFiguresInFrames`, `deleteFiguresInFrames`, `duplicateInFrames` (joins kept among the copies), `mirrorFiguresInFrames`, `scaleFiguresInFrames` (an absolute scale keeps the figures' proportions; a zero scale collapses), `rotateFiguresInFrames`, `centerFiguresInFrames`, `resetPoseInFrames`, `addFigureInFrames`, and `moveSelectionInFrames` (`sheetMoveSelection`). Every frame of the range (the timeline's chosen ticks as the app passes them, keyframe starts, or the playhead) is planned on its evaluated frame; figures joined below a changed one are re-joined at their parent's handle (`jointEndpoints`: single precision, `styk-math`); one `_commitSheetRange` keys every layer whose figures changed at each tick (a held cell at its key unless auto key is on), or on a native timeline one `figure-range` entry patches the keyframes | yes, without movieclips among the changed figures, duplicating figures with effect clips (random identities), aligning (the app measures bounds with a function of its own), pasting across frames, and adding, duplicating or deleting across frames of a native timeline | range-appearance-sheet, range-appearance-colors-sheet, range-joins-sheet, range-transforms-sheet, range-autokey-sheet, range-locked-sheet, range-native, range-ik-pinned-sheet, range-ik-joined-sheet, range-ik-followers-sheet, range-movieclip-sheet |
+| Figure order: `bringToFront`, `sendToBack`, `moveSelectionLayer`, `orderSelection` on whole figures and `orderFiguresInFrames`, as depths (`_stykZIndex`) within each layer: reordered ties separated in the direction of the move, a run pushed past ±1,000,000 shifted back or numbered again | yes, with property channels or depths on show (always in the app); a partial selection of one figure orders its segments (a builder command): `Unported` | range-order-sheet |
+| Flipping a branch: `mirrorSelection` and `mirrorFigure` with one figure's joint selected turn its segment over (angle and bend), figures joined below following; `mirrorFigure` on whole figures | yes; a selected branch and several selected segments stay with the editor (the facade, below) | range-branch-sheet, range-native, transform-native, range-transforms-sheet |
 | `undo`, `redo` of what those record | yes | all of the above |
-| flipping a branch, everything else | no: `Unported` | transform-native |
+| everything else | no: `Unported` | |
 
 Every ported call runs in both of the editor's modes:
 
@@ -163,6 +166,14 @@ document difference the harness can see):
   edits on the other layers. The facade starts no engine session while one is on, and
   changing the focus ends the current session (measured with the driver's focus step:
   without this, owned editing inserted a key the editor refuses on a locked layer).
+- **Frame ranges**: on a layer sheet the app passes a timeline range as an array carrying the
+  chosen ticks (`rangeFrames()`, `sheetTicks`), which JSON drops; the facade sends such arrays
+  as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way
+  (`engine/tools/edit-replay.mjs`). Found while porting the range commands: owned
+  `setSceneColor` with a timeline range selected had keyed the playhead only.
+- **Several selected segments** (`_segmentSelection`, `toggleSegment`): a branch flip turns them
+  all over. As with a selected branch, the facade starts no session and ends the current one;
+  both are checked again before every call, since undo can restore them.
 - **A selected branch** (`_branchSelection`, `selectBranch`): commands act on the branch's
   segments instead of whole figures (`deleteSelection` deletes the branch). The facade starts
   no session while a branch is selected, and selecting one ends the current session
@@ -179,6 +190,9 @@ document difference the harness can see):
   facade hands it over with every call, and the engine follows it as the editor does
   (`selectSheetLayer`, seeks selecting the layer's figures on show, `keepSelectionOnSeek`,
   any other selection dropping it, history restoring it with the selection).
+- **`runtime_segments`** of legacy Pivot poses are read by the range operations (lengths and
+  bends materialized before a transform, and by geometry): the facade keeps those calls in the
+  editor for documents whose keyframes carry them.
 - **`runtime_segments`** are not in the engine's copy (the mirror strips them). The
   editor's history snapshots keep them, so on a native timeline a gesture that moves a
   figure with `runtime_segments` and puts it back is a change in JavaScript and none in

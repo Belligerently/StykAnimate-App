@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 67 | 17 | 2 | 0 | 0 | 1 % | 40 % | 0 % |
+| `styk-edit` | 86 | 1213 KiB | 65 | 19 | 2 | 0 | 0 | 1 % | 44 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
 | `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4068 KiB | 214 | 86 | 33 | 22 | 1 | 20 % | 36 % | 0 % |
+| **Total** | 356 | 4068 KiB | 212 | 88 | 33 | 22 | 1 | 20 % | 37 % | 0 % |
 
 ## Engine modules
 
@@ -113,12 +113,12 @@ Engine logic: ported to Rust.
 | `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames and the other commands still JS |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: adding a figure at the playhead on a layer sheet (applyFigureRange add, insert, _commitSheetRange: Editor::add_figure, commit_sheet_range); other range operations, pasting and native timelines still JS |
+| `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: applyFigureRange on a layer sheet (_commitSheetRange) and on a native timeline (the figure-range history entry), the *InFrames commands except paste and align, insertionPlan for adding, insert (styk-edit/src/range.rs, sheet.rs); pasting across frames, movieclips and figures with effect clips still JS |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS |
 | `src/editor-rig.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-scene.mjs` | `styk-edit` | partial | Rust: setSceneColor and setSceneBackground on a layer sheet (styk-edit/src/property_edit.rs); native-timeline scene edits, background imports and the rest still JS |
-| `src/editor-selection.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-selection.mjs` | `styk-edit` | partial | Rust: orderSelection on whole figures, bringToFront and sendToBack through the range operation (styk-edit/src/range.rs); ordering one figure's segments, alignSelection and the selection helpers still JS |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs), setSpatialFeetPinned (ik_settings.rs); joined 3D IK targets still JS |
@@ -127,7 +127,7 @@ Engine logic: ported to Rust.
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS |
 | `src/editor-vfx.mjs` | `styk-edit` | partial | Rust: setVfxParameter (styk-edit/src/property_edit.rs); adding, pasting, presets and stack edits still JS |
-| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, center, reset, poseJoint, rotateJoint, bendJoint), updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
+| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
 | `src/frame-draft-animation.mjs` | `styk-edit` | js |  |
 | `src/frame-timing-history.mjs` | `styk-edit` | js |  |
@@ -139,7 +139,7 @@ Engine logic: ported to Rust.
 | `src/polygon-draft.mjs` | `styk-edit` | js |  |
 | `src/pose-property-split.mjs` | `styk-edit` | js |  |
 | `src/project-tabs.mjs` | `styk-edit` | js |  |
-| `src/range-figure-operations.mjs` | `styk-edit` | js |  |
+| `src/range-figure-operations.mjs` | `styk-edit` | partial | Rust: planFigureFrameOperation for appearance, order, join, detach, delete, duplicate, reset, center, scale, rotate and flips, a branch flip included (styk-edit/src/range_plan.rs); recolouring and aligning still JS |
 | `src/rig-examples-3d.mjs` | `styk-edit` | js |  |
 | `src/rig-examples.mjs` | `styk-edit` | js |  |
 | `src/rig-mechanism-examples.mjs` | `styk-edit` | js |  |
