@@ -165,7 +165,7 @@ without owning.
 | `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands active. |
 | `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure snapshots reviewed. Handle/pick queries reviewed; body/snapping and geometry cache byte bounds active. |
 | `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting frozen for review, canonical worker receiver/typed draft active. No early gate flips. |
-| `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: reviewed compact answers and camera 00–11 combined, with 40 focused JavaScript tests and Rust integration suites passing. A separately isolated crisp owner prototype passes 16 CPU/GPU cases; original-renderer comparison remains pending. No copied tree is treated as a milestone. |
+| `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: reviewed compact answers and camera 00–11 combined, with 40 focused JavaScript tests and Rust integration suites passing. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
@@ -184,6 +184,14 @@ gate, engine-1 and each deletion step. A failing checkpoint is bisected across c
 since the last green run and fixed forward; never rewrite history. Checkpoints need an
 immutable source snapshot so concurrent merges cannot change their tested bytes. Keep
 its target cache and flags stable.
+
+**Release-cache diagnosis:** Cargo fingerprint logs identify regenerated origin JSON
+embedded by four `include_bytes!` calls as stale inputs even when bytes are unchanged.
+Those unit tests now read the same fixtures at runtime, like the replay tests. After
+regeneration, the affected release unit target is fresh in 0.05 s (previous unnecessary
+relink 65 s). Dependencies were cached; source changes legitimately relink release
+binaries with thin LTO, and single-crate versus full-workspace feature graphs keep
+distinct cached artifacts. No target was cleaned and parity flags/profile are unchanged.
 
 - The user explicitly superseded the original two-subagent cap during takeover: use all
   available slots for independent, bounded work (currently five child lanes plus root).
@@ -918,6 +926,7 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 13:22 | S5 complete the origin pose/channel fixture set | Include the 54 evaluated-record JSON generated from the previous milestone’s new scenarios. The first full parity run exposed their omission from `e5bb439f`; production source, crate API and eligibility are unchanged. Root preparation is isolated in `engine-root-integration`. | The exact Rust record suite passes all 179 groups / 2,225 ticks with zero unported ticks; all 373 record JSON regenerate byte-stable. The preceding full run passed Rust suites, command regeneration and 441 containers; its only failure was the missing files. Complete parity passed on this committed fixture set: all generators, 246 command recordings and 441 containers. |
 | 2026-10-04 14:01 | S5 compact owned session responses | Session view `changesOnly` returns changed COW draft/retained figures, sheet fields, explicit order/removal and retained metadata; adopted result views are not duplicated. Full shadow/native responses remain default. Public Rust signatures unchanged; additive JSON protocol, portable/mobile pin note. User focused-merge/checkpoint verification policy recorded in handoff. | 18 recorded families / 483 native reconstruction calls and 18 JavaScript adoption tests pass. Root 367 Rust tests, wasm build (8,724 KiB), check (1,982 files) and full parity/246 recordings/441 containers pass. Origin app 62 adopted + 65 exact, 730,987-byte document/79 entries/full undo identical; startup retry 165 adopted + 295 exact, 290,105-byte document/80 entries/full undo identical, no rounding/differences/page errors. Earlier startup browser crash has no result; no class flip or performance claim. |
 
+| 2026-10-04 14:05 | Preserve release test cache through regeneration | Origin atomic-refusal unit tests read their identical editor-built fixtures at runtime instead of embedding regenerated JSON into the test binary. No production behavior, crate API, parity profile, threshold or gate change. | Cargo fingerprint proves the original mtime trigger; two affected tests pass. Actual guard-fixture regeneration changes no tracked bytes, then the release unit build is fresh in 0.05 s with both tests passing (previous redundant rebuild 65 s). npm check passes; full parity is reserved for checkpoints under the new policy. |
+
 Work is active in the isolated lanes listed in the handoff. Frozen uncommitted snapshots
 are review inputs, not completed milestones or class ownership evidence.
-

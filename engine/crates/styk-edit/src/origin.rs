@@ -234,10 +234,11 @@ mod tests {
 
     #[test]
     fn future_or_absent_property_refusal_preserves_the_shown_frame() {
-        let plain = include_bytes!("../../../tests/edit/origin-future-rig-sheet.document.json").as_slice();
-        let joined = include_bytes!("../../../tests/edit/origin-future-rig-joined-sheet.document.json").as_slice();
-        let changing = include_bytes!("../../../tests/edit/origin-changing-rig-sheet.document.json").as_slice();
-        for (document, id, property, begin) in [(plain, 3.0, "rotation", true), (plain, 77.0, "rotation", true), (joined, 2.0, "x", false), (changing, 3.0, "rotation", false)] {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+        let plain = std::fs::read(fixtures.join("origin-future-rig-sheet.document.json")).unwrap();
+        let joined = std::fs::read(fixtures.join("origin-future-rig-joined-sheet.document.json")).unwrap();
+        let changing = std::fs::read(fixtures.join("origin-changing-rig-sheet.document.json")).unwrap();
+        for (document, id, property, begin) in [(plain.as_slice(), 3.0, "rotation", true), (plain.as_slice(), 77.0, "rotation", true), (joined.as_slice(), 2.0, "x", false), (changing.as_slice(), 3.0, "rotation", false)] {
             let report = styk_doc::json::parse(document).unwrap();
             let mut editor = Editor::new(report, crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
             editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();
@@ -262,7 +263,8 @@ mod tests {
     fn invalid_future_join_guard_is_atomic_and_never_panics() {
         use std::panic::{catch_unwind, AssertUnwindSafe};
         for cyclic in [true, false] {
-            let mut report = styk_doc::json::parse(include_bytes!("../../../tests/edit/origin-future-rig-joined-sheet.document.json")).unwrap();
+            let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/origin-future-rig-joined-sheet.document.json");
+            let mut report = styk_doc::json::parse(&std::fs::read(file).unwrap()).unwrap();
             let invalidate = |frame: &mut Value| {
                 let objects = frame.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap();
                 let Some(slot) = objects.iter().position(|object| uid(object) == Some(3)) else { return };

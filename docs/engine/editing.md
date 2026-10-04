@@ -557,3 +557,7 @@ directly.
   command touched).
 - Interactive commands never send the whole document; a gesture's updates are
   the records it changes.
+
+Recorded JSON is loaded by tests at runtime. Regeneration may rewrite byte-identical
+files; embedding those files in test binaries made Cargo relink them needlessly. The
+origin atomic-refusal tests now follow the same runtime-fixture policy as replays.
