@@ -244,6 +244,18 @@ async function run(mode) {
       for (let i = 0; i < 4; i++) e.undo();
       e.select(uid, -1);
     }));
+    // Rig relationships: Smart Stretch, a behaviour merged into a joint, angle locks measured on
+    // the figure on show, parts bound to a driver.
+    await step('relate parts of the rig', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 3) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      e.select(uid, 0); attempt(() => e.enableSmartStretch(true)); attempt(() => e.setRigBehavior({stretch: {min: 0.5}}));
+      e.select(uid, 1); attempt(() => e.setAngleLock('world')); attempt(() => e.setRigBehavior({response: {mode: 'rigid'}}));
+      e.select(uid, 2); attempt(() => e.bindStretchParts(e.figure.segments[0].segment_id)); attempt(() => e.setAngleLock('parent'));
+      attempt(() => e.setSecondaryAngleReference(e.figure.segments[0].segment_id));
+      for (let i = 0; i < 6; i++) e.undo();
+      e.select(uid, -1);
+    }));
     await step('move a handle in Handle Edit Mode', () => page.evaluate(() => {
       const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1);
       const p = e.geometry.objects.get(e.selectedSlot)?.joints.get(e.figure?.segments[1]?.segment_id); if (!p) return;

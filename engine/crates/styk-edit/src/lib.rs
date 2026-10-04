@@ -39,6 +39,7 @@ mod range_plan;
 mod recolor;
 mod record;
 pub mod replay;
+mod rig_behavior;
 mod select;
 pub mod session;
 mod sheet;
@@ -470,6 +471,9 @@ impl Editor {
             return result;
         }
         if let Some(result) = self.builder_call(method, args) {
+            return result;
+        }
+        if let Some(result) = self.rig_call(method, args) {
             return result;
         }
         match method {

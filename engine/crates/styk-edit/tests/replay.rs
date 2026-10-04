@@ -53,6 +53,8 @@ const PORTED: &[&str] = &[
     "recolor-sheet", "recolor-format4-sheet", "recolor-mesh-sheet", "recolor-native",
     // The builder: segment styles, branch caps and fills, the figure's name and outline.
     "builder-styles-sheet", "builder-styles-native", "builder-styles-override-native",
+    // Rig relationships: Smart Stretch, behaviours, angle locks, stretch parts, IK refusals.
+    "rig-behavior-sheet", "rig-behavior-native", "rig-behavior-ik-sheet",
 ];
 
 #[test]

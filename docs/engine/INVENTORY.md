@@ -19,7 +19,7 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4068 KiB | 205 | 94 | 34 | 22 | 1 | 20 % | 39 % | 0 % |
+| **Total** | 356 | 4069 KiB | 205 | 94 | 34 | 22 | 1 | 20 % | 39 % | 0 % |
 
 ## Engine modules
 
@@ -115,7 +115,7 @@ Engine logic: ported to Rust.
 | `src/editor-origin-support.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: applyFigureRange on a layer sheet (_commitSheetRange) and on a native timeline (the figure-range history entry), the *InFrames commands except paste and align, insertionPlan for adding, insert (styk-edit/src/range.rs, sheet.rs); pasting across frames, movieclips and figures with effect clips still JS |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); rig authoring commands still JS |
+| `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); setRigBehavior, enableSmartStretch, bindStretchParts, setAngleLock, setSecondaryAngleReference with the rig's validation (styk-edit/src/rig_behavior.rs); appending rig joints (addConnector, addWeightedJoint) still JS |
 | `src/editor-rig.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-scene.mjs` | `styk-edit` | partial | Rust: setSceneColor and setSceneBackground on a layer sheet (styk-edit/src/property_edit.rs); native-timeline scene edits, background imports and the rest still JS |
 | `src/editor-selection.mjs` | `styk-edit` | partial | Rust: orderSelection on whole figures, bringToFront and sendToBack through the range operation (styk-edit/src/range.rs); ordering one figure's segments, alignSelection and the selection helpers still JS |
@@ -233,15 +233,15 @@ Engine logic: ported to Rust.
 | `src/ik-spatial.mjs` | `styk-eval::rig` | partial | Rust: evaluation; pole and capture helpers for editing still JS |
 | `src/ik-topology.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
 | `src/ik.mjs` | `styk-eval::rig` | partial | Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK, ikBendReference) and translateIKTargets (styk-edit); remapIKFollowers, validateIK still JS |
-| `src/rig-angle-path.mjs` | `styk-eval::rig` | partial | Rust: angle path sampling; authoring still JS |
-| `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation; authoring helpers still JS |
+| `src/rig-angle-path.mjs` | `styk-eval::rig` | partial | Rust: angle path sampling (styk_eval::rig); validateAnglePath (styk-edit/src/rig_behavior.rs); authoring still JS |
+| `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS |
 | `src/rig-control-details.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
-| `src/rig-weighted.mjs` | `styk-eval::rig` | partial | Rust: weighted joints and bindings; authoring still JS |
+| `src/rig-weighted.mjs` | `styk-eval::rig` | partial | Rust: weighted joints and bindings (styk_eval::rig); validateWeightedJoint (styk-edit/src/rig_behavior.rs); authoring still JS |
 | `src/spatial-mesh-legacy.mjs` | `styk-eval::rig` | js | IK, constraints, spatial rigs and meshes |
 | `src/movieclip-mesh.mjs` | `styk-eval::spatial` | partial | Rust: meshes attached to spatial bones (styk_eval::spatial); materialization for editing still JS |
 | `src/pivot/surfaces.mjs` | `styk-eval::spatial` | ported | Rust: one-sided surfaces, culling and depth (styk_eval::spatial); still used by the JavaScript renderer |
 | `src/rig-pose-choices.mjs` | `styk-eval::spatial` | partial | Rust: hidden pose choices in evaluation; poseChoiceGroups and applyChannelPoseChoice for setPoseChoice (styk-edit/src/pose_choice.rs); the 3D panel's reading of groups and validation still JS |
-| `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); authoring still JS |
+| `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); validateSpatial (styk-edit/src/rig_behavior.rs); authoring still JS |
 | `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
 | `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validateVfxClips for edits (styk-edit/src/vfx_clips.rs, paints excepted) |

@@ -49,7 +49,9 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   // Recolouring (styk-edit/src/recolor.rs).
   'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors',
   // The builder's segment styles (styk-edit/src/builder.rs).
-  'updateBuilderSegmentStyle', 'updateSegmentStyle', 'updateSegmentBranchStyle', 'convertSegment', 'setBranchCaps', 'setBranchFill', 'setPolygonOpacity'];
+  'updateBuilderSegmentStyle', 'updateSegmentStyle', 'updateSegmentBranchStyle', 'convertSegment', 'setBranchCaps', 'setBranchFill', 'setPolygonOpacity',
+  // Rig relationships (styk-edit/src/rig_behavior.rs).
+  'setRigBehavior', 'enableSmartStretch', 'bindStretchParts', 'setAngleLock', 'setSecondaryAngleReference'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold), or clipboard text (numbers in text cannot be compared within the
  * browsers' last-digit differences, D16): a view, not compared. */

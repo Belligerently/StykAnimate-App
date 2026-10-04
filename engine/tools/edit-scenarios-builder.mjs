@@ -76,3 +76,41 @@ scenario('builder-styles-override-native', {}, [
   ['@select', 1, -1], ['updateFiguresInFrames', {color_override_raw: 0x80ff0000}, [0]], ['@select', 1, 1], ['updateBuilderSegmentStyle', {color: '#00ff00'}],
   ['updateBuilderSegmentStyle', {opacity: 0.5}], ['updateBuilderSegmentStyle', {static: true, color: '#0000ff'}], ['undo'], ['undo'], ['redo'],
 ], 'builder.document.json');
+
+// Rig relationships of the rig document's figure (a stretch driver 22 with a follower 33, an
+// angle-locked 44, a connector 56 from 33 to 55): Smart Stretch, behaviours merged into a joint
+// (stretch, response, attachment, follow, weighted joints, angle paths, connectors), angle locks
+// measured on the figure on show, a second angle reference, parts bound to a driver; the rig's
+// refusals; a pose gesture committed first; history.
+const rigSteps = [
+  ['@select', 1, 0], ['enableSmartStretch', true], ['@select', 1, 4], ['enableSmartStretch', true],
+  ['@select', 1, 1], ['setRigBehavior', {stretch: {min: 0.5, width: 'scale'}}], ['setRigBehavior', {stretch: {min: 200}}], ['setRigBehavior', {bogus: 1}],
+  ['setRigBehavior', {connector: {start: 11}}], ['setRigBehavior', {response: {mode: 'rigid'}}], ['setRigBehavior', {response: {multiplier: 2}}],
+  ['setRigBehavior', {response: {mode: 'bounce'}}], ['setRigBehavior', {response: null}], ['setRigBehavior', {orientation: 'world'}], ['setRigBehavior', {orientation: 'sideways'}],
+  ['setRigBehavior', {stretch: null}],
+  ['@select', 1, 2], ['setRigBehavior', {follow: {driver: 11}}], ['setRigBehavior', {follow: {influence: 9}}], ['setRigBehavior', {follow: {driver: 44}}], ['setRigBehavior', {follow: null}],
+  ['setRigBehavior', {weighted: {origin: 22, anchors: [{joint: 55, weight: 0.5}]}}], ['setRigBehavior', {weighted: {anchors: [{joint: 55, weight: 500}]}}], ['setRigBehavior', {weighted: null}],
+  ['setRigBehavior', {anglePath: {driver: 11, origin: 0, restAngle: 0, pitchRestAngle: 0, figureRestAngle: 0, keys: [[0, 10, 0, 0], [3, 0, 10, 0]]}}],
+  ['setRigBehavior', {anglePath: {keys: [[3, 0, 0, 0], [1, 0, 0, 0]]}}], ['setRigBehavior', {anglePath: null}],
+  ['setRigBehavior', {weighted: {origin: 22, anchors: [{joint: 55, weight: 0.5}, {joint: 55, weight: 0.5}]}}], ['enableSmartStretch', true], ['undo'],
+  ['@select', 1, 5], ['setRigBehavior', {connector: null}], ['setRigBehavior', {connector: {end: 999}}], ['setRigBehavior', {connector: {end: 44}}],
+  ['setRigBehavior', {stretch: {}}], ['setRigBehavior', {stretch: {source: 'slide'}}], ['setRigBehavior', {stretch: {source: 'slide', restPosition: 0.4}}],
+  ['setRigBehavior', {angleLock: {mode: 'world', angle: 0, multiplier: 1}}],
+  ['@select', 1, 3], ['updateBuilderSegmentStyle', {static: true}], ['@select', 1, 4], ['setAngleLock', 'parent'], ['undo'],
+  ['@select', 1, 4], ['setAngleLock', 'world'], ['rotateFigure', 0.3], ['setAngleLock', 'figure'], ['setAngleLock', 'parent'], ['rotateFigure', -0.2],
+  ['setSecondaryAngleReference', 11], ['setSecondaryAngleReference', 999], ['@select', 1, 0], ['poseJoint', 400, 250, {stretch: true}], ['@select', 1, 4],
+  ['setRigBehavior', {angleLock: {space: 'authored'}}], ['setSecondaryAngleReference', 22], ['setSecondaryAngleReference', 0],
+  ['setAngleLock', 'bogus'], ['setAngleLock', 'off'],
+  ['@select', 1, 0], ['setAngleLock', 'parent'], ['setSecondaryAngleReference', 22],
+  ['@select', 1, 3], ['bindStretchParts', 11], ['bindStretchParts', 11, {branch: true, mode: 'rigid', influence: 2}], ['bindStretchParts', 0], ['bindStretchParts', 55, {influence: 3}], ['@select', 1, 0], ['bindStretchParts', 11],
+  ['enableSmartStretch', false], ['@select', 1, -1], ['setRigBehavior', {orientation: 'world'}],
+  ['@select', 1, 1], ['beginDrag', 'Pose joint'], ['rotateJoint', 0.2], ['setRigBehavior', {orientation: 'inherit'}],
+  ['undo'], ['undo'], ['undo'], ['redo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
+];
+scenario('rig-behavior-sheet', app, rigSteps, 'rig.document.json');
+scenario('rig-behavior-native', {}, rigSteps, 'rig.document.json');
+// An enabled IK controller refuses a relationship that would derive its joint.
+scenario('rig-behavior-ik-sheet', app, [
+  ['@select', 1, 3], ['setAngleLock', 'world'], ['setRigBehavior', {weighted: {origin: 3, anchors: [{joint: 2, weight: 1}]}}], ['bindStretchParts', 1],
+  ['@select', 1, 0], ['setRigBehavior', {stretch: {}}], ['@select', 1, 3], ['bindStretchParts', 1], ['undo'], ['undo'], ['redo'],
+], 'startup.document.json');
