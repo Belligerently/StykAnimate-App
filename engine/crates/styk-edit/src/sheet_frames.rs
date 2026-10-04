@@ -448,13 +448,14 @@ impl Editor {
                 if copy && source.is_some() && drawing {
                     return Err(EditError::Unported("copying the frames of a drawing layer".into()));
                 }
-                if source.as_ref().is_some_and(|frame| objects_of(frame).iter().any(|o| o.get("_stykMovieclip").is_some_and(Value::truthy))) {
-                    return Err(EditError::Unported("moving the frames of a movieclip".into()));
-                }
                 let mut moved = key.as_obj().cloned().unwrap_or_default();
                 moved.set("tick", Value::Num(tick_of(key) + delta));
                 if copy {
                     moved.set("id", Value::str(&plan.cell()));
+                }
+                // A movieclip on the document's clock moves its span with the frame.
+                if let Some(frame) = source.as_ref().filter(|frame| objects_of(frame).iter().any(|o| o.get("_stykMovieclip").is_some_and(Value::truthy))) {
+                    moved.set("value", plan.capture(&shift_clip_time(frame, delta), id));
                 }
                 keys.push(Value::object(moved));
             }

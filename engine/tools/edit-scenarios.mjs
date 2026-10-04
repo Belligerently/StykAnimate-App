@@ -189,7 +189,25 @@ scenario('frames-movieclip-sheet', app, [
     ['@seek', 2], ['sheetInsertFrames', ['scene', 'camera', 'layer-1'], 1, 2], ['sheetDuplicateFrameAfter'], ['sheetRemoveFrames', ['layer-1'], 0, 1], ['sheetInsertKey', ['layer-1'], 4],
     ['sheetAppendFrame', {duration: 2}], ['sheetInsertFrames', ['scene', 'camera', 'layer-1'], 0, 1], ['sheetInsertKey', ['layer-1'], 14], ['sheetClearFrames', ['layer-1'], 2, 3],
     ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'], ['redo'],
+  ], 'sheet-movieclip-timed.document.json');  // Its frames moved and copied along the timeline: the span and restarts move with them
+  // (never before the first frame), the presence clip's frames as they are.
+  scenario('move-frames-clip-sheet', app, [
+    ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, 3, {copy: true}], ['sheetMoveFrames', ['layer-1'], 2, 2, -2], ['@seek', 9], ['@select', 4, -1],
+    ['sheetMoveFrames', ['layer-1'], 6, 9, 1], ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'sheet-movieclip-timed.document.json');
+  // A clip on the presence clock copied and pasted (on its own layer it keeps its identity,
+  // elsewhere it takes a new one that carries on from where it was copied), moved to another
+  // layer (the source keeps where it was) and copied back with those continuations; history.
+  scenario('clipboard-presence-clip-sheet', app, [
+    ['createLayer', 'Clips'], ['sheetCopyFrames', ['layer-1'], 4, 8], ['sheetPasteFrames', ['layer-1'], 10], ['sheetPasteFrames', ['layer-2'], 0],
+    ['sheetTransferFrames', ['layer-1'], ['layer-2'], 6, 8, 12], ['sheetCopyFrames', ['layer-1'], 5, 9], ['sheetPasteFrames', ['layer-2'], 20],
+    ['sheetTransferFrames', ['layer-2'], ['layer-1'], 0, 2, 24, {copy: true}], ['@seek', 13], ['@select', 5, -1],
+    ['sheetCopyFrames', ['layer-1'], 6, 7], ['sheetPasteFrames', ['layer-2'], 40], ['sheetCopyFrames', ['layer-1'], 24, 26], ['sheetPasteFrames', ['layer-2'], 50], ['sheetPasteFrames', ['layer-1'], 30], ['sheetCopyFrames', ['layer-1'], 31, 33], ['sheetPasteFrames', ['layer-2'], 60],
+    ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
+  scenario('move-frames-presence-clip-sheet', app, [
+    ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, 3, {copy: true}], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
 }
 // Commands that draft the whole frame on a sheet: joins, duplicates and deletions.
 scenario('figures-sheet', app, [

@@ -132,7 +132,14 @@ async function run(mode) {
     await page.mouse.up({button}); await sleep(120);
   };
   const steps = [];
-  const step = async (name, run) => { await settled(); await run(); steps.push(name); };
+  // A step the editor refuses on this document (its message shown to users, compared in the
+  // shadow like any other answer) is noted and the run goes on.
+  const refused = [];
+  const step = async (name, run) => {
+    await settled();
+    try { await run(); steps.push(name); }
+    catch (error) { const message = String(error?.message ?? error).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0]; refused.push(`${name}: ${message}`); }
+  };
 
   /** The interactions, once. */
   const interactions = async () => {
@@ -306,7 +313,7 @@ async function run(mode) {
     return {after, undone: capture()};
   });
   await context.close();
-  return {report, outcome, steps, problems};
+  return {report, outcome, steps, refused, problems};
 }
 try {
   if (own) {
@@ -316,8 +323,9 @@ try {
     // With --default, the app as users get it: the engine owns the document's calls when its
     // editing class is owned by default (src/engine/engine-edit-shadow.mjs, OWNED_CLASSES).
     const owned = await run(args.includes('--default') ? '' : 'engineEdit=on');
-    const {report, steps, problems} = owned;
+    const {report, steps, refused, problems} = owned;
     console.log(`steps: ${steps.join('; ')}`);
+    for (const line of refused) console.log(`  refused by the editor: ${line}`);
     console.log(`engine-owned calls: ${report.owned} adopted from the engine (${report.ownedMs.toFixed(1)} ms), ${report.compared} run in both and the same, ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
     for (const [why, count] of Object.entries(report.ended)) console.log(`  session ended ${count}×: ${why}`);
     for (const [what, count] of Object.entries(report.unported)) console.log(`  not ported ${count}×: ${what}`);
@@ -338,9 +346,10 @@ try {
       return null;
     };
     const differences = [];
-    // Identities the editor draws (effect clips, their effects) are named by where they first
-    // appear: other parts of the app draw identities too, at moments that differ between runs.
-    const drawn = text => { const names = new Map(); return text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, id => { if (!names.has(id)) names.set(id, `id-${names.size + 1}`); return names.get(id); }); };
+    // Identities the editor draws (effect clips, their effects, which write them as `fx-` and
+    // the hex digits without dashes) are named by where they first appear: other parts of the
+    // app draw identities too, at moments that differ between runs.
+    const drawn = text => { const names = new Map(); return text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?<=fx-)[0-9a-f]{32}\b/g, id => { if (!names.has(id)) names.set(id, `id-${names.size + 1}`); return names.get(id); }); };
     for (const phase of ['after', 'undone']) for (const key of ['document', 'undo', 'redo', 'selection']) {
       const [a, b] = [alone, owned].map(run => key === 'document' ? JSON.parse(drawn(run.outcome[phase][key])) : run.outcome[phase][key]);
       const found = near(a, b, `${phase} ${key}`);
@@ -362,11 +371,12 @@ try {
     console.log(`  mode ${report.mode}`);
     failed = differences.length > 0 || report.mismatches.length > 0 || (report.owned === 0 && !args.includes('--default')) || problems.length > 0;
   } else {
-  const {report, steps, problems} = await run('engineShadow=on');
+  const {report, steps, refused, problems} = await run('engineShadow=on');
   if (!report) throw new Error('Shadow editing was not installed (is ?engineShadow=on honoured?)');
   const out = option('--out');
-  if (out) await writeFile(path.resolve(out), JSON.stringify({steps, ...report, problems}, null, 1));
+  if (out) await writeFile(path.resolve(out), JSON.stringify({steps, refused, ...report, problems}, null, 1));
   console.log(`steps: ${steps.join('; ')}`);
+  for (const line of refused) console.log(`  refused by the editor: ${line}`);
   console.log(`shadowed calls: ${report.calls} run in the engine, ${report.compared} the same (${report.rounded} of them but for last digits of the browser's Math), ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
   console.log(`time in those calls: editor ${report.jsMs.toFixed(1)} ms, engine ${report.engineMs.toFixed(1)} ms`);
   console.log(`  the same, by call: ${Object.entries(report.comparedByCall ?? {}).map(([name, count]) => `${name} ×${count}`).join(', ')}`);

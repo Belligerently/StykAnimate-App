@@ -828,7 +828,9 @@ impl Prepared {
         out
     }
 
-    fn presence_elapsed(&self, uid: u32, tick: f64) -> f64 {
+    /// `presenceElapsed(index, uid, tick)`: how long movieclip `uid` has played on the presence
+    /// clock by `tick`, in document ticks at its speed.
+    pub fn presence_elapsed(&self, uid: u32, tick: f64) -> f64 {
         let Some(spans) = self.presence.get(&uid) else { return 0.0 };
         let i = spans.partition_point(|s| s.0 <= tick);
         match i.checked_sub(1).map(|i| spans[i]) {

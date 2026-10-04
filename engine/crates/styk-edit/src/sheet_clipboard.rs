@@ -3,15 +3,20 @@
 //! frame, over what is there or inserted, on the same layers or on others (where the
 //! figures take new identities). The clipboard belongs to the editor that copied: a
 //! session pastes only what it copied itself (the facade checks that the editor's
-//! clipboard is that one). Drawing layers, movieclip parts and movieclips on the
-//! presence clock answer `Unported` when pasted, as does a clipboard from another
-//! document, which the engine never holds.
+//! clipboard is that one). Movieclips on the presence clock carry on from where they were
+//! copied. Drawing layers and movieclip parts answer `Unported` when pasted, as does a
+//! clipboard from another document, which the engine never holds.
 
 use styk_doc::{Obj, Value};
 
 use crate::frame::objects_of;
 use crate::record::uid;
 use crate::sheet::{constant, continuations, fixed, items, key_at, key_easing, num, Write, MAX_SHEET_TICKS};
+
+/// `usesPresence(object)`: a movieclip instance on the presence clock.
+fn uses_presence(object: &Value) -> bool {
+    object.path(&["_stykMovieclip", "clock"]).and_then(Value::as_str) == Some("presence")
+}
 use crate::{EditError, Editor};
 
 /// `editor._sheetClipboard`, as far as pasting it in the same document reads it.
@@ -20,6 +25,8 @@ pub(crate) struct Clipboard {
     start: f64,
     duration: f64,
     rows: Vec<Row>,
+    /// Where each movieclip on the presence clock was in its clip when copied (`phases`).
+    phases: Vec<(u32, f64)>,
     /// Why pasting it stays in JavaScript, if it does.
     unported: Option<&'static str>,
 }
@@ -155,9 +162,6 @@ impl Editor {
                 let owned = self.owned_frame(&frame, &uids, &steps)?;
                 let objects = objects_of(&owned);
                 types.extend(objects.iter().filter_map(|o| num(o, "figure_type_id")));
-                if !continuations(&owned).is_empty() || objects.iter().any(|o| o.path(&["_stykMovieclip", "clock"]).and_then(Value::as_str) == Some("presence")) {
-                    unported.get_or_insert("pasting movieclips on the presence clock");
-                }
                 if objects.iter().any(|o| o.get("_stykMovieclipPart").is_some_and(Value::truthy)) {
                     unported.get_or_insert("pasting movieclip parts");
                 }
@@ -178,8 +182,48 @@ impl Editor {
         if figures.iter().any(|f| num(f, "figure_type_id").is_some_and(|t| types.contains(&t)) && f.path(&["_styk", "drawing"]).is_some_and(Value::truthy)) {
             unported.get_or_insert("pasting drawings");
         }
-        self.sheet_clipboard = Some(Clipboard { start, duration: end - start + 1.0, rows, unported });
+        let phases = self.clip_phases(&rows, start)?;
+        self.sheet_clipboard = Some(Clipboard { start, duration: end - start + 1.0, rows, phases, unported });
         Ok(Value::Null)
+    }
+
+    /// The phase of every movieclip on the presence clock in the copied rows, where it first
+    /// appears (`phases` of `sheetCopyFrames`).
+    fn clip_phases(&self, rows: &[Row], start: f64) -> Result<Vec<(u32, f64)>, EditError> {
+        let mut phases: Vec<(u32, f64)> = Vec::new();
+        let figures = items(self.report.get("figure_types"));
+        let fps = num(&self.report, "fps").unwrap_or(f64::NAN);
+        let mut prepared = None;
+        for row in rows {
+            for key in &row.keys {
+                let mut members: Vec<(u32, Value, Value)> = objects_of(&key.frame)
+                    .iter()
+                    .filter(|o| uses_presence(o))
+                    .filter_map(|o| Some((uid(o)?, o.get("figure_type_id").cloned().unwrap_or(Value::Null), o.get("_stykMovieclip").cloned().unwrap_or(Value::Null))))
+                    .collect();
+                members.extend(continuations(&key.frame).iter().filter_map(|step| Some((num(step, "uid")? as u32, step.get("typeId").cloned().unwrap_or(Value::Null), step.get("playback").cloned().unwrap_or(Value::Null)))));
+                for (member, type_id, playback) in members {
+                    if phases.iter().any(|(u, _)| *u == member) {
+                        continue;
+                    }
+                    if prepared.is_none() {
+                        prepared = Some(self.prepared()?);
+                    }
+                    let asset = figures.iter().find(|f| f.get("figure_type_id") == Some(&type_id)).and_then(|f| f.path(&["_styk", "movieclip"]).cloned());
+                    let offset = playback.get("offset").filter(|v| !v.is_null()).and_then(Value::as_f64).unwrap_or(0.0);
+                    let clip_fps = asset.as_ref().and_then(|a| a.path(&["document", "fps"])).and_then(Value::as_f64).unwrap_or(fps);
+                    let duration = asset.as_ref().and_then(|a| num(a, "duration")).unwrap_or(f64::NAN);
+                    let raw = offset + prepared.as_ref().unwrap().presence_elapsed(member, start + key.offset) * clip_fps / fps;
+                    let phase = match playback.get("mode").and_then(Value::as_str) {
+                        Some("single") => offset,
+                        Some("loop") => raw % duration,
+                        mode => raw.min(duration - if mode == Some("once") { 0.0 } else { 1.0 }),
+                    };
+                    phases.push((member, phase));
+                }
+            }
+        }
+        Ok(phases)
     }
 
     /// `sheetTransferFrames(ids, destinations, start, end, tick, {copy})`: a range of layers
@@ -192,7 +236,6 @@ impl Editor {
         let kept = self.sheet_clipboard.clone();
         let result = (|| {
             self.sheet_copy_frames(ids, start, &Value::Num(end))?;
-            // Moving clips on the presence clock keeps their phase on the source rows: not ported.
             if let Some(reason) = self.sheet_clipboard.as_ref().and_then(|c| c.unported) {
                 return Err(EditError::Unported(reason.into()));
             }
@@ -200,6 +243,7 @@ impl Editor {
             let moved = (|| {
                 if !copy {
                     self.sheet_clear_frames(ids, start, &Value::Num(end))?;
+                    self.retain_moved_phases(&sources, start)?;
                 }
                 self.sheet_paste_frames(destinations, tick, &Value::Null)
             })();
@@ -218,6 +262,52 @@ impl Editor {
         })();
         self.sheet_clipboard = kept;
         result
+    }
+
+    /// The source rows of a move keep where their presence-clock movieclips were: a later
+    /// appearance there does not jump back because the frames in between moved away.
+    fn retain_moved_phases(&mut self, sources: &[String], start: f64) -> Result<(), EditError> {
+        let clipboard = self.sheet_clipboard.clone().unwrap();
+        let mut plan = self.planner(sources)?;
+        let mut changed = false;
+        for row in &clipboard.rows {
+            for entry in &row.keys {
+                let mut steps: Vec<Value> = continuations(&entry.frame);
+                for object in objects_of(&entry.frame).iter().filter(|o| uses_presence(o)) {
+                    let mut step = Obj::new();
+                    step.set("uid", object.get("unique_id").cloned().unwrap_or(Value::Null));
+                    step.set("typeId", object.get("figure_type_id").cloned().unwrap_or(Value::Null));
+                    step.set("playback", object.get("_stykMovieclip").cloned().unwrap_or(Value::Null));
+                    steps.push(Value::object(step));
+                }
+                if steps.is_empty() {
+                    continue;
+                }
+                // One step a figure, where it first appears, with its last value.
+                let mut unique: Vec<(Value, Value)> = Vec::new();
+                for step in steps {
+                    let id = step.get("uid").cloned().unwrap_or(Value::Null);
+                    match unique.iter_mut().find(|(u, _)| *u == id) {
+                        Some(entry) => entry.1 = step,
+                        None => unique.push((id, step)),
+                    }
+                }
+                let mut frame = entry.frame.as_obj().cloned().unwrap_or_default();
+                for key in ["objects", "object_draw_order", "object_draw_order_unique_ids"] {
+                    frame.set(key, Value::array(Vec::new()));
+                }
+                let mut styk = frame.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+                styk.set("movieclipContinuations", Value::array(unique.into_iter().map(|(_, step)| step).collect()));
+                frame.set("_styk", Value::object(styk));
+                plan.write(&row.id, start + entry.offset, &Value::object(frame), Write::default())?;
+                changed = true;
+            }
+        }
+        if changed {
+            let selection = self.selection_state();
+            self.publish(plan, "Retain moved movieclip phase", selection, None)?;
+        }
+        Ok(())
     }
 
     /// `sheetPasteFrames(ids, tick, {insert})`: the clipboard's rows on `ids` (or, given one
@@ -263,7 +353,8 @@ impl Editor {
         let mut map: Vec<(u32, u32)> = Vec::new();
         for (row, id) in rows.iter().zip(&destinations) {
             for entry in &row.keys {
-                for old in objects_of(&entry.frame).iter().filter_map(uid) {
+                let steps = continuations(&entry.frame).iter().filter_map(|step| num(step, "uid").map(|u| u as u32)).collect::<Vec<_>>();
+                for old in objects_of(&entry.frame).iter().filter_map(uid).chain(steps) {
                     if row.id == *id && self.layer_of(old) == *id {
                         continue;
                     }
@@ -278,6 +369,7 @@ impl Editor {
             }
         }
         let renamed = |old: u32| map.iter().find(|(from, _)| *from == old).map(|(_, to)| *to);
+        let phase_of = |old: u32| clipboard.phases.iter().find(|(u, _)| *u == old).map(|(_, p)| *p);
         for (row, id) in rows.iter().zip(&destinations) {
             let restore = self.evaluated(finish, false)?;
             let old_end = plan.end(id);
@@ -315,7 +407,35 @@ impl Editor {
                         if let Some(new) = renamed(old) {
                             record.set("unique_id", Value::Num(new as f64));
                             plan.assign(new, id);
+                            // A pasted presence-clock clip carries on from where it was copied.
+                            if let (true, Some(phase)) = (uses_presence(&Value::object(record.clone())), phase_of(old)) {
+                                let mut playback = record.get("_stykMovieclip").and_then(Value::as_obj).cloned().unwrap_or_default();
+                                playback.set("offset", Value::Num(phase));
+                                record.set("_stykMovieclip", Value::object(playback));
+                            }
                         }
+                    }
+                    let steps: Vec<Value> = continuations(&frame)
+                        .into_iter()
+                        .map(|step| {
+                            let mut step = step.as_obj().cloned().unwrap_or_default();
+                            let Some(old) = step.get("uid").and_then(Value::as_f64).map(|u| u as u32) else { return Value::object(step) };
+                            if let Some(new) = renamed(old) {
+                                step.set("uid", Value::Num(new as f64));
+                                plan.assign(new, id);
+                                if let Some(phase) = phase_of(old) {
+                                    let mut playback = step.get("playback").and_then(Value::as_obj).cloned().unwrap_or_default();
+                                    playback.set("offset", Value::Num(phase));
+                                    step.set("playback", Value::object(playback));
+                                }
+                            }
+                            Value::object(step)
+                        })
+                        .collect();
+                    if !steps.is_empty() {
+                        let mut styk = record.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+                        styk.set("movieclipContinuations", Value::array(steps));
+                        record.set("_styk", Value::object(styk));
                     }
                     for object in objects.iter_mut() {
                         let Some(record) = object.make_obj() else { continue };
