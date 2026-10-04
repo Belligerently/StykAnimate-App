@@ -32,6 +32,7 @@ mod project;
 mod property_edit;
 mod range;
 mod range_plan;
+mod recolor;
 mod record;
 pub mod replay;
 mod select;

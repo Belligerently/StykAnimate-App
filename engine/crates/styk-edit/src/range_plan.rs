@@ -74,6 +74,7 @@ pub(crate) struct Part {
 pub(crate) enum Kind {
     /// The figures' colour and transparency fields, in the patch's order.
     Appearance(Vec<(String, f64)>),
+    Recolor(Box<crate::recolor::Recolor>),
     Order { direction: Direction, numeric: bool },
     Join { target: f64, handle: f64 },
     Scale { factor: Option<f64>, value: Option<f64>, reference: Option<Value> },
@@ -118,6 +119,8 @@ type Hierarchy = (HashMap<usize, Vec<usize>>, Vec<usize>);
 /// figure layers and the geometry of a frame's figures.
 pub(crate) struct Context<'a> {
     pub figures: &'a [Value],
+    /// The document's format version (`report.version`): colours of format 4 are whole-figure overrides.
+    pub version: f64,
     pub canvas: [f64; 2],
     pub layer_of: &'a dyn Fn(u32) -> String,
     /// `buildGeometry(report, frame)` for the figures at `slots` (sorted), each figure's
@@ -318,6 +321,13 @@ impl<'a> Changes<'a> {
         Value::object(next.clone())
     }
 
+    fn replace(&mut self, slot: usize, record: Obj) {
+        if !self.changes.contains_key(&slot) {
+            self.order.push(slot);
+        }
+        self.changes.insert(slot, record);
+    }
+
     /// `result(structural)`.
     fn result(&self, frame: &Value, structural: bool) -> Option<Planned> {
         if self.changes.is_empty() {
@@ -414,6 +424,19 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
             let remove: &[&str] = if patch.iter().any(|(k, _)| k == "color_override_raw") { &["color_transition"] } else { &[] };
             for &slot in &slots {
                 changes.patch(slot, patch.iter().map(|(k, v)| (k.as_str(), Value::Num(*v))).collect(), remove);
+            }
+            return Ok(changes.result(frame, false));
+        }
+        Kind::Recolor(recolor) => {
+            for &slot in &slots {
+                let object = &objects[slot];
+                if let Some(mut next) = crate::recolor::recolor_object(context.version, figure_of(context.figures, object), object, recolor)? {
+                    if recolor.mode != crate::recolor::Mode::All || recolor.color.is_some() {
+                        next.remove("color_transition");
+                    }
+                    next.remove("runtime_segments");
+                    changes.replace(slot, next);
+                }
             }
             return Ok(changes.result(frame, false));
         }

@@ -255,6 +255,19 @@ async function run(mode) {
       for (let i = 0; i < 6; i++) e.undo();
       e.select(uid, -1);
     }));
+    // Recolouring as the inspector does it: a palette colour replaced, the figure's colour set
+    // (across a timeline range too), a polygon's colour, a reset.
+    await step('recolour figures from the palette and the inspector', () => page.evaluate(() => {
+      const e = styk.editor; if (e.selectedUid === null) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      const entry = e.figurePalette()[0], last = Math.max(0, e.totalTicks - 1);
+      if (entry) attempt(() => e.replaceFigureColor(entry.color, '#204080', {targets: entry, indices: undefined}));
+      attempt(() => e.setFigureColor('#c04020', {indices: undefined}));
+      attempt(() => e.setFigureColor('#40c020', {indices: Object.assign([e.frameIndex], {sheetTicks: [...new Set([0, Math.min(2, last), e.tick])]}), opacity: 0.8}));
+      if (e.figure?.polyfills?.length) attempt(() => e.updatePolygon(0, {color: '#336699'}));
+      attempt(() => e.resetFigureColors({indices: undefined}));
+      e.undo(); e.undo();
+    }));
     if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
     // A hand or foot with an IK controller, when the figure has one: its target is dragged.
     const target = (await handles()).find(handle => handle.ik);

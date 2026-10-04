@@ -5,7 +5,8 @@
 //! patching the keyframes. Also the commands that reach it: figure order
 //! (`bringToFront`, `sendToBack`, `moveSelectionLayer`, `orderSelection`), flipping a branch
 //! (`mirrorSelection` and `mirrorFigure` on a joint), `mirrorFigure` itself, and moving figures
-//! across frames (`moveSelectionInFrames`, `sheetMoveSelection`).
+//! across frames (`moveSelectionInFrames`, `sheetMoveSelection`). Recolouring goes through the
+//! same operation ([`crate::recolor`]).
 //!
 //! Movieclips, pasting across frames, aligning (the app measures bounds with a function of
 //! its own) and figures with effect clips answer `Unported`.
@@ -58,7 +59,7 @@ pub(crate) struct Options {
 
 impl Options {
     /// `{...options, indices}` from a command's options and its index argument.
-    fn of(options: &Value, indices: Option<&Value>) -> Options {
+    pub(crate) fn of(options: &Value, indices: Option<&Value>) -> Options {
         let list = |v: &Value| v.elements().map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default();
         Options {
             uids: options.get("uids").filter(|u| !u.is_null()).map(|u| list(u).iter().filter_map(Value::as_f64).map(|u| u as u32).collect()),
@@ -85,6 +86,8 @@ pub(crate) enum Request {
     Rotate { radians: Value, center: Value },
     Center,
     Reset,
+    /// Recolouring (its label comes with the options).
+    Recolor(Box<crate::recolor::Recolor>),
 }
 
 impl Request {
@@ -102,6 +105,7 @@ impl Request {
             Request::Rotate { .. } => "Rotate figures across frames",
             Request::Center => "Center figures across frames",
             Request::Reset => "Reset poses across frames",
+            Request::Recolor(_) => "Edit figure colors",
         }
     }
 }
@@ -297,6 +301,7 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
         Request::Delete => Kind::Delete,
         Request::Detach => Kind::Detach,
         Request::Reset => Kind::Reset,
+        Request::Recolor(recolor) => Kind::Recolor(recolor.clone()),
         Request::Add { .. } => unreachable!("an insertion is not planned"),
     };
     let center = match request {
@@ -314,6 +319,9 @@ fn range_args(args: &[Value], at: usize) -> Options {
 impl Editor {
     /// The figure-range commands by their JavaScript names; `None` for other calls.
     pub(crate) fn range_call(&mut self, method: &str, args: &[Value]) -> Option<Result<Value, EditError>> {
+        if let Some(result) = self.recolor_call(method, args) {
+            return Some(result);
+        }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
         let result = match method {
             "addFigureInFrames" => {
@@ -352,7 +360,7 @@ impl Editor {
     }
 
     /// `applyFigureRange(operation, options)`.
-    fn apply_figure_range(&mut self, request: Request, options: Options) -> Result<Value, EditError> {
+    pub(crate) fn apply_figure_range(&mut self, request: Request, options: Options) -> Result<Value, EditError> {
         let label = options.label.clone().unwrap_or_else(|| request.label().to_string());
         let mut uids: Vec<u32> = Vec::new();
         for id in options.uids.clone().unwrap_or_else(|| self.selection.uids.clone()) {
@@ -642,7 +650,8 @@ impl Editor {
     fn plan_frame(&self, frame: &Value, uids: &[u32], operation: &Operation, figures: &[Value], canvas: [f64; 2]) -> Result<Option<Planned>, EditError> {
         let layer_of = |id: u32| self.layer_of(id);
         let geometry = |record: &Value, slots: &[usize]| self.joints_of(record, slots);
-        let context = crate::range_plan::Context { figures, canvas, layer_of: &layer_of, geometry: &geometry };
+        let version = num(&self.report, "version").unwrap_or(f64::NAN);
+        let context = crate::range_plan::Context { figures, version, canvas, layer_of: &layer_of, geometry: &geometry };
         crate::range_plan::plan(&context, frame, uids, operation)
     }
 

@@ -49,6 +49,8 @@ const PORTED: &[&str] = &[
     // Figures changed across frames, figure order, joins, branch flips (transform-native ends with one).
     "range-appearance-sheet", "range-appearance-colors-sheet", "range-order-sheet", "range-joins-sheet", "range-transforms-sheet", "range-autokey-sheet", "range-locked-sheet", "range-branch-sheet", "range-native", "transform-native",
     "range-ik-pinned-sheet", "range-ik-joined-sheet", "range-ik-followers-sheet", "range-movieclip-sheet",
+    // Recolouring figures: palettes, gradients and paints, styles, polygons, format 4, mesh colours.
+    "recolor-sheet", "recolor-format4-sheet", "recolor-mesh-sheet", "recolor-native",
 ];
 
 #[test]

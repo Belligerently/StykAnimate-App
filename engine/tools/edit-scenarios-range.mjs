@@ -188,3 +188,61 @@ scenario('range-movieclip-sheet', app, [
   ['@seek', 3], ['@select', 1, -1], ['updateFiguresInFrames', {field28: 60}, [0], {ticks: [0, 3]}], ['orderFiguresInFrames', 'back', [0], {ticks: [2]}],
   ['@select', 2, -1], ['detachFiguresInFrames', [0], {ticks: [1]}], ['rotateFiguresInFrames', 0.2, [0], {ticks: [1, 5]}], ['undo'], ['redo'],
 ], 'sheet-movieclip-loose.document.json');
+// Recolouring (`editFigureColors` through `applyFigureRange`, src/figure-colors.mjs): a colour
+// replaced through the palette of a joined assembly, gradient ends and paint stops, the whole
+// figure, segment and polygon styles (a polygon's colour from the builder), a reset, ranges,
+// the editor's refusals and a hidden or locked layer.
+scenario('recolor-sheet', app, [
+  ['@select', 1, -1], ['replaceFigureColor', '#0d99ff', '#123456'], ['replaceFigureColor', '#00ff00', '#ff00ff'], ['replaceFigureColor', '#c82828', '#204060'],
+  ['replaceFigureColor', '#0a141e', '#ffffff', {targets: {segments: [{handleId: 4, stops: [0, 2]}], polygons: [7]}}],
+  ['replaceFigureColor', '#999999', '#000000'], ['replaceFigureColor', '#123456', '#123456'],
+  ['@select', 1, 1], ['replaceFigureColor', '#123456', '#654321'], ['@select', 1, -1],
+  ['setFigureColor', '#ff8000'], ['undo'], ['setFigureColor', '#00ff00', {opacity: 0.5}], ['editFigureColors', {mode: 'all', opacity: 0.25}],
+  ['editFigureColors', {mode: 'style', patch: {color: '#ff0000', opacity: 0.5, thickness: 4}, targets: {segments: [{handleId: 5, stops: []}], polygons: []}}],
+  ['editFigureColors', {mode: 'style', patch: {color: '#ff0000', opacity: 0.5, thickness: 4}, targets: {segments: [{handleId: 5, stops: []}], polygons: []}}],
+  ['editFigureColors', {mode: 'style', patch: {paint: {type: 'radial', angle: 0, stops: [{offset: 0, color: [255, 0, 0], opacity: 1}, {offset: 1, color: [0, 0, 255], opacity: 0.5}]}}, targets: {segments: [{handleId: 6, stops: []}]}}],
+  ['editFigureColors', {mode: 'style', patch: {gradient: {color: '#00ffff', opacity: 0.4}}, targets: {segments: [{handleId: 7, stops: []}]}}],
+  ['editFigureColors', {mode: 'style', patch: {gradient: null}, targets: {segments: [{handleId: 3, stops: []}]}}],
+  ['editFigureColors', {mode: 'style', patch: {color: [10, 20, 30]}, targets: {segments: [], polygons: [1]}}],
+  ['updatePolygon', 2, {color: '#336699'}], ['updatePolygon', 1, {color: '#996633', opacity: 0.5}],
+  // Overlays read back: a polygon's colour found in the palette, a stop's opacity kept when a paint is rewritten.
+  ['replaceFigureColor', '#336699', '#aabbcc'],
+  ['editFigureColors', {mode: 'style', patch: {opacity: 0.3}, targets: {segments: [{handleId: 4, stops: []}], polygons: []}}], ['setFigureColor', '#00aa00'],
+  ['editFigureColors', {mode: 'style', patch: {opacity: 0.3}, targets: {segments: [{handleId: 8, stops: []}], polygons: []}}],
+  ['editFigureColors', {mode: 'style', patch: {gradient: {color: '#00ffff'}}, targets: {segments: [{handleId: 8, stops: []}]}}],
+  // A paint given out of order with a fractional channel; the reset samples the definition's paint between its stops.
+  ['editFigureColors', {mode: 'style', patch: {paint: {type: 'linear', angle: 0, stops: [{offset: 0.75, color: [250, 10.4, 10], opacity: 1}, {offset: 0.25, color: [10, 250, 10], opacity: 0.8}]}}, targets: {segments: [{handleId: 4, stops: []}]}}],
+  ['resetFigureColors'], ['@select', 2, -1], ['setFigureColor', '#808080'], ['resetFigureColors'], ['@select', 1, -1],
+  // A half-transparent override mixed into the colours a style edit writes for the other segments.
+  ['updateFiguresInFrames', {color_override_raw: 0x80ff0000}, [0]], ['editFigureColors', {mode: 'style', patch: {thickness: 3}, targets: {segments: [{handleId: 1, stops: []}], polygons: []}}],
+  ['undo'], ['undo'],
+  ['setFigureColor', '#abcdef', {indices: range([0, 3])}], ['resetFigureColors', {indices: [0]}],
+  // Only the figures of one definition; a three-digit hex colour.
+  ['selectMany', [1, 2]], ['editFigureColors', {mode: 'all', color: '#f80', figureTypeId: 2}], ['undo'], ['@select', 1, -1],
+  ['editFigureColors', {mode: 'bogus'}], ['replaceFigureColor', null, '#000000'], ['editFigureColors', {mode: 'replace', color: '#000000'}],
+  ['editFigureColors', {mode: 'all', opacity: 2}], ['editFigureColors', {mode: 'style', patch: {bogus: 1}}], ['editFigureColors', {mode: 'style', patch: {paint: {type: 'spiral'}}}],
+  ['editFigureColors', {mode: 'replace', color: '#000000', targets: {segments: [{handleId: 0, stops: [0]}]}}], ['setFigureColor', 'red'],
+  ['setLayerLocked', 'layer-1', true], ['setFigureColor', '#000000'], ['setLayerLocked', 'layer-1', false],
+  ['setLayerVisible', 'layer-1', false], ['setFigureColor', '#000000'], ['setLayerVisible', 'layer-1', true],
+  ['undo'], ['undo'], ['undo'], ['redo'],
+], 'range-colors.document.json');
+// Format 4: the figure's colour is one override for the whole figure (a negative one draws
+// black, whatever its low bytes); recolouring switches the figure to its segments' colours.
+scenario('recolor-format4-sheet', app, [
+  ['@select', 1, -1], ['updateFiguresInFrames', {color_override_raw: 255}, [0]], ['replaceFigureColor', '#ff0000', '#00ff00'], ['undo'],
+  ['updateFiguresInFrames', {color_override_raw: -16711936}, [0]],
+  ['editFigureColors', {mode: 'style', patch: {color: '#ff0000'}, targets: {segments: [{handleId: 2, stops: []}], polygons: []}}], ['undo'],
+  ['setFigureColor', '#336699'], ['resetFigureColors'],
+  ['editFigureColors', {mode: 'style', patch: {color: '#ff0000'}, targets: {segments: [{handleId: 2, stops: []}], polygons: []}}],
+  ['undo'], ['undo'], ['redo'],
+], 'format4.document.json');
+// A 3D mesh's palette colours.
+scenario('recolor-mesh-sheet', app, [
+  ['@select', 1, -1], ['replaceFigureColor', '#d65c40', '#102030'], ['editFigureColors', {mode: 'replace', color: '#ffffff', targets: {segments: [], polygons: [], meshColors: [1, 3]}}],
+  ['setFigureColor', '#808000'], ['resetFigureColors'], ['editFigureColors', {mode: 'replace', color: '#000000', targets: {segments: [], meshColors: [9]}}],
+  ['undo'], ['redo'],
+], '../../crates/styk-eval/tests/fixtures/spatial/mesh-sheet.json');
+// On a native timeline: one history entry patching the keyframe.
+scenario('recolor-native', {}, [
+  ['@select', 1, -1], ['setFigureColor', '#ff0000'], ['replaceFigureColor', '#ff0000', '#00ff00'], ['resetFigureColors'], ['undo'], ['undo'], ['redo'],
+], 'two-limbs.document.json');

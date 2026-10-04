@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 86 | 1213 KiB | 65 | 19 | 2 | 0 | 0 | 1 % | 44 % | 0 % |
+| `styk-edit` | 87 | 1227 KiB | 65 | 20 | 2 | 0 | 0 | 1 % | 44 % | 0 % |
 | `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
-| `styk-eval` | 83 | 774 KiB | 37 | 37 | 9 | 0 | 0 | 15 % | 57 % | 0 % |
+| `styk-eval` | 82 | 760 KiB | 36 | 37 | 9 | 0 | 0 | 16 % | 58 % | 0 % |
 | `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4068 KiB | 212 | 88 | 33 | 22 | 1 | 20 % | 37 % | 0 % |
+| **Total** | 356 | 4068 KiB | 211 | 89 | 33 | 22 | 1 | 20 % | 38 % | 0 % |
 
 ## Engine modules
 
@@ -83,12 +83,12 @@ Engine logic: ported to Rust.
 | `src/editor-builder-branch.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs); polygon colour on a figure on show, surfaces, figure definition style and the builder's segment commands still JS |
+| `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs); polygon colour on a figure on show, surfaces, figure definition style and the builder's segment commands still JS |
 | `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
 | `src/editor-camera.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-sparse.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-colors.mjs` | `styk-edit` | partial | Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs); recolouring figures (editFigureColors and its range operation) still JS |
+| `src/editor-colors.mjs` | `styk-edit` | partial | Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs) and recolouring figures (editFigureColors, setFigureColor, replaceFigureColor, resetFigureColors: styk-edit/src/recolor.rs); figurePalette for the inspector still JS |
 | `src/editor-combine.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-drawing.mjs` | `styk-edit` | js | commands and history |
@@ -128,6 +128,7 @@ Engine logic: ported to Rust.
 | `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit (styk-edit/src/vfx_clips.rs); adding, pasting and duplicating clips and effects still JS |
 | `src/editor-vfx.mjs` | `styk-edit` | partial | Rust: setVfxParameter (styk-edit/src/property_edit.rs); adding, pasting, presets and stack edits still JS |
 | `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
+| `src/figure-colors.mjs` | `styk-edit` | partial | Rust: validateRecolor, recolorObject, figurePalette, attachedFigurePalette, displayedColor, displayedSegmentPaint (styk-edit/src/recolor.rs, for recolouring); the inspector reads them in JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
 | `src/frame-draft-animation.mjs` | `styk-edit` | js |  |
 | `src/frame-timing-history.mjs` | `styk-edit` | js |  |
@@ -139,7 +140,7 @@ Engine logic: ported to Rust.
 | `src/polygon-draft.mjs` | `styk-edit` | js |  |
 | `src/pose-property-split.mjs` | `styk-edit` | js |  |
 | `src/project-tabs.mjs` | `styk-edit` | js |  |
-| `src/range-figure-operations.mjs` | `styk-edit` | partial | Rust: planFigureFrameOperation for appearance, order, join, detach, delete, duplicate, reset, center, scale, rotate and flips, a branch flip included (styk-edit/src/range_plan.rs); recolouring and aligning still JS |
+| `src/range-figure-operations.mjs` | `styk-edit` | partial | Rust: planFigureFrameOperation for every operation but aligning (styk-edit/src/range_plan.rs: appearance, recolouring, order, join, detach, delete, duplicate, reset, center, scale, rotate, flips and branch flips); aligning still JS |
 | `src/rig-examples-3d.mjs` | `styk-edit` | js |  |
 | `src/rig-examples.mjs` | `styk-edit` | js |  |
 | `src/rig-mechanism-examples.mjs` | `styk-edit` | js |  |
@@ -180,7 +181,6 @@ Engine logic: ported to Rust.
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
 | `src/color-palette.mjs` | `styk-eval` | js |  |
 | `src/connected-timeline.mjs` | `styk-eval` | js |  |
-| `src/figure-colors.mjs` | `styk-eval` | js |  |
 | `src/frame-ids.mjs` | `styk-eval` | js |  |
 | `src/keyframe-easing.mjs` | `styk-eval` | partial | Rust: easing curves (linear, eased, bezier, constant, Auto); validation still JS |
 | `src/layer-folders.mjs` | `styk-eval` | js |  |
@@ -193,7 +193,7 @@ Engine logic: ported to Rust.
 | `src/object-identity.mjs` | `styk-eval` | js |  |
 | `src/onion-range.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/onion-skin.mjs` | `styk-eval` | partial | onion sampling and motion-path projection. Rust: ghost drawing, tint and order; sampling still JS |
-| `src/paint.mjs` | `styk-eval` | partial | Rust: segment paints and gradients in draw lists; CSS and SVG helpers still JS |
+| `src/paint.mjs` | `styk-eval` | partial | Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS |
 | `src/pivot/background.mjs` | `styk-eval` | partial | Rust: background tween and colour key; painting still JS |
 | `src/pivot/geometry-definition.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-order.mjs` | `styk-eval` | js | evaluation and world geometry |
@@ -209,7 +209,7 @@ Engine logic: ported to Rust.
 | `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS |
 | `src/animation-channels.mjs` | `styk-eval::channels` | partial | Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); composeAnimationChannels and animationPropertyValue on records (styk_eval::records); animationChannelId, normalizeAnimationTarget and validateAnimationValue for property edits (styk-edit/src/property_edit.rs); document validation and native-timeline authoring still JS |
 | `src/animation-properties.mjs` | `styk-eval::channels` | partial | Rust: property vocabulary, discrete and colour properties; validation and names still JS |
-| `src/animation-style.mjs` | `styk-eval::channels` | partial | Rust: style overlays and style channels (setAnimationStyle, applicability); validation still JS |
+| `src/animation-style.mjs` | `styk-eval::channels` | partial | Rust: style overlays and style channels (setAnimationStyle, applicability); resolveInstanceFigure's segment and polygon overlays, styleColor and meshPaletteColor for recolouring (styk-edit/src/recolor.rs); validation still JS |
 | `src/native-property-curve.mjs` | `styk-eval::channels` | partial | Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor |
 | `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: sampling, shaping (dead zone, look-ahead, springs, zoom), sampleFollow (styk_eval::follow); followFramingOffset and incremental resampling still JS |
 | `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | partial | Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS |
