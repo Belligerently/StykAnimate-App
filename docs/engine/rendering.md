@@ -344,6 +344,21 @@ by the engine (an edit frame whose trails are still being sampled asks the app f
 another frame, `Stage::refining`); so are 3D meshes, surfaces, poses and drawings a
 spatial bone turns.
 
+**Pictures that arrive after the frame.** Pictures and drawing cels decode on the engine's
+workers after a document opens, and the stage uploads them a slice at a time (8 MiB a
+frame) when it draws. A still frame drawn before its pictures arrived used to stay without
+them until something else drew (URIEL 3 opened at tick 44: its drawing cel missing, 23,783
+solid pixels in app parity). The stage now notes the atlas places it has uploaded
+(`styk_engine::Uploaded`) and, after each frame, whether that frame samples a place not
+filled yet while pictures are still on their way (`Stage::pictures_pending`: looked up only
+then); the interface draws again on the next frame when the missing pictures are decoded and
+wait for upload, or once the engine's progress counter advances when they are still decoding
+(`waitForPictures` in `engine-stage.mjs`: one `Atomics.waitAsync` at a time, dropped when
+another frame is drawn, a timeout without progress waiting again without drawing, at most a
+minute). A picture that cannot be decoded ends the waiting once nothing else is pending.
+Measured opening URIEL 3 at tick 44 in Electron: 9 and 13 extra frames in two runs, all within
+the first 1.3 s, none afterwards; the cel is there.
+
 ## Thumbnails, library previews and the camera monitor
 
 The other places the editor draws frames, for documents the engine draws, use the same GPU

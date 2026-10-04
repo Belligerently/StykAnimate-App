@@ -46,7 +46,9 @@ async function engineSide(canvas) {
     ghosts: new WeakMap(), nextGhost: 1, frameSent: false,
     /** The drawing tiles each figure was last sent with: publication replaces them in place. */
     tiles: new WeakMap(), drawingUnpublished,
-    stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, fallbacks: 0}};
+    /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
+    pictureWait: 0,
+    stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, fallbacks: 0, pictureRedraws: 0}};
 }
 
 /**
@@ -83,8 +85,33 @@ function probed(canvas) {
 const STRIP = new Set(['runtime_segments']);
 /** How long a thumbnail waits for its frame and pictures before the JavaScript renderer draws it. */
 const THUMBNAIL_WAIT_MS = 60000;
+/** How long a frame shown while its pictures decode waits for the engine's workers to finish one. */
+const PICTURE_WAIT_MS = 60000;
 /** A pose as JSON, without derived caches. */
 const poseJSON = object => JSON.stringify(object, (key, value) => STRIP.has(key) ? undefined : value);
+
+/**
+ * A frame was just drawn by `side.stage`: when it lacks pictures still on their way
+ * (`Stage::pictures_pending`: drawing cels and images decode on the engine's workers and each
+ * frame uploads a slice of them), `redraw` is called once they can be shown: on the next
+ * microtask for pictures already decoded, else when the engine's progress counter (read as
+ * `seen` before drawing) advances. One wait at a time per stage side, dropped when another frame
+ * is drawn; waiting is `Atomics.waitAsync` (D7), and a wait that times out with nothing finished
+ * waits again without drawing, for at most `PICTURE_WAIT_MS`.
+ */
+export function waitForPictures(side, seen, redraw) {
+  const token = ++side.pictureWait, pending = side.stage.pictures_pending();
+  if (!pending) return;
+  const again = () => { side.stats.pictureRedraws++; redraw(); };
+  if (pending === 1) { queueMicrotask(again); return; }
+  const started = performance.now();
+  const wait = () => side.engine.whenProgress(seen).then(() => {
+    if (token !== side.pictureWait) return;
+    if (side.engine.progressSeen() !== seen) again();
+    else if (performance.now() - started < PICTURE_WAIT_MS) wait();
+  });
+  wait();
+}
 
 /**
  * Wraps the renderer `create(canvas, options)` builds.
@@ -205,8 +232,10 @@ export async function createStageRenderer(canvas, options, create) {
     return list;
   };
 
+  const awaitPictures = seen => waitForPictures(side, seen, () => options.onInvalidate?.());
+
   const drawEdit = request => {
-    const started = performance.now();
+    const started = performance.now(), seen = side.engine.progressSeen();
     syncDefinitions(request);
     const {frame, geometry} = request, objects = frame.objects ?? [];
     const json = frameJSON(frame, geometry, side);
@@ -230,6 +259,7 @@ export async function createStageRenderer(canvas, options, create) {
     // Generated effects whose trails are still being sampled refine on the next frame, as
     // the JavaScript renderer's incomplete batches do (6 ms of sampling a frame).
     if (side.stage.refining()) queueMicrotask(() => options.onInvalidate?.());
+    if (drawn) awaitPictures(seen);
     return drawn;
   };
 
@@ -273,9 +303,9 @@ export async function createStageRenderer(canvas, options, create) {
     renderPrepared(key, options = {}) {
       const tick = engineTick(key);
       if (tick === null) { const result = legacy.renderPrepared(key, options); if (result) show(false); return result; }
-      const dpr = legacy.dpr || 1, view = options.view ?? {};
+      const dpr = legacy.dpr || 1, view = options.view ?? {}, seen = side.engine.progressSeen();
       const drawn = side.stage.render(tick, (view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, options.cameraEnabled !== false, true, false);
-      if (drawn) show(true);
+      if (drawn) { show(true); awaitPictures(seen); }
       return drawn;
     },
     // The engine decodes and uploads its own pictures; a frame it prepared never waits for the other renderer's.

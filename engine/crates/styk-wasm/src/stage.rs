@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use styk_engine::edit::{EditOptions, EditScene, Onion};
-use styk_engine::{Engine, Generation};
+use styk_engine::{Engine, Generation, Uploaded};
 use styk_render::{Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
@@ -13,6 +13,14 @@ use crate::js_error;
 /// Pixels of decoded images uploaded per frame at most, so a document with many
 /// sprites fills its atlas over a few frames instead of stalling one.
 const IMAGE_UPLOAD_BYTES: usize = 8 << 20;
+
+/// [`Stage::pictures_pending`]: the last frame drawn has all its pictures (or none it
+/// lacks can still come), lacks some that are decoded and wait for upload (draw again
+/// on the next frame), or lacks some still being decoded (draw again once the engine's
+/// progress counter advances).
+const PICTURES_COMPLETE: u32 = 0;
+const PICTURES_DECODED: u32 = 1;
+const PICTURES_DECODING: u32 = 2;
 
 /// What the stage drew last: the camera monitor shows the same frame (`views.rs`).
 #[derive(Clone, Default)]
@@ -37,6 +45,10 @@ pub struct Stage {
     backend: String,
     /// The document lineage and page count the sprite atlas is allocated for.
     pub(crate) atlas_of: Option<(u64, u32)>,
+    /// The atlas places uploaded so far, and whether the last frame drawn lacked a
+    /// picture ([`Stage::pictures_pending`]).
+    uploaded: Uploaded,
+    pictures: u32,
     pub(crate) edit: EditScene,
     /// Effects are drawn (the editor's effects preview is on).
     pub(crate) effects: bool,
@@ -104,6 +116,8 @@ impl Stage {
             renderer,
             backend: format!("{:?} · {}", info.backend, info.name),
             atlas_of: None,
+            uploaded: Uploaded::default(),
+            pictures: PICTURES_COMPLETE,
             edit: EditScene::default(),
             effects: true,
             edits: 0,
@@ -176,6 +190,17 @@ impl Stage {
         self.edit.has_ghost(id)
     }
 
+    /// Whether the last frame drawn lacked pictures that are still to come: 0 when it had
+    /// every picture it shows (or the ones it lacks will never come: a picture that failed
+    /// to decode), 1 when some are decoded and wait for upload (each frame uploads a
+    /// slice: draw again on the next frame), 2 when some are still being decoded on the
+    /// engine's workers (draw again once the progress counter advances). Without this a
+    /// still frame shown while its drawing cels decode lacked them until something else
+    /// drew again.
+    pub fn pictures_pending(&self) -> u32 {
+        self.pictures
+    }
+
     /// Draws the edit frame. `hidden` lists object slots not drawn; `translations` holds
     /// `slot, dx, dy` triples of dragged objects; `background` is an ARGB canvas colour
     /// replacing the scene background, or a negative number for none. `onions` describes
@@ -230,6 +255,7 @@ impl Stage {
             // Another project, or more atlas pages than before: the texture is allocated
             // again and every image decoded so far is uploaded again by the engine.
             self.renderer.prepare_sprites(&generation.assets);
+            self.uploaded.clear();
             if self.atlas_of.is_some_and(|(lineage, _)| lineage == layout.0) {
                 self.engine.redecode_images();
             }
@@ -238,6 +264,22 @@ impl Stage {
         let images = self.engine.take_images(IMAGE_UPLOAD_BYTES);
         if !images.is_empty() {
             self.renderer.upload_images(&generation.assets, images.iter().map(|image| &**image));
+            for image in &images {
+                self.uploaded.record(&generation.assets, image);
+            }
+        }
+    }
+
+    /// What [`Stage::pictures_pending`] reports after drawing `list`. The list is looked
+    /// through only while pictures of the document are still on their way.
+    fn pictures_after(&self, list: &styk_eval::drawlist::DrawList) -> u32 {
+        let (decoding, decoded) = self.engine.images_backlog();
+        if decoding + decoded == 0 || !self.uploaded.lacks(list) {
+            PICTURES_COMPLETE
+        } else if decoded > 0 {
+            PICTURES_DECODED
+        } else {
+            PICTURES_DECODING
         }
     }
 
@@ -288,6 +330,7 @@ impl Stage {
         }
         self.queue.submit([encoder.finish()]);
         self.queue.present(target);
+        self.pictures = self.pictures_after(list);
         Ok(true)
     }
 
