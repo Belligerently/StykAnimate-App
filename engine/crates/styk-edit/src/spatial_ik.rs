@@ -129,7 +129,8 @@ impl Editor {
     /// `handle` of the figure in `slot`, with `captureSpatialIK`'s parts.
     pub(crate) fn capture_limb(&self, slot: usize, handle: u32) -> Result<Capture, EditError> {
         let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
-        let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
+        // The figure as selection reads it (on a layer sheet the frame on show), as `captureFor` reads `editor.object`.
+        let object = self.selection_frame()?.get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let current = object.path(&["_stykIK", &handle.to_string()]).cloned().unwrap_or(Value::Null);
         let controller = ik::parse::table(object.get("_stykIK")).and_then(|table| table.get(handle).cloned()).ok_or_else(|| unported("with a controller the engine cannot read"))?;
         let spec = CaptureSpec {
@@ -147,7 +148,7 @@ impl Editor {
     pub(crate) fn capture_with(&self, slot: usize, handle: u32, spec: &CaptureSpec) -> Result<Capture, EditError> {
         let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
         let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
-        let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
+        let object = self.selection_frame()?.get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let id = uid(&object).ok_or_else(|| unported("of a figure without an identity"))?;
         let at = frame.objects.iter().position(|o| o.uid == id).ok_or_else(|| unported("of a figure the engine does not draw"))?;
         let evaluated = &frame.objects[at];

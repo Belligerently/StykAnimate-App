@@ -566,6 +566,13 @@ scenario('figures-layers-sheet', app, [
     ['@select', 1, 2], ['setNodeIK', {enabled: true, chainLength: 1}], ['@select', 1, 1], ['setNodeIK', {enabled: true}], ['setNodeIK', {enabled: true}],
     ['@select', 1, -1], ['setNodeIK', {enabled: true}], ['setNodeIK', {pinned: true}], ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'startup.document.json');
+  // The same on a figure after the first (a duplicate): the limb is captured from the frame on
+  // show, which on a layer sheet holds more figures than the native keyframe.
+  scenario('ik-settings-second-figure-sheet', app, [
+    ['@select', 1, -1], ['duplicateFigure'], ['@select', 2, 3], ['setNodeIK', {pinned: true}], ['rotateIKTarget', 0.2], ['setNodeIK', {bendDirection: -1}],
+    ['setNodeIK', {bendDirection: 0}], ['poseJoint', 540, 330], ['setNodeIK', {pinned: false}], ['poseJoint', 530, 320], ['setNodeIK', {chainLength: 1}],
+    ['beginDrag', 'Pose joint'], ['poseJoint', 525, 310], ['commitDrag'], ['undo'], ['undo'], ['redo'],
+  ], 'startup.document.json');
   scenario('ik-settings-pinned-sheet', app, [
     ['@select', 1, 3], ['setNodeIK', {allowStretch: true}], ['poseJoint', 560, 330], ['setNodeIK', {pinned: false}], ['@select', 1, 5], ['setNodeIK', {chainLength: 1}],
     ['setNodeIK', {bendDirection: 0}], ['rotateIKTarget', 0.5], ['@select', 1, 7], ['setNodeIK', {enabled: false}], ['undo'], ['redo'],

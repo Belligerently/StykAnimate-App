@@ -204,8 +204,19 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   // The timeline, figure and segment-value clipboards the session copied (the editor's own): a
   // session starts with none, and pastes only when the editor's clipboard is that one.
   let copied = null, copiedFigures = null, copiedValues = null, copiedCamera = null, copiedMotion = null, copiedVfxClip = null;
+  // `?engineEditCapture=on`: the session's starting document and state and every call it is
+  // sent are kept; the first sessions to meet an unported call, a difference or another error
+  // are saved in `report.captures`, for `styk edit-session` to replay natively.
+  const capturing = choice('engineEditCapture', 'stykanimate.engine.editCapture') === 'on';
+  let log = null;
+  const keep = key => {
+    const captures = report.captures ??= [];
+    if (log && captures.length < 8 && !captures.some(capture => capture.key === key)) captures.push({key, document: log.document, state: log.state, calls: log.calls.slice()});
+  };
+  const call = (live, name, args, viewText) => { log?.calls.push({name, args, view: viewText}); return live.call(name, args, viewText); };
   const end = why => {
     if (!session) return;
+    log = null;
     session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null; copiedCamera = null; copiedMotion = null; copiedVfxClip = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
@@ -287,9 +298,11 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (!side || side.failed || editor._drag || editor._authoredPoseEdit || editor._animationEdit || editor._vfxClipEdit) return null;
     // Not there yet: this call is not shadowed, the next one may be.
     if (stale || syncing || !side.mirror.framesCurrent(editor.report, editor.revision)) { prepare(); return null; }
-    const started = side.engine.handle.edit_session(JSON.stringify({...view(), ...counters(), propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)}));
+    const state = JSON.stringify({...view(), ...counters(), propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)});
+    const started = side.engine.handle.edit_session(state);
     if (!started) return null;
     if (started.revision() !== editor.revision) { started.free(); return null; }
+    if (capturing) log = {document: JSON.stringify(editor.report), state, calls: []};
     report.sessions++;
     return session = started;
   };
@@ -336,6 +349,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (report.mismatches.length < 50) report.mismatches.push({call: name, args: plain(args), problems,
       context: {tick: editor.tick, frameIndex: editor.frameIndex, draftObjects: edit?.frame.objects.length, keyframe: edit?.frame.keyframe_index, frameDraft: Boolean(editor.report._styk?.simpleFrameDraft)}});
     console.warn(`[engine shadow] ${name} differs:\n  ${problems.join('\n  ')}`);
+    keep(`${name}: a difference`);
     end('a difference');
   };
 
@@ -452,7 +466,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && own && OWNED.has(name)) {
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
-        try { text = live.call(name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
+        try { text = call(live, name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
         catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
         report.calls++;
         const why = answer?.status === 'ok' ? unadoptable(answer) : null;
@@ -467,12 +481,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
             entry.callMs = (entry.callMs ?? 0) + parsing - called; entry.answerBytes = (entry.answerBytes ?? 0) + text.length;
           }
         }
-        if (answer?.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
+        if (answer?.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; keep(key); end('a call the engine has not ported'); }
         else if (answer?.status === 'error') {
           // The editor throws the error itself, with its message; both are unchanged.
           depth++;
-          try { const result = original.apply(this, args); end('an error the editor did not raise'); return result; }
-          catch (error) { if ((error.messageKey ?? error.message) !== answer.error) end('a different error'); throw error; }
+          try { const result = original.apply(this, args); keep(`${name}: an error the editor did not raise`); end('an error the editor did not raise'); return result; }
+          catch (error) { if ((error.messageKey ?? error.message) !== answer.error) { keep(`${name}: a different error`); end('a different error'); } throw error; }
           finally { depth--; }
         } else if (answer) end(`an answer the editor cannot adopt (${name}: ${why})`);
         live = null;
@@ -494,9 +508,9 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && typeof result?.then === 'function') { end('an asynchronous call'); live = null; }
       if (live) {
         try {
-          const called = performance.now(), answer = JSON.parse(live.call(name, payload, draws.length ? JSON.stringify({...JSON.parse(before), draws}) : before));
+          const called = performance.now(), answer = JSON.parse(call(live, name, payload, draws.length ? JSON.stringify({...JSON.parse(before), draws}) : before));
           report.engineMs += performance.now() - called; report.calls++;
-          if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
+          if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; keep(key); end('a call the engine has not ported'); }
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
           if (name === 'sheetCopyFrames' && session && !thrown) copied = editor._sheetClipboard;
           if ((name === 'copySelection' || name === 'cutSelection') && session && !thrown) copiedFigures = editor._selectionClipboard ?? null;
@@ -520,7 +534,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (!live) return batch.call(this, label, operation, options);
     if (typeof label !== 'string' || options?.beforeSelection) { end('a batch the engine cannot open'); return batch.call(this, label, operation, options); }
     let answer;
-    try { answer = JSON.parse(live.call('beginBatch', JSON.stringify([label]), JSON.stringify(view()))); }
+    try { answer = JSON.parse(call(live, 'beginBatch', JSON.stringify([label]), JSON.stringify(view()))); }
     catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: 'beginBatch', problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; return batch.call(this, label, operation, options); }
     if (answer.status !== 'ok') { end('a batch the engine cannot open'); return batch.call(this, label, operation, options); }
     batching = true;
@@ -533,7 +547,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     finally { closing = null; batching = false; }
     if (session && closed) {
       try {
-        const called = performance.now(), ended = JSON.parse(session.call('endBatch', '[]', JSON.stringify(view())));
+        const called = performance.now(), ended = JSON.parse(call(session, 'endBatch', '[]', JSON.stringify(view())));
         report.engineMs += performance.now() - called; report.calls++;
         if (ended.status !== 'ok') end('a batch the engine cannot close');
         else compare('endBatch', [], ended, result, null, closed, sheetBefore);

@@ -7,6 +7,8 @@
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 //!   styk generators <file> <tick>…        the generated effects of frames: draws, live particles, timing
 //!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
+//!   styk edit-session <capture.json>      an app edit session the shadow facade captured,
+//!                                         replayed natively (each answer's status)
 //!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
 //!                                         on a document, called directly and through an edit
 //!                                         session's JSON (as the app calls it)
@@ -52,13 +54,14 @@ fn main() {
         Some("raster") if args.len() >= 4 => raster(&args[1], &args[2], &args[3], &args[4..]),
         Some("gpubench") if args.len() >= 3 => gpubench(&args[1], &args[2], args[3..].iter().any(|a| a == "--no-effects")),
         Some("edit-replay") if args.len() >= 2 => edit_replay(&args[1..]),
+        Some("edit-session") if args.len() == 2 => edit_session(&args[1]),
         Some("records") if args.len() >= 2 => records(&args[1], &args[2..]),
         Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3], &args[4..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         Some("export") if args.len() >= 4 => export::export(&args[1], &args[2], &args[3], &args[4..]),
         Some("raster-parity") if args.len() >= 2 => raster_parity::run(&args[1..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>... | edit-session <capture.json>");
             2
         }
     };
@@ -87,6 +90,46 @@ fn edit_replay(files: &[String]) -> i32 {
         }
     }
     i32::from(failed)
+}
+
+/// Replays an edit session the app's shadow facade captured (`?engineEditCapture=on`,
+/// `scripts/engine-edit-shadow.mjs --capture <folder>`): the document and editor state the
+/// session started from, then every call with the arguments and view the facade sent,
+/// printing each answer's status (and why, for one the engine did not run).
+fn edit_session(file: &str) -> i32 {
+    let capture = match std::fs::read(file).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())) {
+        Ok(capture) => capture,
+        Err(error) => {
+            println!("{file}: {error}");
+            return 2;
+        }
+    };
+    let text = |value: Option<&styk_doc::Value>| value.and_then(styk_doc::Value::as_str).unwrap_or("null").to_string();
+    let report = match styk_doc::json::parse(text(capture.get("document")).as_bytes()) {
+        Ok(report) => report,
+        Err(error) => {
+            println!("{file}: the document is not JSON: {error}");
+            return 2;
+        }
+    };
+    let mut session = match styk_edit::session::Session::start(report, &text(capture.get("state"))) {
+        Ok(session) => session,
+        Err(error) => {
+            println!("{file}: the session did not start: {error}");
+            return 2;
+        }
+    };
+    println!("{}: {}", file, text(capture.get("key")));
+    let calls: Vec<styk_doc::Value> = capture.get("calls").and_then(styk_doc::Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+    for (at, call) in calls.iter().enumerate() {
+        let name = text(call.get("name"));
+        let answer = session.call(&name, &text(call.get("args")), &text(call.get("view")));
+        let answer = styk_doc::json::parse(answer.as_bytes()).unwrap_or(styk_doc::Value::Null);
+        let status = text(answer.get("status"));
+        let why = answer.get("reason").or(answer.get("error")).and_then(styk_doc::Value::as_str).map(|why| format!(": {why}")).unwrap_or_default();
+        println!("{at:>4} {name}: {status}{why}");
+    }
+    0
 }
 
 /// Times a gesture in styk-edit on a loaded report (records-reference.mjs writes one):

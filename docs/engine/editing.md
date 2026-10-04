@@ -282,6 +282,20 @@ the engine (on joined, two undos reach history from before the session, which en
 starts the next). Their times include a duplicate, join and unjoin that each re-evaluate
 the frame with IK.
 
+### Replaying an app session natively
+
+With `?engineEditCapture=on` (or `localStorage['stykanimate.engine.editCapture'] = 'on'`) the
+facade keeps each session's starting document and state and every call it sends (name,
+arguments and the view, draws included); the first eight sessions to meet an unported call,
+a difference or another error are kept in `__stykEditShadow.captures`, one per reason.
+`node scripts/engine-edit-shadow.mjs … --capture <folder>` writes them as
+`<run>-<n>.capture.json`, and `styk edit-session <file>` replays one in `styk-edit` natively,
+printing each answer's status, so a refusal or difference met in the app can be debugged
+without the browser. The first one found this way (2026-10-04): `setNodeIK` on any figure
+but the first refused with "posing an IK target outside the frame", because the limb was
+captured from the native keyframe, which on a layer sheet holds fewer figures than the frame
+on show (`ik-settings-second-figure-sheet`).
+
 ## Values the editor draws at random (D18)
 
 Commands that draw identities or seeds draw them through `src/editor-draws.mjs`. The recorder

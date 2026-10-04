@@ -21,8 +21,11 @@
 // --own --default: the second run is the app's default (the engine owns editing for the
 // document classes it edits by default, and stays out of the others).
 // --warm: the interactions run once untimed before the timed round (warmed-up code).
+// --capture <folder>: the first sessions that meet an unported call, a difference or another
+// error are saved there (`?engineEditCapture=on`) as `<run>-<n>.capture.json`, which
+// `styk edit-session <file>` replays natively (docs/engine/editing.md).
 import {spawn} from 'node:child_process';
-import {readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {chromium} from '../tests/support/playwright.mjs';
 
@@ -50,6 +53,15 @@ const {origin, stop} = await server();
 const browser = await chromium.launch();
 const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
+const captureFolder = option('--capture');
+/** Writes the sessions a run captured (`report.captures`) into `--capture`'s folder. */
+async function saveCaptures(report, run) {
+  if (!captureFolder || !report?.captures?.length) return;
+  await mkdir(path.resolve(captureFolder), {recursive: true});
+  for (const [at, capture] of report.captures.entries()) await writeFile(path.resolve(captureFolder, `${run}-${at}.capture.json`), JSON.stringify(capture));
+  console.log(`  captured ${report.captures.length} sessions (${run}) in ${captureFolder}: ${report.captures.map(capture => capture.key).join('; ')}`);
+  delete report.captures;
+}
 let failed = true;
 /** One run of the interactions; `mode` is the query that sets up editing. */
 async function run(mode) {
@@ -62,7 +74,7 @@ async function run(mode) {
   const page = await context.newPage();
   const problems = [];
   page.on('pageerror', error => problems.push(`pageerror ${error.message.slice(0, 300)}`));
-  await page.goto(`${origin}/?${mode}`);
+  await page.goto(`${origin}/?${mode}${captureFolder ? '&engineEditCapture=on' : ''}`);
   await page.waitForFunction(() => window.styk?.ready === true, null, {timeout: 60000});
   await page.evaluate(() => { document.querySelector('.styk-privacy [data-decline]')?.click(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); });
   if (exactMath) await page.evaluate(async () => {
@@ -442,6 +454,8 @@ try {
     // editing class is owned by default (src/engine/engine-edit-shadow.mjs, OWNED_CLASSES).
     const owned = await run(args.includes('--default') ? '' : 'engineEdit=on');
     const {report, steps, refused, problems} = owned;
+    await saveCaptures(alone.report, 'alone');
+    await saveCaptures(report, 'owned');
     console.log(`steps: ${steps.join('; ')}`);
     for (const line of refused) console.log(`  refused by the editor: ${line}`);
     console.log(`engine-owned calls: ${report.owned} adopted from the engine (${report.ownedMs.toFixed(1)} ms), ${report.compared} run in both and the same, ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
@@ -491,6 +505,7 @@ try {
   } else {
   const {report, steps, refused, problems} = await run('engineShadow=on');
   if (!report) throw new Error('Shadow editing was not installed (is ?engineShadow=on honoured?)');
+  await saveCaptures(report, 'shadow');
   const out = option('--out');
   if (out) await writeFile(path.resolve(out), JSON.stringify({steps, refused, ...report, problems}, null, 1));
   console.log(`steps: ${steps.join('; ')}`);
