@@ -93,6 +93,8 @@ impl Session {
             }
             self.editor.set_sheet_selection(sheet_selection_of(&view));
         }
+        // What the editor drew at random during its own run of the call (D18).
+        self.editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
         let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
         match self.editor.call(method, &args) {
             Ok(result) => {

@@ -78,7 +78,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Gestures around pinned limbs: the solution baked before a pose edit (`_objectEdit(…, {posed})`, `_bakeIKFollowers`), follower offsets turned with their joint (`_rotateIKFollowers`), the bend remembered after every change (`_rememberIKBends`), a stretched end followed by its pin (`_followStretchedIK`); a gesture on joined figures takes in their whole assembly (`_ikPoseSlots`, `_expandIKDrag`) | yes | pinned-ik-sheet, ik-followers-sheet, ik-chains-sheet, ik-joined-sheet, ik-joined-late-sheet |
 | The project palette (`styk-edit/src/palette.rs`): `addPaletteColor`, `addPaletteColors`, `removePaletteColor`, `movePaletteColor` (colours as `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` or bytes), one `palette` history entry each; compared in both editors | yes | palette-sheet |
 | Audio tracks and clips (`styk-edit/src/audio.rs`): `setAudioTrack` (name, volume, mute, solo), `deleteAudioTrack`, `setAudioClip` (start, trim, duration, volume, fades kept within the clip, another track; the clip edited goes last on its track, as in the editor), `deleteAudioClip`, recordings nothing uses dropped; validated as `validateAudioState` does, each recording checked once (the editor's `WeakSet`, here by identity without keeping it alive); one `audio` history entry each. Not run in the app yet: the engine's document leaves the audio out ([document.md](document.md)), so these stay with the editor until the engine saves. Adding tracks, importing, splitting, duplicating and pasting clips draw random identities and ripples with frame edits are batches: they stay in the editor | yes | audio-sheet, audio-none-sheet |
-| Camera motion clips (`styk-edit/src/camera_motion.rs`): `setCameraMotion` (start, duration, switch, parameters, followed figures; muted ranges move with the clip) and `deleteCameraMotion`, validated as `validateCameraMotion` does, one `camera-motion` history entry each, the sheet lengthened to the last clip; compared in both editors, not adopted. Adding, duplicating, pasting and randomizing clips draw random identities or seeds and stay in the editor | yes | camera-motion-sheet |
+| Camera motion clips (`styk-edit/src/camera_motion.rs`): `setCameraMotion` (start, duration, switch, parameters, followed figures; muted ranges move with the clip) and `deleteCameraMotion`, validated as `validateCameraMotion` does, one `camera-motion` history entry each, the sheet lengthened to the last clip; compared in both editors, not adopted. `addCameraMotion` (each preset; a follow clip following the selected figures to the end), `copyCameraMotion`, `pasteCameraMotion`, `duplicateCameraMotion` (muted ranges moving with the copy) and `randomizeCameraMotion` take the identities and seeds the editor drew (D18) | yes | camera-motion-sheet, camera-motion-add-sheet, camera-motion-paste-sheet |
 | `updateSegment(patch)`: the selected joint's angle, length and bend (one posed edit; a connector's length within 0 to 1) and its definition's colour, transparency, thickness, shape and construction flag with the raw flags following (one `figure` history entry); compared in both editors, not adopted (its definition event is not a sheet publication) | yes | update-segment-sheet, update-segment-rig-sheet |
 | `updateObject(patch)`, `updateSelection(patch)`: the inspector's figure fields (scale, position, opacity, name, colour, mirroring, metadata) with the editor's refusals; with several figures selected, shared fields edit them all | yes | update-object-sheet, update-object-native |
 | `addFigure(typeId)` on a layer sheet: a new figure of a library definition in the middle of the canvas at the playhead, selected, in the active layer, through the range commit (`applyFigureRange`, `insert`, `_commitSheetRange`: only the inserted figure's layer is keyed, unlike a whole-frame transaction, which also stores joined figures' roots) | yes, not for movieclips or on a native timeline | add-figure-sheet, add-figure-layers-sheet |
@@ -275,6 +275,16 @@ after IK editing was ported, joined figures included: every call the script make
 the engine (on joined, two undos reach history from before the session, which ends it and
 starts the next). Their times include a duplicate, join and unjoin that each re-evaluate
 the frame with IK.
+
+## Values the editor draws at random (D18)
+
+Commands that draw identities or seeds draw them through `src/editor-draws.mjs`. The recorder
+(`engine/tools/edit-replay.mjs`) draws a fixed sequence (identities `d0d0d0d0-0000-4000-8000-…`)
+and stores each step's draws as `draws: [[kind, value], …]`; the replay hands them to the
+engine before the step (`Editor::set_draws`), and a port takes them in order and by kind
+(`draw_uuid`, `draw_seed`, `draw_random`), answering `Unported` when it would draw what it was
+not handed. In the app the facade records what the editor drew during its run of the call and
+sends it in the call's view; such calls run in both and are compared, never owned.
 
 ## Engine-owned editing in the app
 

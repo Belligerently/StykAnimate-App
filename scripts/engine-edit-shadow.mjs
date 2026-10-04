@@ -261,6 +261,9 @@ async function run(mode) {
       const e = styk.editor, clip = e.selectionFrame.objects.find(o => e.report.figure_types.find(f => f.figure_type_id === o.figure_type_id)?._styk?.movieclip);
       if (!clip) return; e.select(clip.unique_id, -1); e.setMovieclipPlayback({speed: 1.5}, {allFrames: true}); e.undo();
     }));
+    await step('add, copy, paste, duplicate and reseed camera motion clips', () => page.evaluate(() => {
+      const e = styk.editor; try { const id = e.addCameraMotion('shake'); e.copyCameraMotion(id); e.pasteCameraMotion(); e.duplicateCameraMotion(id); e.randomizeCameraMotion(id); e.undo(); } catch {}
+    }));
     await step('edit and delete a camera motion clip', () => page.evaluate(() => { const e = styk.editor, clip = e.getCameraMotions()[0]; if (!clip) return; e.setCameraMotion(clip.id, {start: clip.start + 1}); e.setCameraMotion(clip.id, {enabled: !clip.enabled}); e.deleteCameraMotion(clip.id); e.undo(); }));
     await step('set a layer parallax', () => page.evaluate(() => { const e = styk.editor, layer = e.report._styk?.layers?.order?.[0]; if (!layer) return; e.setLayerParallax(layer, {enabled: true, x: 0.5}); e.setLayerParallax(layer, {linked: false, y: 2}); e.undo(); e.undo(); }));
     await step('change the project settings', () => page.evaluate(() => { const e = styk.editor, {fps, canvas_width: width, canvas_height: height} = e.report; e.setFPS(fps + 1); e.updateProject({canvas_width: width + 10}); e.setCanvasSize(width, height); e.undo(); e.undo(); e.undo(); }));

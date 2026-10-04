@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 87 | 1227 KiB | 62 | 22 | 3 | 0 | 0 | 1 % | 47 % | 0 % |
+| `styk-edit` | 88 | 1228 KiB | 62 | 23 | 3 | 0 | 0 | 1 % | 47 % | 0 % |
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
 | `styk-eval` | 82 | 760 KiB | 36 | 37 | 9 | 0 | 0 | 16 % | 58 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 355 | 4042 KiB | 203 | 95 | 34 | 22 | 1 | 20 % | 40 % | 0 % |
+| **Total** | 356 | 4043 KiB | 203 | 96 | 34 | 22 | 1 | 20 % | 40 % | 0 % |
 
 ## Engine modules
 
@@ -84,7 +84,7 @@ Engine logic: ported to Rust.
 | `src/editor-builder-style.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder-topology.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs); polygon colour on a figure on show, surfaces, figure definition style and the builder's segment commands still JS |
-| `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); adding, duplicating, pasting, randomizing (random identities and seeds), parallax and baking still JS |
+| `src/editor-camera-motion.mjs` | `styk-edit` | partial | Rust: setCameraMotion, deleteCameraMotion, addCameraMotion, copyCameraMotion, pasteCameraMotion, duplicateCameraMotion and randomizeCameraMotion (identities and seeds the editor draws, D18) with validateCameraMotion and the camera-motion history entry (styk-edit/src/camera_motion.rs), setLayerParallax (styk-edit/src/layers.rs); baking camera motion still JS |
 | `src/editor-camera.mjs` | `styk-edit` | partial | Rust: copyCamera, pasteCamera, setCameraValues, resetCamera, transformCamera, alignCameraToView, locateCamera, locateHandle, camera drags and applyCameraToFigures on a layer sheet (styk-edit/src/camera_commands.rs); native-timeline camera snapshots and centerCamera (figure bounds) still JS |
 | `src/editor-clipboard-async.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-clipboard-sparse.mjs` | `styk-edit` | js | commands and history |
@@ -92,6 +92,7 @@ Engine logic: ported to Rust.
 | `src/editor-combine.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-drawing.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-draws.mjs` | `styk-edit` | partial | Rust: Editor::set_draws, draw_uuid, draw_seed and draw_random take what the editor drew for a call (D18); drawing the values stays in JavaScript until the engine owns the document |
 | `src/editor-duplicate-drag.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-figure-transform.mjs` | `styk-edit` | ported | beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag, createFigureHandleTransform, figureHandleTransform (styk-edit/src/figure_transform.rs); rotateOriginSupport only reached by documents with animation origins, which the engine does not edit |
 | `src/editor-frame-clipboard.mjs` | `styk-edit` | js | commands and history |

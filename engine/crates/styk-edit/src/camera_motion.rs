@@ -18,6 +18,9 @@ const FOLLOW_FRAMES: f64 = 100000.0;
 /// `Object.keys(defaults)` and `Object.keys(FOLLOW_DEFAULTS)`: the parameters of each kind.
 const PRESET_KEYS: [&str; 13] = ["strength", "moveX", "moveY", "roll", "zoom", "frequency", "roughness", "direction", "recovery", "phase", "fadeIn", "fadeOut", "seed"];
 const FOLLOW_KEYS: [&str; 13] = ["strength", "followX", "followY", "offsetX", "offsetY", "lag", "deadZone", "lookAhead", "zoomFit", "padding", "maxZoom", "fadeIn", "fadeOut"];
+/// `defaults` and `FOLLOW_DEFAULTS` (src/camera-motion.mjs, src/camera-follow.mjs): a new clip's parameters.
+const MOTION_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("moveX", 12.0), ("moveY", 12.0), ("roll", 1.0), ("zoom", 0.0), ("frequency", 8.0), ("roughness", 0.5), ("direction", 0.0), ("recovery", 5.0), ("phase", 0.0), ("fadeIn", 2.0), ("fadeOut", 4.0), ("seed", 1.0)];
+const FOLLOW_DEFAULTS: &[(&str, f64)] = &[("strength", 1.0), ("followX", 1.0), ("followY", 1.0), ("offsetX", 0.0), ("offsetY", 0.0), ("lag", 8.0), ("deadZone", 0.0), ("lookAhead", 0.0), ("zoomFit", 0.0), ("padding", 0.2), ("maxZoom", 3.0), ("fadeIn", 6.0), ("fadeOut", 6.0)];
 
 /// `MOTION_PARAMETERS[key]`'s range.
 fn range(key: &str) -> (f64, f64) {
@@ -280,6 +283,137 @@ impl Editor {
         let mut list = clips;
         list[at] = Value::object(next);
         self.publish_camera(list, "Edit camera motion")
+    }
+
+    /// `copyCameraMotion(id)`: a clip kept for pasting.
+    pub(crate) fn copy_camera_motion(&mut self, id: &Value) -> bool {
+        match self.camera_clips().into_iter().find(|c| c.get("id") == Some(id)) {
+            Some(clip) => {
+                self.camera_motion_clipboard = Some(clip);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// A copy of `clip` with a new identity at `start` (its muted ranges moved with it).
+    fn moved_clip(&mut self, clip: &Value, start: f64) -> Result<Value, EditError> {
+        let mut next = clip.as_obj().cloned().unwrap_or_default();
+        next.set("id", Value::str(&format!("motion-{}", self.draw_uuid()?)));
+        next.set("start", Value::Num(start));
+        let duration = clip.get("duration").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        if let Some(ranges) = shifted_ranges(clip, start, duration) {
+            next.set("mutedRanges", ranges);
+        }
+        Ok(Value::object(next))
+    }
+
+    /// `pasteCameraMotion(start)`: the copied clip at `start` (the playhead's frame by
+    /// default) with a new identity. Returns the identity.
+    pub(crate) fn paste_camera_motion(&mut self, start: Option<f64>) -> Result<Value, EditError> {
+        let Some(clip) = self.camera_motion_clipboard.clone() else { return Err(invalid("errors.editorCameraMotion.copyACameraMotionClipFirst")) };
+        let next = self.moved_clip(&clip, start.unwrap_or(self.tick.floor()))?;
+        let id = next.get("id").cloned().unwrap_or(Value::Null);
+        let mut clips = self.camera_clips();
+        clips.push(next);
+        self.publish_camera(clips, "Paste camera motion")?;
+        Ok(id)
+    }
+
+    /// `duplicateCameraMotion(id, start)`: a copy after the clip (or at `start`).
+    pub(crate) fn duplicate_camera_motion(&mut self, id: &Value, start: Option<f64>) -> Result<Value, EditError> {
+        let Some(source) = self.camera_clips().into_iter().find(|c| c.get("id") == Some(id)) else { return Err(invalid("errors.editorCameraMotion.selectACameraMotionClip")) };
+        let number = |key: &str| source.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
+        let next = self.moved_clip(&source, start.unwrap_or(number("start") + number("duration")))?;
+        let id = next.get("id").cloned().unwrap_or(Value::Null);
+        let mut clips = self.camera_clips();
+        clips.push(next);
+        self.publish_camera(clips, "Duplicate camera motion")?;
+        Ok(id)
+    }
+
+    /// `addCameraMotion(type, {start, duration, targets})` (`createCameraMotion`): a preset
+    /// clip at the playhead's frame; a follow clip follows the selected figures to the end.
+    pub(crate) fn add_camera_motion(&mut self, kind: &Value, options: &Value) -> Result<Value, EditError> {
+        let kind = kind.as_str().unwrap_or("").to_string();
+        let given = |key: &str| options.get(key).filter(|v| !v.is_null()).cloned();
+        // `{start = Math.floor(this.tick)}`: only a missing start takes the default.
+        let start = options.get("start").cloned().unwrap_or(Value::Num(self.tick.floor()));
+        let mut targets = given("targets");
+        let mut duration = given("duration");
+        if kind == "follow" {
+            if targets.is_none() {
+                let list: Vec<Value> = self.selection.uids.iter().map(|uid| {
+                    let mut target = Obj::new();
+                    target.set("uid", Value::Num(*uid as f64));
+                    target.set("weight", Value::Num(1.0));
+                    Value::object(target)
+                }).collect();
+                targets = Some(Value::array(list));
+            }
+            if targets.as_ref().and_then(Value::array_len).unwrap_or(0) == 0 {
+                return Err(invalid("errors.editorCameraMotion.selectTheFiguresTheCameraShouldFollow"));
+            }
+            if duration.is_none() {
+                let total = crate::timeline::total_ticks(&crate::timeline::rows(&self.report));
+                duration = Some(Value::Num(FOLLOW_FRAMES.min(24f64.max(total - start.as_f64().unwrap_or(f64::NAN)))));
+            }
+        }
+        let duration = duration.unwrap_or(Value::Num(if kind == "impact" { 12.0 } else { 24.0 }));
+        let id = format!("motion-{}", self.draw_uuid()?);
+        // `createCameraMotion(type, id, start, duration, {targets})`
+        if !TYPES.contains(&kind.as_str()) {
+            return Err(invalid("errors.cameraMotion.chooseACameraMotionPreset"));
+        }
+        let mut clip = Obj::new();
+        clip.set("id", Value::str(&id));
+        clip.set("type", Value::str(&kind));
+        clip.set("start", start);
+        clip.set("duration", duration);
+        clip.set("enabled", Value::Bool(true));
+        let mut params = Obj::new();
+        if kind == "follow" {
+            validate_targets(targets.as_ref())?;
+            let list: Vec<Value> = targets.as_ref().and_then(Value::elements).map(|e| e.iter().map(|t| {
+                let mut target = Obj::new();
+                target.set("uid", t.get("uid").cloned().unwrap_or(Value::Null));
+                target.set("weight", t.get("weight").cloned().unwrap_or(Value::Null));
+                Value::object(target)
+            }).collect()).unwrap_or_default();
+            clip.set("targets", Value::array(list));
+            for (key, value) in FOLLOW_DEFAULTS {
+                params.set(key, Value::Num(*value));
+            }
+        } else {
+            for (key, value) in MOTION_DEFAULTS {
+                params.set(key, Value::Num(*value));
+            }
+            let preset: &[(&str, f64)] = match kind.as_str() {
+                "handheld" => &[("moveX", 3.0), ("moveY", 2.0), ("roll", 0.3), ("frequency", 0.7)],
+                "wobble" => &[("moveX", 5.0), ("moveY", 2.0), ("roll", 2.0), ("frequency", 1.5)],
+                "impact" => &[("moveX", 18.0), ("moveY", 18.0), ("roll", 1.5), ("zoom", 0.04), ("fadeIn", 0.0), ("fadeOut", 0.0), ("frequency", 6.0)],
+                "pulse" => &[("moveX", 0.0), ("moveY", 0.0), ("roll", 0.0), ("zoom", 0.08), ("fadeIn", 0.0), ("fadeOut", 0.0)],
+                _ => &[],
+            };
+            for (key, value) in preset {
+                params.set(key, Value::Num(*value));
+            }
+        }
+        clip.set("params", Value::object(params));
+        let mut clips = self.camera_clips();
+        clips.push(Value::object(clip));
+        self.publish_camera(clips, "Add camera motion")?;
+        Ok(Value::str(&id))
+    }
+
+    /// `randomizeCameraMotion(id)`: a new seed (31 random bits).
+    pub(crate) fn randomize_camera_motion(&mut self, id: &Value) -> Result<bool, EditError> {
+        let seed = (self.draw_seed()? as u32 & 0x7fff_ffff) as f64;
+        let mut params = Obj::new();
+        params.set("seed", Value::Num(seed));
+        let mut patch = Obj::new();
+        patch.set("params", Value::object(params));
+        self.set_camera_motion(id, &Value::object(patch))
     }
 
     /// `deleteCameraMotion(id)`.

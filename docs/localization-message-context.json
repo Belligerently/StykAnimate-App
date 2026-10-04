@@ -15277,62 +15277,62 @@
   },
   "errors.editorCameraMotion.bakeAValidRangeOfAtMost100": {
     "locations": [
-      "src/editor-camera-motion.mjs:63"
+      "src/editor-camera-motion.mjs:64"
     ],
     "context": "if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>this.totalTicks||end-start>100000)throw messageError(new Error(''), \"errors.editor"
   },
   "errors.editorCameraMotion.copyACameraMotionClipFirst": {
     "locations": [
-      "src/editor-camera-motion.mjs:34"
+      "src/editor-camera-motion.mjs:35"
     ],
     "context": "pasteCameraMotion(start=Math.floor(this.tick)){const clip=this._cameraMotionClipboard;if(!clip)throw messageError(new Error(''), \"errors.editorCameraMotion.copy"
   },
   "errors.editorCameraMotion.selectACameraMotionClip": {
     "locations": [
-      "src/editor-camera-motion.mjs:48",
-      "src/editor-camera-motion.mjs:52"
+      "src/editor-camera-motion.mjs:49",
+      "src/editor-camera-motion.mjs:53"
     ],
     "context": "const clips=this.getCameraMotions(),old=clips.find(c=>c.id===id);if(!old)throw messageError(new Error(''), \"errors.editorCameraMotion.selectACameraMotionClip\", "
   },
   "errors.editorCameraMotion.selectAFigureLayerForParallax": {
     "locations": [
-      "src/editor-camera-motion.mjs:55"
+      "src/editor-camera-motion.mjs:56"
     ],
     "context": "const layer=this.getLayer(id);if(layer?.kind!=='layer')throw messageError(new Error(''), \"errors.editorCameraMotion.selectAFigureLayerForParallax\", {});if(layer"
   },
   "errors.editorCameraMotion.selectTheFiguresTheCameraShouldFollow": {
     "locations": [
-      "src/editor-camera-motion.mjs:39"
+      "src/editor-camera-motion.mjs:40"
     ],
     "context": "if(!targets.length)throw messageError(new Error(''), \"errors.editorCameraMotion.selectTheFiguresTheCameraShouldFollow\", {});"
   },
   "errors.editorCameraMotion.theAnimationChangedWhileBakingTryAgain": {
     "locations": [
-      "src/editor-camera-motion.mjs:69"
+      "src/editor-camera-motion.mjs:70"
     ],
     "context": "if(this.revision!==revision||this._documentToken!==token||this._drag||this._animationEdit)throw messageError(new Error(''), \"errors.editorCameraMotion.theAnimat"
   },
   "errors.editorCameraMotion.unlockBeforeEditingParallax": {
     "locations": [
-      "src/editor-camera-motion.mjs:55"
+      "src/editor-camera-motion.mjs:56"
     ],
     "context": "const layer=this.getLayer(id);if(layer?.kind!=='layer')throw messageError(new Error(''), \"errors.editorCameraMotion.selectAFigureLayerForParallax\", {});if(layer"
   },
   "errors.editorCameraMotion.unlockCameraBeforeEditingMotion": {
     "locations": [
-      "src/editor-camera-motion.mjs:17"
+      "src/editor-camera-motion.mjs:18"
     ],
     "context": "function unlocked(editor){if(editor.getLayer('camera')?.locked)throw messageError(new Error(''), \"errors.editorCameraMotion.unlockCameraBeforeEditingMotion\", {}"
   },
   "errors.editorCameraMotion.unsupportedCameraMotionProperty": {
     "locations": [
-      "src/editor-camera-motion.mjs:47"
+      "src/editor-camera-motion.mjs:48"
     ],
     "context": "if(Object.keys(patch).some(k=>!['start','duration','enabled','params','targets'].includes(k)))throw messageError(new Error(''), \"errors.editorCameraMotion.unsup"
   },
   "errors.editorCameraMotion.unsupportedParallaxProperty": {
     "locations": [
-      "src/editor-camera-motion.mjs:56"
+      "src/editor-camera-motion.mjs:57"
     ],
     "context": "if(Object.keys(patch).some(k=>!['enabled','linked','x','y','reference'].includes(k)))throw messageError(new Error(''), \"errors.editorCameraMotion.unsupportedPar"
   },

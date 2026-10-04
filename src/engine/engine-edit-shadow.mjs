@@ -24,6 +24,7 @@
 import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 import {layerFocusOf} from '../editor-layer-focus.mjs';
 import {figureHandleTransform} from '../editor-figure-transform.mjs';
+import {withDraws} from '../editor-draws.mjs';
 
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
@@ -33,6 +34,8 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
   'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'segmentValues', 'beginSegmentValueEdit', 'setSegmentValues', 'copySegmentValues', 'pasteSegmentValues',
   'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'applyCameraToFigures',
+  // These draw identities or seeds (D18): the editor runs them and hands the engine what it drew.
+  'addCameraMotion', 'copyCameraMotion', 'pasteCameraMotion', 'duplicateCameraMotion', 'randomizeCameraMotion',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
@@ -185,10 +188,10 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   let batching = false, closing = null;
   // The timeline, figure and segment-value clipboards the session copied (the editor's own): a
   // session starts with none, and pastes only when the editor's clipboard is that one.
-  let copied = null, copiedFigures = null, copiedValues = null, copiedCamera = null;
+  let copied = null, copiedFigures = null, copiedValues = null, copiedCamera = null, copiedMotion = null;
   const end = why => {
     if (!session) return;
-    session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null; copiedCamera = null;
+    session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null; copiedCamera = null; copiedMotion = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
@@ -418,6 +421,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && name === 'pasteSelection' && (editor._selectionClipboard ?? editor._figureClipboard ?? null) !== copiedFigures) { end('a figure clipboard the session did not copy'); live = null; }
       if (live && name === 'pasteSegmentValues' && args[0] == null && (editor._segmentValuesClipboard ?? null) !== copiedValues) { end('segment values the session did not copy'); live = null; }
       if (live && name === 'pasteCamera' && (editor._cameraClipboard ?? null) !== copiedCamera) { end('a camera the session did not copy'); live = null; }
+      if (live && name === 'pasteCameraMotion' && (editor._cameraMotionClipboard ?? null) !== copiedMotion) { end('a camera motion clip the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         let given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
@@ -460,8 +464,9 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       const sheetBefore = editor.report._styk?.layerSheet;
       depth++; events = [];
       const started = performance.now();
-      let result, thrown;
-      try { result = original.apply(this, args); } catch (error) { thrown = error; } finally { depth--; }
+      let result, thrown, draws = [];
+      // What the editor draws at random during the call goes to the engine with it (D18).
+      try { ({result, draws} = withDraws(() => original.apply(this, args))); } catch (error) { thrown = error; draws = error?.draws ?? []; } finally { depth--; }
       const captured = events; events = null;
       report.jsMs += performance.now() - started;
       // What the calls the engine would own cost the editor (compared with `ownedMs`).
@@ -473,7 +478,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && typeof result?.then === 'function') { end('an asynchronous call'); live = null; }
       if (live) {
         try {
-          const called = performance.now(), answer = JSON.parse(live.call(name, payload, before));
+          const called = performance.now(), answer = JSON.parse(live.call(name, payload, draws.length ? JSON.stringify({...JSON.parse(before), draws}) : before));
           report.engineMs += performance.now() - called; report.calls++;
           if (answer.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; end('a call the engine has not ported'); }
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
@@ -481,6 +486,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           if ((name === 'copySelection' || name === 'cutSelection') && session && !thrown) copiedFigures = editor._selectionClipboard ?? null;
           if (name === 'copySegmentValues' && session && !thrown) copiedValues = editor._segmentValuesClipboard ?? null;
           if (name === 'copyCamera' && session && !thrown) copiedCamera = editor._cameraClipboard ?? null;
+          if (name === 'copyCameraMotion' && session && !thrown) copiedMotion = editor._cameraMotionClipboard ?? null;
         } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;

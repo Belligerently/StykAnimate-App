@@ -54,6 +54,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         let number = step.get("step").and_then(Value::as_f64).unwrap_or(0.0) as usize;
         let call: Vec<Value> = step.get("call").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let method = call.first().and_then(Value::as_str).unwrap_or("").to_string();
+        editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
         let result = editor.call(&method, &call[1..]);
         let mut differences = Vec::new();
         let recorded_error = step.get("error").filter(|e| !e.is_null());

@@ -170,6 +170,11 @@ pub struct Editor {
     pub(crate) segment_values_clipboard: Option<String>,
     /// `editor._cameraClipboard`: the last copied camera.
     pub(crate) camera_clipboard: Option<Value>,
+    /// `editor._cameraMotionClipboard`: the last copied camera motion clip.
+    pub(crate) camera_motion_clipboard: Option<Value>,
+    /// What the editor drew at random for the call being made (`[kind, value]` in order:
+    /// `uuid`, `seed`, `random`; src/editor-draws.mjs, D18), handed over with the call.
+    pub(crate) draws: std::collections::VecDeque<(String, Value)>,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -224,6 +229,7 @@ struct Snapshot {
     figure_clipboard: Option<figure_clipboard::FigureClipboard>,
     segment_values_clipboard: Option<String>,
     camera_clipboard: Option<Value>,
+    camera_motion_clipboard: Option<Value>,
     vfx_edit: Option<Option<Value>>,
     batch: Option<history::Batch>,
     sheet_selection: Option<select::SheetSelection>,
@@ -262,6 +268,8 @@ impl Editor {
             figure_clipboard: None,
             segment_values_clipboard: None,
             camera_clipboard: None,
+            camera_motion_clipboard: None,
+            draws: Default::default(),
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -282,6 +290,40 @@ impl Editor {
 
     /// The editor's counters that the document does not carry: the layer revision
     /// its events name, the number of the next pose source and the next figure identity.
+    /// What the editor drew at random for the next call (`draws` of a recording or a session
+    /// call: `[[kind, value], …]`); a call that draws takes them in order (D18).
+    pub fn set_draws(&mut self, draws: &Value) {
+        self.draws = draws
+            .elements()
+            .map(|e| e.iter().filter_map(|pair| Some((pair.item(0)?.as_str()?.to_string(), pair.item(1)?))).collect())
+            .unwrap_or_default();
+    }
+
+    /// The next value the editor drew, of `kind`; a call without it is not ported here.
+    pub(crate) fn draw(&mut self, kind: &str) -> Result<Value, EditError> {
+        match self.draws.pop_front() {
+            Some((drawn, value)) if drawn == kind => Ok(value),
+            Some((drawn, _)) => Err(EditError::Unported(format!("a call that draws a {kind} where the editor drew a {drawn}"))),
+            None => Err(EditError::Unported(format!("a call that draws a {kind} the editor did not hand over"))),
+        }
+    }
+
+    /// `editorDraws.uuid()`.
+    pub(crate) fn draw_uuid(&mut self) -> Result<String, EditError> {
+        self.draw("uuid")?.as_str().map(str::to_string).ok_or_else(|| EditError::Unported("an identity that is not text".into()))
+    }
+
+    /// `editorDraws.seed()`.
+    pub(crate) fn draw_seed(&mut self) -> Result<f64, EditError> {
+        self.draw("seed")?.as_f64().ok_or_else(|| EditError::Unported("a seed that is not a number".into()))
+    }
+
+    /// `editorDraws.random()` (the seeds new generator effects draw; not ported yet).
+    #[allow(dead_code)]
+    pub(crate) fn draw_random(&mut self) -> Result<f64, EditError> {
+        self.draw("random")?.as_f64().ok_or_else(|| EditError::Unported("a fraction that is not a number".into()))
+    }
+
     pub fn set_counters(&mut self, layer_revision: u64, next_frame_identity: u64, next_uid: u64) {
         self.layer_revision = layer_revision;
         self.next_frame_identity = next_frame_identity;
@@ -418,6 +460,7 @@ impl Editor {
             figure_clipboard: self.figure_clipboard.clone(),
             segment_values_clipboard: self.segment_values_clipboard.clone(),
             camera_clipboard: self.camera_clipboard.clone(),
+            camera_motion_clipboard: self.camera_motion_clipboard.clone(),
             vfx_edit: self.vfx_edit.clone(),
             batch: self.batch.clone(),
             sheet_selection: self.sheet_selection.clone(),
@@ -444,6 +487,7 @@ impl Editor {
         self.figure_clipboard = snapshot.figure_clipboard;
         self.segment_values_clipboard = snapshot.segment_values_clipboard;
         self.camera_clipboard = snapshot.camera_clipboard;
+        self.camera_motion_clipboard = snapshot.camera_motion_clipboard;
         self.vfx_edit = snapshot.vfx_edit;
         self.batch = snapshot.batch;
         self.sheet_selection = snapshot.sheet_selection;
@@ -539,6 +583,11 @@ impl Editor {
             "movePaletteColor" => self.move_palette_color(&arg(0), &arg(1)).map(Value::Bool),
             "setCameraMotion" => self.set_camera_motion(&arg(0), &arg(1)).map(Value::Bool),
             "deleteCameraMotion" => self.delete_camera_motion(&arg(0)).map(Value::Bool),
+            "copyCameraMotion" => Ok(Value::Bool(self.copy_camera_motion(&arg(0)))),
+            "pasteCameraMotion" => self.paste_camera_motion(arg(0).as_f64()),
+            "duplicateCameraMotion" => self.duplicate_camera_motion(&arg(0), arg(1).as_f64()),
+            "addCameraMotion" => self.add_camera_motion(&arg(0), &arg(1)),
+            "randomizeCameraMotion" => self.randomize_camera_motion(&arg(0)).map(Value::Bool),
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),

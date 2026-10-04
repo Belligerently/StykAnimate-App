@@ -249,6 +249,23 @@ scenario('frames-movieclip-sheet', app, [
     ['createLayer', 'Clips'], ['sheetTransferFrames', ['layer-1'], ['layer-2'], 6, 6, 3], ['@seek', 0], ['@select', 4, -1], ['setMovieclipPlayback', {mode: 'hold'}, {allFrames: true}],
     ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');
+  // Camera motion clips added (each preset, a follow clip following the selected figures to the
+  // end, refusals), copied and pasted, duplicated, given a new seed; identities and seeds drawn
+  // by the editor (D18); history.
+  scenario('camera-motion-add-sheet', app, [
+    ['addCameraMotion', 'shake'], ['addCameraMotion', 'impact', {start: 2}], ['addCameraMotion', 'handheld', {duration: 5}], ['addCameraMotion', 'wobble'], ['addCameraMotion', 'pulse', {start: 1, duration: 3}],
+    ['addCameraMotion', 'bogus'], ['addCameraMotion', 'follow'], ['@select', 1, -1], ['addCameraMotion', 'follow'], ['addCameraMotion', 'follow', {targets: [{uid: 1, weight: 2}]}],
+    ['copyCameraMotion', 'nope'], ['pasteCameraMotion'], ['copyCameraMotion', 'motion-d0d0d0d0-0000-4000-8000-000000000001'], ['@seek', 3], ['pasteCameraMotion'], ['pasteCameraMotion', 5],
+    ['duplicateCameraMotion', 'motion-d0d0d0d0-0000-4000-8000-000000000002'], ['duplicateCameraMotion', 'motion-d0d0d0d0-0000-4000-8000-000000000002', 1], ['duplicateCameraMotion', 'nope'],
+    ['randomizeCameraMotion', 'motion-d0d0d0d0-0000-4000-8000-000000000003'], ['randomizeCameraMotion', 'nope'], ['setLayerLocked', 'camera', true], ['addCameraMotion', 'shake'], ['setLayerLocked', 'camera', false],
+    ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'joined-chain.document.json');
+  // A clip with muted ranges pasted and duplicated (the ranges move with it), from a playhead
+  // between frames.
+  scenario('camera-motion-paste-sheet', app, [
+    ['copyCameraMotion', 'motion-00000000-0000-4000-8000-000000000002'], ['@seek', 4.5], ['pasteCameraMotion'], ['duplicateCameraMotion', 'motion-00000000-0000-4000-8000-000000000002', 30],
+    ['undo'], ['redo'],
+  ], 'camera-motion.document.json');
   scenario('move-frames-presence-clip-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, 3, {copy: true}], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');

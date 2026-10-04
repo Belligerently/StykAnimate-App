@@ -21,6 +21,7 @@ import path from 'node:path';
 const here = path.dirname(new URL(import.meta.url).pathname);
 const repo = path.resolve(here, '../..');
 const {Editor} = await import(`${repo}/src/editor.mjs`);
+const {withDraws} = await import(`${repo}/src/editor-draws.mjs`);
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 /** The report as the mirror sends it (src/engine/engine-mirror.mjs strips the same caches). */
@@ -66,13 +67,23 @@ export function replay(scenario, base = repo) {
     if (name === '@batch') { let last; return editor.movieclipBatch(args[0], () => { for (const step of args[1]) last = run(step); return last; }); }
     return editor[name === '@seek' ? 'seek' : name === '@select' ? 'select' : name](...args.map(decode));
   };
+  // What the editor draws at random comes from a fixed sequence, and each step records it
+  // (`draws`) for the engine to be handed the same values (D18).
+  let drawn = 0;
+  const source = kind => {
+    drawn++;
+    // Not the pattern the fixture generators and the app driver draw with: documents made by them keep their identities.
+    if (kind === 'uuid') return `d0d0d0d0-0000-4000-8000-${String(drawn).padStart(12, '0')}`;
+    const bits = Math.imul(drawn, 0x9e3779b1) >>> 0;
+    return kind === 'seed' ? bits : bits / 2 ** 32;
+  };
   scenario.steps.forEach((call, index) => {
     events.length = 0;
-    let result, error = null;
-    try { result = run(call); }
-    catch (caught) { error = {message: caught.message, key: caught.messageKey ?? null}; }
+    let result, error = null, draws = [];
+    try { ({result, draws} = withDraws(() => run(call), source)); }
+    catch (caught) { error = {message: caught.message, key: caught.messageKey ?? null}; draws = caught?.draws ?? []; }
     const text = reportJSON(editor);
-    steps.push({step: index + 1, call, result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});
+    steps.push({step: index + 1, call, ...(draws.length ? {draws} : {}), result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});
     previous = text;
   });
   return {scenario: scenario.name, editor: scenario.editor ?? {}, steps};
