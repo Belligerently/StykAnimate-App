@@ -74,9 +74,21 @@ const GESTURES: &[&str] = &[
 /// Calls that only read or restore: selection, the playhead, history.
 const VIEWS: &[&str] = &["select", "@select", "selectMany", "seek", "@seek", "undo", "redo", "cancelDrag"];
 
+/// Movieclip capture/break can read future native keys, saved sources and nested assets.
+/// Reuse the controller owner rather than relying on the gesture's current-frame gate.
+fn movieclip_document_has_controllers(report: &Value) -> bool {
+    let frame_has_controllers = |frame: &Value| frame.get("objects").and_then(Value::elements).is_some_and(|objects| objects.iter().any(|object| !controllers(&object).is_empty()));
+    report.get("keyframes").and_then(Value::elements).is_some_and(|frames| frames.iter().any(|frame| frame_has_controllers(&frame)))
+        || report.path(&["_styk", "frameSources"]).and_then(Value::as_obj).is_some_and(|sources| sources.iter().any(|(_, frame)| frame_has_controllers(frame)))
+        || report.get("figure_types").and_then(Value::elements).is_some_and(|figures| figures.iter().any(|figure| figure.path(&["_styk", "movieclip", "document"]).is_some_and(movieclip_document_has_controllers)))
+}
+
 impl Editor {
     /// Why `method` cannot run here because of IK controllers on the frame on show.
-    pub(crate) fn ik_gate(&self, method: &str) -> Result<Option<String>, EditError> {
+    pub(crate) fn ik_gate(&self, method: &str, args: &[Value]) -> Result<Option<String>, EditError> {
+        if self.native_movieclip_mutation(method, args) && movieclip_document_has_controllers(&self.report) {
+            return Ok(Some("native movieclip edits with IK are not recorded".into()));
+        }
         if VIEWS.contains(&method) {
             return Ok(None);
         }

@@ -128,6 +128,34 @@ pending. Mobile API additions: `Session::call_values`, `records::paint_record`,
 `picking::{JointOrder, ClosestJointOptions, JointHit, closest_joint}` and
 `QueryError::InvalidOrder`, all platform neutral.
 
+The reviewed renderer, movie/layer/history/selection, canonical root publication and
+origin sheet motion prerequisites are integrated. Shared-type checks pass 615 native
+Rust tests; final planner test-setup strengthening passes its seven unit tests. All
+307 affected JavaScript tests and `npm run check` (1,994 files) pass. Affected CLI
+replays admit 75 new recordings / 6,446 exact steps plus 64 worker recordings / 643
+steps; 16 deliberate guards remain explicit. Regeneration preserves all 3,153 JSON,
+including 88 new evaluated-record groups / 798 ticks. Totals: 461 command recordings,
+371 evaluated groups / 4,032 ticks. Shipping Wasm is 9,528 KiB (`c14773c5a27f`).
+Software-web stored/fractional preview pictures pass 4/4, zero solids; actual selection
+adoption passes three owned calls plus six exact comparisons and preserves the
+22,810-byte document, six history entries, selection and full undo. No class gate,
+JavaScript deletion or performance claim. The broad sheet shadow run stalled without
+comparison and was stopped; focused verification passes, broader flow/readiness stays
+required before adoption gates. Missing fixture alias and empty focus attempts are
+retained as unsuccessful verification, never counted.
+Mobile API changes are listed in `docs/engine/editing.md` and `threading.md`: checked
+layer/canonical publication APIs and history owner, retained source/effect clocks,
+selection metadata and motion display; `FrameData::tick` is `f64`, `Engine::stage`
+returns a checked result and `PlanError::Unported` carries `String`. Keep crates neutral.
+The background full checkpoint on immutable committed `53e3bdd9` passed at
+2026-10-04 16:36 CEST: 421 Rust tests, byte-stable repository fixtures and all
+358 container comparisons. Its first release build used a cold persistent isolated
+target (2,297.5 s); after all regeneration the entire release test target is fresh
+in 0.43 s, with no recompilation. Retain that cache. Next regular checkpoint starts
+no earlier than 17:54 CEST; gate/benchmark/deletion requirements still apply.
+Logs: `tmp/root-verification-temp/checkpoint-53e3bdd9.log` and
+`checkpoint-53e3bdd9-cache-freshness.log`.
+
 ### Where the port stands
 
 | Stage | State |
@@ -135,16 +163,16 @@ pending. Mobile API additions: `Session::call_values`, `records::paint_record`,
 | S0 plan, baseline | Done (sections 1–5; baseline worktree `tmp/baseline-worktree` at `96ebce85`). |
 | S1 formats | Done: the Rust codec runs in the app in place of Pyodide and the Python sidecar; the Python codec is a development oracle only. Left: `.styk` open/save through Rust once the engine owns the document; sidecar names in brand and release tooling. |
 | S2 store, evaluation, geometry | Done for every feature the gate checks: IK (2D, 3D, joined), channels, meshes, follow camera, text, movieclip replacements, effects as records. Camera motion now uses V8-exact maths. |
-| S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Drawing cels under effects now match Electron; software web and crisp parity remain open. Left: the camera monitor on WebGL2, in-between previews, then item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
+| S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Drawing cels under effects now match Electron; software web and crisp parity remain open. Worker monitor and exact in-between sample prerequisites are assembled; actual-shown/resource ordering remains. Left: item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
 | S4 export, thumbnails, previews | Done for documents the engine draws, on the GPU or the CPU; SVG stays JavaScript by design. |
-| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 370 command recordings include the 63 new exact range/join/2D-rig replays, 12 effect-preset/scope/paint replays and four existing explicit builder/native-channel guards. Origins admit recorded whole/joint/handle/topology/saved-channel/range/join/2D-rig calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
+| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 461 command recordings include recorded movieclip/native scalar/optional selection and origin sheet motion prerequisites, plus explicit unsupported guards. Canonical worker Session app adoption is pending. Origins admit recorded whole/joint/handle/topology/saved-channel/range/join/2D-rig calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
 | S6 drawing raster engine | Done: `styk-drawing` (D17) runs in the drawing workers by default (`?drawingEngine=off` to compare). |
 | S7 | Not started: dead machinery, final screenshots, interleaved benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, Windows CI. |
 
 Inventory (`docs/engine/INVENTORY.md`, rendered from `engine/inventory.tsv`): 356 modules,
-4,045 KiB of engine source at the start; 182 js, 116 partial, 35 ported, 22 verified, 1
-removed; 20 % covered by Rust, 47 % partly covered, 0 % deleted. `styk-edit` alone: 89
-modules, 49 js, 36 partial, 4 ported.
+4,053 KiB of engine source at the start; 177 js, 121 partial, 35 ported, 22 verified, 1
+removed; 20 % covered by Rust, 48 % partly covered, 0 % deleted. `styk-edit` alone: 89
+modules, 46 js, 39 partial, 4 ported.
 
 **Document classes the engine edits by default** (D15, `OWNED_CLASSES` in
 `src/engine/engine-edit-shadow.mjs`, `editingClass`): `large figures` (1,000 segments or more
@@ -169,8 +197,8 @@ without owning.
    offsets, support rotation/reflection/reset, Set Origin and recorded topology now match.
    Joint/handle and saved x/y/scale/rotation channel recordings now match, including shown
    frames and future target/ancestor guards. Ranges/joins and recorded 2D rig combinations
-   now match. Next: optional selection metadata, native scalar authoring, motion paths
-   and complex rig/pose-choice/spatial combinations. Every admitted command needs its own
+   now match. Optional selection metadata, native scalar authoring and recorded sheet motion paths
+   are assembled; next: native origin motion and complex rig/pose-choice/spatial combinations. Every admitted command needs its own
    recorded replay and app comparison; class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
@@ -180,10 +208,10 @@ without owning.
    (`--file`), flip a class only when its calls cost no more than the editor's and the owned
    run is "the same as the editor alone". Trap: this machine is shared and loaded; compare
    interleaved runs and report the load.
-4. **Remaining editing commands**, each with recordings first: worker integration for native-ready follow-camera read/bake and joined 3D IK commands, movieclip create,
-   split, make unique, break apart and placing, centring the camera and aligning figures
-   (the app passes a bounds function: port `objectBounds` for figures or pass bounds as data),
-   the asynchronous layer commands (planning off the interface thread, D7), worker adoption
+4. **Remaining editing commands**, each with recordings first: worker integration for native-ready follow-camera read/bake and joined 3D IK commands,
+   recorded movieclip command adoption and the remaining baking branch, recorded camera
+   centering/alignment, the asynchronous layer facade (native/sheet planning kernels are
+   assembled on workers, D7), worker adoption
    of the now-recorded effect presets/scopes/paints, builder leftovers (branch thickness,
    sprite segments, native property gestures and drawing a new figure now have exact native replays;
    their facade/runtime adoption remains pending).
@@ -218,14 +246,14 @@ without owning.
 | Branch / worktree | State |
 | --- | --- |
 | `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
-| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Record/pose/channel/range/join/2D-rig and strict nested validation integrated. Optional selection metadata and native scalar-channel lifecycle frozen; origin motion paths active; the isolated worktree was moved with all 7,980 entries/hash/link/status checks preserved to avoid tmpfs quota. |
-| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption integrated; effects, worker layer planning, corrected sheet kernel and history budgets reviewed. Warm-history readiness and prepared publication reviewed; native migration frozen/independently reviewed; raw selection-guard correction frozen. Canonical worker Session implementation active. |
-| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands and Break Apart reviewed; sheet extension reviewed; native extension, insertion, corrected import error priority and explicit IK/saved-draft admission frozen and independently reviewed; awaited baking recordings active. |
-| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query integrated. Independent layer/movie reviews completed; combined dependency integration active in the separate movie-integration worktree. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver reviewed. Atomic paired publication/retirement, stale ACK disposal and decoder task-order corrections frozen and reviewed; fractional prepared playback implementation active. No early gate flips. |
+| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Record/pose/channel/range/join/2D-rig and strict nested validation integrated. Optional selection metadata, native scalar lifecycle and sheet motion are integrated; five no-channel native motion recordings are reviewed/frozen, saved native motion oracle active; the isolated worktree was moved with all 7,980 entries/hash/link/status checks preserved to avoid tmpfs quota. |
+| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption integrated; effects, worker layer planning, corrected sheet kernel and history budgets reviewed. Warm-history readiness and prepared publication reviewed; native migration frozen/independently reviewed; raw selection-guard correction frozen. Those source prerequisites and canonical root publication are integrated; durable quiet/live Session actor and guarded fresh bootstrap active, no app gate. |
+| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands and Break Apart reviewed; sheet extension reviewed; native extension, insertion, corrected import error priority and explicit IK/saved-draft admission frozen and independently reviewed; that complete source stack is integrated; bake source frozen/reviewed, central strict replay/history integration pending, further effects/limits recordings active. |
+| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query integrated. Independent layer/movie and assembled-main reviews completed; exact frozen source manifests retained for the integrated dependency stack. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver reviewed. Atomic paired publication/retirement, stale ACK disposal and decoder task-order corrections frozen and reviewed; fractional playback and bounded ticket fix integrated with focused checks. Isolated destination-grid CEL candidate passes original software-web 4/4; single-child clip, auxiliary/default GPU evidence and review pending. No early gate flips. |
 | `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera/origin range/rig/pose and strict-validation preparation integrated into main after review/focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
-| `tmp/engine-worktrees/movie-integration` (detached at `7ff82b2c`) | Separate clean dependency integration: reviewed movieclip/layer/history/readiness/publication/selection stack. No commit or runtime gate until root review and focused checks. |
-| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. First run pending the roughly two-hour interval after the last green checkpoint. |
+| `tmp/engine-worktrees/movie-integration` (detached at `7ff82b2c`) | Separate clean dependency integration: reviewed movieclip/layer/history/readiness/publication/selection stack. Exact reviewed/focused-tested dependency snapshot has been integrated; preserve its immutable inputs/evidence, no runtime gate. |
+| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Full checkpoint of committed `53e3bdd9` green at 16:36 CEST; post-regeneration whole release target fresh in 0.43 s. Next regular run no earlier than 17:54 CEST. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
@@ -251,7 +279,7 @@ Those unit tests now read the same fixtures at runtime, like the replay tests. A
 regeneration, the affected release unit target is fresh in 0.05 s (previous unnecessary
 relink 65 s). Dependencies were cached; source changes legitimately relink release
 binaries with thin LTO, and single-crate versus full-workspace feature graphs keep
-distinct cached artifacts. The new logarithm binary fixture likewise reads at runtime; its release target remains fresh in 0.04 s after identical regeneration. The new origin rig fixtures and follow cold-path test likewise read at runtime; no generated fixture is embedded in a Rust test binary. After all affected regeneration, both edit/eval unit targets remain fresh (0.11 s, debug). No target was cleaned and parity flags/profile are unchanged.
+distinct cached artifacts. The new logarithm binary fixture likewise reads at runtime; its release target remains fresh in 0.04 s after identical regeneration. The new origin rig, follow cold-path, movieclip, history and layer-planning test fixtures likewise read at runtime; no regenerated JSON fixture is embedded in a Rust test binary. After all affected regeneration, both edit/eval unit targets remain fresh (0.11 s, debug). The complete committed-HEAD checkpoint preserves its persistent isolated cache; after every generator the whole release test target is fresh in 0.43 s. Its first 2,297.5 s Rust stage was a cold isolated cache, not repeated cache loss. No target was cleaned and parity flags/profile are unchanged.
 
 - The user explicitly superseded the original two-subagent cap during takeover: use all
   available slots for independent, bounded work (currently five child lanes plus root).
@@ -373,6 +401,8 @@ tolerance the current export tests use.
 | `engine/tools/container-parity.mjs` | decoded documents (and `styk container roundtrip` the written bytes) against `src/native-container.mjs` |
 | `engine/tools/ik-fixtures.mjs`, `engine/tools/eval-fixtures.mjs` → `cargo test -p styk-eval` | small projects the editor builds with its own commands, and what it evaluates (IK, movieclip replacements); regeneration is byte-stable |
 | `scripts/engine-app-parity.mjs` | the running app with and without the engine (`?engine=off`): stage pixels per tick, with onion skins and after playback |
+| `styk edit-replay --worker <reference.json>` | recorded worker-only native/sheet commands through the same strict every-step comparator |
+| `scripts/engine-edit-shadow.mjs --selection-adoption --focused --own --warm --exact-math` | actual new-ID selection after duplicate/paste, history and full undo |
 | `styk parity formats` (S1) | decoded documents and written bytes against the JS and Python codecs |
 | `scripts/ui-snapshots.mjs --touch --compare … --chrome-only` | the interface, pixel by pixel |
 
@@ -485,16 +515,16 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
   closest-joint order are portable prerequisites. Durable Session publication,
   actual-shown/resource ordering and per-class adoption cost still need the shared
-  worker boundary. These additions do not open ownership or document-class gates.
+  worker boundary. A broad owned sheet shadow attempt stalled without a result while
+  the narrow duplicate/paste check passes; retry and diagnose complete flow before class
+  adoption. These additions do not open ownership or document-class gates.
 
-- **Fractional prepared playback and hardware-headless capture:** stored/edit views at
-  tick 3.5 match, but the existing prepared-playback API takes `u32`; a fractional camera
-  preview is silently drawn at tick 3. Its pixels are exactly the whole-tick preview's,
-  failing D13 by 4,004 solid pixels / mean 1.8362 on the recorded origin rig. Stage,
-  playback binding and cache owners are byte-identical to `e5dbda24`. Preserve one bounded
-  cache and prepare exact fractional views on workers before renderer deletion. Separately,
-  hardware-opt-in headless web returned an empty engine canvas for all nine rig views;
-  default software web and Electron each pass all 12 affected pictures. No threshold change.
+- **Prepared playback and hardware-headless capture:** the reviewed renderer batch now
+  keeps exact fractional samples in the existing worker frame cache; shipping default
+  software web passes stored/preview ticks 3 and 3.5 (4/4, zero solids), fixing the recorded
+  integer-preview defect. Broader actual-shown/resource readiness and no-thread fallback
+  still prevent renderer deletion. Hardware-opt-in headless web previously returned an
+  empty engine canvas for all nine rig views; no new hardware claim or threshold change.
 
 - **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
   `node engine/tools/gate-census.mjs` (2026-10-03, the gate itself on each file loaded as
@@ -881,6 +911,24 @@ checks pass. Typed `Session::call_values` matches the JSON boundary for 830 call
 closest-joint borrowed order matches 201,792 actual editor queries without a
 per-pointer order allocation. Full parity remains a committed-HEAD checkpoint.
 
+### Reviewed worker integration (2026-10-04)
+
+The renderer, movie/layer/history/selection, canonical root publication and sheet motion
+batch passes 615 native tests, 307 affected JavaScript tests, check and shipping Wasm.
+All 3,153 affected JSON regenerate unchanged. Actual CLI evidence covers 75 admitted
+new recordings / 6,446 steps, 16 intentional guards and 64 worker recordings / 643 steps.
+Include the 88 new evaluated groups / 798 ticks: totals are 461 command recordings and
+371 evaluated groups / 4,032 ticks. Existing every-step comparisons remain exact.
+
+Shipping default software-web stored and fractional camera-preview captures pass 4/4
+(mean 0.01781–0.04450, max 67, zero solids); the rendered preview was inspected. Focused
+real-app duplicate/paste adopts three calls and compares six, with no differences or
+unshadowed calls: document 22,810 bytes, six history entries, selection and full undo match.
+Its timing on a loaded machine is not a class-cost or performance claim. The broad sheet
+run stalled without a comparison; an initial nonexistent fixture alias and zero-action
+focus attempt also remain failed evidence. None substitutes for future complete app
+adoption checks. No thresholds, document-class gates or JavaScript deletions changed.
+
 ## 8. Work queue
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
@@ -1066,3 +1114,5 @@ task), `CHANGELOG.md`, Windows CI.
 
 Work is active in the isolated lanes listed in the handoff. Frozen uncommitted snapshots
 are review inputs, not completed milestones or class ownership evidence.
+
+| 2026-10-04 17:05 | S3/S5 recorded worker movieclips, history, canonical publication and fractional rendering | Integrate reviewed renderer and movie/layer/history/selection owners, bounded native/sheet planning, canonical COW root admission/paired publication with terminal-ACK retirement, exact displaced-generation cleanup, native scalar authoring and recorded origin sheet motion. Preserve retained movieclip/VFX source clocks and one checked SheetPlan/history owner. Fix atomic insertion/capacity refusal and bounded new-ID selection exchange in the editor/facade. Portable mobile API changes: checked Engine stage/layer/publication APIs, opaque admission and prepared/guarded editor publication, history limits/checkpoints, selection/motion accessors, retained source/effect fields; FrameData.tick is f64 and PlanError::Unported carries String (details in editing/threading). Wasm 9,528 KiB (+624 KiB). No class gate or deletion. | 615 shared-type native tests, final seven planner unit tests, 307 focused JS tests, check/changelog and shipping Wasm pass. All 3,153 affected JSON stay stable; 88 new evaluated groups / 798 ticks (371 / 4,032 total). CLI 75 new admitted tapes / 6,446 exact steps + 64 worker tapes / 643 steps; 16 guards remain explicit, 461 ordinary tapes total. Software stored/fractional preview 4/4, zero solids; actual duplicate/paste 3 adopted + 6 exact, same 22,810-byte document / six history entries / selection / full undo. Broad app run stalled without result; wrong alias and empty-focus attempts retained. Independent full source reviews and actual source mutants retained. Full committed 53e3bdd9 checkpoint green (421 tests / 358 containers); complete post-regeneration release target fresh in 0.43 s, cold isolated first run 2,297.5 s. Next checkpoint no earlier than 17:54 CEST; no performance claim. |

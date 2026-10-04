@@ -1,0 +1,143 @@
+//! Worker-prepared publication and an allocation-free final head exchange.
+//!
+//! The editor callback only exchanges already-validated heads. Every displaced
+//! engine/cache/image/task payload stays owned by the returned worker retirement.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::{Engine, Generation, State, TaskQueue, frames, images};
+use crate::mirror::RecordGuard;
+
+/// Opaque worker-owned payload. Keep it through publication ACK; the interface
+/// must never own its last strong reference. Dropping it releases old resources.
+pub struct PublicationRetirement {
+    pub(crate) generation: Option<Arc<Generation>>,
+    pub(crate) frames: frames::Cache,
+    pub(crate) images: Option<images::Store>,
+    pub(crate) tasks: TaskQueue,
+    pub(crate) canonical_root: Option<styk_doc::Value>,
+    pub(crate) record_charges: std::collections::LinkedList<crate::mirror::transfer::Charge>,
+    pub(crate) root_admission: Option<crate::mirror::EditPublicationAdmission>,
+}
+
+impl PublicationRetirement {
+    pub(crate) fn empty() -> Self {
+        Self { generation: None, frames: frames::Cache::new(0), images: None, tasks: TaskQueue::new(), canonical_root: None, record_charges: std::collections::LinkedList::new(), root_admission: None }
+    }
+    pub(crate) fn needs_worker(&self) -> bool {
+        self.generation.is_some() || self.frames.has_storage() || self.images.as_ref().is_some_and(images::Store::has_storage) || !self.tasks.is_empty() || self.canonical_root.is_some() || !self.record_charges.is_empty() || self.root_admission.is_some()
+    }
+}
+
+struct Prepared {
+    previous: Option<Arc<Generation>>,
+    generation: Arc<Generation>,
+    frames: Option<frames::Cache>,
+    images: Option<images::Store>,
+    tasks: TaskQueue,
+    same_lineage: bool,
+    image_delta: usize,
+}
+
+impl Prepared {
+    fn new(generation: Arc<Generation>, current: Option<Arc<Generation>>) -> Self {
+        let previous = current.as_ref().filter(|previous| previous.lineage == generation.lineage);
+        let count = generation.prepared.doc.images.len();
+        let known = previous.as_ref().map_or(0, |previous| previous.prepared.doc.images.len().min(count));
+        let cels: Vec<usize> = generation.assets.cels.keys().copied().filter(|cel| !previous.as_ref().is_some_and(|old| old.assets.cels.contains_key(cel))).collect();
+        let mut tasks = TaskQueue::new();
+        for index in known..count {
+            let generation = generation.clone();
+            tasks.push_back(crate::OrdinaryTask::Run(Box::new(move |engine: &Engine| engine.decode_image(&generation, index))));
+        }
+        for cel in &cels {
+            let generation = generation.clone();
+            let cel = *cel;
+            tasks.push_back(crate::OrdinaryTask::Run(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel))));
+        }
+        if generation.anchors.is_some() {
+            for row in 0..styk_eval::vfx::generated::atlas::ROWS {
+                if styk_eval::vfx::generated::atlas::ready(row).is_none() {
+                    tasks.push_back(crate::OrdinaryTask::Run(Box::new(move |_: &Engine| { styk_eval::vfx::generated::atlas::row(row); })));
+                }
+            }
+        }
+        let same_lineage = previous.is_some();
+        Self {
+            previous: current,
+            frames: Some(frames::Cache::new(0)),
+            images: Some(images::Store::for_publication(generation.lineage, count + cels.len())),
+            same_lineage, image_delta: count - known + cels.len(), generation, tasks,
+        }
+    }
+
+    fn current(&self, state: &State) -> bool {
+        match (&self.previous, &state.current) {
+            (None, None) => true,
+            (Some(before), Some(current)) => Arc::ptr_eq(before, current),
+            _ => false,
+        }
+    }
+
+    /// Only pointer/scalar operations. All fresh owners/nodes were built above.
+    fn install(&mut self, state: &mut State) -> PublicationRetirement {
+        let frames = state.frames.exchange_publication(self.frames.take().expect("prepared once"), self.generation.id);
+        let images = if self.same_lineage {
+            state.images.grow(self.image_delta);
+            None
+        } else { Some(std::mem::replace(&mut state.images, self.images.take().expect("prepared once"))) };
+        let tasks = if self.same_lineage {
+            state.tasks.append(&mut self.tasks);
+            TaskQueue::new()
+        } else { std::mem::replace(&mut state.tasks, std::mem::take(&mut self.tasks)) };
+        let generation = state.current.replace(self.generation.clone());
+        PublicationRetirement { generation, frames, images, tasks, canonical_root: None, record_charges: std::collections::LinkedList::new(), root_admission: None }
+    }
+}
+
+impl Engine {
+    /// Prepares and retires on this worker. The final shared lock performs only
+    /// guard checks, the supplied zero-allocation/drop head exchange, and swaps.
+    /// Refusal leaves `exchange` untouched for worker retention/disposal.
+    pub(crate) fn publish_with<F, R>(&self, mut generation: Generation, guard: Option<(RecordGuard, Arc<AtomicBool>)>, exchange: &mut Option<F>) -> Option<(u64, PublicationRetirement, R)>
+    where F: FnOnce() -> R {
+        let id = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
+        generation.id = id;
+        if styk_eval::vfx::generated::has_generators(&generation.prepared.doc) {
+            generation.anchors = Some(Arc::new(crate::anchors::Anchors::new()));
+        }
+        let generation = Arc::new(generation);
+        loop {
+            let current = {
+                let state = self.inner.state.lock();
+                if guard.as_ref().is_some_and(|(guard, cancelled)| !guard.current(&state) || cancelled.load(Ordering::SeqCst) || self.inner.stopping.load(Ordering::SeqCst)) { return None }
+                state.current.clone()
+            };
+            let mut prepared = Prepared::new(generation.clone(), current);
+            let result = {
+                let mut state = self.inner.state.lock();
+                if !prepared.current(&state) || guard.as_ref().is_some_and(|(guard, cancelled)| !guard.current(&state) || cancelled.load(Ordering::SeqCst) || self.inner.stopping.load(Ordering::SeqCst)) {
+                    None
+                } else {
+                    let exchanged = exchange.take().expect("the callback runs only once")();
+                    Some((prepared.install(&mut state), exchanged))
+                }
+            };
+            if let Some((retirement, exchanged)) = result {
+                if let Some(previous) = &retirement.generation {
+                    crate::planning::invalidate_generation(self, previous.id);
+                    self.retire_record_batches(previous.id);
+                }
+                self.inner.state.notify_all();
+                return Some((id, retirement, exchanged));
+            }
+            if guard.is_some() { return None }
+            // An unguarded open races another open: prepare against its actual
+            // current lineage instead of restoring old images/tasks into it.
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

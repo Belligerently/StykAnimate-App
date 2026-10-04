@@ -29,6 +29,17 @@ impl Outcome {
 
 /// Replays `reference` (the JSON the JavaScript side wrote).
 pub fn replay(reference: &Value) -> Result<Outcome, String> {
+    replay_with_worker(reference, false)
+}
+
+/// Native/offline verification of recorded sheet commands using their existing
+/// worker preparation owner. This is not UI admission: the calling thread may
+/// perform dense preparation. Results use the same every-step comparisons.
+pub fn replay_worker(reference: &Value) -> Result<Outcome, String> {
+    replay_with_worker(reference, true)
+}
+
+fn replay_with_worker(reference: &Value, worker: bool) -> Result<Outcome, String> {
     let steps: Vec<Value> = reference.get("steps").and_then(Value::elements).ok_or("the reference has no steps")?.iter().collect();
     let first = steps.first().ok_or("the reference has no steps")?;
     let mut expected = first.get("document").and_then(Value::as_str).ok_or("step 0 has no document")?.to_string();
@@ -45,6 +56,15 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
     );
     let counter = |key: &str| state.get(key).and_then(Value::as_f64).unwrap_or(0.0) as u64;
     editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"), counter("nextUid"));
+    let mut history_ready = !reference.path(&["initialHistory", "ready"]).is_some_and(|value| matches!(value,Value::Bool(false)));
+    if let Some(history) = reference.get("initialHistory") {
+        let counter = |key: &str| history.get(key).and_then(Value::as_f64).unwrap_or(0.0) as u64;
+        editor.set_revision_counters(counter("revision"),counter("revisionSerial"),counter("savedRevision"));
+        let limits = crate::HistoryLimits { count: history.get("limit").and_then(Value::as_f64).unwrap_or(80.0) as usize, bytes: history.get("bytes").and_then(Value::as_f64).unwrap_or(48.0*1024.0*1024.0) };
+        if history_ready { editor.configure_worker_history(limits).map_err(|error|format!("history settings: {error:?}"))?; }
+        else { editor.history_limits = limits; }
+    }
+    editor.set_selection_metadata(state).map_err(|error| format!("{error:?}"))?;
     let mut outcome = Outcome { scenario: reference.get("scenario").and_then(Value::as_str).unwrap_or("").to_string(), steps: steps.len() - 1, ..Outcome::default() };
     if editor.report_json() != expected {
         outcome.mismatches.push("step 0: the loaded document does not survive the engine's store byte for byte".into());
@@ -57,8 +77,23 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         let method = call.first().and_then(Value::as_str).unwrap_or("").to_string();
         editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
         // A replay-only read verifies the live pose using the existing snapshot owner.
-        let result = if method == "@frame" {
+        let result = if method == "@historyLimits" {
+            editor.configure_worker_history(crate::HistoryLimits { count:call.get(1).and_then(Value::as_f64).unwrap_or(80.0) as usize,bytes:call.get(2).and_then(Value::as_f64).unwrap_or(48.0*1024.0*1024.0) }).map(|_|Value::Null)
+        } else if method == "@trimHistory" {
+            editor.trim_worker_history().map(|_|Value::Null)
+        } else if method == "@prepareHistory" {
+            editor.prepare_worker_history(crate::HistoryLimits { count:call.get(1).and_then(Value::as_f64).unwrap_or(80.0) as usize,bytes:call.get(2).and_then(Value::as_f64).unwrap_or(48.0*1024.0*1024.0) },call.get(3).and_then(Value::as_f64).unwrap_or(f64::NAN),||Ok(())).map(|_|Value::Null)
+        } else if method == "@frame" {
             editor.shown_frame().map(|frame| Value::str(&styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&frame))))
+        } else if method == "@motionFrame" {
+            editor.motion_display_frame_worker().and_then(|display| display.map_or_else(|| editor.shown_frame(), Ok))
+                .map(|frame| Value::str(&styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&frame))))
+        } else if method == "@selection" {
+            Ok(Value::str(&styk_doc::json::to_string(&editor.selection_state().history_value())))
+        } else if method == "@restoreSelection" {
+            let value = call.get(1).unwrap_or(&Value::Null);
+            let selection = crate::select::selection_state_of(value);
+            editor.restore_selection(&selection).map(|()| Value::Null)
         } else if method == "@cameraAtTime" {
             editor.shown_frame().and_then(|frame| editor.camera_at_time(&frame, editor.tick)).map(|camera| camera.unwrap_or(Value::Null))
         } else if method.starts_with("@native") {
@@ -77,7 +112,15 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
             result
         } else {
             let measured: Option<Vec<Value>> = step.get("boundsArgs").and_then(Value::elements).map(|e| e.iter().collect());
-            editor.call(&method, measured.as_deref().unwrap_or(&call[1..]))
+            let args = measured.as_deref().unwrap_or(&call[1..]);
+            if worker && editor.movieclip_timeline_replay_call(&method, args) {
+                editor.call_movieclip_timeline_worker(&method, args, &mut crate::movieclip_planning::TimelineWorker {
+                    max_source_bytes: 128 * 1024 * 1024,
+                    check: &mut || Ok(()),
+                    progress: &mut |_| {},
+                    clock: || 0.0,
+                })
+            } else { editor.call(&method, args) }
         };
         let mut differences = Vec::new();
         let recorded_error = step.get("error").filter(|e| !e.is_null());
@@ -116,6 +159,22 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
         let want = json(step.get("state").unwrap_or(&Value::Null));
         if got != want {
             differences.push(format!("state {got}, the editor's {want}"));
+        }
+        if method == "@prepareHistory" && result.is_ok() { history_ready = true; }
+        if let Some(history) = step.get("history") {
+            // An explicitly unprepared owner still verifies labels, children,
+            // stack membership and epochs at each step. Bytes become exact only
+            // after its recorded worker checkpoint; existing probes stay exact.
+            fn unprepared(value: &Value) -> Value {
+                match value {
+                    Value::Obj(object) => Value::object(object.iter().filter(|(key,_)| &***key != "bytes" && &***key != "size").map(|(key,value)|(key.clone(),unprepared(value))).collect()),
+                    Value::Arr(items) => Value::array(items.iter().map(unprepared).collect()),
+                    _ => value.clone(),
+                }
+            }
+            let actual = editor.history_value();
+            let (got,want) = if history_ready { (json(&actual),json(history)) } else { (json(&unprepared(&actual)),json(&unprepared(history))) };
+            if got != want { differences.push(format!("history {got}, the editor's {want}")); }
         }
         let got = json(&Value::array(editor.take_events()));
         let want = json(step.get("events").unwrap_or(&Value::Null));

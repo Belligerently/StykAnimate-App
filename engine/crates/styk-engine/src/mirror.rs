@@ -16,6 +16,60 @@ use styk_formats::container::parse_lifted;
 
 use crate::{Engine, Generation};
 
+pub(crate) mod transfer;
+mod root;
+pub use root::EditPublicationAdmission;
+pub use transfer::{Packet, PacketKind, RecordAck, RecordGuard, RecordLengths, TransferError, MAX_RECORD_PACKET_BYTES, MAX_RECORD_RETAINED_BYTES, MAX_RECORD_CHANGES};
+
+/// Dense metadata transported independently from the document's small properties.
+/// Codes are stable for browser and native hosts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetadataField {
+    DraftBaseline,
+    DraftAnimationBaseline,
+    LayerSheet,
+    Layers,
+    Animation,
+}
+
+impl MetadataField {
+    pub fn from_code(code: u32) -> Option<Self> {
+        match code {
+            0 => Some(Self::DraftBaseline),
+            1 => Some(Self::DraftAnimationBaseline),
+            2 => Some(Self::LayerSheet),
+            3 => Some(Self::Layers),
+            4 => Some(Self::Animation),
+            _ => None,
+        }
+    }
+
+    fn path(self) -> &'static [&'static str] {
+        match self {
+            Self::DraftBaseline => &["_styk", "simpleFrameDraft", "baseline"],
+            Self::DraftAnimationBaseline => &["_styk", "simpleFrameDraft", "animationBaseline"],
+            Self::LayerSheet => &["_styk", "layerSheet"],
+            Self::Layers => &["_styk", "layers"],
+            Self::Animation => &["_styk", "animation"],
+        }
+    }
+}
+
+/// The canonical location of one already-validated lifted value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RecordTarget {
+    Table(Table, u32),
+    Source(String),
+    Metadata(MetadataField),
+}
+
+/// Source removal may need to restore the absence of the source table itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceDisposition {
+    Preserve,
+    AbsentIfEmpty,
+}
+
 /// The tables of a document that are synchronised record by record.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Table {
@@ -67,6 +121,11 @@ pub enum Change {
     Set(Table, u32, Record),
     /// `_styk.frameSources[id]`: a retained pose source, or its removal.
     Source(String, Option<Record>),
+    /// The shared worker receiver parsed/materialized this value once. `None`
+    /// removes a source/metadata field; table records must supply a value.
+    Resolved(RecordTarget, Option<Value>),
+    /// Applied after all source changes, so no nonempty source table is lost.
+    Sources(SourceDisposition),
 }
 
 /// Why a commit was refused. The mirror is unchanged.
@@ -74,6 +133,8 @@ pub enum Change {
 pub enum MirrorError {
     #[error("a staged record is not valid: {0}")]
     Record(String),
+    #[error("a staged record is not valid: {0}")]
+    Transaction(&'static str),
     #[error("a staged change names record {index} of `{table}`, which has {len}")]
     Index { table: &'static str, index: usize, len: usize },
     #[error("record {index} of `{table}` was announced by the layout but never supplied")]
@@ -119,11 +180,12 @@ fn table_items(tree: &Value, table: Table) -> Vec<Value> {
 
 impl Mirror {
     /// Applies `changes` to a copy of the tree. The copy shares every record the changes do not name.
-    fn apply(&self, changes: Vec<Change>) -> Result<(Value, bool), MirrorError> {
+    fn apply(&self, changes: std::collections::LinkedList<Change>) -> Result<(Value, bool), MirrorError> {
         let mut tree = self.tree.clone();
         let mut reset = false;
         // Placeholders left by a layout until their record arrives.
         let mut pending: Vec<(Table, usize)> = Vec::new();
+        let mut sources_disposition = SourceDisposition::Preserve;
         for change in changes {
             match change {
                 Change::Reset => {
@@ -168,37 +230,90 @@ impl Mirror {
                 }
                 Change::Set(table, index, lifted) => {
                     let value = record(&lifted)?;
-                    let index = index as usize;
-                    let root = tree.make_obj().expect("the document is an object");
-                    let len = root.get(table.key()).and_then(Value::array_len).unwrap_or(0);
-                    let items = root.get_mut(table.key()).and_then(Value::make_arr).filter(|items| index < items.len()).ok_or(MirrorError::Index { table: table.key(), index, len })?;
-                    items[index] = value;
-                    pending.retain(|entry| *entry != (table, index));
+                    resolved(&mut tree, RecordTarget::Table(table, index), Some(value), &mut pending)?;
                 }
                 Change::Source(id, lifted) => {
                     let value = lifted.as_ref().map(record).transpose()?;
-                    let root = tree.make_obj().expect("the document is an object");
-                    if !root.get("_styk").is_some_and(Value::is_object) {
-                        root.set("_styk", Value::object(Obj::new()));
-                    }
-                    let styk = root.get_mut("_styk").and_then(Value::make_obj).expect("set above");
-                    if !styk.get("frameSources").is_some_and(Value::is_object) {
-                        styk.set("frameSources", Value::object(Obj::new()));
-                    }
-                    let sources = styk.get_mut("frameSources").and_then(Value::make_obj).expect("set above");
-                    match value {
-                        Some(value) => sources.set(&id, value),
-                        None => {
-                            sources.remove(&id);
-                        }
-                    }
+                    resolved(&mut tree, RecordTarget::Source(id), value, &mut pending)?;
                 }
+                Change::Resolved(target, value) => resolved(&mut tree, target, value, &mut pending)?,
+                Change::Sources(disposition) => sources_disposition = disposition,
             }
         }
         if let Some(&(table, index)) = pending.first() {
             return Err(MirrorError::Missing { table: table.key(), index });
         }
+        if sources_disposition == SourceDisposition::AbsentIfEmpty {
+            if tree.path(&["_styk", "frameSources"]).and_then(Value::as_obj).is_some_and(|sources| !sources.is_empty()) {
+                return Err(MirrorError::Record("a nonempty source table cannot be removed".into()));
+            }
+            remove_path(&mut tree, &["_styk", "frameSources"]);
+        }
         Ok((tree, reset))
+    }
+}
+
+fn remove_path(tree: &mut Value, path: &[&str]) {
+    let Some((key, parents)) = path.split_last() else { return };
+    let mut owner = tree;
+    for parent in parents {
+        let Some(next) = owner.make_obj().and_then(|object| object.get_mut(parent)) else { return };
+        owner = next;
+    }
+    if let Some(object) = owner.make_obj() { object.remove(key); }
+}
+
+fn set_path(tree: &mut Value, path: &[&str], value: Value) {
+    let (key, parents) = path.split_last().expect("a canonical field path");
+    let mut owner = tree;
+    for parent in parents {
+        let object = owner.make_obj().expect("the canonical owner is an object");
+        if !object.get(parent).is_some_and(Value::is_object) { object.set(parent, Value::object(Obj::new())); }
+        owner = object.get_mut(parent).expect("set above");
+    }
+    owner.make_obj().expect("the canonical owner is an object").set(key, value);
+}
+
+fn resolved(tree: &mut Value, target: RecordTarget, value: Option<Value>, pending: &mut Vec<(Table, usize)>) -> Result<(), MirrorError> {
+    match target {
+        RecordTarget::Table(table, index) => {
+            let value = value.ok_or_else(|| MirrorError::Record("a table record cannot be absent".into()))?;
+            let index = index as usize;
+            let root = tree.make_obj().expect("the document is an object");
+            let len = root.get(table.key()).and_then(Value::array_len).unwrap_or(0);
+            let items = root.get_mut(table.key()).and_then(Value::make_arr).filter(|items| index < items.len()).ok_or(MirrorError::Index { table: table.key(), index, len })?;
+            items[index] = value;
+            pending.retain(|entry| *entry != (table, index));
+        }
+        RecordTarget::Source(id) => {
+            if !tree.path(&["_styk", "frameSources"]).is_some_and(Value::is_object) {
+                set_path(tree, &["_styk", "frameSources"], Value::object(Obj::new()));
+            }
+            match value {
+                Some(value) => set_path(tree, &["_styk", "frameSources", &id], value),
+                None => remove_path(tree, &["_styk", "frameSources", &id]),
+            }
+        }
+        RecordTarget::Metadata(field) => {
+            match value {
+                Some(value) => set_path(tree, field.path(), value),
+                None => remove_path(tree, field.path()),
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Only the small in-flight identity stays staged while a worker owns changes.
+/// Every error path retires that marker on this worker; discard can invalidate it.
+struct CommitMarker<'a> { engine: &'a Engine, batch: u32, cancelled: Arc<std::sync::atomic::AtomicBool> }
+impl Drop for CommitMarker<'_> {
+    fn drop(&mut self) {
+        let retired = {
+            let mut staged = self.engine.inner.staged.lock();
+            if staged.get(&self.batch).is_some_and(|owner| Arc::ptr_eq(&owner.cancelled, &self.cancelled)) { staged.remove(&self.batch) } else { None }
+        };
+        drop(retired);
     }
 }
 
@@ -206,8 +321,59 @@ impl Engine {
     /// Stages one change in `batch`. Cheap: nothing is parsed until [`Engine::commit`].
     /// Batches are independent: a long description of the frames can be staged over
     /// many turns of the interface while small commits of other batches go through.
-    pub fn stage(&self, batch: u32, change: Change) {
-        self.inner.staged.lock().entry(batch).or_default().push(change);
+    pub fn stage(&self, batch: u32, change: Change) -> Result<(), TransferError> {
+        // Allocate the single node outside the shared lock, then splice it in.
+        let mut node = std::collections::LinkedList::new();
+        node.push_back(change);
+        let mut fresh = Some(transfer::Batch::default());
+        let admitted = (|| {
+            let mut staged = self.inner.staged.lock();
+            if self.inner.stopping.load(std::sync::atomic::Ordering::SeqCst) { return Err(TransferError::Cancelled) }
+            if !staged.contains_key(&batch) {
+                if staged.len() >= transfer::MAX_RECORD_TRANSFERS || staged.len() == staged.capacity() { return Err(TransferError::Capacity) }
+                staged.insert(batch, fresh.take().expect("prebuilt batch"));
+            }
+            let owner = staged.get_mut(&batch).expect("existing or inserted batch");
+            if owner.guard.is_none() { owner.changes.append(&mut node); return Ok(None) }
+            Ok(Some(owner.cancelled.clone()))
+        })();
+        let cancelled = match admitted {
+            Ok(None) => return Ok(()),
+            Ok(Some(cancelled)) => cancelled,
+            Err(error) => { self.spawn_retained(move |_| drop(node)); return Err(error) }
+        };
+        // A legacy caller cannot inject unaccounted records into a guarded owner.
+        // Serialize cancellation against its atomic publication, then retire both
+        // the transaction and the foreign payload on the existing worker lane.
+        let retired = {
+            let _state = self.inner.state.lock();
+            let mut staged = self.inner.staged.lock();
+            if staged.get(&batch).is_some_and(|owner| Arc::ptr_eq(&owner.cancelled, &cancelled)) {
+                cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+                if let Some(transfer) = staged.get(&batch).and_then(|owner| owner.transfer.as_ref()) { transfer.cancel(); }
+                staged.remove(&batch)
+            } else { None }
+        };
+        self.spawn_retained(move |_| { drop(retired); drop(node); });
+        Err(TransferError::Stale)
+    }
+
+    /// Detaches an uncommitted batch in bounded work. Its lifted bytes are dropped
+    /// by the existing retained cleanup lane, including across publication/stop.
+    /// Guarded preparation remains cancellable until atomic publication.
+    pub fn discard_batch(&self, batch: u32) {
+        let changes = {
+            let _state = self.inner.state.lock();
+            let changes = self.inner.staged.lock().remove(&batch);
+            if let Some(changes) = &changes {
+                changes.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+                if let Some(transfer) = &changes.transfer { transfer.cancel(); }
+            }
+            changes
+        };
+        if let Some(changes) = changes {
+            self.spawn_retained(move |_| drop(changes));
+        }
     }
 
     /// The mirrored document and the interface revision of its last commit, for an
@@ -236,24 +402,87 @@ impl Engine {
         let started = self.now();
         // Only one commit runs at a time; commits are background tasks, so waiting here is allowed.
         let mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        self.commit_locked(mirror, started, revision, batch)
+        self.commit_locked(mirror, started, revision, batch, None)
+    }
+
+    /// A guarded transaction must still exist with this exact nonce. A discarded
+    /// or replaced batch cannot produce a successful empty legacy commit.
+    /// Runs on a worker, as [`Engine::commit`].
+    pub fn commit_record(&self, revision: u64, batch: u32, guard: RecordGuard) -> Result<Committed, MirrorError> {
+        let started = self.now();
+        let mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.commit_locked(mirror, started, revision, batch, Some(guard))
+    }
+
+    /// Worker-only paired publication. Prepare/validate the editor outside the
+    /// shared State lock. `exchange` must only swap prebuilt heads, allocating and
+    /// dropping nothing; it runs once after the final cancellation/nonce check.
+    /// Keep both returned retirements on the worker through terminal ACK.
+    /// Refusal returns the uncalled callback for worker retention/disposal.
+    pub fn commit_record_with<F, R>(&self, revision: u64, batch: u32, guard: RecordGuard, exchange: F) -> Result<(Committed, crate::PublicationRetirement, R), (MirrorError, F)>
+    where F: FnOnce() -> R {
+        let started = self.now();
+        let mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut exchange = Some(exchange);
+        self.commit_locked_with(mirror, started, revision, batch, Some(guard), None, &mut exchange).map_err(|error| (error, exchange.take().expect("refused before head exchange")))
     }
 
     /// [`Engine::commit`] for the interface thread, which may not wait (D7): `Ok(None)` while
     /// another commit runs, the batch staged as it was, to be committed by a later call.
     pub fn try_commit(&self, revision: u64, batch: u32) -> Result<Option<Committed>, MirrorError> {
+        // A chunked/validated batch is always prepared and published by workers.
+        if self.inner.staged.lock().get(&batch).is_some_and(|batch| batch.guard.is_some()) { return Ok(None) }
         let started = self.now();
         let mirror = match self.inner.mirror.try_lock() {
             Ok(mirror) => mirror,
             Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
             Err(std::sync::TryLockError::WouldBlock) => return Ok(None),
         };
-        self.commit_locked(mirror, started, revision, batch).map(Some)
+        self.commit_locked(mirror, started, revision, batch, None).map(Some)
     }
 
-    fn commit_locked(&self, mut mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32) -> Result<Committed, MirrorError> {
-        let changes = self.inner.staged.lock().remove(&batch).unwrap_or_default();
-        let (tree, reset) = mirror.apply(changes)?;
+    fn commit_locked(&self, mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32, guard: Option<RecordGuard>) -> Result<Committed, MirrorError> {
+        let (committed, retirement, ()) = self.commit_locked_with(mirror, started, revision, batch, guard, None, &mut Some(|| ()))?;
+        if retirement.needs_worker() { self.spawn_retained(move |_| drop(retirement)); }
+        Ok(committed)
+    }
+
+    fn commit_locked_with<F, R>(&self, mut mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32, guard: Option<RecordGuard>, expected_root: Option<(&Value, &Value, &Arc<transfer::Charge>)>, exchange: &mut Option<F>) -> Result<(Committed, crate::PublicationRetirement, R), MirrorError>
+    where F: FnOnce() -> R {
+        let mut empty = Some(transfer::Batch::default());
+        let mut staged = {
+            let mut staged = self.inner.staged.lock();
+            if guard.is_none() && staged.get(&batch).is_some_and(|owner| owner.guard.is_some()) {
+                return Err(MirrorError::Transaction("a lifted transaction requires its guarded commit"));
+            }
+            if guard.is_some_and(|guard| staged.get(&batch).and_then(|batch| batch.guard) != Some(guard)) {
+                return Err(MirrorError::Transaction("the lifted transaction was discarded or replaced"));
+            }
+            match (staged.get(&batch).and_then(|batch| batch.root.as_ref()), expected_root) {
+                (None, None) => {},
+                (Some(root), Some((before, after, charge))) if root.before.same_node(before) && root.after.same_node(after) && Arc::ptr_eq(&root.charge, charge) && mirror.tree.same_node(before) => {},
+                _ => return Err(MirrorError::Transaction("a prepared root requires its exact guarded Editor publication")),
+            }
+            if staged.get(&batch).and_then(|batch| batch.transfer.as_ref()).is_some_and(|transfer| !transfer.acknowledged()) {
+                return Err(MirrorError::Transaction("the lifted transfer has not completed and been acknowledged"));
+            }
+            if guard.is_some() {
+                let owner = staged.get_mut(&batch).expect("guard checked above");
+                if owner.committing { return Err(MirrorError::Transaction("the lifted transaction is already preparing")); }
+                owner.committing = true;
+                transfer::Batch { changes: std::mem::take(&mut owner.changes), guard: owner.guard, transfer: owner.transfer.clone(), cancelled: owner.cancelled.clone(), committing: true, budget: owner.budget.clone(), charges: std::mem::take(&mut owner.charges), root: owner.root.take() }
+            } else { staged.remove(&batch).unwrap_or_else(|| empty.take().expect("prebuilt empty batch")) }
+        };
+        let _retirement = staged.guard.map(|_| CommitMarker { engine: self, batch, cancelled: staged.cancelled.clone() });
+        if staged.cancelled.load(std::sync::atomic::Ordering::SeqCst) || staged.guard.is_some_and(|guard| !self.record_guard_current(guard)) {
+            return Err(MirrorError::Transaction("the lifted transfer belongs to another document generation"));
+        }
+        let (tree, reset) = match staged.root.take() {
+            Some(root) => (root.after, false),
+            None => mirror.apply(staged.changes)?,
+        };
+        let previous_lineage = mirror.lineage;
+        let previous_assets = mirror.assets.clone();
         if reset {
             mirror.loader = Loader::new();
             mirror.assets = None;
@@ -267,14 +496,28 @@ impl Engine {
             None => Assets::build(&document),
         });
         let prepared = Arc::new(Prepared::new(Arc::new(document)));
-        mirror.tree = tree;
-        mirror.revision = revision;
-        mirror.prepared = Some(prepared.clone());
-        mirror.assets = Some(assets.clone());
-        mirror.loader.release_unused();
         let ms = self.now() - started;
-        let id = self.publish(Generation { id: 0, lineage: mirror.lineage, revision, prepared, assets, open_ms: ms, anchors: None });
-        Ok(Committed { generation: id, revision, converted, ms })
+        let published = self.publish_with(Generation { id: 0, lineage: mirror.lineage, revision, prepared: prepared.clone(), assets: assets.clone(), open_ms: ms, anchors: None }, staged.guard.map(|guard| (guard, staged.cancelled.clone())), exchange);
+        let Some((id, mut retirement, exchanged)) = published else {
+            // The canonical store/prepared view stay unchanged. Retire conversion
+            // scratch on this worker; the one loader will rebuild when needed.
+            mirror.loader = Loader::new();
+            mirror.lineage = previous_lineage;
+            mirror.assets = previous_assets;
+            return Err(MirrorError::Transaction("the lifted transfer was superseded before publication"));
+        };
+        // Only Default has no prepared head: its tree is the true empty
+        // bootstrap sentinel. Every successfully published raw root, including
+        // minimal reports with absent native tables, belongs to retirement.
+        let had_canonical_head = mirror.prepared.is_some();
+        let previous_root = std::mem::replace(&mut mirror.tree, tree);
+        if had_canonical_head { retirement.canonical_root = Some(previous_root); }
+        retirement.record_charges.append(&mut staged.charges);
+        mirror.revision = revision;
+        mirror.prepared = Some(prepared);
+        mirror.assets = Some(assets);
+        mirror.loader.release_unused();
+        Ok((Committed { generation: id, revision, converted, ms }, retirement, exchanged))
     }
 }
 
@@ -290,10 +533,10 @@ mod tests {
     #[test]
     fn the_interface_thread_never_waits_for_a_commit() {
         let engine = Engine::new(clock, Budgets::for_device(None));
-        engine.stage(0, Change::Reset);
-        engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20}"#.to_vec()));
-        engine.stage(0, Change::Layout(Table::Figures, vec![]));
-        engine.stage(0, Change::Layout(Table::Keyframes, vec![]));
+        engine.stage(0, Change::Reset).unwrap();
+        engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20}"#.to_vec())).unwrap();
+        engine.stage(0, Change::Layout(Table::Figures, vec![])).unwrap();
+        engine.stage(0, Change::Layout(Table::Keyframes, vec![])).unwrap();
         // Another commit holds the mirror (a background commit of the document's frames).
         let busy = engine.inner.mirror.lock().unwrap();
         assert!(matches!(engine.try_commit(1, 0), Ok(None)), "the interface thread is told to come back, not made to wait");
@@ -302,5 +545,24 @@ mod tests {
         let done = engine.try_commit(1, 0).unwrap().expect("the mirror is free");
         assert_eq!(done.revision, 1);
         assert!(!engine.inner.staged.lock().contains_key(&0));
+    }
+
+    #[test]
+    fn discarded_dense_batches_are_detached_once_and_disposed_by_retained_workers() {
+        let engine = Engine::new(clock, Budgets::for_device(None));
+        engine.stage(7, Change::Properties(vec![b' '; 64 * 1024 * 1024])).unwrap();
+        engine.discard_batch(7);
+        assert!(!engine.inner.staged.lock().contains_key(&7));
+        assert_eq!(engine.inner.state.lock().retained_tasks.len(), 1, "the dense bytes have not been dropped on the caller");
+        for _ in 0..100 { engine.discard_batch(7); }
+        assert_eq!(engine.inner.state.lock().retained_tasks.len(), 1, "empty/repeated discards enqueue no work");
+        engine.stage(0, Change::Reset).unwrap();
+        engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20}"#.to_vec())).unwrap();
+        engine.stage(0, Change::Layout(Table::Keyframes, vec![])).unwrap();
+        engine.commit(2, 0).unwrap();
+        assert_eq!(engine.inner.state.lock().retained_tasks.len(), 1, "publication retains worker disposal");
+        engine.stop();
+        engine.work();
+        assert_eq!(engine.inner.state.lock().retained_tasks.len(), 0, "stop drains disposal before workers return");
     }
 }

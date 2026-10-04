@@ -468,6 +468,8 @@ impl Easing {
 #[derive(Clone, Debug)]
 pub struct Keyframe {
     pub duration: u32,
+    /// `_vfxTimelineTick` retained by a captured pose/template, when present.
+    pub retained_vfx_tick: Option<f64>,
     pub objects: Vec<Arc<Object>>,
     /// Back-to-front slots. Always a permutation of `objects`.
     pub draw_order: Vec<u32>,
@@ -588,6 +590,13 @@ impl Layers {
     }
 }
 
+/// An immutable crop baseline; local keys map their output intervals into this source.
+#[derive(Clone, Debug)]
+pub struct MovieclipSource {
+    pub document: Arc<Document>,
+    pub ticks: Vec<Option<f64>>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Document {
     /// The lineage's aggregate budget for derived scenes retained by movieclip
@@ -625,6 +634,8 @@ pub struct Document {
     pub notes: Vec<String>,
     /// A figure has an animation origin ([`crate::origin`]): native intervals correct roots.
     pub origins: bool,
+    /// `_styk.movieclipSource`: exact source curves of a cropped movieclip.
+    pub movieclip_source: Option<Arc<MovieclipSource>>,
 }
 
 #[derive(Clone, Debug)]

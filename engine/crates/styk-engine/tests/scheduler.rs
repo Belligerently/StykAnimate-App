@@ -61,7 +61,7 @@ fn workers_prepare_every_requested_tick() {
         let middle = engine.frame(10).unwrap();
         assert!(!first.list.prims.is_empty());
         assert_ne!(first.list.prims, middle.list.prims);
-        assert_eq!(middle.tick, 10);
+        assert_eq!(middle.tick, 10.0);
     });
 }
 
@@ -87,7 +87,7 @@ fn a_frame_can_be_prepared_on_the_calling_thread_without_workers() {
     engine.open(&project(), "styk", "walk").unwrap();
     assert!(engine.frame(3).is_none());
     let frame = engine.frame_now(3).unwrap();
-    assert_eq!(frame.tick, 3);
+    assert_eq!(frame.tick, 3.0);
     assert_eq!(engine.frame_stats().inline, 1);
     assert!(engine.frame_now(21).is_none(), "past the end");
     // A host without threads drives the same queue itself.

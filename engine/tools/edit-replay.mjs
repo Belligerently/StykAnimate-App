@@ -63,6 +63,7 @@ export function replay(scenario, base = repo) {
     // Runtime counters the document does not carry: events name the layer revision, new
     // pose sources take the next frame identity and new figures the next unique id.
     layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid,
+    ...Object.fromEntries(Object.entries(editor._selectionState()).filter(([key]) => ['polygonSelection', 'segmentIds', 'branch'].includes(key))),
   });
   let previous = reportJSON(editor);
   const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: []}];
@@ -72,6 +73,9 @@ export function replay(scenario, base = repo) {
   const nativeProperty = nativePropertyReplay(editor);
   const run = ([name, ...args]) => {
     if (name === '@frame') return JSON.stringify(snapshotPoseFrame(editor.evaluatedFrame));
+    if (name === '@motionFrame') return JSON.stringify(snapshotPoseFrame((editor._drag?.motionPath ? editor._drag.display?.frame : null) ?? editor.evaluatedFrame));
+    if (name === '@selection') return JSON.stringify(editor._selectionState());
+    if (name === '@restoreSelection') return editor._restoreSelection(args[0]);
     // Read the existing camera owner, including follow travel, without view changes.
     if (name === '@cameraAtTime') return cameraAtTime(editor.report, editor.evaluatedFrame);
     if (name.startsWith('@native')) return nativeProperty(name, args.map(decode));

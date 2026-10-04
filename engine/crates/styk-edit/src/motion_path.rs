@@ -129,6 +129,9 @@ impl Target {
 struct Entry {
     key: String,
     source: Option<String>,
+    /// `_sheetPoseDraftWrite`'s original span; later moves recapture its source.
+    write_tick: f64,
+    next_tick: f64,
     /// On a key whose movieclip replacements placed every figure the gesture changed there,
     /// the replacements are captured again and the key keeps its own pose (`patchOnly`): by
     /// replaced figure, the pose source captured and the replacement written (`patchSources`).
@@ -180,6 +183,8 @@ pub(crate) struct Session {
     claims: HashSet<(String, u64)>,
     /// The falloff's writes that have a frame (`session.writes`), by tick.
     planned: Vec<Planned>,
+    /// The target's original key ticks, used by `refreshFalloff`'s display range.
+    keys: Vec<f64>,
     moved: bool,
     /// The last pointer and its options (`lastPoint`, `lastOptions`).
     last: Option<(Value, Value)>,
@@ -370,6 +375,10 @@ fn truthy(value: &Value, key: &str) -> bool {
     value.get(key).is_some_and(Value::truthy)
 }
 
+fn keys_next_tick(plan: &mut Plan, id: &str, index: usize) -> f64 {
+    plan.keys(id).get(index + 1).and_then(|key| num(key, "tick")).unwrap_or_else(|| plan.end(id))
+}
+
 /// `isStatic(segment)` on a figure record.
 fn is_static(segment: &Value) -> bool {
     crate::pose::is_static(segment)
@@ -408,6 +417,30 @@ fn checked_camera(current: &Value, x: f64, y: f64) -> Result<Value, EditError> {
 }
 
 impl Editor {
+    /// The stage's motion-path display (`_drag.display.frame`), separately from
+    /// `evaluatedFrame`. This query prepares a transient COW Plan through the existing
+    /// Loader/Prepared/Records owners. Call only on the durable session worker (or
+    /// native replay); it is intentionally absent from Session.call/UI dispatch.
+    /// The future actor must publish its result with the same gesture/revision guard.
+    pub fn motion_display_frame_worker(&self) -> Result<Option<Value>, EditError> {
+        let Some(session) = self.drag.as_ref().and_then(|drag| drag.motion_path.as_ref()).filter(|session| session.moved) else { return Ok(None) };
+        let total = total_ticks(&rows(&self.report));
+        let range = if session.falloff.is_some() {
+            let low = session.posed.iter().map(|posed| posed.tick).fold(f64::INFINITY, f64::min);
+            let high = session.posed.iter().map(|posed| posed.tick).fold(f64::NEG_INFINITY, f64::max);
+            [session.keys.iter().copied().filter(|tick| *tick < low).fold(0.0, f64::max),
+                session.keys.iter().copied().filter(|tick| *tick > high).map(|tick| tick + 1.0).fold(total, f64::min)]
+        } else {
+            session.posed[0].writes.iter().fold([session.tick, session.tick + 1.0], |range, (_, entry)|
+                [range[0].min(entry.write_tick), range[1].max(entry.next_tick)])
+        };
+        if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
+        let report = session.plan.virtual_report(&self.report)?;
+        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+        let prepared = Prepared::new(Arc::new(doc));
+        Ok(Some(styk_eval::records::Records::new(&report, &prepared)?.evaluated(self.tick)?))
+    }
+
     /// Whether a motion-path edit is open.
     pub(crate) fn motion_path_open(&self) -> bool {
         self.drag.as_ref().is_some_and(|d| d.motion_path.is_some())
@@ -445,6 +478,9 @@ impl Editor {
 
     /// `beginMotionPathEdit(target, tick, {label, falloff})`: never seeks.
     fn begin_motion_path_edit(&mut self, target: &Value, tick: &Value, options: &Value) -> Result<bool, EditError> {
+        if self.drag.is_some() && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels")) {
+            return Err(EditError::Unported("an origin motion-path begin during another live gesture".into()));
+        }
         if !self.sheet() {
             return Err(EditError::Unported("a motion-path edit on a native timeline".into()));
         }
@@ -459,6 +495,9 @@ impl Editor {
         let falloff = normalize_falloff(options.get("falloff"))?;
         let label = label.unwrap_or_else(|| if falloff.is_some() { "Reshape motion path" } else { "Edit motion path" }.to_string());
         let mut target = Target::parse(target)?;
+        if target.camera && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels")) {
+            return Err(EditError::Unported("an unrecorded camera motion-path edit on an origin document".into()));
+        }
         if self.drag.is_some() {
             self.commit_drag()?;
         }
@@ -526,6 +565,7 @@ impl Editor {
             component,
             claims: HashSet::new(),
             planned: Vec::new(),
+            keys: Vec::new(),
             moved: false,
             last: None,
         };
@@ -577,7 +617,13 @@ impl Editor {
             return Ok(());
         }
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-        for object in objects_of(frame) {
+        let objects = objects_of(frame);
+        if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+            let slots = objects.iter().enumerate().filter_map(|(slot, object)|
+                (uid(object).is_some_and(|uid| session.component.contains(&uid)) || has_pinned(object)).then_some(slot)).collect::<Vec<_>>();
+            self.origin_motion_gate(&objects, &slots)?;
+        }
+        for object in objects {
             if !uid(&object).is_some_and(|u| session.component.contains(&u)) && !has_pinned(&object) {
                 continue;
             }
@@ -606,6 +652,7 @@ impl Editor {
             }
         }
         keys.sort_by(f64::total_cmp);
+        session.keys = keys.clone();
         let total = total_ticks(&rows(&self.report));
         let falloff = session.falloff.clone().expect("a falloff edit");
         let writes = plan_falloff(session.tick, &falloff, &keys, total);
@@ -739,6 +786,7 @@ impl Editor {
         session.moved = true;
         let posed = &mut session.posed[0];
         posed.moved = true;
+        self.synchronize_origin_frame(&mut posed.working, &posed.baseline, false)?;
         if target.camera {
             posed.camera_changed = true;
         }
@@ -777,6 +825,7 @@ impl Editor {
             let moved = matches!(applied, Ok(true));
             if moved {
                 posed.moved = true;
+                self.synchronize_origin_frame(&mut posed.working, &posed.baseline, false)?;
                 if target.camera {
                     posed.camera_changed = true;
                 }
@@ -890,7 +939,8 @@ impl Editor {
                     }
                     plan.set_keys(id, keys);
                     let name = key.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-                    posed.writes.push((id.to_string(), Entry { key: name, source: None, patches: Some(Vec::new()) }));
+                    let next_tick = keys_next_tick(plan, id, index);
+                    posed.writes.push((id.to_string(), Entry { key: name, source: None, write_tick: posed.tick, next_tick, patches: Some(Vec::new()) }));
                     posed.writes.len() - 1
                 } else {
                     // Auto key writes at the frame's tick; otherwise a held cell edits its preceding key.
@@ -901,8 +951,11 @@ impl Editor {
                     };
                     let easing = key.unwrap_or_else(constant);
                     plan.write(id, write_tick, frame, Write { easing: Some(&easing), ..Write::default() })?;
-                    let written = plan.keys(id).into_iter().find(|k| num(k, "tick") == Some(write_tick)).unwrap_or(Value::Null);
-                    let entry = Entry { key: written.get("id").and_then(Value::as_str).unwrap_or("").to_string(), source: written.path(&["value", "frameId"]).and_then(Value::as_str).map(str::to_string), patches: None };
+                    let keys = plan.keys(id);
+                    let index = keys.iter().position(|key| num(key, "tick") == Some(write_tick));
+                    let written = index.and_then(|index| keys.get(index)).cloned().unwrap_or(Value::Null);
+                    let next_tick = index.map_or(write_tick + 1.0, |index| keys_next_tick(plan, id, index));
+                    let entry = Entry { key: written.get("id").and_then(Value::as_str).unwrap_or("").to_string(), source: written.path(&["value", "frameId"]).and_then(Value::as_str).map(str::to_string), write_tick, next_tick, patches: None };
                     posed.writes.push((id.to_string(), entry));
                     return Ok(());
                 }
@@ -1214,6 +1267,7 @@ impl Editor {
             }
         }
         for (s, segments) in by_object {
+            let figure = (s != slot).then(|| self.figure_of(&object_at(&posed.working, s))).flatten();
             let Some(record) = object_mut(&mut posed.working, s) else { continue };
             let Some(angles) = record.get_mut("angles") else { continue };
             let Some(list) = angles.make_arr() else { continue };
@@ -1223,6 +1277,7 @@ impl Editor {
                 }
             }
             angles.repack();
+            if let Some(figure) = figure { crate::origin::rotate_support(&figure, record, delta); }
         }
         Ok(())
     }

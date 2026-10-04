@@ -81,6 +81,28 @@ How the engine runs in the app (`engine/crates/styk-engine`,
 - Library code has no clock, file or thread of its own: the host injects a
   clock (`styk_wasm::clock`), and native tools use rayon through `par`.
 
+## Prepared samples and layer planning
+
+Fractional playback and preview requests use `Engine::request_samples` and `frame_at`
+on the existing frame cache. `FrameData::tick` is now `f64`; integer entry points remain
+available. A request does not synchronously prepare a cold sample on the interface.
+Camera monitor and preview work share this prepared owner, resource readiness and
+bounded ticket retirement. A refused or cancelled result retains its complete payload
+and charge through worker retirement and terminal ACK; disposal never extends a State
+critical section.
+
+`Engine::plan_layers(revision, LayerRequest)` uses the existing worker task lane and
+returns `LayerJob`. Polling gives bounded chunks and progress, ACK admits the next chunk,
+and cancellation, expiry or generation replacement retires the original job on workers.
+Native and sheet kernels share this protocol. A publication invalidates only the job of
+the exact generation it displaced, preserving a newer job installed during the exchange.
+This adds portable Engine APIs and a dependency on `styk-edit`; browser glue stays in
+`styk-wasm` and `src/engine/engine-layer-planning.mjs`.
+
+Mobile pin compatibility: `Engine::stage` now returns a checked result,
+`PlanError::Unported` carries an owned `String`, and `FrameData::tick` changes from `u32`
+to `f64`. Callers should retain error handling and use integer wrappers where appropriate.
+
 ## Building
 
 `npm run engine:build` (`scripts/engine-build.mjs`): nightly `nightly-2026-09-15`,

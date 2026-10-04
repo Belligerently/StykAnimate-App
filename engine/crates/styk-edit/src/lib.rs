@@ -28,15 +28,21 @@ mod history;
 mod ik;
 mod ik_settings;
 mod layers;
+pub mod layer_planning;
+pub mod movieclip_planning;
+mod history_weight;
 mod motion_path;
 mod movieclips;
 mod origin;
 mod origin_topology;
+mod movieclip_commands;
+mod movieclip_native;
 mod pose;
 mod pose_choice;
 mod palette;
 mod polygons;
 mod project;
+pub mod publication;
 mod property_edit;
 mod range;
 mod range_plan;
@@ -63,7 +69,7 @@ use std::collections::HashMap;
 
 use styk_doc::{Obj, Value};
 
-pub use history::{Command, CommandKind};
+pub use history::{Command, CommandKind, HistoryLimits};
 pub use select::Selection;
 
 /// What a failed call says. `Unported` means "run this in JavaScript": the call
@@ -147,6 +153,7 @@ pub struct Editor {
     pub(crate) tick: f64,
     pub(crate) frame_index: usize,
     pub(crate) selection: Selection,
+    pub(crate) selection_metadata: select::SelectionMetadata,
     pub(crate) drag: Option<Drag>,
     pub(crate) authored: Option<Authored>,
     /// The draft of the last committed gesture, which the editor goes on showing as
@@ -154,8 +161,11 @@ pub struct Editor {
     /// (`_authoredCommitPreview` kept in `_evaluated`). Usually equal to evaluating
     /// again; not after editing a movieclip's replaced frame between its keys.
     pub(crate) retained: Option<Value>,
-    pub(crate) undo: Vec<Command>,
-    pub(crate) redo: Vec<Command>,
+    pub(crate) undo: Vec<history::Entry>,
+    pub(crate) redo: Vec<history::Entry>,
+    pub(crate) history_limits: history::HistoryLimits,
+    pub(crate) history_size: f64,
+    pub(crate) worker_history: bool,
     pub(crate) revision: u64,
     pub(crate) saved_revision: u64,
     pub(crate) revision_serial: u64,
@@ -242,11 +252,13 @@ struct Snapshot {
     tick: f64,
     frame_index: usize,
     selection: Selection,
+    selection_metadata: select::SelectionMetadata,
     drag: Option<Drag>,
     authored: Option<Authored>,
     retained: Option<Value>,
-    undo: Vec<Command>,
-    redo: Vec<Command>,
+    undo: Vec<history::Entry>,
+    redo: Vec<history::Entry>,
+    history_size: f64,
     counters: [u64; 6],
     uid_counts: Option<(HashMap<u32, i64>, std::collections::HashSet<u32>)>,
     generated_sources: Vec<String>,
@@ -281,11 +293,15 @@ impl Editor {
             tick: 0.0,
             frame_index: 0,
             selection: Selection::default(),
+            selection_metadata: select::SelectionMetadata::default(),
             drag: None,
             authored: None,
             retained: None,
             undo: Vec::new(),
             redo: Vec::new(),
+            history_limits: Default::default(),
+            history_size: 0.0,
+            worker_history: false,
             revision: 0,
             saved_revision: 0,
             revision_serial: 0,
@@ -369,6 +385,12 @@ impl Editor {
         self.next_uid = next_uid;
     }
 
+    /// The document's small revision counters when a worker editor adopts the
+    /// live owner. Their exact digits are part of enumerable history weights.
+    pub fn set_revision_counters(&mut self, revision: u64, serial: u64, saved: u64) {
+        self.revision = revision; self.revision_serial = serial; self.saved_revision = saved;
+    }
+
     pub fn report(&self) -> &Value {
         &self.report
     }
@@ -435,6 +457,9 @@ impl Editor {
         object.set("layerRevision", Value::Num(state.layer_revision as f64));
         object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
         object.set("nextUid", Value::Num(state.next_uid as f64));
+        if self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.is_some() || self.selection_metadata.branch.is_some() {
+            self.selection_state().write_metadata(&mut object);
+        }
         Value::object(object)
     }
 
@@ -485,11 +510,13 @@ impl Editor {
             tick: self.tick,
             frame_index: self.frame_index,
             selection: self.selection.clone(),
+            selection_metadata: self.selection_metadata.clone(),
             drag: self.drag.clone(),
             authored: self.authored.clone(),
             retained: self.retained.clone(),
             undo: self.undo.clone(),
             redo: self.redo.clone(),
+            history_size: self.history_size,
             counters: [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid],
             uid_counts: self.uid_counts.clone(),
             generated_sources: self.generated_sources.clone(),
@@ -513,47 +540,44 @@ impl Editor {
         }
     }
 
-    fn restore(&mut self, snapshot: Snapshot) {
-        self.report = snapshot.report;
-        self.tick = snapshot.tick;
-        self.frame_index = snapshot.frame_index;
-        self.selection = snapshot.selection;
-        self.drag = snapshot.drag;
-        self.authored = snapshot.authored;
-        self.retained = snapshot.retained;
-        self.undo = snapshot.undo;
-        self.redo = snapshot.redo;
-        [self.revision, self.saved_revision, self.revision_serial, self.layer_revision, self.next_frame_identity, self.next_uid] = snapshot.counters;
-        self.uid_counts = snapshot.uid_counts;
-        self.generated_sources = snapshot.generated_sources;
-        self.pending_source_layer_changes = snapshot.pending_source_layer_changes;
-        self.pending_source_bytes = snapshot.pending_source_bytes;
-        self.new_layer_hints = snapshot.new_layer_hints;
-        self.layer_event_pending = snapshot.layer_event_pending;
+    fn restore(&mut self, mut snapshot: Snapshot) {
+        self.exchange_snapshot(&mut snapshot);
         self.events.truncate(snapshot.events);
-        self.sheet_clipboard = snapshot.sheet_clipboard;
-        self.figure_clipboard = snapshot.figure_clipboard;
-        self.segment_values_clipboard = snapshot.segment_values_clipboard;
-        self.camera_clipboard = snapshot.camera_clipboard;
-        self.camera_motion_clipboard = snapshot.camera_motion_clipboard;
-        self.vfx_clip_clipboard = snapshot.vfx_clip_clipboard;
-        self.vfx_edit = snapshot.vfx_edit;
-        self.batch = snapshot.batch;
-        self.sheet_selection = snapshot.sheet_selection;
-        self.property_edit = snapshot.property_edit;
-        self.native_token = snapshot.native_token;
-        self.native_token_serial = snapshot.native_token_serial;
+    }
+
+    /// Exchanges the existing rollback owner's heads without dropping them.
+    /// Prepared worker publication retains the displaced snapshot until ACK.
+    fn exchange_snapshot(&mut self, snapshot: &mut Snapshot) {
+        macro_rules! swap {
+            ($($field:ident),+ $(,)?) => { $(std::mem::swap(&mut self.$field, &mut snapshot.$field);)+ };
+        }
+        swap!(report, tick, frame_index, selection, selection_metadata, drag, authored, retained, undo,
+            redo, history_size, uid_counts, generated_sources,
+            pending_source_layer_changes, pending_source_bytes, new_layer_hints,
+            layer_event_pending, sheet_clipboard, figure_clipboard,
+            segment_values_clipboard, camera_clipboard, camera_motion_clipboard,
+            vfx_clip_clipboard, vfx_edit, batch, sheet_selection, property_edit,
+            native_token, native_token_serial);
+        for (actual, captured) in [
+            &mut self.revision, &mut self.saved_revision,
+            &mut self.revision_serial, &mut self.layer_revision,
+            &mut self.next_frame_identity, &mut self.next_uid,
+        ].into_iter().zip(&mut snapshot.counters) {
+            std::mem::swap(actual, captured);
+        }
     }
 
     fn dispatch(&mut self, method: &str, args: &[Value]) -> Result<Value, EditError> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
         // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
         let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
+        self.selection_metadata_gate(method)?;
+        self.native_transform_gate(method, args)?;
         if let Some(reason) = self.unported_document() {
             let recorded = match reason {
-                "with animation origins" => origin::recorded_call(method),
-                "with animation origins and property channels" => origin::recorded_channel_call(method),
-                _ => false,
+                "with animation origins" => origin::recorded_call(method) || select::metadata_recorded_call(method),
+                "with animation origins and property channels" => origin::recorded_channel_call(method) || select::metadata_recorded_call(method),
+                _ => self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method),
             };
             if !recorded {
                 return Err(EditError::Unported(format!("{method} {reason}")));
@@ -573,7 +597,10 @@ impl Editor {
             if origin::rig_tool_call(method) { self.origin_rig_gate()?; }
             if origin::property_call(method) { self.origin_property_gate(method, args)?; }
         }
-        if let Some(reason) = self.ik_gate(method)? {
+        if self.native_movieclip_mutation(method, args) && self.report.path(&["_styk", "simpleFrameDraft"]).is_some() {
+            return Err(EditError::Unported(format!("{method} with a saved working frame")));
+        }
+        if let Some(reason) = self.ik_gate(method, args)? {
             return Err(EditError::Unported(format!("{method} {reason}")));
         }
         self.native_property_gate(method)?;
@@ -606,6 +633,9 @@ impl Editor {
                 self.select(arg(0).as_f64().filter(|v| v.fract() == 0.0 && *v >= 0.0).map(|v| v as u32), joint, flag("toggle"), flag("add"))
             }
             "selectMany" => self.select_many(&arg(0).numbers().unwrap_or_default().into_iter().map(|v| v as u32).collect::<Vec<_>>()),
+            "selectPolygon" => self.select_polygon(select::index(args.first()).and_then(|id| u32::try_from(id).ok()), select::index(args.get(1))).map(Value::Bool),
+            "toggleSegment" => self.toggle_segment(select::index(args.first()).and_then(|id| u32::try_from(id).ok()), select::index(args.get(1))).map(Value::Bool),
+            "selectBranch" => self.select_branch(select::index(args.first()).and_then(|id| u32::try_from(id).ok()), select::index(args.get(1))).map(Value::Bool),
             "seek" | "@seek" => self.seek(arg(0).as_f64().unwrap_or(0.0)),
             "beginDrag" => {
                 let translation = match arg(1).get("scope").and_then(Value::as_str) {
@@ -689,6 +719,7 @@ impl Editor {
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
+            "addMovieclipToNextKeyframes" if !self.sheet() => self.extend_native_movieclip(number(0)),
             "addFigure" => self.add_figure((!args.is_empty()).then(|| arg(0)).as_ref()),
             "renameLayer" => self.rename_layer(&arg(0), &arg(1)).map(Value::Bool),
             "setLayerColor" => self.set_layer_color(&arg(0), &arg(1)).map(Value::Bool),
@@ -769,6 +800,12 @@ impl Editor {
             "moveVfxClipKeys" => self.move_vfx_clip_keys(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
             "deleteVfxClipKeys" => self.delete_vfx_clip_keys(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "setVfxClipEasing" => self.set_vfx_clip_easing(&arg(0), &arg(1), &arg(2), &arg(3)).map(Value::Bool),
+            "createEmptyMovieclip" => self.create_empty_movieclip(&arg(0)),
+            "createMovieclip" => self.create_movieclip(&arg(0)),
+            "makeMovieclipUnique" => self.make_movieclip_unique(),
+            "placeMovieclip" => self.place_native_movieclip(&arg(0), arg(1).get("move").is_some_and(Value::truthy)),
+            "splitMovieclip" => self.split_native_movieclip(args.first().map(|v| v.as_f64().unwrap_or(f64::NAN)).unwrap_or(self.tick)),
+            "breakApartMovieclip" => self.break_apart_movieclip(),
             "renameMovieclip" => self.rename_movieclip(&arg(0)),
             "restartMovieclip" => self.restart_movieclip(),
             "removeMovieclipRestart" => self.remove_movieclip_restart(),

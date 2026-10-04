@@ -26,8 +26,11 @@ use crate::Generation;
 /// the least recently shown are dropped beyond this.
 const MAX_GHOSTS: usize = 48;
 
+#[derive(Clone)]
 struct Pose {
-    frame: Frame,
+    // Snapshots used by auxiliary views share the pose and its built geometry. Creating
+    // one on the interface thread must not copy every object of a dense frame.
+    frame: Arc<Frame>,
     /// Geometry of `frame`, built when first drawn.
     scene: Option<Arc<Scene>>,
     /// The draw counter when this pose was last shown.
@@ -40,6 +43,24 @@ struct Pose {
     vfx_tick: Option<f64>,
     /// Its generated effects, built when first drawn (again while incomplete).
     generators: Option<Arc<Batch>>,
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn a_snapshot_shares_the_dense_pose_and_geometry_instead_of_cloning_them() {
+        let mut source = EditScene { current: Some(Pose::new(Frame::default(), 3, Times::default())), lineage: 4, generation: 5, ..Default::default() };
+        source.current.as_mut().unwrap().scene = Some(Arc::new(Scene::default()));
+        let snapshot = source.snapshot();
+        let original = source.current.as_ref().unwrap();
+        let captured = snapshot.current.as_ref().unwrap();
+        assert!(Arc::ptr_eq(&original.frame, &captured.frame));
+        assert!(Arc::ptr_eq(original.scene.as_ref().unwrap(), captured.scene.as_ref().unwrap()));
+        assert!(snapshot.ghosts.is_empty());
+        assert_eq!((snapshot.lineage, snapshot.generation), (4, 5));
+    }
 }
 
 /// The scene camera of a frame shown through it.
@@ -62,30 +83,30 @@ struct Times {
 
 impl Pose {
     fn new(frame: Frame, used: u64, times: Times) -> Pose {
-        Pose { frame, scene: None, used, motion_tick: times.motion, shot: None, vfx_tick: times.vfx, generators: None }
+        Pose { frame: Arc::new(frame), scene: None, used, motion_tick: times.motion, shot: None, vfx_tick: times.vfx, generators: None }
     }
 
     /// What the scene camera does to this pose, worked out once per document generation
     /// (follow paths are the generation's).
-    fn shot(&mut self, generation: &Generation) -> Shot {
+    fn shot(&mut self, generation: &Generation, prepare: bool) -> Option<Shot> {
         if let Some((id, shot)) = &self.shot
             && *id == generation.id
         {
-            return shot.clone();
+            return Some(shot.clone());
         }
         let prepared = &generation.prepared;
         let doc = &prepared.doc;
         let authored = self.frame.camera;
         let (travel, camera) = match self.motion_tick {
             Some(tick) if !doc.camera_motion.is_empty() => {
-                let travel = prepared.travel(authored, tick);
+                let travel = if prepare { prepared.travel(authored, tick) } else { prepared.travel_ready(authored, tick)? };
                 (travel, styk_eval::camera::at_time(travel, &doc.camera_motion, tick, doc.fps))
             }
             _ => (authored, authored),
         };
         let shot = Shot { camera, parallax: styk_eval::parallax::resolve(doc, &self.frame, travel.as_ref()) };
         self.shot = Some((generation.id, shot.clone()));
-        shot
+        Some(shot)
     }
 }
 
@@ -101,6 +122,8 @@ pub struct EditScene {
     draws: u64,
     /// The last frame's generated effects used the current pose for some trails: draw again.
     refining: bool,
+    /// The displayed pose needs a worker to warm its shared follow-camera path.
+    camera_pending: Option<f64>,
 }
 
 /// One onion skin of a frame.
@@ -131,6 +154,9 @@ pub struct EditOptions<'a> {
     pub bypass_effects: bool,
     /// The frame is shown through the scene camera (playback preview), which moves parallax layers.
     pub camera: bool,
+    /// Worker/offline callers may prepare a cold camera path. Interface callers
+    /// read only already-published follow paths and receive `None` while cold.
+    pub prepare_camera: bool,
     /// The host's clock and how long a frame may evaluate generated effects' earlier
     /// anchors (the editor's 6 ms); without a clock, all of them are evaluated.
     pub clock: Option<crate::Clock>,
@@ -153,6 +179,12 @@ fn flags(slots: &[u32], count: usize) -> Vec<bool> {
 }
 
 impl EditScene {
+    /// A read-only snapshot of the displayed pose for an auxiliary worker. The frame,
+    /// geometry and generated batches are shared; ghosts and parsing caches are not copied.
+    /// The worker builds camera/parallax geometry and draw lists, never the interface.
+    pub fn snapshot(&self) -> EditScene {
+        EditScene { loader: Some(Loader::new()), current: self.current.clone(), lineage: self.lineage, generation: self.generation, draws: self.draws, ..Default::default() }
+    }
     /// Starts over when the document is another project; drops built geometry when its definitions changed.
     fn follow(&mut self, generation: &Generation) {
         if self.lineage != generation.lineage || self.loader.is_none() {
@@ -194,7 +226,7 @@ impl EditScene {
     pub fn update(&mut self, generation: &Generation, text: &[u8]) -> Result<(), String> {
         self.follow(generation);
         let previous = self.current.take();
-        let (frame, times) = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
+        let (frame, times) = self.parse(generation, text, previous.as_ref().map(|pose| pose.frame.as_ref()))?;
         self.current = Some(Pose::new(frame, self.draws, times));
         Ok(())
     }
@@ -203,7 +235,7 @@ impl EditScene {
     pub fn update_ghost(&mut self, generation: &Generation, id: u32, text: &[u8]) -> Result<(), String> {
         self.follow(generation);
         let previous = self.ghosts.remove(&id);
-        let (frame, times) = self.parse(generation, text, previous.as_ref().map(|pose| &pose.frame))?;
+        let (frame, times) = self.parse(generation, text, previous.as_ref().map(|pose| pose.frame.as_ref()))?;
         self.ghosts.insert(id, Pose::new(frame, self.draws, times));
         Ok(())
     }
@@ -229,10 +261,15 @@ impl EditScene {
         }
     }
 
+    /// Exact motion time whose follow path is still cold. The caller schedules
+    /// worker frame tickets and retries after engine progress; it keeps its last draw.
+    pub fn camera_pending(&self) -> Option<f64> { self.camera_pending }
+
     /// The draw list of the current frame under `options`. `Err` names a ghost the
     /// interface asked for and never sent.
     pub fn draw_list(&mut self, generation: &Generation, options: &EditOptions<'_>) -> Result<Option<Arc<DrawList>>, String> {
         self.follow(generation);
+        self.camera_pending = None;
         self.draws += 1;
         let doc = &generation.prepared.doc;
         let scene_of = |pose: &mut Pose| pose.scene.get_or_insert_with(|| Arc::new(build(doc, &pose.frame))).clone();
@@ -241,7 +278,13 @@ impl EditScene {
         let hidden = flags(options.hidden, current.frame.objects.len());
         // Through the scene camera, parallax layers move after any drag (onion skins are
         // never shown with the camera on, so they take no parallax).
-        let parallax = if options.camera { current.shot(generation).parallax } else { None };
+        let parallax = if options.camera {
+            let Some(shot) = current.shot(generation, options.prepare_camera) else {
+                self.camera_pending = current.motion_tick;
+                return Ok(None);
+            };
+            shot.parallax
+        } else { None };
         let moved = parallax.as_ref().map(|p| p.translations(options.translations));
         let translations = moved.as_deref().unwrap_or(options.translations);
         // Generated effects: built once per pose, again while trails are being refined.

@@ -2,7 +2,9 @@
 //!
 //! Phase 1 keeps the app's history in JavaScript (docs/engine/editing.md); this one
 //! exists so the command-replay harness can check undo and redo record for record.
-//! It trims by count (`historyLimit`, 80 entries) but not by the editor's byte budget.
+//! Worker-owned editors can prepare exact byte weights and honor the app's count
+//! and byte limits. Synchronous UI sessions keep count-only readiness until their
+//! immutable transactions arrive with worker-prepared weights.
 
 use styk_doc::Value;
 
@@ -11,6 +13,26 @@ use crate::select::SelectionState;
 use crate::{EditError, Editor};
 
 const HISTORY_LIMIT: usize = 80;
+
+/// The editor's settings. The byte budget always retains one oversized entry;
+/// a zero count limit discards even that entry.
+#[derive(Clone, Copy, Debug)]
+pub struct HistoryLimits { pub count: usize, pub bytes: f64 }
+impl Default for HistoryLimits { fn default() -> Self { Self { count: HISTORY_LIMIT, bytes: 48.0 * 1024.0 * 1024.0 } } }
+
+/// One weight tree parallel to a batch's existing command tree. No retained
+/// document data is copied and child weights survive revision overrides.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Weight {
+    bytes: f64,
+    children: Vec<Weight>,
+    /// The actual owner's sparse estimate shape, retained even while unprepared.
+    topology: Option<crate::history_weight::TopologyShape>,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct Entry { command: Command, weight: Weight }
+impl std::ops::Deref for Entry { type Target = Command; fn deref(&self) -> &Command { &self.command } }
+impl std::ops::DerefMut for Entry { fn deref_mut(&mut self) -> &mut Command { &mut self.command } }
 
 /// `a === b` for two values: numbers by value, text by content, containers by identity.
 pub(crate) fn js_strict_eq(a: &Value, b: &Value) -> bool {
@@ -28,6 +50,8 @@ pub(crate) fn js_strict_eq(a: &Value, b: &Value) -> bool {
 pub enum CommandKind {
     /// One native keyframe before and after a structural transaction (`kind: 'frame'`).
     Frame { index: usize, before: Value, after: Value, structural: bool },
+    /// Saved native channels (`kind: 'animation'`), sharing the movieclip owner.
+    Animation { before: Option<Value>, after: Value, structural: bool },
     /// Whole records of one native keyframe's objects, replaced by unique id.
     Objects { index: usize, before: Vec<Value>, after: Vec<Value> },
     /// The layer sheet and layer state before and after, and the pose sources the
@@ -35,7 +59,7 @@ pub enum CommandKind {
     LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)>, definitions: Option<(usize, Vec<Value>)> },
     /// Paths of the layer state before and after, and the sheet when the layers' tracks
     /// changed with them (`kind: 'layers'`).
-    Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, structural: bool, timing: bool },
+    Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, migration: Option<crate::layer_planning::NativeMigration>, structural: bool, timing: bool },
     /// A figure definition before and after (`kind: 'figure'`).
     Figure { index: usize, before: Value, after: Value },
     /// Definitions inserted beside the existing library and one native keyframe
@@ -57,10 +81,12 @@ pub enum CommandKind {
     /// A movieclip definition before (none when it was added) and after (none when removed)
     /// at its place in the definitions (`kind: 'movieclip-definition'`).
     MovieclipDefinition { index: usize, before: Option<Value>, after: Option<Value> },
+    /// Selected movieclip poses in native keys and retained sources (`kind: 'movieclip-poses'`).
+    MovieclipPoses { before: Vec<crate::topology::FramePoses>, after: Vec<crate::topology::FramePoses> },
     /// Entries recorded inside `movieclipBatch`, undone and redone together (`kind: 'movieclip-batch'`).
     Batch { commands: Vec<Command> },
     /// Native keyframes patched by a figure operation across frames (`kind: 'figure-range'`).
-    FigureRange { changes: Vec<crate::range::FrameChange>, structural: bool },
+    FigureRange { changes: Vec<crate::range::FrameChange>, structural: bool, retain_geometry: bool },
     /// Paths of a figure definition before and after (`kind: 'native-properties'`, `scope: 'figure'`).
     NativeProperties { index: usize, before: crate::builder::Patch, after: crate::builder::Patch },
     /// A figure definition and the poses it changed, before and after (`kind: 'topology'`).
@@ -71,7 +97,7 @@ pub enum CommandKind {
 /// selection when it began.
 #[derive(Clone, Debug)]
 pub(crate) struct Batch {
-    commands: Vec<Command>,
+    commands: Vec<Entry>,
     label: String,
     revision: u64,
     before_selection: SelectionState,
@@ -105,10 +131,30 @@ pub(crate) enum Direction {
 impl Editor {
     /// `_record`: a new revision, pushed to undo; redo is cleared, and pose sources
     /// only a dropped redo branch used are collected.
-    pub(crate) fn record(&mut self, mut command: Command) -> Result<(), EditError> {
+    pub(crate) fn record(&mut self, command: Command) -> Result<(), EditError> {
+        self.record_weight(command, None, None)
+    }
+
+    pub(crate) fn record_topology(&mut self, command: Command, shape: crate::history_weight::TopologyShape) -> Result<(), EditError> {
+        self.record_weight(command, None, Some(shape))
+    }
+
+    fn record_weight(&mut self, command: Command, prepared: Option<Weight>, topology: Option<crate::history_weight::TopologyShape>) -> Result<(), EditError> {
+        self.record_weight_checked(command, prepared, topology, &mut || Ok(()))
+    }
+
+    pub(crate) fn record_checked(&mut self, command: Command, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<(), EditError> {
+        self.record_weight_checked(command, None, None, check)
+    }
+
+    fn record_weight_checked(&mut self, mut command: Command, prepared: Option<Weight>, topology: Option<crate::history_weight::TopologyShape>, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<(), EditError> {
+        check()?;
         if let CommandKind::LayerSheet { sources, .. } = &command.kind {
             let frames: Vec<Value> = sources.iter().map(|(_, frame)| frame.clone()).collect();
             command.layers |= self.register_frame_sources(&frames, false)?;
+        }
+        if let CommandKind::Layers { migration: Some(migration), .. } = &command.kind {
+            command.layers |= self.register_frame_sources(&migration.frames(), false)?;
         }
         command.layers |= !self.pending_source_layer_changes.is_empty();
         command.layer_changes.append(&mut self.pending_source_layer_changes);
@@ -118,21 +164,173 @@ impl Editor {
         self.revision_serial += 1;
         command.after_revision = self.revision_serial;
         self.revision = command.after_revision;
+        let weight = if self.worker_history {
+            match prepared {
+                Some(mut weight) => { weight.bytes += command.captured_source_bytes as f64; weight },
+                None => Weight { bytes: crate::history_weight::command_bytes_checked(&command, topology.as_ref(), check)?, children: Vec::new(), topology },
+            }
+        } else {
+            let mut weight = prepared.unwrap_or_default();
+            weight.bytes = 0.0;
+            weight.topology = topology;
+            weight
+        };
+        let entry = Entry { command, weight };
         if let Some(batch) = self.batch.as_mut() {
-            batch.commands.push(command);
+            batch.commands.push(entry);
             return Ok(());
         }
-        self.undo.push(command);
+        self.history_size -= self.redo.iter().map(|entry| entry.weight.bytes).sum::<f64>();
+        self.history_size += entry.weight.bytes;
+        self.undo.push(entry);
         self.redo.clear();
-        let mut trimmed = false;
-        while self.undo.len() > HISTORY_LIMIT {
-            self.undo.remove(0);
-            trimmed = true;
-        }
-        if collect || trimmed {
-            self.prune_frame_sources();
-        }
+        self.trim_history(collect);
         Ok(())
+    }
+
+    /// Enables exact sizing for a worker-owned editor before its first command.
+    /// This is deliberately separate from synchronous Session::start: command
+    /// weights and retired dense values must be prepared/disposed on a worker.
+    pub fn configure_worker_history(&mut self, limits: HistoryLimits) -> Result<(), EditError> {
+        if limits.bytes.is_nan() || limits.bytes < 0.0 { return Err(EditError::Invalid("invalid history byte budget".into())); }
+        if !self.worker_history && (!self.undo.is_empty() || !self.redo.is_empty() || self.batch.is_some()) { return Err(EditError::Unported("worker history must be configured before recording commands".into())); }
+        self.history_limits = limits; self.worker_history = true; Ok(())
+    }
+
+    /// Prepares retained history on its owning worker, atomically. The checkpoint
+    /// must come from the validated existing accounting owner: summing retained
+    /// entries cannot reproduce floating residue from earlier dropped commands.
+    /// Dense traversal and retirement are never allowed in a synchronous Session.
+    /// Caller cancellation/stale checks run through dense strings/numeric arrays.
+    pub fn prepare_worker_history(
+        &mut self,
+        limits: HistoryLimits,
+        checkpoint: f64,
+        mut check: impl FnMut() -> Result<(), EditError>,
+    ) -> Result<(), EditError> {
+        if limits.bytes.is_nan() || limits.bytes < 0.0 || !checkpoint.is_finite() {
+            return Err(EditError::Invalid(
+                "invalid history accounting checkpoint or limits".into(),
+            ));
+        }
+        if self.worker_history && checkpoint != self.history_size {
+            return Err(EditError::Invalid(
+                "history accounting checkpoint differs from its owner".into(),
+            ));
+        }
+        fn prepare(
+            command: &Command,
+            previous: &Weight,
+            check: &mut impl FnMut() -> Result<(), EditError>,
+        ) -> Result<Weight, EditError> {
+            check()?;
+            if matches!(command.kind, CommandKind::Topology { .. }) && previous.topology.is_none() {
+                return Err(EditError::Unported(
+                    "original topology history estimate metadata is unavailable".into(),
+                ));
+            }
+            let children = if let CommandKind::Batch { commands } = &command.kind {
+                if commands.len() != previous.children.len() {
+                    return Err(EditError::Unported(
+                        "original batch history estimate metadata is unavailable".into(),
+                    ));
+                }
+                commands
+                    .iter()
+                    .zip(&previous.children)
+                    .map(|(command, previous)| prepare(command, previous, check))
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                Vec::new()
+            };
+            let bytes = if matches!(command.kind, CommandKind::Batch { .. }) {
+                128.0
+                    + children.iter().map(|weight| weight.bytes).sum::<f64>()
+                    + command.captured_source_bytes as f64
+            } else {
+                crate::history_weight::command_bytes_checked(
+                    command,
+                    previous.topology.as_ref(),
+                    check,
+                )?
+            };
+            Ok(Weight {
+                bytes,
+                children,
+                topology: previous.topology.clone(),
+            })
+        }
+        let undo = self
+            .undo
+            .iter()
+            .map(|entry| prepare(entry, &entry.weight, &mut check))
+            .collect::<Result<Vec<_>, _>>()?;
+        let redo = self
+            .redo
+            .iter()
+            .map(|entry| prepare(entry, &entry.weight, &mut check))
+            .collect::<Result<Vec<_>, _>>()?;
+        let prepared_batch = self
+            .batch
+            .as_ref()
+            .map(|batch| {
+                batch
+                    .commands
+                    .iter()
+                    .map(|entry| prepare(entry, &entry.weight, &mut check))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        check()?;
+        for (entry, weight) in self.undo.iter_mut().zip(undo) {
+            entry.weight = weight;
+        }
+        for (entry, weight) in self.redo.iter_mut().zip(redo) {
+            entry.weight = weight;
+        }
+        if let Some(batch) = self.batch.as_mut() {
+            for (entry, weight) in batch
+                .commands
+                .iter_mut()
+                .zip(prepared_batch.unwrap_or_default())
+            {
+                entry.weight = weight;
+            }
+        }
+        self.history_size = checkpoint;
+        self.history_limits = limits;
+        self.worker_history = true;
+        Ok(())
+    }
+
+    pub fn history_limits(&self) -> HistoryLimits { self.history_limits }
+    /// No byte total is claimed until a worker has enabled exact accounting.
+    pub fn history_size(&self) -> Option<f64> { self.worker_history.then_some(self.history_size) }
+
+    /// `_trimHistory`: retires oldest undo until one remains, then farthest redo.
+    /// Worker-only because retirement can release dense retained COW values.
+    pub fn trim_worker_history(&mut self) -> Result<(), EditError> {
+        if !self.worker_history { return Err(EditError::Unported("history byte weights have not been prepared on a worker".into())); }
+        self.trim_history(false); Ok(())
+    }
+
+    fn trim_history(&mut self, mut collect: bool) {
+        while self.undo.len() > self.history_limits.count || (self.worker_history && self.history_size > self.history_limits.bytes && self.undo.len() + self.redo.len() > 1) {
+            let retired = if self.undo.len() > 1 { &mut self.undo } else if !self.redo.is_empty() { &mut self.redo } else { &mut self.undo };
+            self.history_size -= retired.remove(0).weight.bytes; collect = true;
+        }
+        if collect { self.prune_frame_sources(); }
+    }
+
+    pub(crate) fn history_value(&self) -> Value {
+        fn summary(command: &Command, weight: &Weight) -> Value {
+            let mut value = styk_doc::Obj::new(); value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
+            if let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight)).collect())); }
+            Value::object(value)
+        }
+        let mut value = styk_doc::Obj::new(); value.set("size", Value::Num(self.history_size));
+        value.set("undo", Value::array(self.undo.iter().map(|entry|summary(entry,&entry.weight)).collect())); value.set("redo", Value::array(self.redo.iter().map(|entry|summary(entry,&entry.weight)).collect()));
+        value.set("revision",Value::Num(self.revision as f64));value.set("revisionSerial",Value::Num(self.revision_serial as f64));value.set("savedRevision",Value::Num(self.saved_revision as f64));Value::object(value)
     }
 
     /// `movieclipBatch(label, operation)` begins: entries recorded until it ends become one.
@@ -154,7 +352,9 @@ impl Editor {
         let batch = self.batch.take().unwrap();
         if !batch.commands.is_empty() {
             let after_selection = self.selection_state();
-            self.record(Command { kind: CommandKind::Batch { commands: batch.commands }, label: batch.label.clone(), before_selection: batch.before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
+            let (commands,children): (Vec<_>,Vec<_>) = batch.commands.into_iter().map(|entry|(entry.command,entry.weight)).unzip();
+            let weight=Weight { bytes:128.0+children.iter().map(|weight|weight.bytes).sum::<f64>(),children,topology:None };
+            self.record_weight(Command { kind: CommandKind::Batch { commands }, label: batch.label.clone(), before_selection: batch.before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false },Some(weight),None)?;
             if let Some(command) = self.undo.last_mut() {
                 command.before_revision = batch.revision;
             }
@@ -195,6 +395,15 @@ impl Editor {
         Ok(true)
     }
 
+    /// Existing undo/redo owner for a worker transaction. This bypasses no UI
+    /// admission gate: a canonical worker editor must have exact history ready.
+    pub fn apply_history_worker(&mut self, redo: bool) -> Result<bool, EditError> {
+        if !self.worker_history {
+            return Err(EditError::Unported("worker history is not prepared".into()));
+        }
+        if redo { self.redo() } else { self.undo() }
+    }
+
     fn apply(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
         let (selection, revision) = match direction {
             Direction::Before => (&command.before_selection, command.before_revision),
@@ -202,8 +411,12 @@ impl Editor {
         };
         match &command.kind {
             CommandKind::Frame { index, before, after, structural } => {
+                self.ensure_counts();
+                let (previous, next) = if direction == Direction::Before { (after, before) } else { (before, after) };
                 let value = if direction == Direction::Before { before } else { after };
                 if let Some(frame) = self.report.make_obj().and_then(|report| report.get_mut("keyframes")).and_then(Value::make_arr).and_then(|frames| frames.get_mut(*index)) { *frame = value.clone(); }
+                self.track_frames(std::slice::from_ref(previous), std::slice::from_ref(next), false)?;
+                self.apply_attached_layer_changes(&command.layer_changes, direction);
                 self.retained = None;
                 self.restore_selection(selection)?;
                 self.revision = revision;
@@ -227,6 +440,7 @@ impl Editor {
                 );
             }
             CommandKind::LayerSheet { .. } => self.apply_sheet_command(command, direction)?,
+            CommandKind::Animation { .. } => self.apply_native_animation(command, direction)?,
             CommandKind::Layers { .. } => self.apply_layers_command(command, direction)?,
             CommandKind::CameraMotion { .. } => self.apply_camera_command(command, direction)?,
             CommandKind::Palette { .. } => self.apply_palette_command(command, direction)?,
@@ -234,6 +448,7 @@ impl Editor {
             CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
             CommandKind::Fields { .. } => self.apply_fields_command(command, direction)?,
             CommandKind::MovieclipDefinition { .. } => self.apply_movieclip_definition(command, direction)?,
+            CommandKind::MovieclipPoses { .. } => self.apply_movieclip_poses(command, direction)?,
             CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
             CommandKind::NativeProperties { .. } => self.apply_native_properties(command, direction)?,
             CommandKind::Topology { .. } => self.apply_topology(command, direction)?,

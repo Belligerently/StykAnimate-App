@@ -367,9 +367,16 @@ export function materializeMarkers(node, sections, {maxMaterializedBytes = MAX_B
   return walk(node);
 }
 
-/** UTF-8 length of a JSON string without allocating an escaped copy. */
-function jsonStringBytes(value) {
-  let bytes = 2;
+/** Drain the same lifted owner for synchronous container/worker callers. */
+function drainLift(steps) {
+  let step;
+  do { step = steps.next(); } while (!step.done);
+  return step.value;
+}
+
+/** UTF-8 length of a JSON string, with a checkpoint within long strings. */
+function* jsonStringBytesSteps(value) {
+  let bytes = 2, checkpoint = 2047;
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
     if (code === 34 || code === 92 || code === 8 || code === 9 || code === 10 || code === 12 || code === 13) bytes += 2;
@@ -378,21 +385,24 @@ function jsonStringBytes(value) {
     else if (code < 2048) bytes += 2;
     else if (code >= 0xd800 && code <= 0xdbff && value.charCodeAt(i + 1) >= 0xdc00 && value.charCodeAt(i + 1) <= 0xdfff) { bytes += 4; i++; }
     else bytes += code >= 0xd800 && code <= 0xdfff ? 6 : 3;
+    if (i >= checkpoint) { yield null; checkpoint = i + 2048; }
   }
   return bytes;
 }
+function jsonStringBytes(value) { return drainLift(jsonStringBytesSteps(value)); }
 
-/** Pick the smallest exact binary encoding for a plain numeric array.
- *  Integers stay exact; floats use f32 only when every value round-trips. */
-function arrayType(values) {
+/** The one exact numeric-array type selection, shared by both callers. */
+function* arrayTypeSteps(values) {
   let ints = true, min = Infinity, max = -Infinity, f32 = true;
-  for (const v of values) {
+  for (let index = 0; index < values.length; index++) {
+    const v = values[index];
     if (typeof v !== 'number' || !Number.isFinite(v)) return null;
     if (Number.isInteger(v)) {
-      if (Math.abs(v) >= 2 ** 53) return null; // JSON ints may exceed f64
+      if (Math.abs(v) >= 2 ** 53) return null;
       if (v < min) min = v; if (v > max) max = v;
     } else ints = false;
     if (f32 && Math.fround(v) !== v) f32 = false;
+    if ((index & 2047) === 2047) yield null;
   }
   if (ints) {
     if (min >= 0) {
@@ -405,151 +415,8 @@ function arrayType(values) {
   return f32 ? 'f32' : 'f64';
 }
 
-/** Walk an editable document and produce the v2 skeleton + binary sections.
- *  Returns {skeleton, sections:[{kind, bytes}], blobOffsets}. The input is
- *  never mutated; shared array/blob content is deduplicated to one section
- *  range so its identity survives the round-trip through identical marker
- *  text. `preBlobs` reserves leading ranges in the payload section for bytes
- *  supplied by the caller (e.g. a fetched original source); blobOffsets[i]
- *  gives each one's offset for use in a caller-written S2S marker. */
-export function liftDocument(document, {preBlobs = [], maxBytes = MAX_BYTES} = {}) {
-  const arrays = [], blobs = [], seenArrays = new Map(), seenBlobs = new Map();
-  const preBlobRanges = new Map();
-  // Repeated field names and short labels are common in dense scenes. Keep
-  // this admission memo local and bounded; large payload strings are excluded.
-  const stringSizes = new Map();
-  const stringSize = value => {
-    if (value.length > 128) return jsonStringBytes(value);
-    const cached = stringSizes.get(value);
-    if (cached !== undefined) return cached;
-    const length = jsonStringBytes(value);
-    if (stringSizes.size < 512) stringSizes.set(value, length);
-    return length;
-  };
-  let arraysLength = 0, blobsLength = 0, jsonUpperBytes = 0, knownJSONBytes = 0, allocationBytes = 0;
-  const maxMaterializedBytes = maxBytes * 4;
-  // Formatting every pose number is expensive. An upper bound admits ordinary
-  // files; exceeding it triggers the existing exact scan before publication.
-  // Only exact, already-known costs can reject early, preserving near-limit
-  // files whose decimal representation is smaller than the bound.
-  const admit = (length, estimated = false) => {
-    if (!Number.isSafeInteger(length)) throw documentTooLarge();
-    if (!estimated) {
-      if (length > maxMaterializedBytes - knownJSONBytes) throw documentTooLarge();
-      knownJSONBytes += length;
-    }
-    jsonUpperBytes += length;
-  };
-  const checkAllocation = () => {
-    if (allocationBytes + arraysLength + blobsLength > maxMaterializedBytes) throw documentTooLarge();
-  };
-  const admitPayload = (prefix, encodedLength) => {
-    admit(stringSize(prefix) + encodedLength);
-    allocationBytes += encodedLength; checkAllocation();
-  };
-  const blobOffsets = preBlobs.map(bytes => {
-    if (bytes.byteLength > maxBytes - blobsLength) throw documentTooLarge();
-    if (!preBlobRanges.has(bytes)) preBlobRanges.set(bytes, {s: 1, o: blobsLength, n: bytes.byteLength});
-    const o = blobsLength; blobs.push(bytes); blobsLength += bytes.byteLength; return o;
-  });
-  const align = (length, type) => length + ((TYPE_BYTES[type] - (length % TYPE_BYTES[type])) % TYPE_BYTES[type]);
-  const lift = (value, key) => {
-    // Only explicit reserved payloads in known base64 fields can replace a
-    // string with owned bytes. Foreign typed-array fields retain JSON behavior.
-    const preBlob = B64_FIELDS.has(key) && preBlobRanges.get(value);
-    if (preBlob) {
-      admitPayload('', 4 * Math.ceil(preBlob.n / 3));
-      return `S2S:${preBlob.s}:${preBlob.o}:${preBlob.n}`;
-    }
-    if (typeof value === 'string') {
-      if (value.length >= LIFT_MIN_STRING) {
-        let base64 = null, prefix = '';
-        if (B64_FIELDS.has(key)) base64 = value;
-        else if ((key === 'data_url' || key === 'styk_tiles') && value.startsWith('data:')) {
-          const comma = value.indexOf(',');
-          if (comma > 5 && value.slice(0, comma).endsWith(';base64')) { base64 = value.slice(comma + 1); prefix = value.slice(0, comma + 1); }
-        }
-        if (base64 !== null) {
-          const hit = seenBlobs.get(base64);
-          if (hit) {
-            admitPayload(prefix, base64.length);
-            return prefix ? `S2D:${hit.s}:${hit.o}:${hit.n}:${prefix}` : `S2S:${hit.s}:${hit.o}:${hit.n}`;
-          }
-          const decodedLength = base64.length / 4 * 3 > maxBytes - blobsLength ? canonicalBase64Length(base64) : null;
-          if (decodedLength !== null && decodedLength > maxBytes - blobsLength) throw documentTooLarge();
-          let bytes;
-          try { bytes = base64ToBytes(base64); if (bytesToBase64(bytes) !== base64) bytes = null; }
-          catch { bytes = null; }
-          if (bytes) {
-            const s = 1, o = blobsLength, n = bytes.byteLength;
-            if (n > maxBytes - blobsLength) throw documentTooLarge();
-            admitPayload(prefix, base64.length);
-            blobs.push(bytes); blobsLength += n; seenBlobs.set(base64, {s, o, n});
-            checkAllocation();
-            return prefix ? `S2D:${s}:${o}:${n}:${prefix}` : `S2S:${s}:${o}:${n}`;
-          }
-        }
-      }
-      admit(stringSize(value));
-      return ESCAPABLE.test(value) ? 'S2E:' + value : value;
-    }
-    if (Array.isArray(value)) {
-      const hit = seenArrays.get(value);
-      if (hit) { admit(hit.jsonUpperBytes, true); return hit.marker; }
-      const type = value.length >= LIFT_MIN_ARRAY ? arrayType(value) : null;
-      if (type) {
-        const jsonUpperBytes = 2 + Math.max(0, value.length - 1) + value.length * MAX_JSON_NUMBER_BYTES;
-        admit(jsonUpperBytes, true);
-        const offset = align(arraysLength, type);
-        if (value.length > Math.floor((maxBytes - offset) / TYPE_BYTES[type])) throw documentTooLarge();
-        arraysLength = offset + value.length * TYPE_BYTES[type];
-        allocationBytes += value.length * 48; checkAllocation();
-        const marker = `S2B:${type}:0:${offset}:${value.length}`;
-        arrays.push({type, value, offset});
-        seenArrays.set(value, {marker, jsonUpperBytes});
-        return marker;
-      }
-      admit(2 + Math.max(0, value.length - 1));
-      return value.map(item => lift(item, ''));
-    }
-    if (value && typeof value === 'object') {
-      const out = {}, keys = Object.keys(value);
-      admit(2 + Math.max(0, keys.length - 1));
-      for (const key of keys) {
-        admit(stringSize(key) + 1);
-        const lifted = lift(value[key], key);
-        // A literal "__proto__" key survives JSON and the transport; assigning
-        // it normally would invoke the prototype setter and drop the field.
-        if (key === '__proto__') Object.defineProperty(out, key, {value: lifted, writable: true, configurable: true, enumerable: true});
-        else out[key] = lifted;
-      }
-      return out;
-    }
-    if (typeof value === 'number' && Number.isFinite(value)) admit(MAX_JSON_NUMBER_BYTES, true);
-    else admit(value == null || typeof value === 'number' ? 4 : String(value).length);
-    return value;
-  };
-  const skeleton = lift(document, '');
-  const arraysBytes = new Uint8Array(arraysLength);
-  for (const entry of arrays)
-    new TYPES[entry.type](arraysBytes.buffer, entry.offset, entry.value.length).set(entry.value);
-  const blobsBytes = new Uint8Array(blobsLength);
-  let offset = 0;
-  for (const bytes of blobs) { blobsBytes.set(bytes, offset); offset += bytes.byteLength; }
-  const sections = [{kind: 1, bytes: arraysBytes}, {kind: 2, bytes: blobsBytes}];
-  if (jsonUpperBytes > maxMaterializedBytes) {
-    try { materializeMarkers(skeleton, sections, {maxMaterializedBytes, validateOnly: true}); }
-    catch (error) { if (!error.code) error.code = 'document_too_large'; throw error; }
-  }
-  return {skeleton, sections, blobOffsets};
-}
-
-function documentTooLarge() {
-  return Object.assign(messageError(new Error(''), "errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit", {}), {code: 'document_too_large'});
-}
-
-/** Length of canonical base64, checked before decoding an oversized payload. */
-function canonicalBase64Length(value) {
+/** Canonical base64 validation never decodes or hashes a whole payload at once. */
+function* canonicalBase64LengthSteps(value) {
   if (value.length % 4) return null;
   const end = value.length - (value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0);
   let last = 0;
@@ -561,10 +428,297 @@ function canonicalBase64Length(value) {
     else if (code === 43) last = 62;
     else if (code === 47) last = 63;
     else return null;
+    if ((i & 2047) === 2047) yield null;
   }
   const padding = value.length - end;
   if ((padding === 2 && (last & 15)) || (padding === 1 && (last & 3))) return null;
   return value.length / 4 * 3 - padding;
+}
+
+/** Bounded exact comparison: string-key hashing/equality must not flatten big blobs. */
+function* blobFingerprint(value) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+    if ((i & 2047) === 2047) yield null;
+  }
+  return `${value.length}:${hash >>> 0}`;
+}
+function* sameBlob(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a.charCodeAt(i) !== b.charCodeAt(i)) return false;
+    if ((i & 2047) === 2047) yield null;
+  }
+  return true;
+}
+
+/** Existing numeric encoding, in fragments small enough to copy through a binding. */
+function* numberFragments(type, value, offset) {
+  for (let at = 0; at < value.length; at += 2048) {
+    const typed = new TYPES[type](value.slice(at, at + 2048));
+    yield {kind: 'section', section: 0, offset: offset + at * TYPE_BYTES[type], bytes: new Uint8Array(typed.buffer)};
+  }
+}
+function* byteFragments(bytes, section, offset) {
+  for (let at = 0; at < bytes.byteLength; at += 16384)
+    yield {kind: 'section', section, offset: offset + at, bytes: bytes.subarray(at, at + 16384)};
+}
+
+/** JSON.stringify's scalar escaping, subdivided before a large escaped allocation. */
+function* scalarFragments(value, array = false, prefix = '') {
+  if (typeof value !== 'string') {
+    const text = JSON.stringify(value);
+    yield text ?? (array ? 'null' : '');
+    return;
+  }
+  yield '"';
+  if (prefix) yield JSON.stringify(prefix).slice(1, -1);
+  for (let at = 0; at < value.length;) {
+    let end = Math.min(value.length, at + 512);
+    // Preserve a paired surrogate across the escape chunks exactly as JSON.stringify.
+    if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff && value.charCodeAt(end) >= 0xdc00 && value.charCodeAt(end) <= 0xdfff) end--;
+    yield JSON.stringify(value.slice(at, end)).slice(1, -1);
+    at = end;
+  }
+  yield '"';
+}
+
+/**
+ * The one lifted document walk. Null yields are work checkpoints; stream mode yields
+ * UTF-8-compatible skeleton text and offset binary fragments, then section lengths.
+ * A stream caller supplies a worker/canonical key manifest for every object: this
+ * owner never discovers cold own keys on the interface thread. Incomplete streams
+ * are discarded atomically by their transport, and parsed/validated only on a worker.
+ */
+function* liftSteps(document, {preBlobs = [], maxBytes = MAX_BYTES, stream = false, keyManifest} = {}) {
+  const arrays = [], blobs = [], seenArrays = new Map(), seenBlobs = new Map(), preBlobRanges = new Map();
+  const stringSizes = new Map();
+  const stringSize = function*(value) {
+    if (value.length > 128) return yield* jsonStringBytesSteps(value);
+    const cached = stringSizes.get(value);
+    if (cached !== undefined) return cached;
+    const length = yield* jsonStringBytesSteps(value);
+    if (stringSizes.size < 512) stringSizes.set(value, length);
+    return length;
+  };
+  let arraysLength = 0, blobsLength = 0, jsonUpperBytes = 0, knownJSONBytes = 0, allocationBytes = 0;
+  const maxMaterializedBytes = maxBytes * 4;
+  const admit = (length, estimated = false) => {
+    if (!Number.isSafeInteger(length)) throw documentTooLarge();
+    if (!estimated) {
+      if (length > maxMaterializedBytes - knownJSONBytes) throw documentTooLarge();
+      knownJSONBytes += length;
+    }
+    jsonUpperBytes += length;
+  };
+  const checkAllocation = () => {
+    if (allocationBytes + arraysLength + blobsLength > maxMaterializedBytes) throw documentTooLarge();
+  };
+  const admitPayload = function*(prefix, encodedLength) {
+    admit((yield* stringSize(prefix)) + encodedLength);
+    allocationBytes += encodedLength; checkAllocation();
+  };
+  const blobOffsets = [];
+  for (const bytes of preBlobs) {
+    if (bytes.byteLength > maxBytes - blobsLength) throw documentTooLarge();
+    if (!preBlobRanges.has(bytes)) preBlobRanges.set(bytes, {s: 1, o: blobsLength, n: bytes.byteLength});
+    blobOffsets.push(blobsLength);
+    if (stream) yield* byteFragments(bytes, 1, blobsLength); else blobs.push(bytes);
+    blobsLength += bytes.byteLength;
+    yield null;
+  }
+  const align = (length, type) => length + ((TYPE_BYTES[type] - (length % TYPE_BYTES[type])) % TYPE_BYTES[type]);
+  // Reuse one small frame per nesting depth. Dense records must not allocate a
+  // generator/closure/temporary frame for every scalar on the interface.
+  const frames = [], frameAt = depth => frames[depth] ??= {kind: 0, source: null, out: null, keys: null, index: 0, key: '', slot: '', present: true, array: false, emitted: false};
+  const root = frameAt(0); root.source = document;
+  let depth = 0, skeleton;
+  const finish = lifted => {
+    const child = frames[depth--];
+    if (stream) return;
+    if (depth < 0) { skeleton = lifted; return; }
+    const parent = frames[depth];
+    if (child.present) {
+      if (child.slot === '__proto__') Object.defineProperty(parent.out, child.slot, {value: lifted, writable: true, configurable: true, enumerable: true});
+      else parent.out[child.slot] = lifted;
+    }
+  };
+  while (depth >= 0) {
+    const frame = frames[depth], value = frame.source;
+    if (frame.kind !== 0) {
+      const count = frame.kind === 1 ? value.length : frame.keys.length;
+      if (frame.index >= count) {
+        if (stream) yield frame.kind === 1 ? ']' : '}';
+        finish(frame.out); continue;
+      }
+      const key = frame.kind === 1 ? frame.index++ : frame.keys[frame.index++];
+      if (frame.kind === 2) admit((stringSizes.get(key) ?? (yield* stringSize(key))) + 1);
+      const next = value[key];
+      if (stream && frame.kind === 2 && (next === undefined || typeof next === 'function' || typeof next === 'symbol')) continue;
+      if (stream) {
+        if (frame.emitted) yield ',';
+        if (frame.kind === 2) { if (key.length <= 512) yield JSON.stringify(key); else yield* scalarFragments(key); yield ':'; }
+        frame.emitted = true;
+      }
+      const child = frameAt(++depth);
+      child.kind = 0; child.source = next; child.key = frame.kind === 1 ? '' : key; child.slot = key;
+      child.present = frame.kind !== 1 || key in value; child.array = frame.kind === 1;
+      if (stream) yield null;
+      continue;
+    }
+    const preBlob = B64_FIELDS.has(frame.key) && preBlobRanges.get(value);
+    if (preBlob) {
+      yield* admitPayload('', 4 * Math.ceil(preBlob.n / 3));
+      const marker = `S2S:${preBlob.s}:${preBlob.o}:${preBlob.n}`;
+      if (stream) yield JSON.stringify(marker);
+      finish(marker); continue;
+    }
+    if (typeof value === 'string') {
+      let payload = false;
+      if (value.length >= LIFT_MIN_STRING) {
+        let base64 = null, prefix = '';
+        if (B64_FIELDS.has(frame.key)) base64 = value;
+        else if ((frame.key === 'data_url' || frame.key === 'styk_tiles') && value.startsWith('data:')) {
+          let comma = -1;
+          for (let at = 0; at < value.length; at += 2048) {
+            const found = value.slice(at, at + 2048).indexOf(',');
+            if (found >= 0) { comma = at + found; break; }
+            yield null;
+          }
+          if (comma > 5 && value.slice(0, comma).endsWith(';base64')) { base64 = value.slice(comma + 1); prefix = value.slice(0, comma + 1); }
+        }
+        if (base64 !== null) {
+          const decodedLength = yield* canonicalBase64LengthSteps(base64);
+          if (decodedLength !== null) {
+            const fingerprint = yield* blobFingerprint(base64), candidates = seenBlobs.get(fingerprint) ?? [];
+            let hit;
+            for (const candidate of candidates) if (yield* sameBlob(candidate.value, base64)) { hit = candidate; break; }
+            if (hit) {
+              yield* admitPayload(prefix, base64.length);
+              const lead = prefix ? `S2D:${hit.s}:${hit.o}:${hit.n}:` : `S2S:${hit.s}:${hit.o}:${hit.n}`;
+              if (stream) yield* scalarFragments(prefix, false, lead);
+              finish(stream ? null : lead + prefix); payload = true;
+            } else {
+              if (decodedLength > maxBytes - blobsLength) throw documentTooLarge();
+              yield* admitPayload(prefix, base64.length);
+              const s = 1, o = blobsLength, n = decodedLength;
+              const owned = stream ? null : new Uint8Array(n);
+              let offset = 0;
+              for (let at = 0; at < base64.length; at += 16384) {
+                const bytes = base64ToBytes(base64.slice(at, at + 16384));
+                if (stream) yield {kind: 'section', section: 1, offset: o + offset, bytes};
+                else { owned.set(bytes, offset); yield null; }
+                offset += bytes.byteLength;
+              }
+              if (!stream) blobs.push(owned);
+              blobsLength += n; candidates.push({value: base64, s, o, n}); seenBlobs.set(fingerprint, candidates);
+              checkAllocation();
+              const lead = prefix ? `S2D:${s}:${o}:${n}:` : `S2S:${s}:${o}:${n}`;
+              if (stream) yield* scalarFragments(prefix, false, lead);
+              finish(stream ? null : lead + prefix); payload = true;
+            }
+          }
+        }
+      }
+      if (payload) continue;
+      admit((value.length <= 128 ? stringSizes.get(value) : undefined) ?? (yield* stringSize(value)));
+      const escaped = ESCAPABLE.test(value);
+      if (stream) {
+        if (value.length <= 512) yield JSON.stringify(escaped ? 'S2E:' + value : value);
+        else yield* scalarFragments(value, frame.array, escaped ? 'S2E:' : '');
+      }
+      finish(stream ? null : escaped ? 'S2E:' + value : value); continue;
+    }
+    if (Array.isArray(value)) {
+      const hit = seenArrays.get(value);
+      if (hit) { admit(hit.jsonUpperBytes, true); if (stream) yield JSON.stringify(hit.marker); finish(hit.marker); continue; }
+      const type = value.length >= LIFT_MIN_ARRAY ? yield* arrayTypeSteps(value) : null;
+      if (type) {
+        const jsonUpperBytes = 2 + Math.max(0, value.length - 1) + value.length * MAX_JSON_NUMBER_BYTES;
+        admit(jsonUpperBytes, true);
+        const offset = align(arraysLength, type);
+        if (value.length > Math.floor((maxBytes - offset) / TYPE_BYTES[type])) throw documentTooLarge();
+        if (stream && offset > arraysLength) yield {kind: 'section', section: 0, offset: arraysLength, bytes: new Uint8Array(offset - arraysLength)};
+        arraysLength = offset + value.length * TYPE_BYTES[type];
+        allocationBytes += value.length * 48; checkAllocation();
+        const marker = `S2B:${type}:0:${offset}:${value.length}`;
+        if (stream) yield* numberFragments(type, value, offset); else arrays.push({type, value, offset});
+        seenArrays.set(value, {marker, jsonUpperBytes});
+        if (stream) yield JSON.stringify(marker);
+        finish(marker); continue;
+      }
+      admit(2 + Math.max(0, value.length - 1));
+      frame.kind = 1; frame.out = stream ? null : new Array(value.length); frame.keys = null; frame.index = 0; frame.emitted = false;
+      if (stream) yield '[';
+      continue;
+    }
+    if (value && typeof value === 'object') {
+      const keys = stream ? keyManifest?.get(value) : Object.keys(value);
+      if (!keys) throw Object.assign(new Error('The canonical record keys are not ready.'), {code: 'engine_keys_not_ready'});
+      admit(2 + Math.max(0, keys.length - 1));
+      frame.kind = 2; frame.out = stream ? null : {}; frame.keys = keys; frame.index = 0; frame.emitted = false;
+      if (stream) yield '{';
+      continue;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) admit(MAX_JSON_NUMBER_BYTES, true);
+    else admit(value == null || typeof value === 'number' ? 4 : String(value).length);
+    if (stream) yield JSON.stringify(value) ?? (frame.array ? 'null' : '');
+    finish(value);
+  }
+  if (stream) return {sectionLengths: [arraysLength, blobsLength], blobOffsets, materializedUpperBytes: jsonUpperBytes, materializationLimit: maxMaterializedBytes};
+  const arraysBytes = new Uint8Array(arraysLength);
+  for (const entry of arrays) for (const fragment of numberFragments(entry.type, entry.value, entry.offset)) { arraysBytes.set(fragment.bytes, fragment.offset); yield null; }
+  const blobsBytes = new Uint8Array(blobsLength);
+  let offset = 0;
+  for (const bytes of blobs) {
+    for (const fragment of byteFragments(bytes, 1, offset)) { blobsBytes.set(fragment.bytes, fragment.offset); yield null; }
+    offset += bytes.byteLength;
+  }
+  const sections = [{kind: 1, bytes: arraysBytes}, {kind: 2, bytes: blobsBytes}];
+  if (jsonUpperBytes > maxMaterializedBytes) {
+    try { materializeMarkers(skeleton, sections, {maxMaterializedBytes, validateOnly: true}); }
+    catch (error) { if (!error.code) error.code = 'document_too_large'; throw error; }
+  }
+  return {skeleton, sections, blobOffsets};
+}
+
+/**
+ * Incremental lifted owner. Skeleton tokens are joined within 8192 UTF-16 code
+ * units; binary chunks are at most 16384 bytes. Stream completion is not validation:
+ * its receiver validates materialization limits atomically on a worker before ACK.
+ */
+export function* liftDocumentSteps(document, options = {}) {
+  const steps = liftSteps(document, options);
+  let text = '', step;
+  try {
+    for (;;) {
+      step = steps.next();
+      if (step.done) { if (text) yield {kind: 'skeleton', text}; return step.value; }
+      const item = step.value;
+      if (typeof item === 'string') {
+        if (text.length + item.length > 8192) { yield {kind: 'skeleton', text}; text = ''; }
+        text += item;
+      } else if (item === null) {
+        // A work checkpoint need not turn every small property into a packet.
+        yield null;
+      } else {
+        if (text) { yield {kind: 'skeleton', text}; text = ''; }
+        yield item;
+      }
+    }
+  } finally {
+    steps.return();
+  }
+}
+
+/** Synchronous container callers share all marker/packing/escaping decisions. */
+export function liftDocument(document, options = {}) {
+  return drainLift(liftDocumentSteps(document, {preBlobs: options.preBlobs, maxBytes: options.maxBytes}));
+}
+
+function documentTooLarge() {
+  return Object.assign(messageError(new Error(''), "errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit", {}), {code: 'document_too_large'});
 }
 
 /** Assemble v2 from bounded parts; Blob consumers avoid a whole-file copy. */

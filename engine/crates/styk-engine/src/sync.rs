@@ -8,6 +8,17 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
 
+#[cfg(not(test))]
+type LockGuard<'a, T> = MutexGuard<'a, T>;
+#[cfg(test)]
+pub(crate) struct LockGuard<'a, T> { guard: MutexGuard<'a, T>, traced: bool }
+#[cfg(test)]
+impl<T> std::ops::Deref for LockGuard<'_, T> { type Target = T; fn deref(&self) -> &T { &self.guard } }
+#[cfg(test)]
+impl<T> std::ops::DerefMut for LockGuard<'_, T> { fn deref_mut(&mut self) -> &mut T { &mut self.guard } }
+#[cfg(test)]
+impl<T> Drop for LockGuard<'_, T> { fn drop(&mut self) { crate::allocation::leave(self.traced); } }
+
 pub struct Shared<T> {
     value: Mutex<T>,
     /// Counts publications of new work, so a worker never sleeps through one.
@@ -22,13 +33,22 @@ impl<T> Shared<T> {
     }
 
     /// Takes the lock, spinning while another thread holds it.
-    pub fn lock(&self) -> MutexGuard<'_, T> {
+    pub fn lock(&self) -> LockGuard<'_, T> {
+        #[cfg(test)]
+        crate::allocation::before_lock(self as *const Self as usize);
         loop {
             match self.value.try_lock() {
-                Ok(guard) => return guard,
+                Ok(guard) => {
+                    #[cfg(not(test))] { return guard }
+                    #[cfg(test)] { return LockGuard { guard, traced: crate::allocation::enter(self as *const Self as usize) } }
+                },
                 // A thread that panicked while holding the lock left consistent data:
                 // critical sections here only move values.
-                Err(std::sync::TryLockError::Poisoned(poisoned)) => return poisoned.into_inner(),
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                    let guard = poisoned.into_inner();
+                    #[cfg(not(test))] { return guard }
+                    #[cfg(test)] { return LockGuard { guard, traced: crate::allocation::enter(self as *const Self as usize) } }
+                },
                 Err(std::sync::TryLockError::WouldBlock) => std::hint::spin_loop(),
             }
         }

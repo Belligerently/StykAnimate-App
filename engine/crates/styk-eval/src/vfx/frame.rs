@@ -134,6 +134,16 @@ impl Owner {
 /// The effects of `frame` (evaluated at `frame.tick` from `doc`), or `None`
 /// when nothing is to be drawn.
 pub fn evaluate(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
+    evaluate_with(doc, frame, true)
+}
+
+/// `vfxRenderFrame` inherits retained source filters, while the generated-effect
+/// census reads only the local document and its nested movieclip definitions.
+pub(crate) fn inherited_filters(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
+    evaluate_with(doc, frame, false)
+}
+
+fn evaluate_with(doc: &Document, frame: &Frame, include_generators: bool) -> Option<Arc<FrameVfx>> {
     let tick = frame.tick;
     let clips = doc.vfx_clips.as_deref();
     let mut out = FrameVfx::default();
@@ -150,7 +160,7 @@ pub fn evaluate(doc: &Document, frame: &Frame) -> Option<Arc<FrameVfx>> {
         connect(frame, &mut owners, &mut out);
     }
     out.objects = owners.into_iter().map(|o| o.map(|o| o.vfx).filter(|v| !v.figure.is_empty() || v.attached.is_some() || !v.segments.is_empty())).collect();
-    if let Some(clips) = clips {
+    if include_generators && let Some(clips) = clips {
         out.generators = generators(clips, tick, &|_| 0.0);
     }
     let empty = out.scene.is_empty() && out.generators.is_empty() && out.objects.iter().all(Option::is_none);

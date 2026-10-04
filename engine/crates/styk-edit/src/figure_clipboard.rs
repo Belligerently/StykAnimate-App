@@ -16,7 +16,7 @@ use crate::record::{num, uid};
 use crate::{EditError, Editor};
 
 /// `editor._selectionClipboard`, as far as pasting it in the same document reads it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct FigureClipboard {
     objects: Vec<Value>,
     figures: Vec<Value>,

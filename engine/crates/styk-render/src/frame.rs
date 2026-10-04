@@ -423,6 +423,10 @@ impl Renderer {
                     draw_prims(&mut pass, &self.pipeline, additive.as_ref(), face_runs, from..until);
                 }
             }
+            // WebGL resolves a multisampled attachment with gl.blit_framebuffer,
+            // which respects the current scissor. Resolve the cleared card margins
+            // too, after the artboard has clipped every drawn scene primitive.
+            pass.set_scissor_rect(0, 0, size[0], size[1]);
             from = until;
         }
         // Depth buffers live while frames use them (a document with 3D faces).

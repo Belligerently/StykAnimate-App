@@ -25,14 +25,14 @@ fn key(x: f64) -> String {
 
 /// Stages a whole three-key document, as the interface does when a project opens.
 fn stage_document(engine: &Engine) {
-    engine.stage(0, Change::Reset);
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20,"_styk":{"name":"Walk"}}"#.to_vec()));
-    engine.stage(0, Change::Layout(Table::Figures, vec![-1]));
-    engine.stage(0, Change::Set(Table::Figures, 0, plain(FIGURE)));
-    engine.stage(0, Change::Layout(Table::Backgrounds, vec![]));
-    engine.stage(0, Change::Layout(Table::Keyframes, vec![-1, -1, -1]));
+    engine.stage(0, Change::Reset).unwrap();
+    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20,"_styk":{"name":"Walk"}}"#.to_vec())).unwrap();
+    engine.stage(0, Change::Layout(Table::Figures, vec![-1])).unwrap();
+    engine.stage(0, Change::Set(Table::Figures, 0, plain(FIGURE))).unwrap();
+    engine.stage(0, Change::Layout(Table::Backgrounds, vec![])).unwrap();
+    engine.stage(0, Change::Layout(Table::Keyframes, vec![-1, -1, -1])).unwrap();
     for (index, x) in [10.0, 20.0, 30.0].into_iter().enumerate() {
-        engine.stage(0, Change::Set(Table::Keyframes, index as u32, plain(&key(x))));
+        engine.stage(0, Change::Set(Table::Keyframes, index as u32, plain(&key(x)))).unwrap();
     }
 }
 
@@ -58,7 +58,7 @@ fn an_edit_sends_and_converts_only_what_changed() {
     let before = engine.generation().unwrap();
     assert!(engine.frame_now(5).is_some());
 
-    engine.stage(0, Change::Set(Table::Keyframes, 1, plain(&key(99.0))));
+    engine.stage(0, Change::Set(Table::Keyframes, 1, plain(&key(99.0)))).unwrap();
     let second = engine.commit(2, 0).unwrap();
     assert_eq!(second.converted, Converted { figures: 0, keyframes: 1 });
     let after = engine.generation().unwrap();
@@ -77,8 +77,8 @@ fn frames_can_be_inserted_removed_and_reordered_without_resending_them() {
     stage_document(&engine);
     engine.commit(1, 0).unwrap();
     // New order: the old third key, a new key, the old first key. The old second key is gone.
-    engine.stage(0, Change::Layout(Table::Keyframes, vec![2, -1, 0]));
-    engine.stage(0, Change::Set(Table::Keyframes, 1, plain(&key(55.0))));
+    engine.stage(0, Change::Layout(Table::Keyframes, vec![2, -1, 0])).unwrap();
+    engine.stage(0, Change::Set(Table::Keyframes, 1, plain(&key(55.0)))).unwrap();
     let committed = engine.commit(2, 0).unwrap();
     assert_eq!(committed.converted, Converted { figures: 0, keyframes: 1 });
     let doc = &engine.generation().unwrap().prepared.doc;
@@ -100,7 +100,7 @@ fn a_refused_commit_leaves_the_document_as_it_was() {
         vec![Change::Set(Table::Keyframes, 0, plain(&key(5.0))), Change::Layout(Table::Figures, vec![7])],
     ] {
         for change in changes {
-            engine.stage(0, change);
+            engine.stage(0, change).unwrap();
         }
         assert!(engine.commit(2, 0).is_err());
         let current = engine.generation().unwrap();
@@ -108,7 +108,7 @@ fn a_refused_commit_leaves_the_document_as_it_was() {
         assert_eq!(current.prepared.doc.keyframes[0].objects[0].root[0], 10.0);
     }
     // The next good commit is not affected by the refused ones.
-    engine.stage(0, Change::Set(Table::Keyframes, 0, plain(&key(11.0))));
+    engine.stage(0, Change::Set(Table::Keyframes, 0, plain(&key(11.0)))).unwrap();
     assert_eq!(engine.commit(3, 0).unwrap().converted, Converted { figures: 0, keyframes: 1 });
 }
 
@@ -118,12 +118,12 @@ fn batches_are_staged_and_committed_independently() {
     stage_document(&engine);
     engine.commit(1, 0).unwrap();
     // A frame batch is half staged when a small commit of another batch goes through.
-    engine.stage(7, Change::Layout(Table::Keyframes, vec![0, 1, 2, -1]));
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":400,"canvas_height":200,"fps":20}"#.to_vec()));
+    engine.stage(7, Change::Layout(Table::Keyframes, vec![0, 1, 2, -1])).unwrap();
+    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":400,"canvas_height":200,"fps":20}"#.to_vec())).unwrap();
     engine.commit(2, 0).unwrap();
     assert_eq!(engine.generation().unwrap().prepared.doc.canvas[0], 400);
     assert_eq!(engine.generation().unwrap().prepared.doc.keyframes.len(), 3);
-    engine.stage(7, Change::Set(Table::Keyframes, 3, plain(&key(44.0))));
+    engine.stage(7, Change::Set(Table::Keyframes, 3, plain(&key(44.0)))).unwrap();
     engine.commit(3, 7).unwrap();
     let doc = engine.generation().unwrap().prepared.doc.clone();
     assert_eq!((doc.keyframes.len(), doc.canvas[0]), (4, 400));
@@ -133,16 +133,16 @@ fn batches_are_staged_and_committed_independently() {
 fn pose_sources_are_added_and_removed_by_identity() {
     let engine = Engine::new(clock, Budgets::for_device(None));
     stage_document(&engine);
-    engine.stage(0, Change::Source("pose-a".into(), Some(plain(&key(70.0)))));
+    engine.stage(0, Change::Source("pose-a".into(), Some(plain(&key(70.0))))).unwrap();
     engine.commit(1, 0).unwrap();
     let doc = engine.generation().unwrap().prepared.doc.clone();
     assert_eq!(doc.frame_sources["pose-a"].objects[0].root[0], 70.0);
     // New properties keep the sources that were not named.
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":640,"canvas_height":200,"fps":20,"_styk":{"name":"Walk 2"}}"#.to_vec()));
+    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":640,"canvas_height":200,"fps":20,"_styk":{"name":"Walk 2"}}"#.to_vec())).unwrap();
     engine.commit(2, 0).unwrap();
     let doc = engine.generation().unwrap().prepared.doc.clone();
     assert_eq!((doc.canvas[0], doc.name.as_str(), doc.frame_sources.len()), (640, "Walk 2", 1));
-    engine.stage(0, Change::Source("pose-a".into(), None));
+    engine.stage(0, Change::Source("pose-a".into(), None)).unwrap();
     engine.commit(3, 0).unwrap();
     assert!(engine.generation().unwrap().prepared.doc.frame_sources.is_empty());
 }

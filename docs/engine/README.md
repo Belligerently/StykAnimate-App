@@ -16,7 +16,7 @@ is [`../RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md); decisions are in
 | [spatial.md](spatial.md) | 3D: spatial poses, one-sided surfaces, figure and movieclip meshes, depth runs |
 | [rendering.md](rendering.md) | the draw-list format, GPU renderer, CPU rasterizer, the stage, thumbnails, library previews, the camera monitor, exports |
 | [threading.md](threading.md) | WebAssembly, workers, scheduling, budgets |
-| [editing.md](editing.md) | moving the editor's commands into the engine (S5, in design) |
+| [editing.md](editing.md) | recorded commands, history and canonical worker publication (S5, adoption in progress) |
 | [drawing.md](drawing.md) | the drawing raster engine: brushes, strokes, fill, selections, transforms, tile and undo codecs (S6) |
 
 Commands: `npm run engine:build`, `npm run engine:test` (seconds once built),

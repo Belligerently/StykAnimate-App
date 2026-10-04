@@ -165,12 +165,6 @@ impl Loader {
         &self.scene_budget
     }
 
-    fn note(&mut self, feature: &str) {
-        if !self.unsupported.iter().any(|f| f == feature) {
-            self.unsupported.push(feature.to_string());
-        }
-    }
-
     fn image(&mut self, v: &Value, keys: &[&str]) -> Option<u32> {
         for key in keys {
             let Some(field) = v.get(*key) else { continue };
@@ -288,14 +282,40 @@ impl Loader {
         let effect_channels = [styk.get("animation"), styk.path(&["layerSheet", "legacyAnimation"])]
             .into_iter()
             .any(|animation| channels(animation).iter().any(|c| c.get("property").and_then(Value::as_str).is_some_and(crate::vfx::parse::is_vfx_property)));
-        // A capture's retained source (`movieclipSource`) is not evaluated: its effect clips would be lost.
+        // Source effects remain visible to the document-level effect census.
         let source_vfx = styk.path(&["movieclipSource", "document"]).is_some_and(raw_has_vfx);
-        if source_vfx && styk.path(&["movieclipSource", "document", "_styk", "vfxClips", "clips"]).and_then(Value::array_len).is_some_and(|n| n > 0) {
-            self.note("effect clips of a captured movieclip's source");
-        }
         let auto_easing = match d.get("auto_easing") {
             Some(v) => truthy(Some(v)),
             None => version >= 5,
+        };
+        let movieclip_source = match styk.get("movieclipSource") {
+            Some(source) if source.get("document").is_some_and(Value::is_object) => {
+                let mut retained = source.get("document").unwrap().as_obj().cloned().unwrap();
+                if source.get("inheritFigures").is_some_and(Value::truthy) {
+                    retained.set(
+                        "figure_types",
+                        d.get("figure_types").cloned().unwrap_or(Value::Null),
+                    );
+                }
+                let document = Arc::new(self.nested_document(&Value::object(retained), name)?);
+                let ticks = d
+                    .get("keyframes")
+                    .and_then(Value::as_arr)
+                    .map(|frames| {
+                        frames
+                            .iter()
+                            .map(|frame| {
+                                frame
+                                    .path(&["_styk", "movieclipSourceTick"])
+                                    .and_then(Value::as_f64)
+                                    .filter(|n| n.is_finite())
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some(Arc::new(MovieclipSource { document, ticks }))
+            }
+            _ => None,
         };
         let mut doc = Document {
             scene_budget: self.scene_budget.clone(),
@@ -319,6 +339,7 @@ impl Loader {
             notes: Vec::new(),
             figure_index: HashMap::new(),
             origins: false,
+            movieclip_source,
         };
         doc.origins = doc.figures.iter().any(|f| f.origin.is_some());
         doc.reindex_figures();
@@ -746,6 +767,7 @@ impl Loader {
         let count = key.objects.len();
         Ok(crate::eval::Frame {
             tick: num(value, "tick").unwrap_or(0.0),
+            retained_vfx_tick: num(value, "_vfxTimelineTick"),
             objects: key.objects,
             draw_order: key.draw_order,
             camera: key.camera,
@@ -780,6 +802,7 @@ impl Loader {
         let styk = k.get("_styk");
         let mut frame = Keyframe {
             duration: int(k, "duration_raw").unwrap_or(1).max(0) as u32,
+            retained_vfx_tick: num(k, "_vfxTimelineTick"),
             objects,
             draw_order,
             camera,

@@ -79,3 +79,101 @@ fn edit_frames_in_the_preview_follow_and_shake() {
     scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().unwrap();
     assert!(scene.camera().unwrap().is_default, "without a camera-motion time, the authored camera");
 }
+
+fn follow_engine(duration: Option<f64>) -> Engine {
+    use styk_doc::{json, Value};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../styk-eval/tests/fixtures/eval/follow-figures.json");
+    let mut value = json::parse(&std::fs::read(path).unwrap()).unwrap();
+    if let Some(duration) = duration {
+        let clips = value.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().get_mut("cameraMotion").unwrap().make_obj().unwrap().get_mut("clips").unwrap().make_arr().unwrap();
+        for clip in clips { if clip.get("type").and_then(Value::as_str) == Some("follow") { clip.make_obj().unwrap().set("duration", Value::Num(duration)); } }
+    }
+    let engine = Engine::new(clock, Budgets::for_device(None));
+    engine.open(json::to_string(&value).as_bytes(), "json", "cold follow").unwrap();
+    engine
+}
+
+fn follow_pose(tick: f64) -> Vec<u8> {
+    format!(r#"{{"_cameraMotionTick":{tick},"camera":{{"is_default":true,"x":0,"y":0,"scale":1,"angle_rad":0}},"objects":[{{"unique_id":1,"figure_type_id":1,"root_x":300,"root_y":150,"scale":1,"angles":[0.8,2,0]}}]}}"#).into_bytes()
+}
+
+#[test]
+fn cold_edit_follow_reads_do_not_prepare_a_late_path_or_use_the_authored_camera() {
+    let engine = follow_engine(Some(100_000.0));
+    let generation = engine.generation().unwrap();
+    let mut scene = EditScene::default();
+    scene.update(&generation, &follow_pose(90_000.0)).unwrap();
+    let authored = scene.camera();
+    assert!(generation.prepared.travel_ready(authored, 90_000.0).is_none());
+    for _ in 0..100 {
+        assert!(scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().is_none());
+        assert_eq!(scene.camera_pending(), Some(90_000.0));
+    }
+    assert!(generation.prepared.travel_ready(authored, 90_000.0).is_none(), "only workers may extend the same path");
+    assert_eq!(scene.camera(), authored, "the undrawn pose is never presented as an authored-camera approximation");
+    assert_eq!(engine.frame_stats().prepared, 0);
+}
+
+#[test]
+fn existing_worker_frame_tickets_warm_the_exact_edit_and_monitor_prepared_owner() {
+    use styk_engine::thumbnails::monitor::MonitorFrame;
+    let engine = follow_engine(None);
+    let generation = engine.generation().unwrap();
+    let mut scene = EditScene::default();
+    scene.update(&generation, &follow_pose(14.0)).unwrap();
+    assert!(scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().is_none());
+    // A ready tick in another engine/generation projection cannot make this path ready.
+    let other = follow_engine(None);
+    other.frame_now(14).unwrap();
+    assert!(generation.prepared.travel_ready(scene.camera(), 14.0).is_none());
+    engine.request(14, &[14]);
+    while engine.step() {}
+    let drawn = scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().unwrap();
+    assert_eq!(scene.camera_pending(), None);
+    assert_eq!(scene.camera(), engine.frame(14).unwrap().camera);
+    let mut monitor = MonitorFrame::edit(engine.clone(), generation, &scene, vec![], vec![], true);
+    let (snapshot, camera) = monitor.prepare().unwrap().unwrap();
+    assert_eq!(camera, scene.camera());
+    assert_eq!(snapshot.prims, drawn.prims);
+}
+
+#[test]
+fn floor_ticket_warms_a_fractional_pose_when_the_ceil_ticket_is_past_a_follow_clip() {
+    let engine = follow_engine(Some(15.0));
+    let generation = engine.generation().unwrap();
+    let mut scene = EditScene::default();
+    scene.update(&generation, &follow_pose(16.75)).unwrap();
+    assert!(scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().is_none());
+    engine.request(16, &[17, 16]);
+    while engine.step() {}
+    let ready = generation.prepared.travel_ready(scene.camera(), 16.75);
+    assert!(ready.is_some(), "the floor ticket warms the exact shared path at its fractional end");
+    assert!(scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().is_some());
+    assert_eq!(scene.camera_pending(), None);
+}
+
+#[test]
+fn definitions_only_follow_waits_for_its_complete_target_owner() {
+    use std::sync::Arc;
+    use styk_engine::Generation;
+    use styk_eval::eval::Prepared;
+    let engine = follow_engine(None);
+    let complete = engine.generation().unwrap();
+    let mut definitions = (*complete.prepared.doc).clone();
+    definitions.keyframes.clear();
+    let generation = Generation { id: complete.id + 1, lineage: complete.lineage, revision: 2,
+        prepared: Arc::new(Prepared::new(Arc::new(definitions))), assets: complete.assets.clone(), open_ms: 0.0, anchors: None };
+    assert_eq!(generation.playable_ticks(), 0);
+    assert_eq!(generation.prepared.total_ticks, 1, "the empty definitions projection has no playable target timeline");
+    let mut scene = EditScene::default();
+    scene.update(&generation, &follow_pose(14.0)).unwrap();
+    for _ in 0..100 {
+        assert!(scene.draw_list(&generation, &EditOptions { camera: true, ..Default::default() }).unwrap().is_none());
+    }
+    assert!(generation.prepared.travel_ready(scene.camera(), 14.0).is_none());
+    engine.request(14, &[14]);
+    while engine.step() {}
+    assert!(generation.prepared.travel_ready(scene.camera(), 14.0).is_none(), "a different complete owner's warm path cannot certify this empty projection");
+    assert!(scene.draw_list(&complete, &EditOptions { camera: true, ..Default::default() }).unwrap().is_some());
+    assert_eq!(scene.camera(), engine.frame(14).unwrap().camera);
+}

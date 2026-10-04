@@ -30,7 +30,7 @@ What's new in each version of StykAnimate.
 - Moving a segment while building a figure no longer bends other parts of the figure.
 - Fixed blur, glow and outlines losing fine brush detail on drawing layers.
 - Fixed errors when adjusting motion paths on joined figures.
-- Failed attempts to draw a new figure keep the project unchanged.
+- Failed attempts to add figures or movieclips keep the project and figure joins unchanged.
 - Fixed an inspector error when viewing between frames.
 
 ### Performance

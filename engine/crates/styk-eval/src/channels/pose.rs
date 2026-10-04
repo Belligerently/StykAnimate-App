@@ -75,6 +75,7 @@ pub(crate) fn masked_at(ranges: &[(f64, f64)], tick: f64) -> bool {
 fn blank(base: &Frame) -> Frame {
     Frame {
         tick: base.tick,
+        retained_vfx_tick: base.retained_vfx_tick,
         objects: Vec::new(),
         draw_order: Vec::new(),
         origins: Vec::new(),
@@ -171,6 +172,7 @@ pub(crate) fn compose(doc: &Document, compiled: &Compiled, base: Frame, tick: f6
     // The frame's own fields, which camera and scene tracks replace; figures come last.
     let mut result = Frame {
         tick: base.tick,
+        retained_vfx_tick: base.retained_vfx_tick,
         objects: Vec::new(),
         draw_order: Vec::new(),
         camera: base.camera,

@@ -11479,7 +11479,8 @@
   },
   "errors.animationChannels.invalidAnimationKeyIdentityCounter": {
     "locations": [
-      "src/animation-channels.mjs:96"
+      "src/animation-channels.mjs:96",
+      "src/editor-range-commands.mjs:184"
     ],
     "context": "if (animation.nextKeyId !== undefined && (!Number.isSafeInteger(animation.nextKeyId) || animation.nextKeyId < 1)) throw messageError(new Error(''), \"errors.anim"
   },
@@ -11503,7 +11504,8 @@
   },
   "errors.animationChannels.invalidMovieclipEnd": {
     "locations": [
-      "src/animation-channels.mjs:118"
+      "src/animation-channels.mjs:118",
+      "src/editor-movieclips.mjs:218"
     ],
     "context": "if(channel.clipEnd!==undefined&&(channel.property!=='pose'||channel.target.kind!=='figure'||!Number.isInteger(channel.clipEnd)||channel.clipEnd<0||channel.clipE"
   },
@@ -16499,7 +16501,7 @@
     "locations": [
       "src/editor-layer-sheet.mjs:714",
       "src/editor-range-commands.mjs:73",
-      "src/editor-range-commands.mjs:220",
+      "src/editor-range-commands.mjs:223",
       "src/editor.mjs:706"
     ],
     "context": "if(!uidMap.has(uid)){if(nextUid>0x7ffffffe)throw messageError(new Error(''), \"errors.editorLayerSheet.objectIdentityCapacityReached\", {});uidMap.set(uid,nextUid"
@@ -16638,136 +16640,136 @@
   },
   "errors.editorMovieclips.bakeAShorterRangeForThisScene": {
     "locations": [
-      "src/editor-movieclips.mjs:509"
+      "src/editor-movieclips.mjs:515"
     ],
     "context": "count+=frame.objects.length;if(count>250000)throw messageError(new Error(''), \"errors.editorMovieclips.bakeAShorterRangeForThisScene\", {});"
   },
   "errors.editorMovieclips.bakeSupportsScenesUpTo5000Frames": {
     "locations": [
-      "src/editor-movieclips.mjs:505"
+      "src/editor-movieclips.mjs:511"
     ],
     "context": "if(end-start>5000)throw messageError(new Error(''), \"errors.editorMovieclips.bakeSupportsScenesUpTo5000Frames\", {});"
   },
   "errors.editorMovieclips.chooseAMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:518"
+      "src/editor-movieclips.mjs:524"
     ],
     "context": "const figure=this.report.figure_types.find(f=>f.figure_type_id===typeId);if(!isMovieclip(figure))throw messageError(new Error(''), \"errors.editorMovieclips.choo"
   },
   "errors.editorMovieclips.chooseAnExistingDrawing": {
     "locations": [
-      "src/editor-movieclips.mjs:335"
+      "src/editor-movieclips.mjs:341"
     ],
     "context": "if(!drawing||!Number.isInteger(group)||!Number.isInteger(view))throw messageError(new Error(''), \"errors.editorMovieclips.chooseAnExistingDrawing\", {});"
   },
   "errors.editorMovieclips.chooseAValidMovieclipRange": {
     "locations": [
-      "src/editor-movieclips.mjs:36"
+      "src/editor-movieclips.mjs:39"
     ],
     "context": "if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>Math.max(editor.totalTicks,start+1))throw messageError(new Error(''), \"errors.edit"
   },
   "errors.editorMovieclips.enterAPositiveWholeNumberOfKeyframes": {
     "locations": [
-      "src/editor-movieclips.mjs:188"
+      "src/editor-movieclips.mjs:191"
     ],
     "context": "if(!Number.isSafeInteger(count)||count<1)throw messageError(new Error(''), \"errors.editorMovieclips.enterAPositiveWholeNumberOfKeyframes\", {});"
   },
   "errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:260"
+      "src/editor-movieclips.mjs:266"
     ],
     "context": "if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMoviecl"
   },
   "errors.editorMovieclips.finishDrawingPublicationBeforeEditingAMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:517"
+      "src/editor-movieclips.mjs:523"
     ],
     "context": "if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeEditingAMoviecli"
   },
   "errors.editorMovieclips.finishDrawingPublicationBeforeLeavingThisMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:540"
+      "src/editor-movieclips.mjs:546"
     ],
     "context": "if(save&&drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeLeavingThi"
   },
   "errors.editorMovieclips.placeThePlayheadInsideTheMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:397"
+      "src/editor-movieclips.mjs:403"
     ],
     "context": "if(!Number.isInteger(tick)||tick<=p.start||p.end!==null&&tick>=p.end)throw messageError(new Error(''), \"errors.editorMovieclips.placeThePlayheadInsideTheMoviecl"
   },
   "errors.editorMovieclips.selectAdjacentFiguresInTheStackingOrder": {
     "locations": [
-      "src/editor-movieclips.mjs:274"
+      "src/editor-movieclips.mjs:280"
     ],
     "context": "if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw messageError(new Error(''), \"errors.editorMovieclips.selectAdjacentFiguresInTheSta"
   },
   "errors.editorMovieclips.selectAMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:187",
-      "src/editor-movieclips.mjs:328",
-      "src/editor-movieclips.mjs:342",
-      "src/editor-movieclips.mjs:353",
+      "src/editor-movieclips.mjs:190",
+      "src/editor-movieclips.mjs:334",
+      "src/editor-movieclips.mjs:348",
       "src/editor-movieclips.mjs:359",
-      "src/editor-movieclips.mjs:363",
-      "src/editor-movieclips.mjs:395",
-      "src/editor-movieclips.mjs:422",
-      "src/editor-movieclips.mjs:445",
-      "src/editor-movieclips.mjs:502"
+      "src/editor-movieclips.mjs:365",
+      "src/editor-movieclips.mjs:369",
+      "src/editor-movieclips.mjs:401",
+      "src/editor-movieclips.mjs:428",
+      "src/editor-movieclips.mjs:451",
+      "src/editor-movieclips.mjs:508"
     ],
     "context": "if(!isMovieclip(this.figure))throw messageError(new Error(''), \"errors.editorMovieclips.selectAMovieclip\", {});"
   },
   "errors.editorMovieclips.selectedFiguresCrossOtherFiguresInTheStacking": {
     "locations": [
-      "src/editor-movieclips.mjs:182"
+      "src/editor-movieclips.mjs:185"
     ],
     "context": "if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw messageError(new Error(''), \"errors.editorMovieclips.selectedFiguresCrossOtherFigu"
   },
   "errors.editorMovieclips.selectedFiguresOverlapOtherFiguresInTheStacking": {
     "locations": [
-      "src/editor-movieclips.mjs:305"
+      "src/editor-movieclips.mjs:311"
     ],
     "context": "if(positions.length&&positions.at(-1)-positions[0]+1!==positions.length)throw messageError(new Error(''), \"errors.editorMovieclips.selectedFiguresOverlapOtherFi"
   },
   "errors.editorMovieclips.selectFiguresToCreateAMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:41"
+      "src/editor-movieclips.mjs:44"
     ],
     "context": "if(!selected.size)throw messageError(new Error(''), \"errors.editorMovieclips.selectFiguresToCreateAMovieclip\", {});"
   },
   "errors.editorMovieclips.selectTheDrawingOrItsParentRig": {
     "locations": [
-      "src/editor-movieclips.mjs:336"
+      "src/editor-movieclips.mjs:342"
     ],
     "context": "if(uid!==this.selectedUid&&object.join?.target_unique_id!==this.selectedUid)throw messageError(new Error(''), \"errors.editorMovieclips.selectTheDrawingOrItsPare"
   },
   "errors.editorMovieclips.theSceneChangedWhileBakingTryAgain": {
     "locations": [
-      "src/editor-movieclips.mjs:511"
+      "src/editor-movieclips.mjs:517"
     ],
     "context": "if(performance.now()-lastYield>6){await new Promise(resolve=>setTimeout(resolve,0));lastYield=performance.now();if(this.report!==report||this.revision!==revisio"
   },
   "errors.editorMovieclips.thisIsAnAttachedMeshPoseItsParent": {
     "locations": [
-      "src/editor-movieclips.mjs:519"
+      "src/editor-movieclips.mjs:525"
     ],
     "context": "if(movieclipAsset(figure).spatialMeshes)throw messageError(new Error(''), \"errors.editorMovieclips.thisIsAnAttachedMeshPoseItsParent\", {});"
   },
   "errors.editorMovieclips.unlockTheDrawingLayerBeforeChangingIt": {
     "locations": [
-      "src/editor-movieclips.mjs:337"
+      "src/editor-movieclips.mjs:343"
     ],
     "context": "if(layerLocked(this.report,uid))throw messageError(new Error(''), \"errors.editorMovieclips.unlockTheDrawingLayerBeforeChangingIt\", {});"
   },
   "errors.editorMovieclips.unlockTheMovieclipLayerBeforeEditingIt": {
     "locations": [
-      "src/editor-movieclips.mjs:189"
+      "src/editor-movieclips.mjs:192"
     ],
     "context": "if(this.getLayer(this.layerForUid(this.selectedUid))?.locked)throw messageError(new Error(''), \"errors.editorMovieclips.unlockTheMovieclipLayerBeforeEditingIt\","
   },
   "errors.editorMovieclips.useANameFrom1To120Characters": {
     "locations": [
-      "src/editor-movieclips.mjs:329"
+      "src/editor-movieclips.mjs:335"
     ],
     "context": "name=String(name).trim();if(!name||name.length>120)throw messageError(new Error(''), \"errors.editorMovieclips.useANameFrom1To120Characters\", {});"
   },
@@ -16810,7 +16812,7 @@
   },
   "errors.editorRangeCommands.chooseASupportedFigureRangeOperation": {
     "locations": [
-      "src/editor-range-commands.mjs:203"
+      "src/editor-range-commands.mjs:206"
     ],
     "context": "if (!operation || !labels[operation.kind]) throw messageError(new Error(''), \"errors.editorRangeCommands.chooseASupportedFigureRangeOperation\", {});"
   },
@@ -19463,50 +19465,50 @@
   },
   "errors.nativeContainer.aFileMustContainReusableFiguresAndOne": {
     "locations": [
-      "src/native-container.mjs:654"
+      "src/native-container.mjs:808"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.aFileMustContainReusableFiguresAndOne\", {kind: kind}), {code: 'invalid_native_figure'});"
   },
   "errors.nativeContainer.aStykmovFileMustContainOneMovieclip": {
     "locations": [
-      "src/native-container.mjs:667"
+      "src/native-container.mjs:821"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.aStykmovFileMustContainOneMovieclip\", {}), {code: 'invalid_movieclip'});"
   },
   "errors.nativeContainer.corruptedEmbeddedOriginalSource": {
     "locations": [
-      "src/native-container.mjs:679",
-      "src/native-container.mjs:680"
+      "src/native-container.mjs:833",
+      "src/native-container.mjs:834"
     ],
     "context": "try { bytes = base64ToBytes(encoded); } catch { throw messageError(new Error(''), \"errors.nativeContainer.corruptedEmbeddedOriginalSource\", {}); }"
   },
   "errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch": {
     "locations": [
-      "src/native-container.mjs:683"
+      "src/native-container.mjs:837"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch\", {});"
   },
   "errors.nativeContainer.figureSetJoinsMustStayInsideTheSaved": {
     "locations": [
-      "src/native-container.mjs:663"
+      "src/native-container.mjs:817"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.figureSetJoinsMustStayInsideTheSaved\", {}), {code: 'invalid_native_figure'});"
   },
   "errors.nativeContainer.invalidEmbeddedOriginalSource": {
     "locations": [
-      "src/native-container.mjs:677"
+      "src/native-container.mjs:831"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.invalidEmbeddedOriginalSource\", {});"
   },
   "errors.nativeContainer.projectDataMustBeAJsonObject": {
     "locations": [
-      "src/native-container.mjs:695"
+      "src/native-container.mjs:849"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.projectDataMustBeAJsonObject\", {}), {code: 'invalid_document'});"
   },
   "errors.nativeContainer.theFigureMustBeSelfContained": {
     "locations": [
-      "src/native-container.mjs:658"
+      "src/native-container.mjs:812"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.theFigureMustBeSelfContained\", {kind: kind}), {code: 'invalid_native_figure'});"
   },
@@ -19524,7 +19526,7 @@
   "errors.nativeContainer.theNativeFileExceedsTheCompressedSizeLimit": {
     "locations": [
       "src/native-container.mjs:192",
-      "src/native-container.mjs:594"
+      "src/native-container.mjs:748"
     ],
     "context": "if (bytes.byteLength > MAX_BYTES) throw messageError(new Error(''), \"errors.nativeContainer.theNativeFileExceedsTheCompressedSizeLimit\", {});"
   },
@@ -19538,8 +19540,8 @@
     "locations": [
       "src/native-container.mjs:52",
       "src/native-container.mjs:62",
-      "src/native-container.mjs:548",
-      "src/native-container.mjs:579"
+      "src/native-container.mjs:721",
+      "src/native-container.mjs:733"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit\", {});"
   },
@@ -19622,13 +19624,13 @@
       "src/native-container.mjs:168",
       "src/native-container.mjs:178",
       "src/native-container.mjs:225",
-      "src/native-container.mjs:582"
+      "src/native-container.mjs:736"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.unsupportedStykanimateFileVersionUpdateTheAppTo\", {});"
   },
   "errors.nativeContainer.unsupportedStykanimateProjectVersion": {
     "locations": [
-      "src/native-container.mjs:691"
+      "src/native-container.mjs:845"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.unsupportedStykanimateProjectVersion\", {}), {code: 'invalid_native_version'});"
   },

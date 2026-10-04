@@ -37,6 +37,7 @@ export function enginePreviewsEnabled() {
 }
 
 const abortError = () => new DOMException('The preview was superseded.', 'AbortError');
+const settled = request => request?.signal?.removeEventListener('abort', request.onAbort);
 
 export class EnginePreviewWorker {
   /**
@@ -70,8 +71,9 @@ export class EnginePreviewWorker {
       if (answered) dismiss(worker); else worker.terminate();
       const active = this.active;
       this.active = null;
+      settled(active);
       active?.reject(new Error(message));
-      for (const request of this.queue.splice(0)) request.reject(new Error(message));
+      for (const request of this.queue.splice(0)) { settled(request); request.reject(new Error(message)); }
     };
     // The thread could not join the engine: every request since falls back to the JavaScript workers.
     worker.addEventListener('message', ({data}) => {
@@ -92,6 +94,7 @@ export class EnginePreviewWorker {
     const request = this.active;
     if (!request || request.id !== data.id) { data?.bitmap?.close(); return; }
     this.active = null;
+    settled(request);
     this.stats.lastMs = performance.now() - request.sent;
     if (request.signal?.aborted) { data.bitmap?.close(); request.reject(abortError()); }
     else if (data.ok) request.resolve(data);
@@ -105,19 +108,21 @@ export class EnginePreviewWorker {
    * requests that reach the worker). Resolves with the worker's answer (`{refused, message}`
    * when the engine declined to draw it); rejects with an AbortError when `signal` aborts first.
    */
-  request(message, {signal, transfer = []} = {}) {
+  request(message, {signal, transfer = [], discard} = {}) {
     if (this.broken) return Promise.reject(new Error(this.broken));
     if (signal?.aborted) return Promise.reject(abortError());
     clearTimeout(this.idleTimer);
     this.idleTimer = 0;
     return new Promise((resolve, reject) => {
-      const request = {id: ++this.sequence, message, transfer, signal, resolve, reject, sent: 0};
+      const request = {id: ++this.sequence, message, transfer, discard, signal, resolve, reject, sent: 0};
       this.stats.requests++;
-      signal?.addEventListener('abort', () => {
+      request.onAbort = () => {
         const at = this.queue.indexOf(request);
-        if (at >= 0) { this.queue.splice(at, 1); this.stats.cancelled++; reject(abortError()); this._scheduleIdle(); }
+        if (at >= 0) { this.queue.splice(at, 1); settled(request); this.stats.cancelled++; reject(abortError()); this._scheduleIdle(); }
+        if (this.active === request) try { this.worker?.postMessage({operation: 'cancel', request: request.id}); } catch { /* the worker will answer or fail */ }
         // A request in the worker keeps its place until it answers; its answer is dropped.
-      }, {once: true});
+      };
+      signal?.addEventListener('abort', request.onAbort, {once: true});
       this.queue.push(request);
       this._next();
     });
@@ -130,10 +135,11 @@ export class EnginePreviewWorker {
     const worker = this.worker ?? this._spawn();
     this.active = request;
     request.sent = performance.now();
+    let message;
     try {
-      const message = typeof request.message === 'function' ? request.message() : request.message;
+      message = typeof request.message === 'function' ? request.message() : request.message;
       worker.postMessage({...message, id: request.id}, request.transfer);
-    } catch (error) { this.active = null; request.reject(error); this._next(); }
+    } catch (error) { if (message) request.discard?.(message); this.active = null; settled(request); request.reject(error); this._next(); }
   }
 
   _scheduleIdle() {
@@ -153,8 +159,9 @@ export class EnginePreviewWorker {
     this.stats.releases++;
     const active = this.active;
     this.active = null;
+    settled(active);
     active?.reject(abortError());
-    for (const request of this.queue.splice(0)) request.reject(abortError());
+    for (const request of this.queue.splice(0)) { settled(request); request.reject(abortError()); }
     dismiss(worker);
   }
 }
@@ -179,6 +186,93 @@ let shared = null;
 export function enginePreviews() {
   if (!enginePreviewsEnabled() || typeof Worker !== 'function' || typeof OffscreenCanvas === 'undefined') return Promise.resolve(null);
   return shared ??= loadEngine().then(engine => engine.threaded ? new EnginePreviewWorker(engine) : null, () => null);
+}
+
+/**
+ * One pending camera-monitor frame and one retained bitmap. Captures the stage's
+ * displayed pose only when the existing preview worker sends it; camera/parallax
+ * preparation and rasterization run there, including the first appearance. New
+ * views cancel old requests without terminating a shared-memory thread.
+ */
+export class EngineCameraMonitor {
+  constructor(stage, {previews = enginePreviews, invalidate = () => {}} = {}) {
+    this.stage = stage;
+    this.previews = previews;
+    this.invalidate = invalidate;
+    this.pending = null;
+    this.picture = null;
+    this.key = null;
+    this.disposed = false;
+    this.refused = false;
+    this.stats = {requests: 0, drawn: 0, lastMs: 0, captureMs: 0, backend: null, cpu: false, gpuRefusal: null};
+  }
+
+  draw(target, view) {
+    if (this.disposed || this.refused) return false;
+    const version = this.stage.monitor_version();
+    if (!version) {
+      this.key = null;
+      this.pending?.controller.abort();
+      // The stage owns the cold pose and its existing progress waiter schedules
+      // another draw. No monitor pose may be prepared on the interface thread.
+      return true;
+    }
+    const key = JSON.stringify([version, view.width, view.height, view.zoom, view.panX, view.panY]);
+    this.key = key;
+    if (this.picture?.key === key) {
+      target.save(); target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(this.picture.bitmap, 0, 0); target.restore();
+      return true;
+    }
+    if (this.pending && this.pending.key !== key) this.pending.controller.abort();
+    if (!this.pending) {
+      const request = this.pending = {key, controller: new AbortController()};
+      const {signal} = request.controller;
+      void this._render(request, view, version, signal);
+    }
+    // Accepted asynchronously: the caller must not prepare the same pose in JavaScript.
+    return true;
+  }
+
+  async _render(request, view, version, signal) {
+    let bitmap;
+    const started = performance.now();
+    try {
+      const worker = await this.previews();
+      if (!worker?.usable) { this.refused = true; return; }
+      if (signal.aborted || this.disposed || this.key !== request.key) return;
+      const answer = await worker.request(() => {
+        if (signal.aborted || this.disposed || this.key !== request.key || this.stage.monitor_version() !== version) throw abortError();
+        const capturing = performance.now(), address = this.stage.monitor_address();
+        this.stats.captureMs = performance.now() - capturing;
+        this.stats.requests++;
+        if (!address) throw abortError();
+        return {operation: 'monitor', address, ...view};
+      }, {signal, discard: message => this.stage.forget_monitor(message.address)});
+      bitmap = answer.bitmap;
+      if (worker.stats) Object.assign(this.stats, {backend: worker.stats.backend, cpu: worker.stats.cpu, gpuRefusal: worker.stats.gpuRefusal});
+      if (signal.aborted || this.disposed || this.key !== request.key || this.stage.monitor_version() !== version) return;
+      if (answer.refused) { if (answer.refused !== 'stale') this.refused = true; return; }
+      if (!bitmap) { this.refused = true; return; }
+      this.picture?.bitmap.close();
+      this.picture = {key: request.key, bitmap};
+      this.stats.drawn++;
+      this.stats.lastMs = performance.now() - started;
+      bitmap = null;
+    } catch (error) { if (error?.name !== 'AbortError') this.refused = true; }
+    finally {
+      bitmap?.close();
+      if (this.pending === request) this.pending = null;
+      if (!this.disposed) this.invalidate();
+    }
+  }
+
+  destroy() {
+    this.disposed = true;
+    this.pending?.controller.abort();
+    this.picture?.bitmap.close();
+    this.picture = null;
+    this.stage.detach_monitor?.();
+  }
 }
 
 /** A library file's extension as the engine reads it (`stkz`, `stykmov`, …), from its name. */

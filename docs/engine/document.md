@@ -51,6 +51,26 @@ a frame sync (`syncFrames`) and an export wait for the background commit
 instead. (Before, the interface thread waited on the lock, which a browser
 refuses: the batch was lost and the mirror silently out of step.)
 
+## Canonical worker publication prerequisites (S5)
+
+The checked worker boundary stages the same before/after COW roots that the editor's
+prepared publication owns. `Engine::stage_edit_publication_worker` returns an opaque
+`EditPublicationAdmission`; `commit_edit_publication_worker` validates that admission,
+the original revision and roots, then exchanges the mirror generation and editor heads
+in one guarded publication. The common record-transfer protocol retains displaced roots
+and all related charges until terminal ACK. Cancellation and stale publication dispose
+their retained owners on workers.
+
+`styk_doc::retained_bytes_checked` counts each shared allocation once, including reserved
+capacity and packed numeric arrays, with bounded cancellation checks. Root and ordinary
+record admissions share the existing byte and slot budgets. Only a genuinely empty
+default mirror has no canonical root to retire; an empty-keyframe document still has an
+owned root. Cleanup targets the exact displaced generation, so an older publication
+cannot cancel record packets or planning work installed for a newer generation.
+
+These portable APIs support the pending canonical Session actor. The current JavaScript
+editor and mirror remain in charge until the app handoff and class cost gates pass.
+
 ## Invariants
 
 - No silent loss: a field the engine does not understand stays in the tree and

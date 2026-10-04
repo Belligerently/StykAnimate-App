@@ -13,6 +13,10 @@
 /** Keys of engine packets: the stage renderer draws these with the engine. */
 export const ENGINE_KEY = 'engine:';
 export const engineTick = key => typeof key === 'string' && key.startsWith(ENGINE_KEY) ? Number(key.slice(key.lastIndexOf(':') + 1)) : null;
+// These are metadata tickets, not prepared frames. Native residency remains
+// governed by its existing byte budget; a discarded ticket can be recreated.
+const MAX_ENGINE_TICKETS = 120;
+const sample = tick => Number.isFinite(tick) && tick >= 0;
 
 /**
  * @param {object} legacy the JavaScript PlaybackCache
@@ -24,8 +28,31 @@ export function createStagePlayback(legacy, {stage}) {
   let engineMode = false;
   let report = null, revision = -1, hiddenKey = null, syncing = null, syncError = null;
   const packets = new Map();
+  const configured = Number(legacy.maxFrames);
+  const ticketLimit = Number.isFinite(configured) ? Math.max(1, Math.min(MAX_ENGINE_TICKETS, Math.floor(configured))) : MAX_ENGINE_TICKETS;
+  let requested = [], packetGeneration = null;
   const stats = {};
-  const dropPackets = () => packets.clear();
+  const dropPackets = () => { packets.clear(); requested = []; packetGeneration = null; };
+  const prunePackets = handle => {
+    const generation = handle.generation();
+    if (packetGeneration !== generation) { packets.clear(); packetGeneration = generation; }
+    for (const tick of packets.keys()) if (!handle.frame_ready(tick)) packets.delete(tick);
+  };
+  const rank = tick => { const at = requested.indexOf(tick); return at < 0 ? ticketLimit : at; };
+  const retainPacket = (tick, packet) => {
+    if (packets.size >= ticketLimit) {
+      let victim, farthest = -1;
+      for (const candidate of packets.keys()) {
+        // Preserve the current request's first presentation while checking ahead.
+        if (candidate === requested[0]) continue;
+        const priority = rank(candidate);
+        if (priority > farthest) { victim = candidate; farthest = priority; }
+      }
+      if (victim === undefined || farthest < rank(tick)) return;
+      packets.delete(victim);
+    }
+    packets.set(tick, packet);
+  };
 
   const eligible = (candidate, candidateRevision) => {
     const engine = side();
@@ -51,14 +78,21 @@ export function createStagePlayback(legacy, {stage}) {
   };
   const ready = () => engineMode && !syncing && !syncError && side().mirror.framesCurrent(report, revision);
   const packetFor = tick => {
-    if (!ready() || !side().engine.handle.frame_ready(tick)) return null;
+    if (!sample(tick) || !ready()) return null;
+    tick = tick === 0 ? 0 : tick;
+    const handle = side().engine.handle;
+    prunePackets(handle);
+    if (!handle.frame_ready(tick)) return null;
     let packet = packets.get(tick);
     if (!packet) {
-      const handle = side().engine.handle, meta = handle.frame_meta(tick);
+      const meta = handle.frame_meta(tick);
       if (meta === undefined) return null;
       packet = {tick, key: `${ENGINE_KEY}${handle.generation()}:${tick}`, engine: true, cameraEnabled: true, frame: {...JSON.parse(meta), engine: true},
         byteLength: 0, compileMs: 0, hiddenKey: hiddenKey ?? '', softwareFrames: true, previewQuality: {reduced: false}, compatibility: [], groups: []};
-      packets.set(tick, packet);
+      retainPacket(tick, packet);
+    } else {
+      // Existing Map order supplies recency after the bounded request priority.
+      packets.delete(tick); packets.set(tick, packet);
     }
     return packet;
   };
@@ -106,7 +140,7 @@ export function createStagePlayback(legacy, {stage}) {
     },
     invalidate(options) {
       if (!engineMode) return legacy.invalidate(options);
-      side().engine.handle.request(0, new Uint32Array(0));
+      side().engine.handle.request_samples(0, new Float64Array(0));
       dropPackets();
       return playback;
     },
@@ -116,7 +150,15 @@ export function createStagePlayback(legacy, {stage}) {
       if (syncError) throw syncError;
       if (!ready() || !ticks.length) return;
       const engine = side().engine;
-      engine.handle.request(ticks[0], new Uint32Array(ticks));
+      if (sample(ticks[0])) {
+        requested = [];
+        for (let index = 0; index < Math.min(ticks.length, ticketLimit); index++) {
+          const tick = ticks[index];
+          if (sample(tick) && !requested.includes(tick)) requested.push(tick === 0 ? 0 : tick);
+        }
+      }
+      prunePackets(engine.handle);
+      engine.handle.request_samples(ticks[0], new Float64Array(ticks));
       engine.pump();
     },
     /**

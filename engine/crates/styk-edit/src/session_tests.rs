@@ -215,3 +215,62 @@ fn malformed_json_wrapper_does_not_mutate_the_canonical_owner() {
         assert!(session.editor.take_events().is_empty());
     }
 }
+
+#[test]
+fn quiet_worker_session_prepares_the_same_owner_and_keeps_retired_heads() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/move-native.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let mut session = Session::start(parse(first.get("document").unwrap().as_str().unwrap()), &json(first.get("state").unwrap())).unwrap();
+    let before = session.report().clone();
+    assert!(matches!(session.prepare_worker_call_values("setFPS", &parse("[31]"), &Value::Null, || Ok(())), Err(EditError::Unported(_))));
+    assert!(session.report().same_node(&before));
+    session.prepare_worker_history(crate::HistoryLimits::default(), 0.0, || Ok(())).unwrap();
+    let state = session.editor.state_value();
+    let ready = session.prepare_worker_call_values("setFPS", &parse("[31]"), &Value::Null, || Ok(())).unwrap();
+    assert_eq!(ready.result().get("status").and_then(Value::as_str), Some("ok"));
+    assert_eq!(ready.result().path(&["state", "undoLabel"]).and_then(Value::as_str), Some("Change frame rate"));
+    assert_eq!(ready.result().get("events").and_then(Value::array_len), Some(1));
+    assert!(session.report().same_node(&before));assert_eq!(session.editor.state_value(), state);
+    let after = ready.report().clone();
+    let guard = session.guard_worker_publication_checked(ready, || Ok(())).unwrap_or_else(|(error, _)| panic!("{error:?}"));
+    let retired = guard.commit();
+    assert!(retired.previous_report().same_node(&before));assert!(session.report().same_node(&after));
+    drop(retired);
+    let undo = session.prepare_worker_call_values("undo", &parse("[]"), &Value::Null, || Ok(())).unwrap();
+    assert_eq!(undo.result().get("status").and_then(Value::as_str), Some("ok"));
+    let guard = session.guard_worker_publication_checked(undo, || Ok(())).unwrap_or_else(|(error, _)| panic!("{error:?}"));
+    drop(guard.commit());assert_eq!(json(session.report()), json(&before));
+}
+
+#[test]
+fn worker_session_preserves_cancellation_stale_views_and_quiet_refusals() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/move-native.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let mut session = Session::start(parse(first.get("document").unwrap().as_str().unwrap()), &json(first.get("state").unwrap())).unwrap();
+    session.prepare_worker_history(crate::HistoryLimits::default(), 0.0, || Ok(())).unwrap();
+    let before = session.report().clone();let state = session.editor.state_value();
+    let mut checks = 0;
+    let error = session.prepare_worker_call_values("setFPS", &parse("[31]"), &Value::Null, || {
+        checks += 1;if checks == 3 { Err(EditError::Invalid("cancel after owner call".into())) } else { Ok(()) }
+    });
+    assert!(matches!(error, Err(EditError::Invalid(ref reason)) if reason == "cancel after owner call"));
+    assert!(session.report().same_node(&before));assert_eq!(session.editor.state_value(), state);
+    let ready = session.prepare_worker_call_values("setFPS", &parse("[31]"), &Value::Null, || Ok(())).unwrap();
+    session.call_values("select", &parse("[2,-1]"), &Value::Null);
+    let newer = session.editor.state_value();
+    let rejected = match session.guard_worker_publication_checked(ready, || Ok(())) {
+        Err((EditError::Invalid(_), ready)) => ready,
+        Err((error, _)) => panic!("unexpected {error:?}"),
+        Ok(_) => panic!("stale session view accepted"),
+    };
+    assert_eq!(session.editor.state_value(), newer);assert!(session.report().same_node(&before));drop(rejected);
+    session.call_values("select", &parse("[1,-1]"), &Value::Null);
+    session.call_values("beginDrag", &parse("[\"Live gesture\"]"), &Value::Null);
+    let drag = session.editor.drag_value();
+    assert!(matches!(session.prepare_worker_call_values("setFPS", &parse("[31]"), &Value::Null, || Ok(())), Err(EditError::Unported(_))));
+    assert_eq!(session.editor.drag_value(), drag);
+    session.call_values("cancelDrag", &parse("[]"), &Value::Null);
+    assert!(session.editor.drag.is_none());
+}

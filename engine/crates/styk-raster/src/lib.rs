@@ -97,6 +97,12 @@ impl Images {
         self.sprites.values().chain(self.tiles.values()).map(|i| i.rgba.len()).sum()
     }
 
+    /// Shared decoded pixels, for an auxiliary GPU view using the same image owner.
+    /// Iteration borrows the pixels; rebuilding an atlas does not make a second cache.
+    pub fn decoded(&self) -> impl Iterator<Item = &DecodedImage> {
+        self.sprites.values().chain(self.tiles.values()).map(Arc::as_ref)
+    }
+
     fn texture(image: &DecodedImage, straight: bool) -> Texture<'_> {
         Texture { width: image.width as usize, height: image.height as usize, data: image.rgba.as_chunks::<4>().0, straight }
     }

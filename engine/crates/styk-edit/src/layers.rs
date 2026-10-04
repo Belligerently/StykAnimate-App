@@ -24,6 +24,23 @@ pub struct LayerChange {
     pub(crate) after: Option<Option<Value>>,
 }
 
+impl LayerChange {
+    /// The layer owner's enumerable change, for worker history sizing.
+    pub(crate) fn history_value(&self) -> Value {
+        let side = |exists: bool, value: Option<&Value>| {
+            let mut object = Obj::new();
+            object.set("exists", Value::Bool(exists));
+            if let Some(value) = value { object.set("value", value.clone()); }
+            Value::object(object)
+        };
+        let mut change = Obj::new();
+        change.set("path", Value::array(self.path.iter().map(|part| Value::str(part)).collect()));
+        change.set("before", side(self.before.is_some(), self.before.as_ref()));
+        change.set("after", side(self.after.is_some(), self.after.as_ref().and_then(Option::as_ref)));
+        Value::object(change)
+    }
+}
+
 /// `{exists, value}` as `JSON.stringify` prints it, to tell a change from none.
 fn side_json(side: &Option<Option<Value>>) -> String {
     match side {
@@ -132,7 +149,7 @@ fn write_path(state: &mut Value, path: &[String], value: Option<&Option<Value>>)
 }
 
 /// What a layer edit changes: paths, values (`None` for `undefined`), removals.
-type Update = (Vec<String>, Option<Value>, bool);
+pub(crate) type Update = (Vec<String>, Option<Value>, bool);
 
 fn path(keys: &[&str]) -> Vec<String> {
     keys.iter().map(|k| k.to_string()).collect()
@@ -147,6 +164,9 @@ impl Editor {
                 && !self.generated_sources.iter().any(|known| known == id)
             {
                 self.generated_sources.push(id.to_string());
+                // `_registerFrameSources` charges captures referenced by small
+                // key IDs. Real LayerSheet entries already charge their source
+                // values in precomputedBytes and must not charge them twice.
                 if captured {
                     self.pending_source_bytes += 256 + crate::frame::objects_of(frame).iter().map(|object| {
                         512 + 8 * ["angles", "lengths", "bends"].iter().map(|key| object.get(key).and_then(Value::array_len).unwrap_or(0)).sum::<usize>()
@@ -229,11 +249,15 @@ impl Editor {
 
     /// `_layerEdit(label, updates, {structural, activeId})`: the changed paths of the layer
     /// state, one history entry, the sheet's tracks following the layers.
-    fn layer_edit(&mut self, label: &str, updates: Vec<Update>, structural: bool, active: Option<String>) -> Result<bool, EditError> {
-        if self.drag.is_some() {
-            self.commit_drag()?;
-        }
+    pub(crate) fn layer_edit(&mut self, label: &str, updates: Vec<Update>, structural: bool, active: Option<String>) -> Result<bool, EditError> {
+        self.layer_edit_migration_checked(label, updates, structural, active, None, &mut || Ok(()))
+    }
+
+    pub(crate) fn layer_edit_migration_checked(&mut self, label: &str, updates: Vec<Update>, structural: bool, active: Option<String>, migration: Option<crate::layer_planning::NativeMigration>, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
+        if self.drag.is_some() { self.commit_drag()?; }
         self.ensure_layer_state()?;
+        if migration.is_some() { self.ensure_counts(); }
         let before_selection = self.selection_state();
         let state = self.layer_state();
         let changes: Vec<LayerChange> = updates
@@ -283,46 +307,50 @@ impl Editor {
             after.set("tracks", Value::object(tracks));
             (before, Value::object(after))
         });
-        let timing = sheet_patch.is_some();
+        let timing = sheet_patch.is_some() || migration.is_some();
         if let Some((_, after)) = &sheet_patch
             && let Some(styk) = self.report.make_obj().and_then(|r| r.get_mut("_styk")).and_then(Value::make_obj)
         {
             styk.set("layerSheet", after.clone());
         }
+        let animation = migration.is_some();
+        if let Some(migration) = &migration { migration.publish(self, check)?; }
         self.layer_revision += 1;
         let after_selection = self.selection_state();
-        self.record(Command { kind: CommandKind::Layers { changes, sheet: sheet_patch, structural, timing }, label: label.into(), before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
-        self.emit_layers("edit", label, structural, timing, true);
+        self.record_checked(Command { kind: CommandKind::Layers { changes, sheet: sheet_patch, migration, structural, timing }, label: label.into(), before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false }, check)?;
+        self.retained = None;
+        self.emit_layers("edit", label, structural, timing, animation, true);
         Ok(true)
     }
 
     /// The events of a layer edit and of its undo and redo, decorated with the layer
     /// revision as `_emit` decorates them.
-    fn emit_layers(&mut self, kind: &str, label: &str, structural: bool, timing: bool, edit: bool) {
+    fn emit_layers(&mut self, kind: &str, label: &str, structural: bool, timing: bool, animation: bool, edit: bool) {
         self.layer_event_pending = false;
         let mut event = Obj::new();
         event.set("kind", Value::str(kind));
         event.set("frameIndex", Value::Num(self.frame_index as f64));
         event.set("tick", Value::Num(self.tick));
         event.set("structural", Value::Bool(structural));
-        event.set("timing", Value::Bool(if edit { false } else { timing }));
+        event.set("timing", Value::Bool(if edit { animation } else { timing }));
         event.set("layers", Value::Bool(true));
         event.set("layerRevision", Value::Num(self.layer_revision as f64));
         event.set("label", Value::str(label));
         if edit {
             event.set("layerMetadata", Value::Bool(true));
-            event.set("animation", Value::Bool(false));
+            event.set("animation", Value::Bool(animation));
         } else {
             event.set("definition", Value::Bool(false));
-            event.set("animation", Value::Bool(false));
+            event.set("animation", Value::Bool(animation));
         }
         self.events.push(Value::object(event));
     }
 
     /// `_applyCommand` for a `layers` entry.
     pub(crate) fn apply_layers_command(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
-        let CommandKind::Layers { changes, sheet, structural, timing } = &command.kind else { return Ok(()) };
+        let CommandKind::Layers { changes, sheet, migration, structural, timing } = &command.kind else { return Ok(()) };
         self.ensure_layer_state()?;
+        if let Some(migration) = migration { migration.apply(self, direction)?; }
         if let Some(state) = self.layer_state_mut() {
             for change in changes {
                 let side = match direction {
@@ -344,7 +372,8 @@ impl Editor {
         };
         self.restore_selection(selection)?;
         self.revision = revision;
-        self.emit_layers("history", &command.label, *structural, *timing, false);
+        self.retained = None;
+        self.emit_layers("history", &command.label, *structural, *timing, migration.is_some(), false);
         Ok(())
     }
 

@@ -1719,23 +1719,27 @@ export class Editor extends EventTarget {
   importFigure(document, {position} = {}) {
     if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) throw messageError(new Error(''), "errors.editorRangeCommands.chooseAValidCanvasPosition", {});
     const incoming=document?.document??document?.report??document;
-    if(!this._insertingMovieclip&&incoming?.figure_types?.some(isMovieclip))return this._insertMovieclip(()=>this.importFigure(document, {position}));
+    const movieclipInsertion=!this._insertingMovieclip&&incoming?.figure_types?.some(isMovieclip);
     const source = document?.document ?? document?.report ?? document;
     const figures = source.figure_types ?? (source.segments ? [source] : []);
     if (!figures.length) throw messageError(new Error(''), "errors.editor.theImportedFileContainsNoFigureDefinitions", {});
     if(figures.some(isMovieclip))prepareEditorLoad(source);
-    const sourceFrame = source.keyframes?.[0], sources = sourceFrame?.objects?.length ? sourceFrame.objects : [createObject(figures[0], 1, 0, 0)];
-    const bySlot = new Map(sources.map((object, index) => [object.object_slot ?? index, object.unique_id]));
-    const objects = sources.map(object => ({...object, join: object.join && bySlot.has(object.join.target_object_slot)
-      ? {...object.join, target_unique_id: bySlot.get(object.join.target_object_slot)} : null}));
-    // Imported files and clipboard pastes use the same atomic planner. History
-    // owns only new definitions and affected poses, independent of library size.
-    const result = this.applyFigureRange({kind:'paste', importing:true, newIdentities:true,
-      position:position ?? {x:this.report.canvas_width/2,y:this.report.canvas_height/2},
-      clipboard:{objects,figures,order:sourceFrame?.objects?.length ? frameOrder(sourceFrame) : objects.map(object=>object.unique_id)}},
-      {atPlayhead:true,label:'Import figure'});
-    this._selectedUid = result.insertedUids[0] ?? null;
-    return this.object;
+    // Validate imported movieclips once before their placement checks.
+    const insert = () => {
+      const sourceFrame = source.keyframes?.[0], sources = sourceFrame?.objects?.length ? sourceFrame.objects : [createObject(figures[0], 1, 0, 0)];
+      const bySlot = new Map(sources.map((object, index) => [object.object_slot ?? index, object.unique_id]));
+      const objects = sources.map(object => ({...object, join: object.join && bySlot.has(object.join.target_object_slot)
+        ? {...object.join, target_unique_id: bySlot.get(object.join.target_object_slot)} : null}));
+      // Imported files and clipboard pastes use the same atomic planner. History
+      // owns only new definitions and affected poses, independent of library size.
+      const result = this.applyFigureRange({kind:'paste', importing:true, newIdentities:true,
+        position:position ?? {x:this.report.canvas_width/2,y:this.report.canvas_height/2},
+        clipboard:{objects,figures,order:sourceFrame?.objects?.length ? frameOrder(sourceFrame) : objects.map(object=>object.unique_id)}},
+        {atPlayhead:true,label:'Import figure'});
+      this._selectedUid = result.insertedUids[0] ?? null;
+      return this.object;
+    };
+    return movieclipInsertion ? this._insertMovieclip(insert) : insert();
   }
   serialize() {
     const document = clone(this.report); document._styk = {...document._styk, format: 'StykAnimate', format_version: 1, name: this.name};

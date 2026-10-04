@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use styk_engine::edit::{EditOptions, EditScene, Onion};
-use styk_engine::{Engine, Generation, Uploaded};
+use styk_engine::{Engine, FrameData, Generation, Uploaded};
 use styk_render::{Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
@@ -27,8 +27,8 @@ const PICTURES_DECODING: u32 = 2;
 pub(crate) enum Shown {
     #[default]
     Nothing,
-    Edit { hidden: Vec<u32>, translations: Vec<(u32, [f64; 2])> },
-    Prepared(u32),
+    Edit { generation: u64, edits: u64, effects: bool, scene: std::sync::Arc<EditScene>, hidden: Vec<u32>, translations: Vec<(u32, [f64; 2])> },
+    Prepared(u64, f64),
 }
 
 #[wasm_bindgen]
@@ -156,9 +156,22 @@ impl Stage {
         let Some(generation) = self.engine.generation() else { return Ok(false) };
         let frame = if wait { self.engine.frame_now(tick) } else { self.engine.frame(tick) };
         let Some(frame) = frame else { return Ok(false) };
-        let drawn = self.draw(&generation, &frame.list, if camera { frame.camera } else { None }, zoom, [pan_x, pan_y], clip_to_artboard)?;
+        self.present_prepared(&generation, &frame, zoom, [pan_x, pan_y], camera, clip_to_artboard)
+    }
+
+    /// Presents an already prepared finite sample. A cold sample returns false and
+    /// preserves the actual shown frame; evaluation always runs on the worker.
+    pub fn render_sample(&mut self, tick: f64, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
+        let Some(generation) = self.engine.generation() else { return Ok(false) };
+        let Some(frame) = self.engine.frame_at(tick) else { return Ok(false) };
+        self.present_prepared(&generation, &frame, zoom, [pan_x, pan_y], camera, clip_to_artboard)
+    }
+
+    fn present_prepared(&mut self, generation: &Arc<Generation>, frame: &FrameData, zoom: f64, pan: [f64; 2], camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
+        if frame.generation != generation.id { return Ok(false); }
+        let drawn = self.draw(generation, &frame.list, if camera { frame.camera } else { None }, zoom, pan, clip_to_artboard)?;
         if drawn {
-            self.shown = Shown::Prepared(tick);
+            self.shown = Shown::Prepared(generation.id, frame.tick);
         }
         Ok(drawn)
     }
@@ -198,8 +211,11 @@ impl Stage {
     /// still frame shown while its drawing cels decode lacked them until something else
     /// drew again.
     pub fn pictures_pending(&self) -> u32 {
-        self.pictures
+        if self.edit.camera_pending().is_some() { 2 } else { self.pictures }
     }
+
+    /// A cold followed pose is accepted but awaits the engine worker's shared path.
+    pub fn camera_pending(&self) -> bool { self.edit.camera_pending().is_some() }
 
     /// Draws the edit frame. `hidden` lists object slots not drawn; `translations` holds
     /// `slot, dx, dy` triples of dragged objects; `background` is an ARGB canvas colour
@@ -237,12 +253,28 @@ impl Stage {
             .collect();
         // Generated effects evaluate earlier anchors for at most 6 ms a frame, as the editor does
         // (`INTERACTIVE_SAMPLING_MS`); the rest refine over the next frames (`refining`).
-        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
-        let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, prepare_camera: false, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
+        let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else {
+            if let Some(tick) = self.edit.camera_pending()
+                && !generation.prepared.doc.keyframes.is_empty()
+            {
+                // Both neighbours are bounded existing frame tickets. At a follow
+                // clip's end ceil(tick) can be inactive; floor(tick) warms its last row.
+                // Presentation still waits on travel_ready for this exact Prepared.
+                let last = generation.playable_ticks().saturating_sub(1);
+                let before = (tick.floor().max(0.0) as u32).min(last);
+                let after = (tick.ceil().max(0.0) as u32).min(last);
+                self.engine.request(before, &[after, before]);
+            }
+            // A definitions-only mirror has no target poses. Its adapter first
+            // syncs frames asynchronously; sampling its empty projection would
+            // publish a camera path for the wrong document.
+            return Ok(false);
+        };
         let scene_camera = if camera { self.edit.camera() } else { None };
         let drawn = self.draw(&generation, &list, scene_camera, zoom, [pan_x, pan_y], clip_to_artboard)?;
         if drawn {
-            self.shown = Shown::Edit { hidden: hidden.to_vec(), translations };
+            self.shown = Shown::Edit { generation: generation.id, edits: self.edits, effects: self.effects, scene: std::sync::Arc::new(self.edit.snapshot()), hidden: hidden.to_vec(), translations };
         }
         Ok(drawn)
     }

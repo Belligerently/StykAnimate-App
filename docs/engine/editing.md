@@ -77,6 +77,48 @@ The 41 derived evaluated groups / 362 ticks are included. Public portable additi
 `math_log` is a browser export only in `styk-wasm`. The logarithm test reads its generated
 binary at runtime so identical regeneration does not invalidate release compilation.
 
+### Recorded worker movieclips, history and publication (2026-10-04)
+
+Native and sheet movieclip creation, splitting, unique copies, break apart, placement,
+playback and extension share the existing materializer, capture, `SheetPlan` and history
+owners. Retained source documents preserve their original effect clocks. Worker-only
+entry points do not bypass the app's readiness or document-class gates; baking and
+unrecorded IK/draft combinations still require their own recordings and adoption.
+`styk edit-replay --worker <reference.json>` exercises this same dispatch and compares
+every editor step. Ordinary replay retains its explicit refusal behavior.
+
+History weights follow the editor's UTF-16 JSON accounting, source charges, trim order
+and oversized-entry rules. A warm owner supplies its exact readiness checkpoint;
+reconstructing it by summing entries can change stored floating-point results. Optional
+selection metadata is kept in the central snapshot/restore owner and checked before
+publication. The facade exchanges ordinary new figure IDs before their records arrive,
+then publishes the document; restoration must preserve that ordering.
+
+`Session::prepare_worker_history` and `prepare_worker_call_values` operate on the same
+worker-owned editor. `PreparedPublication::guard_worker_checked` validates the original
+report, selection, counters and history before exchanging heads. Engine publication
+pairs that exchange with the acknowledged mirror generation. Its opaque
+`EditPublicationAdmission` retains canonical roots and their shared byte charge through
+terminal ACK, cancellation or refusal. This is a prerequisite for the durable actor;
+it does not make the current interface-thread Session a worker actor.
+
+Recorded origin sheet motion paths use `Editor::motion_display_frame_worker` for the
+editor's transient display read while the canonical shown-frame owner remains unchanged.
+Checked `SheetPlan` state forwards cancellation checks and preserves removed tracks.
+Unsupported native authored channels and complex live states refuse before mutation.
+
+Portable mobile pin additions include `HistoryLimits`, worker history configuration,
+preparation and application methods, `Editor::set_revision_counters`,
+`set_selection_metadata`, `motion_display_frame_worker`, prepared/guarded publication
+types and accessors, and the Engine layer planning and canonical publication APIs.
+`CommandKind::Animation` gains structural metadata, `FigureRange` retains geometry when
+recorded, and layer/movieclip command variants preserve their recorded history shape.
+Browser bindings remain confined to `styk-wasm`.
+
+Evaluation also adds `MovieclipSource`, `Document::movieclip_source` and
+`Frame`/`Keyframe::retained_vfx_tick`. These portable fields keep cropped source clocks
+and inherited effect evaluation intact; downstream struct literals need the new fields.
+
 ## Status of phase 1
 
 `engine/crates/styk-edit` holds an `Editor` over the report as the mirror receives it, with

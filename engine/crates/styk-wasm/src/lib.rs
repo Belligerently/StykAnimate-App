@@ -20,6 +20,7 @@ pub mod edit;
 pub mod engine;
 pub mod export;
 pub mod math;
+pub mod planning;
 pub mod preview;
 pub mod stage;
 pub mod views;

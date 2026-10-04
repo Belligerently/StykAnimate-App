@@ -221,7 +221,7 @@ impl ExportRenderer {
         let generation = self.frames.generation().clone();
         self.edit.update(&generation, json.as_bytes()).map_err(js_error)?;
         // Every earlier anchor of generated effects is evaluated: an export has no frame budget.
-        let options = EditOptions { camera: true, clock: None, anchor_budget_ms: f64::INFINITY, ..Default::default() };
+        let options = EditOptions { camera: true, prepare_camera: true, clock: None, anchor_budget_ms: f64::INFINITY, ..Default::default() };
         let list = self.edit.draw_list(&generation, &options).map_err(js_error)?.ok_or_else(|| js_error("the pose has no frame"))?;
         self.current = Some((list, self.edit.camera()));
         self.last_evaluate_ms = clock() - started;

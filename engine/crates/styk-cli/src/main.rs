@@ -6,7 +6,7 @@
 //!   styk bench <file> [--frames N]        evaluation + geometry throughput
 //!   styk layers <file> <tick>             the effect layers of a frame (docs/engine/vfx.md)
 //!   styk generators <file> <tick>…        the generated effects of frames: draws, live particles, timing
-//!   styk edit-replay <reference.json>…    editing commands against the JS editor's recording
+//!   styk edit-replay [--worker] <reference.json>…    editing commands against the JS editor's recording
 //!   styk edit-session <capture.json>      an app edit session the shadow facade captured,
 //!                                         replayed natively (each answer's status)
 //!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
@@ -61,7 +61,7 @@ fn main() {
         Some("export") if args.len() >= 4 => export::export(&args[1], &args[2], &args[3], &args[4..]),
         Some("raster-parity") if args.len() >= 2 => raster_parity::run(&args[1..]),
         _ => {
-            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>... | edit-session <capture.json>");
+            eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay [--worker] <reference.json>... | edit-session <capture.json>");
             2
         }
     };
@@ -71,9 +71,12 @@ fn main() {
 /// Replays command recordings (engine/tools/edit-replay.mjs) in styk-edit. Exit code 1
 /// when any step the engine runs differs from the editor's.
 fn edit_replay(files: &[String]) -> i32 {
+    let worker = files.iter().any(|arg| arg == "--worker");
+    let references: Vec<_> = files.iter().filter(|arg| *arg != "--worker").collect();
+    if references.is_empty() { eprintln!("edit-replay requires a reference file"); return 2; }
     let mut failed = false;
-    for file in files {
-        let outcome = std::fs::read(file).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())).and_then(|reference| styk_edit::replay::replay(&reference));
+    for file in references {
+        let outcome = std::fs::read(file).map_err(|e| e.to_string()).and_then(|bytes| styk_doc::json::parse(&bytes).map_err(|e| e.to_string())).and_then(|reference| if worker { styk_edit::replay::replay_worker(&reference) } else { styk_edit::replay::replay(&reference) });
         match outcome {
             Ok(outcome) => {
                 let unported = outcome.unported.as_ref().map(|(step, what)| format!(", step {step} not ported ({what})")).unwrap_or_default();

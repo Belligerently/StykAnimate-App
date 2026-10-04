@@ -16,7 +16,7 @@ use crate::record::{frame_mut, uid};
 use crate::{EditError, Editor};
 
 /// What evaluation keeps between calls, for as long as the document does not change.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct Cache {
     pub loader: styk_eval::load::Loader,
     /// The document `prepared` and `frames` belong to (a shared node: any change to
@@ -112,9 +112,10 @@ impl Editor {
     }
 
     /// `editor.selectionFrame.objects`: what selection reads. On a layer sheet the
-    /// frame on show; on a native timeline the keyframe at the playhead.
+    /// frame on show; on a native timeline with no saved channels the keyframe
+    /// at the playhead.
     pub(crate) fn selection_frame(&self) -> Result<Vec<Value>, EditError> {
-        if self.authored.is_some() || self.sheet() {
+        if self.authored.is_some() || self.sheet() || self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) > 0 {
             return Ok(objects_of(&self.shown_frame()?));
         }
         Ok(crate::record::frame_objects(&self.report, self.frame_index))

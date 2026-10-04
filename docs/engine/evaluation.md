@@ -223,12 +223,21 @@ with the frame and draws them.
   the camera preview the stage draws them through `cameraAtTime` worked out against the
   committed generation (a follow path reflects an edit once the mirror commits it).
 
+## Retained movieclip sources
+
+The typed loader reads `movieclipSource` into `MovieclipSource` with the immutable source
+document and its local-to-source tick map. Evaluation and recorded command materialization
+sample that same source, including native/sheet channels, presence clocks, membership and
+retained VFX timing. `Frame` and `Keyframe::retained_vfx_tick` carry the inherited effect
+clock through the common frame finishing owner. Unknown source fields remain in the store.
+Editor-built source, coverage, generator and timing fixtures certify the recorded paths;
+unrecorded command combinations remain gated independently of rendering.
+
 ## Not evaluated yet
 
-Gated in the app: frame drafts (temporary editing state shown only as onion skins). A
-captured movieclip's retained source (`movieclipSource`) is not read (the engine tweens
-the clip's keyframes where the editor samples the source, channels included). The work
-queue in the plan orders them.
+Gated in the app: frame drafts (temporary editing state shown only as onion skins).
+Actual shown/resource readiness and no-thread fallback still need their canonical app
+boundary before JavaScript evaluation is deleted. The work queue in the plan orders them.
 
 ## Testing
 

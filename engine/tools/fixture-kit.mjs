@@ -67,10 +67,10 @@ export function prune(document) {
  * object's outline (--style); `native` evaluates it on its native timeline (--native) into
  * `<name>.native.reference.json`.
  */
-export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false, scene = false, style = false, native = false} = {}) {
+export function writeProject(out, name, document, ticks, {vfx = false, camera = false, images = false, scene = false, style = false, native = false, inbetween = []} = {}) {
   const file = `${out}/${name}.json`, reference = `${out}/${name}${native ? '.native' : ''}.reference.json`;
   writeFileSync(file, JSON.stringify(prune(document)) + '\n');
-  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : []), ...(scene ? ['--scene'] : []), ...(style ? ['--style'] : []), ...(native ? ['--native'] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
+  execFileSync(process.execPath, [`${here}/reference.mjs`, file, reference, '--ticks', ticks.join(','), ...(vfx ? ['--vfx'] : []), ...(camera ? ['--camera'] : []), ...(images ? ['--images'] : []), ...(scene ? ['--scene'] : []), ...(style ? ['--style'] : []), ...(native ? ['--native'] : []), ...(inbetween.length ? ['--inbetween', inbetween.map(([index, ratio]) => `${index}:${ratio}`).join(',')] : [])], {stdio: ['ignore', 'ignore', 'ignore']});
   const dump = JSON.parse(readFileSync(reference, 'utf8'));
   delete dump.loadMs; delete dump.evalMsPerFrame;
   return {file, reference, dump};

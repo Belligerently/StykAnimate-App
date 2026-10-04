@@ -148,6 +148,32 @@ enum Patch {
 /// A field before or after: its key and its value, `None` when the key is absent.
 type Field = (String, Option<Value>);
 
+impl FrameChange {
+    /// The range diff owner's enumerable change, for worker history sizing.
+    pub(crate) fn history_value(&self) -> Value {
+        fn fields(values: &[Field]) -> Value {
+            Value::array(values.iter().map(|(key, value)| {
+                let mut field = Obj::new(); field.set("key", Value::str(key)); field.set("exists", Value::Bool(value.is_some()));
+                if let Some(value) = value { field.set("value", value.clone()); }
+                Value::object(field)
+            }).collect())
+        }
+        fn side(patch: &Patch) -> Value {
+            let mut value = Obj::new(); value.set("exists", Value::Bool(!matches!(patch, Patch::Missing)));
+            match patch { Patch::Missing => {}, Patch::Object(object) => value.set("object", object.clone()), Patch::Fields(entries) => value.set("fields", fields(entries)) }
+            Value::object(value)
+        }
+        let mut change = Obj::new(); change.set("index", Value::Num(self.index as f64));
+        change.set("patches", Value::array(self.patches.iter().map(|(uid, before, after)| {
+            let mut value = Obj::new(); value.set("uid", Value::Num(*uid as f64)); value.set("before", side(before)); value.set("after", side(after)); Value::object(value)
+        }).collect()));
+        if let Some((before, after)) = &self.slots { change.set("beforeSlots", Value::array(before.clone())); change.set("afterSlots", Value::array(after.clone())); }
+        if let Some((before, after)) = &self.order { change.set("beforeOrder", Value::nums(before)); change.set("afterOrder", Value::nums(after)); }
+        if let Some((before, after)) = &self.fields { change.set("beforeFields", fields(before)); change.set("afterFields", fields(after)); }
+        Value::object(change)
+    }
+}
+
 fn json(value: Option<&Value>) -> Option<String> {
     value.map(styk_doc::json::to_string)
 }
@@ -378,6 +404,21 @@ impl Editor {
 
     /// `applyFigureRange(operation, options)`.
     pub(crate) fn apply_figure_range(&mut self, request: Request, options: Options) -> Result<Value, EditError> {
+        self.apply_figure_range_with(request, options, false, None)
+    }
+
+    /// The recorded library movieclip insertion still uses the same range
+    /// planner, native frame patches and authored publication owner.
+    pub(crate) fn add_movieclip_range(&mut self, type_id: &Value, worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
+        self.apply_figure_range_with(
+            Request::Add { type_id: type_id.clone(), x: Value::Null, y: Value::Null },
+            Options { at_playhead: true, label: Some("Add figure".into()), ..Options::default() },
+            true,
+            worker,
+        )
+    }
+
+    fn apply_figure_range_with(&mut self, request: Request, options: Options, movieclip_insertion: bool, worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
         let label = options.label.clone().unwrap_or_else(|| request.label().to_string());
         let mut uids: Vec<u32> = Vec::new();
         for id in options.uids.clone().unwrap_or_else(|| self.selection.uids.clone()) {
@@ -402,7 +443,11 @@ impl Editor {
         if matches!(request, Request::Align { .. }) && self.property_edit.is_some() {
             self.commit_animation_edit()?;
         }
-        let (authored, targets) = self.range_targets(&options)?;
+        let (mut authored, mut targets) = self.range_targets(&options)?;
+        if movieclip_insertion && !self.sheet() && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) > 0 {
+            authored = true;
+            for target in &mut targets { target.frame = self.shown_frame()?; }
+        }
         if targets.is_empty() {
             return Ok(outcome(&[], &[]));
         }
@@ -411,7 +456,7 @@ impl Editor {
         let mut payload: Option<Payload> = None;
         let mut map = None;
         match &request {
-            Request::Add { type_id, x, y } => payload = Some(self.add_payload(type_id, x, y, &figures)?),
+            Request::Add { type_id, x, y } => payload = Some(self.add_payload(type_id, x, y, &figures, movieclip_insertion)?),
             Request::Duplicate { .. } => {
                 let present: Vec<u32> = targets.iter().flat_map(|t| objects_of(&t.frame)).filter_map(|o| uid(&o)).filter(|u| uids.contains(u)).collect();
                 let mut next = self.next_uid;
@@ -435,7 +480,7 @@ impl Editor {
         if payload.is_none() && uids.is_empty() {
             return Ok(outcome(&[], &[]));
         }
-        if !authored && (payload.is_some() || matches!(request, Request::Delete)) {
+        if !authored && ((payload.is_some() && !movieclip_insertion) || matches!(request, Request::Delete)) {
             return Err(EditError::Unported("figures added or removed across frames on a native timeline".into()));
         }
         let version = num(&self.report, "version").unwrap_or(f64::NAN);
@@ -461,7 +506,7 @@ impl Editor {
             // onto the presence clock; on a native timeline they are not ported.
             let before = objects_of(&target.frame);
             let after = objects_of(&planned.frame);
-            if !authored && before.iter().chain(&after).filter(|o| uid(o).is_some_and(|u| planned.changed.contains(&u))).any(movieclip) {
+            if !authored && !movieclip_insertion && before.iter().chain(&after).filter(|o| uid(o).is_some_and(|u| planned.changed.contains(&u))).any(movieclip) {
                 return Err(EditError::Unported("figure-range operations on movieclips on a native timeline".into()));
             }
             if let Some(payload) = payload.as_ref().filter(|_| matches!(request, Request::Duplicate { .. })) {
@@ -501,6 +546,10 @@ impl Editor {
         let inserted: Vec<u32> = payload.as_ref().map(|p| p.order.clone()).unwrap_or_default();
         if authored {
             if !self.sheet() {
+                if movieclip_insertion {
+                    self.commit_native_movieclip_range(&plans, payload.as_ref().unwrap(), &label, selection)?;
+                    return Ok(outcome(&ticks, &inserted));
+                }
                 return Err(EditError::Unported("figure-range operations on property channels of a native timeline".into()));
             }
             let befores: Vec<Value> = plans.iter().map(|(t, _)| t.frame.clone()).collect();
@@ -510,15 +559,17 @@ impl Editor {
             let hints = payload.as_ref().map(|p| p.hints.clone()).unwrap_or_default();
             if let Some(payload) = &payload {
                 // `publish(…, {selectUids, nextUid})`: published, the new figures are selected.
-                self.selection = crate::Selection { uid: payload.order.last().copied(), uids: payload.order.clone(), joint: -1 };
+                self.select_ids(payload.order.clone());
                 self.next_uid = payload.next_uid;
             }
-            if let Err(error) = self.commit_sheet_range(&entries, &inserted, &hints, Vec::new(), &label, selection, None, deletion) {
+            let insertion = payload.as_ref().filter(|_| movieclip_insertion).map(|payload| (payload.objects.as_slice(), false));
+            if let Err(error) = self.commit_sheet_range_worker(&entries, &inserted, &hints, Vec::new(), &label, selection, insertion, deletion, worker) {
                 self.selection = previous_selection;
                 self.next_uid = previous_next;
                 return Err(error);
             }
         } else {
+            if movieclip_insertion { self.ensure_counts(); }
             let changes: Vec<FrameChange> = plans.iter().map(|(t, p)| diff_frame(t.index, &t.frame, &p.frame)).collect();
             let structural = plans.iter().any(|(_, p)| p.structural);
             let mut changed: Vec<u32> = Vec::new();
@@ -528,13 +579,22 @@ impl Editor {
                 }
             }
             let indices: Vec<usize> = plans.iter().map(|(t, _)| t.index).collect();
+            let befores: Vec<Value> = plans.iter().filter(|_| movieclip_insertion).map(|(target, _)| target.frame.clone()).collect();
+            let afters: Vec<Value> = plans.iter().filter(|_| movieclip_insertion).map(|(_, planned)| planned.frame.clone()).collect();
             for (target, planned) in plans {
                 if let Some(slot) = self.report.make_obj().and_then(|r| r.get_mut("keyframes")).and_then(Value::make_arr).and_then(|k| k.get_mut(target.index)) {
                     *slot = planned.frame;
                 }
             }
+            if let Some(payload) = &payload {
+                self.next_uid = payload.next_uid;
+                self.new_layer_hints = payload.hints.clone();
+                self.select_ids(payload.order.clone());
+            }
+            self.retained = None;
+            let layers = movieclip_insertion && self.track_frames(&befores, &afters, true)?;
             let after_selection = self.selection_state();
-            self.record(Command { kind: CommandKind::FigureRange { changes, structural }, label: label.clone(), before_selection: selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
+            self.record(Command { kind: CommandKind::FigureRange { changes, structural, retain_geometry: movieclip_insertion }, label: label.clone(), before_selection: selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers })?;
             self.emit(
                 "edit",
                 vec![
@@ -546,6 +606,75 @@ impl Editor {
             );
         }
         Ok(outcome(&ticks, &inserted))
+    }
+
+    /// The recorded pose-only native insertion subset of
+    /// `_commitAuthoredFigureRange`/`authoredDraft`. Publication and capture use
+    /// their existing owners; native keys remain unchanged.
+    fn commit_native_movieclip_range(&mut self, plans: &[(Target, Planned)], payload: &Payload, label: &str, selection: crate::select::SelectionState) -> Result<(), EditError> {
+        self.ensure_counts();
+        let before = self.report.path(&["_styk", "animation"]).cloned();
+        let mut after = before.as_ref().and_then(Value::as_obj).cloned().unwrap_or_default();
+        after.set("version", Value::Num(1.0));
+        let mut next_key = num(&Value::object(after.clone()), "nextKeyId").unwrap_or(1.0);
+        let mut channels = crate::sheet::items(after.get("channels"));
+        let mut entries = Vec::new();
+        for (target, plan) in plans {
+            let mut layers = Vec::new();
+            for id in &plan.changed {
+                let layer = self.owner_with(*id, &payload.hints)?;
+                if !layers.contains(&layer) { layers.push(layer); }
+            }
+            for layer in layers {
+                let mut channel = self.native_layer_pose(&layer)?.as_obj().cloned().unwrap();
+                channel.set("source", Value::str("authored"));
+                let mut keys = crate::sheet::items(channel.get("keys"));
+                let value = { let mut value = Obj::new(); value.set("frameId", Value::str(&format!("frame-{}", self.next_frame_identity + entries.len() as u64))); Value::object(value) };
+                if let Some(key) = keys.iter_mut().find(|key| num(key, "tick") == Some(target.tick) && !key.get("hidden").is_some_and(Value::truthy)) {
+                    let key = key.make_obj().unwrap(); key.set("value", value); key.remove("passthrough");
+                } else {
+                    let mut key = Obj::new();
+                    let id = loop {
+                        if !next_key.is_finite() || next_key.fract() != 0.0 || !(1.0..=9_007_199_254_740_991.0).contains(&next_key) {
+                            return Err(invalid("errors.animationChannels.invalidAnimationKeyIdentityCounter"));
+                        }
+                        let id = format!("key-{}", next_key as u64);
+                        next_key += 1.0;
+                        if !keys.iter().any(|key| key.get("id").and_then(Value::as_str) == Some(id.as_str())) { break id; }
+                    };
+                    key.set("id", Value::str(&id)); key.set("tick", Value::Num(target.tick)); key.set("value", value);
+                    let previous = keys.iter().filter(|key| !key.get("hidden").is_some_and(Value::truthy) && num(key, "tick").is_some_and(|tick| tick < target.tick)).max_by(|a,b| num(a, "tick").unwrap().total_cmp(&num(b, "tick").unwrap()));
+                    let mut easing = previous.cloned().unwrap_or_else(crate::sheet::constant).as_obj().cloned().unwrap();
+                    if previous.is_some() && easing.get("interpolation").is_none() { easing.set("interpolation", Value::str(if self.report.get("auto_easing").is_some_and(Value::truthy) { "auto" } else { "linear" })); }
+                    for (name, value) in crate::sheet::key_easing(&Value::object(easing)) { key.set(name, value); }
+                    keys.push(Value::object(key));
+                }
+                keys.sort_by(|a,b| num(a,"tick").unwrap().total_cmp(&num(b,"tick").unwrap()).then_with(|| b.get("hidden").is_some_and(Value::truthy).cmp(&a.get("hidden").is_some_and(Value::truthy))));
+                channel.set("keys", Value::array(keys));
+                let channel = Value::object(channel);
+                match channels.iter().position(|old| old.get("id") == channel.get("id")) { Some(index) => channels[index] = channel, None => channels.push(channel) }
+            }
+            entries.push(plan.frame.clone());
+        }
+        // The editor validates the completed authored draft before it registers
+        // sources/counters or changes selection. MAX allocation consumes the
+        // last safe counter and must fail here even without a collision.
+        if !next_key.is_finite() || next_key.fract() != 0.0 || !(1.0..=9_007_199_254_740_991.0).contains(&next_key) {
+            return Err(invalid("errors.animationChannels.invalidAnimationKeyIdentityCounter"));
+        }
+        // validateAnimationDocument checks the counter header before the
+        // authored key ticks. Keep that priority without publishing either.
+        if plans.iter().any(|(target, _)| target.tick.fract() != 0.0 || !target.tick.is_finite() || target.tick < 0.0) {
+            return Err(invalid("errors.animationChannels.animationKeysMustBeSortedAtValidWhole"));
+        }
+        after.set("nextKeyId", Value::Num(next_key));
+        after.set("channels", Value::array(channels));
+        self.next_uid = payload.next_uid;
+        self.new_layer_hints = payload.hints.clone();
+        for frame in &entries { self.capture_native_pose(frame, None)?; }
+        self.select_ids(payload.order.clone());
+        let changed = plans.iter().flat_map(|(_, plan)| plan.changed.iter().copied()).collect::<Vec<_>>();
+        self.publish_native_animation(before, Value::object(after), label, selection, Some(&changed))
     }
 
     /// `targets(editor, options)`: whether the range is authored (a layer sheet), and its frames.
@@ -660,7 +789,7 @@ impl Editor {
     }
 
     /// `insertionPlan(editor, {kind: 'add', typeId, x, y})`: a new figure of a library definition.
-    fn add_payload(&self, type_id: &Value, x: &Value, y: &Value, figures: &[Value]) -> Result<Payload, EditError> {
+    fn add_payload(&self, type_id: &Value, x: &Value, y: &Value, figures: &[Value], movieclip_insertion: bool) -> Result<Payload, EditError> {
         let wanted = if type_id.is_null() { figures.first().and_then(|f| f.get("figure_type_id").cloned()).unwrap_or(Value::Null) } else { type_id.clone() };
         let Some(figure) = figures.iter().find(|f| !wanted.is_null() && f.get("figure_type_id") == Some(&wanted)) else {
             return Err(invalid("errors.editorRangeCommands.chooseAnExistingFigureDefinition"));
@@ -674,10 +803,24 @@ impl Editor {
         if !x.is_finite() || !y.is_finite() {
             return Err(invalid("errors.editorRangeCommands.figurePositionMustBeFinite"));
         }
-        if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
+        let movieclip = figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy);
+        if movieclip && !movieclip_insertion {
             return Err(EditError::Unported("adding a movieclip".into()));
         }
-        let object = crate::figures::create_object(figure, identity, x, y);
+        let mut object = crate::figures::create_object(figure, identity, x, y);
+        if movieclip {
+            let mut playback = Obj::new();
+            if self.sheet() {
+                playback.set("clock", Value::str("presence"));
+            } else {
+                playback.set("start", Value::Num(self.tick));
+                playback.set("end", Value::Null);
+            }
+            playback.set("offset", Value::Num(0.0));
+            playback.set("speed", Value::Num(1.0));
+            playback.set("mode", Value::str("loop"));
+            object.make_obj().unwrap().set("_stykMovieclip", Value::object(playback));
+        }
         Ok(Payload { objects: vec![object], order: vec![identity], hints: HashMap::new(), next_uid: self.next_uid + 1 })
     }
 
@@ -919,8 +1062,10 @@ impl Editor {
     /// `_applyFigureRangeCommand(command, direction)`: the keyframes' figures, slots, order and
     /// fields as they were before or after.
     pub(crate) fn apply_figure_range_command(&mut self, command: &Command, direction: HistoryDirection) -> Result<(), EditError> {
-        let CommandKind::FigureRange { changes, structural } = &command.kind else { return Ok(()) };
+        let CommandKind::FigureRange { changes, structural, .. } = &command.kind else { return Ok(()) };
         let after = direction == HistoryDirection::After;
+        if command.layers { self.ensure_counts(); }
+        let previous: Vec<Value> = changes.iter().filter(|_| command.layers).filter_map(|change| self.report.get("keyframes").and_then(|frames| frames.item(change.index))).collect();
         for change in changes {
             let Some(frame) = crate::record::frame_mut(&mut self.report, change.index) else { continue };
             let mut objects: Vec<(u32, Value)> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().filter_map(|o| Some((uid(&o)?, o))).collect()).unwrap_or_default();
@@ -960,6 +1105,9 @@ impl Editor {
                 apply_fields(frame, if after { after_fields } else { before });
             }
         }
+        let current: Vec<Value> = changes.iter().filter(|_| command.layers).filter_map(|change| self.report.get("keyframes").and_then(|frames| frames.item(change.index))).collect();
+        if command.layers { self.track_frames(&previous, &current, false)?; }
+        self.apply_attached_layer_changes(&command.layer_changes, direction);
         let (selection, revision) = if after { (&command.after_selection, command.after_revision) } else { (&command.before_selection, command.before_revision) };
         self.restore_selection(selection)?;
         self.revision = revision;

@@ -490,6 +490,100 @@ pub fn string_bytes(text: &str) -> usize {
     }).sum::<usize>()
 }
 
+/// `JSON.stringify(value).length`: UTF-16 code units, without allocating the JSON
+/// text or encoded blobs. Traverses the value, so call on a preparation worker for
+/// document-sized data. This uses the same numeric formatter and string escapes
+/// as [`write`].
+pub fn utf16_units(value: &Value) -> usize {
+    match utf16_units_checked(value, || Ok::<(), std::convert::Infallible>(())) {
+        Ok(units) => units,
+        Err(error) => match error {},
+    }
+}
+
+/// The same JSON weight owner, with cooperative cancellation/stale/progress
+/// checks during a dense single string or numeric array as well as containers.
+/// The caller owns the worker and its cancellation contract. Checks run before
+/// traversal and after at most 4096 visited nodes, numbers, or text characters.
+pub fn utf16_units_checked<E>(
+    value: &Value,
+    mut check: impl FnMut() -> Result<(), E>,
+) -> Result<usize, E> {
+    fn touch<E>(pending: &mut usize, check: &mut impl FnMut() -> Result<(), E>) -> Result<(), E> {
+        *pending += 1;
+        if *pending == 4096 {
+            *pending = 0;
+            check()?;
+        }
+        Ok(())
+    }
+    fn string<E>(
+        text: &str,
+        pending: &mut usize,
+        check: &mut impl FnMut() -> Result<(), E>,
+    ) -> Result<usize, E> {
+        let mut units = 2;
+        for character in text.chars() {
+            touch(pending, check)?;
+            units += match character {
+                '"' | '\\' | '\u{08}' | '\t' | '\n' | '\u{0c}' | '\r' => 2,
+                '\0'..='\u{1f}' => 6,
+                _ => character.len_utf16(),
+            };
+        }
+        Ok(units)
+    }
+    fn count<E>(
+        value: &Value,
+        number: &mut Vec<u8>,
+        pending: &mut usize,
+        check: &mut impl FnMut() -> Result<(), E>,
+    ) -> Result<usize, E> {
+        touch(pending, check)?;
+        Ok(match value {
+            Value::Null => 4,
+            Value::Bool(true) => 4,
+            Value::Bool(false) => 5,
+            Value::Num(n) => {
+                number.clear();
+                format_number(*n, number);
+                number.len()
+            }
+            Value::Str(text) => string(text, pending, check)?,
+            Value::Blob(blob) => {
+                string(&blob.prefix, pending, check)? + blob.bytes.len().div_ceil(3) * 4
+            }
+            Value::Nums(numbers) => {
+                let mut units = 2 + numbers.len().saturating_sub(1);
+                for n in numbers.iter() {
+                    touch(pending, check)?;
+                    number.clear();
+                    format_number(n, number);
+                    units += number.len();
+                }
+                units
+            }
+            Value::Arr(items) => {
+                let mut units = 2 + items.len().saturating_sub(1);
+                for item in items.iter() {
+                    units += count(item, number, pending, check)?;
+                }
+                units
+            }
+            Value::Obj(object) => {
+                let mut units = 2 + object.len().saturating_sub(1);
+                for (key, item) in object.iter() {
+                    units +=
+                        string(key, pending, check)? + 1 + count(item, number, pending, check)?;
+                }
+                units
+            }
+        })
+    }
+    check()?;
+    count(value, &mut Vec::with_capacity(32), &mut 0, &mut check)
+}
+
 /// Appends the standard, padded base64 of `bytes`.
 pub fn base64_into(bytes: &[u8], out: &mut Vec<u8>) {
     let start = out.len();
@@ -599,6 +693,31 @@ mod tests {
             let mut out = Vec::new();
             write_string(text, &mut out);
             assert_eq!(string_bytes(text), out.len(), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn utf16_units_matches_javascript_text_length_without_building_it() {
+        for text in [r#"{"quote\"":"😀é漢\u0000\n","numbers":[0,1.2,1e+21,1e-7],"array":[true,false,null]}"#, "[]", "{}", "\"\"", "[1,2,3]"] {
+            let value = parse(text.as_bytes()).unwrap();
+            assert_eq!(utf16_units(&value), to_string(&value).encode_utf16().count());
+        }
+        for n in [f64::NAN, f64::INFINITY, -0.0, 5e-324] {
+            let value = Value::Num(n);
+            assert_eq!(utf16_units(&value), to_string(&value).encode_utf16().count());
+        }
+        let value=Value::Blob(Arc::new(crate::value::Blob { prefix:Arc::from("data:🦊;base64,\n"),bytes:Arc::from([0,1,2,3,4]) }));
+        assert_eq!(utf16_units(&value),to_string(&value).encode_utf16().count());
+    }
+
+    #[test]
+    fn dense_single_values_check_before_completion_without_mutating() {
+        for value in [Value::nums(&vec![1.25; 100_000]), Value::str(&"🦊".repeat(100_000))] {
+            let mut checks = 0;
+            let result = utf16_units_checked(&value, || { checks += 1; if checks == 3 { Err("cancelled") } else { Ok(()) } });
+            assert_eq!(result,Err("cancelled"));
+            assert_eq!(checks,3);
+            assert_eq!(utf16_units_checked(&value,||Ok::<_, &str>(())).unwrap(),utf16_units(&value));
         }
     }
 }

@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 use crate::doc::*;
 
+pub mod preview;
+
 /// One key of a native or virtual (pose-track) timeline.
 #[derive(Clone, Debug)]
 pub struct KeyRef {
@@ -48,6 +50,8 @@ pub struct Row {
 #[derive(Clone, Debug, Default)]
 pub struct Frame {
     pub tick: f64,
+    /// `_vfxTimelineTick`: retained source/template clock for inherited effect clips.
+    pub retained_vfx_tick: Option<f64>,
     pub objects: Vec<Arc<Object>>,
     pub draw_order: Vec<u32>,
     pub camera: Option<Camera>,
@@ -90,6 +94,8 @@ pub struct Prepared {
     follow: Option<crate::follow::Follow>,
     /// The property channels the native timeline is evaluated with ([`crate::channels`]).
     channels: Option<crate::channels::Compiled>,
+    /// Retained crop baseline prepared once; source arithmetic has one typed owner.
+    pub(crate) source: Option<Arc<Prepared>>,
 }
 
 /// `shortest(a)`: the angle in (-π, π], with V8's rounding (tweened angles are stored
@@ -423,6 +429,7 @@ fn frame_of(key: &KeyRef) -> Frame {
     let k = &key.frame;
     Frame {
         tick: 0.0,
+        retained_vfx_tick: k.retained_vfx_tick,
         objects: k.objects.clone(),
         draw_order: k.draw_order.clone(),
         camera: k.camera,
@@ -558,6 +565,7 @@ fn tween_interval(doc: &Document, seq: &Seq, index: usize, t: f64, exact: bool, 
     let (background, background_b, background_mix) = tween_background(&a.frame, &b.frame, a.duration, bg_t);
     Frame {
         tick: 0.0,
+        retained_vfx_tick: a.frame.retained_vfx_tick,
         pose_vfx: a.frame.vfx.as_ref().map(|stacks| crate::vfx::interpolate(stacks, b.frame.vfx.as_ref(), t)),
         vfx: None,
         parallax: None,
@@ -753,7 +761,9 @@ impl Prepared {
             || doc.animation.as_ref().is_some_and(|a| a.vfx)
             || doc.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.prepared.has_vfx));
         let follow = crate::follow::Follow::new(&doc);
-        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow, channels };
+        let source = doc.movieclip_source.as_ref().map(|source| Arc::new(Prepared::new(source.document.clone())));
+        let has_vfx = has_vfx || source.as_ref().is_some_and(|source| source.has_vfx);
+        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow, channels, source };
         prepared.presence = prepared.presence_index();
         prepared
     }
@@ -848,7 +858,9 @@ impl Prepared {
         let clip = doc.figure(object.figure).and_then(|f| f.movieclip.clone())?;
         let default = MovieclipPlayback { start: 0.0, end: None, offset: 0.0, speed: 1.0, mode: MovieclipMode::Loop, presence: false, restarts: vec![] };
         let settings = object.movieclip.as_deref().cloned().unwrap_or(default);
-        Some(if settings.presence {
+        Some(if settings.presence && self.retained_source_time_at(tick).is_some() {
+            object.clip_time
+        } else if settings.presence {
             let time = if settings.mode == MovieclipMode::Single { 0.0 } else { self.presence_elapsed(object.uid, tick) };
             let s = MovieclipPlayback { start: 0.0, end: None, speed: 1.0, ..settings };
             movieclip_time(&clip, &s, time, doc.fps)
@@ -926,7 +938,18 @@ impl Prepared {
     }
 
     fn evaluate_with(&self, tick: f64, fractional: bool) -> Frame {
-        let mut frame = self.evaluate_raw(tick, fractional);
+        self.finish_frame(self.evaluate_raw(tick, fractional), tick, fractional)
+    }
+
+    /// A native interval selected explicitly by the editor (including one-tick and
+    /// hidden keys). A layer sheet still samples its tracks at the absolute tick.
+    pub fn evaluate_interval(&self, index: usize, ratio: f64, tick: f64) -> Frame {
+        let mut frame = if self.doc.sheet.is_some() { self.sample_sheet(tick) } else { self.native_interval(index, ratio, tick) };
+        frame.tick = tick;
+        self.finish_frame(frame, tick, false)
+    }
+
+    fn finish_frame(&self, mut frame: Frame, tick: f64, fractional: bool) -> Frame {
         self.apply_movieclips(&mut frame, tick);
         apply_layer_order(&self.doc, &mut frame);
         // Where the camera travels (`cameraTravelAt`, follow clips included) moves parallax
@@ -940,9 +963,22 @@ impl Prepared {
             frame.camera = crate::camera::at_time(travel, &self.doc.camera_motion, tick, self.doc.fps);
         }
         if self.has_vfx {
-            frame.vfx = crate::vfx::evaluate(&self.doc, &frame);
+            if self.doc.vfx_clips.is_none()
+                && let (Some(source), Some(source_tick)) = (self.retained_effect_source(), frame.retained_vfx_tick)
+            {
+                let mut timed = frame.clone();
+                timed.tick = source_tick;
+                frame.vfx = crate::vfx::frame::inherited_filters(source, &timed);
+            } else {
+                frame.vfx = crate::vfx::evaluate(&self.doc, &frame);
+            }
         }
         frame
+    }
+
+    fn retained_effect_source(&self) -> Option<&Document> {
+        let source = self.source.as_ref()?;
+        if source.doc.vfx_clips.is_some() { Some(&source.doc) } else { source.retained_effect_source() }
     }
 
     /// `cameraTravelAt`: where the camera is at `tick`, the authored `camera` moved by the
@@ -978,7 +1014,7 @@ impl Prepared {
             self.sample_sheet(tick)
         } else if fractional {
             let (index, t) = row_at_fraction(&self.rows, tick);
-            self.with_channels(evaluate_native(&self.doc, &self.native, index, t), tick)
+            self.native_interval(index, t, tick)
         } else {
             self.native_at(tick)
         };
@@ -991,7 +1027,68 @@ impl Prepared {
     /// (`sampleLegacy`, whose channels are the sheet's `legacyAnimation`).
     pub fn native_at(&self, tick: f64) -> Frame {
         let (index, t) = row_at(&self.rows, tick);
-        self.with_channels(evaluate_native(&self.doc, &self.native, index, t), tick)
+        self.native_interval(index, t, tick)
+    }
+
+    // Imported sheet keys call sampleLegacy with an explicit interval ratio even
+    // inside one-tick rows. Ordinary paused native playback keeps row_at's rule.
+    fn native_at_fraction(&self, tick: f64) -> Frame {
+        let (index, ratio) = row_at_fraction(&self.rows, tick);
+        self.native_interval(index, ratio, tick)
+    }
+
+    fn native_interval(&self, index: usize, ratio: f64, tick: f64) -> Frame {
+        self.with_channels(self.native_frame(index, ratio), tick)
+    }
+
+    /// The absolute source time corresponding to a local native key interval.
+    pub(crate) fn retained_source_time(&self, index: usize, t: f64) -> Option<f64> {
+        let source = self.doc.movieclip_source.as_ref()?;
+        let start = source.ticks.get(index).copied().flatten()?;
+        let finish = source
+            .ticks
+            .get(index + 1)
+            .copied()
+            .flatten()
+            .unwrap_or(start + self.rows.get(index).map_or(1.0, |row| row.count as f64));
+        Some(start + (finish - start) * t.clamp(0.0, 1.0))
+    }
+
+    fn retained_source_time_at(&self, tick: f64) -> Option<f64> {
+        if self.doc.sheet.is_some() {
+            return None;
+        }
+        let (index, t) = row_at_fraction(&self.rows, tick);
+        self.retained_source_time(index, t)
+    }
+
+    fn native_frame(&self, index: usize, t: f64) -> Frame {
+        let (Some(source), Some(source_tick)) = (&self.source, self.retained_source_time(index, t))
+        else {
+            return evaluate_native(&self.doc, &self.native, index, t);
+        };
+        let mut frame = source.evaluate_raw(source_tick, true);
+        if source.doc.vfx_clips.is_some() { frame.retained_vfx_tick = Some(source_tick); }
+        // Source clocks are sampled before the local crop restores its presence
+        // offsets, as evaluatedFrame does for retained samples. Hidden instances
+        // stay present here; apply_movieclips owns visibility filtering.
+        for object in &mut frame.objects {
+            let time = source.clip_local(object, source_tick);
+            if let Some(time) = time {
+                Arc::make_mut(object).clip_time = time;
+            }
+            if let Some(local) = self
+                .doc
+                .keyframes
+                .get(index)
+                .and_then(|key| key.object(object.uid))
+                .filter(|local| local.movieclip.as_ref().is_some_and(|p| p.presence))
+            {
+                Arc::make_mut(object).movieclip = local.movieclip.clone();
+            }
+        }
+        apply_layer_order(&source.doc, &mut frame);
+        frame
     }
 
     /// `composePoseChannels` then `composeAnimationChannels` at `tick`.
@@ -1149,7 +1246,7 @@ impl Prepared {
             && matches!(n.value, SheetValue::Frame(None))
         {
             return match &key.value {
-                SheetValue::SourceTick(t) => Some((self.native_at(*t), Sampled::Native(t.to_bits()))),
+                SheetValue::SourceTick(t) => Some((self.native_at_fraction(*t), Sampled::Native(t.to_bits()))),
                 SheetValue::Frame(Some(id)) => self.doc.pose_source(id).map(|k| {
                     (frame_of(&KeyRef { frame: k.clone(), duration: 1, easing: None, origin: Some(FrameRef::Source(id.clone())) }), Sampled::Source(id.clone()))
                 }),
@@ -1167,7 +1264,7 @@ impl Prepared {
                 None => (0.0, source),
             };
             let time = source + fraction * (target - source);
-            return Some((self.native_at(time), Sampled::Native(time.to_bits())));
+            return Some((self.native_at_fraction(time), Sampled::Native(time.to_bits())));
         }
         if self.imported.get(id).copied().unwrap_or(false) {
             let index = at - 1;
@@ -1214,7 +1311,7 @@ impl Prepared {
     /// `snapshotPoseFrame(sourceAt(time), <the layer's figures>)`: the imported pose at
     /// `time` reduced to the figures of layer `id` and the figures they are joined to.
     fn endpoint(&self, id: &str, fixed: bool, time: f64) -> Keyframe {
-        let source = self.native_at(time);
+        let source = self.native_at_fraction(time);
         let layers = self.doc.layers.clone().unwrap_or_default();
         let mut wanted = vec![false; source.objects.len()];
         if !fixed {
@@ -1248,6 +1345,7 @@ impl Prepared {
         }
         let mut frame = Keyframe {
             duration: 1,
+            retained_vfx_tick: None,
             draw_order: source.draw_order.iter().filter_map(|&slot| remap.get(slot as usize).copied().filter(|&slot| slot != u32::MAX)).collect(),
             objects,
             camera: source.camera,
@@ -1324,6 +1422,7 @@ impl Prepared {
         let pose_vfx = scene.as_ref().and_then(|s| s.pose_vfx.clone());
         Frame {
             tick,
+            retained_vfx_tick: doc.keyframes.first().and_then(|k| k.retained_vfx_tick),
             draw_order: (0..objects.len() as u32).collect(),
             objects,
             camera: Some(camera.and_then(|(c, _)| c.camera).unwrap_or_default()),
@@ -1426,6 +1525,7 @@ fn patch_track(doc: &Document, track: &SheetTrack, uid: u32) -> Seq {
 pub(crate) fn blank_keyframe() -> Keyframe {
     Keyframe {
         duration: 1,
+        retained_vfx_tick: None,
         objects: vec![],
         draw_order: vec![],
         camera: Some(Camera::default()),

@@ -287,6 +287,9 @@ impl Editor {
         let figure = figures.iter().find(|f| f.get("figure_type_id").is_some_and(|id| *id == wanted && !wanted.is_null())).cloned();
         let Some(figure) = figure else { return Err(EditError::Invalid("errors.editor.chooseAFigureFromTheLibrary".into())) };
         if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
+            if !self.sheet() {
+                return self.insert_native_movieclip(&figure);
+            }
             return Err(EditError::Unported("adding a movieclip".into()));
         }
         if !self.sheet() {

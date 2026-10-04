@@ -20,7 +20,7 @@ fn uses_presence(object: &Value) -> bool {
 use crate::{EditError, Editor};
 
 /// `editor._sheetClipboard`, as far as pasting it in the same document reads it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Clipboard {
     start: f64,
     duration: f64,
@@ -31,14 +31,14 @@ pub(crate) struct Clipboard {
     unported: Option<&'static str>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Row {
     id: String,
     drawing: bool,
     keys: Vec<Entry>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Entry {
     offset: f64,
     frame: Value,

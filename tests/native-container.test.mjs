@@ -2,11 +2,113 @@
  *  corruption rejection, and compatibility with the v1/legacy formats. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildContainerV1, buildContainerV2, encodeContainerV2, decodeDocument, liftDocument,
+import {buildContainerV1, buildContainerV2, encodeContainerV2, decodeDocument, liftDocument, liftDocumentSteps,
   normalizeDecodedDocument, bytesToBase64, base64ToBytes, inflate, deflate, materializeMarkers,
   encodeContainerV2Parts, createContainerCompressionCache} from '../src/native-container.mjs';
 
 const floats = () => Array.from({length: 64}, (_, i) => Math.sin(i) * 180);
+
+// Canonical worker-side manifests, created before the interface owns a stream.
+function liftManifest(document) {
+  const manifest = new WeakMap(), seen = new WeakSet(), pending = [document];
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    const keys = Object.keys(value);
+    if (!Array.isArray(value)) manifest.set(value, keys);
+    for (const key of keys) pending.push(value[key]);
+  }
+  return manifest;
+}
+
+// This collector models the worker receiver, which alone assembles whole sections.
+function collectLiftStream(document, options = {}) {
+  const iterator = liftDocumentSteps(document, {stream: true, keyManifest: liftManifest(document), ...options});
+  const text = [], fragments = [[], []];
+  let checkpoints = 0, step;
+  for (;;) {
+    step = iterator.next();
+    if (step.done) break;
+    if (step.value === null) { checkpoints++; continue; }
+    const chunk = step.value;
+    if (chunk.kind === 'skeleton') {
+      assert.ok(new TextEncoder().encode(chunk.text).byteLength <= 32768);
+      text.push(chunk.text);
+    } else {
+      assert.ok(chunk.bytes.byteLength <= 16384);
+      fragments[chunk.section].push(chunk);
+    }
+  }
+  const sections = step.value.sectionLengths.map((length, index) => {
+    const bytes = new Uint8Array(length);
+    for (const chunk of fragments[index]) bytes.set(chunk.bytes, chunk.offset);
+    return {kind: index + 1, bytes};
+  });
+  return {skeleton: JSON.parse(text.join('')), sections, metadata: step.value, checkpoints};
+}
+
+test('incremental lifting retains one exact skeleton, section alignment and shared markers', () => {
+  const numbers = Array.from({length: 5000}, (_, i) => i * .125), source = bytesToBase64(new Uint8Array(100000).fill(31));
+  const text = ('A\ud83d\ude42\ud800\n\\\"').repeat(10000);
+  const document = {a: Array(33).fill(7), numbers, alias: numbers, text, marker: 'S2E:literal', omitted: undefined,
+    holes: [, null, undefined], foreign: new Uint8Array([1, 2]), future: JSON.parse('{"__proto__":{"retained":true}}'),
+    data_base64: source, nested: {source_base64: source, data_url: 'data:application/octet-stream;base64,' + source}};
+  const expected = liftDocument(document), actual = collectLiftStream(document);
+  assert.deepEqual(actual.skeleton, JSON.parse(JSON.stringify(expected.skeleton)));
+  assert.deepEqual(actual.sections, expected.sections);
+  assert.ok(actual.checkpoints > 100);
+  assert.deepEqual(materializeMarkers(actual.skeleton, actual.sections), JSON.parse(JSON.stringify(document)));
+});
+
+test('base64 fingerprint collisions never combine different payloads', () => {
+  // These two canonical suffixes collide after the same 65536-character prefix.
+  const prefix = 'A'.repeat(65536), first = prefix + 'cyMSrjhZ', second = prefix + 'j9I6GxIB';
+  const document = {data_base64: first, nested: {source_base64: second}, alias: {data_base64: first}};
+  const lifted = collectLiftStream(document);
+  assert.notEqual(lifted.skeleton.data_base64, lifted.skeleton.nested.source_base64);
+  assert.equal(lifted.skeleton.data_base64, lifted.skeleton.alias.data_base64);
+  assert.deepEqual(materializeMarkers(lifted.skeleton, lifted.sections), document);
+});
+
+test('unmanifested cold objects refuse before asking V8 for any own keys', () => {
+  const document = Object.fromEntries(Array.from({length: 100000}, (_, index) => [`unknown-${index}`, index]));
+  const keys = Object.keys;
+  try {
+    Object.keys = () => { throw new Error('unbounded enumeration'); };
+    assert.throws(() => liftDocumentSteps(document, {stream: true}).next(), error => error.code === 'engine_keys_not_ready');
+  } finally { Object.keys = keys; }
+});
+
+test('one dense native record yields inside segments, channels, strings and payloads', () => {
+  const keys = Array.from({length: 100000}, (_, index) => ({id: index, tick: index, value: index * .125}));
+  const document = {segments: Array.from({length: 100000}, (_, index) => ({id: index, parent: 0, angle: .5})),
+    unknown: {channels: [{property: 'x', keys}], text: 'x'.repeat(100000), data_base64: bytesToBase64(new Uint8Array(100000).fill(17))}};
+  const actual = collectLiftStream(document);
+  assert.ok(actual.checkpoints > 200000);
+  assert.equal(actual.skeleton.segments.length, 100000);
+  assert.equal(actual.skeleton.unknown.channels[0].keys.length, 100000);
+  assert.deepEqual(materializeMarkers(actual.skeleton, actual.sections), document);
+});
+
+test('paired surrogates crossing a work boundary never skip string checkpoints', () => {
+  const document = {text: 'x' + '\ud83d\ude42'.repeat(100000)};
+  const lifted = collectLiftStream(document);
+  assert.ok(lifted.checkpoints >= 90, 'the admission scan must yield within the astral string');
+  assert.equal(lifted.skeleton.text, document.text);
+});
+
+test('stream completion still requires worker materialization admission before acknowledgement', () => {
+  const values = Array(33).fill(7), document = {arrays: Array(100).fill(values)};
+  assert.throws(() => liftDocument(document, {maxBytes: 1024}), error => error.code === 'document_too_large');
+  const lifted = collectLiftStream(document, {maxBytes: 1024});
+  assert.equal(lifted.metadata.materializationLimit, 4096);
+  assert.ok(lifted.metadata.materializedUpperBytes > lifted.metadata.materializationLimit);
+  const before = JSON.stringify(lifted.skeleton);
+  assert.throws(() => materializeMarkers(lifted.skeleton, lifted.sections,
+    {maxMaterializedBytes: lifted.metadata.materializationLimit, validateOnly: true}), /uncompressed size/);
+  assert.equal(JSON.stringify(lifted.skeleton), before, 'failed worker admission must preserve the staged skeleton');
+});
 
 test('sectioned metadata has a separate bound while payload and aggregate limits remain enforced',async()=>{
   const bytes=await buildContainerV2({name:'small'},'styk');

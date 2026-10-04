@@ -5,7 +5,7 @@
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
 //   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
-//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
+//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--selection-adoption] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -56,6 +56,7 @@ const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
 const requiredCalls = [
+  ...(args.includes('--selection-adoption') ? ['duplicateFigure', 'pasteSelection', 'duplicateSelection'] : []),
   ...(args.includes('--vfx-remaining') ? ['setVfxScope', 'applyVfxPreset', 'addVfxGroup', 'addVfxUserPreset'] : []),
   ...(args.includes('--origin-range') ? ['rotateFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'resetPoseInFrames', 'centerFiguresInFrames', 'joinFiguresInFrames', 'detachFiguresInFrames'] : []),
   ...(args.includes('--origin-rig') ? ['beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag'] : []),
@@ -173,6 +174,30 @@ async function run(mode) {
 
   /** The interactions, once. */
   const interactions = async () => {
+    if (args.includes('--selection-adoption')) {
+      await step('duplicate a figure and restore its new selection', () => page.evaluate(() => {
+        const e = styk.editor, object = e.evaluatedFrame.objects[0];
+        if (!object) throw new Error('The selection check needs a figure.');
+        e.select(object.unique_id, -1);
+        const oldUid = e.selectedUid, copy = e.duplicateFigure();
+        if (!copy || copy.unique_id === oldUid || e.selectedUid !== copy.unique_id
+          || !e.selectionFrame.objects.some(object => object.unique_id === copy.unique_id)) {
+          throw new Error('Duplicating a figure lost its new selection.');
+        }
+        e.undo(); e.redo();
+      }));
+      await step('paste and duplicate the current selection', () => page.evaluate(() => {
+        const e = styk.editor, selected = () => e.selectedUid !== null
+          && e.selectionFrame.objects.some(object => object.unique_id === e.selectedUid);
+        const previous = e.selectedUid;
+        e.copySelection(); e.pasteSelection();
+        if (!selected() || e.selectedUid === previous) throw new Error('Pasting lost its new selection.');
+        const pasted = e.selectedUid;
+        e.duplicateSelection();
+        if (!selected() || e.selectedUid === pasted) throw new Error('Duplicating lost its new selection.');
+        e.undo(); e.redo();
+      }));
+    }
     if (args.includes('--origin-range')) {
       await step('transform animation-origin figures across recorded sheet ticks', () => page.evaluate(() => {
         const e = styk.editor, range = Object.assign([0, 1], {sheetTicks: [0, 3, 8]});

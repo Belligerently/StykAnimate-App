@@ -22,7 +22,7 @@ mod write;
 
 use sha2::{Digest, Sha256};
 
-pub use read::{Decoded, Parts, decode, decode_parts, parse_lifted};
+pub use read::{Decoded, Parts, decode, decode_parts, parse_lifted, parse_lifted_owned, parse_lifted_owned_within, parse_lifted_owned_admitted_within, LiftedAdmitted};
 pub use write::{Lifted, encode_v1, encode_v2, lift, lift_within};
 
 pub(crate) const HEADER: usize = 56;

@@ -54,12 +54,47 @@ pub fn decode(bytes: &[u8], kind: Kind) -> Result<Decoded, ContainerError> {
 /// sends changed records to the engine this way, so pose arrays cross as bytes.
 pub fn parse_lifted(skeleton: &[u8], arrays: &[u8], payloads: &[u8]) -> Result<Value, ContainerError> {
     let sections = [(1u8, arrays.to_vec()), (2u8, payloads.to_vec())];
+    parse_lifted_sections(skeleton, sections, MAX_MATERIALIZED_BYTES).map(|admitted| admitted.document)
+}
+
+/// Consumes assembled worker sections, avoiding another full-section copy.
+pub fn parse_lifted_owned(skeleton: Vec<u8>, arrays: Vec<u8>, payloads: Vec<u8>) -> Result<Value, ContainerError> {
+    parse_lifted_owned_within(skeleton, arrays, payloads, MAX_MATERIALIZED_BYTES)
+}
+
+/// The same marker parser with a tighter materialization admission budget.
+/// A stream's completion is not an admission ACK until this succeeds.
+pub fn parse_lifted_owned_within(skeleton: Vec<u8>, arrays: Vec<u8>, payloads: Vec<u8>, materialization_limit: usize) -> Result<Value, ContainerError> {
+    parse_lifted_owned_admitted_within(skeleton, arrays, payloads, materialization_limit).map(|admitted| admitted.document)
+}
+
+/// The single parse result and its conservative retained-allocation admission.
+/// Hosts can charge a staged transaction without another traversal or serialization.
+pub struct LiftedAdmitted {
+    pub document: Value,
+    pub retained_bytes: usize,
+}
+
+pub fn parse_lifted_owned_admitted_within(skeleton: Vec<u8>, arrays: Vec<u8>, payloads: Vec<u8>, materialization_limit: usize) -> Result<LiftedAdmitted, ContainerError> {
+    parse_lifted_sections(&skeleton, [(1, arrays), (2, payloads)], materialization_limit)
+}
+
+fn parse_lifted_sections(skeleton: &[u8], sections: [(u8, Vec<u8>); 2], materialization_limit: usize) -> Result<LiftedAdmitted, ContainerError> {
+    if skeleton.len() > MAX_SKELETON_BYTES || sections.iter().any(|(_, bytes)| bytes.len() > MAX_BYTES)
+        || materialization_limit > MAX_MATERIALIZED_BYTES || sections.iter().map(|(_, bytes)| bytes.len()).sum::<usize>() > materialization_limit {
+        return Err(ContainerError::MaterializedTooLarge);
+    }
     let mut markers = Markers::new(&sections, skeleton.len());
+    markers.materialization_limit = materialization_limit;
     let parsed = parse_text(skeleton, Some(&mut markers));
     if let Some(error) = markers.error.take() {
         return Err(error);
     }
-    Ok(parsed?)
+    let document = parsed?;
+    if markers.materialized_upper > materialization_limit && json_length(&document) > materialization_limit {
+        return Err(ContainerError::MaterializedTooLarge);
+    }
+    Ok(LiftedAdmitted { document, retained_bytes: markers.allocation.max(markers.materialized_upper) })
 }
 
 /// Verifies a container and returns its uncompressed pieces without building a document.
@@ -225,6 +260,7 @@ struct Markers<'a> {
     allocation: usize,
     /// Upper bound of the expanded document's JSON length.
     materialized_upper: usize,
+    materialization_limit: usize,
     /// The container error behind a refused string (the JSON layer only carries its own).
     error: Option<ContainerError>,
 }
@@ -237,6 +273,7 @@ impl<'a> Markers<'a> {
             payloads: HashMap::new(),
             allocation: sections.iter().map(|(_, bytes)| bytes.len()).sum(),
             materialized_upper: skeleton_bytes,
+            materialization_limit: MAX_MATERIALIZED_BYTES,
             error: None,
         }
     }
@@ -248,7 +285,7 @@ impl<'a> Markers<'a> {
     }
 
     fn admit_allocation(&mut self, bytes: usize) -> Result<(), ContainerError> {
-        if bytes > MAX_MATERIALIZED_BYTES.saturating_sub(self.allocation) {
+        if bytes > self.materialization_limit.saturating_sub(self.allocation) {
             return Err(ContainerError::MaterializedTooLarge);
         }
         self.allocation += bytes;

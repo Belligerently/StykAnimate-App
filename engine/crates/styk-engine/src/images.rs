@@ -60,16 +60,44 @@ pub(crate) struct Store {
     /// The document lineage these images belong to.
     lineage: u64,
     /// Decoded and not yet taken by the renderer.
-    ready: Vec<Arc<DecodedImage>>,
+    ready: std::collections::LinkedList<Arc<DecodedImage>>,
+    epoch: u64,
+    redecode_pending: bool,
+    preparing: Option<DecodeScope>,
     remaining: usize,
 }
 
-impl Store {
-    pub fn reset(&mut self, lineage: u64, count: usize) {
-        self.lineage = lineage;
-        self.ready.clear();
-        self.remaining = count;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DecodeScope { lineage: u64, epoch: u64 }
+impl DecodeScope {
+    fn current(self, images: &Store) -> bool { (self.lineage, self.epoch) == (images.lineage, images.epoch) }
+}
+
+/// All exits (including worker unwind) release only this matching preparation.
+/// A replaced lineage/epoch cannot clear a newer worker's selection barrier.
+struct Preparation<'a> { engine: &'a Engine, scope: DecodeScope }
+impl Drop for Preparation<'_> {
+    fn drop(&mut self) {
+        {
+            let mut state = self.engine.inner.state.lock();
+            if state.images.preparing == Some(self.scope) { state.images.preparing = None; state.images.redecode_pending = false; }
+        }
+        self.engine.inner.state.notify_all();
     }
+}
+
+impl Store {
+    pub(crate) fn has_storage(&self) -> bool { !self.ready.is_empty() }
+
+    pub(crate) fn for_publication(lineage: u64, count: usize) -> Self {
+        Self { lineage, ready: Default::default(), remaining: count, epoch: 0, redecode_pending: false, preparing: None }
+    }
+
+    pub(crate) fn preparation_active(&self) -> bool { self.preparing.is_some() }
+    pub(crate) fn start_preparation(&mut self, scope: DecodeScope) {
+        if scope.current(self) && self.redecode_pending { self.preparing = Some(scope); }
+    }
+    pub(crate) fn cancel_preparation(&mut self) { self.preparing = None; }
 
     /// A later revision of the same document added `count` images.
     pub fn grow(&mut self, count: usize) {
@@ -79,19 +107,26 @@ impl Store {
 
 impl Engine {
     pub(crate) fn decode_image(&self, generation: &Arc<Generation>, index: usize) {
-        let decoded = styk_eval::assets::decode_image(&generation.prepared.doc, &generation.assets, index);
+        let epoch = {
+            let state = self.inner.state.lock();
+            if state.images.lineage != generation.lineage { return }
+            state.images.epoch
+        };
+        let mut ready = std::collections::LinkedList::new();
+        if let Some(decoded) = styk_eval::assets::decode_image(&generation.prepared.doc, &generation.assets, index) { ready.push_back(Arc::new(decoded)); }
         let mut state = self.inner.state.lock();
-        if state.images.lineage != generation.lineage {
-            return;
-        }
+        if state.images.lineage != generation.lineage || state.images.epoch != epoch { return }
         state.images.remaining = state.images.remaining.saturating_sub(1);
-        if let Some(image) = decoded {
-            state.images.ready.push(Arc::new(image));
-        }
+        state.images.ready.append(&mut ready);
     }
 
     /// Decodes drawing cel `cel` (every display level) for the atlas of `generation`.
     pub(crate) fn decode_cel(&self, generation: &Arc<Generation>, cel: usize) {
+        let epoch = {
+            let state = self.inner.state.lock();
+            if state.images.lineage != generation.lineage { return }
+            state.images.epoch
+        };
         let decoded = match generation.assets.cels.get(&cel) {
             Some((tiles, _)) => {
                 let before = tiles.artwork_bounds();
@@ -103,12 +138,11 @@ impl Engine {
             }
             None => Vec::new(),
         };
+        let mut ready: std::collections::LinkedList<_> = decoded.into_iter().map(Arc::new).collect();
         let mut state = self.inner.state.lock();
-        if state.images.lineage != generation.lineage {
-            return;
-        }
+        if state.images.lineage != generation.lineage || state.images.epoch != epoch { return }
         state.images.remaining = state.images.remaining.saturating_sub(1);
-        state.images.ready.extend(decoded.into_iter().map(Arc::new));
+        state.images.ready.append(&mut ready);
     }
 
     /// Resource workers can finish an earlier revision's decode after a commit.
@@ -130,37 +164,77 @@ impl Engine {
     /// Decoded images the renderer has not uploaded yet, up to `max_bytes` of pixels
     /// (at least one image), so one frame never uploads more than it can afford.
     pub fn take_images(&self, max_bytes: usize) -> Vec<Arc<DecodedImage>> {
-        let mut state = self.inner.state.lock();
-        let mut taken = Vec::new();
+        let mut taken = std::collections::LinkedList::new();
         let mut bytes = 0;
-        while let Some(image) = state.images.ready.last() {
-            if !taken.is_empty() && bytes + image.rgba.len() > max_bytes {
-                break;
-            }
-            bytes += image.rgba.len();
-            taken.push(state.images.ready.pop().expect("checked above"));
-        }
-        taken
-    }
-
-    /// Queues every image of the open document for decoding again. The renderer asks
-    /// for this when it had to allocate a larger atlas, which starts empty.
-    pub fn redecode_images(&self) {
         {
             let mut state = self.inner.state.lock();
-            let Some(generation) = state.current.clone() else { return };
-            let count = generation.prepared.doc.images.len();
-            state.images.reset(generation.lineage, count + generation.assets.cels.len());
-            for index in 0..count {
+            while let Some(image) = state.images.ready.back() {
+                if !taken.is_empty() && image.rgba.len() > max_bytes.saturating_sub(bytes) { break }
+                bytes += image.rgba.len();
+                let tail = state.images.ready.len() - 1;
+                taken.append(&mut state.images.ready.split_off(tail));
+            }
+        }
+        // Node disposal and output allocation happen after the shared lock.
+        taken.into_iter().collect()
+    }
+
+    /// Queues one coalesced preparation in the same ordinary worker queue.
+    /// Pending counters change immediately, but dense task preparation/disposal
+    /// never happens on the caller (a Stage may call this on the interface).
+    pub fn redecode_images(&self) {
+        let mut job = crate::TaskQueue::new();
+        job.push_back(crate::OrdinaryTask::Redecode(DecodeScope { lineage: 0, epoch: 0 }));
+        let retired = {
+            let mut state = self.inner.state.lock();
+            if self.inner.stopping.load(std::sync::atomic::Ordering::SeqCst) || state.images.redecode_pending { return }
+            let Some(generation) = state.current.as_ref() else { return };
+            let mut fresh = Store::for_publication(generation.lineage, generation.prepared.doc.images.len() + generation.assets.cels.len());
+            fresh.epoch = state.images.epoch.wrapping_add(1);
+            fresh.redecode_pending = true;
+            *job.front_mut().expect("prebuilt placeholder") = crate::OrdinaryTask::Redecode(DecodeScope { lineage: fresh.lineage, epoch: fresh.epoch });
+            let retired = std::mem::replace(&mut state.images, fresh);
+            state.tasks.append(&mut job);
+            retired
+        };
+        if retired.has_storage() { self.spawn_retained(move |_| drop(retired)); }
+        self.inner.state.notify_all();
+    }
+
+    pub(crate) fn prepare_redecode(&self, scope: DecodeScope) {
+        let _preparation = Preparation { engine: self, scope };
+        loop {
+            let (generation, epoch) = {
+                let state = self.inner.state.lock();
+                if self.inner.stopping.load(std::sync::atomic::Ordering::SeqCst) || !scope.current(&state.images) || !state.images.redecode_pending || state.images.preparing != Some(scope) { return }
+                let Some(generation) = state.current.clone() else { return };
+                (generation, state.images.epoch)
+            };
+            let mut tasks = crate::TaskQueue::new();
+            for index in 0..generation.prepared.doc.images.len() {
                 let generation = generation.clone();
-                state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_image(&generation, index)));
+                tasks.push_back(crate::OrdinaryTask::Run(Box::new(move |engine: &Engine| engine.decode_image(&generation, index))));
             }
             for &cel in generation.assets.cels.keys() {
                 let generation = generation.clone();
-                state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel)));
+                tasks.push_back(crate::OrdinaryTask::Run(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel))));
             }
+            let mut fresh = Store::for_publication(generation.lineage, generation.prepared.doc.images.len() + generation.assets.cels.len());
+            fresh.epoch = epoch.wrapping_add(1);
+            let retired = {
+                let mut state = self.inner.state.lock();
+                if self.inner.stopping.load(std::sync::atomic::Ordering::SeqCst) || !scope.current(&state.images) || !state.images.redecode_pending || state.images.preparing != Some(scope) { return }
+                if state.images.epoch != epoch || !state.current.as_ref().is_some_and(|current| Arc::ptr_eq(current, &generation)) { None }
+                else {
+                    // Decode work precedes commands queued after its preparation
+                    // placeholder, exactly as the original immediate enqueue.
+                    tasks.append(&mut state.tasks);
+                    std::mem::swap(&mut state.tasks, &mut tasks);
+                    Some(std::mem::replace(&mut state.images, fresh))
+                }
+            };
+            if let Some(retired) = retired { drop(retired); self.inner.state.notify_all(); return }
         }
-        self.inner.state.notify_all();
     }
 
     /// Images of the open document still being decoded or waiting for upload.
@@ -176,3 +250,6 @@ impl Engine {
         (state.images.remaining, state.images.ready.len())
     }
 }
+
+#[cfg(test)]
+mod tests;

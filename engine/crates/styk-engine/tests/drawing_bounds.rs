@@ -64,20 +64,22 @@ fn record(value: &Value) -> Record {
 fn an_earlier_revisions_decode_corrects_a_reused_cel_in_the_current_revision() {
     let value = fixture(true);
     let engine = Engine::new(|| 0.0, Budgets::for_device(None));
-    engine.stage(0, Change::Reset);
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":960,"canvas_height":540,"fps":24}"#.to_vec()));
+    engine.stage(0, Change::Reset).unwrap();
+    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":960,"canvas_height":540,"fps":24}"#.to_vec())).unwrap();
     for (table, key) in [(Table::Figures, "figure_types"), (Table::Keyframes, "keyframes"), (Table::Backgrounds, "backgrounds")] {
         let rows = value.get(key).unwrap().as_arr().unwrap();
-        engine.stage(0, Change::Layout(table, vec![-1; rows.len()]));
-        for (i, row) in rows.iter().enumerate() { engine.stage(0, Change::Set(table, i as u32, record(row))); }
+        engine.stage(0, Change::Layout(table, vec![-1; rows.len()])).unwrap();
+        for (i, row) in rows.iter().enumerate() { engine.stage(0, Change::Set(table, i as u32, record(row))).unwrap(); }
     }
     engine.commit(1, 0).unwrap();
     let previous = cel(&engine);
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":960,"canvas_height":540,"fps":25}"#.to_vec()));
+    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":960,"canvas_height":540,"fps":25}"#.to_vec())).unwrap();
     engine.commit(2, 0).unwrap();
     assert!(Arc::ptr_eq(&previous, &cel(&engine)), "unchanged typed records share drawing resources");
     let before = engine.frame_now(0).unwrap();
-    assert!(engine.step(), "the previous revision's queued decoder finishes");
+    while previous.decoded_bounds.get().is_none() {
+        assert!(engine.step(), "the existing worker queue reaches the previous revision's decoder after retiring displaced heads");
+    }
     assert!(engine.frame(0).is_none(), "the correction belongs to the shared cel, not just the old revision");
     while engine.step() {}
     let after = engine.frame(0).unwrap();

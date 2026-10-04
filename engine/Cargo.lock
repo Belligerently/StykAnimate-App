@@ -1166,6 +1166,7 @@ version = "0.1.0"
 dependencies = [
  "styk-doc",
  "styk-draw",
+ "styk-edit",
  "styk-eval",
  "styk-formats",
  "thiserror",

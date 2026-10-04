@@ -3,6 +3,7 @@
 //
 //   node scripts/engine-preview-parity.mjs [--target web|electron] [--file <project>]... [--ticks 0,10,20]
 //        [--sizes 320x192,512x288,96x54] [--export-check] [--library <file>]... [--elapsed 0,0.4,1.2] [--monitor]
+//        [--inbetween 1:0.37,2:0.5] [--cold-follow-check] [--definitions-follow-check] [--monitor-only]
 //        [--timing] [--rounds 3] [--cpu-check] [--label <name>] [--out <dir>] [--url http://127.0.0.1:47831] [--electron-arg <switch>]...
 //
 // Thumbnails (each --file, or the document the app starts with): one run of the app with the engine. For each
@@ -16,7 +17,9 @@
 // frames at --elapsed seconds and its backdrop, from the engine (src/engine/engine-previews.mjs) and from the
 // JavaScript worker (src/library-preview-worker.mjs). Camera monitor (--monitor): the app with and without the
 // engine (?engine=off), the camera selected so the inspector shows its monitor, the monitor's canvas captured at
-// each tick and after playback.
+// each tick and after playback. --monitor-only skips ordinary thumbnails. In-between
+// previews (--inbetween index:ratio,...): the app's actual thumbnail adapter and the
+// unchanged JavaScript worker sample each interval with no, adjacent and settings onions.
 //
 // --cpu-check: each engine thumbnail, library poster and hover frame, and an export frame of each tick at the canvas
 // size, drawn again with the CPU rasterizer (`stykanimate.engine.cpu` set: the preview worker and the export worker draw
@@ -264,6 +267,108 @@ function thumbnails(page, list, exported, cpuCheck) {
   }, {list, sizes, exported, cpuCheck});
 }
 
+/** Explicit preview intervals and all onion policies, compared through the unchanged UI adapters. */
+function inbetweens(page, samples) {
+  return page.evaluate(async ({samples, sizes}) => {
+    const {ThumbnailRenderer} = await import('/src/thumbnail-renderer.mjs');
+    const {enginePreviews} = await import('/src/engine/engine-previews.mjs');
+    const engine = styk.thumbnails, legacy = new ThumbnailRenderer(styk.editor), steps = [];
+    const draw = async (renderer, index, target, inbetween) => {
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (await renderer.renderThumbnail(index, target, {inbetween})) return true;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return false;
+    };
+    try {
+      for (const [index, ratio] of samples) for (const onionMode of ['none', 'adjacent', 'settings']) for (const [width, height] of sizes) {
+        const options = {ratio, onionMode, onionCount: 3, onionOpacity: .18, onionAhead: true};
+        const a = __preview.canvas(width, height), b = __preview.canvas(width, height), before = engine.stats.engine?.inbetweens ?? 0;
+        const drawn = await draw(engine, index, a, options), legacyDrawn = await draw(legacy, index, b, options);
+        const byEngine = (engine.stats.engine?.inbetweens ?? 0) > before;
+        steps.push({name: `inbetween-${index}-${ratio}-${onionMode}-${width}x${height}`, drawn, legacyDrawn, byEngine, worker: {...(await enginePreviews())?.stats}, refusal: byEngine ? null : engine.stats.engine?.refusal, engine: __preview.png(a), legacy: __preview.png(b)});
+      }
+    } finally { legacy.destroy(); }
+    return steps;
+  }, {samples, sizes});
+}
+
+/** The monitor retains the actual stage pose while a followed edit waits on its worker. */
+function coldFollow(page) {
+  return page.evaluate(async () => {
+    const {EngineCameraMonitor} = await import('/src/engine/engine-previews.mjs');
+    const side = styk.state.renderer.engineSide, stage = side.stage, engine = side.engine;
+    const monitor = new EngineCameraMonitor(stage), target = __preview.canvas(320, 180);
+    const view = {width: 320, height: 180, zoom: .3, panX: 0, panY: 0};
+    const picture = async () => {
+      for (let attempt = 0; attempt < 300; attempt++) {
+        monitor.draw(target.getContext('2d'), view);
+        if (!monitor.pending && monitor.picture && monitor.picture.key === monitor.key) return __preview.png(target);
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      throw new Error('The diagnostic monitor did not settle.');
+    };
+    try {
+      // Frame thumbnails do not necessarily draw the main stage. Establish one
+      // known successful edit draw before superseding it with a cold follow time.
+      const draw = () => stage.render_edit(1, 0, 0, true, true, new Uint32Array(), new Float64Array(), -1, new Float64Array());
+      stage.edit_frame(JSON.stringify({...styk.editor.frame, _cameraMotionTick: 0}));
+      if (!draw()) throw new Error('The initial diagnostic stage pose did not draw.');
+      const before = await picture(), version = stage.monitor_version();
+      stage.edit_frame(JSON.stringify({...styk.editor.frame, _cameraMotionTick: 14}));
+      const started = performance.now();
+      const coldDraw = draw(), coldMs = performance.now() - started, pending = stage.camera_pending();
+      const versionDuring = stage.monitor_version(), during = await picture();
+      if (coldDraw || !pending || versionDuring !== version || before !== during) throw new Error('A cold followed edit replaced the actual displayed monitor pose.');
+      let warmed = false;
+      for (let attempt = 0; attempt < 300; attempt++) {
+        const seen = engine.progressSeen();
+        if (draw()) { warmed = true; break; }
+        await engine.whenProgress(seen);
+      }
+      if (!warmed || stage.camera_pending()) throw new Error('The follow worker ticket did not warm its exact Prepared owner.');
+      const after = await picture();
+      if (stage.monitor_version() === version || after === before) throw new Error('The warmed followed pose did not become the monitor source.');
+      return {coldDraw, pending, retainedVersion: versionDuring === version, retainedPixels: before === during, warmed, changedPixels: after !== before, coldMs};
+    } finally { monitor.destroy(); }
+  });
+}
+
+/** A first followed edit from the definitions-only mirror must sync target poses asynchronously. */
+function definitionsFollow(page) {
+  return page.evaluate(async () => {
+    const {ensureCameraFrames} = await import('/src/engine/engine-stage.mjs');
+    const side = styk.state.renderer.engineSide, {stage, engine, mirror} = side;
+    const report = styk.editor.report, revision = styk.editor.revision;
+    mirror.reset();
+    mirror.syncDefinitions(report, revision);
+    const emptyGeneration = engine.handle.generation();
+    stage.edit_frame(JSON.stringify({...styk.editor.frame, _cameraMotionTick: 14}));
+    const draw = () => stage.render_edit(1, 0, 0, true, true, new Uint32Array(), new Float64Array(), -1, new Float64Array());
+    const preparedBefore = JSON.parse(engine.handle.stats()).prepared;
+    const coldDraw = draw(), pending = stage.camera_pending();
+    engine.pump();
+    await new Promise(resolve => setTimeout(resolve, 80));
+    const emptyPrepared = JSON.parse(engine.handle.stats()).prepared - preparedBefore;
+    if (coldDraw || !pending || emptyPrepared !== 0) throw new Error('The definitions-only projection was sampled as a complete target document.');
+    let redraws = 0;
+    const started = performance.now();
+    ensureCameraFrames(side, {report, revision}, () => redraws++);
+    const requestMs = performance.now() - started;
+    if (mirror.framesCurrent(report, revision)) throw new Error('The first camera sync ran synchronously.');
+    await side.cameraFrames.promise;
+    if (!mirror.framesCurrent(report, revision) || redraws !== 1 || engine.handle.generation() === emptyGeneration) throw new Error('The asynchronous camera frame prerequisite was not published exactly once.');
+    let warmed = false;
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const seen = engine.progressSeen();
+      if (draw()) { warmed = true; break; }
+      await engine.whenProgress(seen);
+    }
+    if (!warmed || stage.camera_pending()) throw new Error('The complete camera target owner did not settle.');
+    return {coldDraw, pending, emptyPrepared, redraws, asynchronous: true, warmed, requestMs};
+  });
+}
+
 /** A library file's poster and hover frames from both paths. */
 function library(page, name, base64, cpuCheck) {
   return page.evaluate(async ({name, base64, elapsed, cpuCheck}) => {
@@ -327,19 +432,27 @@ async function monitor(page, list) {
   const shots = [];
   const shoot = async name => {
     let previous = null, picture = null;
-    for (let i = 0; i < 20; i++) {
-      picture = await page.evaluate(async () => {
+    const started = Date.now();
+    while (Date.now() - started < 60000) {
+      const state = await page.evaluate(async () => {
         for (let i = 0; i < 3; i++) await new Promise(resolve => requestAnimationFrame(resolve));
         const canvas = document.querySelector('[data-camera-monitor]');
-        return canvas && canvas.width ? __preview.png(canvas) : null;
+        const side = styk.state.renderer.engineSide, worker = side?.workerMonitor;
+        const ready = !styk.state.renderer.engineActive || !worker || worker.refused || (!worker.pending && worker.picture?.key === worker.key);
+        return {picture: canvas && canvas.width ? __preview.png(canvas) : null, ready};
       });
-      if (picture && picture === previous) break;
-      previous = picture;
+      picture = state.picture;
+      if (state.ready && picture && picture === previous) break;
+      previous = state.ready ? picture : null;
       await page.waitForTimeout(150);
     }
-    // The engine drew the monitor: it drew the stage, and its device gave the monitor a canvas.
-    const engine = await page.evaluate(() => Boolean(styk.state.renderer.engineActive && styk.state.renderer.engineSide?.monitor === true));
-    shots.push({name, picture, engine});
+    if (Date.now() - started >= 60000) throw new Error(`The camera monitor did not finish ${name} within a minute.`);
+    // The stage's own auxiliary canvas, or its displayed pose prepared in the engine worker.
+    const status = await page.evaluate(() => {
+      const side = styk.state.renderer.engineSide, worker = side?.workerMonitor;
+      return {engine: Boolean(styk.state.renderer.engineActive && (side?.monitor === true || worker && worker.picture?.key === worker.key && !worker.refused)), timing: worker?.stats ?? null};
+    });
+    shots.push({name, picture, ...status});
   };
   for (const tick of list) {
     await page.evaluate(tick => styk.editor.seek(tick), tick);
@@ -459,14 +572,18 @@ try {
   const comparer = (a, b) => blank.evaluate(({a, b}) => __preview.compare(a, b), {a, b});
   const libraryFiles = await Promise.all(libraries.map(async file => ({name: path.basename(file), base64: (await readFile(path.resolve(file))).toString('base64')})));
   const documents = files.length ? files : (libraries.length ? [] : [null]);
-  for (const file of documents) {
+  for (const file of flag('--monitor-only') ? [] : documents) {
     await load(app.page, file);
     const total = await app.page.evaluate(() => styk.editor.totalTicks);
     const starts = await app.page.evaluate(() => styk.editor.timeline.map(row => row.start));
     const list = ticks ?? [...new Set([0, Math.floor(starts.length / 4), Math.floor(starts.length / 2), Math.floor(3 * starts.length / 4), starts.length - 1].map(i => starts[Math.max(0, i)]))].filter(tick => tick >= 0 && tick < total);
     const steps = Object.assign([], {prefix: `${file ? path.basename(file).replace(/[^\w.-]+/g, '-') : 'startup'}-`});
     for (const step of await thumbnails(app.page, list, flag('--export-check'), flag('--cpu-check'))) await record(steps, step, comparer);
+    const sampleOption = option('--inbetween');
+    if (sampleOption) for (const step of await inbetweens(app.page, sampleOption.split(',').map(value => value.split(':').map(Number)))) await record(steps, step, comparer);
     report.documents.push({file, ticks: list, steps: [...steps]});
+    if (flag('--cold-follow-check')) report.coldFollow = await coldFollow(app.page);
+    if (flag('--definitions-follow-check')) report.definitionsFollow = await definitionsFollow(app.page);
     if (flag('--timing')) {
       const spread = starts.length <= 48 ? starts : starts.filter((_, i) => i % Math.ceil(starts.length / 48) === 0);
       for (let round = 0; round < rounds; round++) {
@@ -517,7 +634,7 @@ try {
       }
       const steps = Object.assign([], {prefix: `${file ? path.basename(file).replace(/[^\w.-]+/g, '-') : 'startup'}-`});
       for (const [i, shot] of runs[0].entries()) await record(steps, {name: shot.name, byEngine: shot.engine, refusal: shot.engine ? null : 'the engine did not draw the monitor', engine: shot.picture, legacy: runs[1][i]?.picture}, comparer);
-      report.monitor.push({file, steps: [...steps]});
+      report.monitor.push({file, steps: [...steps], timing: runs[0].map(({name, timing}) => ({name, ...timing}))});
     }
   }
 } finally {

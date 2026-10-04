@@ -77,6 +77,10 @@ pub struct FramePoses {
 pub struct Snapshot {
     pub figure: Value,
     pub frames: Vec<FramePoses>,
+    /// Saved sheet animations in this document and retained source documents.
+    pub sheet_animations: Vec<(usize, Option<Value>)>,
+    /// Saved animations in retained movieclip source documents, in depth order.
+    pub movieclip_source_animations: Vec<Option<Value>>,
 }
 
 /// `_allSourceFrames()` as places: the keyframes, then the pose sources.
@@ -148,6 +152,9 @@ pub(crate) struct TopologyOptions {
     pub origin_reroot: Option<OriginReroot>,
     pub origin_splits: Vec<(f64, f64)>,
     pub origin_freeze: HashSet<u64>,
+    /// Read-only worker sizing of the editor's sparse command representation.
+    pub history_append_only: bool,
+    pub history_segment_indices: Option<Vec<usize>>,
 }
 
 #[derive(Clone)]
@@ -374,7 +381,13 @@ impl Editor {
                 FramePoses { place: place.clone(), objects: objects.iter().filter(|o| uid(o).is_some_and(|u| ids.contains(&u))).map(snapshot_object).collect() }
             })
             .collect();
-        Snapshot { figure, frames }
+        let mut sheet_animations=Vec::new();let mut movieclip_source_animations=Vec::new();let mut document=Some(&self.report);let mut depth=0;
+        while let Some(report)=document {
+            if let Some(sheet)=report.path(&["_styk","layerSheet"]).filter(|value|value.truthy()) { sheet_animations.push((depth,sheet.get("legacyAnimation").filter(|value|!value.is_null()).cloned())); }
+            if depth>0 { movieclip_source_animations.push(report.path(&["_styk","animation"]).filter(|value|!value.is_null()).cloned()); }
+            document=report.path(&["_styk","movieclipSource","document"]);depth+=1;
+        }
+        Snapshot { figure, frames, sheet_animations, movieclip_source_animations }
     }
 
     /// `_topologyEdit(label, mutate, options)`: the selected figure's definition and every pose
@@ -436,7 +449,7 @@ impl Editor {
             figure.remove("poly_z_raw");
         }
         let after = self.topology_snapshot(index, &identities);
-        self.record(Command { kind: CommandKind::Topology { index, before, after }, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
+        self.record_topology(Command { kind: CommandKind::Topology { index, before, after }, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false }, crate::history_weight::TopologyShape { append_only: options.history_append_only, segment_indices: options.history_segment_indices.map(std::sync::Arc::new) })?;
         self.emit("edit", vec![("label", Value::str(label)), ("structural", Value::Bool(true)), ("definition", Value::Bool(true))]);
         Ok(true)
     }
@@ -458,6 +471,20 @@ impl Editor {
                         *object = replacement.clone();
                     }
                 }
+            }
+        }
+        for (depth,animation) in &snapshot.sheet_animations {
+            let mut document=Some(&mut self.report);
+            for _ in 0..*depth {document=document.and_then(|report|report.make_obj()?.get_mut("_styk")?.make_obj()?.get_mut("movieclipSource")?.make_obj()?.get_mut("document"));}
+            if let Some(sheet)=document.and_then(|report|report.make_obj()?.get_mut("_styk")?.make_obj()?.get_mut("layerSheet")?.make_obj()) {
+                match animation {Some(animation)=>sheet.set("legacyAnimation",animation.clone()),None=>{sheet.remove("legacyAnimation");}}
+            }
+        }
+        let mut document=Some(&mut self.report);
+        for animation in &snapshot.movieclip_source_animations {
+            document=document.and_then(|report|report.make_obj()?.get_mut("_styk")?.make_obj()?.get_mut("movieclipSource")?.make_obj()?.get_mut("document"));
+            if let Some(styk)=document.as_mut().and_then(|report|report.make_obj()?.get_mut("_styk")?.make_obj()) {
+                match animation {Some(animation)=>styk.set("animation",animation.clone()),None=>{styk.remove("animation");}}
             }
         }
         self.retained = None;
@@ -1108,7 +1135,7 @@ impl Editor {
         let added = result.clone();
         let angles: Vec<f64> = prepared.iter().map(|s| s.angle).collect();
         let lengths: Vec<f64> = prepared.iter().map(|s| s.length).collect();
-        self.topology_edit(label, TopologyOptions::default(), |editor, index| {
+        self.topology_edit(label, TopologyOptions { history_append_only: true, ..TopologyOptions::default() }, |editor, index| {
             let mut all = items(editor.figure_at(index).get("segments"));
             all.extend(added.iter().cloned());
             let total = all.len();
@@ -2181,7 +2208,7 @@ impl Editor {
         let angle = given(&segment, "angle_rad").unwrap_or(f64::NAN);
         let length = given(&segment, "length").unwrap_or(f64::NAN);
         let added = segment.clone();
-        self.topology_edit(label, TopologyOptions::default(), |editor, at| {
+        self.topology_edit(label, TopologyOptions { history_append_only: true, ..TopologyOptions::default() }, |editor, at| {
             let mut all = items(editor.figure_at(at).get("segments"));
             all.push(added.clone());
             let total = all.len();

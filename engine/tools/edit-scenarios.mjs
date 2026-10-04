@@ -5,6 +5,10 @@ import {documentOf, limb, open, joint, nextKey, prune, Editor} from './fixture-k
 import {createVfxClip} from '../../src/vfx-clips.mjs';
 import {createVfx} from '../../src/vfx.mjs';
 import {createCameraMotion} from '../../src/camera-motion.mjs';
+await import('./edit-scenarios-movieclips-joins.mjs');
+await import('./edit-scenarios-movieclips-presence.mjs');
+await import('./edit-scenarios-movieclips-membership.mjs');
+await import('./edit-scenarios-movieclips-timed.mjs');
 const out = new URL('../tests/edit', import.meta.url).pathname;
 // A native-timeline document with two limbs (one joined to the other) over two keyframes.
 const doc = documentOf([limb(true), limb()], i => [250 + i * 150, 160]);
@@ -1164,3 +1168,12 @@ await import('./edit-scenarios-origin-rig.mjs');
 await import('./edit-scenarios-origin-rig-pose.mjs');
 await import('./edit-scenarios-origin-rig-inactive.mjs');
 await import('./origin-rig-invalid-fixtures.mjs');
+
+// Movieclip definitions, sparse capture and editable conversion.
+await import('./edit-scenarios-movieclips.mjs');
+await import('./edit-scenarios-movieclips-native.mjs');
+await import('./edit-scenarios-selection-metadata.mjs');
+await import('./edit-scenarios-native-transform-channels.mjs');
+
+// Remote-time motion previews and commits retain original animation pivots.
+await import('./edit-scenarios-origin-motion.mjs');

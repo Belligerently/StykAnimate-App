@@ -25,6 +25,7 @@ let wasm = null, previews = null, canvas = null, flat = null, progress = null, r
 let gpuRefusal = null;
 /** The hover animation open in the worker: requests of an older session are answered `stale`. */
 let session = null;
+const cancelled = new Set();
 
 async function start(message) {
   wasm ??= initSync({module: message.module, memory: message.memory, thread_stack_size: message.stack});
@@ -68,8 +69,14 @@ function cpuPicture() {
 
 /** The last library picture: the GPU canvas's (nothing is read back), or the CPU's. */
 const picture = () => previews.cpu() ? cpuPicture() : canvas.transferToImageBitmap();
+function canvasSize(width, height) {
+  if (!canvas) return;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+}
 
 async function poster({bytes, extension}) {
+  canvasSize(SIZE, SIZE);
   const result = JSON.parse(previews.poster(new Uint8Array(bytes), extension));
   const bitmap = picture(), out = new OffscreenCanvas(SIZE, SIZE);
   out.getContext('2d').drawImage(bitmap, 0, 0);
@@ -81,6 +88,7 @@ function begin() {
   const count = previews.library_begin(), pixels = new Uint8ClampedArray(count * SAMPLE * SAMPLE * 4);
   const sample = new OffscreenCanvas(SAMPLE, SAMPLE), context = sample.getContext('2d', {willReadFrequently: true});
   for (let i = 0; i < count; i++) {
+    canvasSize(SAMPLE, SAMPLE);
     previews.library_sample(i);
     const bitmap = picture();
     context.clearRect(0, 0, SAMPLE, SAMPLE);
@@ -93,6 +101,7 @@ function begin() {
 }
 
 function frame({elapsed}) {
+  canvasSize(SIZE, SIZE);
   const result = JSON.parse(previews.library_frame(elapsed));
   return {...result, bitmap: picture()};
 }
@@ -128,9 +137,45 @@ async function thumbnail({address, revision, tick, width, height}) {
   }
 }
 
+/** An explicit native interval, with preview onion settings, sampled only here. */
+async function inbetween({id, address, revision, index, ratio, mode, count, opacity, ahead, width, height}) {
+  previews.adopt_engine(address);
+  const started = performance.now();
+  for (;;) {
+    if (releasing || cancelled.has(id)) throw new DOMException('The preview was superseded.', 'AbortError');
+    if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
+    canvasSize(width, height);
+    const seen = Atomics.load(progress, 0), status = previews.inbetween(revision, index, ratio, mode, count, opacity, ahead, width, height);
+    if (status === 2) return {refused: 'stale'};
+    if (status === 0) return {bitmap: picture(), width, height};
+    await whenProgress(seen);
+  }
+}
+
+/** The frame displayed by the stage, captured by shared pointers and prepared here. */
+async function monitor({id, address, width, height, zoom, panX, panY}) {
+  previews.monitor_begin(address);
+  const started = performance.now();
+  try {
+    for (;;) {
+      if (releasing || cancelled.has(id)) throw new DOMException('The preview was superseded.', 'AbortError');
+      if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
+      canvasSize(width, height);
+      const seen = Atomics.load(progress, 0), status = previews.monitor(width, height, zoom, panX, panY);
+      if (status === 2) return {refused: 'stale'};
+      if (status === 0) return {bitmap: picture(), width, height};
+      await whenProgress(seen);
+    }
+  } finally { cancelled.delete(id); previews.monitor_end(); }
+}
+
 async function operate(message) {
   if (message.operation === 'start') return start(message);
-  if (!previews) throw new Error('The preview worker has not started.');
+  if (!previews) {
+    if (message.operation === 'monitor' && wasm) Previews.forget_monitor(message.address);
+    if (['thumbnail', 'inbetween'].includes(message.operation) && wasm) Previews.forget_engine(message.address);
+    throw new Error('The preview worker has not started.');
+  }
   if (['library-begin', 'library-frame', 'library-close'].includes(message.operation) && message.session !== session) return {refused: 'stale', message: 'another library preview is open'};
   switch (message.operation) {
     case 'library-poster': return poster(message);
@@ -139,6 +184,8 @@ async function operate(message) {
     case 'library-frame': return frame(message);
     case 'library-close': session = null; previews.library_close(); return {};
     case 'thumbnail': return thumbnail(message);
+    case 'inbetween': return inbetween(message);
+    case 'monitor': return monitor(message);
     default: throw new Error(`Unknown preview operation ${message.operation}.`);
   }
 }
@@ -161,20 +208,24 @@ async function release() {
 }
 
 self.addEventListener('message', ({data: message}) => {
+  if (message.operation === 'cancel') { cancelled.add(message.request); return; }
   if (message.operation === 'release') { release(); return; }
   const run = running.then(() => {
     if (releasing) {
       // A thumbnail's engine address is consumed even when it is not drawn.
-      if (message.operation === 'thumbnail' && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
+      if (['thumbnail', 'inbetween'].includes(message.operation) && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
+      if (message.operation === 'monitor' && wasm) try { Previews.forget_monitor(message.address); } catch { /* the module is gone */ }
       throw new DOMException('The preview worker was released.', 'AbortError');
     }
     return operate(message);
   });
   running = run.catch(() => {});
   run.then(result => {
+    cancelled.delete(message.id);
     const transfer = result?.bitmap ? [result.bitmap] : [];
     self.postMessage({id: message.id, ok: true, ...result}, transfer);
   }, error => {
+    cancelled.delete(message.id);
     self.postMessage({id: message.id, ok: false, error: String(error?.message ?? error), name: error?.name});
   });
 });

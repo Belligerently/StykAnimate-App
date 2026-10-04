@@ -20,6 +20,8 @@ use crate::select::SelectionState;
 use crate::sheet::{constant, fixed, items, key_at, num, Write};
 use crate::{EditError, Editor};
 
+mod native;
+
 /// `MAX_TICK` of the editor's animation keys and `MAX_SHEET_TICKS` of the sheet.
 const MAX_TICK: f64 = 10_000_000.0;
 
@@ -31,6 +33,7 @@ fn invalid(key: &str) -> EditError {
 /// shows meanwhile (`editor._sheetPropertyPreview`).
 #[derive(Clone, Debug)]
 pub(crate) struct Edit {
+    native: Option<native::NativeEdit>,
     target: Value,
     property: String,
     exact: bool,
@@ -341,6 +344,7 @@ impl Editor {
             "beginAnimationEdit" | "previewAnimationEdit" | "commitAnimationEdit" | "cancelAnimationEdit" => Ok(()),
             "centerCamera" | "alignFiguresInFrames" => Ok(()), // Their recorded owner finishes this edit before measuring.
             "undo" | "redo" => self.cancel_animation_edit().map(|_| ()),
+            "addAnimationKeys" | "addAnimationKey" if !self.sheet() => Ok(()),
             other => Err(EditError::Unported(format!("{other} during a property edit"))),
         }
     }
@@ -349,7 +353,7 @@ impl Editor {
     pub(crate) fn property_call(&mut self, method: &str, args: &[Value]) -> Option<Result<Value, EditError>> {
         let arg = |i: usize| args.get(i).cloned();
         let sheet = self.sheet();
-        if !sheet && ["addAnimationKeys", "addAnimationKey", "beginAnimationEdit", "setSceneColor", "setSceneBackground", "setBackgroundColor", "setVfxParameter"].contains(&method) {
+        if !sheet && ["setSceneColor", "setSceneBackground", "setBackgroundColor", "setVfxParameter"].contains(&method) {
             return Some(Err(EditError::Unported(format!("{method} on a native timeline"))));
         }
         Some(match method {
@@ -411,7 +415,7 @@ impl Editor {
             return Ok(Value::array(Vec::new()));
         }
         if !self.sheet() {
-            return Err(EditError::Unported("addAnimationKeys on a native timeline".into()));
+            return self.add_native_animation_keys(&list);
         }
         let mut filled = Vec::with_capacity(list.len());
         for entry in &list {
@@ -543,6 +547,7 @@ impl Editor {
 
     /// `beginAnimationEdit(target, property, {exactTarget})` on a layer sheet.
     fn begin_animation_edit(&mut self, target: &Value, property: &Value, exact: bool) -> Result<Value, EditError> {
+        if !self.sheet() { return self.begin_native_animation_edit(target, property, exact); }
         if self.property_edit.is_some() {
             self.commit_animation_edit()?;
         }
@@ -559,6 +564,7 @@ impl Editor {
         let initial = self.animation_value(&target, property, &Value::Num(self.tick))?.ok_or_else(|| invalid("errors.editorAnimation.theSelectedFigureIsNotPresentAtThis"))?;
         let frame = self.shown_frame()?;
         self.property_edit = Some(Edit {
+            native: None,
             target: target.clone(),
             property: property.to_string(),
             exact,
@@ -586,6 +592,7 @@ impl Editor {
     /// `previewAnimationEdit(value)` on a layer sheet: the frame on show at the edit's start
     /// with the value composed is shown until the edit ends.
     fn preview_animation_edit(&mut self, value: Option<Value>) -> Result<Value, EditError> {
+        if !self.sheet() { return self.preview_native_animation_edit(value); }
         let Some(edit) = self.property_edit.clone() else { return Err(invalid("errors.editorAnimation.beginAPropertyEditBeforePreviewingIt")) };
         let validated = validate_value(&edit.target, &edit.property, value.as_ref())?;
         let changed = !strictly_equal(&validated, Some(&edit.initial));
@@ -611,6 +618,7 @@ impl Editor {
 
     /// `commitAnimationEdit()` on a layer sheet: the edited value keyed at the edit's tick.
     pub(crate) fn commit_animation_edit(&mut self) -> Result<bool, EditError> {
+        if !self.sheet() { return self.commit_native_animation_edit(); }
         let Some(edit) = self.property_edit.take() else { return Ok(false) };
         self.retained = None;
         if !edit.changed {
@@ -623,6 +631,7 @@ impl Editor {
 
     /// `cancelAnimationEdit()` on a layer sheet.
     pub(crate) fn cancel_animation_edit(&mut self) -> Result<bool, EditError> {
+        if !self.sheet() { return self.cancel_native_animation_edit(); }
         if self.property_edit.take().is_none() {
             return Ok(false);
         }

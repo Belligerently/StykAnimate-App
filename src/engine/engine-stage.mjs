@@ -16,6 +16,7 @@ import {EngineMirror} from './engine-mirror.mjs';
 import {EngineEligibility} from './engine-eligibility.mjs';
 import {engineTick} from './engine-playback.mjs';
 import {drawingResourcesFor} from '../drawing-resources.mjs';
+import {EngineCameraMonitor} from './engine-previews.mjs';
 
 /** The engine side of the stage, shared by every renderer the app creates (it survives a device loss of the other). */
 let shared = null;
@@ -111,6 +112,67 @@ export function waitForPictures(side, seen, redraw) {
     else if (performance.now() - started < PICTURE_WAIT_MS) wait();
   });
   wait();
+}
+
+/** Cancels only this stage's asynchronous camera prerequisite. */
+export function cancelCameraFrames(side) {
+  const sync = side.cameraFrames;
+  if (!sync) return;
+  side.cameraFrames = null;
+  sync.controller.abort(new DOMException('The camera preparation was superseded.', 'AbortError'));
+}
+
+/** Keep at most one dirty identity per live record while the camera is off. */
+export function recordCameraChange(side, detail) {
+  const report = side.frameReport;
+  if (!report) return;
+  const dirty = side.cameraDirty ??= {frameIndices: new Set(), figureIndices: new Set(), sourceIds: new Set(), allFrames: false, allFigures: false, allSources: false};
+  // A long edit session stays bounded even when old records are removed without
+  // individual dirty names. A full resend uses the mirror's asynchronous owner.
+  const include = (items, identities, all, present) => {
+    if (dirty[all]) return;
+    let visited = 0;
+    for (const identity of items ?? []) {
+      if (++visited > 256) { identities.clear(); dirty[all] = true; break; }
+      if (present(identity)) identities.add(identity); else identities.delete(identity);
+      if (identities.size >= 256) { identities.clear(); dirty[all] = true; break; }
+    }
+  };
+  include(detail.frameIndices, dirty.frameIndices, 'allFrames', index => index >= 0 && index < (report.keyframes?.length ?? 0));
+  include(detail.figureIndices, dirty.figureIndices, 'allFigures', index => index >= 0 && index < (report.figure_types?.length ?? 0));
+  const sources = report._styk?.frameSources ?? {};
+  include(detail.sourceIds, dirty.sourceIds, 'allSources', id => Object.hasOwn(sources, id));
+  // A removed source does not need an explicit resend; syncFrames removes it.
+  dirty.allFigures ||= Boolean(detail.definition && !detail.figureIndices?.length);
+  if (detail.structural) {
+    dirty.frameIndices.clear(); dirty.sourceIds.clear();
+    dirty.allFrames = true; dirty.allSources = true;
+  }
+}
+
+/**
+ * An edit pose can arrive before playback has mirrored its stored target poses.
+ * Coalesce one asynchronous frame sync through the existing mirror, then let
+ * render_edit request worker frame tickets on that complete Prepared owner.
+ */
+export function ensureCameraFrames(side, {report, revision = 0}, redraw) {
+  if (side.mirror.framesCurrent(report, revision)) return false;
+  const old = side.cameraFrames;
+  if (old?.report === report && old.revision === revision) return true;
+  cancelCameraFrames(side);
+  const sync = {report, revision, controller: new AbortController()};
+  side.cameraFrames = sync;
+  const dirty = side.cameraDirty;
+  sync.promise = Promise.resolve().then(() => side.mirror.syncFrames(report, revision, dirty ?? {}, {signal: sync.controller.signal})).then(() => {
+    if (side.cameraFrames !== sync || sync.controller.signal.aborted || !side.mirror.framesCurrent(report, revision)) return;
+    if (side.cameraDirty === dirty) side.cameraDirty = null;
+    redraw();
+  }).catch(error => {
+    if (side.cameraFrames !== sync || sync.controller.signal.aborted || error?.name === 'AbortError') return;
+    side.failed = `the engine refused the camera document (${error.message})`;
+    redraw();
+  }).finally(() => { if (side.cameraFrames === sync) side.cameraFrames = null; });
+  return true;
 }
 
 /**
@@ -235,6 +297,8 @@ export async function createStageRenderer(canvas, options, create) {
   const awaitPictures = seen => waitForPictures(side, seen, () => options.onInvalidate?.());
 
   const drawEdit = request => {
+    if (side.cameraFrames && (side.cameraFrames.report !== request.report || side.cameraFrames.revision !== (request.revision ?? 0))) cancelCameraFrames(side);
+    if (side.frameReport !== request.report || side.mirror.framesCurrent(request.report, request.revision ?? 0)) side.cameraDirty = null;
     const started = performance.now(), seen = side.engine.progressSeen();
     syncDefinitions(request);
     const {frame, geometry} = request, objects = frame.objects ?? [];
@@ -259,8 +323,14 @@ export async function createStageRenderer(canvas, options, create) {
     // Generated effects whose trails are still being sampled refine on the next frame, as
     // the JavaScript renderer's incomplete batches do (6 ms of sampling a frame).
     if (side.stage.refining()) queueMicrotask(() => options.onInvalidate?.());
-    if (drawn) awaitPictures(seen);
-    return drawn;
+    const pendingCamera = side.stage.camera_pending?.() === true;
+    side.stats.cameraPending = pendingCamera;
+    if (pendingCamera) ensureCameraFrames(side, request, () => options.onInvalidate?.());
+    else cancelCameraFrames(side);
+    if (drawn || pendingCamera) awaitPictures(seen);
+    // The previous actual scene stays visible while the shared follow path warms.
+    // Keeping ownership also prevents JavaScript preparation on this cold path.
+    return drawn || pendingCamera;
   };
 
   const renderer = {
@@ -304,7 +374,7 @@ export async function createStageRenderer(canvas, options, create) {
       const tick = engineTick(key);
       if (tick === null) { const result = legacy.renderPrepared(key, options); if (result) show(false); return result; }
       const dpr = legacy.dpr || 1, view = options.view ?? {}, seen = side.engine.progressSeen();
-      const drawn = side.stage.render(tick, (view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, options.cameraEnabled !== false, true, false);
+      const drawn = side.stage.render_sample(tick, (view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, options.cameraEnabled !== false, true);
       if (drawn) { show(true); awaitPictures(seen); }
       return drawn;
     },
@@ -327,6 +397,8 @@ export async function createStageRenderer(canvas, options, create) {
      * (`{frameIndices, figureIndices, sourceIds, structural, definition}`), merged until the next frame.
      */
     documentChanged(detail = {}) {
+      cancelCameraFrames(side);
+      recordCameraChange(side, detail);
       const dirty = side.dirty ??= {frameIndices: [], figureIndices: [], sourceIds: [], structural: false, definition: false};
       dirty.frameIndices.push(...detail.frameIndices ?? []);
       dirty.figureIndices.push(...detail.figureIndices ?? []);
@@ -355,7 +427,11 @@ export async function createStageRenderer(canvas, options, create) {
      * (WebGL2): the caller draws it.
      */
     drawCameraMonitor(target, {width, height, zoom, panX, panY}) {
-      if (!engineShown || side.failed) return false;
+      if (!engineShown || side.failed) { side.workerMonitor?.destroy(); side.workerMonitor = null; return false; }
+      if (side.engine.threaded) {
+        side.workerMonitor ??= new EngineCameraMonitor(side.stage, {invalidate: () => options.onInvalidate?.()});
+        return side.workerMonitor.draw(target, {width, height, zoom, panX, panY});
+      }
       if (side.monitor === undefined) {
         side.monitorCanvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height));
         try {
@@ -418,7 +494,7 @@ export async function createStageRenderer(canvas, options, create) {
     },
     /** The engine side of the stage, for the playback adapter and tests. */
     get engineSide() { return side; },
-    destroy() { show(false); legacy.destroy(); },
+    destroy() { cancelCameraFrames(side); side.pictureWait++; side.workerMonitor?.destroy(); side.workerMonitor = null; show(false); legacy.destroy(); },
   };
   // Everything else is the JavaScript renderer's, bound to it.
   return new Proxy(renderer, {

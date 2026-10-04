@@ -32,6 +32,18 @@ pub struct Bound {
     track: Option<Seq>,
 }
 
+/// A channel composition bound once to the same immutable Records generation.
+/// The caller samples frames one at a time; no second evaluator or frame cache.
+pub struct RecordChannels<'records, 'doc> {
+    records: &'records Records<'doc>,
+    channels: Vec<Bound>,
+}
+impl RecordChannels<'_, '_> {
+    pub fn compose(&self, frame: Value, tick: f64) -> Result<Value, Error> {
+        self.records.compose(frame, &self.channels, tick)
+    }
+}
+
 /// `SCENE_FIELDS`: what a scene pose track sets.
 const SCENE_FIELDS: [&str; 6] = ["background_id", "background_id_b", "background_mix", "background_color", "_stykBackgroundColor", "_stykVfx"];
 /// `NATIVE_PROPERTY_FIELDS` and `NATIVE_OUTLINE_FIELDS`: what `nativeAppearance` keeps.
@@ -494,8 +506,12 @@ impl Records<'_> {
     /// (`at(report, tick)`) with the one-key channels it builds composed at `tick`, pose
     /// channels first.
     pub fn compose_channels(&self, frame: Value, channels: &[Value], tick: f64) -> Result<Value, Error> {
-        let bound = bind(self.prepared, channels)?;
-        self.compose(frame, &bound, tick)
+        self.bind_channels(channels)?.compose(frame, tick)
+    }
+
+    /// Reuse the owning channel binding across a worker's sequence of samples.
+    pub fn bind_channels(&self, channels: &[Value]) -> Result<RecordChannels<'_, '_>, Error> {
+        Ok(RecordChannels { records: self, channels: bind(self.prepared, channels)? })
     }
 
     /// `composePoseChannels`: figures and layers take the pose their own key track samples,
@@ -1051,6 +1067,22 @@ impl Records<'_> {
 
     fn animation_offset(&self, object: &Value) -> [f64; 2] {
         self.typed_object(object).and_then(|typed| self.prepared.doc.figure(typed.figure).map(|figure| crate::origin::offset(figure, &typed))).unwrap_or([0.0, 0.0])
+    }
+
+    /// The persisted curve's own value (`sampleAnimationChannel`), before any
+    /// other joined figure's channel changes its displayed world coordinates.
+    /// Reuses this Records view's already bound channel and exact sampler.
+    pub fn sample_channel_value(&self, target: &Value, property: &str, tick: f64) -> Result<Option<Value>, Error> {
+        let mut record = Obj::new();
+        record.set("target", target.clone());
+        record.set("property", Value::str(property));
+        record.set("keys", Value::array(Vec::new()));
+        let channel = crate::channels::channel(&Value::object(record), &mut Vec::new()).map_err(|why| Error::Invalid(why.to_string()))?;
+        let Some(bound) = self.legacy.iter().find(|bound| bound.channel.target == channel.target && bound.channel.property == channel.property) else { return Ok(None) };
+        match bound.channel.sample_at(tick) {
+            Some(value) => Self::sampled_value(bound, value),
+            None => Ok(None),
+        }
     }
 
     /// `animationPropertyValue(report, frame, target, property)`: what the editor shows for a

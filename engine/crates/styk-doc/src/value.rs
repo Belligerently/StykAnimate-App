@@ -3,6 +3,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
+#[path = "retention.rs"]
+mod retention;
+pub use retention::retained_bytes_checked;
+
 /// One node of a document. Cloning is cheap: containers are reference counted and
 /// shared until one side changes them.
 #[derive(Clone, Debug)]

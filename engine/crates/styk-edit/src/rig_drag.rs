@@ -435,7 +435,8 @@ impl Editor {
             return Ok(false);
         }
         let type_id = rig.figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
-        self.topology_edit(&drag.label, crate::topology::TopologyOptions::default(), |editor, at| {
+        let history_segment_indices = Some(operations.iter().map(|operation| operation.index).collect());
+        self.topology_edit(&drag.label, crate::topology::TopologyOptions { history_segment_indices, ..crate::topology::TopologyOptions::default() }, |editor, at| {
             let mut next = items(editor.report.get("figure_types").and_then(|f| f.item(at)).as_ref().and_then(|f| f.get("segments")));
             for op in &operations {
                 let segment = &mut next[op.index];

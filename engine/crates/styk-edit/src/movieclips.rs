@@ -1,8 +1,8 @@
 //! Movieclips (src/editor-movieclips.mjs): `renameMovieclip`, published as one
 //! `movieclip-definition` history entry (`publishDefinition`); an instance's playback on the
 //! frame on show (`setMovieclipPlayback`, `setMovieclipDrawing`), checked as
-//! `validatePlayback` checks it. Playback across every frame goes through timeline edits and
-//! answers `Unported`.
+//! `validatePlayback` checks it. Recorded native playback across every frame uses
+//! the shared movieclip pose/history owner; timed sheet preparation is still refused.
 
 use styk_doc::{Obj, Value};
 
@@ -29,7 +29,7 @@ fn finite(value: Option<&Value>) -> Option<f64> {
 }
 
 /// `playbackSettings(object)`: the instance's playback over the defaults.
-fn playback_settings(playback: Option<&Value>) -> Obj {
+pub(crate) fn playback_settings(playback: Option<&Value>) -> Obj {
     let mut value = Obj::new();
     value.set("start", Value::Num(0.0));
     value.set("end", Value::Null);
@@ -47,7 +47,7 @@ fn invalid(key: &str) -> EditError {
 }
 
 /// `validatePlayback(settings)`: the playback over the defaults, if it is one.
-fn validate_playback(settings: Obj) -> Result<Value, EditError> {
+pub(crate) fn validate_playback(settings: Obj) -> Result<Value, EditError> {
     let value = playback_settings(Some(&Value::object(settings)));
     let clock = value.get("clock");
     if clock.is_some_and(|c| c.as_str() != Some("presence")) {
@@ -95,7 +95,7 @@ fn validate_playback(settings: Obj) -> Result<Value, EditError> {
 
 impl Editor {
     /// The selected figure's slot, record and definition, when it is a movieclip instance.
-    fn selected_movieclip(&self) -> Result<(usize, Value, Value), EditError> {
+    pub(crate) fn selected_movieclip(&self) -> Result<(usize, Value, Value), EditError> {
         if let Some((slot, object)) = self.object()? {
             let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
             if let Some(figure) = figures.into_iter().find(|f| f.get("figure_type_id") == object.get("figure_type_id")).filter(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
@@ -107,6 +107,10 @@ impl Editor {
 
     /// `setMovieclipPlayback(patch, {allFrames})` on the frame on show. Returns the playback.
     pub(crate) fn set_movieclip_playback(&mut self, patch: &Value, options: &Value) -> Result<Value, EditError> {
+        self.set_movieclip_playback_with(patch, options, None)
+    }
+
+    pub(crate) fn set_movieclip_playback_with(&mut self, patch: &Value, options: &Value, mut worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
         let (slot, object, _) = self.selected_movieclip()?;
         let mut settings = playback_settings(object.get("_stykMovieclip"));
         for (key, value) in patch.as_obj().map(|p| p.iter().collect::<Vec<_>>()).unwrap_or_default() {
@@ -118,6 +122,14 @@ impl Editor {
             if presence && self.sheet() {
                 let id = crate::record::uid(&object).unwrap_or(0);
                 return self.sheet_set_movieclip_playback(id, patch);
+            }
+            if !self.sheet() || worker.is_some() {
+                let prepare = self.sheet() && self.batch.is_none();
+                return self.movieclip_batch("Set movieclip playback", |editor| {
+                    if prepare { worker.as_deref_mut().unwrap().prepare(editor)?; }
+                    editor.edit_native_movieclip_poses("Set movieclip playback", |object| object.set("_stykMovieclip", value.clone()))?;
+                    Ok(value.clone())
+                });
             }
             return Err(EditError::Unported("movieclip playback across every frame of a clip on the document's clock".into()));
         }
@@ -134,6 +146,10 @@ impl Editor {
     /// `restartMovieclip()`: the selected clip starts again at the playhead (a restart key),
     /// on every frame.
     pub(crate) fn restart_movieclip(&mut self) -> Result<Value, EditError> {
+        self.restart_movieclip_with(None)
+    }
+
+    pub(crate) fn restart_movieclip_with(&mut self, worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
         let (_, object, _) = self.selected_movieclip()?;
         let tick = (self.tick + 0.5).floor();
         let mut restarts: Vec<Value> = playback_settings(object.get("_stykMovieclip")).get("restarts").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
@@ -143,23 +159,27 @@ impl Editor {
         key.set("offset", Value::Num(0.0));
         restarts.push(Value::object(key));
         restarts.sort_by(|a, b| a.get("tick").and_then(Value::as_f64).unwrap_or(f64::NAN).total_cmp(&b.get("tick").and_then(Value::as_f64).unwrap_or(f64::NAN)));
-        self.set_restarts(restarts)
+        self.set_restarts(restarts, worker)
     }
 
     /// `removeMovieclipRestart()`: the restart key at the playhead removed, on every frame.
     pub(crate) fn remove_movieclip_restart(&mut self) -> Result<Value, EditError> {
+        self.remove_movieclip_restart_with(None)
+    }
+
+    pub(crate) fn remove_movieclip_restart_with(&mut self, worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
         let (_, object, _) = self.selected_movieclip()?;
         let mut restarts: Vec<Value> = playback_settings(object.get("_stykMovieclip")).get("restarts").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         restarts.retain(|key| key.get("tick").and_then(Value::as_f64) != Some(self.tick));
-        self.set_restarts(restarts)
+        self.set_restarts(restarts, worker)
     }
 
-    fn set_restarts(&mut self, restarts: Vec<Value>) -> Result<Value, EditError> {
+    fn set_restarts(&mut self, restarts: Vec<Value>, worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
         let mut patch = Obj::new();
         patch.set("restarts", Value::array(restarts));
         let mut options = Obj::new();
         options.set("allFrames", Value::Bool(true));
-        self.set_movieclip_playback(&Value::object(patch), &Value::object(options))
+        self.set_movieclip_playback_with(&Value::object(patch), &Value::object(options), worker)
     }
 
     /// `sheetSetMovieclipPlayback(uid, patch, {allFrames: true})`: a clip on the presence clock
@@ -325,7 +345,7 @@ impl Editor {
     }
 
     /// `publishDefinition(editor, figure, index, label)` replacing the definition at `index`.
-    fn publish_definition(&mut self, index: usize, figure: Value, label: &str) -> Result<(), EditError> {
+    pub(crate) fn publish_definition(&mut self, index: usize, figure: Value, label: &str) -> Result<(), EditError> {
         let figures = self.report.make_obj().and_then(|r| r.get_mut("figure_types")).and_then(Value::make_arr).ok_or_else(|| EditError::Unported("figure definitions that are not a list".into()))?;
         let before = figures.get(index).cloned();
         match figures.get_mut(index) {

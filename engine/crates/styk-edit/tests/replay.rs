@@ -4,6 +4,34 @@
 use std::path::Path;
 
 const PORTED: &[&str] = &[
+    // Origin motion sheet gestures; @motionFrame is a worker/native-only replay view.
+    "origin-motion-layout-sheet", "origin-motion-layout-autokey-sheet",
+    "origin-motion-offsets-sheet", "origin-motion-offsets-autokey-sheet",
+    "origin-motion-support-sheet", "origin-motion-support-autokey-sheet",
+    "origin-motion-support-pinned-sheet", "origin-motion-support-pinned-autokey-sheet",
+    "origin-motion-support-free-sheet", "origin-motion-support-free-autokey-sheet",
+    "origin-motion-saved-layout-sheet", "origin-motion-saved-layout-autokey-sheet",
+    "origin-motion-saved-support-sheet", "origin-motion-saved-support-autokey-sheet",
+    // Native saved scalar authoring; projected native properties remain unavailable.
+    "native-transform-channels-plain-new", "native-transform-channels-plain-saved",
+    "native-transform-channels-layout-new", "native-transform-channels-layout-saved",
+    "native-transform-channels-offsets-new", "native-transform-channels-offsets-saved",
+    "native-transform-channels-support-new", "native-transform-channels-support-saved",
+    "native-transform-channels-future-plain",
+    // Optional selection metadata and its canonical history/view owner.
+    "selection-metadata-layout-autokey-sheet",
+    "selection-metadata-layout-native",
+    "selection-metadata-layout-sheet",
+    "selection-metadata-plain-autokey-sheet",
+    "selection-metadata-plain-native",
+    "selection-metadata-plain-sheet",
+    "selection-metadata-saved-layout-autokey-sheet",
+    "selection-metadata-saved-layout-sheet",
+    "selection-metadata-saved-support-autokey-sheet",
+    "selection-metadata-saved-support-sheet",
+    "selection-metadata-support-autokey-sheet",
+    "selection-metadata-support-native",
+    "selection-metadata-support-sheet",
     // Animation-origin whole-figure gestures (native, sheet, retained support and offsets).
     "origin-gestures-layout-native", "origin-gestures-layout-sheet", "origin-gestures-offsets-native", "origin-gestures-offsets-sheet",
     "origin-gestures-support-native", "origin-gestures-support-sheet", "origin-gestures-support-autokey-sheet",
@@ -49,6 +77,9 @@ const PORTED: &[&str] = &[
     "origin-channels-support-sheet", "origin-channels-support-autokey-sheet",
     "origin-channels-saved-layout-sheet", "origin-channels-saved-layout-autokey-sheet",
     "origin-channels-saved-support-sheet", "origin-channels-saved-support-autokey-sheet",
+    // Editor-recorded movieclip definition creation, sparse capture and current-frame conversion.
+    "clip-empty-native", "clip-empty-sheet", "clip-create-definition-native", "clip-create-definition-sheet", "clip-create-loose-sheet", "clip-create-joined-sheet",
+    "clip-create-multilayer-sheet", "clip-create-locked-sheet", "clip-create-errors-sheet", "clip-unique-sheet", "clip-break-sheet", "clip-break-joined-sheet", "clip-break-flip-sheet", "clip-break-nested-sheet",
     "move-native", "move-joined", "drag-cancel", "selection-native", "rotate-native", "transform-joined", "pose-native", "pose-joints", "pose-joined", "pose-snap",
     // The app's configuration: gestures on a layer sheet.
     "move-sheet", "gestures-sheet", "autokey-sheet", "layers-sheet", "locked-sheet", "movieclip-sheet", "movieclip-loose-sheet",

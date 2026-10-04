@@ -40,6 +40,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
 const {decodeDocument, normalizeDecodedDocument} = await import(`${repo}/src/native-container.mjs`);
 const {Editor} = await import(`${repo}/src/editor.mjs`);
+const {sampleInbetweenPreview} = await import(`${repo}/src/editor-inbetween.mjs`);
+const {buildGeometry} = await import(`${repo}/src/pivot/geometry.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
 if (!input || !output) {
@@ -77,16 +79,22 @@ else {
 }
 const max = Number(option('--max') ?? Infinity);
 ticks = ticks.filter(t => t >= 0 && t < total).slice(0, max);
+const samples = option('--inbetween')?.split(',').map(value => {
+  const [index, ratio] = value.split(':').map(Number);
+  return {index, ratio};
+});
 
 const round = v => typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v;
 const pt = p => p ? [round(p.x), round(p.y)] : null;
 const frames = [];
 let evalMs = 0;
-for (const tick of ticks) {
+for (const entry of samples ?? ticks) {
   const t0 = performance.now();
-  editor.seek(tick);
-  const frame = editor.evaluatedFrame;
-  const geometry = editor.geometry;
+  const sample = samples ? sampleInbetweenPreview(editor.report, entry.ratio, entry.index) : null;
+  const tick = sample?.sourceTick ?? entry;
+  if (!sample) editor.seek(tick);
+  const frame = sample?.frame ?? editor.evaluatedFrame;
+  const geometry = sample ? buildGeometry(editor.report, frame) : editor.geometry;
   const drawables = geometry.drawables;
   evalMs += performance.now() - t0;
   // Evaluated meshes (docs/engine/spatial.md): each once per tick, in the order
@@ -133,6 +141,7 @@ for (const tick of ticks) {
   }
   frames.push({
     tick,
+    ...(sample ? {inbetween: {index: sample.index, ratio: sample.ratio}} : {}),
     camera: frame.camera ?? null,
     background: {id: frame.background_id ?? 0, b: frame.background_id_b ?? 0, mix: frame.background_mix ?? 0},
     objects, drawables: items,

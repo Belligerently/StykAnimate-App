@@ -19,6 +19,7 @@ use styk_draw::DrawList;
 use styk_engine::edit::EditOptions;
 use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
+use styk_engine::thumbnails::monitor::MonitorFrame;
 use styk_eval::doc::Camera;
 use styk_render::{Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
@@ -45,6 +46,27 @@ struct MonitorKey {
     translations: Vec<(u32, [f64; 2])>,
 }
 
+enum WorkerMonitorKey {
+    Edit(MonitorKey, u32),
+    // Keep the allocation alive while it identifies the bitmap, so allocator reuse
+    // can never mistake another prepared frame for this one.
+    Prepared(u64, f64, Option<Arc<styk_engine::FrameData>>),
+}
+
+impl PartialEq for WorkerMonitorKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Edit(a, ap), Self::Edit(b, bp)) => a == b && ap == bp,
+            (Self::Prepared(ag, at, a), Self::Prepared(bg, bt, b)) => ag == bg && at == bt && match (a, b) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Views {
     monitor: Option<Aux>,
@@ -53,6 +75,8 @@ pub(crate) struct Views {
     thumbnails: Option<Aux>,
     /// The revision thumbnails are drawn from, pinned while the interface asks for it.
     frames: Option<ExportFrames>,
+    worker_monitor: Option<WorkerMonitorKey>,
+    monitor_version: u32,
 }
 
 /// What [`Stage::prepare_thumbnail`] and [`Stage::render_thumbnail`] answer.
@@ -169,6 +193,54 @@ fn view_of(framing: Framing, clear: [f64; 4]) -> ViewParams {
 
 #[wasm_bindgen]
 impl Stage {
+    /// Version of the stage frame for the worker's camera monitor, or zero with no
+    /// displayed frame. Comparing only changed view data never evaluates a pose.
+    pub fn monitor_version(&mut self) -> u32 {
+        let Some(generation) = self.engine.generation() else { return 0 };
+        let key = match &self.shown {
+            Shown::Nothing => return 0,
+            Shown::Prepared(shown_generation, tick) => {
+                if *shown_generation != generation.id { return 0; }
+                WorkerMonitorKey::Prepared(generation.id, *tick, self.engine.frame_at(*tick))
+            }
+            Shown::Edit { generation: shown_generation, edits, effects, hidden, translations, .. } => {
+                if *shown_generation != generation.id { return 0; }
+                WorkerMonitorKey::Edit(MonitorKey { generation: generation.id, edits: *edits, effects: *effects, hidden: hidden.clone(), translations: translations.clone() }, self.engine.images_pending() as u32)
+            },
+        };
+        if self.views.worker_monitor.as_ref() != Some(&key) {
+            self.views.worker_monitor = Some(key);
+            self.views.monitor_version = self.views.monitor_version.wrapping_add(1).max(1);
+        }
+        self.views.monitor_version
+    }
+
+    /// Consumed by `Previews::monitor_begin` in the shared-memory preview worker.
+    /// Captures shared pointers only; no camera preparation, geometry or raster work
+    /// runs on the interface thread. Made only when a queued request is sent.
+    pub fn monitor_address(&self) -> usize {
+        let Some(generation) = self.engine.generation() else { return 0 };
+        let request = match &self.shown {
+            Shown::Nothing => return 0,
+            Shown::Prepared(shown_generation, tick) => {
+                if *shown_generation != generation.id { return 0; }
+                MonitorFrame::prepared_sample_at(self.engine.clone(), generation, *tick)
+            }
+            Shown::Edit { generation: shown_generation, scene, effects, hidden, translations, .. } => {
+                if *shown_generation != generation.id { return 0; }
+                MonitorFrame::edit(self.engine.clone(), generation, scene, hidden.clone(), translations.clone(), *effects)
+            },
+        };
+        Box::into_raw(Box::new(request)) as usize
+    }
+
+    /// A message which failed to transfer never reached the worker: release its ticket.
+    pub fn forget_monitor(&self, address: usize) {
+        if address != 0 {
+            // SAFETY: the caller owns the untransferred address produced above.
+            drop(unsafe { Box::from_raw(address as *mut MonitorFrame) });
+        }
+    }
     /// Gives the camera monitor a canvas (`canvas`, drawn by a renderer of its own that
     /// samples the stage's pictures), its picture cleared to the probe colour ([`probe`]).
     /// `false` where the device cannot present to a second canvas (WebGL2): the interface
@@ -194,20 +266,22 @@ impl Stage {
         let (list, camera) = match self.shown.clone() {
             Shown::Nothing => return Ok(false),
             // Never evaluated here: the stage drew this tick from the cache a moment ago.
-            Shown::Prepared(tick) => match self.engine.frame(tick) {
-                Some(frame) => (frame.list.clone(), frame.camera),
-                None => return Ok(false),
+            Shown::Prepared(shown_generation, tick) => match self.engine.frame_at(tick) {
+                Some(frame) if shown_generation == generation.id => (frame.list.clone(), frame.camera),
+                _ => return Ok(false),
             },
-            Shown::Edit { hidden, translations } => {
-                let key = MonitorKey { generation: generation.id, edits: self.edits, effects: self.effects, hidden, translations };
+            Shown::Edit { generation: shown_generation, edits, effects, scene, hidden, translations } => {
+                if shown_generation != generation.id { return Ok(false); }
+                let key = MonitorKey { generation: generation.id, edits, effects, hidden, translations };
                 match self.views.monitor_list.as_ref().filter(|(known, _, _)| *known == key) {
                     Some((_, list, camera)) => (list.clone(), *camera),
                     None => {
-                        let options = EditOptions { hidden: &key.hidden, translations: &key.translations, background: None, onions: &[], bypass_effects: !self.effects, camera: true, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
-                        let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
-                        let camera = self.edit.camera();
+                        let options = EditOptions { hidden: &key.hidden, translations: &key.translations, background: None, onions: &[], bypass_effects: !effects, camera: true, prepare_camera: true, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
+                        let mut scene = scene.snapshot();
+                        let Some(list) = scene.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
+                        let camera = scene.camera();
                         // Generated effects still being refined are built again next time.
-                        self.views.monitor_list = (!self.edit.refining()).then(|| (key, list.clone(), camera));
+                        self.views.monitor_list = (!scene.refining()).then(|| (key, list.clone(), camera));
                         (list, camera)
                     }
                 }
@@ -231,6 +305,7 @@ impl Stage {
     pub fn detach_monitor(&mut self) {
         self.views.monitor = None;
         self.views.monitor_list = None;
+        self.views.worker_monitor = None;
     }
 
     /// Gives frame thumbnails a canvas, as [`Stage::attach_monitor`] does the monitor

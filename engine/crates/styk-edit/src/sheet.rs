@@ -136,17 +136,45 @@ pub(crate) fn constant() -> Value {
 pub(crate) struct Plan {
     pub before: Value,
     /// Replaced tracks, in the order the command first touched them.
-    tracks: Vec<(String, Obj)>,
-    next_id: f64,
+    pub(crate) tracks: Vec<(String, Obj)>,
+    pub(crate) removed_tracks: Vec<String>,
+    pub(crate) next_id: f64,
     pub duration: f64,
-    sources: Vec<(String, Value)>,
-    layers: Value,
-    next_frame: u64,
+    pub(crate) sources: Vec<(String, Value)>,
+    pub(crate) layers: Value,
+    pub(crate) next_frame: u64,
     /// Figure definitions the command adds (`assets.figure_types.added`).
     pub(crate) definitions: Vec<Value>,
 }
 
 impl Plan {
+    /// The same sheet state used by publication and virtual motion previews.
+    fn state(&self, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
+        check()?;
+        let mut tracks = self.before.get("tracks").and_then(Value::as_obj).cloned().unwrap_or_default();
+        for id in &self.removed_tracks { check()?; tracks.remove(id); }
+        for (id, track) in &self.tracks { check()?; tracks.set(id, Value::object(track.clone())); }
+        let mut state = self.before.as_obj().cloned().unwrap_or_default();
+        state.set("tracks", Value::object(tracks));
+        state.set("nextId", Value::Num(self.next_id));
+        state.set("duration", Value::Num(self.duration));
+        Ok(Value::object(state))
+    }
+
+    /// `refreshSession`/`refreshFalloff`: a borrowed, transient COW projection.
+    /// Preparation/evaluation of this report belongs on the session worker.
+    pub(crate) fn virtual_report(&self, report: &Value) -> Result<Value, EditError> {
+        let mut root = report.as_obj().cloned().unwrap_or_default();
+        let mut styk = report.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+        styk.set("layerSheet", self.state(&mut || Ok(()))?);
+        styk.set("layers", self.layers.clone());
+        let mut sources = styk.get("frameSources").and_then(Value::as_obj).cloned().unwrap_or_default();
+        for (id, source) in &self.sources { sources.set(id, source.clone()); }
+        styk.set("frameSources", Value::object(sources));
+        root.set("_styk", Value::object(styk));
+        Ok(Value::object(root))
+    }
+
     /// `get(id)`: the command's own copy of a track.
     pub(crate) fn track(&mut self, id: &str) -> &mut Obj {
         if let Some(at) = self.tracks.iter().position(|(track, _)| track == id) {
@@ -182,7 +210,7 @@ impl Plan {
     /// The largest end among the plan's tracks and the untouched ones (`Object.values(state.tracks)`).
     pub(crate) fn longest(&self) -> f64 {
         let untouched = self.before.get("tracks").and_then(Value::as_obj).map(|tracks| {
-            tracks.iter().filter(|(id, _)| !self.tracks.iter().any(|(touched, _)| touched.as_str() == &***id)).filter_map(|(_, track)| num(track, "end")).fold(f64::NEG_INFINITY, f64::max)
+            tracks.iter().filter(|(id, _)| !self.removed_tracks.iter().any(|removed| removed.as_str() == &***id) && !self.tracks.iter().any(|(touched, _)| touched.as_str() == &***id)).filter_map(|(_, track)| num(track, "end")).fold(f64::NEG_INFINITY, f64::max)
         });
         self.tracks.iter().filter_map(|(_, track)| track.get("end").and_then(Value::as_f64)).fold(untouched.unwrap_or(f64::NEG_INFINITY), f64::max)
     }
@@ -248,6 +276,18 @@ impl Plan {
         }
         source.set("_styk", Value::object(styk));
         Value::object(source)
+    }
+
+    /// One held sample on a fresh worker-owned track. Capture uses the same owner
+    /// as write; the fresh key list grows in place between ticks.
+    pub(crate) fn append_sample(&mut self, id: &str, tick: f64, frame: &Value) -> Result<(), EditError> {
+        let owns = |u: Option<f64>| u.is_some_and(|u| layer_of(Some(&self.layers), u as u32) == id);
+        let empty = !fixed(id) && !objects_of(frame).iter().any(|o| owns(num(o, "unique_id"))) && !continuations(frame).iter().any(|step| owns(num(step, "uid")));
+        let mut key = Obj::new(); key.set("id", Value::str(&self.cell())); key.set("tick", Value::Num(tick)); key.set("interpolation", Value::str("constant"));
+        let value = if empty { let mut value=Obj::new(); value.set("frameId", Value::Null); Value::object(value) } else { self.capture(frame,id) };
+        key.set("value",value);key.set("empty",Value::Bool(empty));
+        self.track(id).get_mut("keys").and_then(Value::make_arr).ok_or_else(|| EditError::Invalid("invalid sampled track".into()))?.push(Value::object(key));
+        Ok(())
     }
 
     /// `write(id, tick, frame, {blank, easing, extend})`: a key at `tick` holding the
@@ -324,6 +364,73 @@ impl Plan {
     }
 }
 
+/// The shared geometry-aware ownership/attachment kernel. A worker borrows the
+/// mirror's existing Loader/Prepared instead of constructing another Editor/cache.
+pub(crate) fn owned_frame_with(frame: &Value, uids: &[u32], steps: &[Value], mut geometry: impl FnMut(&Value) -> Result<styk_eval::geometry::Scene, EditError>) -> Result<Value, EditError> {
+        let all = objects_of(frame);
+        let selected = |object: &Value| uid(object).is_some_and(|u| uids.contains(&u));
+        let order: Vec<f64> = frame_order(frame).into_iter().filter(|u| uids.contains(&(*u as u32))).collect();
+        let mut members: Vec<Obj> = Vec::new();
+        let mut scene = None;
+        for object in all.iter().filter(|o| selected(o)) {
+            let mut record = object.as_obj().cloned().unwrap_or_default();
+            if let Some(join) = object.get("join").filter(|j| j.truthy()) {
+                let parent = num(join, "target_object_slot").filter(|s| *s >= 0.0).and_then(|s| all.get(s as usize));
+                match parent.filter(|p| selected(p)).and_then(|p| p.get("unique_id")) {
+                    Some(parent) => {
+                        let mut join = join.as_obj().cloned().unwrap_or_default();
+                        join.set("target_unique_id", parent.clone());
+                        record.set("join", Value::object(join));
+                    }
+                    // Joined to a figure left out: it stays where geometry puts it, unjoined.
+                    None => {
+                        if scene.is_none() {
+                            scene = Some(geometry(frame)?);
+                        }
+                        let slot = num(object, "object_slot");
+                        if let Some(root) = scene.as_ref().and_then(|scene| scene.objects.iter().find(|g| Some(g.slot as f64) == slot)).map(|g| g.root) {
+                            record.set("root_x", Value::Num(root[0]));
+                            record.set("root_y", Value::Num(root[1]));
+                        }
+                        record.set("join", Value::Null);
+                    }
+                }
+            }
+            members.push(record);
+        }
+        // `normalizeFrame`: slots follow unique ids, joins follow their figures.
+        let id_of = |record: &Obj| record.get("unique_id").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        members.sort_by_key(|record| id_of(record) as i64 as i32);
+        let slot_of = |target: f64| members.iter().position(|record| id_of(record) == target);
+        let slots: Vec<Option<usize>> = members.iter().map(|record| record.get("join").filter(|j| j.truthy()).and_then(|j| num(j, "target_unique_id")).and_then(slot_of)).collect();
+        let objects: Vec<Value> = members
+            .iter()
+            .enumerate()
+            .map(|(slot, record)| {
+                let mut record = record.clone();
+                record.set("object_slot", Value::Num(slot as f64));
+                if let (Some(target), Some(join)) = (slots[slot], record.get("join").and_then(Value::as_obj).cloned()) {
+                    let mut join = join;
+                    join.set("target_object_slot", Value::Num(target as f64));
+                    record.set("join", Value::object(join));
+                }
+                Value::object(record)
+            })
+            .collect();
+        let mut out = frame.as_obj().cloned().unwrap_or_default();
+        out.set("objects", Value::array(objects));
+        let mut styk = out.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+        if steps.is_empty() {
+            styk.remove("movieclipContinuations");
+        } else {
+            styk.set("movieclipContinuations", Value::array(steps.to_vec()));
+        }
+        out.set("_styk", Value::object(styk));
+        out.set("object_draw_order_unique_ids", Value::array(order.iter().map(|u| Value::Num(*u)).collect()));
+        out.set("object_draw_order", Value::array(order.iter().map(|u| slot_of(*u).map_or(Value::Null, |slot| Value::Num(slot as f64))).collect()));
+        Ok(Value::object(out))
+}
+
 /// `inheritedKeyEasing(keys, tick)`: the easing of the nearest earlier key, else a hold.
 fn inherited_easing(keys: &[Value], tick: f64) -> Vec<(&'static str, Value)> {
     let mut previous: Option<&Value> = None;
@@ -348,7 +455,7 @@ impl Editor {
     }
 
     /// `insertionOwner(editor, uid, hints)` with the given hints.
-    fn owner_with(&self, uid: u32, hints: &std::collections::HashMap<u32, String>) -> Result<String, EditError> {
+    pub(crate) fn owner_with(&self, uid: u32, hints: &std::collections::HashMap<u32, String>) -> Result<String, EditError> {
         let layers = self.report.path(&["_styk", "layers"]);
         let known = self.uid_counts.as_ref().is_some_and(|(counts, _)| counts.contains_key(&uid)) || layers.and_then(|l| l.path(&["assignments", &uid.to_string()])).is_some();
         let user = |id: &str| layers.and_then(|l| l.path(&["byId", id])).is_some();
@@ -608,6 +715,12 @@ impl Editor {
     /// instance is among them, they leave as replacements by nothing.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn commit_sheet_range(&mut self, plans: &[(f64, Value, Vec<u32>)], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState, payload: Option<(&[Value], bool)>, deletion: Option<(&[u32], &[Value])>) -> Result<bool, EditError> {
+        self.commit_sheet_range_worker(plans, inserted, hints, definitions, label, selection, payload, deletion, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn commit_sheet_range_worker(&mut self, plans: &[(f64, Value, Vec<u32>)], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState, payload: Option<(&[Value], bool)>, deletion: Option<(&[u32], &[Value])>, mut worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<bool, EditError> {
+        if let Some(worker) = worker.as_mut() { (worker.check)()?; }
         self.ensure_counts();
         let mut ids: Vec<String> = Vec::new();
         for &uid in plans.iter().flat_map(|(_, _, changed)| changed) {
@@ -622,6 +735,7 @@ impl Editor {
             plan.assign(uid, &self.owner_with(uid, hints)?);
         }
         for (index, (tick, frame, changed)) in plans.iter().enumerate() {
+            if let Some(worker) = worker.as_mut() { (worker.check)()?; }
             let tick = *tick;
             if let Some((uids, befores)) = deletion {
                 let before = befores.get(index).map(objects_of).unwrap_or_default();
@@ -686,7 +800,10 @@ impl Editor {
                 plan.write(id, at, frame, Write { easing: Some(key.as_ref().unwrap_or(&held)), ..Write::default() })?;
             }
         }
-        self.publish(plan, label, selection, None)
+        match worker {
+            Some(worker) => { worker.publish_plan_with_selection(self, plan, label, Some(selection))?; Ok(true) }
+            None => self.publish(plan, label, selection, None),
+        }
     }
 
     /// `replaceAt(editor, plan, id, tick, uid, frame, options, end)`: from `tick` until `end`,
@@ -734,13 +851,16 @@ impl Editor {
                 plan.set_keys(id, keys);
             }
         }
-        let frame_id = plan.capture(frame, id).get("frameId").cloned().unwrap_or(Value::Null);
+        let frame_id = match &extra {
+            Some(("frameId", frame_id)) => frame_id.clone(),
+            _ => plan.capture(frame, id).get("frameId").cloned().unwrap_or(Value::Null),
+        };
         let at = boundary(self, plan, tick)?;
         let mut patches: Vec<Value> = previous.into_iter().filter(|p| num(p, "uid") != Some(replaced as f64)).collect();
         let mut patch = Obj::new();
         patch.set("uid", Value::Num(replaced as f64));
         patch.set("frameId", frame_id);
-        if let Some((key, value)) = extra {
+        if let Some((key, value)) = extra.filter(|(key, _)| *key != "frameId") {
             patch.set(key, value);
         }
         patches.push(Value::object(patch));
@@ -774,68 +894,7 @@ impl Editor {
     /// `ownedFrame(report, frame, uids)` with `continuations` set: the frame reduced to
     /// the figures `uids` name, joins among them kept, slots by unique id.
     pub(crate) fn owned_frame(&self, frame: &Value, uids: &[u32], steps: &[Value]) -> Result<Value, EditError> {
-        let all = objects_of(frame);
-        let selected = |object: &Value| uid(object).is_some_and(|u| uids.contains(&u));
-        let order: Vec<f64> = frame_order(frame).into_iter().filter(|u| uids.contains(&(*u as u32))).collect();
-        let mut members: Vec<Obj> = Vec::new();
-        let mut scene = None;
-        for object in all.iter().filter(|o| selected(o)) {
-            let mut record = object.as_obj().cloned().unwrap_or_default();
-            if let Some(join) = object.get("join").filter(|j| j.truthy()) {
-                let parent = num(join, "target_object_slot").filter(|s| *s >= 0.0).and_then(|s| all.get(s as usize));
-                match parent.filter(|p| selected(p)).and_then(|p| p.get("unique_id")) {
-                    Some(parent) => {
-                        let mut join = join.as_obj().cloned().unwrap_or_default();
-                        join.set("target_unique_id", parent.clone());
-                        record.set("join", Value::object(join));
-                    }
-                    // Joined to a figure left out: it stays where geometry puts it, unjoined.
-                    None => {
-                        if scene.is_none() {
-                            scene = Some(self.record_geometry(frame)?);
-                        }
-                        let slot = num(object, "object_slot");
-                        if let Some(root) = scene.as_ref().and_then(|scene| scene.objects.iter().find(|g| Some(g.slot as f64) == slot)).map(|g| g.root) {
-                            record.set("root_x", Value::Num(root[0]));
-                            record.set("root_y", Value::Num(root[1]));
-                        }
-                        record.set("join", Value::Null);
-                    }
-                }
-            }
-            members.push(record);
-        }
-        // `normalizeFrame`: slots follow unique ids, joins follow their figures.
-        let id_of = |record: &Obj| record.get("unique_id").and_then(Value::as_f64).unwrap_or(f64::NAN);
-        members.sort_by_key(|record| id_of(record) as i64 as i32);
-        let slot_of = |target: f64| members.iter().position(|record| id_of(record) == target);
-        let slots: Vec<Option<usize>> = members.iter().map(|record| record.get("join").filter(|j| j.truthy()).and_then(|j| num(j, "target_unique_id")).and_then(slot_of)).collect();
-        let objects: Vec<Value> = members
-            .iter()
-            .enumerate()
-            .map(|(slot, record)| {
-                let mut record = record.clone();
-                record.set("object_slot", Value::Num(slot as f64));
-                if let (Some(target), Some(join)) = (slots[slot], record.get("join").and_then(Value::as_obj).cloned()) {
-                    let mut join = join;
-                    join.set("target_object_slot", Value::Num(target as f64));
-                    record.set("join", Value::object(join));
-                }
-                Value::object(record)
-            })
-            .collect();
-        let mut out = frame.as_obj().cloned().unwrap_or_default();
-        out.set("objects", Value::array(objects));
-        let mut styk = out.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
-        if steps.is_empty() {
-            styk.remove("movieclipContinuations");
-        } else {
-            styk.set("movieclipContinuations", Value::array(steps.to_vec()));
-        }
-        out.set("_styk", Value::object(styk));
-        out.set("object_draw_order_unique_ids", Value::array(order.iter().map(|u| Value::Num(*u)).collect()));
-        out.set("object_draw_order", Value::array(order.iter().map(|u| slot_of(*u).map_or(Value::Null, |slot| Value::Num(slot as f64))).collect()));
-        Ok(Value::object(out))
+        owned_frame_with(frame, uids, steps, |frame| self.record_geometry(frame))
     }
 
     /// `buildGeometry(report, frame)` for a frame record that need not be the one on show.
@@ -871,6 +930,7 @@ impl Editor {
             duration: num(&before, "duration").unwrap_or(1.0),
             before,
             tracks: Vec::new(),
+            removed_tracks: Vec::new(),
             sources: Vec::new(),
             layers,
             next_frame: self.next_frame_identity,
@@ -880,7 +940,12 @@ impl Editor {
 
     /// `publish(editor, plan, label, {selection})`: the plan becomes the document's
     /// sheet, with one history entry.
-    pub(crate) fn publish(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>) -> Result<bool, EditError> {
+    pub(crate) fn publish(&mut self, plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>) -> Result<bool, EditError> {
+        self.publish_checked(plan, label, selection, retained, &mut || Ok(()))
+    }
+
+    pub(crate) fn publish_checked(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
         // How many poses hold each figure, counted on the document before it changes.
         self.ensure_counts();
         // Imported spans whose ends changed are frozen as poses: an unchanged
@@ -893,6 +958,7 @@ impl Editor {
         let mut materialize_ids: Vec<String> = before_tracks.map(|tracks| tracks.keys().filter(|id| changed.contains(&***id)).map(|id| id.to_string()).collect()).unwrap_or_default();
         materialize_ids.extend(plan.tracks.iter().filter(|(id, _)| before_tracks.is_none_or(|tracks| tracks.get(id).is_none())).map(|(id, _)| id.clone()));
         for id in materialize_ids {
+            check()?;
             let previous: Vec<Value> = items(plan.before.path(&["tracks", &id, "keys"])).into_iter().filter(|k| !k.get("patchOnly").is_some_and(Value::truthy)).collect();
             let current: Vec<Value> = plan.keys(&id).into_iter().filter(|k| !k.get("patchOnly").is_some_and(Value::truthy)).collect();
             let name = |key: Option<&Value>| key.and_then(|k| k.get("id")).cloned();
@@ -902,6 +968,7 @@ impl Editor {
             let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::with_capacity(previous.len());
             let mut other = false;
             for (at, old) in previous.iter().enumerate() {
+                check()?;
                 match old.get("id").and_then(|id| id.as_str().map(str::to_string)) {
                     Some(id) => {
                         index.entry(id).or_insert(at);
@@ -910,6 +977,7 @@ impl Editor {
                 }
             }
             for (i, key) in current.iter().enumerate() {
+                check()?;
                 let scan = || previous.iter().position(|old| name(Some(old)) == name(Some(key)));
                 let found = match key.get("id").and_then(|id| id.as_str().map(str::to_string)) {
                     Some(id) if !other => index.get(&id).copied(),
@@ -929,19 +997,11 @@ impl Editor {
                 }
             }
         }
-        self.validate_plan(&mut plan)?;
+        self.validate_plan_checked(&mut plan, check)?;
         // The new sheet: the old one with the replaced tracks, counters and length.
         let before = plan.before.clone();
         let before_layers = self.report.path(&["_styk", "layers"]).cloned().unwrap_or(Value::Null);
-        let mut tracks = before.get("tracks").and_then(Value::as_obj).cloned().unwrap_or_default();
-        for (id, track) in &plan.tracks {
-            tracks.set(id, Value::object(track.clone()));
-        }
-        let mut state = before.as_obj().cloned().unwrap_or_default();
-        state.set("tracks", Value::object(tracks));
-        state.set("nextId", Value::Num(plan.next_id));
-        state.set("duration", Value::Num(plan.duration));
-        let after = Value::object(state);
+        let after = plan.state(check)?;
         let after_layers = plan.layers.clone();
         let definitions = if plan.definitions.is_empty() {
             None
@@ -956,6 +1016,7 @@ impl Editor {
         if !plan.sources.is_empty() {
             let sources = self.sources_mut();
             for (id, source) in &plan.sources {
+                check()?;
                 sources.set(id, source.clone());
             }
         }
@@ -964,7 +1025,7 @@ impl Editor {
         self.new_layer_hints = plan.sources.iter().flat_map(|(_, source)| objects_of(source)).filter_map(|o| uid(&o)).map(|u| (u, self.layer_of(u))).collect();
         let after_selection = self.selection_state();
         let source_ids: Vec<Value> = plan.sources.iter().map(|(id, _)| Value::str(id)).collect();
-        self.record(Command {
+        self.record_checked(Command {
             kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions },
             label: label.to_string(),
             before_selection: selection,
@@ -974,7 +1035,8 @@ impl Editor {
             layer_changes: Vec::new(),
             captured_source_bytes: 0,
             layers: false,
-        })?;
+        }, check)?;
+        check()?;
         self.layer_revision += 1;
         self.emit_sheet("edit", label, source_ids, definition);
         Ok(true)
@@ -983,7 +1045,8 @@ impl Editor {
     /// `validateLayerSheetChanges`: what the replaced tracks must satisfy, with the
     /// editor's errors (keys in order inside their layer's length, poses that exist,
     /// identities not reused).
-    fn validate_plan(&self, plan: &mut Plan) -> Result<(), EditError> {
+    fn validate_plan_checked(&self, plan: &mut Plan, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<(), EditError> {
+        check()?;
         let order = "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered";
         let duration = plan.duration;
         if duration.fract() != 0.0 || !(1.0..=MAX_SHEET_TICKS).contains(&duration) {
@@ -992,6 +1055,7 @@ impl Editor {
         let ids: Vec<String> = plan.tracks.iter().map(|(id, _)| id.clone()).collect();
         let mut largest = 0.0f64;
         for id in &ids {
+            check()?;
             let end = plan.end(id);
             if end.fract() != 0.0 || end < 0.0 || end > duration {
                 return Err(EditError::Invalid("errors.layerSheet.invalidLayerExposureLength".into()));
@@ -999,6 +1063,7 @@ impl Editor {
             let mut previous = -1.0;
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             for key in plan.keys(id) {
+                check()?;
                 let name = key.get("id").and_then(Value::as_str).unwrap_or("").to_string();
                 let tick = num(&key, "tick").unwrap_or(f64::NAN);
                 if name.is_empty() || seen.contains(&name) || tick.fract() != 0.0 || tick.is_nan() || tick < 0.0 || tick <= previous || tick >= end {
@@ -1027,7 +1092,7 @@ impl Editor {
             }
         }
         // An untouched track may not outlast a shortened sheet.
-        let untouched = plan.before.get("tracks").and_then(Value::as_obj).map(|tracks| tracks.iter().filter(|(id, _)| !ids.iter().any(|touched| touched.as_str() == &***id)).filter_map(|(_, track)| num(track, "end")).fold(0.0, f64::max));
+        let untouched = plan.before.get("tracks").and_then(Value::as_obj).map(|tracks| tracks.iter().filter(|(id, _)| !plan.removed_tracks.iter().any(|removed| removed.as_str() == &***id) && !ids.iter().any(|touched| touched.as_str() == &***id)).filter_map(|(_, track)| num(track, "end")).fold(0.0, f64::max));
         if untouched.is_some_and(|end| end > duration) {
             return Err(EditError::Invalid("errors.layerSheet.invalidLayerExposureLength".into()));
         }
@@ -1167,6 +1232,16 @@ impl Editor {
             }
         };
         keep_sheet(self.report.path(&["_styk", "layerSheet"]), &mut retained);
+        let keep_animation = |animation: Option<&Value>, retained: &mut Vec<String>| {
+            for channel in items(animation.and_then(|a| a.get("channels"))).iter().filter(|c| c.get("property").and_then(Value::as_str) == Some("pose")) {
+                for key in items(channel.get("keys")) {
+                    if let Some(id) = key.path(&["value", "frameId"]).and_then(Value::as_str) {
+                        if !retained.iter().any(|kept| kept == id) { retained.push(id.to_string()); }
+                    }
+                }
+            }
+        };
+        keep_animation(self.report.path(&["_styk", "animation"]), &mut retained);
         // `historyCommands`: the entries of batches count as entries.
         fn flatten<'a>(commands: impl Iterator<Item = &'a Command>, out: &mut Vec<&'a Command>) {
             for command in commands {
@@ -1177,12 +1252,29 @@ impl Editor {
             }
         }
         let mut history = Vec::new();
-        flatten(self.undo.iter().chain(&self.redo), &mut history);
+        flatten(self.undo.iter().chain(&self.redo).map(|entry| &**entry), &mut history);
         for command in history {
             if let CommandKind::LayerSheet { before, after, sources, .. } = &command.kind {
                 keep_sheet(Some(before), &mut retained);
                 keep_sheet(Some(after), &mut retained);
                 retained.extend(sources.iter().map(|(id, _)| id.clone()));
+            }
+            if let CommandKind::Animation { before, after, .. } = &command.kind {
+                keep_animation(before.as_ref(), &mut retained);
+                keep_animation(Some(after), &mut retained);
+            }
+            if let CommandKind::Layers { migration: Some(migration), .. } = &command.kind {
+                migration.retain_sources(&mut retained);
+            }
+            if let CommandKind::MovieclipPoses { before, after } = &command.kind {
+                for entry in before.iter().chain(after) {
+                    if let crate::topology::Place::Source(id) = &entry.place { retained.push(id.clone()); }
+                }
+            }
+            if let CommandKind::Topology { before, after, .. } = &command.kind {
+                for entry in before.frames.iter().chain(&after.frames) {
+                    if let crate::topology::Place::Source(id) = &entry.place { retained.push(id.clone()); }
+                }
             }
         }
         let dropped: Vec<String> = self.generated_sources.iter().filter(|id| !retained.contains(id)).cloned().collect();

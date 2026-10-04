@@ -19,12 +19,17 @@
 //! interface thread may not wait on a lock, so every shared structure is taken
 //! with [`sync::Shared::lock`], which spins for the few instructions a holder needs.
 
+#[cfg(test)]
+mod allocation;
 pub mod anchors;
 pub mod edit;
 pub mod export;
 mod frames;
 mod images;
 pub mod mirror;
+pub mod planning;
+mod publication;
+pub use publication::PublicationRetirement;
 mod sync;
 pub mod thumbnails;
 
@@ -37,6 +42,18 @@ use styk_eval::eval::Prepared;
 pub use frames::{FrameData, FrameStats};
 pub use images::{DecodedImage, Uploaded};
 use sync::Shared;
+
+type Task = Box<dyn FnOnce(&Engine) + Send>;
+enum OrdinaryTask { Run(Task), Redecode(images::DecodeScope) }
+type TaskQueue = std::collections::LinkedList<OrdinaryTask>;
+
+/// Detach the first existing node without allocating or freeing it. The worker
+/// pops/drops the detached node after releasing the UI-visible shared lock.
+fn detach_task<T>(tasks: &mut std::collections::LinkedList<T>) -> Option<std::collections::LinkedList<T>> {
+    if tasks.is_empty() { return None }
+    let tail = tasks.split_off(1);
+    Some(std::mem::replace(tasks, tail))
+}
 
 /// A monotonic clock in milliseconds. The engine cannot read one itself on every
 /// platform (WebAssembly has none), so the host supplies it.
@@ -112,19 +129,25 @@ struct State {
     frames: frames::Cache,
     images: images::Store,
     /// Background tasks that are not frames (image decoding), oldest first.
-    tasks: std::collections::VecDeque<Box<dyn FnOnce(&Engine) + Send>>,
+    tasks: TaskQueue,
+    /// Read-only planning/cleanup tasks survive document replacement: payloads
+    /// must be disposed on a worker, including jobs awaiting receiver ACKs.
+    retained_tasks: std::collections::LinkedList<Box<dyn FnOnce(&Engine) + Send>>,
 }
 
 struct Inner {
     state: Shared<State>,
     /// Changes staged for the next commit.
-    staged: Shared<std::collections::HashMap<u32, Vec<mirror::Change>>>,
+    staged: Shared<mirror::transfer::Staged>,
+    record_slots: Arc<std::sync::atomic::AtomicUsize>,
+    record_budget: Arc<mirror::transfer::Budget>,
     mirror: std::sync::Mutex<mirror::Mirror>,
     clock: Clock,
     next_generation: AtomicU64,
     stopping: AtomicBool,
     progress: std::sync::atomic::AtomicU32,
     notifier: Option<Notifier>,
+    planning: Shared<Option<Arc<planning::Core>>>,
 }
 
 /// The engine. Cheap to clone; every clone is the same engine.
@@ -147,14 +170,18 @@ impl Engine {
                     frames: frames::Cache::new(budgets.frame_cache_bytes),
                     images: images::Store::default(),
                     tasks: Default::default(),
+                    retained_tasks: Default::default(),
                 }),
                 staged: Shared::new(Default::default()),
+                record_slots: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                record_budget: Arc::new(Default::default()),
                 mirror: Default::default(),
                 clock,
                 next_generation: AtomicU64::new(1),
                 stopping: AtomicBool::new(false),
                 progress: std::sync::atomic::AtomicU32::new(0),
                 notifier,
+                planning: Shared::new(None),
             }),
         }
     }
@@ -192,60 +219,37 @@ impl Engine {
 
     /// Makes `generation` the open document and queues the decoding of its images
     /// that the previous revision did not already have. Returns its id.
-    pub(crate) fn publish(&self, mut generation: Generation) -> u64 {
-        let id = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
-        generation.id = id;
-        let generators = styk_eval::vfx::generated::has_generators(&generation.prepared.doc);
-        if generators {
-            generation.anchors = Some(Arc::new(anchors::Anchors::new()));
-        }
-        let generation = Arc::new(generation);
-        let image_count = generation.prepared.doc.images.len();
-        {
-            let mut state = self.inner.state.lock();
-            let previous = state.current.clone().filter(|previous| previous.lineage == generation.lineage);
-            let known = previous.as_ref().map_or(0, |previous| previous.prepared.doc.images.len().min(image_count));
-            // Drawing cels this revision placed that the previous one did not have.
-            let cels: Vec<usize> = generation.assets.cels.keys().copied().filter(|cel| !previous.as_ref().is_some_and(|p| p.assets.cels.contains_key(cel))).collect();
-            state.frames.reset(id);
-            if previous.is_none() {
-                state.images.reset(generation.lineage, image_count + cels.len());
-                state.tasks.clear();
-            } else {
-                state.images.grow(image_count - known + cels.len());
-            }
-            // Image pixels are decoded in the background: the frames drawn before they
-            // arrive show the artwork without them.
-            for index in known..image_count {
-                let generation = generation.clone();
-                state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_image(&generation, index)));
-            }
-            for cel in cels {
-                let generation = generation.clone();
-                state.tasks.push_back(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel)));
-            }
-            // Generated effects: their particle materials are generated in the background, once
-            // per process, so the interface thread finds them ready when it first draws one.
-            if generators {
-                for row in 0..styk_eval::vfx::generated::atlas::ROWS {
-                    if styk_eval::vfx::generated::atlas::ready(row).is_none() {
-                        state.tasks.push_back(Box::new(move |_: &Engine| {
-                            styk_eval::vfx::generated::atlas::row(row);
-                        }));
-                    }
-                }
-            }
-            state.current = Some(generation);
-        }
-        self.inner.state.notify_all();
-        id
+    pub(crate) fn publish(&self, generation: Generation) -> u64 {
+        self.publish_record(generation, None).expect("an unguarded publication cannot be refused")
+    }
+
+    pub(crate) fn publish_record(&self, generation: Generation, guard: Option<(mirror::RecordGuard, Arc<AtomicBool>)>) -> Option<u64> {
+        let (id, retirement, ()) = self.publish_with(generation, guard, &mut Some(|| ()))?;
+        if retirement.needs_worker() { self.spawn_retained(move |_| drop(retirement)); }
+        Some(id)
     }
 
     /// Runs `task` in the background: on a worker inside [`Engine::work`], or on the
     /// next [`Engine::step`] of a host without workers. Tasks run before frames.
     pub fn spawn(&self, task: impl FnOnce(&Engine) + Send + 'static) {
-        self.inner.state.lock().tasks.push_back(Box::new(task));
+        let mut node = TaskQueue::new();
+        node.push_back(OrdinaryTask::Run(Box::new(task)));
+        self.inner.state.lock().tasks.append(&mut node);
         self.inner.state.notify_all();
+    }
+
+    /// Internal planning continuations: coalesced to one per active job and
+    /// retained across generation replacement until a worker disposes the job.
+    fn spawn_retained(&self, task: impl FnOnce(&Engine) + Send + 'static) {
+        let mut node = std::collections::LinkedList::new();
+        node.push_back(Box::new(task) as Box<dyn FnOnce(&Engine) + Send>);
+        self.inner.state.lock().retained_tasks.append(&mut node);
+        self.inner.state.notify_all();
+    }
+
+    fn notify_progress(&self) {
+        self.inner.progress.fetch_add(1, Ordering::SeqCst);
+        if let Some(notify) = self.inner.notifier { notify(&self.inner.progress); }
     }
 
     /// A counter that advances whenever background work finishes (a frame, an image,
@@ -261,7 +265,8 @@ impl Engine {
 
     /// Asks every worker to return from [`Engine::work`].
     pub fn stop(&self) {
-        self.inner.stopping.store(true, Ordering::SeqCst);
+        planning::cancel_current(self);
+        self.stop_record_batches();
         self.inner.state.notify_all();
     }
 
@@ -270,6 +275,9 @@ impl Engine {
     pub fn work(&self) {
         loop {
             if self.inner.stopping.load(Ordering::SeqCst) {
+                // Cancellation retains cleanup until a worker runs it.
+                let task = detach_task(&mut self.inner.state.lock().retained_tasks);
+                if let Some(mut node) = task { node.pop_front().expect("detached task")(self); self.notify_progress(); continue; }
                 return;
             }
             if !self.step() {
@@ -281,9 +289,16 @@ impl Engine {
     /// Runs one unit of background work on the calling thread, if there is any.
     /// A host without worker threads calls this between its own tasks.
     pub fn step(&self) -> bool {
+        planning::expire_current(self);
         let job = {
             let mut state = self.inner.state.lock();
-            if let Some(task) = state.tasks.pop_front() {
+            if let Some(task) = detach_task(&mut state.retained_tasks) {
+                Job::Retained(task)
+            } else if state.images.preparation_active() {
+                return false;
+            } else if let Some(task) = detach_task(&mut state.tasks) {
+                if let Some(OrdinaryTask::Redecode(scope)) = task.front()
+                    && !self.inner.stopping.load(Ordering::SeqCst) { state.images.start_preparation(*scope); }
                 Job::Task(task)
             } else {
                 match (state.current.clone(), state.frames.take_wanted()) {
@@ -293,24 +308,26 @@ impl Engine {
             }
         };
         match job {
-            Job::Task(task) => task(self),
+            Job::Retained(mut node) => node.pop_front().expect("detached retained task")(self),
+            Job::Task(mut node) => match node.pop_front().expect("detached task") {
+                OrdinaryTask::Run(task) => task(self),
+                OrdinaryTask::Redecode(scope) => self.prepare_redecode(scope),
+            },
             Job::Frame(generation, tick, hidden, effects, epoch) => {
-                let data = frames::produce(&generation, tick, &hidden, effects, self.inner.clock);
+                let data = frames::produce(&generation, tick.time(), &hidden, effects, self.inner.clock);
                 let mut state = self.inner.state.lock();
                 // A frame prepared for another set of hidden figures, or with effects toggled, is not shown.
                 let current = std::sync::Arc::ptr_eq(&state.frames.hidden, &hidden) && state.frames.effects == effects;
                 state.frames.finish(generation.id, epoch, tick, current.then_some(data));
             }
         }
-        self.inner.progress.fetch_add(1, Ordering::SeqCst);
-        if let Some(notify) = self.inner.notifier {
-            notify(&self.inner.progress);
-        }
+        self.notify_progress();
         true
     }
 }
 
 enum Job {
-    Task(Box<dyn FnOnce(&Engine) + Send>),
-    Frame(Arc<Generation>, u32, Arc<[u32]>, bool, u64),
+    Retained(std::collections::LinkedList<Task>),
+    Task(TaskQueue),
+    Frame(Arc<Generation>, frames::Sample, Arc<[u32]>, bool, u64),
 }

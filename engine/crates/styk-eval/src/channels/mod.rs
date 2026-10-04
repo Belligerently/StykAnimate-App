@@ -597,3 +597,16 @@ impl Animation {
         Some(Arc::new(animation))
     }
 }
+
+/// `animationEndTick` on a validated editor animation record. Timeline edits
+/// need only this bound; they do not rebuild all typed channels on every seek.
+pub fn end_tick_of_record(animation: Option<&Value>) -> f64 {
+    let mut end: f64 = 0.0;
+    for channel in animation.and_then(|a| a.get("channels")).and_then(Value::as_arr).into_iter().flatten() {
+        let Some(keys) = channel.get("keys").and_then(Value::as_arr) else { continue };
+        let Some(tick) = keys.last().and_then(|k| k.get("tick")).and_then(Value::as_f64) else { continue };
+        let visible = keys.iter().rev().take_while(|k| k.get("tick").and_then(Value::as_f64) == Some(tick)).any(|k| !k.get("hidden").is_some_and(Value::truthy));
+        end = end.max(channel.get("clipEnd").and_then(Value::as_f64).unwrap_or(0.0)).max(tick + if visible { 1.0 } else { 0.0 });
+    }
+    end
+}

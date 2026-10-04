@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EngineThumbnails} from '../src/engine/engine-thumbnails.mjs';
-import {EnginePreviewWorker} from '../src/engine/engine-previews.mjs';
+import {EnginePreviewWorker, EngineCameraMonitor} from '../src/engine/engine-previews.mjs';
 
 /** An editor as thumbnails see it: a document, its revision, its timeline and change events. */
 function editor({frames = 3} = {}) {
@@ -66,13 +66,13 @@ test('a document the engine draws gets its thumbnails from the stage, without th
   assert.equal(thumbnails.stats.engine.renders, 2);
 });
 
-test('in-between previews, refused documents and devices without a second canvas are the JavaScript renderer\'s', async () => {
+test('in-between previews without a worker, refused documents and devices without a second canvas are the JavaScript renderer\'s', async () => {
   const js = javascript(), target = editor();
   // An in-between preview samples a pose that is not in the document.
   const {stage, playback, calls} = app();
-  const thumbnails = new EngineThumbnails(target, {}, {stage: () => stage, playback: () => playback, javascript: js.make});
+  const thumbnails = new EngineThumbnails(target, {}, {stage: () => stage, playback: () => playback, javascript: js.make, previews: async () => null});
   assert.equal(await thumbnails.renderThumbnail(0, canvas(), {inbetween: {ratio: .5}}), true);
-  assert.equal(calls.length, 0, 'the engine is not asked');
+  assert.equal(calls.length, 0, 'without a worker no document is mirrored');
   // The gate refuses the document.
   const refused = app({refusal: 'a frame draft'});
   const second = new EngineThumbnails(target, {}, {stage: () => refused.stage, playback: () => refused.playback, javascript: js.make});
@@ -94,6 +94,20 @@ test('in-between previews, refused documents and devices without a second canvas
   assert.equal(await fourth.renderThumbnail(0, canvas()), true);
   assert.equal(plain.calls.length, 0);
   assert.equal(js.drawn.length, 5);
+});
+
+test('in-between thumbnails sample an explicit interval in the existing engine worker without copying the document', async () => {
+  const {stage, playback, calls} = app(), js = javascript(), target = editor();
+  const worker = previewWorker();
+  const thumbnails = new EngineThumbnails(target, {}, {stage: () => stage, playback: () => playback, javascript: js.make, previews: async () => worker.worker});
+  const inbetween = {ratio: .37, onionMode: 'settings', onionCount: 3, onionOpacity: .18, onionAhead: false};
+  const picture = canvas();
+  assert.equal(await thumbnails.renderThumbnail(1, picture, {inbetween}), true);
+  assert.deepEqual(calls, [['frames', 4], ['definitions', 4]]);
+  assert.deepEqual({...worker.requests[0], address: undefined}, {operation: 'inbetween', address: undefined, revision: 4, index: 1, ratio: .37, mode: 1, count: 3, opacity: .18, ahead: false, width: 320, height: 192});
+  assert.equal(picture.drawn[0].closed, true);
+  assert.equal(thumbnails.stats.engine.inbetweens, 1);
+  assert.equal(thumbnails.javascript, null);
 });
 
 test('thumbnails the stage cannot draw are drawn by the preview worker on the CPU, from the engine\'s document', async () => {
@@ -225,6 +239,16 @@ test('a request\'s message can be made when it is sent', async () => {
   previews.release();
 });
 
+test('a settled preview request cannot send a late cancellation to the shared worker', async () => {
+  const {workers, spawn} = fakeWorker(message => ({id: message.id, ok: true}));
+  const previews = new EnginePreviewWorker(engine, {spawn});
+  const controller = new AbortController();
+  await previews.request({operation: 'monitor', address: 10}, {signal: controller.signal});
+  controller.abort();
+  assert.equal(workers[0].messages.some(message => message.operation === 'cancel'), false);
+  previews.release();
+});
+
 test('a preview worker that cannot start leaves every request to the JavaScript workers', async () => {
   const {workers, spawn} = fakeWorker(message => message.operation === 'start' ? {id: 0, ok: false, error: 'the GPU canvas gives no pixels in this worker'} : null);
   const previews = new EnginePreviewWorker(engine, {spawn});
@@ -236,4 +260,97 @@ test('a preview worker that cannot start leaves every request to the JavaScript 
   assert.equal(workers[0].messages.at(-1).operation, 'release');
   assert.equal(workers[0].terminated, true);
   assert.equal(workers.length, 1, 'no second worker is started');
+});
+
+test('the camera monitor shares the displayed pose, keeps one pending request and never draws a stale answer', async () => {
+  let version = 1, addresses = 0, invalidations = 0;
+  const requests = [], bitmaps = [];
+  const worker = {usable: true, request(message, options) {
+    const sent = message();
+    return new Promise(resolve => requests.push({sent, options, resolve}));
+  }};
+  const stage = {monitor_version: () => version, monitor_address: () => ++addresses, forget_monitor() { assert.fail('a transferred ticket belongs to the worker'); }};
+  const monitor = new EngineCameraMonitor(stage, {previews: async () => worker, invalidate: () => invalidations++});
+  const target = {save() {}, restore() {}, setTransform() {}, drawImage: bitmap => bitmaps.push(bitmap)};
+  const view = {width: 320, height: 180, zoom: .5, panX: 0, panY: 0};
+  assert.equal(monitor.draw(target, view), true, 'accepted without preparing or drawing JavaScript artwork');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(addresses, 1);
+  assert.deepEqual(requests[0].sent, {operation: 'monitor', address: 1, ...view});
+  version = 2;
+  for (let i = 0; i < 40; i++) monitor.draw(target, view);
+  assert.equal(requests.length, 1, 'the latest frame waits in one slot, never a queue of monitor captures');
+  assert.equal(requests[0].options.signal.aborted, true);
+  const stale = {closed: 0, close() { this.closed++; }};
+  requests[0].resolve({bitmap: stale});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stale.closed, 1);
+  assert.equal(bitmaps.length, 0);
+  assert.equal(invalidations, 1, 'the app asks for the latest frame once the old one finishes');
+  monitor.draw(target, view);
+  await new Promise(resolve => setImmediate(resolve));
+  const current = {closed: 0, close() { this.closed++; }};
+  requests[1].resolve({bitmap: current});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(monitor.draw(target, view), true);
+  assert.deepEqual(bitmaps, [current]);
+  assert.equal(addresses, 2, 'a settled unchanged frame reuses its one bitmap');
+  monitor.destroy();
+  assert.equal(current.closed, 1);
+  assert.equal(monitor.draw(target, view), false);
+});
+
+test('camera monitor cancellation before sending creates no ticket and disposal closes late bitmaps', async () => {
+  let resolveWorker, addresses = 0;
+  const stage = {monitor_version: () => 1, monitor_address: () => ++addresses};
+  const loading = new EngineCameraMonitor(stage, {previews: () => new Promise(resolve => { resolveWorker = resolve; })});
+  const target = {save() {}, restore() {}, setTransform() {}, drawImage() { assert.fail('disposed'); }};
+  const view = {width: 160, height: 90, zoom: .25, panX: 0, panY: 0};
+  loading.draw(target, view); loading.destroy();
+  resolveWorker({usable: true, request() { assert.fail('cancelled before sending'); }});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(addresses, 0);
+  let finish;
+  const drawing = new EngineCameraMonitor(stage, {previews: async () => ({usable: true, request(message) { message(); return new Promise(resolve => { finish = resolve; }); }})});
+  drawing.draw(target, view);
+  await new Promise(resolve => setImmediate(resolve));
+  drawing.destroy();
+  const bitmap = {closed: 0, close() { this.closed++; }};
+  finish({bitmap});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(bitmap.closed, 1);
+});
+
+test('a monitor ticket which cannot transfer is released exactly once', async () => {
+  const {workers, spawn} = fakeWorker(message => message.operation === 'start' ? {id: 0, ok: true} : null);
+  const previews = new EnginePreviewWorker(engine, {spawn});
+  // Start the worker first; its next message throws before consuming the ticket.
+  const started = previews.request({operation: 'first'});
+  workers[0].dispatchEvent(Object.assign(new Event('message'), {data: {id: workers[0].messages.at(-1).id, ok: true}}));
+  await started;
+  const original = workers[0].postMessage;
+  workers[0].postMessage = message => { if (message.operation === 'monitor') throw new Error('cannot transfer'); return original(message); };
+  const discarded = [];
+  await assert.rejects(previews.request(() => ({operation: 'monitor', address: 19}), {discard: message => discarded.push(message.address)}), /cannot transfer/);
+  assert.deepEqual(discarded, [19]);
+  previews.release();
+});
+
+test('a threaded monitor keeps ownership while its first followed stage pose is pending', async () => {
+  let version = 0, addresses = 0;
+  const stage = {monitor_version: () => version, monitor_address: () => ++addresses, forget_monitor() {}};
+  const worker = previewWorker(() => ({bitmap: {close() {}}}));
+  const monitor = new EngineCameraMonitor(stage, {previews: async () => worker.worker});
+  const target = {save() {}, restore() {}, setTransform() {}, drawImage() {}};
+  const view = {width: 320, height: 180, zoom: .5, panX: 0, panY: 0};
+  assert.equal(monitor.draw(target, view), true, 'no JavaScript camera evaluation on the cold path');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(worker.requests.length, 0);
+  assert.equal(addresses, 0, 'there is no displayed pose to capture yet');
+  version = 1;
+  assert.equal(monitor.draw(target, view), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(worker.requests.length, 1);
+  assert.equal(monitor.stats.drawn, 1);
+  monitor.destroy();
 });

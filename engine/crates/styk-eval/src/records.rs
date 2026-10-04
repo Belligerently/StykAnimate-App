@@ -25,7 +25,7 @@ use styk_doc::{Obj, Value};
 
 use crate::eval::{Prepared, Row, Seq, evaluate_native_exact_only, timeline_rows};
 
-pub use channels::{Bound, resolved_stack};
+pub use channels::{Bound, RecordChannels, resolved_stack};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -95,6 +95,8 @@ pub struct Records<'a> {
     /// The property channels the native timeline is sampled with (`sampleLegacy`): a
     /// layer sheet's `legacyAnimation`, else `_styk.animation`.
     legacy: Vec<Bound>,
+    /// Raw retained source, sharing the parent definitions when requested.
+    source_tree: Option<Value>,
 }
 
 impl<'a> Records<'a> {
@@ -102,9 +104,6 @@ impl<'a> Records<'a> {
     pub fn new(tree: &'a Value, prepared: &'a Prepared) -> Result<Records<'a>, Error> {
         let styk = tree.get("_styk");
         let clips = |path: &[&str]| items(styk.and_then(|s| s.path(path)));
-        if styk.and_then(|s| s.get("movieclipSource")).is_some() {
-            return unported("a movieclip's own document");
-        }
         let legacy_channels = match styk.and_then(|s| s.get("layerSheet")) {
             Some(sheet) => sheet.path(&["legacyAnimation", "channels"]),
             None => styk.and_then(|s| s.path(&["animation", "channels"])),
@@ -125,7 +124,21 @@ impl<'a> Records<'a> {
         if let Some(last) = rows.last_mut() {
             last.count = last.count.max((ends - last.start as f64).max(0.0) as u32);
         }
-        Ok(Records { tree, prepared, rows, legacy })
+        let source_tree = styk
+            .and_then(|s| s.get("movieclipSource"))
+            .and_then(|source| {
+                let mut document = source.get("document")?.as_obj()?.clone();
+                if source.get("inheritFigures").is_some_and(Value::truthy) {
+                    document.set(
+                        "figure_types",
+                        tree.get("figure_types").cloned().unwrap_or(Value::Null),
+                    );
+                }
+                Some(Value::object(document))
+            });
+        Ok(Records { tree, prepared, rows, legacy,
+            source_tree,
+        })
     }
 
     /// A pose record read through the same typed loader as evaluation. Origin arithmetic
@@ -205,7 +218,7 @@ impl<'a> Records<'a> {
     pub fn evaluated_options(&self, tick: f64, clips: bool, skip_patches: bool) -> Result<Value, Error> {
         let frame = match self.tree.path(&["_styk", "layerSheet"]) {
             Some(sheet) => self.sample_sheet(sheet, tick, skip_patches)?,
-            None => self.native_at(tick)?,
+            None => self.native_at_with(tick, clips)?,
         };
         let frame = if clips { self.sample_clips(frame, tick)? } else { frame };
         Ok(self.layer_order(frame))
@@ -278,12 +291,72 @@ impl<'a> Records<'a> {
     /// `sampleLegacy(report, time)`: the native timeline at a time with its property
     /// channels composed, in layer order.
     fn native_at(&self, time: f64) -> Result<Value, Error> {
+        self.native_at_with(time, false)
+    }
+
+    fn native_at_with(&self, time: f64, clips: bool) -> Result<Value, Error> {
         let index = self.rows.partition_point(|r| r.start as f64 <= time).saturating_sub(1);
         let t = match self.rows.get(index) {
             Some(row) if row.count > 0 => (time - row.start as f64) / row.count as f64,
             _ => 0.0,
         };
-        let frame = self.native(index, t)?;
+        let frame = match (
+            &self.source_tree,
+            &self.prepared.source,
+            self.prepared.retained_source_time(index, t),
+        ) {
+            (Some(tree), Some(prepared), Some(source_tick)) => {
+                let source = Records::new(tree, prepared)?;
+                let sampled = source.evaluated_with(source_tick, clips)?;
+                let keys = items(self.tree.get("keyframes"));
+                let key = keys
+                    .get(index)
+                    .ok_or_else(|| Error::Invalid(format!("no key {index}")))?;
+                let mut frame = sampled.as_obj().cloned().unwrap_or_default();
+                if let Some(duration) = key.get("duration_raw") {
+                    frame.set("duration_raw", duration.clone());
+                }
+                match key.get("_styk") {
+                    Some(styk) => frame.set("_styk", styk.clone()),
+                    None => {
+                        frame.remove("_styk");
+                    }
+                }
+                let settings: HashMap<u32, Value> = items(key.get("objects"))
+                    .iter()
+                    .filter_map(|object| {
+                        Some((
+                            uid(object)? as u32,
+                            object
+                                .get("_stykMovieclip")
+                                .filter(|p| {
+                                    p.get("clock").and_then(Value::as_str) == Some("presence")
+                                })?
+                                .clone(),
+                        ))
+                    })
+                    .collect();
+                if !settings.is_empty() {
+                    let objects = items(frame.get("objects"))
+                        .into_iter()
+                        .map(|object| {
+                            if let Some(settings) =
+                                uid(&object).and_then(|uid| settings.get(&(uid as u32)))
+                            {
+                                let mut object = object.as_obj().cloned().unwrap_or_default();
+                                object.set("_stykMovieclip", settings.clone());
+                                Value::object(object)
+                            } else {
+                                object
+                            }
+                        })
+                        .collect();
+                    frame.set("objects", Value::array(objects));
+                }
+                Value::object(frame)
+            }
+            _ => self.native(index, t)?,
+        };
         Ok(self.layer_order(self.compose(frame, &self.legacy, time)?))
     }
 

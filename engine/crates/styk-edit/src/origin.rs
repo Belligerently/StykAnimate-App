@@ -8,7 +8,7 @@ use crate::record::{num, uid};
 use crate::{EditError, Editor};
 
 pub(crate) fn recorded_call(method: &str) -> bool {
-    posing_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
+    posing_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
         "commitDrag" | "cancelDrag" | "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" |
         "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" | "setOrigin" | "mirrorSegment" | "mirrorSegmentBranch" | "splitSegment" | "splitSegmentBranch" | "splitBuilderSegments" | "unsplitSegment" |
         "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
@@ -18,8 +18,12 @@ pub(crate) fn property_call(method: &str) -> bool {
     matches!(method, "beginAnimationEdit" | "previewAnimationEdit" | "commitAnimationEdit" | "cancelAnimationEdit" | "addAnimationKey" | "addAnimationKeys")
 }
 
+pub(crate) fn motion_call(method: &str) -> bool {
+    matches!(method, "beginMotionPathEdit" | "updateMotionPathEdit" | "commitMotionPathEdit" | "cancelMotionPathEdit" | "setMotionPathFalloff" | "motionPathFalloff")
+}
+
 pub(crate) fn recorded_channel_call(method: &str) -> bool {
-    property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
+    property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
         "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" | "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" |
         "poseJoint" | "rotateJoint" | "bendJoint" | "undo" | "redo")
 }
@@ -148,7 +152,7 @@ impl Editor {
             let fallback = Value::Num(self.tick);
             let at = tick.filter(|tick| !tick.is_null()).unwrap_or(&fallback);
             // Keys use the sheet owner's tick check; a begin reads the current property view.
-            let at = if method == "beginAnimationEdit" { at.clone() } else { Value::Num(crate::property_edit::checked_tick(at)?) };
+            let at = if method == "beginAnimationEdit" { at.clone() } else if self.sheet() { Value::Num(crate::property_edit::checked_tick(at)?) } else { at.clone() };
             let frame = self.animation_frame_at(&at)?;
             let mut objects = crate::frame::objects_of(&frame);
             let has_target = |objects: &[Value]| objects.iter().any(|object| crate::record::uid(object) == Some(uid));
@@ -175,7 +179,7 @@ impl Editor {
         }
     }
 
-    fn origin_plain_targets(&self, uids: &[u32]) -> Result<(), EditError> {
+    pub(crate) fn origin_plain_targets(&self, uids: &[u32]) -> Result<(), EditError> {
         self.origin_plain_targets_in(&self.selection_frame()?, uids, false)
     }
 
@@ -186,6 +190,21 @@ impl Editor {
 
     fn origin_plain_slots_in(&self, objects: &[Value], slots: &[usize]) -> Result<(), EditError> {
         self.origin_plain_slots_with_rig(objects, slots, false).map(|_| ())
+    }
+
+    /// Motion edits resolve their component in the remote frame, not the current
+    /// selection. The same definition and typed-origin owners validate that view.
+    pub(crate) fn origin_motion_gate(&self, objects: &[Value], slots: &[usize]) -> Result<(), EditError> {
+        let ids = slots.iter().filter_map(|&slot| uid(&objects[slot])).collect::<Vec<_>>();
+        let slots = crate::select::resolve_join_selection(objects, &ids, true)
+            .map_err(|_| EditError::Unported("an unrecorded invalid animation-origin motion hierarchy".into()))?;
+        self.origin_plain_slots_in(objects, &slots)?;
+        for slot in slots {
+            if let Some(figure) = self.figure_of(&objects[slot]).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+                self.origin_figure(&figure)?;
+            }
+        }
+        Ok(())
     }
 
     fn origin_plain_slots_with_rig(&self, objects: &[Value], slots: &[usize], allow_rig: bool) -> Result<bool, EditError> {

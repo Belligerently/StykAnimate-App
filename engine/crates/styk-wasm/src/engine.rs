@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use styk_engine::mirror::{Change, Committed, Record, Table};
+use styk_engine::mirror::{Change, Committed, MetadataField, Packet, PacketKind, Record, RecordGuard, RecordLengths, RecordTarget, SourceDisposition, Table, MAX_RECORD_PACKET_BYTES};
 use styk_engine::{Budgets, Engine, Opened};
 use wasm_bindgen::prelude::*;
 
@@ -20,6 +20,23 @@ pub struct EngineHandle {
 
 fn table(code: u32) -> Result<Table, JsError> {
     Table::from_code(code).ok_or_else(|| js_error(format!("unknown document table {code}")))
+}
+
+fn record_counter(value: f64) -> Result<u64, &'static str> {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > 9_007_199_254_740_991.0 {
+        return Err("the record transfer counter is not an exact nonnegative JavaScript integer");
+    }
+    Ok(value as u64)
+}
+
+fn record_guard(counters: &js_sys::Float64Array, length: u32) -> Result<RecordGuard, JsError> {
+    if counters.length() != length { return Err(js_error("the record transfer guard has the wrong length")); }
+    Ok(RecordGuard {
+        generation: record_counter(counters.get_index(0)).map_err(js_error)?,
+        lineage: record_counter(counters.get_index(1)).map_err(js_error)?,
+        revision: record_counter(counters.get_index(2)).map_err(js_error)?,
+        nonce: record_counter(counters.get_index(3)).map_err(js_error)?,
+    })
 }
 
 fn opened_json(opened: &Opened) -> String {
@@ -54,6 +71,14 @@ impl EngineHandle {
         Box::into_raw(Box::new(self.engine.clone())) as usize
     }
 
+    /// Consumes a worker ticket whose message failed to transfer.
+    pub fn forget_address(&self, address: usize) {
+        if address != 0 {
+            // SAFETY: the caller owns the untransferred address produced above.
+            drop(unsafe { Box::from_raw(address as *mut styk_engine::Engine) });
+        }
+    }
+
     /// Address of the 32-bit progress counter in the module's memory, for
     /// `Atomics.waitAsync`: it changes whenever background work finishes.
     pub fn progress_address(&self) -> usize {
@@ -82,33 +107,109 @@ impl EngineHandle {
     }
 
     /// Starts describing another document: the mirrored one is forgotten at the next commit.
-    pub fn stage_reset(&self, batch: u32) {
-        self.engine.stage(batch, Change::Reset);
+    pub fn stage_reset(&self, batch: u32) -> Result<(), JsError> {
+        self.engine.stage(batch, Change::Reset).map_err(js_error)
+    }
+
+    /// Releases an abandoned, uncommitted mirror batch and its staged bytes.
+    pub fn discard_batch(&self, batch: u32) { self.engine.discard_batch(batch); }
+
+    /// One coherent guard snapshot: generation,lineage,revision; all zeros
+    /// before the first document. The caller adds a transaction nonce/ticket.
+    pub fn record_identity(&self) -> Vec<f64> {
+        self.engine.generation().map_or_else(|| vec![0.0; 3], |generation| vec![generation.id as f64, generation.lineage as f64, generation.revision as f64])
+    }
+
+    /// Guard array: generation,lineage,revision,batch nonce,record ticket.
+    /// Target 0=table (code 0..2), 1=source, 2=metadata (code 0..4).
+    /// Array lengths and IDs are bounded before crossing owned memory.
+    pub fn begin_record_transfer(&self, batch: u32, counters: js_sys::Float64Array, target: u32, code: u32, index: u32, id: js_sys::JsString) -> Result<(), JsError> {
+        let guard = record_guard(&counters, 5)?;
+        let ticket = record_counter(counters.get_index(4)).map_err(js_error)?;
+        let target = match target {
+            0 => RecordTarget::Table(table(code)?, index),
+            1 => {
+                if id.length() > 256 { return Err(js_error("the retained source identity is too long")); }
+                RecordTarget::Source(id.as_string().ok_or_else(|| js_error("a retained source identity must be a string"))?)
+            }
+            2 => RecordTarget::Metadata(MetadataField::from_code(code).ok_or_else(|| js_error("unknown canonical metadata field"))?),
+            _ => return Err(js_error("unknown record transfer target")),
+        };
+        self.engine.begin_record(batch, guard, ticket, target).map_err(js_error)
+    }
+
+    /// Packet kinds: 0=skeleton UTF-8 bytes, 1=numbers, 2=payloads. The binding
+    /// checks its byte bound before to_vec; worker append is acknowledged once.
+    pub fn record_transfer_packet(&self, batch: u32, ticket: f64, sequence: u32, kind: u32, offset: u32, bytes: js_sys::Uint8Array) -> Result<(), JsError> {
+        if bytes.length() == 0 || bytes.length() as usize > MAX_RECORD_PACKET_BYTES { return Err(js_error("the record packet exceeds its transfer bound")); }
+        let kind = match kind { 0 => PacketKind::Skeleton, 1 => PacketKind::Arrays, 2 => PacketKind::Payloads, _ => return Err(js_error("unknown record packet kind")) };
+        self.engine.record_packet(batch, record_counter(ticket).map_err(js_error)?, sequence as u64, Packet { kind, offset: offset as usize, bytes: bytes.to_vec() }).map_err(js_error)
+    }
+
+    /// Length array: skeleton,numbers,payloads,materialization limit. No record
+    /// is admitted until the worker returns its tagged terminal ACK.
+    pub fn finish_record_transfer(&self, batch: u32, ticket: f64, sequence: u32, lengths: js_sys::Uint32Array) -> Result<(), JsError> {
+        if lengths.length() != 4 { return Err(js_error("the record section length array is invalid")); }
+        self.engine.finish_record(batch, record_counter(ticket).map_err(js_error)?, sequence as u64, RecordLengths {
+            skeleton: lengths.get_index(0) as usize, arrays: lengths.get_index(1) as usize, payloads: lengths.get_index(2) as usize, materialization_limit: lengths.get_index(3) as usize,
+        }).map_err(js_error)
+    }
+
+    pub fn finish_absent_record_transfer(&self, batch: u32, ticket: f64, sequence: u32) -> Result<(), JsError> {
+        self.engine.finish_absent_record(batch, record_counter(ticket).map_err(js_error)?, sequence as u64).map_err(js_error)
+    }
+
+    /// Small JSON response or undefined while pending. A retired ticket is an
+    /// error, allowing a waiter to abandon its cursor rather than wait forever.
+    pub fn take_record_transfer_ack(&self, batch: u32, ticket: f64) -> Result<Option<String>, JsError> {
+        let ticket = record_counter(ticket).map_err(js_error)?;
+        let ack = self.engine.take_record_ack(batch, ticket);
+        if ack.is_none() && !self.engine.record_transfer_current(batch, ticket) { return Err(js_error("the record transfer was superseded or cancelled")); }
+        Ok(ack.map(|ack| {
+            let error = ack.error.map_or_else(|| "null".into(), |error| styk_doc::json::to_string(&styk_doc::Value::str(&error.to_string())));
+            format!("{{\"ticket\":{},\"sequence\":{},\"finished\":{},\"error\":{error}}}", ack.ticket, ack.sequence, ack.finished)
+        }))
+    }
+
+    /// Explicit final source-table absence, without replacing its contents.
+    pub fn record_sources_absent_if_empty(&self, batch: u32, counters: js_sys::Float64Array) -> Result<(), JsError> {
+        self.engine.stage_guarded(batch, record_guard(&counters, 4)?, Change::Sources(SourceDisposition::AbsentIfEmpty)).map_err(js_error)
+    }
+
+    /// Background commit guarded through final publication. A missing/replaced
+    /// nonce is refused rather than acknowledging an empty legacy batch.
+    pub fn commit_record_transfer(&self, revision: f64, batch: u32, counters: js_sys::Float64Array) -> Result<(), JsError> {
+        let revision = record_counter(revision).map_err(js_error)?;
+        let guard = record_guard(&counters, 4)?;
+        let slot = self.committed.clone();
+        self.engine.spawn(move |engine| {
+            let result = engine.commit_record(revision, batch, guard).map_err(|error| (revision, error.to_string()));
+            slot.lock().unwrap_or_else(|error| error.into_inner()).push(result);
+        });
+        Ok(())
     }
 
     /// Stages the document's top-level properties (JSON, without the tables and pose sources).
-    pub fn stage_properties(&self, batch: u32, json: &str) {
-        self.engine.stage(batch, Change::Properties(json.as_bytes().to_vec()));
+    pub fn stage_properties(&self, batch: u32, json: &str) -> Result<(), JsError> {
+        self.engine.stage(batch, Change::Properties(json.as_bytes().to_vec())).map_err(js_error)
     }
 
     /// Stages the order of a table (0 figures, 1 keyframes, 2 backgrounds): for each
     /// position the index its record had before, or -1 for a record staged next.
     pub fn stage_layout(&self, batch: u32, table_code: u32, layout: &[i32]) -> Result<(), JsError> {
-        self.engine.stage(batch, Change::Layout(table(table_code)?, layout.to_vec()));
-        Ok(())
+        self.engine.stage(batch, Change::Layout(table(table_code)?, layout.to_vec())).map_err(js_error)
     }
 
     /// Stages one record of a table as lifted JSON and its two byte sections.
     pub fn stage_record(&self, batch: u32, table_code: u32, index: u32, skeleton: &str, arrays: &[u8], payloads: &[u8]) -> Result<(), JsError> {
         let record = Record { skeleton: skeleton.as_bytes().to_vec(), arrays: arrays.to_vec(), payloads: payloads.to_vec() };
-        self.engine.stage(batch, Change::Set(table(table_code)?, index, record));
-        Ok(())
+        self.engine.stage(batch, Change::Set(table(table_code)?, index, record)).map_err(js_error)
     }
 
     /// Stages a retained pose source, or its removal when `skeleton` is empty.
-    pub fn stage_source(&self, batch: u32, id: &str, skeleton: &str, arrays: &[u8], payloads: &[u8]) {
+    pub fn stage_source(&self, batch: u32, id: &str, skeleton: &str, arrays: &[u8], payloads: &[u8]) -> Result<(), JsError> {
         let record = (!skeleton.is_empty()).then(|| Record { skeleton: skeleton.as_bytes().to_vec(), arrays: arrays.to_vec(), payloads: payloads.to_vec() });
-        self.engine.stage(batch, Change::Source(id.to_string(), record));
+        self.engine.stage(batch, Change::Source(id.to_string(), record)).map_err(js_error)
     }
 
     /// Commits everything staged in `batch` as the document of `revision`, in the
@@ -175,15 +276,20 @@ impl EngineHandle {
         self.engine.request(playhead, ticks);
     }
 
-    pub fn frame_ready(&self, tick: u32) -> bool {
-        self.engine.frame(tick).is_some()
+    /// Replaces fractional sample requests; the interface transfers Float64Array.
+    pub fn request_samples(&self, playhead: f64, ticks: &[f64]) {
+        self.engine.request_samples(playhead, ticks);
+    }
+
+    pub fn frame_ready(&self, tick: f64) -> bool {
+        self.engine.frame_at(tick).is_some()
     }
 
     /// What the interface draws around a prepared frame (the camera outline, the
     /// background being shown), as the JSON of a keyframe without objects;
     /// `undefined` while the frame is not ready.
-    pub fn frame_meta(&self, tick: u32) -> Option<String> {
-        let frame = self.engine.frame(tick)?;
+    pub fn frame_meta(&self, tick: f64) -> Option<String> {
+        let frame = self.engine.frame_at(tick)?;
         let camera = match frame.camera {
             Some(c) => format!("{{\"x\":{},\"y\":{},\"scale\":{},\"angle_rad\":{},\"is_default\":{}}}", c.x, c.y, c.scale, c.angle, c.is_default),
             None => "null".to_string(),

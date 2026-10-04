@@ -14,7 +14,9 @@
 //! canvas failing the probe) are drawn here too, always on the CPU ([`Previews::thumbnail`]):
 //! the document is the engine's, pinned at the interface's revision (`ExportFrames`), its
 //! frames prepared on the engine's workers and its pictures decoded there once per document
-//! lineage, kept across revisions.
+//! lineage, kept across revisions. In-between poses and the camera monitor share this
+//! worker's existing device/atlas (or its CPU rasterizer); even their first preparation
+//! runs here, never on the interface thread.
 //!
 //! A library file is not the open document: its pictures go into an atlas of this device (or
 //! the CPU's pictures), replaced when another file is drawn (library files hold few
@@ -25,6 +27,8 @@ use std::sync::Arc;
 use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::thumbnails::library::{fitted, LibraryPreview, Sample, SAMPLE, SIZE};
 use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
+use styk_engine::thumbnails::monitor::MonitorFrame;
+use styk_engine::thumbnails::inbetween::{InbetweenPreview, Onions};
 use styk_engine::{Engine, Generation};
 use styk_raster::{Edges, Images, Raster};
 use styk_render::{Renderer, ViewParams, wgpu};
@@ -45,13 +49,14 @@ struct Gpu {
     config: wgpu::SurfaceConfiguration,
     renderer: Renderer,
     /// The library file whose pictures the atlas holds (its lineage).
-    atlas: Option<u64>,
+    atlas: Option<(u64, u32, usize)>,
 }
 
 /// The open document's frames for thumbnails, and its pictures for the CPU.
 struct DocumentThumbnails {
     frames: ExportFrames,
     images: Images,
+    preview: Option<InbetweenPreview>,
 }
 
 #[wasm_bindgen]
@@ -70,6 +75,7 @@ pub struct Previews {
     /// The engine whose open document frame thumbnails show ([`Previews::adopt_engine`]).
     engine: Option<Engine>,
     thumbnails: Option<DocumentThumbnails>,
+    monitor: Option<MonitorFrame>,
 }
 
 /// A picture drawn, as JSON for the worker (`extra` adds fields).
@@ -79,7 +85,7 @@ fn drawn(width: u32, height: u32, started: f64, evaluated: f64, extra: &str) -> 
 
 impl Previews {
     fn with(gpu: Option<Gpu>, backend: String) -> Previews {
-        Previews { gpu, backend, raster: Raster::new(Edges::Smooth), library_images: None, picture: (0, 0, Vec::new()), library: None, samples: Vec::new(), engine: None, thumbnails: None }
+        Previews { gpu, backend, raster: Raster::new(Edges::Smooth), library_images: None, picture: (0, 0, Vec::new()), library: None, samples: Vec::new(), engine: None, thumbnails: None, monitor: None }
     }
 }
 
@@ -235,6 +241,63 @@ impl Previews {
         drop(unsafe { Box::from_raw(address as *mut Engine) });
     }
 
+    /// Consumes the stage's shared-memory monitor snapshot. It holds shared pointers,
+    /// never a JSON copy of the document or a pose prepared on the interface thread.
+    pub fn monitor_begin(&mut self, address: usize) {
+        // SAFETY: the stage made this address in this memory; this request consumes it once.
+        self.monitor = Some(unsafe { *Box::from_raw(address as *mut MonitorFrame) });
+    }
+
+    /// Releases a snapshot which did not reach a running request (worker release).
+    pub fn forget_monitor(address: usize) {
+        // SAFETY: as in monitor_begin; a dropped message's address is consumed once.
+        drop(unsafe { Box::from_raw(address as *mut MonitorFrame) });
+    }
+
+    /// Draws the stage's displayed pose through the camera, on transparency. Executed
+    /// only in the preview worker, including the first camera/parallax preparation.
+    /// 0: drawn; 1: pictures pending; 2: a newer document generation superseded it.
+    pub fn monitor(&mut self, width: u32, height: u32, zoom: f64, pan_x: f64, pan_y: f64) -> Result<u32, JsError> {
+        if width == 0 || height == 0 || width > 2048 || height > 2048 || !zoom.is_finite() || zoom <= 0.0 || !pan_x.is_finite() || !pan_y.is_finite() {
+            return Err(js_error("Invalid camera monitor size or view."));
+        }
+        let Some(request) = self.monitor.as_ref() else { return Ok(STALE) };
+        let (engine, generation) = (request.engine.clone(), request.generation.clone());
+        if engine.generation().is_none_or(|g| g.id != generation.id) { return Ok(STALE) }
+        self.pin(&engine, &generation)?;
+        let pictures = self.thumbnails.as_mut().expect("pinned above");
+        for image in pictures.frames.take_images(usize::MAX) { pictures.images.add_shared(&generation.assets, image); }
+        if pictures.frames.images_pending() > 0 { return Ok(WAIT) }
+        let Some((list, camera)) = self.monitor.as_mut().expect("present above").prepare().map_err(js_error)? else { return Ok(STALE) };
+        let doc = &generation.prepared.doc;
+        let pan = [pan_x, pan_y];
+        let framing = Framing { matrix: styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan), artboard: [pan_x, pan_y, pan_x + doc.canvas[0] as f64 * zoom, pan_y + doc.canvas[1] as f64 * zoom], zoom, pan };
+        let view = view_of(framing, [0.0; 4], true, true);
+        self.draw_document(&generation, &list, &view, width, height)?;
+        Ok(READY)
+    }
+
+    /// The request finished or was cancelled. Images stay with the preview worker's
+    /// pinned document, reused by thumbnails and the next monitor frame.
+    pub fn monitor_end(&mut self) { self.monitor = None; }
+
+    /// Explicit in-between samples, including hidden and one-tick native intervals,
+    /// prepared here using one typed sampling view of the pinned generation.
+    pub fn inbetween(&mut self, revision: f64, index: u32, ratio: f64, mode: u32, count: u32, opacity: f64, ahead: bool, width: u32, height: u32) -> Result<u32, JsError> {
+        if !(1..=MAX_SIDE).contains(&width) || !(1..=MAX_SIDE).contains(&height) { return Err(js_error("Invalid in-between preview dimensions.")); }
+        let Some(engine) = self.engine.clone() else { return Ok(STALE) };
+        let Some(generation) = engine.generation().filter(|g| g.revision == revision as u64) else { return Ok(STALE) };
+        self.pin(&engine, &generation)?;
+        let pictures = self.thumbnails.as_mut().expect("pinned above");
+        for image in pictures.frames.take_images(usize::MAX) { pictures.images.add_shared(&generation.assets, image); }
+        if pictures.frames.images_pending() > 0 { return Ok(WAIT) }
+        let preview = pictures.preview.get_or_insert_with(|| InbetweenPreview::new(generation.clone()));
+        let (list, camera) = preview.sample(index as usize, ratio, Onions { mode, count, opacity, ahead }, clock).map_err(js_error)?;
+        let view = view_of(card(&generation.prepared.doc, camera.as_ref(), width, height), CARD, true, true);
+        self.draw_document(&generation, &list, &view, width, height)?;
+        Ok(READY)
+    }
+
     /// Draws the thumbnail of `tick` of the open document at `revision` on a `width ×
     /// height` card (`styk_engine::thumbnails::card`) with the CPU rasterizer, into the CPU's
     /// picture. 0: drawn; 1: its frame or some of the document's pictures are not ready yet
@@ -305,6 +368,7 @@ impl Previews {
         self.samples.clear();
         self.thumbnails = None;
         self.engine = None;
+        self.monitor = None;
         self.library_images = None;
         self.picture = (0, 0, Vec::new());
         self.raster.release();
@@ -343,13 +407,29 @@ impl Previews {
         match self.thumbnails.take() {
             Some(earlier) if earlier.frames.generation().lineage == generation.lineage && earlier.frames.images_pending() == 0 => {
                 frames.decode_images_since(Some(earlier.frames.generation()));
-                self.thumbnails = Some(DocumentThumbnails { frames, images: earlier.images });
+                self.thumbnails = Some(DocumentThumbnails { frames, images: earlier.images, preview: None });
             }
             _ => {
                 frames.decode_images();
-                self.thumbnails = Some(DocumentThumbnails { frames, images: Images::default() });
+                self.thumbnails = Some(DocumentThumbnails { frames, images: Images::default(), preview: None });
             }
         }
+        Ok(())
+    }
+
+    /// Monitor and in-between frames share this worker's existing atlas/device and
+    /// the pinned document's decoded pictures; library files reuse the same device.
+    fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32) -> Result<(), JsError> {
+        let pictures = self.thumbnails.as_ref().expect("a document is pinned");
+        if let Some(gpu) = self.gpu.as_mut() {
+            let layout = (generation.lineage, generation.assets.pages, pictures.images.len());
+            if gpu.atlas != Some(layout) {
+                gpu.renderer.prepare_sprites(&generation.assets);
+                gpu.renderer.upload_images(&generation.assets, pictures.images.decoded());
+                gpu.atlas = Some(layout);
+            }
+            gpu.draw(list, view, width, height)?;
+        } else { self.picture = (width, height, self.raster.render(list, &pictures.images, view, [width, height]).straight()); }
         Ok(())
     }
 
@@ -369,31 +449,39 @@ impl Previews {
             self.picture = (size, size, self.raster.render(list, images, &view, [size, size]).straight());
             return Ok(());
         };
-        if gpu.atlas != Some(preview.lineage) {
+        if gpu.atlas.is_none_or(|(lineage, _, _)| lineage != preview.lineage) {
             gpu.renderer.prepare_sprites(preview.assets());
             let images = preview.images();
             gpu.renderer.upload_images(preview.assets(), images.iter());
-            gpu.atlas = Some(preview.lineage);
+            gpu.atlas = Some((preview.lineage, preview.assets().pages, images.len()));
         }
-        if (size, size) != (gpu.config.width, gpu.config.height) {
-            gpu.config.width = size;
-            gpu.config.height = size;
-            gpu.surface.configure(&gpu.device, &gpu.config);
+        gpu.draw(list, &view, size, size)
+    }
+}
+
+impl Gpu {
+    /// One renderer and atlas serve library and camera pictures on the existing worker
+    /// device. A switch replaces the atlas; no second renderer or device is allocated.
+    fn draw(&mut self, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32) -> Result<(), JsError> {
+        if (width, height) != (self.config.width, self.config.height) {
+            self.config.width = width;
+            self.config.height = height;
+            self.surface.configure(&self.device, &self.config);
         }
-        let target = match gpu.surface.get_current_texture() {
+        let target = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
             _ => {
-                gpu.surface.configure(&gpu.device, &gpu.config);
+                self.surface.configure(&self.device, &self.config);
                 return Err(js_error("the preview canvas was lost; try again"));
             }
         };
-        gpu.renderer.set_list(list);
-        let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk library preview") });
-        gpu.renderer.render(&mut encoder, &view, [size, size]);
+        self.renderer.set_list(list);
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk auxiliary view") });
+        self.renderer.render(&mut encoder, view, [width, height]);
         {
             let target_view = target.texture.create_view(&Default::default());
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("styk library preview present"),
+                label: Some("styk auxiliary view present"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &target_view,
                     depth_slice: None,
@@ -405,10 +493,10 @@ impl Previews {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            gpu.renderer.present(&mut pass);
+            self.renderer.present(&mut pass);
         }
-        gpu.queue.submit([encoder.finish()]);
-        gpu.queue.present(target);
+        self.queue.submit([encoder.finish()]);
+        self.queue.present(target);
         Ok(())
     }
 }

@@ -34,7 +34,7 @@ const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSeg
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames', 'alignFiguresInFrames'];
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
-const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
+const PORTED = ['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
   'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'segmentValues', 'beginSegmentValueEdit', 'setSegmentValues', 'copySegmentValues', 'pasteSegmentValues',
   'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'centerCamera', 'alignSelection', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'applyCameraToFigures',
@@ -86,6 +86,8 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   // its live trail); what its commit publishes is adopted.
   'commitMotionPathEdit']);
 const RANGE = new Set([...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames']);
+/** Conditional metadata comes from the editor's canonical selection owner. */
+const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segmentIds', 'branch'].filter(key => Object.hasOwn(state, key)).map(key => [key, state[key]]));
 /** A frame range as the app passes it on a layer sheet (`rangeFrames()`: an array carrying the
  * timeline's chosen ticks as `sheetTicks`), which JSON would drop: `{"@array", sheetTicks}`. */
 const frameRanges = (key, value) => Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
@@ -228,7 +230,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
     selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey),
-    sheetSelection: editor._sheetSelection ? {id: editor._sheetSelection.id, contents: Boolean(editor._sheetSelection.contents)} : null});
+    sheetSelection: editor._sheetSelection ? {id: editor._sheetSelection.id, contents: Boolean(editor._sheetSelection.contents)} : null,
+    ...selectionMetadata(editor._selectionState())});
   const counters = () => ({layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid});
 
   editor.addEventListener('change', event => {
@@ -244,11 +247,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     else if (detail?.kind === 'layer-focus') end('layer focus');
     else if (detail?.kind === 'selection' && editor.branchSelected) end('a branch selection');
     else if (detail?.kind === 'selection' && editor.selectedSegmentIds?.size > 1) end('several selected segments');
+    else if (detail?.kind === 'selection' && editor.selectedPolygonIndex >= 0) end('a polygon selection');
   });
   /** Whether the editor holds runtime state that changes what calls do and the engine lacks:
    * layer focus, a selected branch, several selected segments of a figure (a branch flip turns
    * them all over). */
-  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor.branchSelected || editor.selectedSegmentIds?.size > 1);
+  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor.branchSelected || editor.selectedSegmentIds?.size > 1 || editor.selectedPolygonIndex >= 0);
   // Legacy Pivot poses carry `runtime_segments`, which the engine's copy leaves out; the range
   // operations read them (lengths and bends materialized before a transform, and geometry), so
   // documents that have them keep those calls in the editor. Checked once per keyframe list.
@@ -328,6 +332,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     const state = {...view(), ...counters()};
     for (const key of ['tick', 'frameIndex', 'selectedUid', 'selectedJoint', 'layerRevision', 'nextFrameIdentity', 'nextUid']) same(key, state[key], answer.state[key]);
     same('selectedUids', JSON.stringify(state.selectedUids), JSON.stringify(answer.state.selectedUids));
+    same('selection metadata', JSON.stringify(selectionMetadata(state)), JSON.stringify(selectionMetadata(answer.state)));
     same('events', JSON.stringify(captured), JSON.stringify(answer.events));
     const edit = editor._authoredPoseEdit, drag = editor._drag;
     const taken = edit && drag ? new Set(drag.before.map(object => object.unique_id)) : null;
@@ -388,10 +393,20 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     // A handle transform accumulates the turns it crossed: the editor's own state keeps up.
     if (name === 'transformFigureHandle' && answer.drag && drag?.figureHandle) figureHandleTransform(drag.figureHandle.transform, {x: args[0], y: args[1]}, {...drag.figureHandle, ...args[2]});
     const engineSelection = state.selectedUid !== editor.selectedUid || state.selectedJoint !== editor.selectedJoint
-      || JSON.stringify(state.selectedUids) !== JSON.stringify([...editor.selectedUids]);
+      || JSON.stringify(state.selectedUids) !== JSON.stringify([...editor.selectedUids])
+      || JSON.stringify(selectionMetadata(state)) !== JSON.stringify(selectionMetadata(editor._selectionState()));
     if (engineSelection) {
-      editor._polygonSelection = null; editor._segmentSelection = null; editor._branchSelection = null;
-      editor.selectedUids = new Set(state.selectedUids); editor._selectedUid = state.selectedUid; editor.selectedJoint = state.selectedJoint;
+      const restored = editor._selectionState(), metadata = selectionMetadata(state);
+      if (Object.keys(metadata).length || Object.keys(selectionMetadata(restored)).length) {
+        for (const key of ['polygonSelection', 'segmentIds', 'branch']) delete restored[key];
+        editor._restoreSelection({...restored, uid: state.selectedUid, uids: state.selectedUids, joint: state.selectedJoint, ...metadata});
+      } else {
+        // Publication may introduce these IDs. Preserve the existing bounded
+        // selection exchange until its sources arrive; restoring against the
+        // old frame would discard a newly duplicated or inserted figure.
+        editor._polygonSelection = null; editor._segmentSelection = null; editor._branchSelection = null;
+        editor.selectedUids = new Set(state.selectedUids); editor._selectedUid = state.selectedUid; editor.selectedJoint = state.selectedJoint;
+      }
     }
     editor._nextUid = state.nextUid;
     // A property edit ends as `commitAnimationEdit` ends it, whatever it publishes.

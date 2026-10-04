@@ -109,7 +109,8 @@ impl Editor {
         self.transaction_impl(label, mutate, recorded_native)
     }
 
-    fn native_frame_transaction(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+    pub(crate) fn native_frame_transaction(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+        self.ensure_counts();
         let index = self.frame_index;
         let before = self.report.get("keyframes").and_then(|frames| frames.item(index)).ok_or_else(|| EditError::Invalid("a native transaction without a frame".into()))?;
         let before_selection = self.selection_state();
@@ -124,7 +125,8 @@ impl Editor {
         if before == after { return Ok(false); }
         self.retained = None;
         self.tick = crate::timeline::rows(&self.report).get(index).map(|row| row.start).unwrap_or(0.0);
-        self.record(crate::history::Command { kind: crate::history::CommandKind::Frame { index, before, after, structural: true }, layers: false, layer_changes: Vec::new(), captured_source_bytes: 0, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
+        let layers = self.track_frames(std::slice::from_ref(&before), std::slice::from_ref(&after), true)?;
+        self.record(crate::history::Command { kind: crate::history::CommandKind::Frame { index, before, after, structural: true }, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers })?;
         self.emit("edit", vec![("label", Value::str(label)), ("structural", Value::Bool(true))]);
         Ok(true)
     }

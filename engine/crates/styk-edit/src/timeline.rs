@@ -38,9 +38,9 @@ pub(crate) fn rows(report: &Value) -> Vec<Row> {
             }
         }
         None => {
-            // (Property channels would extend the last row too; documents with them are not edited here.)
             if let Some(last) = rows.last_mut() {
-                last.count = last.count.max(ends - last.start);
+                let animation_end = styk_eval::channels::end_tick_of_record(styk.and_then(|s| s.get("animation")));
+                last.count = last.count.max(ends.max(animation_end) - last.start);
             }
         }
     }

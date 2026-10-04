@@ -50,6 +50,22 @@ pub struct Patch {
     pub remove_empty: Vec<Vec<Key>>,
 }
 
+impl Patch {
+    /// The native property owner's enumerable patch, for worker history sizing.
+    pub(crate) fn history_value(&self) -> Value {
+        let mut patch = Obj::new();
+        patch.set("entries", Value::array(self.entries.iter().map(|entry| {
+            let mut object = Obj::new();
+            object.set("path", Value::array(entry.path.iter().map(Key::value).collect()));
+            object.set("exists", Value::Bool(entry.value.is_some()));
+            if let Some(value) = &entry.value { object.set("value", value.clone()); }
+            Value::object(object)
+        }).collect()));
+        patch.set("removeEmptyParents", Value::array(self.remove_empty.iter().map(|path| Value::array(path.iter().map(Key::value).collect())).collect()));
+        Value::object(patch)
+    }
+}
+
 fn segment_path(index: usize, field: &str) -> Vec<Key> {
     vec![Key::Field("segments".into()), Key::Index(index), Key::Field(field.into())]
 }

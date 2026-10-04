@@ -14,6 +14,7 @@ pub mod follow;
 pub mod geometry;
 pub mod ik;
 pub mod load;
+pub mod materialize;
 pub mod onion;
 pub mod origin;
 pub mod par;
