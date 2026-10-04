@@ -227,6 +227,23 @@ The additive `Records::pose_source_frame(id, native_index)` lookup preserves ret
 source precedence. A row hint requires verified unique native frame identities; raw or
 unvalidated records must use `None` for first-match semantics.
 
+`mirror::{WorkerPublication, WorkerEditPublication}` provide an opaque scoped worker
+candidate. Preparation retains the same Mirror guard, CommitMarker and Loader, and
+exposes borrowed access to the exact prebuilt Generation/Assets before the existing
+final State exchange. `prepare_record_publication_worker` and
+`prepare_edit_publication_worker` use that owner; existing commit methods delegate to
+it. Commit consumes it once and returns worker retirements; cancellation, stop, stale
+generation or disposal preserve the old heads and leave callbacks uncalled. Working
+displays borrow the current generation; actual history revision changes still publish
+when stored JSON is identical. This adds portable APIs for the mobile pin, with no
+ACK-spanning guard, Core ready-storage change or browser adoption.
+
+Encoding the candidate's own document with its own Assets is verified separately from
+encoding the actual Editor WorkerFrame Scene. New imported glyph identities currently
+differ between the independent Editor and Mirror typed loaders; that actual Scene must
+be paired with compatible assets before encoded ready/shown admission. A substitute
+Scene or content-based glyph lookup is not a valid repair.
+
 Portable mobile pin additions: `RevisionCounters`, `Session::{start_worker_prepared,
 revision,history_checkpoint_worker,into_worker}`, `WorkerSession`, `WorkerPrepared`,
 `WorkerFrame`, `PreparedPublication::{revision,project_fields_response_worker}`,

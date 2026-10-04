@@ -30,7 +30,7 @@ impl PublicationRetirement {
     }
 }
 
-struct Prepared {
+pub(crate) struct Prepared {
     previous: Option<Arc<Generation>>,
     generation: Arc<Generation>,
     frames: Option<frames::Cache>,
@@ -41,6 +41,8 @@ struct Prepared {
 }
 
 impl Prepared {
+    pub(crate) fn generation(&self) -> &Arc<Generation> { &self.generation }
+
     fn new(generation: Arc<Generation>, current: Option<Arc<Generation>>) -> Self {
         let previous = current.as_ref().filter(|previous| previous.lineage == generation.lineage);
         let count = generation.prepared.doc.images.len();
@@ -115,46 +117,82 @@ impl Engine {
         Some(exchange.take().expect("one guarded working head exchange")())
     }
 
-    /// Prepares and retires on this worker. The final shared lock performs only
-    /// guard checks, the supplied zero-allocation/drop head exchange, and swaps.
-    /// Refusal leaves `exchange` untouched for worker retention/disposal.
-    pub(crate) fn publish_with<F, R>(&self, mut generation: Generation, guard: Option<(RecordGuard, Arc<AtomicBool>)>, exchange: &mut Option<F>) -> Option<(u64, PublicationRetirement, R)>
-    where F: FnOnce() -> R {
+    /// The SAME publication owner prepares its exact generation/resources
+    /// before a worker encoder borrows them. Nothing is visible under State yet.
+    pub(crate) fn prepare_publication_worker(
+        &self, mut generation: Generation, guard: Option<&(RecordGuard, Arc<AtomicBool>)>,
+    ) -> Option<Prepared> {
         let id = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
         generation.id = id;
         if styk_eval::vfx::generated::has_generators(&generation.prepared.doc) {
             generation.anchors = Some(Arc::new(crate::anchors::Anchors::new()));
         }
-        let generation = Arc::new(generation);
-        loop {
-            let current = {
-                let state = self.inner.state.lock();
-                if !authorized(&state, guard.as_ref().map(|(guard, cancelled)| (guard, cancelled.as_ref())), &self.inner.stopping) { return None }
-                state.current.clone()
-            };
-            let mut prepared = Prepared::new(generation.clone(), current);
-            let result = {
-                let mut state = self.inner.state.lock();
-                if !prepared.current(&state) || !authorized(&state, guard.as_ref().map(|(guard, cancelled)| (guard, cancelled.as_ref())), &self.inner.stopping) {
-                    None
-                } else {
-                    let exchanged = exchange.take().expect("the callback runs only once")();
-                    Some((prepared.install(&mut state), exchanged))
-                }
-            };
-            if let Some((retirement, exchanged)) = result {
-                if let Some(previous) = &retirement.generation {
-                    crate::planning::invalidate_generation(self, previous.id);
-                    self.retire_record_batches(previous.id);
-                }
-                self.inner.state.notify_all();
-                return Some((id, retirement, exchanged));
+        self.prepare_generation_worker(Arc::new(generation), guard)
+    }
+
+    fn prepare_generation_worker(
+        &self, generation: Arc<Generation>, guard: Option<&(RecordGuard, Arc<AtomicBool>)>,
+    ) -> Option<Prepared> {
+        let current = {
+            let state = self.inner.state.lock();
+            if !authorized(&state, guard.map(|(guard, cancelled)| (guard, cancelled.as_ref())), &self.inner.stopping) { return None; }
+            state.current.clone()
+        };
+        Some(Prepared::new(generation, current))
+    }
+
+    /// Consume the exact prebuilt publication once. Failure returns all fresh
+    /// payloads, and the uncalled callback remains with the owning worker.
+    pub(crate) fn publish_prepared_worker<F, R>(
+        &self, mut prepared: Prepared, guard: Option<&(RecordGuard, Arc<AtomicBool>)>, exchange: &mut Option<F>,
+    ) -> Result<(u64, PublicationRetirement, R), Prepared>
+    where F: FnOnce() -> R {
+        let result = {
+            let mut state = self.inner.state.lock();
+            if !prepared.current(&state) || !authorized(&state, guard.map(|(guard, cancelled)| (guard, cancelled.as_ref())), &self.inner.stopping) {
+                None
+            } else {
+                let exchanged = exchange.take().expect("the callback runs only once")();
+                Some((prepared.install(&mut state), exchanged))
             }
-            if guard.is_some() { return None }
-            // An unguarded open races another open: prepare against its actual
-            // current lineage instead of restoring old images/tasks into it.
+        };
+        if let Some((retirement, exchanged)) = result {
+            if let Some(previous) = &retirement.generation {
+                crate::planning::invalidate_generation(self, previous.id);
+                self.retire_record_batches(previous.id);
+            }
+            self.inner.state.notify_all();
+            Ok((prepared.generation.id, retirement, exchanged))
+        } else { Err(prepared) }
+    }
+
+    /// Compatibility callers prepare and consume through that SAME owner.
+    /// Only an unguarded open may retry against a newly published lineage.
+    pub(crate) fn publish_with<F, R>(&self, generation: Generation, guard: Option<(RecordGuard, Arc<AtomicBool>)>, exchange: &mut Option<F>) -> Option<(u64, PublicationRetirement, R)>
+    where F: FnOnce() -> R {
+        let prepared = self.prepare_publication_worker(generation, guard.as_ref())?;
+        self.publish_prepared_compatible_worker(prepared, guard.as_ref(), exchange).ok()
+    }
+
+    /// Existing unguarded-open retry behavior shares the same prebuilt owner;
+    /// guarded candidates always return unchanged on final refusal.
+    pub(crate) fn publish_prepared_compatible_worker<F, R>(
+        &self, mut prepared: Prepared, guard: Option<&(RecordGuard, Arc<AtomicBool>)>, exchange: &mut Option<F>,
+    ) -> Result<(u64, PublicationRetirement, R), Prepared>
+    where F: FnOnce() -> R {
+        loop {
+            match self.publish_prepared_worker(prepared, guard, exchange) {
+                Ok(result) => return Ok(result),
+                Err(previous) => {
+                    if guard.is_some() { return Err(previous); }
+                    let generation = previous.generation.clone();
+                    drop(previous);
+                    prepared = self.prepare_generation_worker(generation, None).expect("unguarded preparation");
+                }
+            }
         }
     }
+
 }
 
 #[cfg(test)]

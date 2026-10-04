@@ -37,6 +37,52 @@ pub struct EditPublicationAdmission {
     stored: bool,
 }
 
+/// Exact guarded Editor and Mirror preparation, scoped to one worker. The
+/// Mirror guard/CommitMarker are retained; no ACK-spanning or UI owner is exposed.
+#[must_use = "consume or dispose this candidate on its owning worker"]
+pub struct WorkerEditPublication<'engine, 'editor> {
+    candidate: super::WorkerPublication<'engine>,
+    publication: GuardedPublication<'editor>,
+    retirement: PublicationRetirement,
+}
+impl<'engine, 'editor> WorkerEditPublication<'engine, 'editor> {
+    pub fn generation(&self) -> &crate::Generation { self.candidate.generation() }
+    pub fn stores_generation(&self) -> bool { self.candidate.stores_generation() }
+
+    /// Consume the exact candidate and both head exchanges once. Caller keeps
+    /// returned retirements on the worker; refusal returns the uncalled editor.
+    pub fn commit_worker(self) -> Result<(super::Committed, PublicationRetirement, RetiredPublication),
+        (MirrorError, GuardedPublication<'editor>, PublicationRetirement)> {
+        self.commit_with_worker(|retired| retired)
+            .map_err(|(error, publication, retirement, _)| (error, publication, retirement))
+    }
+
+    pub(crate) fn commit_with_worker<F, R>(self, ready_exchange: F)
+        -> Result<(super::Committed, PublicationRetirement, R),
+            (MirrorError, GuardedPublication<'editor>, PublicationRetirement, F)>
+    where F: FnOnce(RetiredPublication) -> R {
+        let Self { candidate, publication, mut retirement } = self;
+        let mut publication = Some(publication);
+        let mut ready_exchange = Some(ready_exchange);
+        let mut exchange = Some(|| {
+            let retired = publication.take().expect("one guarded head exchange").commit();
+            ready_exchange.take().expect("one ready head exchange")(retired)
+        });
+        match candidate.commit(&mut exchange) {
+            Ok((done, mut retired, editor)) => {
+                retired.root_admission = retirement.root_admission.take();
+                Ok((done, retired, editor))
+            }
+            Err((error, candidate)) => {
+                drop(exchange);
+                drop(candidate); // worker-only original Loader/marker disposition
+                Err((error, publication.take().expect("refused before head exchange"),
+                    retirement, ready_exchange.take().expect("refused before ready head exchange")))
+            }
+        }
+    }
+}
+
 impl Engine {
     /// Worker-only admission of the exact immutable prepared Editor report. The
     /// before root must be this mirror's canonical COW head. Shared graph storage
@@ -198,70 +244,38 @@ impl Engine {
     ) -> Result<(super::Committed, PublicationRetirement, R),
         (MirrorError, GuardedPublication<'a>, PublicationRetirement, F)>
     where F: FnOnce(RetiredPublication) -> R {
-        let started = self.now();
-        let mut retained = PublicationRetirement::empty();
-        let admitted = admission.batch == batch
-            && admission.guard == guard
-            && admission.editor_before.as_ref().unwrap_or(&admission.before).same_node(publication.before_report())
-            && admission.after.same_node(publication.report());
-        retained.root_admission = Some(admission);
-        if !admitted {
-            return Err((
-                MirrorError::Transaction(
-                    "the prepared root admission does not match this publication",
-                ),
-                publication,
-                retained,
-                ready_exchange,
-            ));
-        }
-        let mirror = self
-            .inner
-            .mirror
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let before = retained.root_admission.as_ref().expect("admitted above").before.clone();
-        let after = publication.report().clone();
-        let revision = publication.revision();
-        let mut publication = Some(publication);
-        let mut ready_exchange = Some(ready_exchange);
-        let mut exchange = Some(|| {
-            let retired = publication.take().expect("one guarded head exchange").commit();
-            ready_exchange.take().expect("one ready head exchange")(retired)
-        });
-        match self.commit_locked_with(
-            mirror,
-            started,
-            revision,
-            batch,
-            Some(guard),
-            Some((
-                &before,
-                &after,
-                &retained
-                    .root_admission
-                    .as_ref()
-                    .expect("admitted above")
-                    .charge,
-                retained.root_admission.as_ref().expect("admitted above").stored,
-            )),
-            &mut exchange,
-        ) {
-            Ok((done, mut retirement, editor)) => {
-                retirement.root_admission = retained.root_admission.take();
-                Ok((done, retirement, editor))
-            }
-            Err(error) => {
-                drop(exchange);
-                Err((
-                    error,
-                    publication.take().expect("refused before head exchange"),
-                    retained,
-                    ready_exchange.take().expect("refused before ready head exchange"),
-                ))
-            }
+        match self.prepare_edit_publication_worker(batch, guard, publication, admission) {
+            Ok(candidate) => candidate.commit_with_worker(ready_exchange),
+            Err((error, publication, retirement)) => Err((error, publication, retirement, ready_exchange)),
         }
     }
+    /// Prebuild the existing exact guarded Editor/Mirror publication on its
+    /// worker. Borrow compatible Generation/Assets before encoding, then consume
+    /// or dispose within this same scope; the existing Mirror guard stays owned.
+    pub fn prepare_edit_publication_worker<'engine, 'editor>(
+        &'engine self, batch: u32, guard: RecordGuard,
+        publication: GuardedPublication<'editor>, admission: EditPublicationAdmission,
+    ) -> Result<WorkerEditPublication<'engine, 'editor>,
+        (MirrorError, GuardedPublication<'editor>, PublicationRetirement)> {
+        let started = self.now();
+        let mut retirement = PublicationRetirement::empty();
+        let admitted = admission.batch == batch && admission.guard == guard
+            && admission.editor_before.as_ref().unwrap_or(&admission.before).same_node(publication.before_report())
+            && admission.after.same_node(publication.report());
+        retirement.root_admission = Some(admission);
+        if !admitted {
+            return Err((MirrorError::Transaction("the prepared root admission does not match this publication"),
+                publication, retirement));
+        }
+        let mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let admission = retirement.root_admission.as_ref().expect("admitted above");
+        match self.prepare_locked(mirror, started, publication.revision(), batch, Some(guard),
+            Some((&admission.before, &admission.after, &admission.charge, admission.stored))) {
+            Ok(candidate) => Ok(WorkerEditPublication { candidate, publication, retirement }),
+            Err(error) => Err((error, publication, retirement)),
+        }
+    }
+
 }
 
 #[cfg(test)]

@@ -140,6 +140,14 @@ charge lifetime and actual renderer release still need the existing owning proto
 This scoped foundation does not certify live Stage preparation, all renderer last-owner
 drops, global stop or no-thread pumping.
 
+The scoped `mirror::WorkerPublication` candidate holds the existing blocking Mirror
+guard only on its worker. It is consumed or disposed before an ACK; no candidate guard
+is placed in State, a UI handle, Core ready storage or a browser binding. Exact prebuilt
+Generation/Assets borrowing enables subsequent worker encoding without first exposing
+the new head. Final authorization and head exchange use the original State owner.
+This prerequisite does not certify actual WorkerFrame asset pairing, UI last-owner
+release, upload preparation, presentation or shutdown.
+
 The portable `styk_eval::drawlist::{retained_bytes_checked, RetainedBytesError}` helper
 observes the encoded payload on workers. It includes all seven buffer capacities,
 Arc layout padding, shared effect/paint payloads and unique glyph triangle slices;

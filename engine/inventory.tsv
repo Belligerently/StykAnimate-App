@@ -357,7 +357,7 @@ src/renderer-raster-capture.mjs	engine	styk-render	js
 src/renderer-upload.mjs	engine	styk-render	js	
 src/renderer-vector-raster.mjs	engine	styk-render	js	
 src/renderer-vfx-vector.mjs	engine	styk-render	partial	Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it
-src/renderer.mjs	engine	styk-render	partial	Rust: edit/onion/playback/fractional views, worker monitor and exact prepared shown tickets; original software-web cel stage fixed; portable retained encoded allocation helper has no runtime caller; auxiliary clip/paint, no-thread, last-owner/physical D7 and eligibility remain
+src/renderer.mjs	engine	styk-render	partial	Rust: edit/onion/playback/fractional views, worker monitor and exact prepared shown tickets; scoped prebuilt generation/assets publication candidate and encoded allocation helpers are verified prerequisites with no runtime adoption; actual Editor glyph pairing, auxiliary clip/paint/cel/scene-effect/onion/crisp parity, no-thread and last-owner/physical D7 remain
 src/rig-angle-path.mjs	engine	styk-eval::rig	partial	Rust: angle path sampling (styk_eval::rig); validateAnglePath (styk-edit/src/rig_behavior.rs); authoring still JS
 src/rig-constraints.mjs	engine	styk-eval::rig	partial	Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS
 src/rig-control-details.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes

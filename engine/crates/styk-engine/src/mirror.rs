@@ -18,7 +18,9 @@ use crate::{Engine, Generation};
 
 pub(crate) mod transfer;
 mod root;
-pub use root::EditPublicationAdmission;
+mod candidate;
+pub use candidate::WorkerPublication;
+pub use root::{EditPublicationAdmission, WorkerEditPublication};
 pub use transfer::{Packet, PacketKind, RecordAck, RecordGuard, RecordLengths, TransferError, MAX_RECORD_PACKET_BYTES, MAX_RECORD_RETAINED_BYTES, MAX_RECORD_CHANGES};
 
 /// Dense metadata transported independently from the document's small properties.
@@ -447,88 +449,10 @@ impl Engine {
         Ok(committed)
     }
 
-    fn commit_locked_with<F, R>(&self, mut mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32, guard: Option<RecordGuard>, expected_root: Option<(&Value, &Value, &Arc<transfer::Charge>, bool)>, exchange: &mut Option<F>) -> Result<(Committed, crate::PublicationRetirement, R), MirrorError>
+    fn commit_locked_with<F, R>(&self, mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32, guard: Option<RecordGuard>, expected_root: Option<(&Value, &Value, &Arc<transfer::Charge>, bool)>, exchange: &mut Option<F>) -> Result<(Committed, crate::PublicationRetirement, R), MirrorError>
     where F: FnOnce() -> R {
-        let mut empty = Some(transfer::Batch::default());
-        let mut staged = {
-            let mut staged = self.inner.staged.lock();
-            if guard.is_none() && staged.get(&batch).is_some_and(|owner| owner.guard.is_some()) {
-                return Err(MirrorError::Transaction("a lifted transaction requires its guarded commit"));
-            }
-            if guard.is_some_and(|guard| staged.get(&batch).and_then(|batch| batch.guard) != Some(guard)) {
-                return Err(MirrorError::Transaction("the lifted transaction was discarded or replaced"));
-            }
-            match (staged.get(&batch).and_then(|batch| batch.root.as_ref()), expected_root) {
-                (None, None) => {},
-                (Some(root), Some((before, after, charge, stored))) if root.before.same_node(before) && root.after.same_node(after) && Arc::ptr_eq(&root.charge, charge) && root.stored == stored && mirror.tree.same_node(before) => {},
-                _ => return Err(MirrorError::Transaction("a prepared root requires its exact guarded Editor publication")),
-            }
-            if staged.get(&batch).and_then(|batch| batch.transfer.as_ref()).is_some_and(|transfer| !transfer.acknowledged()) {
-                return Err(MirrorError::Transaction("the lifted transfer has not completed and been acknowledged"));
-            }
-            if guard.is_some() {
-                let owner = staged.get_mut(&batch).expect("guard checked above");
-                if owner.committing { return Err(MirrorError::Transaction("the lifted transaction is already preparing")); }
-                owner.committing = true;
-                transfer::Batch { changes: std::mem::take(&mut owner.changes), guard: owner.guard, transfer: owner.transfer.clone(), cancelled: owner.cancelled.clone(), committing: true, budget: owner.budget.clone(), charges: std::mem::take(&mut owner.charges), root: owner.root.take() }
-            } else { staged.remove(&batch).unwrap_or_else(|| empty.take().expect("prebuilt empty batch")) }
-        };
-        let _retirement = staged.guard.map(|_| CommitMarker { engine: self, batch, cancelled: staged.cancelled.clone() });
-        if staged.cancelled.load(std::sync::atomic::Ordering::SeqCst) || staged.guard.is_some_and(|guard| !self.record_guard_current(guard)) {
-            return Err(MirrorError::Transaction("the lifted transfer belongs to another document generation"));
-        }
-        if expected_root.is_some_and(|(_, _, _, stored)| !stored) {
-            // A working-only operation preserves the stored root/Loader/cache.
-            // Reuse the exact final State/current/cancellation linearization.
-            let guard = staged.guard.expect("working publication is guarded");
-            let exchanged = self.exchange_session_working_worker(guard, &staged.cancelled, exchange)
-                .ok_or(MirrorError::Transaction("the working Session was superseded before publication"))?;
-            let mut retirement = crate::PublicationRetirement::empty();
-            retirement.record_charges.append(&mut staged.charges);
-            return Ok((Committed { generation: guard.generation, revision: guard.revision,
-                converted: Default::default(), ms: self.now() - started }, retirement, exchanged));
-        }
-        let (tree, reset) = match staged.root.take() {
-            Some(root) => (root.after, false),
-            None => mirror.apply(staged.changes)?,
-        };
-        let previous_lineage = mirror.lineage;
-        let previous_assets = mirror.assets.clone();
-        if reset {
-            mirror.loader = Loader::new();
-            mirror.assets = None;
-            mirror.lineage = self.inner.next_generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        }
-        let name = tree.path(&["_styk", "name"]).and_then(Value::as_str).unwrap_or("").to_string();
-        let document = mirror.loader.document(&tree, &name).map_err(|e| MirrorError::Document(e.to_string()))?;
-        let converted = mirror.loader.converted;
-        let assets = Arc::new(match &mirror.assets {
-            Some(previous) => previous.extended(&document),
-            None => Assets::build(&document),
-        });
-        let prepared = Arc::new(Prepared::new(Arc::new(document)));
-        let ms = self.now() - started;
-        let published = self.publish_with(Generation { id: 0, lineage: mirror.lineage, revision, prepared: prepared.clone(), assets: assets.clone(), open_ms: ms, anchors: None }, staged.guard.map(|guard| (guard, staged.cancelled.clone())), exchange);
-        let Some((id, mut retirement, exchanged)) = published else {
-            // The canonical store/prepared view stay unchanged. Retire conversion
-            // scratch on this worker; the one loader will rebuild when needed.
-            mirror.loader = Loader::new();
-            mirror.lineage = previous_lineage;
-            mirror.assets = previous_assets;
-            return Err(MirrorError::Transaction("the lifted transfer was superseded before publication"));
-        };
-        // Only Default has no prepared head: its tree is the true empty
-        // bootstrap sentinel. Every successfully published raw root, including
-        // minimal reports with absent native tables, belongs to retirement.
-        let had_canonical_head = mirror.prepared.is_some();
-        let previous_root = std::mem::replace(&mut mirror.tree, tree);
-        if had_canonical_head { retirement.canonical_root = Some(previous_root); }
-        retirement.record_charges.append(&mut staged.charges);
-        mirror.revision = revision;
-        mirror.prepared = Some(prepared);
-        mirror.assets = Some(assets);
-        mirror.loader.release_unused();
-        Ok((Committed { generation: id, revision, converted, ms }, retirement, exchanged))
+        self.prepare_locked(mirror, started, revision, batch, guard, expected_root)?
+            .commit(exchange).map_err(|(error, candidate)| { drop(candidate); error })
     }
 }
 

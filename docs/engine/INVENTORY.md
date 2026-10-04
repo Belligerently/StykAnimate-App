@@ -359,7 +359,7 @@ Engine logic: ported to Rust.
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
 | `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: edit/onion/playback/fractional views, worker monitor and exact prepared shown tickets; original software-web cel stage fixed; portable retained encoded allocation helper has no runtime caller; auxiliary clip/paint, no-thread, last-owner/physical D7 and eligibility remain |
+| `src/renderer.mjs` | `styk-render` | partial | Rust: edit/onion/playback/fractional views, worker monitor and exact prepared shown tickets; scoped prebuilt generation/assets publication candidate and encoded allocation helpers are verified prerequisites with no runtime adoption; actual Editor glyph pairing, auxiliary clip/paint/cel/scene-effect/onion/crisp parity, no-thread and last-owner/physical D7 remain |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
