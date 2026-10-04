@@ -90,8 +90,10 @@ export function syncCameraControls(root, frame, {activeKey=null, guides=true}={}
 }
 
 /** Draw on the app's animation frame, reusing evaluated geometry and media.
- * A prepared playback packet uses the renderer's presentation contract; other
- * states fall back to the Canvas 2D artwork path below. */
+ * Where the engine drew the stage's frame, the stage draws the monitor too
+ * (`options.stage.drawCameraMonitor`); otherwise a prepared playback packet uses
+ * the renderer's presentation contract, and other states fall back to the
+ * Canvas 2D artwork path below. */
 export function drawCameraMonitor(canvas, options) {
   let {report,frame,geometry,resources,hiddenUids,prepared}=options;
   if(!cameraMonitorVisible(canvas) || !report || !frame) return false;
@@ -107,6 +109,10 @@ export function drawCameraMonitor(canvas, options) {
   configureVfxSoftwareResources(ctx,{maxBytes:options.maxSoftwareFilterBytes??previewMemoryPlan().editorSoftwareFilters});
   const view={scale,x:(width-report.canvas_width*scale)/2,y:(height-report.canvas_height*scale)/2};
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
+  // The engine draws the frame it drew on the stage, on the stage's device (engine-stage.mjs).
+  if(options.stage?.drawCameraMonitor?.(ctx,{width:canvas.width,height:canvas.height,zoom:scale*dpr,panX:view.x*dpr,panY:view.y*dpr})){
+    if(state.retryAt)options.onRecovery?.('camera','recovered');state.retryAt=0;return true;
+  }
   if(prepared){
     let source=monitorSurfaces.get(prepared.renderer);
     if(!source){source=new MonitorPreparedSource(prepared.renderer);monitorSurfaces.set(prepared.renderer,source);}

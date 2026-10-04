@@ -22,6 +22,7 @@
 import {ExportFrameRenderer} from '../export-frame-renderer.mjs';
 import {drawingBarrier} from '../drawing-resources.mjs';
 import {EXPORT_MAX_PIXELS} from '../export-sampling.mjs';
+import {engineDocument} from './engine-document.mjs';
 
 /** Rendered pixels a side of an export tile at most (styk-export `TILE_SIDE`). */
 export const ENGINE_TILE_SIDE = 2048;
@@ -127,26 +128,10 @@ export class EngineExportFrames extends ExportFrameRenderer {
     };
   }
 
-  /**
-   * Why the engine cannot draw `report` for this export, or null once it holds it: its frames
-   * through the playback adapter (the synchronisation playback uses, one commit at a time),
-   * then what only the stage knows (figures edited in place, drawings just published).
-   */
-  async _engineDocument(report) {
+  /** Why the engine cannot draw `report` for this export, or null once it holds it (engine-document.mjs). */
+  _engineDocument(report) {
     const {stage, playback, revision} = this.engine;
-    try {
-      if (!await playback.exportDocument(report, revision)) return stage.prepareExport(report, revision) ?? 'the engine does not draw this document';
-      const engine = stage.engineSide.engine;
-      for (;;) {
-        this._check();
-        const seen = engine.progressSeen?.();
-        try { return stage.prepareExport(report, revision); }
-        catch (error) { if (error?.code !== 'engine_busy') throw error; await engine.whenProgress(seen); }
-      }
-    } catch (error) {
-      if (error?.name === 'AbortError') throw error;
-      return String(error?.message ?? error);
-    }
+    return engineDocument({stage, playback, report, revision, check: () => this._check()});
   }
 
   /** The JavaScript renderer takes the export; nothing was drawn yet. */

@@ -14,12 +14,12 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
 | `styk-edit` | 87 | 1227 KiB | 62 | 22 | 3 | 0 | 0 | 1 % | 47 % | 0 % |
-| `styk-engine` | 24 | 216 KiB | 22 | 2 | 0 | 0 | 0 | 0 % | 46 % | 0 % |
+| `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
 | `styk-eval` | 82 | 760 KiB | 36 | 37 | 9 | 0 | 0 | 16 % | 58 % | 0 % |
-| `styk-export` | 15 | 123 KiB | 9 | 6 | 0 | 0 | 0 | 0 % | 33 % | 0 % |
+| `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4068 KiB | 208 | 91 | 34 | 22 | 1 | 20 % | 38 % | 0 % |
+| **Total** | 355 | 4042 KiB | 203 | 95 | 34 | 22 | 1 | 20 % | 40 % | 0 % |
 
 ## Engine modules
 
@@ -171,11 +171,11 @@ Engine logic: ported to Rust.
 | `src/playback-worker.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy) |
 | `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: playback preparation on the engine thread pool for supported documents |
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
-| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | js |  |
+| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; unreadable files and devices without a readable GPU canvas still JS |
+| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
+| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: frame thumbnails of documents the engine draws on the stage's device (styk_engine::thumbnails::card, styk_wasm::views, src/engine/engine-thumbnails.mjs); in-between previews, refused documents and WebGL2 stages still JS |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | js |  |
+| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of documents the engine draws (styk_wasm::views); the worker draws in-between previews, refused documents, WebGL2 stages and canvases that give no pixels |
 | `src/animation-origin-validation.mjs` | `styk-eval` | js |  |
 | `src/animation-pose.mjs` | `styk-eval` | partial | Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS; plus composePoseChannels and handleOrientation (styk_eval::channels::pose); composePoseChannels on records (styk_eval::records) |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
@@ -270,7 +270,6 @@ Engine logic: ported to Rust.
 | `src/image-codecs.mjs` | `styk-export` | js |  |
 | `src/image-export-worker.mjs` | `styk-export` | js |  |
 | `src/image-export.mjs` | `styk-export` | js |  |
-| `src/svg-export.mjs` | `styk-export` | js |  |
 | `src/audio-model.mjs` | `styk-export::audio` | js | audio model and offline mix; validateAudioState also in styk-edit/src/audio.rs for the ported audio commands |
 | `src/audio-pcm.mjs` | `styk-export::audio` | js | audio model and offline mix |
 | `backend/native_format.py` | `styk-formats::container` | verified | the app reads containers in src/native-container.mjs and, as the codec fallback, styk-piv over styk-formats; kept only as the development test oracle (not shipped) |
@@ -423,6 +422,7 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `src/frame-clipboard-storage.mjs` |  | stays | file, storage and network services |
 | `src/library-files.mjs` |  | stays | file, storage and network services |
 | `src/native-files.mjs` |  | stays | file, storage and network services |
+| `src/svg-export.mjs` |  | stays | editable vector output kept in JavaScript; the draw list is tessellated (docs/engine/rendering.md) |
 | `src/web-library.mjs` |  | stays | file, storage and network services |
 | `src/web-offline.mjs` |  | stays | file, storage and network services |
 | `src/audio-encode.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |
@@ -457,7 +457,7 @@ Interface: stays in JS.
 | `src/builder-mode.mjs` |  | stays |  |
 | `src/builder-outliner.mjs` |  | stays |  |
 | `src/builder-surface-ui.mjs` |  | stays |  |
-| `src/camera-monitor.mjs` |  | stays |  |
+| `src/camera-monitor.mjs` |  | stays | draws through Stage::render_monitor where the engine draws the stage |
 | `src/camera-motion-graph.mjs` |  | stays |  |
 | `src/camera-motion-localization.mjs` |  | stays |  |
 | `src/camera-motion-timeline.mjs` |  | stays |  |
@@ -504,6 +504,7 @@ Interface: stays in JS.
 | `src/layer-timeline.mjs` |  | stays |  |
 | `src/library-drag.mjs` |  | stays |  |
 | `src/library-hover-preview.mjs` |  | stays |  |
+| `src/library-matte.mjs` |  | stays |  |
 | `src/localization-bindings.mjs` |  | stays |  |
 | `src/localization.mjs` |  | stays |  |
 | `src/localized-error.mjs` |  | stays |  |

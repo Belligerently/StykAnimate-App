@@ -455,7 +455,10 @@ impl Raster<'_> {
             pixmap
         };
         let mut paint = Paint::default();
-        paint.anti_alias = self.view.anti_alias;
+        // A cel's tiles meet edge to edge: covering their quads' edges by area would let two
+        // half-covered pixels blend into a seam. Each pixel takes the tile its centre falls in,
+        // as the GPU's samples do; the cel's outline is in its texels' alpha.
+        paint.anti_alias = self.view.anti_alias && !drawing;
         // The fill's transform applies to the shader too: the pattern maps texels to world units.
         paint.shader = Pattern::new(source.as_ref(), SpreadMode::Pad, quality, base[3], to_world);
         let mut pb = PathBuilder::new();

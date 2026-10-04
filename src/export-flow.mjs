@@ -46,7 +46,7 @@ import { exportProgressMarkup, mountExportProgress } from "./export-progress.mjs
 import { checkExportContext } from "./export-canvas.mjs";
 import { buildExportRequest, exportFormatInfo, exportJob } from "./export-request.mjs";
 import { openExportSheet, openExportProgress } from "./export-sheet.mjs";
-import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
+import { createThumbnailRenderer } from "./engine/engine-thumbnails.mjs";
 import { isMovieclip } from "./movieclips.mjs";
 import { icon } from "./icons.mjs";
 
@@ -438,13 +438,13 @@ export function createExportFlow(ctx) {
       throw error;
     }
   }
-  /** The export dialog's frame previews: the thumbnail worker, only while the dialog shows them. */
+  /** The export dialog's frame previews: thumbnails (the engine's for documents it draws), only while the dialog shows them. */
   function previewFrames() {
     let renderer = null;
     return {
       render(tick, canvas, { signal } = {}) {
         if (!editor.totalTicks || signal?.aborted) return Promise.resolve(false);
-        renderer ??= new ThumbnailRenderer(editor, { baseURL: importer.baseURL, onError: () => {} });
+        renderer ??= createThumbnailRenderer(editor, { baseURL: importer.baseURL, onError: () => {} }, { stage: () => state.renderer, playback: () => playback });
         const rows = editor.timeline, index = Math.max(0, rows.findLastIndex((row) => row.start <= tick));
         return renderer.renderThumbnail(index, canvas, { tick, storedFrames: false, signal });
       },

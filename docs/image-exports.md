@@ -63,6 +63,10 @@ width,height,resources,cameraEnabled:true})`. It writes actual vector strokes,
 circles, curves, polygons, gradients, and glyph outlines; sprite and background
 pixels are embedded image resources. It preserves camera and layer transforms
 and grouped opacity. The function's API comments document additional defaults.
+SVG stays with this exporter for every document, also those whose pixel exports
+come from the Rust engine: the engine's draw lists are tessellated for drawing and
+cannot give the same editable SVG ([engine rendering: why SVG stays
+JavaScript](engine/rendering.md#exports)).
 
 Validation:
 

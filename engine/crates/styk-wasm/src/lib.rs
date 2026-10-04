@@ -5,9 +5,11 @@
 //!
 //! - [`engine::EngineHandle`]: the document and background preparation. One per
 //!   page, shared with the worker threads by address.
-//! - [`stage::Stage`]: the GPU surface of one canvas. Interface thread only.
+//! - [`stage::Stage`]: the GPU surface of one canvas, and the other views its device draws
+//!   (`views`: the camera monitor, frame thumbnails). Interface thread only.
 //! - [`edit::EditSession`]: the editor's calls run on the mirrored document. Interface thread only.
 //! - [`export::ExportRenderer`]: export frames, drawn in a worker with a GPU device of its own.
+//! - [`preview::Previews`]: thumbnails and library previews, drawn on the CPU in a worker.
 //!
 //! The module is instantiated once per thread over one shared memory. Workers
 //! call [`engine::worker_run`] and stay inside it.
@@ -16,7 +18,9 @@ pub mod edit;
 pub mod engine;
 pub mod export;
 pub mod math;
+pub mod preview;
 pub mod stage;
+pub mod views;
 
 use wasm_bindgen::prelude::*;
 

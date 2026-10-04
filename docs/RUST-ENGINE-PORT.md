@@ -225,6 +225,17 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   geometry on every evaluation, and scrub previews carry whole frames, so the `channels` class
   is not owned until large documents are measured. Bézier easing uses `pow`, which in
   WebAssembly is libm and may differ from a browser's in the last bit (not observed).
+- **Previews on WebGL2 and without WebGPU canvases:** thumbnails and the camera monitor fall
+  back to JavaScript on WebGL2 stages (one device cannot draw to a second canvas) and where a
+  WebGPU canvas gives no pixels (Electron under Xvfb without ANGLE on Vulkan; a magenta probe
+  decides). This closes with a complete CPU rasterizer (item 7: edge coverage, filter
+  effects, coplanar 3D faces) or a WebGL2 readback.
+- **Thumbnails differ from the JavaScript worker by category:** text and 3D artwork are drawn
+  from object rasters at the editor's density, so they look blockier than Canvas 2D at
+  96–320 px; Canvas 2D seams and the edge coverage of one-pixel strokes at 96×54 also differ.
+  Thumbnails equal the stage and export frames. In-between previews and the camera-motion
+  preview still draw in the JavaScript thumbnail worker (a sampled pose that is not in the
+  document).
 - **Range commands, open after the port**: pasting and aligning across frames (the app
   measures alignment bounds with a function of its own), movieclips among the changed figures,
   duplicating figures with effect clips, adding, duplicating or deleting across native
@@ -398,6 +409,16 @@ undo chunks, clipboard; `tests/drawing-engine.*` compare the two engines through
 property-edit documents, 458 ticks identical to the editor's evaluated frame, each differing
 without its channels; 1,265 of 1,265 recorded ticks overall.
 
+**Thumbnails, library previews, camera monitor** (`scripts/engine-preview-parity.mjs`,
+Electron with `--use-angle=vulkan`, D13). Engine thumbnails against the engine's export
+frames of the same ticks: 121 of 121 pass, 89 identical. Against the JavaScript worker: 10,
+12 and 1 of 43 steps pass at 320×192, 512×288 and 96×54. Fixtures of figures, drawings,
+parallax, follow camera, colour transitions, sprites and effects pass at the two larger sizes;
+scenes with text or 3D artwork fail by the mean (0.5–4.4, at most 30 solid pixels), the
+waterfall plane by Canvas 2D seams. Library previews: the backdrop is the same for 12 of 12
+files, hover bounds equal the editor's, and posters and frames of 3D figures and effects fail
+by the mean. Camera monitor: 1 of 6 pass. The web target falls back to the JavaScript paths.
+
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
 the JavaScript renderer being its Canvas 2D fallback, WebGL2 for the engine), 29 documents
 (the repository's eligible test projects and asset packs, `svr_uriel.piv`, `hitoshi vs suzu
@@ -450,8 +471,9 @@ removing the remaining sidecar names from the brand and release tooling; the per
 Windows launcher (outside the repository) must stop requiring the sidecar.
 
 **S4, export:** frames, PNG sequence, GIF, APNG and video frames come from the engine for
-documents it draws (milestone log, 2026-10-03). Left: SVG export, thumbnails and library
-previews; the audio mix and WebCodecs encoders stay platform services.
+documents it draws (milestone log, 2026-10-03). Thumbnails and library previews too
+(milestone log, 2026-10-04); SVG export stays JavaScript (`docs/engine/rendering.md`, Why SVG
+stays JavaScript); the audio mix and WebCodecs encoders stay platform services.
 
 **S5, the engine owns the document:** `styk-edit` with history; commands ported group by
 group, each checked by a command-replay harness (the same calls run in the JavaScript
@@ -565,14 +587,13 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 03:42 | S5 property edits on keys with movieclip replacements | A property edit on a key whose movieclip frames are replaced keeps the replacements and writes the key's pose from the frame without them (`Records::evaluated_options(tick, clips, skip_patches)` in `styk-eval`, `at(…, {skipMovieclipPatches: true})`). | 1 recording (11 steps) matches the editor at every step; 4 of 4 mutations break it. |
 | 2026-10-04 04:06 | S5 figures across frames, figure order, branch flips, recolouring (agent, reviewed and merged) | `styk-edit/src/range.rs`, `range_plan.rs`: `applyFigureRange` and `planFigureFrameOperation` (appearance, order with depths at ±1,000,000, join, detach, delete, duplicate, reset, centre, scale, rotate, flips, branch flips) at the playhead or across a range, committed as one `_commitSheetRange` (generalised to several ticks) or as a native `figure-range` entry; `moveSelectionInFrames`, `bringToFront`, `sendToBack`, `moveSelectionLayer`, `orderSelection`, `mirrorFigure`. `styk-edit/src/recolor.rs`: `editFigureColors`, `setFigureColor`, `replaceFigureColor`, `resetFigureColors` and a polygon's colour. Owned with the large figure class. Found while porting: the app's timeline ranges lost their ticks across JSON (owned `setSceneColor` with a range selected keyed the playhead only); fixed in the facade (`{"@array", "sheetTicks"}`). | 18 recordings (427 steps) match at every step, `transform-native` now 21 of 21; mutations 88 of 92 caught (4 equivalent or indistinguishable). App with the engine's `Math` (agent's runs): start document 270/270, `channels-figure` 236/236, the colours document 271/271; owned editing the same as the editor alone. |
 | 2026-10-04 04:43 | S5 the camera baked into the figures | `applyCameraToFigures` on a layer sheet (`applyAuthoredCameraToFigures`, `styk-edit/src/camera_commands.rs`): per chosen frame, each figure keyed where the camera shows it (root through the inverse camera matrix with `styk-math`, scale, rotation) and the camera keyed back to the identity; the camera lookup shared with handle nudges (`effective_camera`, `camera_linear`). | 1 recording (17 steps) matches the editor at every step; 7 of 7 mutations break it. App shadow with the engine's `Math`: start document 307/307; owned editing the same as the editor alone. |
+| 2026-10-04 04:47 | S3 item 6 / S4 thumbnails, library previews, camera monitor (agent, reviewed and merged) | Frame thumbnails of documents the engine draws are drawn on the stage's WebGPU device (`styk_engine::thumbnails::card`, `styk_wasm::views`, `src/engine/engine-thumbnails.mjs`): frames prepared on workers by an `ExportFrames` pinned to the revision (`ready` only on the interface thread, D7), a second renderer sharing the sprite atlas (`Renderer::share_sprites`). Library posters and hover animations come from one GPU preview worker (`styk_engine::thumbnails::library`, `styk_wasm::preview`; bounds from `artwork_bounds` with effect padding and `Batch::bounds`). The camera monitor is drawn by `Stage::render_monitor`. SVG export stays JavaScript (editable vectors, not the draw list). JavaScript fallback for in-between previews, refused documents, WebGL2 stages and canvases failing a pixel probe. The JavaScript worker's parallax fixed first. styk-raster: cel tiles without seams; not used (3 AA levels, no filter effects, z-fight). | Thumbnails vs engine export frames 121/121 (89 identical); vs JavaScript worker 10/12/1 of 43 at 320×192/512×288/96×54 (text, 3D rasters, Canvas 2D seams by the mean); library mattes 12/12 the same; monitor 1/6. Bamboo 48 thumbnails 334–362 ms vs 6.5–11.3 s; first thumbnail 2–9 ms vs 0.65–3.2 s; library poster 11–34 ms vs 0.69–0.91 s; monitor 0.5 ms vs 19–127 ms on the interface thread (load 18–27). engine:test 295, engine:parity ok, npm test 6 known failures (agent's runs). |
 
-In progress: the remaining drawing paths through the engine (agent: thumbnails, library
-previews, camera monitor, SVG export; S3 item 6). Next for agents: the builder and rig family
-(topology edits, `native-properties` entries, rig behaviours, segment commands), motion paths
-and in-betweens, the CPU rasterizer (S3 item 7). Next in the main thread: `centerCamera`,
-joined 3D IK targets, movieclip commands, the asynchronous layer commands (moving figures
-between layers, deleting layers: their planning must stay off the interface thread, D7). The
-next classes to flip (D15): small figure documents once a pose's boundary and adoption cost
-less than the editor's call (measured: the editor computes a small pose in about 0.07 ms),
-then 3D documents (a 105-bone pose step costs 0.19 ms natively, two thirds of it the figure's
-3D geometry, as in the editor).
+In progress: the builder and rig family (agent). Next for agents: motion paths and
+in-betweens, the CPU rasterizer (S3 item 7). Next in the main thread: `centerCamera`, joined
+3D IK targets, movieclip commands, the asynchronous layer commands (moving figures between
+layers, deleting layers: their planning must stay off the interface thread, D7). The next
+classes to flip (D15): small figure documents once a pose's boundary and adoption cost less
+than the editor's call (measured: the editor computes a small pose in about 0.07 ms), then 3D
+documents (a 105-bone pose step costs 0.19 ms natively, two thirds of it the figure's 3D
+geometry, as in the editor).

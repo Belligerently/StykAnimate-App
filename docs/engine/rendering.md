@@ -2,8 +2,10 @@
 
 How a draw list becomes pixels: the format (`engine/crates/styk-draw`), the GPU
 renderer (`engine/crates/styk-render`), the CPU rasterizer
-(`engine/crates/styk-raster`), the stage in the app (`src/engine/engine-stage.mjs`) and
-export frames (`engine/crates/styk-export`, `src/engine/engine-export.mjs`).
+(`engine/crates/styk-raster`), the stage in the app (`src/engine/engine-stage.mjs`),
+thumbnails, library previews and the camera monitor (`engine/crates/styk-wasm/src/views.rs`,
+`preview.rs`, `src/engine/engine-thumbnails.mjs`, `engine-previews.mjs`) and export frames
+(`engine/crates/styk-export`, `src/engine/engine-export.mjs`).
 
 ## The draw list (`styk-draw`)
 
@@ -193,9 +195,10 @@ the quietest round 86–96 against 104–108 ms (the draw list holds 26 % more r
 ## CPU (`styk-raster`)
 
 The same draw list rasterized with tiny-skia (Skia's raster backend, as Canvas
-2D): meant for thumbnails, library previews and devices without WebGPU or WebGL2
-(exports draw with the GPU renderer, see [Exports](#exports); `styk export --cpu`
-compares the two). Groups render into their own pixmaps; custom paints shade per pixel
+2D): for tools (`styk raster`, `styk export --cpu`) and, later, devices without WebGPU
+or WebGL2. Exports, thumbnails and library previews draw with the GPU renderer instead
+([Exports](#exports), [Thumbnails](#thumbnails-library-previews-and-the-camera-monitor),
+which says why). Groups render into their own pixmaps; custom paints shade per pixel
 with `sample_paint`; consecutive triangles of one look fill as one path.
 `styk raster` renders a frame like `styk render`; on the compared frames the
 two differ by less than 0.2/255 on average, along edges (0.30–0.56 on 3D scenes,
@@ -207,6 +210,9 @@ fixtures the CPU and the GPU differ by less than 0.2/255 on average.
 Text in raster entries is drawn at the output's density, and lone glyphs by their
 own triangles (`F_GLYPH_VECTOR`), not from masks.
 Filter effects are not drawn on the CPU yet.
+A drawing cel's tiles are filled without coverage at their quads' edges (each pixel takes
+the tile its centre falls in, as the GPU's samples do): tiles meeting in the middle of a
+pixel left a seam when both covered it by area (`tests/tiles.rs`).
 
 ## In the app
 
@@ -225,6 +231,159 @@ by the engine (an edit frame whose trails are still being sampled asks the app f
 another frame, `Stage::refining`); so are 3D meshes, surfaces, poses and drawings a
 spatial bone turns.
 
+## Thumbnails, library previews and the camera monitor
+
+The other places the editor draws frames, for documents the engine draws, use the same GPU
+renderer as the stage, so they show what the stage shows. Where the engine does not draw
+(documents the gate refuses, pages without the engine's worker threads, devices without
+WebGPU), the JavaScript paths draw as before.
+
+**Frame thumbnails** (the timeline's filmstrip cards at 320×192, the export dialog's stage and
+strip at up to 512×288 and 96×60): `src/engine/engine-thumbnails.mjs` keeps the interface of
+`ThumbnailRenderer` (`src/thumbnail-renderer.mjs`). For a thumbnail it brings the engine to the
+editor's revision (`src/engine/engine-document.mjs`, the synchronisation exports use), then asks
+the stage (`renderThumbnail` in `engine-stage.mjs`, `Stage::prepare_thumbnail` and
+`render_thumbnail` in `styk-wasm/src/views.rs`): the tick's frame is prepared on the engine's
+workers by an `ExportFrames` pinned to the revision (the interface thread only checks
+`ExportFrames::ready`, never evaluates, D7), every picture of the document is uploaded first,
+then a renderer of the thumbnails' own, sampling the stage's sprite atlas
+(`Renderer::share_sprites`), draws it on the stage's device into an `OffscreenCanvas`, framed as
+the filmstrip frames it (`styk_engine::thumbnails::card`: the canvas fitted and centred on a
+`#f5f5f5` card, through the scene camera, effects drawn, the document's hidden layers hidden),
+and the interface copies that canvas onto the card in the same task. No copy of the document goes
+to a thumbnail worker; the JavaScript worker is created only for what the engine does not draw:
+in-between previews (`docs/INSERT-INBETWEEN.md`, a sampled pose that is not in the document),
+refused documents, and stages on WebGL2, which cannot present one device to a second canvas.
+Thumbnails show parallax layers moved by the camera, as playback does; the JavaScript worker
+drew them unmoved on frames without scene effects and was fixed first (it is the oracle).
+
+**Library previews** (`src/library-files.mjs`, `src/library-hover-preview.mjs`): one preview
+worker per page (`src/engine/engine-previews.mjs`, `engine-preview-worker.mjs`) joins the
+engine's shared memory and gets a GPU device of its own (WebGPU in the worker, else WebGL2 on its
+`OffscreenCanvas`). It opens a library file apart from the open document
+(`styk_engine::thumbnails::library`, `styk_wasm::preview::Previews`) and draws it with the stage's
+renderer: a saved asset's poster from its saved bytes (tick 0, or the first of fifteen evenly
+spaced ticks with artwork, fitted to its bounds with a tenth of margin, on transparency), and the
+hover animation (fitted to the union of sixteen sampled frames, grown by every frame drawn). Bounds
+are the editor's: `objectBounds` with each item's effect padding
+(`styk_eval::drawlist::artwork_bounds`) joined with the generated effects' reach
+(`Batch::bounds`, `generatorBatchBounds`). Each picture leaves the canvas as an `ImageBitmap`
+(`transferToImageBitmap`); nothing is read back. The card's backdrop is chosen in the worker from
+sixteen 40-pixel samples by `libraryPreviewMatte` (`src/library-matte.mjs`, shared with the
+JavaScript worker). Requests run one at a time; one cancelled before it starts is never sent. The
+worker stays between hovers and is released after five idle minutes (its device destroyed, its
+memory and thread stack freed, then it ends; terminated if it does not answer within 5 s). A worker
+that cannot get a device, or a file the engine cannot read, leaves previews to the JavaScript worker.
+
+**The camera monitor** (`src/camera-monitor.mjs`, in the Camera inspector): where the engine drew
+the stage's frame, `drawCameraMonitor` on the stage (`Stage::render_monitor`) draws that frame
+again through the scene camera, on the stage's device with a renderer of the monitor's own: a
+prepared playback frame from the cache, or the edit frame encoded again with the camera's parallax
+and without onion skins (kept while the frame does not change). WebGL2 stages draw the monitor with
+the JavaScript Canvas 2D path, as before.
+
+**Home and project pictures** are read from the stage's canvas (`stagePicture` in `src/app.mjs`):
+the engine's canvas where the engine draws the scene. They need no path of their own.
+
+**Why the GPU, not `styk-raster`.** The CPU rasterizer was tried first for thumbnails and library
+previews (no device, no shared atlas, works without a GPU) and dropped, measured in the app: its
+edges take three partial-coverage levels where the editor's Canvas 2D takes about 220 and the GPU
+about 250 (a library poster: mean difference 0.52 from Canvas 2D on a plain figure, edges only); it
+draws no filter effects (such frames had to fall back); and near-coplanar 3D faces resolve
+differently from the GPU (15 Guns tick 5 at 512×288: 21 solid pixels against the GPU's picture,
+where a receiver face showed through a stock). Drawing on the GPU gives the stage's pixels: an engine
+thumbnail equals the engine's export frame of that tick at the canvas's size (`--export-check`
+below: 89 of 121 identical, the rest within 2 levels but one pixel at 24, mean ≤ 0.008), and export
+frames equal the stage's.
+
+**What differs from the JavaScript paths.** The JavaScript thumbnail and library workers draw with
+Canvas 2D in a worker, the editor's fallback renderer: polygons and 3D faces antialiased one by one
+(seams), text and 3D artwork as vectors at the output's density, filter effects with the software
+filters, generated effects as tinted sprites. The engine draws as the WebGPU renderer does: 3D
+artwork and text from object rasters at the editor's raster density (at least half a pixel a unit,
+`rasterResolution`) resampled bilinearly, which at thumbnail sizes looks blockier than Canvas 2D
+draws small text; seamless faces; the GPU's effects. At 96×54 every stroke is one or two pixels wide,
+so edge coverage alone exceeds the app-parity mean (D13).
+
+### Measured
+
+`scripts/engine-preview-parity.mjs` (2026-10-04, RTX 4070 SUPER, the machine shared with other work
+at load averages 18–23). Electron under Xvfb with `--use-angle=vulkan` (WebGPU on the NVIDIA
+adapter, whose canvases can then be copied); the JavaScript paths in the same page.
+
+**Thumbnails against the JavaScript worker** (D13, limits unchanged; five frame starts per document,
+three sizes): 43 steps a size, all drawn by the engine. Passing at 320×192 / 512×288 / 96×54: 10 / 12 /
+1. The fixtures of figures, drawings and effects pass at 320×192 and 512×288 (the drawing-cel,
+parallax, follow-camera, colour-transition, Stick Nodes sprite and figure-effect fixtures, at most
+0.20), Karate-Fighter-Movement (a 3D rig) 9 of 10 (one step with 2 solid pixels); the
+generated-effects fixture passes at 512×288 (0.199) and fails at 320×192 (0.293). Scenes with text
+and 3D artwork fail at both sizes (Impact-FX-Fight 0.53–1.42, Vehicles 1.09–4.40 with up to 30 solid
+pixels, 15 Guns 0.98–3.46, Hand & Face 0.59–1.90, Everyday Props 0.81–3.31, Bamboo 2.39–3.71), the
+waterfall plane by the Canvas 2D seams (0.41–0.60, 1–2 solid pixels). At 96×54 only the drawing cel
+passes (figures 0.25–1.14, text, 3D and polygon scenes 1.4–15.5). Difference pictures inspected:
+edges, small text, 3D faces and particles; no moved, missing or recoloured shape. Against the
+engine's own export frames: 121 of 121 steps pass (above).
+
+**Library previews against the JavaScript worker** (Electron, 12 asset-pack files, poster and three
+hover frames each): the backdrop chosen is the same for all 12. Posters and frames of 3D figures fail
+by the mean (sedan 0.80, helicopter 1.05, Atlas gun 0.50, bullet 0.37, left hand 1.82, face 0.99,
+mascots 0.49–0.52; no solid pixel), the dojo wall by the Canvas 2D seams (1.94, 12 solid pixels), the
+movieclips' animated frames by their glow and particles (0.50–2.18, at most 10 solid pixels); the
+movieclips' posters are blank in both (their clips begin on an empty frame). The fitted bounds of the
+three movieclips' hover animations equal the editor's at every compared tick.
+
+**Camera monitor** against the JavaScript monitor (`?engine=off`, Canvas 2D while paused; one tick
+each): the figure-effect fixture passes (0.234); the others fail by the mean (parallax and follow
+fixtures 0.42–0.45, Karate 0.50 with 2 solid pixels, Impact 1.30, Vehicles 6.68 with 27 solid
+pixels, its captions and vehicles drawn from rasters as on the stage).
+
+**Speed and memory** (`--timing`, three interleaved rounds, each renderer created fresh; 320×192
+thumbnails of every frame start, at most 48; the app's memory and the GPU memory `nvidia-smi`
+attributes to it before and after each renderer):
+
+| Document (thumbnails) | Engine: total, first, median of the rest | JavaScript: total, first, median of the rest |
+| --- | --- | --- |
+| Karate-Fighter-Movement.styk (44) | 134–158 ms, 3.0–5.5 ms, 2.9–3.0 ms | 1,387–1,476 ms, 857–871 ms, 10.5–12.6 ms |
+| Impact-FX-Fight.styk (48) | 85–136 ms, 1.8–5.8 ms, 1.7–2.5 ms | 1,481–2,660 ms, 648–1,128 ms, 12.2–27.2 ms |
+| Bamboo-Training-Grounds-Demo.styk (48) | 334–362 ms, 7.6–8.8 ms, 6.8–7.3 ms | 6,502–11,295 ms, 1,186–1,836 ms, 112–221 ms |
+| TDD2 URIEL NEMESIS 3.styk (private corpus, 44) | 121–187 ms, 1.9–2.5 ms, 2.7–4.2 ms | 2,171–4,227 ms, 1,563–3,158 ms, 9.2–15.4 ms |
+| Jay on a new app (repaired).styk (private corpus, 1) | 6–12 ms | 1,001–1,372 ms |
+
+The JavaScript renderer's first thumbnail starts its worker and copies the document into it; the
+engine's draws from the document it holds. Memory around each renderer's first round (all processes
+of the app, before → after, the renderer still alive): JavaScript Karate +29, Impact +119, Bamboo
+−11, URIEL 3 +61, Jay +9 MiB; engine +11, +1, −1, −5, −5 MiB. GPU memory: the engine's thumbnail
+canvas and renderer added up to 42 MiB the first time (URIEL 3: 478 → 520 MiB; Impact +18 MiB), the
+JavaScript worker's canvas up to 109 MiB (URIEL 3: 520 → 629 MiB). Later rounds move by tens of MiB
+either way (collection, other GPU users of the process).
+
+| Library file | Engine: poster (worker starting), poster, hover start, hover frame | JavaScript: poster, hover start, hover frame |
+| --- | --- | --- |
+| Vehicles 01-sedan.stkz | 383–488 ms, 12–15 ms, 59–106 ms, 0.5–2.0 ms | 689–899 ms, 796–997 ms, 1.3–2.3 ms |
+| Impact 12-hit-spark-fan.stykmov | 281–325 ms, 11–22 ms, 206–276 ms, 0.9–1.6 ms | 706–848 ms, 857–1,001 ms, 9.9–14.0 ms |
+| Mascot 01-classic.stkz | 410–438 ms, 14–17 ms, 75–93 ms, 1.7–2.0 ms | 846–876 ms, 942–1,125 ms, 2.8–3.7 ms |
+| Dojo 01-dojo-back-wall.stkz | 300–803 ms, 24–34 ms, 75–145 ms, 1.7–2.0 ms | 747–909 ms, 958–1,034 ms, 6.1–9.8 ms |
+
+The camera monitor's time on the interface thread (`drawCameraMonitor`, 278×139, 60 paused frames
+after a seek each, two interleaved rounds, load averages 20–27): Bamboo-Training-Grounds-Demo.styk
+engine median 0.49–0.66 ms (90th percentile 0.71–1.10, worst 1.69) against JavaScript 75–127 ms
+(132–196, worst 260); Vehicles-Pivot-3D.styk engine 0.46–0.53 ms (0.69–0.77, worst 3.85) against
+JavaScript 19–40 ms (43–79, worst 106). The JavaScript monitor redraws the scene with Canvas 2D on
+the interface thread; the engine's submits a draw on the stage's device and copies its canvas.
+
+Not measured: other GPUs, Windows, macOS, a real display, the web build in browsers with WebGPU,
+packaged builds.
+
+**Testing**: `cargo test -p styk-engine --test thumbnails` (thumbnail frames prepared on workers and
+never evaluated by asking, the library fit and wrap-around, a file's own pictures),
+`cargo test -p styk-engine --lib` (the card's framing), `cargo test -p styk-eval --test vfx_layers`
+(`artwork_bounds` with effect padding) and `--test generators` (`Batch::bounds` holds every live
+particle), `node --test tests/engine-previews.test.mjs` (which renderer draws a thumbnail, the
+fallbacks, the preview worker's queue, cancellation, failure and release),
+`tests/thumbnail-renderer.browser.mjs` (the JavaScript worker's parallax), and
+`scripts/engine-preview-parity.mjs [--target electron --electron-arg --use-angle=vulkan]
+[--file …] [--library …] [--monitor] [--export-check] [--timing]`.
+
 ## Exports
 
 For a document the engine draws, export frames (PNG, PNG and JPEG sequences, GIF, APNG and
@@ -233,6 +392,25 @@ scene camera, at the export's size and sampling, without onion skins. The encode
 GIF, APNG and ZIP writers, WebCodecs, FFmpeg, the audio mix) are unchanged and receive the
 same canvases and PNG frames as before. SVG stays vector output from the JavaScript exporter,
 and so do documents the gate refuses (`engine-eligibility.mjs`).
+
+**Why SVG stays JavaScript.** An SVG export (`src/svg-export.mjs`) is editable vectors: one group
+per object (`data-object-id`, `data-movieclip-id`) with its opacity, strokes with their caps and
+joins, circles, polygon paths, gradient definitions, text as glyph outline paths, and pictures and
+drawing cels embedded at their source resolution (cels flattened from the tile store). The draw
+list is the renderer's tessellated form of the same frame, so an SVG built from it would not be
+equivalent: polygons and glyphs are triangles, curves polylines, pictures atlas rectangles of
+possibly reduced copies, cels 64-pixel tiles of one display level, and objects are not grouped.
+Counted on tick 0 (a draw-list census of `styk_eval::drawlist::encode` against the exporter's
+elements): Impact-FX-Fight.styk 27 scene items become 4,883 records, 4,855 of them triangles (its
+captions), against 141 SVG elements; the drawing-cel fixture's one cel 403 tile quads, against one
+embedded PNG; Karate-Fighter-Movement.styk 12,295 3D face triangles, which the exporter embeds as one
+rendered picture (frames with 3D, filter or generated effects take that raster branch). Porting
+the exporter would mean a second, vector-level output from `styk_eval::geometry` with
+JavaScript-exact number formatting, for an export that is not slow: one frame took 11–20 ms
+(Impact, 141 elements), 29–39 ms (the waterfall plane, 249 elements) and 117–176 ms (Karate, the
+raster branch) in the web build, after 0.52–0.89 s for the JavaScript export worker to start and
+receive the document (three rounds each, load average 14–15). The raster branch could take the
+engine's export frame later; it is unchanged here.
 
 **Where it runs.** `src/engine/engine-export.mjs` gives the export a renderer:
 `EngineExportFrames`, an `ExportFrameRenderer` (`src/export-frame-renderer.mjs`) whose worker

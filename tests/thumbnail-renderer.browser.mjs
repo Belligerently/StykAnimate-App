@@ -1,6 +1,6 @@
 import { chromium } from "./support/playwright.mjs";
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }),
   checks = [],
@@ -284,6 +284,20 @@ try {
       const next = await previewRenderer.renderThumbnail(0, previewCanvas);
       return cancelled === false && next === true;
     }),
+  );
+  check(
+    "Parallax layers move with the camera in worker thumbnails, as in playback",
+    await page.evaluate(async (text) => {
+      // Two layers with parallax whose reference differs from the camera: their figures move.
+      const report = JSON.parse(text);
+      previewEditor.load(structuredClone(report), "Parallax");
+      await previewRenderer.renderThumbnail(0, previewCanvas);
+      const moved = pixels().join();
+      for (const layer of Object.values(report._styk.layers.byId)) if (layer.parallax) layer.parallax.enabled = false;
+      previewEditor.load(report, "No parallax");
+      await previewRenderer.renderThumbnail(0, previewCanvas);
+      return moved !== pixels().join();
+    }, await readFile("engine/crates/styk-eval/tests/fixtures/eval/parallax-layers.json", "utf8")),
   );
   check(
     "Destroyed renderer refuses new work",

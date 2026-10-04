@@ -40,7 +40,7 @@ import { OnionSkinCache } from "./onion-skin.mjs";
 import {hasPinnedIK} from './ik.mjs';
 import { OnionControls } from "./onion-controls.mjs";
 import { OnionController } from "./onion-controller.mjs";
-import { ThumbnailRenderer } from "./thumbnail-renderer.mjs";
+import { createThumbnailRenderer } from "./engine/engine-thumbnails.mjs";
 import { BackgroundDialog } from "./background-dialog.mjs";
 import { ImportClient } from "./import-client.mjs";
 import { browserCodecHost, codecProfile } from "./codec-web-host.mjs";
@@ -2009,7 +2009,7 @@ function loop(now) {
       syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
       if (!state.editablePreparing) drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
         onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
-        report:editor.report,frame,geometry:state.playing?null:state.drag?.geometry || keyboardHandleGesture?.geometry || editor.geometry,
+        stage:state.renderer,report:editor.report,frame,geometry:state.playing?null:state.drag?.geometry || keyboardHandleGesture?.geometry || editor.geometry,
         resources:state.renderer.resources,hiddenUids:effectiveHidden(),
         prepared:packet?.key!==undefined&&state.renderer?.renderPreparedInto?{renderer:state.renderer,key:packet.key,hiddenKey:packet.hiddenKey||''}:null,
       });
@@ -6657,7 +6657,8 @@ async function init() {
       onError: fail,
       onRestored: queueUI,
     });
-  thumbnailRenderer = new ThumbnailRenderer(editor, { onError: fail });
+  // Frame thumbnails: the engine draws them for documents it draws (src/engine/engine-thumbnails.mjs).
+  thumbnailRenderer = createThumbnailRenderer(editor, { onError: fail }, { stage: () => state.renderer, playback: () => playback });
   sharedClipboard = new SharedClipboard(editor, desktop);
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;

@@ -851,6 +851,49 @@ fn object_fx<'s>(scene: &'s Scene, it: &Item) -> Option<&'s ObjectVfx> {
     scene.clip_vfx.get(owner as usize)?.as_deref()?.object(part)
 }
 
+/// `objectBounds` of a frame's whole artwork, as the editor measures it to fit a library
+/// preview (`src/library-preview-worker.mjs`): every item's box grown by half its stroke,
+/// its outline, three units and the reach of the effects on it (`drawableVfxPadding`: its
+/// object's figure stack, its node's stack, and the figure stacks of the movieclip
+/// instances it is drawn in). `[x, y, width, height]` in whole units; `None` when the
+/// frame draws no item.
+pub fn artwork_bounds(assets: &Assets, scene: &Scene) -> Option<[f64; 4]> {
+    if scene.items.is_empty() {
+        return None;
+    }
+    let fx = scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some);
+    let mut acc = EMPTY;
+    for it in &scene.items {
+        let Some(extent) = item_extent(scene, assets, it) else { continue };
+        let mut pad = 0.0;
+        if fx {
+            let scale = it.scale.abs();
+            if let Some(own) = object_fx(scene, it) {
+                if !own.figure.is_empty() {
+                    pad += crate::vfx::padding(&own.figure, scale, 0.0);
+                }
+                if let Some(stack) = node_stack(own, &scene.figures[it.figure as usize], it) {
+                    pad += crate::vfx::padding(stack, scale, 0.0);
+                }
+            }
+            if it.chain != crate::geometry::NO_CHAIN {
+                // Each instance the item is drawn in, outermost first, with its own scale.
+                let (mut above, mut above_slot) = (scene.vfx.as_deref(), it.slot);
+                for &(owner, part) in &scene.chains[it.chain as usize] {
+                    let stack = above.and_then(|f| f.object(above_slot)).map_or(&[][..], |o| &o.figure[..]);
+                    if !stack.is_empty() {
+                        pad += crate::vfx::padding(stack, scene.owner_scales.get(owner as usize).copied().unwrap_or(1.0), 0.0);
+                    }
+                    above = scene.clip_vfx.get(owner as usize).and_then(|v| v.as_deref());
+                    above_slot = part;
+                }
+            }
+        }
+        extent.include(&mut acc, pad);
+    }
+    Some(rounded(acc))
+}
+
 /// A node's own stack (`segmentVfx`): segments have node stacks, polygons do not.
 fn node_stack<'s>(fx: &'s ObjectVfx, fig: &Figure, it: &Item) -> Option<&'s [Arc<Effect>]> {
     if fx.segments.is_empty() || matches!(it.kind, ItemKind::Poly | ItemKind::Mesh) || it.flags & crate::geometry::ITEM_SEG_BRUSH != 0 {

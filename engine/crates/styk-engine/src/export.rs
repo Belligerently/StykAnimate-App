@@ -1,4 +1,4 @@
-//! Frames for an export.
+//! Frames for an export (and for thumbnails, which pin a revision the same way).
 //!
 //! An export draws one revision of the document from its first frame to its last, while
 //! the interface may go on drawing the stage. [`ExportFrames`] pins the generation the
@@ -170,6 +170,12 @@ impl ExportFrames {
             return None;
         }
         Some(Arc::new(produce(&self.generation, tick, &[], true, self.engine.inner.clock)))
+    }
+
+    /// The frame of `tick` if a worker has prepared it, left in place; never evaluated here
+    /// (the interface thread asks this for thumbnails, which it may not evaluate, D7).
+    pub fn ready(&self, tick: u32) -> Option<Arc<FrameData>> {
+        self.state.lock().ready.get(&tick).cloned()
     }
 
     /// Frames prepared ahead and not yet taken, or being prepared (at most [`AHEAD`]).

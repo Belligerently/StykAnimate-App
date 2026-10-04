@@ -257,7 +257,7 @@
   "app.compatibilityMode": {
     "locations": [
       "src/app.mjs:2031",
-      "src/app.mjs:6807"
+      "src/app.mjs:6808"
     ],
     "context": "if (state.renderer.stats?.backend === \"Canvas 2D fallback\") localizedText($(\"renderer-label\"), \"app.compatibilityMode\");"
   },
@@ -409,7 +409,7 @@
   },
   "app.editorReadyFileServiceUnavailable": {
     "locations": [
-      "src/app.mjs:6704"
+      "src/app.mjs:6705"
     ],
     "context": "status({messageKey: \"app.editorReadyFileServiceUnavailable\", messageParams: {}}, true);"
   },
@@ -739,7 +739,7 @@
   },
   "app.loadingThePivotConverterFirstUseOnly": {
     "locations": [
-      "src/app.mjs:6695"
+      "src/app.mjs:6696"
     ],
     "context": "if (state === \"loading\") status(stage === \"runtime\" ? {messageKey: \"app.loadingThePivotConverterFirstUseOnly\", messageParams: {}} : {messageKey: \"app.startingTh"
   },
@@ -987,7 +987,7 @@
   },
   "app.preparingCanvasAndEffects": {
     "locations": [
-      "src/app.mjs:6665"
+      "src/app.mjs:6666"
     ],
     "context": "status({messageKey: \"app.preparingCanvasAndEffects\", messageParams: {}}, false, true);"
   },
@@ -1022,14 +1022,14 @@
       "src/app.mjs:2181",
       "src/app.mjs:3650",
       "src/app.mjs:3909",
-      "src/app.mjs:6678",
-      "src/app.mjs:6813"
+      "src/app.mjs:6679",
+      "src/app.mjs:6814"
     ],
     "context": "onReady(){state.editingPacket=null;status({messageKey: \"app.ready\", messageParams: {}});warmPlayback();},"
   },
   "app.reconnectCanvas": {
     "locations": [
-      "src/app.mjs:6839"
+      "src/app.mjs:6840"
     ],
     "context": "localizedMarkup($(\"renderer-error\"), `<p data-i18n=\"app.theGraphicsDeviceWasResetReconnectingYourCanvas\">${messageHTML(\"app.theGraphicsDeviceWasResetReconnectin"
   },
@@ -1277,7 +1277,7 @@
   },
   "app.startingThePivotConverter": {
     "locations": [
-      "src/app.mjs:6695"
+      "src/app.mjs:6696"
     ],
     "context": "if (state === \"loading\") status(stage === \"runtime\" ? {messageKey: \"app.loadingThePivotConverterFirstUseOnly\", messageParams: {}} : {messageKey: \"app.startingTh"
   },
@@ -1337,19 +1337,19 @@
   },
   "app.theCanvasCouldNotReconnectYourAnimationIs": {
     "locations": [
-      "src/app.mjs:6751"
+      "src/app.mjs:6752"
     ],
     "context": "localizedText($(\"renderer-error\").querySelector('p'), \"app.theCanvasCouldNotReconnectYourAnimationIs\", {});"
   },
   "app.theCanvasUsesCompatibilityRenderingWhichCanBe": {
     "locations": [
-      "src/app.mjs:6817"
+      "src/app.mjs:6818"
     ],
     "context": "toasts.show({ message: interfaceText(\"app.theCanvasUsesCompatibilityRenderingWhichCanBe\", {value:reason}), messageKey: \"app.theCanvasUsesCompatibilityRenderingW"
   },
   "app.theGraphicsDeviceWasResetReconnectingYourCanvas": {
     "locations": [
-      "src/app.mjs:6839"
+      "src/app.mjs:6840"
     ],
     "context": "localizedMarkup($(\"renderer-error\"), `<p data-i18n=\"app.theGraphicsDeviceWasResetReconnectingYourCanvas\">${messageHTML(\"app.theGraphicsDeviceWasResetReconnectin"
   },
@@ -1436,7 +1436,7 @@
   },
   "app.valueCanvasCompatibilityRenderingIsActive": {
     "locations": [
-      "src/app.mjs:6811"
+      "src/app.mjs:6812"
     ],
     "context": "if (compatibility) localizedAttribute($(\"renderer-label\"), 'title', 'app.valueCanvasCompatibilityRenderingIsActive', {value:reason});"
   },
@@ -1466,7 +1466,7 @@
   },
   "app.webgpuIsUnavailable": {
     "locations": [
-      "src/app.mjs:6810"
+      "src/app.mjs:6811"
     ],
     "context": "const reason = message.reasonKey ? {messageKey:message.reasonKey, messageParams:message.reasonParams} : message.reason || {messageKey:\"app.webgpuIsUnavailable\"}"
   },
@@ -7353,9 +7353,9 @@
       "src/ui/ui-dialog.mjs:299",
       "src/ui/ui-dialog.mjs:340",
       "src/ui/ui-toast.mjs:441",
-      "src/user-library.mjs:582",
-      "src/user-library.mjs:594",
-      "src/user-library.mjs:620"
+      "src/user-library.mjs:584",
+      "src/user-library.mjs:596",
+      "src/user-library.mjs:622"
     ],
     "context": "{ label: kitText(t, \"common.cancel\"), labelKey: \"common.cancel\", labelParams: {}, cancel: true, id: \"keep-editing\", variant: \"ghost\" },"
   },
@@ -12040,14 +12040,14 @@
   },
   "errors.app.selectionChangedReopenTheColorPicker": {
     "locations": [
-      "src/app.mjs:6870",
-      "src/app.mjs:6877"
+      "src/app.mjs:6871",
+      "src/app.mjs:6878"
     ],
     "context": "if(editor.report!==report||editor.tick!==tick||[...editor.selectedUids].join(',')!==uids)throw messageError(new Error(''), \"errors.app.selectionChangedReopenThe"
   },
   "errors.app.selectionChangedReopenThePalette": {
     "locations": [
-      "src/app.mjs:6863"
+      "src/app.mjs:6864"
     ],
     "context": "if(editor.report!==report||editor.selectedUid!==uid||editor.figure!==figure||editor.tick!==tick)throw messageError(new Error(''), \"errors.app.selectionChangedRe"
   },
@@ -12077,7 +12077,7 @@
   },
   "errors.app.theGraphicsDeviceWasLost": {
     "locations": [
-      "src/app.mjs:6822"
+      "src/app.mjs:6823"
     ],
     "context": "telemetry.error(Object.assign(messageError(new Error(''), \"errors.app.theGraphicsDeviceWasLost\", {}), { name: 'GPUError', telemetryCode: 'device_lost' }), 'gpu'"
   },
@@ -12575,7 +12575,7 @@
   },
   "errors.cameraMonitor.theCameraPreviewCanvasIsUnavailable": {
     "locations": [
-      "src/camera-monitor.mjs:106"
+      "src/camera-monitor.mjs:108"
     ],
     "context": "if(!ctx || ctx.isContextLost?.())throw Object.assign(messageError(new Error(''), \"errors.cameraMonitor.theCameraPreviewCanvasIsUnavailable\", {}),{telemetryCode:"
   },
@@ -18904,19 +18904,19 @@
   },
   "errors.libraryFiles.couldNotEncodeThePreview": {
     "locations": [
-      "src/library-files.mjs:16"
+      "src/library-files.mjs:10"
     ],
-    "context": "const reader = new FileReader(); reader.onerror = () => finish(messageError(new Error(''), \"errors.libraryFiles.couldNotEncodeThePreview\", {}));"
+    "context": "const reader = new FileReader(); reader.onerror = () => reject(messageError(new Error(''), \"errors.libraryFiles.couldNotEncodeThePreview\", {}));"
   },
   "errors.libraryFiles.theLibraryFileChangedWhileReading": {
     "locations": [
-      "src/library-files.mjs:44"
+      "src/library-files.mjs:58"
     ],
     "context": "if (size !== transfer.size) throw messageError(new Error(''), \"errors.libraryFiles.theLibraryFileChangedWhileReading\", {});"
   },
   "errors.libraryFiles.theLibraryPreviewTimedOut": {
     "locations": [
-      "src/library-files.mjs:12"
+      "src/library-files.mjs:27"
     ],
     "context": "const timer = setTimeout(() => finish(messageError(new Error(''), \"errors.libraryFiles.theLibraryPreviewTimedOut\", {})), 60000);"
   },
@@ -21940,55 +21940,55 @@
   "errors.thumbnailRenderer.thumbnailSuperseded": {
     "locations": [
       "src/thumbnail-renderer.mjs:9",
-      "src/thumbnail-worker.mjs:47"
+      "src/thumbnail-worker.mjs:48"
     ],
     "context": "messageError(new DOMException('', \"AbortError\"), \"errors.thumbnailRenderer.thumbnailSuperseded\", {});"
   },
   "errors.thumbnailWorker.invalidInbetweenPreviewOptions": {
     "locations": [
-      "src/thumbnail-worker.mjs:126"
+      "src/thumbnail-worker.mjs:127"
     ],
     "context": "throw messageError(new Error(''), \"errors.thumbnailWorker.invalidInbetweenPreviewOptions\", {});"
   },
   "errors.thumbnailWorker.invalidStoredFramePreviewMode": {
     "locations": [
-      "src/thumbnail-worker.mjs:98"
+      "src/thumbnail-worker.mjs:99"
     ],
     "context": "if (message.storedFrames !== undefined && typeof message.storedFrames !== 'boolean') throw messageError(new Error(''), \"errors.thumbnailWorker.invalidStoredFram"
   },
   "errors.thumbnailWorker.invalidThumbnailTime": {
     "locations": [
-      "src/thumbnail-worker.mjs:99"
+      "src/thumbnail-worker.mjs:100"
     ],
     "context": "if(message.tick!==undefined&&(!Number.isInteger(message.tick)||message.tick<0||message.tick>10000000))throw messageError(new Error(''), \"errors.thumbnailWorker."
   },
   "errors.thumbnailWorker.thumbnailDimensionsExceed512Pixels": {
     "locations": [
-      "src/thumbnail-worker.mjs:110"
+      "src/thumbnail-worker.mjs:111"
     ],
     "context": "throw messageError(new RangeError(''), \"errors.thumbnailWorker.thumbnailDimensionsExceed512Pixels\", {});"
   },
   "errors.thumbnailWorker.thumbnailDocumentIsUnavailable": {
     "locations": [
-      "src/thumbnail-worker.mjs:83"
+      "src/thumbnail-worker.mjs:84"
     ],
     "context": "if (!report) throw messageError(new Error(''), \"errors.thumbnailWorker.thumbnailDocumentIsUnavailable\", {});"
   },
   "errors.thumbnailWorker.thumbnailFrameIsUnavailable": {
     "locations": [
-      "src/thumbnail-worker.mjs:101"
+      "src/thumbnail-worker.mjs:102"
     ],
     "context": "throw messageError(new RangeError(''), \"errors.thumbnailWorker.thumbnailFrameIsUnavailable\", {});"
   },
   "errors.thumbnailWorker.thumbnailWorkerAlreadyHasAPendingFrame": {
     "locations": [
-      "src/thumbnail-worker.mjs:96"
+      "src/thumbnail-worker.mjs:97"
     ],
     "context": "throw messageError(new Error(''), \"errors.thumbnailWorker.thumbnailWorkerAlreadyHasAPendingFrame\", {});"
   },
   "errors.thumbnailWorker.unknownThumbnailOperation": {
     "locations": [
-      "src/thumbnail-worker.mjs:94"
+      "src/thumbnail-worker.mjs:95"
     ],
     "context": "if (operation !== \"render\") throw messageError(new Error(''), \"errors.thumbnailWorker.unknownThumbnailOperation\", {});"
   },
@@ -22078,7 +22078,7 @@
   },
   "errors.userLibrary.theDocumentOrInsertionFrameChangedInsertThe": {
     "locations": [
-      "src/user-library.mjs:559"
+      "src/user-library.mjs:561"
     ],
     "context": "if (this.editor.report !== report || this.editor.tick !== tick || this.editor.activeLayerId !== layer) throw messageError(new Error(''), \"errors.userLibrary.the"
   },
@@ -22090,7 +22090,7 @@
   },
   "errors.userLibrary.unlockTheDestinationLayerBeforeInsertingAnAsset": {
     "locations": [
-      "src/user-library.mjs:562"
+      "src/user-library.mjs:564"
     ],
     "context": "if (this.editor.getLayer(layer)?.locked) throw messageError(new Error(''), \"errors.userLibrary.unlockTheDestinationLayerBeforeInsertingAnAsset\", {});"
   },
@@ -29020,20 +29020,20 @@
   },
   "libraryHoverPreview.animationPreviewUnavailableDoubleClickToInsertThis": {
     "locations": [
-      "src/library-hover-preview.mjs:20",
-      "src/library-hover-preview.mjs:51"
+      "src/library-hover-preview.mjs:28",
+      "src/library-hover-preview.mjs:34"
     ],
-    "context": "const fail = () => { if (active()) { this.stop(); localizedAttribute(session.card, \"title\", \"libraryHoverPreview.animationPreviewUnavailableDoubleClickToInsertT"
+    "context": "if (active()) { this.stop(); if (error.name !== 'AbortError') localizedAttribute(session.card, \"title\", \"libraryHoverPreview.animationPreviewUnavailableDoubleCl"
   },
   "libraryHoverPreview.hoverToPlay": {
     "locations": [
-      "src/library-hover-preview.mjs:59"
+      "src/library-hover-preview.mjs:100"
     ],
     "context": "const hint = session.card.querySelector('.library-preview-hint'); if (hint) localizedText(hint, \"libraryHoverPreview.hoverToPlay\", {});"
   },
   "libraryHoverPreview.playing": {
     "locations": [
-      "src/library-hover-preview.mjs:34"
+      "src/library-hover-preview.mjs:43"
     ],
     "context": "localizedText(session.card.querySelector('.library-preview-hint'), \"libraryHoverPreview.playing\", {});"
   },
@@ -31165,7 +31165,7 @@
   "rendererStatus.deviceLost": {
     "locations": [
       "src/app.mjs:2032",
-      "src/app.mjs:6808"
+      "src/app.mjs:6809"
     ],
     "context": "else if (state.renderer.stats?.backend === \"WebGPU device lost\") localizedText($(\"renderer-label\"), \"rendererStatus.deviceLost\");"
   },
@@ -31183,7 +31183,7 @@
   },
   "rendererStatus.reconnectionFailed": {
     "locations": [
-      "src/app.mjs:6782"
+      "src/app.mjs:6783"
     ],
     "context": "fallbackReason: `Graphics reconnection failed: ${error.message}`, fallbackReasonKey:'rendererStatus.reconnectionFailed',"
   },
@@ -37618,7 +37618,7 @@
   },
   "userLibrary.assetName": {
     "locations": [
-      "src/user-library.mjs:570"
+      "src/user-library.mjs:572"
     ],
     "context": "const input = document.createElement('input'); input.className = 'library-rename'; input.value = item.name; input.maxLength = 120; localizedAttribute(input, 'ar"
   },
@@ -37642,9 +37642,9 @@
   },
   "userLibrary.cancel": {
     "locations": [
-      "src/user-library.mjs:582",
-      "src/user-library.mjs:594",
-      "src/user-library.mjs:620"
+      "src/user-library.mjs:584",
+      "src/user-library.mjs:596",
+      "src/user-library.mjs:622"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
@@ -37670,13 +37670,13 @@
   },
   "userLibrary.copiesAlreadyInYourScenesStayAvailable": {
     "locations": [
-      "src/user-library.mjs:620"
+      "src/user-library.mjs:622"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.createFolder": {
     "locations": [
-      "src/user-library.mjs:582"
+      "src/user-library.mjs:584"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
@@ -37741,14 +37741,14 @@
   },
   "userLibrary.folderLocation": {
     "locations": [
-      "src/user-library.mjs:537",
-      "src/user-library.mjs:603"
+      "src/user-library.mjs:539",
+      "src/user-library.mjs:605"
     ],
     "context": "this.say({messageKey:\"userLibrary.notice.savedTo2\",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:"
   },
   "userLibrary.folderName": {
     "locations": [
-      "src/user-library.mjs:582"
+      "src/user-library.mjs:584"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
@@ -37772,7 +37772,7 @@
   },
   "userLibrary.in": {
     "locations": [
-      "src/user-library.mjs:582"
+      "src/user-library.mjs:584"
     ],
     "context": "localizedMarkup(this.dialog, `<form><h2 data-i18n=\"userLibrary.newFolder\">${messageHTML(\"userLibrary.newFolder\", {})}</h2><p ${messageAttributes(\"userLibrary.in"
   },
@@ -37785,7 +37785,7 @@
   },
   "userLibrary.library": {
     "locations": [
-      "src/user-library.mjs:597"
+      "src/user-library.mjs:599"
     ],
     "context": "localizedText(this.dialog.querySelector('.library-move-location'), \"userLibrary.library\", {value: folder ? ` › ${folder.replaceAll('/',' › ')}` : ''});"
   },
@@ -37794,7 +37794,7 @@
       "src/user-library.mjs:238",
       "src/user-library.mjs:501",
       "src/user-library.mjs:508",
-      "src/user-library.mjs:612"
+      "src/user-library.mjs:614"
     ],
     "context": "let current = ''; const parts = messageTuple([interfaceText(\"userLibrary.library2\"), ...this.folder.split('/').filter(Boolean)], {0: {key: \"userLibrary.library2"
   },
@@ -37837,7 +37837,7 @@
   },
   "userLibrary.move": {
     "locations": [
-      "src/user-library.mjs:594"
+      "src/user-library.mjs:596"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.move\", {name: item.name})}>Move ${esc(item.name)}</h2><div class=\"library-move-location\"></di"
   },
@@ -37849,13 +37849,13 @@
   },
   "userLibrary.moveHere": {
     "locations": [
-      "src/user-library.mjs:594"
+      "src/user-library.mjs:596"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.move\", {name: item.name})}>Move ${esc(item.name)}</h2><div class=\"library-move-location\"></di"
   },
   "userLibrary.moveLibraryItem": {
     "locations": [
-      "src/user-library.mjs:593"
+      "src/user-library.mjs:595"
     ],
     "context": "localizedAttribute(this.dialog, 'aria-label', \"userLibrary.moveLibraryItem\", {}); let destination = ''; let sequence = 0;"
   },
@@ -37889,10 +37889,10 @@
       "src/user-library.mjs:59",
       "src/user-library.mjs:202",
       "src/user-library.mjs:292",
-      "src/user-library.mjs:526",
-      "src/user-library.mjs:537",
-      "src/user-library.mjs:582",
-      "src/user-library.mjs:604"
+      "src/user-library.mjs:528",
+      "src/user-library.mjs:539",
+      "src/user-library.mjs:584",
+      "src/user-library.mjs:606"
     ],
     "context": "<div class=\"library-source ui-segmented\" data-size=\"sm\" data-fill role=\"group\" aria-label=\"Library source\" data-i18n-aria-label=\"userLibrary.librarySource\"><but"
   },
@@ -37918,20 +37918,20 @@
     "locations": [
       "src/user-library.mjs:57",
       "src/user-library.mjs:474",
-      "src/user-library.mjs:582"
+      "src/user-library.mjs:584"
     ],
     "context": "<div class=\"library-location\"><nav class=\"library-breadcrumbs ui-crumb\" aria-label=\"Library folders\" data-i18n-aria-label=\"userLibrary.libraryFolders\"></nav><sp"
   },
   "userLibrary.newLibraryFolder": {
     "locations": [
       "src/user-library.mjs:57",
-      "src/user-library.mjs:581"
+      "src/user-library.mjs:583"
     ],
     "context": "<div class=\"library-location\"><nav class=\"library-breadcrumbs ui-crumb\" aria-label=\"Library folders\" data-i18n-aria-label=\"userLibrary.libraryFolders\"></nav><sp"
   },
   "userLibrary.noFoldersHere": {
     "locations": [
-      "src/user-library.mjs:607"
+      "src/user-library.mjs:609"
     ],
     "context": "if (!list.children.length) { const none = document.createElement('p'); none.className = 'library-move-none'; localizedText(none, \"userLibrary.noFoldersHere\", {}"
   },
@@ -37955,13 +37955,13 @@
   },
   "userLibrary.notice.addedToTheScene": {
     "locations": [
-      "src/user-library.mjs:563"
+      "src/user-library.mjs:565"
     ],
     "context": "this.editor.importFigure(document, {position}); this.setTool('select'); this.say({messageKey:\"userLibrary.notice.addedToTheScene\",messageParams:{name: item.name"
   },
   "userLibrary.notice.inserting": {
     "locations": [
-      "src/user-library.mjs:554"
+      "src/user-library.mjs:556"
     ],
     "context": "this.busy = true; this.syncSelection(); this.say({messageKey:\"userLibrary.notice.inserting\",messageParams:{name: item.name}});"
   },
@@ -37979,19 +37979,19 @@
   },
   "userLibrary.notice.movedTo2": {
     "locations": [
-      "src/user-library.mjs:612"
+      "src/user-library.mjs:614"
     ],
     "context": "try { await this.desktop.changeLibraryItem({path:item.path, folder:destination}); this.dialog.close(); this.selected = null; await this.refresh(); this.say({mes"
   },
   "userLibrary.notice.savedTo": {
     "locations": [
-      "src/user-library.mjs:526"
+      "src/user-library.mjs:528"
     ],
     "context": "this.input.value = ''; this.filterValue = 'all'; this.kindSelect.value = 'all'; await this.refresh(folder); this.select(result.path); this.say({messageKey:\"user"
   },
   "userLibrary.notice.savedTo2": {
     "locations": [
-      "src/user-library.mjs:537"
+      "src/user-library.mjs:539"
     ],
     "context": "this.say({messageKey:\"userLibrary.notice.savedTo2\",messageParams:{name: item.name, value1: this.folder ? {messageKey:'userLibrary.folderLocation',messageParams:"
   },
@@ -38003,7 +38003,7 @@
   },
   "userLibrary.notice.savingToMyLibrary": {
     "locations": [
-      "src/user-library.mjs:532"
+      "src/user-library.mjs:534"
     ],
     "context": "this.busy = true; this.syncSelection(); this.say({messageKey:\"userLibrary.notice.savingToMyLibrary\",messageParams:{name: item.name}});"
   },
@@ -38053,13 +38053,13 @@
   },
   "userLibrary.remove": {
     "locations": [
-      "src/user-library.mjs:620"
+      "src/user-library.mjs:622"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.removeLibraryItem": {
     "locations": [
-      "src/user-library.mjs:619"
+      "src/user-library.mjs:621"
     ],
     "context": "localizedAttribute(this.dialog, 'aria-label', \"userLibrary.removeLibraryItem\", {});"
   },
@@ -38132,13 +38132,13 @@
   },
   "userLibrary.thisAssetAndItsPreview": {
     "locations": [
-      "src/user-library.mjs:620"
+      "src/user-library.mjs:622"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
   "userLibrary.thisFolderAndItsContents": {
     "locations": [
-      "src/user-library.mjs:620"
+      "src/user-library.mjs:622"
     ],
     "context": "localizedMarkup(this.dialog, `<h2 ${messageAttributes(\"userLibrary.remove\", {name: item.name})}>Remove ${esc(item.name)}?</h2><p ${messageAttributes(\"userLibrar"
   },
@@ -38150,7 +38150,7 @@
   },
   "userLibrary.untitledAsset": {
     "locations": [
-      "src/user-library.mjs:523"
+      "src/user-library.mjs:525"
     ],
     "context": "let name = report._styk.name.replace(/[<>:\"/\\\\|?*\\x00-\\x1f]/g,'-').replace(/^\\.+|[. ]+$/g,'').slice(0,110).trim() || interfaceText(\"userLibrary.untitledAsset\");"
   },

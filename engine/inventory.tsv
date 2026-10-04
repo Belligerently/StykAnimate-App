@@ -33,7 +33,7 @@ src/builder-session.mjs	engine	styk-edit	js
 src/builder-surface-ui.mjs	ui	-	stays	
 src/camera-bake-authored.mjs	engine	styk-eval::camera	js	
 src/camera-follow.mjs	engine	styk-eval::follow	partial	Rust: sampling, shaping (dead zone, look-ahead, springs, zoom), sampleFollow (styk_eval::follow); followFramingOffset and incremental resampling still JS
-src/camera-monitor.mjs	ui	-	stays	
+src/camera-monitor.mjs	ui	-	stays	draws through Stage::render_monitor where the engine draws the stage
 src/camera-motion-bake-client.mjs	engine	styk-eval::camera	js	
 src/camera-motion-bake-worker.mjs	engine	styk-eval::camera	js	
 src/camera-motion-bake.mjs	engine	styk-eval::camera	js	
@@ -243,8 +243,9 @@ src/layers.mjs	engine	styk-eval	partial	Rust: layer order and membership (applyL
 src/library-drag.mjs	ui	-	stays	
 src/library-files.mjs	platform	-	stays	file, storage and network services
 src/library-hover-preview.mjs	ui	-	stays	
-src/library-preview-core.mjs	engine	styk-engine::thumbnails	js	
-src/library-preview-worker.mjs	engine	styk-engine::thumbnails	js	
+src/library-matte.mjs	ui	-	stays	
+src/library-preview-core.mjs	engine	styk-engine::thumbnails	partial	Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; unreadable files and devices without a readable GPU canvas still JS
+src/library-preview-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS
 src/localization-bindings.mjs	ui	-	stays	
 src/localization.mjs	ui	-	stays	
 src/localized-error.mjs	ui	-	stays	
@@ -419,7 +420,7 @@ src/support-localization.mjs	app	-	stays	telemetry, support, updates
 src/support-media.mjs	app	-	stays	telemetry, support, updates
 src/support-ui.mjs	app	-	stays	telemetry, support, updates
 src/surface-raster.mjs	engine	styk-render	ported	Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer
-src/svg-export.mjs	engine	styk-export	js	
+src/svg-export.mjs	platform	-	stays	editable vector output kept in JavaScript; the draw list is tessellated (docs/engine/rendering.md)
 src/telemetry-core.mjs	app	-	stays	telemetry, support, updates
 src/telemetry-measurements.mjs	app	-	stays	telemetry, support, updates
 src/telemetry-performance-schema.mjs	app	-	stays	telemetry, support, updates
@@ -433,9 +434,9 @@ src/text-font-compat.mjs	engine	styk-edit	js
 src/text-preview.mjs	ui	-	stays	
 src/theme-bootstrap.js	ui	-	stays	
 src/theme.mjs	ui	-	stays	
-src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	js	
+src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	partial	Rust: frame thumbnails of documents the engine draws on the stage's device (styk_engine::thumbnails::card, styk_wasm::views, src/engine/engine-thumbnails.mjs); in-between previews, refused documents and WebGL2 stages still JS
 src/thumbnail-validity.mjs	engine	styk-engine::thumbnails	js	
-src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	js	
+src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: thumbnails of documents the engine draws (styk_wasm::views); the worker draws in-between previews, refused documents, WebGL2 stages and canvases that give no pixels
 src/timeline-header.mjs	ui	-	stays	
 src/timeline-host.mjs	ui	-	stays	
 src/timeline-hotkeys.mjs	ui	-	stays	

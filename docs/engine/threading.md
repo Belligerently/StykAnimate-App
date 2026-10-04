@@ -43,6 +43,20 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   let through first); a worker that does not answer within 5 s is terminated
   (what it held then stays allocated in the shared memory). Pages that are not
   cross-origin isolated export with the JavaScript renderer.
+- The preview worker (`src/engine/engine-preview-worker.mjs`, one per page,
+  `engine-previews.mjs`; see [rendering.md](rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
+  joins the shared memory like the export worker and keeps its event loop for a GPU
+  device of its own, on which it draws library files' posters and hover animations
+  (`styk_wasm::preview::Previews`). It starts with the first request, runs requests one
+  at a time and is released after five idle minutes, as the export worker is (device
+  destroyed, pending answers let through, then the thread destroyed); it is never
+  terminated to cancel a preview (a cancelled request's answer is dropped), because a
+  thread of the shared memory terminated mid-call could hold the allocator or a lock.
+- Frame thumbnails and the camera monitor are drawn by the stage on the interface
+  thread (`styk-wasm/src/views.rs`), the only work done there being the draw itself:
+  a thumbnail's frame is prepared on the preparation workers (`ExportFrames::prefetch`)
+  and the interface waits for it on the progress counter; `ExportFrames::ready` only
+  looks.
 
 ## Rules
 
@@ -69,7 +83,9 @@ Never strip the profile ([D10](decisions/0010-keep-wasm-symbols.md)).
 ## Testing
 
 `cargo test -p styk-engine` (scheduler, mirror, definitions-only commits, a commit
-the interface thread finds busy, export frames prepared ahead); `node --test
-tests/engine-export.test.mjs` (the export worker's start, release and fallbacks);
+the interface thread finds busy, export frames prepared ahead, thumbnail frames never
+evaluated by the thread asking); `node --test tests/engine-export.test.mjs` (the export
+worker's start, release and fallbacks); `node --test tests/engine-previews.test.mjs`
+(the preview worker's queue, cancellation, failure and idle release);
 `engine/viewer/` (a bare page over the engine with `window.viewer` benchmarks);
 the app parity tool.

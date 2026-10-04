@@ -26,6 +26,7 @@ What's new in each version of StykAnimate.
 ### Fixed
 
 - Undoing a timeline change made of several steps keeps your selection and shows the right frame.
+- Timeline previews show parallax layers where playback shows them.
 
 ### Performance
 
@@ -34,6 +35,7 @@ What's new in each version of StykAnimate.
 - Exporting animations with effects, particles, 3D or many figures is several times faster.
 - Animations with particles, auras, beams, smoke or explosions play and edit more smoothly.
 - Fills, magic wand selections, filters and saving are faster on drawing layers.
+- Timeline and asset library previews appear almost instantly, and large projects use less memory while they are shown.
 - Smoother playback for animations with parallax layers, a following camera, moved figure origins, Stick Nodes sprites, turning 3D drawings or animated properties.
 
 ## [1.2.5]
