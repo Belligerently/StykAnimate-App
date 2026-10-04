@@ -216,9 +216,20 @@ impl<'a> Records<'a> {
     /// replacements left out (`at(report, tick, {skipMovieclipPatches: true})`): the pose a
     /// key with replacements is written from.
     pub fn evaluated_options(&self, tick: f64, clips: bool, skip_patches: bool) -> Result<Value, Error> {
+        self.evaluated_mode(tick, clips, skip_patches, false)
+    }
+
+    /// The editor's authoritative shown pose holds a native one-tick row while
+    /// channels retain the actual fractional clock. Raw `at`/motion sampling
+    /// keeps its existing fractional-row rule through [`Records::evaluated_with`].
+    pub fn evaluated_editor_with(&self, tick: f64, clips: bool) -> Result<Value, Error> {
+        self.evaluated_mode(tick, clips, false, true)
+    }
+
+    fn evaluated_mode(&self, tick: f64, clips: bool, skip_patches: bool, editor: bool) -> Result<Value, Error> {
         let frame = match self.tree.path(&["_styk", "layerSheet"]) {
             Some(sheet) => self.sample_sheet(sheet, tick, skip_patches)?,
-            None => self.native_at_with(tick, clips)?,
+            None => self.native_at_with(tick, clips, editor)?,
         };
         let frame = if clips { self.sample_clips(frame, tick)? } else { frame };
         Ok(self.layer_order(frame))
@@ -291,14 +302,17 @@ impl<'a> Records<'a> {
     /// `sampleLegacy(report, time)`: the native timeline at a time with its property
     /// channels composed, in layer order.
     fn native_at(&self, time: f64) -> Result<Value, Error> {
-        self.native_at_with(time, false)
+        self.native_at_with(time, false, false)
     }
 
-    fn native_at_with(&self, time: f64, clips: bool) -> Result<Value, Error> {
-        let index = self.rows.partition_point(|r| r.start as f64 <= time).saturating_sub(1);
-        let t = match self.rows.get(index) {
-            Some(row) if row.count > 0 => (time - row.start as f64) / row.count as f64,
-            _ => 0.0,
+    fn native_at_with(&self, time: f64, clips: bool, editor: bool) -> Result<Value, Error> {
+        let (index, t) = if editor { crate::eval::row_at(&self.rows, time) } else {
+            let index = self.rows.partition_point(|r| r.start as f64 <= time).saturating_sub(1);
+            let t = match self.rows.get(index) {
+                Some(row) if row.count > 0 => (time - row.start as f64) / row.count as f64,
+                _ => 0.0,
+            };
+            (index, t)
         };
         let frame = match (
             &self.source_tree,

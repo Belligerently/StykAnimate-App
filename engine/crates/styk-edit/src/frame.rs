@@ -24,7 +24,7 @@ pub(crate) struct Cache {
     report: Option<Value>,
     prepared: Option<Arc<Prepared>>,
     /// Evaluated frames by tick and by whether movieclips were sampled; a few recent ones.
-    frames: Vec<(u64, bool, Value)>,
+    frames: Vec<(u64, bool, bool, Value)>,
 }
 
 impl From<styk_eval::records::Error> for EditError {
@@ -77,16 +77,22 @@ impl Editor {
     /// `evaluatedFrame(report, …, tick)` as records; without `clips`, the frame a
     /// key's pose is captured from (`at(report, tick)`: movieclips not sampled).
     pub(crate) fn evaluated(&self, tick: f64, clips: bool) -> Result<Value, EditError> {
+        self.evaluated_mode(tick, clips, false)
+    }
+
+    fn evaluated_mode(&self, tick: f64, clips: bool, editor_native: bool) -> Result<Value, EditError> {
+        let editor_native = editor_native && !self.sheet();
         let prepared = self.prepared()?;
-        if let Some((_, _, frame)) = self.eval.borrow().frames.iter().find(|(at, with, _)| *at == tick.to_bits() && *with == clips) {
+        if let Some((_, _, _, frame)) = self.eval.borrow().frames.iter().find(|(at, with, editor, _)| *at == tick.to_bits() && *with == clips && *editor == editor_native) {
             return Ok(frame.clone());
         }
-        let frame = Records::new(&self.report, &prepared)?.evaluated_with(tick, clips)?;
+        let records = Records::new(&self.report, &prepared)?;
+        let frame = if editor_native { records.evaluated_editor_with(tick, clips)? } else { records.evaluated_with(tick, clips)? };
         let mut cache = self.eval.borrow_mut();
         if cache.frames.len() >= 4 {
             cache.frames.remove(0);
         }
-        cache.frames.push((tick.to_bits(), clips, frame.clone()));
+        cache.frames.push((tick.to_bits(), clips, editor_native, frame.clone()));
         Ok(frame)
     }
 
@@ -107,7 +113,7 @@ impl Editor {
         match (&self.authored, &self.retained) {
             (Some(edit), _) => Ok(edit.frame.clone()),
             (None, Some(frame)) => Ok(frame.clone()),
-            (None, None) => self.evaluated(self.tick, true),
+            (None, None) => self.evaluated_mode(self.tick, true, true),
         }
     }
 
@@ -212,3 +218,126 @@ mod tests {
         assert!(editor.eval.borrow().prepared.is_none(), "empty camera clips prepared the document");
     }
 }
+
+/// A contiguous native row splice (`kind: 'ranges'`), shared by native frame commands.
+/// Values remain immutable COW records; applying history never mutates its snapshots.
+#[derive(Clone, Debug)]
+pub struct FrameSlice {
+    pub index: usize,
+    pub before: Vec<Value>,
+    pub after: Vec<Value>,
+}
+
+impl FrameSlice {
+    pub(crate) fn history_value(&self) -> Value {
+        let mut value = Obj::new();
+        value.set("index", Value::Num(self.index as f64));
+        value.set("before", Value::array(self.before.clone()));
+        value.set("after", Value::array(self.after.clone()));
+        Value::object(value)
+    }
+}
+
+/// The existing native keyframe array owns row splices. The direction determines
+/// ordering when more than one disjoint original range is replaced.
+pub(crate) fn splice_ranges(report: &mut Value, changes: &[FrameSlice], after: bool) -> Result<(), EditError> {
+    let frames = report.make_obj().and_then(|report| report.get_mut("keyframes")).and_then(Value::make_arr)
+        .ok_or_else(|| EditError::Unported("native ranges without a keyframe array".into()))?;
+    let mut ordered = changes.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|change| change.index);
+    if after { ordered.reverse(); }
+    for change in ordered {
+        let (removed, inserted) = if after { (&change.before, &change.after) } else { (&change.after, &change.before) };
+        if change.index > frames.len() || removed.len() > frames.len() - change.index {
+            return Err(EditError::Unported("native ranges outside the keyframe array".into()));
+        }
+        frames.splice(change.index..change.index + removed.len(), inserted.iter().cloned());
+    }
+    Ok(())
+}
+
+impl Editor {
+    /// `_reconcileFrameIds(previous)`: live unchanged nodes reserve their identity;
+    /// retained sources and every earlier row reserve theirs in traversal order.
+    fn reconcile_native_frame_ids(&self, report: &mut Value) -> Result<u64, EditError> {
+        let previous = native_frames_of(&self.report);
+        let mut frames = native_frames_of(report);
+        let live = frames.iter().filter_map(|frame| match frame { Value::Obj(node) => Some(Arc::as_ptr(node) as usize), _ => None }).collect::<std::collections::HashSet<_>>();
+        let mut reserved = std::collections::HashMap::new();
+        for old in &previous {
+            if matches!(old, Value::Obj(node) if live.contains(&(Arc::as_ptr(node) as usize))) {
+                if let Some(id) = old.path(&["_styk", "frameId"]).and_then(Value::as_str) { reserved.insert(id.to_string(), old.clone()); }
+            }
+        }
+        let mut retained = report.path(&["_styk", "frameSources"]).and_then(Value::as_obj)
+            .map(|sources| sources.keys().map(|id| id.to_string()).collect::<std::collections::HashSet<_>>()).unwrap_or_default();
+        let mut next = self.next_frame_identity;
+        for frame in &mut frames {
+            let id = frame.path(&["_styk", "frameId"]).and_then(Value::as_str).map(str::to_string);
+            if id.as_ref().is_none_or(|id| retained.contains(id) || reserved.get(id).is_some_and(|old| !old.same_node(frame))) {
+                if next > 9_007_199_254_740_991 { return Err(EditError::Unported("native row identity capacity before its recording".into())); }
+                let mut fields = frame.as_obj().cloned().ok_or_else(|| EditError::Unported("a native row that is not an object".into()))?;
+                let mut styk = frame.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+                styk.set("frameId", Value::str(&format!("frame-{next}"))); next += 1;
+                fields.set("_styk", Value::object(styk)); *frame = Value::object(fields);
+            }
+            retained.insert(frame.path(&["_styk", "frameId"]).and_then(Value::as_str).unwrap().to_string());
+        }
+        report.make_obj().unwrap().set("keyframes", Value::array(frames));
+        Ok(next)
+    }
+
+    /// A native row transaction shared by split, falloff and future recorded frame
+    /// commands. Authored reference capture remains unavailable until recorded.
+    pub(crate) fn commit_native_ranges(&mut self, mut changes: Vec<FrameSlice>, label: &str, before_selection: crate::select::SelectionState, structural: bool, timing: bool) -> Result<bool, EditError> {
+        if changes.len() != 1 { return Err(EditError::Unported("multiple native row splices before their recordings".into())); }
+        if self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) != 0 || self.report.path(&["_styk", "simpleFrameDraft"]).is_some() {
+            return Err(EditError::Unported("native ranges with authored frame references".into()));
+        }
+        let mut report = self.report.clone();
+        splice_ranges(&mut report, &changes, true)?;
+        let next = self.reconcile_native_frame_ids(&mut report)?;
+        // Reconciliation may assign new identities; history captures exactly the
+        // published rows, rather than the pre-reconciliation pieces.
+        for change in &mut changes {
+            change.after = native_frames_of(&report).into_iter().skip(change.index).take(change.after.len()).collect();
+        }
+        self.ensure_counts();
+        self.report = report; self.next_frame_identity = next; self.retained = None;
+        let previous = changes.iter().flat_map(|change| change.before.iter().cloned()).collect::<Vec<_>>();
+        let current = changes.iter().flat_map(|change| change.after.iter().cloned()).collect::<Vec<_>>();
+        let layers = self.track_frames(&previous, &current, true)?;
+        self.frame_index = crate::timeline::rows(&self.report).iter().rposition(|row| row.start <= self.tick).unwrap_or(0);
+        let indices = changes.iter().flat_map(|change| change.index..change.index + change.after.len()).map(|index| Value::Num(index as f64)).collect();
+        self.record(crate::history::Command { kind: crate::history::CommandKind::Ranges { changes, structural, timing }, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers })?;
+        self.emit("edit", vec![("label", Value::str(label)), ("structural", Value::Bool(structural)), ("timing", Value::Bool(timing)), ("frameIndices", Value::array(indices))]);
+        Ok(true)
+    }
+
+    pub(crate) fn apply_native_ranges(&mut self, command: &crate::history::Command, direction: crate::history::Direction) -> Result<(), EditError> {
+        let crate::history::CommandKind::Ranges { changes, structural, timing } = &command.kind else { return Ok(()) };
+        let after = direction == crate::history::Direction::After;
+        self.ensure_counts();
+        splice_ranges(&mut self.report, changes, after)?;
+        let (previous, current) = if after {
+            (changes.iter().flat_map(|change| change.before.iter().cloned()).collect::<Vec<_>>(), changes.iter().flat_map(|change| change.after.iter().cloned()).collect::<Vec<_>>())
+        } else {
+            (changes.iter().flat_map(|change| change.after.iter().cloned()).collect::<Vec<_>>(), changes.iter().flat_map(|change| change.before.iter().cloned()).collect::<Vec<_>>())
+        };
+        self.track_frames(&previous, &current, false)?;
+        self.apply_attached_layer_changes(&command.layer_changes, direction);
+        self.retained = None;
+        let (selection, revision) = if after { (&command.after_selection, command.after_revision) } else { (&command.before_selection, command.before_revision) };
+        self.restore_selection(selection)?; self.revision = revision;
+        self.emit("history", vec![("label", Value::str(&command.label)), ("structural", Value::Bool(*structural)), ("timing", Value::Bool(*timing)), ("definition", Value::Bool(false)), ("animation", Value::Bool(false))]);
+        Ok(())
+    }
+}
+
+fn native_frames_of(report: &Value) -> Vec<Value> {
+    report.get("keyframes").and_then(Value::elements).map(|frames| frames.iter().collect()).unwrap_or_default()
+}
+
+#[cfg(test)]
+#[path = "native_sampling_tests.rs"]
+mod native_sampling_tests;

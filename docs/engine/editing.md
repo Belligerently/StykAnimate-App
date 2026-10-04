@@ -107,6 +107,16 @@ editor's transient display read while the canonical shown-frame owner remains un
 Checked `SheetPlan` state forwards cancellation checks and preserves removed tracks.
 Unsupported native authored channels and complex live states refuse before mutation.
 
+The five recorded native origin motion families also use that display owner. A remote
+write splits a native row through `FrameSlice` / `CommandKind::Ranges`; membership,
+attached-layer changes and UTF-16 history weights use the existing checked owners.
+Twenty-two actual editor commands certify both their enumerable history and the
+worker's retained weights. A native one-tick shown row holds its pose while scalar
+channels keep the fractional clock; raw sampling remains distinct in the same bounded
+cache, through `Records::evaluated_editor_with`. Saved native motion, ordinary native
+targets and unrecorded complex combinations remain explicit atomic refusals. This
+does not open an app ownership gate.
+
 Portable mobile pin additions include `HistoryLimits`, worker history configuration,
 preparation and application methods, `Editor::set_revision_counters`,
 `set_selection_metadata`, `motion_display_frame_worker`, prepared/guarded publication
@@ -114,6 +124,10 @@ types and accessors, and the Engine layer planning and canonical publication API
 `CommandKind::Animation` gains structural metadata, `FigureRange` retains geometry when
 recorded, and layer/movieclip command variants preserve their recorded history shape.
 Browser bindings remain confined to `styk-wasm`.
+
+The native motion milestone additionally exports `FrameSlice` and the
+`CommandKind::Ranges` variant; downstream exhaustive matches need the new variant.
+`Records::evaluated_editor_with` is an additive portable evaluation entry point.
 
 Evaluation also adds `MovieclipSource`, `Document::movieclip_source` and
 `Frame`/`Keyframe::retained_vfx_tick`. These portable fields keep cropped source clocks

@@ -12,8 +12,9 @@
 //! joint (turned with its subtree and the figures joined below it, stretched, isolated; the
 //! displayed solution of pinned limbs baked first and followers of pinned limbs turned), the end
 //! of a limb with an IK controller (a pinned target moves; a free limb is solved and baked, across
-//! joined figures too), and the camera. Native timelines, rigged and 3D figures, and keys whose
-//! figures a movieclip replacement placed answer `Unported`.
+//! joined figures too), and the camera. Recorded native origin figures reuse the same pose math,
+//! Objects history and shared native row-splice owner; saved native channels, native camera,
+//! ordinary native targets, rigged and 3D figures, and keys whose figures a movieclip replacement placed stay `Unported`.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -30,7 +31,7 @@ use crate::ik::{angle_table, assign, bake_object, controllers, displayed_angle, 
 use crate::record::{join_target, num, uid};
 use crate::select::{resolve_join_selection, SelectionState};
 use crate::sheet::{constant, continuations, fixed, key_at, signature, Plan, Write};
-use crate::timeline::{rows, total_ticks};
+use crate::timeline::{rows, total_ticks, Row};
 use crate::{Drag, EditError, Editor};
 
 /// `MOTION_PATH_FALLOFF_SHAPES`.
@@ -145,6 +146,8 @@ struct Posed {
     tick: f64,
     weight: f64,
     kind: Kind,
+    index: usize,
+    row: Row,
     source: Value,
     working: Value,
     /// The component's figures as they were (`baseline`).
@@ -164,6 +167,9 @@ struct Posed {
     claims: Vec<(String, bool)>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Mode { Sheet, Key, Split, Native }
+
 /// An open motion-path edit (`editor._drag` with `motionPath`).
 #[derive(Clone, Debug)]
 pub(crate) struct Session {
@@ -174,7 +180,8 @@ pub(crate) struct Session {
     tick: f64,
     before_selection: SelectionState,
     falloff: Option<Falloff>,
-    plan: Plan,
+    mode: Mode,
+    plan: Option<Plan>,
     /// The grabbed frame first, then a falloff's other writes by priority.
     posed: Vec<Posed>,
     /// The figures joined to the target (`component`).
@@ -430,15 +437,146 @@ impl Editor {
             let high = session.posed.iter().map(|posed| posed.tick).fold(f64::NEG_INFINITY, f64::max);
             [session.keys.iter().copied().filter(|tick| *tick < low).fold(0.0, f64::max),
                 session.keys.iter().copied().filter(|tick| *tick > high).map(|tick| tick + 1.0).fold(total, f64::min)]
+        } else if session.mode != Mode::Sheet {
+            let timeline = rows(&self.report); let index = session.posed[0].index;
+            let low = timeline[index.saturating_sub(2)].start;
+            let last = timeline[(index + 2).min(timeline.len() - 1)];
+            [low, last.start + last.count]
         } else {
             session.posed[0].writes.iter().fold([session.tick, session.tick + 1.0], |range, (_, entry)|
                 [range[0].min(entry.write_tick), range[1].max(entry.next_tick)])
         };
         if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
-        let report = session.plan.virtual_report(&self.report)?;
+        let report = if let Some(plan) = &session.plan { plan.virtual_report(&self.report)? } else { self.native_motion_report(session, false)? };
         let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
         let prepared = Prepared::new(Arc::new(doc));
         Ok(Some(styk_eval::records::Records::new(&report, &prepared)?.evaluated(self.tick)?))
+    }
+
+    /// A native gesture projects its same posed records over the canonical COW
+    /// report only for the worker display query; no preview becomes another store.
+    fn native_motion_report(&self, session: &Session, commit: bool) -> Result<Value, EditError> {
+        let mut report = self.report.clone();
+        if session.mode == Mode::Key {
+            let posed = &session.posed[0];
+            let frames = report.make_obj().and_then(|report| report.get_mut("keyframes")).and_then(Value::make_arr)
+                .ok_or_else(|| EditError::Unported("native motion without keyframes".into()))?;
+            frames[posed.index] = posed.working.clone();
+        } else if let Some((change, _)) = self.native_motion_slice(session, commit)? {
+            crate::frame::splice_ranges(&mut report, &[change], true)?;
+        }
+        Ok(report)
+    }
+
+    /// `falloffNativeFrames`: one contiguous slice keeps untouched rows and
+    /// replaces stored poses or splits their spans at the grabbed/edge ticks.
+    fn native_motion_slice(&self, session: &Session, commit: bool) -> Result<Option<(crate::frame::FrameSlice, bool)>, EditError> {
+        let frames = self.report.get("keyframes").and_then(Value::elements).map(|frames| frames.iter().collect::<Vec<_>>()).unwrap_or_default();
+        if session.mode == Mode::Split {
+            let posed = &session.posed[0];
+            let before = frames.get(posed.index).cloned().ok_or_else(|| EditError::Unported("a missing native motion row".into()))?;
+            let mut head = before.as_obj().cloned().unwrap();
+            head.set("duration_raw", Value::Num(posed.tick - posed.row.start));
+            let mut tail = posed.working.as_obj().cloned().unwrap();
+            tail.set("duration_raw", Value::Num(posed.row.start + posed.row.count - posed.tick));
+            return Ok(Some((crate::frame::FrameSlice { index: posed.index, before: vec![before], after: vec![Value::object(head), Value::object(tail)] }, true)));
+        }
+        let mut by_row = BTreeMap::<usize, Vec<&Posed>>::new();
+        for posed in &session.posed {
+            if posed.moved || posed.kind == Kind::Edge { by_row.entry(posed.index).or_default().push(posed); }
+        }
+        let Some((&first, _)) = by_row.first_key_value() else { return Ok(None) };
+        let last = *by_row.last_key_value().unwrap().0;
+        let mut after = Vec::new(); let mut timing = false;
+        for index in first..=last {
+            let stored = frames.get(index).cloned().ok_or_else(|| EditError::Unported("a missing native falloff row".into()))?;
+            let Some(subs) = by_row.get_mut(&index) else { after.push(stored); continue };
+            subs.sort_by(|a,b| a.tick.total_cmp(&b.tick));
+            let row = subs[0].row;
+            let mut pose = stored.clone();
+            if let Some(head) = subs.iter().find(|posed| posed.tick <= row.start).filter(|posed| posed.moved) {
+                pose = stored_candidate(&stored, &head.working, &session.component, session.target.camera);
+                if commit { pose = self.settle_native_motion(&stored, &pose, &session.component)?; }
+            }
+            let splits = subs.iter().filter(|posed| posed.tick > row.start).collect::<Vec<_>>();
+            if let Some(first) = splits.first() {
+                timing = true;
+                pose.make_obj().unwrap().set("duration_raw", Value::Num(first.tick - row.start));
+            }
+            after.push(pose);
+            for (offset, posed) in splits.iter().enumerate() {
+                let next = splits.get(offset + 1).map_or(row.start + row.count, |posed| posed.tick);
+                let mut piece = posed.working.clone();
+                piece.make_obj().unwrap().set("duration_raw", Value::Num(next - posed.tick));
+                after.push(piece);
+            }
+        }
+        Ok(Some((crate::frame::FrameSlice { index: first, before: frames[first..=last].to_vec(), after }, timing)))
+    }
+
+    /// The stored-pose commit owner keeps unrelated records and unknown metadata,
+    /// drops runtime fields and stores final joined roots from existing geometry.
+    fn settle_native_motion(&self, stored: &Value, candidate: &Value, component: &[u32]) -> Result<Value, EditError> {
+        let old = objects_of(stored); let current = objects_of(candidate);
+        let mut changed = Vec::new();
+        let objects = current.iter().map(|object| {
+            let Some(id) = uid(object).filter(|id| component.contains(id)) else { return object.clone() };
+            let before = old.iter().find(|object| uid(object) == Some(id));
+            if before.is_some_and(|before| signature(before, &old) == signature(object, &current)) { return before.unwrap().clone(); }
+            changed.push(id); snapshot_object(object)
+        }).collect::<Vec<_>>();
+        let mut settled = candidate.clone(); settled.make_obj().unwrap().set("objects", Value::array(objects));
+        if changed.is_empty() { return Ok(settled); }
+        self.check_native_motion_records(&settled, &changed)?;
+        if objects_of(&settled).iter().any(|object| join_target(object).is_some() && uid(object).is_some_and(|id| changed.contains(&id))) {
+            let (_, _, scene) = self.posed_scene(&settled)?;
+            for (slot, object) in objects_of(&settled).iter().enumerate() {
+                if join_target(object).is_some() && uid(object).is_some_and(|id| changed.contains(&id)) {
+                    if let (Some(geometry), Some(record)) = (scene.objects.get(slot), object_mut(&mut settled, slot)) {
+                        record.set("root_x", Value::Num(geometry.root[0])); record.set("root_y", Value::Num(geometry.root[1]));
+                    }
+                }
+            }
+        }
+        Ok(settled)
+    }
+
+    /// Out-of-range/malformed stored pose mutations remain an atomic fallback;
+    /// admission otherwise uses the same typed origin/definition/joins owner.
+    fn check_native_motion_records(&self, frame: &Value, ids: &[u32]) -> Result<(), EditError> {
+        let objects = objects_of(frame);
+        let slots = objects.iter().enumerate().filter_map(|(slot, object)| uid(object).is_some_and(|id| ids.contains(&id)).then_some(slot)).collect::<Vec<_>>();
+        self.origin_motion_gate(&objects, &slots)?;
+        for slot in slots {
+            let object = &objects[slot];
+            if ["root_x", "root_y", "scale"].iter().any(|key| !num(object,key).is_some_and(|number| number.is_finite() && (number as f32).is_finite())) ||
+                ["angles", "lengths", "bends"].iter().any(|key| object.get(key).and_then(Value::numbers).is_some_and(|numbers| numbers.iter().any(|number| !number.is_finite() || !(number.abs() as f32).is_finite()))) {
+                return Err(EditError::Unported("an unrecorded native motion pose outside its stored range".into()));
+            }
+        }
+        Ok(())
+    }
+
+    fn commit_native_motion(&mut self, session: Session) -> Result<bool, EditError> {
+        if session.mode == Mode::Key {
+            let posed = &session.posed[0];
+            let stored = self.report.get("keyframes").and_then(|frames| frames.item(posed.index)).unwrap();
+            let candidate = stored_candidate(&stored, &posed.working, &session.component, session.target.camera);
+            let previous = objects_of(&stored); let current = objects_of(&candidate);
+            let after = current.iter().filter(|object| uid(object).is_some_and(|id| session.component.contains(&id)) &&
+                previous.iter().find(|before| uid(before) == uid(object)).is_none_or(|before| signature(before,&previous) != signature(object,&current))).map(snapshot_object).collect::<Vec<_>>();
+            self.drag = None;
+            if after.is_empty() { self.emit("edit", vec![("motionPath", Value::Bool(true))]); return Ok(false); }
+            self.check_native_motion_records(&candidate, &after.iter().filter_map(uid).collect::<Vec<_>>())?;
+            self.replace_objects(posed.index, &after); self.retained = None;
+            self.record(crate::history::Command { kind: crate::history::CommandKind::Objects { index: posed.index, before: posed.baseline.clone(), after }, label: session.label.clone(), before_selection: session.before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
+            self.emit("edit", vec![("label", Value::str(&session.label)), ("changedUids", uid_array(&session.component)), ("frameIndices", Value::array(vec![Value::Num(posed.index as f64)]))]);
+            return Ok(true);
+        }
+        let Some((change, timing)) = self.native_motion_slice(&session, true)? else { self.drag = None; return Ok(false) };
+        for frame in &change.after { self.check_native_motion_records(frame, &session.component)?; }
+        self.drag = None;
+        self.commit_native_ranges(vec![change], &session.label, session.before_selection, false, timing)
     }
 
     /// Whether a motion-path edit is open.
@@ -478,11 +616,14 @@ impl Editor {
 
     /// `beginMotionPathEdit(target, tick, {label, falloff})`: never seeks.
     fn begin_motion_path_edit(&mut self, target: &Value, tick: &Value, options: &Value) -> Result<bool, EditError> {
+        if !self.sheet() && self.unported_document() != Some("with animation origins") {
+            return Err(EditError::Unported("a native motion-path document outside its origin recordings".into()));
+        }
         if self.drag.is_some() && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels")) {
             return Err(EditError::Unported("an origin motion-path begin during another live gesture".into()));
         }
-        if !self.sheet() {
-            return Err(EditError::Unported("a motion-path edit on a native timeline".into()));
+        if !self.sheet() && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) != 0 {
+            return Err(EditError::Unported("an authored native motion-path edit".into()));
         }
         let total = total_ticks(&rows(&self.report));
         let Some(tick) = tick.as_f64().filter(|t| t.fract() == 0.0 && *t >= 0.0 && *t < total) else { return Ok(false) };
@@ -495,6 +636,7 @@ impl Editor {
         let falloff = normalize_falloff(options.get("falloff"))?;
         let label = label.unwrap_or_else(|| if falloff.is_some() { "Reshape motion path" } else { "Edit motion path" }.to_string());
         let mut target = Target::parse(target)?;
+        if target.camera && !self.sheet() { return Err(EditError::Unported("an unrecorded native camera motion-path edit".into())); }
         if target.camera && self.unported_document().is_some_and(|reason| matches!(reason, "with animation origins" | "with animation origins and property channels")) {
             return Err(EditError::Unported("an unrecorded camera motion-path edit on an origin document".into()));
         }
@@ -528,6 +670,9 @@ impl Editor {
                 }
             }
         }
+        if !self.sheet() && slot_of(&objects, target.uid).and_then(|slot| figure_of(&objects[slot])).is_none_or(|figure| !figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+            return Err(EditError::Unported("an ordinary native motion-path target before its recordings".into()));
+        }
         let mut component = Vec::new();
         if !target.camera {
             let Some(slot) = slot_of(&objects, target.uid) else { return Ok(false) };
@@ -552,6 +697,10 @@ impl Editor {
                 owners.push(layer);
             }
         }
+        let timeline = rows(&self.report);
+        let index = timeline.iter().rposition(|row| row.start <= tick).unwrap_or(0);
+        let row = timeline[index];
+        let mode = if self.sheet() { Mode::Sheet } else if falloff.is_some() { Mode::Native } else if tick <= row.start { Mode::Key } else { Mode::Split };
         let falloff_mode = falloff.is_some();
         let mut session = Session {
             label,
@@ -560,7 +709,8 @@ impl Editor {
             tick,
             before_selection: self.selection_state(),
             falloff,
-            plan: self.planner(&owners)?,
+            mode,
+            plan: if mode == Mode::Sheet { Some(self.planner(&owners)?) } else { None },
             posed: Vec::new(),
             component,
             claims: HashSet::new(),
@@ -575,9 +725,15 @@ impl Editor {
             }
         } else {
             self.check_figures(&session, &source)?;
-            let baseline = if session.target.camera { Vec::new() } else { objects.iter().filter(|o| uid(o).is_some_and(|u| session.component.contains(&u))).map(snapshot_object).collect() };
-            let working = styk_eval::records::snapshot_pose_frame_of(&source, None);
-            session.posed.push(Posed::new(tick, 1.0, Kind::Grab, source, working, baseline, [f64::NAN; 2]));
+            let stored = self.report.get("keyframes").and_then(|frames| frames.item(index)).unwrap_or(Value::Null);
+            let baseline_frame = if mode == Mode::Sheet { &source } else { &stored };
+            let baseline = if session.target.camera { Vec::new() } else { objects_of(baseline_frame).iter().filter(|o| uid(o).is_some_and(|u| session.component.contains(&u))).map(snapshot_object).collect() };
+            let mut working = styk_eval::records::snapshot_pose_frame_of(&source, None);
+            if mode == Mode::Key { copy_frame_identity(&mut working, &stored); }
+            if mode == Mode::Split { working.make_obj().unwrap().set("duration_raw", Value::Num(row.start + row.count - tick)); }
+            let mut posed = Posed::new(tick, 1.0, Kind::Grab, source, working, baseline, [f64::NAN; 2]);
+            posed.index = index; posed.row = row;
+            session.posed.push(posed);
         }
         self.drag = Some(Drag {
             label: session.label.clone(),
@@ -651,6 +807,7 @@ impl Editor {
                 keys.push(at);
             }
         }
+        if session.mode != Mode::Sheet { keys = rows(&self.report).into_iter().filter(|row| row.count > 0.0).map(|row| row.start).collect(); }
         keys.sort_by(f64::total_cmp);
         session.keys = keys.clone();
         let total = total_ticks(&rows(&self.report));
@@ -682,8 +839,14 @@ impl Editor {
         }
         let source = self.motion_path_source(write.tick)?;
         self.check_figures(session, &source)?;
-        let baseline = if session.target.camera { Vec::new() } else { objects_of(&source).iter().filter(|o| uid(o).is_some_and(|u| session.component.contains(&u))).map(snapshot_object).collect() };
-        let working = styk_eval::records::snapshot_pose_frame_of(&source, None);
+        let timeline = rows(&self.report);
+        let index = timeline.iter().rposition(|row| row.start <= write.tick).unwrap_or(0);
+        let row = timeline[index];
+        let stored = self.report.get("keyframes").and_then(|frames| frames.item(index)).unwrap_or(Value::Null);
+        let baseline_frame = if session.mode == Mode::Native && write.tick <= row.start { &stored } else { &source };
+        let baseline = if session.target.camera { Vec::new() } else { objects_of(baseline_frame).iter().filter(|o| uid(o).is_some_and(|u| session.component.contains(&u))).map(snapshot_object).collect() };
+        let mut working = styk_eval::records::snapshot_pose_frame_of(&source, None);
+        if session.mode == Mode::Native && write.tick <= row.start { copy_frame_identity(&mut working, &stored); }
         let origin = if session.target.camera {
             let camera = crate::camera_commands::camera_values(working.get("camera"));
             let field = |key: &str| camera.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
@@ -697,7 +860,9 @@ impl Editor {
                 None => return Ok(None),
             }
         };
-        Ok(Some(Posed::new(write.tick, write.weight, write.kind, source, working, baseline, origin)))
+        let mut posed = Posed::new(write.tick, write.weight, write.kind, source, working, baseline, origin);
+        posed.index = index; posed.row = row;
+        Ok(Some(posed))
     }
 
     /// `report[key]` as a number.
@@ -801,8 +966,8 @@ impl Editor {
         if posed.camera_changed && !owners.iter().any(|o| o == "camera") {
             owners.push("camera".into());
         }
-        for id in &owners {
-            self.draft_write(&mut session.plan, posed, id, &changed)?;
+        if let Some(plan) = session.plan.as_mut() {
+            for id in &owners { self.draft_write(plan, posed, id, &changed)?; }
         }
         let changed = changed_uids(posed, None);
         self.emit("edit", vec![("live", Value::Bool(true)), ("motionPath", Value::Bool(true)), ("changedUids", uid_array(&changed))]);
@@ -859,6 +1024,7 @@ impl Editor {
     /// `writeFalloff`: a write's poses recorded into the sheet plan; edges write the unchanged
     /// component so that the original pose holds there.
     fn write_falloff(&self, session: &mut Session, index: usize) -> Result<(), EditError> {
+        if session.mode != Mode::Sheet { return Ok(()); }
         let edge = session.posed[index].kind == Kind::Edge;
         if !edge && !session.posed[index].moved {
             return Ok(());
@@ -876,7 +1042,7 @@ impl Editor {
         }
         for id in owners {
             if self.sheet_claim(session, index, &id) {
-                self.draft_write(&mut session.plan, &mut session.posed[index], &id, &changed)?;
+                self.draft_write(session.plan.as_mut().expect("sheet session"), &mut session.posed[index], &id, &changed)?;
             }
         }
         Ok(())
@@ -888,7 +1054,7 @@ impl Editor {
         if let Some((_, known)) = session.posed[index].claims.iter().find(|(track, _)| track == id) {
             return *known;
         }
-        let keys = session.plan.keys(id);
+        let keys = session.plan.as_mut().expect("sheet session").keys(id);
         let tick = session.posed[index].tick;
         let key = key_at(&keys, tick).map(|i| &keys[i]);
         let held = key.is_some_and(|k| matches!(k.get("interpolation").and_then(Value::as_str), Some("constant" | "hold")) || truthy(k, "movieclipPatches"));
@@ -1512,6 +1678,10 @@ impl Editor {
             if !session.moved || !has_changes(&session.posed[0], session.target.camera) {
                 return nothing(self);
             }
+            if session.mode != Mode::Sheet {
+                self.remember_motion_path_bends(&mut session.posed[0])?;
+                return self.commit_native_motion(session);
+            }
             // The bends a single frame remembers are not captured again: its key holds the pose
             // of the last pointer move.
             self.drag = None;
@@ -1519,7 +1689,7 @@ impl Editor {
                 self.emit("edit", vec![("motionPath", Value::Bool(true))]);
                 return Ok(false);
             }
-            return self.publish(session.plan, &session.label, session.before_selection, None);
+            return self.publish(session.plan.expect("sheet session"), &session.label, session.before_selection, None);
         }
         let changed = session.posed.iter().any(|p| p.moved && if p.camera_changed { has_changes(p, session.target.camera) } else { !p.changed.is_empty() });
         if !session.moved || !changed {
@@ -1536,6 +1706,7 @@ impl Editor {
                 session.posed[index].changed = changed_uids(posed, Some(&session.component));
             }
         }
+        if session.mode != Mode::Sheet { return self.commit_native_motion(session); }
         // Captured again after the bends settle, so that the stored sources include them.
         for index in 0..session.posed.len() {
             if session.posed[index].moved
@@ -1550,7 +1721,7 @@ impl Editor {
             self.emit("edit", vec![("motionPath", Value::Bool(true))]);
             return Ok(false);
         }
-        self.publish(session.plan, &session.label, session.before_selection, None)
+        self.publish(session.plan.expect("sheet session"), &session.label, session.before_selection, None)
     }
 
     /// `cancelMotionPathEdit()`: nothing was written to the document.
@@ -1640,6 +1811,8 @@ impl Posed {
             tick,
             weight,
             kind,
+            index: 0,
+            row: Row { start: 0.0, count: 0.0 },
             source,
             working,
             baseline,
@@ -1733,4 +1906,24 @@ mod tests {
         }
         assert_eq!(rounded_cube(0.5), 0.125);
     }
+}
+
+fn copy_frame_identity(working: &mut Value, stored: &Value) {
+    let mut styk = working.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+    if let Some(id) = stored.path(&["_styk", "frameId"]) { styk.set("frameId", id.clone()); }
+    working.make_obj().unwrap().set("_styk", Value::object(styk));
+}
+
+fn stored_candidate(stored: &Value, working: &Value, ids: &[u32], camera: bool) -> Value {
+    let edited = objects_of(working);
+    let objects = objects_of(stored).iter().map(|object| {
+        let Some(id) = uid(object).filter(|id| ids.contains(id)) else { return object.clone() };
+        let Some(edited) = edited.iter().find(|object| uid(object) == Some(id)) else { return object.clone() };
+        let mut record = edited.as_obj().cloned().unwrap();
+        if let Some(slot) = object.get("object_slot") { record.set("object_slot", slot.clone()); }
+        Value::object(record)
+    }).collect();
+    let mut candidate = stored.as_obj().cloned().unwrap();
+    if camera { candidate.set("camera", working.get("camera").cloned().unwrap_or(Value::Null)); }
+    candidate.set("objects", Value::array(objects)); Value::object(candidate)
 }

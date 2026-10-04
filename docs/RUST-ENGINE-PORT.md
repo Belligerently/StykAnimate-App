@@ -156,6 +156,19 @@ no earlier than 17:54 CEST; gate/benchmark/deletion requirements still apply.
 Logs: `tmp/root-verification-temp/checkpoint-53e3bdd9.log` and
 `checkpoint-53e3bdd9-cache-freshness.log`.
 
+Five recorded native origin motion families are now integrated: their 969 steps match
+fully, using the same motion/frame/membership/history owners. Shared-type checks pass
+623 native Rust tests; 79 focused JavaScript tests, check and shipping Wasm pass.
+All 65 motion JSON regenerate unchanged. The 30 admitted affected CLI recordings match
+5,799 steps; 11 saved-motion/scalar guard recordings remain explicit. Twenty-two actual
+commands certify enumerable history and the worker's exact retained weights; five
+fractional-read cases keep native held shown poses distinct from raw samples while
+scalar channels retain tick 3.5. Wasm is 9,582 KiB (`cdbde8b50169`). No app gate or
+adoption changes: native motion is an offline/worker prerequisite. Mobile pin additions:
+`FrameSlice`, `CommandKind::Ranges` (update exhaustive matches), and additive
+`Records::evaluated_editor_with`. Saved native motion and complex origin combinations
+remain the next command work. Logs: `tmp/root-verification-temp/native-motion-*`.
+
 ### Where the port stands
 
 | Stage | State |
@@ -198,7 +211,8 @@ without owning.
    Joint/handle and saved x/y/scale/rotation channel recordings now match, including shown
    frames and future target/ancestor guards. Ranges/joins and recorded 2D rig combinations
    now match. Optional selection metadata, native scalar authoring and recorded sheet motion paths
-   are assembled; next: native origin motion and complex rig/pose-choice/spatial combinations. Every admitted command needs its own
+   are assembled, as are five recorded native origin motion families; next: saved native
+   origin motion and complex rig/pose-choice/spatial combinations. Every admitted command needs its own
    recorded replay and app comparison; class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
@@ -237,6 +251,8 @@ without owning.
 - Benchmarks not yet run: the final interleaved benchmark set and the performance report;
   numbers in the milestone log are single runs on a shared, loaded machine.
 - `wasm-opt` is not installed: the WebAssembly modules are not size-optimized.
+- Native motion still refuses saved channels and unrecorded ordinary/complex targets
+  before mutation; its five admitted remote-time families do not change app adoption.
 - Section 6 lists the rest: software web drawing cels and crisp export, CPU rasterizer on nearly coplanar 3D
   faces, out-of-memory not recovered, `svr_uriel.piv` too large for the reference tool,
   Clippy warnings in `styk-eval`, the codec's `.stk` segment-edit defect.
@@ -246,7 +262,7 @@ without owning.
 | Branch / worktree | State |
 | --- | --- |
 | `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
-| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Record/pose/channel/range/join/2D-rig and strict nested validation integrated. Optional selection metadata, native scalar lifecycle and sheet motion are integrated; five no-channel native motion recordings are reviewed/frozen, saved native motion oracle active; the isolated worktree was moved with all 7,980 entries/hash/link/status checks preserved to avoid tmpfs quota. |
+| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Record/pose/channel/range/join/2D-rig and strict nested validation integrated. Optional selection metadata, native scalar lifecycle, sheet motion and five no-channel native motion families are integrated. Saved native motion continues in clean `tmp/engine-worktrees/origin-native-saved`, based on the integrated owners; the historical worktree and immutable snapshots remain preserved. |
 | `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption integrated; effects, worker layer planning, corrected sheet kernel and history budgets reviewed. Warm-history readiness and prepared publication reviewed; native migration frozen/independently reviewed; raw selection-guard correction frozen. Those source prerequisites and canonical root publication are integrated; durable quiet/live Session actor and guarded fresh bootstrap active, no app gate. |
 | `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands and Break Apart reviewed; sheet extension reviewed; native extension, insertion, corrected import error priority and explicit IK/saved-draft admission frozen and independently reviewed; that complete source stack is integrated; bake source frozen/reviewed, central strict replay/history integration pending, further effects/limits recordings active. |
 | `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query integrated. Independent layer/movie and assembled-main reviews completed; exact frozen source manifests retained for the integrated dependency stack. |
@@ -1116,3 +1132,5 @@ Work is active in the isolated lanes listed in the handoff. Frozen uncommitted s
 are review inputs, not completed milestones or class ownership evidence.
 
 | 2026-10-04 17:05 | S3/S5 recorded worker movieclips, history, canonical publication and fractional rendering | Integrate reviewed renderer and movie/layer/history/selection owners, bounded native/sheet planning, canonical COW root admission/paired publication with terminal-ACK retirement, exact displaced-generation cleanup, native scalar authoring and recorded origin sheet motion. Preserve retained movieclip/VFX source clocks and one checked SheetPlan/history owner. Fix atomic insertion/capacity refusal and bounded new-ID selection exchange in the editor/facade. Portable mobile API changes: checked Engine stage/layer/publication APIs, opaque admission and prepared/guarded editor publication, history limits/checkpoints, selection/motion accessors, retained source/effect fields; FrameData.tick is f64 and PlanError::Unported carries String (details in editing/threading). Wasm 9,528 KiB (+624 KiB). No class gate or deletion. | 615 shared-type native tests, final seven planner unit tests, 307 focused JS tests, check/changelog and shipping Wasm pass. All 3,153 affected JSON stay stable; 88 new evaluated groups / 798 ticks (371 / 4,032 total). CLI 75 new admitted tapes / 6,446 exact steps + 64 worker tapes / 643 steps; 16 guards remain explicit, 461 ordinary tapes total. Software stored/fractional preview 4/4, zero solids; actual duplicate/paste 3 adopted + 6 exact, same 22,810-byte document / six history entries / selection / full undo. Broad app run stalled without result; wrong alias and empty-focus attempts retained. Independent full source reviews and actual source mutants retained. Full committed 53e3bdd9 checkpoint green (421 tests / 358 containers); complete post-regeneration release target fresh in 0.43 s, cold isolated first run 2,297.5 s. Next checkpoint no earlier than 17:54 CEST; no performance claim. |
+
+| 2026-10-04 17:20 | S5 recorded native origin motion and exact row-splice history | Five no-channel native remote-time origin families reuse the checked frame/membership/attached-layer/history owners. Keep native one-tick shown poses held and raw samples distinct in the existing bounded cache, with scalar channels on the fractional clock. Portable mobile API additions: FrameSlice, CommandKind::Ranges (exhaustive matches need updating), Records::evaluated_editor_with. Wasm 9,582 KiB (+54 KiB). No app gate, adoption change, deletion or performance claim. | Shared-type checks: 623 native tests; 79 focused JS tests, check and shipping Wasm pass. All 65 motion JSON regenerate byte-stable. Thirty admitted affected CLI tapes / 5,799 exact steps include five new native admissions / 969 steps; 11 explicit guards remain. Actual worker weights and enumerable history match 22 editor commands; five raw/shown fractional cases preserve scalar x=635 at tick 3.5. Initial cfgtest private-field access corrected through the existing history summary, no public test helper added. Independent source review passes; full suite remains reserved for committed checkpoints. |

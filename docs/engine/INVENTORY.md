@@ -110,7 +110,7 @@ Engine logic: ported to Rust.
 | `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: authored pose/range/key/frame/clipboard/channel publications and recorded movieclip/timing operations; same checked SheetPlan owner, worker history/publication; unrecorded combinations and canonical app adoption pending |
 | `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-motion-path.mjs` | `styk-edit` | partial | Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins with worker display-frame reads; native origin path lane, complex rigs/3D and live trail adoption pending |
+| `src/editor-motion-path.mjs` | `styk-edit` | partial | Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins plus five native remote-time families with row-splice history and raw/shown fractional reads; saved native motion, complex rigs/3D and live trail adoption pending |
 | `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: recorded create, make unique, split, break apart, insert, playback/restart, extension and source-clock/presence membership commands on native/sheet worker paths; baking and unrecorded IK/draft combinations plus app adoption pending |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | partial | Rust: recorded whole/topology/joint/handle/saved-channel/range/join/2D-rig edits preserve retained support; 63 new replays/9764 exact steps and 63 derived groups/647 ticks; future complex definitions and class ownership stay guarded |
 | `src/editor-origin-support.mjs` | `styk-edit` | partial | Rust: repairOriginSupport, retained graph compaction, ghost pose remapping and construction-edit offsets (styk-edit/src/origin_topology.rs), recorded native/sheet Set Origin and topology; remaining unrecorded command combinations still JS |
@@ -199,7 +199,7 @@ Engine logic: ported to Rust.
 | `src/pivot/geometry-definition.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-order.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-pose.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pivot/geometry.mjs` | `styk-eval` | partial | Rust: evaluated records/world geometry plus prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS |
+| `src/pivot/geometry.mjs` | `styk-eval` | partial | Rust: evaluated records/world geometry, distinct native held shown/raw fractional views, prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS |
 | `src/pivot/raster-clip.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
 | `src/structural-equality.mjs` | `styk-eval` | js |  |

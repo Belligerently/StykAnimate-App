@@ -229,6 +229,12 @@ pub(crate) fn command_bytes_checked(
     };
     let index = |metadata: &mut Obj, index: usize| metadata.set("index", Value::Num(index as f64));
     let result = match &command.kind {
+        CommandKind::Ranges { changes, structural, timing } => {
+            metadata.set("kind", Value::str("ranges"));
+            metadata.set("changes", Value::array(changes.iter().map(crate::frame::FrameSlice::history_value).collect()));
+            flags(&mut metadata, *structural, *timing);
+            bytes(&Value::object(metadata), check)?
+        }
         CommandKind::Objects {
             index: at,
             before,

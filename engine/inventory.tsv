@@ -155,7 +155,7 @@ src/editor-layer-migration.mjs	engine	styk-edit	partial	Rust: recorded native co
 src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: authored pose/range/key/frame/clipboard/channel publications and recorded movieclip/timing operations; same checked SheetPlan owner, worker history/publication; unrecorded combinations and canonical app adoption pending
 src/editor-layers.mjs	engine	styk-edit	partial	Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS
 src/editor-load.mjs	engine	styk-edit	js	commands and history
-src/editor-motion-path.mjs	engine	styk-edit	partial	Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins with worker display-frame reads; native origin path lane, complex rigs/3D and live trail adoption pending
+src/editor-motion-path.mjs	engine	styk-edit	partial	Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins plus five native remote-time families with row-splice history and raw/shown fractional reads; saved native motion, complex rigs/3D and live trail adoption pending
 src/editor-movieclips.mjs	engine	styk-edit	partial	Rust: recorded create, make unique, split, break apart, insert, playback/restart, extension and source-clock/presence membership commands on native/sheet worker paths; baking and unrecorded IK/draft combinations plus app adoption pending
 src/editor-origin-mutations.mjs	engine	styk-edit	partial	Rust: recorded whole/topology/joint/handle/saved-channel/range/join/2D-rig edits preserve retained support; 63 new replays/9764 exact steps and 63 derived groups/647 ticks; future complex definitions and class ownership stay guarded
 src/editor-origin-support.mjs	engine	styk-edit	partial	Rust: repairOriginSupport, retained graph compaction, ghost pose remapping and construction-edit offsets (styk-edit/src/origin_topology.rs), recorded native/sheet Set Origin and topology; remaining unrecorded command combinations still JS
@@ -297,7 +297,7 @@ src/pivot/background.mjs	engine	styk-eval	partial	Rust: background tween and col
 src/pivot/geometry-definition.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-order.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/geometry-pose.mjs	engine	styk-eval	js	evaluation and world geometry
-src/pivot/geometry.mjs	engine	styk-eval	partial	Rust: evaluated records/world geometry plus prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS
+src/pivot/geometry.mjs	engine	styk-eval	partial	Rust: evaluated records/world geometry, distinct native held shown/raw fractional views, prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS
 src/pivot/model.mjs	engine	styk-doc	js	validation and structure
 src/pivot/raster-clip.mjs	engine	styk-eval	js	evaluation and world geometry
 src/pivot/structure.mjs	engine	styk-doc	partial	Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS

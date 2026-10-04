@@ -48,6 +48,8 @@ pub(crate) fn js_strict_eq(a: &Value, b: &Value) -> bool {
 /// What a history entry changed.
 #[derive(Clone, Debug)]
 pub enum CommandKind {
+    /// Contiguous native frame slices (`kind: 'ranges'`), including row splits.
+    Ranges { changes: Vec<crate::frame::FrameSlice>, structural: bool, timing: bool },
     /// One native keyframe before and after a structural transaction (`kind: 'frame'`).
     Frame { index: usize, before: Value, after: Value, structural: bool },
     /// Saved native channels (`kind: 'animation'`), sharing the movieclip owner.
@@ -410,6 +412,7 @@ impl Editor {
             Direction::After => (&command.after_selection, command.after_revision),
         };
         match &command.kind {
+            CommandKind::Ranges { .. } => self.apply_native_ranges(command, direction)?,
             CommandKind::Frame { index, before, after, structural } => {
                 self.ensure_counts();
                 let (previous, next) = if direction == Direction::Before { (after, before) } else { (before, after) };

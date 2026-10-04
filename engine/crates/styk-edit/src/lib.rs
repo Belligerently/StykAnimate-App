@@ -70,6 +70,7 @@ use std::collections::HashMap;
 use styk_doc::{Obj, Value};
 
 pub use history::{Command, CommandKind, HistoryLimits};
+pub use frame::FrameSlice;
 pub use select::Selection;
 
 /// What a failed call says. `Unported` means "run this in JavaScript": the call
@@ -936,3 +937,6 @@ fn next_frame_identity(report: &Value) -> u64 {
     let sources = report.path(&["_styk", "frameSources"]).and_then(Value::as_obj).map(|table| table.keys().filter_map(|id| number(Some(id))).collect::<Vec<_>>()).unwrap_or_default();
     keyed.chain(sources).max().map_or(1, |largest| largest + 1)
 }
+
+#[cfg(test)]
+mod native_motion_history_tests;
