@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use styk_engine::edit::{EditOptions, EditScene, Onion};
-use styk_engine::{Engine, FrameData, Generation, Uploaded};
+use styk_engine::{Engine, Generation, Uploaded};
 use styk_render::{Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
@@ -28,7 +28,7 @@ pub(crate) enum Shown {
     #[default]
     Nothing,
     Edit { generation: u64, edits: u64, effects: bool, scene: std::sync::Arc<EditScene>, hidden: Vec<u32>, translations: Vec<(u32, [f64; 2])> },
-    Prepared(u64, f64),
+    Prepared { generation: u64, tick: f64, epoch: u64 },
 }
 
 #[wasm_bindgen]
@@ -61,6 +61,17 @@ pub struct Stage {
 
 #[wasm_bindgen]
 impl Stage {
+    /// Actual successful shown head only: kind, generation, exact sample or edit
+    /// stamp, prepared cache epoch, and edit-effects flag. The host derives its
+    /// shown token alongside view/resource/input lifetime epochs; no scene walk.
+    pub fn shown_identity(&self) -> Vec<f64> {
+        match &self.shown {
+            Shown::Nothing => vec![0.0; 5],
+            Shown::Prepared { generation, tick, epoch } => vec![1.0, *generation as f64, *tick, *epoch as f64, 0.0],
+            Shown::Edit { generation, edits, effects, .. } => vec![2.0, *generation as f64, *edits as f64, 0.0, if *effects { 1.0 } else { 0.0 }],
+        }
+    }
+
     /// Creates the surface of `canvas`: WebGPU where the browser has it, WebGL2 otherwise.
     pub async fn create(canvas: web_sys::HtmlCanvasElement, engine: &EngineHandle) -> Result<Stage, JsError> {
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
@@ -159,25 +170,33 @@ impl Stage {
     /// `false` is returned.
     #[allow(clippy::too_many_arguments)]
     pub fn render(&mut self, tick: u32, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool, wait: bool) -> Result<bool, JsError> {
-        let Some(generation) = self.engine.generation() else { return Ok(false) };
-        let frame = if wait { self.engine.frame_now(tick) } else { self.engine.frame(tick) };
-        let Some(frame) = frame else { return Ok(false) };
-        self.present_prepared(&generation, &frame, zoom, [pan_x, pan_y], camera, clip_to_artboard)
+        let snapshot = if wait { self.engine.prepared_frame_now_at(tick as f64) } else { self.engine.prepared_frame(tick as f64, None) };
+        let Some(snapshot) = snapshot else { return Ok(false) };
+        self.present_prepared(&snapshot, zoom, [pan_x, pan_y], camera, clip_to_artboard)
     }
 
     /// Presents an already prepared finite sample. A cold sample returns false and
     /// preserves the actual shown frame; evaluation always runs on the worker.
     pub fn render_sample(&mut self, tick: f64, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
-        let Some(generation) = self.engine.generation() else { return Ok(false) };
-        let Some(frame) = self.engine.frame_at(tick) else { return Ok(false) };
-        self.present_prepared(&generation, &frame, zoom, [pan_x, pan_y], camera, clip_to_artboard)
+        let Some(snapshot) = self.engine.prepared_frame(tick, None) else { return Ok(false) };
+        self.present_prepared(&snapshot, zoom, [pan_x, pan_y], camera, clip_to_artboard)
     }
 
-    fn present_prepared(&mut self, generation: &Arc<Generation>, frame: &FrameData, zoom: f64, pan: [f64; 2], camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
-        if frame.generation != generation.id { return Ok(false); }
+    /// An external packet must match native readiness at the drawing boundary,
+    /// even when a worker publishes between a JavaScript readiness read and draw.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_ticket(&mut self, generation: f64, epoch: f64, tick: f64, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
+        let (Ok(generation), Ok(epoch)) = (crate::engine::record_counter(generation), crate::engine::record_counter(epoch)) else { return Ok(false); };
+        let Some(snapshot) = self.engine.prepared_frame(tick, Some((generation, epoch))) else { return Ok(false) };
+        self.present_prepared(&snapshot, zoom, [pan_x, pan_y], camera, clip_to_artboard)
+    }
+
+    fn present_prepared(&mut self, snapshot: &styk_engine::FrameSnapshot, zoom: f64, pan: [f64; 2], camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
+        let generation = &snapshot.generation;
+        let frame = &snapshot.frame;
         let drawn = self.draw(generation, &frame.list, if camera { frame.camera } else { None }, zoom, pan, clip_to_artboard)?;
         if drawn {
-            self.shown = Shown::Prepared(generation.id, frame.tick);
+            self.shown = Shown::Prepared { generation: generation.id, tick: frame.tick, epoch: snapshot.epoch };
         }
         Ok(drawn)
     }

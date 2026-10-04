@@ -11,7 +11,7 @@ use crate::edit::{EditOptions, EditScene};
 use crate::{Engine, FrameData, Generation};
 
 enum Source {
-    Prepared(f64),
+    Prepared { tick: f64, epoch: Option<u64> },
     Edit { scene: EditScene, hidden: Vec<u32>, translations: Vec<(u32, [f64; 2])>, effects: bool },
 }
 
@@ -36,7 +36,13 @@ impl MonitorFrame {
 
     /// Captures the actual finite fractional time successfully displayed by the stage.
     pub fn prepared_sample_at(engine: Engine, generation: Arc<Generation>, tick: f64) -> MonitorFrame {
-        MonitorFrame { engine, generation, source: Source::Prepared(tick) }
+        MonitorFrame { engine, generation, source: Source::Prepared { tick, epoch: None } }
+    }
+
+    /// Captures the actual successfully shown prepared ticket. Cache eviction
+    /// may be repaired on the worker; another settings/resource epoch is stale.
+    pub fn prepared_ticket(engine: Engine, generation: Arc<Generation>, tick: f64, epoch: u64) -> MonitorFrame {
+        MonitorFrame { engine, generation, source: Source::Prepared { tick, epoch: Some(epoch) } }
     }
 
     pub fn edit(engine: Engine, generation: Arc<Generation>, scene: &EditScene, hidden: Vec<u32>, translations: Vec<(u32, [f64; 2])>, effects: bool) -> MonitorFrame {
@@ -47,12 +53,15 @@ impl MonitorFrame {
     /// parallax and effects follow the displayed pose; onion skins are omitted.
     pub fn prepare(&mut self) -> Result<Option<(Arc<DrawList>, Option<Camera>)>, String> {
         match &mut self.source {
-            Source::Prepared(tick) => {
+            Source::Prepared { tick, epoch } => {
                 if self.engine.generation().is_none_or(|generation| generation.id != self.generation.id) { return Ok(None); }
+                if epoch.is_some_and(|epoch| !self.engine.frame_epoch_current(self.generation.id, epoch)) { return Ok(None); }
                 // A late cel decode can correct effect bounds within this generation.
                 // Never reuse the old ticket's list: this is the engine's one cache,
                 // and any missing frame is prepared here, on the monitor worker.
-                Ok(self.engine.frame_now_at(*tick).filter(|frame| frame.generation == self.generation.id).map(|frame| (frame.list.clone(), frame.camera)))
+                let frame = self.engine.frame_now_at(*tick).filter(|frame| frame.generation == self.generation.id);
+                if epoch.is_some_and(|epoch| !self.engine.frame_epoch_current(self.generation.id, epoch)) { return Ok(None); }
+                Ok(frame.map(|frame| (frame.list.clone(), frame.camera)))
             },
             Source::Edit { scene, hidden, translations, effects } => {
                 let options = EditOptions { hidden, translations, bypass_effects: !*effects, camera: true, prepare_camera: true, ..Default::default() };

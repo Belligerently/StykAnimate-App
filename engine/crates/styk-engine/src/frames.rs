@@ -22,6 +22,14 @@ pub struct FrameData {
     pub ms: f32,
 }
 
+/// One coherent read of the existing prepared-frame owner. Its epoch also
+/// identifies the hidden/effect settings and decoded resource bounds.
+pub struct FrameSnapshot {
+    pub generation: Arc<Generation>,
+    pub frame: Arc<FrameData>,
+    pub epoch: u64,
+}
+
 /// Preparation totals since the document opened.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FrameStats {
@@ -251,6 +259,39 @@ impl Engine {
         self.inner.state.lock().frames.entries.get(&tick).map(|entry| entry.data.clone())
     }
 
+    /// Reads a ready frame and its generation/cache epoch together. An expected
+    /// identity refuses superseded tickets before cloning either shared pointer;
+    /// this never evaluates, prepares or repairs a cold sample.
+    pub fn prepared_frame(&self, time: f64, expected: Option<(u64, u64)>) -> Option<FrameSnapshot> {
+        self.read_prepared(time, expected, |generation, frame, epoch| FrameSnapshot {
+            generation: generation.clone(), frame: frame.clone(), epoch,
+        })
+    }
+
+    /// Readiness of one exact ticket, without taking ownership of a draw list.
+    pub fn frame_matches(&self, time: f64, generation: u64, epoch: u64) -> bool {
+        self.read_prepared(time, Some((generation, epoch)), |_, _, _| ()).is_some()
+    }
+
+    fn read_prepared<R>(&self, time: f64, expected: Option<(u64, u64)>, read: impl FnOnce(&Arc<Generation>, &Arc<FrameData>, u64) -> R) -> Option<R> {
+        let tick = Sample::new(time)?;
+        let state = self.inner.state.lock();
+        let generation = state.current.as_ref()?;
+        let frames = &state.frames;
+        if frames.generation != generation.id || expected.is_some_and(|identity| identity != (generation.id, frames.epoch)) { return None; }
+        let frame = &frames.entries.get(&tick)?.data;
+        if frame.generation != generation.id { return None; }
+        Some(read(generation, frame, frames.epoch))
+    }
+
+    /// A captured prepared monitor may repair an evicted sample on its worker,
+    /// but must never substitute newer hidden/effect/resource settings.
+    pub fn frame_epoch_current(&self, generation: u64, epoch: u64) -> bool {
+        let state = self.inner.state.lock();
+        state.current.as_ref().is_some_and(|current| current.id == generation)
+            && state.frames.generation == generation && state.frames.epoch == epoch
+    }
+
     /// Prepares an integer frame on the calling thread when not already ready.
     /// Worker/CLI use; browser presentation should read readiness instead.
     pub fn frame_now(&self, tick: u32) -> Option<Arc<FrameData>> {
@@ -259,9 +300,16 @@ impl Engine {
 
     /// Prepares a finite fractional frame on the calling worker or CLI thread.
     pub fn frame_now_at(&self, time: f64) -> Option<Arc<FrameData>> {
+        self.prepared_frame_now_at(time).map(|snapshot| snapshot.frame)
+    }
+
+    /// Worker/CLI preparation returns the actual produced frame even if its
+    /// cache budget immediately evicts it. Nonblocking presentation uses
+    /// `prepared_frame` instead and never enters this preparation path.
+    pub fn prepared_frame_now_at(&self, time: f64) -> Option<FrameSnapshot> {
         let tick = Sample::new(time)?;
         let time = tick.time();
-        if let Some(ready) = self.frame_at(time) {
+        if let Some(ready) = self.prepared_frame(time, None) {
             return Some(ready);
         }
         let (generation, hidden, effects, epoch) = {
@@ -280,7 +328,7 @@ impl Engine {
         if ready.is_some() {
             state.frames.stats.inline += 1;
         }
-        ready
+        ready.map(|frame| FrameSnapshot { generation, frame, epoch })
     }
 
     /// Sets the figures hidden for this session (by identity). Prepared frames that

@@ -12,7 +12,17 @@
 
 /** Keys of engine packets: the stage renderer draws these with the engine. */
 export const ENGINE_KEY = 'engine:';
-export const engineTick = key => typeof key === 'string' && key.startsWith(ENGINE_KEY) ? Number(key.slice(key.lastIndexOf(':') + 1)) : null;
+/** Generation, settings/resource epoch and the exact sample share one native owner. */
+export function engineTicket(key) {
+  if (typeof key !== 'string' || key.length > 96 || !key.startsWith(ENGINE_KEY)) return null;
+  const parts = key.split(':');
+  if (parts.length !== 4) return null;
+  const [generation, epoch, tick] = parts.slice(1).map(Number);
+  if (!Number.isSafeInteger(generation) || generation <= 0 || !Number.isSafeInteger(epoch) || epoch < 0 || !Number.isFinite(tick) || tick < 0) return null;
+  if (parts[1] !== String(generation) || parts[2] !== String(epoch) || parts[3] !== String(tick)) return null;
+  return {generation, epoch, tick};
+}
+export const engineTick = key => engineTicket(key)?.tick ?? null;
 // These are metadata tickets, not prepared frames. Native residency remains
 // governed by its existing byte budget; a discarded ticket can be recreated.
 const MAX_ENGINE_TICKETS = 120;
@@ -36,7 +46,10 @@ export function createStagePlayback(legacy, {stage}) {
   const prunePackets = handle => {
     const generation = handle.generation();
     if (packetGeneration !== generation) { packets.clear(); packetGeneration = generation; }
-    for (const tick of packets.keys()) if (!handle.frame_ready(tick)) packets.delete(tick);
+    for (const [tick, packet] of packets) {
+      const ticket = engineTicket(packet.key);
+      if (!ticket || !handle.frame_ticket_ready(ticket.generation, ticket.epoch, ticket.tick)) packets.delete(tick);
+    }
   };
   const rank = tick => { const at = requested.indexOf(tick); return at < 0 ? ticketLimit : at; };
   const retainPacket = (tick, packet) => {
@@ -82,12 +95,14 @@ export function createStagePlayback(legacy, {stage}) {
     tick = tick === 0 ? 0 : tick;
     const handle = side().engine.handle;
     prunePackets(handle);
-    if (!handle.frame_ready(tick)) return null;
     let packet = packets.get(tick);
     if (!packet) {
       const meta = handle.frame_meta(tick);
       if (meta === undefined) return null;
-      packet = {tick, key: `${ENGINE_KEY}${handle.generation()}:${tick}`, engine: true, cameraEnabled: true, frame: {...JSON.parse(meta), engine: true},
+      const frame = JSON.parse(meta), key = `${ENGINE_KEY}${frame.generation}:${frame.epoch}:${tick}`;
+      const ticket = engineTicket(key);
+      if (!ticket || frame.tick !== tick || !handle.frame_ticket_ready(ticket.generation, ticket.epoch, ticket.tick)) return null;
+      packet = {tick, key, engine: true, cameraEnabled: true, frame: {...frame, engine: true},
         byteLength: 0, compileMs: 0, hiddenKey: hiddenKey ?? '', softwareFrames: true, previewQuality: {reduced: false}, compatibility: [], groups: []};
       retainPacket(tick, packet);
     } else {

@@ -179,6 +179,21 @@ adoption changes: native motion is an offline/worker prerequisite. Mobile pin ad
 `Records::evaluated_editor_with`. Saved native motion and complex origin combinations
 remain the next command work. Logs: `tmp/root-verification-temp/native-motion-*`.
 
+Prepared playback keys now bind generation, cache epoch and exact sample, with one
+coherent native read and a second identity check at the drawing boundary. Hidden,
+effects, decoded-resource and generation changes cannot substitute a newer same-tick
+frame for an old packet. Actual shown identity advances only on successful drawing;
+the prepared worker monitor rejects stale sources and retains its accepted bitmap at the same
+view. Explicit worker wait behavior still returns a produced frame immediately evicted
+by a tiny cache. Focused checks pass 140 engine tests, 35 JavaScript tests, check and
+shipping Wasm (9,588 KiB, SHA `d155ab99b159`). Four actual-source mutations are caught
+and restored. Real app refusals preserve surface, renderer ownership, document/history
+and selection. Full artifact-specific pictures and evidence are in the latest milestone.
+Portable API additions for the Android pin are `FrameSnapshot`,
+`Engine::{prepared_frame,frame_matches,frame_epoch_current,prepared_frame_now_at}` and
+`MonitorFrame::prepared_ticket`; browser-only ticket/getter exports stay in `styk-wasm`.
+Broader live shown/readiness, State latency and retirement D7 work remains open.
+
 ### Where the port stands
 
 | Stage | State |
@@ -282,7 +297,7 @@ without owning.
 | `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver integrated. Reviewed destination-grid cel fix and single-child correction integrated from immutable 18-path freeze; original software-web and default Electron GPU 4/4 pass on main. Auxiliary background clip/paint mismatch has an independent empty-scene reproduction and continues in `tmp/engine-worktrees/cel-grid`; immutable primary and additive evidence retained. No early gate flips. |
 | `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera/origin range/rig/pose and strict-validation preparation integrated into main after review/focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
 | `tmp/engine-worktrees/movie-integration` (detached at `7ff82b2c`) | Separate clean dependency integration: reviewed movieclip/layer/history/readiness/publication/selection stack. Exact reviewed/focused-tested dependency snapshot has been integrated; preserve its immutable inputs/evidence, no runtime gate. |
-| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Full checkpoint of committed `53e3bdd9` green at 16:36 CEST; post-regeneration whole release target fresh in 0.43 s. Next regular run no earlier than 17:54 CEST. |
+| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Committed `53e3bdd9` green at 16:36 CEST; post-regeneration whole release target fresh in 0.43 s. Committed `9728e86e` checkpoint running since 17:54 CEST while focused integration continues; next regular run no earlier than 19:54 CEST. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
@@ -557,8 +572,9 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   interface readiness reads also lock. No-thread `Engine::step` time slicing occurs
   between whole jobs, and monitor camera preparation can run inline. Atlas uploads can
   exceed the nominal 8 MiB slice with one large image; their UI duration is unmeasured.
-  Prepared stage keys discard generation, so an old ticket can draw a newer same-tick
-  frame. Worker stop has no cleanup acknowledgement. Use the existing worker/session,
+  Prepared generation/epoch/sample substitution is now closed with native tickets and
+  actual-shown monitor guards; live edit-scene readiness remains separate. Worker stop
+  has no cleanup acknowledgement. Use the existing worker/session,
   frame/cache and retained-task owners to close these paths before gates or deletion;
   the quiet worker actor alone does not certify them. Static findings are separate from
   Chromium GPU load or delayed animation frames, which do not establish UI lock duration.
@@ -1182,3 +1198,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 17:20 | S5 recorded native origin motion and exact row-splice history | Five no-channel native remote-time origin families reuse the checked frame/membership/attached-layer/history owners. Keep native one-tick shown poses held and raw samples distinct in the existing bounded cache, with scalar channels on the fractional clock. Portable mobile API additions: FrameSlice, CommandKind::Ranges (exhaustive matches need updating), Records::evaluated_editor_with. Wasm 9,582 KiB (+54 KiB). No app gate, adoption change, deletion or performance claim. | Shared-type checks: 623 native tests; 79 focused JS tests, check and shipping Wasm pass. All 65 motion JSON regenerate byte-stable. Thirty admitted affected CLI tapes / 5,799 exact steps include five new native admissions / 969 steps; 11 explicit guards remain. Actual worker weights and enumerable history match 22 editor commands; five raw/shown fractional cases preserve scalar x=635 at tick 3.5. Initial cfgtest private-field access corrected through the existing history summary, no public test helper added. Independent source review passes; full suite remains reserved for committed checkpoints. |
 
 | 2026-10-04 17:38 | S3 destination-grid drawing-cel correction | Integrate the independently reviewed 18-path freeze through the existing drawing entry, placement/filter, Raster and Renderer owners. Explicit destination grid for direct software edits/previews; world grid remains default for prepared/GPU paths. Single-child drawing clips retain child/outer effects; multiple-child entries keep existing policy. Mobile pin additions: LayerKind::Entry.single_drawing, DrawingGrid, plan_with_grid and Renderer/Raster grid setters (rendering.md). Wasm 9,584 KiB (+2 KiB). No class gate, deletion or performance claim. | Shared-type checks pass 632 native tests, 31 focused JS tests, check and shipping Wasm. Two editor-built fixtures regenerate byte-stable; actual eligibility/plan source mutations are caught. Final main software-web original cel 4/4 and default Electron GPU 4/4 pass, zero solids; all four Legacy web and default GPU engine RGBA captures remain byte-identical. Dense single-child and serialized child-Blur/outer-Tint each pass 1/1. Auxiliary onion .288346 and edit-monitor .714171 remain failed; an actual empty-background monitor isolates 278 fractional clip/paint border pixels independently. Source audit records remaining D7/UI and stale-ticket paths; broad figures retry makes progress through one warm-up round then times out at 180 s without comparison. Full suite reserved for committed checkpoints. Logs: tmp/root-verification-temp/cel-destination-*. |
+
+| 2026-10-04 18:16 | S3 prepared generation/epoch/sample tickets and retained actual monitor frame | Bind existing cached frames and metadata coherently to one generation/cache epoch, validate again at native drawing, and advance only the successful scalar shown head. Prepared monitor workers refuse newer hidden/effect/resource sources and retain the accepted same-view bitmap while cold. Preserve explicit worker wait results after immediate cache eviction. Portable pin additions: FrameSnapshot; Engine prepared_frame/frame_matches/frame_epoch_current/prepared_frame_now_at; MonitorFrame prepared_ticket. Browser-only ticket/getter exports stay in styk-wasm. Wasm 9,588 KiB (+4 KiB), SHA d155ab99b159. No class gate, deletion or performance claim. | 140 owning-engine tests, 35 focused playback/stage/preview JS tests, check/changelog and final shipping build pass. Four actual-source mutants fail and restore hash-exact. Independent review identifies and closes the tiny-cache wait compatibility regression before commit. Final actual app verifies generation and hidden/effect epochs, six malformed keys and three native-boundary/cold refusals, unchanged actual shown surface/ownership/document/history/selection, and retained worker-monitor pixels. Original software-web stored/preview ticks 3 and 3.5 pass 4/4 (means .017812–.044503); default Electron GPU passes 4/4 (.032218–.034970), zero solids and unchanged D13. Initial one-shot driver requests were displaced by normal UI prefetch; successful driver follows existing repeated bounded request protocol, without synchronous preparation. Full checkpoint continues on committed 9728e86e in its persistent target. Broader live-readiness/State/retirement D7 and auxiliary pixel gaps remain open. Logs: tmp/root-verification-temp/prepared-ticket-*. |

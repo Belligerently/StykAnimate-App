@@ -26,7 +26,7 @@ What's new in each version of StykAnimate.
 ### Fixed
 
 - Undoing a timeline change made of several steps keeps your selection and shows the right frame.
-- Timeline previews show parallax layers where playback shows them.
+- Timeline and camera previews show the correct frame and parallax layer positions.
 - Moving a segment while building a figure no longer bends other parts of the figure.
 - Fixed blur, glow and outlines losing fine brush detail on drawing layers.
 - Fixed errors when adjusting motion paths on joined figures.

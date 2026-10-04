@@ -39,7 +39,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use styk_eval::assets::Assets;
 use styk_eval::eval::Prepared;
 
-pub use frames::{FrameData, FrameStats};
+pub use frames::{FrameData, FrameSnapshot, FrameStats};
 pub use images::{DecodedImage, Uploaded};
 use sync::Shared;
 

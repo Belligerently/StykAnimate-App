@@ -57,18 +57,14 @@ enum WorkerMonitorKey {
     Edit(MonitorKey, u32),
     // Keep the allocation alive while it identifies the bitmap, so allocator reuse
     // can never mistake another prepared frame for this one.
-    Prepared(u64, f64, Option<Arc<styk_engine::FrameData>>),
+    Prepared(u64, f64, u64, Arc<styk_engine::FrameData>),
 }
 
 impl PartialEq for WorkerMonitorKey {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Edit(a, ap), Self::Edit(b, bp)) => a == b && ap == bp,
-            (Self::Prepared(ag, at, a), Self::Prepared(bg, bt, b)) => ag == bg && at == bt && match (a, b) {
-                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
-                (None, None) => true,
-                _ => false,
-            },
+            (Self::Prepared(ag, at, ae, a), Self::Prepared(bg, bt, be, b)) => ag == bg && at == bt && ae == be && Arc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -207,9 +203,9 @@ impl Stage {
         let Some(generation) = self.engine.generation() else { return 0 };
         let key = match &self.shown {
             Shown::Nothing => return 0,
-            Shown::Prepared(shown_generation, tick) => {
-                if *shown_generation != generation.id { return 0; }
-                WorkerMonitorKey::Prepared(generation.id, *tick, self.engine.frame_at(*tick))
+            Shown::Prepared { generation: shown_generation, tick, epoch } => {
+                let Some(snapshot) = self.engine.prepared_frame(*tick, Some((*shown_generation, *epoch))) else { return 0; };
+                WorkerMonitorKey::Prepared(snapshot.generation.id, *tick, *epoch, snapshot.frame)
             }
             Shown::Edit { generation: shown_generation, edits, effects, hidden, translations, .. } => {
                 if *shown_generation != generation.id { return 0; }
@@ -230,9 +226,9 @@ impl Stage {
         let Some(generation) = self.engine.generation() else { return 0 };
         let (frame, grid) = match &self.shown {
             Shown::Nothing => return 0,
-            Shown::Prepared(shown_generation, tick) => {
-                if *shown_generation != generation.id { return 0; }
-                (MonitorFrame::prepared_sample_at(self.engine.clone(), generation, *tick), DrawingGrid::World)
+            Shown::Prepared { generation: shown_generation, tick, epoch } => {
+                if *shown_generation != generation.id || !self.engine.frame_epoch_current(*shown_generation, *epoch) { return 0; }
+                (MonitorFrame::prepared_ticket(self.engine.clone(), generation, *tick, *epoch), DrawingGrid::World)
             }
             Shown::Edit { generation: shown_generation, scene, effects, hidden, translations, .. } => {
                 if *shown_generation != generation.id { return 0; }
@@ -271,13 +267,14 @@ impl Stage {
         if self.views.monitor.is_none() {
             return Ok(false);
         }
-        let grid = if matches!(self.shown, Shown::Prepared(..)) { DrawingGrid::World } else { DrawingGrid::Destination };
+        let grid = if matches!(self.shown, Shown::Prepared { .. }) { DrawingGrid::World } else { DrawingGrid::Destination };
         let (list, camera) = match self.shown.clone() {
             Shown::Nothing => return Ok(false),
             // Never evaluated here: the stage drew this tick from the cache a moment ago.
-            Shown::Prepared(shown_generation, tick) => match self.engine.frame_at(tick) {
-                Some(frame) if shown_generation == generation.id => (frame.list.clone(), frame.camera),
-                _ => return Ok(false),
+            Shown::Prepared { generation: shown_generation, tick, epoch } => {
+                let Some(snapshot) = self.engine.prepared_frame(tick, Some((shown_generation, epoch))) else { return Ok(false); };
+                if snapshot.generation.id != generation.id { return Ok(false); }
+                (snapshot.frame.list.clone(), snapshot.frame.camera)
             },
             Shown::Edit { generation: shown_generation, edits, effects, scene, hidden, translations } => {
                 if shown_generation != generation.id { return Ok(false); }

@@ -33,7 +33,7 @@ src/builder-session.mjs	engine	styk-edit	js
 src/builder-surface-ui.mjs	ui	-	stays	
 src/camera-bake-authored.mjs	engine	styk-eval::camera	js	
 src/camera-follow.mjs	engine	styk-eval::follow	partial	Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; cold browser follow ticks/revisions require worker preparation, incremental resampling still JS
-src/camera-monitor.mjs	ui	-	stays	draws through Stage::render_monitor where the engine draws the stage
+src/camera-monitor.mjs	ui	-	stays	draws through the engine stage/worker where the engine draws; retains the last accepted same-view bitmap while its shown ticket is cold
 src/camera-motion-bake-client.mjs	engine	styk-eval::camera	js	
 src/camera-motion-bake-worker.mjs	engine	styk-eval::camera	js	
 src/camera-motion-bake.mjs	engine	styk-eval::camera	js	
@@ -320,7 +320,7 @@ src/playback-upload.mjs	engine	styk-engine::playback	js	worker preparation, pack
 src/playback-vector-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-window.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-worker.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy)
-src/playback.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: playback preparation on the engine thread pool for supported documents
+src/playback.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames
 src/polygon-draft.mjs	engine	styk-edit	js	
 src/polygon-preview.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/pose-property-split.mjs	engine	styk-edit	js	
@@ -357,7 +357,7 @@ src/renderer-raster-capture.mjs	engine	styk-render	js
 src/renderer-upload.mjs	engine	styk-render	js	
 src/renderer-vector-raster.mjs	engine	styk-render	js	
 src/renderer-vfx-vector.mjs	engine	styk-render	partial	Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it
-src/renderer.mjs	engine	styk-render	partial	Rust: supported edit/onion/playback views, fractional prepared samples, common record lifting, worker monitor and stale publication retirement; original software-web cel stage parity fixed; auxiliary clip/paint, no-thread, audited D7 and class/draft eligibility remain
+src/renderer.mjs	engine	styk-render	partial	Rust: supported edit/onion/playback views, fractional prepared samples, common record lifting, worker monitor, actual prepared shown identity/epoch guards and stale publication retirement; original software-web cel stage parity fixed; auxiliary clip/paint, no-thread, audited D7 and class/draft eligibility remain
 src/rig-angle-path.mjs	engine	styk-eval::rig	partial	Rust: angle path sampling (styk_eval::rig); validateAnglePath (styk-edit/src/rig_behavior.rs); authoring still JS
 src/rig-constraints.mjs	engine	styk-eval::rig	partial	Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS
 src/rig-control-details.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes
@@ -435,7 +435,7 @@ src/text-font-compat.mjs	engine	styk-edit	js
 src/text-preview.mjs	ui	-	stays	
 src/theme-bootstrap.js	ui	-	stays	
 src/theme.mjs	ui	-	stays	
-src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	partial	Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; auxiliary onion/monitor parity, actual-shown readiness, refused documents and no-thread fallback remain
+src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	partial	Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; prepared shown epoch and retained monitor bitmap verified; auxiliary onion/monitor parity, live actual-shown readiness, refused documents and no-thread fallback remain
 src/thumbnail-validity.mjs	engine	styk-engine::thumbnails	js	
 src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained
 src/timeline-header.mjs	ui	-	stays	

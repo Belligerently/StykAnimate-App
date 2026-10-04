@@ -354,3 +354,32 @@ test('a threaded monitor keeps ownership while its first followed stage pose is 
   assert.equal(monitor.stats.drawn, 1);
   monitor.destroy();
 });
+
+test('a cold shown epoch retains its accepted monitor picture and rejects late newer work', async () => {
+  let version = 1, addresses = 0, finish;
+  const accepted = {closed: 0, close() { this.closed++; }}, late = {closed: 0, close() { this.closed++; }};
+  const stage = {monitor_version: () => version, monitor_address: () => ++addresses, forget_monitor() {}};
+  const worker = {usable: true, request(message) { message(); return addresses === 1 ? Promise.resolve({bitmap: accepted}) : new Promise(resolve => { finish = resolve; }); }};
+  const monitor = new EngineCameraMonitor(stage, {previews: async () => worker});
+  const painted = [], target = {save() {}, restore() {}, setTransform() {}, drawImage(image) { painted.push(image); }};
+  const view = {width: 320, height: 180, zoom: .5, panX: 2, panY: 3};
+  monitor.draw(target, view);
+  await new Promise(resolve => setImmediate(resolve));
+  monitor.draw(target, view);
+  assert.deepEqual(painted, [accepted]);
+  version = 2;
+  monitor.draw(target, view);
+  await new Promise(resolve => setImmediate(resolve));
+  version = 0;
+  monitor.draw(target, view);
+  assert.deepEqual(painted, [accepted, accepted], 'the cleared canvas keeps its actual accepted picture');
+  finish({bitmap: late});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(late.closed, 1);
+  assert.equal(accepted.closed, 0, 'superseded work never replaces the prior picture');
+  monitor.draw(target, {...view, width: 321});
+  assert.equal(painted.length, 2, 'a cold picture is not stretched into a different view');
+  assert.equal(addresses, 2, 'cold paths request no pose or ticket');
+  monitor.destroy();
+  assert.equal(accepted.closed, 1);
+});

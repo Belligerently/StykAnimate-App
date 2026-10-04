@@ -213,6 +213,11 @@ export class EngineCameraMonitor {
     if (!version) {
       this.key = null;
       this.pending?.controller.abort();
+      // The caller clears its canvas before asking. Keep the last actually
+      // accepted picture while its shown source is cold, only at the same view.
+      const previous = this.picture && JSON.parse(this.picture.key);
+      if (previous && previous[1] === view.width && previous[2] === view.height
+          && previous[3] === view.zoom && previous[4] === view.panX && previous[5] === view.panY) this._paint(target);
       // The stage owns the cold pose and its existing progress waiter schedules
       // another draw. No monitor pose may be prepared on the interface thread.
       return true;
@@ -220,7 +225,7 @@ export class EngineCameraMonitor {
     const key = JSON.stringify([version, view.width, view.height, view.zoom, view.panX, view.panY]);
     this.key = key;
     if (this.picture?.key === key) {
-      target.save(); target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(this.picture.bitmap, 0, 0); target.restore();
+      this._paint(target);
       return true;
     }
     if (this.pending && this.pending.key !== key) this.pending.controller.abort();
@@ -231,6 +236,10 @@ export class EngineCameraMonitor {
     }
     // Accepted asynchronously: the caller must not prepare the same pose in JavaScript.
     return true;
+  }
+
+  _paint(target) {
+    target.save(); target.setTransform(1, 0, 0, 1, 0, 0); target.drawImage(this.picture.bitmap, 0, 0); target.restore();
   }
 
   async _render(request, view, version, signal) {

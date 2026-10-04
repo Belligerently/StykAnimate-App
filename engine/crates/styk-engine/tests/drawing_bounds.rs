@@ -34,12 +34,17 @@ fn cel(engine: &Engine) -> Arc<styk_eval::doc::DrawingTiles> {
 fn decoding_stale_bounds_rebuilds_an_already_cached_effect_grid() {
     let engine = open(&fixture(true), || 0.0);
     let before = engine.frame_now(0).unwrap();
+    let shown = engine.prepared_frame(0.0, None).unwrap();
+    let mut monitor = styk_engine::thumbnails::monitor::MonitorFrame::prepared_ticket(engine.clone(), shown.generation.clone(), 0.0, shown.epoch);
     assert!(!before.list.layers.is_empty(), "a real effect grid must observe the correction");
     assert!(cel(&engine).decoded_bounds.get().is_none());
     assert!(engine.step(), "the existing queued PNG decoder runs");
     assert!(engine.frame(0).is_none(), "the obsolete cached grid was invalidated");
     while engine.step() {}
     let after = engine.frame(0).expect("the cached tick was requeued");
+    assert!(!engine.frame_matches(0.0, shown.generation.id, shown.epoch));
+    assert!(engine.prepared_frame(0.0, Some((shown.generation.id, shown.epoch))).is_none());
+    assert!(monitor.prepare().unwrap().is_none(), "new resource bounds never replace the actual shown monitor source");
     assert!(!Arc::ptr_eq(&before, &after));
     assert_ne!(before.list.layers[0].kind, after.list.layers[0].kind, "the layer is anchored to decoded ink");
     assert_eq!(cel(&engine).bounds, None, "the file's metadata is preserved");

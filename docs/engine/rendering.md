@@ -510,8 +510,27 @@ first answer says which (`EnginePreviewWorker.stats.backend`, `cpu`, `gpuRefusal
 the stage's frame, `drawCameraMonitor` on the stage (`Stage::render_monitor`) draws that frame
 again through the scene camera, on the stage's device with a renderer of the monitor's own: a
 prepared playback frame from the cache, or the edit frame encoded again with the camera's parallax
-and without onion skins (kept while the frame does not change). WebGL2 stages draw the monitor with
-the JavaScript Canvas 2D path, as before.
+and without onion skins (kept while the frame does not change). The auxiliary worker
+draws WebGL2 monitor requests through the engine's CPU path.
+
+Prepared playback packets bind generation, cache epoch and exact finite sample. The
+native drawing boundary refuses stale or malformed tickets and preserves the scalar
+actual shown identity, surface and renderer ownership. A monitor captures that actual
+shown ticket and checks its epoch before and after worker preparation; it cannot repair
+an old ticket using newer hidden/effect/resource settings. Same-epoch cache eviction
+can still be repaired on the worker. Bitmap acceptance checks the native monitor version
+again. While cold, the existing accepted bitmap is painted again at the same view,
+because the camera inspector clears its canvas before calling the adapter; resized or
+moved views never stretch the previous bitmap. There is still one pending request and
+one accepted bitmap, and late replacements close without advancing either shown head.
+
+The final prepared-ticket build is 9,817,728 bytes (9,588 KiB, SHA `d155ab99b159`).
+Focused native checks pass 140 engine tests and 35 playback/stage/preview JavaScript
+tests. Four actual source mutations expose missing ticket/epoch or wait-result guards
+and restore byte-exact. The real app checks generation, hidden/effect epochs, malformed
+keys, native-boundary refusals and retained worker-monitor pixels while preserving
+document/history/selection. Auxiliary cel pixel parity remains separately open; this
+identity correction does not change its clipping or sampling policy.
 
 **Home and project pictures** are read from the stage's canvas (`stagePicture` in `src/app.mjs`):
 the engine's canvas where the engine draws the scene. They need no path of their own.

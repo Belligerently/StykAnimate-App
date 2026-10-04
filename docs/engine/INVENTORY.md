@@ -171,11 +171,11 @@ Engine logic: ported to Rust.
 | `src/playback-vector-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-window.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-worker.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy) |
-| `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: playback preparation on the engine thread pool for supported documents |
+| `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames |
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
 | `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS |
 | `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
-| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; auxiliary onion/monitor parity, actual-shown readiness, refused documents and no-thread fallback remain |
+| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; prepared shown epoch and retained monitor bitmap verified; auxiliary onion/monitor parity, live actual-shown readiness, refused documents and no-thread fallback remain |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
 | `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained |
 | `src/animation-origin-validation.mjs` | `styk-eval` | partial | Rust: typed origin compiler validates retained support indices, numbers, bindings and capacity against 68 editor refusals; cooperative import/object validation still JS |
@@ -359,7 +359,7 @@ Engine logic: ported to Rust.
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
 | `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: supported edit/onion/playback views, fractional prepared samples, common record lifting, worker monitor and stale publication retirement; original software-web cel stage parity fixed; auxiliary clip/paint, no-thread, audited D7 and class/draft eligibility remain |
+| `src/renderer.mjs` | `styk-render` | partial | Rust: supported edit/onion/playback views, fractional prepared samples, common record lifting, worker monitor, actual prepared shown identity/epoch guards and stale publication retirement; original software-web cel stage parity fixed; auxiliary clip/paint, no-thread, audited D7 and class/draft eligibility remain |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
@@ -458,7 +458,7 @@ Interface: stays in JS.
 | `src/builder-mode.mjs` |  | stays |  |
 | `src/builder-outliner.mjs` |  | stays |  |
 | `src/builder-surface-ui.mjs` |  | stays |  |
-| `src/camera-monitor.mjs` |  | stays | draws through Stage::render_monitor where the engine draws the stage |
+| `src/camera-monitor.mjs` |  | stays | draws through the engine stage/worker where the engine draws; retains the last accepted same-view bitmap while its shown ticket is cold |
 | `src/camera-motion-graph.mjs` |  | stays |  |
 | `src/camera-motion-localization.mjs` |  | stays |  |
 | `src/camera-motion-timeline.mjs` |  | stays |  |

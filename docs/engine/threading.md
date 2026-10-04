@@ -86,6 +86,24 @@ How the engine runs in the app (`engine/crates/styk-engine`,
 Fractional playback and preview requests use `Engine::request_samples` and `frame_at`
 on the existing frame cache. `FrameData::tick` is now `f64`; integer entry points remain
 available. A request does not synchronously prepare a cold sample on the interface.
+`Engine::prepared_frame` reads the current generation, cached frame and cache epoch
+together under the existing State lock. `frame_matches` checks that same identity
+without retaining a draw list. App keys are `engine:generation:epoch:sample`; hidden
+figures, effect settings and resource-bound changes supersede them even if the same
+sample is already ready again. Metadata and native drawing both validate this ticket.
+Cold or stale reads do not prepare work and do not advance the actual shown head.
+
+`FrameSnapshot`, `Engine::{prepared_frame,frame_matches,frame_epoch_current,
+prepared_frame_now_at}` and `MonitorFrame::prepared_ticket` are additive portable APIs
+for the mobile pin. `prepared_frame_now_at` is explicitly worker/CLI preparation: it
+returns the actual produced snapshot even when immediate cache trimming evicts it,
+preserving the existing `frame_now_at` and explicit wait-render behavior. The browser
+adds `EngineHandle::frame_ticket_ready`, generation/epoch metadata, `Stage::render_ticket`
+and the fixed five-scalar `shown_identity` getter: kind, generation, exact sample or
+edit stamp, prepared epoch, edit-effects flag. It changes only after a successful draw.
+This closes prepared-ticket substitution; shared-State latency, dense retirement and
+live edit-scene preparation remain in the D7 audit, rather than being certified here.
+
 Camera monitor and preview work share this prepared owner, resource readiness and
 bounded ticket retirement. A refused or cancelled result retains its complete payload
 and charge through worker retirement and terminal ACK; disposal never extends a State

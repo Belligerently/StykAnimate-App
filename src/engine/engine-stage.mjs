@@ -14,7 +14,7 @@
 import {loadEngine} from './engine.mjs';
 import {EngineMirror} from './engine-mirror.mjs';
 import {EngineEligibility} from './engine-eligibility.mjs';
-import {engineTick} from './engine-playback.mjs';
+import {ENGINE_KEY, engineTicket} from './engine-playback.mjs';
 import {drawingResourcesFor} from '../drawing-resources.mjs';
 import {EngineCameraMonitor} from './engine-previews.mjs';
 
@@ -369,14 +369,19 @@ export async function createStageRenderer(canvas, options, create) {
     },
     // Prepared playback frames: an engine packet is a ticket for a tick the engine has ready.
     prepareFrame(packet, options) { return packet?.engine ? packet.key : legacy.prepareFrame(packet, options); },
-    hasPreparedFrame(key) { return engineTick(key) !== null ? true : legacy.hasPreparedFrame(key); },
+    hasPreparedFrame(key) {
+      if (typeof key !== 'string' || !key.startsWith(ENGINE_KEY)) return legacy.hasPreparedFrame(key);
+      const ticket = engineTicket(key);
+      return ticket !== null && side.engine.handle.frame_ticket_ready(ticket.generation, ticket.epoch, ticket.tick);
+    },
     canWarm: (...args) => legacy.canWarm?.(...args),
     renderPrepared(key, options = {}) {
-      const tick = engineTick(key);
-      if (tick === null) { const result = legacy.renderPrepared(key, options); if (result) show(false); return result; }
+      if (typeof key !== 'string' || !key.startsWith(ENGINE_KEY)) { const result = legacy.renderPrepared(key, options); if (result) show(false); return result; }
+      const ticket = engineTicket(key);
+      if (!ticket) return false;
       const dpr = legacy.dpr || 1, view = options.view ?? {}, seen = side.engine.progressSeen();
       side.stage.set_canvas_drawing(false);
-      const drawn = side.stage.render_sample(tick, (view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, options.cameraEnabled !== false, true);
+      const drawn = side.stage.render_ticket(ticket.generation, ticket.epoch, ticket.tick, (view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, options.cameraEnabled !== false, true);
       if (drawn) { show(true); awaitPictures(seen); }
       return drawn;
     },

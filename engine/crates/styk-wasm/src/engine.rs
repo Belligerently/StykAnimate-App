@@ -22,7 +22,7 @@ fn table(code: u32) -> Result<Table, JsError> {
     Table::from_code(code).ok_or_else(|| js_error(format!("unknown document table {code}")))
 }
 
-fn record_counter(value: f64) -> Result<u64, &'static str> {
+pub(crate) fn record_counter(value: f64) -> Result<u64, &'static str> {
     if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > 9_007_199_254_740_991.0 {
         return Err("the record transfer counter is not an exact nonnegative JavaScript integer");
     }
@@ -285,17 +285,26 @@ impl EngineHandle {
         self.engine.frame_at(tick).is_some()
     }
 
+    /// A ready frame belongs to this exact generation and settings/resource epoch.
+    pub fn frame_ticket_ready(&self, generation: f64, epoch: f64, tick: f64) -> bool {
+        let (Ok(generation), Ok(epoch)) = (record_counter(generation), record_counter(epoch)) else { return false; };
+        self.engine.frame_matches(tick, generation, epoch)
+    }
+
     /// What the interface draws around a prepared frame (the camera outline, the
     /// background being shown), as the JSON of a keyframe without objects;
     /// `undefined` while the frame is not ready.
     pub fn frame_meta(&self, tick: f64) -> Option<String> {
-        let frame = self.engine.frame_at(tick)?;
+        let snapshot = self.engine.prepared_frame(tick, None)?;
+        let frame = &snapshot.frame;
+        let generation = snapshot.generation.id;
+        let epoch = snapshot.epoch;
         let camera = match frame.camera {
             Some(c) => format!("{{\"x\":{},\"y\":{},\"scale\":{},\"angle_rad\":{},\"is_default\":{}}}", c.x, c.y, c.scale, c.angle, c.is_default),
             None => "null".to_string(),
         };
         let (a, b, mix) = frame.background;
-        Some(format!("{{\"tick\":{tick},\"camera\":{camera},\"background_id\":{a},\"background_id_b\":{b},\"background_mix\":{mix},\"objects\":[]}}"))
+        Some(format!("{{\"tick\":{tick},\"generation\":{generation},\"epoch\":{epoch},\"camera\":{camera},\"background_id\":{a},\"background_id_b\":{b},\"background_mix\":{mix},\"objects\":[]}}"))
     }
 
     /// Prepares `tick` on the calling thread if needed and describes its draw list as

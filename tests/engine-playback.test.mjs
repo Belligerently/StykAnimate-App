@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createStagePlayback, engineTick} from '../src/engine/engine-playback.mjs';
+import {createStagePlayback, engineTick, engineTicket} from '../src/engine/engine-playback.mjs';
 
 function playbackSide({maxFrames} = {}) {
-  let current = null, generation = 7;
+  let current = null, generation = 7, epoch = 2;
   let readinessReads = 0;
   const requests = [], ready = new Map(), legacyCalls = [];
   const handle = {
@@ -11,7 +11,8 @@ function playbackSide({maxFrames} = {}) {
     // Calling the integer path would truncate the sample before the worker.
     request() { throw new Error('integer binding reached'); },
     frame_ready: tick => { readinessReads++; return ready.has(tick); },
-    frame_meta: tick => JSON.stringify(ready.get(tick)),
+    frame_ticket_ready: (gen, resourceEpoch, tick) => { readinessReads++; return gen === generation && resourceEpoch === epoch && ready.has(tick); },
+    frame_meta: tick => ready.has(tick) ? JSON.stringify({...ready.get(tick), generation, epoch}) : undefined,
     generation: () => generation,
     set_hidden() {}, total_ticks: () => 9,
   };
@@ -21,7 +22,7 @@ function playbackSide({maxFrames} = {}) {
   const legacy = {report: null, maxFrames, load(...args) { legacyCalls.push(args); }, dispose() {}, invalidate() {}};
   return {playback: createStagePlayback(legacy, {stage: () => ({engineSide: side})}), ready, requests, legacyCalls,
     reads: () => readinessReads,
-    nextGeneration() { generation++; }};
+    nextGeneration() { generation++; }, nextEpoch() { epoch++; }, handle};
 }
 
 test('fractional range requests retain Float64 samples and distinct ready packet metadata', async () => {
@@ -142,4 +143,45 @@ test('invalidation cancels fractional requests and a replacement revision drops 
   assert.notEqual(current, previous);
   assert.notEqual(current.key, previous.key);
   assert.equal(current.tick, 3.5);
+});
+
+test('a same-tick settings or resource change replaces its ticket even when readiness is already restored', async () => {
+  const {playback, ready, nextEpoch, handle} = playbackSide();
+  playback.load({}, {revision: 1});
+  await playback.prepareRange([3.5]);
+  ready.set(3.5, {tick: 3.5, background_id: 1});
+  const previous = playback.get(3.5), previousIdentity = engineTicket(previous.key);
+  nextEpoch();
+  ready.set(3.5, {tick: 3.5, background_id: 2});
+  assert.equal(handle.frame_ticket_ready(previousIdentity.generation, previousIdentity.epoch, previousIdentity.tick), false);
+  const current = playback.get(3.5);
+  assert.notEqual(current, previous);
+  assert.notEqual(current.key, previous.key);
+  assert.equal(current.frame.background_id, 2, 'overlay metadata belongs to the new native frame');
+  assert.equal(playback.cache.size, 1, 'the same packet owner retains only the current ticket');
+});
+
+test('publication between metadata read and ticket admission cannot admit mismatched overlay metadata', async () => {
+  const {playback, ready, nextEpoch, handle} = playbackSide();
+  playback.load({}, {revision: 1});
+  await playback.prepareRange([3.5]);
+  ready.set(3.5, {tick: 3.5, camera: {x: 10}});
+  const meta = handle.frame_meta;
+  handle.frame_meta = tick => { const old = meta(tick); nextEpoch(); handle.frame_meta = meta; return old; };
+  assert.equal(playback.get(3.5), null);
+  assert.equal(playback.cache.size, 0);
+  assert.equal(playback.get(3.5).frame.camera.x, 10);
+});
+
+test('only canonical finite engine identities are engine tickets', () => {
+  assert.deepEqual(engineTicket('engine:7:2:3.5'), {generation: 7, epoch: 2, tick: 3.5});
+  assert.equal(engineTick('engine:7:2:0'), 0);
+  for (const key of [null, '', 'legacy:7:2:3.5', 'engine:7:3.5', 'engine:0:2:3.5',
+    'engine:7:-1:3.5', 'engine:7:2:NaN', 'engine:7:2:Infinity', 'engine:7:2:-0',
+    'engine:7:2:-1', 'engine:7:2:', 'engine:07:2:3.5', 'engine:7:02:3.5',
+    'engine:7:2:03.5', 'engine:7:2:3.5:extra', `engine:7:2:${'0'.repeat(100)}`,
+    'engine:9007199254740992:2:3.5']) {
+    assert.equal(engineTicket(key), null, String(key));
+    assert.equal(engineTick(key), null, String(key));
+  }
 });
