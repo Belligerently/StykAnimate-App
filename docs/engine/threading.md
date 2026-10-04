@@ -145,8 +145,11 @@ guard only on its worker. It is consumed or disposed before an ACK; no candidate
 is placed in State, a UI handle, Core ready storage or a browser binding. Exact prebuilt
 Generation/Assets borrowing enables subsequent worker encoding without first exposing
 the new head. Final authorization and head exchange use the original State owner.
-This prerequisite does not certify actual WorkerFrame asset pairing, UI last-owner
-release, upload preparation, presentation or shutdown.
+The opt-in guarded typed capability now pairs the recorded actual WorkerFrame glyph
+Scene and image namespace with the same after-Cache Loader/Assets. The ordinary route
+and Core/Stage adoption are unchanged. The displaced Loader joins existing worker
+retirement. This prerequisite does not certify UI last-owner release, upload preparation,
+presentation or shutdown.
 
 The portable `styk_eval::drawlist::{retained_bytes_checked, RetainedBytesError}` helper
 observes the encoded payload on workers. It includes all seven buffer capacities,
@@ -157,6 +160,16 @@ admission or readiness caller and is not a complete physical-memory bound. Frame
 derived Figure, Prepared/Generation/Assets, mutable caches, scratch allocations and
 renderer ownership remain separate accounting and disposal obligations. See the
 owning [drawlist contract](../../engine/crates/styk-eval/src/drawlist/README.md).
+
+Private `eval::retained` observation additionally covers the explicitly visited Frame,
+derived Figure, style and typed effect children. Strong source Document/glyph owners seed
+one transient allocation identity set; the same checked DrawList/Resolved visitors count
+covered additional allocations. Actual System allocation IDs, sizes and thread IDs
+provide independent test evidence. Map layouts, mutable caches and unvisited source
+branches remain explicit gaps; cancellation or overflow provides no usable charge.
+There is no runtime caller, public descriptor, reservation, new budget or lease. Full
+Prepared/Generation/Assets union, scratch, renderer last-owner and shutdown still need
+owning proofs. See [the observation contract](../../engine/crates/styk-eval/src/eval/retained/README.md).
 
 `Engine::plan_layers(revision, LayerRequest)` uses the existing worker task lane and
 returns `LayerJob`. Polling gives bounded chunks and progress, ACK admits the next chunk,

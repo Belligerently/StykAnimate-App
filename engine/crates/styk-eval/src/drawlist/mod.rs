@@ -13,6 +13,7 @@
 mod generators;
 mod retained;
 pub use retained::{RetainedBytesError, retained_bytes_checked};
+pub(crate) use retained::AllocationObservation;
 
 use std::collections::HashSet;
 use std::f64::consts::PI;

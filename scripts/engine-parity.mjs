@@ -87,6 +87,10 @@ run('native transform projection fixtures regenerate unchanged', process.execPat
   ['engine/tools/native-transform-projection-fixtures.mjs'], {quiet: true,
     check: () => unchanged('engine/tests/edit')});
 
+run('typed pairing fixtures regenerate unchanged', process.execPath,
+  ['engine/tools/typed-pairing-fixtures.mjs'], {quiet: true,
+    check: () => unchanged('engine/tests/typed-pairing')});
+
 // Containers: every native file in the repository, against the JavaScript reader.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});
 const natives = [];

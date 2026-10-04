@@ -14,6 +14,7 @@ use std::sync::Arc;
 use crate::doc::*;
 
 pub mod preview;
+pub(crate) mod retained;
 
 /// One key of a native or virtual (pose-track) timeline.
 #[derive(Clone, Debug)]

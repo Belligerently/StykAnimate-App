@@ -20,6 +20,7 @@ mod owner;
 pub mod parity;
 pub mod parse;
 pub mod registry;
+pub(crate) mod retained;
 
 use std::sync::Arc;
 

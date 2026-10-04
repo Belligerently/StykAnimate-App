@@ -202,3 +202,6 @@ fn recorded_working_and_identical_byte_history_commit_borrow_the_exact_generatio
         drop((engine_retired, editor_retired, display));
     }
 }
+
+#[path = "typed_tests.rs"]
+mod typed;

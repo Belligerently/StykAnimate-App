@@ -238,11 +238,23 @@ displays borrow the current generation; actual history revision changes still pu
 when stored JSON is identical. This adds portable APIs for the mobile pin, with no
 ACK-spanning guard, Core ready-storage change or browser adoption.
 
-Encoding the candidate's own document with its own Assets is verified separately from
-encoding the actual Editor WorkerFrame Scene. New imported glyph identities currently
-differ between the independent Editor and Mirror typed loaders; that actual Scene must
-be paired with compatible assets before encoded ready/shown admission. A substitute
-Scene or content-based glyph lookup is not a valid repair.
+The additive opt-in `prepare_edit_typed_publication_worker` pairs the actual Editor
+WorkerFrame Scene with candidate Assets using `GuardedPublication::typed_cache_worker`.
+Its opaque `GuardedTypedCache` borrows the same guarded after-Cache report, Loader and
+Prepared; it cannot be supplied from another host or independently compiled Scene.
+The raw layerSheet must be an object, the actual Prepared must have a typed sheet and
+the existing checked layer planner must admit its descriptors. Malformed or missing
+sheets refuse atomically. All typed heads and the SceneBudget lineage must match;
+image namespace and imported glyph identity are preserved, including working-only
+operations whose guarded after report differs from the acknowledged stored root.
+The displaced typed Loader is retired on the worker through the existing publication
+retirement. These three additive APIs are platform neutral for the mobile pin.
+
+Recorded namespace and glyph operations compare the complete editor observations;
+native/nested figure import and background import remain explicit refusals. The ordinary
+independent-loader publication API and Core route are unchanged. Actual encoded
+Ready/Shown adoption still needs this opt-in capability connected to the existing worker
+owner; pairing is not Stage, release or whole-document D7 certification.
 
 Portable mobile pin additions: `RevisionCounters`, `Session::{start_worker_prepared,
 revision,history_checkpoint_worker,into_worker}`, `WorkerSession`, `WorkerPrepared`,

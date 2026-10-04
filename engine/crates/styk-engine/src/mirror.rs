@@ -451,7 +451,7 @@ impl Engine {
 
     fn commit_locked_with<F, R>(&self, mirror: std::sync::MutexGuard<'_, Mirror>, started: f64, revision: u64, batch: u32, guard: Option<RecordGuard>, expected_root: Option<(&Value, &Value, &Arc<transfer::Charge>, bool)>, exchange: &mut Option<F>) -> Result<(Committed, crate::PublicationRetirement, R), MirrorError>
     where F: FnOnce() -> R {
-        self.prepare_locked(mirror, started, revision, batch, guard, expected_root)?
+        self.prepare_locked(mirror, started, revision, batch, guard, expected_root, None)?
             .commit(exchange).map_err(|(error, candidate)| { drop(candidate); error })
     }
 }

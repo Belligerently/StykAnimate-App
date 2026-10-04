@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
+pub(crate) mod retained;
 
 /// Pivot primitive codes (`segment.primitive_code`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

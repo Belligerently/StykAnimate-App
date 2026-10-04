@@ -27,6 +27,13 @@ pub(crate) struct Cache {
     frames: Vec<(u64, bool, bool, Value)>,
 }
 
+impl Cache {
+    pub(crate) fn typed_worker(&self, report: &Value) -> Option<(&styk_eval::load::Loader, &Arc<Prepared>)> {
+        if !self.report.as_ref().is_some_and(|cached| cached.same_node(report)) { return None; }
+        Some((&self.loader, self.prepared.as_ref()?))
+    }
+}
+
 impl From<styk_eval::records::Error> for EditError {
     fn from(error: styk_eval::records::Error) -> EditError {
         match error {

@@ -17,16 +17,17 @@ pub struct PublicationRetirement {
     pub(crate) images: Option<images::Store>,
     pub(crate) tasks: TaskQueue,
     pub(crate) canonical_root: Option<styk_doc::Value>,
+    pub(crate) typed_loader: Option<styk_eval::load::Loader>,
     pub(crate) record_charges: std::collections::LinkedList<crate::mirror::transfer::Charge>,
     pub(crate) root_admission: Option<crate::mirror::EditPublicationAdmission>,
 }
 
 impl PublicationRetirement {
     pub(crate) fn empty() -> Self {
-        Self { generation: None, frames: frames::Cache::new(0), images: None, tasks: TaskQueue::new(), canonical_root: None, record_charges: std::collections::LinkedList::new(), root_admission: None }
+        Self { generation: None, frames: frames::Cache::new(0), images: None, tasks: TaskQueue::new(), canonical_root: None, typed_loader: None, record_charges: std::collections::LinkedList::new(), root_admission: None }
     }
     pub(crate) fn needs_worker(&self) -> bool {
-        self.generation.is_some() || self.frames.has_storage() || self.images.as_ref().is_some_and(images::Store::has_storage) || !self.tasks.is_empty() || self.canonical_root.is_some() || !self.record_charges.is_empty() || self.root_admission.is_some()
+        self.generation.is_some() || self.frames.has_storage() || self.images.as_ref().is_some_and(images::Store::has_storage) || !self.tasks.is_empty() || self.canonical_root.is_some() || self.typed_loader.is_some() || !self.record_charges.is_empty() || self.root_admission.is_some()
     }
 }
 
@@ -94,7 +95,7 @@ impl Prepared {
             TaskQueue::new()
         } else { std::mem::replace(&mut state.tasks, std::mem::take(&mut self.tasks)) };
         let generation = state.current.replace(self.generation.clone());
-        PublicationRetirement { generation, frames, images, tasks, canonical_root: None, record_charges: std::collections::LinkedList::new(), root_admission: None }
+        PublicationRetirement { generation, frames, images, tasks, canonical_root: None, typed_loader: None, record_charges: std::collections::LinkedList::new(), root_admission: None }
     }
 }
 

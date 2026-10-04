@@ -55,32 +55,38 @@ impl Resolved {
         }
         self.add(arc::<Effect>());
         self.layout(arc_allocation::<Effect>(1), arc::<Effect>());
-        if self.ids.insert(Arc::as_ptr(&effect.id) as *const u8) {
-            self.add(effect.id.len());
-            self.add(2 * std::mem::size_of::<usize>());
-            let logical = effect
-                .id
-                .len()
-                .checked_add(2 * std::mem::size_of::<usize>());
-            match logical {
-                Some(bytes) => self.layout(arc_allocation::<u8>(effect.id.len()), bytes),
-                None => self.overflow = true,
-            }
-        }
+        self.string(&effect.id);
         for (index, spec) in effect.kind().specs().iter().enumerate() {
             if spec.kind == ParamKind::Color
                 && let ParamValue::Paint(paint) = effect.params.get(index)
-                && self.paints.insert(Arc::as_ptr(&paint))
             {
-                self.add(arc::<Paint>());
-                self.layout(arc_allocation::<Paint>(1), arc::<Paint>());
-                self.overflow |= paint
-                    .stops
-                    .capacity()
-                    .checked_mul(std::mem::size_of::<crate::doc::PaintStop>())
-                    .is_none();
-                self.add(buffer(&paint.stops));
+                self.paint(&paint);
             }
+        }
+    }
+
+    pub(crate) fn string(&mut self, value: &Arc<str>) {
+        if self.ids.insert(Arc::as_ptr(value) as *const u8) {
+            self.add(value.len());
+            self.add(2 * std::mem::size_of::<usize>());
+            let logical = value.len().checked_add(2 * std::mem::size_of::<usize>());
+            match logical {
+                Some(bytes) => self.layout(arc_allocation::<u8>(value.len()), bytes),
+                None => self.overflow = true,
+            }
+        }
+    }
+
+    pub(crate) fn paint(&mut self, paint: &Arc<Paint>) {
+        if self.paints.insert(Arc::as_ptr(paint)) {
+            self.add(arc::<Paint>());
+            self.layout(arc_allocation::<Paint>(1), arc::<Paint>());
+            self.overflow |= paint
+                .stops
+                .capacity()
+                .checked_mul(std::mem::size_of::<crate::doc::PaintStop>())
+                .is_none();
+            self.add(buffer(&paint.stops));
         }
     }
 

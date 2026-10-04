@@ -41,6 +41,31 @@ pub struct ObjectStyle {
     pub key: String,
 }
 
+/// Covered flat style buffers/paints. Map table allocations are deliberately
+/// uncovered: std HashMap's private bucket/control layout is not inferred.
+pub(crate) fn observe_allocations(
+    visitor: &mut crate::eval::retained::Visitor<'_>,
+    style: &Arc<ObjectStyle>,
+) -> Result<(), crate::eval::retained::Reason> {
+    visitor.check()?;
+    if visitor.allocations.arc(style)? {
+        visitor.allocations.text(&style.key)?;
+        visitor.allocations.buffer(&style.mesh_colors)?;
+        if style.segments.capacity() != 0 || style.polygons.capacity() != 0 {
+            visitor
+                .uncovered
+                .add(crate::eval::retained::Uncovered::MAP_TABLES);
+        }
+        for segment in style.segments.values() {
+            visitor.check()?;
+            if let Some(paint) = &segment.paint {
+                visitor.allocations.resolved.paint(paint);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn rgb_of(c: u32) -> [u8; 3] {
     [(c >> 16 & 255) as u8, (c >> 8 & 255) as u8, (c & 255) as u8]
 }

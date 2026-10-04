@@ -255,11 +255,24 @@ Mobile API additions: WorkerSession::prepare_worker_history, Handle::submit_live
 Records::pose_source_frame (row hints require verified unique IDs), and
 styk_eval::drawlist::{retained_bytes_checked, RetainedBytesError}.
 
-Scoped worker publication candidates are independently reviewed and verified. The
-candidate borrows its exact prebuilt generation/assets under the same Mirror and
-CommitMarker guard, but does not yet pair the actual Editor-produced glyph Scene with
-that Loader. Portable pin additions are listed in editing.md and threading.md. This
-is a prerequisite with no Core/Stage/app adoption, class gate or deletion.
+Scoped worker publication candidates and the opt-in guarded typed pairing are integrated.
+The candidate borrows its exact prebuilt generation/assets under the same Mirror and
+CommitMarker guard. The typed route borrows the actual guarded after-Cache Loader and
+pairs the recorded Editor glyph Scene and image namespace with those assets; the
+ordinary independent-loader route remains unchanged. Raw layerSheet must be an object,
+and its actual typed sheet and existing checked planner must both admit it before
+pairing. Six malformed/missing-sheet cases now refuse atomically. Portable additions:
+GuardedTypedCache, GuardedPublication::typed_cache_worker and
+Engine::prepare_edit_typed_publication_worker (details in editing.md).
+
+Private typed Frame allocation observation is also integrated, using strongly held
+source identities, the same checked DrawList/Resolved visitors and an actual allocator
+ledger in tests. It has no runtime caller, reservation or public API; encountered map,
+mutable-cache and other unvisited branches remain explicit gaps. Focused verification
+passes 528 native tests (two opt-in diagnostics ignored), check, two typed fixture
+regenerations with all 3,634 captured JSON stable, and the pinned threaded Wasm typecheck.
+The shipping package was not rebuilt. These are prerequisites without Core/Stage/app
+adoption, class gate, physical-cap certification or deletion.
 
 The separate, still-uncommitted Renderer32 patch passes its 24 focused pictures on
 shipping Wasm `b155e35fe6a6` and its shared-type native checks, but MUST NOT be committed
@@ -422,10 +435,13 @@ without owning.
   app writer transfer and actual shown/query ordering remain open. Global last-owner
   retirement/physical accounting and shutdown
   ACK remain separate D7 obligations.
-- Scoped generation/assets publication is integrated without actual Core/Stage adoption.
-  The recorded Editor Scene still has different glyph identities from a separately
-  prepared candidate Scene; pair the same guarded after-Cache Loader, not a substitute
-  Scene or content lookup. Actual current-ready raw roots outlive terminal ACK with zero
+- Scoped generation/assets publication and recorded guarded typed glyph/image pairing
+  are integrated without actual Core/Stage adoption. The opt-in route uses the same
+  guarded after-Cache Loader; the ordinary independent-loader route still cannot encode
+  those actual Editor glyph identities. Native/nested/background imports and additional
+  typed heads remain refused. Private Frame allocation observation covers only its
+  explicitly visited branches, with no runtime admission or complete physical bound.
+  Actual current-ready raw roots outlive terminal ACK with zero
   receiver charge. Preserve the existing 1 GiB receiver budget when fixing that lifetime;
   the editing materialization/source allowance is a separate unchanged 128 MiB owner.
 - Section 6 lists the rest: auxiliary cel previews/monitor and crisp export, CPU rasterizer on nearly coplanar 3D
@@ -1220,6 +1236,23 @@ the receipt validator rejected it, and the corrected actual comparisons are reta
 separately. No threshold or expected pixel was altered. No gate, deletion or performance
 claim. Evidence: `tmp/root-verification-temp/renderer-publication-*`.
 
+
+### Guarded typed pairing and private Frame observation (2026-10-04)
+
+The independently reviewed 23-source batch passes 528 touched-crate tests (two explicit
+diagnostics ignored), check, byte-stable typed fixture regeneration twice and the pinned
+threaded shipping-profile Wasm typecheck. All 3,634 captured engine JSON remain unchanged.
+Actual recorded namespace/glyph observations compare Editor Scene encoding with the same
+guarded after-Cache Loader and candidate Assets. Missing or malformed raw/typed sheets
+refuse before publication using the existing checked planner. Original failed-before
+cases, actual source mutants and independent scope correction review are preserved.
+
+Private Frame observation tests use actual allocator identities and held source owners;
+they certify only visited allocation branches. No runtime charge or caller was added.
+Core/Stage/app adoption, whole physical union, last-owner release and other typed import
+families remain open. Shipping pkg, app behavior, document-class gates and budgets are
+unchanged. Evidence: `tmp/root-verification-temp/typed-frame-*`.
+
 ## 8. Work queue
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
@@ -1427,3 +1460,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 19:58 | Correct the shared progress-helper staging omission | Immediate postcommit status identifies verified src/engine/engine.mjs left unstaged by the manually assembled100-path list. Supply its unchanged independently reviewed helper in a new commit; no history rewrite. The previous65e1db72 snapshot is incomplete and must not be pinned. No crate API, gates, budgets or thresholds change. | All47 affected progress/playback/bootstrap/project JavaScript tests and npm check (1,999 files/7,010 messages) pass on the exact corrected sources. No native/app rebuild needed because those bytes are unchanged. Original milestone evidence preserved with omission diagnosis; background checkpoint starts only on corrected committed HEAD. Stage future source lists from the union of every contributing source manifest, then assert only known unrelated paths remain unstaged. Logs: tmp/root-verification-temp/cache-quiet-live-progress-stage-correction-*. |
 | 2026-10-04 20:35 | S5 portable Core live coupling, native scalar projection and retained encoded accounting | Batch three independently reviewed native owners. Preserve the same Session, Mirror stored/history transition, SceneBudget and terminal-ACK roots. Adopt original native curves through marker/Draft/Records/typed sampler and share one Resolved allocation visitor; Scene saturation and all budgets stay exact. Mobile additions: WorkerSession::prepare_worker_history, Handle::submit_live, Records::pose_source_frame with unique-ID hint precondition, drawlist retained_bytes_checked/RetainedBytesError. Browser writer, current raw charge, glyph identity, upload/Shown/release and stop remain open. | Focused edit/eval/engine: 505 tests, one diagnostic ignored; JS: 59 tests; check: 1,999 files; pinned threaded Wasm compile passes. Rebuilt CLI: 50 admitted tapes / 6,581 exact steps, nine explicit guards. Projection: 204 curves / 1,620 samples / 200 missing first writes. All 3,577 source JSON stay stable; 13 new derived groups / 147 ticks / 26 JSON regenerate twice stable (421 groups total). Shipping pkg rebuild deferred to renderer app milestone; no app adoption, picture, gate, deletion or performance claim. Exact 34-source composition and six owning adaptations reviewed. Checkpoint805688d5 compile-only exit 143 attempt preserved; same HEAD/cache continuation running, next regular run 21:59 CEST. Evidence: tmp/root-verification-temp/core-projection-accounting-*. |
 | 2026-10-04 21:35 | S5 scoped pre-publication generation and assets | Commit the independently reviewed five-path native candidate separately from the held Renderer32 patch. Same worker Mirror guard/CommitMarker/Loader and final State exchange; borrowed exact prebuilt generation/assets, single consuming commit and worker retirement. Working displays reuse the acknowledged generation; identical stored JSON still publishes genuine history revisions. Add portable WorkerPublication/WorkerEditPublication and Engine::prepare_record_publication_worker/prepare_edit_publication_worker APIs; mobile pin may move after downstream review. Actual Editor glyph pairing, Core Ready/Shown adoption, raw-ready charging and physical D7 remain open. | Fresh touched-crate run: all 182 styk-engine tests pass. Original isolated 117 focused tests and three actual source mutants caught/restored; all five root source hashes match that immutable freeze. Previously verified unchanged check, recorded CLI 50 admitted tapes/6,581 exact steps/nine guards and 13 derived groups/147 ticks remain green. No command recording, JavaScript or app adoption changed. Full committed 805688d5 checkpoint passes 56 stages/691 release-selected tests/358 containers; all 136 release executables fresh after regeneration in 0.23 s. Original Electron CEL regression blocks the separate renderer commit and is preserved in the handoff. Logs: tmp/root-verification-temp/scoped-candidate-* and renderer-publication-*. |
+| 2026-10-04 22:02 | S5 guarded typed Scene/assets pairing and private Frame allocation observation | Batch two independently reviewed, disjoint freezes with one reviewed vfx module declaration adaptation. Opt-in pairing borrows the same guarded after-Cache Loader and exact candidate assets, preserving image namespace and actual imported glyph identities; six malformed/missing typed sheets refuse atomically through the existing checked planner. Private Frame observation reuses existing allocation visitors and a strongly held source baseline; it exposes gaps and has no runtime caller or charge. Mobile additions: GuardedTypedCache, GuardedPublication::typed_cache_worker, Engine::prepare_edit_typed_publication_worker; Frame observers remain private. No Core/Stage/app adoption, budget, gate, deletion or performance claim. | Touched edit/engine/eval tests: 528 pass, two explicit diagnostics ignored; npm check and generator syntax pass. Two typed regeneration runs preserve all 3,634 captured engine JSON. Pinned shipping-profile threaded Wasm typecheck passes; pkg remains unchanged. Actual recorded typed namespace/glyph comparisons and refusal guards pass in native tests. Independently reviewed typed scope correction closes six real failed-before cases; Frame allocator ledger and 18 actual source mutants remain preserved. Exact 23-source composition plus parity registration verified unchanged. Renderer32 remains uncommitted due to original full-CEL Electron regression. Full checkpoint last green805688d5; next eligible21:59 CEST. Evidence: tmp/root-verification-temp/typed-frame-*. |

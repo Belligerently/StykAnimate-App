@@ -361,11 +361,41 @@ pub struct GuardedPublication<'a> {
     prepared: PreparedPublication,
     epoch: Option<&'a mut u64>,
 }
+
+/// Borrowed existing after-cache capability. Only the guarded publication can
+/// construct it; it is worker-scoped and must not span host ACKs. It contains no
+/// new evaluator, store, cache or prepared resources.
+pub struct GuardedTypedCache<'a> {
+    report: &'a Value,
+    loader: &'a styk_eval::load::Loader,
+    prepared: &'a std::sync::Arc<styk_eval::eval::Prepared>,
+}
+impl GuardedTypedCache<'_> {
+    pub fn report(&self) -> &Value { self.report }
+    pub fn loader(&self) -> &styk_eval::load::Loader { self.loader }
+    pub fn prepared(&self) -> &std::sync::Arc<styk_eval::eval::Prepared> { self.prepared }
+}
 impl GuardedPublication<'_> {
     /// Canonical roots of this already-guarded transaction, borrowed on its worker.
     pub fn before_report(&self) -> &Value { self.prepared.before_report() }
     pub fn report(&self) -> &Value { self.prepared.report() }
     pub fn revision(&self) -> u64 { self.prepared.heads.snapshot.counters[0] }
+    /// The actual after-cache belonging to this exact canonical COW report.
+    /// Metadata/document compatibility is validated by the consuming Mirror
+    /// owner before asset preparation; a foreign/cold cache is refused.
+    pub fn typed_cache_worker(&self) -> Result<GuardedTypedCache<'_>, EditError> {
+        let report = self.report();
+        let (loader, prepared) = self.prepared.heads.cache.typed_worker(report)
+            .ok_or_else(|| EditError::Unported("the guarded report has no compatible prepared cache".into()))?;
+        if prepared.doc.sheet.is_none() {
+            return Err(EditError::Unported("typed publication requires its prepared layer sheet".into()));
+        }
+        // Loader deliberately permits partial typed views. The existing Plan
+        // owner checks the raw required layer/track/key descriptors; do not
+        // fabricate a second shape validator or change legacy Editor loading.
+        crate::layer_planning::checked_plan(report, &[], 0)?;
+        Ok(GuardedTypedCache { report, loader, prepared })
+    }
     /// Constant head exchange; retains all displaced payloads in the return.
     /// The host must keep this retirement on its durable worker through ACK.
     pub fn commit(mut self) -> RetiredPublication {

@@ -257,6 +257,25 @@ impl Engine {
         publication: GuardedPublication<'editor>, admission: EditPublicationAdmission,
     ) -> Result<WorkerEditPublication<'engine, 'editor>,
         (MirrorError, GuardedPublication<'editor>, PublicationRetirement)> {
+        self.prepare_edit_publication_worker_impl(batch, guard, publication, admission, false)
+    }
+
+    /// Opt-in worker-scoped pairing with the exact guarded Editor after-cache.
+    /// This recorded sheet prerequisite preserves actual Glyph/image identities;
+    /// it has no Core, browser, ACK-spanning or presentation admission caller.
+    pub fn prepare_edit_typed_publication_worker<'engine, 'editor>(
+        &'engine self, batch: u32, guard: RecordGuard,
+        publication: GuardedPublication<'editor>, admission: EditPublicationAdmission,
+    ) -> Result<WorkerEditPublication<'engine, 'editor>,
+        (MirrorError, GuardedPublication<'editor>, PublicationRetirement)> {
+        self.prepare_edit_publication_worker_impl(batch, guard, publication, admission, true)
+    }
+
+    fn prepare_edit_publication_worker_impl<'engine, 'editor>(
+        &'engine self, batch: u32, guard: RecordGuard,
+        publication: GuardedPublication<'editor>, admission: EditPublicationAdmission, typed: bool,
+    ) -> Result<WorkerEditPublication<'engine, 'editor>,
+        (MirrorError, GuardedPublication<'editor>, PublicationRetirement)> {
         let started = self.now();
         let mut retirement = PublicationRetirement::empty();
         let admitted = admission.batch == batch && admission.guard == guard
@@ -267,10 +286,19 @@ impl Engine {
             return Err((MirrorError::Transaction("the prepared root admission does not match this publication"),
                 publication, retirement));
         }
+        if typed && !publication.report().path(&["_styk", "layerSheet"]).is_some_and(Value::is_object) {
+            return Err((MirrorError::Transaction("typed publication requires its recorded layer-sheet scope"), publication, retirement));
+        }
+        let context = if typed {
+            match publication.typed_cache_worker() {
+                Ok(context) => Some(context),
+                Err(_) => return Err((MirrorError::Transaction("the guarded report has no compatible prepared cache"), publication, retirement)),
+            }
+        } else { None };
         let mirror = self.inner.mirror.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let admission = retirement.root_admission.as_ref().expect("admitted above");
         match self.prepare_locked(mirror, started, publication.revision(), batch, Some(guard),
-            Some((&admission.before, &admission.after, &admission.charge, admission.stored))) {
+            Some((&admission.before, &admission.after, &admission.charge, admission.stored)), context.as_ref()) {
             Ok(candidate) => Ok(WorkerEditPublication { candidate, publication, retirement }),
             Err(error) => Err((error, publication, retirement)),
         }
