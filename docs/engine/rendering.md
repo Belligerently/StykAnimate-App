@@ -194,25 +194,109 @@ the quietest round 86–96 against 104–108 ms (the draw list holds 26 % more r
 
 ## CPU (`styk-raster`)
 
-The same draw list rasterized with tiny-skia (Skia's raster backend, as Canvas
-2D): for tools (`styk raster`, `styk export --cpu`) and, later, devices without WebGPU
-or WebGL2. Exports, thumbnails and library previews draw with the GPU renderer instead
-([Exports](#exports), [Thumbnails](#thumbnails-library-previews-and-the-camera-monitor),
-which says why). Groups render into their own pixmaps; custom paints shade per pixel
-with `sample_paint`; consecutive triangles of one look fill as one path.
-`styk raster` renders a frame like `styk render`; on the compared frames the
-two differ by less than 0.2/255 on average, along edges (0.30–0.56 on 3D scenes,
-whose raster entries the GPU resamples and the CPU draws at the output's density).
-Depth runs rasterize with a four-sample depth buffer compared at 24 bits.
-Generated effects expand into the GPU's quads and are shaded per pixel by its
-fragment arithmetic, additive ones added (`generators.rs`); on the generator
-fixtures the CPU and the GPU differ by less than 0.2/255 on average.
-Text in raster entries is drawn at the output's density, and lone glyphs by their
-own triangles (`F_GLYPH_VECTOR`), not from masks.
-Filter effects are not drawn on the CPU yet.
-A drawing cel's tiles are filled without coverage at their quads' edges (each pixel takes
-the tile its centre falls in, as the GPU's samples do): tiles meeting in the middle of a
-pixel left a seam when both covered it by area (`tests/tiles.rs`).
+The GPU renderer's pipeline carried out on the CPU, rule for rule, so a frame drawn here is
+the frame the stage draws: for devices with neither WebGPU nor WebGL2 and for tools
+(`styk raster`, `styk export --cpu`). It replaced a tiny-skia rasterizer that covered edges
+as Skia does (a few partial-coverage levels at thumbnail sizes), drew no filter effects,
+drew raster entries at the output's density and resolved each depth run to its nearest
+faces before compositing it.
+
+| Module | Holds |
+| --- | --- |
+| `frame.rs` | one frame: each group placed by styk-render's plan, drawn into a target of its own, filtered, composited; every primitive kind |
+| `target.rs` | a target with the GPU's samples: four RGBA8 samples a pixel (one for crisp edges), blended one by one, averaged when resolved |
+| `coverage.rs` | the GPU's rasterization rules: vertices snapped to 1/256 pixel, the standard four sample positions, the top-left rule |
+| `shade.rs` | `prim.wgsl`'s fragment arithmetic: coverage by distance, the strokes' distance functions, texture sampling |
+| `effects.rs` | effect recipes run pass by pass with the arithmetic of `passes.wgsl` |
+| `glyphs.rs` | masks of lone glyphs, kept across frames |
+| `generators.rs` | generated effects: the GPU's quads, its fragment arithmetic |
+
+**One plan for both renderers.** What does not need a GPU lives in styk-render without its
+`gpu` feature, which styk-raster depends on: `ViewParams`, `Edges`, where each group is
+drawn for a view (`effects::plan`: a translucent figure on its parent's grid, a raster entry
+or filtered artwork on the editor's raster grid at its density, the camera image through the
+scene camera) and its group record (`effects::record`, here with every layer at the origin
+of a target of its own), and effect recipes (`effects::recipe`: the passes `VfxWebGPU.run`
+records, with their parameters). The GPU's atlas, rounds and pooled slots are resource
+management and have no CPU counterpart: a layer is drawn at full resolution into a target of
+its size.
+
+**Rules followed.**
+
+- Samples: a target keeps one colour per pixel until a write covers only some of its
+  samples, then four; a write that leaves them equal folds them back. Blending is the
+  pipeline's (`One, OneMinusSrcAlpha`; `One, One` for `F_ADD`), each result rounded to 8
+  bits as an `Rgba8Unorm` target stores it; resolving averages the samples.
+- Strokes, arcs, polylines, discs and rings are covered by distance at each pixel's centre
+  (`clamp(0.5 − d / aa, 0, 1)`, hairlines faded to a one-pixel footprint; crisp: in or out),
+  over the pixels of the quad the vertex shader draws. A polyline takes each pixel's nearest
+  segment.
+- Triangles, image and glyph quads, composites, particles and the artboard fill are covered
+  by the samples, so adjacent triangles share their edges' samples: no seams between faces,
+  glyph triangles or polygons of different colours, and none between a cel's tiles.
+- Paints are `sample_paint` at the pixel's centre; sprites bilinear (`F_SMOOTH`) or nearest
+  within their gutter; cel tiles premultiplied texel by texel, then bilinear across their
+  borders, at the level the layer's density shows; composites bilinear, clamped to the child
+  (nearest with crisp edges); backgrounds nearest.
+- Depth runs: the reset's quad sets the far depth, then each face is drawn over what is
+  there, sample by sample, where its depth (the vertex shader's window depth, interpolated
+  at the sample, stored at 24 bits) is not greater than what the run drew there: translucent
+  faces blend in drawing order, an equal depth passes.
+- Lone glyphs: masks laid out by `GlyphMask::layout` for the view's raster density, filled at
+  four samples a texel and kept across frames by glyph and size (at most 64 MiB, the least
+  recently used first out); an instance without a mask draws its triangles.
+- Filter effects: after a filtered layer is drawn and resolved, its recipe runs on its
+  pixels, each pass written to an RGBA8 slot of its size and sampled bilinearly with edges
+  clamped, as on the GPU. Box passes and alpha dilations of a source as large as their
+  target take whole texels, so they run with prefix sums and a monotonic queue (equal to
+  shading each pixel within a level, `windows_equal_the_shader`).
+
+**What still differs.** Near-coplanar 3D faces: two faces nearly in one plane (a seat on a
+tank, a decal on a receiver; measured 7 and 16 steps of the 24-bit buffer apart) resolve by
+the last bits of each GPU's vertex arithmetic (where its layer sits in the atlas, fused
+multiply-adds, its depth interpolation), which differ between GPUs too; the CPU interpolates
+exactly from the snapped vertices. The GPU draws layers too large for its atlas pages at a
+lower scale in a lone round (`plan_rounds`); the CPU never does. Texture filtering and
+resolves round in the last level.
+
+**Memory.** A frame holds the view-sized target, then one target per isolation group on the
+path being drawn (a layer's size: its rectangle on its grid), each four bytes a pixel plus
+sixteen per pixel whose samples differ; a filtered layer adds its working slots (at most
+eight of its size). Glyph masks stay within 64 MiB. Images are the decoded images the
+engine holds, not copied (`Images::add_shared`). Nothing is pooled between frames; exports
+bound a frame by drawing it in tiles.
+
+### Measured
+
+`styk raster-parity` draws the same draw lists and views with both renderers (frames as the
+app's thumbnails and exports take them from `ExportFrames`; library files as the asset library
+opens them) and compares them by D13, limits unchanged, alpha counted. 2026-10-04, RTX 4070
+SUPER (Vulkan) for the GPU, the machine shared with other work (load averages 6–21). Before:
+the tiny-skia rasterizer (`86124552`); after: this one. Repository corpus: the 388 tracked
+`.styk`, `.stkz` and `.stykmov` files and 47 editor-built fixtures (effects, generated
+effects, 3D, drawings, text; 2 have no keyframe), thumbnails at up to five frame starts,
+exports at three; library previews of the 193 `.stkz` and `.stykmov` files (poster and three
+hover frames). Passing steps, both rules (no solid pixel / mean):
+
+| Steps | Before | After |
+| --- | --- | --- |
+| Thumbnail 320×192 (899) | 435 (857 / 438) | 899 (899 / 899) |
+| Thumbnail 512×288 (899) | 607 (857 / 614) | 899 (899 / 899) |
+| Thumbnail 96×54 (899) | 144 (790 / 144) | 899 (899 / 899) |
+| Export, canvas size, Smooth edges (677) | 645 (645 / 665) | 677 (677 / 677) |
+| Export, No smoothing (677) | 629 (645 / 649) | 677 (677 / 677) |
+| Library poster (193) | 36 (179 / 36) | 193 (193 / 193) |
+| Library hover frame (579) | 52 (520 / 52) | 579 (579 / 579) |
+| Private corpus (8 files: URIEL 3 with its blur, glow, bloom and tint, Jay, Pistol-3D, four Pivot imports): thumbnails at three sizes (93) | 49 | 93 |
+| Private corpus: exports, both samplings (38) | 33 | 38 |
+
+Twelve frame starts of each of the 180 3D documents (scenes, turntables, demos, packs and
+spatial fixtures): 1,244 of 1,244 thumbnails at 320×192 pass, 1,242 at 512×288 and 1,231
+exports, every failure by solid pixels where two near-coplanar faces meet (above); no mean
+fails. Which effects the documents use (`--census`, every tick): the repository's documents
+and asset packs draw no filter effect (9 hold generated effects); the effect fixtures draw all
+17 kinds; the private corpus draws blur (99 frames of URIEL 3), glow (54), bloom (47), tint
+(36), RGB split (2) and outline (1).
 
 ## In the app
 
@@ -285,7 +369,8 @@ the JavaScript Canvas 2D path, as before.
 **Home and project pictures** are read from the stage's canvas (`stagePicture` in `src/app.mjs`):
 the engine's canvas where the engine draws the scene. They need no path of their own.
 
-**Why the GPU, not `styk-raster`.** The CPU rasterizer was tried first for thumbnails and library
+**Why the GPU, not `styk-raster`.** The CPU rasterizer of the time (tiny-skia, since replaced by
+the GPU's pipeline on the CPU, [CPU](#cpu-styk-raster)) was tried first for thumbnails and library
 previews (no device, no shared atlas, works without a GPU) and dropped, measured in the app: its
 edges take three partial-coverage levels where the editor's Canvas 2D takes about 220 and the GPU
 about 250 (a library poster: mean difference 0.52 from Canvas 2D on a plain figure, edges only); it
@@ -488,9 +573,9 @@ and in No smoothing on frames the JavaScript exporter drew smooth.
 
 **Why the GPU, measured** (`styk export`, native, RTX 4070 SUPER, 1,920×1,080, Smooth edges, the
 median of 10 frames each, the same draw lists, the GPU time including the read-back of the
-frame; 2026-10-03, load average 6–7):
+frame; 2026-10-03, load average 6–7; the CPU column is the tiny-skia rasterizer of the time):
 
-| Document | GPU | CPU (`styk-raster`) |
+| Document | GPU | CPU (`styk-raster`, tiny-skia) |
 | --- | ---: | ---: |
 | The start document | 12.6 ms | 14.3 ms |
 | Impact-FX-Fight.styk (effects, generated effects, captions) | 13.1 ms | 186.9 ms, without its effects |
@@ -618,6 +703,12 @@ the app's own exports per format with `--formats`, cancellation and failure with
 `--integrity`) and `scripts/engine-export-compare.py` (decodes and compares the exports of a
 format).
 
+`cargo test -p styk-raster` (the target's samples, the rasterization rules, effect windows
+against per-pixel shading; strokes covered by distance, no seams between adjacent triangles,
+translucent faces blending in drawing order, filtered layers; each fails on the tiny-skia
+rasterizer; on a GPU, six repository documents by D13 against styk-render, and the generator
+fixture), `styk raster-parity [--export] [--crisp] [--library] [--census] [--ticks N]
+[--out dir] --list …` (the CPU against the GPU over a corpus, above);
 `cargo test -p styk-render -p styk-raster`; text: `cargo test -p styk-eval --test text`
 (raster entries, glyph records and their mask layouts against numbers the editor printed,
 finer curves for large text; each fails without its rule), `-p styk-render --test glyphs`

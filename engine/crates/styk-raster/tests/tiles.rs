@@ -34,10 +34,10 @@ fn adjacent_tiles_leave_no_seam() {
     };
     let list = DrawList { prims: vec![prim(0.0, &a), prim(64.0, &b)], ..Default::default() };
     // 0.7 pixels a unit, shifted: the shared edge lands at x = 48.5, halfway through a pixel.
-    let view = styk_raster::View { matrix: [0.7, 0.0, 0.0, 0.7, 3.7, 2.1], width: 100, height: 60, artboard: [0.0, 0.0, 100.0, 60.0], clip_to_artboard: false, clear: [0.0; 4], anti_alias: true };
-    let pixmap = styk_raster::render(&list, &images, &view).expect("a frame");
+    let view = styk_raster::ViewParams { matrix: [0.7, 0.0, 0.0, 0.7, 3.7, 2.1], artboard: [0.0, 0.0, 100.0, 60.0], clip_to_artboard: false, clear: [0.0; 4], zoom: 0.7, pan: [3.7, 2.1], stretch: 1.0, camera_view: false, camera_limit: 2048.0 };
+    let pixels = styk_raster::render(&list, &images, &view, [100, 60], styk_raster::Edges::Smooth).straight();
     for x in 6..90 {
-        let p = pixmap.pixel(x, 20).unwrap().demultiply();
-        assert_eq!([p.red(), p.alpha()], [255, 255], "column {x} is covered");
+        let i = (20 * 100 + x) * 4;
+        assert_eq!([pixels[i], pixels[i + 3]], [255, 255], "column {x} is covered");
     }
 }

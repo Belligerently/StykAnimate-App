@@ -475,22 +475,22 @@ fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
         .unwrap_or([cw / 2.0, ch / 2.0]);
     let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
-    let view = styk_raster::View {
+    let view = styk_render::ViewParams {
         matrix: camera_matrix(&p.doc, scene.camera.as_ref(), zoom, pan),
-        width: w,
-        height: h,
         artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
         clip_to_artboard: !rest.iter().any(|a| a == "--no-clip"),
         clear: [0.16, 0.16, 0.17, 1.0],
-        anti_alias: !rest.iter().any(|a| a == "--aliased"),
+        zoom,
+        pan,
+        stretch: 1.0,
+        camera_view: true,
+        camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
     };
+    let edges = if rest.iter().any(|a| a == "--aliased") { styk_raster::Edges::Crisp } else { styk_raster::Edges::Smooth };
     let started = Instant::now();
-    let Some(pixmap) = styk_raster::render(&list, &images, &view) else {
-        eprintln!("cannot rasterize a {w}x{h} frame");
-        return 1;
-    };
+    let frame = styk_raster::render(&list, &images, &view, [w, h], edges);
     let raster_ms = started.elapsed().as_secs_f64() * 1000.0;
-    image::save_buffer(out, &styk_raster::straight_rgba(&pixmap), w, h, image::ColorType::Rgba8).expect("write png");
+    image::save_buffer(out, &frame.straight(), w, h, image::ColorType::Rgba8).expect("write png");
     println!(
         "{}: tick {tick}, {} prims, {} groups, opened {ms:.0} ms, assets {assets_ms:.0} ms ({} images), frame {encode_ms:.2} ms, raster {raster_ms:.1} ms → {out}",
         p.doc.name,

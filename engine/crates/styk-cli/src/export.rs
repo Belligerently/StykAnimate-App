@@ -1,6 +1,6 @@
 //! `styk export`: export frames as the app's engine exports them (styk-export), natively,
-//! with timings; `--cpu` rasterizes the same draw lists with styk-raster instead, which
-//! draws no filter effects.
+//! with timings; `--cpu` rasterizes the same draw lists with styk-raster instead (the
+//! app's path where no GPU device is available).
 //!
 //!   styk export <file> <tick | first-last> <out.png | folder> [--size WxH] [--smoothing edges|none|sprites]
 //!               [--matte] [--tile N] [--cpu] [--repeat N]
@@ -138,10 +138,9 @@ fn run(path: &str, ticks: &str, out: &str, rest: &[String]) -> Result<(), String
 fn raster(doc: &styk_eval::doc::Document, frame: &styk_engine::FrameData, settings: &Settings, images: &styk_raster::Images, matte: bool) -> Result<Vec<u8>, String> {
     let [w, h] = settings.render_size();
     let tile = Tile { x: 0, y: 0, size: [w, h], valid: [w, h] };
-    let v = styk_export::view::tile_view(doc, frame.camera.as_ref(), settings, &tile);
-    let view = styk_raster::View { matrix: v.matrix, width: w, height: h, artboard: v.artboard, clip_to_artboard: true, clear: [0.0; 4], anti_alias: settings.smoothing != Smoothing::None };
-    let pixmap = styk_raster::render(&frame.list, images, &view).ok_or("cannot rasterize the frame")?;
+    let view = styk_export::view::tile_view(doc, frame.camera.as_ref(), settings, &tile);
+    let rendered = styk_raster::render(&frame.list, images, &view, [w, h], settings.smoothing.edges());
     let mut out = Vec::new();
-    styk_export::pixels::resolve(pixmap.data(), w as usize * 4, [w, h], settings.smoothing.factor(), matte, &mut out);
+    styk_export::pixels::resolve(&rendered.pixels, w as usize * 4, [w, h], settings.smoothing.factor(), matte, &mut out);
     Ok(out)
 }

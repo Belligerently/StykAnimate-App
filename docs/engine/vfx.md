@@ -123,11 +123,13 @@ So effects are view independent exactly as the editor's are: sizes are authored 
 
 Every layer is **cropped** to what can reach the screen: the drawn part of its parent, widened by its effects' sampling reach (`vfx::sampling_padding`) and two pixels. A crop keeps the pixel grid and the global coordinates, so visible pixels are those of the complete layer; a layer entirely off screen is not drawn.
 
-### Passes (`frame.rs`, `effects/executor.rs`, `effects/passes.wgsl`)
+### Passes (`frame.rs`, `effects/recipe.rs`, `effects/executor.rs`, `effects/passes.wgsl`)
 
 Layers are packed into the two isolation atlases as before (one pass per nesting depth, rounds when they overflow). Pages are at least the frame's size and grow, in 256-pixel steps, to the largest layer (an entry at the bucketed density, the camera image). Each group has a six-texel record in the group table (`effects::record`): world to atlas, page, atlas rectangle, its composite into its parent (atlas pixels to the parent's target) and the part shown.
 
-After a depth's layer passes, each filtered layer of that depth is copied into working slot 0, filtered, and copied back in place, so the next depth composites the result. The executor records each stack exactly as `VfxWebGPU.run` does: the same operations (`passes.wgsl` is the editor's WGSL with the operation as a uniform), the same slot choice, saves, three box passes per axis with downsampling on the global grid past 20 pixels, rounded or separable dilation, partial strength through the strength source, and the same uniform values in single precision. Slots are pooled at one size, so a pass uses its slot's top-left corner; sampling scales into it and clamps where the editor's exact-size textures would.
+After a depth's layer passes, each filtered layer of that depth is copied into working slot 0, filtered, and copied back in place, so the next depth composites the result. Each stack is recorded (`effects::recipe`, which needs no GPU) exactly as `VfxWebGPU.run` does: the same operations (`passes.wgsl` is the editor's WGSL with the operation as a uniform), the same slot choice, saves, three box passes per axis with downsampling on the global grid past 20 pixels, rounded or separable dilation, partial strength through the strength source, and the same uniform values in single precision. Slots are pooled at one size, so a pass uses its slot's top-left corner; sampling scales into it and clamps where the editor's exact-size textures would.
+
+The CPU rasterizer (`styk-raster`, [rendering.md](rendering.md#cpu-styk-raster)) runs the same recipes: the same plan places and crops each layer, and `styk-raster/src/effects.rs` carries out every operation of `passes.wgsl` on slots of exactly each pass's size, rounded to 8 bits per pass as the GPU's slots are.
 
 ### Memory
 
@@ -184,7 +186,7 @@ Cost: building a batch takes 0.1 to 1.6 ms on the fixtures and evaluating their 
 
 ### Adding an effect type to the renderer
 
-After its evaluation (see Changing it): add its passes to `Recorder::effect` in `effects/executor.rs`, as `VfxWebGPU.run` records them; a new operation goes into `passes.wgsl` as in the editor's shader (one more `if (operation == N)`); its padding and sampling padding come from `vfx::padding`. Add it to a document of `engine/tools/vfx-parity-docs.mjs` with non-default parameters and compare in the app.
+After its evaluation (see Changing it): add its passes to `Recorder::effect` in `effects/recipe.rs`, as `VfxWebGPU.run` records them; a new operation goes into `passes.wgsl` as in the editor's shader (one more `if (operation == N)`) and into `general` in `styk-raster/src/effects.rs` with the same arithmetic; its padding and sampling padding come from `vfx::padding`. Add it to a document of `engine/tools/vfx-parity-docs.mjs` with non-default parameters and compare in the app.
 
 ### Testing the rendering
 
@@ -260,7 +262,6 @@ The memory is bounded but the bound is large: a layer is at most 3,968 pixels on
 ### Open
 
 - Drawing cels inside effect layers are resampled bilinearly, not with Canvas 2D's high-quality smoothing (URIEL ticks 61 to 64).
-- The CPU rasterizer (`styk-raster`) does not filter and does not know the camera image group: for a frame with a scene stack it would draw the frame twice.
 - `previewRasterScale` (the editor lowering all raster densities under memory pressure) is not followed.
 - Not caused by effects, seen while measuring: the stage uploads decoded images only when it draws (8 MiB per frame) and nothing asks for another frame while images are pending, so a still frame can lack a drawing cel until the next redraw (headless: 3,606 images pending at the first capture, the cel appears once none is and the frame is drawn again); a drawing layer's onion skin past its last drawing is not drawn (tick 46).
 

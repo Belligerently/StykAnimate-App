@@ -1,14 +1,16 @@
 //! Generated effects on the CPU (`K_PARTICLE`, `K_BEAM`; docs/engine/vfx.md): each
 //! record is expanded into the same quad as the GPU's vertex shader (its corners in
-//! the draw's local units, then the draw's transform, then the view), and every pixel
-//! the quad covers is shaded at its centre by the fragment shader's arithmetic, in
-//! single precision, then blended over the target (or added, `F_ADD`).
+//! the draw's local units, then the draw's transform, then the layer's), covered by the
+//! GPU's samples, and shaded once a pixel at its centre by the fragment shader's
+//! arithmetic, in single precision, then blended over the target (or added, `F_ADD`).
 
 use styk_draw::*;
 use styk_eval::vfx::generated::atlas;
-use tiny_skia::{Mask, Pixmap, PremultipliedColorU8};
 
-use crate::Raster;
+use crate::coverage::quad;
+use crate::frame::Layer;
+use crate::shade::invert;
+use crate::target::Target;
 
 fn smooth(a: f32, b: f32, x: f32) -> f32 {
     let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
@@ -248,66 +250,46 @@ fn beam_color(p: &Prim, uv: [f32; 2], prm: [f32; 4], aa: f32, c0: [f32; 4], c1: 
     [rgb[0].min(1.0) * alpha, rgb[1].min(1.0) * alpha, rgb[2].min(1.0) * alpha, alpha]
 }
 
-impl Raster<'_> {
-    /// One generated-effect record drawn into `target`.
-    pub(crate) fn generated(&self, target: &mut Pixmap, p: &Prim, clip: Option<&Mask>) {
-        let row = |i: u32| self.list.paints.get((p.paint + i) as usize).copied().unwrap_or([0.0; 4]);
-        let (r0, r1, r2) = (row(0), row(1), row(2));
-        let s = r1[2].max(1e-12);
-        // World units per output pixel, in the draw's local units.
-        let px = (1.0 / self.scale) as f32 / s;
-        let [a, b, c, d, e, f] = self.view.matrix;
-        let to_output = |local: [f32; 2]| -> [f64; 2] {
-            let world = [(r0[0] * local[0] + r0[2] * local[1] + r1[0]) as f64, (r0[1] * local[0] + r0[3] * local[1] + r1[1]) as f64];
-            [a * world[0] + c * world[1] + e, b * world[0] + d * world[1] + f]
-        };
-        let (l00, uv00, prm) = corner(p, [0.0, 0.0], px, r2);
-        let (l10, uv10, _) = corner(p, [1.0, 0.0], px, r2);
-        let (l01, uv01, _) = corner(p, [0.0, 1.0], px, r2);
-        // The quad is the affine image of q ∈ [-1, 1]²: output(q) = o + qx·u + qy·v.
-        let o = to_output(l00);
-        let (o10, o01) = (to_output(l10), to_output(l01));
-        let (u, v) = ([o10[0] - o[0], o10[1] - o[1]], [o01[0] - o[0], o01[1] - o[1]]);
-        let det = u[0] * v[1] - u[1] * v[0];
-        if det.abs() < 1e-12 {
+/// Draws generated-effect record `p` of `list` into `target`, the pixels of `layer`, within
+/// `clip` (x0, y0, x1, y1).
+pub(crate) fn draw(list: &DrawList, p: &Prim, target: &mut Target, layer: &Layer, clip: [i64; 4], positions: &[[i64; 2]]) {
+    let row = |i: u32| list.paints.get((p.paint + i) as usize).copied().unwrap_or([0.0; 4]);
+    let (r0, r1, r2) = (row(0), row(1), row(2));
+    // The layer's pixel in the draw's local units (`px` in prim.wgsl).
+    let px = layer.aa / r1[2].max(1e-12);
+    let m = layer.m32;
+    let to_target = |local: [f32; 2]| -> [f32; 2] {
+        let world = [r0[0] * local[0] + r0[2] * local[1] + r1[0], r0[1] * local[0] + r0[3] * local[1] + r1[1]];
+        [m[0] * world[0] + m[2] * world[1] + m[4], m[1] * world[0] + m[3] * world[1] + m[5]]
+    };
+    let shaped = [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]].map(|q| corner(p, q, px, r2));
+    let corners = shaped.map(|(local, _, _)| to_target(local));
+    let prm = shaped[0].2;
+    // The quad is the affine image of q ∈ [-1, 1]²: q at a pixel centre, then uv, which the
+    // GPU interpolates affinely between the corners.
+    let (o, u, v) = (corners[0], corners[1], corners[2]);
+    let from_q = [((u[0] - o[0]) / 2.0) as f64, ((u[1] - o[1]) / 2.0) as f64, ((v[0] - o[0]) / 2.0) as f64, ((v[1] - o[1]) / 2.0) as f64, ((u[0] + v[0]) / 2.0) as f64, ((u[1] + v[1]) / 2.0) as f64];
+    if (from_q[0] * from_q[3] - from_q[1] * from_q[2]).abs() < 1e-12 {
+        return;
+    }
+    let to_q = invert(from_q);
+    let (uv0, uv1, uv2) = (shaped[0].1, shaped[1].1, shaped[2].1);
+    let beam = p.kind & 255 == K_BEAM;
+    let (c0, c1) = (row(3), row(4));
+    let additive = p.kind & F_ADD != 0;
+    let width = target.width;
+    quad(corners, clip, positions, |x, y, mask| {
+        let (cx, cy) = (x as f64 + 0.5, y as f64 + 0.5);
+        let qx = (to_q[0] * cx + to_q[2] * cy + to_q[4]) as f32;
+        let qy = (to_q[1] * cx + to_q[3] * cy + to_q[5]) as f32;
+        let (sx, sy) = ((qx + 1.0) * 0.5, (qy + 1.0) * 0.5);
+        let uv = [uv0[0] + (uv1[0] - uv0[0]) * sx + (uv2[0] - uv0[0]) * sy, uv0[1] + (uv1[1] - uv0[1]) * sx + (uv2[1] - uv0[1]) * sy];
+        let color = if beam { beam_color(p, uv, prm, px, c0, c1) } else { particle_color(p, uv, prm, r1[3]) };
+        // The fragment shader discards what it gives no alpha.
+        if color[3] <= 0.0 {
             return;
         }
-        let corners = [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [1.0, 1.0]].map(|q: [f64; 2]| [o[0] + q[0] * u[0] + q[1] * v[0], o[1] + q[0] * u[1] + q[1] * v[1]]);
-        let (w, h) = (target.width() as i64, target.height() as i64);
-        let x0 = (corners.iter().map(|q| q[0]).fold(f64::INFINITY, f64::min).floor() as i64).clamp(0, w);
-        let x1 = (corners.iter().map(|q| q[0]).fold(f64::NEG_INFINITY, f64::max).ceil() as i64).clamp(0, w);
-        let y0 = (corners.iter().map(|q| q[1]).fold(f64::INFINITY, f64::min).floor() as i64).clamp(0, h);
-        let y1 = (corners.iter().map(|q| q[1]).fold(f64::NEG_INFINITY, f64::max).ceil() as i64).clamp(0, h);
-        let (duv_x, duv_y) = ([uv10[0] - uv00[0], uv10[1] - uv00[1]], [uv01[0] - uv00[0], uv01[1] - uv00[1]]);
-        let beam = p.kind & 255 == K_BEAM;
-        let (c0, c1) = (row(3), row(4));
-        let additive = p.kind & F_ADD != 0;
-        let width = target.width() as usize;
-        let pixels = target.pixels_mut();
-        for y in y0..y1 {
-            for x in x0..x1 {
-                let (dx, dy) = (x as f64 + 0.5 - o[0], y as f64 + 0.5 - o[1]);
-                let qx = (dx * v[1] - dy * v[0]) / det;
-                let qy = (u[0] * dy - u[1] * dx) / det;
-                if qx.abs() > 1.0 || qy.abs() > 1.0 {
-                    continue;
-                }
-                let (qx, qy) = (qx as f32, qy as f32);
-                let uv = [uv00[0] + qx * duv_x[0] + qy * duv_y[0], uv00[1] + qx * duv_x[1] + qy * duv_y[1]];
-                let color = if beam { beam_color(p, uv, prm, px, c0, c1) } else { particle_color(p, uv, prm, r1[3]) };
-                let i = y as usize * width + x as usize;
-                let coverage = clip.map_or(1.0, |clip| clip.data()[i] as f32 / 255.0);
-                if color[3] <= 0.0 || coverage <= 0.0 {
-                    continue;
-                }
-                let dst = pixels[i];
-                let dst = [dst.red(), dst.green(), dst.blue(), dst.alpha()].map(|v| v as f32 / 255.0);
-                let src = color.map(|v| v * coverage);
-                let out: [f32; 4] = if additive { [0, 1, 2, 3].map(|k| (dst[k] + src[k]).min(1.0)) } else { [0, 1, 2, 3].map(|k| src[k] + dst[k] * (1.0 - src[3])) };
-                let byte = |v: f32| (v * 255.0).round().clamp(0.0, 255.0) as u8;
-                let alpha = byte(out[3]);
-                pixels[i] = PremultipliedColorU8::from_rgba(byte(out[0]).min(alpha), byte(out[1]).min(alpha), byte(out[2]).min(alpha), alpha).unwrap_or(pixels[i]);
-            }
-        }
-    }
+        target.blend(y as usize * width + x as usize, mask, color, additive);
+    });
 }
+

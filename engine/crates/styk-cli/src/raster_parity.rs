@@ -79,7 +79,8 @@ pub fn compare(a: &[u8], b: &[u8], width: usize) -> (Difference, Vec<u8>) {
     let beyond: f64 = d.iter().filter(|&&v| v > QUANTUM).map(|&v| v as f64).sum();
     let raw: f64 = d.iter().map(|&v| v as f64).sum();
     let max = d.iter().copied().max().unwrap_or(0);
-    (Difference { solid, mean: beyond / n.max(1) as f64, raw: raw / n.max(1) as f64, max }, d)
+    // (An empty sum of floats is -0: adding 0 prints it as 0.)
+    (Difference { solid, mean: beyond / n.max(1) as f64 + 0.0, raw: raw / n.max(1) as f64 + 0.0, max }, d)
 }
 
 /// Pixels differing by more than the threshold together with all eight neighbours.
@@ -113,19 +114,10 @@ fn difference_picture(b: &[u8], d: &[u8], width: usize) -> Vec<u8> {
 
 /// The CPU rasterizer's picture of `list` seen through `view`, premultiplied RGBA, and its time.
 fn cpu_frame(list: &DrawList, images: &styk_raster::Images, view: &ViewParams, size: [u32; 2], edges: Edges) -> (Vec<u8>, f64) {
-    let raster = styk_raster::View {
-        matrix: view.matrix,
-        width: size[0],
-        height: size[1],
-        artboard: view.artboard,
-        clip_to_artboard: view.clip_to_artboard,
-        clear: view.clear.map(|v| v as f32),
-        anti_alias: edges == Edges::Smooth,
-    };
     let started = clock();
-    let pixmap = styk_raster::render(list, images, &raster).expect("a frame");
+    let frame = styk_raster::render(list, images, view, size, edges);
     let ms = clock() - started;
-    (pixmap.data().to_vec(), ms)
+    (frame.pixels, ms)
 }
 
 struct Step {
@@ -173,7 +165,9 @@ fn frame_starts(doc: &styk_eval::doc::Document, ticks: u32, count: usize) -> Vec
         0 | 1 => vec![0],
         2 => vec![0, n - 1],
         3 => vec![0, n / 2, n - 1],
-        _ => vec![0, n / 4, n / 2, 3 * n / 4, n - 1],
+        4 | 5 => vec![0, n / 4, n / 2, 3 * n / 4, n - 1],
+        // More: evenly spread.
+        _ => (0..count).map(|i| i * (n - 1) / (count - 1)).collect(),
     };
     let mut list: Vec<u32> = picks.into_iter().map(|i| starts[i.min(n - 1)]).filter(|&t| t < ticks.max(1)).collect();
     list.dedup();

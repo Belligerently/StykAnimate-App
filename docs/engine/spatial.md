@@ -139,11 +139,13 @@ before: one pipeline, no depth buffer, no extra draw call.
 
 ### CPU (`styk-raster`)
 
-A run is rasterized with a depth buffer of four samples per pixel at the GPU's
-standard sample positions (one at the pixel centre for aliased exports), depths
-interpolated in double precision and compared as a 24-bit buffer stores them, then
-resolved and composited over the target. Raster entries are drawn at the output's
-density (the CPU rasterizer draws every group there).
+As on the GPU ([rendering.md](rendering.md#cpu-styk-raster)): raster entries are drawn on
+the editor's grid at its density and resampled; a run's reset sets the far depth over its
+quad; each face is drawn over the target sample by sample (four at the GPU's standard
+positions, one at the centre for crisp edges) where its window depth, interpolated exactly
+from the snapped vertices and stored at 24 bits, is not greater than what the run drew there.
+Faces nearly in one plane (a few steps of the buffer apart) can still resolve differently
+from a GPU, whose own vertex arithmetic decides them.
 
 ## Parity
 
@@ -178,10 +180,10 @@ byte-identical, 102 of them spatial (34 with a tweened 3D pose).
 
 **Renderers**: a scene with a depth run, a later record and a second run holds the GPU
 and the CPU to the same pixels (`styk-render/tests/depth.rs`, `styk-raster/tests/depth.rs`);
-the GPU test is skipped where no adapter exists. Engine GPU against engine CPU (1,200×800,
-`styk render` / `styk raster` / `styk diff`): 15 Guns tick 0 mean 0.56/255, Hand & Face
-tick 40 0.30, Vehicles tick 3 0.39, along edges: the GPU resamples raster entries as the
-editor does, the CPU draws them at the output's density (Jay on a new app, no 3D: 0.03).
+the GPU test is skipped where no adapter exists. Engine GPU against engine CPU
+(`styk raster-parity`, D13): twelve frame starts of each of the 180 3D documents pass at
+320×192 (1,244 of 1,244), 512×288 (1,242) and the canvas size (1,231), the failures solid
+pixels where near-coplanar faces meet ([rendering.md](rendering.md#measured)).
 
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13): see [Measured](#measured).
 
@@ -193,7 +195,8 @@ editor does, the CPU draws them at the output's density (Jay on a new app, no 3D
   budget, but not its raster cache: the engine draws the entry for every frame (no
   stand-ins while navigating, no retained sharper raster).
 - Invalid meshes are left out and noted where the editor refuses the file.
-- The CPU rasterizer draws raster entries at the output's density.
+- Faces nearly in one plane resolve by each renderer's last bits (on a GPU, its own vertex
+  arithmetic): the CPU rasterizer and a GPU can pick different faces there.
 - The editor lowers raster densities when a scene exceeds its preview budget
   (`previewRasterScale`); the engine does not (as for effects).
 

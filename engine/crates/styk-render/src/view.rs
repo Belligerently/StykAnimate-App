@@ -1,5 +1,6 @@
 //! How a frame maps onto its output.
 
+#[cfg(feature = "gpu")]
 use crate::resources::GpuView;
 
 /// The longest side of the camera image of scene effects in the editor's camera preview
@@ -29,6 +30,7 @@ pub struct ViewParams {
     pub camera_limit: f64,
 }
 
+#[cfg(feature = "gpu")]
 impl ViewParams {
     /// The shader's view uniform for a pass drawing into `target`; `crisp` covers shapes
     /// fully or not at all (`Edges::Crisp`).
