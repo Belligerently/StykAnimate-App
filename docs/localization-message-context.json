@@ -14709,13 +14709,13 @@
   },
   "errors.editorAnimation.aRestoredPoseNeedsAtLeastOneFrame": {
     "locations": [
-      "src/editor-animation.mjs:375"
+      "src/editor-animation.mjs:377"
     ],
     "context": "if (!Number.isInteger(duration) || duration < 1) throw messageError(new Error(''), \"errors.editorAnimation.aRestoredPoseNeedsAtLeastOneFrame\", {});"
   },
   "errors.editorAnimation.beginAPropertyEditBeforePreviewingIt": {
     "locations": [
-      "src/editor-animation.mjs:465"
+      "src/editor-animation.mjs:468"
     ],
     "context": "const edit = this._animationEdit; if (!edit) throw messageError(new Error(''), \"errors.editorAnimation.beginAPropertyEditBeforePreviewingIt\", {});"
   },
@@ -14727,7 +14727,7 @@
   },
   "errors.editorAnimation.duplicateKeysByAWholeNumberOfFrames": {
     "locations": [
-      "src/editor-animation.mjs:431"
+      "src/editor-animation.mjs:433"
     ],
     "context": "if (!Number.isInteger(deltaTick)) throw messageError(new Error(''), \"errors.editorAnimation.duplicateKeysByAWholeNumberOfFrames\", {});"
   },
@@ -14757,13 +14757,13 @@
   },
   "errors.editorAnimation.moveKeysByAWholeNumberOfFrames": {
     "locations": [
-      "src/editor-animation.mjs:403"
+      "src/editor-animation.mjs:405"
     ],
     "context": "if (!Number.isInteger(deltaTick)) throw messageError(new Error(''), \"errors.editorAnimation.moveKeysByAWholeNumberOfFrames\", {});"
   },
   "errors.editorAnimation.onlyPoseKeysCanBeHidden": {
     "locations": [
-      "src/editor-animation.mjs:347"
+      "src/editor-animation.mjs:349"
     ],
     "context": "if (channel.property !== 'pose' || typeof patch.hidden !== 'boolean') throw messageError(new Error(''), \"errors.editorAnimation.onlyPoseKeysCanBeHidden\", {});"
   },
@@ -14775,29 +14775,29 @@
   },
   "errors.editorAnimation.theAnimationKeyNoLongerExists": {
     "locations": [
-      "src/editor-animation.mjs:342",
-      "src/editor-animation.mjs:363",
-      "src/editor-animation.mjs:391",
-      "src/editor-animation.mjs:408"
+      "src/editor-animation.mjs:344",
+      "src/editor-animation.mjs:365",
+      "src/editor-animation.mjs:393",
+      "src/editor-animation.mjs:410"
     ],
     "context": "if (!key) throw messageError(new Error(''), \"errors.editorAnimation.theAnimationKeyNoLongerExists\", {});"
   },
   "errors.editorAnimation.theSelectedFigureIsNotPresentAtThis": {
     "locations": [
       "src/editor-animation.mjs:140",
-      "src/editor-animation.mjs:452"
+      "src/editor-animation.mjs:455"
     ],
     "context": "if (raw === undefined) throw messageError(new Error(''), \"errors.editorAnimation.theSelectedFigureIsNotPresentAtThis\", {});"
   },
   "errors.editorAnimation.timingScaleMustBeGreaterThanZero": {
     "locations": [
-      "src/editor-animation.mjs:385"
+      "src/editor-animation.mjs:387"
     ],
     "context": "if (!Number.isFinite(factor) || factor <= 0) throw messageError(new Error(''), \"errors.editorAnimation.timingScaleMustBeGreaterThanZero\", {});"
   },
   "errors.editorAnimation.usePoseKeysToEditALayerPose": {
     "locations": [
-      "src/editor-animation.mjs:450"
+      "src/editor-animation.mjs:452"
     ],
     "context": "if (property === 'pose') throw messageError(new Error(''), \"errors.editorAnimation.usePoseKeysToEditALayerPose\", {});"
   },

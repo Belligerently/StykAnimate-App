@@ -8,6 +8,8 @@
 
 use std::sync::Arc;
 
+mod cache;
+pub use cache::{ClipSceneCache, SceneBudget};
 
 use crate::doc::*;
 use crate::eval::Frame;
@@ -107,6 +109,17 @@ pub const ITEM_SOLID: u8 = 2;
 /// Stroke `points` as an open polyline (curved Stick Nodes segments).
 pub const ITEM_POLYLINE: u8 = 4;
 
+/// Query metadata of a segment before visible drawable/Stick Nodes expansion.
+/// Curves remain in [`Scene::points`]; a straight segment's empty range reads
+/// its existing start and this raw drawing end. No second geometry is built.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RawSegment {
+    pub drawing_end: [f64; 2],
+    pub points: (u32, u32),
+    /// The existing rig/scale-adjusted stroke width.
+    pub thickness: f64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ObjectGeometry {
     pub slot: u32,
@@ -118,6 +131,10 @@ pub struct ObjectGeometry {
     /// Handle position per segment index (NaN when unresolved).
     pub ends: Vec<[f64; 2]>,
     pub starts: Vec<[f64; 2]>,
+    /// Per segment: the scaled length resolved in the existing geometry loop,
+    /// including IK/rig derivation and invisible control segments.
+    pub lengths: Vec<f64>,
+    pub raw_segments: Vec<RawSegment>,
     pub opacity: f64,
     pub resolved: bool,
     /// What a spatial rig's joints carry besides their positions; `None` for
@@ -233,10 +250,19 @@ impl ObjectGeometry {
 
 #[derive(Clone, Debug, Default)]
 pub struct Scene {
+    /// Retained derived-buffer charge computed once by the builder. Reading it
+    /// is O(1). Shared document/figure payloads and allocator overhead are
+    /// outside this charge; resolved effects/paints are conservatively charged.
+    /// A caller changing public buffers must rebuild
+    /// this value with [`Scene::account_buffers`] before using it as a charge.
+    pub retained_bytes: usize,
     pub objects: Vec<ObjectGeometry>,
     pub items: Vec<Item>,
     pub points: Vec<[f64; 2]>,
     pub figures: Vec<Arc<Figure>>,
+    /// Per object slot: its resolved instance in [`Scene::figures`]. Kept from
+    /// the builder's existing figure table; `u32::MAX` means absent.
+    pub figure_of: Vec<u32>,
     pub camera: Option<Camera>,
     pub background: (u32, u32, f64),
     pub warnings: Vec<String>,
@@ -263,6 +289,11 @@ pub struct Scene {
 }
 
 impl Scene {
+    /// The actual styled/pose-choice figure of this object's geometry.
+    pub fn figure_for(&self, slot: usize) -> Option<&Figure> {
+        self.figures.get(*self.figure_of.get(slot)? as usize).map(|f| &**f)
+    }
+
     pub fn points_of(&self, item: &Item) -> &[[f64; 2]] {
         &self.points[item.points.0 as usize..item.points.1 as usize]
     }
@@ -285,15 +316,15 @@ pub fn arc_points(start: [f64; 2], angle: f64, length: f64, bend: f64, out: &mut
     }
     if bend.abs() < 1e-7 {
         out.push(start);
-        out.push([start[0] + length * angle.cos(), start[1] + length * angle.sin()]);
+        out.push([start[0] + length * styk_math::cos(angle), start[1] + length * styk_math::sin(angle)]);
         return;
     }
     let steps = 8f64.max(160f64.min((bend.abs() * 16.0).ceil()).min((length.abs() / 4.0).ceil())) as usize;
     let r = length / bend;
-    let (s0, c0) = angle.sin_cos();
+    let (s0, c0) = (styk_math::sin(angle), styk_math::cos(angle));
     for i in 0..=steps {
         let a = angle + (bend * i as f64) / steps as f64;
-        out.push([start[0] + r * (a.sin() - s0), start[1] + r * (c0 - a.cos())]);
+        out.push([start[0] + r * (styk_math::sin(a) - s0), start[1] + r * (c0 - styk_math::cos(a))]);
     }
 }
 
@@ -378,6 +409,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let nan = [f64::NAN, f64::NAN];
     let mut ends = vec![nan; n];
     let mut starts = vec![nan; n];
+    let mut lengths = vec![f64::NAN; n];
+    let mut raw_segments = vec![RawSegment::default(); n];
     let mut items: Vec<Item> = Vec::with_capacity(n + fig.polyfills.len());
     let mut points: Vec<[f64; 2]> = Vec::new();
     // Segment item index per segment (for polygon edges).
@@ -473,6 +506,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             _ => end,
         };
         starts[i] = start;
+        lengths[i] = length;
         let rgb = if black_override {
             if (obj.color as i32) < 0 { [0, 0, 0] } else { [(obj.color & 255) as u8, (obj.color >> 8 & 255) as u8, (obj.color >> 16 & 255) as u8] }
         } else {
@@ -526,6 +560,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             item.bend = 1e-6;
             item.flags |= ITEM_POLYLINE;
         }
+        let item = segment_items.last().unwrap();
+        raw_segments[i] = RawSegment { drawing_end: item.end, points: item.points, thickness: item.thickness };
     }
     let joint = |handle: u32| -> Option<[f64; 2]> {
         if handle == 0 {
@@ -753,7 +789,7 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             .collect()
     });
     let extent = bounds.extent();
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, opacity, resolved: true, spatial, rig, extent });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, lengths, raw_segments, opacity, resolved: true, spatial, rig, extent });
     built.items = items;
     built.points = points;
     built.meshes = meshes;
@@ -802,7 +838,7 @@ fn build_clip_mesh(frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, c
     };
     let angle = attachment.as_ref().map_or(local_angle, |a| a.figure_angle);
     let end = [root[0] + 40.0 * scale * styk_math::cos(angle), root[1] + 40.0 * scale * styk_math::sin(angle)];
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], lengths: vec![40.0 * scale], raw_segments: vec![RawSegment { drawing_end: end, ..Default::default() }], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
     let transition = match &obj.color_transition {
         Some(c) => {
@@ -865,11 +901,7 @@ pub fn clip_scene(clip: &Movieclip, local: f64) -> Arc<Scene> {
     let frame = clip.prepared.evaluate_clip(clip.source_start + local);
     let scene = Arc::new(build(&clip.document, &frame));
     let mut cache = clip.cache.lock().unwrap();
-    if cache.len() >= 64 {
-        cache.clear();
-    }
-    cache.insert(key, scene.clone());
-    scene
+    cache.publish(key, scene, &clip.document.scene_budget)
 }
 
 /// The drawing a spatial bone turns a movieclip to (`rotatedDrawing`): the view its turn and
@@ -950,7 +982,7 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
     let (a, b) = (angle.cos() * scale, angle.sin() * scale);
     let end = [root[0] + 40.0 * angle.cos() * scale, root[1] + 40.0 * angle.sin() * scale];
     let opacity = 1.0 - obj.transparency / 255.0;
-    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
+    let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends: vec![end], starts: vec![root], lengths: vec![40.0 * scale], raw_segments: vec![RawSegment { drawing_end: end, ..Default::default() }], opacity, resolved: true, spatial: None, rig: None, extent: handle_extent(root, end) });
     let Some(local) = obj.clip_time else { return built };
     // A rotated drawing shows the frame its bone selects, whatever the clip's own time.
     let local = drawing.as_ref().map_or(local, |d| d.frame);
@@ -1162,9 +1194,12 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
     scene.items.reserve(total_items);
     scene.points.reserve(total_points);
     for &slot in &frame.draw_order {
-        let Some(b) = built[slot as usize].take() else { continue };
+        let Some(mut b) = built[slot as usize].take() else { continue };
         let base = scene.points.len() as u32;
         scene.points.extend_from_slice(&b.points);
+        for raw in &mut b.geometry.raw_segments {
+            raw.points = (raw.points.0 + base, raw.points.1 + base);
+        }
         // Movieclip content brings its own figures, owners and chains.
         let figure_map: Vec<u32> = b
             .figures
@@ -1211,5 +1246,7 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
         }
         scene.objects[slot as usize] = b.geometry;
     }
+    scene.figure_of = fig_of;
+    scene.account_buffers();
     scene
 }

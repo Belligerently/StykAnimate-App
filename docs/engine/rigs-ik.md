@@ -11,6 +11,13 @@ How the Rust engine (`engine/crates/styk-eval`) evaluates IK, and where it meets
 
 ## Modules
 
+Origin editing uses the shared raw nested validator
+`styk_eval::rig::validate_2d(&Value) -> Result<(), &'static str>` before constructing
+typed rig plans. It preserves compiler dependency order, reference/range/bool/cycle
+checks, accepted unknown metadata, and inactive null/false/zero connector values.
+The origin fixtures record 102 malformed refusals plus 27 accepted cases; a refusal
+preserves an already-open drag, document, counters and history.
+
 | Module (`src/ik/`) | Holds | JavaScript |
 | --- | --- | --- |
 | `mod.rs` | `Table`, `Controller`, `Target`, `BendReference`, `SpatialTarget`, `solve_local`, V8's `hypot` | `src/ik.mjs` |

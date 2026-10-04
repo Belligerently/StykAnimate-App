@@ -551,7 +551,7 @@ impl<T> Latest<T> {
 mod tests {
     #[test]
     fn cold_late_dense_queries_do_not_publish_samples_or_shapes() {
-        let mut tree = styk_doc::json::parse(include_bytes!("../tests/fixtures/eval/follow-figures.json")).unwrap();
+        let mut tree = styk_doc::json::parse(&std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/eval/follow-figures.json")).unwrap()).unwrap();
         let figures = tree.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap();
         for figure in figures {
             let object = figure.make_obj().unwrap();

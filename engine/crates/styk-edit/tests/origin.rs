@@ -27,7 +27,7 @@ fn unproven_origin_commands_refuse_atomically_during_a_gesture() {
     editor.call("beginTranslationDrag", &[]).unwrap();
     editor.call("moveSelection", &[styk_doc::Value::Num(4.0), styk_doc::Value::Num(-2.0)]).unwrap();
     let before = (editor.report_json(), editor.state());
-    for method in ["applyFigureRange", "moveSelectionInFrames", "beginMotionPathEdit", "joinTo", "duplicateFigure", "deleteSelection"] {
+    for method in ["applyFigureRange", "moveSelectionInFrames", "beginMotionPathEdit", "duplicateFigure", "deleteSelection"] {
         assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))), "{method}");
         assert_eq!((editor.report_json(), editor.state()), before, "{method} changed state on refusal");
     }

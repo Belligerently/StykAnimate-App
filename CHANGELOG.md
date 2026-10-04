@@ -31,6 +31,7 @@ What's new in each version of StykAnimate.
 - Fixed blur, glow and outlines losing fine brush detail on drawing layers.
 - Fixed errors when adjusting motion paths on joined figures.
 - Failed attempts to draw a new figure keep the project unchanged.
+- Fixed an inspector error when viewing between frames.
 
 ### Performance
 

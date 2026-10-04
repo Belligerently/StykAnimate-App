@@ -1158,3 +1158,9 @@ await import('./edit-scenarios-sprite-segment.mjs');
 await import('./edit-scenarios-draw-capacity.mjs');
 
 await import('./edit-scenarios-draw-new-figure.mjs');
+await import('./edit-scenarios-origin-range.mjs');
+await import('./edit-scenarios-origin-join.mjs');
+await import('./edit-scenarios-origin-rig.mjs');
+await import('./edit-scenarios-origin-rig-pose.mjs');
+await import('./edit-scenarios-origin-rig-inactive.mjs');
+await import('./origin-rig-invalid-fixtures.mjs');

@@ -86,6 +86,32 @@ worker readiness/publication remains required. No class gate, deletion or perfor
 Mobile API notes: additive `styk_math::log`, `Prepared::travel_ready`, `Pose::shot`,
 `CommandKind::FigureSplice`; browser-only `math_log` export stays in `styk-wasm`.
 
+Origin range/join and constrained 2D rig work is integrated: 63 new recordings / 9,764
+exact steps plus 63 derived groups / 647 exact ticks (126 JSON). There are now 358
+command recordings and 283 evaluated-record groups / 3,234 ticks. Shared-type validation
+passes 431 Rust tests; final focused edit/eval checks after marquee/read corrections
+pass 178 tests. All 93 affected replays match 12,050 steps and regenerate byte-stable;
+190 origin inputs, 66 handle/body/snap inputs and 22 bounds inputs also stay unchanged.
+JavaScript checks pass 137 focused tests and 1,987 syntax checks. The inspector reads
+fractional ticks without errors while whole keyframe writes/begins remain strict.
+App range and rig drivers compare 14 + 10 calls exactly with no page errors; no adoption
+or cost claim. Engine wasm is 8,881 KiB (SHA `aaae85f3e3a8`). Electron and default software
+web each pass 12/12 whole-tick stored/preview/onion/curved pictures, zero solids.
+Fractional camera preview remains open: tick 3.5 produces precisely the engine pixels
+of tick 3 (4,004 solid differences against the editor, mean 1.8362). Its integer playback
+binding and stage/cache owners are unchanged from `e5dbda24`; edit-frame tick 3.5 passes.
+Hardware-opt-in web captured an empty engine canvas (0/9); this is retained as failed
+evidence, not certified coverage. No class gate, deletion or threshold change.
+
+Prepared native picking/snapping and measured-bounds marquee queries borrow existing
+ready geometry; app actual-shown/resource/order preparation remains pending. Movieclip
+scene cache reservations bound retention across one Loader lineage (64 MiB/1,024
+entries) as well as each clip (64 scenes/64 MiB); this is not a whole-process memory bound.
+Mobile crate API notes: `CommandKind::Frame`; `rig::validate_2d`; public picking types,
+functions and `geometry::RawSegment`/`SceneBudget`; `Document::scene_budget`,
+`Loader::with_scene_limits`/`scene_budget`, `Scene::figure_of`/`retained_bytes`,
+`ObjectGeometry::lengths`/`raw_segments`, `Segment::control_detail`. All are platform neutral.
+
 ### Where the port stands
 
 | Stage | State |
@@ -95,7 +121,7 @@ Mobile API notes: additive `styk_math::log`, `Prepared::travel_ready`, `Pose::sh
 | S2 store, evaluation, geometry | Done for every feature the gate checks: IK (2D, 3D, joined), channels, meshes, follow camera, text, movieclip replacements, effects as records. Camera motion now uses V8-exact maths. |
 | S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Drawing cels under effects now match Electron; software web and crisp parity remain open. Left: the camera monitor on WebGL2, in-between previews, then item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
 | S4 export, thumbnails, previews | Done for documents the engine draws, on the GPU or the CPU; SVG stays JavaScript by design. |
-| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 295 command recordings include 45 newly admitted exact replays and four explicit builder/native-channel guard cases. Origins admit recorded whole-figure, joint/handle, topology and saved transform-channel calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
+| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 358 command recordings include the 63 new exact range/join/2D-rig replays and four existing explicit builder/native-channel guards. Origins admit recorded whole/joint/handle/topology/saved-channel/range/join/2D-rig calls; other families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
 | S6 drawing raster engine | Done: `styk-drawing` (D17) runs in the drawing workers by default (`?drawingEngine=off` to compare). |
 | S7 | Not started: dead machinery, final screenshots, interleaved benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, Windows CI. |
 
@@ -126,8 +152,9 @@ without owning.
 2. **Finish animation-origin editing.** Records, whole-figure synchronization, local
    offsets, support rotation/reflection/reset, Set Origin and recorded topology now match.
    Joint/handle and saved x/y/scale/rotation channel recordings now match, including shown
-   frames and future target/ancestor guards. Next: ranges, joins, motion paths and complex
-   rig/pose-choice/spatial combinations. Every admitted command needs its own
+   frames and future target/ancestor guards. Ranges/joins and recorded 2D rig combinations
+   now match. Next: optional selection metadata, native scalar authoring, motion paths
+   and complex rig/pose-choice/spatial combinations. Every admitted command needs its own
    recorded replay and app comparison; class ownership remains closed. Isolated lanes
    coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
@@ -175,12 +202,12 @@ without owning.
 | Branch / worktree | State |
 | --- | --- |
 | `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
-| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Earlier record/pose/channel slices integrated; range/join and constrained rig-pose snapshots reviewed. Shared strict rig validation and optional selection metadata active; the isolated worktree was moved with all 7,980 entries/hash/link/status checks preserved to avoid tmpfs quota. |
-| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption integrated; effects, worker layer planning, corrected sheet kernel and history budgets reviewed. Warm-history readiness and prepared publication reviewed; native migration history active. |
-| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands and Break Apart reviewed; sheet extension frozen, native insertion/extension active. |
-| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping queries and per-clip cache reviewed; aggregate lineage cache budget active. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting reviewed, canonical ACK receiver/cancellation and transaction budgets active. No early gate flips. |
-| `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera group reviewed; origin range/rig/pose and strict-validation corrections merged in isolation for focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
+| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Record/pose/channel/range/join/2D-rig and strict nested validation integrated. Optional selection metadata frozen; native scalar-channel lifecycle active; the isolated worktree was moved with all 7,980 entries/hash/link/status checks preserved to avoid tmpfs quota. |
+| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Compact responses/adoption integrated; effects, worker layer planning, corrected sheet kernel and history budgets reviewed. Warm-history readiness and prepared publication reviewed; native migration frozen/independently reviewed; raw selection-guard correction frozen. Canonical worker Session implementation active. |
+| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source/source-clock/generator, sheet/native commands, joined crop oracle fix, native membership/timing and timed-sheet worker planners reviewed; sequential timed-sheet commands and Break Apart reviewed; sheet extension reviewed; native extension and insertion oracle fix under review, with an import-error-priority correction required. |
+| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query frozen; independent layer/movie review active. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver reviewed. Atomic paired publication/retirement and shared-lock allocator corrections frozen for review; fractional prepared playback still open. No early gate flips. |
+| `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera/origin range/rig/pose and strict-validation preparation integrated into main after review/focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
 | `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
 `main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
@@ -206,7 +233,7 @@ Those unit tests now read the same fixtures at runtime, like the replay tests. A
 regeneration, the affected release unit target is fresh in 0.05 s (previous unnecessary
 relink 65 s). Dependencies were cached; source changes legitimately relink release
 binaries with thin LTO, and single-crate versus full-workspace feature graphs keep
-distinct cached artifacts. The new logarithm binary fixture likewise reads at runtime; its release target remains fresh in 0.04 s after identical regeneration. No target was cleaned and parity flags/profile are unchanged.
+distinct cached artifacts. The new logarithm binary fixture likewise reads at runtime; its release target remains fresh in 0.04 s after identical regeneration. The new origin rig fixtures and follow cold-path test likewise read at runtime; no generated fixture is embedded in a Rust test binary. After all affected regeneration, both edit/eval unit targets remain fresh (0.11 s, debug). No target was cleaned and parity flags/profile are unchanged.
 
 - The user explicitly superseded the original two-subagent cap during takeover: use all
   available slots for independent, bounded work (currently five child lanes plus root).
@@ -436,6 +463,15 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
+- **Fractional prepared playback and hardware-headless capture:** stored/edit views at
+  tick 3.5 match, but the existing prepared-playback API takes `u32`; a fractional camera
+  preview is silently drawn at tick 3. Its pixels are exactly the whole-tick preview's,
+  failing D13 by 4,004 solid pixels / mean 1.8362 on the recorded origin rig. Stage,
+  playback binding and cache owners are byte-identical to `e5dbda24`. Preserve one bounded
+  cache and prepare exact fractional views on workers before renderer deletion. Separately,
+  hardware-opt-in headless web returned an empty engine canvas for all nine rig views;
+  default software web and Electron each pass all 12 affected pictures. No threshold change.
+
 - **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
   `node engine/tools/gate-census.mjs` (2026-10-03, the gate itself on each file loaded as
   the app loads it): of 382 native documents (the asset catalogue, the private corpus and
@@ -499,7 +535,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   own keyframes where the editor samples its retained source (`movieclipSource`); the follow
   camera reshapes its whole path on every revision where the editor resamples incrementally
   (edit frames use the committed path); records (`styk_eval::records`) now match animation origins, but editing remains limited to
-  recorded whole-figure, topology, joint/handle and saved transform-channel families until the remaining command replays land; onion-skin ghosts get no
+  recorded whole-figure, topology, joint/handle, saved transform-channel, range/join and constrained 2D-rig families until remaining command replays land; onion-skin ghosts get no
   parallax (the editor never shows onion skins with the camera on).
 - **Captions**: text is drawn as the WebGPU renderer draws it ([rendering.md](engine/rendering.md#text)).
   One step still fails: 15 Guns tick 0 (mean 0.294, its cover page), because Chromium's
@@ -534,8 +570,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   bounds callbacks still run in the editor until the canonical worker query is connected.
   Follow UI sessions refuse cold ticks/revisions instead of evaluating them on the interface
   thread; native bake replays do not certify UI admission. Still unported in `styk-edit`:
-  origin ranges/joins and complex definitions
-  (whole-figure/joint/handle gestures, saved transform channels, `setOrigin` and recorded support/topology repair now match),
+  unrecorded complex origin definitions and motion-path/pose-choice/spatial combinations
+  (range/join and recorded 2D-rig calls now match alongside whole/joint/handle/saved-channel/topology families),
   creating, splitting, making unique, breaking apart and placing movieclips, effect presets
   and scopes with attached parts, centring the camera and aligning figures (the app passes a
   bounds function), the asynchronous layer commands (D7), in-betweens (native timelines
@@ -788,6 +824,24 @@ capture because the temporary path exceeded Chromium’s socket limit; the succe
 retry used the short root-disk `tmp/root-tmp`. Engine wasm 8,845 KiB (+121 KiB);
 check passes 1,986 JavaScript files. No gate, threshold or benchmark claim.
 
+**Origin range/rig and native query prerequisites** (2026-10-04): 431 workspace Rust
+checks pass for shared types; final focused edit/eval checks pass 178 tests after the
+marquee and fractional-read corrections. All 93 affected replays match 12,050 steps
+and regenerate unchanged, including 63 new recordings / 9,764 steps. Their 63 derived
+groups / 647 ticks are committed; total evaluated coverage is 283 groups / 3,234 ticks.
+All 190 origin generator files, 66 handle/body/snap inputs and 22 bounds inputs remain
+byte-stable. Query evidence includes 817 handles, 79,021 handle-pick/origin-marquee queries,
+51,120 body picks, 20,256 nearest picks, 6,003 snaps and 5,490 explicit bounds predicates;
+source app filtering/order is recorded. Native cache tests cover nested clips, concurrent
+admission, saturation, late revisions, cancellation and lifetime release. App exact range
+14/14 and rig 10/10 calls pass without page errors; costs are loaded-machine observations
+and do not open D15 adoption. All 137 focused JS tests, build and check (1,987 files) pass.
+Electron pictures 12/12 (mean 0.0087–0.0978), default software web 12/12 (0.0111–0.0795),
+zero solids; one rendered rig preview inspected. The added fractional preview probe fails
+1/6: preview3.5 equals engine preview3 byte for byte while edit3.5 passes. Its unchanged
+integer cache/binding path remains open. Hardware-opt-in web 0/9 captures an empty engine
+canvas. Failures remain recorded separately. Engine wasm 8,881 KiB; no gate/threshold change.
+
 ## 8. Work queue
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
@@ -813,7 +867,7 @@ effect executors are deleted):
    recorded saved origin x/y/scale/rotation editing matches, including future target and ancestor guards; unrecorded channel combinations remain gated.
 5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
    transitions, Stick Nodes sprites, frame drafts, retained movieclip sources,
-   `runtime_segments` fallbacks.
+   `runtime_segments` fallbacks; exact fractional prepared playback remains required.
 6. Every other drawing path through the engine: thumbnails, library previews, the camera
    monitor, the drawing workspace (live strokes), export frames (S4).
 7. A CPU rasterizer for exports, thumbnails and devices without WebGPU or WebGL2: done
@@ -966,6 +1020,8 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 14:05 | Preserve release test cache through regeneration | Origin atomic-refusal unit tests read their identical editor-built fixtures at runtime instead of embedding regenerated JSON into the test binary. No production behavior, crate API, parity profile, threshold or gate change. | Cargo fingerprint proves the original mtime trigger; two affected tests pass. Actual guard-fixture regeneration changes no tracked bytes, then the release unit build is fresh in 0.05 s with both tests passing (previous redundant rebuild 65 s). npm check passes; full parity is reserved for checkpoints under the new policy. |
 
 | 2026-10-04 14:38 | S5 camera, measured bounds and remaining builder prerequisites | V8-exact follow logarithms and cached native follow reads/bakes; joined spatial IK, branch thickness, native-property tokens, sprite insertion and library/new-figure history match recorded native/sheet commands. Measured app bounds cross the shadow boundary once. Fix joined pinned motion-path errors and atomic identity-capacity refusal in the editor oracle. Mobile pin API additions: `styk_math::log`, `Prepared::travel_ready`, `Pose::shot`, `CommandKind::FigureSplice`; browser-only `math_log` stays in `styk-wasm`. Engine wasm 8,845 KiB (+121 KiB). | 393 Rust tests, 43 affected JS tests, build and check (1,986 files) pass; 140 fixture inputs and 49 recordings regenerate unchanged. The 45 admitted recordings match 1,290 steps; four origin/native-channel guards remain explicit. Include 82 derived JSON / 41 groups / 362 exact ticks. App: joined paths 1 adopted + 11 exact, bounds 8 exact, capacity 2 exact; document/history/selection/full undo preserved. Electron stored/preview/onion pictures 9/9, mean 0.0553–0.0884, zero solids. Strict follow adoption remains open at cold revision/tick D7 guards; broad software driver stopped without a result. No class flip, deletion or performance claim. Log fixture regeneration leaves release test fresh in 0.04 s. |
+
+| 2026-10-04 15:27 | S5 origin ranges, joins and constrained rigs; native query prerequisites | Origin range/join/2D rig synchronization and strict nested validation preserve live gestures, raw support and history. Borrowed handle/body/snapping/marquee queries and existing movieclip scene cache reservations share one prepared geometry owner. Fix fractional inspector reads while keyframe writes/begins remain whole-tick. Mobile pin API: `CommandKind::Frame`, `rig::validate_2d`, public picking/`RawSegment`/`SceneBudget`, scene-budget and prepared-geometry fields/methods (details above). Engine wasm 8,881 KiB (+36 KiB). No document-class flip, deletion or adoption claim. | Shared-type workspace validation 431 Rust tests; final focused edit/eval 178 tests and 137 JS tests pass, check 1,987 files. All 93 affected recordings match 12,050 steps, including 63 new / 9,764; regeneration is byte-stable for these recordings, 190 origin inputs, 66 picking inputs and 22 bounds inputs. Add 126 evaluated JSON / 63 groups / 647 ticks. App range 14 and rig 10 exact calls, no page errors. Electron 12/12 and default software web 12/12 pictures pass, zero solids. Fractional preview 3.5 is incorrectly prepared as tick 3; hardware-opt-in web captures an empty canvas. Both failures remain open with evidence. Runtime fixture reads keep regenerated edit/eval test targets fresh (0.11 s debug). |
 
 Work is active in the isolated lanes listed in the handoff. Frozen uncommitted snapshots
 are review inputs, not completed milestones or class ownership evidence.

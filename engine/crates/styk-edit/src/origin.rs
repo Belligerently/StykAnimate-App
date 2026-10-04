@@ -8,7 +8,7 @@ use crate::record::{num, uid};
 use crate::{EditError, Editor};
 
 pub(crate) fn recorded_call(method: &str) -> bool {
-    posing_call(method) || property_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
+    posing_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
         "commitDrag" | "cancelDrag" | "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" |
         "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" | "setOrigin" | "mirrorSegment" | "mirrorSegmentBranch" | "splitSegment" | "splitSegmentBranch" | "splitBuilderSegments" | "unsplitSegment" |
         "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
@@ -19,14 +19,28 @@ pub(crate) fn property_call(method: &str) -> bool {
 }
 
 pub(crate) fn recorded_channel_call(method: &str) -> bool {
-    property_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
+    property_call(method) || range_call(method) || rig_tool_call(method) || rig_pose_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" | "commitDrag" | "cancelDrag" |
         "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" | "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" |
         "poseJoint" | "rotateJoint" | "bendJoint" | "undo" | "redo")
+}
+
+pub(crate) fn range_call(method: &str) -> bool {
+    matches!(method, "rotateFiguresInFrames" | "mirrorFiguresInFrames" | "scaleFiguresInFrames" | "resetPoseInFrames" | "centerFiguresInFrames" |
+        "detachFiguresInFrames" | "joinFiguresInFrames" | "moveSelectionInFrames" | "joinTo" | "unjoinFigure" | "joinFigure")
 }
 
 pub(crate) fn posing_call(method: &str) -> bool {
     matches!(method, "poseJoint" | "rotateJoint" | "bendJoint" | "beginHandleEditDrag" | "editHandlePosition" | "commitHandleEditDrag" | "cancelHandleEditDrag" |
         "beginFigureHandleDrag" | "transformFigureHandle" | "commitFigureHandleDrag" | "cancelFigureHandleDrag")
+}
+
+pub(crate) fn rig_tool_call(method: &str) -> bool {
+    matches!(method, "beginRigDrag" | "editRigJoint" | "commitRigDrag" | "cancelRigDrag")
+}
+
+pub(crate) fn rig_pose_call(method: &str) -> bool {
+    matches!(method, "poseJoint" | "rotateJoint" | "bendJoint" | "beginFigureHandleDrag" | "transformFigureHandle" | "commitFigureHandleDrag" | "cancelFigureHandleDrag" |
+        "slideConnector" | "setConnectorPosition")
 }
 
 fn same_pose(a: &Value, b: &Value) -> bool {
@@ -94,6 +108,33 @@ impl Editor {
         self.origin_plain_targets(&self.selection.uids)
     }
 
+    /// The Rig tool's recorded 2D lifecycle reuses pose admission
+    /// and the topology owner's typed origin validation before starting a gesture.
+    pub(crate) fn origin_rig_gate(&self) -> Result<(), EditError> {
+        self.origin_rig_pose_gate("beginRigDrag", false)?;
+        for object in self.selected_objects()? {
+            if let Some(figure) = self.figure_of(&object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some()) {
+                self.origin_figure(&figure)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Recorded 2D stretch/follow/world-lock/connector definitions use the same
+    /// pose owners; other rig relationships and rig/IK combinations stay refused.
+    pub(crate) fn origin_rig_pose_gate(&self, method: &str, saved_channels: bool) -> Result<(), EditError> {
+        let objects = self.selection_frame()?;
+        let slots = Self::ik_pose_slots(&objects, crate::select::resolve_join_selection(&objects, &self.selection.uids, false)?);
+        let has_rig = self.origin_plain_slots_with_rig(&objects, &slots, true)?;
+        if has_rig && slots.iter().any(|&slot| objects[slot].get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| !controllers.is_empty())) {
+            return Err(EditError::Unported("an unrecorded animation-origin rig with IK controllers".into()));
+        }
+        if !has_rig && saved_channels && matches!(method, "beginFigureHandleDrag" | "transformFigureHandle" | "commitFigureHandleDrag" | "cancelFigureHandleDrag") {
+            return Err(EditError::Unported("an unrecorded saved-origin channel figure-handle gesture without a 2D rig".into()));
+        }
+        Ok(())
+    }
+
     /// The recorded sheet property subset, validated before a property begin
     /// could commit a live gesture. Other targets/properties stay with the editor.
     pub(crate) fn origin_property_gate(&self, method: &str, args: &[Value]) -> Result<(), EditError> {
@@ -140,16 +181,60 @@ impl Editor {
 
     fn origin_plain_targets_in(&self, objects: &[Value], uids: &[u32], ancestors: bool) -> Result<(), EditError> {
         let slots = Self::ik_pose_slots(objects, crate::select::resolve_join_selection(objects, uids, ancestors)?);
-        for slot in slots {
+        self.origin_plain_slots_in(objects, &slots)
+    }
+
+    fn origin_plain_slots_in(&self, objects: &[Value], slots: &[usize]) -> Result<(), EditError> {
+        self.origin_plain_slots_with_rig(objects, slots, false).map(|_| ())
+    }
+
+    fn origin_plain_slots_with_rig(&self, objects: &[Value], slots: &[usize], allow_rig: bool) -> Result<bool, EditError> {
+        let mut has_rig = false;
+        let mut validated = std::collections::HashSet::new();
+        for &slot in slots {
             let object = &objects[slot];
             let figure = self.report.get("figure_types").and_then(Value::elements).and_then(|figures| figures.iter().find(|figure| num(figure, "figure_type_id") == num(object, "figure_type_id")));
-            let complex = figure.is_some_and(|figure|
+            let mut figure_has_rig = false;
+            let complex = figure.as_ref().is_some_and(|figure|
                 ["poseChoices", "spatialMesh", "movieclip", "drawing"].iter().any(|key| figure.path(&["_styk", key]).is_some_and(Value::truthy)) ||
-                figure.get("segments").and_then(Value::elements).is_some_and(|segments| segments.iter().any(|segment|
-                    ["_stykRig", "_stykPoseChoice"].iter().any(|key| segment.get(key).is_some_and(Value::truthy))))) ||
+                figure.get("segments").and_then(Value::elements).is_some_and(|segments| segments.iter().any(|segment| {
+                    let rig = segment.get("_stykRig").filter(|rig| rig.truthy());
+                    figure_has_rig |= rig.is_some();
+                    has_rig |= rig.is_some();
+                    let unrecorded = rig.is_some_and(|rig| !allow_rig || !rig.as_obj().is_some_and(|rig| !rig.is_empty() &&
+                        rig.keys().all(|key| ["stretch", "follow", "angleLock", "connector"].contains(&key.as_ref())) &&
+                        rig.get("follow").is_none_or(|follow| follow.get("mode").and_then(Value::as_str) == Some("stretch")) &&
+                        rig.get("angleLock").is_none_or(|lock| lock.get("mode").and_then(Value::as_str) == Some("world"))));
+                    unrecorded || segment.get("_stykPoseChoice").is_some_and(Value::truthy)
+                }))) ||
                 object.get("_stykSpatial").is_some_and(Value::truthy) ||
                 object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| controllers.iter().any(|(_, controller)| controller.get("spatialTarget").is_some_and(Value::truthy)));
             if complex { return Err(EditError::Unported("origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition".into())); }
+            if allow_rig && figure_has_rig && let Some(figure) = figure
+                && validated.insert(num(&figure, "figure_type_id").unwrap_or(f64::NAN).to_bits())
+            {
+                styk_eval::rig::validate_2d(&figure).map_err(|error| EditError::Unported(format!("an animation-origin rig unavailable for editing: {error}")))?;
+            }
+        }
+        Ok(has_rig)
+    }
+
+    /// Range admission follows the actual planned frame, including attachments and
+    /// a join destination. IK combinations stay refused until range recordings prove them.
+    pub(crate) fn origin_range_gate(&self, objects: &[Value], uids: &[u32], target: Option<u32>) -> Result<(), EditError> {
+        let mut affected = uids.to_vec();
+        if let Some(target) = target { affected.push(target); }
+        let slots = crate::select::resolve_join_selection(objects, &affected, true)
+            .map_err(|_| EditError::Unported("an unrecorded invalid animation-origin range hierarchy".into()))?;
+        self.origin_plain_slots_in(objects, &slots)?;
+        for slot in slots {
+            let object = &objects[slot];
+            if object.get("_stykIK").and_then(Value::as_obj).is_some_and(|controllers| !controllers.is_empty()) {
+                return Err(EditError::Unported("an unrecorded animation-origin range with IK controllers".into()));
+            }
+            if let Some(figure) = self.figure_of(object).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+                self.origin_figure(&figure)?;
+            }
         }
         Ok(())
     }
@@ -198,19 +283,44 @@ impl Editor {
         object.set("_stykAnimationOrigin", Value::object(origin)); Ok(())
     }
 
+    pub(crate) fn mirror_origin_support(&self, figure: &Value, source: &Value, object: &mut Obj, horizontal: bool) -> Result<(), EditError> {
+        let previous = self.origin_rotation(figure, source)?;
+        mirror_support(figure, object, horizontal);
+        self.reflect_origin_offset(figure, object, horizontal, previous)
+    }
+
     /// `touch` and both commit paths synchronize only the gesture's captured poses.
     /// Pointer return preserves the exact original pivot metadata instead of rounding it again.
     pub(crate) fn synchronize_origins(&mut self, before: &[Value]) -> Result<(), EditError> {
+        for (slot, updated) in self.origin_updates(&self.frame_objects(), before, false)? {
+            self.frame_object_mut(slot).unwrap().set("_stykAnimationOrigin", updated);
+        }
+        Ok(())
+    }
+
+    /// The same synchronization owner for independently planned range frames.
+    pub(crate) fn synchronize_origin_frame(&self, frame: &mut Value, before: &[Value], include_new: bool) -> Result<(), EditError> {
+        let updates = self.origin_updates(&crate::frame::objects_of(frame), before, include_new)?;
+        if !updates.is_empty() {
+            let objects = frame.make_obj().and_then(|frame| frame.get_mut("objects")).and_then(Value::make_arr)
+                .ok_or_else(|| EditError::Invalid("an origin frame without objects".into()))?;
+            for (slot, updated) in updates { objects[slot].make_obj().unwrap().set("_stykAnimationOrigin", updated); }
+        }
+        Ok(())
+    }
+
+    fn origin_updates(&self, objects: &[Value], before: &[Value], include_new: bool) -> Result<Vec<(usize, Value)>, EditError> {
         let figures: HashMap<u32, Value> = self.report.get("figure_types").and_then(Value::elements).map(|items| items.iter()
             .filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy))
             .filter_map(|figure| Some((num(&figure, "figure_type_id")? as u32, figure))).collect()).unwrap_or_default();
-        if figures.is_empty() { return Ok(()); }
+        if figures.is_empty() { return Ok(Vec::new()); }
+        let mut updates = Vec::new();
         let previous: HashMap<u32, &Value> = before.iter().filter_map(|object| Some((uid(object)?, object))).collect();
-        for (slot, object) in self.frame_objects().iter().enumerate() {
+        for (slot, object) in objects.iter().enumerate() {
             let Some(figure) = num(object, "figure_type_id").and_then(|id| figures.get(&(id as u32))) else { continue };
             let Some(origin) = object.get("_stykAnimationOrigin").and_then(Value::as_obj) else { continue };
             let old = uid(object).and_then(|id| previous.get(&id)).copied();
-            if !before.is_empty() && old.is_none() { continue; }
+            if !before.is_empty() && old.is_none() && !include_new { continue; }
             let updated = if let Some(old) = old.filter(|old| same_pose(old, object)) {
                 if ["x", "y", "offsetX", "offsetY"].iter().all(|field| old.path(&["_stykAnimationOrigin", field]) == origin.get(field)) { continue; }
                 let Some(origin) = old.get("_stykAnimationOrigin").cloned() else { continue }; origin
@@ -222,15 +332,111 @@ impl Editor {
                 origin.set("y", Value::Num(num(object, "root_y").unwrap_or(f64::NAN) + offset[1]));
                 Value::object(origin)
             };
-            self.frame_object_mut(slot).unwrap().set("_stykAnimationOrigin", updated);
+            updates.push((slot, updated));
         }
-        Ok(())
+        Ok(updates)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture_bytes(name: &str) -> Vec<u8> {
+        std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit").join(name)).unwrap()
+    }
+
+    #[test]
+    fn unrecorded_rig_relationships_and_ik_refuse_before_committing_a_drag() {
+        let bytes = fixture_bytes("origin-rig-pose-support-sheet.document.json");
+        let mut refused = 0;
+        for feature in ["spatial", "weighted", "anglePath", "futureRelationship", "follow-mode", "angle-lock-mode", "ik"] {
+            let mut editor = Editor::new(styk_doc::json::parse(&bytes).unwrap(), crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
+            editor.call("select", &[Value::Num(1.0), Value::Num(2.0)]).unwrap();
+            editor.call("beginTranslationDrag", &[]).unwrap();
+            editor.call("moveSelection", &[Value::Num(5.125), Value::Num(-2.75)]).unwrap();
+            let figure = editor.report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[0].make_obj().unwrap();
+            let segments = figure.get_mut("segments").unwrap().make_arr().unwrap();
+            match feature {
+                "ik" => {
+                    let mut controllers = Obj::new();controllers.set("66", Value::object(Obj::new()));
+                    editor.authored.as_mut().unwrap().frame.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[0].make_obj().unwrap().set("_stykIK", Value::object(controllers));
+                }
+                "follow-mode" | "angle-lock-mode" => {
+                    let field = if feature == "follow-mode" { "follow" } else { "angleLock" };
+                    let rig = segments.iter_mut().find_map(|segment| segment.make_obj()?.get_mut("_stykRig")?.make_obj().filter(|rig| rig.get(field).is_some())).unwrap();
+                    rig.get_mut(field).unwrap().make_obj().unwrap().set("mode", Value::str("unrecorded"));
+                }
+                _ => {
+                    let rig = segments.iter_mut().find_map(|segment| segment.make_obj()?.get_mut("_stykRig")?.make_obj()).unwrap();
+                    rig.set(feature, Value::Bool(true));
+                }
+            }
+            editor.take_events();
+            let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
+            let before = snapshot(&editor);
+            for (method, args) in [("poseJoint", vec![Value::Num(400.25), Value::Num(200.125)]), ("rotateJoint", vec![Value::Num(0.17)]), ("bendJoint", vec![Value::Num(400.25), Value::Num(200.125)]),
+                ("beginFigureHandleDrag", vec![]), ("transformFigureHandle", vec![Value::Num(400.25), Value::Num(200.125)]), ("commitFigureHandleDrag", vec![]), ("cancelFigureHandleDrag", vec![]),
+                ("beginRigDrag", vec![]), ("editRigJoint", vec![Value::Num(400.25), Value::Num(200.125)]), ("commitRigDrag", vec![]), ("cancelRigDrag", vec![]), ("slideConnector", vec![Value::Num(400.25), Value::Num(200.125)]), ("setConnectorPosition", vec![Value::Num(0.65)])] {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| editor.call(method, &args)));
+                assert!(matches!(result, Ok(Err(EditError::Unported(_)))), "{feature} {method}: {result:?}");
+                assert_eq!(snapshot(&editor), before, "{feature} {method} changed the live drag");assert!(editor.take_events().is_empty());refused += 1;
+            }
+        }
+        assert_eq!(refused, 91);
+    }
+
+    #[test]
+    fn origin_rig_range_join_and_property_admission_is_unchanged() {
+        let bytes = fixture_bytes("origin-rig-pose-support-sheet.document.json");
+        let mut editor = Editor::new(styk_doc::json::parse(&bytes).unwrap(), crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
+        editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();editor.call("beginTranslationDrag", &[]).unwrap();editor.call("moveSelection", &[Value::Num(5.125), Value::Num(-2.75)]).unwrap();editor.take_events();
+        let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
+        let before = snapshot(&editor);
+        let mut target = Obj::new();target.set("kind", Value::str("figure"));target.set("uid", Value::Num(1.0));
+        for (method, args) in [("rotateFiguresInFrames", vec![Value::Num(0.17)]), ("joinTo", vec![Value::Num(2.0), Value::Num(22.0)]), ("beginAnimationEdit", vec![Value::object(target), Value::str("rotation")])] {
+            assert!(matches!(editor.call(method, &args), Err(EditError::Unported(_))), "{method}");
+            assert_eq!(snapshot(&editor), before, "{method} changed the live drag");assert!(editor.take_events().is_empty());
+        }
+    }
+
+    #[test]
+    fn ordinary_rig_gate_refuses_complex_or_malformed_origins_without_committing_a_drag() {
+        let bytes = fixture_bytes("origin-rig-support-sheet.document.json");
+        let mut refused = 0;
+        for feature in ["rig", "pose-choice", "mesh", "movieclip", "drawing", "spatial", "invalid-origin"] {
+            let report = styk_doc::json::parse(&bytes).unwrap();
+            let mut editor = Editor::new(report, crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
+            editor.call("select", &[Value::Num(1.0), Value::Num(3.0)]).unwrap();
+            editor.call("beginTranslationDrag", &[]).unwrap();
+            editor.call("moveSelection", &[Value::Num(5.125), Value::Num(-2.75)]).unwrap();
+            let figure = editor.report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[0].make_obj().unwrap();
+            match feature {
+                "rig" | "pose-choice" => {
+                    let segment = figure.get_mut("segments").unwrap().make_arr().unwrap()[0].make_obj().unwrap();
+                    segment.set(if feature == "rig" { "_stykRig" } else { "_stykPoseChoice" }, Value::Bool(true));
+                }
+                "spatial" => {
+                    editor.authored.as_mut().unwrap().frame.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[0].make_obj().unwrap().set("_stykSpatial", Value::Bool(true));
+                }
+                "invalid-origin" => {
+                    figure.get_mut("_styk").unwrap().make_obj().unwrap().get_mut("animationOrigin").unwrap().make_obj().unwrap().get_mut("support").unwrap().make_obj().unwrap().set("rotation", Value::Num(100_001.0));
+                }
+                _ => { figure.get_mut("_styk").unwrap().make_obj().unwrap().set(match feature { "mesh" => "spatialMesh", other => other }, Value::Bool(true)); }
+            }
+            editor.take_events();
+            let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
+            let before = snapshot(&editor);
+            for (method, args) in [("beginRigDrag", vec![]), ("editRigJoint", vec![Value::Num(400.25), Value::Num(200.125)]), ("commitRigDrag", vec![]), ("cancelRigDrag", vec![])] {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| editor.call(method, &args)));
+                assert!(matches!(result, Ok(Err(EditError::Unported(_)))), "{feature} {method}: {result:?}");
+                assert_eq!(snapshot(&editor), before, "{feature} {method} committed or changed the live drag");
+                assert!(editor.take_events().is_empty());
+                refused += 1;
+            }
+        }
+        assert_eq!(refused, 28);
+    }
 
     #[test]
     fn future_or_absent_property_refusal_preserves_the_shown_frame() {
@@ -256,6 +462,49 @@ mod tests {
                 assert_eq!(snapshot(&editor), before, "{id} {property} {method} changed the shown frame or editor on refusal");
                 assert!(editor.take_events().is_empty(), "{id} {property} {method} emitted on refusal");
             }
+        }
+    }
+
+    #[test]
+    fn future_complex_range_refusal_preserves_the_shown_frame() {
+        for (document, id) in [(fixture_bytes("origin-future-rig-sheet.document.json"), 3.0), (fixture_bytes("origin-future-rig-joined-sheet.document.json"), 2.0), (fixture_bytes("origin-changing-rig-sheet.document.json"), 3.0)] {
+            let mut editor = Editor::new(styk_doc::json::parse(&document).unwrap(), crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
+            editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();editor.call("beginTranslationDrag", &[]).unwrap();editor.call("moveSelection", &[Value::Num(7.25), Value::Num(-3.5)]).unwrap();editor.take_events();
+            let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
+            let before = snapshot(&editor);
+            let mut options = Obj::new();options.set("uids", Value::array(vec![Value::Num(id)]));options.set("ticks", Value::array(vec![Value::Num(8.0)]));
+            assert!(matches!(editor.call("rotateFiguresInFrames", &[Value::Num(0.27), Value::Null, Value::object(options)]), Err(EditError::Unported(_))));
+            assert_eq!(snapshot(&editor), before);assert!(editor.take_events().is_empty());
+            let mut indices = Obj::new();indices.set("@array", Value::array(vec![Value::Num(1.0)]));indices.set("sheetTicks", Value::array(vec![Value::Num(8.0)]));
+            assert!(matches!(editor.call("joinFiguresInFrames", &[Value::Num(id), Value::Num(22.0), Value::object(indices)]), Err(EditError::Unported(_))));
+            assert_eq!(snapshot(&editor), before);assert!(editor.take_events().is_empty());
+        }
+    }
+
+    #[test]
+    fn invalid_future_range_join_guard_is_atomic_and_never_panics() {
+        use std::panic::{catch_unwind, AssertUnwindSafe};
+        for cyclic in [true, false] {
+            let mut report = styk_doc::json::parse(&fixture_bytes("origin-future-rig-joined-sheet.document.json")).unwrap();
+            let invalidate = |frame: &mut Value| {
+                let objects = frame.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap();
+                let Some(slot) = objects.iter().position(|object| uid(object) == Some(3)) else { return };
+                let parent = objects.iter().position(|object| uid(object) == Some(2)).unwrap();
+                let mut join = Obj::new();join.set("target_object_slot", Value::Num(if cyclic { parent as f64 } else { 999.0 }));join.set("target_unique_id", Value::Num(2.0));join.set("target_handle_id", Value::Num(22.0));
+                objects[slot].make_obj().unwrap().set("join", Value::object(join));
+            };
+            for frame in report.make_obj().unwrap().get_mut("keyframes").unwrap().make_arr().unwrap() { invalidate(frame); }
+            let sources = report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().get_mut("frameSources").unwrap().make_obj().unwrap();
+            let names: Vec<_> = sources.keys().map(|key| key.to_string()).collect();for name in names { invalidate(sources.get_mut(&name).unwrap()); }
+            let mut editor = Editor::new(report, crate::Options { property_channels: true, layer_timeline: true, auto_key: false });
+            editor.call("select", &[Value::Num(1.0), Value::Num(-1.0)]).unwrap();editor.call("beginTranslationDrag", &[]).unwrap();editor.call("moveSelection", &[Value::Num(7.25), Value::Num(-3.5)]).unwrap();editor.take_events();
+            let snapshot = |editor: &Editor| (editor.report_json(), editor.state(), editor.drag_value(), styk_doc::json::to_string(&styk_eval::records::snapshot_pose_frame(&editor.shown_frame().unwrap())));
+            let before = snapshot(&editor);
+            let mut indices = Obj::new();indices.set("@array", Value::array(vec![Value::Num(1.0)]));indices.set("sheetTicks", Value::array(vec![Value::Num(8.0)]));
+            let result = catch_unwind(AssertUnwindSafe(|| editor.call("rotateFiguresInFrames", &[Value::Num(0.27), Value::object(indices)])));
+            assert!(matches!(result, Ok(Err(EditError::Unported(_)))), "invalid future range join was not atomically refused");
+            assert_eq!(snapshot(&editor), before, "invalid future range join changed the shown frame or editor");
+            assert!(editor.take_events().is_empty());
         }
     }
 
@@ -290,3 +539,7 @@ mod tests {
     }
 
 }
+
+#[cfg(test)]
+#[path = "origin_rig_validation_tests.rs"]
+mod validation_tests;

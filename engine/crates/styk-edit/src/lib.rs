@@ -562,7 +562,15 @@ impl Editor {
             if matches!(method, "mirrorSelection" | "mirrorFigure") && self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
                 return Err(EditError::Unported(format!("{method} of an origin branch")));
             }
-            if origin::posing_call(method) { self.origin_pose_gate()?; }
+            if method == "moveSelectionInFrames" && !self.sheet() {
+                return Err(EditError::Unported("moving animation-origin figures across native keyframes".into()));
+            }
+            if matches!(method, "joinTo" | "unjoinFigure" | "joinFigure") {
+                self.origin_range_gate(&self.selection_frame()?, &self.selection.uids, if method == "unjoinFigure" { None } else { arg(0).as_f64().map(|id| id as u32) })?;
+            }
+            if origin::rig_pose_call(method) { self.origin_rig_pose_gate(method, reason == "with animation origins and property channels")?; }
+            else if origin::posing_call(method) { self.origin_pose_gate()?; }
+            if origin::rig_tool_call(method) { self.origin_rig_gate()?; }
             if origin::property_call(method) { self.origin_property_gate(method, args)?; }
         }
         if let Some(reason) = self.ik_gate(method)? {
@@ -651,6 +659,7 @@ impl Editor {
             "resetPose" => self.reset_pose().map(Value::Bool),
             "poseJoint" => self.pose_joint(number(0), number(1), &arg(2)).map(Value::Bool),
             "setConnectorPosition" => self.set_connector_position(number(0)).map(Value::Bool),
+            "slideConnector" => self.slide_selected_connector(number(0), number(1)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
             "setAudioTrack" => self.set_audio_track(&arg(0), &arg(1)).map(Value::Bool),

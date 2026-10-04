@@ -445,7 +445,9 @@ impl Editor {
             _ => Some(validate(&request, version, canvas, self.selection.uid, part, matches!(request, Request::Order(_)) && authored, map)?),
         };
         let mut plans: Vec<(Target, Planned)> = Vec::new();
+        let origins = figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy));
         for target in targets {
+            if origins { self.origin_range_gate(&objects_of(&target.frame), &uids, if let Request::Join { target, .. } = &request { target.as_f64().map(|id| id as u32) } else { None })?; }
             let planned = match (&operation, &payload) {
                 (None, Some(payload)) => {
                     let frame = crate::figure_clipboard::insert(&target.frame, &payload.objects, &payload.order)?;
@@ -488,6 +490,7 @@ impl Editor {
                 frame.set("objects", Value::array(objects));
                 planned.frame = Value::object(frame);
             }
+            self.synchronize_origin_frame(&mut planned.frame, &before, true)?;
             plans.push((target, planned));
         }
         if plans.is_empty() {
@@ -645,7 +648,7 @@ impl Editor {
         Ok(unique)
     }
 
-    fn figure_of(&self, object: &Value) -> Option<Value> {
+    pub(crate) fn figure_of(&self, object: &Value) -> Option<Value> {
         let id = num(object, "figure_type_id")?;
         self.report.get("figure_types").and_then(Value::elements).and_then(|e| e.iter().find(|f| num(f, "figure_type_id") == Some(id)))
     }
@@ -683,7 +686,8 @@ impl Editor {
         let layer_of = |id: u32| self.layer_of(id);
         let geometry = |record: &Value, slots: &[usize]| self.joints_of(record, slots);
         let version = num(&self.report, "version").unwrap_or(f64::NAN);
-        let context = crate::range_plan::Context { figures, version, canvas, layer_of: &layer_of, geometry: &geometry };
+        let mirror_origin = |figure: &Value, source: &Value, record: &mut Obj, horizontal| self.mirror_origin_support(figure, source, record, horizontal);
+        let context = crate::range_plan::Context { figures, version, canvas, layer_of: &layer_of, geometry: &geometry, mirror_origin: &mirror_origin };
         crate::range_plan::plan(&context, frame, uids, operation)
     }
 
@@ -869,6 +873,9 @@ impl Editor {
         for tick in ticks {
             let before = self.evaluated(tick, false)?;
             let objects = objects_of(&before);
+            if self.unported_document().is_some_and(|reason| reason.starts_with("with animation origins")) {
+                self.origin_range_gate(&objects, &self.selection.uids, None)?;
+            }
             let affected = crate::select::resolve_join_selection(&objects, &self.selection.uids, true)?;
             let roots = translation_roots(&objects, &self.selection.uids);
             let mut changed = Vec::new();
@@ -895,7 +902,9 @@ impl Editor {
             if !changed.is_empty() {
                 let mut frame = before.as_obj().cloned().unwrap_or_default();
                 frame.set("objects", Value::array(moved_objects));
-                entries.push((tick, Value::object(frame), changed));
+                let mut frame = Value::object(frame);
+                self.synchronize_origin_frame(&mut frame, &objects, false)?;
+                entries.push((tick, frame, changed));
             }
         }
         if entries.is_empty() {

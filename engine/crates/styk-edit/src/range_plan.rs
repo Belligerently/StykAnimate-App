@@ -127,6 +127,8 @@ pub(crate) struct Context<'a> {
     /// `buildGeometry(report, frame)` for the figures at `slots` (sorted), each figure's
     /// joints, or the editor's error when one is unresolved.
     pub geometry: &'a GeometryOf<'a>,
+    /// The origin owner reflects retained support and local offsets in JS order.
+    pub mirror_origin: &'a dyn Fn(&Value, &Value, &mut Obj, bool) -> Result<(), EditError>,
 }
 
 /// A planned frame (`{frame, changedUids, structural}`).
@@ -676,17 +678,21 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                 let Some(figure) = figure_of(context.figures, original) else { return Err(invalid("errors.rangeFigureOperations.unknownFigureDefinition")) };
                 let angles: Vec<f64> = segments_of(Some(figure)).iter().map(|s| given(s, "angle_rad").unwrap_or(0.0)).collect();
                 let held = numbers(original.get("angles"));
+                let mut reset = original.as_obj().cloned().unwrap_or_default();
+                crate::origin::reset_support(figure, &mut reset);
+                let ghosts_changed = original.path(&["_stykAnimationOrigin", "ghosts"]) != reset.get("_stykAnimationOrigin").and_then(|origin| origin.get("ghosts"));
                 let empty = |key: &str| original.get(key).and_then(Value::array_len).is_none_or(|n| n == 0);
-                if !original.get("len_flag").is_some_and(Value::truthy) && !original.get("bend_flag").is_some_and(Value::truthy) && empty("lengths") && empty("bends") && held.len() == angles.len() && held.iter().zip(&angles).all(|(a, b)| a == b) {
+                if !ghosts_changed && original.get("runtime_segments").is_none() && !original.get("len_flag").is_some_and(Value::truthy) && !original.get("bend_flag").is_some_and(Value::truthy) && empty("lengths") && empty("bends") && held.len() == angles.len() && held.iter().zip(&angles).all(|(a, b)| a == b) {
                     continue;
                 }
-                let patch = vec![
+                let mut patch = vec![
                     ("angles", Value::array(angles.iter().map(|&a| Value::Num(a)).collect())),
                     ("len_flag", Value::Num(0.0)),
                     ("bend_flag", Value::Num(0.0)),
                     ("lengths", Value::array(Vec::new())),
                     ("bends", Value::array(Vec::new())),
                 ];
+                if ghosts_changed { patch.push(("_stykAnimationOrigin", reset.get("_stykAnimationOrigin").cloned().unwrap_or(Value::Null))); }
                 changes.patch(slot, patch, &["runtime_segments"]);
             }
             if changes.changes.is_empty() {
@@ -917,7 +923,16 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                         patch.push(("image_text_flags", Value::Num(if object.get("image_text_flags").is_some_and(Value::truthy) { 0.0 } else { 1.0 })));
                     }
                 }
-                changes.patch(slot, patch, &["runtime_segments"]);
+                let changed = changes.patch(slot, patch, &["runtime_segments"]);
+                if let Some(figure) = figure {
+                    let mut record = changed.as_obj().cloned().unwrap_or_default();
+                    match &operation.kind {
+                        Kind::Rotate(radians) => crate::origin::rotate_support(figure, &mut record, *radians),
+                        Kind::Mirror { .. } => (context.mirror_origin)(figure, object, &mut record, horizontal)?,
+                        _ => {}
+                    }
+                    if changed.get("_stykAnimationOrigin") != record.get("_stykAnimationOrigin") { changes.replace(slot, record); }
+                }
             }
         }
         _ => unreachable!("handled above"),

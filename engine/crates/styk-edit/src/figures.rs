@@ -123,7 +123,7 @@ impl Editor {
         join.set("target_object_slot", Value::Num(target_slot as f64));
         join.set("target_unique_id", Value::Num(target.unwrap()));
         join.set("target_handle_id", Value::Num(handle.unwrap()));
-        self.transaction("Join figures", |editor| {
+        self.join_transaction("Join figures", |editor| {
             let at = editor.frame_objects().iter().position(|o| uid(o) == selected);
             if let Some(record) = at.and_then(|at| editor.frame_object_mut(at)) {
                 record.set("join", Value::object(join));
@@ -140,7 +140,7 @@ impl Editor {
             Some(_) => selected.and_then(|u| self.roots_of(&[u]).ok()?.get(&u).copied()),
             None => None,
         };
-        self.transaction("Unjoin figure", |editor| {
+        self.join_transaction("Unjoin figure", |editor| {
             let at = editor.frame_objects().iter().position(|o| uid(o) == selected);
             if let Some(record) = at.and_then(|at| editor.frame_object_mut(at)) {
                 if let Some(root) = root {

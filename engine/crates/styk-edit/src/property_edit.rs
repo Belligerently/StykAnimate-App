@@ -397,7 +397,7 @@ impl Editor {
     /// The same property target view used by `animationValue`: the live frame at
     /// the playhead, otherwise the existing evaluated-record cache at the given tick.
     pub(crate) fn animation_frame_at(&self, tick: &Value) -> Result<Value, EditError> {
-        let tick = check_tick(tick)?;
+        let tick = tick.as_f64().filter(|t| t.is_finite() && (0.0..=MAX_TICK).contains(t)).ok_or_else(|| invalid("errors.editorAnimation.keyframeTimeMustBeAnIntegerFrom0"))?;
         if tick == self.tick { self.shown_frame() } else { self.evaluated(tick, true) }
     }
 
@@ -419,7 +419,8 @@ impl Editor {
             let property = entry.get("property").and_then(Value::as_str).unwrap_or("");
             if entry.get("value").is_none() && property != "pose" {
                 let target = entry.get("target").cloned().unwrap_or(Value::Null);
-                match self.animation_value(&target, property, &tick_of(entry, self.tick))? {
+                let tick = check_tick(&tick_of(entry, self.tick))?;
+                match self.animation_value(&target, property, &Value::Num(tick))? {
                     Some(value) => out.set("value", value),
                     None => {
                         out.remove("value");
@@ -554,6 +555,7 @@ impl Editor {
         if property == "pose" {
             return Err(invalid("errors.editorAnimation.usePoseKeysToEditALayerPose"));
         }
+        check_tick(&Value::Num(self.tick))?;
         let initial = self.animation_value(&target, property, &Value::Num(self.tick))?.ok_or_else(|| invalid("errors.editorAnimation.theSelectedFigureIsNotPresentAtThis"))?;
         let frame = self.shown_frame()?;
         self.property_edit = Some(Edit {

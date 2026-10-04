@@ -126,6 +126,34 @@ and ancestry is acyclic. Sixty-eight malformed cases are recorded from the exist
 validator, with unchanged raw metadata and atomic command refusal checks. Cooperative
 import and per-object validation remain in their existing JavaScript owners.
 
+## Prepared picking and scene-cache lifetime
+
+`styk_eval::picking` provides native handle generation/picking, segment-body picking,
+origin and measured-bounds marquee predicates, and the gesture-local construction
+index. Queries borrow ready typed `Scene`/`Frame` geometry and preserve the editor's
+ordering, inclusive radii, exclusions, snap priority and latch. Raw segment drawing
+endpoints/point ranges/thickness survive before expanded sprite geometry; stored
+arc arithmetic uses `styk-math`. These are native prerequisites: the app still owns
+query preparation, bounds/resource identity, overlays and interaction sequencing.
+An explicit measured rectangle is required for the bounds predicate; extent is not
+substituted for live drawing alpha or effect bounds.
+
+The existing movieclip scene cache retains at most 64 scenes/64 MiB per clip. All
+clips, nested documents and still-live revisions from one `Loader` share its
+`SceneBudget` (64 MiB/1,024 entries by default). Admission uses checked atomic
+reservations; a reservation follows the cache entry through eviction, cancellation
+and disposal. Oversized or saturated scenes remain usable without cache retention.
+`Scene::retained_bytes` is computed once, including resolved effect/paint buffers,
+and read in O(1). Shared immutable payloads can be conservatively charged twice.
+This does not bound authored payloads, transient/caller-held scenes, allocator
+overhead, unrelated caches or independent loader lineages.
+
+Platform-neutral additions for crate consumers: `Document::scene_budget`,
+`Loader::with_scene_limits`/`scene_budget`, `geometry::SceneBudget`,
+`Scene::figure_of`/`retained_bytes`, `ObjectGeometry::lengths`/`raw_segments`,
+`RawSegment`, `Segment::control_detail`, and the public picking types/functions.
+Browser query wiring and actual-shown snapshot readiness remain pending.
+
 ## Colour transitions
 
 A pose's `color_transition` (`{from, to, t}`; no command writes one, older documents

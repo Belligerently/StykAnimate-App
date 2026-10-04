@@ -589,3 +589,24 @@ directly.
 Recorded JSON is loaded by tests at runtime. Regeneration may rewrite byte-identical
 files; embedding those files in test binaries made Cargo relink them needlessly. The
 origin atomic-refusal tests now follow the same runtime-fixture policy as replays.
+
+The remaining recorded origin range/join and 2D rig families now use the existing
+range, pose and history owners. Sixty-three additional recordings match all 9,764
+steps, including fractional shown frames, live commit/cancel and undo/redo; their
+63 evaluated-record groups cover 647 ticks. Saved pose/handle/connector operations
+admit only the recorded rig combinations. Future 3D, pose-choice and attachment
+combinations remain explicit atomic refusals. `slideConnector` has a native command
+entry but is not added to the app facade by this milestone.
+
+Raw nested rig metadata is validated through `styk_eval::rig::validate_2d` before
+origin commands can commit a live gesture. The compiler and editor record 102
+malformed refusals and 27 accepted boundaries/unknown-field cases; inactive null,
+false and zero connector metadata retain JavaScript truthiness. The native-frame
+history carrier is `CommandKind::Frame {index, before, after, structural}`.
+
+Inspector `animationValue` reads accept finite fractional playhead ticks and use
+the existing shown-frame/channel sampler, including exact target scope. Stored key
+times and property-edit begins still require whole ticks. The affected 93 command
+recordings regenerate unchanged and match all 12,050 steps. Native scalar-channel
+authoring, canonical worker readiness and document-class adoption remain separate
+prerequisites.

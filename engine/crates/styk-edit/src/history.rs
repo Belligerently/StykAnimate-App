@@ -26,6 +26,8 @@ pub(crate) fn js_strict_eq(a: &Value, b: &Value) -> bool {
 /// What a history entry changed.
 #[derive(Clone, Debug)]
 pub enum CommandKind {
+    /// One native keyframe before and after a structural transaction (`kind: 'frame'`).
+    Frame { index: usize, before: Value, after: Value, structural: bool },
     /// Whole records of one native keyframe's objects, replaced by unique id.
     Objects { index: usize, before: Vec<Value>, after: Vec<Value> },
     /// The layer sheet and layer state before and after, and the pose sources the
@@ -199,6 +201,14 @@ impl Editor {
             Direction::After => (&command.after_selection, command.after_revision),
         };
         match &command.kind {
+            CommandKind::Frame { index, before, after, structural } => {
+                let value = if direction == Direction::Before { before } else { after };
+                if let Some(frame) = self.report.make_obj().and_then(|report| report.get_mut("keyframes")).and_then(Value::make_arr).and_then(|frames| frames.get_mut(*index)) { *frame = value.clone(); }
+                self.retained = None;
+                self.restore_selection(selection)?;
+                self.revision = revision;
+                self.emit("history", vec![("label", Value::str(&command.label)), ("structural", Value::Bool(*structural)), ("definition", Value::Bool(false)), ("animation", Value::Bool(false))]);
+            }
             CommandKind::Objects { index, before, after } => {
                 let value = if direction == Direction::Before { before } else { after };
                 self.replace_objects(*index, value);

@@ -15,11 +15,11 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
 | `styk-edit` | 89 | 1232 KiB | 49 | 36 | 4 | 0 | 0 | 2 % | 62 % | 0 % |
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
-| `styk-eval` | 81 | 758 KiB | 33 | 39 | 9 | 0 | 0 | 16 % | 61 % | 0 % |
+| `styk-eval` | 81 | 758 KiB | 31 | 41 | 9 | 0 | 0 | 16 % | 65 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 32 | 15 | 5 | 0 | 0 | 9 % | 57 % | 0 % |
-| **Total** | 356 | 4045 KiB | 186 | 112 | 35 | 22 | 1 | 20 % | 46 % | 0 % |
+| **Total** | 356 | 4045 KiB | 184 | 114 | 35 | 22 | 1 | 20 % | 47 % | 0 % |
 
 ## Engine modules
 
@@ -76,7 +76,7 @@ Engine logic: ported to Rust.
 | `src/clipboard-worker-plan.mjs` | `styk-edit` | js |  |
 | `src/clipboard-worker.mjs` | `styk-edit` | js |  |
 | `src/demo.mjs` | `styk-edit` | js |  |
-| `src/editor-animation.mjs` | `styk-edit` | partial | Rust: addAnimationKeys on a layer sheet, the sheet branches of beginAnimationEdit, previewAnimationEdit, commitAnimationEdit and cancelAnimationEdit, animationValue (styk-edit/src/property_edit.rs); native-timeline channel authoring and key editing still JS |
+| `src/editor-animation.mjs` | `styk-edit` | partial | Rust: sheet scalar editing and fractional read-only animation frame/property values; whole stored key times/begins retained, native scalar-channel authoring and key editing still JS |
 | `src/editor-audio.mjs` | `styk-edit` | partial | Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS |
 | `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); property-channel commits still JS; owned session transport sends changed COW drafts/retained figures and sheet metadata, with exact compact/full reconstruction and adoption coverage |
 | `src/editor-branch-style.mjs` | `styk-edit` | partial | Rust: the draw order's held keys after a live preview (beginBranchStyleAnimation, previewBranchStyleValues, commitBranchStyleAnimation for moveBuilderOrder and setBuilderOrder: styk-edit/src/builder.rs); branch opacity and width gestures still JS |
@@ -112,12 +112,12 @@ Engine logic: ported to Rust.
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-motion-path.mjs` | `styk-edit` | partial | Rust: layer-sheet motion-path commands, falloffs/history and joined pinned followers; corrected JS assembly figure/virtual-ID rotation and app exact cancel/commit/undo. Native timelines, origin/rig/3D and live trail remain JS |
 | `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show, playback across every frame for clips on the presence clock with restartMovieclip and removeMovieclipRestart (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames of clips on the document's clock and the other commands still JS |
-| `src/editor-origin-mutations.mjs` | `styk-edit` | partial | Rust: whole-figure gesture synchronization, ghost rotation/reflection/reset and local offset reflection (styk-edit/src/origin.rs), native/sheet fractional/cancel/history replays; recorded reroot/topology repair shares support validation; recorded joint/handle gestures and saved x/y/scale/rotation channels match shown frames and stored records; their complete derived evaluation recordings are committed (179 groups, 2225 ticks), with atomic-refusal fixtures loaded at test runtime to keep regeneration from invalidating binaries; ranges, joins and unrecorded origin combinations still JS |
+| `src/editor-origin-mutations.mjs` | `styk-edit` | partial | Rust: recorded whole/topology/joint/handle/saved-channel/range/join/2D-rig edits preserve retained support; 63 new replays/9764 exact steps and 63 derived groups/647 ticks; future complex definitions and class ownership stay guarded |
 | `src/editor-origin-support.mjs` | `styk-edit` | partial | Rust: repairOriginSupport, retained graph compaction, ghost pose remapping and construction-edit offsets (styk-edit/src/origin_topology.rs), recorded native/sheet Set Origin and topology; remaining unrecorded command combinations still JS |
 | `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: applyFigureRange on a layer sheet (_commitSheetRange) and on a native timeline (the figure-range history entry), the *InFrames commands except paste and align, insertionPlan for adding and pasting at the playhead (movieclip instances included), insert, replaceAt for movieclips (styk-edit/src/range.rs, sheet.rs, figure_clipboard.rs); pasting across frames, movieclips on a native timeline and figures with effect clips still JS |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); setRigBehavior, enableSmartStretch, bindStretchParts, setAngleLock, setSecondaryAngleReference with the rig's validation (styk-edit/src/rig_behavior.rs); addConnector, addWeightedJoint (styk-edit/src/topology.rs); Smart Stretch on a connector still JS |
-| `src/editor-rig.mjs` | `styk-edit` | partial | Rust: beginRigDrag, editRigJoint, commitRigDrag, cancelRigDrag and the bend gesture (styk-edit/src/rig_drag.rs, bendJoint in styk-edit/src/pose.rs); figures with animation origins and IK across joined figures still JS |
+| `src/editor-rig.mjs` | `styk-edit` | partial | Rust: rig/bend gestures, including recorded animation-origin 2D stretch/follow/world-angle/connector families; unrecorded complex origin and app facade combinations remain guarded |
 | `src/editor-scene.mjs` | `styk-edit` | partial | Rust: setSceneColor and setSceneBackground on a layer sheet (styk-edit/src/property_edit.rs); native-timeline scene edits, background imports and the rest still JS |
 | `src/editor-selection.mjs` | `styk-edit` | partial | Rust: orderSelection on whole figures, bringToFront and sendToBack through the range operation (styk-edit/src/range.rs); ordering one figure's segments, alignSelection and the selection helpers still JS |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
@@ -199,7 +199,7 @@ Engine logic: ported to Rust.
 | `src/pivot/geometry-definition.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-order.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pivot/geometry-pose.mjs` | `styk-eval` | js | evaluation and world geometry |
-| `src/pivot/geometry.mjs` | `styk-eval` | partial | evaluation and world geometry. Rust: evaluatedNativeFrame, evaluatedFrame as records, buildGeometry, drawPrimitives (draw lists); picking and Canvas paths still JS |
+| `src/pivot/geometry.mjs` | `styk-eval` | partial | Rust: evaluated records/world geometry plus prepared native handle/body/snap queries and per-clip/aggregate-lineage scene cache limits; app actual-shown query preparation and Canvas paths still JS |
 | `src/pivot/raster-clip.mjs` | `styk-eval` | js | evaluation and world geometry |
 | `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
 | `src/structural-equality.mjs` | `styk-eval` | js |  |
@@ -220,13 +220,13 @@ Engine logic: ported to Rust.
 | `src/movieclip-mesh-materialize.mjs` | `styk-eval::movieclips` | js |  |
 | `src/movieclip-presence.mjs` | `styk-eval::movieclips` | partial | Rust: presence clock and continuations; editing still JS |
 | `src/movieclips.mjs` | `styk-eval::movieclips` | partial | Rust: movieclipTime and clip sampling; capture and editing still JS |
-| `src/animation-origin-support.mjs` | `styk-eval::origin` | partial | Rust: support-graph origins with ghosts, corrections, origin rotation (styk_eval::origin); recorded whole/joint/handle gestures synchronize ghosts through styk-edit; unrecorded editing still JS |
+| `src/animation-origin-support.mjs` | `styk-eval::origin` | partial | Rust: support-graph origins/ghost corrections and recorded whole/joint/handle/range/join/2D-rig synchronization; future rig/spatial combinations remain guarded |
 | `src/animation-origin.mjs` | `styk-eval::origin` | partial | Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); evaluated records and scalar property previews byte-exact; most origin editing still JS |
 | `src/layer-parallax.mjs` | `styk-eval::parallax` | partial | Rust: parallaxResolver, per-slot offsets against camera travel (styk_eval::parallax); validation and translatedPlan still JS |
-| `src/builder-construction.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
+| `src/builder-construction.mjs` | `styk-eval::picking` | partial | Rust: native gesture-local ConstructionIndex, segment picking and exact snap priority/latch; app query preparation, actual-shown order and overlay still JS |
 | `src/builder-fill.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/camera-overlay.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
-| `src/canvas-interactions.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
+| `src/canvas-interactions.mjs` | `styk-eval::picking` | partial | Rust: handle/body picking, origin and explicit measured-bounds marquee predicates; bounds/resource readiness and ordered app query/gesture stream still JS |
 | `src/polygon-preview.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/ik-evaluation.mjs` | `styk-eval::rig` | ported | Rust: not needed (memoization; the engine caches whole frames) |
 | `src/ik-joined.mjs` | `styk-eval::rig` | partial | Rust: assemblies, solve and scatter with followers, used by evaluation and editing (ik::joined::Assembly); join validation still JS |

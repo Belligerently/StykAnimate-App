@@ -85,6 +85,8 @@ pub struct Segment {
     pub bend: f64,
     pub prim: Prim,
     pub is_static: bool,
+    /// `_stykControl.level === 'detail'`: a detail handle, hidden by default.
+    pub control_detail: bool,
     pub rgb: [u8; 3],
     pub alpha: f64,
     pub secondary: Option<([u8; 3], u8)>,
@@ -299,8 +301,10 @@ pub struct Movieclip {
     pub drawing_rotation: Option<DrawingRotation>,
     /// The clip's own timeline, prepared once.
     pub prepared: Arc<crate::eval::Prepared>,
-    /// Evaluated local frames shared by every instance (bounded).
-    pub cache: std::sync::Mutex<HashMap<u64, Arc<crate::geometry::Scene>>>,
+    /// Evaluated local frames shared by every instance, bounded by entry count
+    /// and retained derived-buffer bytes, also reserving from the nested
+    /// document's shared lineage budget. Authored resources are separate.
+    pub cache: std::sync::Mutex<crate::geometry::ClipSceneCache>,
 }
 
 /// `drawingRotation` of a movieclip (src/movieclip-drawings.mjs).
@@ -586,6 +590,11 @@ impl Layers {
 
 #[derive(Clone, Debug, Default)]
 pub struct Document {
+    /// The lineage's aggregate budget for derived scenes retained by movieclip
+    /// caches. Root and nested typed documents of one Loader share this token,
+    /// including revisions and cloned loaders with the same typed resources.
+    /// Authored payloads and caller-held transient scenes are separate.
+    pub scene_budget: Arc<crate::geometry::SceneBudget>,
     pub name: String,
     pub version: u32,
     pub canvas: [u32; 2],

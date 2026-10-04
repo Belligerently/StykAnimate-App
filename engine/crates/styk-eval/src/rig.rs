@@ -12,6 +12,9 @@ use styk_math::{atan2, cos, hypot, norm, sin};
 const EPS: f64 = 1e-8;
 const SPATIAL_EPS: f64 = 1e-9;
 
+mod validation;
+pub use validation::validate_2d;
+
 #[derive(Clone, Debug)]
 pub struct Connector {
     pub start: u32,
@@ -154,10 +157,10 @@ pub fn parse(v: &Value) -> Option<Rig> {
         return None;
     }
     let mut rig = Rig { world: v.get("orientation").and_then(Value::as_str) == Some("world"), ..Default::default() };
-    if let Some(c) = v.get("connector") {
+    if let Some(c) = v.get("connector").filter(|value| value.truthy()) {
         rig.connector = Some(Connector { start: id(c, "start").unwrap_or(0), end: id(c, "end").unwrap_or(0) });
     }
-    if let Some(d) = v.get("stretch") {
+    if let Some(d) = v.get("stretch").filter(|value| value.truthy()) {
         rig.stretch = Some(Stretch {
             rest_length: f(d, "restLength").unwrap_or(1.0),
             min: f(d, "min").unwrap_or(0.0),
@@ -177,7 +180,7 @@ pub fn parse(v: &Value) -> Option<Rig> {
             rest_position: f(d, "restPosition").unwrap_or(1.0),
         });
     }
-    if let Some(x) = v.get("follow") {
+    if let Some(x) = v.get("follow").filter(|value| value.truthy()) {
         rig.follow = Some(Follow {
             driver: id(x, "driver").unwrap_or(0),
             rigid: x.get("mode").and_then(Value::as_str) == Some("rigid"),
@@ -277,6 +280,29 @@ pub struct RigPlan {
     pub dependencies: Vec<Vec<u32>>,
 }
 
+/// Shared dependency ordering for typed plans and strict raw edit validation.
+fn dependency_order(dependencies: &[Vec<u32>]) -> Option<Vec<u32>> {
+    let n = dependencies.len();
+    let mut outgoing = vec![Vec::new(); n];
+    let mut indegree = vec![0usize; n];
+    for (index, dependencies) in dependencies.iter().enumerate() {
+        for &dependency in dependencies {
+            outgoing.get_mut(dependency as usize)?.push(index);
+            indegree[index] += 1;
+        }
+    }
+    let mut order: Vec<u32> = (0..n as u32).filter(|&index| indegree[index as usize] == 0).collect();
+    let mut q = 0;
+    while q < order.len() {
+        for &child in &outgoing[order[q] as usize] {
+            indegree[child] -= 1;
+            if indegree[child] == 0 { order.push(child as u32); }
+        }
+        q += 1;
+    }
+    (order.len() == n).then_some(order)
+}
+
 /// `rigConstraintPlanSteps`: dependency order and resolved impulses.
 pub fn plan(segments: &[crate::doc::Segment], index_of: &std::collections::HashMap<u32, u32>) -> Option<RigPlan> {
     if segments.iter().all(|s| s.rig.is_none()) {
@@ -284,8 +310,6 @@ pub fn plan(segments: &[crate::doc::Segment], index_of: &std::collections::HashM
     }
     let n = segments.len();
     let idx = |id: u32| index_of.get(&id).map(|&i| i as usize);
-    let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut indegree = vec![0u32; n];
     let mut dependencies: Vec<Vec<u32>> = vec![Vec::new(); n];
     for (i, s) in segments.iter().enumerate() {
         let mut deps: Vec<u32> = vec![s.parent];
@@ -340,27 +364,11 @@ pub fn plan(segments: &[crate::doc::Segment], index_of: &std::collections::HashM
             }
             seen.push(d);
             if let Some(p) = idx(d) {
-                outgoing[p].push(i);
-                indegree[i] += 1;
                 dependencies[i].push(p as u32);
             }
         }
     }
-    let mut order: Vec<u32> = (0..n as u32).filter(|&i| indegree[i as usize] == 0).collect();
-    let mut q = 0;
-    while q < order.len() {
-        let current = order[q] as usize;
-        for &child in &outgoing[current] {
-            indegree[child] -= 1;
-            if indegree[child] == 0 {
-                order.push(child as u32);
-            }
-        }
-        q += 1;
-    }
-    if order.len() != n {
-        return None;
-    }
+    let order = dependency_order(&dependencies)?;
     let mut inputs: Vec<Option<Impulse>> = vec![None; n];
     let mut outputs: Vec<Option<Impulse>> = vec![None; n];
     let mut blocked: Vec<Option<usize>> = vec![None; n];

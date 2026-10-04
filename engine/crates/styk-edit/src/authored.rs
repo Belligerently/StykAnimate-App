@@ -102,14 +102,46 @@ impl Editor {
         self.commit_sheet_pose()
     }
 
+    /// Structural joins use the editor's single native-frame transaction. Other
+    /// native transaction families remain refused at their existing owner.
+    pub(crate) fn join_transaction(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+        let recorded_native = self.unported_document().is_some_and(|reason| reason.starts_with("with animation origins"));
+        self.transaction_impl(label, mutate, recorded_native)
+    }
+
+    fn native_frame_transaction(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+        let index = self.frame_index;
+        let before = self.report.get("keyframes").and_then(|frames| frames.item(index)).ok_or_else(|| EditError::Invalid("a native transaction without a frame".into()))?;
+        let before_selection = self.selection_state();
+        let result = mutate(self).and_then(|()| self.synchronize_origins(&objects_of(&before)));
+        if let Err(error) = result {
+            if let Some(frame) = self.report.make_obj().and_then(|report| report.get_mut("keyframes")).and_then(Value::make_arr).and_then(|frames| frames.get_mut(index)) { *frame = before; }
+            self.restore_selection(&before_selection)?;
+            self.retained = None;
+            return Err(error);
+        }
+        let after = self.report.get("keyframes").and_then(|frames| frames.item(index)).unwrap();
+        if before == after { return Ok(false); }
+        self.retained = None;
+        self.tick = crate::timeline::rows(&self.report).get(index).map(|row| row.start).unwrap_or(0.0);
+        self.record(crate::history::Command { kind: crate::history::CommandKind::Frame { index, before, after, structural: true }, layers: false, layer_changes: Vec::new(), captured_source_bytes: 0, label: label.into(), before_selection, after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
+        self.emit("edit", vec![("label", Value::str(label)), ("structural", Value::Bool(true))]);
+        Ok(true)
+    }
+
     /// `transaction(label, mutate)` on a layer sheet (`_authoredTransaction`): `mutate`
     /// changes a draft of the whole frame on show, figures included, which commits
     /// through the sheet like a gesture.
     pub(crate) fn transaction(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
+        self.transaction_impl(label, mutate, false)
+    }
+
+    fn transaction_impl(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>, native_join: bool) -> Result<bool, EditError> {
         if self.drag.is_some() {
             self.commit_drag()?;
         }
         if !self.sheet() {
+            if native_join { return self.native_frame_transaction(label, mutate); }
             return Err(EditError::Unported(format!("{label} on a native timeline")));
         }
         if self.tick.fract() != 0.0 {

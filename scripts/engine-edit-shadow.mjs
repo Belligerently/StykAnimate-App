@@ -5,7 +5,7 @@
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
 //   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
-//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
+//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -56,6 +56,8 @@ const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
 const requiredCalls = [
+  ...(args.includes('--origin-range') ? ['rotateFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'resetPoseInFrames', 'centerFiguresInFrames', 'joinFiguresInFrames', 'detachFiguresInFrames'] : []),
+  ...(args.includes('--origin-rig') ? ['beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag'] : []),
   ...(args.includes('--camera-follow') ? ['nudgeHandle', 'setCameraMotion', 'applyCameraToFigures'] : []),
   ...(args.includes('--joined-motion') ? ['beginMotionPathEdit', 'updateMotionPathEdit', 'commitMotionPathEdit', 'cancelMotionPathEdit'] : []),
   ...(args.includes('--bounds') ? ['centerCamera', 'alignFiguresInFrames'] : []),
@@ -84,7 +86,10 @@ async function run(mode) {
   await context.addInitScript(() => { let next = 0; crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++next).padStart(12, '0')}`; });
   const page = await context.newPage();
   const problems = [];
-  page.on('pageerror', error => problems.push(`pageerror ${error.message.slice(0, 300)}`));
+  page.on('pageerror', error => {
+    problems.push(`pageerror ${error.message.slice(0, 300)}`);
+    if (args.includes('--verbose')) console.error(String(error.stack ?? error.message).split('\n').slice(0, 8).join('\n'));
+  });
   await page.goto(`${origin}/?${mode}${captureFolder ? '&engineEditCapture=on' : ''}`);
   await page.waitForFunction(() => window.styk?.ready === true, null, {timeout: 60000});
   await page.evaluate(() => { document.querySelector('.styk-privacy [data-decline]')?.click(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); });
@@ -167,6 +172,31 @@ async function run(mode) {
 
   /** The interactions, once. */
   const interactions = async () => {
+    if (args.includes('--origin-range')) {
+      await step('transform animation-origin figures across recorded sheet ticks', () => page.evaluate(() => {
+        const e = styk.editor, range = Object.assign([0, 1], {sheetTicks: [0, 3, 8]});
+        e.select(1, -1); e.seek(3.5);
+        e.rotateFiguresInFrames(.27, range, {center: {x: 265.125, y: 180.75}});
+        e.mirrorFiguresInFrames('horizontal', range); e.scaleFiguresInFrames(1.2, range, {relative: true});
+        e.resetPoseInFrames(range); e.centerFiguresInFrames(range); e.undo(); e.redo();
+      }));
+      await step('join and detach animation-origin figures across frames', () => page.evaluate(() => {
+        const e = styk.editor, range = Object.assign([0, 1], {sheetTicks: [0, 3, 8]});
+        e.select(3, -1); e.joinFiguresInFrames(1, 22, range, {uids: [3]});
+        e.detachFiguresInFrames(range, {uids: [3]}); e.undo(); e.redo();
+      }));
+    }
+    if (args.includes('--origin-rig')) await step('commit and cancel an animation-origin rig gesture', () => page.evaluate(() => {
+      const e = styk.editor, figure = e.report.figure_types[0];
+      const joint = figure.segments.findIndex(segment => segment._stykRig?.stretch);
+      if (joint < 0) throw new Error('The origin rig check needs its recorded stretch target.');
+      e.select(1, joint); e.seek(3.5);
+      const tip = () => e.geometry.objects.get(e.selectedSlot).segments[joint].end;
+      let p = tip(); if (!e.beginRigDrag()) throw new Error('The origin rig gesture was refused.');
+      e.editRigJoint(p.x + 5.25, p.y - 2.125); e.commitRigDrag(); e.undo(); e.redo();
+      p = tip(); if (!e.beginRigDrag()) throw new Error('The origin rig cancel gesture was refused.');
+      e.editRigJoint(p.x - 7.125, p.y + 4.75); e.cancelRigDrag();
+    }));
     if (args.includes('--camera-follow')) {
       await step('nudge a handle under camera follow', () => page.evaluate(() => {
         const e = styk.editor;

@@ -19,6 +19,7 @@ pub mod origin;
 pub mod par;
 pub mod parallax;
 pub mod parity;
+pub mod picking;
 pub mod records;
 pub mod rig;
 pub mod spatial;

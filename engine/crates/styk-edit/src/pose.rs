@@ -568,6 +568,15 @@ impl Editor {
 }
 
 impl Editor {
+    /// Direct `slideConnector(x, y)` uses the same selected-joint projection that
+    /// posing and Rig-tool pointer edits already call.
+    pub(crate) fn slide_selected_connector(&mut self, x: f64, y: f64) -> Result<bool, EditError> {
+        rig_finite(x, -1e9, 1e9, "Joint X")?;
+        rig_finite(y, -1e9, 1e9, "Joint Y")?;
+        let Some(Joint { slot, object, joint, .. }) = self.joint_context()? else { return Ok(false) };
+        self.slide_connector(slot, &object, joint, x, y)
+    }
+
     /// `slideConnector(x, y)`: the connector's position from the pointer projected onto its
     /// drawn centerline (curves included); ties keep the first interval.
     pub(crate) fn slide_connector(&mut self, slot: usize, object: &Value, joint: usize, x: f64, y: f64) -> Result<bool, EditError> {

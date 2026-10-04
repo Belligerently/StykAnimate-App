@@ -18,6 +18,9 @@ use crate::Error;
 /// only the records the edit replaced are converted again.
 #[derive(Clone)]
 pub struct Loader {
+    /// The lifetime/accounting owner shared by this lineage's typed clip
+    /// resources. Cloning a Loader must preserve it along with those resources.
+    scene_budget: Arc<crate::geometry::SceneBudget>,
     /// One image table shared by the root document and every nested movieclip.
     /// Append-only: an index, once handed out, names the same image for good.
     pub images: Vec<ImageData>,
@@ -137,7 +140,14 @@ impl Default for Loader {
 
 impl Loader {
     pub fn new() -> Self {
+        Self::with_scene_limits(crate::geometry::SceneBudget::DEFAULT_BYTES, crate::geometry::SceneBudget::DEFAULT_ENTRIES)
+    }
+
+    /// Sets aggregate derived Scene retention limits for a new document
+    /// lineage. Revisions and nested clips created by this loader share them.
+    pub fn with_scene_limits(bytes: usize, entries: usize) -> Self {
         Loader {
+            scene_budget: Arc::new(crate::geometry::SceneBudget::with_limits(bytes, entries)),
             images: Vec::new(),
             unsupported: Vec::new(),
             notes: Vec::new(),
@@ -149,6 +159,10 @@ impl Loader {
             animations: HashMap::new(),
             converted: Converted::default(),
         }
+    }
+
+    pub fn scene_budget(&self) -> &Arc<crate::geometry::SceneBudget> {
+        &self.scene_budget
     }
 
     fn note(&mut self, feature: &str) {
@@ -284,6 +298,7 @@ impl Loader {
             None => version >= 5,
         };
         let mut doc = Document {
+            scene_budget: self.scene_budget.clone(),
             name: styk.get("name").and_then(Value::as_str).unwrap_or(name).to_string(),
             version,
             canvas,
@@ -525,6 +540,7 @@ impl Loader {
             bend: num(s, "bend_rad").unwrap_or(0.0),
             prim,
             is_static,
+            control_detail: s.get("_stykControl").and_then(|c| c.get("level")).and_then(Value::as_str) == Some("detail"),
             rgb: rgb(s.get("color_rgb")).unwrap_or([0, 0, 0]),
             alpha: match num(s, "transparency") {
                 Some(t) => 1.0 - t / 255.0,
