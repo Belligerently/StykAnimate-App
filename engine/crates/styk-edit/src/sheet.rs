@@ -193,6 +193,11 @@ impl Plan {
         }
     }
 
+    /// Whether the plan captured any pose source (`plan.sources.length`).
+    pub(crate) fn has_sources(&self) -> bool {
+        !self.sources.is_empty()
+    }
+
     /// A pose source this plan captured, by id.
     pub(crate) fn captured(&self, id: &str) -> Option<&Value> {
         self.sources.iter().find(|(source, _)| source == id).map(|(_, frame)| frame)

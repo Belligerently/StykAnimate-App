@@ -238,6 +238,17 @@ scenario('frames-movieclip-sheet', app, [
     ['orderFiguresInFrames', 1, [0]], ['mirrorFiguresInFrames', 'horizontal', [0]], ['rotateFiguresInFrames', 0.3, [0]], ['duplicateInFrames', [0]], ['@select', 4, -1], ['deleteFiguresInFrames', [0]], ['undo'], ['@seek', 6], ['@select', 4, -1], ['deleteFiguresInFrames', [0, 1]],
     ['undo'], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');
+  // A clip on the presence clock given new playback on every frame: each key of its layer and
+  // each replacement holding it; refusals (placement and restarts belong to the document's
+  // clock); after its frames were copied elsewhere, the continuations too; history.
+  scenario('clip-playback-all-sheet', app, [
+    ['@select', 4, -1], ['createLayer', 'Clips'], ['sheetTransferFrames', ['layer-1'], ['layer-2'], 6, 6, 3], ['@seek', 3], ['@select', 5, -1],
+    ['setMovieclipPlayback', {speed: 3}, {allFrames: true}], ['setMovieclipPlayback', {speed: 3}, {allFrames: true}], ['undo'], ['undo'], ['undo'],
+    ['@seek', 0], ['@select', 4, -1], ['setMovieclipPlayback', {speed: 2, mode: 'once'}, {allFrames: true}], ['setMovieclipPlayback', {offset: 1}, {allFrames: true}],
+    ['setMovieclipPlayback', {start: 3}, {allFrames: true}], ['restartMovieclip'], ['removeMovieclipRestart'], ['setMovieclipPlayback', {speed: 2, mode: 'once'}, {allFrames: true}],
+    ['createLayer', 'Clips'], ['sheetTransferFrames', ['layer-1'], ['layer-2'], 6, 6, 3], ['@seek', 0], ['@select', 4, -1], ['setMovieclipPlayback', {mode: 'hold'}, {allFrames: true}],
+    ['undo'], ['undo'], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
   scenario('move-frames-presence-clip-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, 3, {copy: true}], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');

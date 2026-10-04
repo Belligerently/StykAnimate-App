@@ -114,7 +114,12 @@ impl Editor {
         }
         let value = validate_playback(settings)?;
         if options.get("allFrames").is_some_and(Value::truthy) {
-            return Err(EditError::Unported("movieclip playback across every frame".into()));
+            let presence = object.path(&["_stykMovieclip", "clock"]).and_then(Value::as_str) == Some("presence");
+            if presence && self.sheet() {
+                let id = crate::record::uid(&object).unwrap_or(0);
+                return self.sheet_set_movieclip_playback(id, patch);
+            }
+            return Err(EditError::Unported("movieclip playback across every frame of a clip on the document's clock".into()));
         }
         let playback = value.clone();
         self.object_edit("Set movieclip playback", move |editor| {
@@ -124,6 +129,165 @@ impl Editor {
             Ok(())
         })?;
         Ok(value)
+    }
+
+    /// `restartMovieclip()`: the selected clip starts again at the playhead (a restart key),
+    /// on every frame.
+    pub(crate) fn restart_movieclip(&mut self) -> Result<Value, EditError> {
+        let (_, object, _) = self.selected_movieclip()?;
+        let tick = (self.tick + 0.5).floor();
+        let mut restarts: Vec<Value> = playback_settings(object.get("_stykMovieclip")).get("restarts").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        restarts.retain(|key| key.get("tick").and_then(Value::as_f64) != Some(tick));
+        let mut key = Obj::new();
+        key.set("tick", Value::Num(tick));
+        key.set("offset", Value::Num(0.0));
+        restarts.push(Value::object(key));
+        restarts.sort_by(|a, b| a.get("tick").and_then(Value::as_f64).unwrap_or(f64::NAN).total_cmp(&b.get("tick").and_then(Value::as_f64).unwrap_or(f64::NAN)));
+        self.set_restarts(restarts)
+    }
+
+    /// `removeMovieclipRestart()`: the restart key at the playhead removed, on every frame.
+    pub(crate) fn remove_movieclip_restart(&mut self) -> Result<Value, EditError> {
+        let (_, object, _) = self.selected_movieclip()?;
+        let mut restarts: Vec<Value> = playback_settings(object.get("_stykMovieclip")).get("restarts").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        restarts.retain(|key| key.get("tick").and_then(Value::as_f64) != Some(self.tick));
+        self.set_restarts(restarts)
+    }
+
+    fn set_restarts(&mut self, restarts: Vec<Value>) -> Result<Value, EditError> {
+        let mut patch = Obj::new();
+        patch.set("restarts", Value::array(restarts));
+        let mut options = Obj::new();
+        options.set("allFrames", Value::Bool(true));
+        self.set_movieclip_playback(&Value::object(patch), &Value::object(options))
+    }
+
+    /// `sheetSetMovieclipPlayback(uid, patch, {allFrames: true})`: a clip on the presence clock
+    /// takes the patch on every key of its layer (each written from the frame without its
+    /// replacements, which it keeps) and in every replacement holding it.
+    fn sheet_set_movieclip_playback(&mut self, uid: u32, patch: &Value) -> Result<Value, EditError> {
+        let id = self.layer_of(uid);
+        let mut plan = self.planner(std::slice::from_ref(&id))?;
+        let patched = |playback: Option<&Value>| -> Result<Value, EditError> {
+            let mut settings = playback.and_then(Value::as_obj).cloned().unwrap_or_default();
+            for (key, value) in patch.as_obj().map(|p| p.iter().collect::<Vec<_>>()).unwrap_or_default() {
+                settings.set(key, value.clone());
+            }
+            validate_playback(settings)
+        };
+        let presence = |object: &Value| object.path(&["_stykMovieclip", "clock"]).and_then(Value::as_str) == Some("presence");
+        let same = |object: &Value| crate::record::uid(object) == Some(uid);
+        let ticks: Vec<f64> = plan.keys(&id).iter().filter(|k| !k.get("patchOnly").is_some_and(Value::truthy)).filter_map(|k| crate::sheet::num(k, "tick")).collect();
+        let mut result = Value::Null;
+        for tick in ticks {
+            let frame = self.evaluated_without_patches(tick)?;
+            let mut changed = false;
+            let mut record = frame.as_obj().cloned().unwrap_or_default();
+            let mut objects = crate::frame::objects_of(&frame);
+            for object in objects.iter_mut().filter(|o| same(o) && presence(o)) {
+                let settings = patched(object.get("_stykMovieclip"))?;
+                changed |= styk_doc::json::to_string(&settings) != object.get("_stykMovieclip").map(styk_doc::json::to_string).unwrap_or_default();
+                result = settings.clone();
+                if let Some(object) = object.make_obj() {
+                    object.set("_stykMovieclip", settings);
+                }
+            }
+            record.set("objects", Value::array(objects));
+            let steps = crate::sheet::continuations(&frame);
+            if steps.iter().any(|step| crate::sheet::num(step, "uid") == Some(uid as f64)) {
+                let mut rewritten = Vec::with_capacity(steps.len());
+                for step in steps {
+                    if crate::sheet::num(&step, "uid") != Some(uid as f64) {
+                        rewritten.push(step);
+                        continue;
+                    }
+                    let mut step = step.as_obj().cloned().unwrap_or_default();
+                    step.set("playback", patched(step.get("playback"))?);
+                    rewritten.push(Value::object(step));
+                    changed = true;
+                }
+                let mut styk = record.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+                styk.set("movieclipContinuations", Value::array(rewritten));
+                record.set("_styk", Value::object(styk));
+            }
+            if changed {
+                let keys = plan.keys(&id);
+                let key = crate::sheet::key_at(&keys, tick).map(|i| keys[i].clone());
+                plan.write(&id, tick, &Value::object(record), crate::sheet::Write { easing: key.as_ref(), ..crate::sheet::Write::default() })?;
+                if let Some(patches) = key.as_ref().and_then(|k| k.get("movieclipPatches")).cloned() {
+                    let mut keys = plan.keys(&id);
+                    if let Some(written) = keys.iter_mut().find(|k| crate::sheet::num(k, "tick") == Some(tick)).and_then(Value::make_obj) {
+                        written.set("movieclipPatches", patches);
+                        match key.as_ref().and_then(|k| k.get("empty")) {
+                            Some(empty) => written.set("empty", empty.clone()),
+                            None => {
+                                written.remove("empty");
+                            }
+                        }
+                    }
+                    plan.set_keys(&id, keys);
+                }
+            }
+        }
+        // Replacements holding the clip take the patch too.
+        let mut keys = plan.keys(&id);
+        let mut rewritten = false;
+        for key in keys.iter_mut() {
+            let patches = crate::sheet::items(key.get("movieclipPatches"));
+            if key.get("movieclipPatches").is_none_or(|p| !p.truthy()) {
+                continue;
+            }
+            let mut replaced = Vec::with_capacity(patches.len());
+            for replacement in patches {
+                let source = replacement.get("frameId").and_then(Value::as_str).and_then(|frame| self.frame_by_id(frame)).unwrap_or(Value::Null);
+                let holds = crate::sheet::continuations(&source).iter().any(|step| crate::sheet::num(step, "uid") == Some(uid as f64)) || crate::frame::objects_of(&source).iter().any(|o| same(o) && presence(o));
+                if !holds {
+                    replaced.push(replacement);
+                    continue;
+                }
+                let mut frame = source.as_obj().cloned().unwrap_or_default();
+                let mut objects = crate::frame::objects_of(&source);
+                for object in objects.iter_mut().filter(|o| same(o) && presence(o)) {
+                    let settings = patched(object.get("_stykMovieclip"))?;
+                    result = settings.clone();
+                    if let Some(object) = object.make_obj() {
+                        object.set("_stykMovieclip", settings);
+                    }
+                }
+                frame.set("objects", Value::array(objects));
+                let steps = crate::sheet::continuations(&source);
+                if !steps.is_empty() {
+                    let mut out = Vec::with_capacity(steps.len());
+                    for step in steps {
+                        if crate::sheet::num(&step, "uid") != Some(uid as f64) {
+                            out.push(step);
+                            continue;
+                        }
+                        let mut step = step.as_obj().cloned().unwrap_or_default();
+                        step.set("playback", patched(step.get("playback"))?);
+                        out.push(Value::object(step));
+                    }
+                    let mut styk = frame.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default();
+                    styk.set("movieclipContinuations", Value::array(out));
+                    frame.set("_styk", Value::object(styk));
+                }
+                let mut replacement = replacement.as_obj().cloned().unwrap_or_default();
+                replacement.set("frameId", plan.capture(&Value::object(frame), &id).get("frameId").cloned().unwrap_or(Value::Null));
+                replaced.push(Value::object(replacement));
+            }
+            if let Some(key) = key.make_obj() {
+                key.set("movieclipPatches", Value::array(replaced));
+            }
+            rewritten = true;
+        }
+        if rewritten {
+            plan.set_keys(&id, keys);
+        }
+        if plan.has_sources() {
+            let selection = self.selection_state();
+            self.publish(plan, "Set movieclip playback", selection, None)?;
+        }
+        Ok(result)
     }
 
     /// `setMovieclipDrawing(uid, group, view)`: a drawing set's view shown by the instance
