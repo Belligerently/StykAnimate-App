@@ -52,7 +52,7 @@ const PORTED: &[&str] = &[
     // Recolouring figures: palettes, gradients and paints, styles, polygons, format 4, mesh colours.
     "recolor-sheet", "recolor-format4-sheet", "recolor-mesh-sheet", "recolor-native",
     // The builder: segment styles, branch caps and fills, the figure's name and outline.
-    "builder-styles-sheet", "builder-styles-native", "builder-styles-override-native",
+    "builder-styles-sheet", "builder-styles-native", "builder-styles-override-native", "builder-order-sheet", "builder-order-native",
     // Rig relationships: Smart Stretch, behaviours, angle locks, stretch parts, IK refusals.
     "rig-behavior-sheet", "rig-behavior-native", "rig-behavior-ik-sheet",
     // The figure's topology: segments added, deleted, unsplit, flipped, moved, split, duplicated; rig joints appended.

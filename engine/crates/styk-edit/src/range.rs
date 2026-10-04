@@ -730,7 +730,18 @@ impl Editor {
             let figure = self.object()?.and_then(|(_, o)| self.figure_of(&o));
             let count = |key: &str| figure.as_ref().and_then(|f| f.get(key)).and_then(Value::array_len).unwrap_or(0);
             if (self.selection.joint as usize) < count("segments") && count("segments") + count("polyfills") > 1 {
-                return Err(EditError::Unported("ordering the segments of one figure".into()));
+                // A segment of one figure moves in the figure's own drawing order (`moveBuilderOrder`).
+                let mut target = styk_doc::Obj::new();
+                target.set("kind", Value::str("segment"));
+                target.set("index", Value::Num(self.selection.joint as f64));
+                let step = match direction.as_f64() {
+                    Some(1.0) => Value::str("up"),
+                    Some(_) => Value::str("down"),
+                    None => direction.clone(),
+                };
+                let mut options = styk_doc::Obj::new();
+                options.set("branch", Value::Bool(false));
+                return self.move_builder_order(&Value::object(target), &step, Some(&Value::object(options)));
             }
         }
         let frame_indices = Indices::parse(options.get("frameIndices"));

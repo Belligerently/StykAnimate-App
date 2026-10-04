@@ -626,6 +626,8 @@ impl Editor {
             "setBranchCaps" => self.set_branch_caps(given(0)).map(Value::Bool),
             "setBranchFill" => self.set_branch_fill(given(0)).map(Value::Bool),
             "setPolygonOpacity" => self.set_polygon_opacity(given(0), given(1)),
+            "moveBuilderOrder" => self.move_builder_order(given(0).unwrap_or(&Value::Null), given(1).unwrap_or(&Value::Null), given(2)),
+            "setBuilderOrder" => self.set_builder_order(given(0).unwrap_or(&Value::Null), given(1).unwrap_or(&Value::Null), given(2)),
             _ => return None,
         })
     }
@@ -915,6 +917,338 @@ impl Editor {
             }
             Ok(())
         })
+    }
+}
+
+/// One drawable of a figure's combined drawing order (`builderDrawables`): a polygon or a
+/// segment, its place in the definition, its order, and its identity.
+#[derive(Clone, Debug)]
+struct Drawable {
+    polygon: bool,
+    index: usize,
+    z: f64,
+    id: Value,
+}
+
+/// `orderValue(value)`: a finite single-precision draw order.
+fn order_value(value: Option<&Value>, fallback: f64) -> Result<f64, EditError> {
+    match value.filter(|v| !v.is_null()) {
+        None => Ok(fallback),
+        Some(Value::Num(n)) if n.is_finite() && ((*n as f32) as f64).is_finite() => Ok(*n),
+        Some(_) => Err(invalid("errors.animationProperties.drawOrderMustBeAFiniteNativeNumber")),
+    }
+}
+
+/// `builderDrawables(figure)`, of the figure as `object` shows it when given
+/// (`resolveInstanceFigure`'s draw orders), polygons first on ties.
+fn drawables(figure: &Value, object: Option<&Value>) -> Result<Vec<Drawable>, EditError> {
+    let style = object.and_then(|o| o.get("_stykStyle")).filter(|s| !s.is_null());
+    let mut out = Vec::new();
+    for (index, polygon) in polygons_of(figure).iter().enumerate() {
+        let id = crate::recolor::polygon_identity(polygon, index);
+        let override_z = style.and_then(|s| s.path(&["polygons", &styk_doc::json::to_string(&Value::Num(id)), "zIndex"]));
+        let z = match override_z {
+            Some(value) => order_value(Some(value), 0.0)?,
+            None => order_value(polygon.get("z_order"), 0.0)?,
+        };
+        out.push(Drawable { polygon: true, index, z, id: Value::Num(id) });
+    }
+    for (index, segment) in segments_of(figure).iter().enumerate() {
+        let id = segment.get("segment_id").cloned().unwrap_or(Value::Null);
+        let override_z = style.and_then(|s| s.get("segments")).and_then(|t| t.get(&styk_doc::json::to_string(&id))).and_then(|o| o.get("zIndex")).and_then(Value::as_f64).filter(|z| z.is_finite());
+        let z = match override_z {
+            Some(z) => order_value(Some(&Value::Num(z)), 0.0)?,
+            None => order_value(segment.get("z_order"), index as f64 + 1.0)?,
+        };
+        out.push(Drawable { polygon: false, index, z, id });
+    }
+    out.sort_by(|a, b| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(out)
+}
+
+/// `resolveTarget(figure, target, selectedJoint)`: `(polygon, index)` of an existing drawable.
+fn resolve_target(figure: &Value, target: &Value, selected_joint: i64) -> Result<(bool, usize), EditError> {
+    let missing = || invalid("errors.editorBuilderStyle.selectAnExistingSegmentOrPolygon");
+    let kind = target.get("kind").filter(|v| !v.is_null()).cloned().unwrap_or_else(|| Value::str("segment"));
+    let index = match target.get("index").filter(|v| !v.is_null()) {
+        Some(value) => value.as_f64().ok_or_else(missing)?,
+        None => selected_joint as f64,
+    };
+    if index.fract() != 0.0 || index < 0.0 {
+        return Err(missing());
+    }
+    let polygon = match kind.as_str() {
+        Some("segment") => false,
+        Some("polygon") => true,
+        _ => return Err(missing()),
+    };
+    let list = if polygon { polygons_of(figure) } else { segments_of(figure) };
+    let item = list.get(index as usize).filter(|i| i.truthy()).ok_or_else(missing)?;
+    order_value(item.get("z_order"), if polygon { 0.0 } else { index + 1.0 })?;
+    Ok((polygon, index as usize))
+}
+
+/// `builderStyleTargets(figure, target, {branch})`: the drawables an order edit moves; a branch
+/// takes the segments below the selected one and the polygons whose every handle is in it.
+fn style_targets(figure: &Value, entries: &[Drawable], target: (bool, usize), branch: bool) -> Vec<(bool, usize)> {
+    if !branch || target.0 {
+        return vec![target];
+    }
+    let segments = segments_of(figure);
+    let key = |v: Option<&Value>| v.map(styk_doc::json::to_string).unwrap_or_default();
+    let mut children: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for s in &segments {
+        children.entry(key(s.get("parent_id"))).or_default().push(key(s.get("segment_id")));
+    }
+    let selected = &segments[target.1];
+    let mut ids = vec![key(selected.get("segment_id"))];
+    let mut i = 0;
+    while i < ids.len() {
+        for child in children.get(&ids[i]).cloned().unwrap_or_default() {
+            if !ids.contains(&child) {
+                ids.push(child);
+            }
+        }
+        i += 1;
+    }
+    let mut polygon_ids = ids.clone();
+    polygon_ids.push(key(selected.get("parent_id")));
+    let polygons = polygons_of(figure);
+    entries
+        .iter()
+        .filter(|entry| {
+            if entry.polygon {
+                let handles = items_of(polygons[entry.index].get("segment_ids"));
+                handles.iter().all(|h| polygon_ids.contains(&key(Some(h)))) && handles.iter().any(|h| ids.contains(&key(Some(h))))
+            } else {
+                ids.contains(&key(segments[entry.index].get("segment_id")))
+            }
+        })
+        .map(|entry| (entry.polygon, entry.index))
+        .collect()
+}
+
+fn items_of(value: Option<&Value>) -> Vec<Value> {
+    value.and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default()
+}
+
+/// `reorderBuilderDrawables(entries, selected, {direction, delta})`: the new order, as indices
+/// into `entries`.
+fn reorder(entries: &[Drawable], selected: &[(bool, usize)], direction: Option<&str>, delta: f64) -> Result<Vec<usize>, EditError> {
+    let chosen = |e: &Drawable| selected.contains(&(e.polygon, e.index));
+    let all: Vec<usize> = (0..entries.len()).collect();
+    if let Some(side @ ("front" | "back")) = direction {
+        let own: Vec<usize> = all.iter().copied().filter(|&i| chosen(&entries[i])).collect();
+        let other: Vec<usize> = all.iter().copied().filter(|&i| !chosen(&entries[i])).collect();
+        return Ok(if side == "front" { [other, own].concat() } else { [own, other].concat() });
+    }
+    let delta = match direction {
+        Some("up") => 1.0,
+        Some("down") => -1.0,
+        _ => delta,
+    };
+    if !(delta.is_finite() && delta.fract() == 0.0) {
+        return Err(invalid("errors.editorBuilderStyle.chooseAWholeDrawOrderPosition"));
+    }
+    if delta == 0.0 {
+        return Ok(all);
+    }
+    let mut moving: Vec<usize> = all.iter().copied().filter(|&i| chosen(&entries[i])).collect();
+    let other: Vec<usize> = all.iter().copied().filter(|&i| !chosen(&entries[i])).collect();
+    if delta > 0.0 {
+        moving.reverse();
+    }
+    let n = entries.len() as f64;
+    let mut result: Vec<Option<usize>> = vec![None; entries.len()];
+    let mut boundary = if delta > 0.0 { n - 1.0 } else { 0.0 };
+    for index in moving {
+        let target = if delta > 0.0 { (index as f64 + delta).min(boundary) } else { (index as f64 + delta).max(boundary) };
+        result[target as usize] = Some(index);
+        boundary = target + if delta > 0.0 { -1.0 } else { 1.0 };
+    }
+    let mut cursor = other.into_iter();
+    Ok(result.into_iter().map(|slot| slot.or_else(|| cursor.next()).unwrap_or(0)).collect())
+}
+
+impl Editor {
+    /// `animatedOrder(editor)`: draw order goes through property keys (property channels or a
+    /// layer sheet).
+    fn animated_order(&self) -> bool {
+        self.options.property_channels || self.sheet()
+    }
+
+    /// `moveBuilderOrder(target, direction, {branch})`: segments or polygons raised or lowered in
+    /// the figure's combined drawing order: keyed on the figure on show when animated, else written
+    /// into the definition.
+    pub(crate) fn move_builder_order(&mut self, target: &Value, direction: &Value, options: Option<&Value>) -> Result<Value, EditError> {
+        let direction = direction.as_str().filter(|d| ["front", "back", "up", "down"].contains(d)).ok_or_else(|| invalid("errors.editorBuilderStyle.chooseAValidDrawOrderDirection"))?.to_string();
+        let branch = match options {
+            None => false,
+            Some(Value::Null) => return Err(EditError::Unported("order options that are null".into())),
+            Some(o) => o.get("branch").is_some_and(Value::truthy),
+        };
+        let Some((_, object)) = self.object()? else { return Err(EditError::Unported("ordering without a figure".into())) };
+        let figure = self.figure_value(&object);
+        if figure.is_null() {
+            return Err(EditError::Unported("ordering without a figure".into()));
+        }
+        let animated = self.animated_order();
+        let entries = drawables(&figure, animated.then_some(&object))?;
+        let target_value = resolve_target(&figure, target, self.selection.joint)?;
+        let selected = style_targets(&figure, &entries, target_value, branch);
+        let next = reorder(&entries, &selected, Some(&direction), 0.0)?;
+        if animated {
+            if next.iter().enumerate().all(|(i, &j)| i == j) {
+                return Ok(Value::Bool(false));
+            }
+            return self.key_builder_order(&figure, &object, &entries, &next).map(Value::Bool);
+        }
+        // `${Raise|Lower} ${branch ? 'branch' : target.kind ?? 'segment'}`.
+        let noun = if branch { "branch".to_string() } else { target.get("kind").filter(|k| !k.is_null()).and_then(Value::as_str).unwrap_or("segment").to_string() };
+        let label = format!("{} {noun}", if direction == "front" || direction == "up" { "Raise" } else { "Lower" });
+        self.write_builder_order(&label, &figure, &object, &entries, &next).map(Value::Bool)
+    }
+
+    /// `setBuilderOrder(target, value, {branch})`: a drawable (or branch) moved to a place in the
+    /// combined drawing order, counted from 1.
+    pub(crate) fn set_builder_order(&mut self, target: &Value, value: &Value, options: Option<&Value>) -> Result<Value, EditError> {
+        let branch = match options {
+            None => false,
+            Some(Value::Null) => return Err(EditError::Unported("order options that are null".into())),
+            Some(o) => o.get("branch").is_some_and(Value::truthy),
+        };
+        let Some((_, object)) = self.object()? else { return Err(EditError::Unported("ordering without a figure".into())) };
+        let figure = self.figure_value(&object);
+        if figure.is_null() {
+            return Err(EditError::Unported("ordering without a figure".into()));
+        }
+        let selected = resolve_target(&figure, target, self.selection.joint)?;
+        let animated = self.animated_order();
+        let entries = drawables(&figure, animated.then_some(&object))?;
+        let targets = style_targets(&figure, &entries, selected, branch);
+        let current = entries.iter().position(|e| (e.polygon, e.index) == selected).map_or(0.0, |p| p as f64 + 1.0);
+        let label = format!("{} draw order", if branch && !selected.0 { "Branch" } else if selected.0 { "Polygon" } else { "Segment" });
+        let value = match value {
+            Value::Num(n) if n.is_finite() && ((*n as f32) as f64).is_finite() => *n,
+            _ => return Err(invalid("errors.animationProperties.drawOrderMustBeAFiniteNativeNumber")),
+        };
+        let in_range = value.fract() == 0.0 && value >= 1.0 && value <= entries.len() as f64;
+        if animated {
+            if self.property_edit.is_some() {
+                return Err(EditError::Unported("a draw order edit while a property edit is open".into()));
+            }
+            if self.drag.is_some() {
+                self.commit_drag()?;
+            }
+            if !in_range {
+                let uid = object.get("unique_id").cloned().unwrap_or(Value::Null);
+                self.emit("edit", vec![("label", Value::str("Cancel branch opacity")), ("live", Value::Bool(false)), ("changedUids", Value::array(vec![uid]))]);
+                return Err(invalid("errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom"));
+            }
+            let next = reorder(&entries, &targets, None, value - current)?;
+            return self.key_builder_order(&figure, &object, &entries, &next).map(Value::Bool);
+        }
+        if !in_range {
+            if self.drag.is_some() {
+                self.commit_drag()?;
+            }
+            return Err(invalid("errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom"));
+        }
+        let next = reorder(&entries, &targets, None, value - current)?;
+        self.write_builder_order(&label, &figure, &object, &entries, &next).map(Value::Bool)
+    }
+
+    /// `beginBuilderOrderAnimation`, `previewBuilderOrderSequence`, `commitBranchStyleAnimation`: every
+    /// drawable keyed at its new place (a held key), after the preview's live event.
+    fn key_builder_order(&mut self, figure: &Value, object: &Value, entries: &[Drawable], next: &[usize]) -> Result<bool, EditError> {
+        if self.property_edit.is_some() {
+            return Err(EditError::Unported("a draw order edit while a property edit is open".into()));
+        }
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        let uid = object.get("unique_id").cloned().unwrap_or(Value::Null);
+        let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
+        let unchanged = next.iter().enumerate().all(|(i, &j)| i == j);
+        let mut position = vec![0.0; entries.len()];
+        for (place, &index) in next.iter().enumerate() {
+            position[index] = place as f64 + 1.0;
+        }
+        let values: Vec<f64> = entries.iter().enumerate().map(|(i, e)| if unchanged { e.z } else { position[i] }).collect();
+        self.emit("edit", vec![("label", Value::str("Preview drawable properties")), ("live", Value::Bool(true)), ("changedUids", Value::array(vec![uid.clone()]))]);
+        let changed = entries.iter().zip(&values).any(|(e, v)| e.z != *v);
+        if !changed {
+            self.emit("edit", vec![("animation", Value::Bool(true)), ("label", Value::str("Cancel unchanged branch opacity"))]);
+            return Ok(false);
+        }
+        let keyed = entries
+            .iter()
+            .zip(&values)
+            .map(|(entry, value)| {
+                let mut target = Obj::new();
+                target.set("kind", Value::str(if entry.polygon { "polygon" } else { "segment" }));
+                target.set("uid", uid.clone());
+                target.set("figureTypeId", type_id.clone());
+                target.set(if entry.polygon { "polygonId" } else { "handleId" }, entry.id.clone());
+                let mut key = Obj::new();
+                key.set("target", Value::object(target));
+                key.set("property", Value::str("zIndex"));
+                key.set("tick", Value::Num(self.tick));
+                key.set("value", Value::Num(*value));
+                key.set("exactTarget", Value::Bool(true));
+                key.set("interpolation", Value::str("hold"));
+                Value::object(key)
+            })
+            .collect();
+        self.add_animation_keys(Some(&Value::array(keyed)))?;
+        Ok(true)
+    }
+
+    /// `command(editor, label, orderPaths(entries), publishOrder)`: the new order written into the
+    /// definition (positions from 1), the native order arrays dropped; one `native-properties` entry.
+    fn write_builder_order(&mut self, label: &str, figure: &Value, object: &Value, entries: &[Drawable], next: &[usize]) -> Result<bool, EditError> {
+        let _ = object;
+        let figures = items_of(self.report.get("figure_types"));
+        let Some(index) = figures.iter().position(|f| f.get("figure_type_id") == figure.get("figure_type_id")) else { return Ok(false) };
+        let path = |e: &Drawable, field: &str| vec![Key::Field(if e.polygon { "polyfills" } else { "segments" }.into()), Key::Index(e.index), Key::Field(field.into())];
+        let mut paths: Vec<Vec<Key>> = entries.iter().flat_map(|e| [path(e, "z_order"), path(e, "z_order_runtime_raw")]).collect();
+        paths.push(vec![Key::Field("segment_z_raw".into())]);
+        paths.push(vec![Key::Field("poly_z_raw".into())]);
+        if next.iter().enumerate().all(|(i, &j)| i == j) {
+            if self.drag.is_some() {
+                self.commit_drag()?;
+            }
+            return Ok(false);
+        }
+        let mut writes: Vec<Entry> = Vec::new();
+        for (place, &i) in next.iter().enumerate() {
+            writes.push(field(path(&entries[i], "z_order"), Value::Num(place as f64 + 1.0)));
+            writes.push(field(path(&entries[i], "z_order_runtime_raw"), Value::Num(place as f64)));
+        }
+        writes.push(Entry { path: vec![Key::Field("segment_z_raw".into())], value: None });
+        writes.push(Entry { path: vec![Key::Field("poly_z_raw".into())], value: None });
+        self.order_command(label, index, paths, writes)
+    }
+
+    /// `command(editor, label, paths, mutate)` with the paths captured in their own order.
+    fn order_command(&mut self, label: &str, index: usize, paths: Vec<Vec<Key>>, writes: Vec<Entry>) -> Result<bool, EditError> {
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        let Some(figure) = self.report.get("figure_types").and_then(|f| f.item(index)) else { return Ok(false) };
+        let selection = self.selection_state();
+        let before = capture(&figure, &paths);
+        let mut changed = figure.clone();
+        apply_patch(&mut changed, &Patch { entries: writes, remove_empty: Vec::new() });
+        let after = capture(&changed, &paths);
+        if entries_json(&before.entries) == entries_json(&after.entries) {
+            return Ok(false);
+        }
+        self.apply_definition_patch(index, &after);
+        self.retained = None;
+        self.record(Command { kind: CommandKind::NativeProperties { index, before, after }, label: label.into(), before_selection: selection.clone(), after_selection: self.selection_state(), before_revision: 0, after_revision: 0 })?;
+        self.emit("edit", vec![("label", Value::str(label)), ("definition", Value::Bool(true))]);
+        Ok(true)
     }
 }
 

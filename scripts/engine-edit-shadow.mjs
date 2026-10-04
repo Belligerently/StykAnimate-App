@@ -244,6 +244,17 @@ async function run(mode) {
       for (let i = 0; i < 4; i++) e.undo();
       e.select(uid, -1);
     }));
+    // The figure's own drawing order: a segment raised, lowered, placed; a polygon to the front.
+    await step('order the figure\'s segments as the builder does', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.figure || e.figure.segments.length < 2) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      e.select(uid, 1);
+      attempt(() => e.moveBuilderOrder({kind: 'segment'}, 'front')); attempt(() => e.moveBuilderOrder({kind: 'segment'}, 'down', {branch: true}));
+      attempt(() => e.setBuilderOrder({kind: 'segment', index: 1}, 2)); attempt(() => e.orderSelection(1));
+      if (e.figure?.polyfills?.length) attempt(() => e.moveBuilderOrder({kind: 'polygon', index: 0}, 'front'));
+      for (let i = 0; i < 5; i++) e.undo();
+      e.select(uid, -1);
+    }));
     // Rig relationships: Smart Stretch, a behaviour merged into a joint, angle locks measured on
     // the figure on show, parts bound to a driver.
     await step('relate parts of the rig', () => page.evaluate(() => {

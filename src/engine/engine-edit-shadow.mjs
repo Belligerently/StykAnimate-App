@@ -52,7 +52,7 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   // Recolouring (styk-edit/src/recolor.rs).
   'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors',
   // The builder's segment styles (styk-edit/src/builder.rs).
-  'updateBuilderSegmentStyle', 'updateSegmentStyle', 'updateSegmentBranchStyle', 'convertSegment', 'setBranchCaps', 'setBranchFill', 'setPolygonOpacity',
+  'updateBuilderSegmentStyle', 'updateSegmentStyle', 'updateSegmentBranchStyle', 'convertSegment', 'setBranchCaps', 'setBranchFill', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder',
   // Rig relationships (styk-edit/src/rig_behavior.rs).
   'setRigBehavior', 'enableSmartStretch', 'bindStretchParts', 'setAngleLock', 'setSecondaryAngleReference',
   // Rig edits by dragging (styk-edit/src/rig_drag.rs).
@@ -72,8 +72,8 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   'addAnimationKeys', 'addAnimationKey', 'commitAnimationEdit', 'setSceneColor', 'setSceneBackground', 'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter',
   ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
   'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors',
-  // Style edits recoloured or keyed on the figure on show publish the sheet; definition edits run in the editor.
-  'updateBuilderSegmentStyle', 'setPolygonOpacity']);
+  // Style and draw-order edits recoloured or keyed on the figure on show publish the sheet; definition edits run in the editor.
+  'updateBuilderSegmentStyle', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder']);
 const RANGE = new Set([...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames']);
 /** A frame range as the app passes it on a layer sheet (`rangeFrames()`: an array carrying the
  * timeline's chosen ticks as `sheetTicks`), which JSON would drop: `{"@array", sheetTicks}`. */
