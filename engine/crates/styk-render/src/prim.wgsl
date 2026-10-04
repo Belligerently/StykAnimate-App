@@ -34,6 +34,7 @@ struct Group {
     clip: vec4<f32>,    // the group's atlas rectangle (x0, y0, x1, y1)
     p: vec4<f32>,       // this group's atlas pixels -> its parent's target, linear part
     pt: vec2<f32>,      // and its translation
+    canvas: f32,        // 1 where the editor paints the layer with Canvas 2D (effects::plan)
     show: vec4<f32>,    // the part of the atlas rectangle its composite shows
 };
 
@@ -81,7 +82,7 @@ fn group_at(g: u32) -> Group {
     let r3 = textureLoad(group_table, table_at(g * 6u + 3u), 0);
     let r4 = textureLoad(group_table, table_at(g * 6u + 4u), 0);
     let r5 = textureLoad(group_table, table_at(g * 6u + 5u), 0);
-    return Group(r0, r1.xy, r1.z, r1.w, r2, r3, r4.xy, r5);
+    return Group(r0, r1.xy, r1.z, r1.w, r2, r3, r4.xy, r4.z, r5);
 }
 
 fn affine(m: vec4<f32>, t: vec2<f32>, q: vec2<f32>) -> vec2<f32> {
@@ -143,6 +144,8 @@ struct VsOut {
     @location(5) @interpolate(flat) a: vec4<f32>,
     @location(6) @interpolate(flat) b: vec4<f32>,
     @location(7) @interpolate(flat) c: vec4<f32>,
+    // A drawing tile in a Canvas 2D layer: how much of its parent tile is blended in.
+    @location(8) @interpolate(flat) mip: f32,
 };
 
 fn to_screen(p: vec2<f32>) -> vec2<f32> {
@@ -317,6 +320,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.b = in.b;
     out.c = in.c;
     out.uv = vec2<f32>(0.0, 0.0);
+    out.mip = 0.0;
     let g = p.group;
     out.clip = vec4<f32>(-1e9, -1e9, 1e9, 1e9);
     // World units per target pixel.
@@ -407,10 +411,18 @@ fn vs_main(in: VsIn) -> VsOut {
             // floor(-log2(target pixels per cel pixel)) clamped to 0..8 (drawing-gpu.mjs).
             let level = p.b.w;
             let cel_pixel = length(p.a.zw) / (64.0 * exp2(level));
-            let shown = clamp(floor(-log2(max(cel_pixel / aa, 1e-30))), 0.0, 8.0);
+            let lod = -log2(max(cel_pixel / aa, 1e-30));
+            let shown = clamp(floor(lod), 0.0, 8.0);
             if (shown != level) {
                 out.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);
                 return out;
+            }
+            // In a layer the editor paints with Canvas 2D, it draws this level scaled by what
+            // remains (between 1 and 1/2) with 'high' smoothing, which Chromium samples from the
+            // level's own reductions, trilinearly, at a level of detail of log2(1 / scale) - 1/2
+            // (measured): past 2^-1/2, up to half of the next level is blended in.
+            if (g != 0u && gr.canvas > 0.5 && p.paint != NO_PAINT) {
+                out.mip = clamp(lod - shown - 0.5, 0.0, 0.5);
             }
         }
         world = p.a.xy + p.a.zw * c.x + p.b.xy * c.y;
@@ -532,6 +544,16 @@ fn paint_at(offset: u32, w: vec2<f32>) -> vec4<f32> {
         prev = col;
     }
     return prev;
+}
+
+// Bilinear filtering of a drawing tile's straight-alpha texels, premultiplied first:
+// `origin` is the top-left texel of the 2×2 footprint, `f` the position within it.
+fn tile_bilinear(origin: vec2<i32>, layer: i32, f: vec2<f32>) -> vec4<f32> {
+    let t00 = premul(textureLoad(sprites, origin, layer, 0));
+    let t10 = premul(textureLoad(sprites, origin + vec2<i32>(1, 0), layer, 0));
+    let t01 = premul(textureLoad(sprites, origin + vec2<i32>(0, 1), layer, 0));
+    let t11 = premul(textureLoad(sprites, origin + vec2<i32>(1, 1), layer, 0));
+    return mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
 }
 
 // Nearest-neighbour sampling through the linear sampler: at a texel's centre the
@@ -699,7 +721,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let w = in.world;
     let aa = in.aa;
     var base = unpack(p.color);
-    if (p.paint != NO_PAINT) {
+    // A drawing tile's `paint` names its parent tile, not a paint (styk-draw F_DRAWING).
+    if (p.paint != NO_PAINT && kind != K_IMAGE) {
         base = paint_at(p.paint, w);
     }
     if (kind == K_CAPSULE || kind == K_BOX || kind == K_ARC || kind == K_POLYLINE) {
@@ -786,11 +809,16 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             let f = t - cell;
             let origin = vec2<i32>(round(rect.xy * size)) + vec2<i32>(cell);
             let layer = i32(p.b.z);
-            let t00 = premul(textureLoad(sprites, origin, layer, 0));
-            let t10 = premul(textureLoad(sprites, origin + vec2<i32>(1, 0), layer, 0));
-            let t01 = premul(textureLoad(sprites, origin + vec2<i32>(0, 1), layer, 0));
-            let t11 = premul(textureLoad(sprites, origin + vec2<i32>(1, 1), layer, 0));
-            tex = mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
+            tex = tile_bilinear(origin, layer, f);
+            if (in.mip > 0.0) {
+                // The parent tile: this tile is the quarter `q` of it, at half its texel density.
+                let parent = paint_row(p.paint);
+                let q = u32(parent.w);
+                let tp = in.uv * 32.0 + vec2<f32>(f32(q & 1u), f32(q >> 1u)) * 32.0 - vec2<f32>(0.5);
+                let cp = floor(tp);
+                let up = tile_bilinear(vec2<i32>(parent.yz) + vec2<i32>(cp), i32(parent.x), tp - cp);
+                tex = mix(tex, up, in.mip);
+            }
         } else if ((p.kind & F_SMOOTH) != 0u && !crisp()) {
             tex = textureSampleLevel(sprites, linear_sampler, raw, i32(p.b.z), 0.0);
         } else {

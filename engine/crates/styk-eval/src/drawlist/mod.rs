@@ -367,7 +367,7 @@ impl<'a> Ctx<'a> {
         let tint = if self.tint.is_some() { F_TINT } else { 0 };
         let flags = if a.smooth { F_SMOOTH } else { 0 } | tint;
         // One atlas rectangle drawn over the cel-space rectangle (x, y, w, h); `extra` is the record's last parameter.
-        let quad = |out: &mut Out, kind: u32, e: &crate::assets::AtlasEntry, anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, extra: f64| {
+        let quad = |out: &mut Out, kind: u32, paint: u32, e: &crate::assets::AtlasEntry, anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, extra: f64| {
             let o = place(anchor, x, y);
             let u = place(anchor, x + w, y);
             let v = place(anchor, x, y + h);
@@ -382,16 +382,33 @@ impl<'a> Ctx<'a> {
                 ys.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             ];
             let uv = e.uv();
-            out.push(prim(kind, color, NO_PAINT, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, extra], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]), b);
+            out.push(prim(kind, color, paint, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, extra], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]), b);
         };
         if let Some(tiles) = &a.tiles {
             // Every level's tiles; the shader keeps the level the view calls for (`crate::drawing`).
             let Some(starts) = self.assets.cel_levels(tiles) else { return };
             for (level, drawn) in tiles.levels.iter().enumerate() {
                 let span = (crate::drawing::TILE << level) as f64;
+                let parents = tiles.levels.get(level + 1).zip(starts.get(level + 1));
                 for (i, &(tx, ty)) in drawn.iter().enumerate() {
                     let Some(e) = self.assets.drawing.get((starts[level] + i as u32) as usize).filter(|e| e.valid) else { continue };
-                    quad(out, K_IMAGE | F_DRAWING | tint, e, tiles.anchor, tx as f64 * span, ty as f64 * span, span, span, level as f64);
+                    // The tile one level up that covers this one (`F_DRAWING`): what Canvas 2D's
+                    // smoothing blends in where the editor paints the cel into a raster.
+                    let (px, py) = (tx.div_euclid(2), ty.div_euclid(2));
+                    let parent = parents.and_then(|(above, &start)| {
+                        // Levels are sorted by row, then column (`crate::drawing::level_tiles`).
+                        let j = above.binary_search_by_key(&(py, px), |&(x, y)| (y, x)).ok()?;
+                        self.assets.drawing.get((start + j as u32) as usize).filter(|e| e.valid)
+                    });
+                    let paint = match parent {
+                        Some(p) => {
+                            let row = out.paints.len() as u32;
+                            out.paints.push([p.layer as f32, p.x as f32, p.y as f32, ((tx - 2 * px) + 2 * (ty - 2 * py)) as f32]);
+                            row
+                        }
+                        None => NO_PAINT,
+                    };
+                    quad(out, K_IMAGE | F_DRAWING | tint, paint, e, tiles.anchor, tx as f64 * span, ty as f64 * span, span, span, level as f64);
                 }
             }
             return;
@@ -399,7 +416,7 @@ impl<'a> Ctx<'a> {
         let Some(image) = a.image else { return };
         let Some(e) = self.assets.image(image) else { return };
         let [w, h] = a.display_size.unwrap_or([e.source_w as f64, e.source_h as f64]);
-        quad(out, K_IMAGE | flags, e, a.anchor_start, 0.0, 0.0, w, h, 0.0);
+        quad(out, K_IMAGE | flags, NO_PAINT, e, a.anchor_start, 0.0, 0.0, w, h, 0.0);
     }
 
     /// Where a text's glyph-space point lands (the transform of `drawPrimitives`' text branch).

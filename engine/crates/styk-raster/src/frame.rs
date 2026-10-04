@@ -33,6 +33,8 @@ pub(crate) struct Layer {
     pub p: Affine,
     pub show: [f64; 4],
     pub filter: Option<plan::Filter>,
+    /// The editor paints this layer with Canvas 2D (`plan::Placement::canvas`).
+    pub canvas: bool,
 }
 
 /// What a frame costs: its layers, effect passes and the most bytes its targets held at once.
@@ -80,6 +82,7 @@ impl<'a> Frame<'a> {
             p: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             show: [0.0, 0.0, size[0] as f64, size[1] as f64],
             filter: None,
+            canvas: false,
         };
         let mut layers = vec![root; n];
         let mut matrices: Vec<Affine> = vec![view.matrix; n];
@@ -99,6 +102,7 @@ impl<'a> Frame<'a> {
                 p: [f(12), f(13), f(14), f(15), f(16), f(17)],
                 show: [f(20), f(21), f(22), f(23)],
                 filter: placement.filter,
+                canvas: placement.canvas,
             };
         }
         let mut runs = vec![(usize::MAX, 0usize); n];
@@ -448,17 +452,32 @@ impl<'a> Frame<'a> {
     fn image(&self, target: &mut Target, layer: &Layer, clip: [i64; 4], p: &Prim) {
         let (o, u, v) = ([p.a[0], p.a[1]], [p.a[2], p.a[3]], [p.b[0], p.b[1]]);
         let drawing = p.kind & F_DRAWING != 0;
+        // How much of a drawing tile's parent is blended in (prim.wgsl: `mip`).
+        let mut mip = 0.0f32;
         if drawing {
             // A tile of display level b.w: the view shows one level per cel (`drawing-gpu.mjs`).
             let level = p.b[3];
             let cel_pixel = (u[0] * u[0] + u[1] * u[1]).sqrt() / (64.0 * level.exp2());
-            let shown = (-(cel_pixel / layer.aa).max(1e-30).log2()).floor().clamp(0.0, 8.0);
+            let lod = -(cel_pixel / layer.aa).max(1e-30).log2();
+            let shown = lod.floor().clamp(0.0, 8.0);
             if shown != level {
                 return;
+            }
+            // In a layer the editor paints with Canvas 2D, its 'high' smoothing blends up to half
+            // of the next level in (prim.wgsl).
+            if layer.canvas && p.paint != NO_PAINT {
+                mip = (lod - shown - 0.5).clamp(0.0, 0.5);
             }
         }
         let key = crate::atlas_key(p.b[2], p.c);
         let Some(texture) = (if drawing { self.images.tile(key) } else { self.images.sprite(key) }) else { return };
+        // The parent tile (styk-draw `F_DRAWING`) and the quarter of it this tile covers.
+        let parent = if mip > 0.0 {
+            let row = self.list.paints.get(p.paint as usize).copied().unwrap_or([0.0; 4]);
+            self.images.tile((row[0] as u32, row[1] as u32, row[2] as u32)).map(|t| (t, [(row[3] as u32 & 1) as f32 * 32.0, (row[3] as u32 >> 1) as f32 * 32.0]))
+        } else {
+            None
+        };
         let rect = p.c;
         let crisp = self.crisp;
         let corners = [o, [o[0] + u[0], o[1] + u[1]], [o[0] + v[0], o[1] + v[1]], [o[0] + u[0] + v[0], o[1] + u[1] + v[1]]].map(|c| apply32(&layer.m32, c));
@@ -477,7 +496,14 @@ impl<'a> Frame<'a> {
                 texture.texel(1 + (uv[0] * 64.0).floor().clamp(0.0, 63.0) as i64, 1 + (uv[1] * 64.0).floor().clamp(0.0, 63.0) as i64)
             } else if drawing {
                 // The slot's border holds the neighbouring tiles' texels: tiles join without seams.
-                texture.bilinear([uv[0] * 64.0 + 1.0, uv[1] * 64.0 + 1.0])
+                let own = texture.bilinear([uv[0] * 64.0 + 1.0, uv[1] * 64.0 + 1.0]);
+                match &parent {
+                    Some((up, q)) => {
+                        let above = up.bilinear([uv[0] * 32.0 + q[0] + 1.0, uv[1] * 32.0 + q[1] + 1.0]);
+                        [0, 1, 2, 3].map(|k| own[k] + (above[k] - own[k]) * mip)
+                    }
+                    None => own,
+                }
             } else {
                 let raw = [rect[0] + (rect[2] - rect[0]) * uv[0], rect[1] + (rect[3] - rect[1]) * uv[1]];
                 if smooth {

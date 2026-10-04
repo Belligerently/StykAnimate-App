@@ -143,7 +143,14 @@ pub const F_RING_FILL: u32 = 1 << 9;
 /// An image drawn in the record's colour through its own coverage (onion tint).
 pub const F_TINT: u32 = 1 << 11;
 /// A drawing cel tile (`styk_eval::drawing`): straight-alpha texels with a border, filtered
-/// by the shader; the record's `b[3]` is its display level.
+/// by the shader; the record's `b[3]` is its display level. Its `paint` is not a paint
+/// record: it is the row of [`DrawList::paints`] naming the tile's **parent**, the tile one
+/// level up that covers it (`[atlas layer, x, y, quadrant]`: the parent slot's first texel,
+/// past its border, and which quarter of it this tile reduces to, `qx + 2·qy`), or
+/// [`NO_PAINT`] when there is none (the last level). Renderers drawing a cel inside a layer
+/// the editor paints with Canvas 2D ([`LayerKind`]: entries, nested and raster layers) blend
+/// the parent in as Canvas 2D's smoothing samples its reduced levels; elsewhere one level is
+/// drawn and the row is unused.
 pub const F_DRAWING: u32 = 1 << 12;
 
 /// `Prim::paint` of a record drawn in its `color`.
