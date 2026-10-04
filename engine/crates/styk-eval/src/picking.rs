@@ -148,6 +148,9 @@ pub enum QueryError {
     NotReady { slot: usize },
     /// The supplied frame's painter order names an absent object.
     InvalidFrame { slot: usize },
+    /// The supplied all-joint traversal is not a complete permutation of the
+    /// frame's slots. Never replace the source's order with painter/slot order.
+    InvalidOrder,
 }
 
 fn contains(set: Option<&HashSet<u32>>, value: u32) -> bool {
@@ -448,6 +451,87 @@ pub fn bounds_intersects_marquee(scene: &Scene, frame: &Frame, slot: usize, boun
     let d = projection.point([bounds.left, bounds.bottom]);
     Ok(max(max(max(a[0], b[0]), c[0]), d[0]) >= rect.left && min(min(min(a[0], b[0]), c[0]), d[0]) <= rect.right &&
         max(max(max(a[1], b[1]), c[1]), d[1]) >= rect.top && min(min(min(a[1], b[1]), c[1]), d[1]) <= rect.bottom)
+}
+
+/// The exact source geometry-map traversal, borrowed from an already prepared
+/// query snapshot. Construction validates it once with temporary scratch; no
+/// scene field/cache or per-pointer allocation is retained. The producer owns
+/// the order's document/draft/display identity and incremental append semantics.
+pub struct JointOrder<'a> {
+    scene: &'a Scene,
+    frame: &'a Frame,
+    slots: &'a [u32],
+}
+
+impl<'a> JointOrder<'a> {
+    pub fn new(scene: &'a Scene, frame: &'a Frame, ordered_slots: &'a [u32]) -> Result<Self, QueryError> {
+        if ordered_slots.len() != frame.objects.len() { return Err(QueryError::InvalidOrder); }
+        let mut seen = vec![false; frame.objects.len()];
+        for &slot in ordered_slots {
+            let Some(seen) = seen.get_mut(slot as usize) else { return Err(QueryError::InvalidOrder); };
+            if std::mem::replace(seen, true) { return Err(QueryError::InvalidOrder); }
+        }
+        Ok(Self {scene, frame, slots: ordered_slots})
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ClosestJointOptions<'a> {
+    pub uid: Option<u32>,
+    pub excluded_uid: Option<u32>,
+    pub hidden_uids: Option<&'a HashSet<u32>>,
+    pub locked_uids: Option<&'a HashSet<u32>>,
+    /// Source threshold is ten CSS pixels divided by this exact view scale.
+    pub view_scale: f64,
+}
+
+impl Default for ClosestJointOptions<'_> {
+    fn default() -> Self { Self {uid: None, excluded_uid: None, hidden_uids: None, locked_uids: None, view_scale: 1.0} }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct JointHit {
+    pub slot: u32,
+    pub uid: u32,
+    pub joint: i32,
+    pub id: u32,
+    pub point: [f64; 2],
+}
+
+/// The app's `closestHandle`: all joints, including joined roots, static and
+/// invisible nodes. The radius is inclusive, and later equal-distance joints
+/// in the supplied geometry-map order win. This is not exposed-handle picking
+/// or construction KD nearest; both have distinct owning selection contracts.
+/// Numeric nonfinite behavior follows the source, which has no finite guard.
+pub fn closest_joint(order: &JointOrder<'_>, point: [f64; 2], options: &ClosestJointOptions<'_>) -> Result<Option<JointHit>, QueryError> {
+    let radius = 10.0 / options.view_scale;
+    let mut distance = radius * radius;
+    let mut hit = None;
+    for &slot in order.slots {
+        let slot = slot as usize;
+        let object = &order.frame.objects[slot];
+        if options.excluded_uid == Some(object.uid) || options.uid.is_some_and(|uid| uid != object.uid) ||
+            contains(options.hidden_uids, object.uid) || contains(options.locked_uids, object.uid) { continue; }
+        let (geometry, figure) = ready(order.scene, order.frame, slot)?;
+        let mut visit = |id, joint, candidate: [f64; 2]| {
+            let dx = candidate[0] - point[0];
+            let dy = candidate[1] - point[1];
+            let d = dx * dx + dy * dy;
+            if d <= distance {
+                distance = d;
+                hit = Some(JointHit {slot: slot as u32, uid: object.uid, joint, id, point: candidate});
+            }
+        };
+        visit(0, -1, geometry.root);
+        let joints = figure.plan.rig.as_ref().map_or(&figure.plan.order, |rig| &rig.order);
+        for &index in joints {
+            let index = index as usize;
+            let segment = figure.segments.get(index).ok_or(QueryError::NotReady {slot})?;
+            let point = *geometry.ends.get(index).ok_or(QueryError::NotReady {slot})?;
+            visit(segment.id, index as i32, point);
+        }
+    }
+    Ok(hit)
 }
 
 #[derive(Clone, Copy, Debug)]

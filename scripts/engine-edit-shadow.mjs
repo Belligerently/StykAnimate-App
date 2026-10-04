@@ -5,7 +5,7 @@
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
 //   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
-//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
+//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -56,6 +56,7 @@ const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
 const requiredCalls = [
+  ...(args.includes('--vfx-remaining') ? ['setVfxScope', 'applyVfxPreset', 'addVfxGroup', 'addVfxUserPreset'] : []),
   ...(args.includes('--origin-range') ? ['rotateFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'resetPoseInFrames', 'centerFiguresInFrames', 'joinFiguresInFrames', 'detachFiguresInFrames'] : []),
   ...(args.includes('--origin-rig') ? ['beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag'] : []),
   ...(args.includes('--camera-follow') ? ['nudgeHandle', 'setCameraMotion', 'applyCameraToFigures'] : []),
@@ -240,6 +241,17 @@ async function run(mode) {
       try { e.addSegment({length: 5}); }
       catch (error) { rejected = error.messageKey === 'errors.editorLayerSheet.objectIdentityCapacityReached'; if (!rejected) throw error; }
       if (!rejected || snapshot() !== before) throw new Error('The capacity refusal changed the project or its history.');
+    }));
+    if (args.includes('--vfx-remaining')) await step('compare editable effect presets, paints and attached scopes', () => page.evaluate(async () => {
+      const e = styk.editor, {createVfx} = await import('/src/vfx.mjs');
+      e.select(1, -1); const target = {kind: 'figure', uid: 1};
+      e.setVfxScope(target, true); e.applyVfxPreset(target, 'Neon');
+      e.addVfxGroup(target, 'Ice', {includeAttached: true, start: 0, duration: 12});
+      const paint = {type: 'linear', angle: 45, stops: [{offset: 0, color: [40, 120, 255], opacity: 1}, {offset: 1, color: [240, 60, 80], opacity: .6}]};
+      const tint = {...createVfx('tint', 'saved-tint'), params: {color: paint, mix: .7}};
+      e.addVfxUserPreset(target, {id: 'saved-preset', name: 'Gradient pulse', created: 0, effects: [tint], keys: {}, strength: .8, fadeIn: 2, fadeOut: 3, duration: 12, offset: 2}, {includeAttached: true});
+      e.pasteVfx(target, [tint], {includeAttached: true}); e.setVfxParameter(target, tint.id, 'color', {...paint, type: 'radial'});
+      for (let i = 0; i < 6; i++) e.undo(); for (let i = 0; i < 6; i++) e.redo();
     }));
     if (args.includes('--focused')) return;
     if (args.includes('--origin')) await step('set a figure origin and replay its history', () => page.evaluate(() => {

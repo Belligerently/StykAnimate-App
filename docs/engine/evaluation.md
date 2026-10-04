@@ -130,7 +130,7 @@ import and per-object validation remain in their existing JavaScript owners.
 
 `styk_eval::picking` provides native handle generation/picking, segment-body picking,
 origin and measured-bounds marquee predicates, and the gesture-local construction
-index. Queries borrow ready typed `Scene`/`Frame` geometry and preserve the editor's
+index, and `closest_joint` with a borrowed `JointOrder`. Queries borrow ready typed `Scene`/`Frame` geometry and preserve the editor's
 ordering, inclusive radii, exclusions, snap priority and latch. Raw segment drawing
 endpoints/point ranges/thickness survive before expanded sprite geometry; stored
 arc arithmetic uses `styk-math`. These are native prerequisites: the app still owns
@@ -152,7 +152,13 @@ Platform-neutral additions for crate consumers: `Document::scene_budget`,
 `Loader::with_scene_limits`/`scene_budget`, `geometry::SceneBudget`,
 `Scene::figure_of`/`retained_bytes`, `ObjectGeometry::lengths`/`raw_segments`,
 `RawSegment`, `Segment::control_detail`, and the public picking types/functions.
-Browser query wiring and actual-shown snapshot readiness remain pending.
+`JointOrder::new` validates the provided slot permutation once; queries retain the
+editor's later-entry ties, inclusive CSS radius and all-joint traversal without
+allocating an order on each pointer move. Forty-four fixture files record 201,792
+actual editor queries across 20 projects / 54 frames, including live edited and
+reopened painter-map order. Additive `ClosestJointOptions`, `JointHit` and
+`QueryError::InvalidOrder` are platform neutral. Browser query wiring and
+actual-shown snapshot readiness remain pending.
 
 ## Colour transitions
 

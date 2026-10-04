@@ -38,7 +38,7 @@ const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.leng
 run('Rust fixture suites', ...cargo('test', '--release', '-p', 'styk-doc', '-p', 'styk-formats', '-p', 'styk-draw', '-p', 'styk-eval', '-p', 'styk-engine', '-p', 'styk-render', '-p', 'styk-raster', '-p', 'styk-piv', '-p', 'styk-edit', '-p', 'styk-math', '-p', 'styk-drawing'));
 
 // Fixture generators are byte-stable: regenerating changes nothing.
-for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures', 'generator-fixtures', 'spatial-fixtures', 'origin-fixtures', 'origin-invalid-fixtures', 'origin-rig-invalid-fixtures', 'channel-fixtures', 'picking-fixtures', 'picking-construction-fixtures', 'picking-bounds-fixtures']) {
+for (const tool of ['ik-fixtures', 'eval-fixtures', 'vfx-fixtures', 'generator-fixtures', 'spatial-fixtures', 'origin-fixtures', 'origin-invalid-fixtures', 'origin-rig-invalid-fixtures', 'channel-fixtures', 'picking-fixtures', 'picking-construction-fixtures', 'picking-bounds-fixtures', 'picking-joints-fixtures']) {
   if (!existsSync(path.join(root, `engine/tools/${tool}.mjs`))) continue;
   run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
     check: () => unchanged('engine/crates/styk-eval/tests/fixtures')});
@@ -60,6 +60,8 @@ run('record fixtures regenerate unchanged', process.execPath, ['engine/tools/rec
 
 // Command recordings are byte-stable too: re-recording them in the JavaScript editor changes
 // nothing (styk-edit's test above replays them in the engine).
+run('effect preset catalogue and scenarios regenerate unchanged', process.execPath, ['engine/tools/edit-vfx-scenarios.mjs'], {quiet: true,
+  check: () => unchanged('engine/crates/styk-edit/src/vfx_presets.json', 'engine/tests/edit')});
 run('edit recordings regenerate unchanged', process.execPath, ['engine/tools/edit-scenarios.mjs'], {quiet: true,
   check: () => spawnSync(process.execPath, ['engine/tools/edit-replay.mjs', '--all'], {cwd: root}).status === 0
     && unchanged('engine/tests/edit')});

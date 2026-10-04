@@ -40,8 +40,8 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'centerCamera', 'alignSelection', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'applyCameraToFigures',
   // These draw identities or seeds (D18): the editor runs them and hands the engine what it drew.
   'addCameraMotion', 'copyCameraMotion', 'pasteCameraMotion', 'duplicateCameraMotion', 'randomizeCameraMotion', 'addVfx', 'duplicateVfx', 'pasteVfx',
-  'addVfxClip', 'copyVfxClip', 'pasteVfxClip', 'duplicateVfxClip', 'addVfxGroupEffect',
-  'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
+  'applyVfxPreset', 'addVfxGroup', 'addVfxUserPreset', 'addVfxClip', 'copyVfxClip', 'pasteVfxClip', 'duplicateVfxClip', 'addVfxGroupEffect',
+  'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx', 'setVfxScope',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',

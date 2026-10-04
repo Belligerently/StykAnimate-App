@@ -47,7 +47,7 @@ src/canvas-artwork-pick.mjs	engine	styk-render	js
 src/canvas-color-sample.mjs	engine	styk-render	js	
 src/canvas-guides.mjs	ui	-	stays	
 src/canvas-handle-overlay.mjs	ui	-	stays	
-src/canvas-interactions.mjs	engine	styk-eval::picking	partial	Rust: handle/body picking, origin and explicit measured-bounds marquee predicates; bounds/resource readiness and ordered app query/gesture stream still JS
+src/canvas-interactions.mjs	engine	styk-eval::picking	partial	Rust: handle/body/closest-joint picking, origin and explicit measured-bounds marquee predicates; borrowed painter order matches 201792 queries; bounds/resource readiness and app query/gesture stream still JS
 src/canvas-pinch.mjs	ui	-	stays	
 src/canvas-pose-input.mjs	ui	-	stays	
 src/canvas-raster-refinement.mjs	engine	styk-render	js	
@@ -171,8 +171,8 @@ src/editor-spatial.mjs	engine	styk-edit	partial	Rust: getSpatialPose, setSpatial
 src/editor-sprite-segment.mjs	engine	styk-edit	partial	Rust: sprite insertion PNG validation, sparse aliases/placement/style/order and native/sheet history, recorded exactly; origins and facade admission remain gated
 src/editor-style-topology.mjs	engine	styk-edit	partial	Rust: style overlays, Stick Nodes shapes and effect owners following the handles of a topology edit (styk-edit/src/topology.rs); channels a changed handle animates and reversed gradients (setOrigin) still JS
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
-src/editor-vfx-clips.mjs	engine	styk-edit	partial	Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit, addVfxClip, copyVfxClip, pasteVfxClip, duplicateVfxClip, addVfxGroupEffect (styk-edit/src/vfx_clips.rs); presets (addVfxGroup, addVfxUserPreset) and figure clips pasted with figures still JS
-src/editor-vfx.mjs	engine	styk-edit	partial	Rust: addVfx, removeVfx, resetVfx, duplicateVfx, moveVfx, reorderVfx, pasteVfx on a layer sheet (styk-edit/src/vfx_stack.rs, identities the editor draws: D18) and setVfxParameter (styk-edit/src/property_edit.rs); presets (applyVfxPreset), setVfxScope and pasting with attached parts still JS
+src/editor-vfx-clips.mjs	engine	styk-edit	partial	Rust: stack/clip commands plus addVfxGroup/addVfxUserPreset, key identities and D18 draws, attached scopes and strict paints; 12 remaining-effect replays/392 exact steps; figure clips pasted with figures and worker runtime adoption remain JS
+src/editor-vfx.mjs	engine	styk-edit	partial	Rust: stack editing, all 13 presets, setVfxScope, paste with attached parts and paint parameters on layer sheets; exact recorded/app shadow and existing paint adoption; native stacks and remaining runtime ownership still JS
 src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet, _topologyEdit, addSegment, addSegments, deleteSegment, splitSegment, replaceFigureDefinition (styk-edit/src/topology.rs) (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
@@ -500,7 +500,7 @@ src/vfx-canvas.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-clip-controls.mjs	ui	-	stays	
 src/vfx-clip-inspector.mjs	ui	-	stays	
 src/vfx-clip-timeline.mjs	ui	-	stays	
-src/vfx-clips.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validateVfxClips for edits (styk-edit/src/vfx_clips.rs, paints excepted)
+src/vfx-clips.mjs	engine	styk-eval::vfx	partial	Rust: clip sampling, keys, fades, composition and strict edit validation including paints/attached scopes; remaining JS model callers preserved
 src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
 src/vfx-cpu.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
@@ -522,13 +522,13 @@ src/vfx-localization.mjs	ui	-	stays
 src/vfx-paint.mjs	engine	styk-eval::vfx	ported	effect model, clips, sampling. Rust: vfx::paint
 src/vfx-preset-preview.mjs	ui	-	stays	
 src/vfx-preset-ui.mjs	ui	-	stays	
-src/vfx-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-presets.mjs	engine	styk-eval::vfx	partial	Rust: byte-verifiable 13-preset catalogue and recorded stack/group commands; existing JS UI/oracle catalogue callers remain
 src/vfx-preview.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
 src/vfx-registry.mjs	engine	styk-eval::vfx	ported	effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags)
 src/vfx-scene.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: scene stack over the camera image (effects); Canvas 2D path still JS
 src/vfx-shaders.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: the filter shaders (effects/passes.wgsl); generated effects still JS
 src/vfx-surface.mjs	engine	styk-render::vfx	js	effect executors and surfaces
-src/vfx-user-presets.mjs	engine	styk-eval::vfx	js	effect model, clips, sampling
+src/vfx-user-presets.mjs	engine	styk-eval::vfx	partial	Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS
 src/vfx-viewport.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: layer density, crops and resolution caps per view (effects/plan.rs)
 src/vfx-webgpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: every filter pass (styk-render effects/executor.rs, passes.wgsl) on WebGPU, native and WebGL2; still the oracle and the renderer of gated documents
 src/vfx.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS

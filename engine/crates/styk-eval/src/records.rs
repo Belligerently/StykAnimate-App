@@ -1054,7 +1054,7 @@ fn vfx_record(stacks: &Value, next: Option<&Value>, before: Option<&crate::vfx::
 }
 
 /// `normalizePaint`'s record: `{type, angle, stops: [{offset, color, opacity}]}`.
-fn paint_record(paint: &crate::doc::Paint) -> Value {
+pub fn paint_record(paint: &crate::doc::Paint) -> Value {
     let mut record = Obj::new();
     record.set("type", Value::str(crate::vfx::paint::kind_name(paint.kind)));
     record.set("angle", Value::Num(paint.angle));

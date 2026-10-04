@@ -87,7 +87,7 @@ pub fn replay(reference: &Value) -> Result<Outcome, String> {
                 return Ok(outcome);
             }
             (Err(EditError::Invalid(key)), Some(error)) => {
-                let recorded = error.get("key").and_then(Value::as_str).unwrap_or("");
+                let recorded = error.get("key").and_then(Value::as_str).or_else(|| error.get("message").and_then(Value::as_str)).unwrap_or("");
                 if recorded != key {
                     differences.push(format!("error {key}, the editor's was {recorded}"));
                 }

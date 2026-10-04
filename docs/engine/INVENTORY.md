@@ -15,11 +15,11 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
 | `styk-edit` | 89 | 1232 KiB | 49 | 36 | 4 | 0 | 0 | 2 % | 62 % | 0 % |
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
-| `styk-eval` | 81 | 758 KiB | 31 | 41 | 9 | 0 | 0 | 16 % | 65 % | 0 % |
+| `styk-eval` | 81 | 758 KiB | 29 | 43 | 9 | 0 | 0 | 16 % | 66 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 32 | 15 | 5 | 0 | 0 | 9 % | 57 % | 0 % |
-| **Total** | 356 | 4045 KiB | 184 | 114 | 35 | 22 | 1 | 20 % | 47 % | 0 % |
+| **Total** | 356 | 4045 KiB | 182 | 116 | 35 | 22 | 1 | 20 % | 47 % | 0 % |
 
 ## Engine modules
 
@@ -126,8 +126,8 @@ Engine logic: ported to Rust.
 | `src/editor-sprite-segment.mjs` | `styk-edit` | partial | Rust: sprite insertion PNG validation, sparse aliases/placement/style/order and native/sheet history, recorded exactly; origins and facade admission remain gated |
 | `src/editor-style-topology.mjs` | `styk-edit` | partial | Rust: style overlays, Stick Nodes shapes and effect owners following the handles of a topology edit (styk-edit/src/topology.rs); channels a changed handle animates and reversed gradients (setOrigin) still JS |
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: setVfxClip, trimVfxClipStart, deleteVfxClip, moveVfxClipOrder, reorderVfxGroupEffect, setVfxClipParameter(s), toggleVfxClipKey, moveVfxClipKey(s), deleteVfxClipKeys, setVfxClipEasing, the gizmo edit, addVfxClip, copyVfxClip, pasteVfxClip, duplicateVfxClip, addVfxGroupEffect (styk-edit/src/vfx_clips.rs); presets (addVfxGroup, addVfxUserPreset) and figure clips pasted with figures still JS |
-| `src/editor-vfx.mjs` | `styk-edit` | partial | Rust: addVfx, removeVfx, resetVfx, duplicateVfx, moveVfx, reorderVfx, pasteVfx on a layer sheet (styk-edit/src/vfx_stack.rs, identities the editor draws: D18) and setVfxParameter (styk-edit/src/property_edit.rs); presets (applyVfxPreset), setVfxScope and pasting with attached parts still JS |
+| `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: stack/clip commands plus addVfxGroup/addVfxUserPreset, key identities and D18 draws, attached scopes and strict paints; 12 remaining-effect replays/392 exact steps; figure clips pasted with figures and worker runtime adoption remain JS |
+| `src/editor-vfx.mjs` | `styk-edit` | partial | Rust: stack editing, all 13 presets, setVfxScope, paste with attached parts and paint parameters on layer sheets; exact recorded/app shadow and existing paint adoption; native stacks and remaining runtime ownership still JS |
 | `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet, _topologyEdit, addSegment, addSegments, deleteSegment, splitSegment, replaceFigureDefinition (styk-edit/src/topology.rs) (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
 | `src/figure-colors.mjs` | `styk-edit` | partial | Rust: validateRecolor, recolorObject, figurePalette, attachedFigurePalette, displayedColor, displayedSegmentPaint (styk-edit/src/recolor.rs, for recolouring); the inspector reads them in JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
@@ -226,7 +226,7 @@ Engine logic: ported to Rust.
 | `src/builder-construction.mjs` | `styk-eval::picking` | partial | Rust: native gesture-local ConstructionIndex, segment picking and exact snap priority/latch; app query preparation, actual-shown order and overlay still JS |
 | `src/builder-fill.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/camera-overlay.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
-| `src/canvas-interactions.mjs` | `styk-eval::picking` | partial | Rust: handle/body picking, origin and explicit measured-bounds marquee predicates; bounds/resource readiness and ordered app query/gesture stream still JS |
+| `src/canvas-interactions.mjs` | `styk-eval::picking` | partial | Rust: handle/body/closest-joint picking, origin and explicit measured-bounds marquee predicates; borrowed painter order matches 201792 queries; bounds/resource readiness and app query/gesture stream still JS |
 | `src/polygon-preview.mjs` | `styk-eval::picking` | js | handles, picking, snapping geometry (drawn by the JS overlay) |
 | `src/ik-evaluation.mjs` | `styk-eval::rig` | ported | Rust: not needed (memoization; the engine caches whole frames) |
 | `src/ik-joined.mjs` | `styk-eval::rig` | partial | Rust: assemblies, solve and scatter with followers, used by evaluation and editing (ik::joined::Assembly); join validation still JS |
@@ -245,14 +245,14 @@ Engine logic: ported to Rust.
 | `src/rig-spatial.mjs` | `styk-eval::spatial` | partial | Rust: spatial joints, quaternion frames, 3D pose tweens, quaternionPose (rig.rs, styk_eval::spatial); validateSpatial (styk-edit/src/rig_behavior.rs); authoring still JS |
 | `src/spatial-mesh.mjs` | `styk-eval::spatial` | partial | Rust: figure meshes, skinning, view targets and painter-order splitting (styk_eval::spatial); editing helpers still JS |
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
-| `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: clip sampling, keys, fades, composition (vfx::clips, vfx::evaluate); validateVfxClips for edits (styk-edit/src/vfx_clips.rs, paints excepted) |
+| `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | Rust: clip sampling, keys, fades, composition and strict edit validation including paints/attached scopes; remaining JS model callers preserved |
 | `src/vfx-connected.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS |
 | `src/vfx-key-channels.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
 | `src/vfx-paint.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::paint |
-| `src/vfx-presets.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
+| `src/vfx-presets.mjs` | `styk-eval::vfx` | partial | Rust: byte-verifiable 13-preset catalogue and recorded stack/group commands; existing JS UI/oracle catalogue callers remain |
 | `src/vfx-preview.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
 | `src/vfx-registry.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags) |
-| `src/vfx-user-presets.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
+| `src/vfx-user-presets.mjs` | `styk-eval::vfx` | partial | Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS |
 | `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS |
 | `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |

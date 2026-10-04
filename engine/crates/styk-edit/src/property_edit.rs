@@ -247,7 +247,7 @@ pub(crate) fn validate_vfx_value(property: &str, value: Option<&Value>) -> Resul
     };
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max && (!(color || discrete) || n.fract() == 0.0) => Ok(Value::Num(*n)),
-        Some(Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null) if color => Err(EditError::Unported("an effect colour given as a paint".into())),
+        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if color => crate::recolor::normalize_paint(paint).map(|paint| paint.value()),
         _ => Err(invalid("errors.cameraMotion.mustBeBetweenAnd")),
     }
 }

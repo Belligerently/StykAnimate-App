@@ -105,16 +105,26 @@ impl Session {
     /// document are `null`. Default answers remain complete for shadow comparison.
     /// Returns the answer as JSON (see the module).
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
-        let before = self.editor.report().clone();
-        let retained = self.editor.retained_frame();
-        let draft = self.editor.authored.as_ref().map(|edit| edit.frame.clone());
-        let mut answer = Obj::new();
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
         let (Ok(args), Ok(view)) = parsed else {
+            let mut answer = Obj::new();
             answer.set("status", Value::str("error"));
             answer.set("error", Value::str("the call's arguments are not JSON"));
             return styk_doc::json::to_string(&Value::object(answer));
         };
+        styk_doc::json::to_string(&self.call_values(method, &args, &view))
+    }
+
+    /// The same command and response owner over already decoded COW values.
+    /// This worker-only boundary avoids whole-answer JSON serialization: its
+    /// returned value stays worker-owned until the common bounded packet ACK.
+    /// Arguments and view must also be decoded/admitted on that worker; this
+    /// method does not enable an owning editor on both UI and worker.
+    pub fn call_values(&mut self, method: &str, args: &Value, view: &Value) -> Value {
+        let before = self.editor.report().clone();
+        let retained = self.editor.retained_frame();
+        let draft = self.editor.authored.as_ref().map(|edit| edit.frame.clone());
+        let mut answer = Obj::new();
         // Owned calls request only changed COW records. The default remains complete for
         // shadow comparison and existing native session consumers.
         let changes_only = flag(&view, "changesOnly");
@@ -273,7 +283,7 @@ impl Session {
         } else { self.editor.draft_figures() };
         answer.set("draft", figures.map_or(Value::Null, Value::array));
         answer.set("drag", self.editor.drag_value());
-        styk_doc::json::to_string(&Value::object(answer))
+        Value::object(answer)
     }
 }
 

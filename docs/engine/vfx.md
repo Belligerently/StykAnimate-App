@@ -15,6 +15,17 @@ How the Rust engine (`engine/crates/styk-eval/src/vfx/`) decides, for one tick, 
 - `vfx::padding`, `vfx::sampling_padding` and `vfx::working_slots` take such a stack (`vfxPadding`, `vfxSamplingPadding`, `vfxWorkingSlots`).
 - Saying what must be drawn: `Document::unsupported` does not name effects, since they are evaluated. A frame whose `vfx` is `Some` has effects the renderer must draw, and `vfx::document_has_vfx` (`documentHasVfx`) tells whether a document carries any at all. The engine draws every filter and every generated effect ([Rendering](#rendering)); the interface's gate (`src/engine/engine-eligibility.mjs`) no longer refuses any effect.
 
+## Recorded effect editing
+
+`styk-edit` uses the effect registry and existing typed paint interpolation for stack
+and clip commands. The remaining 12 recordings / 392 steps cover every built-in
+preset, saved preset timing/keys with remapped identities, attached scopes through
+depth 16 and refusal at 17, raw paint validation and keyed solid/gradient sampling.
+`records::paint_record` preserves the typed paint's editor record form. The facade
+records identity/seed draws (D18) for preset/group creation; commands retain their
+existing shadow/adoption policy. User-preset storage and inspector flows remain in
+their existing UI owners.
+
 ## Evaluation order
 
 1. **Per-pose stacks** (`Object::vfx`, `Object::vfx_scope`, and `Keyframe::vfx` for the scene) are read with the pose. Between two keys they tween with it (`vfx::interpolate`, called from `eval::evaluate_native` for the scene and from `tween_object` for objects) at the pose tween's own progress. A layer sheet takes the scene's stack from the scene track. Property channels of effects then apply to the tweened stacks (`channels::scalar`, `applyVfxParameter`, [evaluation.md](evaluation.md#property-channels)): a `vfxStack` channel replaces a target's whole stack (an empty one removes it), a `vfx1:<type>:<id>:<param>` channel sets one parameter of the first effect in the stack with that identity and type (numbers clamped to their range, colours as keyed, discrete values held; `enabled` switches it), `vfxScope` turns a figure's scope on or off; a node channel applies only where the instance's figure type has that node. Channels apply before clips, and a document whose only effects are channels still resolves effects (`Prepared::has_vfx`).

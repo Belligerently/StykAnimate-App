@@ -4,8 +4,8 @@
 //! them once (`beginVfxClipEdit`). Each change is one `vfx-clips` history entry, the layer
 //! sheet lengthened to the last timed clip (`publish`). Adding, copying, pasting and
 //! duplicating clips and adding effects to them take the identities and seeds the editor
-//! drew (D18). Paint colours, connected scopes and paint sampled between keys stay in
-//! JavaScript.
+//! drew (D18). Paint colours use the shared strict paint validator and the evaluator's
+//! colour interpolation. Connected scopes validate the currently displayed joins.
 //!
 //! The clips are checked as `validateVfxClips` checks them. A clip the document already
 //! holds was checked when it arrived (the editor keeps a set of checked clips), so only
@@ -97,11 +97,11 @@ fn property_of(kind: &str, id: &str, param: &str) -> Result<(String, Descriptor)
 }
 
 /// `validateVfxValue(property, value)` for a parameter: a number in its range (whole for
-/// colours and discrete parameters). A paint is checked in JavaScript.
+/// colours and discrete parameters), or a paint through the shared editor validator.
 fn check_value(found: &Descriptor, value: Option<&Value>) -> Result<(), EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= found.min && *n <= found.max && (!(found.color || found.discrete) || n.fract() == 0.0) => Ok(()),
-        Some(Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null) if found.color => Err(EditError::Unported("a paint colour".into())),
+        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if found.color => crate::recolor::normalize_paint(paint).map(|_| ()),
         _ => Err(invalid("errors.cameraMotion.mustBeBetweenAnd")),
     }
 }
@@ -479,7 +479,7 @@ impl Editor {
             return Err(invalid("errors.editorVfxClips.unsupportedEffectClipProperty"));
         }
         if patch.get("includeAttached").is_some_and(Value::truthy) {
-            return Err(EditError::Unported("an effect clip that includes attached figures".into()));
+            self.check_connected_vfx(clip.path(&["target", "uid"]).unwrap_or(&Value::Null))?;
         }
         let mut next = clip.as_obj().cloned().unwrap_or_default();
         for (key, value) in patch.iter() {
@@ -628,7 +628,7 @@ impl Editor {
     }
 
     /// `toggleVfxClipKey(id, property, tick)`: a key at the clip's time removed, or one
-    /// added with the value there (sampling between keys is not ported).
+    /// added with the sampled value there, including paint colours between keys.
     pub(crate) fn toggle_vfx_clip_key(&mut self, id: &Value, property: &Value, tick: &Value) -> Result<bool, EditError> {
         let clip = self.vfx_clip(id)?;
         let property = property.as_str().ok_or_else(|| EditError::Unported("an effect key property that is not text".into()))?.to_string();
@@ -647,11 +647,9 @@ impl Editor {
             patch.set("keys", Value::object(table));
             return self.set_vfx_clip(id, &Value::object(patch));
         }
-        if !keys.is_empty() {
-            return Err(EditError::Unported("sampling an effect parameter between its keys".into()));
-        }
         let found = descriptor(&property).ok_or_else(|| EditError::Unported("an effect key property the registry does not name".into()))?;
-        let effect = list(clip.get("effects")).into_iter().find(|e| e.get("id").and_then(Value::as_str) == Some(found.id.as_str()));
+        let sampled = sampled_effects(&clip, tick).ok_or_else(|| EditError::Unported("an effect parameter the evaluator does not sample".into()))?;
+        let effect = list(Some(&sampled)).into_iter().find(|e| e.get("id").and_then(Value::as_str) == Some(found.id.as_str()));
         let Some(effect) = effect else { return Err(EditError::Unported("an effect key for an effect the clip does not hold".into())) };
         let value = if found.param == "enabled" {
             Value::Num(if effect.get("enabled").is_some_and(Value::truthy) { 1.0 } else { 0.0 })
@@ -786,22 +784,7 @@ fn generator_duration(kind: &str) -> f64 {
     }
 }
 
-/// `interpolateVfxColor(a, b, t)` for two `0xRRGGBB` numbers: each channel mixed and rounded.
-fn mix_colors(a: f64, b: f64, t: f64) -> f64 {
-    let (a, b) = (a as i64 as u32, b as i64 as u32);
-    let mut value = 0u32;
-    for shift in [0, 8, 16] {
-        let (x, y) = (f64::from(a >> shift & 255), f64::from(b >> shift & 255));
-        let channel = js_round(js_max(0.0, js_min(255.0, x + (y - x) * t)));
-        if !channel.is_nan() {
-            value |= (channel as u32) << shift;
-        }
-    }
-    f64::from(value)
-}
-
-/// `sampleVfxKeys(keys, tick, fallback, property)` for a channel with keys; `None` for paint
-/// colours between keys.
+/// `sampleVfxKeys(keys, tick, fallback, property)` for a channel with keys.
 fn sample_channel(keys: &[Value], tick: f64, found: &Descriptor) -> Option<Value> {
     let at = |k: &Value| k.get("tick").and_then(Value::as_f64).unwrap_or(f64::NAN);
     let low = keys.partition_point(|k| at(k) <= tick).saturating_sub(1);
@@ -812,15 +795,23 @@ fn sample_channel(keys: &[Value], tick: f64, found: &Descriptor) -> Option<Value
         return Some(value);
     }
     let t = styk_eval::eval::eased_progress(styk_eval::load::easing(Some(a)).as_ref(), (tick - at(a)) / (at(b) - at(a)));
+    if found.color {
+        let spec = &found.kind.specs()[found.kind.param(&found.param)?];
+        let a = styk_eval::vfx::parse::value(spec, &value)?;
+        let b = styk_eval::vfx::parse::value(spec, b.get("value")?)?;
+        return Some(match styk_eval::vfx::paint::interpolate(&a, &b, t) {
+            styk_eval::vfx::ParamValue::Num(value) => Value::Num(value),
+            styk_eval::vfx::ParamValue::Paint(paint) => styk_eval::records::paint_record(&paint),
+        });
+    }
     match (value.as_f64(), b.get("value").and_then(Value::as_f64)) {
-        (Some(x), Some(y)) if found.color => Some(Value::Num(mix_colors(x, y, t))),
         (Some(x), Some(y)) => Some(Value::Num(x + (y - x) * t)),
         _ => None,
     }
 }
 
 /// `sampleVfxClip(clip, tick)`: the clip's effects with their keyed parameters at the clip's
-/// time; `None` where a paint colour is sampled between keys.
+/// time; `None` where the registry does not read a keyed parameter.
 fn sampled_effects(clip: &Value, tick: f64) -> Option<Value> {
     let number = |key: &str| clip.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
     let age = js_max(0.0, tick - number("start") + number("offset"));
@@ -859,12 +850,40 @@ impl Editor {
         Ok(with(&effect, "params", params))
     }
 
+    /// `createVfxClip`: its identities already drawn in the caller's ordering.
+    fn new_vfx_clip(&self, target: Value, kind: &str, id: &str, effect_id: &str, options: &Obj) -> Result<Value, EditError> {
+        let mut clip = Obj::new();
+        clip.set("id", Value::str(id));
+        clip.set("name", Value::str(""));
+        let include = if target.get("kind").and_then(Value::as_str) == Some("figure") { options.get("includeAttached").cloned().unwrap_or(Value::Bool(false)) } else { Value::Bool(false) };
+        clip.set("target", target);
+        clip.set("start", options.get("start").cloned().unwrap_or(Value::Num(0.0)));
+        clip.set("duration", options.get("duration").cloned().unwrap_or(Value::Null));
+        clip.set("offset", Value::Num(0.0));
+        clip.set("enabled", Value::Bool(true));
+        clip.set("strength", Value::Num(1.0));
+        clip.set("fadeIn", Value::Num(0.0));
+        clip.set("fadeOut", Value::Num(0.0));
+        clip.set("includeAttached", include);
+        clip.set("effects", Value::array(vec![self.create_vfx(kind, effect_id)?]));
+        clip.set("keys", Value::object(Obj::new()));
+        Ok(Value::object(clip))
+    }
+
+    /// `checkScope(editor, clip)` for the newly created figure clip.
+    fn check_vfx_clip_scope(&self, clip: &Value) -> Result<(), EditError> {
+        if clip.get("includeAttached").is_some_and(Value::truthy) && clip.path(&["target", "kind"]).and_then(Value::as_str) == Some("figure") {
+            self.check_connected_vfx(clip.path(&["target", "uid"]).unwrap_or(&Value::Null))?;
+        }
+        Ok(())
+    }
+
     /// `addVfxClip(target, type, {start, duration, includeAttached})` (`createVfxClip`): a clip
     /// of one effect on `target`, for the whole animation unless timed; a generated effect
     /// starts at the playhead's frame for its usual length. Returns the clip's identity.
     pub(crate) fn add_vfx_clip(&mut self, target: &Value, kind: &Value, options: &Value) -> Result<Value, EditError> {
         let target = normalize_target(target)?;
-        let options = match options {
+        let mut options = match options {
             Value::Null => Obj::new(),
             other => other.as_obj().cloned().ok_or_else(|| EditError::Unported("effect clip options that are not an object".into()))?,
         };
@@ -872,33 +891,84 @@ impl Editor {
         let generator = Kind::from_name(name).is_some_and(Kind::is_generator);
         // `generatorTiming`: only when neither the start nor the length is given.
         let timed = generator && options.get("start").is_none() && options.get("duration").is_none();
-        let start = if timed { Value::Num(js_max(0.0, self.tick.floor())) } else { options.get("start").cloned().unwrap_or(Value::Num(0.0)) };
-        let duration = if timed { Value::Num(generator_duration(name)) } else { options.get("duration").cloned().unwrap_or(Value::Null) };
-        let include = if target.get("kind").and_then(Value::as_str) == Some("figure") { options.get("includeAttached").cloned().unwrap_or(Value::Bool(false)) } else { Value::Bool(false) };
+        if timed { options.set("start", Value::Num(js_max(0.0, self.tick.floor()))); options.set("duration", Value::Num(generator_duration(name))); }
         let id = self.draw_uuid()?;
         let effect_id = self.draw_uuid()?;
-        let effect = self.create_vfx(name, &effect_id)?;
-        let effect = self.seeded(effect)?;
-        if include.truthy() {
-            return Err(EditError::Unported("an effect clip that includes attached figures".into()));
-        }
-        let mut clip = Obj::new();
-        clip.set("id", Value::str(&id));
-        clip.set("name", Value::str(""));
-        clip.set("target", target);
-        clip.set("start", start);
-        clip.set("duration", duration);
-        clip.set("offset", Value::Num(0.0));
-        clip.set("enabled", Value::Bool(true));
-        clip.set("strength", Value::Num(1.0));
-        clip.set("fadeIn", Value::Num(0.0));
-        clip.set("fadeOut", Value::Num(0.0));
-        clip.set("includeAttached", include);
-        clip.set("effects", Value::array(vec![effect]));
-        clip.set("keys", Value::object(Obj::new()));
+        let clip = self.new_vfx_clip(target, name, &id, &effect_id, &options)?;
+        let effect = self.seeded(clip.get("effects").and_then(|e| e.item(0)).unwrap_or(Value::Null))?;
+        let clip = with(&clip, "effects", Value::array(vec![effect]));
+        self.check_vfx_clip_scope(&clip)?;
         let mut clips = self.vfx_clips();
-        clips.push(Value::object(clip));
+        clips.push(clip);
         self.publish_vfx(clips, "Add effect clip")?;
+        Ok(Value::str(&id))
+    }
+
+    /// `addVfxGroup(target, preset, options)`: editable built-in effects as one clip.
+    pub(crate) fn add_vfx_group(&mut self, target: &Value, name: &Value, options: &Value) -> Result<Value, EditError> {
+        let mut effects = Vec::new();
+        for effect in self.vfx_preset_effects(name, false)? { effects.push(self.seeded(effect)?); }
+        let target = normalize_target(target)?;
+        let options = match options { Value::Null => Obj::new(), other => other.as_obj().cloned().ok_or_else(|| EditError::Unported("effect group options that are not an object".into()))? };
+        // Current built-in presets contain filters only, so `generatorTiming` keeps options.
+        let id = self.draw_uuid()?;
+        let effect_id = self.draw_uuid()?;
+        let kind = effects.first().and_then(|e| e.get("type")).and_then(Value::as_str).unwrap_or("");
+        let clip = self.new_vfx_clip(target, kind, &id, &effect_id, &options)?;
+        self.check_vfx_clip_scope(&clip)?;
+        let clip = with(&with(&clip, "name", name.clone()), "effects", Value::array(effects));
+        let mut clips = self.vfx_clips();
+        clips.push(clip);
+        self.publish_vfx(clips, "Add effect group")?;
+        Ok(Value::str(&id))
+    }
+
+    /// `addVfxUserPreset`: fresh identities for the effects and clip; keyed property names
+    /// follow them, while the saved settings, timing and raw paint records are preserved.
+    pub(crate) fn add_vfx_user_preset(&mut self, target: &Value, preset: &Value, options: &Value) -> Result<Value, EditError> {
+        let target = normalize_target(target)?;
+        let effects = preset.get("effects").filter(|e| e.is_array()).map(|e| list(Some(e))).filter(|e| !e.is_empty()).ok_or_else(|| EditError::Unported("an effect preset with no effects".into()))?;
+        let mut ids = Vec::new();
+        for effect in &effects { ids.push((effect.get("id").cloned(), self.draw_uuid()?)); }
+        let id = self.draw_uuid()?;
+        let unused_effect_id = self.draw_uuid()?;
+        let mut create_options = Obj::new();
+        create_options.set("includeAttached", Value::Bool(options.get("includeAttached").is_some_and(Value::truthy)));
+        let kind = effects[0].get("type").and_then(Value::as_str).unwrap_or("");
+        let mut clip = self.new_vfx_clip(target, kind, &id, &unused_effect_id, &create_options)?.as_obj().cloned().unwrap_or_default();
+        for field in ["name", "strength", "fadeIn", "fadeOut", "duration", "offset"] {
+            match preset.get(field) { Some(value) => clip.set(field, value.clone()), None => { clip.remove(field); } }
+        }
+        let duration = preset.get("duration");
+        let start = if matches!(duration, Some(Value::Null)) { 0.0 } else {
+            let wanted = match options.get("start").filter(|s| !s.is_null()) {
+                None => self.tick,
+                Some(Value::Num(value)) => *value,
+                Some(_) => return Err(EditError::Unported("an effect preset start that is not a number".into())),
+            };
+            js_max(0.0, js_min(wanted.floor(), MAX_TICK - duration.and_then(Value::as_f64).unwrap_or(f64::NAN)))
+        };
+        clip.set("start", Value::Num(start));
+        let fresh = |old: Option<&Value>| ids.iter().rev().find(|(known, _)| object_is(known.as_ref(), old)).map(|(_, id)| id.as_str());
+        let mut renamed = Vec::new();
+        for effect in effects { renamed.push(with(&effect, "id", Value::str(fresh(effect.get("id")).unwrap_or("")))); }
+        let mut keys = Obj::new();
+        let channels = preset.get("keys").and_then(Value::as_obj).ok_or_else(|| EditError::Unported("an effect preset without parameter keys".into()))?;
+        for (property, channel) in channels.iter() {
+            let mut parts = property.split(':').map(str::to_string).collect::<Vec<_>>();
+            if parts.len() >= 3 { parts[2] = fresh(Some(&Value::str(&parts[2]))).unwrap_or("").to_string(); }
+            keys.set(&parts.join(":"), channel.clone());
+        }
+        clip.set("effects", Value::array(renamed));
+        clip.set("keys", Value::object(keys));
+        let clip = Value::object(clip);
+        let mut seeded = Vec::new();
+        for effect in list(clip.get("effects")) { seeded.push(self.seeded(effect)?); }
+        let clip = with(&clip, "effects", Value::array(seeded));
+        self.check_vfx_clip_scope(&clip)?;
+        let mut clips = self.vfx_clips();
+        clips.push(clip);
+        self.publish_vfx(clips, "Add effect preset")?;
         Ok(Value::str(&id))
     }
 

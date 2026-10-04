@@ -157,3 +157,61 @@ fn refused_and_invalid_calls_send_no_replacements_and_preserve_the_live_gesture(
     assert_eq!(answer.get("drag"), Some(&Value::Null));
     assert_eq!(json(session.editor.report()), before);
 }
+
+#[test]
+fn worker_values_and_legacy_json_share_recorded_editor_outcomes() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let mut calls = 0;
+    for name in ["move-native", "drag-cancel", "range-native", "gestures-sheet",
+        "layers-sheet", "figures-layers-sheet", "locked-sheet",
+        "figure-clipboard-sheet", "figure-clipboard-clip-sheet",
+        "property-clip-patches-sheet", "topology-sheet", "topology-native",
+        "vfx-clip-paints-native", "vfx-clip-paints-sheet"] {
+        let reference = parse(&std::fs::read_to_string(folder.join(format!("{name}.reference.json"))).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        for compact in [false, true] {
+            let mut state = steps[0].get("state").unwrap().as_obj().unwrap().clone();
+            for (key, value) in reference.get("editor").unwrap().as_obj().unwrap().iter() { state.set(key, value.clone()); }
+            let initial = parse(steps[0].get("document").unwrap().as_str().unwrap());
+            let mut legacy = Session::start(initial.clone(), &json(&Value::object(state.clone()))).unwrap();
+            let mut worker = Session::start(initial, &json(&Value::object(state))).unwrap();
+            let mut expected = steps[0].get("document").unwrap().as_str().unwrap().to_string();
+            for step in &steps[1..] {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap().trim_start_matches('@');
+                let mut view = legacy.editor.state_value().as_obj().unwrap().clone();
+                view.set("autoKey", Value::Bool(legacy.editor.options.auto_key));
+                view.set("draws", step.get("draws").cloned().unwrap_or(Value::Null));
+                if compact { view.set("changesOnly", Value::Bool(true)); }
+                let view = Value::object(view);let args = Value::array(call[1..].to_vec());
+                let old = legacy.call(method, &json(&args), &json(&view));
+                let answer = worker.call_values(method, &args, &view);
+                let label = format!("{name}/{} {method}, compact={compact}", step.get("step").unwrap());
+                assert_eq!(json(&answer), old, "{label}: wire bytes");
+                assert_ne!(answer.get("status").and_then(Value::as_str), Some("unported"), "{label}");
+                assert_eq!(answer.get("state"), step.get("state"), "{label}: editor state");
+                assert_eq!(answer.get("events"), step.get("events"), "{label}: editor events");
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+                assert_eq!(worker.editor.report_json(), expected, "{label}: editor document");
+                assert_eq!(legacy.editor.report_json(), worker.editor.report_json(), "{label}: owner");
+                calls += 1;
+            }
+        }
+    }
+    assert!(calls > 200);
+}
+
+#[test]
+fn malformed_json_wrapper_does_not_mutate_the_canonical_owner() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/move-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let mut session = Session::start(parse(first.get("document").unwrap().as_str().unwrap()), &json(first.get("state").unwrap())).unwrap();
+    let report = session.editor.report().clone();let state = session.editor.state_value();
+    for (args, view) in [("[", "null"), ("[]", "{"), ("[", "{")] {
+        let answer = parse(&session.call("noSuchEditingCommand", args, view));
+        assert_eq!(json(&answer), "{\"status\":\"error\",\"error\":\"the call's arguments are not JSON\"}");
+        assert!(report.same_node(session.editor.report()));assert_eq!(session.editor.state_value(), state);
+        assert!(session.editor.take_events().is_empty());
+    }
+}
