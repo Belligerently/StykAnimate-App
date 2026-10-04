@@ -55,16 +55,15 @@ struct MonitorKey {
 
 enum WorkerMonitorKey {
     Edit(MonitorKey, u32),
-    // Keep the allocation alive while it identifies the bitmap, so allocator reuse
-    // can never mistake another prepared frame for this one.
-    Prepared(u64, f64, u64, Arc<styk_engine::FrameData>),
+    // Keep allocation identity without making the UI key a dense frame owner.
+    Prepared(u64, f64, u64, std::sync::Weak<styk_engine::FrameData>),
 }
 
 impl PartialEq for WorkerMonitorKey {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Edit(a, ap), Self::Edit(b, bp)) => a == b && ap == bp,
-            (Self::Prepared(ag, at, ae, a), Self::Prepared(bg, bt, be, b)) => ag == bg && at == bt && ae == be && Arc::ptr_eq(a, b),
+            (Self::Prepared(ag, at, ae, a), Self::Prepared(bg, bt, be, b)) => ag == bg && at == bt && ae == be && std::sync::Weak::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -200,16 +199,17 @@ impl Stage {
     /// Version of the stage frame for the worker's camera monitor, or zero with no
     /// displayed frame. Comparing only changed view data never evaluates a pose.
     pub fn monitor_version(&mut self) -> u32 {
-        let Some(generation) = self.engine.generation() else { return 0 };
         let key = match &self.shown {
             Shown::Nothing => return 0,
             Shown::Prepared { generation: shown_generation, tick, epoch } => {
                 let Some(snapshot) = self.engine.prepared_frame(*tick, Some((*shown_generation, *epoch))) else { return 0; };
-                WorkerMonitorKey::Prepared(snapshot.generation.id, *tick, *epoch, snapshot.frame)
+                WorkerMonitorKey::Prepared(snapshot.generation.id, *tick, *epoch, Arc::downgrade(&snapshot.frame))
             }
             Shown::Edit { generation: shown_generation, edits, effects, hidden, translations, .. } => {
-                if *shown_generation != generation.id { return 0; }
-                WorkerMonitorKey::Edit(MonitorKey { generation: generation.id, edits: *edits, effects: *effects, hidden: hidden.clone(), translations: translations.clone() }, self.engine.images_pending() as u32)
+                let Some(generation) = self.engine.try_generation_header().ok().flatten() else { return 0; };
+                if *shown_generation != generation.generation { return 0; }
+                let Some(images) = self.engine.try_images_pending() else { return 0; };
+                WorkerMonitorKey::Edit(MonitorKey { generation: generation.generation, edits: *edits, effects: *effects, hidden: hidden.clone(), translations: translations.clone() }, images as u32)
             },
         };
         if self.views.worker_monitor.as_ref() != Some(&key) {
@@ -223,14 +223,14 @@ impl Stage {
     /// Captures shared pointers only; no camera preparation, geometry or raster work
     /// runs on the interface thread. Made only when a queued request is sent.
     pub fn monitor_address(&self) -> usize {
-        let Some(generation) = self.engine.generation() else { return 0 };
         let (frame, grid) = match &self.shown {
             Shown::Nothing => return 0,
             Shown::Prepared { generation: shown_generation, tick, epoch } => {
-                if *shown_generation != generation.id || !self.engine.frame_epoch_current(*shown_generation, *epoch) { return 0; }
+                let Some(generation) = self.engine.generation_for_frame_epoch(*shown_generation, *epoch) else { return 0; };
                 (MonitorFrame::prepared_ticket(self.engine.clone(), generation, *tick, *epoch), DrawingGrid::World)
             }
             Shown::Edit { generation: shown_generation, scene, effects, hidden, translations, .. } => {
+                let Some(generation) = self.engine.try_generation() else { return 0; };
                 if *shown_generation != generation.id { return 0; }
                 (MonitorFrame::edit(self.engine.clone(), generation, scene, hidden.clone(), translations.clone(), *effects), DrawingGrid::Destination)
             },

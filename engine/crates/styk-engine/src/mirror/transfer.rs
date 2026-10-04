@@ -23,7 +23,7 @@ pub const MAX_RECORD_CHANGES: usize = 65_536;
 #[derive(Default)]
 pub(crate) struct Budget { bytes: AtomicUsize, records: AtomicUsize }
 #[cfg(test)]
-impl Budget { pub(super) fn retained_bytes(&self) -> usize { self.bytes.load(Ordering::SeqCst) } }
+impl Budget { pub(crate) fn retained_bytes(&self) -> usize { self.bytes.load(Ordering::SeqCst) } }
 
 fn reserve(counter: &AtomicUsize, amount: usize, limit: usize) -> Result<(), TransferError> {
     counter.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |old| old.checked_add(amount).filter(|new| *new <= limit))
@@ -397,14 +397,22 @@ impl Engine {
 
     // The sole admission/publication owner for ordinary admitted records and
     // worker-prepared roots. All payload/node allocation precedes shared locks.
-    pub(super) fn stage_guarded_owner(&self, batch: u32, guard: RecordGuard, budget: Arc<Budget>, mut node: LinkedList<Change>, mut charges: LinkedList<Charge>, root: Option<super::root::Root>) -> Result<(), TransferError> {
+    pub(super) fn stage_guarded_owner(&self, batch: u32, guard: RecordGuard, budget: Arc<Budget>, node: LinkedList<Change>, charges: LinkedList<Charge>, root: Option<super::root::Root>) -> Result<(), TransferError> {
+        self.stage_guarded_cancelled_owner(batch, guard, budget, node, charges, root, None)
+    }
+
+    // Actor-only cancellation alias; every producer still uses this SAME
+    // admission/index/charge owner and final publication cancellation check.
+    pub(super) fn stage_guarded_cancelled_owner(&self, batch: u32, guard: RecordGuard, budget: Arc<Budget>, mut node: LinkedList<Change>, mut charges: LinkedList<Charge>, root: Option<super::root::Root>, cancelled: Option<Arc<AtomicBool>>) -> Result<(), TransferError> {
         let mut fresh = Some(Batch::with_budget(budget.clone()));
+        if let Some(cancelled) = cancelled.as_ref() { fresh.as_mut().expect("prebuilt batch").cancelled = cancelled.clone(); }
         let mut incoming_root = root;
         let state = self.inner.state.lock();
         if !guard.current(&state) || self.inner.stopping.load(Ordering::SeqCst) { return Err(TransferError::Stale) }
         let mut staged = self.inner.staged.lock();
         if !staged.contains_key(&batch) && (staged.len() >= MAX_RECORD_TRANSFERS || staged.len() == staged.capacity()) { return Err(TransferError::Capacity) }
         if let Some(owner) = staged.get(&batch) {
+            if cancelled.as_ref().is_some_and(|cancelled| !Arc::ptr_eq(cancelled, &owner.cancelled)) { return Err(TransferError::Stale) }
             if owner.guard.is_none() && !owner.changes.is_empty() { return Err(TransferError::LegacyBatch) }
             if owner.committing || owner.root.is_some() { return Err(TransferError::Pending) }
             if incoming_root.is_some() && (!owner.changes.is_empty() || owner.transfer.is_some()) { return Err(TransferError::LegacyBatch) }

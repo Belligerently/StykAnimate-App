@@ -2,6 +2,7 @@
 //! No raw root setter, serialized document, alternate diff, store or Loader.
 use std::collections::LinkedList;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use styk_doc::Value;
 use styk_edit::publication::{GuardedPublication, PreparedPublication, RetiredPublication};
@@ -44,7 +45,33 @@ impl Engine {
         batch: u32,
         guard: RecordGuard,
         prepared: &PreparedPublication,
-        mut check: impl FnMut() -> Result<(), MirrorError>,
+        check: impl FnMut() -> Result<(), MirrorError>,
+    ) -> Result<EditPublicationAdmission, MirrorError> {
+        self.stage_edit_publication_response_worker(batch, guard, prepared, prepared.result(), check)
+    }
+
+    /// Actor-only response metadata shares this same graph/retained admission.
+    /// It never supplies a root: both canonical roots still come exclusively
+    /// from the exact owning PreparedPublication.
+    pub(crate) fn stage_edit_publication_response_worker(
+        &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
+        response: &Value, check: impl FnMut() -> Result<(), MirrorError>,
+    ) -> Result<EditPublicationAdmission, MirrorError> {
+        self.stage_publication_response_worker(batch, guard, prepared, response, None, check)
+    }
+
+    /// The actor aliases its prebuilt small cancellation atom into the SAME
+    /// Batch owner. UI cancellation reaches final paired publication without
+    /// acquiring State/staged or detaching any payload on that interface.
+    pub(crate) fn stage_session_publication_response_worker(
+        &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
+        response: &Value, cancelled: Arc<AtomicBool>, check: impl FnMut() -> Result<(), MirrorError>,
+    ) -> Result<EditPublicationAdmission, MirrorError> {
+        self.stage_publication_response_worker(batch, guard, prepared, response, Some(cancelled), check)
+    }
+    fn stage_publication_response_worker(
+        &self, batch: u32, guard: RecordGuard, prepared: &PreparedPublication,
+        response: &Value, cancelled: Option<Arc<AtomicBool>>, mut check: impl FnMut() -> Result<(), MirrorError>,
     ) -> Result<EditPublicationAdmission, MirrorError> {
         check()?;
         {
@@ -74,7 +101,12 @@ impl Engine {
             .map_err(|error| MirrorError::Record(error.to_string()))?;
         let mut accounted = 0;
         styk_doc::retained_bytes_checked(
-            &[prepared.before_report(), prepared.report()],
+            &[
+                prepared.before_report(), prepared.report(), prepared.result(),
+                prepared.state(), prepared.history(), prepared.events(),
+                prepared.before_state(), prepared.before_history(),
+                response,
+            ],
             |bytes| {
                 check()?;
                 charge
@@ -98,7 +130,7 @@ impl Engine {
             after: prepared.report().clone(),
             charge: charge.clone(),
         };
-        self.stage_guarded_owner(
+        self.stage_guarded_cancelled_owner(
             batch,
             guard,
             budget,
@@ -109,6 +141,7 @@ impl Engine {
                 after: admission.after.clone(),
                 charge,
             }),
+            cancelled,
         )
         .map_err(|error| MirrorError::Record(error.to_string()))?;
         Ok(admission)

@@ -243,6 +243,12 @@ impl Engine {
         state.images.remaining + state.images.ready.len()
     }
 
+    /// Try-only scalar diagnostic; Busy is distinct from complete resources.
+    pub fn try_images_pending(&self) -> Option<usize> {
+        let state = self.inner.state.try_lock()?;
+        Some(state.images.remaining + state.images.ready.len())
+    }
+
     /// Images of the open document still being decoded, and decoded ones waiting for
     /// [`Engine::take_images`].
     pub fn images_backlog(&self) -> (usize, usize) {

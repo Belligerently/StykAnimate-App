@@ -546,6 +546,22 @@ impl Editor {
             .collect())
     }
 
+    /// The actual `_animationEdit` returned at BEGIN, for the exclusive worker
+    /// response. It shares the existing edit's COW frame/selection and never
+    /// reconstructs an edit, baseline or publication state.
+    pub(crate) fn animation_edit_value_worker(&self) -> Result<Value, EditError> {
+        let edit = self.property_edit.as_ref().ok_or_else(|| invalid("errors.editorAnimation.beginAPropertyEditBeforePreviewingIt"))?;
+        if let Some(native) = &edit.native { return Ok(native.begin_value_worker(edit)); }
+        let mut out = Obj::new();
+        out.set("sheet", Value::Bool(true));
+        out.set("target", edit.target.clone());out.set("property", Value::str(&edit.property));
+        out.set("exactTarget", Value::Bool(edit.exact));out.set("tick", Value::Num(edit.tick));
+        out.set("initialValue", edit.initial.clone());out.set("value", edit.value.clone());
+        out.set("frame", edit.frame.clone());out.set("selection", edit.selection.history_value());
+        out.set("changed", Value::Bool(edit.changed));
+        Ok(Value::object(out))
+    }
+
     /// `beginAnimationEdit(target, property, {exactTarget})` on a layer sheet.
     fn begin_animation_edit(&mut self, target: &Value, property: &Value, exact: bool) -> Result<Value, EditError> {
         if !self.sheet() { return self.begin_native_animation_edit(target, property, exact); }

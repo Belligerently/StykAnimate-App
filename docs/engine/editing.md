@@ -170,6 +170,46 @@ Evaluation also adds `MovieclipSource`, `Document::movieclip_source` and
 `Frame`/`Keyframe::retained_vfx_tick`. These portable fields keep cropped source clocks
 and inherited effect evaluation intact; downstream struct literals need the new fields.
 
+### Quiet actor and exclusive live capability (2026-10-04)
+
+The Engine's existing Core can own one moved Session. Quiet requests prepare on workers,
+stream bounded packets, and wait for packet and readiness acknowledgements. Final
+publication exchanges the canonical Engine and editor heads under the same State and
+cancellation guard. Normal success retains displaced roots and their admission charge
+until terminal ACK; explicit cancellation/close cleans them up on the owning worker.
+Fresh bootstrap preserves loaded revision/serial/saved counters; attaching
+an existing Session preserves its history and exact warm checkpoint. Unsupported warm,
+clipboard, live, metadata and absent-field states refuse before transfer or mutation.
+
+`prepareFreshEditWorker` and `projectWorker` are explicit asynchronous host primitives,
+with no app call-site or document-class activation. Project controls admit at most three
+existing scalar fields from the original Fields/history owner. They keep the old host
+root behind a dependent-query barrier, then accept the actual committed identity before
+exchanging scalar slots. Busy reads preserve that root. The same finite progress wait
+retries lock contention without fabricating progress or resubmitting a command. Every
+Ready attempt checks cancellation and view ownership; cancellation after an actual
+commit cannot roll back or replay it. Postcommit host failure retires the worker owner.
+
+Separately, consuming `Session::into_worker` produces the portable exclusive
+`WorkerSession` capability. Its private identity and operation epoch guard prepared live
+operations using the same editor, publication, history, source and SceneBudget owners.
+The actual editor's working document and shown frame remain separate. Ten ordinary
+native/sheet lifecycle tapes compare all 115 calls, complete returns, state, events,
+display, exported history fields/weights and runtime flags. Eight native
+`propertyChannels:true` tapes retain their first-selection refusal; five asynchronous
+preflight tapes are evidence for a future protocol, not admitted live calls. This
+capability is not yet coupled to Core live requests or browser ready/shown tickets.
+
+Portable mobile pin additions: `RevisionCounters`, `Session::{start_worker_prepared,
+revision,history_checkpoint_worker,into_worker}`, `WorkerSession`, `WorkerPrepared`,
+`WorkerFrame`, `PreparedPublication::{revision,project_fields_response_worker}`,
+`RetainedScene`, `RetainedScene::scene`, `SceneBudget::retain_worker`; the Engine
+`session` module's `Stamp`, `Epochs`, `Phase`, `Error`, `Success`, `Packet`, `Poll`,
+`FreshHistory`, `Handle` and Engine attach/detach/fresh-session methods. Browser
+`EditWorker` and typed Busy bindings remain in `styk-wasm`. Exclusive app writer
+transfer, bounded live transport, cold query ordering, actual ready/shown/resource ACK
+and complete disposal remain required before class adoption or deletion.
+
 ## Status of phase 1
 
 `engine/crates/styk-edit` holds an `Editor` over the report as the mirror receives it, with

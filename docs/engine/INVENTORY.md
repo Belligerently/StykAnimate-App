@@ -65,7 +65,7 @@ Engine logic: ported to Rust.
 | `src/drawing-worker-operations.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
 | `src/drawing-worker-preview.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
 | `src/drawing-worker.mjs` | `styk-drawing` | partial | Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS |
-| `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 JSON history weights, exact warm readiness checkpoint, count/byte trimming and source retirement; canonical worker owner integrated, app handoff pending |
+| `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 JSON history weights, exact warm readiness checkpoint, count/byte trimming and source retirement; quiet canonical Core actor and exclusive portable live capability integrated; exact warm checkpoints preserved, app handoff/readiness pending |
 | `src/builder-appearance.mjs` | `styk-edit` | partial | Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view) |
 | `src/builder-session.mjs` | `styk-edit` | js |  |
 | `src/clipboard-asset-plan.mjs` | `styk-edit` | js |  |
@@ -128,7 +128,7 @@ Engine logic: ported to Rust.
 | `src/editor-tweener.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | partial | Rust: stack/clip commands plus addVfxGroup/addVfxUserPreset, key identities and D18 draws, attached scopes and strict paints; 12 remaining-effect replays/392 exact steps; figure clips pasted with figures and worker runtime adoption remain JS |
 | `src/editor-vfx.mjs` | `styk-edit` | partial | Rust: stack editing, all 13 presets, setVfxScope, paste with attached parts and paint parameters on layer sheets; exact recorded/app shadow and existing paint adoption; native stacks and remaining runtime ownership still JS |
-| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet, _topologyEdit, addSegment, addSegments, deleteSegment, splitSegment, replaceFigureDefinition (styk-edit/src/topology.rs) (styk-edit; the app runs them in the engine for large figure documents); every other command still JS |
+| `src/editor.mjs` | `styk-edit` | partial | Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet, _topologyEdit, addSegment, addSegments, deleteSegment, splitSegment, replaceFigureDefinition (styk-edit/src/topology.rs) (styk-edit; the app runs them in the engine for large figure documents); quiet canonical worker and bounded explicit project route integrated, app writer transfer/live Core readiness pending; every other command still JS |
 | `src/figure-colors.mjs` | `styk-edit` | partial | Rust: validateRecolor, recolorObject, figurePalette, attachedFigurePalette, displayedColor, displayedSegmentPaint (styk-edit/src/recolor.rs, for recolouring); the inspector reads them in JS |
 | `src/frame-clipboard-authored.mjs` | `styk-edit` | js |  |
 | `src/frame-draft-animation.mjs` | `styk-edit` | js |  |
@@ -136,7 +136,7 @@ Engine logic: ported to Rust.
 | `src/media-authoring.mjs` | `styk-edit` | js |  |
 | `src/media-image-worker.mjs` | `styk-edit` | js |  |
 | `src/motion-path-falloff.mjs` | `styk-edit` | ported | motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay |
-| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: replay-native property token lifecycle through the owning builder/project mutation layer; app facade/worker adoption remains pending |
+| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property token lifecycle through the owning builder/project mutation layer and exclusive portable live Session; native propertyChannels:true projection and app facade/worker adoption pending |
 | `src/native-property-ranges.mjs` | `styk-edit` | js |  |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
 | `src/polygon-draft.mjs` | `styk-edit` | js |  |
@@ -171,7 +171,7 @@ Engine logic: ported to Rust.
 | `src/playback-vector-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-window.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-worker.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy) |
-| `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames |
+| `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames; one-shot State/Storage readiness and finite coalesced Busy controls, dense cache work outside State; physical lease/final-drop/shutdown work open |
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
 | `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS |
 | `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |

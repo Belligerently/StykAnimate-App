@@ -15,10 +15,26 @@ pub use budget::SceneBudget;
 use budget::Reservation;
 
 #[derive(Debug)]
-struct CachedScene {
+pub struct RetainedScene {
     // Drop the retained scene reference before releasing its reservation.
     scene: Arc<Scene>,
     _reservation: Reservation,
+}
+impl RetainedScene {
+    /// Borrow the one immutable derived scene while its owning worker lease
+    /// charges the lineage. Callers must keep the lease through presentation ACK.
+    pub fn scene(&self) -> &Arc<Scene> { &self.scene }
+}
+impl SceneBudget {
+    /// Retain an actual worker-built scene in the SAME lineage budget as its
+    /// movieclip caches. Rejection drops no caller payload under a shared lock.
+    /// Keep this owner on the worker; its disposal releases the scene first.
+    pub fn retain_worker(self: &Arc<Self>, scene: Arc<Scene>) -> Result<RetainedScene, Arc<Scene>> {
+        match self.reserve(scene.retained_bytes) {
+            Some(reservation) => Ok(RetainedScene { scene, _reservation: reservation }),
+            None => Err(scene),
+        }
+    }
 }
 
 /// One movieclip's evaluated local scenes. The entry limit and clear-all
@@ -28,7 +44,7 @@ struct CachedScene {
 /// separate from this derived-scene accounting.
 #[derive(Debug)]
 pub struct ClipSceneCache {
-    entries: HashMap<u64, CachedScene>,
+    entries: HashMap<u64, RetainedScene>,
     bytes: usize,
     budget: usize,
 }
@@ -86,9 +102,9 @@ impl ClipSceneCache {
         if self.entries.len() >= Self::MAX_ENTRIES || self.bytes > self.budget - bytes {
             self.clear();
         }
-        let Some(reservation) = shared.reserve(bytes) else { return scene };
+        let Ok(retained) = shared.retain_worker(scene.clone()) else { return scene };
         self.bytes += bytes;
-        self.entries.insert(key, CachedScene {scene: scene.clone(), _reservation: reservation});
+        self.entries.insert(key, retained);
         scene
     }
 }
@@ -230,6 +246,29 @@ impl Scene {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worker_display_leases_share_cache_admission_and_release_after_payload_retirement() {
+        let mut value = Scene::default();
+        value.points = vec![[1.0, 2.0]; 32];value.account_buffers();
+        let scene = Arc::new(value);
+        let bytes = scene.retained_bytes;
+        assert!(bytes > 0);
+        let shared = Arc::new(SceneBudget::with_limits(bytes * 2, 2));
+        let mut cache = ClipSceneCache::with_budget(bytes * 2);
+        cache.publish(1, scene.clone(), &shared);
+        assert_eq!((shared.retained_bytes(), shared.retained_entries()), (bytes, 1));
+        let display = shared.retain_worker(scene.clone()).unwrap();
+        assert!(Arc::ptr_eq(display.scene(), &scene));
+        assert_eq!((shared.retained_bytes(), shared.retained_entries()), (bytes * 2, 2));
+        let refused = shared.retain_worker(scene.clone()).unwrap_err();
+        assert!(Arc::ptr_eq(&refused, &scene));
+        assert_eq!((cache.len(), shared.retained_bytes(), shared.retained_entries()), (1, bytes * 2, 2));
+        cache.clear();
+        assert_eq!((shared.retained_bytes(), shared.retained_entries()), (bytes, 1));
+        drop(display);
+        assert_eq!((shared.retained_bytes(), shared.retained_entries()), (0, 0));
+    }
 
     #[test]
     fn simultaneous_publication_keeps_the_winner_and_its_charge() {

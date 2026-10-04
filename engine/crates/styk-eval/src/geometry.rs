@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 mod cache;
-pub use cache::{ClipSceneCache, SceneBudget};
+pub use cache::{ClipSceneCache, RetainedScene, SceneBudget};
 
 use crate::doc::*;
 use crate::eval::Frame;

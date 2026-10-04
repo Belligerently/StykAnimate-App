@@ -41,6 +41,47 @@ export function createStagePlayback(legacy, {stage}) {
   const configured = Number(legacy.maxFrames);
   const ticketLimit = Number.isFinite(configured) ? Math.max(1, Math.min(MAX_ENGINE_TICKETS, Math.floor(configured))) : MAX_ENGINE_TICKETS;
   let requested = [], packetGeneration = null;
+  // Latest admission requests only. Busy never certifies the old native view.
+  let pendingHidden = null, pendingEffects = null, pendingRequest = null;
+  let controlOrder = 0, controlLifetime = 0, retryScheduled = false;
+  const controlsPending = () => pendingHidden !== null || pendingEffects !== null || pendingRequest !== null;
+  const retryControls = (engine, seen) => {
+    if (retryScheduled || !controlsPending()) return;
+    if (!engine) return;
+    retryScheduled = true;
+    const lifetime = controlLifetime;
+    // The same bounded progress owner retries even when an idle lock released
+    // without publishing progress. At most one waiter is outstanding.
+    const waiting = engine.whenProgress?.(seen, 16) ?? Promise.resolve();
+    waiting.then(() => setTimeout(() => {
+      if (lifetime !== controlLifetime) return;
+      retryScheduled = false;
+      flushControls();
+    }, 0));
+  };
+  const flushControls = () => {
+    if (!controlsPending()) return true;
+    const engine = side()?.engine, handle = engine?.handle;
+    if (!handle) return false;
+    // Read before testing admission, matching the existing progress contract.
+    const seen = engine.progressSeen?.();
+    for (const kind of ['hidden', 'effects']) {
+      const pending = kind === 'hidden' ? pendingHidden : pendingEffects;
+      if (!pending) continue;
+      const admission = kind === 'hidden' ? handle.try_set_hidden(pending.uids) : handle.try_set_effects(pending.enabled);
+      if (admission === 0) { retryControls(engine, seen); return false; }
+      // An actually changed setting resets older demand; a no-op does not.
+      if (admission === 2 && pendingRequest && pendingRequest.order < pending.order) pendingRequest = null;
+      if (kind === 'hidden') { hiddenKey = pending.key; pendingHidden = null; } else pendingEffects = null;
+    }
+    if (pendingRequest) {
+      const admission = handle.try_request_samples(pendingRequest.playhead, pendingRequest.samples);
+      if (admission === 0) { retryControls(engine, seen); return false; }
+      pendingRequest = null;
+      side()?.engine.pump();
+    }
+    return true;
+  };
   const stats = {};
   const dropPackets = () => { packets.clear(); requested = []; packetGeneration = null; };
   const prunePackets = handle => {
@@ -75,13 +116,16 @@ export function createStagePlayback(legacy, {stage}) {
     return !engine.failed && !engine.drawingUnpublished(candidate) && engine.eligibility.check(candidate, candidateRevision, engine.dirty) === null;
   };
   const setHidden = options => {
-    if (options?.hiddenKey === undefined || options.hiddenKey === hiddenKey) return;
-    hiddenKey = options.hiddenKey;
-    side().engine.handle.set_hidden(new Uint32Array(options.hiddenUids ?? []));
+    if (options?.hiddenKey === undefined || (!pendingHidden && options.hiddenKey === hiddenKey)) return;
+    pendingHidden = {key: options.hiddenKey, uids: new Uint32Array(options.hiddenUids ?? []), order: ++controlOrder};
     dropPackets();
+    flushControls();
   };
   const sync = dirty => {
     const engine = side(), target = report, targetRevision = revision;
+    // Publication clears native demand; an unaccepted request for its previous
+    // document must not be retried after that publication either.
+    pendingRequest = null;
     syncError = null; dropPackets();
     const run = engine.mirror.syncFrames(target, targetRevision, dirty).catch(error => {
       if (error?.name !== 'AbortError') { syncError = error; engine.failed = `the engine refused the document (${error.message})`; }
@@ -89,8 +133,10 @@ export function createStagePlayback(legacy, {stage}) {
     syncing = run;
     return run;
   };
-  const ready = () => engineMode && !syncing && !syncError && side().mirror.framesCurrent(report, revision);
+  const mirrored = () => engineMode && !syncing && !syncError && side().mirror.framesCurrent(report, revision);
+  const ready = () => !controlsPending() && mirrored();
   const packetFor = tick => {
+    flushControls();
     if (!sample(tick) || !ready()) return null;
     tick = tick === 0 ? 0 : tick;
     const handle = side().engine.handle;
@@ -155,7 +201,8 @@ export function createStagePlayback(legacy, {stage}) {
     },
     invalidate(options) {
       if (!engineMode) return legacy.invalidate(options);
-      side().engine.handle.request_samples(0, new Float64Array(0));
+      pendingRequest = {playhead: 0, samples: new Float64Array(0), order: ++controlOrder};
+      flushControls();
       dropPackets();
       return playback;
     },
@@ -163,7 +210,8 @@ export function createStagePlayback(legacy, {stage}) {
       if (!engineMode) return legacy.prepareRange(ticks, options);
       if (syncing) await syncing;
       if (syncError) throw syncError;
-      if (!ready() || !ticks.length) return;
+      // A busy earlier admission stays cold, but cannot suppress newer demand.
+      if (!mirrored() || !ticks.length || !sample(ticks[0])) return;
       const engine = side().engine;
       if (sample(ticks[0])) {
         requested = [];
@@ -173,8 +221,8 @@ export function createStagePlayback(legacy, {stage}) {
         }
       }
       prunePackets(engine.handle);
-      engine.handle.request_samples(ticks[0], new Float64Array(ticks));
-      engine.pump();
+      pendingRequest = {playhead: ticks[0], samples: new Float64Array(ticks), order: ++controlOrder};
+      flushControls();
     },
     /**
      * For an export (engine-export.mjs): brings the engine's document to `report` at
@@ -196,6 +244,7 @@ export function createStagePlayback(legacy, {stage}) {
     bufferedAhead(tick, count, end) {
       if (!engineMode) return legacy.bufferedAhead(tick, count, end);
       const total = side().engine.handle.total_ticks(), last = Math.min(tick + count, end ?? total, total);
+      if (total === 0) return false; // No document or a busy scalar header is cold.
       for (let next = tick; next < last; next++) if (packetFor(next) === null) return false;
       return packetFor(tick) !== null;
     },
@@ -203,7 +252,11 @@ export function createStagePlayback(legacy, {stage}) {
     setVfxEnabled(enabled) {
       // The engine's prepared frames are kept with or without effects, as the editor's preview shows them.
       const engine = side();
-      if (engine) { engine.engine.handle.set_effects(enabled !== false); if (engineMode) dropPackets(); }
+      if (engine) {
+        pendingEffects = {enabled: enabled !== false, order: ++controlOrder};
+        if (engineMode) dropPackets();
+        flushControls();
+      }
       return legacy.setVfxEnabled(enabled);
     },
     stageNativeSnapshot(...args) { return engineMode ? false : legacy.stageNativeSnapshot(...args); },
@@ -211,7 +264,11 @@ export function createStagePlayback(legacy, {stage}) {
     // Planning jobs still run on the JavaScript mirror: load it only when one is asked for.
     planLayerMigration(request, options) { return planner().planLayerMigration(request, options); },
     planInsertInbetweens(request, options) { return planner().planInsertInbetweens(request, options); },
-    dispose() { dropPackets(); return legacy.dispose(); },
+    dispose() {
+      pendingHidden = pendingEffects = pendingRequest = null;
+      controlLifetime++; retryScheduled = false;
+      dropPackets(); return legacy.dispose();
+    },
   };
   const planner = () => {
     if (engineMode && (legacy.report !== report || legacy.documentRevision !== revision)) legacy.load(report, {revision});

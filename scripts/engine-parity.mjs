@@ -73,6 +73,16 @@ run('saved native motion history regenerates unchanged', process.execPath, ['eng
 run('native draft displays regenerate unchanged', process.execPath, ['engine/tools/origin-motion-draft-records.mjs'], {quiet: true,
   check: () => unchanged('engine/tests/edit/origin-motion-draft-records.json')});
 
+// Canonical Session handoff, quiet publication and live worker evidence share the
+// same editor oracle; complete return views follow their lifecycle recordings.
+for (const [tool, folder] of [
+  ['session-handoff-fixtures', 'session-handoff'],
+  ['session-quiet-fixtures', 'session-quiet'],
+  ['session-live-fixtures', 'session-live'],
+  ['session-live-return-fixtures', 'session-live-return'],
+]) run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
+  check: () => unchanged(`engine/tests/${folder}`)});
+
 // Containers: every native file in the repository, against the JavaScript reader.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});
 const natives = [];

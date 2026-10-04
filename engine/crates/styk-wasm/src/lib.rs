@@ -22,6 +22,7 @@ pub mod export;
 pub mod math;
 pub mod planning;
 pub mod preview;
+pub mod session_worker;
 pub mod stage;
 pub mod views;
 

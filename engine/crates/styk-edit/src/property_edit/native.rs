@@ -16,6 +16,18 @@ pub(super) struct NativeEdit {
     before_channel: Option<Value>,
     preview: Option<(Value, usize, usize)>,
 }
+impl NativeEdit {
+    pub(super) fn begin_value_worker(&self, edit: &Edit) -> Value {
+        let mut out = Obj::new();
+        out.set("target", edit.target.clone());out.set("property", Value::str(&edit.property));
+        out.set("exactTarget", Value::Bool(edit.exact));out.set("tick", Value::Num(edit.tick));
+        out.set("before", self.before.clone().unwrap_or(Value::Null));
+        if let Some(channel) = &self.before_channel { out.set("beforeChannel", channel.clone()); }
+        out.set("initialValue", edit.initial.clone());out.set("selection", edit.selection.history_value());
+        out.set("changed", Value::Bool(edit.changed));
+        Value::object(out)
+    }
+}
 
 fn animation(editor: &Editor) -> Option<Value> {
     editor

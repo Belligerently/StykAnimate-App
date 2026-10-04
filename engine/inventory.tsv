@@ -1,6 +1,6 @@
 path	kind	owner	status	note
 src/animation-channels.mjs	engine	styk-eval::channels	partial	Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); composeAnimationChannels and animationPropertyValue on records (styk_eval::records); animationChannelId, normalizeAnimationTarget and validateAnimationValue for property edits (styk-edit/src/property_edit.rs); document validation and native-timeline authoring still JS
-src/animation-history.mjs	engine	styk-edit	partial	Rust: recorded UTF-16 JSON history weights, exact warm readiness checkpoint, count/byte trimming and source retirement; canonical worker owner integrated, app handoff pending
+src/animation-history.mjs	engine	styk-edit	partial	Rust: recorded UTF-16 JSON history weights, exact warm readiness checkpoint, count/byte trimming and source retirement; quiet canonical Core actor and exclusive portable live capability integrated; exact warm checkpoints preserved, app handoff/readiness pending
 src/animation-origin-support.mjs	engine	styk-eval::origin	partial	Rust: support-graph origins/ghost corrections and recorded whole/joint/handle/range/join/2D-rig synchronization; future rig/spatial combinations remain guarded
 src/animation-origin-validation.mjs	engine	styk-eval	partial	Rust: typed origin compiler validates retained support indices, numbers, bindings and capacity against 68 editor refusals; cooperative import/object validation still JS
 src/animation-origin.mjs	engine	styk-eval::origin	partial	Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); evaluated records and scalar property previews byte-exact; most origin editing still JS
@@ -173,7 +173,7 @@ src/editor-style-topology.mjs	engine	styk-edit	partial	Rust: style overlays, Sti
 src/editor-tweener.mjs	engine	styk-edit	js	commands and history
 src/editor-vfx-clips.mjs	engine	styk-edit	partial	Rust: stack/clip commands plus addVfxGroup/addVfxUserPreset, key identities and D18 draws, attached scopes and strict paints; 12 remaining-effect replays/392 exact steps; figure clips pasted with figures and worker runtime adoption remain JS
 src/editor-vfx.mjs	engine	styk-edit	partial	Rust: stack editing, all 13 presets, setVfxScope, paste with attached parts and paint parameters on layer sheets; exact recorded/app shadow and existing paint adoption; native stacks and remaining runtime ownership still JS
-src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet, _topologyEdit, addSegment, addSegments, deleteSegment, splitSegment, replaceFigureDefinition (styk-edit/src/topology.rs) (styk-edit; the app runs them in the engine for large figure documents); every other command still JS
+src/editor.mjs	engine	styk-edit	partial	Rust: selection, seek, gestures, moving, transforming and posing figures (move, rotate, scale, flip, mirrorFigure and branch flips, center, reset, poseJoint, rotateJoint, bendJoint), moveSelectionLayer and moveSelectionInFrames on a layer sheet, updateObject, updateSelection, addFigure, the figure clipboard (copySelection, cutSelection, pasteSelection, duplicateSelection, importFigure: styk-edit/src/figure_clipboard.rs), project settings (setFPS, setCanvasSize, updateProject: styk-edit/src/project.rs), _restoreSelection, undo/redo of object edits, setBackgroundColor on a layer sheet, _topologyEdit, addSegment, addSegments, deleteSegment, splitSegment, replaceFigureDefinition (styk-edit/src/topology.rs) (styk-edit; the app runs them in the engine for large figure documents); quiet canonical worker and bounded explicit project route integrated, app writer transfer/live Core readiness pending; every other command still JS
 src/error-presentation.mjs	ui	-	stays	
 src/even-odd-fill.mjs	engine	styk-render	js	
 src/export-canvas.mjs	engine	styk-export	js	frame hand-over shared by both export workers
@@ -272,7 +272,7 @@ src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/moviecl
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
 src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
-src/native-property-edit.mjs	engine	styk-edit	partial	Rust: replay-native property token lifecycle through the owning builder/project mutation layer; app facade/worker adoption remains pending
+src/native-property-edit.mjs	engine	styk-edit	partial	Rust: recorded native property token lifecycle through the owning builder/project mutation layer and exclusive portable live Session; native propertyChannels:true projection and app facade/worker adoption pending
 src/native-property-projection.mjs	engine	styk-eval	js	
 src/native-property-ranges.mjs	engine	styk-edit	js	
 src/native-text-authoring.mjs	engine	styk-edit	js	
@@ -320,7 +320,7 @@ src/playback-upload.mjs	engine	styk-engine::playback	js	worker preparation, pack
 src/playback-vector-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-window.mjs	engine	styk-engine::playback	js	scheduling, budgets
 src/playback-worker.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy)
-src/playback.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames
+src/playback.mjs	engine	styk-engine::playback	partial	worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames; one-shot State/Storage readiness and finite coalesced Busy controls, dense cache work outside State; physical lease/final-drop/shutdown work open
 src/polygon-draft.mjs	engine	styk-edit	js	
 src/polygon-preview.mjs	engine	styk-eval::picking	js	handles, picking, snapping geometry (drawn by the JS overlay)
 src/pose-property-split.mjs	engine	styk-edit	js	

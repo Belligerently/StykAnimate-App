@@ -118,7 +118,10 @@ impl Guard {
     }
     fn matches(&self, editor: &Editor) -> bool {
         quiet(editor)
-            && editor.worker_history
+            && self.matches_owner(editor)
+    }
+    fn matches_owner(&self, editor: &Editor) -> bool {
+        editor.worker_history
             && self.report.same_node(&editor.report)
             && self.counters
                 == [
@@ -175,10 +178,111 @@ pub struct PreparedPublication {
     events: Value,
 }
 impl PreparedPublication {
+    /// Narrow worker response for the recorded project-settings surface. Fields
+    /// come from the actual Fields owner, preserving its order and absence;
+    /// this is not a second diff/publication or a serialized document snapshot.
+    /// UI admission remains separate from this portable owning-worker API.
+    pub fn project_fields_response_worker(&self, method: &str) -> Result<Value, EditError> {
+        use crate::history::CommandKind;
+        use styk_doc::Obj;
+        if !matches!(method, "setFPS" | "setCanvasSize" | "updateProject" | "undo" | "redo") {
+            return Err(EditError::Unported("the bounded project-settings worker surface".into()));
+        }
+        let status = self.result.get("status").and_then(Value::as_str);
+        let changed = status == Some("ok") && self.result.get("result") == Some(&Value::Bool(true));
+        let mut fields = Vec::new();
+        if changed {
+            let values: Vec<(String, Option<Value>)> = if matches!(method, "undo" | "redo") {
+                let command = if method == "undo" { self.heads.snapshot.redo.last() } else { self.heads.snapshot.undo.last() }
+                    .ok_or_else(|| EditError::Unported("the moved project history entry is unavailable".into()))?;
+                let CommandKind::Fields { before, after, .. } = &command.kind else {
+                    return Err(EditError::Unported("history outside the bounded project-settings worker surface".into()));
+                };
+                if before.iter().any(|(_, value)| value.is_none()) {
+                    return Err(EditError::Unported("absent-before project fields require recorded own-key ordering".into()));
+                }
+                if method == "undo" { before.clone() } else { after.iter().map(|(key, value)| (key.clone(), Some(value.clone()))).collect() }
+            } else {
+                // _fields emits its exact ordered patch keys even if count0
+                // immediately trims the command. Reuse that owning event and
+                // the exact guarded root; never infer changes from a root diff.
+                let events = self.result.get("events").and_then(Value::elements)
+                    .ok_or_else(|| EditError::Unported("the Fields publication event is unavailable".into()))?;
+                let mut keys = None;
+                for event in events.iter() {
+                    if let Some(fields) = event.get("projectFields") {
+                        if keys.is_some() { return Err(EditError::Unported("multiple Fields publication events".into())); }
+                        keys = Some(fields.clone());
+                    }
+                }
+                let keys = keys.and_then(|keys| keys.elements().map(|e| e.iter().collect::<Vec<_>>()))
+                    .ok_or_else(|| EditError::Unported("the Fields publication event is unavailable".into()))?;
+                if keys.len() > 3 { return Err(EditError::Unported("more than three project fields in one publication".into())); }
+                let mut values = Vec::new();
+                for key in keys {
+                    let key = key.as_str().ok_or_else(|| EditError::Unported("a non-string project field".into()))?;
+                    if self.before_report().get(key).is_none() {
+                        return Err(EditError::Unported("absent-before project fields require recorded own-key ordering".into()));
+                    }
+                    values.push((key.to_owned(), self.report().get(key).cloned()));
+                }
+                values
+            };
+            // JS undo keeps an own undefined key for absent-before settings.
+            // The canonical JSON store cannot yet retain that insertion slot
+            // through a later branch/re-edit. Refuse rather than delete/append
+            // and silently alter the oracle's subsequent serialized key order.
+            if values.len() > 3 { return Err(EditError::Unported("more than three project fields in one publication".into())); }
+            for (key, value) in values {
+                if !matches!(key.as_str(), "fps" | "canvas_width" | "canvas_height" | "frame_delay_ms")
+                    || value.as_ref().is_some_and(|value| !matches!(value, Value::Null | Value::Bool(_) | Value::Num(_))) {
+                    return Err(EditError::Unported("a non-scalar project field in worker history".into()));
+                }
+                let mut field = Obj::new(); field.set("key", Value::str(&key));
+                match value { Some(value) => field.set("value", value.clone()), None => field.set("absent", Value::Bool(true)) }
+                fields.push(Value::object(field));
+            }
+        }
+        // State/history are the views already prepared by this same owner. Only
+        // scalar lengths/checkpoint and top labels cross this narrow boundary;
+        // complete undo/redo summaries remain retained on the durable worker.
+        if self.state.get("selectedUids").and_then(Value::array_len).unwrap_or(0) > 1024
+            || ["polygonSelection", "segmentIds", "branch"].iter().any(|key| self.state.get(key).is_some()) {
+            return Err(EditError::Unported("selection outside the bounded project-settings worker surface".into()));
+        }
+        let mut result = Obj::new();
+        for key in ["status", "result", "error", "reason"] {
+            if let Some(value) = self.result.get(key) { result.set(key, value.clone()); }
+        }
+        result.set("state", self.state.clone());
+        // Session drains emitted events into its answer before Heads capture.
+        // Preserve that exact command response, not the now-empty pending list.
+        result.set("events", self.result.get("events").cloned().unwrap_or_else(|| self.events.clone()));
+        let mut history = Obj::new();
+        for key in ["size", "revision", "revisionSerial", "savedRevision"] {
+            if let Some(value) = self.history.get(key) { history.set(key, value.clone()); }
+        }
+        for key in ["undo", "redo"] {
+            history.set(key, Value::Num(self.history.get(key).and_then(Value::array_len).unwrap_or(0) as f64));
+        }
+        history.set("limit", Value::Num(self.heads.limits.count as f64));
+        history.set("byteLimit", Value::Num(self.heads.limits.bytes));
+        let mut response = Obj::new(); response.set("kind", Value::str("project-fields"));
+        response.set("answer", Value::object(result)); response.set("fields", Value::array(fields));
+        response.set("history", Value::object(history));
+        let response = Value::object(response);
+        // Worker-only final bounded control check, before cursor or root admission.
+        // Dense raw unknown fields never participate in this small response.
+        if styk_doc::json::to_string(&response).len() > 64 * 1024 / 3 {
+            return Err(EditError::Unported("project-settings response exceeds its control budget".into()));
+        }
+        Ok(response)
+    }
     pub fn before_report(&self) -> &Value {
         &self.guard.report
     }
     pub fn before_revision(&self) -> u64 { self.guard.counters[0] }
+    pub fn revision(&self) -> u64 { self.heads.snapshot.counters[0] }
     pub fn report(&self) -> &Value {
         &self.heads.snapshot.report
     }
@@ -233,7 +337,21 @@ impl PreparedPublication {
         Ok(GuardedPublication {
             editor,
             prepared: self,
+            epoch: None,
         })
+    }
+
+    /// Only the consuming Session worker capability can use this live guard.
+    /// Its private epoch was checked before borrowing the same owner exclusively.
+    pub(crate) fn guard_worker_exclusive<'a>(
+        self, editor: &'a mut Editor, epoch: &'a mut u64, live: bool,
+        mut check: impl FnMut() -> Result<(), EditError>,
+    ) -> Result<GuardedPublication<'a>, (EditError, Self)> {
+        if let Err(error) = check() { return Err((error, self)); }
+        let matches = if live { self.guard.matches_owner(editor) } else { self.guard.matches(editor) };
+        if let Err(error) = check() { return Err((error, self)); }
+        if !matches { return Err((EditError::Invalid("the exclusive Session owner changed".into()), self)); }
+        Ok(GuardedPublication { editor, prepared: self, epoch: Some(epoch) })
     }
 }
 
@@ -241,6 +359,7 @@ impl PreparedPublication {
 pub struct GuardedPublication<'a> {
     editor: &'a mut Editor,
     prepared: PreparedPublication,
+    epoch: Option<&'a mut u64>,
 }
 impl GuardedPublication<'_> {
     /// Canonical roots of this already-guarded transaction, borrowed on its worker.
@@ -251,6 +370,7 @@ impl GuardedPublication<'_> {
     /// The host must keep this retirement on its durable worker through ACK.
     pub fn commit(mut self) -> RetiredPublication {
         self.prepared.heads.exchange(self.editor);
+        if let Some(epoch) = self.epoch { *epoch += 1; }
         RetiredPublication {
             prepared: self.prepared,
         }
@@ -292,7 +412,18 @@ impl Editor {
             &mut Editor,
             &mut dyn FnMut() -> Result<(), EditError>,
         ) -> Result<Value, EditError>,
+        check: impl FnMut() -> Result<(), EditError>,
+    ) -> Result<PreparedPublication, EditError> {
+        self.prepare_worker_operation(operation, check, false)
+    }
+
+    /// The exclusive Session capability is the sole caller permitting live
+    /// runtime. It owns the same snapshots and must guard its operation epoch.
+    pub(crate) fn prepare_worker_operation(
+        &mut self,
+        operation: impl FnOnce(&mut Editor, &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError>,
         mut check: impl FnMut() -> Result<(), EditError>,
+        live: bool,
     ) -> Result<PreparedPublication, EditError> {
         check()?;
         if !self.worker_history {
@@ -300,7 +431,7 @@ impl Editor {
                 "worker history has not been prepared".into(),
             ));
         }
-        if !quiet(self) {
+        if !live && !quiet(self) {
             return Err(EditError::Unported(
                 "publication with a live editing gesture or batch".into(),
             ));
@@ -311,7 +442,7 @@ impl Editor {
         let before_history = self.history_value();
         let result = operation(self, &mut check).and_then(|result| {
             check()?;
-            if !quiet(self) {
+            if !live && !quiet(self) {
                 return Err(EditError::Unported(
                     "publication left a live editing gesture or batch".into(),
                 ));

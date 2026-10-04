@@ -11,11 +11,13 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   revision, prepared document, assets), a task queue, the frame cache and
   image decoding. Every change publishes a new generation; results computed
   for an older one are dropped.
-- Frame scheduler (`frames.rs`): the interface asks for ticks around the
-  playhead (`request`); workers evaluate and encode them (`FrameData`: draw
-  list, camera, background) into a cache bounded by `Budgets::for_device`
-  (48–384 MiB by `navigator.deviceMemory`), evicting what is farthest ahead
-  of the playhead first. `set_hidden` re-keys frames by what is hidden.
+- Frame scheduler (`frames.rs`): the interface admits ticks with
+  `try_request_samples`; workers evaluate and encode them (`FrameData`: draw
+  list, camera, background). `Budgets::for_device` supplies the existing logical
+  eviction target (48–384 MiB by `navigator.deviceMemory`); the protected playhead
+  and separately retained payloads prevent treating it as a physical memory cap.
+  Try hidden/effects setters advance the epoch; playback retries only its latest
+  pending controls while Busy keeps it cold.
 - Images: decoded on workers (`take_images` hands them to the renderer a few
   megabytes per frame); drawing cels decode one task each. The stage remembers which
   atlas places it uploaded (`Uploaded`); a frame drawn while some picture it shows is
@@ -69,12 +71,17 @@ How the engine runs in the app (`engine/crates/styk-engine`,
 
 ## Rules
 
-- The interface thread never blocks: shared state is taken with a spinning
-  lock around queue pushes and pointer swaps; waiting is `Atomics.waitAsync` on
-  the engine's progress counter, which Rust bumps with `Atomics.notify`. Read the
+- The interface thread must never block. Readiness and admission use one-shot
+  `Shared::try_lock` and return cold or Busy without replacing the current owner.
+  `Shared::lock` can wait and belongs on workers or synchronous tools; a short
+  critical section does not justify interface spinning. Waiting is cooperative
+  `Atomics.waitAsync` on the engine's progress counter, which Rust bumps with
+  `Atomics.notify`. Read the
   counter (`progressSeen()`) before checking for a result and wait with that value
-  (`whenProgress(seen)`): work that finishes in between is otherwise only noticed at
-  the 250 ms timeout. The mirror's commit on the interface thread only tries the
+  (`whenProgress(seen, timeoutMs)`): both waitAsync and polling use the
+  requested timeout (default and ceiling 250 ms; cache/project retries
+  use 16 ms). An idle lock can release without publishing progress. A timeout
+  rechecks readiness without changing the counter. The mirror's commit only tries the
   mirror's lock (`Engine::try_commit`, [document.md](document.md)).
 - No rayon in WebAssembly: `styk_eval::par::map` is sequential there;
   parallelism is whole frames on workers.
@@ -83,11 +90,11 @@ How the engine runs in the app (`engine/crates/styk-engine`,
 
 ## Prepared samples and layer planning
 
-Fractional playback and preview requests use `Engine::request_samples` and `frame_at`
+Fractional interface playback requests use `Engine::try_request_samples` and `frame_at`
 on the existing frame cache. `FrameData::tick` is now `f64`; integer entry points remain
 available. A request does not synchronously prepare a cold sample on the interface.
-`Engine::prepared_frame` reads the current generation, cached frame and cache epoch
-together under the existing State lock. `frame_matches` checks that same identity
+`Engine::prepared_frame` tries the current State and same cache Storage once,
+checking generation, cached frame and epoch coherently. `frame_matches` checks that same identity
 without retaining a draw list. App keys are `engine:generation:epoch:sample`; hidden
 figures, effect settings and resource-bound changes supersede them even if the same
 sample is already ready again. Metadata and native drawing both validate this ticket.
@@ -104,10 +111,31 @@ edit stamp, prepared epoch, edit-effects flag. It changes only after a successfu
 This closes prepared-ticket substitution; shared-State latency, dense retirement and
 live edit-scene preparation remain in the D7 audit, rather than being certified here.
 
-Camera monitor and preview work share this prepared owner, resource readiness and
-bounded ticket retirement. A refused or cancelled result retains its complete payload
-and charge through worker retirement and terminal ACK; disposal never extends a State
-critical section.
+Camera monitor and preview work share this prepared owner and resource readiness.
+Their complete presenter leases, retained charges and final-drop threads remain part
+of the D7 audit; a weak frame identity alone does not certify last-owner retirement.
+
+The cache retains one Storage owner plus a small control head in State. Workers move
+coalesced controls under State after acquiring Storage; they never wait for Storage
+while holding State. Dense construction, scanning, sorting, reset, completion, trimming
+and rejected-frame disposal run outside State. Actual State allocation/drop probes and
+held-lock tests cover these paths. Existing logical estimates, 90% trimming and protected
+playhead behavior remain unchanged. Physical DrawList/Generation/style/glyph ownership,
+presenter leases, aggregate charging and shutdown ACK are still open.
+
+Portable pin additions are `FrameAdmission` (Busy=0, Unchanged=1, Applied=2),
+`FrameMetadata`, `GenerationHeader`, Engine try request/settings/header/generation/stats/
+images methods, `frame_ready_at`, `frame_metadata`, `generation_for_frame_epoch` and
+`generation_identity_now`. The scalar identity reader delegates to the same four-scalar
+header owner; no document returns zero identity, while contention returns Busy.
+Existing integer and explicit worker preparation APIs remain available.
+
+The quiet Session actor described in [editing.md](editing.md#quiet-actor-and-exclusive-live-capability-2026-10-04)
+uses bounded UI controls and worker-owned preparation/retirement. Its deferred registry
+and final cancellation/expiry checks share existing task and State owners. The guarded
+quiet payload charge stays with the worker until terminal ACK or cancellation cleanup. This scoped
+foundation does not certify live Stage preparation, all renderer last-owner drops,
+global stop or no-thread pumping.
 
 `Engine::plan_layers(revision, LayerRequest)` uses the existing worker task lane and
 returns `LayerJob`. Polling gives bounded chunks and progress, ACK admits the next chunk,

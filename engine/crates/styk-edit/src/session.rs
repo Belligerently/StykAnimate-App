@@ -8,6 +8,7 @@
 //! compares that with what the JavaScript editor did (docs/engine/editing.md).
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use styk_doc::{Obj, Value};
 
@@ -15,6 +16,17 @@ use crate::{EditError, Editor, Options, Selection};
 
 pub struct Session {
     editor: Editor,
+}
+
+mod worker;
+pub use worker::{WorkerFrame, WorkerPrepared, WorkerSession};
+
+/// Exact counters supplied by the existing history owner during worker handoff.
+#[derive(Clone, Copy, Debug)]
+pub struct RevisionCounters {
+    pub revision: u64,
+    pub serial: u64,
+    pub saved: u64,
 }
 
 fn number(value: &Value, key: &str) -> Option<f64> {
@@ -69,6 +81,19 @@ impl Session {
     /// [`Session::start`] from typed views already made for `report` (the engine's mirror).
     pub fn start_prepared(report: Value, state: &str, loader: styk_eval::load::Loader, prepared: std::sync::Arc<styk_eval::eval::Prepared>) -> Result<Session, String> {
         Self::start_with(report, state, Some((loader, prepared)))
+    }
+
+    /// Worker-only initialization from an actually fresh, empty-history owner.
+    /// The host must refuse foreign warm history, not rebuild it from the report.
+    /// Existing Rust warm Sessions move as-is through Engine::attach_session_worker.
+    /// Counters come from that original owner; never infer them from the mirror.
+    pub fn start_worker_prepared(report: Value, state: &str, loader: styk_eval::load::Loader, prepared: std::sync::Arc<styk_eval::eval::Prepared>, counters: RevisionCounters) -> Result<Session, String> {
+        if counters.revision > counters.serial || counters.saved > counters.serial {
+            return Err("the original history revision counters are invalid".into());
+        }
+        let mut session = Self::start_prepared(report, state, loader, prepared)?;
+        session.editor.set_revision_counters(counters.revision, counters.serial, counters.saved);
+        Ok(session)
     }
 
     pub fn start(report: Value, state: &str) -> Result<Session, String> {
@@ -134,6 +159,12 @@ impl Session {
     pub fn report(&self) -> &Value {
         self.editor.report()
     }
+
+    /// Actual owning history revision, for worker handoff validation.
+    pub fn revision(&self) -> u64 { self.editor.revision }
+
+    /// Scalar checkpoint of the exact prepared owner, never a reconstructed sum.
+    pub fn history_checkpoint_worker(&self) -> Option<f64> { self.editor.history_size() }
 
     /// Prepare the existing exact history owner before accepting worker calls.
     /// A warm session uses its original owner checkpoint, never a reconstructed sum.
@@ -212,7 +243,13 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let result = if !worker_preparation && !editor.sheet() && (method == "addFigure" || crate::movieclip_native::native_movieclip_method(method)) {
         Err(EditError::Unported(if method == "addFigure" { "native movieclip insertion requires worker preparation" } else { "native movieclip editing requires worker preparation" }.into()))
     } else {
-        editor.call(method, &args)
+        editor.call(method, &args).and_then(|result| {
+            // Legacy facades read these views locally. The exclusive worker has
+            // the sole owner, so it returns the recorded view from that owner.
+            if worker_preparation && matches!(method, "seek" | "@seek") { editor.shown_frame() }
+            else if worker_preparation && method == "beginAnimationEdit" { editor.animation_edit_value_worker() }
+            else { Ok(result) }
+        })
     };
     match result {
         Ok(result) => {

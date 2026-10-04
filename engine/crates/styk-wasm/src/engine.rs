@@ -120,6 +120,12 @@ impl EngineHandle {
         self.engine.generation().map_or_else(|| vec![0.0; 3], |generation| vec![generation.id as f64, generation.lineage as f64, generation.revision as f64])
     }
 
+    /// Undefined means busy. Bootstrap must preserve its current owner and
+    /// retry explicitly; it cannot wait on worker cache/publication locks.
+    pub fn try_record_identity(&self) -> Option<Vec<f64>> {
+        self.engine.generation_identity_now().map(|identity| identity.map(|value| value as f64).to_vec())
+    }
+
     /// Guard array: generation,lineage,revision,batch nonce,record ticket.
     /// Target 0=table (code 0..2), 1=source, 2=metadata (code 0..4).
     /// Array lengths and IDs are bounded before crossing owned memory.
@@ -263,12 +269,12 @@ impl EngineHandle {
 
     /// The interface revision of the open document, or -1 when there is none.
     pub fn revision(&self) -> f64 {
-        self.engine.generation().map_or(-1.0, |generation| generation.revision as f64)
+        self.engine.try_generation_header().ok().flatten().map_or(-1.0, |header| header.revision as f64)
     }
 
     /// Length of the open document in ticks (0 when there is none).
     pub fn total_ticks(&self) -> u32 {
-        self.engine.generation().map_or(0, |generation| generation.playable_ticks())
+        self.engine.try_generation_header().ok().flatten().map_or(0, |header| header.total_ticks)
     }
 
     /// Replaces the ticks wanted in the background, most urgent first.
@@ -282,7 +288,7 @@ impl EngineHandle {
     }
 
     pub fn frame_ready(&self, tick: f64) -> bool {
-        self.engine.frame_at(tick).is_some()
+        self.engine.frame_ready_at(tick)
     }
 
     /// A ready frame belongs to this exact generation and settings/resource epoch.
@@ -295,10 +301,9 @@ impl EngineHandle {
     /// background being shown), as the JSON of a keyframe without objects;
     /// `undefined` while the frame is not ready.
     pub fn frame_meta(&self, tick: f64) -> Option<String> {
-        let snapshot = self.engine.prepared_frame(tick, None)?;
-        let frame = &snapshot.frame;
-        let generation = snapshot.generation.id;
-        let epoch = snapshot.epoch;
+        let frame = self.engine.frame_metadata(tick)?;
+        let generation = frame.generation;
+        let epoch = frame.epoch;
         let camera = match frame.camera {
             Some(c) => format!("{{\"x\":{},\"y\":{},\"scale\":{},\"angle_rad\":{},\"is_default\":{}}}", c.x, c.y, c.scale, c.angle, c.is_default),
             None => "null".to_string(),
@@ -326,15 +331,24 @@ impl EngineHandle {
         self.engine.set_hidden(uids);
     }
 
+    /// 0=Busy (unchanged), 1=Unchanged, 2=Applied. UI never spins on State.
+    pub fn try_set_hidden(&self, uids: &[u32]) -> u32 { self.engine.try_set_hidden(uids) as u32 }
+
+    pub fn try_request_samples(&self, playhead: f64, ticks: &[f64]) -> u32 {
+        self.engine.try_request_samples(playhead, ticks) as u32
+    }
+
     /// Prepares frames with or without effects (the editor's effects preview).
     pub fn set_effects(&self, on: bool) {
         self.engine.set_effects(on);
     }
 
+    pub fn try_set_effects(&self, on: bool) -> u32 { self.engine.try_set_effects(on) as u32 }
+
     /// The id of the open document generation (0 when there is none). Prepared frames
     /// belong to one generation.
     pub fn generation(&self) -> f64 {
-        self.engine.generation().map_or(0.0, |generation| generation.id as f64)
+        self.engine.try_generation_header().ok().flatten().map_or(0.0, |header| header.generation as f64)
     }
 
     /// Runs one unit of background work here. For hosts without worker threads.
@@ -344,16 +358,19 @@ impl EngineHandle {
 
     /// Preparation statistics as JSON.
     pub fn stats(&self) -> String {
-        let s = self.engine.frame_stats();
+        let frames = self.engine.try_frame_stats();
+        let images = self.engine.try_images_pending();
+        let busy = frames.is_none() || images.is_none();
+        let s = frames.unwrap_or_default();
         format!(
-            "{{\"prepared\":{},\"totalMs\":{:.3},\"worstMs\":{:.3},\"inline\":{},\"cached\":{},\"cachedBytes\":{},\"imagesPending\":{}}}",
+            "{{\"prepared\":{},\"totalMs\":{:.3},\"worstMs\":{:.3},\"inline\":{},\"cached\":{},\"cachedBytes\":{},\"imagesPending\":{},\"busy\":{busy}}}",
             s.prepared,
             s.total_ms,
             s.worst_ms,
             s.inline,
             s.cached,
             s.cached_bytes,
-            self.engine.images_pending()
+            images.unwrap_or_default()
         )
     }
 

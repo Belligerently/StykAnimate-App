@@ -102,267 +102,182 @@ impl From<u32> for Sample {
     fn from(tick: u32) -> Self { Sample((tick as f64).to_bits()) }
 }
 
-struct Entry {
-    data: Arc<FrameData>,
-    bytes: usize,
+mod cache;
+pub(crate) use cache::{Cache, Work};
+
+/// Small prepared metadata copied without retaining a dense frame or generation.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameMetadata {
+    pub generation: u64, pub epoch: u64, pub tick: f64,
+    pub camera: Option<Camera>, pub background: (u32, u32, f64),
 }
 
-pub(crate) struct Cache {
-    generation: u64,
-    /// Resource and session changes also supersede work within one generation.
-    pub(crate) epoch: u64,
-    entries: HashMap<Sample, Entry>,
-    bytes: usize,
-    budget: usize,
-    /// Ticks to prepare, most urgent first.
-    wanted: Vec<Sample>,
-    inflight: HashSet<Sample>,
-    /// The tick playback is at: the cache evicts what is farthest ahead of it.
-    playhead: Sample,
-    /// Figures hidden for this session, by identity. Prepared frames leave them out.
-    pub(crate) hidden: Arc<[u32]>,
-    /// Effects are drawn (the editor's effects preview is on).
-    pub(crate) effects: bool,
-    total: u32,
-    stats: FrameStats,
+/// One coherent scalar generation header. Busy is separate from no document.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GenerationHeader {
+    pub generation: u64, pub lineage: u64, pub revision: u64, pub total_ticks: u32,
 }
 
-impl Cache {
-    pub fn new(budget: usize) -> Cache {
-        Cache { generation: 0, epoch: 0, entries: HashMap::new(), bytes: 0, budget, wanted: Vec::new(), inflight: HashSet::new(), playhead: Sample::default(), hidden: Arc::from(Vec::new()), effects: true, total: 1, stats: FrameStats::default() }
-    }
-
-    pub fn reset(&mut self, generation: u64) {
-        self.generation = generation;
-        self.epoch = self.epoch.wrapping_add(1);
-        self.entries.clear();
-        self.bytes = 0;
-        self.wanted.clear();
-        self.inflight.clear();
-        self.stats = FrameStats::default();
-    }
-
-    pub(crate) fn has_storage(&self) -> bool { self.entries.capacity() != 0 || self.wanted.capacity() != 0 || self.inflight.capacity() != 0 || !self.hidden.is_empty() }
-
-    /// Install a worker-prebuilt empty owner without dropping the old cache.
-    /// Live session settings may change during preparation; preserve them here.
-    pub(crate) fn exchange_publication(&mut self, mut fresh: Cache, generation: u64) -> Cache {
-        fresh.generation = generation;
-        fresh.epoch = self.epoch.wrapping_add(1);
-        fresh.budget = self.budget;
-        fresh.playhead = self.playhead;
-        fresh.total = self.total;
-        fresh.effects = self.effects;
-        std::mem::swap(&mut fresh.hidden, &mut self.hidden);
-        std::mem::replace(self, fresh)
-    }
-
-    /// A decoded cel changed the rectangles effects read. Rebuild previously
-    /// requested work, and reject any worker still producing the earlier grid.
-    pub(crate) fn invalidate_resources(&mut self) {
-        self.epoch = self.epoch.wrapping_add(1);
-        let mut redo: Vec<Sample> = self.entries.keys().chain(self.inflight.iter()).copied().collect();
-        let total = self.total.max(1);
-        redo.sort_unstable_by(|a, b| a.ahead(self.playhead, total).total_cmp(&b.ahead(self.playhead, total)));
-        let mut seen: HashSet<Sample> = self.wanted.iter().copied().collect();
-        self.wanted.extend(redo.into_iter().filter(|tick| seen.insert(*tick)));
-        self.entries.clear();
-        self.bytes = 0;
-        self.inflight.clear();
-    }
-
-    /// The next tick a worker should prepare, marked as in progress.
-    pub fn take_wanted(&mut self) -> Option<Sample> {
-        let at = self.wanted.iter().position(|tick| !self.entries.contains_key(tick) && !self.inflight.contains(tick))?;
-        let tick = self.wanted[at];
-        self.wanted.drain(..=at);
-        self.inflight.insert(tick);
-        Some(tick)
-    }
-
-    /// Stores a finished frame, unless the document changed while it was prepared.
-    pub fn finish(&mut self, generation: u64, epoch: u64, tick: Sample, data: Option<FrameData>) -> Option<Arc<FrameData>> {
-        if generation != self.generation || epoch != self.epoch {
-            return None;
-        }
-        self.inflight.remove(&tick);
-        let data = Arc::new(data?);
-        self.stats.prepared += 1;
-        self.stats.total_ms += data.ms as f64;
-        self.stats.worst_ms = self.stats.worst_ms.max(data.ms);
-        let bytes = data.list.bytes() + 256;
-        if let Some(old) = self.entries.insert(tick, Entry { data: data.clone(), bytes }) {
-            self.bytes -= old.bytes;
-        }
-        self.bytes += bytes;
-        self.trim();
-        Some(data)
-    }
-
-    /// Keeps the cache within its budget by dropping the frames playback will reach last.
-    fn trim(&mut self) {
-        if self.bytes <= self.budget {
-            return;
-        }
-        let (total, playhead) = (self.total.max(1), self.playhead);
-        let mut ticks: Vec<Sample> = self.entries.keys().copied().collect();
-        ticks.sort_by(|a, b| b.ahead(playhead, total).total_cmp(&a.ahead(playhead, total)));
-        for tick in ticks {
-            if self.bytes <= self.budget / 10 * 9 {
-                break;
-            }
-            if tick != playhead
-                && let Some(entry) = self.entries.remove(&tick)
-            {
-                self.bytes -= entry.bytes;
-            }
-        }
-    }
-}
+pub use cache::Admission as FrameAdmission;
 
 impl Engine {
-    /// Replaces the integer ticks wanted in the background, most urgent first.
-    /// Integer and fractional requests use the same cache and worker queue.
     pub fn request(&self, playhead: u32, ticks: &[u32]) {
-        self.request_keys(Sample::from(playhead), ticks.iter().copied().map(Sample::from).collect());
+        self.request_keys(Sample::from(playhead), ticks.iter().copied().map(Sample::from).collect(), false);
     }
 
-    /// Replaces the finite, nonnegative samples wanted in the background. Invalid
-    /// samples are omitted; an invalid playhead leaves the current request intact.
     pub fn request_samples(&self, playhead: f64, ticks: &[f64]) {
-        let Some(playhead) = Sample::new(playhead) else { return };
-        self.request_keys(playhead, ticks.iter().copied().filter_map(Sample::new).collect());
+        let Some(playhead) = Sample::new(playhead) else { return; };
+        self.request_keys(playhead, ticks.iter().copied().filter_map(Sample::new).collect(), false);
     }
 
-    fn request_keys(&self, playhead: Sample, mut wanted: Vec<Sample>) {
+    /// Single UI admission; Busy has not replaced the previous request.
+    pub fn try_request_samples(&self, playhead: f64, ticks: &[f64]) -> FrameAdmission {
+        let Some(playhead) = Sample::new(playhead) else { return FrameAdmission::Unchanged; };
+        self.request_keys(playhead, ticks.iter().copied().filter_map(Sample::new).collect(), true)
+    }
+
+    fn request_keys(&self, playhead: Sample, wanted: Vec<Sample>, nonblocking: bool) -> FrameAdmission {
         let old = {
-            let mut state = self.inner.state.lock();
-            let total = state.current.as_ref().map_or(1, |g| g.playable_ticks());
-            wanted.retain(|tick| tick.time() < total as f64);
-            let frames = &mut state.frames;
-            frames.playhead = playhead;
-            frames.total = total;
-            std::mem::replace(&mut frames.wanted, wanted)
+            let mut state = if nonblocking {
+                let Some(state) = self.inner.state.try_lock() else { return FrameAdmission::Busy; }; state
+            } else { self.inner.state.lock() };
+            if self.inner.stopping.load(std::sync::atomic::Ordering::SeqCst) { return FrameAdmission::Unchanged; }
+            let total = state.current.as_ref().map_or(1, |generation| generation.playable_ticks());
+            state.frames.request(playhead, total, wanted)
         };
-        drop(old);
+        drop(old); // Request buffers, like frame storage, never drop under State.
         self.inner.state.notify_all();
+        FrameAdmission::Applied
     }
 
-    /// The prepared integer frame, if ready, from the shared sample cache.
-    pub fn frame(&self, tick: u32) -> Option<Arc<FrameData>> {
-        self.frame_at(tick as f64)
-    }
+    pub fn frame(&self, tick: u32) -> Option<Arc<FrameData>> { self.frame_at(tick as f64) }
 
-    /// The prepared fractional frame, if ready. Never evaluates or prepares work.
+    /// A single nonblocking cache read. Never evaluates or repairs a cold sample.
     pub fn frame_at(&self, tick: f64) -> Option<Arc<FrameData>> {
-        let tick = Sample::new(tick)?;
-        self.inner.state.lock().frames.entries.get(&tick).map(|entry| entry.data.clone())
+        self.read_prepared(tick, None, |_, frame, _| frame.clone())
     }
 
-    /// Reads a ready frame and its generation/cache epoch together. An expected
-    /// identity refuses superseded tickets before cloning either shared pointer;
-    /// this never evaluates, prepares or repairs a cold sample.
     pub fn prepared_frame(&self, time: f64, expected: Option<(u64, u64)>) -> Option<FrameSnapshot> {
         self.read_prepared(time, expected, |generation, frame, epoch| FrameSnapshot {
             generation: generation.clone(), frame: frame.clone(), epoch,
         })
     }
 
-    /// Readiness of one exact ticket, without taking ownership of a draw list.
     pub fn frame_matches(&self, time: f64, generation: u64, epoch: u64) -> bool {
         self.read_prepared(time, Some((generation, epoch)), |_, _, _| ()).is_some()
     }
 
+    pub fn frame_ready_at(&self, time: f64) -> bool { self.read_prepared(time, None, |_, _, _| ()).is_some() }
+
+    pub fn frame_metadata(&self, time: f64) -> Option<FrameMetadata> {
+        self.read_prepared(time, None, |generation, frame, epoch| FrameMetadata {
+            generation: generation.id, epoch, tick: frame.tick, camera: frame.camera, background: frame.background,
+        })
+    }
+
     fn read_prepared<R>(&self, time: f64, expected: Option<(u64, u64)>, read: impl FnOnce(&Arc<Generation>, &Arc<FrameData>, u64) -> R) -> Option<R> {
         let tick = Sample::new(time)?;
-        let state = self.inner.state.lock();
+        let state = self.inner.state.try_lock()?;
         let generation = state.current.as_ref()?;
-        let frames = &state.frames;
-        if frames.generation != generation.id || expected.is_some_and(|identity| identity != (generation.id, frames.epoch)) { return None; }
-        let frame = &frames.entries.get(&tick)?.data;
+        let cache = &state.frames;
+        if cache.generation != generation.id || expected.is_some_and(|identity| identity != (generation.id, cache.epoch)) { return None; }
+        let storage = match cache.storage.try_lock() {
+            Ok(storage) => storage,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        if storage.generation != generation.id || storage.epoch != cache.epoch { return None; }
+        let frame = &storage.entries.get(&tick)?.data;
         if frame.generation != generation.id { return None; }
-        Some(read(generation, frame, frames.epoch))
+        Some(read(generation, frame, cache.epoch))
     }
 
-    /// A captured prepared monitor may repair an evicted sample on its worker,
-    /// but must never substitute newer hidden/effect/resource settings.
     pub fn frame_epoch_current(&self, generation: u64, epoch: u64) -> bool {
-        let state = self.inner.state.lock();
-        state.current.as_ref().is_some_and(|current| current.id == generation)
-            && state.frames.generation == generation && state.frames.epoch == epoch
+        self.inner.state.try_lock().is_some_and(|state| state.current.as_ref().is_some_and(|current| current.id == generation)
+            && state.frames.generation == generation && state.frames.epoch == epoch)
     }
 
-    /// Prepares an integer frame on the calling thread when not already ready.
-    /// Worker/CLI use; browser presentation should read readiness instead.
-    pub fn frame_now(&self, tick: u32) -> Option<Arc<FrameData>> {
-        self.frame_now_at(tick as f64)
+    pub fn try_generation_header(&self) -> Result<Option<GenerationHeader>, FrameAdmission> {
+        let state = self.inner.state.try_lock().ok_or(FrameAdmission::Busy)?;
+        Ok(state.current.as_ref().map(|generation| GenerationHeader {
+            generation: generation.id, lineage: generation.lineage, revision: generation.revision, total_ticks: generation.playable_ticks(),
+        }))
     }
 
-    /// Prepares a finite fractional frame on the calling worker or CLI thread.
-    pub fn frame_now_at(&self, time: f64) -> Option<Arc<FrameData>> {
-        self.prepared_frame_now_at(time).map(|snapshot| snapshot.frame)
+    /// Try-only generation capture for a worker-bound request. Busy is cold.
+    pub fn try_generation(&self) -> Option<Arc<Generation>> { self.inner.state.try_lock()?.current.clone() }
+
+    /// Capture the generation and prepared epoch together even after same-epoch
+    /// eviction. The monitor repairs missing samples on its own worker.
+    pub fn generation_for_frame_epoch(&self, generation: u64, epoch: u64) -> Option<Arc<Generation>> {
+        let state = self.inner.state.try_lock()?;
+        let current = state.current.as_ref()?;
+        (current.id == generation && state.frames.generation == generation && state.frames.epoch == epoch).then(|| current.clone())
     }
 
-    /// Worker/CLI preparation returns the actual produced frame even if its
-    /// cache budget immediately evicts it. Nonblocking presentation uses
-    /// `prepared_frame` instead and never enters this preparation path.
+    pub fn frame_now(&self, tick: u32) -> Option<Arc<FrameData>> { self.frame_now_at(tick as f64) }
+    pub fn frame_now_at(&self, time: f64) -> Option<Arc<FrameData>> { self.prepared_frame_now_at(time).map(|snapshot| snapshot.frame) }
+
+    /// Worker/CLI preparation returns the actual result even if immediately evicted.
     pub fn prepared_frame_now_at(&self, time: f64) -> Option<FrameSnapshot> {
         let tick = Sample::new(time)?;
-        let time = tick.time();
-        if let Some(ready) = self.prepared_frame(time, None) {
-            return Some(ready);
-        }
-        let (generation, hidden, effects, epoch) = {
-            let state = self.inner.state.lock();
-            (state.current.clone()?, state.frames.hidden.clone(), state.frames.effects, state.frames.epoch)
-        };
-        if time >= generation.playable_ticks() as f64 {
-            return None;
-        }
-        let data = produce(&generation, time, &hidden, effects, self.inner.clock);
-        let mut state = self.inner.state.lock();
-        if !Arc::ptr_eq(&state.frames.hidden, &hidden) || state.frames.effects != effects {
-            return None;
-        }
-        let ready = state.frames.finish(generation.id, epoch, tick, Some(data));
-        if ready.is_some() {
-            state.frames.stats.inline += 1;
-        }
-        ready.map(|frame| FrameSnapshot { generation, frame, epoch })
+        if let Some(ready) = self.prepared_frame(time, None) { return Some(ready); }
+        let work = { let state = self.inner.state.lock(); state.frames.work(state.current.clone()) };
+        work.prepare_now(self, tick)
     }
 
-    /// Sets the figures hidden for this session (by identity). Prepared frames that
-    /// showed them are dropped; hidden layers come from the document itself.
     pub fn set_hidden(&self, uids: &[u32]) {
-        let mut state = self.inner.state.lock();
-        if &*state.frames.hidden == uids {
-            return;
-        }
-        state.frames.hidden = Arc::from(uids);
-        let generation = state.frames.generation;
-        state.frames.reset(generation);
+        while self.hidden_admission(uids, false) == FrameAdmission::Busy { std::thread::yield_now(); }
     }
 
-    /// Prepares frames with or without effects. Prepared frames of the other kind are dropped.
-    pub fn set_effects(&self, on: bool) {
-        let mut state = self.inner.state.lock();
-        if state.frames.effects == on {
-            return;
-        }
-        state.frames.effects = on;
-        let generation = state.frames.generation;
-        state.frames.reset(generation);
+    pub fn try_set_hidden(&self, uids: &[u32]) -> FrameAdmission { self.hidden_admission(uids, true) }
+
+    fn hidden_admission(&self, uids: &[u32], nonblocking: bool) -> FrameAdmission {
+        let (before, epoch) = {
+            let state = if nonblocking { let Some(state) = self.inner.state.try_lock() else { return FrameAdmission::Busy; }; state } else { self.inner.state.lock() };
+            (state.frames.hidden.clone(), state.frames.epoch)
+        };
+        // Compare/copy outside State. The second guard verifies this actual head.
+        let same = &*before == uids;
+        let mut replacement = (!same).then(|| Arc::from(uids));
+        let (old_hidden, old_request) = {
+            let mut state = if nonblocking { let Some(state) = self.inner.state.try_lock() else { return FrameAdmission::Busy; }; state } else { self.inner.state.lock() };
+            let cache = &mut state.frames;
+            if cache.epoch != epoch || !Arc::ptr_eq(&cache.hidden, &before) { return FrameAdmission::Busy; }
+            if same { return FrameAdmission::Unchanged; }
+            let old_hidden = std::mem::replace(&mut cache.hidden, replacement.take().expect("changed hidden head"));
+            let generation = cache.generation;
+            (old_hidden, cache.reset(generation))
+        };
+        drop((old_hidden, old_request));
+        self.inner.state.notify_all();
+        FrameAdmission::Applied
     }
 
-    pub fn frame_stats(&self) -> FrameStats {
-        let state = self.inner.state.lock();
-        FrameStats { cached: state.frames.entries.len(), cached_bytes: state.frames.bytes, ..state.frames.stats }
+    pub fn set_effects(&self, on: bool) { self.effects_admission(on, false); }
+    pub fn try_set_effects(&self, on: bool) -> FrameAdmission { self.effects_admission(on, true) }
+
+    fn effects_admission(&self, on: bool, nonblocking: bool) -> FrameAdmission {
+        let old_request = {
+            let mut state = if nonblocking { let Some(state) = self.inner.state.try_lock() else { return FrameAdmission::Busy; }; state } else { self.inner.state.lock() };
+            if state.frames.effects == on { return FrameAdmission::Unchanged; }
+            state.frames.effects = on;
+            let generation = state.frames.generation;
+            state.frames.reset(generation)
+        };
+        drop(old_request);
+        self.inner.state.notify_all();
+        FrameAdmission::Applied
     }
+
+    pub fn try_frame_stats(&self) -> Option<FrameStats> { Some(self.inner.state.try_lock()?.frames.summary) }
+    pub fn frame_stats(&self) -> FrameStats { self.inner.state.lock().frames.summary }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::cache::Storage as Cache;
 
     fn frame(generation: u64, tick: u32) -> FrameData {
         FrameData { generation, tick: tick as f64, list: Arc::new(DrawList::default()), camera: None, background: (0, 0, 0.0), ms: 1.0 }
@@ -450,3 +365,7 @@ mod tests {
     }
 
 }
+
+#[cfg(test)]
+#[path = "frames/d7_tests.rs"]
+mod d7_tests;

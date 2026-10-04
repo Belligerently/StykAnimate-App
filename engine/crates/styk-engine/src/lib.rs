@@ -15,9 +15,10 @@
 //! - [`thumbnails`] draws small pictures of frames and library files on the CPU, on
 //!   the thread that asks.
 //!
-//! Nothing here blocks the calling thread except [`Engine::work`]. The browser's
-//! interface thread may not wait on a lock, so every shared structure is taken
-//! with [`sync::Shared::lock`], which spins for the few instructions a holder needs.
+//! Interface readiness and admission use one-shot try reads and return cold or
+//! Busy on contention. [`sync::Shared::lock`] can wait and belongs on workers and
+//! synchronous tools. Cache payload preparation and disposal run outside State;
+//! presenter lifetime and shutdown contracts remain separate obligations.
 
 #[cfg(test)]
 mod allocation;
@@ -28,6 +29,7 @@ mod frames;
 mod images;
 pub mod mirror;
 pub mod planning;
+pub mod session;
 mod publication;
 pub use publication::PublicationRetirement;
 mod sync;
@@ -39,7 +41,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use styk_eval::assets::Assets;
 use styk_eval::eval::Prepared;
 
-pub use frames::{FrameData, FrameSnapshot, FrameStats};
+pub use frames::{FrameAdmission, FrameData, FrameMetadata, FrameSnapshot, FrameStats, GenerationHeader};
 pub use images::{DecodedImage, Uploaded};
 use sync::Shared;
 
@@ -148,6 +150,7 @@ struct Inner {
     progress: std::sync::atomic::AtomicU32,
     notifier: Option<Notifier>,
     planning: Shared<Option<Arc<planning::Core>>>,
+    session: Shared<Option<Arc<session::Core>>>,
 }
 
 /// The engine. Cheap to clone; every clone is the same engine.
@@ -182,6 +185,7 @@ impl Engine {
                 progress: std::sync::atomic::AtomicU32::new(0),
                 notifier,
                 planning: Shared::new(None),
+                session: Shared::new(None),
             }),
         }
     }
@@ -263,8 +267,17 @@ impl Engine {
         self.inner.state.lock().current.clone()
     }
 
+    /// One coherent scalar readiness read. None means busy; an unopened Engine
+    /// returns zeros. No strong document/cache owner crosses this interface.
+    pub fn generation_identity_now(&self) -> Option<[u64; 3]> {
+        self.try_generation_header().ok().map(|header| header.map_or([0; 3], |header| {
+            [header.generation, header.lineage, header.revision]
+        }))
+    }
+
     /// Asks every worker to return from [`Engine::work`].
     pub fn stop(&self) {
+        session::cancel_current(self);
         planning::cancel_current(self);
         self.stop_record_batches();
         self.inner.state.notify_all();
@@ -276,6 +289,7 @@ impl Engine {
         loop {
             if self.inner.stopping.load(Ordering::SeqCst) {
                 // Cancellation retains cleanup until a worker runs it.
+                if session::service_current(self) { continue; }
                 let task = detach_task(&mut self.inner.state.lock().retained_tasks);
                 if let Some(mut node) = task { node.pop_front().expect("detached task")(self); self.notify_progress(); continue; }
                 return;
@@ -289,22 +303,24 @@ impl Engine {
     /// Runs one unit of background work on the calling thread, if there is any.
     /// A host without worker threads calls this between its own tasks.
     pub fn step(&self) -> bool {
+        session::expire_current(self);
         planning::expire_current(self);
+        if session::service_current(self) { return true; }
         let job = {
             let mut state = self.inner.state.lock();
             if let Some(task) = detach_task(&mut state.retained_tasks) {
                 Job::Retained(task)
             } else if state.images.preparation_active() {
-                return false;
+                // Coalesced maintenance may dispose stale storage while this
+                // image barrier defers evaluation; no ordinary task is reordered.
+                if state.frames.maintenance_due() { Job::Frames(state.frames.work(state.current.clone())) }
+                else { return false; }
             } else if let Some(task) = detach_task(&mut state.tasks) {
                 if let Some(OrdinaryTask::Redecode(scope)) = task.front()
                     && !self.inner.stopping.load(Ordering::SeqCst) { state.images.start_preparation(*scope); }
                 Job::Task(task)
             } else {
-                match (state.current.clone(), state.frames.take_wanted()) {
-                    (Some(generation), Some(tick)) => Job::Frame(generation, tick, state.frames.hidden.clone(), state.frames.effects, state.frames.epoch),
-                    _ => return false,
-                }
+                Job::Frames(state.frames.work(state.current.clone()))
             }
         };
         match job {
@@ -313,13 +329,7 @@ impl Engine {
                 OrdinaryTask::Run(task) => task(self),
                 OrdinaryTask::Redecode(scope) => self.prepare_redecode(scope),
             },
-            Job::Frame(generation, tick, hidden, effects, epoch) => {
-                let data = frames::produce(&generation, tick.time(), &hidden, effects, self.inner.clock);
-                let mut state = self.inner.state.lock();
-                // A frame prepared for another set of hidden figures, or with effects toggled, is not shown.
-                let current = std::sync::Arc::ptr_eq(&state.frames.hidden, &hidden) && state.frames.effects == effects;
-                state.frames.finish(generation.id, epoch, tick, current.then_some(data));
-            }
+            Job::Frames(work) => { if !work.step(self) { return false; } }
         }
         self.notify_progress();
         true
@@ -329,5 +339,5 @@ impl Engine {
 enum Job {
     Retained(std::collections::LinkedList<Task>),
     Task(TaskQueue),
-    Frame(Arc<Generation>, frames::Sample, Arc<[u32]>, bool, u64),
+    Frames(frames::Work),
 }

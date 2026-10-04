@@ -58,6 +58,23 @@ export class EngineMirror {
     return this.report === report && this.framesRevision === revision;
   }
 
+  /** Accept a successful <=3 scalar project-field Session publication. Table,
+   * source and raw root identities are retained by this same sent owner. No
+   * lifting, serialization, reset or evaluator work happens on this path.
+   * The host's pending barrier excludes an overlapping legacy mirror sync.
+   */
+  accept_session_head(report, before, after) {
+    if (this.report !== report || this.framesRevision !== before[2]
+      || before.length !== 4 || after.length !== 4 || after[1] !== before[1] || after[3] <= before[3])
+      throw new Error('The canonical Session head belongs to a stale mirror owner.');
+    const actual = this.engine.handle.try_record_identity();
+    if (actual === undefined) return false;
+    if (actual.length !== 3 || actual.some((value, index) => value !== after[index]))
+      throw new Error('The canonical Session publication has not been acknowledged.');
+    this.framesRevision = after[2];
+    return true;
+  }
+
   _begin(report) {
     if (this.report === report) return;
     this.reset();
