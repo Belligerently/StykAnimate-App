@@ -59,7 +59,7 @@ fn worker_rejection_preserves_live_editor_atomically() {
         };
         let result = e.call_movieclip_timeline_worker(
             if mode == "unsupported-method" {
-                "bakeMovieclip"
+                "enterMovieclip"
             } else {
                 "placeMovieclip"
             },

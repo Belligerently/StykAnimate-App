@@ -81,11 +81,12 @@ fn snapshot(
     value: &Snapshot,
     figure: Value,
     vectors: &mut usize,
+    stripped: bool,
     check: &mut impl FnMut() -> Result<(), crate::EditError>,
 ) -> Result<Value, crate::EditError> {
     let mut snapshot = Obj::new();
     snapshot.set("figure", figure);
-    snapshot.set("frames", poses(&value.frames, true, vectors, check)?);
+    snapshot.set("frames", poses(&value.frames, stripped, vectors, check)?);
     if !value.movieclip_source_animations.is_empty() {
         snapshot.set(
             "movieclipSourceAnimations",
@@ -201,6 +202,29 @@ pub(crate) fn command_bytes_checked(
     topology: Option<&TopologyShape>,
     check: &mut impl FnMut() -> Result<(), crate::EditError>,
 ) -> Result<f64, crate::EditError> {
+    command_projection_checked(command, topology, None, check).map(|(bytes, _)| bytes)
+}
+
+// Normal sizing consumes its existing metadata directly. Only explicit record
+// observation clones the small metadata vector to retain an enumerable carrier.
+fn projection_bytes(metadata: &mut Obj, retain: bool, check: &mut impl FnMut() -> Result<(), crate::EditError>) -> Result<f64, crate::EditError> {
+    let fields = if retain { metadata.clone() } else { std::mem::take(metadata) };
+    bytes(&Value::object(fields), check)
+}
+
+/// Replay-only full carrier from the SAME checked size/payload projection.
+/// Specialized estimates are kept separate from their enumerable command data.
+pub(crate) fn record_value_checked(command: &Command, weight: &crate::history::Weight, check: &mut impl FnMut() -> Result<(), crate::EditError>) -> Result<Value, crate::EditError> {
+    let (_, fields) = command_projection_checked(command, weight.topology.as_ref(), Some(weight), check)?;
+    Ok(Value::object(fields.expect("record mode produces a carrier")))
+}
+
+fn command_projection_checked(
+    command: &Command,
+    topology: Option<&TopologyShape>,
+    record: Option<&crate::history::Weight>,
+    check: &mut impl FnMut() -> Result<(), crate::EditError>,
+) -> Result<(f64, Option<Obj>), crate::EditError> {
     check()?;
     let mut metadata = Obj::new();
     metadata.set("label", Value::str(&command.label));
@@ -233,7 +257,7 @@ pub(crate) fn command_bytes_checked(
             metadata.set("kind", Value::str("ranges"));
             metadata.set("changes", Value::array(changes.iter().map(crate::frame::FrameSlice::history_value).collect()));
             flags(&mut metadata, *structural, *timing);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::Objects {
             index: at,
@@ -245,7 +269,7 @@ pub(crate) fn command_bytes_checked(
             metadata.set("before", Value::array(before.clone()));
             metadata.set("after", Value::array(after.clone()));
             flags(&mut metadata, false, false);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::Frame {
             index: at,
@@ -258,7 +282,7 @@ pub(crate) fn command_bytes_checked(
             metadata.set("before", before.clone());
             metadata.set("after", after.clone());
             flags(&mut metadata, *structural, false);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::LayerSheet {
             before,
@@ -267,6 +291,7 @@ pub(crate) fn command_bytes_checked(
             after_layers,
             sources,
             definitions,
+            retain_geometry,
         } => {
             let old = before.get("tracks");
             let tracks = after.get("tracks").and_then(Value::as_obj);
@@ -305,7 +330,7 @@ pub(crate) fn command_bytes_checked(
             value.set("tracks", Value::array(changed));
             value.set("beforeLayers", before_layers.clone());
             value.set("afterLayers", after_layers.clone());
-            value.set("sources", sources);
+            value.set("sources", sources.clone());
             if let Some((at, added)) = definitions {
                 value.set(
                     "assets",
@@ -318,7 +343,22 @@ pub(crate) fn command_bytes_checked(
                     )]),
                 );
             }
-            bytes(&Value::object(value), check)?
+            let result = bytes(&Value::object(value), check)?;
+            if record.is_some() {
+                metadata.set("kind", Value::str("layer-sheet"));
+                metadata.set("before", before.clone());
+                metadata.set("after", after.clone());
+                metadata.set("beforeLayers", before_layers.clone());
+                metadata.set("afterLayers", after_layers.clone());
+                metadata.set("frameSourceChanges", sources);
+                if let Some((at, added)) = definitions {
+                    metadata.set("assets", object([("figure_types", object([("index", Value::Num(*at as f64)), ("added", Value::array(added.clone()))]))]));
+                }
+                flags(&mut metadata, true, true);
+                metadata.set("retainGeometry", Value::Bool(*retain_geometry));
+                metadata.set("precomputedBytes", Value::Num(result));
+            }
+            result
         }
         CommandKind::Layers {
             changes,
@@ -344,7 +384,7 @@ pub(crate) fn command_bytes_checked(
             if let Some(migration) = migration {
                 migration.history_fields(&mut metadata);
             }
-            bytes(&Value::object(metadata), check)? + migration.as_ref().map_or(0.0, |migration| migration.source_bytes() as f64)
+            projection_bytes(&mut metadata, record.is_some(), check)? + migration.as_ref().map_or(0.0, |migration| migration.source_bytes() as f64)
         }
         CommandKind::Figure {
             index: at,
@@ -356,7 +396,7 @@ pub(crate) fn command_bytes_checked(
             metadata.set("before", before.clone());
             metadata.set("after", after.clone());
             flags(&mut metadata, false, false);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::FigureSplice {
             index: at,
@@ -370,7 +410,7 @@ pub(crate) fn command_bytes_checked(
             metadata.set("before", before.clone());
             metadata.set("after", after.clone());
             flags(&mut metadata, true, false);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::CameraMotion {
             before,
@@ -480,20 +520,28 @@ pub(crate) fn command_bytes_checked(
                 ),
             );
             flags(&mut metadata, false, *timing);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
-        CommandKind::MovieclipDefinition { after, .. } => {
-            after
-                .as_ref()
-                .map(|value| bytes(value, check))
-                .transpose()?
-                .unwrap_or(0.0)
-                + 128.0
+        CommandKind::MovieclipDefinition { index: at, before, after } => {
+            let result = after.as_ref().map(|value| bytes(value, check)).transpose()?.unwrap_or(0.0) + 128.0;
+            if record.is_some() {
+                metadata.set("kind", Value::str("movieclip-definition")); index(&mut metadata, *at);
+                metadata.set("before", before.clone().unwrap_or(Value::Null));
+                metadata.set("after", after.clone().unwrap_or(Value::Null));
+                flags(&mut metadata, true, true);
+                metadata.set("precomputedBytes", Value::Num(result));
+            }
+            result
         }
         CommandKind::Animation { before, after, structural } => {
             metadata.set("kind", Value::str("animation"));
             flags(&mut metadata, *structural, true);
-            animation_size(before.as_ref(), after, check)? + bytes(&Value::object(metadata), check)?
+            let result = animation_size(before.as_ref(), after, check)? + projection_bytes(&mut metadata, record.is_some(), check)?;
+            if record.is_some() {
+                metadata.set("before", before.clone().unwrap_or(Value::Null));
+                metadata.set("after", after.clone());
+            }
+            result
         }
         CommandKind::MovieclipPoses { before, after } => {
             metadata.set("kind", Value::str("movieclip-poses"));
@@ -507,13 +555,26 @@ pub(crate) fn command_bytes_checked(
                 object([("frames", poses(after, false, &mut unused, check)?)]),
             );
             flags(&mut metadata, true, true);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::Batch { commands } => {
-            128.0
-                + commands.iter().try_fold(0.0, |sum, command| {
-                    Ok::<_, crate::EditError>(sum + command_bytes_checked(command, None, check)?)
-                })?
+            if let Some(weight) = record {
+                let mut children = Vec::with_capacity(commands.len());
+                if commands.len() != weight.children.len() { return Err(crate::EditError::Unported("batch replay carrier weights are unavailable".into())); }
+                for (command, child) in commands.iter().zip(&weight.children) {
+                    check()?;
+                    let mut fields = record_value_checked(command, child, check)?.as_obj().unwrap().clone();
+                    fields.set("bytes", Value::Num(child.bytes));
+                    children.push(Value::object(fields));
+                }
+                metadata.set("kind", Value::str("movieclip-batch"));
+                metadata.set("commands", Value::array(children));
+                metadata.set("precomputedBytes", Value::Num(weight.bytes - command.captured_source_bytes as f64));
+                flags(&mut metadata, true, true);
+                weight.bytes - command.captured_source_bytes as f64
+            } else {
+                128.0 + commands.iter().try_fold(0.0, |sum, command| Ok::<_, crate::EditError>(sum + command_bytes_checked(command, None, check)?))?
+            }
         }
         CommandKind::FigureRange {
             changes,
@@ -532,7 +593,7 @@ pub(crate) fn command_bytes_checked(
             );
             flags(&mut metadata, *structural, false);
             metadata.set("retainGeometry", Value::Bool(*retain_geometry));
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::NativeProperties {
             index: at,
@@ -546,7 +607,7 @@ pub(crate) fn command_bytes_checked(
             metadata.set("after", after.history_value());
             metadata.set("definition", Value::Bool(true));
             flags(&mut metadata, false, false);
-            bytes(&Value::object(metadata), check)?
+            projection_bytes(&mut metadata, record.is_some(), check)?
         }
         CommandKind::Topology {
             index: at,
@@ -613,13 +674,40 @@ pub(crate) fn command_bytes_checked(
             }
             metadata.set(
                 "before",
-                snapshot(before, before_figure, &mut vectors, check)?,
+                snapshot(before, before_figure.clone(), &mut vectors, true, check)?,
             );
-            metadata.set("after", snapshot(after, after_figure, &mut vectors, check)?);
-            bytes(&Value::object(metadata), check)? + vectors as f64
+            metadata.set("after", snapshot(after, after_figure.clone(), &mut vectors, true, check)?);
+            let result = projection_bytes(&mut metadata, record.is_some(), check)? + vectors as f64;
+            if record.is_some() {
+                let mut unused = 0;
+                metadata.set("before", snapshot(before, before_figure, &mut unused, false, check)?);
+                metadata.set("after", snapshot(after, after_figure, &mut unused, false, check)?);
+            }
+            result
         }
     };
-    Ok(result + command.captured_source_bytes as f64)
+    let carrier = if record.is_some() {
+        // Field order is the actual JS construction order, not the estimate's
+        // projection order. Missing optional fields remain absent.
+        let order: &[&str] = match &command.kind {
+            CommandKind::Objects { .. } | CommandKind::Frame { .. } | CommandKind::Topology { .. } => &["kind", "label", "index", "before", "after", "appendCount", "segmentIndices", "beforeSelection", "afterSelection", "structural", "timing"],
+            CommandKind::LayerSheet { .. } => &["kind", "label", "before", "after", "beforeLayers", "afterLayers", "frameSourceChanges", "assets", "beforeSelection", "afterSelection", "structural", "timing", "retainGeometry", "precomputedBytes"],
+            CommandKind::Layers { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "layerSheetPatch", "layerAnimationPatch", "frameSourceChanges", "hadFrameSourceTable", "sourceBytes", "frameSourceUidCounts", "afterSelection"],
+            CommandKind::Animation { .. } => &["kind", "label", "before", "after", "beforeSelection", "afterSelection", "structural", "timing"],
+            CommandKind::MovieclipDefinition { .. } => &["kind", "index", "before", "after", "label", "beforeSelection", "afterSelection", "structural", "timing", "precomputedBytes"],
+            CommandKind::Batch { .. } => &["kind", "commands", "label", "beforeSelection", "afterSelection", "precomputedBytes", "structural", "timing"],
+            CommandKind::Ranges { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "afterSelection"],
+            // These existing owners retain exact weight support. Full enumerable
+            // observation needs their own recorded optional construction fields.
+            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
+        };
+        let mut fields = Obj::new();
+        for key in order.iter().chain(["layerChanges", "layers", "beforeRevision", "afterRevision"].iter()) {
+            if let Some(value) = metadata.get(key) { fields.set(*key, value.clone()); }
+        }
+        Some(fields)
+    } else { None };
+    Ok((result + command.captured_source_bytes as f64, carrier))
 }
 
 #[cfg(test)]

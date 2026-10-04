@@ -82,10 +82,33 @@ binary at runtime so identical regeneration does not invalidate release compilat
 Native and sheet movieclip creation, splitting, unique copies, break apart, placement,
 playback and extension share the existing materializer, capture, `SheetPlan` and history
 owners. Retained source documents preserve their original effect clocks. Worker-only
-entry points do not bypass the app's readiness or document-class gates; baking and
-unrecorded IK/draft combinations still require their own recordings and adoption.
+entry points do not bypass the app's readiness or document-class gates; unrecorded
+IK/draft combinations and runtime adoption remain guarded.
 `styk edit-replay --worker <reference.json>` exercises this same dispatch and compares
 every editor step. Ordinary replay retains its explicit refusal behavior.
+
+Awaited Bake now uses this central worker replay for 37 default-budget families /
+234 calls, including recorded saved figure/scene VFX reads. The same materializer,
+native source capture and checked SheetPlan/history owners handle publication;
+direct Editor/legacy Session admission stays closed. A separate four-call object-limit
+trace uses an explicit 1 GiB offline source allowance; the runtime/default replay
+budget remains 128 MiB. The four-call concurrent stale trace remains unported until
+the actual actor/yield lifecycle is matched. Its optional step `interleavings`
+array records the real editor calls run during the awaited operation. The shared
+offline replay refuses a nonempty array before dispatch; it does not compare that
+unsupported step or claim stale runtime parity. The initial worker CLI check
+revealed a step-2 mismatch in the old recording rather than the lane's claimed
+refusal. Adding causal metadata preserves all of its original captured fields.
+
+Full record observation is opt-in and disabled on normal Editor/Session calls.
+At the canonical checked record boundary it captures attached metadata, actual
+weights and enumerable carriers before batch insertion or trimming. The sole
+history-weight projection supplies both sizing and the optional carrier; specialized
+estimates remain separate from payload data. The strict replay compares every
+captured field, including selection, history epochs/weights and nested batch records.
+Two existing Frame/Ranges traces add 27 observer calls without extending command
+admission. Unrecorded carrier variants refuse rather than inventing optional fields.
+Materializer, topology and clipboard now share `styk_eval::vfx::remap_owner`.
 
 History weights follow the editor's UTF-16 JSON accounting, source charges, trim order
 and oversized-entry rules. A warm owner supplies its exact readiness checkpoint;
@@ -139,6 +162,9 @@ The native motion milestone additionally exports `FrameSlice` and the
 `Records::evaluated_editor_with` is an additive portable evaluation entry point.
 The saved-native milestone adds portable `Records::new_native_draft` and changes no
 public `styk-edit` API.
+The Bake milestone adds `CommandKind::LayerSheet.retain_geometry: bool` (update explicit
+constructors/patterns), portable `styk_eval::vfx::remap_owner`, and offline-only
+`replay_worker_with_source_budget`; normal runtime budgets are unchanged.
 
 Evaluation also adds `MovieclipSource`, `Document::movieclip_source` and
 `Frame`/`Keyframe::retained_vfx_tick`. These portable fields keep cropped source clocks

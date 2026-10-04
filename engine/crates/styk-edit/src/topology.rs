@@ -304,36 +304,6 @@ fn ik_follower_indices(segments: &[Value], polygons: &[Value], layout: &Layout, 
     candidates.into_iter().filter(|&i| articulated.contains(&find(&groups, i))).collect()
 }
 
-/// `remapVfxOwner(owner, typeId, handles)`: effect stacks keyed `scope/handle` follow the handles.
-fn remap_vfx_owner(owner: &mut Value, type_id: f64, changes: &[(f64, Vec<f64>)]) {
-    let Some(table) = owner.get("_stykVfx").and_then(Value::as_obj).cloned() else { return };
-    let source = num(owner, "figure_type_id").unwrap_or(f64::NAN);
-    let mut next = Obj::new();
-    for (key, stack) in table.iter() {
-        if &**key == "figure" {
-            next.set(key, stack.clone());
-            continue;
-        }
-        let mut parts = key.splitn(2, '/');
-        let scope = parts.next().unwrap_or("");
-        let id = parts.next().map(js_number).unwrap_or(f64::NAN);
-        if scope != "*" && js_number(scope) != source {
-            next.set(key, stack.clone());
-            continue;
-        }
-        let replacements = changes.iter().find(|(old, _)| *old == id).map(|(_, n)| n.clone()).unwrap_or_else(|| vec![id]);
-        for replacement in replacements {
-            let scope = if scope == "*" { "*".to_string() } else { format_number(type_id) };
-            next.set(&format!("{scope}/{}", format_number(replacement)), stack.clone());
-        }
-    }
-    if next.is_empty() {
-        remove(owner, "_stykVfx");
-    } else {
-        set(owner, "_stykVfx", Value::object(next));
-    }
-}
-
 /// `Number(text)` for the keys the editor writes.
 fn js_number(text: &str) -> f64 {
     let t = text.trim();
@@ -628,7 +598,12 @@ impl Editor {
                 if object.get("figure_type_id") != Some(&type_id) {
                     continue;
                 }
-                remap_vfx_owner(object, type_number, &changes);
+                if object.get("_stykVfx").and_then(Value::as_obj).is_some() {
+                    let source_type = num(object, "figure_type_id").unwrap_or(f64::NAN);
+                    if let Some(owner) = object.make_obj() {
+                        styk_eval::vfx::remap_owner(owner, type_number, Some(&changes), source_type);
+                    }
+                }
                 if let Some(shapes) = object.get("_sticknodesShapes").filter(|s| s.truthy()).and_then(Value::as_obj).cloned() {
                     let mut next = Obj::new();
                     for (id, shape) in shapes.iter() {

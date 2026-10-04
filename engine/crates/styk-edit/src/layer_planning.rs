@@ -804,7 +804,11 @@ impl crate::Editor {
         self.publish_sheet_migration_with_selection_checked(prepared, None, check)
     }
 
-    pub(crate) fn publish_sheet_migration_with_selection_checked(&mut self, prepared: SheetPlan, selection: Option<crate::select::SelectionState>, mut check: impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+    pub(crate) fn publish_sheet_migration_with_selection_checked(&mut self, prepared: SheetPlan, selection: Option<crate::select::SelectionState>, check: impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        self.publish_sheet_migration_with_geometry_checked(prepared, selection, false, check)
+    }
+
+    pub(crate) fn publish_sheet_migration_with_geometry_checked(&mut self, prepared: SheetPlan, selection: Option<crate::select::SelectionState>, retain_geometry: bool, mut check: impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
         check()?;
         // Selection may change activeId without a document revision while the
         // async planner yields. Preserve that permitted live view; all other
@@ -832,7 +836,7 @@ impl crate::Editor {
         let label = prepared.label().to_string();
         let selection = selection.unwrap_or_else(|| self.selection_state());
         let snapshot = self.snapshot();
-        let result = self.publish_checked(prepared.plan, &label, selection, None, &mut check);
+        let result = self.publish_checked(prepared.plan, &label, selection, None, retain_geometry, &mut check);
         if result.is_err() {
             self.restore(snapshot);
         }

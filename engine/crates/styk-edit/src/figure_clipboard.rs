@@ -85,32 +85,6 @@ pub(crate) fn snapshot_pose_object(object: &Value) -> Obj {
     out
 }
 
-/// `remapVfxOwner(owner, typeId)`: effects on a node of the figure's definition move with
-/// the figure to its new definition.
-fn remap_vfx_owner(object: &mut Obj, type_id: f64, source_type: f64) {
-    let Some(table) = object.get("_stykVfx").filter(|t| t.truthy()).and_then(Value::as_obj).cloned() else { return };
-    let mut next = Obj::new();
-    for (key, stack) in table.iter() {
-        if &**key == "figure" {
-            next.set(key, stack.clone());
-            continue;
-        }
-        let (scope, id) = key.split_once('/').unwrap_or((key, ""));
-        let handle: f64 = id.parse().unwrap_or(f64::NAN);
-        if scope != "*" && scope.parse::<f64>().ok() != Some(source_type) {
-            next.set(key, stack.clone());
-            continue;
-        }
-        let scope = if scope == "*" { "*".to_string() } else { styk_doc::json::to_string(&Value::Num(type_id)) };
-        next.set(&format!("{scope}/{}", styk_doc::json::to_string(&Value::Num(handle))), stack.clone());
-    }
-    if next.is_empty() {
-        object.remove("_stykVfx");
-    } else {
-        object.set("_stykVfx", Value::object(next));
-    }
-}
-
 /// `insert(frame, payload)`: the frame with the pasted figures, slots following unique ids,
 /// pasted joins following their remapped parents, drawn in front.
 pub(crate) fn insert(frame: &Value, pasted: &[Value], order: &[u32]) -> Result<Value, EditError> {
@@ -503,7 +477,7 @@ impl Editor {
             let mut object = snapshot_pose_object(original);
             object.remove("_stykMovieclipPart");
             let new_type = num(figure, "figure_type_id").unwrap_or(f64::NAN);
-            remap_vfx_owner(&mut object, new_type, num(original, "figure_type_id").unwrap_or(f64::NAN));
+            styk_eval::vfx::remap_owner(&mut object, new_type, None, num(original, "figure_type_id").unwrap_or(f64::NAN));
             let old = uid(original).unwrap_or(0);
             let new = renamed(old).unwrap_or(old);
             object.set("unique_id", Value::Num(new as f64));

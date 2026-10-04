@@ -24,10 +24,10 @@ impl Default for HistoryLimits { fn default() -> Self { Self { count: HISTORY_LI
 /// document data is copied and child weights survive revision overrides.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Weight {
-    bytes: f64,
-    children: Vec<Weight>,
+    pub(crate) bytes: f64,
+    pub(crate) children: Vec<Weight>,
     /// The actual owner's sparse estimate shape, retained even while unprepared.
-    topology: Option<crate::history_weight::TopologyShape>,
+    pub(crate) topology: Option<crate::history_weight::TopologyShape>,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct Entry { command: Command, weight: Weight }
@@ -58,7 +58,7 @@ pub enum CommandKind {
     Objects { index: usize, before: Vec<Value>, after: Vec<Value> },
     /// The layer sheet and layer state before and after, and the pose sources the
     /// command captured (`kind: 'layer-sheet'`).
-    LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)>, definitions: Option<(usize, Vec<Value>)> },
+    LayerSheet { before: Value, after: Value, before_layers: Value, after_layers: Value, sources: Vec<(String, Value)>, definitions: Option<(usize, Vec<Value>)>, retain_geometry: bool },
     /// Paths of the layer state before and after, and the sheet when the layers' tracks
     /// changed with them (`kind: 'layers'`).
     Layers { changes: Vec<crate::layers::LayerChange>, sheet: Option<(Value, Value)>, migration: Option<crate::layer_planning::NativeMigration>, structural: bool, timing: bool },
@@ -158,6 +158,7 @@ impl Editor {
         if let CommandKind::Layers { migration: Some(migration), .. } = &command.kind {
             command.layers |= self.register_frame_sources(&migration.frames(), false)?;
         }
+        let captured_pending_bytes = self.pending_source_bytes;
         command.layers |= !self.pending_source_layer_changes.is_empty();
         command.layer_changes.append(&mut self.pending_source_layer_changes);
         command.captured_source_bytes += std::mem::take(&mut self.pending_source_bytes);
@@ -177,6 +178,18 @@ impl Editor {
             weight.topology = topology;
             weight
         };
+        if self.replay_records.is_some() {
+            let carrier = crate::history_weight::record_value_checked(&command, &weight, check)?;
+            let mut record = styk_doc::Obj::new();
+            record.set("kind", carrier.get("kind").cloned().unwrap());
+            record.set("label", Value::str(&command.label));
+            record.set("bytes", Value::Num(weight.bytes));
+            record.set("capturedPendingBytes", Value::Num(captured_pending_bytes as f64));
+            record.set("sourceBytes", carrier.get("sourceBytes").cloned().unwrap_or(Value::Null));
+            record.set("precomputedBytes", carrier.get("precomputedBytes").cloned().unwrap_or(Value::Null));
+            record.set("enumerableJSON", Value::str(&styk_doc::json::to_string(&carrier)));
+            self.replay_records.as_mut().unwrap().push(Value::object(record));
+        }
         let entry = Entry { command, weight };
         if let Some(batch) = self.batch.as_mut() {
             batch.commands.push(entry);
@@ -324,14 +337,22 @@ impl Editor {
         if collect { self.prune_frame_sources(); }
     }
 
-    pub(crate) fn history_value(&self) -> Value {
-        fn summary(command: &Command, weight: &Weight) -> Value {
-            let mut value = styk_doc::Obj::new(); value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
-            if let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight)).collect())); }
+    pub(crate) fn history_value(&self) -> Value { self.history_value_shape(false, true) }
+
+    /// Read-only summary shape used by the original capture protocol. Exact
+    /// weights, stack entries and epochs still come from their one owner.
+    pub(crate) fn history_value_shape(&self, kinds: bool, children: bool) -> Value {
+        fn summary(command: &Command, weight: &Weight, kinds: bool, children: bool) -> Value {
+            let mut value = styk_doc::Obj::new();
+            if kinds { value.set("kind", Value::str(match &command.kind {
+                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology",
+            })); }
+            value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
+            if children && let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight,kinds,children)).collect())); }
             Value::object(value)
         }
         let mut value = styk_doc::Obj::new(); value.set("size", Value::Num(self.history_size));
-        value.set("undo", Value::array(self.undo.iter().map(|entry|summary(entry,&entry.weight)).collect())); value.set("redo", Value::array(self.redo.iter().map(|entry|summary(entry,&entry.weight)).collect()));
+        value.set("undo", Value::array(self.undo.iter().map(|entry|summary(entry,&entry.weight,kinds,children)).collect())); value.set("redo", Value::array(self.redo.iter().map(|entry|summary(entry,&entry.weight,kinds,children)).collect()));
         value.set("revision",Value::Num(self.revision as f64));value.set("revisionSerial",Value::Num(self.revision_serial as f64));value.set("savedRevision",Value::Num(self.saved_revision as f64));Value::object(value)
     }
 

@@ -217,14 +217,12 @@ impl<'a> Materializer<'a> {
             if pose.ik.is_some() || typed_figure.plan.rig.is_some() || typed_figure.mesh.is_some() || pose.spatial.is_some() || typed_figure.origin.is_some() {
                 return unsupported("rig, IK, origin or spatial figure materialization");
             }
-            if object.get("_stykVfx").is_some_and(Value::truthy) {
-                return unsupported("materialized effect owner remapping");
-            }
             anchors.insert(slot, output.len());
             let root = transform.point(g.root);
             let mut next = object.as_obj().cloned().unwrap_or_default();
             next.set("unique_id", Value::Num(if path.is_empty() { pose.uid } else { self.identity(&id)? } as f64));
-            next.set("figure_type_id", Value::Num(self.figure_type(document, object)? as f64));
+            let type_id = self.figure_type(document, object)? as f64;
+            next.set("figure_type_id", Value::Num(type_id));
             next.set("root_x", Value::Num(root[0]));
             next.set("root_y", Value::Num(root[1]));
             next.set("join", object.get("join").filter(|v| v.truthy()).cloned().unwrap_or(Value::Null));
@@ -236,6 +234,7 @@ impl<'a> Materializer<'a> {
                 next.set("bend_flag", Value::Num(1.0));
                 next.set("bends", Value::array(typed_figure.segments.iter().enumerate().map(|(i, s)| Value::Num(-pose.bends.as_ref().and_then(|b| b.get(i)).copied().unwrap_or(s.bend))).collect()));
             }
+            crate::vfx::remap_owner(&mut next, type_id, None, pose.figure as f64);
             for key in ["runtime_segments", "_stykIK", "_stykAnimationOrigin", "_stykMovieclip", "_movieclipSample", "_stykMovieclipPart"] {
                 next.remove(key);
             }

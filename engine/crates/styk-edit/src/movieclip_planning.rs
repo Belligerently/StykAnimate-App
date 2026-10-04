@@ -76,9 +76,13 @@ impl TimelineWorker<'_> {
     }
 
     pub(crate) fn publish_plan_with_selection(&mut self, editor: &mut Editor, plan: Plan, label: &str, selection: Option<crate::select::SelectionState>) -> Result<(), EditError> {
+        self.publish_plan_with_geometry(editor, plan, label, selection, false)
+    }
+
+    pub(crate) fn publish_plan_with_geometry(&mut self, editor: &mut Editor, plan: Plan, label: &str, selection: Option<crate::select::SelectionState>, retain_geometry: bool) -> Result<(), EditError> {
         (self.check)()?;
         budget(self.max_source_bytes)?;
-        let (_, poses, values) = memory(&plan, self.max_source_bytes, (0, 0, 0))?;
+        let (_, poses, values) = memory(plan.sources.iter().map(|(_, frame)| frame), self.max_source_bytes, (0, 0, 0))?;
         (self.progress)(Progress {
             phase: "planning",
             completed: plan.sources.len(),
@@ -98,16 +102,17 @@ impl TimelineWorker<'_> {
                 .unwrap_or(Value::Null),
             editor.next_frame_identity,
         );
-        editor.publish_sheet_migration_with_selection_checked(publication, selection, || (self.check)())?;
+        editor.publish_sheet_migration_with_geometry_checked(publication, selection, retain_geometry, || (self.check)())?;
         Ok(())
     }
 }
 
 #[derive(Clone, Copy)]
-enum TimelineCall { AddFigure, Playback, Restart, RemoveRestart, BreakApart, Extend, Place, Split }
+enum TimelineCall { Bake, AddFigure, Playback, Restart, RemoveRestart, BreakApart, Extend, Place, Split }
 impl TimelineCall {
     fn of(method: &str, args: &[Value]) -> Option<Self> {
         Some(match method {
+            "bakeMovieclip" => Self::Bake,
             "addFigure" => Self::AddFigure,
             "setMovieclipPlayback" if args.get(1).and_then(|value| value.get("allFrames")).is_some_and(Value::truthy) => Self::Playback,
             "restartMovieclip" => Self::Restart,
@@ -125,7 +130,8 @@ impl Editor {
     /// Offline replay routing for the SAME supported worker calls. Ordinary
     /// figure insertion and unrecorded selection metadata keep normal dispatch.
     pub(crate) fn movieclip_timeline_replay_call(&self, method: &str, args: &[Value]) -> bool {
-        if !self.sheet() || self.selection_metadata_gate(method).is_err() { return false; }
+        if self.selection_metadata_gate(method).is_err() { return false; }
+        if !self.sheet() { return matches!(TimelineCall::of(method, args), Some(TimelineCall::Bake)); }
         match TimelineCall::of(method, args) {
             Some(TimelineCall::AddFigure) => {
                 let figures = items(self.report.get("figure_types"));
@@ -145,13 +151,15 @@ impl Editor {
         args: &[Value],
         worker: &mut TimelineWorker<'_>,
     ) -> Result<Value, EditError> {
-        if !self.sheet() {
+        if !self.sheet() && !matches!(TimelineCall::of(method, args), Some(TimelineCall::Bake)) {
             return Err(EditError::Unported(
                 "movieclip sheet worker on a native timeline".into(),
             ));
         }
         if let Some(reason) = self.scan_unported() {
-            return Err(EditError::Unported(format!("{method} {reason}")));
+            if !self.recorded_native_movieclip_call(method, args, &reason) {
+                return Err(EditError::Unported(format!("{method} {reason}")));
+            }
         }
         if self.report.path(&["_styk", "simpleFrameDraft"]).is_some() {
             return Err(EditError::Unported(
@@ -175,6 +183,7 @@ impl Editor {
             clock: worker.clock,
         };
         let result = match TimelineCall::of(method, args) {
+            Some(TimelineCall::Bake) => self.bake_movieclip_worker(&mut context),
             Some(TimelineCall::AddFigure) => self.add_sheet_movieclip_figure(args.first(), &mut context),
             Some(TimelineCall::Playback) => {
                 self.set_movieclip_playback_with(
@@ -230,13 +239,14 @@ pub struct ChannelsRequest<'a> {
     pub next_frame_identity: u64,
     pub max_source_bytes: usize,
 }
-fn memory(
-    plan: &Plan,
+pub(crate) fn memory<'a>(
+    frames: impl ExactSizeIterator<Item = &'a Value>,
     maxbytes: usize,
     previous: (usize, usize, usize),
 ) -> Result<(usize, usize, usize), EditError> {
+    let total = frames.len();
     let (counted, mut poses, mut values) = previous;
-    for (_, frame) in plan.sources.iter().skip(counted) {
+    for frame in frames.skip(counted) {
         for object in objects_of(frame) {
             poses = poses.saturating_add(1);
             for field in ["angles", "lengths", "bends"] {
@@ -246,7 +256,7 @@ fn memory(
         }
     }
     let retained = 256usize
-        .saturating_mul(plan.sources.len())
+        .saturating_mul(total)
         .saturating_add(512usize.saturating_mul(poses))
         .saturating_add(8usize.saturating_mul(values));
     if retained > maxbytes {
@@ -254,9 +264,9 @@ fn memory(
             "errors.editorLayerMigration.thisLayerMigrationExceedsTheRetainedPoseMemory".into(),
         ));
     }
-    Ok((plan.sources.len(), poses, values))
+    Ok((total, poses, values))
 }
-fn budget(maxbytes: usize) -> Result<(), EditError> {
+pub(crate) fn budget(maxbytes: usize) -> Result<(), EditError> {
     if maxbytes == 0 {
         Err(EditError::Invalid(
             "errors.editorLayerMigration.layerMigrationSourceMemoryBudgetMustBePositive".into(),
@@ -326,7 +336,7 @@ pub fn prepare_movieclips(
                 key.remove("sourceTick");
             }
             completed += 1;
-            footprint = memory(&plan, request.max_source_bytes, footprint)?;
+            footprint = memory(plan.sources.iter().map(|(_, frame)| frame), request.max_source_bytes, footprint)?;
             let (_, poses, values) = footprint;
             if completed % 8 == 0 || clock() - last >= 8.0 || completed == total {
                 progress(Progress {
@@ -436,7 +446,7 @@ pub fn apply_channels(
                 )?;
             }
         }
-        footprint = memory(&plan, request.max_source_bytes, footprint)?;
+        footprint = memory(plan.sources.iter().map(|(_, frame)| frame), request.max_source_bytes, footprint)?;
         let (_, poses, values) = footprint;
         if (at + 1) % 8 == 0 || clock() - last >= 8.0 || at + 1 == total {
             progress(Progress {

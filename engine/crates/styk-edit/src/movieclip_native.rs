@@ -1,5 +1,6 @@
-//! Recorded native movieclip pose captures, publication and timing. Scalar
-//! channels, drafts, origins and retained-source editing are still refused.
+//! Recorded native movieclip pose captures, publication and timing. Saved VFX
+//! stacks are additionally sampled by recorded reads/Bake; other scalar movie
+//! commands, drafts, origins and retained-source editing remain refused.
 
 use crate::history::{Command, CommandKind, Direction};
 use crate::frame::objects_of;
@@ -148,6 +149,7 @@ impl Editor {
                     | "placeMovieclip"
                     | "splitMovieclip"
                     | "breakApartMovieclip"
+                    | "bakeMovieclip"
                     | "setMovieclipPlayback"
                     | "restartMovieclip"
                     | "removeMovieclipRestart"
@@ -167,10 +169,18 @@ impl Editor {
             }
         }
         poses(&self.report).iter().all(|c| {
+            let figure = c.path(&["target", "kind"]).and_then(Value::as_str) == Some("figure")
+                && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some();
+            // The existing Records scalar owner composes these saved stacks;
+            // only the recorded non-authoring reads/history and worker Bake
+            // are admitted. Other movieclip mutations are still unrecorded.
+            if c.get("property").and_then(Value::as_str) == Some("vfxStack") {
+                return matches!(method, "seek" | "@seek" | "select" | "@select" | "undo" | "redo" | "bakeMovieclip")
+                    && (figure || c.path(&["target", "kind"]).and_then(Value::as_str) == Some("scene"));
+            }
             c.get("property").and_then(Value::as_str) == Some("pose")
-                && ((c.path(&["target", "kind"]).and_then(Value::as_str) == Some("figure")
-                    && c.path(&["target", "uid"]).and_then(Value::as_f64).is_some())
-                    || (matches!(method, "seek" | "@seek" | "select" | "@select" | "selectMany" | "undo" | "redo" | "createEmptyMovieclip" | "addFigure" | "setLayerLocked")
+                && (figure
+                    || (matches!(method, "seek" | "@seek" | "select" | "@select" | "selectMany" | "undo" | "redo" | "createEmptyMovieclip" | "addFigure" | "bakeMovieclip" | "setLayerLocked")
                         && c.path(&["target", "kind"]).and_then(Value::as_str) == Some("layer")
                         && c.path(&["target", "id"]).and_then(Value::as_str).is_some()))
         })
@@ -362,12 +372,18 @@ impl Editor {
 
     /// `poseChannel`: every child shares one captured frame sequence.
     fn capture_native_pose_channel(&mut self, selected: u32, frames: &[(f64, Value)], bounds: (f64, Option<f64>), anchor: Option<u32>, source_uids: &[u32]) -> Result<Value, EditError> {
+        self.capture_native_pose_channel_checked(selected, frames, bounds, anchor, source_uids, &mut || Ok(()))
+    }
+
+    fn capture_native_pose_channel_checked(&mut self, selected: u32, frames: &[(f64, Value)], bounds: (f64, Option<f64>), anchor: Option<u32>, source_uids: &[u32], check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
         let uids = source_uids.iter().map(|u| *u as f64).collect::<Vec<_>>();
         let mut keys = Vec::new();
         for (index, (tick, frame)) in frames.iter().enumerate() {
+            check()?;
             let source = self.capture_native_pose(frame, Some(&uids))?;
             keys.push(pose_key(&format!("clip-pose-{selected}-{index}"), *tick, Some(&source)));
         }
+        check()?;
         if bounds.0 > 0.0 {
             keys.insert(0, pose_key(&format!("clip-blank-{selected}"), 0.0, None));
         }
@@ -507,26 +523,26 @@ impl Editor {
         })
     }
 
-    pub(crate) fn publish_native_movieclip_expansion(
-        &mut self,
-        source: Value,
-        previous: u32,
-        tick: f64,
-        definitions: Vec<Value>,
-        paths: std::collections::HashMap<u32, String>,
+    pub(crate) fn publish_native_movieclip_expansions(
+        &mut self, mut frames: Vec<(f64, Value)>, previous: u32, bounds: (f64, f64),
+        definitions: Vec<Value>, paths: std::collections::HashMap<u32, String>, label: &str, reuse_parts: bool,
+        mut worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>,
     ) -> Result<Value, EditError> {
-        self.movieclip_batch("Break apart frame", |editor| {
+        let (start, end) = bounds;
+        self.movieclip_batch(label, |editor| {
             let mut existing = items(editor.report.get("figure_types")).iter().filter_map(|f| num(f, "figure_type_id")).collect::<Vec<_>>();
             for figure in definitions {
+                if let Some(worker) = worker.as_deref_mut() { (worker.check)()?; }
                 let id = num(&figure, "figure_type_id").unwrap();
                 if !existing.contains(&id) {
                     existing.push(id);
                     editor.publish_definition(items(editor.report.get("figure_types")).len(), figure, "Create movieclip")?;
                 }
             }
-            let parts = poses(&editor.report).into_iter().filter(|c| c.path(&["movieclipPart", "instance"]).and_then(Value::as_f64) == Some(previous as f64)).collect::<Vec<_>>();
+            let parts = poses(&editor.report).into_iter().filter(|c| reuse_parts && c.path(&["movieclipPart", "instance"]).and_then(Value::as_f64) == Some(previous as f64)).collect::<Vec<_>>();
             let mut mapping: Vec<(u32, u32, String)> = Vec::new();
-            for o in items(source.get("objects")) {
+            for o in frames.iter().flat_map(|(_, frame)| items(frame.get("objects"))) {
+                if let Some(worker) = worker.as_deref_mut() { (worker.check)()?; }
                 let old = uid(&o).unwrap();
                 if mapping.iter().any(|(a, _, _)| *a == old) {
                     continue;
@@ -545,24 +561,31 @@ impl Editor {
                 };
                 mapping.push((old, identity, path));
             }
-            let mut frame = source.as_obj().cloned().unwrap();
-            let order = crate::figures::frame_order(&frame).iter().map(|old| mapping.iter().find(|(uid, _, _)| *uid as f64 == *old).unwrap().1 as f64).collect::<Vec<_>>();
-            if let Some(objects) = frame.get_mut("objects").and_then(Value::make_arr) {
-                for o in objects {
-                    let (_, id, path) = mapping.iter().find(|(old, _, _)| Some(*old) == uid(o)).unwrap();
-                    let o = o.make_obj().unwrap();
-                    o.set("unique_id", Value::Num(*id as f64));
-                    o.set("_stykMovieclipPart", object(&[("instance", Value::Num(previous as f64)), ("path", Value::str(path))]));
+            for (_, source) in &mut frames {
+                if let Some(worker) = worker.as_deref_mut() { (worker.check)()?; }
+                let mut frame = source.as_obj().cloned().unwrap();
+                let order = crate::figures::frame_order(&frame).iter().map(|old| mapping.iter().find(|(uid, _, _)| *uid as f64 == *old).unwrap().1 as f64).collect::<Vec<_>>();
+                if let Some(objects) = frame.get_mut("objects").and_then(Value::make_arr) {
+                    for o in objects {
+                        let (_, id, path) = mapping.iter().find(|(old, _, _)| Some(*old) == uid(o)).unwrap();
+                        let o = o.make_obj().unwrap();
+                        o.set("unique_id", Value::Num(*id as f64));
+                        if reuse_parts { o.set("_stykMovieclipPart", object(&[("instance", Value::Num(previous as f64)), ("path", Value::str(path))])); }
+                    }
                 }
+                crate::figures::set_order(&mut frame, &order);
+                crate::figures::normalize_frame(&mut frame);
+                *source = Value::object(frame);
             }
-            crate::figures::set_order(&mut frame, &order);
-            crate::figures::normalize_frame(&mut frame);
             let children = mapping.iter().map(|(_, id, _)| *id).collect::<Vec<_>>();
-            let mut channels = vec![editor.masked_native_pose(previous, tick, tick + 1.0)?];
+            let mut channels = vec![editor.masked_native_pose(previous, start, end)?];
             if let Some(first) = children.first().copied() {
-                let shared = editor.capture_native_pose_channel(first, &[(tick, Value::object(frame))], (tick, Some(tick + 1.0)), Some(previous), &children)?;
+                let shared = if let Some(worker) = worker.as_deref_mut() {
+                    editor.capture_native_pose_channel_checked(first, &frames, (start, Some(end)), Some(previous), &children, worker.check)?
+                } else { editor.capture_native_pose_channel(first, &frames, (start, Some(end)), Some(previous), &children)? };
                 let keys = items(shared.get("keys"));
                 for (_, identity, path) in &mapping {
+                    if let Some(worker) = worker.as_deref_mut() { (worker.check)()?; }
                     let previous_channel = parts.iter().find(|c| c.path(&["movieclipPart", "path"]).and_then(Value::as_str) == Some(path));
                     let key_sequence = if let Some(previous_channel) = previous_channel {
                         let prepared = editor.prepared()?;
@@ -571,17 +594,17 @@ impl Editor {
                             .animation
                             .as_ref()
                             .and_then(|a| a.channels.iter().find(|c| c.target == styk_eval::channels::Target::Figure { uid: *identity } && c.property == styk_eval::channels::Property::Pose))
-                            .and_then(|c| c.sample(tick + 1.0));
+                            .and_then(|c| c.sample(end));
                         let at_end = match sampled {
                             Some(styk_eval::channels::KeyValue::Pose(Some(id))) => object(&[("frameId", Value::str(&id))]),
                             _ => object(&[("frameId", Value::Null)]),
                         };
                         let mut merged = items(previous_channel.get("keys"));
-                        for key in keys.iter().filter(|k| num(k, "tick").unwrap() >= tick) {
+                        for key in keys.iter().filter(|k| num(k, "tick").unwrap() >= start) {
                             let key_tick = num(key, "tick").unwrap();
                             let mut changed = key.as_obj().cloned().unwrap();
                             changed.set("id", Value::str(&format!("clip-part-{identity}-{key_tick}")));
-                            if key_tick == tick + 1.0 {
+                            if key_tick == end {
                                 changed.set("value", at_end.clone());
                             }
                             let changed = Value::object(changed);
@@ -596,20 +619,23 @@ impl Editor {
                     } else {
                         keys.clone()
                     };
-                    channels.push(object(&[
+                    let mut channel = object(&[
                         ("id", Value::str(&channel_id(*identity))),
                         ("target", object(&[("kind", Value::str("figure")), ("uid", Value::Num(*identity as f64))])),
                         ("property", Value::str("pose")),
                         ("keys", Value::array(key_sequence)),
                         ("orderAnchor", Value::Num(previous as f64)),
-                        ("movieclipPart", object(&[("instance", Value::Num(previous as f64)), ("path", Value::str(path))])),
-                    ]));
+                    ]).as_obj().cloned().unwrap();
+                    if reuse_parts { channel.set("movieclipPart", object(&[("instance", Value::Num(previous as f64)), ("path", Value::str(path))])); }
+                    channels.push(Value::object(channel));
                 }
             }
             let layer = editor.layer_of(previous);
+            if let Some(worker) = worker.as_deref_mut() { (worker.check)()?; }
             editor.layer_edit("Place movieclip figures", children.iter().map(|id| (vec!["assignments".into(), id.to_string()], Some(Value::str(&layer)), false)).collect(), true, None)?;
-            editor.publish_native_channels(channels, "Break apart frame")?;
-            editor.seek(tick)?;
+            if let Some(worker) = worker.as_deref_mut() { (worker.check)()?; }
+            editor.publish_native_channels(channels, label)?;
+            editor.seek(start)?;
             editor.select_many(&children)?;
             Ok(Value::array(children.iter().map(|id| Value::Num(*id as f64)).collect()))
         })

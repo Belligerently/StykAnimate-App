@@ -29,17 +29,24 @@ impl Outcome {
 
 /// Replays `reference` (the JSON the JavaScript side wrote).
 pub fn replay(reference: &Value) -> Result<Outcome, String> {
-    replay_with_worker(reference, false)
+    replay_with_worker(reference, false, 128 * 1024 * 1024)
 }
 
-/// Native/offline verification of recorded sheet commands using their existing
+/// Native/offline verification of recorded native/sheet worker commands using their existing
 /// worker preparation owner. This is not UI admission: the calling thread may
 /// perform dense preparation. Results use the same every-step comparisons.
 pub fn replay_worker(reference: &Value) -> Result<Outcome, String> {
-    replay_with_worker(reference, true)
+    replay_worker_with_source_budget(reference, 128 * 1024 * 1024)
 }
 
-fn replay_with_worker(reference: &Value, worker: bool) -> Result<Outcome, String> {
+/// Explicit native/offline host budget; this never changes runtime/UI limits.
+/// The ordinary replay worker retains its 128 MiB default.
+pub fn replay_worker_with_source_budget(reference: &Value, max_source_bytes: usize) -> Result<Outcome, String> {
+    if max_source_bytes == 0 { return Err("offline source budget must be positive".into()); }
+    replay_with_worker(reference, true, max_source_bytes)
+}
+
+fn replay_with_worker(reference: &Value, worker: bool, max_source_bytes: usize) -> Result<Outcome, String> {
     let steps: Vec<Value> = reference.get("steps").and_then(Value::elements).ok_or("the reference has no steps")?.iter().collect();
     let first = steps.first().ok_or("the reference has no steps")?;
     let mut expected = first.get("document").and_then(Value::as_str).ok_or("step 0 has no document")?.to_string();
@@ -70,12 +77,40 @@ fn replay_with_worker(reference: &Value, worker: bool) -> Result<Outcome, String
         outcome.mismatches.push("step 0: the loaded document does not survive the engine's store byte for byte".into());
         return Ok(outcome);
     }
+    // Opt-in audit is retained outside transaction snapshots, exactly like the
+    // editor recording wrapper: it sees successful _record calls even when an
+    // enclosing editor batch later rolls back. Normal editor calls allocate none.
+    let record_capture = steps.iter().any(|step| step.get("records").is_some());
+    if record_capture { editor.replay_records = Some(Vec::new()); }
+    let captured_history = |step: &Value| {
+        let history = step.get("history");
+        let kinds = history.into_iter().flat_map(|value| [value.get("undo"),value.get("redo")]).flatten().filter_map(Value::elements).flat_map(|values|values.iter()).any(|entry| entry.get("kind").is_some());
+        (kinds, !kinds)
+    };
+    if let Some(selection) = first.get("selection") {
+        if json(&editor.selection_state().history_value()) != json(selection) { outcome.mismatches.push("step 0: selection differs".into()); return Ok(outcome); }
+    }
+    if let Some(history) = first.get("history") {
+        let (kinds,children) = captured_history(first);
+        if json(&editor.history_value_shape(kinds,children)) != json(history) { outcome.mismatches.push("step 0: history differs".into()); return Ok(outcome); }
+    }
     let mut native_token = Value::Null;
     for step in &steps[1..] {
         let number = step.get("step").and_then(Value::as_f64).unwrap_or(0.0) as usize;
+        // An awaited recording can contain another real editor call during a
+        // yield. The offline owner cannot reproduce that concurrent writer yet;
+        // refuse its explicit capability before executing or changing anything.
+        if let Some(interleavings) = step.get("interleavings") {
+            let calls = interleavings.elements().ok_or_else(|| format!("step {number}: interleavings must be an array"))?;
+            if !calls.is_empty() {
+                outcome.unported = Some((number, "recorded interleaved editor calls require the canonical actor".into()));
+                return Ok(outcome);
+            }
+        }
         let call: Vec<Value> = step.get("call").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
         let method = call.first().and_then(Value::as_str).unwrap_or("").to_string();
         editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
+        if let Some(records) = editor.replay_records.as_mut() { records.clear(); }
         // A replay-only read verifies the live pose using the existing snapshot owner.
         let result = if method == "@historyLimits" {
             editor.configure_worker_history(crate::HistoryLimits { count:call.get(1).and_then(Value::as_f64).unwrap_or(80.0) as usize,bytes:call.get(2).and_then(Value::as_f64).unwrap_or(48.0*1024.0*1024.0) }).map(|_|Value::Null)
@@ -115,7 +150,7 @@ fn replay_with_worker(reference: &Value, worker: bool) -> Result<Outcome, String
             let args = measured.as_deref().unwrap_or(&call[1..]);
             if worker && editor.movieclip_timeline_replay_call(&method, args) {
                 editor.call_movieclip_timeline_worker(&method, args, &mut crate::movieclip_planning::TimelineWorker {
-                    max_source_bytes: 128 * 1024 * 1024,
+                    max_source_bytes,
                     check: &mut || Ok(()),
                     progress: &mut |_| {},
                     clock: || 0.0,
@@ -172,9 +207,18 @@ fn replay_with_worker(reference: &Value, worker: bool) -> Result<Outcome, String
                     _ => value.clone(),
                 }
             }
-            let actual = editor.history_value();
+            let (kinds,children) = captured_history(step);
+            let actual = editor.history_value_shape(kinds,children);
             let (got,want) = if history_ready { (json(&actual),json(history)) } else { (json(&unprepared(&actual)),json(&unprepared(history))) };
             if got != want { differences.push(format!("history {got}, the editor's {want}")); }
+        }
+        if let Some(selection) = step.get("selection") {
+            let got = json(&editor.selection_state().history_value()); let want = json(selection);
+            if got != want { differences.push(format!("selection {got}, the editor's {want}")); }
+        }
+        if let Some(records) = step.get("records") {
+            let got = json(&Value::array(editor.replay_records.as_ref().unwrap().clone())); let want = json(records);
+            if got != want { differences.push(format!("records differ: {}", first_difference(&got,&want))); }
         }
         let got = json(&Value::array(editor.take_events()));
         let want = json(step.get("events").unwrap_or(&Value::Null));

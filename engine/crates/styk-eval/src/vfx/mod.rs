@@ -16,6 +16,7 @@ pub mod frame;
 pub mod layers;
 pub mod padding;
 pub mod paint;
+mod owner;
 pub mod parity;
 pub mod parse;
 pub mod registry;
@@ -25,6 +26,7 @@ use std::sync::Arc;
 pub use clips::{Channel, Clip, Clips, Field, Key, Target};
 pub use frame::{evaluate, generators, Attached, FrameVfx, Generator, ObjectVfx};
 pub use padding::{padding, sampling_padding, working_slots};
+pub use owner::remap_owner;
 pub use registry::{Color, Kind, Param, ParamKind, ParamValue, Params, Spec};
 
 use crate::doc::Document;

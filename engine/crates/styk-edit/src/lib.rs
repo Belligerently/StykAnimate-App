@@ -167,6 +167,8 @@ pub struct Editor {
     pub(crate) history_limits: history::HistoryLimits,
     pub(crate) history_size: f64,
     pub(crate) worker_history: bool,
+    /// Disabled outside explicit replay: actual records at their owning linear point.
+    pub(crate) replay_records: Option<Vec<Value>>,
     pub(crate) revision: u64,
     pub(crate) saved_revision: u64,
     pub(crate) revision_serial: u64,
@@ -303,6 +305,7 @@ impl Editor {
             history_limits: Default::default(),
             history_size: 0.0,
             worker_history: false,
+            replay_records: None,
             revision: 0,
             saved_revision: 0,
             revision_serial: 0,

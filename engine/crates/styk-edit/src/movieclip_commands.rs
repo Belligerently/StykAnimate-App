@@ -535,7 +535,72 @@ impl Editor {
         self.break_apart_movieclip_with(None)
     }
 
-    pub(crate) fn break_apart_movieclip_with(&mut self, mut worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
+    /// `await bakeMovieclip`: explicit durable-worker tool entry only. Sampling
+    /// borrows the one Records/materializer owner; publication is the existing
+    /// expansion callback inside the host's prepared transaction.
+    pub(crate) fn bake_movieclip_worker(&mut self, worker: &mut crate::movieclip_planning::TimelineWorker<'_>) -> Result<Value, EditError> {
+        self.selected_movieclip()?;
+        self.commit_drag()?;
+        self.commit_animation_edit()?;
+        let (_, original, _) = self.selected_movieclip()?;
+        let previous = uid(&original).unwrap();
+        let playback = crate::movieclips::playback_settings(original.get("_stykMovieclip"));
+        let start = if uses_presence(&original) { 0.0 } else { num(&Value::object(playback.clone()), "start").unwrap_or(0.0) };
+        let total = crate::timeline::total_ticks(&crate::timeline::rows(&self.report));
+        let end = playback.get("end").and_then(Value::as_f64).unwrap_or(total).min(total);
+        if end - start > 5000.0 { return Err(error("bakeSupportsScenesUpTo5000Frames")); }
+        crate::movieclip_planning::budget(worker.max_source_bytes)?;
+        let report = self.report.clone();
+        let prepared = self.prepared()?;
+        let records = styk_eval::records::Records::new(&report, &prepared).map_err(materialize_error)?;
+        let mut materializer = styk_eval::materialize::Materializer::new(&report, &prepared).map_err(materialize_error)?;
+        let mut frames = Vec::new();
+        let mut count = 0usize;
+        let mut footprint = (0, 0, 0);
+        let mut last = (worker.clock)();
+        let mut tick = start;
+        while tick < end {
+            (worker.check)()?;
+            let sampled = records.evaluated_with(tick, true).map_err(materialize_error)?;
+            let frame = self.expand_movieclip_pose(&sampled, previous, &mut materializer)?;
+            count = count.saturating_add(objects_of(&frame).len());
+            if count > 250000 { return Err(error("bakeAShorterRangeForThisScene")); }
+            frames.push((tick, frame));
+            footprint = crate::movieclip_planning::memory(frames.iter().map(|(_, frame)| frame), worker.max_source_bytes, footprint)?;
+            let now = (worker.clock)();
+            if frames.len() % 8 == 0 || now - last > 6.0 || tick + 1.0 >= end {
+                (worker.progress)(crate::layer_planning::Progress {
+                    phase: "sampling", completed: frames.len(), total: (end - start).max(0.0).ceil() as usize,
+                    source_frames: frames.len(), object_poses: footprint.1, segment_values: footprint.2,
+                });
+                last = now;
+                (worker.check)()?;
+            }
+            tick += 1.0;
+        }
+        if frames.is_empty() { return Ok(Value::Bool(false)); }
+        let definitions = materializer.figures().to_vec();
+        let paths = materializer.identities().map(|(path, uid)| (uid, path.into())).collect();
+        (worker.check)()?;
+        self.publish_movieclip_expansion_with(frames, previous, (start, end), definitions, paths, "Bake animation", false, &original, Some(worker))
+    }
+
+    /// `_expandMovieclipPose`: the SAME geometry and materializer owners are
+    /// shared by one-frame break and the awaited worker bake.
+    fn expand_movieclip_pose(&self, frame: &Value, previous: u32, materializer: &mut styk_eval::materialize::Materializer<'_>) -> Result<Value, EditError> {
+        let source = if let Some(selected) = objects_of(frame).into_iter().find(|object| uid(object) == Some(previous)) {
+            let scene = self.record_geometry(frame)?;
+            let root = scene.objects.iter().find(|object| object.slot as f64 == num(&selected, "object_slot").unwrap()).map(|object| object.root).unwrap_or([num(&selected, "root_x").unwrap_or(0.0), num(&selected, "root_y").unwrap_or(0.0)]);
+            let mut selected = selected.as_obj().cloned().unwrap();
+            selected.set("join", Value::Null);
+            selected.set("root_x", Value::Num(root[0]));
+            selected.set("root_y", Value::Num(root[1]));
+            create_frame(&[Value::object(selected)])
+        } else { return Ok(create_frame(&[])); };
+        materializer.frame(&source).map_err(materialize_error)
+    }
+
+    pub(crate) fn break_apart_movieclip_with(&mut self, worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>) -> Result<Value, EditError> {
         let (_, original, _) = self.selected_movieclip()?;
         if self.sheet() && !uses_presence(&original) && worker.is_none() {
             return Err(EditError::Unported("break apart with legacy sheet timing".into()));
@@ -543,32 +608,31 @@ impl Editor {
         let tick = (self.tick + 0.5).floor();
         let previous = uid(&original).unwrap();
         let shown = self.shown_frame()?;
-        let selected = objects_of(&shown).into_iter().find(|o| uid(o) == Some(previous));
-        let mut source = if let Some(selected) = selected {
-            let root = self.roots_of(&[previous])?.get(&previous).copied().unwrap_or([num(&selected, "root_x").unwrap_or(0.0), num(&selected, "root_y").unwrap_or(0.0)]);
-            let mut selected = selected.as_obj().cloned().unwrap();
-            selected.set("join", Value::Null);
-            selected.set("root_x", Value::Num(root[0]));
-            selected.set("root_y", Value::Num(root[1]));
-            create_frame(&[Value::object(selected)])
-        } else {
-            create_frame(&[])
-        };
         let report = self.report.clone();
         let prepared = self.prepared()?;
         let mut materializer = styk_eval::materialize::Materializer::new(&report, &prepared).map_err(materialize_error)?;
-        source = materializer.frame(&source).map_err(materialize_error)?;
+        let source = self.expand_movieclip_pose(&shown, previous, &mut materializer)?;
         let definitions = materializer.figures().to_vec();
         let paths: HashMap<u32, String> = materializer.identities().map(|(path, uid)| (uid, path.into())).collect();
+        self.publish_movieclip_expansion_with(vec![(tick, source)], previous, (tick, tick + 1.0), definitions, paths, "Break apart frame", true, &original, worker)
+    }
+
+    /// SAME replacement Plan and publication owner for break and worker bake.
+    fn publish_movieclip_expansion_with(
+        &mut self, mut frames: Vec<(f64, Value)>, previous: u32, bounds: (f64, f64),
+        definitions: Vec<Value>, paths: HashMap<u32, String>, label: &str, reuse_parts: bool,
+        original: &Value, mut worker: Option<&mut crate::movieclip_planning::TimelineWorker<'_>>,
+    ) -> Result<Value, EditError> {
         if !self.sheet() {
-            return self.publish_native_movieclip_expansion(source, previous, tick, definitions, paths);
+            return self.publish_native_movieclip_expansions(frames, previous, bounds, definitions, paths, label, reuse_parts, worker);
         }
+        let start = bounds.0;
         let prepare = !uses_presence(&original) && self.batch.is_none();
-        self.movieclip_batch("Break apart frame", |editor| {
+        self.movieclip_batch(label, |editor| {
             if prepare { worker.as_deref_mut().unwrap().prepare(editor)?; }
             let mut parts = HashMap::new();
             for channel in items(editor.report.path(&["_styk", "layerSheet", "legacyAnimation", "channels"])) {
-                if channel.get("property").and_then(Value::as_str) == Some("pose") && channel.path(&["movieclipPart", "instance"]).and_then(Value::as_f64) == Some(previous as f64) {
+                if reuse_parts && channel.get("property").and_then(Value::as_str) == Some("pose") && channel.path(&["movieclipPart", "instance"]).and_then(Value::as_f64) == Some(previous as f64) {
                     if let (Some(path), Some(uid)) = (channel.path(&["movieclipPart", "path"]).and_then(Value::as_str), channel.path(&["target", "uid"]).and_then(Value::as_f64)) {
                         parts.insert(path.to_string(), uid as u32);
                     }
@@ -577,7 +641,7 @@ impl Editor {
             if let Some(sources) = editor.report.path(&["_styk", "frameSources"]).and_then(Value::as_obj) {
                 for (_, frame) in sources.iter() {
                     for object in objects_of(frame) {
-                        if object.path(&["_stykMovieclipPart", "instance"]).and_then(Value::as_f64) == Some(previous as f64) {
+                        if reuse_parts && object.path(&["_stykMovieclipPart", "instance"]).and_then(Value::as_f64) == Some(previous as f64) {
                             if let (Some(path), Some(uid)) = (object.path(&["_stykMovieclipPart", "path"]).and_then(Value::as_str), uid(&object)) {
                                 parts.entry(path.to_string()).or_insert(uid);
                             }
@@ -594,8 +658,7 @@ impl Editor {
             }
             let mut ids = Vec::new();
             let mut mapping = HashMap::new();
-            let mut frame = source.as_obj().cloned().unwrap();
-            for object in objects_of(&source) {
+            for object in frames.iter().flat_map(|(_, frame)| objects_of(frame)) {
                 let old = uid(&object).unwrap();
                 if mapping.contains_key(&old) {
                     continue;
@@ -614,36 +677,46 @@ impl Editor {
                 mapping.insert(old, (id, path));
                 ids.push(id);
             }
-            let order = frame_order(&frame).iter().filter_map(|old| mapping.get(&(*old as u32)).map(|(id, _)| *id as f64)).collect::<Vec<_>>();
-            if let Some(objects) = frame.get_mut("objects").and_then(Value::make_arr) {
-                for object in objects {
-                    let (id, path) = mapping.get(&uid(object).unwrap()).unwrap();
-                    let object = object.make_obj().unwrap();
-                    object.set("unique_id", Value::Num(*id as f64));
-                    object.set("_stykMovieclipPart", crate::movieclip_commands::object(&[("instance", Value::Num(previous as f64)), ("path", Value::str(path))]));
+            for (_, source) in &mut frames {
+                let mut frame = source.as_obj().cloned().unwrap();
+                let order = frame_order(&frame).iter().filter_map(|old| mapping.get(&(*old as u32)).map(|(id, _)| *id as f64)).collect::<Vec<_>>();
+                if let Some(objects) = frame.get_mut("objects").and_then(Value::make_arr) {
+                    for object in objects {
+                        let (id, path) = mapping.get(&uid(object).unwrap()).unwrap();
+                        let object = object.make_obj().unwrap();
+                        object.set("unique_id", Value::Num(*id as f64));
+                        if reuse_parts { object.set("_stykMovieclipPart", crate::movieclip_commands::object(&[("instance", Value::Num(previous as f64)), ("path", Value::str(path))])); }
+                    }
+                }
+                set_order(&mut frame, &order);
+                normalize_frame(&mut frame);
+                *source = Value::object(frame);
+            }
+            let layer = editor.layer_of(previous);
+            let mut plan = editor.planner(std::slice::from_ref(&layer))?;
+            for id in &ids { plan.assign(*id, &layer); }
+            let mut replaced = false;
+            for (tick, source) in frames {
+                if let Some(worker) = worker.as_deref_mut() { (worker.check)()?; }
+                let mut frame = source.as_obj().cloned().unwrap();
+                let at = editor.evaluated(tick, true)?;
+                let original = objects_of(&at).into_iter().find(|o| uid(o) == Some(previous));
+                if let Some(original) = original {
+                    let steps = if uses_presence(&original) {
+                        vec![object(&[("uid", Value::Num(previous as f64)), ("typeId", original.get("figure_type_id").cloned().unwrap()), ("playback", original.get("_stykMovieclip").cloned().unwrap())])]
+                    } else {
+                        vec![]
+                    };
+                    set_continuations(&mut frame, steps);
+                    editor.replace_at(&mut plan, &layer, tick, previous, &Value::object(frame), None, tick + 1.0)?;
+                    replaced = true;
                 }
             }
-            set_order(&mut frame, &order);
-            normalize_frame(&mut frame);
-            let at = editor.evaluated(tick, true)?;
-            let original = objects_of(&at).into_iter().find(|o| uid(o) == Some(previous));
-            if let Some(original) = original {
-                let steps = if uses_presence(&original) {
-                    vec![object(&[("uid", Value::Num(previous as f64)), ("typeId", original.get("figure_type_id").cloned().unwrap()), ("playback", original.get("_stykMovieclip").cloned().unwrap())])]
-                } else {
-                    vec![]
-                };
-                set_continuations(&mut frame, steps);
-                let layer = editor.layer_of(previous);
-                let mut plan = editor.planner(std::slice::from_ref(&layer))?;
-                for id in &ids {
-                    plan.assign(*id, &layer);
-                }
-                editor.replace_at(&mut plan, &layer, tick, previous, &Value::object(frame), None, tick + 1.0)?;
-                if let Some(worker) = worker.as_deref_mut() { worker.publish_plan(editor, plan, "Break apart frame")?; }
-                else { editor.publish(plan, "Break apart frame", editor.selection_state(), None)?; }
+            if replaced {
+                if let Some(worker) = worker.as_deref_mut() { worker.publish_plan(editor, plan, label)?; }
+                else { editor.publish(plan, label, editor.selection_state(), None)?; }
             }
-            editor.seek(tick)?;
+            editor.seek(start)?;
             editor.select_many(&ids)?;
             Ok(Value::array(ids.into_iter().map(|id| Value::Num(id as f64)).collect()))
         })

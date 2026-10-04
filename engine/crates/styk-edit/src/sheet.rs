@@ -688,7 +688,7 @@ impl Editor {
         {
             plan.definitions = figures.split_off(start);
         }
-        self.publish(plan, &label, selection, retain.then_some(after))
+        self.publish_geometry(plan, &label, selection, retain.then_some(after), retain)
     }
 
     /// `_commitSheetRange(plans, payload, label, selection)` for one frame at the playhead:
@@ -801,8 +801,8 @@ impl Editor {
             }
         }
         match worker {
-            Some(worker) => { worker.publish_plan_with_selection(self, plan, label, Some(selection))?; Ok(true) }
-            None => self.publish(plan, label, selection, None),
+            Some(worker) => { worker.publish_plan_with_geometry(self, plan, label, Some(selection), payload.is_some())?; Ok(true) }
+            None => self.publish_geometry(plan, label, selection, None, payload.is_some()),
         }
     }
 
@@ -898,7 +898,7 @@ impl Editor {
     }
 
     /// `buildGeometry(report, frame)` for a frame record that need not be the one on show.
-    fn record_geometry(&self, record: &Value) -> Result<styk_eval::geometry::Scene, EditError> {
+    pub(crate) fn record_geometry(&self, record: &Value) -> Result<styk_eval::geometry::Scene, EditError> {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
@@ -941,10 +941,14 @@ impl Editor {
     /// `publish(editor, plan, label, {selection})`: the plan becomes the document's
     /// sheet, with one history entry.
     pub(crate) fn publish(&mut self, plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>) -> Result<bool, EditError> {
-        self.publish_checked(plan, label, selection, retained, &mut || Ok(()))
+        self.publish_geometry(plan, label, selection, retained, false)
     }
 
-    pub(crate) fn publish_checked(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+    fn publish_geometry(&mut self, plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, retain_geometry: bool) -> Result<bool, EditError> {
+        self.publish_checked(plan, label, selection, retained, retain_geometry, &mut || Ok(()))
+    }
+
+    pub(crate) fn publish_checked(&mut self, mut plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, retain_geometry: bool, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
         check()?;
         // How many poses hold each figure, counted on the document before it changes.
         self.ensure_counts();
@@ -1026,7 +1030,7 @@ impl Editor {
         let after_selection = self.selection_state();
         let source_ids: Vec<Value> = plan.sources.iter().map(|(id, _)| Value::str(id)).collect();
         self.record_checked(Command {
-            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions },
+            kind: CommandKind::LayerSheet { before, after, before_layers, after_layers, sources: plan.sources, definitions, retain_geometry },
             label: label.to_string(),
             before_selection: selection,
             after_selection,
@@ -1163,7 +1167,7 @@ impl Editor {
 
     /// `applyLayerSheetCommand(editor, command, direction)`.
     pub(crate) fn apply_sheet_command(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
-        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions } = &command.kind else { return Ok(()) };
+        let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions, .. } = &command.kind else { return Ok(()) };
         let (sheet, layers, selection, revision) = match direction {
             Direction::Before => (before, before_layers, &command.before_selection, command.before_revision),
             Direction::After => (after, after_layers, &command.after_selection, command.after_revision),
