@@ -205,6 +205,14 @@ scenario('frames-movieclip-sheet', app, [
     ['sheetCopyFrames', ['layer-1'], 6, 7], ['sheetPasteFrames', ['layer-2'], 40], ['sheetCopyFrames', ['layer-1'], 24, 26], ['sheetPasteFrames', ['layer-2'], 50], ['sheetPasteFrames', ['layer-1'], 30], ['sheetCopyFrames', ['layer-1'], 31, 33], ['sheetPasteFrames', ['layer-2'], 60],
     ['undo'], ['undo'], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');
+  // Property edits on keys whose movieclip frames are replaced: the key keeps its
+  // replacements, its pose written from the frame without them.
+  scenario('property-clip-patches-sheet', app, [
+    ['@select', 4, -1], ['addAnimationKeys', [{target: {kind: 'figure', uid: 4}, property: 'opacity', tick: 0, value: 0.5}]],
+    ['addAnimationKeys', [{target: {kind: 'figure', uid: 1}, property: 'scale', tick: 0, value: 1.3}]], ['@seek', 3], ['beginAnimationEdit', {kind: 'figure', uid: 4}, 'scale'],
+    ['previewAnimationEdit', 1.4], ['commitAnimationEdit'], ['addAnimationKeys', [{target: {kind: 'figure', uid: 4}, property: 'rotation', tick: 6, value: 0.3}]],
+    ['undo'], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json');
   scenario('move-frames-presence-clip-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, 3, {copy: true}], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');

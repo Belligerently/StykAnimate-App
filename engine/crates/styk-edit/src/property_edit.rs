@@ -481,7 +481,7 @@ impl Editor {
                 channel.set("keys", Value::array(vec![Value::object(key)]));
                 channels.push(Value::object(channel));
             }
-            let mut frame: Option<Value> = None;
+            let mut frames: [Option<Value>; 2] = [None, None];
             for id in &ids {
                 let selected: Vec<&&Value> = list.iter().filter(|entry| owner(self, entry) == *id).collect();
                 if selected.is_empty() {
@@ -491,12 +491,13 @@ impl Editor {
                 let previous = key_at(&keys, *tick).map(|i| keys[i].clone());
                 let held = |key: &Value| matches!(key.get("interpolation").and_then(Value::as_str), Some("constant" | "hold"));
                 let target = previous.clone().filter(|key| num(key, "tick") == Some(*tick) || (!self.auto_key && held(key)));
-                if target.as_ref().is_some_and(|key| !items(key.get("movieclipPatches")).is_empty() || key.get("patchOnly").is_some_and(Value::truthy)) {
-                    return Err(EditError::Unported("a property edit on a key with movieclip frame replacements".into()));
-                }
-                if frame.is_none() {
-                    let base = self.evaluated(*tick, false)?;
-                    frame = Some(if channels.is_empty() { base } else { self.with_records(|records| Ok(records.compose_channels(base, &channels, *tick)?))? });
+                // A key whose movieclip frames are replaced keeps its replacements: its pose is
+                // written from the frame without them.
+                let patches = items(target.as_ref().and_then(|key| key.get("movieclipPatches")));
+                let skip = !patches.is_empty() || target.as_ref().is_some_and(|key| key.get("patchOnly").is_some_and(Value::truthy));
+                if frames[skip as usize].is_none() {
+                    let base = if skip { self.evaluated_without_patches(*tick)? } else { self.evaluated(*tick, false)? };
+                    frames[skip as usize] = Some(if channels.is_empty() { base } else { self.with_records(|records| Ok(records.compose_channels(base, &channels, *tick)?))? });
                 }
                 let given = selected.iter().rev().find(|entry| entry.get("interpolation").is_some()).map(|entry| (**entry).clone());
                 if let Some(given) = &given {
@@ -505,7 +506,20 @@ impl Editor {
                 let held_easing = constant();
                 let easing = given.or_else(|| target.clone()).or_else(|| previous.clone()).unwrap_or(held_easing);
                 let at = target.as_ref().and_then(|key| num(key, "tick")).unwrap_or(*tick);
-                plan.write(id, at, frame.as_ref().unwrap(), Write { easing: Some(&easing), ..Write::default() })?;
+                plan.write(id, at, frames[skip as usize].as_ref().unwrap(), Write { easing: Some(&easing), ..Write::default() })?;
+                if !patches.is_empty() {
+                    let mut keys = plan.keys(id);
+                    if let Some(written) = keys.iter_mut().find(|key| num(key, "tick") == Some(at)).and_then(Value::make_obj) {
+                        written.set("movieclipPatches", Value::array(patches.clone()));
+                        match target.as_ref().and_then(|key| key.get("empty")) {
+                            Some(empty) => written.set("empty", empty.clone()),
+                            None => {
+                                written.remove("empty");
+                            }
+                        }
+                    }
+                    plan.set_keys(id, keys);
+                }
                 let key = plan.keys(id).into_iter().find(|key| num(key, "tick") == Some(at)).and_then(|key| key.get("id").cloned()).unwrap_or(Value::Null);
                 written.push((id.clone(), key));
             }

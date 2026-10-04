@@ -218,15 +218,14 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   publication of a large cel costs the interface thread 0.2–0.7 s while the engine stage syncs
   the new asset (both engines; 2,040-tile cel), now kept out of undo and redo but still paid
   after strokes and fills. Not verified: Windows, macOS, packaged builds, real pens.
-- **Property edits, open after the port**: paints (fill styles and effect colours), keys
-  holding movieclip frame replacements, polygon colour (`editFigureColors`), adding effects and
-  presets (random identities), camera drags as a command, channels on a native timeline and
-  animation origins stay with the editor. Owned editing of `channels-figure` took 289.3 ms
-  against the editor's 116.9 ms (one run, loaded machine): records rebuild channel bindings
-  and convert frames for geometry on every evaluation, and scrub previews carry whole frames,
-  so the `channels` class is not owned until large documents are measured. Bézier easing uses
-  `pow`, which in WebAssembly is libm and may differ from a browser's in the last bit (not
-  observed).
+- **Property edits, open after the port**: paints (fill styles and effect colours), polygon
+  colour (`editFigureColors`), adding effects and presets (random identities), channels on a
+  native timeline and animation origins stay with the editor. Owned editing of
+  `channels-figure` took 289.3 ms against the editor's 116.9 ms (one run, loaded machine):
+  records rebuild channel bindings and convert frames for geometry on every evaluation, and
+  scrub previews carry whole frames, so the `channels` class is not owned until large
+  documents are measured. Bézier easing uses `pow`, which in WebAssembly is libm and may
+  differ from a browser's in the last bit (not observed).
 - **Known divergences of the newly drawn features**: the engine tweens a captured movieclip's
   own keyframes where the editor samples its retained source (`movieclipSource`); the follow
   camera reshapes its whole path on every revision where the editor resamples incrementally
@@ -557,6 +556,7 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 02:08 | S5 handle commands | `styk-edit/src/handle_commands.rs`: `nudgeHandle` (screen pixels through the view's zoom, rotation and mirroring and the frame's camera, onto moving, posing, bending, Handle Edit Mode or the whole-figure transform), `alignHandle`, `locateEditedHandle`, `segmentValues`, `beginSegmentValueEdit`, `setSegmentValues` (relative to the incoming tangent through joined origins), `copySegmentValues`, `pasteSegmentValues`; segments as drawn shared with Handle Edit Mode (`drawn_segments`). Follow clips and camera motion active at the playhead stay with the editor (the engine's records do not carry the editor's runtime camera tick; the playhead's is used). Copied text is compared as a view. | 5 recordings (186 steps) match the editor at every step; 28 of 30 mutations break one (two equivalent: pasted lengths are checked again by `setSegmentValues`, and the arc end's `(bend × steps) / steps` never differs from the bend on recorded values). App shadow with the engine's `Math`: start document 256/256, channels-figure 212/212; owned editing the same as the editor alone. |
 | 2026-10-04 02:41 | S5 camera commands | `styk-edit/src/camera_commands.rs` on a layer sheet: `copyCamera`, `pasteCamera`, `setCameraValues`, `resetCamera`, `transformCamera`, `alignCameraToView`, `locateCamera` (changed values keyed through `addAnimationKeys`), camera drags with their preview as the frame on show (`commitDrag`/`cancelDrag` route to them; other calls during one stay with the editor), `locateHandle`; owned with the large figure class, drag previews compared. `centerCamera`, `applyCameraToFigures` and native-timeline camera snapshots stay JavaScript. | 1 recording (67 steps) matches the editor at every step; 16 of 16 mutations break it. App shadow with the engine's `Math`: start document 269/269, channels-figure 225/225; owned editing the same as the editor alone (the start document's camera calls cost 0.6–0.9 ms in the editor, 1.0–3.8 ms owned with adoption). |
 | 2026-10-04 03:32 | S5 movieclips on the timeline | Moving and copying a movieclip's keys (`sheetMoveFrames`: clips on the document's clock shift their span and restarts, `shiftClipTime`); timeline frames holding clips on the presence clock copied with their phases (`presence_elapsed` exposed by `styk-eval`) and pasted under new identities that carry on from there, continuations included; moving them to another row leaves continuations on the source (`Retain moved movieclip phase`). | 3 recordings (35 steps) match the editor at every step; 8 of 9 mutations break one (the span shift is equivalent for presence-clock clips, which keep their span). App: the movieclip document's shadow lost its three timeline gaps (property edits on keys with clip replacements and pasting clip instances remain); owned editing the same as the editor alone, 143.2 ms against 207.8 ms. |
+| 2026-10-04 03:42 | S5 property edits on keys with movieclip replacements | A property edit on a key whose movieclip frames are replaced keeps the replacements and writes the key's pose from the frame without them (`Records::evaluated_options(tick, clips, skip_patches)` in `styk-eval`, `at(…, {skipMovieclipPatches: true})`). | 1 recording (11 steps) matches the editor at every step; 4 of 4 mutations break it. |
 
 In progress: the remaining drawing paths through the engine (agent: thumbnails, library
 previews, camera monitor, SVG export; S3 item 6); the figure-range family (agent: the commands

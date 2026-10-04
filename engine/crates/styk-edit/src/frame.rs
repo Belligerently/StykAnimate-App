@@ -84,6 +84,13 @@ impl Editor {
         Ok(frame)
     }
 
+    /// `at(report, tick, {skipMovieclipPatches: true})`: movieclips not sampled and the keys'
+    /// movieclip frame replacements left out.
+    pub(crate) fn evaluated_without_patches(&self, tick: f64) -> Result<Value, EditError> {
+        let prepared = self.prepared()?;
+        Ok(Records::new(&self.report, &prepared)?.evaluated_options(tick, false, true)?)
+    }
+
     /// `editor.evaluatedFrame`: the draft of the gesture in progress, else the
     /// document at the playhead.
     pub(crate) fn shown_frame(&self) -> Result<Value, EditError> {

@@ -158,8 +158,15 @@ impl<'a> Records<'a> {
     /// `evaluatedFrame(report, …, tick, {skipMovieclips: !clips})`: with `clips` off,
     /// movieclips outside their span stay in the frame (what a key's pose is captured from).
     pub fn evaluated_with(&self, tick: f64, clips: bool) -> Result<Value, Error> {
+        self.evaluated_options(tick, clips, false)
+    }
+
+    /// [`Records::evaluated_with`], and with `skip_patches` the keys' movieclip frame
+    /// replacements left out (`at(report, tick, {skipMovieclipPatches: true})`): the pose a
+    /// key with replacements is written from.
+    pub fn evaluated_options(&self, tick: f64, clips: bool, skip_patches: bool) -> Result<Value, Error> {
         let frame = match self.tree.path(&["_styk", "layerSheet"]) {
-            Some(sheet) => self.sample_sheet(sheet, tick)?,
+            Some(sheet) => self.sample_sheet(sheet, tick, skip_patches)?,
             None => self.native_at(tick)?,
         };
         let frame = if clips { self.sample_clips(frame, tick)? } else { frame };
@@ -549,14 +556,14 @@ impl<'a> Records<'a> {
     }
 
     /// `sample(id)`: the base pose, then the movieclip frames its key replaces.
-    fn sample(&self, sheet: &Value, id: &str, tick: f64) -> Result<Option<Sample>, Error> {
+    fn sample(&self, sheet: &Value, id: &str, tick: f64, skip_patches: bool) -> Result<Option<Sample>, Error> {
         let Some(track) = sheet.path(&["tracks", id]) else { return Ok(None) };
         let mut sample = self.base_sample(id, track, tick)?;
         let keys = items(track.get("keys"));
         let at = keys.partition_point(|k| num(k, "tick").unwrap_or(0.0) <= tick);
         let Some(key) = at.checked_sub(1).map(|i| &keys[i]) else { return Ok(sample) };
         let patches = items(key.get("movieclipPatches"));
-        if patches.is_empty() || tick >= num(track, "end").unwrap_or(0.0) {
+        if skip_patches || patches.is_empty() || tick >= num(track, "end").unwrap_or(0.0) {
             return Ok(sample);
         }
         let next = keys.get(at);
@@ -711,13 +718,13 @@ impl<'a> Records<'a> {
     }
 
     /// `sampleLayerSheet(report, tick)`.
-    fn sample_sheet(&self, sheet: &Value, tick: f64) -> Result<Value, Error> {
+    fn sample_sheet(&self, sheet: &Value, tick: f64, skip_patches: bool) -> Result<Value, Error> {
         let layers: Vec<String> = items(self.tree.path(&["_styk", "layers", "order"])).iter().filter_map(|id| id.as_str().map(str::to_string)).collect();
-        let scene = self.sample(sheet, "scene", tick)?;
-        let camera = self.sample(sheet, "camera", tick)?;
+        let scene = self.sample(sheet, "scene", tick, skip_patches)?;
+        let camera = self.sample(sheet, "camera", tick, skip_patches)?;
         let mut frames: Vec<(String, Option<Sample>)> = Vec::new();
         for id in &layers {
-            frames.push((id.clone(), self.sample(sheet, id, tick)?));
+            frames.push((id.clone(), self.sample(sheet, id, tick, skip_patches)?));
         }
         let continuations = |frame: &Value| items(frame.path(&["_styk", "movieclipContinuations"]));
         let frame_of = |layer: &str| frames.iter().find(|(id, _)| id == layer).and_then(|(_, sample)| sample.as_ref());
