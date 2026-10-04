@@ -90,8 +90,15 @@ impl Texture<'_> {
     pub fn texel(&self, x: i64, y: i64) -> [f32; 4] {
         let x = x.clamp(0, self.width as i64 - 1) as usize;
         let y = y.clamp(0, self.height as i64 - 1) as usize;
-        let p = self.data[y * self.width + x];
-        let c = [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0, p[3] as f32 / 255.0];
+        self.at(y * self.width + x)
+    }
+
+    /// Texel `i`, premultiplied, as floats.
+    #[inline]
+    fn at(&self, i: usize) -> [f32; 4] {
+        const K: f32 = 1.0 / 255.0;
+        let p = self.data[i];
+        let c = [p[0] as f32 * K, p[1] as f32 * K, p[2] as f32 * K, p[3] as f32 * K];
         if self.straight { premul(c) } else { c }
     }
 
@@ -99,10 +106,15 @@ impl Texture<'_> {
     #[inline]
     pub fn bilinear(&self, t: [f32; 2]) -> [f32; 4] {
         let (x, y) = (t[0] - 0.5, t[1] - 0.5);
-        let (x0, y0) = (x.floor(), y.floor());
-        let (fx, fy) = (x - x0, y - y0);
-        let (ix, iy) = (x0 as i64, y0 as i64);
-        let (a, b, c, d) = (self.texel(ix, iy), self.texel(ix + 1, iy), self.texel(ix, iy + 1), self.texel(ix + 1, iy + 1));
+        let (ix, iy) = (floor(x), floor(y));
+        let (fx, fy) = (x - ix as f32, y - iy as f32);
+        let (w, h) = (self.width as i64, self.height as i64);
+        let (a, b, c, d) = if ix >= 0 && iy >= 0 && ix + 1 < w && iy + 1 < h {
+            let i = (iy * w + ix) as usize;
+            (self.at(i), self.at(i + 1), self.at(i + self.width), self.at(i + self.width + 1))
+        } else {
+            (self.texel(ix, iy), self.texel(ix + 1, iy), self.texel(ix, iy + 1), self.texel(ix + 1, iy + 1))
+        };
         [0, 1, 2, 3].map(|k| {
             let top = a[k] + (b[k] - a[k]) * fx;
             let bottom = c[k] + (d[k] - c[k]) * fx;
@@ -113,8 +125,16 @@ impl Texture<'_> {
     /// The texel holding texel coordinates `t`, edges clamped.
     #[inline]
     pub fn nearest(&self, t: [f32; 2]) -> [f32; 4] {
-        self.texel(t[0].floor() as i64, t[1].floor() as i64)
+        self.texel(floor(t[0]), floor(t[1]))
     }
+}
+
+/// `x.floor()` as an integer, without a library call where the target has no rounding
+/// instruction.
+#[inline]
+pub(crate) fn floor(x: f32) -> i64 {
+    let i = x as i64;
+    if (i as f32) > x { i - 1 } else { i }
 }
 
 /// A one-channel coverage mask (glyph masks), sampled bilinearly.
@@ -135,9 +155,8 @@ impl Mask {
     #[inline]
     pub fn bilinear(&self, t: [f32; 2]) -> f32 {
         let (x, y) = (t[0] - 0.5, t[1] - 0.5);
-        let (x0, y0) = (x.floor(), y.floor());
-        let (fx, fy) = (x - x0, y - y0);
-        let (ix, iy) = (x0 as i64, y0 as i64);
+        let (ix, iy) = (floor(x), floor(y));
+        let (fx, fy) = (x - ix as f32, y - iy as f32);
         let top = self.texel(ix, iy) + (self.texel(ix + 1, iy) - self.texel(ix, iy)) * fx;
         let bottom = self.texel(ix, iy + 1) + (self.texel(ix + 1, iy + 1) - self.texel(ix, iy + 1)) * fx;
         top + (bottom - top) * fy

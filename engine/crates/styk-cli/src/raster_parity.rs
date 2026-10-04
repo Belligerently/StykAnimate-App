@@ -27,7 +27,8 @@
 //! A step fails when a pixel differs by more than 32 levels together with all eight
 //! neighbours (`solid`), or when the mean difference, not counting differences of two levels
 //! or less, exceeds 0.25 (scripts/engine-app-parity.mjs; the limits are fixed). Alpha counts
-//! as a channel. The CPU time is the median of `--repeat` rasterizations (one by default).
+//! as a channel. The CPU time is the median of `--repeat` rasterizations (one by default), by
+//! one CPU renderer per file and edge mode kept across its frames, as the app keeps one.
 //! `--out` keeps both pictures and a difference picture of every failing step; `--json`
 //! writes every step.
 
@@ -113,9 +114,9 @@ fn difference_picture(b: &[u8], d: &[u8], width: usize) -> Vec<u8> {
 }
 
 /// The CPU rasterizer's picture of `list` seen through `view`, premultiplied RGBA, and its time.
-fn cpu_frame(list: &DrawList, images: &styk_raster::Images, view: &ViewParams, size: [u32; 2], edges: Edges) -> (Vec<u8>, f64) {
+fn cpu_frame(raster: &mut styk_raster::Raster, list: &DrawList, images: &styk_raster::Images, view: &ViewParams, size: [u32; 2]) -> (Vec<u8>, f64) {
     let started = clock();
-    let frame = styk_raster::render(list, images, view, size, edges);
+    let frame = raster.render(list, images, view, size);
     let ms = clock() - started;
     (frame.pixels, ms)
 }
@@ -293,7 +294,7 @@ impl Checker<'_> {
     /// Compares the GPU's straight RGBA `gpu_pixels` with the CPU's picture (`cpu()`, run
     /// `repeat` times for its median time) and records the step.
     #[allow(clippy::too_many_arguments)]
-    fn check(&mut self, file: &str, stem: &str, tick: u32, name: String, size: [u32; 2], gpu_pixels: &[u8], cpu: &dyn Fn() -> (Vec<u8>, f64)) {
+    fn check(&mut self, file: &str, stem: &str, tick: u32, name: String, size: [u32; 2], gpu_pixels: &[u8], cpu: &mut dyn FnMut() -> (Vec<u8>, f64)) {
         let mut times = Vec::with_capacity(self.repeat);
         let mut cpu_pixels = Vec::new();
         for _ in 0..self.repeat {
@@ -356,6 +357,8 @@ fn document(gpu: &Gpu, checker: &mut Checker, file: &str, sizes: &[[u32; 2]], ex
     let mut renderer = Renderer::new(&gpu.device, &gpu.queue, wgpu::TextureFormat::Rgba8Unorm);
     renderer.prepare_sprites(&generation.assets);
     renderer.upload_images(&generation.assets, images.iter().map(|image| &**image));
+    // One CPU renderer per edge mode for the document, kept across its frames as the app keeps one.
+    let (mut smooth_raster, mut crisp_raster) = (styk_raster::Raster::new(Edges::Smooth), styk_raster::Raster::new(Edges::Crisp));
     for tick in frame_starts(doc, frames.ticks(), count) {
         let frame = loop {
             if let Some(frame) = frames.take(tick) {
@@ -379,7 +382,7 @@ fn document(gpu: &Gpu, checker: &mut Checker, file: &str, sizes: &[[u32; 2]], ex
                 camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
             };
             let gpu_pixels = gpu_frame(gpu, &mut renderer, &frame.list, &view, size);
-            checker.check(file, &stem, tick, format!("thumb-{}x{}", size[0], size[1]), size, &gpu_pixels, &|| cpu_frame(&frame.list, &cpu_images, &view, size, Edges::Smooth));
+            checker.check(file, &stem, tick, format!("thumb-{}x{}", size[0], size[1]), size, &gpu_pixels, &mut || cpu_frame(&mut smooth_raster, &frame.list, &cpu_images, &view, size));
         }
         let kinds: Vec<(&str, Smoothing)> = [(export, ("export", Smoothing::Edges)), (crisp, ("export-crisp", Smoothing::None))].into_iter().filter(|k| k.0).map(|k| k.1).collect();
         for (name, smoothing) in kinds {
@@ -391,7 +394,8 @@ fn document(gpu: &Gpu, checker: &mut Checker, file: &str, sizes: &[[u32; 2]], ex
             let gpu_pixels = exporter.frame_blocking(doc, &frame.list, frame.camera.as_ref(), false)?;
             let tile = Tile { x: 0, y: 0, size, valid: size };
             let view = styk_export::view::tile_view(doc, frame.camera.as_ref(), &settings, &tile);
-            checker.check(file, &stem, tick, name.to_string(), size, &gpu_pixels, &|| cpu_frame(&frame.list, &cpu_images, &view, size, smoothing.edges()));
+            let raster = if smoothing.edges() == Edges::Crisp { &mut crisp_raster } else { &mut smooth_raster };
+            checker.check(file, &stem, tick, name.to_string(), size, &gpu_pixels, &mut || cpu_frame(raster, &frame.list, &cpu_images, &view, size));
         }
     }
     Ok(())
@@ -431,13 +435,14 @@ fn library(gpu: &Gpu, checker: &mut Checker, file: &str) -> Result<(), String> {
     let (poster, bounds) = preview.poster(clock);
     let view = view_of(bounds);
     let gpu_pixels = gpu_frame(gpu, &mut renderer, &poster.list, &view, size);
-    checker.check(file, &stem, 0, "library-poster".into(), size, &gpu_pixels, &|| cpu_frame(&poster.list, &cpu_images, &view, size, Edges::Smooth));
+    let mut smooth = styk_raster::Raster::new(Edges::Smooth);
+    checker.check(file, &stem, 0, "library-poster".into(), size, &gpu_pixels, &mut || cpu_frame(&mut smooth, &poster.list, &cpu_images, &view, size));
     preview.begin(clock);
     for elapsed in [0.0, 0.4, 1.2] {
         let (sample, bounds, tick) = preview.frame(elapsed, clock);
         let view = view_of(bounds);
         let gpu_pixels = gpu_frame(gpu, &mut renderer, &sample.list, &view, size);
-        checker.check(file, &stem, tick as u32, "library-frame".into(), size, &gpu_pixels, &|| cpu_frame(&sample.list, &cpu_images, &view, size, Edges::Smooth));
+        checker.check(file, &stem, tick as u32, "library-frame".into(), size, &gpu_pixels, &mut || cpu_frame(&mut smooth, &sample.list, &cpu_images, &view, size));
     }
     Ok(())
 }
