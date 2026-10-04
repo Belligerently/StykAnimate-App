@@ -243,6 +243,7 @@ src/layers.mjs	engine	styk-eval	partial	Rust: layer order and membership (applyL
 src/library-drag.mjs	ui	-	stays	
 src/library-files.mjs	platform	-	stays	file, storage and network services
 src/library-hover-preview.mjs	ui	-	stays	
+src/library-matte.mjs	ui	-	stays	
 src/library-preview-core.mjs	engine	styk-engine::thumbnails	js	
 src/library-preview-worker.mjs	engine	styk-engine::thumbnails	js	
 src/localization-bindings.mjs	ui	-	stays	

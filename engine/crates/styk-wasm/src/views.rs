@@ -60,12 +60,49 @@ const READY: u32 = 0;
 const WAIT: u32 = 1;
 const STALE: u32 = 2;
 
+/// Clears a canvas's current picture to opaque magenta, the colour the interface looks for to
+/// tell that a GPU canvas's pixels reach the page here (`probe` in engine-stage.mjs and the
+/// preview worker). Some setups present nothing from a WebGPU canvas (Xvfb without ANGLE on
+/// Vulkan, here): the interface then keeps its own paths.
+pub(crate) fn probe(surface: &wgpu::Surface<'static>, config: &wgpu::SurfaceConfiguration, device: &wgpu::Device, queue: &wgpu::Queue) -> bool {
+    let target = match surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
+        _ => {
+            surface.configure(device, config);
+            return false;
+        }
+    };
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk canvas probe") });
+    {
+        let target_view = target.texture.create_view(&Default::default());
+        let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("styk canvas probe"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 1.0, g: 0.0, b: 1.0, a: 1.0 }), store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    queue.submit([encoder.finish()]);
+    queue.present(target);
+    true
+}
+
 impl Aux {
+    /// The canvas's surface and renderer; its picture is cleared to the probe colour so the
+    /// interface can check, in the same task, that the copy reaches the page.
     fn create(stage: &Stage, canvas: web_sys::OffscreenCanvas) -> Result<Aux, JsError> {
         let (width, height) = (canvas.width().max(1), canvas.height().max(1));
         let surface = stage.instance.create_surface(wgpu::SurfaceTarget::OffscreenCanvas(canvas)).map_err(js_error)?;
         let config = wgpu::SurfaceConfiguration { width, height, ..stage.config.clone() };
         surface.configure(&stage.device, &config);
+        probe(&surface, &config, &stage.device, &stage.queue);
         let renderer = Renderer::new(&stage.device, &stage.queue, config.format);
         Ok(Aux { surface, config, renderer, shared: None })
     }
@@ -133,8 +170,9 @@ fn view_of(framing: Framing, clear: [f64; 4]) -> ViewParams {
 #[wasm_bindgen]
 impl Stage {
     /// Gives the camera monitor a canvas (`canvas`, drawn by a renderer of its own that
-    /// samples the stage's pictures). `false` where the device cannot present to a second
-    /// canvas (WebGL2): the interface draws the monitor itself there.
+    /// samples the stage's pictures), its picture cleared to the probe colour ([`probe`]).
+    /// `false` where the device cannot present to a second canvas (WebGL2): the interface
+    /// draws the monitor itself there.
     pub fn attach_monitor(&mut self, canvas: web_sys::OffscreenCanvas) -> Result<bool, JsError> {
         if !self.is_webgpu {
             return Ok(false);
@@ -195,7 +233,8 @@ impl Stage {
         self.views.monitor_list = None;
     }
 
-    /// Gives frame thumbnails a canvas, as [`Stage::attach_monitor`] does the monitor.
+    /// Gives frame thumbnails a canvas, as [`Stage::attach_monitor`] does the monitor
+    /// (cleared to the probe colour too).
     pub fn attach_thumbnails(&mut self, canvas: web_sys::OffscreenCanvas) -> Result<bool, JsError> {
         if !self.is_webgpu {
             return Ok(false);

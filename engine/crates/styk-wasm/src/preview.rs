@@ -91,6 +91,12 @@ impl Previews {
         self.backend.clone()
     }
 
+    /// Clears the canvas to the probe colour (opaque magenta): the worker checks that its
+    /// pictures leave the canvas here before it takes any preview (`views::probe`).
+    pub fn probe(&mut self) -> bool {
+        crate::views::probe(&self.surface, &self.config, &self.device, &self.queue)
+    }
+
     /// The poster of a library file (`extension`: `stkz`, `stykmov`…), 320 pixels a side,
     /// drawn into the canvas. The file is opened for this call only: the hover animation's
     /// file stays open. Returns the timings as JSON.

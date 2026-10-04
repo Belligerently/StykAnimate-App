@@ -1,11 +1,25 @@
 import {restoreMessageError, messageError} from './localized-error.mjs';
 
 import {nativeFigureDocument} from './native-figure.mjs';
+import {engineLibraryPoster} from './engine/engine-previews.mjs';
 
 export function librarySnapshot(editor) {
   return structuredClone(nativeFigureDocument(editor.report, {figureUids: [...editor.selectedUids], sourceFrame: editor.selectionFrame, tick: editor.tick}));
 }
-export function libraryPreview(report) {
+const dataURL = blob => new Promise((resolve, reject) => {
+  const reader = new FileReader(); reader.onerror = () => reject(messageError(new Error(''), "errors.libraryFiles.couldNotEncodeThePreview", {}));
+  reader.onload = () => resolve(reader.result); reader.readAsDataURL(blob);
+});
+/**
+ * The PNG preview (a data URL) a library asset keeps. With the asset's saved bytes (`file`, and their
+ * `extension` when the file has no name) the engine draws it where it can (src/engine/engine-previews.mjs);
+ * otherwise, and for files the engine does not draw, the JavaScript worker draws `report`.
+ */
+export async function libraryPreview(report, {file, extension} = {}) {
+  const poster = file ? await engineLibraryPoster(file, extension) : null;
+  return poster ? dataURL(poster) : javascriptPreview(report);
+}
+function javascriptPreview(report) {
   return new Promise((resolve,reject) => {
     const worker = new Worker(new URL('./library-preview-worker.mjs', import.meta.url), {type:'module'});
     const finish = (error, result) => { clearTimeout(timer); worker.terminate(); error ? reject(error) : resolve(result); };
@@ -13,8 +27,7 @@ export function libraryPreview(report) {
     worker.onerror = event => finish(new Error(event.message));
     worker.onmessage = async ({data}) => {
       if (data.error) return finish(restoreMessageError(new Error(data.error), data));
-      const reader = new FileReader(); reader.onerror = () => finish(messageError(new Error(''), "errors.libraryFiles.couldNotEncodeThePreview", {}));
-      reader.onload = () => finish(null, reader.result); reader.readAsDataURL(data.blob);
+      dataURL(data.blob).then(url => finish(null, url), finish);
     };
     worker.postMessage({report, baseURL: location.href});
   });

@@ -68,7 +68,21 @@ function drawingTiles(figure, out = []) {
   return out;
 }
 
+/**
+ * Whether a GPU canvas's picture reaches the page: the engine cleared it to opaque magenta
+ * (`probe` in styk-wasm/src/views.rs) in this task. Some setups present nothing from a WebGPU
+ * canvas (Xvfb without ANGLE on Vulkan); there the views stay the JavaScript renderer's.
+ */
+export function probed(canvas) {
+  const sample = new OffscreenCanvas(1, 1), context = sample.getContext('2d', {willReadFrequently: true});
+  context.drawImage(canvas, 0, 0, 1, 1, 0, 0, 1, 1);
+  const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+  return r > 200 && g < 60 && b > 200 && a > 200;
+}
+
 const STRIP = new Set(['runtime_segments']);
+/** How long a thumbnail waits for its frame and pictures before the JavaScript renderer draws it. */
+const THUMBNAIL_WAIT_MS = 60000;
 /** A pose as JSON, without derived caches. */
 const poseJSON = object => JSON.stringify(object, (key, value) => STRIP.has(key) ? undefined : value);
 
@@ -301,6 +315,76 @@ export async function createStageRenderer(canvas, options, create) {
       if (reason) return reason;
       try { syncDefinitions({report, revision, artworkRevision: 'export'}); return null; }
       catch (error) { side.definitions = null; if (error?.code === 'engine_busy') throw error; return String(error?.message ?? error); }
+    },
+    /**
+     * The camera monitor (camera-monitor.mjs): the frame the engine drew last, seen through the
+     * scene camera, drawn on the stage's device into a canvas of the monitor's own and copied onto
+     * `target` (the monitor's 2D context) at its device-pixel size `width × height`, `zoom` device
+     * pixels per scene unit, the scene's origin at `panX, panY`. False when the engine did not
+     * draw the last frame or cannot present to a second canvas whose pictures reach the page
+     * (WebGL2): the caller draws it.
+     */
+    drawCameraMonitor(target, {width, height, zoom, panX, panY}) {
+      if (!engineShown || side.failed) return false;
+      if (side.monitor === undefined) {
+        side.monitorCanvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height));
+        try {
+          side.monitor = side.stage.attach_monitor(side.monitorCanvas);
+          if (side.monitor && !probed(side.monitorCanvas)) { side.stage.detach_monitor(); side.monitor = false; }
+        } catch (error) { console.warn('The camera monitor could not use the engine.', error); side.monitor = false; }
+      }
+      if (!side.monitor) return false;
+      const canvas = side.monitorCanvas;
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+      if (!side.stage.render_monitor(width, height, zoom, panX, panY)) return false;
+      target.save();
+      target.setTransform(1, 0, 0, 1, 0, 0);
+      target.drawImage(canvas, 0, 0);
+      target.restore();
+      return true;
+    },
+    /**
+     * A frame thumbnail (engine-thumbnails.mjs): `tick` of the document at `revision`, on a
+     * `width × height` card, drawn on the stage's device into a canvas of the thumbnails' own
+     * and copied onto `target` (a 2D canvas of that size). The frame is prepared on the engine's
+     * workers and every picture reaches the atlas first; this waits for both on the engine's
+     * progress counter, never blocking (D7). Resolves `drawn`, `stale` (the engine holds another
+     * revision: ask again once it follows) or `refused` (no engine, a device that cannot present
+     * to a second canvas, WebGL2, or a canvas whose pictures do not reach the page); rejects with
+     * an AbortError when `signal` aborts.
+     */
+    async renderThumbnail({revision, tick, width, height}, target, {signal} = {}) {
+      if (side.failed) return 'refused';
+      if (side.thumbnails === undefined) {
+        side.thumbnailCanvas = new OffscreenCanvas(Math.max(1, width), Math.max(1, height));
+        try {
+          side.thumbnails = side.stage.attach_thumbnails(side.thumbnailCanvas);
+          if (side.thumbnails && !probed(side.thumbnailCanvas)) { side.stage.detach_thumbnails(); side.thumbnails = false; }
+        } catch (error) { console.warn('Thumbnails could not use the engine.', error); side.thumbnails = false; }
+      }
+      if (!side.thumbnails) return 'refused';
+      const engine = side.engine, started = performance.now();
+      for (;;) {
+        if (signal?.aborted) throw new DOMException('The thumbnail was superseded.', 'AbortError');
+        // A frame that never comes (the engine stopped preparing) leaves it to the JavaScript renderer.
+        if (performance.now() - started > THUMBNAIL_WAIT_MS) return 'refused';
+        const seen = engine.progressSeen();
+        const prepared = side.stage.prepare_thumbnail(revision, tick);
+        if (prepared === 2) return 'stale';
+        if (prepared === 0) {
+          const drawn = side.stage.render_thumbnail(revision, tick, width, height);
+          if (drawn === 2) return 'stale';
+          if (drawn === 0) {
+            // In the same task: the canvas holds this picture only until the task ends.
+            const context = target.getContext('2d');
+            context.setTransform(1, 0, 0, 1, 0, 0);
+            context.clearRect(0, 0, target.width, target.height);
+            context.drawImage(side.thumbnailCanvas, 0, 0);
+            return 'drawn';
+          }
+        }
+        await engine.whenProgress(seen);
+      }
     },
     /** The engine side of the stage, for the playback adapter and tests. */
     get engineSide() { return side; },

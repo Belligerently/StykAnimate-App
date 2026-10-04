@@ -196,7 +196,9 @@ and existing atomic writes retain the prior file. See [DRAWING.md](DRAWING.md).
 ## Drawing flattening
 
 `.piv`, `.stk` and SVG exports cannot carry the sparse tile store, so each v2
-drawing cel materializes as an ordinary PNG sprite covering its tile bounds.
+drawing cel materializes as an ordinary PNG sprite covering its tile bounds
+(the engine's draw lists hold cels as tiles of one display level, which is one
+reason SVG stays with the JavaScript exporter: [engine rendering](engine/rendering.md#exports)).
 Rasterization uses source resolution up to a 16 Mpx cap; beyond that the
 largest mip level that fits is used and the export stats record the
 downsampled count. Anchors are rewritten into flattened-pixel coordinates so
