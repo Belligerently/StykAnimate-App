@@ -10,6 +10,7 @@
 //   node scripts/engine-app-parity.mjs [--file <project>] [--ticks 0,10,20] [--onion] [--play]
 //        [--target web|electron] [--renderer canvas|gpu] [--label <name>] [--url http://127.0.0.1:47831]
 //        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4] [--no-effects] [--no-onion] [--preview]
+//        [--electron-arg <switch>]...
 //
 // --preview captures each tick again in the camera preview (Ctrl+Play): the scene seen
 // through its camera, with camera motion and parallax layers, as playback shows it.
@@ -18,7 +19,9 @@
 // headless Chromium, where the JavaScript renderer is its Canvas 2D fallback;
 // without --url it starts the development server (scripts/serve.mjs) on a free
 // port and stops it afterwards. The electron target runs the desktop app with a
-// fresh profile, where the JavaScript renderer is WebGPU unless --renderer canvas. Output: artifacts/engine-rust/parity/app/<label>/ with both
+// fresh profile, where the JavaScript renderer is WebGPU unless --renderer canvas. Under Xvfb on Linux pass
+// `--electron-arg --use-angle=vulkan`: WebGPU then reaches the GPU and its canvas can be captured (without it
+// the engine's WebGPU canvas shows nothing there). Output: artifacts/engine-rust/parity/app/<label>/ with both
 // pictures, a difference picture and report.json per step. Exit code 1 when a
 // step fails, 2 when --require-engine is given and the engine did not draw.
 import {spawn} from 'node:child_process';
@@ -33,6 +36,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
 const option = (name, fallback) => { const at = args.indexOf(name); return at < 0 ? fallback : args[at + 1]; };
 const flag = name => args.includes(name);
+const options = name => args.flatMap((value, index) => args[index - 1] === name ? [value] : []);
 const file = option('--file'), label = option('--label', file ? path.basename(file).replace(/[^\w.-]+/g, '-').toLowerCase() : 'startup');
 const out = path.resolve(option('--out', `artifacts/engine-rust/parity/app/${label}`));
 const ticks = option('--ticks')?.split(',').map(Number) ?? null;
@@ -87,7 +91,7 @@ async function desktopApp(engine) {
   const env = {...process.env, STYK_STARTUP_VIEW: 'editor', STYK_USER_DATA_DIR: profile, STYK_LIBRARY_DIR: path.join(profile, 'library'),
     STYK_PYTHON: process.env.STYK_PYTHON ?? path.join(root, '.venv/bin/python')};
   delete env.ELECTRON_RUN_AS_NODE;
-  const app = await _electron.launch({executablePath: createRequire(path.join(root, 'package.json'))('electron'), args: [root], cwd: root, env, timeout: 60000});
+  const app = await _electron.launch({executablePath: createRequire(path.join(root, 'package.json'))('electron'), args: [...options('--electron-arg'), root], cwd: root, env, timeout: 60000});
   const page = await app.firstWindow({timeout: 60000});
   await page.setViewportSize(size).catch(() => {});
   if (!engine) {
