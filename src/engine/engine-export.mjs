@@ -11,11 +11,11 @@
  *
  * `EngineExportFrames` is an `ExportFrameRenderer` whose worker is the engine's
  * (engine-export-worker.mjs): a dedicated worker that joins the engine's shared
- * memory and holds a GPU device of its own, so nothing is drawn or read back on the
- * interface thread (D7). Request handling, progress, revision checks, timeouts, the
- * retry ladder and the output canvas are the base class's. A document the engine does
- * not draw, or a device the worker cannot get, uses the JavaScript worker instead,
- * decided before the first frame. SVG stays vector output: `vector` exports always use
+ * memory and holds a GPU device of its own, or draws on the CPU (styk-raster) where it
+ * gets none, so nothing is drawn or read back on the interface thread (D7). Request
+ * handling, progress, revision checks, timeouts, the retry ladder and the output canvas are
+ * the base class's. A document the engine does not draw, or an engine worker that cannot
+ * start the export, uses the JavaScript worker instead, decided before the first frame. SVG stays vector output: `vector` exports always use
  * the JavaScript renderer. `prewarmExportRenderer` starts the worker and its device while
  * the export dialog is open.
  */
@@ -23,6 +23,7 @@ import {ExportFrameRenderer} from '../export-frame-renderer.mjs';
 import {drawingBarrier} from '../drawing-resources.mjs';
 import {EXPORT_MAX_PIXELS} from '../export-sampling.mjs';
 import {engineDocument} from './engine-document.mjs';
+import {engineCpuForced} from './engine.mjs';
 
 /** Rendered pixels a side of an export tile at most (styk-export `TILE_SIDE`). */
 export const ENGINE_TILE_SIDE = 2048;
@@ -57,7 +58,7 @@ export function prewarmExportRenderer({stage} = {}) {
   const worker = new Worker(new URL('./engine-export-worker.mjs', import.meta.url), {type: 'module', name: WORKER_NAME});
   const entry = warm = {worker, timer: setTimeout(() => { if (warm === entry) { warm = null; release(worker); } }, WARM_MS)};
   worker.addEventListener('message', ({data}) => { if (data?.warmed === false && warm === entry) { warm = null; clearTimeout(entry.timer); release(worker); } });
-  worker.postMessage({operation: 'warm', ...engine.join});
+  worker.postMessage({operation: 'warm', ...engine.join, cpu: engineCpuForced()});
 }
 
 /** The warmed worker, for an export that uses the engine. */
@@ -123,7 +124,7 @@ export class EngineExportFrames extends ExportFrameRenderer {
     const engine = this.engine.stage.engineSide.engine;
     return {
       ...engine.join, address: engine.handle.address(), revision: this.engine.revision,
-      width: this.width, height: this.height, smoothing: this.smoothing, maxPixels: EXPORT_MAX_PIXELS, tileSize,
+      width: this.width, height: this.height, smoothing: this.smoothing, maxPixels: EXPORT_MAX_PIXELS, tileSize, cpu: engineCpuForced(),
       last: this.engine.range?.[1] ?? null,
     };
   }
@@ -165,7 +166,7 @@ export class EngineExportFrames extends ExportFrameRenderer {
       try { started = await this._request('start', this._start(this.tileSize)); }
       catch (error) {
         if (error?.code !== 'engine_unavailable') throw error;
-        // No GPU device in a worker here (or the engine moved on): the JavaScript worker draws.
+        // The engine's worker could not start the export (the engine moved on): the JavaScript worker draws.
         this.failure = null;
         const worker = this.worker;
         this.worker = null;

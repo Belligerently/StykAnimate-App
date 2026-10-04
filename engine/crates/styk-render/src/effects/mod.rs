@@ -1,10 +1,16 @@
 //! Effects: drawing groups the way the editor filters artwork. [`plan`] places
 //! layers for a view, [`record`] turns a placed group into the shader's group
-//! record, and [`executor`] runs effect stacks on layers. See
-//! `docs/engine/vfx.md` (Rendering).
+//! record, [`recipe`] records an effect stack as the passes that filter a layer,
+//! and [`executor`] runs them on the GPU. See `docs/engine/vfx.md` (Rendering).
+//!
+//! Everything but the executor is arithmetic the CPU rasterizer (styk-raster)
+//! follows too, so both renderers place, filter and composite layers alike; it is
+//! built without the `gpu` feature.
 
+#[cfg(feature = "gpu")]
 pub mod executor;
 pub mod plan;
+pub mod recipe;
 
 use plan::{Affine, Filter, Placement};
 use styk_eval::view::{compose, invert};

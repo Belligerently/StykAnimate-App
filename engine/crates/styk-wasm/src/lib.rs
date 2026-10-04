@@ -8,8 +8,10 @@
 //! - [`stage::Stage`]: the GPU surface of one canvas, and the other views its device draws
 //!   (`views`: the camera monitor, frame thumbnails). Interface thread only.
 //! - [`edit::EditSession`]: the editor's calls run on the mirrored document. Interface thread only.
-//! - [`export::ExportRenderer`]: export frames, drawn in a worker with a GPU device of its own.
-//! - [`preview::Previews`]: thumbnails and library previews, drawn on the CPU in a worker.
+//! - [`export::ExportRenderer`]: export frames, drawn in a worker with a GPU device of its own,
+//!   or by the CPU rasterizer where it has none.
+//! - [`preview::Previews`]: library previews (the worker's GPU device, else the CPU) and the
+//!   frame thumbnails the stage cannot draw (the CPU), in a worker.
 //!
 //! The module is instantiated once per thread over one shared memory. Workers
 //! call [`engine::worker_run`] and stay inside it.

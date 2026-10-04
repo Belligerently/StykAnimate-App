@@ -39,10 +39,7 @@ fn gpu(device: &wgpu::Device, queue: &wgpu::Queue, list: DrawList) -> Vec<u8> {
 }
 
 fn cpu(list: &DrawList) -> Vec<u8> {
-    let v = view();
-    let raster = styk_raster::View { matrix: v.matrix, width: SIZE[0], height: SIZE[1], artboard: v.artboard, clip_to_artboard: true, clear: [0.0; 4], anti_alias: true };
-    let pixmap = styk_raster::render(list, &styk_raster::Images::default(), &raster).unwrap();
-    pixmap.data().to_vec()
+    styk_raster::render(list, &styk_raster::Images::default(), &view(), SIZE, styk_raster::Edges::Smooth).pixels
 }
 
 /// Mean absolute difference over channels (levels), and the share of pixels differing by more than `over`.

@@ -14,6 +14,8 @@
 //!                                         (engine/tools/records-reference.mjs wrote the folder)
 //!   styk export <file> <tick|a-b> <out>   export frames as the app's engine exports them, timed
 //!                                         (see export.rs for the options; --cpu: styk-raster)
+//!   styk raster-parity <file>…            styk-raster against styk-render on the same draw lists,
+//!                                         by the app-parity rule D13 (see raster_parity.rs)
 
 use std::path::Path;
 use std::time::Instant;
@@ -24,6 +26,7 @@ use styk_eval::geometry::build;
 
 mod container;
 mod export;
+mod raster_parity;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -53,6 +56,7 @@ fn main() {
         Some("edit-bench") if args.len() >= 4 => edit_bench(&args[1], &args[2], &args[3], &args[4..]),
         Some("diff") if args.len() >= 4 => diff(&args[1], &args[2], &args[3], &args[4..]),
         Some("export") if args.len() >= 4 => export::export(&args[1], &args[2], &args[3], &args[4..]),
+        Some("raster-parity") if args.len() >= 2 => raster_parity::run(&args[1..]),
         _ => {
             eprintln!("usage: styk info <file> | compare <file> <reference.json> [--verbose] | bench <file> [--frames N] | render <file> <tick> <out.png> [--size WxH] [--zoom Z] [--center X,Y] [--no-clip] [--neutral] [--after T] | gpubench <file> <tick> [--no-effects] | layers <file> <tick> [--all] | edit-replay <reference.json>...");
             2
@@ -471,22 +475,22 @@ fn raster(path: &str, tick: &str, out: &str, rest: &[String]) -> i32 {
         .and_then(|(a, b)| Some([a.parse::<f64>().ok()?, b.parse::<f64>().ok()?]))
         .unwrap_or([cw / 2.0, ch / 2.0]);
     let pan = [w as f64 / 2.0 - center[0] * zoom, h as f64 / 2.0 - center[1] * zoom];
-    let view = styk_raster::View {
+    let view = styk_render::ViewParams {
         matrix: camera_matrix(&p.doc, scene.camera.as_ref(), zoom, pan),
-        width: w,
-        height: h,
         artboard: [pan[0], pan[1], pan[0] + cw * zoom, pan[1] + ch * zoom],
         clip_to_artboard: !rest.iter().any(|a| a == "--no-clip"),
         clear: [0.16, 0.16, 0.17, 1.0],
-        anti_alias: !rest.iter().any(|a| a == "--aliased"),
+        zoom,
+        pan,
+        stretch: 1.0,
+        camera_view: true,
+        camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
     };
+    let edges = if rest.iter().any(|a| a == "--aliased") { styk_raster::Edges::Crisp } else { styk_raster::Edges::Smooth };
     let started = Instant::now();
-    let Some(pixmap) = styk_raster::render(&list, &images, &view) else {
-        eprintln!("cannot rasterize a {w}x{h} frame");
-        return 1;
-    };
+    let frame = styk_raster::render(&list, &images, &view, [w, h], edges);
     let raster_ms = started.elapsed().as_secs_f64() * 1000.0;
-    image::save_buffer(out, &styk_raster::straight_rgba(&pixmap), w, h, image::ColorType::Rgba8).expect("write png");
+    image::save_buffer(out, &frame.straight(), w, h, image::ColorType::Rgba8).expect("write png");
     println!(
         "{}: tick {tick}, {} prims, {} groups, opened {ms:.0} ms, assets {assets_ms:.0} ms ({} images), frame {encode_ms:.2} ms, raster {raster_ms:.1} ms → {out}",
         p.doc.name,

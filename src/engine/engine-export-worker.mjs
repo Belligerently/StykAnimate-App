@@ -5,9 +5,11 @@
  * event loop: the export's GPU device lives here (WebGPU, else WebGL2 on an
  * OffscreenCanvas), frames are drawn tile by tile, read back and put on one output
  * canvas, then handed over as the JavaScript export worker hands them over (an
- * ImageBitmap, or a PNG for native video, APNG and PNG sequences). The document comes
- * from the engine (the revision the export started from); the pose the editor shows
- * comes as document chunks, like the JavaScript worker's.
+ * ImageBitmap, or a PNG for native video, APNG and PNG sequences). Where the worker gets
+ * no GPU device, the CPU rasterizer draws the same tiles here (`ExportRenderer.create_cpu`,
+ * each tile drawn when asked for, nothing drawn ahead). The document comes from the engine
+ * (the revision the export started from); the pose the editor shows comes as document
+ * chunks, like the JavaScript worker's.
  *
  * A browser hands a read-back over only when its GPU process gets to it, which can take
  * far longer than drawing (about 100 ms a frame while the page repaints, measured in
@@ -34,6 +36,8 @@ const STRIP = new Set(['runtime_segments']);
 const AHEAD = 6;
 
 let wasm = null, device = null, renderer = null, progress = null, options = null, canvas = null, context = null, tile = null, frameDocument;
+/** Why this worker has no GPU device (its exports are drawn on the CPU), or null. */
+let noDevice = null;
 let releasing = false, running = Promise.resolve();
 /** Read-back slots not holding a tile, and the frames drawn ahead by tick: their slots and reads. */
 let free = [];
@@ -55,13 +59,24 @@ function whenProgress(seen) {
   return new Promise(resolve => setTimeout(resolve, 4));
 }
 
-/** Joins the engine (once per worker) and gets a GPU device, unless the worker has a usable one. */
+/**
+ * Joins the engine (once per worker) and gets a GPU device, unless the worker has a usable one.
+ * Where none can be had, the export is drawn by the CPU rasterizer (`noDevice` says why).
+ */
 async function warm(message) {
   wasm ??= initSync({module: message.module, memory: message.memory, thread_stack_size: message.stack});
   progress ??= new Int32Array(message.memory.buffer, message.progress, 1);
   if (device && !device.usable()) { device.dispose(); device.free(); device = null; }
-  device ??= await ExportDevice.create(new OffscreenCanvas(1, 1));
-  return {warm: true};
+  // `?engineCpu=on`: the CPU draws, as without a GPU device.
+  if (message.cpu) {
+    noDevice ??= 'the CPU rasterizer was asked for';
+    if (device) { device.dispose(); device.free(); device = null; }
+  }
+  if (!device && !noDevice) {
+    try { device = await ExportDevice.create(new OffscreenCanvas(1, 1)); }
+    catch (error) { noDevice = String(error?.message ?? error); }
+  }
+  return {warm: true, cpu: Boolean(noDevice)};
 }
 
 async function start(message) {
@@ -73,10 +88,15 @@ async function start(message) {
     options = message;
     renderer?.free();
     renderer = null;
-    // The device moves into the renderer.
-    const ready = device;
-    device = null;
-    renderer = ExportRenderer.create(message.address, message.revision, message.width, message.height, message.smoothing, message.maxPixels, message.tileSize, ready);
+    if (device) {
+      // The device moves into the renderer.
+      const ready = device;
+      device = null;
+      renderer = ExportRenderer.create(message.address, message.revision, message.width, message.height, message.smoothing, message.maxPixels, message.tileSize, ready);
+    } else {
+      // No GPU device in this worker: the CPU rasterizer draws the same frames (docs/engine/rendering.md, CPU).
+      renderer = ExportRenderer.create_cpu(message.address, message.revision, message.width, message.height, message.smoothing, message.maxPixels, message.tileSize);
+    }
   } catch (error) {
     renderer = null;
     throw Object.assign(new Error(`The engine cannot draw this export here: ${error?.message ?? error}`), {code: 'engine_unavailable'});
@@ -84,7 +104,7 @@ async function start(message) {
   canvas ??= new OffscreenCanvas(message.width, message.height);
   context = exportContext(canvas);
   layout();
-  return {engine: {...JSON.parse(renderer.stats()), backend: renderer.backend(), warmed, modulesMs: loadedAt, startAt: began, deviceMs: joined - began, createMs: performance.now() - joined}};
+  return {engine: {...JSON.parse(renderer.stats()), backend: renderer.backend(), gpuRefusal: noDevice, warmed, modulesMs: loadedAt, startAt: began, deviceMs: joined - began, createMs: performance.now() - joined}};
 }
 
 /** One tile's pixels, reused for every tile of every frame, and every slot free. */

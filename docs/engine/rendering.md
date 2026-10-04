@@ -194,25 +194,138 @@ the quietest round 86–96 against 104–108 ms (the draw list holds 26 % more r
 
 ## CPU (`styk-raster`)
 
-The same draw list rasterized with tiny-skia (Skia's raster backend, as Canvas
-2D): for tools (`styk raster`, `styk export --cpu`) and, later, devices without WebGPU
-or WebGL2. Exports, thumbnails and library previews draw with the GPU renderer instead
-([Exports](#exports), [Thumbnails](#thumbnails-library-previews-and-the-camera-monitor),
-which says why). Groups render into their own pixmaps; custom paints shade per pixel
-with `sample_paint`; consecutive triangles of one look fill as one path.
-`styk raster` renders a frame like `styk render`; on the compared frames the
-two differ by less than 0.2/255 on average, along edges (0.30–0.56 on 3D scenes,
-whose raster entries the GPU resamples and the CPU draws at the output's density).
-Depth runs rasterize with a four-sample depth buffer compared at 24 bits.
-Generated effects expand into the GPU's quads and are shaded per pixel by its
-fragment arithmetic, additive ones added (`generators.rs`); on the generator
-fixtures the CPU and the GPU differ by less than 0.2/255 on average.
-Text in raster entries is drawn at the output's density, and lone glyphs by their
-own triangles (`F_GLYPH_VECTOR`), not from masks.
-Filter effects are not drawn on the CPU yet.
-A drawing cel's tiles are filled without coverage at their quads' edges (each pixel takes
-the tile its centre falls in, as the GPU's samples do): tiles meeting in the middle of a
-pixel left a seam when both covered it by area (`tests/tiles.rs`).
+The GPU renderer's pipeline carried out on the CPU, rule for rule, so a frame drawn here is
+the frame the stage draws: for devices with neither WebGPU nor WebGL2 and for tools
+(`styk raster`, `styk export --cpu`). It replaced a tiny-skia rasterizer that covered edges
+as Skia does (a few partial-coverage levels at thumbnail sizes), drew no filter effects,
+drew raster entries at the output's density and resolved each depth run to its nearest
+faces before compositing it.
+
+| Module | Holds |
+| --- | --- |
+| `frame.rs` | one frame: each group placed by styk-render's plan, drawn into a target of its own, filtered, composited; every primitive kind |
+| `target.rs` | a target with the GPU's samples: four RGBA8 samples a pixel (one for crisp edges), blended one by one, averaged when resolved |
+| `coverage.rs` | the GPU's rasterization rules: vertices snapped to 1/256 pixel, the standard four sample positions, the top-left rule |
+| `shade.rs` | `prim.wgsl`'s fragment arithmetic: coverage by distance, the strokes' distance functions, texture sampling |
+| `effects.rs` | effect recipes run pass by pass with the arithmetic of `passes.wgsl` |
+| `glyphs.rs` | masks of lone glyphs, kept across frames |
+| `generators.rs` | generated effects: the GPU's quads, its fragment arithmetic |
+
+**One plan for both renderers.** What does not need a GPU lives in styk-render without its
+`gpu` feature, which styk-raster depends on: `ViewParams`, `Edges`, where each group is
+drawn for a view (`effects::plan`: a translucent figure on its parent's grid, a raster entry
+or filtered artwork on the editor's raster grid at its density, the camera image through the
+scene camera) and its group record (`effects::record`, here with every layer at the origin
+of a target of its own), and effect recipes (`effects::recipe`: the passes `VfxWebGPU.run`
+records, with their parameters). The GPU's atlas, rounds and pooled slots are resource
+management and have no CPU counterpart: a layer is drawn at full resolution into a target of
+its size.
+
+**Rules followed.**
+
+- Samples: a target keeps one colour per pixel until a write covers only some of its
+  samples, then four; a write that leaves them equal folds them back. Blending is the
+  pipeline's (`One, OneMinusSrcAlpha`; `One, One` for `F_ADD`), each result rounded to 8
+  bits as an `Rgba8Unorm` target stores it; resolving averages the samples.
+- Strokes, arcs, polylines, discs and rings are covered by distance at each pixel's centre
+  (`clamp(0.5 − d / aa, 0, 1)`, hairlines faded to a one-pixel footprint; crisp: in or out),
+  over the pixels of the quad the vertex shader draws. A polyline takes each pixel's nearest
+  segment.
+- Triangles, image and glyph quads, composites, particles and the artboard fill are covered
+  by the samples, so adjacent triangles share their edges' samples: no seams between faces,
+  glyph triangles or polygons of different colours, and none between a cel's tiles.
+- Paints are `sample_paint` at the pixel's centre; sprites bilinear (`F_SMOOTH`) or nearest
+  within their gutter; cel tiles premultiplied texel by texel, then bilinear across their
+  borders, at the level the layer's density shows; composites bilinear, clamped to the child
+  (nearest with crisp edges); backgrounds nearest.
+- Depth runs: the reset's quad sets the far depth, then each face is drawn over what is
+  there, sample by sample, where its depth (the vertex shader's window depth, interpolated
+  at the sample, stored at 24 bits) is not greater than what the run drew there: translucent
+  faces blend in drawing order, an equal depth passes.
+- Lone glyphs: masks laid out by `GlyphMask::layout` for the view's raster density, filled at
+  four samples a texel and kept across frames by glyph and size (at most 64 MiB, the least
+  recently used first out); an instance without a mask draws its triangles.
+- Filter effects: after a filtered layer is drawn and resolved, its recipe runs on its
+  pixels, each pass written to an RGBA8 slot of its size and sampled bilinearly with edges
+  clamped, as on the GPU. Box passes and alpha dilations of a source as large as their
+  target take whole texels, so they run with prefix sums and a monotonic queue (equal to
+  shading each pixel within a level, `windows_equal_the_shader`).
+
+**What still differs.** Near-coplanar 3D faces: two faces nearly in one plane (a seat on a
+tank, a decal on a receiver; measured 7 and 16 steps of the 24-bit buffer apart) resolve by
+the last bits of each GPU's vertex arithmetic (where its layer sits in the atlas, fused
+multiply-adds, its depth interpolation), which differ between GPUs too; the CPU interpolates
+exactly from the snapped vertices. The GPU draws layers too large for its atlas pages at a
+lower scale in a lone round (`plan_rounds`); the CPU never does. Texture filtering and
+resolves round in the last level.
+
+**Memory.** A frame holds the view-sized target, then one target per isolation group on the
+path being drawn (a layer's size: its rectangle on its grid), each four bytes a pixel plus
+sixteen per pixel whose samples differ; a filtered layer adds its working slots (at most
+eight of its size). Glyph masks stay within 64 MiB. Images are the decoded images the
+engine holds, not copied (`Images::add_shared`). Nothing is pooled between frames; exports
+bound a frame by drawing it in tiles.
+
+### Measured
+
+`styk raster-parity` draws the same draw lists and views with both renderers (frames as the
+app's thumbnails and exports take them from `ExportFrames`; library files as the asset library
+opens them) and compares them by D13, limits unchanged, alpha counted. 2026-10-04, RTX 4070
+SUPER (Vulkan) for the GPU, the machine shared with other work (load averages 6–21). Before:
+the tiny-skia rasterizer (`86124552`); after: this one. Repository corpus: the 388 tracked
+`.styk`, `.stkz` and `.stykmov` files and 47 editor-built fixtures (effects, generated
+effects, 3D, drawings, text; 2 have no keyframe), thumbnails at up to five frame starts,
+exports at three; library previews of the 193 `.stkz` and `.stykmov` files (poster and three
+hover frames). Passing steps, both rules (no solid pixel / mean):
+
+| Steps | Before | After |
+| --- | --- | --- |
+| Thumbnail 320×192 (899) | 435 (857 / 438) | 899 (899 / 899) |
+| Thumbnail 512×288 (899) | 607 (857 / 614) | 899 (899 / 899) |
+| Thumbnail 96×54 (899) | 144 (790 / 144) | 899 (899 / 899) |
+| Export, canvas size, Smooth edges (677) | 645 (645 / 665) | 677 (677 / 677) |
+| Export, No smoothing (677) | 629 (645 / 649) | 677 (677 / 677) |
+| Library poster (193) | 36 (179 / 36) | 193 (193 / 193) |
+| Library hover frame (579) | 52 (520 / 52) | 579 (579 / 579) |
+| Private corpus (8 files: URIEL 3 with its blur, glow, bloom and tint, Jay, Pistol-3D, four Pivot imports): thumbnails at three sizes (93) | 49 | 93 |
+| Private corpus: exports, both samplings (38) | 33 | 38 |
+
+Twelve frame starts of each of the 180 3D documents (scenes, turntables, demos, packs and
+spatial fixtures): 1,244 of 1,244 thumbnails at 320×192 pass, 1,242 at 512×288 and 1,231
+exports, every failure by solid pixels where two near-coplanar faces meet (above); no mean
+fails. Which effects the documents use (`--census`, every tick): the repository's documents
+and asset packs draw no filter effect (9 hold generated effects); the effect fixtures draw all
+17 kinds; the private corpus draws blur (99 frames of URIEL 3), glow (54), bloom (47), tint
+(36), RGB split (2) and outline (1).
+
+**Time per frame** (native, one thread; `styk raster-parity --repeat 5`, one CPU renderer per
+document kept across its frames; three rounds alternating the two builds, the median over three
+frame starts per round, the range over rounds; 2026-10-04 07:44–07:47, load averages 9–12 on 12
+threads; the tiny-skia rasterizer drew no filter effect, so the effects fixture and URIEL 3 are not
+the same work):
+
+| Document | Thumbnail 320×192, tiny-skia → now | Export at the canvas size, tiny-skia → now |
+| --- | --- | --- |
+| 15-Guns-Pivot-3D.styk (3D, text; 1,920×1,080) | 14.1–25.8 → 9.5–9.8 ms | 386–578 → 95–101 ms |
+| Vehicles-Pivot-3D.styk (3D, text; 1,920×1,080) | 12.8–21.4 → 10.2–17.7 ms | 369–544 → 98–157 ms |
+| Impact-FX-Fight.styk (captions; 1,920×1,080) | 7.3–9.1 → 3.5–6.0 ms | 219–235 → 79–126 ms |
+| Bamboo-Training-Grounds-Demo.styk (800×600) | 16.5–26.8 → 14.9–26.6 ms | 109–179 → 55–101 ms |
+| hitoshi vs suzu tomiee ssj.piv (private; 760×420) | 11.2–21.5 → 7.5–13.3 ms | 33–61 → 32–58 ms |
+| Karate-Fighter-Movement.styk (3D rig; 800×900) | 2.3–3.5 → 4.4–9.3 ms | 20–34 → 15–32 ms |
+| drawing-cel fixture (960×540) | 1.2–1.4 → 2.5–3.9 ms | 2.0–4.2 → 14.1–24.9 ms |
+| explosions fixture (generated effects; 960×540) | 0.3–0.7 → 0.6–1.2 ms | 2.2–6.5 → 5.4–9.9 ms |
+| TDD2 URIEL NEMESIS 3.styk (private; now with its effects; 800×400) | 6.0–12.6 → 8.0–13.2 ms | 23–44 → 55–88 ms |
+| effects fixture (fourteen effects on one figure; 960×540) | 2.3–4.3 → 90–152 ms | 20–29 → 531–858 ms |
+
+Text and 3D scenes draw faster (tiny-skia filled each glyph and face path at the output's density);
+drawing cels and plain figures slower (each pixel of a cel's quads is sampled bilinearly, where
+tiny-skia's pattern fill is vectorised); filter effects cost what their passes cost, a few to tens
+of milliseconds a pass at export sizes. In the app's export, frames are drawn in tiles of at most
+1,024 pixels (`styk export --cpu`, 1,920×1,080, median of 5 frames, load 9–12: Impact 83 ms,
+15 Guns 97 ms, URIEL 3 145 ms; hitoshi 336 ms before the stroke interiors were filled without the
+square root, then 417–422 ms against 553–568 ms without it, interleaved at load 15–17). The
+WebAssembly engine module grew by 109 KiB (7,980,628 → 8,092,410 bytes without wasm-opt, the
+build before this work against this one).
 
 ## In the app
 
@@ -234,9 +347,12 @@ spatial bone turns.
 ## Thumbnails, library previews and the camera monitor
 
 The other places the editor draws frames, for documents the engine draws, use the same GPU
-renderer as the stage, so they show what the stage shows. Where the engine does not draw
-(documents the gate refuses, pages without the engine's worker threads, devices without
-WebGPU), the JavaScript paths draw as before.
+renderer as the stage, so they show what the stage shows. Where no GPU path serves them (a stage
+on WebGL2 for thumbnails, a worker without a GPU device or whose canvas gives no pixels for library
+previews and exports), the CPU rasterizer draws the same pixels in a worker ([CPU](#cpu-styk-raster),
+[The CPU paths](#the-cpu-paths)). Where the engine does not draw (documents the gate refuses, pages
+without the engine's worker threads, devices where the stage gets no GPU device at all), the
+JavaScript paths draw as before.
 
 **Frame thumbnails** (the timeline's filmstrip cards at 320×192, the export dialog's stage and
 strip at up to 512×288 and 96×60): `src/engine/engine-thumbnails.mjs` keeps the interface of
@@ -250,10 +366,18 @@ then a renderer of the thumbnails' own, sampling the stage's sprite atlas
 (`Renderer::share_sprites`), draws it on the stage's device into an `OffscreenCanvas`, framed as
 the filmstrip frames it (`styk_engine::thumbnails::card`: the canvas fitted and centred on a
 `#f5f5f5` card, through the scene camera, effects drawn, the document's hidden layers hidden),
-and the interface copies that canvas onto the card in the same task. No copy of the document goes
-to a thumbnail worker; the JavaScript worker is created only for what the engine does not draw:
-in-between previews (`docs/INSERT-INBETWEEN.md`, a sampled pose that is not in the document),
-refused documents, and stages on WebGL2, which cannot present one device to a second canvas.
+and the interface copies that canvas onto the card in the same task. Where the stage cannot draw
+thumbnails (a WebGL2 stage cannot present one device to a second canvas; a WebGPU canvas failing the
+magenta probe), the preview worker below draws them on the CPU (`Previews::thumbnail`): it holds an
+engine handle (an address made when the request is sent, consumed in the worker), pins the revision
+with an `ExportFrames`, waits on the engine's progress counter for the frame (prepared on the engine's
+workers) and every picture (decoded there once per document lineage: a later revision decodes only
+the images and drawing cels the earlier one lacked, `ExportFrames::decode_images_since`), rasterizes
+the card with styk-raster and hands it over as an `ImageBitmap`, which the interface draws onto the
+card. No copy of the document goes to a thumbnail worker; the JavaScript worker is created only for
+what the engine does not draw: in-between previews (`docs/INSERT-INBETWEEN.md`, a sampled pose that
+is not in the document), refused documents, pages without the engine's worker threads, and
+thumbnails neither the stage nor the preview worker drew.
 Thumbnails show parallax layers moved by the camera, as playback does; the JavaScript worker
 drew them unmoved on frames without scene effects and was fixed first (it is the oracle).
 
@@ -273,7 +397,10 @@ sixteen 40-pixel samples by `libraryPreviewMatte` (`src/library-matte.mjs`, shar
 JavaScript worker). Requests run one at a time; one cancelled before it starts is never sent. The
 worker stays between hovers and is released after five idle minutes (its device destroyed, its
 memory and thread stack freed, then it ends; terminated if it does not answer within 5 s). A worker
-that cannot get a device, or a file the engine cannot read, leaves previews to the JavaScript worker.
+that gets no GPU device, or whose canvas fails the probe, draws the same pictures with the CPU
+rasterizer (`Previews::create_cpu`) and puts them on a 2D `OffscreenCanvas` to hand them over the
+same way; a file the engine cannot read leaves previews to the JavaScript worker. The worker's
+first answer says which (`EnginePreviewWorker.stats.backend`, `cpu`, `gpuRefusal`).
 
 **The camera monitor** (`src/camera-monitor.mjs`, in the Camera inspector): where the engine drew
 the stage's frame, `drawCameraMonitor` on the stage (`Stage::render_monitor`) draws that frame
@@ -285,8 +412,12 @@ the JavaScript Canvas 2D path, as before.
 **Home and project pictures** are read from the stage's canvas (`stagePicture` in `src/app.mjs`):
 the engine's canvas where the engine draws the scene. They need no path of their own.
 
-**Why the GPU, not `styk-raster`.** The CPU rasterizer was tried first for thumbnails and library
-previews (no device, no shared atlas, works without a GPU) and dropped, measured in the app: its
+**The GPU first, then the CPU.** A thumbnail on the stage's device takes about a millisecond and
+samples the stage's own atlas; the CPU takes 3–40 ms in the worker (below) and needs the pictures
+decoded for it. So the GPU draws wherever it can, and the CPU where no GPU path exists. The CPU
+rasterizer of the time (tiny-skia, since replaced by the GPU's pipeline on the CPU,
+[CPU](#cpu-styk-raster)) was tried first for thumbnails and library previews (no device, no shared
+atlas, works without a GPU) and dropped, measured in the app: its
 edges take three partial-coverage levels where the editor's Canvas 2D takes about 220 and the GPU
 about 250 (a library poster: mean difference 0.52 from Canvas 2D on a plain figure, edges only); it
 draws no filter effects (such frames had to fall back); and near-coplanar 3D faces resolve
@@ -379,10 +510,42 @@ never evaluated by asking, the library fit and wrap-around, a file's own picture
 `cargo test -p styk-engine --lib` (the card's framing), `cargo test -p styk-eval --test vfx_layers`
 (`artwork_bounds` with effect padding) and `--test generators` (`Batch::bounds` holds every live
 particle), `node --test tests/engine-previews.test.mjs` (which renderer draws a thumbnail, the
-fallbacks, the preview worker's queue, cancellation, failure and release),
+preview worker's CPU thumbnails from the engine's document, the fallbacks, the preview worker's
+queue, messages made when sent, cancellation, failure and release),
 `tests/thumbnail-renderer.browser.mjs` (the JavaScript worker's parallax), and
 `scripts/engine-preview-parity.mjs [--target electron --electron-arg --use-angle=vulkan]
-[--file …] [--library …] [--monitor] [--export-check] [--timing]`.
+[--file …] [--library …] [--monitor] [--export-check] [--cpu-check] [--timing]`.
+
+### The CPU paths
+
+Where no GPU path serves them, thumbnails, library previews and exports are drawn by styk-raster
+in their workers, never on the interface thread (D7), with nothing to wait for but the engine's
+workers: thumbnails and library previews in the preview worker (`Previews::thumbnail`,
+`Previews::create_cpu`), exports in the export worker (`ExportRenderer::create_cpu`,
+`styk_export::CpuExport`: tiles of at most 1,024 pixels a side, each drawn when asked for, at most
+four waiting, so nothing is drawn ahead). Pictures are the decoded images the engine's workers give
+them, shared rather than copied; the preview worker keeps those of the open document's lineage
+between thumbnails and lets them go with its idle release (five minutes) or a new document; an
+export's go with its worker. `?engineCpu=on` (or `localStorage['stykanimate.engine.cpu'] = 'on'`)
+draws all three on the CPU even where a GPU device exists, as devices without one do, for
+comparisons. Devices whose stage gets no GPU device at all keep the JavaScript thumbnails and
+exports: the engine then holds no document (library previews still use the CPU there).
+
+**Measured** (`scripts/engine-preview-parity.mjs --cpu-check`, Electron under Xvfb with
+`--use-angle=vulkan`, 2026-10-04, load averages 8–18): each engine thumbnail drawn by the stage's
+GPU and again by the preview worker's CPU, each library poster and hover frame by a GPU preview
+worker and a CPU one, and an export frame of each tick at the canvas size by a GPU export worker and
+a CPU one, compared by D13. Seven repository documents (15 Guns, Vehicles, Impact, Karate, the
+effects, explosions and drawing-cel fixtures) and URIEL 3 (private corpus), five frame starts each,
+three library files: 140 steps, 139 pass; the one failure is 15 Guns tick 1's export (9 solid
+pixels where near-coplanar faces meet, as natively). Times as the interface sees them (the request
+until the picture is on the card), medians over the ticks, GPU / CPU: thumbnails at 320×192
+2.3–3.8 / 8.9–27.7 ms for the scenes (15 Guns 27.7, URIEL 3 22.8, Vehicles 15.5, Karate 10.2,
+Impact 8.9), 1.4–1.9 / 3.5–7.9 ms for the explosions and drawing-cel fixtures, and 1.4 / 153.7 ms
+for the effects fixture (fourteen effects on one figure); at 512×288 0.7–4.5 / 6.3–38.1 ms
+(effects fixture 272.2 ms); at 96×54 0.7–6.1 / 1.0–20.7 ms (effects fixture 115.7 ms). An export's
+first frame, the worker's start included: GPU 420–1,086 ms (its device), CPU 244–768 ms (effects
+fixture 1,035 ms).
 
 ## Exports
 
@@ -426,9 +589,10 @@ what only the stage knows (figures edited in place, drawings just published: `pr
 Starting the worker (its modules, joining the engine, the GPU device and the renderer's
 pipelines) took 400–500 ms in Electron, so the export dialog starts one when it opens
 (`prewarmExportRenderer`, `ExportDevice`); the export takes it, and a worker no export takes
-within a minute is released. A document the engine does not draw, a page without worker threads
-(not cross-origin isolated) or a worker that cannot get a GPU device exports with the JavaScript
-worker, decided before the first frame; an export never mixes the two. `?engineExport=off` (or
+within a minute is released. A worker that cannot get a GPU device draws the export with the CPU
+rasterizer instead ([The CPU paths](#the-cpu-paths)). A document the engine does not draw, a page
+without worker threads (not cross-origin isolated) or an engine worker that cannot start the export
+exports with the JavaScript worker, decided before the first frame; an export never mixes the two. `?engineExport=off` (or
 `localStorage['stykanimate.engine.export'] = 'off'`) keeps the JavaScript renderer for
 comparisons.
 
@@ -488,9 +652,9 @@ and in No smoothing on frames the JavaScript exporter drew smooth.
 
 **Why the GPU, measured** (`styk export`, native, RTX 4070 SUPER, 1,920×1,080, Smooth edges, the
 median of 10 frames each, the same draw lists, the GPU time including the read-back of the
-frame; 2026-10-03, load average 6–7):
+frame; 2026-10-03, load average 6–7; the CPU column is the tiny-skia rasterizer of the time):
 
-| Document | GPU | CPU (`styk-raster`) |
+| Document | GPU | CPU (`styk-raster`, tiny-skia) |
 | --- | ---: | ---: |
 | The start document | 12.6 ms | 14.3 ms |
 | Impact-FX-Fight.styk (effects, generated effects, captions) | 13.1 ms | 186.9 ms, without its effects |
@@ -618,6 +782,12 @@ the app's own exports per format with `--formats`, cancellation and failure with
 `--integrity`) and `scripts/engine-export-compare.py` (decodes and compares the exports of a
 format).
 
+`cargo test -p styk-raster` (the target's samples, the rasterization rules, effect windows
+against per-pixel shading; strokes covered by distance, no seams between adjacent triangles,
+translucent faces blending in drawing order, filtered layers; each fails on the tiny-skia
+rasterizer; on a GPU, six repository documents by D13 against styk-render, and the generator
+fixture), `styk raster-parity [--export] [--crisp] [--library] [--census] [--ticks N]
+[--out dir] --list …` (the CPU against the GPU over a corpus, above);
 `cargo test -p styk-render -p styk-raster`; text: `cargo test -p styk-eval --test text`
 (raster entries, glyph records and their mask layouts against numbers the editor printed,
 finer curves for large text; each fails without its rule), `-p styk-render --test glyphs`

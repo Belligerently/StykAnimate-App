@@ -21,6 +21,19 @@ export function defaultWorkerCount(cores = globalThis.navigator?.hardwareConcurr
   return Math.max(1, Math.min(8, cores - 1));
 }
 
+/**
+ * `?engineCpu=on` (or `localStorage['stykanimate.engine.cpu'] = 'on'`): thumbnails, library
+ * previews and exports are drawn by the CPU rasterizer (styk-raster) in their workers even
+ * where a GPU device exists, as devices without one draw them (for comparisons).
+ */
+export function engineCpuForced() {
+  try {
+    const query = new URLSearchParams(globalThis.location?.search ?? '').get('engineCpu');
+    if (query) return query === 'on';
+    return globalThis.localStorage?.getItem('stykanimate.engine.cpu') === 'on';
+  } catch { return false; }
+}
+
 let loading = null;
 
 /**

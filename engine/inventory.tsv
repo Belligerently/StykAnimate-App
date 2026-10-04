@@ -182,7 +182,7 @@ src/export-crisp.mjs	engine	styk-export	partial	Rust: No smoothing as Edges::Cri
 src/export-flow.mjs	ui	-	stays	export dialog and request
 src/export-frame-core.mjs	engine	styk-export	partial	Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS
 src/export-frame-renderer.mjs	engine	styk-export	partial	Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents
-src/export-frame-worker.mjs	engine	styk-export	partial	Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs); this worker draws documents the engine does not
+src/export-frame-worker.mjs	engine	styk-export	partial	Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs, on the GPU or with styk-raster without a device); this worker draws documents the engine does not and exports whose engine worker cannot start
 src/export-memory.mjs	engine	styk-export	partial	Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); JavaScript exports keep these budgets
 src/export-presets.mjs	ui	-	stays	export dialog and request
 src/export-progress.mjs	ui	-	stays	export dialog and request
@@ -245,7 +245,7 @@ src/library-drag.mjs	ui	-	stays
 src/library-files.mjs	platform	-	stays	file, storage and network services
 src/library-hover-preview.mjs	ui	-	stays	
 src/library-matte.mjs	ui	-	stays	
-src/library-preview-core.mjs	engine	styk-engine::thumbnails	partial	Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; unreadable files and devices without a readable GPU canvas still JS
+src/library-preview-core.mjs	engine	styk-engine::thumbnails	partial	Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS
 src/library-preview-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS
 src/localization-bindings.mjs	ui	-	stays	
 src/localization.mjs	ui	-	stays	
@@ -435,9 +435,9 @@ src/text-font-compat.mjs	engine	styk-edit	js
 src/text-preview.mjs	ui	-	stays	
 src/theme-bootstrap.js	ui	-	stays	
 src/theme.mjs	ui	-	stays	
-src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	partial	Rust: frame thumbnails of documents the engine draws on the stage's device (styk_engine::thumbnails::card, styk_wasm::views, src/engine/engine-thumbnails.mjs); in-between previews, refused documents and WebGL2 stages still JS
+src/thumbnail-renderer.mjs	engine	styk-engine::thumbnails	partial	Rust: frame thumbnails of documents the engine draws on the stage's device (styk_engine::thumbnails::card, styk_wasm::views, src/engine/engine-thumbnails.mjs); WebGL2 stages and canvases that give no pixels through styk-raster in the engine's preview worker (D13 parity); in-between previews and refused documents still JS
 src/thumbnail-validity.mjs	engine	styk-engine::thumbnails	js	
-src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: thumbnails of documents the engine draws (styk_wasm::views); the worker draws in-between previews, refused documents, WebGL2 stages and canvases that give no pixels
+src/thumbnail-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: thumbnails of documents the engine draws (styk_wasm::views; styk-raster where the stage cannot draw them); the worker draws in-between previews and refused documents
 src/timeline-header.mjs	ui	-	stays	
 src/timeline-host.mjs	ui	-	stays	
 src/timeline-hotkeys.mjs	ui	-	stays	

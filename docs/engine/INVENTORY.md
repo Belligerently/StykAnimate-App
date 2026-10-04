@@ -172,11 +172,11 @@ Engine logic: ported to Rust.
 | `src/playback-worker.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy) |
 | `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: playback preparation on the engine thread pool for supported documents |
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
-| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; unreadable files and devices without a readable GPU canvas still JS |
+| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS |
 | `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
-| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: frame thumbnails of documents the engine draws on the stage's device (styk_engine::thumbnails::card, styk_wasm::views, src/engine/engine-thumbnails.mjs); in-between previews, refused documents and WebGL2 stages still JS |
+| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: frame thumbnails of documents the engine draws on the stage's device (styk_engine::thumbnails::card, styk_wasm::views, src/engine/engine-thumbnails.mjs); WebGL2 stages and canvases that give no pixels through styk-raster in the engine's preview worker (D13 parity); in-between previews and refused documents still JS |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of documents the engine draws (styk_wasm::views); the worker draws in-between previews, refused documents, WebGL2 stages and canvases that give no pixels |
+| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of documents the engine draws (styk_wasm::views; styk-raster where the stage cannot draw them); the worker draws in-between previews and refused documents |
 | `src/animation-origin-validation.mjs` | `styk-eval` | js |  |
 | `src/animation-pose.mjs` | `styk-eval` | partial | Rust: buildVirtualPoseTrack, samplePoseTrack, poseSourceFrame; editing helpers still JS; plus composePoseChannels and handleOrientation (styk_eval::channels::pose); composePoseChannels on records (styk_eval::records) |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
@@ -263,7 +263,7 @@ Engine logic: ported to Rust.
 | `src/export-crisp.mjs` | `styk-export` | partial | Rust: No smoothing as Edges::Crisp for documents the engine draws (styk-render, styk-export); other documents JS |
 | `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS |
 | `src/export-frame-renderer.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents |
-| `src/export-frame-worker.mjs` | `styk-export` | partial | Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs); this worker draws documents the engine does not |
+| `src/export-frame-worker.mjs` | `styk-export` | partial | Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs, on the GPU or with styk-raster without a device); this worker draws documents the engine does not and exports whose engine worker cannot start |
 | `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); JavaScript exports keep these budgets |
 | `src/export-sampling.mjs` | `styk-export` | partial | Rust: the sampling limits mirrored in styk_export::settings; the JavaScript worker still reads these |
 | `src/gif-options.mjs` | `styk-export` | js |  |

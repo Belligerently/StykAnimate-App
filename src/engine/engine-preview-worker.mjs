@@ -3,49 +3,78 @@
  * library previews).
  *
  * It joins the engine's shared memory as a thread of its own, as the export worker does, and
- * keeps its event loop. It holds a GPU device of its own (WebGPU in the worker, else WebGL2 on
- * its OffscreenCanvas) and draws library files with the stage's renderer (`Previews`,
- * styk_wasm::preview): a poster (a PNG), the hover animation's frames and the samples its
- * card's backdrop is chosen from. Each picture is taken from the canvas as an ImageBitmap,
- * as the JavaScript library preview worker hands its frames over. Requests run one at a time.
- * `release` ends the worker after freeing its device and what it holds in the engine's memory.
+ * keeps its event loop. Where it gets a GPU device (WebGPU in the worker, else WebGL2 on its
+ * OffscreenCanvas) whose pictures reach the page, it draws library files with the stage's
+ * renderer (`Previews`, styk_wasm::preview): a poster (a PNG), the hover animation's frames and
+ * the samples its card's backdrop is chosen from, each taken from the canvas as an ImageBitmap.
+ * Where it gets none, the CPU rasterizer (styk-raster) draws the same pictures and they are put
+ * on a 2D canvas, then taken the same way. Frame thumbnails the stage cannot draw are drawn here
+ * on the CPU, from the document the engine holds. Requests run one at a time. `release` ends the
+ * worker after freeing its device and what it holds in the engine's memory.
  */
 import {initSync, Previews} from './pkg/styk_engine.js';
 import {libraryPreviewMatte, LIBRARY_MATTES} from '../library-matte.mjs';
 
 /** Side of a library preview and of the samples its backdrop is chosen from (styk_engine::thumbnails::library). */
 const SIZE = 320, SAMPLE = 40;
+/** How long a frame thumbnail waits for its frame and pictures (as the stage's thumbnails do). */
+const THUMBNAIL_WAIT_MS = 60000;
 
-let wasm = null, previews = null, canvas = null, releasing = false, running = Promise.resolve();
+let wasm = null, previews = null, canvas = null, flat = null, progress = null, releasing = false, running = Promise.resolve();
+/** Why library pictures are drawn on the CPU (no GPU device, or its canvas gives no pixels), or null. */
+let gpuRefusal = null;
 /** The hover animation open in the worker: requests of an older session are answered `stale`. */
 let session = null;
 
 async function start(message) {
   wasm ??= initSync({module: message.module, memory: message.memory, thread_stack_size: message.stack});
-  canvas ??= new OffscreenCanvas(SIZE, SIZE);
-  if (!previews) {
-    const created = await Previews.create(canvas);
-    // Some setups give no pixels from a GPU canvas (Xvfb without ANGLE on Vulkan): check before any preview.
-    created.probe();
-    const bitmap = canvas.transferToImageBitmap(), sample = new OffscreenCanvas(1, 1), context = sample.getContext('2d', {willReadFrequently: true});
-    context.drawImage(bitmap, 0, 0, 1, 1, 0, 0, 1, 1);
-    bitmap.close();
-    const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
-    if (!(r > 200 && g < 60 && b > 200 && a > 200)) { created.dispose(); created.free(); throw new Error('the GPU canvas gives no pixels in this worker'); }
-    previews = created;
+  progress ??= new Int32Array(message.memory.buffer, message.progress, 1);
+  if (!previews && message.cpu) {
+    // `?engineCpu=on`: the CPU draws, as without a GPU device.
+    gpuRefusal = 'the CPU rasterizer was asked for';
+    previews = Previews.create_cpu();
   }
-  return {started: true, backend: previews.backend()};
+  if (!previews) {
+    try {
+      canvas = new OffscreenCanvas(SIZE, SIZE);
+      const created = await Previews.create(canvas);
+      // Some setups give no pixels from a GPU canvas (Xvfb without ANGLE on Vulkan): check before any preview.
+      created.probe();
+      const bitmap = canvas.transferToImageBitmap(), sample = new OffscreenCanvas(1, 1), context = sample.getContext('2d', {willReadFrequently: true});
+      context.drawImage(bitmap, 0, 0, 1, 1, 0, 0, 1, 1);
+      bitmap.close();
+      const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+      if (!(r > 200 && g < 60 && b > 200 && a > 200)) { created.dispose(); created.free(); throw new Error('the GPU canvas gives no pixels in this worker'); }
+      previews = created;
+    } catch (error) {
+      // No GPU device whose pictures reach the page: the CPU rasterizer draws them.
+      gpuRefusal = String(error?.message ?? error);
+      canvas = null;
+      previews = Previews.create_cpu();
+    }
+  }
+  return {started: true, backend: previews.backend(), cpu: previews.cpu(), gpuRefusal};
 }
 
-/** The canvas's picture after a draw: its pixels move into the bitmap (nothing is read back). */
-const picture = () => canvas.transferToImageBitmap();
+/** The CPU's last picture on a 2D canvas, as an ImageBitmap (its pixels move into the bitmap). */
+function cpuPicture() {
+  const [width, height] = previews.picture_size(), image = new ImageData(width, height);
+  previews.picture(image.data);
+  flat ??= new OffscreenCanvas(width, height);
+  if (flat.width !== width || flat.height !== height) { flat.width = width; flat.height = height; }
+  flat.getContext('2d').putImageData(image, 0, 0);
+  return flat.transferToImageBitmap();
+}
+
+/** The last library picture: the GPU canvas's (nothing is read back), or the CPU's. */
+const picture = () => previews.cpu() ? cpuPicture() : canvas.transferToImageBitmap();
 
 async function poster({bytes, extension}) {
   const result = JSON.parse(previews.poster(new Uint8Array(bytes), extension));
-  const bitmap = picture(), flat = new OffscreenCanvas(SIZE, SIZE);
-  flat.getContext('2d').drawImage(bitmap, 0, 0);
+  const bitmap = picture(), out = new OffscreenCanvas(SIZE, SIZE);
+  out.getContext('2d').drawImage(bitmap, 0, 0);
   bitmap.close();
-  return {...result, blob: await flat.convertToBlob({type: 'image/png'})};
+  return {...result, blob: await out.convertToBlob({type: 'image/png'})};
 }
 
 function begin() {
@@ -68,6 +97,37 @@ function frame({elapsed}) {
   return {...result, bitmap: picture()};
 }
 
+/**
+ * Resolves when the engine's workers finished something (a frame, a picture) since the
+ * progress counter read `seen`. Read it before asking, so work finishing in between is not missed.
+ */
+function whenProgress(seen) {
+  if (Atomics.load(progress, 0) !== seen) return Promise.resolve();
+  if (typeof Atomics.waitAsync === 'function') {
+    const waiting = Atomics.waitAsync(progress, 0, seen, 250);
+    return waiting.async ? waiting.value.then(() => {}) : Promise.resolve();
+  }
+  return new Promise(resolve => setTimeout(resolve, 4));
+}
+
+/**
+ * A frame thumbnail of the open document, drawn on the CPU: `tick` of `revision` on a
+ * `width × height` card. Its frame is prepared and its pictures decoded on the engine's
+ * workers; this waits for them on the progress counter.
+ */
+async function thumbnail({address, revision, tick, width, height}) {
+  previews.adopt_engine(address);
+  const started = performance.now();
+  for (;;) {
+    if (releasing) throw new DOMException('The preview worker was released.', 'AbortError');
+    if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout', message: 'the frame was not prepared in time'};
+    const seen = Atomics.load(progress, 0), status = previews.thumbnail(revision, tick, width, height);
+    if (status === 2) return {refused: 'stale', message: 'the engine holds another revision'};
+    if (status === 0) return {bitmap: cpuPicture(), width, height};
+    await whenProgress(seen);
+  }
+}
+
 async function operate(message) {
   if (message.operation === 'start') return start(message);
   if (!previews) throw new Error('The preview worker has not started.');
@@ -78,6 +138,7 @@ async function operate(message) {
     case 'library-begin': return begin();
     case 'library-frame': return frame(message);
     case 'library-close': session = null; previews.library_close(); return {};
+    case 'thumbnail': return thumbnail(message);
     default: throw new Error(`Unknown preview operation ${message.operation}.`);
   }
 }
@@ -92,7 +153,7 @@ async function release() {
   try { previews?.free(); } catch { /* already freed */ }
   previews = null;
   if (canvas) canvas.width = canvas.height = 1;
-  canvas = null;
+  canvas = flat = null;
   // No call into the module may follow on this thread (wasm-bindgen's thread destructor).
   try { wasm?.__wbindgen_thread_destroy(); } catch { /* never started */ }
   self.postMessage({released: true});
@@ -102,7 +163,11 @@ async function release() {
 self.addEventListener('message', ({data: message}) => {
   if (message.operation === 'release') { release(); return; }
   const run = running.then(() => {
-    if (releasing) throw new DOMException('The preview worker was released.', 'AbortError');
+    if (releasing) {
+      // A thumbnail's engine address is consumed even when it is not drawn.
+      if (message.operation === 'thumbnail' && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
+      throw new DOMException('The preview worker was released.', 'AbortError');
+    }
     return operate(message);
   });
   running = run.catch(() => {});

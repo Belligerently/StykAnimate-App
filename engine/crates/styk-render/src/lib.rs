@@ -17,37 +17,61 @@
 //! (passes of one frame), [`isolation`] (layer atlas and rounds), [`images`]
 //! (sprite and drawing atlas), [`resources`] (record layouts, lookup tables),
 //! [`present`] (surface copy and read-back), [`view`], [`effects`].
+//!
+//! The renderer is the `gpu` feature (on by default). Without it the crate is what both
+//! renderers follow, which the CPU rasterizer (styk-raster) uses: [`ViewParams`],
+//! [`Edges`], where each layer is drawn for a view (`effects::plan`, `effects::record`)
+//! and effect recipes (`effects::recipe`).
 
+#[cfg(feature = "gpu")]
 use std::sync::Arc;
 
+#[cfg(feature = "gpu")]
 use styk_draw::DrawList;
 
+#[cfg(feature = "gpu")]
 pub use wgpu;
 
 pub mod effects;
+#[cfg(feature = "gpu")]
 mod frame;
+#[cfg(feature = "gpu")]
 mod glyphs;
+#[cfg(feature = "gpu")]
 mod images;
+#[cfg(feature = "gpu")]
 mod isolation;
+#[cfg(feature = "gpu")]
 mod materials;
+#[cfg(feature = "gpu")]
 mod pipeline;
+#[cfg(feature = "gpu")]
 mod present;
+#[cfg(feature = "gpu")]
 mod resources;
 mod view;
 
+#[cfg(feature = "gpu")]
 pub use images::{decode_images, DecodedImage};
+#[cfg(feature = "gpu")]
 pub use present::read_frame;
 pub use view::{ViewParams, CAMERA_PREVIEW_LIMIT};
 
+#[cfg(feature = "gpu")]
 use isolation::LayerAtlas;
+#[cfg(feature = "gpu")]
 use resources::{buffer, prims_bytes, GpuPrim, Table};
 
 /// Samples per pixel of smooth edges (triangles; analytic shapes cover by distance).
-pub(crate) const SAMPLES: u32 = 4;
+pub const SAMPLES: u32 = 4;
+#[cfg(feature = "gpu")]
 pub(crate) const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+#[cfg(feature = "gpu")]
 pub(crate) const MAX_LAYER_PAGES: u32 = 8;
+#[cfg(feature = "gpu")]
 pub(crate) const UNIFORM_STRIDE: u64 = 256;
 
+#[cfg(feature = "gpu")]
 pub struct Stats {
     pub prims: u32,
     pub groups: u32,
@@ -85,6 +109,7 @@ pub enum Edges {
     Crisp,
 }
 
+#[cfg(feature = "gpu")]
 pub struct Renderer {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
@@ -144,6 +169,7 @@ pub struct Renderer {
     pub stats: Stats,
 }
 
+#[cfg(feature = "gpu")]
 impl Renderer {
     /// Uploads a draw list unless it is already resident.
     pub fn set_list(&mut self, list: &Arc<DrawList>) {

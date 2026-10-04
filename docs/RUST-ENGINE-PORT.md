@@ -226,11 +226,19 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   geometry on every evaluation, and scrub previews carry whole frames, so the `channels` class
   is not owned until large documents are measured. Bézier easing uses `pow`, which in
   WebAssembly is libm and may differ from a browser's in the last bit (not observed).
-- **Previews on WebGL2 and without WebGPU canvases:** thumbnails and the camera monitor fall
-  back to JavaScript on WebGL2 stages (one device cannot draw to a second canvas) and where a
-  WebGPU canvas gives no pixels (Electron under Xvfb without ANGLE on Vulkan; a magenta probe
-  decides). This closes with a complete CPU rasterizer (item 7: edge coverage, filter
-  effects, coplanar 3D faces) or a WebGL2 readback.
+- **Previews on WebGL2 and without WebGPU canvases:** thumbnails and library previews are
+  drawn by the CPU rasterizer in the engine's preview worker where the stage cannot draw them
+  (WebGL2 stages, where one device cannot draw to a second canvas, and WebGPU canvases that
+  give no pixels: Electron under Xvfb without ANGLE on Vulkan; a magenta probe decides). The
+  camera monitor on a WebGL2 stage still falls back to JavaScript.
+- **The CPU rasterizer on nearly coplanar 3D faces:** 13 of 1,244 deep-3D export frames fail
+  by solid pixels where faces nearly overlap (the GPU's vertex precision is not reproduced);
+  none fail by the mean. Exports fall back to the JavaScript worker only where the engine's
+  export worker cannot start.
+- **The CPU rasterizer is slower on effects and drawing cels** than the tiny-skia renderer it
+  replaced, which skipped effects and multisampling: the effects fixture's thumbnail takes
+  90–152 ms (2.3–4.3 ms before), a drawing cel's export frame 14.1–24.9 ms (2.0–4.2 ms);
+  it runs in workers only.
 - **Thumbnails differ from the JavaScript worker by category:** text and 3D artwork are drawn
   from object rasters at the editor's density, so they look blockier than Canvas 2D at
   96–320 px; Canvas 2D seams and the edge coverage of one-pixel strokes at 96×54 also differ.
@@ -316,8 +324,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 - **Effects, open after the GPU port**: drawing cels inside
   an effect layer are sampled bilinearly where the editor uses Canvas 2D smoothing (URIEL 3
   ticks 61–64 differ by 4–26 solid pixels under blur, bloom and glow); a drawing layer's
-  onion skin is missing in the engine (tick 46); `styk-raster` ignores effect layers (and
-  would draw a scene stack's frame twice); `previewRasterScale` is not followed; effect
+  onion skin is missing in the engine (tick 46); `previewRasterScale` is not followed; effect
   layers may reach 3,968 px (60 MiB) with two to eight pages per atlas; a still frame can
   lack a drawing cel until the next redraw because nothing redraws while images decode.
   Generated effects drawn by the editor's Canvas 2D fallback (tinted sprites, an 8- or
@@ -420,6 +427,15 @@ waterfall plane by Canvas 2D seams. Library previews: the backdrop is the same f
 files, hover bounds equal the editor's, and posters and frames of 3D figures and effects fail
 by the mean. Camera monitor: 1 of 6 pass. The web target falls back to the JavaScript paths.
 
+**CPU rasterizer** (`styk raster-parity`, `styk-raster` against `styk-render` on the GPU, D13,
+repository corpus): thumbnails 899 of 899 at each of three sizes, export frames 677 of 677
+(both samplings), library posters 193 of 193, hover frames 579 of 579; deep 3D (180
+documents, 12 frames each) thumbnails 1,244 of 1,244, exports 1,242 and 1,231 of 1,244 (the
+failures are solid pixels where faces nearly overlap, section 6). The private corpus, read in
+place: thumbnails 93 of 93, exports 38 of 38. In the app (Electron, ANGLE on Vulkan), 139 of
+140 GPU-against-CPU comparisons pass (the miss, 9 solid pixels on 15 Guns tick 1, passed 64 of
+64 on a recheck).
+
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
 the JavaScript renderer being its Canvas 2D fallback, WebGL2 for the engine), 29 documents
 (the repository's eligible test projects and asset packs, `svr_uriel.piv`, `hitoshi vs suzu
@@ -446,8 +462,8 @@ deletion of what it replaces once nothing calls it. "Agent" marks items run by a
 **S3, the engine draws every document** (then the JavaScript renderer, playback workers and
 effect executors are deleted):
 
-1. Effects rendering: done for every filter type on WebGPU and WebGL2 (milestone log). Left:
-   drawing cels inside effect layers, effects in `styk-raster`.
+1. Effects rendering: done for every filter type on WebGPU, WebGL2 and the CPU (milestone
+   log). Left: drawing cels inside effect layers.
 2. 3D: done (milestone log). Left: rotated movieclip drawings (`drawingRotation`), an
    indexed face format (each face is a 64-byte draw-list record), `previewRasterScale`.
 3. Generators (particle effects): done (milestone log). Left: the JavaScript generator
@@ -461,7 +477,8 @@ effect executors are deleted):
    `runtime_segments` fallbacks.
 6. Every other drawing path through the engine: thumbnails, library previews, the camera
    monitor, the drawing workspace (live strokes), export frames (S4).
-7. A CPU rasterizer for exports, thumbnails and devices without WebGPU or WebGL2.
+7. A CPU rasterizer for exports, thumbnails and devices without WebGPU or WebGL2: done
+   (milestone log). Left: the camera monitor on WebGL2 stages.
 8. Delete the JavaScript renderer, raster caches, stand-ins and density buckets, playback
    workers, effect executors; the eligibility gate disappears.
 
@@ -595,9 +612,10 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 06:57 | S5 commands that draw identities (D18); camera motion clips added | `src/editor-draws.mjs` and the draws protocol (recorder, replay, session view, facade); `styk-edit/src/camera_motion.rs`: `addCameraMotion` (`createCameraMotion`, each preset, a follow clip following the selection), `copyCameraMotion`, `pasteCameraMotion`, `duplicateCameraMotion`, `randomizeCameraMotion` with the editor's identities and seeds. | 2 recordings (34 steps) match the editor at every step, draws included; 7 of 7 mutations break one. App shadow with the engine's `Math`: start document 317/317 (the five calls handed the editor's draws); owned editing the same as the editor alone. |
 | 2026-10-04 07:30 | S5 effect stacks | `styk-edit/src/vfx_stack.rs`: `addVfx`, `removeVfx`, `resetVfx`, `duplicateVfx`, `moveVfx`, `reorderVfx`, `pasteVfx` on figures, segments and the scene (new identities from the editor, D18; which effects the scene takes, `Kind::on_scene`, in the `styk-eval` registry); `setVfxParameter` shares their target checks. Presets, `setVfxScope` and pasting with attached parts stay JavaScript. | 1 recording (31 steps) matches the editor at every step; 9 of 9 mutations break it. App shadow with the engine's `Math`: start document 324/324, channels-figure 279/279; owned editing the same as the editor alone. |
 | 2026-10-04 08:00 | S5 effect clips added, copied and pasted | `styk-edit/src/vfx_clips.rs`: `addVfxClip` (generated effects timed at the playhead, `GENERATOR_DURATIONS`), `copyVfxClip` (effects sampled between number and colour keys), `pasteVfxClip` (keys or values), `duplicateVfxClip`, `addVfxGroupEffect`; `src/editor-vfx-clips.mjs` draws its identities and seeds through `editorDraws` (D18). Presets stay JavaScript. | 1 recording (40 steps) matches the editor at every step; 12 of 14 mutations break it (the other two are equivalent here: effect identities are unique, the at-key guard matters only for paint colours). App shadow with the engine's `Math`: start document 336/336, the new calls among them; owned editing the same as the editor alone. |
+| 2026-10-04 08:40 | S3 item 7: the CPU rasterizer | `styk-raster` draws as `styk-render` does: four-sample edges blended per sample, the GPU's depth rules (24-bit), glyph masks, every effect pass from the recipes `styk-render` records (`effects/recipe.rs`; `styk-render`'s `gpu` feature leaves the shared arithmetic without wgpu). Thumbnails and library previews where the stage cannot draw them and exports without a GPU device are drawn on the CPU in their workers (`?engineCpu=on` forces it). `styk raster-parity` compares it with the GPU. | Parity in section 7 (thumbnails 899/899 at three sizes, exports 677/677, deep 3D 1,244/1,244 thumbnails). Native timings against the tiny-skia renderer, machine load 9–12: 15 Guns export frame 386–578 → 95–101 ms, Impact 219–235 → 79–126 ms; slower where effects and multisampling are now drawn (section 6). In the app, CPU thumbnails 8.9–27.7 ms at 320×192 against 2.3–3.8 ms on the GPU. WebAssembly module +109 KiB (8,092,410 bytes). |
 
-In progress: the builder and rig family (agent), the CPU rasterizer (agent, S3 item 7). Next
-for agents: motion paths and in-betweens. Next in the main thread: `centerCamera`, joined 3D
+In progress: the builder and rig family (agent), motion paths and in-betweens (agent). Next
+for agents: generated effects in the editor's tools, then the camera monitor on WebGL2. Next in the main thread: `centerCamera`, joined 3D
 IK targets, the remaining movieclip commands (create, split, make unique, break apart,
 placing, playback across frames of clips on the document's clock), the asynchronous layer
 commands (moving figures between layers, deleting layers: their planning must stay off the

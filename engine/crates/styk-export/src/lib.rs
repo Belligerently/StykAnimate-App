@@ -12,16 +12,20 @@
 //! - [`pixels`]: premultiplied pixels to straight RGBA, 2×2 averages for Smooth sprites,
 //!   black matte for video without transparency.
 //! - [`gpu`]: the renderer driven tile by tile, with read-back.
+//! - [`cpu`]: the same tiles drawn by the CPU rasterizer (styk-raster), for a worker
+//!   without a GPU device.
 //!
 //! Encoders (PNG, GIF, APNG, ZIP, WebCodecs, FFmpeg) stay platform services of the
 //! interface; see `docs/engine/rendering.md` (Exports) and `docs/export-sampling.md`.
 
+pub mod cpu;
 pub mod gpu;
 pub mod pixels;
 pub mod settings;
 pub mod tiles;
 pub mod view;
 
+pub use cpu::CpuExport;
 pub use gpu::GpuExport;
 pub use settings::{Settings, Smoothing};
 pub use tiles::{Tile, TILE_SIDE};
