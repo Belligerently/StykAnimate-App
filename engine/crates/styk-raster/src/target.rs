@@ -107,6 +107,18 @@ impl Target {
         }
     }
 
+    /// Every sample of pixel `i` set to the opaque colour `px` (as stored): an opaque write
+    /// over the whole pixel, which `blend` would give too.
+    #[inline]
+    pub fn set_opaque(&mut self, i: usize, px: Px) {
+        self.pixels[i] = px;
+        let at = self.index[i];
+        if at != 0 {
+            self.index[i] = 0;
+            self.free.push(at - 1);
+        }
+    }
+
     /// Bytes this target holds.
     pub fn bytes(&self) -> usize {
         self.pixels.len() * 8 + self.split.len() * 16

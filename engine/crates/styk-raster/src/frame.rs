@@ -236,56 +236,57 @@ impl<'a> Frame<'a> {
         let full = target.full();
         let inv = layer.inv;
         // Hairlines keep a one-pixel footprint and fade with their width (crisp: solid).
-        let thin = |hw: f32| -> (f32, f32) {
-            if hw < aa * 0.5 {
-                let fade = if crisp { if hw > 0.0 { 1.0 } else { 0.0 } } else { hw.max(0.0) * 2.0 / aa };
-                (aa * 0.5, fade)
-            } else {
-                (hw, 1.0)
-            }
+        let raw = match kind {
+            K_ARC | K_RING => p.a[3],
+            _ => p.b[0],
         };
+        let (hw, fade) = if raw < aa * 0.5 {
+            (aa * 0.5, if crisp { if raw > 0.0 { 1.0 } else { 0.0 } } else { raw.max(0.0) * 2.0 / aa })
+        } else {
+            (raw, 1.0)
+        };
+        let solid = (p.paint == NO_PAINT).then(|| premul(unpack(p.color)));
+        let fill = (kind == K_RING && p.kind & F_RING_FILL != 0).then(|| premul(unpack(p.b[0].to_bits())));
+        let length = |x: f32, y: f32| (x * x + y * y).sqrt();
+        // A stroke's squared distances beyond which a pixel takes nothing, and within which all of it.
+        let (reach, core) = if crisp { (hw, hw) } else { (hw + aa * 0.5, (hw - aa * 0.5).max(0.0)) };
+        let (outside, inside) = (reach * reach * (1.0 + 1e-5), if core > 0.0 { core * core * (1.0 - 1e-5) } else { -1.0 });
         spans(&quad_px, clip, |y, x0, x1| {
             let cy = y as f64 + 0.5;
+            // The world at each pixel's centre, a step along the row at a time.
+            let (mut wx, mut wy) = (inv[0] * (x0 as f64 + 0.5) + inv[2] * cy + inv[4], inv[1] * (x0 as f64 + 0.5) + inv[3] * cy + inv[5]);
             for x in x0..x1 {
-                let cx = x as f64 + 0.5;
-                let w = [(inv[0] * cx + inv[2] * cy + inv[4]) as f32, (inv[1] * cx + inv[3] * cy + inv[5]) as f32];
-                let src = match kind {
-                    K_DISC => {
-                        let cov = coverage((w[0] - p.a[0]).hypot(w[1] - p.a[1]) - p.a[2], aa, crisp);
-                        if cov <= 0.0 {
-                            continue;
-                        }
-                        scale(premul(self.base(p, w)), cov)
+                let w = [wx as f32, wy as f32];
+                wx += inv[0];
+                wy += inv[1];
+                if kind == K_CAPSULE {
+                    // Most pixels of a stroke are wholly outside or inside it: decided by the
+                    // squared distance, without the square root (the coverage rule's ends).
+                    let squared = segment_distance_squared(w, [p.a[0], p.a[1]], [p.a[2], p.a[3]]);
+                    if squared >= outside {
+                        continue;
                     }
-                    K_RING => {
-                        let dist = (w[0] - p.a[0]).hypot(w[1] - p.a[1]);
-                        let (hw, fade) = thin(p.a[3]);
-                        let ring = coverage((dist - p.a[2]).abs() - hw, aa, crisp) * fade;
-                        let mut out = scale(premul(self.base(p, w)), ring);
-                        if p.kind & F_RING_FILL != 0 {
-                            let fill = scale(premul(unpack(p.b[0].to_bits())), coverage(dist - p.a[2], aa, crisp));
-                            out = [0, 1, 2, 3].map(|k| out[k] + fill[k] * (1.0 - out[3]));
-                        }
-                        if out[3] <= 0.0 {
-                            continue;
-                        }
-                        out
+                    if squared <= inside && solid.is_some_and(|c| c[3] >= 1.0) && fade >= 1.0 {
+                        target.blend(y as usize * width + x as usize, full, solid.unwrap_or_default(), false);
+                        continue;
                     }
-                    _ => {
-                        let raw = if kind == K_ARC { p.a[3] } else { p.b[0] };
-                        let (hw, fade) = thin(raw);
-                        let d = match kind {
-                            K_CAPSULE => sd_segment(w, [p.a[0], p.a[1]], [p.a[2], p.a[3]]) - hw,
-                            K_BOX => sd_box(w, [p.a[0], p.a[1]], [p.a[2], p.a[3]], hw),
-                            _ => sd_arc(w, [p.a[0], p.a[1]], p.a[2], p.b[0], p.b[1]) - hw,
-                        };
-                        let cov = coverage(d, aa, crisp) * fade;
-                        if cov <= 0.0 {
-                            continue;
-                        }
-                        scale(premul(self.base(p, w)), cov)
-                    }
+                }
+                let cov = match kind {
+                    K_DISC => coverage(length(w[0] - p.a[0], w[1] - p.a[1]) - p.a[2], aa, crisp),
+                    K_RING => coverage((length(w[0] - p.a[0], w[1] - p.a[1]) - p.a[2]).abs() - hw, aa, crisp) * fade,
+                    K_CAPSULE => coverage(sd_segment(w, [p.a[0], p.a[1]], [p.a[2], p.a[3]]) - hw, aa, crisp) * fade,
+                    K_BOX => coverage(sd_box(w, [p.a[0], p.a[1]], [p.a[2], p.a[3]], hw), aa, crisp) * fade,
+                    _ => coverage(sd_arc(w, [p.a[0], p.a[1]], p.a[2], p.b[0], p.b[1]) - hw, aa, crisp) * fade,
                 };
+                let mut src = if cov > 0.0 { scale(solid.unwrap_or_else(|| premul(self.base(p, w))), cov) } else { [0.0; 4] };
+                if let Some(fill) = fill {
+                    // A ring's interior under it (prim.wgsl: the ring over its fill).
+                    let inside = coverage(length(w[0] - p.a[0], w[1] - p.a[1]) - p.a[2], aa, crisp);
+                    src = [0, 1, 2, 3].map(|k| src[k] + fill[k] * inside * (1.0 - src[3]));
+                }
+                if src[3] <= 0.0 {
+                    continue;
+                }
                 target.blend(y as usize * width + x as usize, full, src, false);
             }
         });
@@ -601,7 +602,15 @@ impl<'a> Frame<'a> {
         let page = PAGE as f32;
         let origin = [(rect[0] * page).round() - 1.0, (rect[1] * page).round() - 1.0];
         let base = unpack(p.color);
+        // An opaque colour (the usual background) covering a whole pixel replaces what is there.
+        let solid = (texture.is_none() && p.paint == NO_PAINT).then(|| premul(base)).filter(|c| c[3] >= 1.0);
+        let opaque = solid.map(|c| [quantize(c[0]), quantize(c[1]), quantize(c[2]), 255]);
+        let full = target.full();
         quad(corners, clip, positions(self.samples), |x, y, mask| {
+            if let (Some(px), true) = (opaque, mask == full) {
+                target.set_opaque(y as usize * width + x as usize, px);
+                return;
+            }
             let (cx, cy) = (x as f64 + 0.5, y as f64 + 0.5);
             let w = [(inv[0] * cx + inv[2] * cy + inv[4]) as f32, (inv[1] * cx + inv[3] * cy + inv[5]) as f32];
             let src = match texture {
@@ -616,6 +625,15 @@ impl<'a> Frame<'a> {
             target.blend(y as usize * width + x as usize, mask, src, false);
         });
     }
+}
+
+/// The squared distance from `p` to the segment `a`–`b` (`sd_segment` without its square root).
+#[inline]
+fn segment_distance_squared(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
+    let (pa, ba) = ([p[0] - a[0], p[1] - a[1]], [b[0] - a[0], b[1] - a[1]]);
+    let h = ((pa[0] * ba[0] + pa[1] * ba[1]) / (ba[0] * ba[0] + ba[1] * ba[1]).max(1e-20)).clamp(0.0, 1.0);
+    let (dx, dy) = (pa[0] - ba[0] * h, pa[1] - ba[1] * h);
+    dx * dx + dy * dy
 }
 
 /// The corners of an axis-aligned rectangle (x0, y0, x1, y1) as a polygon.
