@@ -1,7 +1,7 @@
 //! Polygons of the selected figure's definition (src/editor-builder.mjs): created,
 //! reshaped, reordered and deleted, each one `figure` history entry (`editDefinition`).
-//! Colour and opacity edits of a figure on show go through recolouring or property keys,
-//! and surfaces through the figure's geometry: they answer `Unported`.
+//! Colour edits of a figure on show are recoloured ([`crate::recolor`]), opacity edits keyed;
+//! surfaces go through the figure's geometry and answer `Unported`.
 
 use styk_doc::{Obj, Value};
 
@@ -249,7 +249,12 @@ impl Editor {
         let style_only = patch.keys().all(|key| ["color", "opacity"].contains(&&**key));
         if style_only && patch.contains("color") {
             // Recoloured on the figure on show (`editFigureColors`).
-            return Err(EditError::Unported("a polygon's colour on a figure on show".into()));
+            if let (Some((_, figure)), Some((_, object))) = (definition.clone(), self.object()?)
+                && let Some(result) = self.recolor_polygon(&figure, &object, at, patch)
+            {
+                return result;
+            }
+            return Err(EditError::Unported("a polygon's colour without the overlay it is recoloured with".into()));
         }
         if style_only && self.options.property_channels {
             // Keyed on the figure on show (`addAnimationKeys`).

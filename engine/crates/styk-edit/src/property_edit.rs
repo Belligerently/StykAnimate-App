@@ -622,43 +622,17 @@ impl Editor {
         Ok(true)
     }
 
-    /// `sheetEditTimes(indices)`: the ticks a range edit keys, from keyframe indices.
-    pub(crate) fn sheet_edit_times(&self, options: Option<&Value>) -> Result<Vec<f64>, EditError> {
-        let indices: Vec<Value> = match options.and_then(|o| o.get("indices")) {
-            None => vec![Value::Num(self.frame_index as f64)],
-            Some(list) => items(Some(list)),
-        };
-        let count = self.report.get("keyframes").and_then(Value::array_len).unwrap_or(0) as f64;
-        let mut unique: Vec<f64> = Vec::new();
-        for index in &indices {
-            let Some(index) = integer(index).filter(|i| *i >= 0.0 && *i < count) else { return Err(invalid("errors.editor.selectExistingKeyframes")) };
-            if !unique.contains(&index) {
-                unique.push(index);
-            }
-        }
-        unique.sort_by(f64::total_cmp);
-        let rows = crate::timeline::rows(&self.report);
-        let mut times = Vec::new();
-        for index in unique {
-            let time = if indices.len() == 1 && index == self.frame_index as f64 {
-                self.tick
-            } else {
-                rows.get(index as usize).map(|row| row.start).ok_or_else(|| EditError::Unported("a keyframe past the layer sheet's end".into()))?
-            };
-            let time = checked_tick(&Value::Num(time))?;
-            if !times.contains(&time) {
-                times.push(time);
-            }
-        }
-        times.sort_by(f64::total_cmp);
-        Ok(times)
+    /// `sheetEditTimes(indices)` of `{indices}`: the ticks a range edit keys, the timeline's
+    /// chosen ticks when the indices carry them ([`crate::range::Indices`]).
+    pub(crate) fn sheet_edit_times_of(&self, options: Option<&Value>) -> Result<Vec<f64>, EditError> {
+        self.sheet_edit_times(crate::range::Indices::parse(options.and_then(|o| o.get("indices"))).as_ref())
     }
 
     /// `setSceneColor(argb, {indices})` on a layer sheet.
     fn set_scene_color(&mut self, argb: &Value, options: Option<&Value>) -> Result<Value, EditError> {
         let Some(argb) = integer(argb).filter(|v| (0.0..=4294967295.0).contains(v)) else { return Err(invalid("errors.editorScene.sceneColorMustBeA32BitArgb")) };
         let scene = scene_target();
-        let entries: Vec<Value> = self.sheet_edit_times(options)?.into_iter().map(|tick| entry(&scene, "color", Some(tick), Some(Value::Num(argb)), false)).collect();
+        let entries: Vec<Value> = self.sheet_edit_times_of(options)?.into_iter().map(|tick| entry(&scene, "color", Some(tick), Some(Value::Num(argb)), false)).collect();
         self.sheet_property_entries(&entries, "Set scene color").map(Value::array)
     }
 
@@ -669,7 +643,7 @@ impl Editor {
         let Some(id) = integer(id).filter(|v| *v >= 0.0 && (*v == 0.0 || exists(*v))) else { return Err(invalid("errors.editorScene.chooseAnExistingBackground")) };
         let scene = scene_target();
         let mut entries = Vec::new();
-        for tick in self.sheet_edit_times(options)? {
+        for tick in self.sheet_edit_times_of(options)? {
             entries.push(entry(&scene, "backgroundId", Some(tick), Some(Value::Num(id)), false));
             entries.push(entry(&scene, "color", Some(tick), Some(Value::Null), false));
         }

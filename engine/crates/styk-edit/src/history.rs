@@ -54,6 +54,8 @@ pub enum CommandKind {
     MovieclipDefinition { index: usize, before: Option<Value>, after: Option<Value> },
     /// Entries recorded inside `movieclipBatch`, undone and redone together (`kind: 'movieclip-batch'`).
     Batch { commands: Vec<Command> },
+    /// Native keyframes patched by a figure operation across frames (`kind: 'figure-range'`).
+    FigureRange { changes: Vec<crate::range::FrameChange>, structural: bool },
 }
 
 /// `editor._movieclipBatch` in progress: its entries, label, the revision before it and the
@@ -211,6 +213,7 @@ impl Editor {
             CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
             CommandKind::Fields { .. } => self.apply_fields_command(command, direction)?,
             CommandKind::MovieclipDefinition { .. } => self.apply_movieclip_definition(command, direction)?,
+            CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
                 for child in ordered {

@@ -117,3 +117,5 @@ scenario('polygon-opacity-sheet', app, [
 }
 // The same commands on documents with property channels.
 await import('./edit-scenarios-channels.mjs');
+// The figure-range commands.
+await import('./edit-scenarios-range.mjs');

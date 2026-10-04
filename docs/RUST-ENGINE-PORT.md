@@ -218,14 +218,20 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   publication of a large cel costs the interface thread 0.2–0.7 s while the engine stage syncs
   the new asset (both engines; 2,040-tile cel), now kept out of undo and redo but still paid
   after strokes and fills. Not verified: Windows, macOS, packaged builds, real pens.
-- **Property edits, open after the port**: paints (fill styles and effect colours), polygon
-  colour (`editFigureColors`), adding effects and presets (random identities), channels on a
-  native timeline and animation origins stay with the editor. Owned editing of
-  `channels-figure` took 289.3 ms against the editor's 116.9 ms (one run, loaded machine):
-  records rebuild channel bindings and convert frames for geometry on every evaluation, and
-  scrub previews carry whole frames, so the `channels` class is not owned until large
-  documents are measured. Bézier easing uses `pow`, which in WebAssembly is libm and may
-  differ from a browser's in the last bit (not observed).
+- **Property edits, open after the port**: paints (fill styles and effect colours), adding
+  effects and presets (random identities), channels on a native timeline and animation origins
+  stay with the editor. Owned editing of `channels-figure` took 289.3 ms against the editor's
+  116.9 ms (one run, loaded machine): records rebuild channel bindings and convert frames for
+  geometry on every evaluation, and scrub previews carry whole frames, so the `channels` class
+  is not owned until large documents are measured. Bézier easing uses `pow`, which in
+  WebAssembly is libm and may differ from a browser's in the last bit (not observed).
+- **Range commands, open after the port**: pasting and aligning across frames (the app
+  measures alignment bounds with a function of its own), movieclips among the changed figures,
+  duplicating figures with effect clips, adding, duplicating or deleting across native
+  keyframes, ordering one figure's segments, and the builder's segment styles stay in the
+  editor. Documents whose poses carry `runtime_segments` keep the range calls in the editor.
+  In one run on the start document, owned calls cost what the editor's do (245.9 against
+  241.9 ms).
 - **Known divergences of the newly drawn features**: the engine tweens a captured movieclip's
   own keyframes where the editor samples its retained source (`movieclipSource`); the follow
   camera reshapes its whole path on every revision where the editor resamples incrementally
@@ -557,13 +563,13 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 02:41 | S5 camera commands | `styk-edit/src/camera_commands.rs` on a layer sheet: `copyCamera`, `pasteCamera`, `setCameraValues`, `resetCamera`, `transformCamera`, `alignCameraToView`, `locateCamera` (changed values keyed through `addAnimationKeys`), camera drags with their preview as the frame on show (`commitDrag`/`cancelDrag` route to them; other calls during one stay with the editor), `locateHandle`; owned with the large figure class, drag previews compared. `centerCamera`, `applyCameraToFigures` and native-timeline camera snapshots stay JavaScript. | 1 recording (67 steps) matches the editor at every step; 16 of 16 mutations break it. App shadow with the engine's `Math`: start document 269/269, channels-figure 225/225; owned editing the same as the editor alone (the start document's camera calls cost 0.6–0.9 ms in the editor, 1.0–3.8 ms owned with adoption). |
 | 2026-10-04 03:32 | S5 movieclips on the timeline | Moving and copying a movieclip's keys (`sheetMoveFrames`: clips on the document's clock shift their span and restarts, `shiftClipTime`); timeline frames holding clips on the presence clock copied with their phases (`presence_elapsed` exposed by `styk-eval`) and pasted under new identities that carry on from there, continuations included; moving them to another row leaves continuations on the source (`Retain moved movieclip phase`). | 3 recordings (35 steps) match the editor at every step; 8 of 9 mutations break one (the span shift is equivalent for presence-clock clips, which keep their span). App: the movieclip document's shadow lost its three timeline gaps (property edits on keys with clip replacements and pasting clip instances remain); owned editing the same as the editor alone, 143.2 ms against 207.8 ms. |
 | 2026-10-04 03:42 | S5 property edits on keys with movieclip replacements | A property edit on a key whose movieclip frames are replaced keeps the replacements and writes the key's pose from the frame without them (`Records::evaluated_options(tick, clips, skip_patches)` in `styk-eval`, `at(…, {skipMovieclipPatches: true})`). | 1 recording (11 steps) matches the editor at every step; 4 of 4 mutations break it. |
+| 2026-10-04 04:06 | S5 figures across frames, figure order, branch flips, recolouring (agent, reviewed and merged) | `styk-edit/src/range.rs`, `range_plan.rs`: `applyFigureRange` and `planFigureFrameOperation` (appearance, order with depths at ±1,000,000, join, detach, delete, duplicate, reset, centre, scale, rotate, flips, branch flips) at the playhead or across a range, committed as one `_commitSheetRange` (generalised to several ticks) or as a native `figure-range` entry; `moveSelectionInFrames`, `bringToFront`, `sendToBack`, `moveSelectionLayer`, `orderSelection`, `mirrorFigure`. `styk-edit/src/recolor.rs`: `editFigureColors`, `setFigureColor`, `replaceFigureColor`, `resetFigureColors` and a polygon's colour. Owned with the large figure class. Found while porting: the app's timeline ranges lost their ticks across JSON (owned `setSceneColor` with a range selected keyed the playhead only); fixed in the facade (`{"@array", "sheetTicks"}`). | 18 recordings (427 steps) match at every step, `transform-native` now 21 of 21; mutations 88 of 92 caught (4 equivalent or indistinguishable). App with the engine's `Math` (agent's runs): start document 270/270, `channels-figure` 236/236, the colours document 271/271; owned editing the same as the editor alone. |
 
 In progress: the remaining drawing paths through the engine (agent: thumbnails, library
-previews, camera monitor, SVG export; S3 item 6); the figure-range family (agent: the commands
-across frames, recolouring, ordering, branch flips). Next for agents: the builder and rig
-family (topology edits, `native-properties` entries, rig behaviours, segment commands), motion
-paths and in-betweens, the CPU rasterizer (S3 item 7). Next in the main thread: `centerCamera`
-and `applyCameraToFigures`, joined 3D IK targets, movieclip commands, the asynchronous layer
+previews, camera monitor, SVG export; S3 item 6). Next for agents: the builder and rig family
+(topology edits, `native-properties` entries, rig behaviours, segment commands), motion paths
+and in-betweens, the CPU rasterizer (S3 item 7). Next in the main thread: `centerCamera` and
+`applyCameraToFigures`, joined 3D IK targets, movieclip commands, the asynchronous layer
 commands (moving figures between layers, deleting layers: their planning must stay off the
 interface thread, D7). The next classes to flip (D15): small figure documents once a pose's
 boundary and adoption cost less than the editor's call (measured: the editor computes a small

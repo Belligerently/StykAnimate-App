@@ -147,33 +147,13 @@ impl Editor {
         Ok(())
     }
 
-    /// `_frameIndices(indices)`.
-    fn frame_indices(&self, indices: Option<&Value>) -> Result<Vec<usize>, EditError> {
-        let count = self.report.get("keyframes").and_then(Value::array_len).unwrap_or(0) as f64;
-        let list: Vec<Value> = match indices {
-            None => vec![Value::Num(self.frame_index as f64)],
-            Some(list) => list.elements().map(|e| e.iter().collect()).unwrap_or_default(),
-        };
-        let mut out: Vec<usize> = Vec::new();
-        for value in list {
-            let Some(index) = value.as_f64().filter(|i| i.fract() == 0.0 && *i >= 0.0 && *i < count) else {
-                return Err(EditError::Invalid("errors.editor.selectExistingKeyframes".into()));
-            };
-            if !out.contains(&(index as usize)) {
-                out.push(index as usize);
-            }
-        }
-        out.sort_unstable();
-        Ok(out)
-    }
-
     /// `cameraTargets(editor, indices)` with each frame's camera (`composedFrame`).
     fn camera_targets(&mut self, indices: Option<&Value>) -> Result<Vec<Target>, EditError> {
         let mut options = Obj::new();
         if let Some(indices) = indices {
             options.set("indices", indices.clone());
         }
-        let ticks = self.sheet_edit_times(Some(&Value::object(options)))?;
+        let ticks = self.sheet_edit_times_of(Some(&Value::object(options)))?;
         let rows = crate::timeline::rows(&self.report);
         let mut targets = Vec::with_capacity(ticks.len());
         for tick in ticks {
@@ -373,7 +353,7 @@ impl Editor {
         self.finish_gesture()?;
         let indices = options.get("indices").filter(|i| !i.is_null()).cloned();
         let label = options.get("label").and_then(Value::as_str).unwrap_or("Move camera").to_string();
-        let selected = self.frame_indices(indices.as_ref())?;
+        let selected = self.frame_indices(crate::range::Indices::parse(indices.as_ref()).as_ref())?;
         if selected.is_empty() {
             return Ok(false);
         }

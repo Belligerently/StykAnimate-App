@@ -25,6 +25,9 @@ import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 import {layerFocusOf} from '../editor-layer-focus.mjs';
 import {figureHandleTransform} from '../editor-figure-transform.mjs';
 
+/** The figure-range commands: an `undefined` argument means what `null` does to them. */
+const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
+  'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames'];
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
@@ -40,7 +43,11 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo',
   // Property edits on a layer sheet (styk-edit/src/property_edit.rs).
   'addAnimationKeys', 'addAnimationKey', 'beginAnimationEdit', 'previewAnimationEdit', 'commitAnimationEdit', 'cancelAnimationEdit', 'setSceneColor', 'setSceneBackground',
-  'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter'];
+  'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter',
+  // Figures changed across frames, figure order, branch flips (styk-edit/src/range.rs).
+  ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
+  // Recolouring (styk-edit/src/recolor.rs).
+  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold), or clipboard text (numbers in text cannot be compared within the
  * browsers' last-digit differences, D16): a view, not compared. */
@@ -51,7 +58,13 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
   'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection', 'importFigure',
   // Property edits publish the sheet; a scrub's previews are compared, not adopted.
-  'addAnimationKeys', 'addAnimationKey', 'commitAnimationEdit', 'setSceneColor', 'setSceneBackground', 'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter']);
+  'addAnimationKeys', 'addAnimationKey', 'commitAnimationEdit', 'setSceneColor', 'setSceneBackground', 'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter',
+  ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
+  'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors']);
+const RANGE = new Set([...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames']);
+/** A frame range as the app passes it on a layer sheet (`rangeFrames()`: an array carrying the
+ * timeline's chosen ticks as `sheetTicks`), which JSON would drop: `{"@array", sheetTicks}`. */
+const frameRanges = (key, value) => Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
 
 /** A switch set in the address (`?query=on|off`), else in local storage: 'on', 'off' or null. */
 const choice = (query, key) => {
@@ -194,9 +207,21 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     // of whole figures.
     else if (detail?.kind === 'layer-focus') end('layer focus');
     else if (detail?.kind === 'selection' && editor.branchSelected) end('a branch selection');
+    else if (detail?.kind === 'selection' && editor.selectedSegmentIds?.size > 1) end('several selected segments');
   });
-  /** Whether the editor holds runtime state that changes what calls do and the engine lacks. */
-  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor.branchSelected);
+  /** Whether the editor holds runtime state that changes what calls do and the engine lacks:
+   * layer focus, a selected branch, several selected segments of a figure (a branch flip turns
+   * them all over). */
+  const runtimeState = () => Boolean(layerFocusOf(editor.report)?.lock || editor.branchSelected || editor.selectedSegmentIds?.size > 1);
+  // Legacy Pivot poses carry `runtime_segments`, which the engine's copy leaves out; the range
+  // operations read them (lengths and bends materialized before a transform, and geometry), so
+  // documents that have them keep those calls in the editor. Checked once per keyframe list.
+  let legacy = {keyframes: null, found: false};
+  const legacyRuntime = () => {
+    const keyframes = editor.report?.keyframes;
+    if (legacy.keyframes !== keyframes) legacy = {keyframes, found: Boolean(keyframes?.some(frame => frame?.objects?.some(object => object?.runtime_segments)))};
+    return legacy.found;
+  };
 
   /** Brings the engine's frames to the editor's revision (playback does it only when it prepares). */
   let syncing = null;
@@ -384,6 +409,9 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       // A ported call made by another call belongs to it.
       if (depth > 0) return original.apply(this, args);
       let live = begin(), before = null, payload = null;
+      // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
+      if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
+      if (live && (RANGE.has(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
       if (live && (name === 'undo' && !live.can_undo() || name === 'redo' && !live.can_redo())) { end('history the session did not record'); live = null; }
       if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
       if (live && name === 'pasteSelection' && (editor._selectionClipboard ?? editor._figureClipboard ?? null) !== copiedFigures) { end('a figure clipboard the session did not copy'); live = null; }
@@ -391,9 +419,10 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && name === 'pasteCamera' && (editor._cameraClipboard ?? null) !== copiedCamera) { end('a camera the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
-        const given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
+        let given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
+        if (RANGE_CALLS.includes(name)) given = given.map(value => value === undefined ? null : value);
         if (given.some(value => value === undefined || typeof value === 'function' || value instanceof Set || name === 'undo' || name === 'redo')) payload = name === 'undo' || name === 'redo' ? '[]' : null;
-        else try { payload = JSON.stringify(given); } catch { payload = null; }
+        else try { payload = JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
         else before = JSON.stringify(view());
       }

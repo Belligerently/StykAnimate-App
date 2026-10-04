@@ -525,18 +525,22 @@ impl Editor {
         self.publish(plan, &label, selection, retain.then_some(after))
     }
 
-    /// `_commitSheetRange(plans, payload, label, selection)` for the frame at the playhead:
-    /// the layers owning `changed` take a key holding `frame`; `inserted` figures are first
-    /// assigned to their layer. Unlike a gesture's commit, nothing else of the frame is
-    /// compared: the operation names what it changed.
     /// `_commitSheetRange(plans, payload, label, selection)` for one frame at the playhead:
     /// `frame` keyed on the layers of the figures in `changed`, the figures in `inserted`
     /// assigned to theirs (`hints` first), `definitions` added with it.
     pub(crate) fn commit_sheet_range_with(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
+        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection)
+    }
+
+    /// `_commitSheetRange(plans, payload, label, selection)`: each planned frame `(tick, frame,
+    /// changed)` keyed on the layers owning its changed figures (a held cell at its key unless
+    /// auto key is on), the figures in `inserted` first assigned to their layer (`hints` first),
+    /// `definitions` added with it. Unlike a gesture's commit, nothing else of a frame is
+    /// compared: the operation names what it changed.
+    pub(crate) fn commit_sheet_range(&mut self, plans: &[(f64, Value, Vec<u32>)], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
         self.ensure_counts();
-        let tick = self.tick;
         let mut ids: Vec<String> = Vec::new();
-        for &uid in changed {
+        for &uid in plans.iter().flat_map(|(_, _, changed)| changed) {
             let owner = self.owner_with(uid, hints)?;
             if !ids.contains(&owner) {
                 ids.push(owner);
@@ -547,27 +551,37 @@ impl Editor {
         for &uid in inserted {
             plan.assign(uid, &self.owner_with(uid, hints)?);
         }
-        for id in &ids {
-            let keys = plan.keys(id);
-            let end = num(&Value::object(plan.track(id).clone()), "end").unwrap_or(0.0);
-            let at_key = key_at(&keys, tick);
-            let key = at_key.map(|i| keys[i].clone());
-            let inside = tick < end;
-            // A boundary of a broken-apart movieclip frame: the pose after it is fixed first.
-            if key.as_ref().is_some_and(|k| k.get("patchOnly").is_some_and(Value::truthy))
-                && let Some(next) = at_key.and_then(|i| keys.get(i + 1)).cloned()
-            {
-                let until = num(&next, "tick").unwrap_or(tick);
-                let evaluated = self.evaluated(until, false)?;
-                plan.write(id, until, &evaluated, Write { easing: Some(&next), ..Write::default() })?;
+        for (tick, frame, changed) in plans {
+            let tick = *tick;
+            let mut layers: Vec<String> = Vec::new();
+            for &uid in changed {
+                let owner = self.owner_with(uid, hints)?;
+                if !layers.contains(&owner) {
+                    layers.push(owner);
+                }
             }
-            let hold = key.as_ref().is_some_and(|k| matches!(k.get("interpolation").and_then(Value::as_str), Some("constant" | "hold")));
-            let at = match &key {
-                Some(key) if !self.auto_key && inside && hold => num(key, "tick").unwrap_or(tick),
-                _ => tick,
-            };
-            let held = constant();
-            plan.write(id, at, frame, Write { easing: Some(key.as_ref().unwrap_or(&held)), ..Write::default() })?;
+            for id in &layers {
+                let keys = plan.keys(id);
+                let end = num(&Value::object(plan.track(id).clone()), "end").unwrap_or(0.0);
+                let at_key = key_at(&keys, tick);
+                let key = at_key.map(|i| keys[i].clone());
+                let inside = tick < end;
+                // A boundary of a broken-apart movieclip frame: the pose after it is fixed first.
+                if key.as_ref().is_some_and(|k| k.get("patchOnly").is_some_and(Value::truthy))
+                    && let Some(next) = at_key.and_then(|i| keys.get(i + 1)).cloned()
+                {
+                    let until = num(&next, "tick").unwrap_or(tick);
+                    let evaluated = self.evaluated(until, false)?;
+                    plan.write(id, until, &evaluated, Write { easing: Some(&next), ..Write::default() })?;
+                }
+                let hold = key.as_ref().is_some_and(|k| matches!(k.get("interpolation").and_then(Value::as_str), Some("constant" | "hold")));
+                let at = match &key {
+                    Some(key) if !self.auto_key && inside && hold => num(key, "tick").unwrap_or(tick),
+                    _ => tick,
+                };
+                let held = constant();
+                plan.write(id, at, frame, Write { easing: Some(key.as_ref().unwrap_or(&held)), ..Write::default() })?;
+            }
         }
         self.publish(plan, label, selection, None)
     }

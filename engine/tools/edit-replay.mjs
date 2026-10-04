@@ -34,6 +34,13 @@ const plain = (value, depth = 4) => {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plain(item, depth - 1)]).filter(([, item]) => item !== undefined));
 };
 
+/** `{"@array": [...], key: value}` in a step's arguments: an array carrying properties, as the
+ * app's frame ranges on a layer sheet carry `sheetTicks` (JSON drops them; the shadow facade
+ * sends them the same way). */
+const decode = value => Array.isArray(value) ? value.map(decode) : value === null || typeof value !== 'object' ? value
+  : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
+  : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
+
 export function replay(scenario, base = repo) {
   const document = typeof scenario.document === 'string' ? JSON.parse(readFileSync(path.resolve(base, scenario.document), 'utf8')) : structuredClone(scenario.document);
   const {autoKey = false, ...options} = scenario.editor ?? {};
@@ -57,7 +64,7 @@ export function replay(scenario, base = repo) {
   // several commands; recorded as one step, returning the last step's result.
   const run = ([name, ...args]) => {
     if (name === '@batch') { let last; return editor.movieclipBatch(args[0], () => { for (const step of args[1]) last = run(step); return last; }); }
-    return editor[name === '@seek' ? 'seek' : name === '@select' ? 'select' : name](...args);
+    return editor[name === '@seek' ? 'seek' : name === '@select' ? 'select' : name](...args.map(decode));
   };
   scenario.steps.forEach((call, index) => {
     events.length = 0;

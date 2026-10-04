@@ -263,6 +263,39 @@ async function run(mode) {
     await step('add, reorder and remove project colours', () => page.evaluate(() => { const e = styk.editor; e.addPaletteColor('#3366cc'); e.addPaletteColors(['#ff8800', [10, 200, 30]]); e.movePaletteColor('#ff8800', 0); e.removePaletteColor('#3366cc'); e.undo(); }));
     await step('add a figure from the library', () => page.evaluate(() => { const e = styk.editor; e.addFigure(e.report.figure_types[0]?.figure_type_id); e.moveSelection(-30, 15); e.undo(); }));
     await step('duplicate, join, unjoin and delete a figure', () => page.evaluate(() => { const e = styk.editor, original = e.selectedUid; const copy = e.duplicateFigure(); if (copy && original !== null) { e.joinTo(original, 0); e.unjoinFigure(); e.moveSelection(20, 20); e.deleteSelection(); e.undo(); e.undo(); } }));
+    // Figures changed across frames as the app does it (a timeline range carries its ticks),
+    // ordered, joined and detached at the playhead, a branch and a figure flipped.
+    await step('change figures across frames, order, join and flip them', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null || !e.report._styk?.layerSheet) return;
+      const last = Math.max(0, e.totalTicks - 1), range = Object.assign([e.frameIndex], {sheetTicks: [...new Set([0, Math.min(2, last), e.tick])]});
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      attempt(() => e.updateFiguresInFrames({field28: 40}, range)); attempt(() => e.mirrorFiguresInFrames('horizontal', range));
+      attempt(() => e.rotateFiguresInFrames(Math.PI / 12, range)); attempt(() => e.centerFiguresInFrames(range));
+      attempt(() => e.moveSelectionInFrames(6, -4, range)); attempt(() => e.resetPoseInFrames(range)); attempt(() => e.duplicateInFrames(range));
+      const copy = e.selectedUid;
+      attempt(() => e.orderSelection('back', {frameIndices: undefined})); attempt(() => e.bringToFront()); attempt(() => e.moveSelectionLayer(-1));
+      attempt(() => e.orderFiguresInFrames('front', range));
+      attempt(() => e.joinFiguresInFrames(uid, 0, undefined, {uids: [copy], atPlayhead: true})); attempt(() => e.detachFiguresInFrames(undefined, {uids: [copy], atPlayhead: true}));
+      attempt(() => e.deleteFiguresInFrames(range));
+      e.select(uid, -1); attempt(() => e.updateFiguresInFrames({field28: 10}, [e.frameIndex], {ticks: [e.tick]})); attempt(() => e.addFigureInFrames(undefined, range));
+      e.select(uid, 1); attempt(() => e.mirrorFigure('horizontal')); attempt(() => e.mirrorSelection('vertical'));
+      e.select(uid, -1); attempt(() => e.mirrorFigure('vertical'));
+      for (let i = 0; i < 6; i++) e.undo();
+      e.select(uid, -1);
+    }));
+    // Recolouring as the inspector does it: a palette colour replaced, the figure's colour set
+    // (across a timeline range too), a polygon's colour, a reset.
+    await step('recolour figures from the palette and the inspector', () => page.evaluate(() => {
+      const e = styk.editor; if (e.selectedUid === null) return;
+      const attempt = run => { try { run(); } catch { /* refused: compared in the shadow */ } };
+      const entry = e.figurePalette()[0], last = Math.max(0, e.totalTicks - 1);
+      if (entry) attempt(() => e.replaceFigureColor(entry.color, '#204080', {targets: entry, indices: undefined}));
+      attempt(() => e.setFigureColor('#c04020', {indices: undefined}));
+      attempt(() => e.setFigureColor('#40c020', {indices: Object.assign([e.frameIndex], {sheetTicks: [...new Set([0, Math.min(2, last), e.tick])]}), opacity: 0.8}));
+      if (e.figure?.polyfills?.length) attempt(() => e.updatePolygon(0, {color: '#336699'}));
+      attempt(() => e.resetFigureColors({indices: undefined}));
+      e.undo(); e.undo();
+    }));
     if (joints[0]) await step('drag a joint again after the commands', async () => { const now = await handles(); const handle = now.find(h => h.joint >= 0); if (handle) await drag(handle, 25, 35); });
     // A hand or foot with an IK controller, when the figure has one: its target is dragged.
     const target = (await handles()).find(handle => handle.ik);
