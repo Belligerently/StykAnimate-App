@@ -7,9 +7,8 @@
 //
 // Without names it regenerates every fixture into
 // engine/crates/styk-eval/tests/fixtures/origin/, which
-// engine/crates/styk-eval/tests/origin.rs compares the engine with. They live apart from
-// the evaluation fixtures because the evaluated frame as records refuses documents with
-// animation origins (styk_eval::records), so records-fixtures.mjs does not record them.
+// engine/crates/styk-eval/tests/origin.rs compares the engine with. records-fixtures.mjs
+// also records these documents' evaluated frames at exact and fractional ticks.
 import {mkdirSync} from 'node:fs';
 import path from 'node:path';
 import {here, documentOf, limb, open, joint, writeProject, writeReference} from './fixture-kit.mjs';

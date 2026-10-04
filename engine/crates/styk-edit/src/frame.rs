@@ -132,6 +132,17 @@ impl Editor {
         frame.get_mut("objects")?.make_arr()?.get_mut(slot)?.make_obj()
     }
 
+    /// Replace one pose already copied for a transform, without first copying its old
+    /// object again through `frame_object_mut`. Frame/array ownership stays here.
+    pub(crate) fn replace_frame_object(&mut self, slot: usize, object: Obj) -> Option<()> {
+        let frame = match self.authored.as_mut() {
+            Some(edit) => edit.frame.make_obj()?,
+            None => frame_mut(&mut self.report, self.frame_index)?,
+        };
+        *frame.get_mut("objects")?.make_arr()?.get_mut(slot)? = Value::object(object);
+        Some(())
+    }
+
     /// `editor.object`: the selected figure's record in the selection frame, else the
     /// last selected figure in slot order.
     pub(crate) fn object(&self) -> Result<Option<(usize, Value)>, EditError> {

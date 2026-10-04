@@ -28,7 +28,7 @@ import {withDraws} from '../editor-draws.mjs';
 
 /** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
 const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSegment', 'unsplitSegment', 'mirrorSegment', 'mirrorSegmentBranch', 'moveBuilderSegment',
-  'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint', 'replaceFigureDefinition'];
+  'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint', 'replaceFigureDefinition', 'setOrigin'];
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames'];
@@ -117,7 +117,7 @@ const LARGE = 1000;
 
 /**
  * A document's editing class (D15, docs/engine/editing.md): `unported` for documents the
- * engine does not edit at all (property channels on a native timeline, animation origins, a
+ * engine does not fully edit (property channels on a native timeline, animation origins, a
  * captured movieclip's own document), `channels` for documents whose layer sheet keeps saved
  * property channels (`legacyAnimation`: edited, their cost not yet measured on large
  * documents), `movieclips` when a figure is a movieclip, `3d` when a figure

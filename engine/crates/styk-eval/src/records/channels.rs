@@ -10,8 +10,8 @@
 //! Values come from the sampling drawing uses ([`Channel::sample_at`]): a key's own value is
 //! taken as saved, an interpolated one as the typed curve works it out. Where the editor
 //! measures geometry (a joined figure's position, a figure that comes loose from its parent)
-//! the record is read into a typed frame and measured. Documents with animation origins are
-//! refused before this ([`Records::new`]), so no origin is corrected here.
+//! the record is read into a typed frame and measured. Animation pivots, original joint
+//! tangents and retained ghost bones use the typed origin evaluator's arithmetic.
 
 use std::collections::{HashMap, HashSet};
 
@@ -453,10 +453,15 @@ impl Records<'_> {
     }
 
     /// `handleOrientation(object, handle)`: the direction of joint `handle` of `object`.
-    fn handle_orientation(object: Option<&Value>, handle: Option<f64>, definitions: &HashMap<u64, Value>) -> Option<f64> {
+    fn handle_orientation(&self, object: Option<&Value>, handle: Option<f64>, definitions: &HashMap<u64, Value>) -> Option<f64> {
         let object = object?;
         let figure = definitions.get(&num(object, "figure_type_id")?.to_bits())?;
         let handle = handle?;
+        if figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) {
+            let typed = self.typed_object(object)?;
+            let figure = self.prepared.doc.figure(typed.figure)?;
+            return crate::origin::handle_orientation(figure, &typed, handle as u32);
+        }
         let segments = items(figure.get("segments"));
         // A `Map` of the segments' identities: the last of equal ones.
         let index = if handle == 0.0 { 0 } else { segments.iter().rposition(|s| s.get("segment_id").and_then(Value::as_f64) == Some(handle))? };
@@ -627,7 +632,7 @@ impl Records<'_> {
             let parent = num(&join, "target_object_slot").filter(|s| *s >= 0.0 && s.fract() == 0.0).and_then(|s| source_objects.get(s as usize));
             let parent_slot = parent.and_then(|p| slots.get(&uid_bits(p))).copied();
             let target = parent_slot.map(|p| &placed[p].object);
-            let oriented = Records::handle_orientation(target, num(&join, "target_handle_id"), &definitions);
+            let oriented = self.handle_orientation(target, num(&join, "target_handle_id"), &definitions);
             let Some(parent_slot) = parent_slot.filter(|_| oriented.is_some()) else {
                 // Its parent left, or no longer has the joint: it stays where its own frame drew it.
                 let scene = match geometry.entry(record.source) {
@@ -682,8 +687,8 @@ impl Records<'_> {
                     let source_parent = record.object.get("join").and_then(|j| num(j, "target_object_slot")).filter(|s| *s >= 0.0 && s.fract() == 0.0).and_then(|s| source_objects.get(s as usize));
                     let handle = num(&join, "target_handle_id");
                     let parent = parent_of(&objects[child]).and_then(|p| objects.get(p)).map(|o| Value::object(o.clone()));
-                    let before = Records::handle_orientation(source_parent, handle, &definitions);
-                    let after = Records::handle_orientation(parent.as_ref(), handle, &definitions);
+                    let before = self.handle_orientation(source_parent, handle, &definitions);
+                    let after = self.handle_orientation(parent.as_ref(), handle, &definitions);
                     let delta = match (before, after) {
                         (Some(before), Some(after)) => after - before,
                         _ => 0.0,
@@ -691,6 +696,8 @@ impl Records<'_> {
                     if delta.abs() > 1e-12 {
                         let angles: Vec<f64> = items(objects[child].get("angles")).iter().map(|a| a.as_f64().unwrap_or(0.0) + delta).collect();
                         objects[child].set("angles", numbers(angles));
+                        let definition = num(&Value::object(objects[child].clone()), "figure_type_id").and_then(|id| definitions.get(&id.to_bits()));
+                        rotate_origin_support(definition, &mut objects[child], delta);
                         objects[child].remove("runtime_segments");
                     }
                 }
@@ -962,18 +969,24 @@ impl Records<'_> {
                 objects[slot].set("field28", Value::Num(crate::vfx::paint::js_round(255.0 * (1.0 - opacity))));
             }
             let mut delta = parents[slot].map_or(0.0, |parent| deltas[parent]);
+            let definition = num(object, "figure_type_id").and_then(|id| definitions.get(&id.to_bits()));
             if let Some(rotation) = value_of(slot, "rotation") {
-                // `animationRotation(figure, object)` without an animation origin.
-                let figure = num(object, "figure_type_id").and_then(|t| definitions.get(&t.to_bits()));
-                let first = figure.and_then(|f| f.get("segments")).and_then(|s| s.item(0));
-                let reference = number(first.as_ref().and_then(|s| s.get("angle_rad")), 0.0);
-                delta = rotation - (number(object.get("angles").and_then(|a| a.item(0)).as_ref(), 0.0) - reference);
+                delta = rotation - self.animation_rotation(definition, object);
             }
             deltas[slot] = delta;
             if delta != 0.0 {
                 let angles: Vec<f64> = items(object.get("angles")).iter().map(|a| a.as_f64().unwrap_or(0.0) + delta).collect();
                 objects[slot].set("angles", numbers(angles));
+                rotate_origin_support(definition, &mut objects[slot], delta);
                 objects[slot].remove("runtime_segments");
+            }
+        }
+        if self.prepared.doc.origins {
+            let mut composed = frame.clone();
+            composed.set("objects", Value::array(objects.iter().cloned().map(Value::object).collect()));
+            let corrected = self.correct_origins(Value::object(composed))?;
+            for (object, record) in objects.iter_mut().zip(items(corrected.get("objects"))) {
+                *object = record.as_obj().cloned().unwrap_or_default();
             }
         }
         let needs_world = values.iter().any(|(slot, v)| parents[*slot].is_some() && v.iter().any(|(k, _)| *k == "x" || *k == "y"));
@@ -992,7 +1005,15 @@ impl Records<'_> {
             }
             let root = roots[slot];
             let object = Value::object(objects[slot].clone());
-            let base = world.as_ref().and_then(|w| w.objects.get(slot)).filter(|g| g.resolved).map(|g| g.root);
+            let mut base = world.as_ref().and_then(|w| w.objects.get(slot)).filter(|g| g.resolved).map(|g| g.root);
+            if let Some(origin) = object.get("_stykAnimationOrigin").filter(|origin| origin.truthy()) {
+                if parents[slot].is_none() {
+                    base = Some([num(origin, "x").unwrap_or(f64::NAN), num(origin, "y").unwrap_or(f64::NAN)]);
+                } else if let Some(root) = base {
+                    let offset = self.animation_offset(&object);
+                    base = Some([root[0] + offset[0], root[1] + offset[1]]);
+                }
+            }
             for (axis, field, value) in [(0usize, "root_x", x), (1usize, "root_y", y)] {
                 let Some(value) = value else { continue };
                 let delta = value - (base.map_or_else(|| num(&object, field).unwrap_or(f64::NAN), |b| b[axis]) + shifts[axis][root]);
@@ -1000,12 +1021,36 @@ impl Records<'_> {
                     let moved = &mut objects[root];
                     let at = moved.get(field).and_then(Value::as_f64).unwrap_or(f64::NAN);
                     moved.set(field, Value::Num(at + delta));
+                    if let Some(origin) = moved.get("_stykAnimationOrigin").filter(|origin| origin.truthy()).and_then(Value::as_obj) {
+                        let mut origin = origin.clone();
+                        let property = if axis == 0 { "x" } else { "y" };
+                        let at = origin.get(property).and_then(Value::as_f64).unwrap_or(f64::NAN);
+                        origin.set(property, Value::Num(at + delta));
+                        moved.set("_stykAnimationOrigin", Value::object(origin));
+                    }
                     moved.remove("runtime_segments");
                 }
                 shifts[axis][root] += delta;
             }
         }
         Ok(())
+    }
+
+    /// `animationRotation`: an original pivot's reference, otherwise the first live angle.
+    fn animation_rotation(&self, definition: Option<&Value>, object: &Value) -> f64 {
+        if definition.is_some_and(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy))
+            && let Some(typed) = self.typed_object(object)
+            && let Some(figure) = self.prepared.doc.figure(typed.figure)
+        {
+            return crate::origin::rotation(figure, &typed);
+        }
+        let first = definition.and_then(|figure| figure.get("segments")).and_then(|segments| segments.item(0));
+        let reference = number(first.as_ref().and_then(|segment| segment.get("angle_rad")), 0.0);
+        number(object.get("angles").and_then(|angles| angles.item(0)).as_ref(), 0.0) - reference
+    }
+
+    fn animation_offset(&self, object: &Value) -> [f64; 2] {
+        self.typed_object(object).and_then(|typed| self.prepared.doc.figure(typed.figure).map(|figure| crate::origin::offset(figure, &typed))).unwrap_or([0.0, 0.0])
     }
 
     /// `animationPropertyValue(report, frame, target, property)`: what the editor shows for a
@@ -1097,21 +1142,41 @@ impl Records<'_> {
         Ok(match property {
             Property::Opacity => Some(Value::Num(1.0 - number(object.get("field28"), 0.0) / 255.0)),
             Property::Rotation => {
-                let first = definition.as_ref().and_then(|f| f.get("segments")).and_then(|s| s.item(0));
-                let reference = number(first.as_ref().and_then(|s| s.get("angle_rad")), 0.0);
-                Some(Value::Num(number(object.get("angles").and_then(|a| a.item(0)).as_ref(), 0.0) - reference))
+                Some(Value::Num(self.animation_rotation(definition.as_ref(), object)))
             }
             Property::X | Property::Y => {
                 let (axis, field) = if *property == Property::X { (0, "root_x") } else { (1, "root_y") };
                 let world = if object.get("join").is_some_and(Value::truthy) { self.geometry_of(frame)?.objects.get(slot).filter(|g| g.resolved).map(|g| g.root) } else { None };
-                match world {
-                    Some(root) => Some(Value::Num(root[axis])),
-                    None => object.get(field).cloned(),
+                match (world, object.get("_stykAnimationOrigin").filter(|origin| origin.truthy())) {
+                    (Some(root), Some(_)) => Some(Value::Num(root[axis] + self.animation_offset(object)[axis])),
+                    (None, Some(origin)) => origin.get(if axis == 0 { "x" } else { "y" }).cloned(),
+                    (Some(root), None) => Some(Value::Num(root[axis])),
+                    (None, None) => object.get(field).cloned(),
                 }
             }
             other => object.get(property_name(other)).cloned(),
         })
     }
+}
+
+/// `rotateOriginSupport`: preserve all ghost fields while the retained angular dependencies
+/// follow a whole figure's turn. Native segments have already taken the same delta.
+fn rotate_origin_support(figure: Option<&Value>, object: &mut Obj, delta: f64) {
+    if delta == 0.0 || !figure.is_some_and(|figure| figure.path(&["_styk", "animationOrigin", "support"]).is_some_and(Value::truthy)) {
+        return;
+    }
+    let Some(origin) = object.get("_stykAnimationOrigin").and_then(Value::as_obj) else { return };
+    let Some(ghosts) = origin.get("ghosts").and_then(Value::as_obj) else { return };
+    let mut turned = Obj::new();
+    for (index, pose) in ghosts.iter() {
+        let mut pose = pose.as_obj().cloned().unwrap_or_default();
+        let angle = pose.get("angle_rad").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        pose.set("angle_rad", Value::Num(angle + delta));
+        turned.set(index, Value::object(pose));
+    }
+    let mut origin = origin.clone();
+    origin.set("ghosts", Value::object(turned));
+    object.set("_stykAnimationOrigin", Value::object(origin));
 }
 
 /// A property's name as channels store it, for the plain ones.

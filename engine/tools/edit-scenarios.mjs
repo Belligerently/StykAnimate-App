@@ -1130,3 +1130,7 @@ scenario('figures-layers-sheet', app, [
 await import('./edit-scenarios-property.mjs');
 // Motion-path edits on a layer sheet (trail points dragged at their own ticks, falloffs).
 await import('./edit-scenarios-motion-path.mjs');
+// Whole-figure animation-origin gestures; topology and scalar channels stay gated.
+await import('./edit-scenarios-origin.mjs');
+
+await import('./edit-scenarios-origin-topology.mjs');

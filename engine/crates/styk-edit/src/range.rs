@@ -792,7 +792,8 @@ impl Editor {
                     continue;
                 }
                 let figure = figures.iter().find(|f| num(f, "figure_type_id") == num(object, "figure_type_id"));
-                let record = editor.frame_object_mut(slot).unwrap();
+                let previous = figure.map(|figure| editor.origin_rotation(figure, object)).transpose()?.unwrap_or(0.0);
+                let mut record = object.as_obj().cloned().unwrap_or_default();
                 let angles: Vec<Value> = numbers(record.get("angles")).into_iter().map(|a| Value::Num(if horizontal { std::f64::consts::PI - a } else { -a })).collect();
                 record.set("angles", Value::array(angles));
                 let bends: Vec<f64> = if record.get("bend_flag").is_some_and(Value::truthy) {
@@ -804,7 +805,12 @@ impl Editor {
                 record.set("bend_flag", Value::Num(1.0));
                 let flipped = !record.get("image_text_flags").is_some_and(Value::truthy);
                 record.set("image_text_flags", Value::Num(if flipped { 1.0 } else { 0.0 }));
+                if let Some(figure) = figure {
+                    crate::origin::mirror_support(figure, &mut record, horizontal);
+                    editor.reflect_origin_offset(figure, &mut record, horizontal, previous)?;
+                }
                 record.remove("runtime_segments");
+                editor.replace_frame_object(slot, record).unwrap();
             }
             Ok(())
         })

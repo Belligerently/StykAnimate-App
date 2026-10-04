@@ -29,6 +29,8 @@ mod ik_settings;
 mod layers;
 mod motion_path;
 mod movieclips;
+mod origin;
+mod origin_topology;
 mod pose;
 mod pose_choice;
 mod palette;
@@ -515,7 +517,13 @@ impl Editor {
         // A JSON argument that is not a number is NaN to the finite checks, as `Number.isFinite` sees it.
         let number = |i: usize| arg(i).as_f64().unwrap_or(f64::NAN);
         if let Some(reason) = self.unported_document() {
-            return Err(EditError::Unported(format!("{method} {reason}")));
+            if reason != "with animation origins" || !origin::recorded_call(method) {
+                return Err(EditError::Unported(format!("{method} {reason}")));
+            }
+            // Branch mirrors enter topology/range paths, outside this gesture milestone.
+            if matches!(method, "mirrorSelection" | "mirrorFigure") && self.selection.joint >= 0 && self.selected_objects()?.len() == 1 {
+                return Err(EditError::Unported(format!("{method} of an origin branch")));
+            }
         }
         if let Some(reason) = self.ik_gate(method)? {
             return Err(EditError::Unported(format!("{method} {reason}")));
@@ -789,6 +797,9 @@ impl Editor {
         }
         let figures = list(self.report.get("figure_types"));
         if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
+            if sheet.and_then(|sheet| sheet.path(&["legacyAnimation", "channels"])).and_then(Value::array_len).unwrap_or(0) > 0 {
+                return Some("with animation origins and property channels");
+            }
             return Some("with animation origins");
         }
         // IK controllers are gated per call, on the frame on show (`ik_gate`).

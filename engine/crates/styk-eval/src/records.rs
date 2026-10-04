@@ -102,9 +102,6 @@ impl<'a> Records<'a> {
     pub fn new(tree: &'a Value, prepared: &'a Prepared) -> Result<Records<'a>, Error> {
         let styk = tree.get("_styk");
         let clips = |path: &[&str]| items(styk.and_then(|s| s.path(path)));
-        if items(tree.get("figure_types")).iter().any(|f| truthy(f.path(&["_styk", "animationOrigin"]))) {
-            return unported("animation origins");
-        }
         if styk.and_then(|s| s.get("movieclipSource")).is_some() {
             return unported("a movieclip's own document");
         }
@@ -129,6 +126,47 @@ impl<'a> Records<'a> {
             last.count = last.count.max((ends - last.start as f64).max(0.0) as u32);
         }
         Ok(Records { tree, prepared, rows, legacy })
+    }
+
+    /// A pose record read through the same typed loader as evaluation. Origin arithmetic
+    /// stays in `crate::origin`; the record writer only preserves the editor's key layout.
+    fn typed_object(&self, object: &Value) -> Option<Arc<crate::doc::Object>> {
+        let mut frame = Obj::new();
+        frame.set("objects", Value::array(vec![object.clone()]));
+        crate::load::Loader::new().keyframe(&Value::object(frame)).ok()?.objects.into_iter().next()
+    }
+
+    /// `correctAnimationOrigins`: exact keys need this as well as interpolated frames.
+    /// Unchanged records keep their identity and unknown fields; a changed root drops the
+    /// runtime geometry just as the editor's correction does.
+    fn correct_origins(&self, frame: Value) -> Result<Value, Error> {
+        if !self.prepared.doc.origins {
+            return Ok(frame);
+        }
+        let mut objects = items(frame.get("objects"));
+        let mut changed = false;
+        for object in &mut objects {
+            // Most poses in a mixed scene need no origin work. Read only an unjoined pose
+            // with a pivot, using the base definition: styles affect drawing, not the
+            // animation basis (`correct_origins` in the typed evaluator does the same).
+            if !truthy(object.get("_stykAnimationOrigin")) || truthy(object.get("join")) {
+                continue;
+            }
+            let Some(figure) = num(object, "figure_type_id").and_then(|id| self.prepared.doc.figure(id as u32)).filter(|figure| figure.origin.is_some()) else { continue };
+            let Some(typed) = self.typed_object(object) else { return Err(Error::Invalid("an animation origin's pose has no identity or figure".into())) };
+            let Some(root) = crate::origin::corrected_root(figure, &typed) else { continue };
+            let Some(record) = object.make_obj() else { continue };
+            record.set("root_x", Value::Num(root[0]));
+            record.set("root_y", Value::Num(root[1]));
+            record.remove("runtime_segments");
+            changed = true;
+        }
+        if !changed {
+            return Ok(frame);
+        }
+        let mut corrected = frame.as_obj().cloned().unwrap_or_default();
+        corrected.set("objects", Value::array(objects));
+        Ok(Value::object(corrected))
     }
 
     /// `snapshotPoseFrame(editor.evaluatedFrame)` at `tick`.
@@ -260,20 +298,20 @@ impl<'a> Records<'a> {
     /// `only`, the other figures keep the interval's first pose (`requestedUids`).
     fn interval(&self, seq: &Seq, frame_at: &dyn Fn(usize) -> Result<Option<Value>, Error>, index: usize, t: f64, only: Option<&[u32]>) -> Result<Value, Error> {
         let (Some(a), Some(key)) = (frame_at(index)?, seq.keys.get(index)) else { return Err(Error::Invalid(format!("no key {index}"))) };
-        let Some(b) = frame_at(index + 1)? else { return Ok(a) };
+        let Some(b) = frame_at(index + 1)? else { return self.correct_origins(a) };
         if t <= 0.0 || (seq.version < 5 && key.easing.is_none()) {
-            return Ok(a);
+            return self.correct_origins(a);
         }
         if t >= 1.0 {
-            return Ok(b);
+            return self.correct_origins(b);
         }
         let auto = key.easing.map(|e| e.mode) == Some(crate::doc::EasingMode::Auto);
         let eased = if auto { t } else { crate::eval::eased_progress(key.easing.as_ref(), t) };
         if eased <= 0.0 {
-            return Ok(a);
+            return self.correct_origins(a);
         }
         if eased >= 1.0 {
-            return Ok(b);
+            return self.correct_origins(b);
         }
         // The numbers: the typed evaluator's tween of the same interval.
         let typed = evaluate_native_exact_only(&self.prepared.doc, seq, index, t, only);
@@ -281,13 +319,34 @@ impl<'a> Records<'a> {
         let next: HashMap<u64, Value> = items(b.get("objects")).into_iter().filter_map(|o| Some((uid(&o)?.to_bits(), o))).collect();
         let mut objects = Vec::new();
         for (slot, o) in items(a.get("objects")).into_iter().enumerate() {
-            let tweened = typed.objects.get(slot).zip(before.get(slot)).filter(|(out, source)| !Arc::ptr_eq(out, source));
-            let Some((out, source)) = tweened else {
-                objects.push(o);
+            let pair = typed.objects.get(slot).zip(before.get(slot));
+            let origin = pair.is_some_and(|(_, source)| self.prepared.doc.figure(source.figure).is_some_and(|figure| figure.origin.is_some()));
+            let corrected = |mut record: Value| {
+                if let Some((out, source)) = pair.filter(|(out, source)| origin && out.root != source.root)
+                    && source.join.is_none()
+                    && let Some(record) = record.make_obj()
+                {
+                    record.set("root_x", Value::Num(out.root[0]));
+                    record.set("root_y", Value::Num(out.root[1]));
+                    record.remove("runtime_segments");
+                }
+                record
+            };
+            let other = uid(&o).and_then(|id| next.get(&id.to_bits())).filter(|other| other.get("figure_type_id") == o.get("figure_type_id"));
+            let Some(other) = other else {
+                objects.push(corrected(o));
                 continue;
             };
-            let other = uid(&o).and_then(|id| next.get(&id.to_bits())).ok_or_else(|| Error::Invalid("a tweened figure has no next pose".into()))?;
-            objects.push(tween_record(&o, other, source, out)?);
+            let tweened = pair.filter(|(out, source)| {
+                // Root correction may copy an otherwise untouched pose (including one outside
+                // `only`). A real origin tween writes a fresh origin; correction keeps it.
+                !Arc::ptr_eq(out, source) && !(origin && source.origin.as_ref().zip(out.origin.as_ref()).is_some_and(|(a, b)| Arc::ptr_eq(a, b)))
+            });
+            let Some((out, source)) = tweened else {
+                objects.push(corrected(o));
+                continue;
+            };
+            objects.push(tween_record(&o, other, source, out, origin)?);
         }
         let mut frame = a.as_obj().cloned().unwrap_or_default();
         frame.set("objects", Value::array(objects));
@@ -870,7 +929,7 @@ fn empty_objects(frame: &mut Obj) {
 
 /// The record of a tweened figure: `out` in `evaluatedNativeFrame`, with the keys
 /// in the order the editor writes them and the typed evaluator's values.
-fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crate::doc::Object) -> Result<Value, Error> {
+fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crate::doc::Object, origin: bool) -> Result<Value, Error> {
     let mut record = o.as_obj().cloned().unwrap_or_default();
     record.remove("runtime_segments");
     // `interpolateSpatialPose`: the camera always, proportions when either key has any.
@@ -887,6 +946,31 @@ fn tween_record(o: &Value, next: &Value, source: &crate::doc::Object, out: &crat
     record.set("root_x", Value::Num(out.root[0]));
     record.set("root_y", Value::Num(out.root[1]));
     record.set("scale", Value::Num(out.scale));
+    if origin && truthy(o.get("_stykAnimationOrigin")) && truthy(next.get("_stykAnimationOrigin")) {
+        let Some(pose) = out.origin.as_deref() else { return unported("an animation origin the engine did not read") };
+        let mut origin = Obj::new();
+        origin.set("x", Value::Num(pose.x));
+        origin.set("y", Value::Num(pose.y));
+        for (key, offset) in ["offsetX", "offsetY"].into_iter().zip(pose.offset) {
+            if let Some(value) = offset {
+                origin.set(key, Value::Num(value));
+            }
+        }
+        if !pose.ghosts.is_empty() {
+            let mut ghosts = Obj::new();
+            for (index, pose) in &pose.ghosts {
+                let mut ghost = Obj::new();
+                // `interpolateOriginSupport` creates bend and length, then its angular pass
+                // writes angle. Integer bone keys enumerate in ascending order in JavaScript.
+                ghost.set("bend_rad", Value::Num(pose.bend));
+                ghost.set("length", Value::Num(pose.length));
+                ghost.set("angle_rad", Value::Num(pose.angle));
+                ghosts.set(&index.to_string(), Value::object(ghost));
+            }
+            origin.set("ghosts", Value::object(ghosts));
+        }
+        record.set("_stykAnimationOrigin", Value::object(origin));
+    }
     record.set("field28", Value::Num(out.transparency));
     if let Some(lengths) = &out.lengths {
         record.set("len_flag", Value::Num(1.0));

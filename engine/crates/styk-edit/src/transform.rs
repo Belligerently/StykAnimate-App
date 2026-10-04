@@ -110,6 +110,7 @@ impl Editor {
     /// `touch`: marks the gesture changed, remembers how pinned limbs now bend, and
     /// announces the live edit.
     pub(crate) fn touch(&mut self) -> Result<(), EditError> {
+        if let Some(before) = self.drag.as_ref().map(|drag| drag.before.clone()) { self.synchronize_origins(&before)?; }
         let changed = match self.drag.as_mut() {
             Some(drag) => {
                 drag.changed = true;
@@ -141,6 +142,9 @@ impl Editor {
         if drag.authored {
             return self.commit_authored_drag();
         }
+        let before = drag.before.clone();
+        self.synchronize_origins(&before)?;
+        let drag = self.drag.as_ref().unwrap();
         let ids: Vec<u32> = drag.before.iter().filter_map(uid).collect();
         let index = drag.index;
         let collect = |editor: &Editor| crate::record::frame_objects(&editor.report, index).into_iter().filter(|o| uid(o).is_some_and(|u| ids.contains(&u))).collect::<Vec<_>>();
@@ -163,6 +167,7 @@ impl Editor {
                     record.set("root_y", Value::Num(root[1]));
                 }
             }
+            self.synchronize_origins(&before)?;
             after = collect(self);
         }
         let drag = self.drag.take().unwrap();
@@ -301,7 +306,7 @@ impl Editor {
 
     /// `_transformSelection`: `transform(object, pivot, is_root, figure)` on the gesture's
     /// figures (or the selected ones only) about `center`, else the selection's center.
-    fn transform_selection(&mut self, label: &str, center: Option<[f64; 2]>, selected_only: bool, mut transform: impl FnMut(&mut Obj, [f64; 2], bool, &Value)) -> Result<bool, EditError> {
+    fn transform_selection(&mut self, label: &str, center: Option<[f64; 2]>, selected_only: bool, mut transform: impl FnMut(&Editor, &mut Obj, [f64; 2], bool, &Value) -> Result<(), EditError>) -> Result<bool, EditError> {
         self.object_edit(label, |editor| {
             let ids: Vec<u32> = if selected_only { editor.selection.uids.clone() } else { editor.drag.as_ref().unwrap().before.iter().filter_map(uid).collect() };
             let pivot = match center {
@@ -318,9 +323,10 @@ impl Editor {
                 }
                 let type_id = num(object, "figure_type_id");
                 let figure = figures.iter().find(|f| num(f, "figure_type_id") == type_id).cloned().unwrap_or(Value::Null);
-                let record = editor.frame_object_mut(slot).unwrap();
-                transform(record, pivot, join_target(object).is_none(), &figure);
+                let mut record = object.as_obj().cloned().unwrap_or_default();
+                transform(editor, &mut record, pivot, join_target(object).is_none(), &figure)?;
                 record.remove("runtime_segments");
+                editor.replace_frame_object(slot, record).unwrap();
             }
             Ok(())
         })
@@ -330,7 +336,7 @@ impl Editor {
         finite(radians)?;
         let (c, s) = (styk_math::cos(radians), styk_math::sin(radians));
         let (center, selected_only) = transform_options(options)?;
-        self.transform_selection("Rotate figures", center, selected_only, |object, pivot, root, _| {
+        self.transform_selection("Rotate figures", center, selected_only, |_, object, pivot, root, figure| {
             if root {
                 let x = field(object, "root_x") - pivot[0];
                 let y = field(object, "root_y") - pivot[1];
@@ -338,6 +344,8 @@ impl Editor {
                 object.set("root_y", Value::Num(pivot[1] + x * s + y * c));
             }
             map_numbers(object, "angles", |a| a + radians);
+            crate::origin::rotate_support(figure, object, radians);
+            Ok(())
         })
     }
 
@@ -349,12 +357,13 @@ impl Editor {
         }
         let (center, selected_only) = transform_options(options)?;
         let label = if selected { "Scale selected figures" } else { "Scale figures" };
-        self.transform_selection(label, center, selected || selected_only, |object, pivot, root, _| {
+        self.transform_selection(label, center, selected || selected_only, |_, object, pivot, root, _| {
             if root {
                 object.set("root_x", Value::Num(pivot[0] + (field(object, "root_x") - pivot[0]) * factor));
                 object.set("root_y", Value::Num(pivot[1] + (field(object, "root_y") - pivot[1]) * factor));
             }
             object.set("scale", Value::Num(field(object, "scale") * factor));
+            Ok(())
         })
     }
 
@@ -369,7 +378,8 @@ impl Editor {
             return Err(EditError::Unported("mirrorSelection of a branch".into()));
         }
         let (center, selected_only) = transform_options(options)?;
-        self.transform_selection("Flip figures", center, selected_only, |object, pivot, root, figure| {
+        self.transform_selection("Flip figures", center, selected_only, |editor, object, pivot, root, figure| {
+            let previous = editor.origin_rotation(figure, &Value::object(object.clone()))?;
             if root {
                 if horizontal {
                     object.set("root_x", Value::Num(2.0 * pivot[0] - field(object, "root_x")));
@@ -387,6 +397,9 @@ impl Editor {
             object.set("bend_flag", Value::Num(1.0));
             let flipped = !object.get("image_text_flags").is_some_and(Value::truthy);
             object.set("image_text_flags", Value::Num(if flipped { 1.0 } else { 0.0 }));
+            crate::origin::mirror_support(figure, object, horizontal);
+            editor.reflect_origin_offset(figure, object, horizontal, previous)?;
+            Ok(())
         })
     }
 
@@ -396,11 +409,13 @@ impl Editor {
         }
         finite(radians)?;
         self.object_edit("Rotate figure", |editor| {
+            let figures: Vec<Value> = editor.report.get("figure_types").and_then(Value::elements).map(|items| items.iter().collect()).unwrap_or_default();
             let ids: Vec<u32> = editor.drag.as_ref().unwrap().before.iter().filter_map(uid).collect();
             for (slot, object) in editor.frame_objects().iter().enumerate() {
                 if uid(object).is_some_and(|u| ids.contains(&u)) {
                     let record = editor.frame_object_mut(slot).unwrap();
                     map_numbers(record, "angles", |a| a + radians);
+                    if let Some(figure) = figures.iter().find(|figure| num(figure, "figure_type_id") == num(object, "figure_type_id")) { crate::origin::rotate_support(figure, record, radians); }
                     record.remove("runtime_segments");
                 }
             }
@@ -427,13 +442,15 @@ impl Editor {
                     continue;
                 }
                 let type_id = num(object, "figure_type_id");
-                let segments: Vec<Value> = figures.iter().find(|f| num(f, "figure_type_id") == type_id).and_then(|f| f.get("segments").and_then(Value::elements)).map(|e| e.iter().collect()).unwrap_or_default();
+                let figure = figures.iter().find(|f| num(f, "figure_type_id") == type_id).cloned().unwrap_or(Value::Null);
+                let segments: Vec<Value> = figure.get("segments").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
                 let record = editor.frame_object_mut(slot).unwrap();
                 record.set("angles", Value::array(segments.iter().map(|s| s.get("angle_rad").cloned().unwrap_or(Value::Null)).collect()));
                 record.set("bend_flag", Value::Num(0.0));
                 record.set("len_flag", Value::Num(0.0));
                 record.set("lengths", Value::array(Vec::new()));
                 record.set("bends", Value::array(Vec::new()));
+                crate::origin::reset_support(&figure, record);
                 record.remove("runtime_segments");
             }
             Ok(())

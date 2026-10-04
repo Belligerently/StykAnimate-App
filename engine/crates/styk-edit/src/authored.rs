@@ -56,7 +56,10 @@ impl Editor {
 
     /// `commitAuthoredPoseDrag`: nothing changed, or the draft goes to the layer sheet.
     pub(crate) fn commit_authored_drag(&mut self) -> Result<bool, EditError> {
-        let (Some(drag), Some(edit)) = (self.drag.as_ref(), self.authored.as_ref()) else { return Ok(false) };
+        let (Some(drag), Some(_)) = (self.drag.as_ref(), self.authored.as_ref()) else { return Ok(false) };
+        let before = drag.before.clone();
+        self.synchronize_origins(&before)?;
+        let (drag, edit) = (self.drag.as_ref().unwrap(), self.authored.as_ref().unwrap());
         let mut ids: Vec<u32> = drag.before.iter().filter_map(uid).collect();
         if edit.transaction {
             ids.extend(objects_of(&edit.frame).iter().filter_map(uid).filter(|u| !ids.contains(u)).collect::<Vec<_>>());
@@ -93,6 +96,8 @@ impl Editor {
                 }
             }
         }
+        let before = self.drag.as_ref().map(|drag| drag.before.clone()).unwrap_or_default();
+        self.synchronize_origins(&before)?;
         self.commit_sheet_pose()
     }
 

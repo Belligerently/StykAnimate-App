@@ -9,7 +9,8 @@
 //! name (`repairIKTopology`, `repairTopologyStyles`). One `topology` history entry records the
 //! definition and the poses it touched, before and after.
 //!
-//! Animation origins, frame drafts, movieclip sources, IK across joined figures, channels a
+//! Recorded animation-origin edits retain their original pivot and hidden support.
+//! Frame drafts, movieclip sources, IK across joined figures, channels a
 //! changed handle animates, pose choices and 3D meshes answer `Unported`.
 
 use std::collections::{HashMap, HashSet};
@@ -133,12 +134,23 @@ pub(crate) struct TopologyOptions {
     pub segment_map: Vec<(f64, Vec<f64>)>,
     /// A replaced definition (`replaceFigureDefinition`) keeps its own count and order arrays.
     pub replaced: bool,
+    pub reversed_gradients: HashSet<u64>,
+    pub origin_reroot: Option<OriginReroot>,
+    pub origin_splits: Vec<(f64, f64)>,
+    pub origin_freeze: HashSet<u64>,
 }
 
-impl TopologyOptions {
-    fn get(&self, id: f64) -> Option<&Vec<f64>> {
-        self.segment_map.iter().find(|(old, _)| *old == id).map(|(_, next)| next)
-    }
+#[derive(Clone)]
+pub(crate) struct OriginEdge {
+    pub old_id: f64,
+    pub parent: f64,
+    pub id: f64,
+    pub reverse: bool,
+}
+
+pub(crate) struct OriginReroot {
+    pub handle: f64,
+    pub edges: Vec<OriginEdge>,
 }
 
 /// `ikLayout(figure)`: handle ids to indices (the last of repeated ids), children by parent id
@@ -379,6 +391,9 @@ impl Editor {
         if figure.path(&["_styk", "poseChoices"]).is_some() || figure.path(&["_styk", "spatialMesh"]).is_some() || items(figure.get("segments")).iter().any(|s| s.get("_stykPoseChoice").is_some()) {
             return Err(EditError::Unported("topology edits of a figure with pose choices or a 3D mesh".into()));
         }
+        // Raw support remapping relies on the typed origin owner's validated indices.
+        // Refuse before committing a live gesture, keeping report/history atomic.
+        if figure.path(&["_styk", "animationOrigin"]).is_some() { self.origin_figure(&figure)?; }
         if self.drag.is_some() {
             self.commit_drag()?;
         }
@@ -389,7 +404,12 @@ impl Editor {
         let report_before = self.report.clone();
         let outcome = (|| {
             mutate(self, index)?;
+            self.repair_origin_support(index, &before, &options)?;
             self.repair_topology(index, &before, &options)?;
+            let figure = self.figure_at(index);
+            if options.origin_reroot.is_none() && crate::origin_topology::geometry_changed(&before.figure, &figure) {
+                for entry in &before.frames { self.preserve_topology_origins(entry)?; }
+            }
             self.validate_topology(index, &before)
         })();
         if let Err(error) = outcome {
@@ -444,6 +464,7 @@ impl Editor {
         let figure = self.report.get("figure_types").and_then(|f| f.item(index)).unwrap_or(Value::Null);
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
         let type_number = num(&figure, "figure_type_id").unwrap_or(f64::NAN);
+        let explicit: HashMap<u64, &Vec<f64>> = options.segment_map.iter().map(|(old, next)| (key_of(*old), next)).collect();
         let segments = items(figure.get("segments"));
         let polygons = items(figure.get("polyfills"));
         let old_segments = items(before.figure.get("segments"));
@@ -471,7 +492,7 @@ impl Editor {
                     let mut next = Obj::new();
                     for (id, value) in shape.iter() {
                         let id = js_number(id);
-                        let targets = options.get(id).cloned().unwrap_or_else(|| vec![id]);
+                        let targets = explicit.get(&key_of(id)).copied().cloned().unwrap_or_else(|| vec![id]);
                         for target in targets {
                             if bones.contains(&key_of(target)) {
                                 next.set(&format_number(target), value.clone());
@@ -487,7 +508,7 @@ impl Editor {
                 let mut next = Obj::new();
                 for (key, controller) in table.iter() {
                     let id = js_number(key);
-                    let target = match options.get(id) {
+                    let target = match explicit.get(&key_of(id)).copied() {
                         Some(replacements) if replacements.contains(&id) => Some(id),
                         Some(replacements) => replacements.last().copied(),
                         None => Some(id),
@@ -531,7 +552,7 @@ impl Editor {
         let mut changes: Vec<(f64, Vec<f64>)> = Vec::new();
         for segment in &old_segments {
             let Some(old) = handle(segment.get("segment_id")) else { continue };
-            let next = match options.get(old) {
+            let next = match explicit.get(&key_of(old)).copied() {
                 Some(next) => next.clone(),
                 None if handles.contains(&key_of(old)) => vec![old],
                 None => Vec::new(),
@@ -540,7 +561,7 @@ impl Editor {
             if !distinct || next.iter().any(|id| !handles.contains(&key_of(*id))) {
                 return Err(invalid("errors.editorStyleTopology.invalidPhysicalSegmentStyleMapping"));
             }
-            if next.len() != 1 || next[0] != old {
+            if next.len() != 1 || next[0] != old || options.reversed_gradients.contains(&key_of(old)) {
                 changes.push((old, next));
             }
         }
@@ -577,7 +598,12 @@ impl Editor {
                         let id = js_number(id);
                         let targets = changes.iter().find(|(old, _)| *old == id).map(|(_, n)| n.clone()).unwrap_or_else(|| vec![id]);
                         for target in targets {
-                            next.set(&format_number(target), shape.clone());
+                            let mut shape = shape.clone();
+                            if options.reversed_gradients.contains(&key_of(id)) {
+                                let reversed = !shape.get("reversed").is_some_and(Value::truthy);
+                                set(&mut shape, "reversed", Value::Bool(reversed));
+                            }
+                            next.set(&format_number(target), shape);
                         }
                     }
                     if next.is_empty() {
@@ -595,7 +621,11 @@ impl Editor {
                     match changes.iter().find(|(old, _)| *old == js_number(h)) {
                         Some((_, replacements)) => {
                             for target in replacements {
-                                next.set(&format_number(*target), style.clone());
+                                let old_handle = js_number(h);
+                                let reversed = options.reversed_gradients.contains(&key_of(old_handle));
+                                let endpoint_swap = old_segments.iter().find(|s| handle(s.get("segment_id")) == Some(old_handle))
+                                    .is_some_and(|s| truthy(s, "secondary") && !matches!(s.path(&["paint", "type"]).and_then(Value::as_str), Some("radial" | "angular" | "diamond")));
+                                next.set(&format_number(*target), if reversed { reverse_overrides(style, endpoint_swap) } else { style.clone() });
                             }
                         }
                         None => next.set(h, style.clone()),
@@ -729,6 +759,7 @@ impl Editor {
     pub(crate) fn topology_call(&mut self, method: &str, args: &[Value]) -> Option<Result<Value, EditError>> {
         let arg = |i: usize| args.get(i);
         Some(match method {
+            "setOrigin" => self.set_origin(arg(0)).map(Value::Bool),
             "addSegment" => self.add_segments(&Value::array(vec![arg(0).cloned().unwrap_or_else(|| Value::object(Obj::new()))])).map(|r| r.item(0).unwrap_or(Value::Null)),
             "addSegments" => self.add_segments(arg(0).unwrap_or(&Value::Null)),
             "deleteSegment" => self.delete_segment(arg(0)).map(Value::Bool),
@@ -902,17 +933,17 @@ fn protect_surfaces(figure: &Value, removed: &HashSet<u64>) -> Result<(), EditEr
 
 impl Editor {
     /// Writes the definition being edited.
-    fn edit_figure(&mut self, index: usize) -> Option<&mut Obj> {
+    pub(crate) fn edit_figure(&mut self, index: usize) -> Option<&mut Obj> {
         self.report.make_obj()?.get_mut("figure_types")?.make_arr()?.get_mut(index)?.make_obj()
     }
 
-    fn figure_at(&self, index: usize) -> Value {
+    pub(crate) fn figure_at(&self, index: usize) -> Value {
         self.report.get("figure_types").and_then(|f| f.item(index)).unwrap_or(Value::Null)
     }
 
     /// The root and handles of the figures at `slots` of the frame at `place`, as the document
     /// now places them (`componentGeometry`).
-    fn component_joints(&self, place: &Place, slots: &[usize]) -> Result<HashMap<usize, crate::range_plan::Joints>, EditError> {
+    pub(crate) fn component_joints(&self, place: &Place, slots: &[usize]) -> Result<HashMap<usize, crate::range_plan::Joints>, EditError> {
         let record = frame_at(&self.report, place).cloned().unwrap_or(Value::Null);
         self.joints_of(&record, slots).map_err(|error| match error {
             EditError::Invalid(why) => EditError::Unported(format!("a topology edit over unresolved geometry ({why})")),
@@ -1254,7 +1285,8 @@ impl Editor {
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
         let parent_id = segment.get("parent_id").cloned().unwrap_or(Value::Null);
         let parent = given(&segment, "parent_id").unwrap_or(f64::NAN);
-        self.topology_edit(label, TopologyOptions::default(), |editor, index_of_figure| {
+        let topology = TopologyOptions { origin_freeze: if preserve { children.iter().filter_map(|&i| num(&segments[i], "segment_id")).map(key_of).collect() } else { HashSet::new() }, ..TopologyOptions::default() };
+        self.topology_edit(label, topology, |editor, index_of_figure| {
             let mut touched: Vec<(Place, Vec<usize>)> = Vec::new();
             for (place, slots) in instances(&editor.report, &type_id) {
                 touched.push((place.clone(), slots.clone()));
@@ -1680,7 +1712,7 @@ impl Editor {
         let allocated = new_handles(&segments, targets.queue.len())?;
         let split: Vec<(usize, f64)> = targets.queue.iter().copied().zip(allocated.iter().copied()).collect();
         let new_id = |index: usize| split.iter().find(|(i, _)| *i == index).map(|(_, id)| *id);
-        let options = TopologyOptions { segment_map: split.iter().map(|&(i, id)| (num(&segments[i], "segment_id").unwrap_or(f64::NAN), vec![num(&segments[i], "segment_id").unwrap_or(f64::NAN), id])).collect(), replaced: false };
+        let options = TopologyOptions { origin_splits: split.iter().map(|&(i, id)| (num(&segments[i], "segment_id").unwrap_or(f64::NAN), id)).collect(), segment_map: split.iter().map(|&(i, id)| (num(&segments[i], "segment_id").unwrap_or(f64::NAN), vec![num(&segments[i], "segment_id").unwrap_or(f64::NAN), id])).collect(), replaced: false, ..TopologyOptions::default() };
         let label = if whole { "Split segment branch" } else { "Split segment" };
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
         let selected_handle = new_id(selected);
@@ -1884,7 +1916,7 @@ impl Editor {
         let selected_parent = given(&selected, "parent_id");
         let label = format!("Duplicate {}", if whole { "segment branch" } else { "segment" });
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
-        let topology = TopologyOptions { segment_map: remap.iter().map(|&(from, to)| (from, vec![from, to])).collect(), replaced: false };
+        let topology = TopologyOptions { segment_map: remap.iter().map(|&(from, to)| (from, vec![from, to])).collect(), replaced: false, ..TopologyOptions::default() };
         self.topology_edit(&label, topology, |editor, at| {
             let figure = editor.figure_at(at);
             let all = items(figure.get("segments"));
@@ -2236,5 +2268,150 @@ impl Editor {
         definition.set("name", Value::str("Weighted joint"));
         definition.set("_stykRig", Value::object(rig));
         self.append_rig_joint(definition, "Add weighted joint")
+    }
+}
+
+/// Gradient reversal belongs to the topology/style owner (editor-style-topology.mjs).
+fn reverse_gradient(mut segment: Value) -> Value {
+    if let Some(shape) = segment.get("_sticknodes").filter(|s| s.truthy()).cloned() {
+        let mut shape = shape; let reversed = !truthy(&shape, "reversed");
+        set(&mut shape, "reversed", Value::Bool(reversed)); set(&mut segment, "_sticknodes", shape);
+    }
+    if matches!(segment.path(&["paint", "type"]).and_then(Value::as_str), Some("radial" | "angular" | "diamond")) {
+        let mut paint = segment.get("paint").cloned().unwrap();
+        let angle = num(&paint, "angle").unwrap_or(f64::NAN) - 180.0;
+        set(&mut paint, "angle", Value::Num(angle)); set(&mut segment, "paint", paint); return segment;
+    }
+    let Some(mut secondary) = segment.get("secondary").filter(|s| s.truthy()).cloned() else { return segment };
+    let opacity = match segment.get("transparency") { Some(value) => 1.0 - value.as_f64().unwrap_or(0.0) / 255.0, None => given(&segment, "color_alpha").unwrap_or(1.0) };
+    let transparency = given(&secondary, "a").unwrap_or(0.0);
+    let color = segment.get("color_rgb").cloned().unwrap_or(Value::Null);
+    let end = secondary.get("rgb").cloned().unwrap_or(Value::Null);
+    if let Some(mut paint) = segment.get("paint").filter(|s| s.truthy()).cloned() {
+        let mut stops = items(paint.get("stops"));
+        for stop in &mut stops { let offset = 1.0 - num(stop, "offset").unwrap_or(f64::NAN); set(stop, "offset", Value::Num(offset)); }
+        stops.reverse(); set(&mut paint, "stops", Value::array(stops)); set(&mut segment, "paint", paint);
+    }
+    set(&mut segment, "color_rgb", end); set(&mut segment, "transparency", Value::Num(transparency));
+    if segment.get("color_alpha").is_some() { set(&mut segment, "color_alpha", Value::Num(1.0 - transparency / 255.0)); }
+    set(&mut secondary, "rgb", color); set(&mut secondary, "a", Value::Num(crate::range_plan::js_round(255.0 * (1.0 - opacity))));
+    set(&mut segment, "secondary", secondary); segment
+}
+
+fn reverse_overrides(style: &Value, swap: bool) -> Value {
+    if let Some(mut paint) = style.get("paint").filter(|p| p.truthy()).cloned() {
+        if paint.get("type").and_then(Value::as_str) != Some("solid") {
+            let angle = ((num(&paint, "angle").unwrap_or(f64::NAN) - 180.0) % 360.0 + 540.0) % 360.0 - 180.0;
+            set(&mut paint, "angle", Value::Num(angle));
+        }
+        let mut out = style.clone(); set(&mut out, "paint", paint); return out;
+    }
+    if !swap { return style.clone(); }
+    let mut out = style.clone();
+    for field in ["opacity", "gradientOpacity"] { remove(&mut out, field); }
+    if let Some(v) = style.get("opacity") { set(&mut out, "gradientOpacity", v.clone()); }
+    if let Some(v) = style.get("gradientOpacity") { set(&mut out, "opacity", v.clone()); }
+    for field in ["color", "gradientColor"] { remove(&mut out, field); }
+    if let Some(v) = style.get("color") { set(&mut out, "gradientColor", v.clone()); }
+    if let Some(v) = style.get("gradientColor") { set(&mut out, "color", v.clone()); }
+    out
+}
+
+impl Editor {
+    fn set_origin(&mut self, requested: Option<&Value>) -> Result<bool, EditError> {
+        let Some((index, figure)) = self.topology_figure()? else { return Ok(false) };
+        let segments = items(figure.get("segments"));
+        if segments.iter().any(|s| truthy(s, "_stykRig")) { return Err(invalid("errors.editor.setTheFigureOriginBeforeConfiguringRigRelationships")); }
+        let selected = usize::try_from(self.selection.joint).ok().and_then(|i| segments.get(i)).and_then(|s| handle(s.get("segment_id")));
+        let id = requested.map(|v| v.as_f64().unwrap_or(f64::NAN)).or(selected);
+        if id == Some(0.0) { return Ok(false); }
+        let Some(id) = id.filter(|id| id.fract() == 0.0 && segments.iter().any(|s| handle(s.get("segment_id")) == Some(*id))) else { return Err(invalid("errors.editor.selectAValidJointForTheNewOrigin")); };
+        let remap = |value: f64| if value == 0.0 { id } else if value == id { 0.0 } else { value };
+        let mut adjacent: HashMap<u64, Vec<(f64, usize)>> = HashMap::new();
+        for (i, segment) in segments.iter().enumerate() {
+            let (parent, child) = (given(segment, "parent_id").unwrap_or(f64::NAN), given(segment, "segment_id").unwrap_or(f64::NAN));
+            adjacent.entry(key_of(parent)).or_default().push((child, i)); adjacent.entry(key_of(child)).or_default().push((parent, i));
+        }
+        let mut visited = HashSet::from([key_of(id)]); let mut queue = vec![id];
+        let mut edges: Vec<Option<OriginEdge>> = vec![None; segments.len()];
+        let mut cursor = 0;
+        while cursor < queue.len() {
+            for &(other, i) in adjacent.get(&key_of(queue[cursor])).map(Vec::as_slice).unwrap_or(&[]) {
+                if !visited.insert(key_of(other)) { continue; }
+                queue.push(other);
+                edges[i] = Some(OriginEdge { old_id: num(&segments[i], "segment_id").unwrap(), parent: remap(queue[cursor]), id: remap(other), reverse: given(&segments[i], "parent_id") != Some(queue[cursor]) });
+            }
+            cursor += 1;
+        }
+        let edges = edges.into_iter().collect::<Option<Vec<_>>>().ok_or_else(|| EditError::Unported("Set Origin on disconnected geometry".into()))?;
+        if edges.iter().enumerate().any(|(i, edge)| edge.reverse && matches!(segments[i].get("segment_type").and_then(Value::as_str), Some("image" | "text"))) { return Err(invalid("errors.editor.chooseAnOriginWhosePathContainsOrdinaryLines")); }
+        let previous = figure.path(&["_styk", "animationOrigin"]);
+        let origin = if let Some(previous) = previous.filter(|o| truthy(o, "support")) { previous.clone() } else {
+            let reference = match previous { Some(origin) => segments.iter().position(|s| s.get("segment_id") == origin.get("rotationHandleId")), None => Some(0) }.ok_or_else(|| EditError::Unported("a missing animation rotation handle".into()))?;
+            let mut origin = Obj::new();
+            origin.set("handleId", Value::Num(remap(previous.and_then(|o| given(o, "handleId")).unwrap_or(0.0))));
+            origin.set("rotationHandleId", Value::Num(edges[reference].id));
+            origin.set("reversed", Value::Bool(previous.is_some_and(|o| truthy(o, "reversed")) != edges[reference].reverse));
+            Value::object(origin)
+        };
+        let options = TopologyOptions { segment_map: edges.iter().map(|e| (e.old_id, vec![e.id])).collect(), reversed_gradients: edges.iter().filter(|e| e.reverse).map(|e| key_of(e.old_id)).collect(), origin_reroot: Some(OriginReroot { handle: id, edges: edges.clone() }), ..TopologyOptions::default() };
+        self.topology_edit_of(Some(index), "Set figure origin", options, |editor, at| {
+            let type_id = figure.get("figure_type_id");
+            for place in places(&editor.report) {
+                let objects = items(frame_at(&editor.report, &place).and_then(|f| f.get("objects")));
+                let slots: Vec<usize> = objects.iter().enumerate().filter(|(_, o)| o.get("figure_type_id") == type_id).map(|(i, _)| i).collect();
+                if slots.is_empty() { continue; }
+                let geometry = editor.component_joints(&place, &slots)?;
+                let mut next = objects.clone();
+                for object in &mut next {
+                    if join_target(object).and_then(|i| objects.get(i)).is_some_and(|p| p.get("figure_type_id") == type_id) {
+                        if let Some(join) = object.make_obj().and_then(|o| o.get_mut("join")).and_then(Value::make_obj) {
+                            let target = join.get("target_handle_id").and_then(Value::as_f64).unwrap_or(f64::NAN); join.set("target_handle_id", Value::Num(remap(target)));
+                        }
+                    }
+                }
+                for slot in slots {
+                    let old = &objects[slot]; let object = &mut next[slot];
+                    let old_pose = old.get("_stykAnimationOrigin");
+                    let point = if old_pose.is_some() && !truthy(old, "join") { old_pose.map(|o| [num(o, "x").unwrap_or(f64::NAN), num(o, "y").unwrap_or(f64::NAN)]) }
+                        else if previous.is_some() && old_pose.is_some() && truthy(old, "join") {
+                            let (typed, pose) = editor.origin_view(&figure, old)?;
+                            let offset = styk_eval::origin::offset(&typed, &pose);
+                            geometry.get(&slot).map(|g| { let root = g.root(); [root[0] + offset[0], root[1] + offset[1]] })
+                        } else { geometry.get(&slot).and_then(|g| g.get(previous.and_then(|o| given(o, "handleId")).unwrap_or(0.0))) };
+                    if let Some(point) = point {
+                        let mut pivot = old_pose.and_then(Value::as_obj).cloned().unwrap_or_default(); pivot.set("x", Value::Num(point[0])); pivot.set("y", Value::Num(point[1])); set(object, "_stykAnimationOrigin", Value::object(pivot));
+                    }
+                    if let Some(point) = geometry.get(&slot).and_then(|g| g.get(id)) { set(object, "root_x", Value::Num(point[0])); set(object, "root_y", Value::Num(point[1])); }
+                    set(object, "join", Value::Null);
+                    let mut pose = Pose::of(old);
+                    for (i, _) in edges.iter().enumerate().filter(|(_, e)| e.reverse) {
+                        let bend = pose.bends.as_ref().and_then(|b| b.get(i)).copied().unwrap_or_else(|| given(&segments[i], "bend_rad").unwrap_or(0.0));
+                        pose.angles[i] += bend + std::f64::consts::PI;
+                        if let Some(bends) = pose.bends.as_mut() { bends[i] = -bend; }
+                    }
+                    pose.write(object);
+                }
+                if let Some(list) = objects_mut(&mut editor.report, &place) { *list = next; }
+            }
+            let next: Vec<Value> = segments.iter().enumerate().map(|(i, s)| {
+                let edge = &edges[i]; let mut out = s.clone(); set(&mut out, "parent_id", Value::Num(edge.parent)); set(&mut out, "segment_id", Value::Num(edge.id));
+                if edge.reverse { let bend = given(s, "bend_rad").unwrap_or(0.0); set(&mut out, "angle_rad", Value::Num(num(s, "angle_rad").unwrap() + (bend + std::f64::consts::PI))); set(&mut out, "bend_rad", Value::Num(-bend)); reverse_gradient(out) } else { out }
+            }).collect();
+            let mut polygons = items(figure.get("polyfills"));
+            for polygon in &mut polygons {
+                set(polygon, "segment_ids", Value::nums(&numbers(polygon.get("segment_ids")).into_iter().map(remap).collect::<Vec<_>>()));
+                if let Some(mut surface) = polygon.get("_stykSurface").filter(|s| s.truthy()).cloned() {
+                    for key in ["basis", "depth"] { if surface.get(key).is_some() { let ids = numbers(surface.get(key)).into_iter().map(remap).collect::<Vec<_>>(); set(&mut surface, key, Value::nums(&ids)); } }
+                    set(polygon, "_stykSurface", surface);
+                }
+            }
+            if let Some(record) = editor.edit_figure(at) {
+                record.set("segments", Value::array(next));
+                let mut metadata = record.get("_styk").and_then(Value::as_obj).cloned().unwrap_or_default(); metadata.set("animationOrigin", origin.clone()); record.set("_styk", Value::object(metadata));
+                if record.get("polyfills").is_some() { record.set("polyfills", Value::array(polygons)); }
+            }
+            editor.selection.joint = -1; Ok(())
+        })
     }
 }

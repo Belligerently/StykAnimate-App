@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // Records what the editor's evaluated frame stores, for every editor-built fixture
-// (engine/crates/styk-eval/tests/fixtures/{eval,ik,vfx,spatial}/*.json and the command-replay
+// (engine/crates/styk-eval/tests/fixtures/{eval,ik,vfx,spatial,origin}/*.json and the command-replay
 // documents), into tests/fixtures/records/<name>/ for styk-eval's tests/records.rs.
 //   node engine/tools/records-fixtures.mjs
 // Byte-stable: the files change only when the editor's evaluation does.
 import {execFileSync} from 'node:child_process';
-import {readdirSync, rmSync} from 'node:fs';
+import {readdirSync, rmSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 const here = path.dirname(new URL(import.meta.url).pathname);
 const fixtures = path.resolve(here, '../crates/styk-eval/tests/fixtures'), out = path.join(fixtures, 'records');
 rmSync(out, {recursive: true, force: true});
 const sources = [];
-for (const group of ['eval', 'ik', 'vfx', 'spatial'])
+for (const group of ['eval', 'ik', 'vfx', 'spatial', 'origin'])
   for (const file of readdirSync(path.join(fixtures, group)).sort())
-    if (file.endsWith('.json') && !file.endsWith('.reference.json') && file !== 'vectors.json') sources.push([`${group}-${file.slice(0, -5)}`, path.join(fixtures, group, file)]);
+    if (file.endsWith('.json') && !file.endsWith('.reference.json') && file !== 'vectors.json') sources.push([`${group}-${file.slice(0, -5)}`, path.join(fixtures, group, file), ...(group === 'origin' ? ['--every', '0.5'] : [])]);
 for (const file of readdirSync(path.resolve(here, '../tests/edit')).sort())
   if (file.endsWith('.document.json')) sources.push([`edit-${file.slice(0, -14)}`, path.resolve(here, '../tests/edit', file)]);
 // A Pivot-eased angle that winds past π over several keys: the editor unwraps it along the
@@ -31,12 +31,11 @@ for (const file of readdirSync(path.resolve(here, '../tests/edit')).sort())
   sources.push(['eval-legacy-winding', file]);
 }
 // Property channels (`channel-fixtures.mjs`), as the app holds them (a layer sheet's
-// `legacyAnimation`) and on their native timeline (`_styk.animation`). Animation origins are not
-// produced as records yet, and a movieclip's own channels are not in its host's records: those
-// fixtures are left out.
-const channelFixtures = readdirSync(path.join(fixtures, 'channels')).filter(file => file.endsWith('.sheet.json') && !file.includes('-origin') && !file.includes('-in-movieclip')).sort();
-for (const file of channelFixtures) sources.push([file.slice(0, -11), path.join(fixtures, 'channels', file)]);
-for (const file of channelFixtures) sources.push([`${file.slice(0, -11)}-native`, path.join(fixtures, 'channels', `${file.slice(0, -11)}.json`), '--native']);
+// `legacyAnimation`) and on their native timeline (`_styk.animation`). A movieclip's own
+// channels are not in its host's records, so those fixtures are left out.
+const channelFixtures = readdirSync(path.join(fixtures, 'channels')).filter(file => file.endsWith('.sheet.json') && !file.includes('-in-movieclip')).sort();
+for (const file of channelFixtures) sources.push([file.slice(0, -11), path.join(fixtures, 'channels', file), ...(file.includes('-origin') ? ['--every', '0.5'] : [])]);
+for (const file of channelFixtures) sources.push([`${file.slice(0, -11)}-native`, path.join(fixtures, 'channels', `${file.slice(0, -11)}.json`), '--native', ...(file.includes('-origin') ? ['--every', '0.5'] : [])]);
 // Property edits on a layer sheet (`_sheetPropertyEntries`): at every tick, the frame the
 // one-key channels of these entries compose on.
 {
@@ -53,10 +52,44 @@ for (const file of channelFixtures) sources.push([`${file.slice(0, -11)}-native`
     sources.push(['channels-vfx-partial', file]);
   }
   const edit = name => path.resolve(here, '../tests/edit', `${name}.document.json`), channels = name => path.join(fixtures, 'channels', `${name}.sheet.json`);
+  // A retained-support figure joined to another origin-bearing figure. The existing channel
+  // fixture's child uses an ordinary definition; giving it the same retained definition
+  // exercises its own ghost rotation and world-pivot offset when its parent is transformed.
+  const {createObject} = await import('../../src/demo.mjs');
+  const {synchronizeAnimationOrigin} = await import('../../src/animation-origin.mjs');
+  const joinedOrigin = path.join(folder, 'origin-joined-support.json');
+  {
+    const document = JSON.parse(readFileSync(path.join(fixtures, 'channels', 'channels-origin-support.json'), 'utf8'));
+    const definition = document.figure_types.find(figure => figure._styk?.animationOrigin?.support);
+    for (const frame of [...document.keyframes, ...Object.values(document._styk.frameSources ?? {})])
+      frame.objects = frame.objects.map(object => {
+        if (object.unique_id !== 2) return object;
+        const child = createObject(definition, object.unique_id, object.root_x, object.root_y,
+          {object_slot: object.object_slot, scale: object.scale, join: object.join});
+        Object.assign(child._stykAnimationOrigin, {offsetX: .5, offsetY: -.25, future: 'retained at exact keys'});
+        synchronizeAnimationOrigin(definition, child);
+        child._stykStyle = {segments: {22: {thickness: 29, opacity: .4}}};
+        return child;
+      });
+    writeFileSync(joinedOrigin, JSON.stringify(document));
+    sources.push(['origin-joined-support', joinedOrigin, '--every', '0.5']);
+    sources.push(['origin-joined-support-native', joinedOrigin, '--native', '--every', '0.5']);
+  }
   const figure = uid => ({kind: 'figure', uid}), segment = (uid, handleId, figureTypeId) => ({kind: 'segment', uid, handleId, ...(figureTypeId === undefined ? {} : {figureTypeId})});
   const camera = {kind: 'camera'}, scene = {kind: 'scene'};
   const entry = (target, property, value, extra = {}) => ({target, property, value, ...extra});
   const sets = [
+    // Original pivots, retained local offsets and ghost bones under scalar property previews;
+    // a joined figure's position moves the parent about its animation pivot.
+    ...['layout', 'offsets', 'support'].map(kind => [`entries-origin-${kind}`, path.join(fixtures, 'origin', `origin-${kind}.json`), () => [
+      entry(figure(1), 'scale', 1.3), entry(figure(1), 'rotation', -.7), entry(figure(1), 'x', 310), entry(figure(1), 'y', 180),
+      entry(figure(2), 'rotation', .8), entry(figure(2), 'x', 450), entry(figure(2), 'y', 240),
+    ]]),
+    ...['layout', 'support'].map(kind => [`entries-origin-zero-scale-${kind}`, path.join(fixtures, 'origin', `origin-${kind}.json`), () => [
+      entry(figure(1), 'scale', 0), entry(figure(1), 'rotation', .4), entry(figure(1), 'x', 320), entry(figure(1), 'y', 210),
+    ]]),
+    ['entries-origin-joined-support', joinedOrigin, () => [entry(figure(1), 'scale', 1.2), entry(figure(1), 'rotation', -.6),
+      entry(figure(2), 'rotation', .9), entry(figure(2), 'x', 440), entry(figure(2), 'y', 250)]],
     // Every scalar kind on figures, segments, the camera and the scene; a joined figure's
     // position moves its root figure, a joined figure turns.
     ['entries-figures', edit('sheet-layers'), () => [
@@ -99,8 +132,28 @@ for (const file of channelFixtures) sources.push([`${file.slice(0, -11)}-native`
   for (const [name, file, build] of sets) {
     const list = path.join(folder, `${name}.json`);
     writeFileSync(list, JSON.stringify(build(JSON.parse(readFileSync(file, 'utf8')))));
-    sources.push([name, file, '--entries', list]);
+    sources.push([name, file, '--entries', list, ...(name.startsWith('entries-origin-') ? ['--every', '0.5'] : [])]);
   }
 }
-for (const [name, file, ...options] of sources) execFileSync(process.execPath, [path.join(here, 'records-reference.mjs'), file, path.join(out, name), '--full', ...options], {stdio: ['ignore', 'ignore', 'inherit']});
+const {animationPropertyValue} = await import('../../src/animation-channels.mjs');
+const {buildGeometry} = await import('../../src/pivot/geometry.mjs');
+for (const [name, file, ...options] of sources) {
+  const destination = path.join(out, name);
+  execFileSync(process.execPath, [path.join(here, 'records-reference.mjs'), file, destination, '--full', ...options], {stdio: ['ignore', 'ignore', 'inherit']});
+  if (!name.startsWith('origin-') && !name.startsWith('channels-origin') && !name.startsWith('entries-origin-')) continue;
+  // Inspector scalar reads on the same stored frame: joined pivots use world geometry;
+  // rotation uses the original live or retained reference instead of the first segment.
+  const report = JSON.parse(readFileSync(path.join(destination, 'report.json'), 'utf8'));
+  const recorded = JSON.parse(readFileSync(path.join(destination, 'records.json'), 'utf8'));
+  const ticks = recorded.ticks.map(({tick, json}) => {
+    const frame = JSON.parse(json); let geometry;
+    const values = frame.objects.flatMap(object => ['x', 'y', 'rotation', 'scale'].map(property => {
+      const target = {kind: 'figure', uid: object.unique_id};
+      return {target, property, value: animationPropertyValue(report, frame, target, property,
+        {resolveGeometry: () => geometry ??= buildGeometry(report, frame)})};
+    }));
+    return {tick, values};
+  });
+  writeFileSync(path.join(destination, 'properties.json'), JSON.stringify({ticks}) + '\n');
+}
 console.log(`${sources.length} documents recorded`);

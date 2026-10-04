@@ -13,7 +13,7 @@
 //! Arithmetic is the editor's, operation for operation, with V8's trigonometry
 //! (`styk-math`, D16): the corrected root is a stored value once a gesture commits.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use styk_doc::Value;
 use styk_math::{cos, sin};
@@ -123,32 +123,46 @@ pub fn parse_pose(v: &Value) -> Option<PoseOrigin> {
 /// editor would refuse it.
 pub fn compile(v: &Value, segments: &[Segment]) -> Result<Origin, String> {
     let ids: HashMap<u32, usize> = segments.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
-    let id = |key: &str| -> Option<u32> { num(v, key).map(|n| n as u32) };
-    let reversed = matches!(v.get("reversed"), Some(Value::Bool(true)));
+    // The editor validates descriptor numbers before arithmetic/indexing. Never turn
+    // malformed known fields into truncated indices or silently drop raw vertices.
+    let integer = |value: Option<&Value>, low: f64, high: f64| {
+        value.and_then(Value::as_f64).filter(|n| n.is_finite() && n.fract() == 0.0 && *n >= low && *n <= high)
+    };
+    let id = |key: &str| -> Option<u32> { integer(v.get(key), 0.0, u32::MAX as f64).map(|n| n as u32) };
+    let reversed = match v.get("reversed") {
+        Some(Value::Bool(reversed)) => *reversed,
+        _ => return Err("an origin's reversed field is not boolean".into()),
+    };
     let (handle, rotation_handle) = (id("handleId"), id("rotationHandleId"));
-    if let Some(support) = v.get("support").filter(|s| s.is_object()) {
-        let bones: Vec<Bone> = support
-            .get("bones")
-            .and_then(Value::as_arr)
-            .ok_or("a support graph without bones")?
-            .iter()
-            .map(|b| {
-                let segment = match b.get("handleId") {
-                    Some(Value::Null) | None => None,
-                    Some(h) => Some(*ids.get(&(h.as_f64().ok_or("a support bone's handle is not a number")? as u32)).ok_or("a support bone names a missing segment")?),
-                };
-                let parent = num(b, "parent").ok_or("a support bone without a parent")?;
-                Ok(Bone {
-                    segment,
-                    parent: (parent >= 0.0).then_some(parent as usize),
-                    reversed: matches!(b.get("reversed"), Some(Value::Bool(true))),
-                    rest: ghost(b).ok_or("a support bone without a pose")?,
-                })
-            })
-            .collect::<Result<_, &str>>()?;
-        if bones.iter().any(|b| b.parent.is_some_and(|p| p >= bones.len())) {
-            return Err("a support bone's parent is out of range".into());
+    if let Some(support) = v.get("support") {
+        if !support.is_object() || num(support, "version") != Some(1.0) {
+            return Err("a support graph needs version 1".into());
         }
+        let raw_bones = support.get("bones").and_then(Value::as_arr).filter(|bones| !bones.is_empty() && bones.len() <= 100000)
+            .ok_or("a support graph needs 1 to 100000 bones")?;
+        let high = raw_bones.len() as f64 - 1.0;
+        let mut bound = HashSet::new();
+        let mut bones = Vec::with_capacity(raw_bones.len());
+        for b in raw_bones {
+            let segment = match b.get("handleId") {
+                Some(Value::Null) => None,
+                value => {
+                    let handle = integer(value, 1.0, 65535.0).ok_or("a support bone's handle is not a native integer")? as u32;
+                    let index = *ids.get(&handle).ok_or("a support bone names a missing segment")?;
+                    if !bound.insert(handle) { return Err("a support bone repeats a live binding".into()); }
+                    Some(index)
+                }
+            };
+            let parent = integer(b.get("parent"), -1.0, high).ok_or("a support bone's parent is out of range")?;
+            let reversed = match b.get("reversed") {
+                Some(Value::Bool(reversed)) => *reversed,
+                _ => return Err("a support bone's reversed field is not boolean".into()),
+            };
+            let rest = ghost(b).filter(|pose| pose.angle.is_finite() && pose.bend.is_finite() && (pose.length as f32).is_finite())
+                .ok_or("a support bone without a finite native pose")?;
+            bones.push(Bone { segment, parent: (parent >= 0.0).then_some(parent as usize), reversed, rest });
+        }
+        if bound.len() != ids.len() { return Err("the retained support is missing a live binding".into()); }
         // Parents before children, roots in order (`originSupportLayout`).
         let mut children: Vec<Vec<usize>> = vec![Vec::new(); bones.len()];
         let mut ready: Vec<usize> = Vec::with_capacity(bones.len());
@@ -167,21 +181,37 @@ pub fn compile(v: &Value, segments: &[Segment]) -> Result<Origin, String> {
         if ready.len() != bones.len() {
             return Err("the retained animation support contains a cycle".into());
         }
-        let path = support
-            .get("path")
-            .and_then(Value::as_arr)
-            .unwrap_or(&[])
-            .iter()
-            .map(|term| Some((num(term, "bone")? as usize, num(term, "sign")?)))
-            .collect::<Option<Vec<_>>>()
-            .filter(|path| path.iter().all(|&(bone, _)| bone < bones.len()))
-            .ok_or("a support path term is malformed")?;
-        let rotation = num(support, "rotation").map(|r| r as usize).filter(|&r| r < bones.len()).ok_or("a support rotation out of range")?;
-        let vertices = match support.get("vertices") {
-            Some(Value::Obj(map)) => map.iter().filter_map(|(key, node)| Some((key.parse::<u32>().ok()?, node.as_f64()? as i64))).collect(),
-            _ => HashMap::new(),
-        };
+        let path = support.get("path").and_then(Value::as_arr).filter(|path| path.len() <= 100000)
+            .ok_or("a support path is missing or exceeds capacity")?.iter().map(|term| {
+                let bone = integer(term.get("bone"), 0.0, high)? as usize;
+                let sign = num(term, "sign").filter(|sign| *sign == 1.0 || *sign == -1.0)?;
+                Some((bone, sign))
+            }).collect::<Option<Vec<_>>>().ok_or("a support path term is malformed")?;
+        let rotation = integer(support.get("rotation"), 0.0, high).ok_or("a support rotation out of range")? as usize;
+        let raw_vertices = support.get("vertices").and_then(Value::as_obj).ok_or("support vertices are not a record")?;
+        let mut vertices = HashMap::new();
+        let mut nodes = HashSet::new();
+        for (key, node) in raw_vertices.iter() {
+            let handle = key.parse::<u32>().ok().filter(|id| id.to_string() == key.as_ref() && (*id == 0 || ids.contains_key(id)))
+                .ok_or("a support vertex key is not an exact native handle")?;
+            let node = integer(Some(node), -1.0, high).ok_or("a support vertex is out of range")? as i64;
+            if !nodes.insert(node) { return Err("support vertices repeat a node".into()); }
+            vertices.insert(handle, node);
+        }
+        if vertices.len() != ids.len() + 1 { return Err("support vertices omit a native handle".into()); }
+        if v.get("handleId") != Some(&Value::Null) && !handle.is_some_and(|id| vertices.get(&id) == Some(&-1)) {
+            return Err("a support origin does not name its virtual root".into());
+        }
+        let rotation_bone = bones[rotation];
+        let rotation_id = rotation_bone.segment.map(|i| segments[i].id);
+        if rotation_handle != rotation_id || rotation_id.is_none() && v.get("rotationHandleId") != Some(&Value::Null)
+            || rotation_id.is_some() && reversed != rotation_bone.reversed {
+            return Err("a support origin's rotation reference differs from its bone".into());
+        }
         return Ok(Origin { handle, rotation_handle, reversed, kind: Kind::Support(Support { bones, ready, path, rotation, vertices }) });
+    }
+    if !rotation_handle.is_some_and(|handle| ids.contains_key(&handle)) {
+        return Err("an origin without a native rotation handle".into());
     }
     // `animationOriginLayout`: breadth first from the pivot over the undirected segments,
     // each node's edges in segment order.

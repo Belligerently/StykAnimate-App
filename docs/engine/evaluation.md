@@ -111,10 +111,20 @@ bones are ghosts. A pose stores its pivot (`_stykAnimationOrigin`: `x`, `y`, a l
 - The figure's rotation (`animationRotation`: the rotation reference's turn) is what rigs,
   inverse kinematics, meshes and attached movieclips read (`origin::rotation`, also behind
   `ik::figure_angle`).
-- The evaluated frame as records still refuses documents with origins (`Records::new`),
-  so their fixtures (`engine/tools/origin-fixtures.mjs`, `tests/origin.rs`: the re-derived
-  tree with a mirrored instance and a joined figure, a real local offset, a support graph
-  with ghosts) live apart from `eval/`, which `records-fixtures.mjs` records.
+- `Records` uses the same typed origin arithmetic at exact keys and fractional intervals,
+  including scalar property previews. Its raw writer preserves unknown pivot/ghost fields,
+  record key order and unchanged COW identities; a corrected root drops runtime geometry.
+  Inspector rotation and joined world positions share the typed origin/geometry owners.
+  `records-fixtures.mjs` records origin fixtures every half tick: layout, real local offsets,
+  retained ghost support, joins, zero scale and property previews. `tests/records_origin.rs`
+  compares full bytes and scalar values and proves the fixtures need their pivots.
+
+The typed compiler rejects malformed retained support before raw editing can index it.
+Known indices must be finite integers in range; bindings and vertex nodes are unique and
+complete, poses are finite within native length range, references match the rotation bone,
+and ancestry is acyclic. Sixty-eight malformed cases are recorded from the existing editor
+validator, with unchanged raw metadata and atomic command refusal checks. Cooperative
+import and per-object validation remain in their existing JavaScript owners.
 
 ## Colour transitions
 
@@ -224,8 +234,8 @@ the reason.
   movieclip frame replacements (`replaceMovieclipFrame`, tweened along their own track),
   movieclips leaving the frame outside their span, layer order, 3D poses between keys
   (`interpolateSpatialPose`'s record), hidden pose keys, and property channels (below).
-- Not yet (each answers `Unported`): figures joined to a hidden movieclip, animation
-  origins, a movieclip's own document. A tweened camera keeps its baked camera-motion
+- Not yet (each answers `Unported`): figures joined to a hidden movieclip and a movieclip's
+  own retained-source document. A tweened camera keeps its baked camera-motion
   offset (`_parallaxMotionOffset`) as the editor writes it.
 - **Property channels as records** (`styk_eval::records` `channels.rs`): where the editor
   composes them, so do records: on the native timeline a layer sheet's imported keys sample

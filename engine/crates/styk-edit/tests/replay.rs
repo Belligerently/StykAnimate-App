@@ -4,6 +4,14 @@
 use std::path::Path;
 
 const PORTED: &[&str] = &[
+    // Animation-origin whole-figure gestures (native, sheet, retained support and offsets).
+    "origin-gestures-layout-native", "origin-gestures-layout-sheet", "origin-gestures-offsets-native", "origin-gestures-offsets-sheet",
+    "origin-gestures-support-native", "origin-gestures-support-sheet", "origin-gestures-support-autokey-sheet",
+    // Animation-origin construction edits and reusable definitions, every pose source.
+    "origin-reroot-new-native", "origin-reroot-new-sheet", "origin-reroot-layout-native", "origin-reroot-layout-sheet",
+    "origin-reroot-offsets-native", "origin-reroot-offsets-sheet", "origin-reroot-support-native", "origin-reroot-support-sheet",
+    "origin-topology-layout-native", "origin-topology-layout-sheet", "origin-topology-offsets-native", "origin-topology-offsets-sheet",
+    "origin-topology-support-native", "origin-topology-support-sheet",
     "move-native", "move-joined", "drag-cancel", "selection-native", "rotate-native", "transform-joined", "pose-native", "pose-joints", "pose-joined", "pose-snap",
     // The app's configuration: gestures on a layer sheet.
     "move-sheet", "gestures-sheet", "autokey-sheet", "layers-sheet", "locked-sheet", "movieclip-sheet", "movieclip-loose-sheet",

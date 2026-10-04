@@ -4,7 +4,7 @@
 // keyboard undo and redo) and through the editor's timeline commands, and reports how
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
-//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm] [--url http://127.0.0.1:47831] [--out <report.json>]
+//   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm] [--origin] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -155,6 +155,14 @@ async function run(mode) {
 
   /** The interactions, once. */
   const interactions = async () => {
+    if (args.includes('--origin')) await step('set a figure origin and replay its history', () => page.evaluate(() => {
+      const e = styk.editor, object = e.evaluatedFrame.objects.find(object => e.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.animationOrigin);
+      if (!object) throw new Error('The origin check needs a figure with an animation origin.');
+      e.select(object.unique_id, -1);
+      const handle = e.figure.segments.find(segment => segment.segment_id !== e.figure._styk.animationOrigin.handleId)?.segment_id;
+      if (handle === undefined) throw new Error('The origin check needs another native handle.');
+      e.setOrigin(handle); e.undo(); e.redo(); e.undo();
+    }));
     const first = await handles();
     const joints = first.filter(handle => handle.joint >= 0), origin0 = first.find(handle => handle.joint < 0);
     if (joints[0]) await step('drag a joint handle', () => drag(joints[0], 40, -30));
@@ -558,7 +566,8 @@ try {
     const out = option('--out');
     if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, differences, problems}, null, 1));
     console.log(`  mode ${report.mode}`);
-    failed = differences.length > 0 || report.mismatches.length > 0 || (report.owned === 0 && !args.includes('--default')) || problems.length > 0;
+    failed = differences.length > 0 || report.mismatches.length > 0 || (report.owned === 0 && !args.includes('--default')) || problems.length > 0
+      || (args.includes('--origin') && !(report.comparedByCall?.setOrigin > 0));
   } else {
   const {report, steps, refused, problems} = await run('engineShadow=on');
   if (!report) throw new Error('Shadow editing was not installed (is ?engineShadow=on honoured?)');
@@ -574,7 +583,8 @@ try {
   for (const [what, count] of Object.entries(report.unported)) console.log(`  not ported ${count}×: ${what}`);
   for (const mismatch of report.mismatches.slice(0, 8)) console.log(`  ${mismatch.call}(${JSON.stringify(mismatch.args ?? []).slice(0, 80)}):\n    ${mismatch.problems.join('\n    ').slice(0, 1500)}`);
   for (const problem of problems.slice(0, 5)) console.log(`  page: ${problem}`);
-  failed = report.mismatches.length > 0 || report.compared === 0;
+  failed = report.mismatches.length > 0 || report.compared === 0
+    || (args.includes('--origin') && !(report.comparedByCall?.setOrigin > 0));
   }
 } finally {
   await browser.close();
