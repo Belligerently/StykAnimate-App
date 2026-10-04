@@ -76,7 +76,7 @@ impl PoseOptions {
 }
 
 /// `isStatic(segment)` on a figure record.
-fn is_static(segment: &Value) -> bool {
+pub(crate) fn is_static(segment: &Value) -> bool {
     if let Some(aux) = segment.get("aux_code").filter(|v| !v.is_null()) {
         return (aux.as_f64().unwrap_or(0.0) as i64) & 1 != 0;
     }
@@ -111,7 +111,7 @@ fn id_of(segment: &Value, key: &str) -> f64 {
 /// `rotationEdits(report, index, slot, joint, …, {isolate})`: the (slot, segment)
 /// angles a rotation of `joint` turns: its own subtree, then every figure joined to a
 /// handle of what turns, whole.
-fn rotation_targets(objects: &[Value], figures: &[Value], slot: usize, joint: usize, isolate: bool) -> Vec<(usize, usize)> {
+pub(crate) fn rotation_targets(objects: &[Value], figures: &[Value], slot: usize, joint: usize, isolate: bool) -> Vec<(usize, usize)> {
     let figure_of = |object: &Value| figures.iter().find(|f| num(f, "figure_type_id") == num(object, "figure_type_id")).cloned().unwrap_or(Value::Null);
     let segments = segments_of(&figure_of(&objects[slot]));
     let ids: Vec<f64> = segments.iter().map(|s| id_of(s, "segment_id")).collect();

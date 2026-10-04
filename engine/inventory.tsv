@@ -155,7 +155,7 @@ src/editor-layer-migration.mjs	engine	styk-edit	js	commands and history
 src/editor-layer-sheet.mjs	engine	styk-edit	partial	Rust: _commitSheetPose incl. movieclip replacements, the planner (write, capture, materialize, retimeClips), publish with its validation, undo/redo of layer-sheet commands, and the key and frame commands (move and copy keys, _commitSheetRange for added figures, insert key, duplicate, easing, clear, insert, remove, duration, append), the timeline clipboard and frames dragged between rows, clips on the presence clock included (sheetCopyFrames, sheetPasteFrames, sheetTransferFrames: styk-edit/src/sheet_clipboard.rs) (styk-edit); movieclip, assignment, channel and range commands still JS; _sheetPropertyEntries (styk-edit/src/property_edit.rs)
 src/editor-layers.mjs	engine	styk-edit	partial	Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS
 src/editor-load.mjs	engine	styk-edit	js	commands and history
-src/editor-motion-path.mjs	engine	styk-edit	js	commands and history
+src/editor-motion-path.mjs	engine	styk-edit	partial	commands and history. Rust: beginMotionPathEdit, updateMotionPathEdit, commitMotionPathEdit, cancelMotionPathEdit, setMotionPathFalloff and motionPathFalloff on a layer sheet (styk-edit/src/motion_path.rs): origins, joints, IK targets pinned and free, movieclip replacements and the camera, falloffs of each shape; native-timeline and animation-channel commits, rigged and 3D figures, followers of pinned limbs in joined assemblies, and the live trail (motionPathReport, the display frame) still JS
 src/editor-movieclips.mjs	engine	styk-edit	partial	Rust: renameMovieclip and the movieclip-definition history entry, setMovieclipPlayback and setMovieclipDrawing on the frame on show, playback across every frame for clips on the presence clock with restartMovieclip and removeMovieclipRestart (styk-edit/src/movieclips.rs), movieclipBatch (styk-edit/src/history.rs); creating, baking, splitting, placing, playback across frames of clips on the document's clock and the other commands still JS
 src/editor-origin-mutations.mjs	engine	styk-edit	js	commands and history
 src/editor-origin-support.mjs	engine	styk-edit	js	commands and history
@@ -254,7 +254,7 @@ src/media-authoring.mjs	engine	styk-edit	js
 src/media-image-worker.mjs	engine	styk-edit	js	
 src/message-error-core.mjs	ui	-	stays	
 src/motion-path-controls.mjs	ui	-	stays	
-src/motion-path-falloff.mjs	engine	styk-eval	js	onion sampling and motion-path projection
+src/motion-path-falloff.mjs	engine	styk-edit	ported	motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay
 src/motion-path.mjs	engine	styk-eval	js	onion sampling and motion-path projection
 src/movieclip-drawings-view.mjs	ui	-	stays	
 src/movieclip-drawings.mjs	engine	styk-eval::movieclips	partial	Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS

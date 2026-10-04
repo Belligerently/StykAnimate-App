@@ -60,6 +60,10 @@ const PORTED: &[&str] = &[
     "topology-rig-sheet", "topology-vfx-sheet", "topology-sticknodes-sheet",
     // Rig edits by dragging: repositioned, turned, stretched, slid and bent joints.
     "rig-drag-sheet", "rig-drag-native", "rig-drag-plain-sheet", "replace-definition-sheet", "replace-definition-joined-native",
+    // Motion-path edits: trail points at their own ticks, falloffs of each shape, IK, layers, a movieclip, the camera.
+    "motion-path-sheet", "motion-path-falloff-sheet", "motion-path-autokey-sheet", "motion-path-layers-sheet", "motion-path-locked-sheet", "motion-path-movieclip-sheet",
+    "motion-path-camera-sheet", "motion-path-ik-sheet", "motion-path-ik-unpinned-sheet", "motion-path-ik-pinned-sheet", "motion-path-ik-followers-sheet", "motion-path-ik-joined-sheet",
+    "motion-path-ik-joined-unpinned-sheet", "motion-path-sticknodes-sheet",
 ];
 
 #[test]

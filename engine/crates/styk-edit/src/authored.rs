@@ -48,6 +48,7 @@ impl Editor {
             segment_value_options: None,
             camera: None,
             rig: None,
+            motion_path: None,
             authored: true,
         });
         Ok(true)
@@ -129,6 +130,7 @@ impl Editor {
             segment_value_options: None,
             camera: None,
             rig: None,
+            motion_path: None,
             authored: true,
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());

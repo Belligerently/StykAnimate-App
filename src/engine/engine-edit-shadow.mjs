@@ -63,7 +63,9 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   // Rig edits by dragging (styk-edit/src/rig_drag.rs).
   'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
   // The figure's topology (styk-edit/src/topology.rs).
-  ...TOPOLOGY];
+  ...TOPOLOGY,
+  // Motion-path edits on a layer sheet (styk-edit/src/motion_path.rs).
+  'beginMotionPathEdit', 'updateMotionPathEdit', 'commitMotionPathEdit', 'cancelMotionPathEdit', 'setMotionPathFalloff'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
  * engine does not hold), or clipboard text (numbers in text cannot be compared within the
  * browsers' last-digit differences, D16): a view, not compared. */
@@ -78,7 +80,10 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   ...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames', 'mirrorFigure',
   'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
   // Style and draw-order edits recoloured or keyed on the figure on show publish the sheet; definition edits run in the editor.
-  'updateBuilderSegmentStyle', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder']);
+  'updateBuilderSegmentStyle', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder',
+  // A motion-path gesture's pointer moves run in both (the app reads the editor's session for
+  // its live trail); what its commit publishes is adopted.
+  'commitMotionPathEdit']);
 const RANGE = new Set([...RANGE_CALLS, 'bringToFront', 'sendToBack', 'moveSelectionLayer', 'orderSelection', 'moveSelectionInFrames']);
 /** A frame range as the app passes it on a layer sheet (`rangeFrames()`: an array carrying the
  * timeline's chosen ticks as `sheetTicks`), which JSON would drop: `{"@array", sheetTicks}`. */
@@ -392,7 +397,11 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     if (name === 'commitAnimationEdit') { editor._animationEdit = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
     let published = false;
     for (const {kind, frameIndex, tick, ...detail} of answer.events) {
-      if (kind === 'edit' && detail.live) {
+      // A motion-path gesture that ended without changing anything: the editor's ends with it.
+      if (kind === 'edit' && detail.motionPath && !detail.live && !detail.layerSheet) {
+        if (editor._drag?.motionPath) editor._drag = null;
+        editor._emit('edit', detail);
+      } else if (kind === 'edit' && detail.live) {
         if (drag) { drag.changed = true; editor._invalidateObjects(detail.changedUids, null, {pose: true}); }
         else editor._invalidate();
         editor._emit('edit', detail);
@@ -424,7 +433,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
   /** Why the editor cannot adopt every effect of this answer (then it runs the call itself), or null. */
   const unadoptable = answer => {
-    const other = answer.events.find(({kind, live, layerSheet}) => !(kind === 'seek' || kind === 'edit' && (live || layerSheet)));
+    const other = answer.events.find(({kind, live, layerSheet, motionPath}) => !(kind === 'seek' || kind === 'edit' && (live || layerSheet || motionPath)));
     if (other) return `a ${other.kind} event`;
     if (answer.events.filter(event => event.layerSheet).length > 1) return 'two publications';
     if (answer.draft && !(editor._authoredPoseEdit && editor._drag && answer.drag)) return `a gesture the editor did not begin (drag ${Boolean(editor._drag)}, draft ${Boolean(editor._authoredPoseEdit)}, engine ${JSON.stringify(answer.drag)})`;
