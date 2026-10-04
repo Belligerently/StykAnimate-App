@@ -142,7 +142,7 @@ src/editor-figure-transform.mjs	engine	styk-edit	ported	beginFigureHandleDrag, t
 src/editor-frame-clipboard.mjs	engine	styk-edit	js	commands and history
 src/editor-frame-draft.mjs	engine	styk-edit	js	commands and history
 src/editor-frames.mjs	engine	styk-edit	js	commands and history
-src/editor-handle-commands.mjs	engine	styk-edit	js	commands and history
+src/editor-handle-commands.mjs	engine	styk-edit	partial	Rust: nudgeHandle, alignHandle, locateEditedHandle, segmentValues, beginSegmentValueEdit, setSegmentValues, copySegmentValues, pasteSegmentValues and their helpers (styk-edit/src/handle_commands.rs); nudging through follow clips or camera motion active at the playhead still JS
 src/editor-handle-edit.mjs	engine	styk-edit	ported	beginHandleEditDrag, editHandlePosition, commitHandleEditDrag, cancelHandleEditDrag, handleEditSegmentPose (styk-edit/src/handle_edit.rs)
 src/editor-ik.mjs	engine	styk-edit	partial	Rust: poseIKTarget, _bakeIKFollowers, _rotateIKFollowers, _rememberIKBends, _ikPoseSlots, _expandIKDrag, _ikLimbPoints, _followStretchedIK, poseGraph and captureFor (styk-edit/src/ik.rs); getIKSettings, setNodeIK, rotateIKTarget on figures not joined to others (ik_settings.rs); setNodeIK and rotateIKTarget across joined figures (bakeGraph) still JS
 src/editor-inbetween-async.mjs	engine	styk-edit	js	commands and history

@@ -28,6 +28,7 @@ import {figureHandleTransform} from '../editor-figure-transform.mjs';
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
 const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
+  'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'segmentValues', 'beginSegmentValueEdit', 'setSegmentValues', 'copySegmentValues', 'pasteSegmentValues',
   'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose', 'poseJoint', 'rotateJoint', 'bendJoint',
   'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames', 'sheetInsertFrames', 'sheetRemoveFrames',
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
@@ -40,11 +41,12 @@ const PORTED = ['select', 'selectMany', 'seek', 'selectSheetLayer', 'keepSelecti
   'addAnimationKeys', 'addAnimationKey', 'beginAnimationEdit', 'previewAnimationEdit', 'commitAnimationEdit', 'cancelAnimationEdit', 'setSceneColor', 'setSceneBackground',
   'setBackgroundColor', 'updateFigureStyle', 'setVfxParameter'];
 /** Calls that return a frame, a figure record or a layer's view (with layer focus, which the
- * engine does not hold): a view, not compared. */
-const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'importFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch', 'beginAnimationEdit']);
+ * engine does not hold), or clipboard text (numbers in text cannot be compared within the
+ * browsers' last-digit differences, D16): a view, not compared. */
+const VIEWS = new Set(['select', 'selectMany', 'seek', 'sheetAppendFrame', 'duplicateFigure', 'addFigure', 'importFigure', 'createLayer', 'createLayerFolder', 'sheetCopyFrames', 'endBatch', 'beginAnimationEdit', 'copySegmentValues']);
 /** Calls the engine runs in the editor's place when it owns editing. */
 const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'scaleSelected', 'mirrorSelection', 'rotateFigure', 'centerFigure', 'resetPose',
-  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'editHandlePosition', 'commitHandleEditDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
+  'poseJoint', 'rotateJoint', 'bendJoint', 'commitDrag', 'editHandlePosition', 'commitHandleEditDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'setSegmentValues', 'pasteSegmentValues', 'sheetInsertKey', 'sheetDuplicateFrameAfter', 'sheetSetEasing', 'sheetClearKeys', 'sheetClearFrames',
   'sheetInsertFrames', 'sheetRemoveFrames', 'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure',
   'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'sheetPasteFrames', 'pasteSelection', 'duplicateSelection', 'importFigure',
   // Property edits publish the sheet; a scrub's previews are compared, not adopted.
@@ -166,12 +168,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   // session that ends inside it does not restart until it closes. `closing` collects the
   // batch's own change event, which the editor sends after the batch's last call.
   let batching = false, closing = null;
-  // The timeline and figure clipboards the session copied (the editor's objects): a session
-  // starts with none, and pastes only when the editor's clipboard is that one.
-  let copied = null, copiedFigures = null;
+  // The timeline, figure and segment-value clipboards the session copied (the editor's own): a
+  // session starts with none, and pastes only when the editor's clipboard is that one.
+  let copied = null, copiedFigures = null, copiedValues = null;
   const end = why => {
     if (!session) return;
-    session.free(); session = null; copied = null; copiedFigures = null;
+    session.free(); session = null; copied = null; copiedFigures = null; copiedValues = null;
     report.ended[why] = (report.ended[why] ?? 0) + 1;
   };
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
@@ -382,6 +384,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (live && (name === 'undo' && !live.can_undo() || name === 'redo' && !live.can_redo())) { end('history the session did not record'); live = null; }
       if (live && name === 'sheetPasteFrames' && (editor._sheetClipboard ?? null) !== copied) { end('a timeline clipboard the session did not copy'); live = null; }
       if (live && name === 'pasteSelection' && (editor._selectionClipboard ?? editor._figureClipboard ?? null) !== copiedFigures) { end('a figure clipboard the session did not copy'); live = null; }
+      if (live && name === 'pasteSegmentValues' && args[0] == null && (editor._segmentValuesClipboard ?? null) !== copiedValues) { end('segment values the session did not copy'); live = null; }
       if (live) {
         // Trailing omitted arguments stay omitted; anything JSON cannot carry is not compared.
         const given = args.slice(); while (given.length && given.at(-1) === undefined) given.pop();
@@ -442,6 +445,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
           if (name === 'sheetCopyFrames' && session && !thrown) copied = editor._sheetClipboard;
           if ((name === 'copySelection' || name === 'cutSelection') && session && !thrown) copiedFigures = editor._selectionClipboard ?? null;
+          if (name === 'copySegmentValues' && session && !thrown) copiedValues = editor._segmentValuesClipboard ?? null;
         } catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
       }
       if (thrown) throw thrown;

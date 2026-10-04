@@ -913,6 +913,45 @@ scenario('figures-layers-sheet', app, [
     scenario('figure-transform-ik-sheet', app, [
       ['@select', 1, 1], ['transformFigureHandle', 330, 260], ['@select', 2, 2], ['transformFigureHandle', 640, 330, {ctrlKey: true}], ['undo'], ['redo'],
     ], '../../crates/styk-eval/tests/fixtures/ik/stretch.json');
+    // Handle commands: nudged by screen pixels through the view (zoomed, turned, mirrored),
+    // aligned to an axis, posed, bent, stretched, edited or turning the whole figure, a handle
+    // chosen by figure and joint or handle number, moved to where it is on the neighbouring key;
+    // segment values read, typed (relative to the incoming tangent), copied and pasted.
+    const handleSteps = [
+      ['@select', 1, 1], ['nudgeHandle', 5, -3], ['nudgeHandle', 2, 0, {bend: true}], ['nudgeHandle', 0, 4, {stretch: true}], ['nudgeHandle', 3, 3, {view: {scale: 2}}],
+      ['nudgeHandle', -4, 2, {view: {scale: 1.5, rotation: 0.3, flip: true}}], ['nudgeHandle', 2, 2, {editMode: true}], ['nudgeHandle', 1, -2, {wholeFigure: true}], ['nudgeHandle', 0, 0],
+      ['nudgeHandle', 3, 1, {uid: 2, jointIndex: 2}], ['nudgeHandle', 3, 1, {uid: 3, handleId: 22}], ['nudgeHandle', 5, 5, {uid: 1, handleId: 0}], ['nudgeHandle', 5, 5, {uid: 1, handleId: 0, editMode: true}],
+      ['nudgeHandle', 1, 1, {uid: 99}], ['nudgeHandle', 1, 1, {uid: 1, handleId: 77}], ['nudgeHandle', 1, 1, {view: {scale: 0}}],
+      ['@select', 1, 2], ['alignHandle', 1, 0], ['alignHandle', 0, -1, {wholeFigure: true}], ['alignHandle', 1, 1, {bend: true}], ['alignHandle', -1, 0, {editMode: true}], ['alignHandle', 0, 0],
+      ['@select', 1, -1], ['alignHandle', 1, 0],
+      ['@select', 2, 1], ['segmentValues'], ['segmentValues', {relative: true}], ['setSegmentValues', {angle: 45}], ['setSegmentValues', {bend: 20, length: 80}], ['setSegmentValues', {angle: 10}, {relative: true}],
+      ['setSegmentValues', {length: 0}], ['setSegmentValues', {foo: 1}], ['setSegmentValues', {angle: 10}, {relative: true}],
+      ['beginSegmentValueEdit', {editMode: true}], ['setSegmentValues', {angle: 30, length: 60}], ['setSegmentValues', {bend: 15}], ['commitDrag'],
+      ['beginSegmentValueEdit', {isolate: true}], ['setSegmentValues', {angle: -20}], ['cancelDrag'], ['@select', 3, 2], ['setSegmentValues', {length: 50}],
+      ['copySegmentValues'], ['@select', 3, 1], ['pasteSegmentValues'], ['pasteSegmentValues', '12,5:abc:3:70'], ['pasteSegmentValues', '1:2:-3'], ['pasteSegmentValues', 'x'.repeat(101)],
+      ['@select', 1, 1], ['locateEditedHandle', -1], ['locateEditedHandle', 1], ['locateEditedHandle', 2], ['locateEditedHandle', -1, {handleId: 0}], ['locateEditedHandle', 1, {uid: 2, jointIndex: 1}],
+      ['@select', 3, 0], ['segmentValues', {relative: true}], ['setSegmentValues', {angle: 25}, {relative: true}], ['beginDrag', 'Pose figure'], ['poseJoint', 330, 330], ['locateEditedHandle', -1],
+      ['undo'], ['undo'], ['undo'], ['redo'], ['selectMany', [1, 3]], ['nudgeHandle', 2, 2, {uid: 1, handleId: 0}],
+      ['@select', 1, 1], ['beginDrag', 'Pose figure'], ['poseJoint', 300, 330], ['locateEditedHandle', 1], ['undo'],
+    ];
+    scenario('handle-commands-native', {}, [['@seek', 6], ...handleSteps], 'joined-chain.document.json');
+    scenario('handle-commands-sheet', app, [['@seek', 6], ...handleSteps, ['@seek', 3], ['@select', 2, 2], ['nudgeHandle', 4, 4], ['setSegmentValues', {angle: 90, bend: 5}], ['undo'], ['redo']], 'joined-chain.document.json');
+    // Through a turned, zoomed camera, and a camera motion clip that does not move it here.
+    {
+      const document = JSON.parse(readFileSync(`${out}/joined-chain.document.json`, 'utf8'));
+      document.keyframes[0].camera = {is_default: false, x: 30, y: -12, scale: 1.25, angle_rad: 0.2};
+      document.keyframes[1].camera = {is_default: false, x: -20, y: 8, scale: 0.8, angle_rad: -0.3};
+      const motion = JSON.parse(readFileSync(`${out}/camera-motion.document.json`, 'utf8'))._styk.cameraMotion;
+      document._styk = {...document._styk, cameraMotion: {...motion, clips: motion.clips.filter(clip => clip.type === 'shake').map(clip => ({...clip, start: 3, duration: 1}))}};
+      writeFileSync(`${out}/camera-chain.document.json`, JSON.stringify(document) + '\n');
+    }
+    const cameraSteps = [['@select', 1, 1], ['nudgeHandle', 5, -3], ['nudgeHandle', 4, 2, {view: {scale: 2, rotation: -0.4}}], ['nudgeHandle', 3, 3, {cameraEnabled: false}], ['@select', 1, -1], ['nudgeHandle', -6, 2], ['@seek', 6], ['@select', 2, 1], ['nudgeHandle', 2, 7], ['@seek', 4], ['nudgeHandle', 1, 2], ['undo'], ['redo']];
+    scenario('handle-commands-camera-native', {}, cameraSteps, 'camera-chain.document.json');
+    scenario('handle-commands-camera-sheet', app, cameraSteps, 'camera-chain.document.json');
+    scenario('handle-commands-ik-sheet', app, [
+      ['@select', 1, 1], ['nudgeHandle', 6, 2], ['segmentValues', {relative: true}], ['setSegmentValues', {angle: 20}, {relative: true}], ['@select', 1, 2], ['alignHandle', 0, 1],
+      ['@select', 2, 1], ['setSegmentValues', {length: 70}], ['undo'], ['redo'],
+    ], '../../crates/styk-eval/tests/fixtures/ik/stretch.json');
     scenario('handle-edit-startup-sheet', app, [
       ['@select', 1, 3], ['editHandlePosition', 520, 300], ['@select', 1, 0], ['editHandlePosition', 470, 260, {bend: true}], ['undo'], ['redo'],
     ], 'startup.document.json');

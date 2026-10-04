@@ -234,6 +234,14 @@ async function run(mode) {
       const p = e.geometry.objects.get(e.selectedSlot)?.segments[1]?.end; if (!p) return;
       try { if (!e.beginFigureHandleDrag(p.x, p.y, {rotate: true, scale: true, joint: 1})) return; e.transformFigureHandle(p.x - 30, p.y + 20); e.transformFigureHandle(p.x - 40, p.y + 60, {shiftKey: true}); e.commitFigureHandleDrag(); e.transformFigureHandle(p.x + 10, p.y - 10, {ctrlKey: true}); e.undo(); } catch {}
     }));
+    await step('nudge and align handles, type and paste segment values', () => page.evaluate(() => {
+      const e = styk.editor; if (e.selectedUid === null) return; e.select(e.selectedUid, 1);
+      try {
+        e.nudgeHandle(4, -2); e.nudgeHandle(2, 2, {bend: true}); e.alignHandle(1, 0); e.nudgeHandle(3, 0, {editMode: true});
+        if (e.beginSegmentValueEdit({})) { e.setSegmentValues({angle: 30}); e.setSegmentValues({length: 70}); e.commitDrag(); }
+        e.setSegmentValues({bend: 10}); e.copySegmentValues(); e.select(e.selectedUid, 2); e.pasteSegmentValues(); e.locateEditedHandle(1); e.undo();
+      } catch {}
+    }));
     await step('edit and delete a camera motion clip', () => page.evaluate(() => { const e = styk.editor, clip = e.getCameraMotions()[0]; if (!clip) return; e.setCameraMotion(clip.id, {start: clip.start + 1}); e.setCameraMotion(clip.id, {enabled: !clip.enabled}); e.deleteCameraMotion(clip.id); e.undo(); }));
     await step('set a layer parallax', () => page.evaluate(() => { const e = styk.editor, layer = e.report._styk?.layers?.order?.[0]; if (!layer) return; e.setLayerParallax(layer, {enabled: true, x: 0.5}); e.setLayerParallax(layer, {linked: false, y: 2}); e.undo(); e.undo(); }));
     await step('change the project settings', () => page.evaluate(() => { const e = styk.editor, {fps, canvas_width: width, canvas_height: height} = e.report; e.setFPS(fps + 1); e.updateProject({canvas_width: width + 10}); e.setCanvasSize(width, height); e.undo(); e.undo(); e.undo(); }));

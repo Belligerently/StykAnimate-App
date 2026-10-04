@@ -19,6 +19,7 @@ mod figure_clipboard;
 mod figure_transform;
 mod figures;
 mod frame;
+mod handle_commands;
 mod handle_edit;
 mod history;
 mod ik;
@@ -103,6 +104,8 @@ pub(crate) struct Drag {
     pub handle_edit: Option<handle_edit::HandleEdit>,
     /// A whole-figure transform by a handle (`_drag.figureHandle`).
     pub figure_handle: Option<figure_transform::FigureHandle>,
+    /// The options of a segment value edit (`_drag.segmentValueOptions`).
+    pub segment_value_options: Option<Value>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -157,6 +160,8 @@ pub struct Editor {
     pub(crate) sheet_clipboard: Option<sheet_clipboard::Clipboard>,
     /// `editor._selectionClipboard`: the figures this editor copied.
     pub(crate) figure_clipboard: Option<figure_clipboard::FigureClipboard>,
+    /// `editor._segmentValuesClipboard`: the last copied `Angle:Bend:Length`.
+    pub(crate) segment_values_clipboard: Option<String>,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -209,6 +214,7 @@ struct Snapshot {
     events: usize,
     sheet_clipboard: Option<sheet_clipboard::Clipboard>,
     figure_clipboard: Option<figure_clipboard::FigureClipboard>,
+    segment_values_clipboard: Option<String>,
     vfx_edit: Option<Option<Value>>,
     batch: Option<history::Batch>,
     sheet_selection: Option<select::SheetSelection>,
@@ -245,6 +251,7 @@ impl Editor {
             new_layer_hints: HashMap::new(),
             sheet_clipboard: None,
             figure_clipboard: None,
+            segment_values_clipboard: None,
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -399,6 +406,7 @@ impl Editor {
             events: self.events.len(),
             sheet_clipboard: self.sheet_clipboard.clone(),
             figure_clipboard: self.figure_clipboard.clone(),
+            segment_values_clipboard: self.segment_values_clipboard.clone(),
             vfx_edit: self.vfx_edit.clone(),
             batch: self.batch.clone(),
             sheet_selection: self.sheet_selection.clone(),
@@ -423,6 +431,7 @@ impl Editor {
         self.events.truncate(snapshot.events);
         self.sheet_clipboard = snapshot.sheet_clipboard;
         self.figure_clipboard = snapshot.figure_clipboard;
+        self.segment_values_clipboard = snapshot.segment_values_clipboard;
         self.vfx_edit = snapshot.vfx_edit;
         self.batch = snapshot.batch;
         self.sheet_selection = snapshot.sheet_selection;
@@ -470,6 +479,14 @@ impl Editor {
             "transformFigureHandle" => self.transform_figure_handle(number(0), number(1), &arg(2)).map(Value::Bool),
             "commitFigureHandleDrag" => self.finish_figure_handle_drag(true).map(Value::Bool),
             "cancelFigureHandleDrag" => self.finish_figure_handle_drag(false).map(Value::Bool),
+            "nudgeHandle" => self.nudge_handle(number(0), number(1), &arg(2)).map(Value::Bool),
+            "alignHandle" => self.align_handle(number(0), number(1), &arg(2)).map(Value::Bool),
+            "locateEditedHandle" => self.locate_edited_handle(arg(0).as_f64().unwrap_or(if arg(0).is_null() { -1.0 } else { f64::NAN }), &arg(1)).map(Value::Bool),
+            "segmentValues" => self.segment_values(&arg(0)),
+            "beginSegmentValueEdit" => self.begin_segment_value_edit(&arg(0)).map(Value::Bool),
+            "setSegmentValues" => self.set_segment_values(&arg(0), &arg(1)).map(Value::Bool),
+            "copySegmentValues" => self.copy_segment_values(&arg(0)),
+            "pasteSegmentValues" => { let text = args.first().cloned(); self.paste_segment_values(text.as_ref(), &arg(1)).map(Value::Bool) }
             "beginTranslationDrag" => self.begin_drag(arg(0).as_str().unwrap_or("Move figures"), true).map(Value::Bool),
             "moveSelection" => self.move_selection(arg(0).as_f64().unwrap_or(f64::NAN), arg(1).as_f64().unwrap_or(f64::NAN), &arg(2)).map(Value::Bool),
             "rotateSelection" => self.rotate_selection(number(0), &arg(1)).map(Value::Bool),

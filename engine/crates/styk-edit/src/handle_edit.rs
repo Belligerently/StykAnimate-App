@@ -90,8 +90,64 @@ fn restore_field(object: &mut Obj, before: &Value, key: &str) {
     }
 }
 
+
+/// A segment as the editor's geometry draws it (`geometry.objects.get(slot).segments[i]`):
+/// its definition's ids, the angle shown (a pinned limb's solved angle), the bend drawn, the
+/// drawn (scaled) length and its ends.
+#[derive(Clone, Debug)]
+pub(crate) struct Drawn {
+    pub index: usize,
+    pub id: f64,
+    pub parent: f64,
+    pub angle: f64,
+    pub bend: f64,
+    pub length: f64,
+    pub start: [f64; 2],
+    pub end: [f64; 2],
+    /// The definition's length (`shape.seg.length`).
+    pub definition_length: f64,
+    /// A line or a square line.
+    pub line: bool,
+}
+
+/// Every segment of the figure at `at` in the evaluated frame as drawn; `definition` is its
+/// definition's segment records.
+pub(crate) fn drawn_segments(prepared: &styk_eval::eval::Prepared, frame: &styk_eval::eval::Frame, scene: &styk_eval::geometry::Scene, solved: &std::collections::HashMap<u32, crate::ik::Solved>, at: usize, definition: &[Value]) -> Result<Vec<Drawn>, EditError> {
+    let evaluated = &frame.objects[at];
+    let figure = evaluated.figure_override.as_ref().or_else(|| prepared.doc.figure(evaluated.figure));
+    let Some(figure) = figure else { return Err(EditError::Unported("a figure the engine does not draw".into())) };
+    let geometry = scene.objects.iter().find(|g| g.uid == evaluated.uid && g.resolved);
+    let stretched = solved.get(&evaluated.uid).and_then(|s| s.solution.lengths.as_ref());
+    let mut shapes = Vec::with_capacity(figure.segments.len());
+    for (i, segment) in figure.segments.iter().enumerate() {
+        let (_, bend, length) = styk_eval::geometry::segment_pose(evaluated, segment, i);
+        // A straight Stick Nodes segment with a sagitta is drawn as a curve, which geometry
+        // reports with a bend of 1e-6.
+        let bend = if bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, evaluated).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { bend };
+        let length = stretched.and_then(|l| l.get(i).copied()).unwrap_or(length) * evaluated.scale;
+        let record = definition.get(i).cloned().unwrap_or(Value::Null);
+        let code = match record.get("primitive_code").filter(|v| !v.is_null()) {
+            Some(code) => code.as_f64().unwrap_or(f64::NAN),
+            None => (num(&record, "flags").unwrap_or(0.0) as i64 & 255) as f64,
+        };
+        shapes.push(Drawn {
+            index: i,
+            id: num(&record, "segment_id").unwrap_or(f64::NAN),
+            parent: num(&record, "parent_id").unwrap_or(f64::NAN),
+            angle: crate::ik::displayed_angle(prepared, frame, scene, solved, at, i),
+            bend,
+            length,
+            start: geometry.and_then(|g| g.starts.get(i).copied()).unwrap_or([f64::NAN; 2]),
+            end: geometry.and_then(|g| g.ends.get(i).copied()).unwrap_or([f64::NAN; 2]),
+            definition_length: num(&record, "length").unwrap_or(f64::NAN),
+            line: code == 0.0 || code == 6.0,
+        });
+    }
+    Ok(shapes)
+}
+
 impl Editor {
-    fn figure_record(&self, object: &Value) -> Option<Value> {
+    pub(crate) fn figure_record(&self, object: &Value) -> Option<Value> {
         let figures = self.report.get("figure_types")?.elements()?;
         figures.iter().find(|f| num(f, "figure_type_id") == num(object, "figure_type_id"))
     }
@@ -163,44 +219,22 @@ impl Editor {
             }
             visited.push(item);
             let found = geometry_of(item).and_then(|(at, g)| Some((at, g, before.iter().find(|o| uid(o) == Some(g.uid))?)));
-            let Some((at, geometry, snapshot)) = found else {
+            let Some((at, _, snapshot)) = found else {
                 return Err(EditError::Invalid("errors.editorHandleEdit.theAttachedHandleIsOutsideTheCurrentPose".into()));
             };
             let evaluated = &frame.objects[at];
             if !(evaluated.scale.abs() > EPS) {
                 return Err(EditError::Invalid("errors.editorHandleEdit.increaseAttachedFigureScaleBeforeRepositioningThisHandle".into()));
             }
-            let figure = evaluated.figure_override.as_ref().or_else(|| prepared.doc.figure(evaluated.figure));
-            let Some(figure) = figure else { return Err(EditError::Unported("handle edit on a figure the engine does not draw".into())) };
             let definition: Vec<Value> = self.figure_record(&objects[item]).and_then(|f| f.get("segments").and_then(Value::elements).map(|e| e.iter().collect())).unwrap_or_default();
-            let stretched = solved.get(&evaluated.uid).and_then(|s| s.solution.lengths.as_ref());
-            let (mut lengths, mut bends, mut incident) = (Vec::new(), Vec::new(), Vec::new());
-            for (i, segment) in figure.segments.iter().enumerate() {
-                let (_, drawn_bend, length) = styk_eval::geometry::segment_pose(evaluated, segment, i);
-                // A straight Stick Nodes segment with a sagitta is drawn as a curve, which
-                // geometry reports with a bend of 1e-6.
-                let drawn_bend = if drawn_bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, evaluated).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { drawn_bend };
-                let length = stretched.and_then(|l| l.get(i).copied()).unwrap_or(length);
-                lengths.push(length * evaluated.scale / evaluated.scale.abs());
-                bends.push(drawn_bend);
-                let record = definition.get(i).cloned().unwrap_or(Value::Null);
-                let (id, parent) = (num(&record, "segment_id").unwrap_or(f64::NAN), num(&record, "parent_id").unwrap_or(f64::NAN));
-                if id == handle || parent == handle {
-                    let code = match record.get("primitive_code").filter(|v| !v.is_null()) {
-                        Some(code) => code.as_f64().unwrap_or(f64::NAN),
-                        None => (num(&record, "flags").unwrap_or(0.0) as i64 & 255) as f64,
-                    };
-                    incident.push(Shape {
-                        index: i,
-                        segment_id: id,
-                        angle: crate::ik::displayed_angle(&prepared, &frame, &scene, &solved, at, i),
-                        bend: drawn_bend,
-                        start: geometry.starts.get(i).copied().unwrap_or([f64::NAN; 2]),
-                        end: geometry.ends.get(i).copied().unwrap_or([f64::NAN; 2]),
-                        line: code == 0.0 || code == 6.0,
-                    });
-                }
-            }
+            let shapes = drawn_segments(&prepared, &frame, &scene, &solved, at, &definition)?;
+            let lengths: Vec<f64> = shapes.iter().map(|s| s.length / evaluated.scale.abs()).collect();
+            let bends: Vec<f64> = shapes.iter().map(|s| s.bend).collect();
+            let incident: Vec<Shape> = shapes
+                .iter()
+                .filter(|s| s.id == handle || s.parent == handle)
+                .map(|s| Shape { index: s.index, segment_id: s.id, angle: s.angle, bend: s.bend, start: s.start, end: s.end, line: s.line })
+                .collect();
             let drawn = bends.clone();
             let indices = incident.iter().map(|s| s.index).collect();
             states.push(State { slot: item, vertex: handle, before: snapshot.clone(), indices, incident, lengths, bends, drawn, moved: false });
