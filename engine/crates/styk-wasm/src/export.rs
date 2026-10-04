@@ -2,10 +2,11 @@
 //!
 //! The worker joins the engine's shared memory like the preparation workers, but keeps
 //! its event loop: it holds a GPU device of its own (WebGPU, else WebGL2 on an
-//! `OffscreenCanvas`), so nothing of an export is drawn or read on the interface thread
-//! (D7). Frames come from the document of the export's revision ([`ExportFrames`]); the
-//! pose the editor shows comes as keyframe JSON, drawn as the stage draws its edit frame
-//! but without onion skins.
+//! `OffscreenCanvas`), or, where it gets none, draws with the CPU rasterizer
+//! (`ExportRenderer::create_cpu`, styk-raster); nothing of an export is drawn or read on
+//! the interface thread (D7). Frames come from the document of the export's revision
+//! ([`ExportFrames`]); the pose the editor shows comes as keyframe JSON, drawn as the stage
+//! draws its edit frame but without onion skins.
 
 use std::sync::{Arc, Mutex};
 
@@ -14,7 +15,7 @@ use styk_engine::edit::{EditOptions, EditScene};
 use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::Engine;
 use styk_eval::doc::Camera;
-use styk_export::{GpuExport, Settings, Smoothing};
+use styk_export::{CpuExport, GpuExport, Settings, Smoothing};
 use styk_render::{wgpu, Edges, Renderer};
 use wasm_bindgen::prelude::*;
 
@@ -104,26 +105,47 @@ impl ExportDevice {
     }
 }
 
+
+/// What draws an export's tiles: the worker's GPU device, or the CPU rasterizer where the
+/// worker has none.
+enum Backend {
+    Gpu {
+        gpu: Box<GpuExport>,
+        device: wgpu::Device,
+        /// WebGL2 draws through a context of this surface; WebGPU needs none.
+        _surface: Option<wgpu::Surface<'static>>,
+        /// What the device reported: lost, out of memory or a validation error.
+        failure: Arc<Mutex<Option<(bool, String)>>>,
+        /// Finding an adapter, getting its device, creating the renderer (ms).
+        start_ms: [f64; 3],
+        /// WebGL2: read-backs complete when the device is polled.
+        polled: bool,
+    },
+    Cpu(CpuExport),
+}
+
 #[wasm_bindgen]
 pub struct ExportRenderer {
     frames: ExportFrames,
-    gpu: GpuExport,
-    device: wgpu::Device,
-    /// WebGL2 draws through a context of this surface; WebGPU needs none.
-    _surface: Option<wgpu::Surface<'static>>,
-    backend: String,
+    backend: Backend,
+    backend_name: String,
     /// The pose the editor shows, when the export is of it.
     edit: EditScene,
     /// The frame being exported: its draw list and the camera it is seen through.
     current: Option<(Arc<DrawList>, Option<Camera>)>,
-    /// What the device reported: lost, out of memory or a validation error.
-    failure: Arc<Mutex<Option<(bool, String)>>>,
     frames_drawn: u32,
     last_evaluate_ms: f64,
-    /// Finding an adapter, getting its device, creating the renderer (ms).
-    start_ms: [f64; 3],
-    /// WebGL2: read-backs complete when the device is polled.
-    polled: bool,
+}
+
+/// The export's settings and its pinned frames, from the arguments of `create` and
+/// `create_cpu`. `address` comes from `EngineHandle::address` and is consumed.
+fn pinned(address: usize, revision: f64, width: u32, height: u32, smoothing: &str, max_pixels: f64) -> Result<(Settings, ExportFrames), JsError> {
+    // SAFETY: `address` was produced by `EngineHandle::address` in this memory and is used once.
+    let engine = unsafe { *Box::from_raw(address as *mut Engine) };
+    let smoothing = Smoothing::parse(smoothing).ok_or_else(|| js_error("choose Smooth edges, No smoothing or Smooth sprites"))?;
+    let settings = Settings::new(width, height, smoothing, max_pixels as u64).map_err(js_error)?;
+    let frames = engine.export_frames(revision as u64).map_err(js_error)?;
+    Ok((settings, frames))
 }
 
 #[wasm_bindgen]
@@ -134,44 +156,44 @@ impl ExportRenderer {
     /// hold the document of `revision`.
     #[allow(clippy::too_many_arguments)]
     pub fn create(address: usize, revision: f64, width: u32, height: u32, smoothing: String, max_pixels: f64, tile: u32, device: ExportDevice) -> Result<ExportRenderer, JsError> {
-        // SAFETY: `address` was produced by `EngineHandle::address` in this memory and is used once.
-        let engine = unsafe { *Box::from_raw(address as *mut Engine) };
+        let (settings, frames) = pinned(address, revision, width, height, &smoothing, max_pixels)?;
         let mut device = device;
-        let smoothing = Smoothing::parse(&smoothing).ok_or_else(|| js_error("choose Smooth edges, No smoothing or Smooth sprites"))?;
-        let settings = Settings::new(width, height, smoothing, max_pixels as u64).map_err(js_error)?;
-        let frames = engine.export_frames(revision as u64).map_err(js_error)?;
         let mut gpu = GpuExport::with_renderer(&device.device, &device.queue, settings, tile, device.renderer.take());
         let generation = frames.generation().clone();
         gpu.prepare_sprites(generation.lineage, &generation.assets);
         frames.decode_images();
-        Ok(ExportRenderer {
-            frames,
-            gpu,
-            device: device.device.clone(),
-            _surface: device.surface.take(),
-            backend: device.backend.clone(),
-            edit: EditScene::default(),
-            current: None,
-            failure: device.failure.clone(),
-            frames_drawn: 0,
-            last_evaluate_ms: 0.0,
-            start_ms: device.start_ms,
-            polled: device.polled,
-        })
+        let backend = Backend::Gpu { gpu: Box::new(gpu), device: device.device.clone(), _surface: device.surface.take(), failure: device.failure.clone(), start_ms: device.start_ms, polled: device.polled };
+        Ok(ExportRenderer { frames, backend, backend_name: device.backend.clone(), edit: EditScene::default(), current: None, frames_drawn: 0, last_evaluate_ms: 0.0 })
+    }
+
+    /// Starts an export as [`ExportRenderer::create`] does, drawn by the CPU rasterizer
+    /// (styk-raster): for a worker that has no GPU device. Tiles are at most
+    /// `styk_export::cpu::TILE_SIDE` pixels a side; each is drawn when asked for.
+    pub fn create_cpu(address: usize, revision: f64, width: u32, height: u32, smoothing: String, max_pixels: f64, tile: u32) -> Result<ExportRenderer, JsError> {
+        let (settings, frames) = pinned(address, revision, width, height, &smoothing, max_pixels)?;
+        frames.decode_images();
+        let backend = Backend::Cpu(CpuExport::new(settings, tile));
+        Ok(ExportRenderer { frames, backend, backend_name: "CPU · styk-raster".into(), edit: EditScene::default(), current: None, frames_drawn: 0, last_evaluate_ms: 0.0 })
     }
 
     /// The graphics backend and adapter, for reports.
     pub fn backend(&self) -> String {
-        self.backend.clone()
+        self.backend_name.clone()
     }
 
     /// Uploads pictures decoded so far and returns how many are still to come. A frame is
     /// drawn only once every picture is in (an export never shows a frame without one).
     pub fn upload_images(&mut self) -> u32 {
         let generation = self.frames.generation().clone();
-        let images = self.frames.take_images(IMAGE_UPLOAD_BYTES);
-        if !images.is_empty() {
-            self.gpu.upload_images(&generation.assets, images.iter().map(|image| &**image));
+        match &mut self.backend {
+            Backend::Gpu { gpu, .. } => {
+                let images = self.frames.take_images(IMAGE_UPLOAD_BYTES);
+                if !images.is_empty() {
+                    gpu.upload_images(&generation.assets, images.iter().map(|image| &**image));
+                }
+            }
+            // The CPU keeps the decoded pictures themselves, shared with nothing else.
+            Backend::Cpu(cpu) => cpu.upload_images(&generation.assets, self.frames.take_images(usize::MAX)),
         }
         self.frames.images_pending() as u32
     }
@@ -206,53 +228,84 @@ impl ExportRenderer {
         Ok(())
     }
 
+    fn tile_list(&self) -> &[styk_export::Tile] {
+        match &self.backend {
+            Backend::Gpu { gpu, .. } => gpu.tiles(),
+            Backend::Cpu(cpu) => cpu.tiles(),
+        }
+    }
+
+    fn settings(&self) -> &Settings {
+        match &self.backend {
+            Backend::Gpu { gpu, .. } => gpu.settings(),
+            Backend::Cpu(cpu) => cpu.settings(),
+        }
+    }
+
     /// Tiles of a frame.
     pub fn tiles(&self) -> u32 {
-        self.gpu.tiles().len() as u32
+        self.tile_list().len() as u32
     }
 
     /// Read-back slots: tiles that can wait to be read at once (the worker draws ahead into
-    /// free ones while earlier tiles are mapped).
+    /// free ones while earlier tiles are mapped). On the CPU, the tiles of one frame (at most
+    /// four), so nothing is drawn ahead.
     pub fn slots(&self) -> u32 {
-        self.gpu.slots() as u32
+        match &self.backend {
+            Backend::Gpu { gpu, .. } => gpu.slots() as u32,
+            Backend::Cpu(cpu) => cpu.slots() as u32,
+        }
     }
 
     /// Where tile `index` lands in the output and its pixels there: x, y, width, height of
     /// the part inside the frame, then the width and height every tile has.
     pub fn tile_rect(&self, index: u32) -> Box<[u32]> {
-        let tile = self.gpu.tiles()[index as usize];
-        let f = self.gpu.settings().smoothing.factor();
+        let tile = self.tile_list()[index as usize];
+        let f = self.settings().smoothing.factor();
         Box::new([tile.x / f, tile.y / f, tile.valid[0] / f, tile.valid[1] / f, tile.size[0] / f, tile.size[1] / f])
     }
 
     /// Draws tile `index` of the prepared frame into read-back `slot`; the promise resolves once
-    /// its pixels can be read.
+    /// its pixels can be read (at once on the CPU, which draws it here).
     pub fn draw_tile(&mut self, index: u32, slot: u32) -> Result<js_sys::Promise, JsError> {
         self.check()?;
         let generation = self.frames.generation().clone();
         let (list, camera) = self.current.clone().ok_or_else(|| js_error("prepare a frame before drawing it"))?;
-        self.gpu.draw(&generation.prepared.doc, &list, camera.as_ref(), index as usize, slot as usize);
-        let readback = self.gpu.readback(slot as usize).clone();
-        let promise = js_sys::Promise::new(&mut |resolve, reject| {
-            readback.slice(..).map_async(wgpu::MapMode::Read, move |result| {
-                let _ = match result {
-                    Ok(()) => resolve.call0(&JsValue::UNDEFINED),
-                    Err(error) => reject.call1(&JsValue::UNDEFINED, &JsValue::from_str(&format!("the export frame could not be read: {error}"))),
-                };
-            });
-        });
-        // WebGL2 maps on the next poll; WebGPU through the mapping's own promise.
-        let _ = self.device.poll(wgpu::PollType::Poll);
-        Ok(promise)
+        match &mut self.backend {
+            Backend::Gpu { gpu, device, .. } => {
+                gpu.draw(&generation.prepared.doc, &list, camera.as_ref(), index as usize, slot as usize);
+                let readback = gpu.readback(slot as usize).clone();
+                let promise = js_sys::Promise::new(&mut |resolve, reject| {
+                    readback.slice(..).map_async(wgpu::MapMode::Read, move |result| {
+                        let _ = match result {
+                            Ok(()) => resolve.call0(&JsValue::UNDEFINED),
+                            Err(error) => reject.call1(&JsValue::UNDEFINED, &JsValue::from_str(&format!("the export frame could not be read: {error}"))),
+                        };
+                    });
+                });
+                // WebGL2 maps on the next poll; WebGPU through the mapping's own promise.
+                let _ = device.poll(wgpu::PollType::Poll);
+                Ok(promise)
+            }
+            Backend::Cpu(cpu) => {
+                cpu.draw(&generation.prepared.doc, &list, camera.as_ref(), index as usize, slot as usize);
+                Ok(js_sys::Promise::resolve(&JsValue::UNDEFINED))
+            }
+        }
     }
 
     /// Writes tile `index`, read into `slot`, into `out` (the RGBA of a tile-sized `ImageData`,
     /// rows of the tile's full width), straight alpha, over black with `matte`.
     pub fn resolve_tile(&mut self, index: u32, slot: u32, matte: bool, out: &js_sys::Uint8ClampedArray) -> Result<(), JsError> {
-        let tile = self.gpu.tiles()[index as usize];
-        let f = self.gpu.settings().smoothing.factor();
+        let tile = self.tile_list()[index as usize];
+        let count = self.tile_list().len() as u32;
+        let f = self.settings().smoothing.factor();
         let (row, full) = ((tile.valid[0] / f * 4) as usize, tile.size[0] / f * 4);
-        let pixels = self.gpu.resolve(index as usize, slot as usize, matte).map_err(js_error)?;
+        let pixels = match &mut self.backend {
+            Backend::Gpu { gpu, .. } => gpu.resolve(index as usize, slot as usize, matte),
+            Backend::Cpu(cpu) => cpu.resolve(index as usize, slot as usize, matte),
+        }
+        .map_err(js_error)?;
         if out.length() < full * (tile.size[1] / f) {
             return Err(js_error("the tile's pixels do not fit"));
         }
@@ -261,31 +314,37 @@ impl ExportRenderer {
         for (y, start) in (0..pixels.len()).step_by(row.max(1)).enumerate() {
             out.set(&view.subarray(start as u32, (start + row) as u32), y as u32 * full);
         }
-        self.frames_drawn += (index + 1 == self.gpu.tiles().len() as u32) as u32;
+        self.frames_drawn += (index + 1 == count) as u32;
         Ok(())
     }
 
     /// Whether read-backs complete only when polled: WebGL2 maps on [`ExportRenderer::poll`],
-    /// WebGPU through the mapping's own promise.
+    /// WebGPU through the mapping's own promise, the CPU at once.
     pub fn needs_poll(&self) -> bool {
-        self.polled
+        matches!(self.backend, Backend::Gpu { polled: true, .. })
     }
 
     /// Lets WebGL2 complete the read-backs whose drawing has finished.
     pub fn poll(&self) {
-        let _ = self.device.poll(wgpu::PollType::Poll);
+        if let Backend::Gpu { device, .. } = &self.backend {
+            let _ = device.poll(wgpu::PollType::Poll);
+        }
     }
 
     /// Gives back read-back `slot`, mapped and not read: a frame drawn ahead that the export
     /// did not ask for.
     pub fn discard(&mut self, slot: u32) {
-        self.gpu.readback(slot as usize).unmap();
+        match &mut self.backend {
+            Backend::Gpu { gpu, .. } => gpu.readback(slot as usize).unmap(),
+            Backend::Cpu(cpu) => cpu.discard(slot as usize),
+        }
     }
 
     /// Fails with what the device reported since the export started (lost, out of memory).
     /// `recoverable` in the error's message prefix tells a retry with smaller tiles may help.
     pub fn check(&self) -> Result<(), JsError> {
-        match self.failure.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        let Backend::Gpu { failure, .. } = &self.backend else { return Ok(()) };
+        match failure.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             Some((recoverable, message)) => Err(js_error(format!("{}{message}", if *recoverable { "recoverable: " } else { "" }))),
             None => Ok(()),
         }
@@ -293,33 +352,59 @@ impl ExportRenderer {
 
     /// Draws later frames in tiles of at most `tile` pixels (a retry after a GPU memory failure).
     pub fn retile(&mut self, tile: u32) {
-        let settings = *self.gpu.settings();
-        let queue = self.gpu_queue();
+        let settings = *self.settings();
         let generation = self.frames.generation().clone();
-        self.gpu = GpuExport::new(&self.device, &queue, settings, tile);
-        self.gpu.prepare_sprites(generation.lineage, &generation.assets);
-        self.frames.forget();
-        self.frames.decode_images();
-    }
-
-    fn gpu_queue(&self) -> wgpu::Queue {
-        self.gpu.queue().clone()
+        match &mut self.backend {
+            Backend::Gpu { gpu, device, .. } => {
+                let queue = gpu.queue().clone();
+                **gpu = GpuExport::new(device, &queue, settings, tile);
+                gpu.prepare_sprites(generation.lineage, &generation.assets);
+                self.frames.forget();
+                self.frames.decode_images();
+            }
+            // The pictures already taken stay.
+            Backend::Cpu(cpu) => cpu.retile(tile),
+        }
     }
 
     /// The export's figures as JSON: backend, tiles, read-back slots, tile size, frames drawn, the last
     /// evaluation, and the renderer's counts of the last tile.
     pub fn stats(&self) -> String {
-        let s = self.gpu.stats();
-        let size = self.gpu.tiles()[0].size;
-        format!(
-            "{{\"backend\":{:?},\"tiles\":{},\"slots\":{},\"tileWidth\":{},\"tileHeight\":{},\"framesDrawn\":{},\"startMs\":[{:.1},{:.1},{:.1}],\"evaluateMs\":{:.3},\"prims\":{},\"passes\":{},\"rounds\":{},\"layerBytes\":{},\"effectBytes\":{},\"depthBytes\":{},\"glyphBytes\":{}}}",
-            self.backend, self.gpu.tiles().len(), self.gpu.slots(), size[0], size[1], self.frames_drawn, self.start_ms[0], self.start_ms[1], self.start_ms[2], self.last_evaluate_ms, s.prims, s.passes, s.rounds, s.layer_bytes, s.effect_bytes, s.depth_bytes, s.glyph_bytes
-        )
+        let size = self.tile_list()[0].size;
+        let head = format!(
+            "\"backend\":{:?},\"tiles\":{},\"slots\":{},\"tileWidth\":{},\"tileHeight\":{},\"framesDrawn\":{},\"evaluateMs\":{:.3}",
+            self.backend_name,
+            self.tile_list().len(),
+            self.slots(),
+            size[0],
+            size[1],
+            self.frames_drawn,
+            self.last_evaluate_ms
+        );
+        match &self.backend {
+            Backend::Gpu { gpu, start_ms, .. } => {
+                let s = gpu.stats();
+                format!(
+                    "{{{head},\"startMs\":[{:.1},{:.1},{:.1}],\"prims\":{},\"passes\":{},\"rounds\":{},\"layerBytes\":{},\"effectBytes\":{},\"depthBytes\":{},\"glyphBytes\":{}}}",
+                    start_ms[0], start_ms[1], start_ms[2], s.prims, s.passes, s.rounds, s.layer_bytes, s.effect_bytes, s.depth_bytes, s.glyph_bytes
+                )
+            }
+            Backend::Cpu(cpu) => {
+                let s = cpu.stats();
+                let (images, slots) = cpu.bytes();
+                format!(
+                    "{{{head},\"cpu\":true,\"layers\":{},\"effectLayers\":{},\"effectPasses\":{},\"peakBytes\":{},\"glyphBytes\":{},\"imageBytes\":{images},\"slotBytes\":{slots}}}",
+                    s.layers, s.effect_layers, s.effect_passes, s.peak_bytes, s.glyph_bytes
+                )
+            }
+        }
     }
 
-    /// Releases the GPU device and everything the export holds. The worker ends afterwards.
+    /// Releases the GPU device (if any) and everything the export holds. The worker ends afterwards.
     pub fn dispose(&mut self) {
         self.current = None;
-        self.device.destroy();
+        if let Backend::Gpu { device, .. } = &self.backend {
+            device.destroy();
+        }
     }
 }

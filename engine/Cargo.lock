@@ -1198,6 +1198,7 @@ dependencies = [
  "styk-draw",
  "styk-engine",
  "styk-eval",
+ "styk-raster",
  "styk-render",
 ]
 
@@ -1263,6 +1264,7 @@ dependencies = [
  "styk-export",
  "styk-formats",
  "styk-math",
+ "styk-raster",
  "styk-render",
  "wasm-bindgen",
  "wasm-bindgen-futures",

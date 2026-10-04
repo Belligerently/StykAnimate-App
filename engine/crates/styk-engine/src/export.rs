@@ -67,11 +67,21 @@ impl ExportFrames {
 
     /// Decodes every image and drawing cel of the document on the engine's workers.
     pub fn decode_images(&self) {
+        self.decode_images_since(None);
+    }
+
+    /// Decodes on the engine's workers the pictures `since` did not have: the images an
+    /// earlier generation of the same lineage (whose decoded pictures the caller keeps, at
+    /// the same atlas places, `Assets::extended`) did not hold, and the drawing cels it had
+    /// not placed. Every picture when `since` is `None` or of another lineage.
+    pub fn decode_images_since(&self, since: Option<&Generation>) {
         let generation = &self.generation;
         let count = generation.prepared.doc.images.len();
-        let cels: Vec<usize> = generation.assets.cels.keys().copied().collect();
-        self.state.lock().images_left = count + cels.len();
-        for index in 0..count {
+        let since = since.filter(|earlier| earlier.lineage == generation.lineage);
+        let known = since.map_or(0, |earlier| earlier.prepared.doc.images.len().min(count));
+        let cels: Vec<usize> = generation.assets.cels.keys().copied().filter(|cel| !since.is_some_and(|earlier| earlier.assets.cels.contains_key(cel))).collect();
+        self.state.lock().images_left = count - known + cels.len();
+        for index in known..count {
             let (generation, state, ended) = (generation.clone(), self.state.clone(), self.ended.clone());
             self.engine.spawn(move |_| {
                 if ended.load(Ordering::Relaxed) {

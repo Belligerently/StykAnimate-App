@@ -141,14 +141,15 @@ test('a document the engine does not draw keeps the JavaScript renderer', async 
   assert.equal(workers[0].terminated, true);
 });
 
-test('without a GPU device in a worker the JavaScript renderer takes over before the first frame', async t => {
+test('an engine worker that cannot start the export leaves it to the JavaScript renderer before the first frame', async t => {
+  // (A worker without a GPU device draws on the CPU instead, in the worker: engine-export-worker.mjs.)
   const {workers} = environment(t, answer({
-    start: (message, worker) => worker.engine ? {ok: false, code: 'engine_unavailable', error: 'no GPU adapter in this worker'} : undefined,
+    start: (message, worker) => worker.engine ? {ok: false, code: 'engine_unavailable', error: 'the engine holds revision 2 of the document, the export is of revision 1'} : undefined,
   }));
   const renderer = createExportFrameRenderer({width: 32, height: 32}, {...app(), revision: 1});
   await renderer.load(report());
   assert.equal(renderer.stats.renderer, 'javascript');
-  assert.match(renderer.stats.engineRefusal, /no GPU adapter/);
+  assert.match(renderer.stats.engineRefusal, /holds revision 2/);
   assert.equal(workers.length, 2);
   assert.equal(workers[0].messages.at(-1).operation, 'release', 'the engine worker is released, not killed');
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -206,8 +207,8 @@ test('the export dialog warms a worker that the export then takes', async t => {
   assert.equal(workers[0].terminated, true);
 });
 
-test('a warm worker no export takes is released after a minute, and one without a device at once', async t => {
-  const {workers} = environment(t, answer({warm: (message, worker) => workers.indexOf(worker) === 1 ? {warmed: false, error: 'no GPU adapter'} : undefined}));
+test('a warm worker no export takes is released after a minute, and one that cannot warm at once', async t => {
+  const {workers} = environment(t, answer({warm: (message, worker) => workers.indexOf(worker) === 1 ? {warmed: false, error: 'the engine module could not start'} : undefined}));
   t.mock.timers.enable({apis: ['setTimeout']});
   const {stage} = app();
   // Nothing is warmed where exports would not use the engine.
@@ -220,7 +221,7 @@ test('a warm worker no export takes is released after a minute, and one without 
   t.mock.timers.tick(1);
   assert.equal(workers[0].messages.at(-1).operation, 'release', 'given up after a minute');
   await new Promise(resolve => queueMicrotask(resolve));
-  // A worker that finds no GPU device says so and is released at once; the next dialog warms again.
+  // A worker that cannot warm says so and is released at once; the next dialog warms again.
   prewarmExportRenderer({stage});
   await new Promise(resolve => queueMicrotask(resolve));
   assert.equal(workers[1].messages.at(-1).operation, 'release');

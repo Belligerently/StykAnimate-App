@@ -41,13 +41,18 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   module after the destructor writes through a stack the shared memory has taken back:
   cancelling an export of URIEL 3 crashed the page that way until the answers were
   let through first); a worker that does not answer within 5 s is terminated
-  (what it held then stays allocated in the shared memory). Pages that are not
-  cross-origin isolated export with the JavaScript renderer.
+  (what it held then stays allocated in the shared memory). A worker that gets no GPU
+  device draws the export with the CPU rasterizer (`ExportRenderer::create_cpu`,
+  styk-raster), each tile when asked for. Pages that are not cross-origin isolated
+  export with the JavaScript renderer.
 - The preview worker (`src/engine/engine-preview-worker.mjs`, one per page,
   `engine-previews.mjs`; see [rendering.md](rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
   joins the shared memory like the export worker and keeps its event loop for a GPU
   device of its own, on which it draws library files' posters and hover animations
-  (`styk_wasm::preview::Previews`). It starts with the first request, runs requests one
+  (`styk_wasm::preview::Previews`), or the CPU rasterizer where it gets none; it also
+  draws on the CPU the frame thumbnails the stage cannot draw, from the engine's document
+  (waiting on the progress counter for their frames and pictures, as the export worker
+  does). It starts with the first request, runs requests one
   at a time and is released after five idle minutes, as the export worker is (device
   destroyed, pending answers let through, then the thread destroyed); it is never
   terminated to cancel a preview (a cancelled request's answer is dropped), because a

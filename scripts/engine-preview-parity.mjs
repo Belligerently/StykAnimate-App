@@ -3,7 +3,7 @@
 //
 //   node scripts/engine-preview-parity.mjs [--target web|electron] [--file <project>]... [--ticks 0,10,20]
 //        [--sizes 320x192,512x288,96x54] [--export-check] [--library <file>]... [--elapsed 0,0.4,1.2] [--monitor]
-//        [--timing] [--rounds 3] [--label <name>] [--out <dir>] [--url http://127.0.0.1:47831] [--electron-arg <switch>]...
+//        [--timing] [--rounds 3] [--cpu-check] [--label <name>] [--out <dir>] [--url http://127.0.0.1:47831] [--electron-arg <switch>]...
 //
 // Thumbnails (each --file, or the document the app starts with): one run of the app with the engine. For each
 // document, tick (by default up to five frame starts spread over the timeline) and size (the filmstrip's 320×192,
@@ -17,6 +17,11 @@
 // JavaScript worker (src/library-preview-worker.mjs). Camera monitor (--monitor): the app with and without the
 // engine (?engine=off), the camera selected so the inspector shows its monitor, the monitor's canvas captured at
 // each tick and after playback.
+//
+// --cpu-check: each engine thumbnail, library poster and hover frame, and an export frame of each tick at the canvas
+// size, drawn again with the CPU rasterizer (`stykanimate.engine.cpu` set: the preview worker and the export worker draw
+// with styk-raster, as on devices without a GPU device) and compared with the GPU's picture (the "-cpu" steps; counted
+// only where the first picture came from the GPU).
 //
 // Pictures are compared with the app-parity rule D13 (docs/engine/decisions/0013-app-parity-rule.md; the limits of
 // scripts/engine-app-parity.mjs, never changed to pass): a step fails when a pixel differs by more than 32 levels
@@ -183,8 +188,8 @@ async function install(page) {
  * pixels is also compared with the engine's export frame of that tick at the canvas's size (src/engine/engine-export.mjs,
  * the stage's own pixels): the thumbnail's canvas area, cropped, against the export.
  */
-function thumbnails(page, list, exported) {
-  return page.evaluate(async ({list, sizes, exported}) => {
+function thumbnails(page, list, exported, cpuCheck) {
+  return page.evaluate(async ({list, sizes, exported, cpuCheck}) => {
     const {ThumbnailRenderer} = await import('/src/thumbnail-renderer.mjs');
     const {createExportFrameRenderer} = await import('/src/engine/engine-export.mjs');
     const exportFrame = async (tick, width, height) => {
@@ -195,8 +200,14 @@ function thumbnails(page, list, exported) {
         await renderer.load(editor.report);
         if (renderer.stats.renderer !== 'engine') return null;
         const output = await renderer.renderNativeTick(tick, {preserveAlpha: true});
-        return __preview.blobPNG(output.blob);
+        const png = await __preview.blobPNG(output.blob);
+        return Object.assign(new String(png), {cpu: /CPU/.test(renderer.stats.engine?.backend ?? '')});
       } finally { renderer.dispose(); }
+    };
+    /** `run()` with the CPU rasterizer asked for (engineCpuForced). */
+    const onCpu = async run => {
+      localStorage.setItem('stykanimate.engine.cpu', 'on');
+      try { return await run(); } finally { localStorage.removeItem('stykanimate.engine.cpu'); }
     };
     const engine = styk.thumbnails, legacy = new ThumbnailRenderer(styk.editor), rows = styk.editor.timeline, steps = [];
     const draw = async (renderer, index, canvas, tick) => {
@@ -210,12 +221,23 @@ function thumbnails(page, list, exported) {
       for (const tick of list) for (const [width, height] of sizes) {
         const index = Math.max(0, rows.findLastIndex(row => row.start <= tick));
         const a = __preview.canvas(width, height), b = __preview.canvas(width, height);
-        const before = engine.stats.engine?.renders ?? 0;
+        const before = engine.stats.engine?.renders ?? 0, cpuBefore = engine.stats.engine?.cpu ?? 0, t0 = performance.now();
         const drawn = await draw(engine, index, a, tick);
+        const engineMs = performance.now() - t0;
         const byEngine = (engine.stats.engine?.renders ?? 0) > before;
+        const byGpu = byEngine && (engine.stats.engine?.cpu ?? 0) === cpuBefore;
         const refusal = byEngine ? null : engine.stats.engine?.refusal ?? 'the app has no engine thumbnails';
         const legacyDrawn = await draw(legacy, index, b, tick);
         steps.push({name: `thumb-${tick}-${width}x${height}`, tick, width, height, drawn, legacyDrawn, byEngine, refusal, engine: __preview.png(a), legacy: __preview.png(b)});
+        if (cpuCheck && byEngine) {
+          const c = __preview.canvas(width, height), cpu = engine.stats.engine?.cpu ?? 0, t1 = performance.now();
+          await onCpu(() => draw(engine, index, c, tick));
+          const cpuMs = performance.now() - t1;
+          const byCpu = (engine.stats.engine?.cpu ?? 0) > cpu;
+          // The thumbnail's time as the filmstrip sees it (the request until it is on the card), GPU then CPU.
+          steps.push({name: `thumb-${tick}-${width}x${height}-cpu`, tick, width, height, byEngine: byCpu && byGpu, against: 'gpu', gpuMs: engineMs, cpuMs,
+            refusal: !byGpu ? 'the first thumbnail was not the GPU\'s' : byCpu ? null : engine.stats.engine?.refusal, engine: __preview.png(c), legacy: __preview.png(a)});
+        }
         if (exported && byEngine) {
           // The card's canvas area (styk_engine::thumbnails::card): fitted, centred.
           const {canvas_width: cw, canvas_height: ch} = styk.editor.report, scale = Math.min(width / cw, height / ch);
@@ -224,28 +246,41 @@ function thumbnails(page, list, exported) {
             const frame = await exportFrame(tick, w, h);
             const crop = __preview.canvas(w, h);
             crop.getContext('2d').drawImage(a, x, y, w, h, 0, 0, w, h);
-            if (frame) steps.push({name: `thumb-${tick}-${width}x${height}-against-export`, tick, width, height, byEngine: true, against: 'export', engine: __preview.png(crop), legacy: frame});
+            if (frame) steps.push({name: `thumb-${tick}-${width}x${height}-against-export`, tick, width, height, byEngine: true, against: 'export', engine: __preview.png(crop), legacy: String(frame)});
           }
         }
       }
+      // An export frame of each tick at the canvas's size, from the GPU and from the CPU.
+      if (cpuCheck) for (const tick of list) {
+        const {canvas_width: cw, canvas_height: ch} = styk.editor.report;
+        const t0 = performance.now(), gpu = await exportFrame(tick, cw, ch), t1 = performance.now();
+        const cpu = gpu ? await onCpu(() => exportFrame(tick, cw, ch)) : null, t2 = performance.now();
+        // Each includes starting its export worker, its device (GPU) and its first frame.
+        steps.push({name: `export-${tick}-${cw}x${ch}-cpu`, tick, width: cw, height: ch, byEngine: Boolean(gpu && !gpu.cpu && cpu?.cpu), against: 'gpu', gpuMs: t1 - t0, cpuMs: t2 - t1,
+          refusal: !gpu ? 'the engine did not export' : gpu.cpu ? 'the first export was not the GPU\'s' : cpu?.cpu ? null : 'the second export was not the CPU\'s', engine: cpu ? String(cpu) : null, legacy: gpu ? String(gpu) : null});
+      }
     } finally { legacy.destroy(); }
     return steps;
-  }, {list, sizes, exported});
+  }, {list, sizes, exported, cpuCheck});
 }
 
 /** A library file's poster and hover frames from both paths. */
-function library(page, name, base64) {
-  return page.evaluate(async ({name, base64, elapsed}) => {
+function library(page, name, base64, cpuCheck) {
+  return page.evaluate(async ({name, base64, elapsed, cpuCheck}) => {
     const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
     const file = new File([bytes], name);
     const previews = await import('/src/engine/engine-previews.mjs');
     const worker = () => new Worker('/src/library-preview-worker.mjs', {type: 'module'});
     const ask = (w, message) => new Promise((resolve, reject) => { w.onmessage = ({data}) => data.error ? reject(new Error(data.error)) : resolve(data); w.postMessage(message); });
     const steps = [];
+    // With --cpu-check a worker that thumbnails started may draw on the CPU: the GPU's pictures come from a new one.
+    if (cpuCheck) (await previews.enginePreviews())?.release();
     const enginePoster = await previews.engineLibraryPoster(file);
     const legacyWorker = worker();
     const legacyPoster = await ask(legacyWorker, {file, baseURL: location.href}).finally(() => legacyWorker.terminate());
-    steps.push({name: 'poster', byEngine: Boolean(enginePoster), engine: enginePoster ? await __preview.blobPNG(enginePoster) : null, legacy: await __preview.blobPNG(legacyPoster.blob)});
+    const gpuPoster = enginePoster ? await __preview.blobPNG(enginePoster) : null, gpuFrames = [];
+    const firstStats = (await previews.enginePreviews())?.stats, gpuWorker = firstStats?.cpu === false;
+    steps.push({name: 'poster', byEngine: Boolean(enginePoster), engine: gpuPoster, legacy: await __preview.blobPNG(legacyPoster.blob)});
     const animation = await previews.engineLibraryAnimation(file);
     const hover = worker();
     try {
@@ -254,13 +289,35 @@ function library(page, name, base64) {
       for (const seconds of elapsed.slice(1)) legacyFrames.push(await ask(hover, {operation: 'frame', elapsed: seconds}));
       for (const [i, seconds] of elapsed.entries()) {
         const frame = animation ? await animation.frame(seconds) : null;
+        const picture = frame ? await __preview.bitmapPNG(frame.bitmap, 320, 320) : null;
+        gpuFrames.push(picture);
         steps.push({name: `hover-${seconds}s`, byEngine: Boolean(frame), engineTick: frame?.tick ?? null, legacyTick: legacyFrames[i].tick,
-          engine: frame ? await __preview.bitmapPNG(frame.bitmap, 320, 320) : null, legacy: await __preview.bitmapPNG(legacyFrames[i].bitmap, 320, 320)});
+          engine: picture, legacy: await __preview.bitmapPNG(legacyFrames[i].bitmap, 320, 320)});
       }
       steps.push({name: 'matte', matte: true, engineMatte: animation?.matte ?? null, legacyMatte: first.matte});
     } finally { hover.terminate(); animation?.close(); }
+    if (cpuCheck) {
+      // The same pictures from a preview worker that draws on the CPU.
+      (await previews.enginePreviews())?.release();
+      localStorage.setItem('stykanimate.engine.cpu', 'on');
+      try {
+        const poster = await previews.engineLibraryPoster(file), worker = await previews.enginePreviews(), byCpu = Boolean(worker?.stats.cpu);
+        const refusal = !gpuWorker ? `the first worker drew on the CPU too (${firstStats?.gpuRefusal ?? 'no worker'})` : byCpu ? null : 'the second worker did not draw on the CPU';
+        steps.push({name: 'poster-cpu', against: 'gpu', byEngine: Boolean(poster && gpuPoster && byCpu && gpuWorker), refusal, engine: poster ? await __preview.blobPNG(poster) : null, legacy: gpuPoster});
+        const animation = await previews.engineLibraryAnimation(file);
+        try {
+          for (const [i, seconds] of elapsed.entries()) {
+            const frame = animation ? await animation.frame(seconds) : null;
+            steps.push({name: `hover-${seconds}s-cpu`, against: 'gpu', byEngine: Boolean(frame && gpuFrames[i] && byCpu && gpuWorker), refusal, engine: frame ? await __preview.bitmapPNG(frame.bitmap, 320, 320) : null, legacy: gpuFrames[i]});
+          }
+        } finally { animation?.close(); }
+      } finally {
+        localStorage.removeItem('stykanimate.engine.cpu');
+        (await previews.enginePreviews())?.release();
+      }
+    }
     return steps;
-  }, {name, base64, elapsed});
+  }, {name, base64, elapsed, cpuCheck});
 }
 
 /** The camera monitor's canvas at each tick, and after playback. */
@@ -408,7 +465,7 @@ try {
     const starts = await app.page.evaluate(() => styk.editor.timeline.map(row => row.start));
     const list = ticks ?? [...new Set([0, Math.floor(starts.length / 4), Math.floor(starts.length / 2), Math.floor(3 * starts.length / 4), starts.length - 1].map(i => starts[Math.max(0, i)]))].filter(tick => tick >= 0 && tick < total);
     const steps = Object.assign([], {prefix: `${file ? path.basename(file).replace(/[^\w.-]+/g, '-') : 'startup'}-`});
-    for (const step of await thumbnails(app.page, list, flag('--export-check'))) await record(steps, step, comparer);
+    for (const step of await thumbnails(app.page, list, flag('--export-check'), flag('--cpu-check'))) await record(steps, step, comparer);
     report.documents.push({file, ticks: list, steps: [...steps]});
     if (flag('--timing')) {
       const spread = starts.length <= 48 ? starts : starts.filter((_, i) => i % Math.ceil(starts.length / 48) === 0);
@@ -430,7 +487,7 @@ try {
   }
   for (const {name, base64} of libraryFiles) {
     const steps = Object.assign([], {prefix: `${name.replace(/[^\w.-]+/g, '-')}-`});
-    for (const step of await library(app.page, name, base64)) await record(steps, step, comparer);
+    for (const step of await library(app.page, name, base64, flag('--cpu-check'))) await record(steps, step, comparer);
     report.library.push({file: name, steps: [...steps]});
   }
   if (flag('--timing') && libraryFiles.length) {

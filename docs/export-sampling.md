@@ -51,9 +51,9 @@ worker joins the engine and draws the frames the stage would show with its own G
 their meaning there: Smooth edges antialiases shapes and samples sprites to the nearest texel;
 No smoothing draws every shape fully in or out (on every frame, including those with effects,
 generated effects or 3D, which the JavaScript renderer below draws smooth); Smooth sprites
-draws twice as large and averages each 2×2 block in premultiplied colour. Other documents,
-pages that are not cross-origin isolated and workers without a GPU device use the JavaScript
-renderer described next.
+draws twice as large and averages each 2×2 block in premultiplied colour. A worker without a
+GPU device draws the same frames with the engine's CPU rasterizer. Other documents and pages
+that are not cross-origin isolated use the JavaScript renderer described next.
 
 The report and current-pose overrides cross to a dedicated worker in bounded
 64 KiB chunks with acknowledgement, a 2 ms snapshot budget and no whole-document

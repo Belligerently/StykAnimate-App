@@ -1,36 +1,75 @@
-//! Library previews, drawn in the app's preview worker (`src/engine/engine-preview-worker.mjs`).
+//! Library previews and CPU frame thumbnails, drawn in the app's preview worker
+//! (`src/engine/engine-preview-worker.mjs`).
 //!
 //! The worker joins the engine's shared memory as a thread of its own and keeps its event
-//! loop. It holds a GPU device of its own (WebGPU in the worker, else WebGL2 on the
-//! worker's `OffscreenCanvas`) and draws into that canvas with the stage's renderer: a
-//! library file's poster, its hover animation and the samples its card's backdrop is chosen
-//! from ([`styk_engine::thumbnails::library`]). After each draw the worker takes the canvas's
-//! picture as an `ImageBitmap` (`transferToImageBitmap`), so nothing is read back.
+//! loop. Where it gets a GPU device (WebGPU in the worker, else WebGL2 on its
+//! `OffscreenCanvas`) it draws library files into that canvas with the stage's renderer: a
+//! file's poster, its hover animation and the samples its card's backdrop is chosen from
+//! ([`styk_engine::thumbnails::library`]); after each draw the worker takes the canvas's
+//! picture as an `ImageBitmap`, so nothing is read back. Where it gets none, or the
+//! canvas's pictures do not reach the page, the same pictures are drawn by the CPU
+//! rasterizer (styk-raster, [`Previews::create_cpu`]) and handed over as pixels.
 //!
-//! A library file is not the open document: its pictures go into an atlas of this device,
-//! replaced when another file is drawn (library files hold few pictures, if any).
+//! Frame thumbnails of the open document that the stage cannot draw (a WebGL2 stage, a
+//! canvas failing the probe) are drawn here too, always on the CPU ([`Previews::thumbnail`]):
+//! the document is the engine's, pinned at the interface's revision (`ExportFrames`), its
+//! frames prepared on the engine's workers and its pictures decoded there once per document
+//! lineage, kept across revisions.
+//!
+//! A library file is not the open document: its pictures go into an atlas of this device (or
+//! the CPU's pictures), replaced when another file is drawn (library files hold few
+//! pictures, if any).
 
 use std::sync::Arc;
 
+use styk_engine::export::{ExportFrames, AHEAD};
 use styk_engine::thumbnails::library::{fitted, LibraryPreview, Sample, SAMPLE, SIZE};
+use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
+use styk_engine::{Engine, Generation};
+use styk_raster::{Edges, Images, Raster};
 use styk_render::{Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
 use crate::{clock, js_error};
 
-#[wasm_bindgen]
-pub struct Previews {
+/// What [`Previews::thumbnail`] answers.
+const READY: u32 = 0;
+const WAIT: u32 = 1;
+const STALE: u32 = 2;
+
+/// The worker's GPU device and the canvas it draws into.
+struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     renderer: Renderer,
-    backend: String,
     /// The library file whose pictures the atlas holds (its lineage).
     atlas: Option<u64>,
+}
+
+/// The open document's frames for thumbnails, and its pictures for the CPU.
+struct DocumentThumbnails {
+    frames: ExportFrames,
+    images: Images,
+}
+
+#[wasm_bindgen]
+pub struct Previews {
+    gpu: Option<Gpu>,
+    backend: String,
+    /// The CPU's renderer: library previews without a GPU device, every frame thumbnail.
+    raster: Raster,
+    /// The library file whose pictures the CPU holds (its lineage), and those pictures.
+    library_images: Option<(u64, Images)>,
+    /// The last picture the CPU drew: its size and straight RGBA.
+    picture: (u32, u32, Vec<u8>),
     /// The hover animation's file, and the samples `library_begin` evaluated.
     library: Option<LibraryPreview>,
     samples: Vec<(Sample, [f64; 4])>,
+    /// The engine whose open document frame thumbnails show ([`Previews::adopt_engine`]).
+    engine: Option<Engine>,
+    thumbnails: Option<DocumentThumbnails>,
 }
 
 /// A picture drawn, as JSON for the worker (`extra` adds fields).
@@ -38,10 +77,16 @@ fn drawn(width: u32, height: u32, started: f64, evaluated: f64, extra: &str) -> 
     format!("{{\"width\":{width},\"height\":{height},\"evaluateMs\":{:.3},\"drawMs\":{:.3}{extra}}}", evaluated - started, clock() - evaluated)
 }
 
+impl Previews {
+    fn with(gpu: Option<Gpu>, backend: String) -> Previews {
+        Previews { gpu, backend, raster: Raster::new(Edges::Smooth), library_images: None, picture: (0, 0, Vec::new()), library: None, samples: Vec::new(), engine: None, thumbnails: None }
+    }
+}
+
 #[wasm_bindgen]
 impl Previews {
     /// Gets a GPU device that draws into `canvas`: WebGPU in this worker where the browser
-    /// has it, else WebGL2. Fails when neither gives a device.
+    /// has it, else WebGL2. Fails when neither gives a device ([`Previews::create_cpu`] then).
     pub async fn create(canvas: web_sys::OffscreenCanvas) -> Result<Previews, JsError> {
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         descriptor.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
@@ -83,7 +128,14 @@ impl Previews {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, &queue, format);
-        Ok(Previews { device, queue, surface, config, renderer, backend: format!("{:?} · {}", info.backend, info.name), atlas: None, library: None, samples: Vec::new() })
+        Ok(Previews::with(Some(Gpu { device, queue, surface, config, renderer, atlas: None }), format!("{:?} · {}", info.backend, info.name)))
+    }
+
+    /// Previews drawn by the CPU rasterizer (styk-raster): every picture is handed over as
+    /// pixels ([`Previews::picture`]). For a worker without a GPU device, or whose canvas
+    /// gives no pixels.
+    pub fn create_cpu() -> Previews {
+        Previews::with(None, "CPU · styk-raster".into())
     }
 
     /// The graphics backend and adapter, for reports.
@@ -91,15 +143,22 @@ impl Previews {
         self.backend.clone()
     }
 
+    /// Whether library pictures are drawn by the CPU (taken with [`Previews::picture`]) rather
+    /// than into the canvas.
+    pub fn cpu(&self) -> bool {
+        self.gpu.is_none()
+    }
+
     /// Clears the canvas to the probe colour (opaque magenta): the worker checks that its
-    /// pictures leave the canvas here before it takes any preview (`views::probe`).
+    /// pictures leave the canvas here before it takes any preview (`views::probe`). `false`
+    /// without a GPU device.
     pub fn probe(&mut self) -> bool {
-        crate::views::probe(&self.surface, &self.config, &self.device, &self.queue)
+        self.gpu.as_ref().is_some_and(|gpu| crate::views::probe(&gpu.surface, &gpu.config, &gpu.device, &gpu.queue))
     }
 
     /// The poster of a library file (`extension`: `stkz`, `stykmov`…), 320 pixels a side,
-    /// drawn into the canvas. The file is opened for this call only: the hover animation's
-    /// file stays open. Returns the timings as JSON.
+    /// drawn into the canvas (or the CPU's picture). The file is opened for this call only:
+    /// the hover animation's file stays open. Returns the timings as JSON.
     pub fn poster(&mut self, bytes: &[u8], extension: &str) -> Result<String, JsError> {
         let started = clock();
         let preview = LibraryPreview::open(bytes, extension).map_err(js_error)?;
@@ -128,8 +187,8 @@ impl Previews {
         Ok(self.samples.len() as u32)
     }
 
-    /// Draws sample `index` of [`Previews::library_begin`] into the canvas, 40 pixels a side,
-    /// fitted to its own bounds.
+    /// Draws sample `index` of [`Previews::library_begin`], 40 pixels a side, fitted to its
+    /// own bounds.
     pub fn library_sample(&mut self, index: u32) -> Result<(), JsError> {
         let library = self.library.take().ok_or_else(|| js_error("open a library file first"))?;
         let result = match self.samples.get(index as usize) {
@@ -143,8 +202,8 @@ impl Previews {
         result
     }
 
-    /// Draws the open file's animation frame at `elapsed` seconds into the canvas, 320 pixels
-    /// a side, fitted to every frame's bounds so far. Returns its tick and timings as JSON.
+    /// Draws the open file's animation frame at `elapsed` seconds, 320 pixels a side, fitted
+    /// to every frame's bounds so far. Returns its tick and timings as JSON.
     pub fn library_frame(&mut self, elapsed: f64) -> Result<String, JsError> {
         let started = clock();
         let mut library = self.library.take().ok_or_else(|| js_error("open a library file first"))?;
@@ -162,51 +221,175 @@ impl Previews {
         self.samples.clear();
     }
 
-    /// Releases the GPU device and everything drawn with it. The worker ends afterwards.
+    /// Frame thumbnails show the open document of the engine at `address` (from
+    /// `EngineHandle::address`, consumed).
+    pub fn adopt_engine(&mut self, address: usize) {
+        // SAFETY: `address` was produced by `EngineHandle::address` in this memory and is used once.
+        self.engine = Some(unsafe { *Box::from_raw(address as *mut Engine) });
+    }
+
+    /// Consumes an engine `address` no thumbnail will use (a request dropped while the
+    /// worker is released).
+    pub fn forget_engine(address: usize) {
+        // SAFETY: as in `adopt_engine`.
+        drop(unsafe { Box::from_raw(address as *mut Engine) });
+    }
+
+    /// Draws the thumbnail of `tick` of the open document at `revision` on a `width ×
+    /// height` card (`styk_engine::thumbnails::card`) with the CPU rasterizer, into the CPU's
+    /// picture. 0: drawn; 1: its frame or some of the document's pictures are not ready yet
+    /// (wait for the engine's progress, then ask again); 2: the engine holds another revision
+    /// (or no document, or no engine was adopted). Fails for a tick past the end or a size
+    /// beyond 512 pixels.
+    pub fn thumbnail(&mut self, revision: f64, tick: u32, width: u32, height: u32) -> Result<u32, JsError> {
+        if !(1..=MAX_SIDE).contains(&width) || !(1..=MAX_SIDE).contains(&height) {
+            return Err(js_error(format!("Thumbnails are 1 to {MAX_SIDE} pixels a side ({width}×{height} asked).")));
+        }
+        let Some(engine) = self.engine.clone() else { return Ok(STALE) };
+        let Some(generation) = engine.generation().filter(|g| g.revision == revision as u64) else { return Ok(STALE) };
+        self.pin(&engine, &generation)?;
+        let thumbnails = self.thumbnails.as_mut().expect("pinned above");
+        if tick >= thumbnails.frames.ticks() {
+            return Err(js_error(format!("The document has no tick {tick} ({} ticks).", thumbnails.frames.ticks())));
+        }
+        // A thumbnail never shows a frame without its pictures: they are all taken first.
+        let assets = thumbnails.frames.generation().assets.clone();
+        for image in thumbnails.frames.take_images(usize::MAX) {
+            thumbnails.images.add_shared(&assets, image);
+        }
+        let Some(frame) = thumbnails.frames.ready(tick) else {
+            // Frames asked for and never drawn (a cancelled thumbnail) give their places back.
+            if thumbnails.frames.waiting() >= AHEAD {
+                thumbnails.frames.forget();
+            }
+            thumbnails.frames.prefetch([tick]);
+            return Ok(WAIT);
+        };
+        if thumbnails.frames.images_pending() > 0 {
+            return Ok(WAIT);
+        }
+        let doc = &thumbnails.frames.generation().prepared.doc;
+        let framing = card(doc, frame.camera.as_ref(), width, height);
+        let view = view_of(framing, CARD, true, true);
+        self.picture = (width, height, self.raster.render(&frame.list, &thumbnails.images, &view, [width, height]).straight());
+        // Drawn: its place among the frames prepared ahead is free again.
+        let _ = thumbnails.frames.take(tick);
+        Ok(READY)
+    }
+
+    /// Copies the last picture the CPU drew into `out` (the RGBA of an `ImageData` of its
+    /// size): straight alpha. Fails when there is none of that size.
+    pub fn picture(&self, out: &js_sys::Uint8ClampedArray) -> Result<(), JsError> {
+        let (width, height, pixels) = &self.picture;
+        if pixels.is_empty() || out.length() as usize != pixels.len() {
+            return Err(js_error(format!("no {}×{} picture to hand over", width, height)));
+        }
+        out.copy_from(pixels);
+        Ok(())
+    }
+
+    /// The size of the last picture the CPU drew: width, height.
+    pub fn picture_size(&self) -> Box<[u32]> {
+        Box::new([self.picture.0, self.picture.1])
+    }
+
+    /// Lets go of the open document's frames and pictures (thumbnails start again from the
+    /// engine when next asked).
+    pub fn thumbnails_release(&mut self) {
+        self.thumbnails = None;
+    }
+
+    /// Releases the GPU device (if any) and everything drawn with it. The worker ends afterwards.
     pub fn dispose(&mut self) {
         self.library = None;
         self.samples.clear();
-        self.device.destroy();
+        self.thumbnails = None;
+        self.engine = None;
+        self.library_images = None;
+        self.picture = (0, 0, Vec::new());
+        self.raster.release();
+        if let Some(gpu) = &self.gpu {
+            gpu.device.destroy();
+        }
+    }
+}
+
+/// The view of a framing on `clear`, clipped to its artboard or not, through the scene
+/// camera (frame thumbnails) or not (library previews).
+fn view_of(framing: Framing, clear: [f64; 4], clip_to_artboard: bool, camera_view: bool) -> ViewParams {
+    ViewParams {
+        matrix: framing.matrix,
+        artboard: framing.artboard,
+        clip_to_artboard,
+        clear,
+        zoom: framing.zoom,
+        pan: framing.pan,
+        stretch: 1.0,
+        camera_view,
+        camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
     }
 }
 
 impl Previews {
-    /// Draws `list` of `preview`'s file fitted to `bounds` into the canvas, `size` a side,
-    /// on transparency.
+    /// Pins `generation` (the engine's, at the interface's revision) for thumbnails: its
+    /// frames, and the pictures it has that those already decoded for its lineage do not.
+    fn pin(&mut self, engine: &Engine, generation: &Arc<Generation>) -> Result<(), JsError> {
+        if self.thumbnails.as_ref().is_some_and(|t| t.frames.generation().id == generation.id) {
+            return Ok(());
+        }
+        let frames = engine.export_frames(generation.revision).map_err(js_error)?;
+        // An earlier revision of the same document whose pictures were all taken: only what it
+        // did not have is decoded (its pictures keep their atlas places, `Assets::extended`).
+        match self.thumbnails.take() {
+            Some(earlier) if earlier.frames.generation().lineage == generation.lineage && earlier.frames.images_pending() == 0 => {
+                frames.decode_images_since(Some(earlier.frames.generation()));
+                self.thumbnails = Some(DocumentThumbnails { frames, images: earlier.images });
+            }
+            _ => {
+                frames.decode_images();
+                self.thumbnails = Some(DocumentThumbnails { frames, images: Images::default() });
+            }
+        }
+        Ok(())
+    }
+
+    /// Draws `list` of `preview`'s file fitted to `bounds`, `size` a side, on transparency:
+    /// into the canvas with the GPU, else into the CPU's picture.
     fn draw(&mut self, preview: &LibraryPreview, list: &Arc<styk_draw::DrawList>, bounds: [f64; 4], size: u32) -> Result<(), JsError> {
-        if self.atlas != Some(preview.lineage) {
-            self.renderer.prepare_sprites(preview.assets());
-            let images = preview.images();
-            self.renderer.upload_images(preview.assets(), images.iter());
-            self.atlas = Some(preview.lineage);
-        }
-        if (size, size) != (self.config.width, self.config.height) {
-            self.config.width = size;
-            self.config.height = size;
-            self.surface.configure(&self.device, &self.config);
-        }
-        let framing = fitted(bounds, size);
-        let view = ViewParams {
-            matrix: framing.matrix,
-            artboard: framing.artboard,
-            clip_to_artboard: false,
-            clear: [0.0; 4],
-            zoom: framing.zoom,
-            pan: framing.pan,
-            stretch: 1.0,
-            camera_view: false,
-            camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
+        let view = view_of(fitted(bounds, size), [0.0; 4], false, false);
+        let Some(gpu) = self.gpu.as_mut() else {
+            if self.library_images.as_ref().is_none_or(|(lineage, _)| *lineage != preview.lineage) {
+                let mut images = Images::default();
+                for image in preview.images() {
+                    images.add_shared(preview.assets(), Arc::new(image));
+                }
+                self.library_images = Some((preview.lineage, images));
+            }
+            let images = &self.library_images.as_ref().expect("set above").1;
+            self.picture = (size, size, self.raster.render(list, images, &view, [size, size]).straight());
+            return Ok(());
         };
-        let target = match self.surface.get_current_texture() {
+        if gpu.atlas != Some(preview.lineage) {
+            gpu.renderer.prepare_sprites(preview.assets());
+            let images = preview.images();
+            gpu.renderer.upload_images(preview.assets(), images.iter());
+            gpu.atlas = Some(preview.lineage);
+        }
+        if (size, size) != (gpu.config.width, gpu.config.height) {
+            gpu.config.width = size;
+            gpu.config.height = size;
+            gpu.surface.configure(&gpu.device, &gpu.config);
+        }
+        let target = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
             _ => {
-                self.surface.configure(&self.device, &self.config);
+                gpu.surface.configure(&gpu.device, &gpu.config);
                 return Err(js_error("the preview canvas was lost; try again"));
             }
         };
-        self.renderer.set_list(list);
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk library preview") });
-        self.renderer.render(&mut encoder, &view, [size, size]);
+        gpu.renderer.set_list(list);
+        let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk library preview") });
+        gpu.renderer.render(&mut encoder, &view, [size, size]);
         {
             let target_view = target.texture.create_view(&Default::default());
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -222,10 +405,10 @@ impl Previews {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            self.renderer.present(&mut pass);
+            gpu.renderer.present(&mut pass);
         }
-        self.queue.submit([encoder.finish()]);
-        self.queue.present(target);
+        gpu.queue.submit([encoder.finish()]);
+        gpu.queue.present(target);
         Ok(())
     }
 }

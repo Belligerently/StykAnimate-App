@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use styk_engine::{Budgets, Engine};
-use styk_export::{GpuExport, Settings, Smoothing, Tile};
+use styk_export::{CpuExport, GpuExport, Settings, Smoothing};
 use styk_render::wgpu;
 
 fn clock() -> f64 {
@@ -73,20 +73,20 @@ fn run(path: &str, ticks: &str, out: &str, rest: &[String]) -> Result<(), String
     let decode_ms = decoding.elapsed().as_secs_f64() * 1000.0;
 
     let cpu = rest.iter().any(|a| a == "--cpu");
+    let tile = option(rest, "--tile").and_then(|n| n.parse::<u32>().ok()).unwrap_or(styk_export::TILE_SIDE);
     let mut gpu = None;
-    let mut raster_images = styk_raster::Images::default();
+    let mut cpu_export = None;
     let adapter_name;
     if cpu {
-        for image in &images {
-            raster_images.add(&generation.assets, image);
-        }
+        let mut exporter = CpuExport::new(settings, tile);
+        exporter.upload_images(&generation.assets, images.iter().cloned());
+        cpu_export = Some(exporter);
         adapter_name = "CPU (styk-raster)".to_string();
     } else {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, ..Default::default() })).map_err(|e| format!("No GPU adapter: {e}"))?;
         adapter_name = adapter.get_info().name;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { label: Some("styk export"), required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()), ..Default::default() })).map_err(|e| e.to_string())?;
-        let tile = option(rest, "--tile").and_then(|n| n.parse::<u32>().ok()).unwrap_or(styk_export::TILE_SIDE);
         let mut exporter = GpuExport::new(&device, &queue, settings, tile);
         exporter.prepare_sprites(generation.lineage, &generation.assets);
         exporter.upload_images(&generation.assets, images.iter().map(|image| &**image));
@@ -103,9 +103,10 @@ fn run(path: &str, ticks: &str, out: &str, rest: &[String]) -> Result<(), String
             let t0 = Instant::now();
             let frame = frames.take(tick).ok_or("no frame")?;
             let t1 = Instant::now();
-            let pixels = match gpu.as_mut() {
-                Some(exporter) => exporter.frame_blocking(doc, &frame.list, frame.camera.as_ref(), matte)?,
-                None => raster(doc, &frame, &settings, &raster_images, matte)?,
+            let pixels = match (gpu.as_mut(), cpu_export.as_mut()) {
+                (Some(exporter), _) => exporter.frame_blocking(doc, &frame.list, frame.camera.as_ref(), matte)?,
+                (None, Some(exporter)) => exporter.frame(doc, &frame.list, frame.camera.as_ref(), matte)?,
+                (None, None) => unreachable!("one renderer is set up"),
             };
             let t2 = Instant::now();
             evaluate.push((t1 - t0).as_secs_f64() * 1000.0);
@@ -116,7 +117,7 @@ fn run(path: &str, ticks: &str, out: &str, rest: &[String]) -> Result<(), String
             }
         }
     }
-    let tiles = gpu.as_ref().map_or(1, |g| g.tiles().len());
+    let tiles = gpu.as_ref().map(|g| g.tiles().len()).or(cpu_export.as_ref().map(|c| c.tiles().len())).unwrap_or(1);
     let stats = gpu.as_ref().map(|g| {
         let s = g.stats();
         format!(", {} passes, {} rounds, layers {:.1} MiB, effect slots {:.1} MiB", s.passes, s.rounds, s.layer_bytes as f64 / 1048576.0, s.effect_bytes as f64 / 1048576.0)
@@ -132,15 +133,4 @@ fn run(path: &str, ticks: &str, out: &str, rest: &[String]) -> Result<(), String
         stats.unwrap_or_default()
     );
     Ok(())
-}
-
-/// The frame rasterized on the CPU at the export's rendered size, then resolved as the GPU path is.
-fn raster(doc: &styk_eval::doc::Document, frame: &styk_engine::FrameData, settings: &Settings, images: &styk_raster::Images, matte: bool) -> Result<Vec<u8>, String> {
-    let [w, h] = settings.render_size();
-    let tile = Tile { x: 0, y: 0, size: [w, h], valid: [w, h] };
-    let view = styk_export::view::tile_view(doc, frame.camera.as_ref(), settings, &tile);
-    let rendered = styk_raster::render(&frame.list, images, &view, [w, h], settings.smoothing.edges());
-    let mut out = Vec::new();
-    styk_export::pixels::resolve(&rendered.pixels, w as usize * 4, [w, h], settings.smoothing.factor(), matte, &mut out);
-    Ok(out)
 }
