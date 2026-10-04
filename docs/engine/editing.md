@@ -368,8 +368,24 @@ against 50.5 ms, rig 123.3 against 50.9 ms, joined-chain 75.1 against 46.1 ms (s
 the engine's call (0.25–0.35 ms in the app) and the adoption of its answer cannot get below
 that while both editors keep their own bookkeeping, so small documents wait for the engine
 to own the document outright (S5, phases 2 and 3). Running the animation while calling the
-session did not slow the calls (the engine's worker threads do not contend with it). `3d`
-and `movieclips` stay too: some of their calls are slower in the engine (below).
+session did not slow the calls (the engine's worker threads do not contend with it).
+
+`3d` flipped on 2026-10-04: with every 3D command and gesture the shadow driver drives ported,
+owned editing was the same as the editor alone and cost less on each 3D document measured
+(`node scripts/engine-edit-shadow.mjs --own --warm --exact-math`, one run each, the machine
+under other load):
+
+| Document | Calls owned | Editor alone | Engine owning, adoption included |
+| --- | ---: | ---: | ---: |
+| a planted 3D leg (ik/spatial) | 97 | 217.6 ms | 101.5 ms |
+| Kung-Fu Master (81 segments, 3D, IK; imported) | 100 | 510.1 ms | 228.9 ms |
+| Hand-Right (3D hand; imported) | 110 | 513.4 ms | 480.3 ms |
+
+With the browser's own `Math` instead of the engine's, an owned 3D pose can differ from the
+editor's by more than its last digits (one angle of the planted leg by 4.6e-6 rad after a
+drag): the 3D solvers iterate on values the browser rounds differently (D16); the engine's
+answer is the same in every browser. `movieclips` stays with the editor: pasting clip
+instances and range operations on movieclips are not ported yet.
 
 What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow
 run, the engine's from an owned run, adoption included). The first measurement found

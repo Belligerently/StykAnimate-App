@@ -31,7 +31,7 @@ What's new in each version of StykAnimate.
 ### Performance
 
 - Pivot files open faster, and in the web app the first one no longer waits for a large download.
-- Editing large animations is faster.
+- Editing large animations and 3D figures is faster.
 - Exporting animations with effects, particles, 3D or many figures is several times faster.
 - Animations with particles, auras, beams, smoke or explosions play and edit more smoothly.
 - Fills, magic wand selections, filters and saving are faster on drawing layers.
