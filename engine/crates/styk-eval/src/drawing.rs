@@ -11,8 +11,9 @@
 //!   bilinearly across tile borders, and every empty tile next to an occupied
 //!   one is drawn too (a halo), so filtering fades past the last tile.
 //!
-//! Each drawn tile is one atlas slot of 64×64 texels plus a one-texel border
-//! holding its neighbours' edge texels (transparent where there is none).
+//! Each drawn tile is one atlas slot of 64×64 texels plus a two-texel border
+//! holding its neighbours' edge texels (transparent where there is none). The
+//! second texel lets Canvas-style Mitchell enlargement read across tile edges.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -20,6 +21,8 @@ use std::sync::Arc;
 use crate::doc::DrawingTiles;
 
 pub const TILE: u32 = 64;
+/// Neighbour texels on each side of a drawn tile (the radius of Mitchell filtering).
+pub const BORDER: u32 = 2;
 const TILE_BYTES: usize = (TILE * TILE * 4) as usize;
 /// Display levels 0..=MAX_LEVEL.
 pub const MAX_LEVEL: u32 = 8;
@@ -103,30 +106,31 @@ fn down_tile(below: &HashMap<(i32, i32), Vec<u8>>, tx: i32, ty: i32) -> Option<V
     Some(out)
 }
 
-/// One drawn tile's slot contents: `(TILE + 2)²` straight-alpha RGBA texels, its
-/// own in the middle and its eight neighbours' edges around them.
+/// One drawn tile's slot contents: `(TILE + 2 * BORDER)²` straight-alpha RGBA
+/// texels, its own in the middle and its eight neighbours' edges around them.
 fn bordered(level: &HashMap<(i32, i32), Vec<u8>>, tx: i32, ty: i32) -> Vec<u8> {
     let t = TILE as i32;
-    let side = (t + 2) as usize;
+    let border = BORDER as i32;
+    let side = (t + 2 * border) as usize;
     let mut out = vec![0u8; side * side * 4];
     for dy in -1..=1 {
         for dx in -1..=1 {
             let Some(pixels) = level.get(&(tx + dx, ty + dy)) else { continue };
-            // The neighbour's texels that land in this slot: all of its own tile, one edge row or column, or a corner.
+            // All of this tile, two edge rows/columns of a neighbour, or their corner.
             let xs: Vec<i32> = match dx {
-                -1 => vec![t - 1],
+                -1 => (t - border..t).collect(),
                 0 => (0..t).collect(),
-                _ => vec![0],
+                _ => (0..border).collect(),
             };
             let ys: Vec<i32> = match dy {
-                -1 => vec![t - 1],
+                -1 => (t - border..t).collect(),
                 0 => (0..t).collect(),
-                _ => vec![0],
+                _ => (0..border).collect(),
             };
             for &sy in &ys {
-                let oy = (sy + dy * t + 1) as usize;
+                let oy = (sy + dy * t + border) as usize;
                 for &sx in &xs {
-                    let ox = (sx + dx * t + 1) as usize;
+                    let ox = (sx + dx * t + border) as usize;
                     let s = ((sy * t + sx) * 4) as usize;
                     let o = (oy * side + ox) * 4;
                     out[o..o + 4].copy_from_slice(&pixels[s..s + 4]);
@@ -150,6 +154,21 @@ pub fn decode_cel(cel: &DrawingTiles) -> Vec<(u32, u32, Vec<u8>)> {
             level.insert((*tx, *ty), rgba.into_raw());
         }
     }
+    // This runs beside PNG decoding on the existing resource workers. Keep only
+    // the derived rectangle, shared by revisions that reuse this immutable cel.
+    let mut bounds = [i64::MAX, i64::MAX, i64::MIN, i64::MIN];
+    for (&(tx, ty), rgba) in &level {
+        if let Some(alpha) = styk_drawing::tiles::alpha_bounds(rgba) {
+            let x = tx as i64 * TILE as i64 + alpha.x;
+            let y = ty as i64 * TILE as i64 + alpha.y;
+            bounds[0] = bounds[0].min(x);
+            bounds[1] = bounds[1].min(y);
+            bounds[2] = bounds[2].max(x + alpha.width);
+            bounds[3] = bounds[3].max(y + alpha.height);
+        }
+    }
+    let alpha = (bounds[0] != i64::MAX).then(|| [bounds[0] as f64, bounds[1] as f64, (bounds[2] - bounds[0]) as f64, (bounds[3] - bounds[1]) as f64]);
+    let _ = cel.decoded_bounds.set(alpha);
     let mut out = Vec::new();
     for (n, drawn) in cel.levels.iter().enumerate() {
         if n > 0 {
@@ -204,11 +223,29 @@ mod tests {
         let middle = tile(|_, y| [0, y as u8, 0, 255]);
         let level = HashMap::from([((-1, 0), left), ((0, 0), middle)]);
         let slot = bordered(&level, 0, 0);
-        let side = TILE as usize + 2;
+        let side = (TILE + 2 * BORDER) as usize;
         let at = |x: usize, y: usize| &slot[(y * side + x) * 4..(y * side + x) * 4 + 4];
-        assert_eq!(at(0, 10), &[63, 0, 0, 255], "the left border is the left tile's last column");
-        assert_eq!(at(1, 10), &[0, 9, 0, 255], "the tile itself, shifted by the border");
-        assert_eq!(at(65, 10), &[0, 0, 0, 0], "no right neighbour: transparent");
+        assert_eq!(at(0, 10), &[62, 0, 0, 255], "the border holds the second-last neighbour column");
+        assert_eq!(at(1, 10), &[63, 0, 0, 255], "and the last column, without repeating it");
+        assert_eq!(at(2, 10), &[0, 8, 0, 255], "the tile itself, shifted by the border");
+        assert_eq!(at(66, 10), &[0, 0, 0, 0], "no right neighbour: transparent");
         assert_eq!(at(0, 0), &[0, 0, 0, 0], "no upper-left neighbour: transparent");
+    }
+
+    #[test]
+    fn a_border_reads_real_neighbours_across_negative_tile_edges_and_corners() {
+        // Unique values in a 3×3 neighborhood make an off-by-one, repeated edge or wrong
+        // negative-coordinate neighbour visible, including both rows/columns at corners.
+        let level: HashMap<_, _> = (-2..=0).flat_map(|ty| (-2..=0).map(move |tx| {
+            ((tx, ty), tile(|x, y| [((tx + 2) * 64 + x as i32) as u8, ((ty + 2) * 64 + y as i32) as u8, 120, 255]))
+        })).collect();
+        let slot = bordered(&level, -1, -1);
+        let side = (TILE + 2 * BORDER) as usize;
+        for y in 0..side {
+            for x in 0..side {
+                let i = (y * side + x) * 4;
+                assert_eq!(&slot[i..i + 4], &[62 + x as u8, 62 + y as u8, 120, 255], "slot ({x}, {y})");
+            }
+        }
     }
 }

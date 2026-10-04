@@ -26,10 +26,52 @@ pub const AHEAD: usize = 8;
 
 #[derive(Default)]
 struct State {
+    epoch: u64,
     ready: HashMap<u32, Arc<FrameData>>,
     inflight: HashSet<u32>,
+    /// Requested frames wait here while this renderer preloads its pictures.
+    pending: Vec<u32>,
     images: Vec<Arc<DecodedImage>>,
     images_left: usize,
+}
+
+/// Starts the bounded set of requested frames once their resource rectangles
+/// are authoritative. No thread waits for PNG decoding to finish.
+fn prepare_pending(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Shared<State>>, ended: &Arc<AtomicBool>) {
+    let (ticks, epoch) = {
+        let mut state = state.lock();
+        if ended.load(Ordering::Relaxed) || state.images_left != 0 {
+            return;
+        }
+        (std::mem::take(&mut state.pending), state.epoch)
+    };
+    for tick in ticks {
+        let (generation, state, ended, clock) = (generation.clone(), state.clone(), ended.clone(), engine.inner.clock);
+        engine.spawn(move |_| {
+            if ended.load(Ordering::Relaxed) {
+                return;
+            }
+            let data = produce(&generation, tick, &[], true, clock);
+            let mut state = state.lock();
+            if ended.load(Ordering::Relaxed) || epoch != state.epoch {
+                return;
+            }
+            state.inflight.remove(&tick);
+            state.ready.insert(tick, Arc::new(data));
+        });
+    }
+}
+
+fn pictures_ready(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Shared<State>>, ended: &Arc<AtomicBool>, epoch: u64, images: impl IntoIterator<Item = DecodedImage>) {
+    {
+        let mut state = state.lock();
+        if ended.load(Ordering::Relaxed) || epoch != state.epoch {
+            return;
+        }
+        state.images_left = state.images_left.saturating_sub(1);
+        state.images.extend(images.into_iter().map(Arc::new));
+    }
+    prepare_pending(engine, generation, state, ended);
 }
 
 /// The frames and pictures of one export. Dropping it abandons work not yet done.
@@ -80,34 +122,52 @@ impl ExportFrames {
         let since = since.filter(|earlier| earlier.lineage == generation.lineage);
         let known = since.map_or(0, |earlier| earlier.prepared.doc.images.len().min(count));
         let cels: Vec<usize> = generation.assets.cels.keys().copied().filter(|cel| !since.is_some_and(|earlier| earlier.assets.cels.contains_key(cel))).collect();
-        self.state.lock().images_left = count - known + cels.len();
+        let epoch = {
+            let mut state = self.state.lock();
+            let remaining = count - known + cels.len();
+            if remaining != 0 {
+                state.epoch = state.epoch.wrapping_add(1);
+                let mut redo: Vec<_> = state.ready.keys().chain(state.inflight.iter()).copied().collect();
+                redo.sort_unstable();
+                redo.dedup();
+                state.inflight = redo.iter().copied().collect();
+                state.pending = redo;
+                state.ready.clear();
+            }
+            state.images_left = remaining;
+            state.epoch
+        };
         for index in known..count {
             let (generation, state, ended) = (generation.clone(), self.state.clone(), self.ended.clone());
-            self.engine.spawn(move |_| {
+            self.engine.spawn(move |engine| {
                 if ended.load(Ordering::Relaxed) {
                     return;
                 }
                 let image = styk_eval::assets::decode_image(&generation.prepared.doc, &generation.assets, index);
-                let mut state = state.lock();
-                state.images_left = state.images_left.saturating_sub(1);
-                state.images.extend(image.map(Arc::new));
+                pictures_ready(engine, &generation, &state, &ended, epoch, image);
             });
         }
         for cel in cels {
             let (generation, state, ended) = (generation.clone(), self.state.clone(), self.ended.clone());
-            self.engine.spawn(move |_| {
+            self.engine.spawn(move |engine| {
                 if ended.load(Ordering::Relaxed) {
                     return;
                 }
                 let tiles = match generation.assets.cels.get(&cel) {
-                    Some((tiles, _)) => styk_eval::assets::decode_cel(&generation.assets, tiles),
+                    Some((tiles, _)) => {
+                        let before = tiles.artwork_bounds();
+                        let decoded = styk_eval::assets::decode_cel(&generation.assets, tiles);
+                        if tiles.artwork_bounds() != before {
+                            engine.drawing_bounds_changed(&generation, tiles);
+                        }
+                        decoded
+                    }
                     None => Vec::new(),
                 };
-                let mut state = state.lock();
-                state.images_left = state.images_left.saturating_sub(1);
-                state.images.extend(tiles.into_iter().map(Arc::new));
+                pictures_ready(engine, &generation, &state, &ended, epoch, tiles);
             });
         }
+        prepare_pending(&self.engine, generation, &self.state, &self.ended);
     }
 
     /// Decoded pictures not yet taken, up to `max_bytes` of pixels (at least one).
@@ -135,7 +195,6 @@ impl ExportFrames {
     /// [`AHEAD`] of them waiting or in progress at a time.
     pub fn prefetch(&self, ticks: impl IntoIterator<Item = u32>) {
         let total = self.ticks();
-        let mut spawn = Vec::new();
         {
             let mut state = self.state.lock();
             for tick in ticks {
@@ -146,46 +205,41 @@ impl ExportFrames {
                     continue;
                 }
                 state.inflight.insert(tick);
-                spawn.push(tick);
+                state.pending.push(tick);
             }
         }
-        for tick in spawn {
-            let (generation, state, ended, clock) = (self.generation.clone(), self.state.clone(), self.ended.clone(), self.engine.inner.clock);
-            self.engine.spawn(move |_| {
-                if ended.load(Ordering::Relaxed) {
-                    state.lock().inflight.remove(&tick);
-                    return;
-                }
-                let data = produce(&generation, tick, &[], true, clock);
-                let mut state = state.lock();
-                state.inflight.remove(&tick);
-                state.ready.insert(tick, Arc::new(data));
-            });
-        }
+        prepare_pending(&self.engine, &self.generation, &self.state, &self.ended);
     }
 
     /// The frame of `tick`: prepared ahead, or evaluated here when no worker has it;
     /// `None` while a worker is still preparing it (wait for the engine's progress counter).
     pub fn take(&self, tick: u32) -> Option<Arc<FrameData>> {
-        {
+        let epoch = {
             let mut state = self.state.lock();
+            if state.images_left != 0 {
+                return None;
+            }
             if let Some(frame) = state.ready.remove(&tick) {
                 return Some(frame);
             }
             if state.inflight.contains(&tick) {
                 return None;
             }
-        }
+            state.epoch
+        };
         if tick >= self.ticks() {
             return None;
         }
-        Some(Arc::new(produce(&self.generation, tick, &[], true, self.engine.inner.clock)))
+        let data = Arc::new(produce(&self.generation, tick, &[], true, self.engine.inner.clock));
+        let state = self.state.lock();
+        (state.epoch == epoch && state.images_left == 0).then_some(data)
     }
 
     /// The frame of `tick` if a worker has prepared it, left in place; never evaluated here
     /// (the interface thread asks this for thumbnails, which it may not evaluate, D7).
     pub fn ready(&self, tick: u32) -> Option<Arc<FrameData>> {
-        self.state.lock().ready.get(&tick).cloned()
+        let state = self.state.lock();
+        if state.images_left != 0 { None } else { state.ready.get(&tick).cloned() }
     }
 
     /// Frames prepared ahead and not yet taken, or being prepared (at most [`AHEAD`]).
@@ -206,5 +260,7 @@ impl Drop for ExportFrames {
         let mut state = self.state.lock();
         state.ready.clear();
         state.images.clear();
+        state.pending.clear();
+        state.inflight.clear();
     }
 }

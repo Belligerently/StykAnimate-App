@@ -1184,6 +1184,7 @@ dependencies = [
  "rayon",
  "styk-doc",
  "styk-draw",
+ "styk-drawing",
  "styk-formats",
  "styk-math",
  "styk-piv",

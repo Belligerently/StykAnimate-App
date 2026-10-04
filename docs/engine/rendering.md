@@ -49,10 +49,64 @@ triangles flagged `F_GLYPH_VECTOR`; `DrawList::glyphs` holds each record's
 | `glyphs.rs`, `glyph.wgsl` | the masks of lone glyphs ([Text](#text)): each glyph filled once per mask size into an atlas of one-channel pages kept across frames (at most 64 MiB), and the per-frame table that tells each `K_GLYPH` record where its mask is |
 
 Drawing cels: every display level's tiles are in the list; the vertex shader
-keeps the level `floor(-log2(pixels per cel pixel))` (0–8) and the fragment
-shader premultiplies straight-alpha texels and filters bilinearly across tile
-borders (each atlas slot carries its neighbours' edge texels; halo tiles fade
-past the last tile), as the editor's GPU drawing display does.
+keeps the level `floor(-log2(pixels per cel pixel))` (0–8), using exact comparisons
+of the selected tile's pixel density with 0.5 and 1 rather than the GPU's approximate
+logarithm at powers of two. The fragment shader premultiplies straight-alpha texels
+before filtering across tile borders; each 64×64 tile has two real neighbour texels
+on every side (a 68×68 atlas slot), and halo tiles fade past the last occupied tile.
+The frame, plain groups on it and camera image use bilinear filtering, as the
+editor's GPU drawing display does.
+
+In entry, nested and raster layers, including plain groups inside them, the editor
+paints cels with Canvas 2D's `high` smoothing. `effects::plan::Placement::canvas`
+marks that sampling rule for both renderers. At exactly 1×, including fractional
+translations, it is bilinear; above 1× it is separable Mitchell-Netravali (B=C=1/3,
+16 premultiplied taps, colour clamped to its alpha before opacity and blending).
+When shrinking, the residual level of detail past 0.5 blends up to half of the
+parent reduction into the tile's bilinear sample. An `F_DRAWING` primitive's `paint`
+names the parent slot and quadrant in one lookup row; negative tile coordinates use
+Euclidean division. The decoder publishes all levels together and the upload queue
+takes higher levels first, so a child never samples an unuploaded parent. Crisp
+edges keep nearest sampling, and onion tint uses the filtered coverage.
+
+Effect rectangles follow the drawing's tight ink bounds, as `objectBounds` does,
+rather than its whole tile coverage. The loader reads the published rectangle;
+the existing PNG worker derives authoritative alpha bounds while it already holds
+the level-0 pixels. Each immutable `DrawingTiles` retains only that rectangle in
+`decoded_bounds`; empty decoded ink keeps the published fallback. Shared cels keep
+the correction across document revisions. A changed rectangle invalidates cached
+effect lists and requeues requested ticks; a cache epoch rejects earlier workers
+and inline preparations. Export preparation holds at most `AHEAD` requests until
+its image preload finishes, without waiting on a thread. Cancellation drops those
+requests and rejects any earlier completion. Translation follows actual gradient
+references once, leaving parent-atlas and generator rows unchanged.
+
+Public crate changes for consumers moving their pin: `DrawingTiles` adds `bounds`,
+`decoded_bounds` and `artwork_bounds()`; `Placement` adds `canvas`;
+`styk_eval::drawing::BORDER` is 2, so decoded drawing slots are 68×68 instead of
+66×66 (6.2% more slot bytes). Sprites retain their one-texel gutter, primitive
+records remain 64 bytes, and these changes have no browser-only dependencies.
+
+Verified in Electron on ANGLE/Vulkan at 1440×900, with D13 unchanged: the editor-built
+`drawing-cels` document passes fitted, 0.3×, 2× and 3× views (mean beyond two levels
+0.0004–0.0049, no solid differences). The five previously failing private-scene
+ticks 46 and 61–64 all pass (mean 0.0002–0.0441, maximum 22, no differences above
+32). The old whole-tile effect bounds were confirmed by a failing regression before
+the correction. Headless web captures are now held until real cel decoding and
+preview jobs finish, but the same synthetic document still fails against the
+software Canvas fallback at all four views (mean 0.3473–1.3455; up to four solid
+differences). Native CPU/GPU comparisons pass all 132 private frame-start thumbnails
+and the synthetic document's three thumbnails plus smooth export (mean at most 0.0004,
+max 3). Its crisp export still fails exactly as on the pre-change CLI (mean 0.2999,
+max 222, no solid pixels). Private web captures timed out twice in animation-frame
+settling with tracked resources ready; they remain unverified. These remain open
+backend-parity gaps. The final diagnostic timing attempt ran at load 10.27–12.77 and
+was too variable to support a cost claim; the idle engine-1 matrix is pending.
+
+Regression coverage lives in the eval and engine `tests/drawing_bounds.rs`, the eval
+drawing/translation tests, and `styk-raster/tests/drawing_sampling.rs` (24 CPU/GPU
+sampling cases). Bounds tests include late shared-cel decoding, stale same-tick
+completions, cancellation and the export queue limit.
 
 Depth runs: a list with faces gets a multisampled `depth24plus` buffer per pass
 and two variants of the one shader's pipeline (painter order writing depth; faces
@@ -235,8 +289,8 @@ its size.
   by the samples, so adjacent triangles share their edges' samples: no seams between faces,
   glyph triangles or polygons of different colours, and none between a cel's tiles.
 - Paints are `sample_paint` at the pixel's centre; sprites bilinear (`F_SMOOTH`) or nearest
-  within their gutter; cel tiles premultiplied texel by texel, then bilinear across their
-  borders, at the level the layer's density shows; composites bilinear, clamped to the child
+  within their gutter; cel tiles premultiplied texel by texel, then sampled across their
+  borders by the layer's drawing rule above, at the level its density shows; composites bilinear, clamped to the child
   (nearest with crisp edges); backgrounds nearest.
 - Depth runs: the reset's quad sets the far depth, then each face is drawn over what is
   there, sample by sample, where its depth (the vertex shader's window depth, interpolated

@@ -93,7 +93,14 @@ impl Engine {
     /// Decodes drawing cel `cel` (every display level) for the atlas of `generation`.
     pub(crate) fn decode_cel(&self, generation: &Arc<Generation>, cel: usize) {
         let decoded = match generation.assets.cels.get(&cel) {
-            Some((tiles, _)) => styk_eval::assets::decode_cel(&generation.assets, tiles),
+            Some((tiles, _)) => {
+                let before = tiles.artwork_bounds();
+                let decoded = styk_eval::assets::decode_cel(&generation.assets, tiles);
+                if tiles.artwork_bounds() != before {
+                    self.drawing_bounds_changed(generation, tiles);
+                }
+                decoded
+            }
             None => Vec::new(),
         };
         let mut state = self.inner.state.lock();
@@ -102,6 +109,22 @@ impl Engine {
         }
         state.images.remaining = state.images.remaining.saturating_sub(1);
         state.images.ready.extend(decoded.into_iter().map(Arc::new));
+    }
+
+    /// Resource workers can finish an earlier revision's decode after a commit.
+    /// Its correction also applies to a current revision that shares that cel.
+    pub(crate) fn drawing_bounds_changed(&self, generation: &Generation, cel: &Arc<styk_eval::doc::DrawingTiles>) {
+        {
+            let mut state = self.inner.state.lock();
+            let retained = state.current.as_ref().is_some_and(|current| {
+                current.lineage == generation.lineage && current.assets.cels.contains_key(&(Arc::as_ptr(cel) as usize))
+            });
+            if !retained {
+                return;
+            }
+            state.frames.invalidate_resources();
+        }
+        self.inner.state.notify_all();
     }
 
     /// Decoded images the renderer has not uploaded yet, up to `max_bytes` of pixels

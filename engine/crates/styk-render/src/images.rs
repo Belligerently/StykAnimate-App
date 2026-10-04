@@ -68,11 +68,12 @@ impl Renderer {
         for img in images {
             let entry = if img.drawing { assets.drawing.get(img.index as usize) } else { assets.atlas.get(img.index as usize) };
             let Some(e) = entry.filter(|e| e.valid) else { continue };
+            let border = if img.drawing { styk_eval::drawing::BORDER } else { 1 };
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &self.sprites,
                     mip_level: 0,
-                    origin: wgpu::Origin3d { x: e.x - 1, y: e.y - 1, z: e.layer },
+                    origin: wgpu::Origin3d { x: e.x - border, y: e.y - border, z: e.layer },
                     aspect: wgpu::TextureAspect::All,
                 },
                 &img.rgba,

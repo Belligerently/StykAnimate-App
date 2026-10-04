@@ -6,7 +6,7 @@
 //! read a document while the UI prepares the next revision.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Pivot primitive codes (`segment.primitive_code`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -165,10 +165,23 @@ pub struct ImageAsset {
 pub struct DrawingTiles {
     pub anchor: [f64; 2],
     pub pixels_per_unit: f64,
+    /// Published tight ink bounds in cel pixels (`_styk.drawing.bounds`).
+    /// They anchor effect rasters; whole-tile coverage only places drawing quads.
+    pub bounds: Option<[f64; 4]>,
+    /// Tight bounds resolved by the existing background PNG decode. No pixel cache
+    /// and no document mutation: a loaded store's nonempty bounds supersede metadata.
+    pub decoded_bounds: OnceLock<Option<[f64; 4]>>,
     /// Level-0 tiles: `(tx, ty, PNG bytes)` in tile coordinates (64 cel pixels per tile).
     pub tiles: Vec<(i32, i32, Arc<[u8]>)>,
     /// The tiles drawn at each display level 0–8 ([`crate::drawing::level_tiles`]).
     pub levels: Vec<Vec<(i32, i32)>>,
+}
+
+impl DrawingTiles {
+    /// `presenter.store.bounds ?? drawingPixelBounds(figure)` in the editor.
+    pub fn artwork_bounds(&self) -> Option<[f64; 4]> {
+        self.decoded_bounds.get().copied().flatten().or(self.bounds)
+    }
 }
 
 #[derive(Clone, Debug)]

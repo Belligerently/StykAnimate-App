@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 styk-piv = { path = "../styk-piv" }
 styk-draw = { path = "../styk-draw" }
+styk-drawing = { path = "../styk-drawing" }
 styk-doc = { path = "../styk-doc" }
 styk-math = { path = "../styk-math" }
 styk-formats = { path = "../styk-formats" }

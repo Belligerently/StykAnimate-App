@@ -88,7 +88,7 @@ src/drawing-composite.mjs	engine	styk-drawing	js
 src/drawing-controller.mjs	ui	-	stays	
 src/drawing-fill.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
 src/drawing-flatten.mjs	engine	styk-drawing	js	
-src/drawing-gpu.mjs	engine	styk-render::drawing	js	GPU tiles and GPU brush
+src/drawing-gpu.mjs	engine	styk-render::drawing	partial	Rust: committed cel display, exact box levels, tile seams, Canvas-style effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes and GPU brush still JS
 src/drawing-history-codec.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
 src/drawing-history-database.mjs	engine	styk-drawing	js	
 src/drawing-history-worker.mjs	engine	styk-drawing	partial	Rust: the history worker encodes undo chunks with styk-drawing; the worker shell is JS
@@ -357,7 +357,7 @@ src/renderer-raster-capture.mjs	engine	styk-render	js
 src/renderer-upload.mjs	engine	styk-render	js	
 src/renderer-vector-raster.mjs	engine	styk-render	js	
 src/renderer-vfx-vector.mjs	engine	styk-render	partial	Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it
-src/renderer.mjs	engine	styk-render	partial	Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs), text as its WebGPU path draws it (object rasters, glyph masks); every other document still JS
+src/renderer.mjs	engine	styk-render	partial	Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs), text as its WebGPU path draws it (object rasters, glyph masks), drawing cels inside effect rasters; every other document still JS
 src/rig-angle-path.mjs	engine	styk-eval::rig	partial	Rust: angle path sampling (styk_eval::rig); validateAnglePath (styk-edit/src/rig_behavior.rs); authoring still JS
 src/rig-constraints.mjs	engine	styk-eval::rig	partial	Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS
 src/rig-control-details.mjs	engine	styk-eval::rig	js	IK, constraints, spatial rigs and meshes

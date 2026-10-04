@@ -3,18 +3,21 @@
 // JavaScript renderer draw effects (scripts/engine-app-parity.mjs, rule D13).
 // Each covers some filter types with non-default parameters, or one kind of
 // target: figures, nodes, connected groups, translucent figures, movieclips,
-// clips with fades and strength, and the scene (camera image).
+// clips with fades and strength, the scene (camera image), and drawing cels
+// under effects (which the editor paints into the effect raster with Canvas 2D).
 //
 //   node engine/tools/vfx-parity-docs.mjs [--out tmp/vfx-parity] [--list]
 //   node scripts/engine-app-parity.mjs --target electron --file tmp/vfx-parity/<name>.json --ticks <ticks> [--zoom 2]
 //
 // The ticks worth comparing for each document are printed and written to
 // <out>/ticks.json. Documents are plain JSON, opened as the editor opens a project.
-import {mkdirSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {repo, emptyDocument, createObject, createFrame, open} from './fixture-kit.mjs';
 
 const {createVfx} = await import(`${repo}/src/vfx.mjs`);
+const {TILE, TILE_BYTES} = await import(`${repo}/src/drawing-tiles.mjs`);
+const {TILE_BLOB_PREFIX, assembleTileBlobBytes, encodeTile} = await import(`${repo}/src/drawing-tile-codec.mjs`);
 const {defaultFigure} = await import(`${repo}/src/demo.mjs`);
 
 // Stable identities, so a document is the same every time it is built.
@@ -49,6 +52,45 @@ function documentWith(objects, ticks = 12) {
   document.figure_types = types;
   document.keyframes = [{...createFrame(objects.map(([type, x, y, extra = {}], i) => createObject(types[type], i + 1, x, y, {scale: .55, ...extra})), ticks), _styk: {easing: {interpolation: 'linear'}}}];
   return document;
+}
+
+/**
+ * A drawing figure (`figureTypeId`) whose cel (12×8 tiles at 2 pixels a unit) holds speckled
+ * light strokes, as a charcoal brush leaves them: every pixel near a stroke's centre line takes
+ * a deterministic random alpha. Encoded with the editor's own tile codec.
+ */
+function celFigure(figureTypeId) {
+  const [tilesX, tilesY] = [12, 8], width = tilesX * TILE, height = tilesY * TILE;
+  let seed = 7;
+  const random = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
+  const strokes = Array.from({length: 48}, () => {
+    const x = random() * width, y = random() * height, angle = (random() - .5) * 1.2 + .6, length = 60 + random() * 260;
+    return {x, y, dx: Math.cos(angle), dy: Math.sin(angle), length, radius: 1.5 + random() * 4};
+  });
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    let ink = 0;
+    for (const s of strokes) {
+      const t = Math.max(0, Math.min(s.length, (x - s.x) * s.dx + (y - s.y) * s.dy));
+      const d = Math.hypot(x - s.x - s.dx * t, y - s.y - s.dy * t);
+      if (d < s.radius) ink = Math.max(ink, 1 - d / s.radius);
+    }
+    if (!ink) continue;
+    const i = (y * width + x) * 4, speckle = random();
+    pixels[i] = 235; pixels[i + 1] = 238; pixels[i + 2] = 242;
+    pixels[i + 3] = speckle < .25 ? 0 : Math.round(255 * Math.min(1, ink * 1.4) * (.35 + .65 * speckle));
+  }
+  const tiles = [];
+  for (let ty = 0; ty < tilesY; ty++) for (let tx = 0; tx < tilesX; tx++) {
+    const tile = new Uint8ClampedArray(TILE_BYTES);
+    for (let row = 0; row < TILE; row++) tile.set(pixels.subarray(((ty * TILE + row) * width + tx * TILE) * 4, ((ty * TILE + row) * width + tx * TILE + TILE) * 4), row * TILE * 4);
+    if (tile.some((value, i) => i % 4 === 3 && value)) tiles.push({tx, ty, png: encodeTile(tile)});
+  }
+  const bytes = assembleTileBlobBytes(tiles);
+  const template = JSON.parse(readFileSync(`${repo}/engine/crates/styk-eval/tests/fixtures/drawlist/drawing-cel.json`, 'utf8')).figure_types[0];
+  return {...template, figure_type_id: figureTypeId,
+    image_assets: [{...template.image_assets[0], styk_tiles: TILE_BLOB_PREFIX + Buffer.from(bytes).toString('base64')}],
+    _styk: {...template._styk, drawing: {...template._styk.drawing, celId: 'cel-00000000-0000-4000-8000-0000000c0001', revision: 1, bounds: {x: 0, y: 0, width, height}}}};
 }
 
 /** Six figures on a 3x2 grid, each with one stack: [figure index, effects]. */
@@ -156,6 +198,26 @@ const docs = {
       {...instance(3, 640, 260, {scale: 1.3, angles: [.4], field28: 90, _stykVfx: {figure: [fx('blur', 'own-blur', {radius: 4})]}}), figure_type_id: clipType.figure_type_id},
     ], 8), _styk: {easing: {interpolation: 'linear'}}}];
     return {editor: open(document, {layerTimeline: true}), ticks: [0, 3]};
+  },
+  /** Drawing cels under effects, which the editor paints into the effect raster with Canvas 2D
+   * smoothing, beside a cel without effects. The cel is speckled light strokes like charcoal
+   * (`celFigure`) on a dark scene: fine texture is where the sampling of reduced levels shows.
+   * At the fitted view of a 1,440×900 window, the cels' level of detail lies past half a
+   * level, where Canvas 2D blends in the next reduction. At 2× and 3× zoom the effect
+   * rasters also enlarge cel pixels with Mitchell filtering (docs/engine/rendering.md). */
+  'drawing-cels': () => {
+    const document = emptyDocument();
+    document.figure_types = [celFigure(1)];
+    const cels = [[40, 40, .56], [360, 50, .58], [680, 40, .53], [40, 300, .57], [360, 310, .55], [700, 320, .28]];
+    document.keyframes = [{...createFrame(cels.map(([x, y, scale], i) => createObject(document.figure_types[0], i + 1, x, y, {scale})), 12), _styk: {easing: {interpolation: 'linear'}}}];
+    const e = open(document, {layerTimeline: true});
+    e.setSceneColor(0xff101018);
+    pose(e, figure(1), [['outline', {color: 0xfbfafa, width: 1.2, opacity: 1, mode: 2, rounded: 0}]]);
+    pose(e, figure(2), [['glow', {color: 0xff4080, radius: 12, intensity: 1.3}]]);
+    pose(e, figure(3), [['blur', {mode: 1, radius: 5, angle: 60}], ['bloom', {threshold: .4, radius: 18, intensity: 1.4}]]);
+    pose(e, figure(4), [['tint', {color: 0x20c0ff, mix: .6}]]);
+    pose(e, figure(6), [['blur', {radius: 3}], ['glow', {color: 0xffd000, radius: 10, intensity: 1.1}]]);
+    return {editor: e, ticks: [0]};
   },
   /** The scene stack (camera image) on an unmoved camera, with a blur past downsampling. */
   'scene': () => {

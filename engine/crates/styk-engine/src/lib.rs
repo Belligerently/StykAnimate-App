@@ -287,19 +287,19 @@ impl Engine {
                 Job::Task(task)
             } else {
                 match (state.current.clone(), state.frames.take_wanted()) {
-                    (Some(generation), Some(tick)) => Job::Frame(generation, tick, state.frames.hidden.clone(), state.frames.effects),
+                    (Some(generation), Some(tick)) => Job::Frame(generation, tick, state.frames.hidden.clone(), state.frames.effects, state.frames.epoch),
                     _ => return false,
                 }
             }
         };
         match job {
             Job::Task(task) => task(self),
-            Job::Frame(generation, tick, hidden, effects) => {
+            Job::Frame(generation, tick, hidden, effects, epoch) => {
                 let data = frames::produce(&generation, tick, &hidden, effects, self.inner.clock);
                 let mut state = self.inner.state.lock();
                 // A frame prepared for another set of hidden figures, or with effects toggled, is not shown.
                 let current = std::sync::Arc::ptr_eq(&state.frames.hidden, &hidden) && state.frames.effects == effects;
-                state.frames.finish(generation.id, tick, current.then_some(data));
+                state.frames.finish(generation.id, epoch, tick, current.then_some(data));
             }
         }
         self.inner.progress.fetch_add(1, Ordering::SeqCst);
@@ -312,5 +312,5 @@ impl Engine {
 
 enum Job {
     Task(Box<dyn FnOnce(&Engine) + Send>),
-    Frame(Arc<Generation>, u32, Arc<[u32]>, bool),
+    Frame(Arc<Generation>, u32, Arc<[u32]>, bool, u64),
 }

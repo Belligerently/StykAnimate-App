@@ -8,12 +8,13 @@ nothing here should need re-deriving.
 - **Rule:** the interface does not change. Every feature stays. A visible change that is not
   strictly faster is a bug.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
-- **Handoff:** the next section, written 2026-10-04 when the work stopped.
+- **Handoff:** the next section, updated during the 2026-10-04 takeover.
 
-## Handoff (2026-10-04, `35f4c734`)
+## Handoff (2026-10-04, takeover after `a19ae5d8`)
 
-Written for the next agent. Read this section, then the [milestone log](#milestone-log) (last
-entries), section 6 and section 8. `git log engine-rust` has the detail of every step.
+Read this section, then the [milestone log](#milestone-log) (last entries), section 6 and
+section 8. Work is active; the isolated lanes below are not integrated until reviewed.
+`git log engine-rust` has the detail of every committed step.
 
 ### Verification of the handed-over state
 
@@ -26,6 +27,19 @@ hand-face-pack ×5 and impact-fx-pack ×1), 26 skipped. Every command recording 
 in `styk edit-replay`. The build, `npm run check` and `npm test` ran on `865c5e3f`; `35f4c734`
 adds only the two record fixture folders, and the Rust tests and parity ran on it again.
 
+Takeover verification at `a19ae5d8` matched the executable handoff: WebAssembly build,
+317 Rust tests, full fixture/regeneration/201 edit recording/441 container parity and
+JavaScript checks passed; `npm test` retained exactly the six known failures. `a19ae5d8`
+changes documentation after `35f4c734`; the pre-existing `.claude/` and `mockups/` were
+preserved. Node was explicitly selected as 24.11.0 and Python as the existing 3.12.9 venv.
+The mobile checkout remains untouched at `fa0c512f`.
+
+Latest cel milestone: 342 Rust tests pass; complete `engine:parity` and `npm run check`
+pass. Electron drawing-cels 4/4 and private ticks 46, 61–64 5/5 pass; native private
+thumbnails 132/132 and synthetic smooth comparisons 4/4 pass. Software web parity and
+synthetic crisp export remain open, as detailed in sections 6 and 7. No ownership gate
+was changed and no JavaScript was deleted.
+
 ### Where the port stands
 
 | Stage | State |
@@ -33,15 +47,15 @@ adds only the two record fixture folders, and the Rust tests and parity ran on i
 | S0 plan, baseline | Done (sections 1–5; baseline worktree `tmp/baseline-worktree` at `96ebce85`). |
 | S1 formats | Done: the Rust codec runs in the app in place of Pyodide and the Python sidecar; the Python codec is a development oracle only. Left: `.styk` open/save through Rust once the engine owns the document; sidecar names in brand and release tooling. |
 | S2 store, evaluation, geometry | Done for every feature the gate checks: IK (2D, 3D, joined), channels, meshes, follow camera, text, movieclip replacements, effects as records. Camera motion now uses V8-exact maths. |
-| S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Left: drawing cels under effects (branch below), the camera monitor on WebGL2, in-between previews, then item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
+| S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Drawing cels under effects now match Electron; software web and crisp parity remain open. Left: the camera monitor on WebGL2, in-between previews, then item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
 | S4 export, thumbnails, previews | Done for documents the engine draws, on the GPU or the CPU; SVG stays JavaScript by design. |
 | S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 201 command recordings replay in full. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
 | S6 drawing raster engine | Done: `styk-drawing` (D17) runs in the drawing workers by default (`?drawingEngine=off` to compare). |
 | S7 | Not started: dead machinery, final screenshots, interleaved benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, Windows CI. |
 
 Inventory (`docs/engine/INVENTORY.md`, rendered from `engine/inventory.tsv`): 356 modules,
-4,044 KiB of engine source at the start; 192 js, 106 partial, 35 ported, 22 verified, 1
-removed; 20 % covered by Rust, 43 % partly covered, 0 % deleted. `styk-edit` alone: 89
+4,044 KiB of engine source at the start; 191 js, 107 partial, 35 ported, 22 verified, 1
+removed; 20 % covered by Rust, 45 % partly covered, 0 % deleted. `styk-edit` alone: 89
 modules, 53 js, 32 partial, 4 ported.
 
 **Document classes the engine edits by default** (D15, `OWNED_CLASSES` in
@@ -57,21 +71,18 @@ without owning.
 
 ### Next steps, in priority order
 
-1. **Finish drawing cels under effects** (branch `worktree-agent-a94722e0321bf1854`, see
-   below). Owners: `styk_eval::drawlist` (tile references), `styk-render` (`prim.wgsl`),
-   `styk-raster` (must follow `styk-render`). Left: Canvas 2D's Mitchell filter when
-   enlarging (the tiles' one-texel border needs clamped taps or a two-texel border); the cause
-   of URIEL 3 ticks 46 (speckles placed differently) and 61–64 (blur, bloom, glow). Verify:
-   `scripts/engine-app-parity.mjs` in Electron (`--electron-arg=--use-angle=vulkan`) and web
-   on the `drawing-cels` document of `engine/tools/vfx-parity-docs.mjs` and URIEL 3 (private
-   corpus, read in place), `styk raster-parity`, then the full checks. Trap: never tune a
-   threshold (D13).
+1. **Close the remaining cel backend gaps**. Electron sampling, tight ink bounds and
+   stale preparation are corrected and verified. Software web `drawing-cels` still fails
+   fitted/0.3×/2×/3× views; private web retries time out in the animation-frame settle even
+   with resource flags ready. Native crisp export differs identically before and after.
+   Investigate the existing owners without changing D13 or readiness checks. The other
+   command lanes can proceed independently.
 2. **Animation origins in editing.** Owners: `styk_eval::records` (lift its origin refusal),
    `styk-edit` (every command that moves figures keeps origins in step:
    `_synchronizeAnimationOrigins`, `preserveAnimationOrigin`, rotate/mirror/reset origin
    support, `setOrigin`). Verify with recordings of each command on an origin document, then
-   the shadow driver on one (`--file`). Trap: it touches most commands, so do it while no
-   other branch edits `styk-edit`.
+   the shadow driver on one (`--file`). Isolated command lanes coordinate dispatch and
+   shared planner hunks; integrate their frozen snapshots sequentially.
 3. **Flip the next classes (D15).** Owners: `styk-edit/src/session.rs` (smaller answers:
    only the changed figures and tracks), `src/engine/engine-edit-shadow.mjs` (adoption).
    Measure with `node scripts/engine-edit-shadow.mjs --own --warm --exact-math` per class
@@ -87,13 +98,16 @@ without owning.
    sprite segments, native property gestures, drawing a new figure). Fix in JavaScript first:
    `applyRotation` in `src/editor-motion-path.mjs` throws on joined assemblies with pinned
    followers.
-5. **S3 item 8, delete the JavaScript renderer**: first the camera monitor on WebGL2, frame
+5. **Measure engine-1 before deletion**: after the remaining commands and document-class
+   flips, stop all subagents and run the complete baseline-0 matrix on an idle machine.
+   Report the before/after table before starting any deletion.
+6. **S3 item 8, delete the JavaScript renderer**: first the camera monitor on WebGL2, frame
    drafts and deep movieclips in the gate, in-between previews, and the no-threads decision;
    then delete and trace every indirect use (workers, dynamic imports, packaging).
-6. **S5 phases 2–3**: handle positions, picking and snapping as engine queries; the engine
+7. **S5 phases 2–3**: handle positions, picking and snapping as engine queries; the engine
    holds the document; delete the JavaScript evaluation, geometry, IK, rig, movieclip and
    effect-model modules (each only once nothing calls it).
-7. **S7**: final interleaved benchmarks and `docs/performance/RUST-ENGINE-PERFORMANCE.md`,
+8. **S7**: final interleaved benchmarks and `docs/performance/RUST-ENGINE-PERFORMANCE.md`,
    interface screenshots against the baseline, Windows CI, documentation pass.
 
 ### Open problems and unverified areas
@@ -105,7 +119,7 @@ without owning.
 - Benchmarks not yet run: the final interleaved benchmark set and the performance report;
   numbers in the milestone log are single runs on a shared, loaded machine.
 - `wasm-opt` is not installed: the WebAssembly modules are not size-optimized.
-- Section 6 lists the rest: effects and drawing cels, CPU rasterizer on nearly coplanar 3D
+- Section 6 lists the rest: software web drawing cels and crisp export, CPU rasterizer on nearly coplanar 3D
   faces, out-of-memory not recovered, `svr_uriel.piv` too large for the reference tool,
   Clippy warnings in `styk-eval`, the codec's `.stk` segment-edit defect.
 
@@ -113,15 +127,23 @@ without owning.
 
 | Branch / worktree | State |
 | --- | --- |
-| `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Its first two commits are merged (`865c5e3f`). Unmerged: `5fbb3696` "WIP: Smooth drawing cels in effect layers as Canvas 2D does": each drawing tile names the tile one level up; the GPU shader and the CPU rasterizer blend up to half of it in layers the editor paints with Canvas 2D (shrinking as Canvas 2D's "high" smoothing); the `drawing-cels` fixture. Checked: cargo tests of styk-render, styk-raster, styk-draw, styk-engine, the styk-eval drawing and effect suites, `npm run check`, the engine build. Not run: full `engine:test`, `engine:parity`, `npm test`, `styk raster-parity`, web-target parity; docs not updated. Missing: enlarging (Mitchell), URIEL 3 ticks 46 and 61–64. Electron parity before → after: drawing-cels fitted 0.510 → 0.0047, zoomed in 0.270 → 0.268 (still fails). |
-| `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for "before" measurements and screenshots. Keep. |
+| `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
+| `engine-origin-records` in `/tmp/styk-engine-origin-records-20261004` | Frozen records/gesture/topology snapshots awaiting root review and integration; remaining origin commands active. |
+| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Frozen compact session responses/adoption patch awaiting review; effect preset and scope commands active. |
+| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Retained-source evaluation prerequisite and sheet command snapshots awaiting review; native pose-channel prerequisite active. |
+| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Follow-camera command recordings, exact log and existing-owner cache/planner fixes active. |
+| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker camera monitor, explicit in-between sampling and draft/depth proofs active; no early gate flips. |
+| `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
 
-No other port branches exist; `main` and `mobile-android` are unrelated to the port.
+`main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
+Other historical stale worktree registrations were reported at takeover and preserved.
 
 ### Standing rules
 
-- At most two subagents at a time, for independent, well-bounded work; every subagent prompt
-  says it must not spawn subagents, agents or workflows. No workflow orchestration.
+- The user explicitly superseded the original two-subagent cap during takeover: use all
+  available slots for independent, bounded work (currently five child lanes plus root).
+  Every child prompt forbids nested subagents, agents and workflows. Heavy GPU/app checks
+  are serialized; engine-1 runs only when every child is stopped and the machine is idle.
 - Never push, open PRs, publish or release without the user asking. Commit only verified
   states, as the configured git user, messages ending with the `Co-Authored-By` line.
 - Update this plan at every milestone (milestone log with the time from `date`, sections 6, 7
@@ -479,14 +501,17 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 - **The WebGL2 path is only verified on SwiftShader** (headless Chromium). Playwright's
   Chromium does not display a WebGPU canvas here; Electron does.
 - **Real iOS and iPadOS devices are unverified** for the engine's shared memory: the page now falls back from 2 GiB to 1 GiB and 512 MiB maxima (D14), but the actual limits of Apple devices were not measured.
-- **Effects, open after the GPU port**: drawing cels inside
-  an effect layer are sampled bilinearly where the editor uses Canvas 2D smoothing (URIEL 3
-  ticks 61–64 differ by 4–26 solid pixels under blur, bloom and glow; tick 46 by its cel's
-  outline effect, not an onion skin as first thought: it fails the same with onion skins off
-  and passes with effects off). Work in progress on branch
-  `worktree-agent-a94722e0321bf1854` (see the handoff). `previewRasterScale` is not followed
-  (it stays 1 on URIEL 3 at the failing ticks, so it does not explain them); effect layers may
-  reach 3,968 px (60 MiB) with two to eight pages per atlas.
+- **Effects and cels, remaining backend gaps**: two-texel neighbour borders, Canvas
+  minification/Mitchell enlargement, exact level selection, intact atlas references and
+  tight alpha bounds now fix private Electron ticks 46 and 61–64 and all four synthetic
+  views. Headless software Canvas web parity still fails the synthetic views (means
+  0.3473–1.3455, at most four solid pixels). Private web verification is unresolved: two
+  bounded retries timed out at tick 46 in the six-animation-frame settle, with all tracked
+  resources ready; the cause is not established. Native crisp export of the synthetic
+  fixture fails identically on the pre-change CLI (mean 0.2999, max 222, no solid pixels),
+  while smooth export and thumbnails pass. Keep these gaps visible before renderer
+  deletion. `previewRasterScale` is not followed; effect layers may reach 3,968 px (60 MiB)
+  with two to eight pages per atlas.
   Generated effects drawn by the editor's Canvas 2D fallback (tinted sprites, an 8- or
   32-step colour ramp, a 4,000-particle preview budget) differ from its WebGPU renderer, so
   web parity (the engine on WebGL2 against the fallback) cannot pass on them; the engine
@@ -530,7 +555,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   resets the whole frame cache (tick-range invalidation, `playback-retention.mjs`, is not
   ported). Fine at the sizes measured so far; the dense-drag benchmark will decide.
 
-Resolved since the last update: onion skins keep custom paints and draw solid paints in the
+Resolved since the last update: Electron drawing cels under outline/blur/bloom/glow,
+including decoded ink-bound correction and stale stage/export preparation; onion skins keep custom paints and draw solid paints in the
 skin's tint (`774d1b21`, `066587e3`); `piv.rs` is gone (styk-piv reads Pivot files);
 effects are drawn as GPU passes, generated effects included; the baseline benchmark is
 complete; the Python codec no longer ships. Earlier: WebKit runs here (missing libraries
@@ -597,6 +623,19 @@ place: thumbnails 93 of 93, exports 38 of 38. In the app (Electron, ANGLE on Vul
 140 GPU-against-CPU comparisons pass (the miss, 9 solid pixels on 15 Guns tick 1, passed 64 of
 64 on a recheck).
 
+**Cel milestone** (2026-10-04): 342 Rust tests, full `engine:parity` (201 byte-stable
+command recordings, 441 repository containers) and `npm run check` pass; `npm test` retains
+4,378 pass / 6 known failures / 26 skipped / 1 todo. Electron at 1440×900 on ANGLE/Vulkan:
+`drawing-cels` fitted/0.3×/2×/3× 4/4 pass (mean 0.0004–0.0049, max 19); private ticks
+46, 61–64 5/5 pass (mean 0.0002–0.0441, max 22, zero differences above 32). Native
+CPU/GPU comparison: all 132 private frame-start thumbnails at 320×192 pass; synthetic
+three thumbnails plus smooth export 4/4 pass (mean at most 0.0004, max 3). Crisp synthetic
+export fails identically before and after, mean 0.2999, max 222, no solid pixels. Stable
+headless web synthetic views 0/4 pass (mean 0.3473–1.3455, max 109, up to four solid pixels);
+private web captures remain unverified after animation-frame settle timeouts. The app
+harness now waits for currently referenced live cels, preview jobs, uploads and engine
+refinement; two equal images alone do not establish readiness. No threshold was changed.
+
 **In the app** (`scripts/engine-app-parity.mjs`, rule D13). Web target (headless Chromium,
 the JavaScript renderer being its Canvas 2D fallback, WebGL2 for the engine), 29 documents
 (the repository's eligible test projects and asset packs, `svr_uriel.piv`, `hitoshi vs suzu
@@ -618,13 +657,16 @@ that; open in section 6. The start-up document (Blue, IK controllers) and the IK
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
 deletion of what it replaces once nothing calls it. "Agent" marks items run by a subagent
-(at most two at a time); everything else is done in the main thread.
+(up to the available five child slots, as authorized during takeover); root reviews and
+verifies every integration. Run idle engine-1 and report the baseline table after commands
+and class flips, before starting deletion.
 
 **S3, the engine draws every document** (then the JavaScript renderer, playback workers and
 effect executors are deleted):
 
 1. Effects rendering: done for every filter type on WebGPU, WebGL2 and the CPU (milestone
-   log). Left: drawing cels inside effect layers.
+   log). Electron drawing cels inside effect layers pass; software web and native crisp
+   export gaps remain (section 6).
 2. 3D: done (milestone log). Left: rotated movieclip drawings (`drawingRotation`), an
    indexed face format (each face is a 64-byte draw-list record), `previewRasterScale`.
 3. Generators (particle effects): done (milestone log). Left: the JavaScript generator
@@ -778,6 +820,7 @@ task), `CHANGELOG.md`, Windows CI.
 | 2026-10-04 10:05 | S5 app sessions replayed natively; IK settings on any figure | `?engineEditCapture=on` keeps each edit session's starting document and calls; `scripts/engine-edit-shadow.mjs --capture <folder>` saves the sessions that meet a refusal, a difference or another error, and `styk edit-session` replays them in `styk-edit`. The first refusal found with it: configuring IK on a figure after the first captured the limb from the native keyframe instead of the frame on show (`styk-edit/src/spatial_ik.rs`). | `ik-settings-second-figure-sheet` (17 steps) matches the editor at every step and refuses at step 4 without the fix. App owned run with `--warm` and the engine's `Math`: `setNodeIK` no longer refused; the same as the editor alone. |
 | 2026-10-04 10:40 | S5 the editor's camera under camera motion | `styk_eval::camera::impulse` and `moved` compute `sampleCameraMotion` and `cameraAtTime` with V8's `Math` in the editor's order of operations (`styk-math` gains `log1p`, fdlibm's as V8 has it: the `libm` crate's musl rewrite differed for 17 of 12,129 inputs; seeds wrap as ToInt32); `styk-edit` composes the editor's camera from them, so handle nudges and baking the camera no longer refuse frames a motion clip moves. Follow clips still refuse. | `camera-motion-handles-sheet` (37 steps, every preset, overlapping clips, muted ranges, a seed at the top of its range, a bake over 61 frames) matches the editor at every step; the muted-range, frame-rate and seed mutants break it; 8 last-bit mutants (platform functions, radians in another order) cannot show there because the baked camera reaches the document through single-precision pose fields, and `styk-math`'s tests pin the functions (12,129 `log1p` inputs bit for bit). |
 | 2026-10-04 10:50 | S5 motion paths; S3 a still frame redrawn once its pictures arrive | Merged: `styk-edit/src/motion_path.rs` (motion-path edits on a layer sheet: origins, joints, IK targets, movieclip instances, the camera, falloffs of each shape; pointer moves compared in the app, the commit owned), and the stage's picture wait (`styk_engine::Uploaded`, `Stage::pictures_pending`, `waitForPictures` in `src/engine/engine-stage.mjs`: a frame drawn while its pictures decode is drawn once more when they arrive, through `Atomics.waitAsync`, at most a minute); `scripts/engine-app-parity.mjs --electron-arg`. | Motion paths: 14 recordings (370 steps) match at every step, 16 of 18 mutations break them (one more only the weights test, one unreachable); shadow with the engine's `Math` 392/392, owned the same as the editor alone. Pictures: URIEL 3 opened at ticks 44 and 45, 23,783 and 21,232 solid pixels before, both pass after (mean 0.009, 0.091); 9–13 extra frames within the first 1.3 s (load 13–19). |
+| 2026-10-04 11:34 | S3 drawing cels under effects (handoff reviewed and completed for Electron) | Parent atlas rows remain intact through translation; exact density selection, two-texel neighbour borders and Canvas minification/Mitchell enlargement are shared by GPU and CPU. Existing decode work derives tight alpha bounds; bounded stage/export queues reject stale preparation through a cache epoch. App captures wait for live artwork and refinement. Platform-neutral API changes for a mobile pin: `DrawingTiles` adds `bounds`, `decoded_bounds`, `artwork_bounds()`; `Placement` adds `canvas`; drawing `BORDER=2` makes slots 68×68 (+6.2% bytes), sprites unchanged. Engine wasm 8,591 KiB, +24 KiB from takeover. | 342 Rust tests; full parity including 201 byte-stable command recordings and 441 containers; check clean, npm test six known failures. Electron synthetic 4/4 + private 5/5; native private thumbnails 132/132 + synthetic smooth 4/4. Stable software web synthetic fails 0/4; private web settle timeout and pre-existing crisp export remain open. Final microbenchmark attempts at load 10.27–12.77 were too variable to interpret; no performance claim, idle engine-1 still pending. |
 
-Nothing is in progress: the work stopped on 2026-10-04 with the handoff at the top of this
-page, which lists the next steps in order.
+Work is active in the isolated lanes listed in the handoff. Frozen uncommitted snapshots
+are review inputs, not completed milestones or class ownership evidence.

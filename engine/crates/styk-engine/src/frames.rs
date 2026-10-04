@@ -83,6 +83,8 @@ struct Entry {
 
 pub(crate) struct Cache {
     generation: u64,
+    /// Resource and session changes also supersede work within one generation.
+    pub(crate) epoch: u64,
     entries: HashMap<u32, Entry>,
     bytes: usize,
     budget: usize,
@@ -101,16 +103,31 @@ pub(crate) struct Cache {
 
 impl Cache {
     pub fn new(budget: usize) -> Cache {
-        Cache { generation: 0, entries: HashMap::new(), bytes: 0, budget, wanted: Vec::new(), inflight: HashSet::new(), playhead: 0, hidden: Arc::from(Vec::new()), effects: true, total: 1, stats: FrameStats::default() }
+        Cache { generation: 0, epoch: 0, entries: HashMap::new(), bytes: 0, budget, wanted: Vec::new(), inflight: HashSet::new(), playhead: 0, hidden: Arc::from(Vec::new()), effects: true, total: 1, stats: FrameStats::default() }
     }
 
     pub fn reset(&mut self, generation: u64) {
         self.generation = generation;
+        self.epoch = self.epoch.wrapping_add(1);
         self.entries.clear();
         self.bytes = 0;
         self.wanted.clear();
         self.inflight.clear();
         self.stats = FrameStats::default();
+    }
+
+    /// A decoded cel changed the rectangles effects read. Rebuild previously
+    /// requested work, and reject any worker still producing the earlier grid.
+    pub(crate) fn invalidate_resources(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
+        let mut redo: Vec<u32> = self.entries.keys().chain(self.inflight.iter()).copied().collect();
+        let total = self.total.max(1);
+        redo.sort_unstable_by_key(|tick| (*tick + total - self.playhead % total) % total);
+        let mut seen: HashSet<u32> = self.wanted.iter().copied().collect();
+        self.wanted.extend(redo.into_iter().filter(|tick| seen.insert(*tick)));
+        self.entries.clear();
+        self.bytes = 0;
+        self.inflight.clear();
     }
 
     /// The next tick a worker should prepare, marked as in progress.
@@ -123,8 +140,8 @@ impl Cache {
     }
 
     /// Stores a finished frame, unless the document changed while it was prepared.
-    pub fn finish(&mut self, generation: u64, tick: u32, data: Option<FrameData>) -> Option<Arc<FrameData>> {
-        if generation != self.generation {
+    pub fn finish(&mut self, generation: u64, epoch: u64, tick: u32, data: Option<FrameData>) -> Option<Arc<FrameData>> {
+        if generation != self.generation || epoch != self.epoch {
             return None;
         }
         self.inflight.remove(&tick);
@@ -189,21 +206,23 @@ impl Engine {
         if let Some(ready) = self.frame(tick) {
             return Some(ready);
         }
-        let generation = self.generation()?;
+        let (generation, hidden, effects, epoch) = {
+            let state = self.inner.state.lock();
+            (state.current.clone()?, state.frames.hidden.clone(), state.frames.effects, state.frames.epoch)
+        };
         if tick >= generation.playable_ticks() {
             return None;
         }
-        let (hidden, effects) = {
-            let state = self.inner.state.lock();
-            (state.frames.hidden.clone(), state.frames.effects)
-        };
         let data = produce(&generation, tick, &hidden, effects, self.inner.clock);
         let mut state = self.inner.state.lock();
         if !Arc::ptr_eq(&state.frames.hidden, &hidden) || state.frames.effects != effects {
             return None;
         }
-        state.frames.stats.inline += 1;
-        state.frames.finish(generation.id, tick, Some(data))
+        let ready = state.frames.finish(generation.id, epoch, tick, Some(data));
+        if ready.is_some() {
+            state.frames.stats.inline += 1;
+        }
+        ready
     }
 
     /// Sets the figures hidden for this session (by identity). Prepared frames that
@@ -232,5 +251,51 @@ impl Engine {
     pub fn frame_stats(&self) -> FrameStats {
         let state = self.inner.state.lock();
         FrameStats { cached: state.frames.entries.len(), cached_bytes: state.frames.bytes, ..state.frames.stats }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(generation: u64, tick: u32) -> FrameData {
+        FrameData { generation, tick, list: Arc::new(DrawList::default()), camera: None, background: (0, 0, 0.0), ms: 1.0 }
+    }
+
+    #[test]
+    fn resource_changes_requeue_cached_inflight_and_requested_frames() {
+        let mut cache = Cache::new(1024 * 1024);
+        cache.reset(7);
+        cache.total = 10;
+        cache.playhead = 2;
+        let epoch = cache.epoch;
+        cache.finish(7, epoch, 2, Some(frame(7, 2))).unwrap();
+        cache.wanted = vec![3, 4];
+        assert_eq!(cache.take_wanted(), Some(3));
+        cache.invalidate_resources();
+        assert!(cache.entries.is_empty());
+        assert_eq!(cache.bytes, 0);
+        let mut rebuilt = Vec::new();
+        while let Some(tick) = cache.take_wanted() { rebuilt.push(tick); }
+        rebuilt.sort_unstable();
+        assert_eq!(rebuilt, [2, 3, 4]);
+    }
+
+    #[test]
+    fn an_old_worker_cannot_finish_or_remove_the_newer_worker_for_the_same_tick() {
+        let mut cache = Cache::new(1024 * 1024);
+        cache.reset(7);
+        cache.wanted = vec![0];
+        let old = cache.epoch;
+        assert_eq!(cache.take_wanted(), Some(0));
+        cache.invalidate_resources();
+        let current = cache.epoch;
+        assert_eq!(cache.take_wanted(), Some(0));
+        assert!(cache.finish(7, old, 0, Some(frame(7, 0))).is_none());
+        assert!(cache.inflight.contains(&0), "the new job still owns its tick");
+        assert!(cache.finish(7, current, 0, Some(frame(7, 0))).is_some());
+        cache.reset(8);
+        assert!(cache.finish(7, current, 0, Some(frame(7, 0))).is_none(), "replacement drops old work");
+        assert!(cache.entries.is_empty());
     }
 }

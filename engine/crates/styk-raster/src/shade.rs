@@ -1,6 +1,6 @@
 //! The fragment arithmetic of styk-render's `prim.wgsl`, in single precision as the GPU
 //! computes it: coverage by distance, the distance functions of strokes, and texture
-//! sampling (nearest and bilinear, as the GPU's samplers filter, clamped to the edge).
+//! sampling (nearest, bilinear and Canvas-style Mitchell, clamped to the edge).
 
 use crate::target::Px;
 
@@ -122,10 +122,49 @@ impl Texture<'_> {
         })
     }
 
+    /// Canvas 2D's 'high' smoothing when enlarging: separable Mitchell-Netravali
+    /// B=C=1/3 at texel coordinates (centres at halves), premultiplied first.
+    /// Arithmetic and clamping follow prim.wgsl::tile_mitchell.
+    pub fn mitchell(&self, t: [f32; 2]) -> [f32; 4] {
+        let (x, y) = (t[0] - 0.5, t[1] - 0.5);
+        let (ix, iy) = (floor(x), floor(y));
+        let (fx, fy) = (x - ix as f32, y - iy as f32);
+        let weights = |f: f32| [mitchell_weight(f + 1.0), mitchell_weight(f), mitchell_weight(1.0 - f), mitchell_weight(2.0 - f)];
+        let (wx, wy) = (weights(fx), weights(fy));
+        let mut sum = [0.0; 4];
+        for j in 0..4 {
+            let mut row = [0.0; 4];
+            for i in 0..4 {
+                let c = self.texel(ix + i as i64 - 1, iy + j as i64 - 1);
+                for k in 0..4 {
+                    row[k] += c[k] * wx[i];
+                }
+            }
+            for k in 0..4 {
+                sum[k] += row[k] * wy[j];
+            }
+        }
+        let alpha = sum[3].clamp(0.0, 1.0);
+        [sum[0].clamp(0.0, alpha), sum[1].clamp(0.0, alpha), sum[2].clamp(0.0, alpha), alpha]
+    }
+
     /// The texel holding texel coordinates `t`, edges clamped.
     #[inline]
     pub fn nearest(&self, t: [f32; 2]) -> [f32; 4] {
         self.texel(floor(t[0]), floor(t[1]))
+    }
+}
+
+/// Mitchell-Netravali B=C=1/3, evaluated in the same order as prim.wgsl.
+#[inline]
+fn mitchell_weight(t: f32) -> f32 {
+    let x = t.abs();
+    if x < 1.0 {
+        ((7.0 / 6.0 * x - 2.0) * x) * x + 8.0 / 9.0
+    } else if x < 2.0 {
+        ((-7.0 / 18.0 * x + 2.0) * x - 10.0 / 3.0) * x + 16.0 / 9.0
+    } else {
+        0.0
     }
 }
 
@@ -186,4 +225,60 @@ pub(crate) fn invert(m: Affine) -> Affine {
 #[inline]
 pub(crate) fn single(m: Affine) -> [f32; 6] {
     m.map(|v| v as f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mitchell_enlargement_spreads_an_impulse_without_transparent_colour_leaking() {
+        let mut pixels = vec![[0, 0, 255, 0]; 8 * 8];
+        pixels[3 * 8 + 3] = [255, 0, 0, 128];
+        let texture = Texture { width: 8, height: 8, data: &pixels, straight: true };
+        let c = texture.mitchell([3.5, 3.5]);
+        // An impulse at the texel centre has the separable Mitchell centre weight (8/9)².
+        let expected = 128.0 / 255.0 * 64.0 / 81.0;
+        assert!((c[0] - expected).abs() < 1e-6 && (c[3] - expected).abs() < 1e-6, "{c:?}");
+        assert_eq!([c[1], c[2]], [0.0, 0.0], "transparent blue cannot tint the red ink");
+        assert!(texture.bilinear([3.5, 3.5])[3] > c[3] + 0.1, "enlargement does not silently stay bilinear");
+        assert_eq!(texture.mitchell([5.0, 3.5]), [0.0; 4], "negative lobes are clamped before blending");
+    }
+
+    #[test]
+    fn mitchell_clamps_overshoot_and_preserves_flat_premultiplied_colour() {
+        let pixels: Vec<_> = (0..8 * 8).map(|i| if i % 8 < 4 { [255, 255, 255, 255] } else { [0; 4] }).collect();
+        let step = Texture { width: 8, height: 8, data: &pixels, straight: true };
+        assert_eq!(step.mitchell([2.8, 3.5]), [1.0; 4], "a bright edge cannot overshoot its coverage");
+        let pixels = [[160, 80, 40, 128]; 8 * 8];
+        let flat = Texture { width: 8, height: 8, data: &pixels, straight: true };
+        for point in [[3.125, 2.875], [0.1, 0.2], [7.9, 7.8]] {
+            let expected = flat.texel(0, 0);
+            let actual = flat.mitchell(point);
+            assert!(actual.into_iter().zip(expected).all(|(a, b)| (a - b).abs() < 1e-6), "{point:?}: {actual:?} != {expected:?}");
+        }
+    }
+
+    #[test]
+    fn mitchell_tiles_match_an_untiled_image_across_edges_and_corners() {
+        // A 2×2 tiling of high-contrast translucent ink, with two real neighbor texels
+        // in each slot. Sampling either side of both internal edges gives the same
+        // colour as the untiled image, including the corner shared by all four tiles.
+        let pixel = |x: usize, y: usize| [(x * 47 % 256) as u8, (y * 73 % 256) as u8, ((x + y) * 19 % 256) as u8, if (x + 3 * y) % 5 == 0 { 0 } else { 180 }];
+        let whole: Vec<_> = (0..132 * 132).map(|i| pixel(i % 132, i / 132)).collect();
+        let full = Texture { width: 132, height: 132, data: &whole, straight: true };
+        for ty in 0..2 {
+            for tx in 0..2 {
+                let slot: Vec<_> = (0..68 * 68).map(|i| pixel(tx * 64 + i % 68, ty * 64 + i / 68)).collect();
+                let tile = Texture { width: 68, height: 68, data: &slot, straight: true };
+                for y in [0.01, 0.125, 0.5, 63.5, 63.875, 63.99] {
+                    for x in [0.01, 0.125, 0.5, 63.5, 63.875, 63.99] {
+                        let actual = tile.mitchell([x + 2.0, y + 2.0]);
+                        let expected = full.mitchell([tx as f32 * 64.0 + x + 2.0, ty as f32 * 64.0 + y + 2.0]);
+                        assert!(actual.into_iter().zip(expected).all(|(a, b)| (a - b).abs() < 2e-5), "tile ({tx},{ty}), ({x},{y}): {actual:?} != {expected:?}");
+                    }
+                }
+            }
+        }
+    }
 }

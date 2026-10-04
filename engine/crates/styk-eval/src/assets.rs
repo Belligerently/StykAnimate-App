@@ -153,7 +153,7 @@ impl Assets {
         let known = assets.atlas.len().min(doc.images.len());
         let sizes: Vec<Option<(u32, u32)>> = crate::par::map(&doc.images[known..], 8, dimensions);
         assets.atlas.resize(doc.images.len(), AtlasEntry::default());
-        pack(&sizes, &mut assets.atlas[known..], &mut assets.cursor);
+        pack(&sizes, &mut assets.atlas[known..], &mut assets.cursor, GUTTER);
         // Drawing cels new in this revision get slots after everything placed before.
         let mut cels = Vec::new();
         collect_cels(doc, &mut cels);
@@ -172,7 +172,7 @@ impl Assets {
             }
             let sizes = vec![Some((crate::drawing::TILE, crate::drawing::TILE)); count as usize];
             assets.drawing.resize(assets.drawing.len() + count as usize, AtlasEntry::default());
-            pack(&sizes, &mut assets.drawing[first as usize..], &mut assets.cursor);
+            pack(&sizes, &mut assets.drawing[first as usize..], &mut assets.cursor, crate::drawing::BORDER);
             assets.cels.insert(Arc::as_ptr(&cel) as usize, (cel, starts));
         }
         assets.pages = if assets.cursor.used { assets.cursor.layer + 1 } else { 0 };
@@ -274,8 +274,8 @@ fn collect_outlined_glyphs(doc: &Document, out: &mut Vec<(Arc<Glyph>, f32)>) {
 }
 
 /// Shelf packing into `PAGE`-sized layers, tallest images first, continuing at `cursor`.
-fn pack(sizes: &[Option<(u32, u32)>], entries: &mut [AtlasEntry], cursor: &mut Cursor) {
-    let max = PAGE - 2 * GUTTER;
+fn pack(sizes: &[Option<(u32, u32)>], entries: &mut [AtlasEntry], cursor: &mut Cursor, gutter: u32) {
+    let max = PAGE - 2 * gutter;
     let mut order: Vec<usize> = (0..sizes.len()).filter(|&i| sizes[i].is_some()).collect();
     let fit = |w: u32, h: u32| -> (u32, u32) {
         if w <= max && h <= max {
@@ -292,7 +292,7 @@ fn pack(sizes: &[Option<(u32, u32)>], entries: &mut [AtlasEntry], cursor: &mut C
     for i in order {
         let (sw, sh) = sizes[i].unwrap();
         let (w, h) = fit(sw, sh);
-        let (cw, ch) = (w + 2 * GUTTER, h + 2 * GUTTER);
+        let (cw, ch) = (w + 2 * gutter, h + 2 * gutter);
         if x + cw > PAGE {
             x = 0;
             y += shelf;
@@ -304,7 +304,7 @@ fn pack(sizes: &[Option<(u32, u32)>], entries: &mut [AtlasEntry], cursor: &mut C
             y = 0;
             shelf = 0;
         }
-        entries[i] = AtlasEntry { layer, x: x + GUTTER, y: y + GUTTER, w, h, source_w: sw, source_h: sh, valid: true };
+        entries[i] = AtlasEntry { layer, x: x + gutter, y: y + gutter, w, h, source_w: sw, source_h: sh, valid: true };
         used = true;
         x += cw;
         shelf = shelf.max(ch);
@@ -418,7 +418,7 @@ pub struct DecodedImage {
 /// Decodes a drawing cel into its atlas slots (every level, see [`crate::drawing`]).
 pub fn decode_cel(assets: &Assets, cel: &Arc<DrawingTiles>) -> Vec<DecodedImage> {
     let Some(starts) = assets.cel_levels(cel) else { return Vec::new() };
-    let side = crate::drawing::TILE + 2;
+    let side = crate::drawing::TILE + 2 * crate::drawing::BORDER;
     crate::drawing::decode_cel(cel)
         .into_iter()
         .map(|(level, index, rgba)| DecodedImage { index: starts[level as usize] + index, drawing: true, width: side, height: side, rgba })
@@ -459,4 +459,27 @@ pub fn decode_image(doc: &Document, assets: &Assets, index: usize) -> Option<Dec
         }
     }
     Some(DecodedImage { index: index as u32, drawing: false, width: gw as u32, height: gh as u32, rgba: out })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drawing_padding_does_not_change_sprite_gutters_or_overlap_slots() {
+        let mut cursor = Cursor::default();
+        let mut entries = [AtlasEntry::default(); 3];
+        let sizes = [Some((64, 64))];
+        pack(&sizes, &mut entries[..1], &mut cursor, GUTTER);
+        pack(&sizes, &mut entries[1..2], &mut cursor, crate::drawing::BORDER);
+        pack(&sizes, &mut entries[2..], &mut cursor, GUTTER);
+        assert_eq!([entries[0].x, entries[0].y], [1, 1], "sprite gutter stays one texel");
+        assert_eq!([entries[1].x, entries[1].y], [68, 2], "the drawing reserves two texels");
+        assert_eq!([entries[2].x, entries[2].y], [135, 1], "the next sprite keeps its own gutter");
+        for entry in entries {
+            assert_eq!([entry.w, entry.h, entry.source_w, entry.source_h], [64; 4], "padding never changes image UVs or size");
+        }
+        assert_eq!(entries[0].x + entries[0].w + 1, entries[1].x - crate::drawing::BORDER);
+        assert_eq!(entries[1].x + entries[1].w + crate::drawing::BORDER, entries[2].x - 1);
+    }
 }

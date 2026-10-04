@@ -57,7 +57,7 @@ pub fn record(placement: &Placement, parent: Affine, slot: Option<Slot>) -> ([f3
     r[4..8].copy_from_slice(&[f(m[4]), f(m[5]), slot.page as f32, f(1.0 / density.max(1e-12))]);
     r[8..12].copy_from_slice(&clip.map(f));
     r[12..16].copy_from_slice(&[f(p[0]), f(p[1]), f(p[2]), f(p[3])]);
-    r[16..20].copy_from_slice(&[f(p[4]), f(p[5]), 0.0, 0.0]);
+    r[16..20].copy_from_slice(&[f(p[4]), f(p[5]), if placement.canvas { 1.0 } else { 0.0 }, 0.0]);
     r[20..24].copy_from_slice(&show.map(f));
     (r, m)
 }
@@ -77,7 +77,7 @@ mod tests {
     fn a_screen_group_composites_in_place() {
         // A plain group in the view's space, placed at (10, 20) in the atlas.
         let view: Affine = [2.0, 0.0, 0.0, 2.0, 5.0, 7.0];
-        let p = Placement { space: view, rect: [100.0, 50.0, 300.0, 150.0], filter: None, camera: None };
+        let p = Placement { space: view, rect: [100.0, 50.0, 300.0, 150.0], filter: None, camera: None, canvas: false };
         let (r, m) = record(&p, view, Some(Slot { page: 3, offset: [10.0, 20.0], scale: 1.0 }));
         assert_eq!(apply(m, [47.5, 21.5]), [10.0, 20.0], "the layer's first pixel at the slot");
         assert_eq!(r[6], 3.0);
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn the_camera_shows_its_centre() {
         let camera = CameraComposite { to_screen: [0.5, 0.0, 0.0, 0.5, 100.0, 100.0], show: [6.0, 6.0, 106.0, 56.0] };
-        let p = Placement { space: [1.0, 0.0, 0.0, 1.0, 6.0, 6.0], rect: [0.0, 0.0, 112.0, 62.0], filter: None, camera: Some(camera) };
+        let p = Placement { space: [1.0, 0.0, 0.0, 1.0, 6.0, 6.0], rect: [0.0, 0.0, 112.0, 62.0], filter: None, camera: Some(camera), canvas: false };
         let (r, _) = record(&p, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], Some(Slot { page: 0, offset: [200.0, 0.0], scale: 1.0 }));
         assert_eq!(&r[20..24], &[206.0, 6.0, 306.0, 56.0]);
         let to_screen = [r[12] as f64, r[13] as f64, r[14] as f64, r[15] as f64, r[16] as f64, r[17] as f64];
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn unplaced_groups_are_not_drawn() {
-        let p = Placement { space: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], rect: [0.0; 4], filter: None, camera: None };
+        let p = Placement { space: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], rect: [0.0; 4], filter: None, camera: None, canvas: false };
         assert_eq!(record(&p, p.space, Some(Slot { page: 0, offset: [0.0; 2], scale: 1.0 })).0[6], -1.0);
     }
 }

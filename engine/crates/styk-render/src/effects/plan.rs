@@ -73,6 +73,11 @@ pub struct Placement {
     pub rect: [f64; 4],
     pub filter: Option<Filter>,
     pub camera: Option<CameraComposite>,
+    /// The editor paints this layer with Canvas 2D (`rasterObject`: entries, nested and raster
+    /// layers, and plain groups inside them): drawing cels in it are smoothed as Canvas 2D
+    /// smooths them (styk-draw `F_DRAWING`). The frame, plain groups on it and the camera
+    /// image draw cels as the editor's GPU drawing display does.
+    pub canvas: bool,
 }
 
 impl Placement {
@@ -255,11 +260,11 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
     let visible = mapped(to_world, screen);
     let visible = [visible[0], visible[1], visible[2] - visible[0], visible[3] - visible[1]];
     let mut out: Vec<Placement> = Vec::with_capacity(list.groups.len());
-    out.push(Placement { space: view.matrix, rect: screen, filter: None, camera: None });
+    out.push(Placement { space: view.matrix, rect: screen, filter: None, camera: None, canvas: false });
     for g in 1..list.groups.len() {
         let group = list.groups[g];
         let parent = out[group.parent as usize];
-        let none = Placement { space: parent.space, rect: NOTHING, filter: None, camera: None };
+        let none = Placement { space: parent.space, rect: NOTHING, filter: None, camera: None, canvas: false };
         if !parent.drawn() {
             out.push(none);
             continue;
@@ -274,7 +279,7 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
                 } else {
                     let rect = mapped(parent.space, [b[0] as f64, b[1] as f64, b[2] as f64, b[3] as f64]);
                     let rect = intersect([rect[0].floor() - 2.0, rect[1].floor() - 2.0, rect[2].ceil() + 2.0, rect[3].ceil() + 2.0], parent.rect);
-                    Placement { space: parent.space, rect: capped(rect, max), filter: None, camera: None }
+                    Placement { space: parent.space, rect: capped(rect, max), filter: None, camera: None, canvas: parent.canvas }
                 }
             }
             Some(LayerKind::Raster { bounds }) => {
@@ -285,7 +290,7 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
                     Some((origin, ps, size)) => {
                         let space = [ps, 0.0, 0.0, ps, -origin[0] * ps, -origin[1] * ps];
                         let wanted = outward(grow(mapped(space, region), 2.0));
-                        Placement { space, rect: capped(intersect([0.0, 0.0, size[0] as f64, size[1] as f64], wanted), max), filter: None, camera: None }
+                        Placement { space, rect: capped(intersect([0.0, 0.0, size[0] as f64, size[1] as f64], wanted), max), filter: None, camera: None, canvas: true }
                     }
                 }
             }
@@ -305,7 +310,7 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
                             origin: [(origin[0] - domain[0]) * ps + rect[0], (origin[1] - domain[1]) * ps + rect[1]],
                             output_size: [domain[2] * ps, domain[3] * ps],
                         });
-                        Placement { space, rect, filter, camera: None }
+                        Placement { space, rect, filter, camera: None, canvas: true }
                     }
                 }
             }
@@ -323,11 +328,11 @@ pub fn plan(list: &DrawList, view: &View) -> Vec<Placement> {
                     origin: [rect[0] - anchor[0], rect[1] - anchor[1]],
                     output_size: [domain[2] * ps, domain[3] * ps],
                 });
-                Placement { space, rect, filter, camera: None }
+                Placement { space, rect, filter, camera: None, canvas: true }
             }
             Some(LayerKind::Camera { canvas, camera }) => {
                 let c = camera_plan(stack, canvas, camera, view);
-                Placement { space: c.space, rect: capped([0.0, 0.0, c.size[0] as f64, c.size[1] as f64], max), filter: Some(c.filter), camera: Some(c.composite) }
+                Placement { space: c.space, rect: capped([0.0, 0.0, c.size[0] as f64, c.size[1] as f64], max), filter: Some(c.filter), camera: Some(c.composite), canvas: false }
             }
         };
         out.push(placement);
@@ -407,6 +412,7 @@ mod tests {
         ];
         let plans = plan(&list(vec![root, entry, node], layers), &view());
         let (e, n) = (plans[1], plans[2]);
+        assert!(e.canvas && n.canvas, "cels in both effect rasters use Canvas smoothing");
         assert_eq!(e.space, n.space, "the nested layer is on its entry's grid");
         let ps = 2f64.sqrt();
         assert_eq!(e.rect, [0.0, 0.0, (220.0 * ps).ceil(), (220.0 * ps).ceil()]);
@@ -432,11 +438,35 @@ mod tests {
         assert_eq!(p.space, [ps, 0.0, 0.0, ps, -97.0 * ps, -98.0 * ps]);
         assert_eq!(p.rect, [0.0, 0.0, (206.0 * ps).ceil(), (205.0 * ps).ceil()]);
         assert!(p.filter.is_none());
+        assert!(p.canvas, "compatibility rasters paint cels with Canvas smoothing too");
         // Only artwork with effects keeps within the effect surface (`vfxRasterScale`).
         let wide = [0.0, 0.0, 3000.0, 100.0];
         let visible = [0.0, 0.0, 3000.0, 100.0];
         assert_eq!(entry_raster(wide, 0.0, 1.25, visible, 8192, false).unwrap().1, ps);
         assert!(entry_raster(wide, 0.0, 1.25, visible, 8192, true).unwrap().1 < ps);
+    }
+
+    #[test]
+    fn plain_groups_inherit_their_parents_drawing_sampler() {
+        let group = |parent, depth, layer| Group { parent, depth, opacity: 0.5, bounds: [110.0, 110.0, 160.0, 160.0], layer };
+        let layers = vec![
+            EffectLayer { effects: stack(vec![blur(2.0)]), kind: LayerKind::Entry { bounds: [90.0, 90.0, 100.0, 100.0], domain: [100.0, 100.0, 80.0, 80.0], scale: 1.0, padding: 10.0 } },
+            EffectLayer { effects: stack(vec![blur(1.0)]), kind: LayerKind::Nested { bounds: [100.0, 100.0, 80.0, 80.0], domain: [110.0, 110.0, 60.0, 60.0], scale: 1.0 } },
+            EffectLayer { effects: None, kind: LayerKind::Raster { bounds: [90.0, 90.0, 100.0, 100.0] } },
+            EffectLayer { effects: stack(vec![blur(2.0)]), kind: LayerKind::Camera { canvas: [960, 540], camera: None } },
+        ];
+        let groups = vec![
+            group(0, 0, NO_LAYER), group(0, 1, NO_LAYER),
+            group(0, 1, 0), group(2, 2, NO_LAYER),
+            group(2, 2, 1), group(4, 3, NO_LAYER),
+            group(0, 1, 2), group(6, 2, NO_LAYER),
+            group(0, 1, 3), group(8, 2, NO_LAYER),
+        ];
+        let plans = plan(&list(groups, layers), &view());
+        assert!(plans.iter().all(Placement::drawn), "all sampler cases must be visible");
+        assert_eq!(plans.iter().map(|p| p.canvas).collect::<Vec<_>>(),
+            [false, false, true, true, true, true, true, true, false, false],
+            "only object rasters and their isolation children use Canvas cel smoothing");
     }
 
     #[test]

@@ -415,9 +415,10 @@ impl Loader {
         }
         let is_drawing = styk.get("drawing").is_some();
         let pixels_per_unit = styk.get("drawing").and_then(|d| num(d, "pixelsPerUnit")).unwrap_or(1.0);
+        let drawing_bounds = styk.path(&["drawing", "bounds"]).and_then(|b| Some([num(b, "x")?, num(b, "y")?, num(b, "width")?, num(b, "height")?]));
         let mut images = Vec::new();
         for a in f.get("image_assets").and_then(Value::as_arr).into_iter().flatten() {
-            images.push(self.image_asset(a, is_drawing, pixels_per_unit));
+            images.push(self.image_asset(a, is_drawing, pixels_per_unit, drawing_bounds));
         }
         let mut texts = Vec::new();
         for a in f.get("text_assets").and_then(Value::as_arr).into_iter().flatten() {
@@ -546,7 +547,7 @@ impl Loader {
         }
     }
 
-    fn image_asset(&mut self, a: &Value, smooth: bool, pixels_per_unit: f64) -> ImageAsset {
+    fn image_asset(&mut self, a: &Value, smooth: bool, pixels_per_unit: f64, bounds: Option<[f64; 4]>) -> ImageAsset {
         let index = ["asset_index", "table_index", "image_index", "sprite_index"]
             .iter()
             .find_map(|k| num(a, k))
@@ -570,7 +571,7 @@ impl Loader {
             let anchor = point(a.get("drawing_anchor")).unwrap_or(start);
             crate::drawing::parse_tiles(&bytes).map(|tiles| {
                 let levels = crate::drawing::level_tiles(&tiles);
-                Arc::new(DrawingTiles { anchor, pixels_per_unit, tiles, levels })
+                Arc::new(DrawingTiles { anchor, pixels_per_unit, bounds, decoded_bounds: Default::default(), tiles, levels })
             })
         });
         let image = if tiles.is_some() { None } else { self.image(a, &["data_url", "data_base64", "data_uri"]) };

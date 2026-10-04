@@ -5,17 +5,17 @@
 use styk_draw::{DrawList, Prim, F_DRAWING, K_IMAGE, NO_PAINT};
 use styk_eval::assets::{Assets, AtlasEntry, DecodedImage, PAGE};
 
-/// A 64-texel tile at atlas place (x, 1), and its decoded pixels (with their border): opaque red.
+/// A 64-texel tile at atlas place (x, 2), and its decoded pixels (with their border): opaque red.
 fn tile(index: u32, x: u32) -> (AtlasEntry, DecodedImage) {
-    let entry = AtlasEntry { layer: 0, x, y: 1, w: 64, h: 64, source_w: 64, source_h: 64, valid: true };
-    let rgba = [255u8, 0, 0, 255].repeat(66 * 66);
-    (entry, DecodedImage { index, drawing: true, width: 66, height: 66, rgba })
+    let entry = AtlasEntry { layer: 0, x, y: 2, w: 64, h: 64, source_w: 64, source_h: 64, valid: true };
+    let rgba = [255u8, 0, 0, 255].repeat(68 * 68);
+    (entry, DecodedImage { index, drawing: true, width: 68, height: 68, rgba })
 }
 
 #[test]
 fn adjacent_tiles_leave_no_seam() {
-    let (a, image_a) = tile(0, 1);
-    let (b, image_b) = tile(1, 67);
+    let (a, image_a) = tile(0, 2);
+    let (b, image_b) = tile(1, 70);
     let mut assets = Assets::default();
     assets.drawing = vec![a, b];
     assets.pages = 1;

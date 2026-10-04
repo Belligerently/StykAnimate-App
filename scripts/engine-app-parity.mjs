@@ -58,6 +58,52 @@ const SETTINGS = {theme: 'light', locale: 'en', uiScale: 100, showHandles: false
  * (a faint change over a large area). The raw mean is reported too.
  */
 const LIMITS = {threshold: 32, mean: 0.25, quantum: 2};
+const CAPTURE_TIMEOUT_MS = 60000;
+
+/** Runs in the page, observing work the app already requested without starting any. */
+function stageReadiness() {
+  const {state, editor} = styk, renderer = state.renderer, engine = Boolean(renderer.engineActive);
+  const owner = styk.drawing?.owner ?? styk.drawingResourcesFor?.(editor.report);
+  // Neighbour cels prefetch in the same owner. Old/unreferenced preview jobs must
+  // not keep a settled picture waiting; only drawings in this presentation matter.
+  const drawings = new Set(), geometries = [renderer.last?.geometry ?? editor.geometry,
+    ...(renderer.last?.onionFrames ?? []).map(onion => onion.geometry)];
+  const geometryAvailable = geometries.some(geometry => geometry?.drawables);
+  for (const geometry of geometries) {
+    for (const item of geometry?.drawables ?? []) {
+      const id = item.fig?._styk?.drawing?.celId;
+      if (id) drawings.add(id);
+    }
+  }
+  const entries = engine ? [] : [...owner?.entries?.values() ?? [], ...owner?.transients ?? []]
+    .filter(entry => !entry.disposed && (!geometryAvailable || drawings.has(entry.id)));
+  const needed = new Set(entries), previews = owner?.previews;
+  const previewPending = job => {
+    if (!job || !needed.has(job.entry) || job.cancelled || job.entry.store !== job.store) return false;
+    const hit = previews.cache.get(job.key);
+    return hit?.entry !== job.entry || hit?.store !== job.store || hit?.version !== (job.entry.pixelStamp ?? 0);
+  };
+  const pending = {
+    render: Boolean(state.dirtyRender), editing: Boolean(state.editablePreparing),
+    pictures: engine ? renderer.engineSide?.stage.pictures_pending() ?? 0 : 0,
+    engineRefining: engine && Boolean(renderer.engineSide?.stage.refining()),
+    loading: entries.filter(entry => entry.loading).length,
+    preparing: entries.filter(entry => entry.preparing).length,
+    decodeQueue: engine ? 0 : (owner?.decodeQueue ?? []).filter(job => needed.has(job.e)).length,
+    previewActive: engine ? 0 : Number(Boolean(previewPending(previews?.active))),
+    previewQueue: engine ? 0 : [...previews?.queue?.values() ?? []].filter(previewPending).length,
+    artwork: !engine && Boolean(renderer.artworkRefining || renderer.refinement?.pending),
+    uploads: !engine && Boolean(renderer.drawingGpu?.incomplete),
+  };
+  // Decode counters are cumulative, not pending flags. They join stamps in
+  // the stability key so a completed decode during a screenshot forces a retry.
+  const signature = JSON.stringify([engine, editor.tick, editor.revision, state.view,
+    entries.map(entry => [entry.id, entry.stamp, entry.decodes ?? 0, entry.pixelStamp ?? 0])]);
+  return {engine, refusal: renderer.engineStats?.refusal ?? null, tick: editor.tick,
+    ready: !Object.values(pending).some(Boolean), pending, signature,
+    drawings: drawings.size, entries: entries.length,
+    decoding: !engine && Boolean(owner?.decoding), decodes: owner?.decodes ?? 0};
+}
 
 async function server() {
   const given = option('--url');
@@ -130,22 +176,41 @@ async function capture(browser, origin, engine) {
   });
   const steps = [];
   const stage = page.locator('#viewport');
-  const settle = () => page.evaluate(async () => {
-    // Images decode and frames prepare in the background: wait until two captures in a row agree.
-    for (let i = 0; i < 6; i++) await new Promise(resolve => requestAnimationFrame(resolve));
-    const renderer = styk.state.renderer;
-    return {engine: Boolean(renderer.engineActive), refusal: renderer.engineStats?.refusal ?? null, tick: styk.editor.tick};
-  });
+  const settle = async deadline => {
+    const animated = await page.evaluate(timeout => new Promise(resolve => {
+      let remaining = 6, frame;
+      const timer = setTimeout(() => { cancelAnimationFrame(frame); resolve(false); }, timeout);
+      const advance = () => {
+        if (--remaining) frame = requestAnimationFrame(advance);
+        else { clearTimeout(timer); resolve(true); }
+      };
+      frame = requestAnimationFrame(advance);
+    }), Math.max(1, deadline - Date.now()));
+    const state = await page.evaluate(stageReadiness);
+    return animated ? state : {...state, ready: false, pending: {...state.pending, animationFrames: true}};
+  };
   const shoot = async name => {
-    let state = await settle(), picture = await stage.screenshot();
-    for (let i = 0; i < 20; i++) {
-      await page.waitForTimeout(150);
-      state = await settle();
-      const next = await stage.screenshot();
-      if (next.equals(picture)) break;
-      picture = next;
+    const deadline = Date.now() + CAPTURE_TIMEOUT_MS;
+    let state, picture;
+    while (Date.now() < deadline) {
+      state = await settle(deadline);
+      if (Date.now() >= deadline) break;
+      if (state.ready) {
+        const next = await stage.screenshot({timeout: Math.max(1, deadline - Date.now())});
+        const after = await page.evaluate(stageReadiness);
+        if (after.ready && after.signature === state.signature) {
+          if (picture?.equals(next)) {
+            steps.push({name, picture: next, engine: after.engine, refusal: after.refusal, tick: after.tick});
+            return;
+          }
+          picture = next;
+        } else picture = null;
+        state = after;
+      } else picture = null;
+      await page.waitForTimeout(Math.min(150, Math.max(0, deadline - Date.now())));
     }
-    steps.push({name, picture, ...state});
+    await close();
+    throw new Error(`${engine ? 'Engine' : 'JavaScript'} capture ${name} did not become ready and stable within ${CAPTURE_TIMEOUT_MS} ms: ${JSON.stringify(state)}`);
   };
   const list = ticks ?? [...new Set([0, Math.floor(total / 4), Math.floor(total / 2), Math.floor(3 * total / 4), total - 1])].filter(tick => tick >= 0 && tick < total);
   // --no-effects: the effects preview off in both runs (what differs without effects is not theirs).

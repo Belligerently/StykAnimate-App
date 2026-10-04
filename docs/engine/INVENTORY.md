@@ -18,8 +18,8 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-eval` | 81 | 757 KiB | 34 | 38 | 9 | 0 | 0 | 16 % | 59 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 733 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
-| `styk-render` | 52 | 708 KiB | 33 | 14 | 5 | 0 | 0 | 9 % | 48 % | 0 % |
-| **Total** | 356 | 4044 KiB | 192 | 106 | 35 | 22 | 1 | 20 % | 43 % | 0 % |
+| `styk-render` | 52 | 708 KiB | 32 | 15 | 5 | 0 | 0 | 9 % | 57 % | 0 % |
+| **Total** | 356 | 4044 KiB | 191 | 107 | 35 | 22 | 1 | 20 % | 45 % | 0 % |
 
 ## Engine modules
 
@@ -359,11 +359,11 @@ Engine logic: ported to Rust.
 | `src/renderer-upload.mjs` | `styk-render` | js |  |
 | `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
 | `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs), text as its WebGPU path draws it (object rasters, glyph masks); every other document still JS |
+| `src/renderer.mjs` | `styk-render` | partial | Rust: draws the editing view, onion skins and playback of documents the engine supports (src/engine/engine-eligibility.mjs), text as its WebGPU path draws it (object rasters, glyph masks), drawing cels inside effect rasters; every other document still JS |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
 | `src/scene-preparation.mjs` | `styk-render` | js |  |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
-| `src/drawing-gpu.mjs` | `styk-render::drawing` | js | GPU tiles and GPU brush |
+| `src/drawing-gpu.mjs` | `styk-render::drawing` | partial | Rust: committed cel display, exact box levels, tile seams, Canvas-style effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes and GPU brush still JS |
 | `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-atlas.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-canvas.mjs` | `styk-render::generators` | partial | Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it |

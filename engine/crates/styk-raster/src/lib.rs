@@ -59,7 +59,7 @@ use shade::Texture;
 pub struct Images {
     /// Premultiplied sprites with their one-texel gutter repeating their edges.
     sprites: HashMap<(u32, u32, u32), Arc<DecodedImage>>,
-    /// Drawing cel tiles: straight alpha, with a one-texel border of neighbouring texels.
+    /// Drawing cel tiles: straight alpha, with a two-texel border of neighbouring texels.
     tiles: HashMap<(u32, u32, u32), Arc<DecodedImage>>,
 }
 

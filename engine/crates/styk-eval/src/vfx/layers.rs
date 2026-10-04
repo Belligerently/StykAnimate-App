@@ -106,20 +106,10 @@ pub fn item_extent(scene: &Scene, assets: &Assets, it: &Item) -> Option<Extent> 
 
 /// The corners of a sprite or drawing cel, placed as `drawPrimitives` places it.
 fn image_corners(it: &Item, seg: &crate::doc::Segment, a: &crate::doc::ImageAsset, assets: &Assets, add: &mut impl FnMut([f64; 2])) {
-    let ([bx, by], [w, h]) = match (&a.tiles, a.image.and_then(|i| assets.image(i))) {
-        // A drawing cel: its level-0 tiles, in cel pixels.
-        (Some(tiles), _) if !tiles.tiles.is_empty() => {
-            let t = crate::drawing::TILE as f64;
-            let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-            for &(tx, ty, _) in &tiles.tiles {
-                let (x, y) = (tx as f64 * t, ty as f64 * t);
-                x0 = x0.min(x);
-                y0 = y0.min(y);
-                x1 = x1.max(x + t);
-                y1 = y1.max(y + t);
-            }
-            ([x0, y0], [x1 - x0, y1 - y0])
-        }
+    let ([bx, by], [w, h]) = match (a.tiles.as_ref().and_then(|tiles| tiles.artwork_bounds()), a.image.and_then(|i| assets.image(i))) {
+        // A drawing's effect grid follows its ink, not the transparent remainder
+        // of its 64-pixel tiles. Tile coverage still places the image quads.
+        (Some([x, y, w, h]), _) => ([x, y], [w, h]),
         (_, image) => ([0.0, 0.0], a.display_size.unwrap_or_else(|| image.map_or([1.0, 1.0], |e| [e.source_w as f64, e.source_h as f64]))),
     };
     let mirror = seg.mirror != it.image_text_flags;
