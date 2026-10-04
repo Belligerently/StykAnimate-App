@@ -263,6 +263,11 @@ macro_rules! effects {
             pub fn scene_only(self) -> bool {
                 match self { $(Kind::$variant => $scene_only,)* }
             }
+            /// `VFX_SCENE_TYPES.has(type)` (src/vfx-registry.mjs): whether the effect may go in
+            /// the scene's stack.
+            pub fn on_scene(self) -> bool {
+                matches!(self.name(), "tint" | "blur" | "grade" | "pixelate" | "noise" | "vignette" | "dissolve" | "rgbSplit" | "wave" | "shockwave" | "bloom" | "lightSweep" | "crt" | "turbulence" | "particles" | "beam" | "explosion" | "smoke")
+            }
             /// The parameters, `effectStrength` first.
             pub fn specs(self) -> &'static [Spec] {
                 match self { $(Kind::$variant => $variant::SPECS,)* }

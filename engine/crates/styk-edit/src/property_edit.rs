@@ -230,7 +230,7 @@ pub(crate) fn validate_value(target: &Value, property: &str, value: Option<&Valu
 }
 
 /// `validateVfxValue(property, value)`: a stack resolved, a number in its range.
-fn validate_vfx_value(property: &str, value: Option<&Value>) -> Result<Value, EditError> {
+pub(crate) fn validate_vfx_value(property: &str, value: Option<&Value>) -> Result<Value, EditError> {
     if property == "vfxStack" {
         crate::vfx_clips::check_stack(value, &[])?;
         return styk_eval::records::resolved_stack(value.unwrap_or(&Value::Null)).map_err(EditError::from);
@@ -716,24 +716,8 @@ impl Editor {
     /// `setVfxParameter(target, id, param, value)`: one parameter of an effect in the target's
     /// stack on show, keyed at the playhead.
     fn set_vfx_parameter(&mut self, target: &Value, id: &Value, param: &Value, value: Option<Value>) -> Result<Value, EditError> {
-        // `targetFor(editor, target)`.
-        let target = normalize_target(target)?;
-        let kind = target.get("kind").and_then(Value::as_str).unwrap_or("").to_string();
-        if !["scene", "figure", "segment"].contains(&kind.as_str()) {
-            return Err(invalid("errors.editorVfx.selectAFigureNodeMovieclipOrScene"));
-        }
-        let layer = if kind == "scene" { "scene".to_string() } else { self.layer_of(target.get("uid").and_then(Value::as_f64).unwrap_or(0.0) as u32) };
-        let layers = self.report.path(&["_styk", "layers"]);
-        let state = if fixed(&layer) { layers.and_then(|l| l.path(&["fixed", &layer])) } else { layers.and_then(|l| l.path(&["byId", &layer])) };
-        if state.and_then(|s| s.get("locked")).is_some_and(Value::truthy) {
-            return Err(invalid("errors.editorVfx.unlockThisLayerBeforeEditingEffects"));
-        }
-        if self.animation_value(&target, "vfxStack", &Value::Num(self.tick))?.is_none() {
-            return Err(invalid("errors.editorVfx.thisTargetIsNotPresentAtThisFrame"));
-        }
-        // `vfxEffects(target)`: the stack of the target on show.
-        let stack = self.animation_value(&target, "vfxStack", &Value::Num(self.tick))?.unwrap_or(Value::Null);
-        let effect = items(Some(&stack)).into_iter().find(|effect| effect.get("id") == Some(id));
+        let target = self.vfx_target(target)?;
+        let effect = self.vfx_effects(&target)?.into_iter().find(|effect| effect.get("id") == Some(id));
         let Some(effect) = effect else { return Err(invalid("errors.editorVfx.theEffectNoLongerExists")) };
         let property = format!("vfx1:{}:{}:{}", effect.get("type").and_then(Value::as_str).unwrap_or(""), id.as_str().unwrap_or(""), param.as_str().unwrap_or("\u{0}"));
         if styk_eval::vfx::parse::property(&property).is_none() {

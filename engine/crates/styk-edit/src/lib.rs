@@ -48,6 +48,7 @@ mod spatial_ik;
 mod timeline;
 mod transform;
 mod vfx_clips;
+mod vfx_stack;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -583,6 +584,13 @@ impl Editor {
             "movePaletteColor" => self.move_palette_color(&arg(0), &arg(1)).map(Value::Bool),
             "setCameraMotion" => self.set_camera_motion(&arg(0), &arg(1)).map(Value::Bool),
             "deleteCameraMotion" => self.delete_camera_motion(&arg(0)).map(Value::Bool),
+            "addVfx" => self.add_vfx(&arg(0), &arg(1)),
+            "removeVfx" => self.remove_vfx(&arg(0), &arg(1)),
+            "resetVfx" => self.reset_vfx(&arg(0), &arg(1)),
+            "duplicateVfx" => self.duplicate_vfx(&arg(0), &arg(1)),
+            "moveVfx" => self.move_vfx(&arg(0), &arg(1), &arg(2)),
+            "reorderVfx" => self.reorder_vfx(&arg(0), &arg(1), &arg(2)),
+            "pasteVfx" => self.paste_vfx(&arg(0), &arg(1), &arg(2)),
             "copyCameraMotion" => Ok(Value::Bool(self.copy_camera_motion(&arg(0)))),
             "pasteCameraMotion" => self.paste_camera_motion(arg(0).as_f64()),
             "duplicateCameraMotion" => self.duplicate_camera_motion(&arg(0), arg(1).as_f64()),

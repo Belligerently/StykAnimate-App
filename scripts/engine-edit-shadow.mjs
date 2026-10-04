@@ -203,6 +203,11 @@ async function run(mode) {
       e.cancelAnimationEdit(); e.undo(); e.undo(); e.redo();
     }));
     await step('add an effect to a figure', () => page.evaluate(() => { const e = styk.editor; if (e.selectedUid !== null && e.report._styk?.layerSheet) e.addVfx({kind: 'figure', uid: e.selectedUid}, 'blur'); }));
+    await step('duplicate, move, reorder, reset and remove effects', () => page.evaluate(() => {
+      const e = styk.editor, uid = e.selectedUid; if (uid === null) return;
+      const figure = {kind: 'figure', uid}, effect = e.vfxEffects(figure).find(item => item.type === 'blur'); if (!effect) return;
+      try { const copy = e.duplicateVfx(figure, effect.id); e.moveVfx(figure, copy, -1); e.reorderVfx(figure, copy, 0); e.resetVfx(figure, effect.id); e.removeVfx(figure, copy); e.pasteVfx(figure, [effect]); e.undo(); } catch {}
+    }));
     await step('key and scrub an effect parameter', () => page.evaluate(() => {
       const e = styk.editor, uid = e.selectedUid; if (uid === null) return;
       const figure = {kind: 'figure', uid}, effect = e.vfxEffects(figure).find(item => item.type === 'blur'); if (!effect) return;

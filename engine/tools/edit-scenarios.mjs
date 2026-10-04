@@ -266,6 +266,25 @@ scenario('frames-movieclip-sheet', app, [
     ['copyCameraMotion', 'motion-00000000-0000-4000-8000-000000000002'], ['@seek', 4.5], ['pasteCameraMotion'], ['duplicateCameraMotion', 'motion-00000000-0000-4000-8000-000000000002', 30],
     ['undo'], ['redo'],
   ], 'camera-motion.document.json');
+  // Effects in a figure's, a segment's and the scene's stacks: added (to several targets,
+  // refusals by kind and target), duplicated, moved, reordered, reset, removed and pasted
+  // (replacing the same effect, a new identity for another kind of the same identity, the
+  // scope set); new identities drawn by the editor (D18); history.
+  {
+    const figure = uid => ({kind: 'figure', uid}), segment = (uid, handleId) => ({kind: 'segment', uid, handleId}), scene = {kind: 'scene'};
+    const [blur, glow, grade] = [1, 2, 3].map(n => `fx-0000000000004000800000000000000${n}`);
+    scenario('vfx-stack-sheet', app, [
+      ['@select', 1, -1], ['addVfx', figure(1), 'glow'], ['addVfx', [figure(1), segment(1, 22)], 'tint'], ['addVfx', scene, 'vignette'], ['addVfx', figure(1), 'vignette'],
+      ['addVfx', figure(1), 'bogus'], ['addVfx', scene, 'outline'], ['addVfx', {kind: 'camera'}, 'glow'], ['duplicateVfx', figure(1), blur], ['duplicateVfx', figure(1), 'fx-none'],
+      ['moveVfx', figure(1), blur, 1], ['moveVfx', figure(1), blur, 2], ['reorderVfx', figure(1), blur, 0], ['reorderVfx', figure(1), blur, 9],
+      ['setVfxParameter', figure(1), blur, 'radius', 6], ['resetVfx', figure(1), blur], ['resetVfx', figure(1), 'fx-none'], ['removeVfx', figure(1), blur], ['removeVfx', figure(1), 'fx-none'],
+      ['pasteVfx', segment(1, 22), [{version: 2, id: blur, type: 'blur', enabled: true, params: {radius: 3}}]],
+      ['pasteVfx', scene, [{version: 2, id: grade, type: 'blur', enabled: true, params: {radius: 2}}]], ['pasteVfx', scene, [{version: 2, id: grade, type: 'grade', enabled: false, params: {}}]],
+      ['pasteVfx', [figure(1)], [{version: 2, id: glow, type: 'glow', enabled: true, params: {}}], {includeAttached: false}], ['pasteVfx', figure(1), [], {includeAttached: 'x'}],
+      ['pasteVfx', figure(1), [{version: 2, id: 'fx-x', type: 'vignette', enabled: true, params: {}}]],
+      ['@seek', 3], ['addVfx', figure(1), 'pixelate'], ['undo'], ['undo'], ['undo'], ['redo'],
+    ], 'property-vfx.document.json');
+  }
   scenario('move-frames-presence-clip-sheet', app, [
     ['sheetMoveFrames', ['layer-1'], 0, 0, 2], ['sheetMoveFrames', ['layer-1'], 6, 6, 3, {copy: true}], ['undo'], ['redo'],
   ], 'sheet-movieclip.document.json');

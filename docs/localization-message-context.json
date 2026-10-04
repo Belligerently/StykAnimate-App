@@ -17336,59 +17336,59 @@
   },
   "errors.editorVfx.chooseAnAvailablePreset": {
     "locations": [
-      "src/editor-vfx.mjs:68"
+      "src/editor-vfx.mjs:69"
     ],
     "context": "const preset=VFX_PRESETS[name]?.effects;if(!preset)throw messageError(new Error(''), \"errors.editorVfx.chooseAnAvailablePreset\", {});if(!Array.isArray(targets))"
   },
   "errors.editorVfx.chooseWhetherToIncludeAttachedParts": {
     "locations": [
-      "src/editor-vfx.mjs:18",
-      "src/editor-vfx.mjs:38"
+      "src/editor-vfx.mjs:19",
+      "src/editor-vfx.mjs:39"
     ],
     "context": "if(typeof includeAttached!=='boolean')throw messageError(new Error(''), \"errors.editorVfx.chooseWhetherToIncludeAttachedParts\", {});"
   },
   "errors.editorVfx.invalidEffectPosition": {
     "locations": [
-      "src/editor-vfx.mjs:35"
+      "src/editor-vfx.mjs:36"
     ],
     "context": "reorderVfx(target,id,index){return this.changeVfxStack(target,stack=>{const from=stack.findIndex(e=>e.id===id);if(from<0||!Number.isInteger(index)||index<0||ind"
   },
   "errors.editorVfx.selectAFigureNodeMovieclipOrScene": {
     "locations": [
-      "src/editor-vfx.mjs:9"
+      "src/editor-vfx.mjs:10"
     ],
     "context": "target=normalizeAnimationTarget(target);if(!['scene','figure','segment'].includes(target.kind))throw messageError(new Error(''), \"errors.editorVfx.selectAFigure"
   },
   "errors.editorVfx.selectAWholeFigureToIncludeAttachedParts": {
     "locations": [
-      "src/editor-vfx.mjs:17"
+      "src/editor-vfx.mjs:18"
     ],
     "context": "target=targetFor(this,target);if(target.kind!=='figure')throw messageError(new Error(''), \"errors.editorVfx.selectAWholeFigureToIncludeAttachedParts\", {});"
   },
   "errors.editorVfx.theEffectNoLongerExists": {
     "locations": [
-      "src/editor-vfx.mjs:32",
       "src/editor-vfx.mjs:33",
-      "src/editor-vfx.mjs:66"
+      "src/editor-vfx.mjs:34",
+      "src/editor-vfx.mjs:67"
     ],
     "context": "resetVfx(target,id){return this.changeVfxStack(target,stack=>{const i=stack.findIndex(e=>e.id===id);if(i<0)throw messageError(new Error(''), \"errors.editorVfx.t"
   },
   "errors.editorVfx.thisEffectIsNotAvailableForTheSelected": {
     "locations": [
-      "src/editor-vfx.mjs:25",
-      "src/editor-vfx.mjs:40"
+      "src/editor-vfx.mjs:26",
+      "src/editor-vfx.mjs:41"
     ],
     "context": "if(targets.some(target=>!effectAvailable(type,target.kind==='scene')))throw messageError(new Error(''), \"errors.editorVfx.thisEffectIsNotAvailableForTheSelected"
   },
   "errors.editorVfx.thisTargetIsNotPresentAtThisFrame": {
     "locations": [
-      "src/editor-vfx.mjs:11"
+      "src/editor-vfx.mjs:12"
     ],
     "context": "if(editor.animationValue(target,'vfxStack')===undefined)throw messageError(new Error(''), \"errors.editorVfx.thisTargetIsNotPresentAtThisFrame\", {});return targe"
   },
   "errors.editorVfx.unlockThisLayerBeforeEditingEffects": {
     "locations": [
-      "src/editor-vfx.mjs:10"
+      "src/editor-vfx.mjs:11"
     ],
     "context": "const layer=editor.getLayer(target.kind==='scene'?'scene':editor.layerForUid(target.uid));if(layer?.locked)throw messageError(new Error(''), \"errors.editorVfx.u"
   },
@@ -17403,7 +17403,7 @@
     "locations": [
       "src/editor-vfx-clips.mjs:55",
       "src/editor-vfx-clips.mjs:80",
-      "src/editor-vfx.mjs:34"
+      "src/editor-vfx.mjs:35"
     ],
     "context": "moveVfxClipOrder(id,delta){if(![-1,1].includes(delta))throw messageError(new Error(''), \"errors.editorVfxClips.chooseAnEffectOrder\", {});const clips=[...vfxClip"
   },
