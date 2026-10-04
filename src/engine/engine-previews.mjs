@@ -181,16 +181,17 @@ export function libraryExtension(file, fallback = 'stkz') {
 /**
  * A library file's poster drawn by the engine: a 320-pixel PNG of its first frame with
  * artwork, fitted on transparency. Resolves null where the engine does not draw it (no
- * preview worker, a file it cannot read, filter effects): the caller's JavaScript worker does.
- * @param {Blob} file the saved asset's bytes
+ * preview worker, a file it cannot read): the caller's JavaScript worker does. Without a
+ * preview worker it resolves at once, before `file` is ready, so the caller can start its own.
+ * @param {Blob|Promise<Blob>} file the saved asset's bytes (or the export making them)
  * @param {string} [extension] `stkz` or `stykmov` (by default from the file's name)
  */
-export async function engineLibraryPoster(file, extension = libraryExtension(file)) {
+export async function engineLibraryPoster(file, extension) {
   const previews = await enginePreviews();
   if (!previews?.usable) return null;
   try {
-    const bytes = await file.arrayBuffer();
-    const result = await previews.request({operation: 'library-poster', bytes, extension}, {transfer: [bytes]});
+    const blob = await file, bytes = await blob.arrayBuffer();
+    const result = await previews.request({operation: 'library-poster', bytes, extension: extension ?? libraryExtension(blob)}, {transfer: [bytes]});
     return result.refused ? null : result.blob;
   } catch { return null; }
 }

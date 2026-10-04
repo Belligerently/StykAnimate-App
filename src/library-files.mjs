@@ -11,9 +11,10 @@ const dataURL = blob => new Promise((resolve, reject) => {
   reader.onload = () => resolve(reader.result); reader.readAsDataURL(blob);
 });
 /**
- * The PNG preview (a data URL) a library asset keeps. With the asset's saved bytes (`file`, and their
- * `extension` when the file has no name) the engine draws it where it can (src/engine/engine-previews.mjs);
- * otherwise, and for files the engine does not draw, the JavaScript worker draws `report`.
+ * The PNG preview (a data URL) a library asset keeps. With the asset's saved bytes (`file`, a Blob or the
+ * export making it, and their `extension` when the file has no name) the engine draws it where it can
+ * (src/engine/engine-previews.mjs); otherwise, and for files the engine does not draw, the JavaScript worker
+ * draws `report` (started at once when the engine cannot, so it overlaps the export).
  */
 export async function libraryPreview(report, {file, extension} = {}) {
   const poster = file ? await engineLibraryPoster(file, extension) : null;

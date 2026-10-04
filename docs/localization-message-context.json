@@ -18910,13 +18910,13 @@
   },
   "errors.libraryFiles.theLibraryFileChangedWhileReading": {
     "locations": [
-      "src/library-files.mjs:57"
+      "src/library-files.mjs:58"
     ],
     "context": "if (size !== transfer.size) throw messageError(new Error(''), \"errors.libraryFiles.theLibraryFileChangedWhileReading\", {});"
   },
   "errors.libraryFiles.theLibraryPreviewTimedOut": {
     "locations": [
-      "src/library-files.mjs:26"
+      "src/library-files.mjs:27"
     ],
     "context": "const timer = setTimeout(() => finish(messageError(new Error(''), \"errors.libraryFiles.theLibraryPreviewTimedOut\", {})), 60000);"
   },

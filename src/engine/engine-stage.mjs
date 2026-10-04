@@ -73,7 +73,7 @@ function drawingTiles(figure, out = []) {
  * (`probe` in styk-wasm/src/views.rs) in this task. Some setups present nothing from a WebGPU
  * canvas (Xvfb without ANGLE on Vulkan); there the views stay the JavaScript renderer's.
  */
-export function probed(canvas) {
+function probed(canvas) {
   const sample = new OffscreenCanvas(1, 1), context = sample.getContext('2d', {willReadFrequently: true});
   context.drawImage(canvas, 0, 0, 1, 1, 0, 0, 1, 1);
   const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
