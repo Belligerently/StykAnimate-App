@@ -1335,3 +1335,229 @@ test('native, drafted, captured-source, origin and active Split routes keep thei
   assert.equal(json(owned.report), json(expected.report)); assert.deepEqual(state(owned), state(expected));
   assert.equal(requested, 0); assert.equal(report.owned, 0);
 });
+
+
+// The separate actual Editor supplies the existing publication fields. Native
+// Session tests certify the command-specific marker and shallow COW projection.
+function uniquePair(document, {layerTimeline = true, historyLimit} = {}) {
+  const options = {demo: false, propertyChannels: true, layerTimeline};
+  const expected = new Editor(options).load(structuredClone(document));
+  const owned = new Editor(options).load(structuredClone(document));
+  let oracle = new Editor(options).load(structuredClone(document)), session, current = true;
+  const packets = [], requests = [], releases = [], events = [[], []];
+  if (historyLimit !== undefined) for (const editor of [expected, owned, oracle]) editor.historyLimit = historyLimit;
+  let alter = answer => answer;
+  const start = () => {
+    session = sessionFor(oracle);
+    const call = session.call.bind(session);
+    session.call = (name, args, viewText) => {
+      if (name === 'beginBatch') return json({status: 'unported', reason: 'this actual-Editor mock has no batch protocol'});
+      const view = JSON.parse(viewText), index = oracle.report.figure_types.length;
+      if (view.movieclipUniquePublication) requests.push({name, view});
+      const answer = JSON.parse(call(name, args, viewText));
+      if (view.movieclipUniquePublication && answer.status === 'ok' && answer.definitions?.length === 1
+        && answer.events.length === 5) answer.movieclipUnique = {definitionIndex: index};
+      if (name === 'makeMovieclipUnique') { packets.push(structuredClone(answer)); alter(answer); }
+      return json(answer);
+    };
+    session.free = () => { releases.push(json(owned.report)); current = false; };
+    return session;
+  };
+  const mirror = {framesCurrent: () => current, syncFrames: async () => {
+    // A genuinely new session starts from the current mirrored report/view.
+    // Editor.load alone would advance the revision and invalidate the handshake.
+    oracle = new Editor(options).load(structuredClone(owned.report));
+    for (const key of ['_revision', '_revisionSerial', '_savedRevision', '_layerRevision', '_definitionRevision', '_nextUid', '_nextFrameIdentity']) oracle[key] = owned[key];
+    oracle._generatedFrameSources = new Set(owned._generatedFrameSources);
+    oracle.historyLimit = owned.historyLimit; oracle._restoreSelection(owned._selectionState()); oracle._invalidate(); current = true;
+  }};
+  const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: start}}, mirror}), {mode: 'classes'});
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => events[index].push(clean(event.detail)));
+  const same = () => {
+    assert.equal(json(owned.report), json(expected.report), 'complete stored document');
+    assert.deepEqual(state(owned), state(expected), 'history, source counters and selection');
+    assert.deepEqual(topologyCounters(owned), topologyCounters(expected), 'original revision and cleanup owners');
+    assert.deepEqual(owned._undo, expected._undo, 'literal history entries and children');
+    assert.deepEqual(owned._redo, expected._redo, 'literal redo entries');
+    assert.equal(json(owned.evaluatedFrame), json(expected.evaluatedFrame), 'displayed frame');
+    assert.deepEqual(events[1], events[0], 'ordered change events');
+    // Original cached/fresh clip geometry can differ only by an own undefined
+    // runtime cache field. Keep real runtime arrays and every numeric value exact.
+    const observable = drawables => drawables.map(drawable => drawable.obj && Object.hasOwn(drawable.obj, 'runtime_segments') && drawable.obj.runtime_segments === undefined
+      ? {...drawable, obj: Object.fromEntries(Object.entries(drawable.obj).filter(([key]) => key !== 'runtime_segments'))} : drawable);
+    assert.deepEqual(observable(owned.geometry.drawables), observable(buildGeometry(owned.report, owned.evaluatedFrame).drawables), 'fresh geometry');
+    assert.equal(report.mismatches.length, 0, JSON.stringify(report.mismatches));
+  };
+  const run = (name, ...args) => {
+    let result, error, actual;
+    try { result = expected[name](...args); } catch (caught) { error = caught.messageKey ?? caught.message; }
+    if (error) assert.throws(() => owned[name](...args), caught => (caught.messageKey ?? caught.message) === error);
+    else actual = owned[name](...args);
+    same(); if (!error) assert.equal(json(actual), json(result), 'returned value');
+    return actual;
+  };
+  return {expected, owned, get oracle() { return oracle; }, get session() { return session; }, report, packets, requests, releases, events,
+    alter: callback => { alter = callback; }, same, run};
+}
+const uniqueDocument = name => JSON.parse(readFileSync(new URL(`../engine/tests/${name}.document.json`, import.meta.url), 'utf8'));
+
+for (const family of ['edit/clip-unique-sheet', 'movieclip-timed-sheet-expansion/unique-imported', 'movieclip-timed-sheet-expansion/unique-authored']) {
+  test(`default Unique adopts the recorded two-child batch and exact event-time state: ${family}`, () => {
+    const scenario = JSON.parse(readFileSync(new URL(`../engine/tests/${family}.scenario.json`, import.meta.url), 'utf8'));
+    const pair = uniquePair(uniqueDocument(family)), {expected, owned, report, run, same} = pair;
+    const observations = [[], []];
+    for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => {
+      observations[index].push({event: clean(event.detail), document: json(editor.report), state: state(editor), counters: topologyCounters(editor),
+        frame: json(editor.evaluatedFrame), geometry: clean(editor.geometry.drawables), batch: clean(editor._movieclipBatch ?? null)});
+    });
+    let originals = 0; const original = owned.makeMovieclipUnique;
+    // Count computation through its original sheet planner; adoption uses the
+    // existing publication owner without running this topology/conversion math.
+    const replace = owned.sheetReplaceMovieclipFrames;
+    owned.sheetReplaceMovieclipFrames = function (...args) { originals++; return replace.apply(this, args); };
+    assert.equal(report.mode, 'classes'); assert.equal(typeof original, 'function');
+    for (const [method, ...args] of scenario.steps) {
+      const name = method.replace(/^@/, ''), before = report.owned, calls = originals;
+      const source = name === 'makeMovieclipUnique' ? owned.figure : null;
+      const priorEvents = observations[1].length, tick = owned.tick;
+      const result = run(name, ...args.map(decode));
+      if (source) {
+        assert.equal(report.owned, before + 1, 'actual default adoption'); assert.equal(originals, calls, 'original Unique planner skipped');
+        assert.equal(result, owned.report.figure_types.at(-1), 'return the installed definition');
+        for (const key of Object.keys(source)) if (!['figure_type_id', 'name'].includes(key)) assert.equal(result[key], source[key], `shallow definition child ${key}`);
+        const command = owned._undo.at(-1);
+        assert.equal(command.kind, 'movieclip-batch'); assert.deepEqual(command.commands.map(child => child.kind), ['movieclip-definition', 'layer-sheet']);
+        assert.deepEqual(command, expected._undo.at(-1));
+        const changes = observations[1].slice(priorEvents);
+        assert.equal(changes.length, 5); assert.deepEqual(changes.map(change => change.event.kind), ['edit', 'edit', 'seek', 'selection', 'edit']);
+        assert.equal(changes[0].state.tick, tick); assert.equal(changes[1].state.tick, tick);
+        const finalUid = owned.selectedUid;
+        assert.equal(changes[0].state.nextUid, finalUid + 1, 'identity advances before the definition event');
+        assert.equal(changes[1].state.nextUid, finalUid + 1);
+        assert.equal(changes[2].state.tick, Math.round(tick));
+      }
+    }
+    same(); assert.deepEqual(observations[1], observations[0], 'each event sees the same report, view, revisions and geometry');
+    while (expected.canUndo) run('undo'); assert.equal(owned.canUndo, false); same();
+    assert.equal(pair.requests.length, family === 'edit/clip-unique-sheet' ? 2 : 1);
+  });
+}
+
+test('Unique retains shallow unknown definition identities and original zero-history source cleanup', () => {
+  const pair = uniquePair(uniqueDocument('movieclip-timed-sheet-expansion/unique-authored'));
+  const {expected, owned, run, same, report} = pair;
+  for (const editor of [expected, owned, pair.oracle]) {
+    editor.select(1); editor.seek(2.25); const figure = editor.figure;
+    figure.uniqueUnknown = {nested: ['keep', null]};
+    Object.defineProperty(figure, '__proto__', {value: {keep: 'own data'}, enumerable: true, writable: true, configurable: true});
+  }
+  const source = owned.figure, before = json(owned.report);
+  const result = run('makeMovieclipUnique');
+  assert.equal(result.uniqueUnknown, source.uniqueUnknown); assert.equal(result['__proto__'], source['__proto__']);
+  assert.equal(result._styk, source._styk); assert.equal(result.segments, source.segments);
+  assert.deepEqual(Object.keys(result), Object.keys(expected.report.figure_types.at(-1)));
+  run('undo'); assert.equal(json(owned.report), before); run('redo');
+  // Original source allocation and pruning remain the batch/record owner's,
+  // including an actual history-only source from preceding authored movement.
+  run('undo'); run('select', 1, -1); run('seek', 2);
+  const initialSources = new Set(Object.keys(owned.report._styk.frameSources ?? {}));
+  run('moveSelection', 5, -2);
+  const first = Object.keys(owned.report._styk.frameSources).filter(id => !initialSources.has(id));
+  assert.ok(first.length); run('moveSelection', -3, 4);
+  for (const editor of [expected, owned, pair.oracle]) editor.historyLimit = 0;
+  const adopted = report.owned;
+  run('makeMovieclipUnique'); assert.equal(report.owned, adopted + 1);
+  assert.equal(owned.canUndo, false); assert.equal(owned._undo.length, 0); same();
+  assert.ok(first.some(id => !Object.hasOwn(owned.report._styk.frameSources, id)), 'original cleanup retires the old history-only source');
+});
+
+test('malformed Unique packets retire Native before an unchanged original fallback', () => {
+  for (const alter of [
+    answer => { delete answer.movieclipUnique; },
+    answer => { answer.movieclipUnique.definitionIndex++; },
+    answer => { answer.definitions = []; },
+    answer => { answer.definitions[0].figure_type_id = 1; },
+    answer => { answer.definitions[0].name = 'foreign'; },
+    answer => { delete answer.sheet; },
+    answer => { delete answer.sources[Object.keys(answer.sources)[0]]; },
+    answer => { answer.sheet.tracks[Object.keys(answer.sheet.tracks)[0]].end = -1; },
+    answer => { answer.events.reverse(); },
+    answer => { answer.events = null; },
+    answer => { answer.state.nextUid++; },
+    answer => { answer.events[1].layerRevision = -1; },
+    answer => { answer.state.layerRevision = answer.events[1].layerRevision - 1; },
+    answer => { answer.state.layerRevision += .5; },
+    answer => { answer.state = null; },
+  ]) {
+    const pair = uniquePair(uniqueDocument('movieclip-timed-sheet-expansion/unique-imported'));
+    const {expected, owned, report, run, same} = pair;
+    run('select', 1); run('seek', 2.25);
+    pair.alter(alter); const before = json(owned.report), adopted = report.owned;
+    let originals = 0; const original = owned.sheetReplaceMovieclipFrames;
+    owned.sheetReplaceMovieclipFrames = function (...args) {
+      originals++; assert.equal(pair.releases.length, 1, 'advanced Native session retired before original publication');
+      return original.apply(this, args);
+    };
+    pair.session.free = () => { pair.releases.push(json(owned.report)); assert.equal(json(owned.report), before, 'no adopted write before malformed refusal'); };
+    expected.makeMovieclipUnique(); owned.makeMovieclipUnique(); same();
+    assert.equal(originals, 1); assert.equal(report.owned, adopted); assert.equal(report.failedOwned, 1);
+    assert.deepEqual(owned._undo.at(-1), expected._undo.at(-1)); originalFallbackHistory(pair);
+  }
+});
+
+test('Unique application errors keep original batch rollback and discard the advanced session before recovery', async () => {
+  const pair = uniquePair(uniqueDocument('movieclip-timed-sheet-expansion/unique-imported'));
+  const {expected, owned, report, run, same} = pair;
+  run('select', 1); run('seek', 2.25);
+  const emits = [expected, owned].map(editor => editor._emit);
+  for (const [index, editor] of [expected, owned].entries()) editor._emit = function (kind, detail) {
+    if (kind === 'seek') throw new Error('Rejected Unique publication');
+    return emits[index].call(this, kind, detail);
+  };
+  assert.throws(() => expected.makeMovieclipUnique(), /Rejected Unique publication/);
+  assert.throws(() => owned.makeMovieclipUnique(), /Rejected Unique publication/);
+  same(); assert.equal(owned._movieclipBatch, null); assert.equal(pair.releases.length, 1);
+  assert.equal(report.ended['a movieclip unique publication failed'], 1);
+  for (const [index, editor] of [expected, owned].entries()) editor._emit = emits[index];
+  // Both original recorded children rolled back through movieclipBatch. Keep
+  // its original consumed identities/revision serial rather than resetting them.
+  assert.equal(owned.selectedUid, expected.selectedUid); assert.equal(owned.tick, 2.25);
+  await report.prepare(); const sessions = report.sessions, adopted = report.owned;
+  run('makeMovieclipUnique'); assert.equal(report.sessions, sessions + 1); assert.equal(report.owned, adopted + 1);
+});
+
+test('native, drafted, captured-source, active and batched Unique routes do not request scoped adoption', () => {
+  const document = uniqueDocument('edit/clip-unique-sheet');
+  for (const [setup, excluded] of [
+    [editor => editor.beginFrameDraft({mode: 'update'}), editor => editor._frameDraft],
+    [editor => editor.beginDrag('Existing gesture'), editor => editor._drag],
+  ]) {
+    const pair = uniquePair(document), {expected, owned, report, same} = pair;
+    for (const editor of [expected, owned, pair.oracle]) { editor.seek(3); editor.select(4); setup(editor); assert.ok(excluded(editor)); }
+    const adopted = report.owned; let error;
+    try { expected.makeMovieclipUnique(); } catch (caught) { error = caught.messageKey ?? caught.message; }
+    if (error) assert.throws(() => owned.makeMovieclipUnique(), caught => (caught.messageKey ?? caught.message) === error);
+    else owned.makeMovieclipUnique();
+    same(); assert.equal(report.owned, adopted); assert.equal(pair.requests.length, 0);
+  }
+  const native = uniquePair(uniqueDocument('edit/clip-unique-legacy-native'), {layerTimeline: false});
+  native.run('select', 1); const adopted = native.report.owned; native.run('makeMovieclipUnique');
+  assert.equal(native.requests.length, 0); assert.equal(native.report.owned, adopted);
+  const source = document.figure_types.find(figure => figure._styk?.movieclip)._styk.movieclip.document;
+  const captured = uniquePair(source);
+  assert.ok(captured.owned.report._styk.movieclipSource, 'actual captured-source route');
+  const before = captured.report.owned;
+  captured.run('select', captured.expected.evaluatedFrame.objects[0].unique_id);
+  assert.throws(() => captured.expected.makeMovieclipUnique()); assert.throws(() => captured.owned.makeMovieclipUnique()); captured.same();
+  assert.equal(captured.requests.length, 0); assert.equal(captured.report.owned, before);
+  const origin = uniquePair(JSON.parse(readFileSync(new URL('../engine/tests/edit/origin-pose-layout-sheet.document.json', import.meta.url), 'utf8')));
+  assert.equal(editingClass(origin.owned.report), 'unported');
+  assert.ok(origin.owned.report.figure_types.some(figure => figure._styk?.animationOrigin));
+  origin.run('select', origin.expected.evaluatedFrame.objects[0].unique_id);
+  assert.throws(() => origin.expected.makeMovieclipUnique()); assert.throws(() => origin.owned.makeMovieclipUnique()); origin.same();
+  assert.equal(origin.requests.length, 0); assert.equal(origin.report.owned, 0);
+  const batch = uniquePair(document); batch.run('seek', 3); batch.run('select', 4);
+  const count = batch.report.owned;
+  for (const editor of [batch.expected, batch.owned]) editor.movieclipBatch('Outer batch', () => editor.makeMovieclipUnique());
+  batch.same(); assert.equal(batch.requests.length, 0); assert.equal(batch.report.owned, count);
+});

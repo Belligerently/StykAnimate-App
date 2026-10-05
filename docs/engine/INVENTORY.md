@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 89 | 1234 KiB | 46 | 39 | 4 | 0 | 0 | 2 % | 64 % | 0 % |
+| `styk-edit` | 89 | 1235 KiB | 46 | 39 | 4 | 0 | 0 | 2 % | 64 % | 0 % |
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
 | `styk-eval` | 81 | 758 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 740 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 31 | 16 | 5 | 0 | 0 | 9 % | 61 % | 0 % |
-| **Total** | 356 | 4054 KiB | 175 | 123 | 35 | 22 | 1 | 20 % | 49 % | 0 % |
+| **Total** | 356 | 4055 KiB | 175 | 123 | 35 | 22 | 1 | 20 % | 49 % | 0 % |
 
 ## Engine modules
 
@@ -111,7 +111,7 @@ Engine logic: ported to Rust.
 | `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS |
 | `src/editor-load.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-motion-path.mjs` | `styk-edit` | partial | Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins plus five native remote-time and two saved native families; canonical row/source/history owners and separate authoritative/transient reads; scalar-only/projection motion, complex rigs/3D and live trail adoption pending |
-| `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: recorded native/sheet create, unique, split, break, insert, playback/restart, extension and awaited worker Bake; 37 default-budget Bake families/234 calls with full canonical history records; concurrent stale Bake, unrecorded IK/draft combinations and app adoption pending |
+| `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: recorded native/sheet create, unique, split, break, insert, playback/restart, extension and awaited worker Bake; 37 default-budget Bake families/234 calls with full canonical history records; concurrent stale Bake, unrecorded IK/draft combinations and other app adoption pending; ordinary sheet Unique now adopts the shallow copied definition and sheet through the original batch/history/source-cleanup owners; 233 Rust / five recordings 79 exact calls / 266 JS and Main check pass; two warmed default UI copies preserve integer/fractional phase, twelve paired boundaries and full undo; 22.030/19.740 ms is matched-command diagnostic only, other command contexts remain guarded and the module stays partial |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | partial | Rust: recorded whole/topology/joint/handle/saved-channel/range/join/2D-rig edits plus angle-lock definitions and single-selected spatial choices preserve retained support; 37 additional replays/4882 steps and 37 derived groups/357 ticks; recorded native TRUE projector and authored live lifecycle now match Worker/Core/strict replay; unrecorded complex definitions and class ownership stay guarded |
 | `src/editor-origin-support.mjs` | `styk-edit` | partial | Rust: repairOriginSupport, retained graph compaction, ghost pose remapping and construction-edit offsets (styk-edit/src/origin_topology.rs), recorded native/sheet Set Origin and topology; remaining unrecorded command combinations still JS |
 | `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: native/sheet figure ranges, measured centering/alignment, insertion/replacement including recorded native movieclips and atomic key-capacity refusal; unrecorded effect/IK/draft combinations and facade adoption pending |

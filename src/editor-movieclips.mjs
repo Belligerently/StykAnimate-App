@@ -11,7 +11,7 @@ import {createMovieclipMaterializer} from './movieclip-materialize.mjs';
 import {animationChannelId,validateAnimationDocument,sampleAnimationChannel} from './animation-channels.mjs';
 import {snapshotPoseFrame} from './pose-snapshot.mjs';
 import {presencePlayback,usesPresence,continuations,setContinuations,presenceElapsed} from './movieclip-presence.mjs';
-import {initializeLayerSheet} from './editor-layer-sheet.mjs';
+import {initializeLayerSheet,adoptLayerSheet} from './editor-layer-sheet.mjs';
 
 const clone=value=>structuredClone(value);
 const allocateType=editor=>editor.report.figure_types.reduce((id,f)=>Math.max(id,f.figure_type_id+1),1);
@@ -422,6 +422,16 @@ export const editorMovieclipMethods={
       this.placeMovieclip({end:tick});
       publishChannels(this,[second,...channels],'Split movieclip');
       this.seek(tick);this.select(uid);return this.object;
+    });
+  },
+  /** Adopt the command-scoped Native result through the original two-child
+   * batch owner. Keep the selected definition's shallow child identities. */
+  _adoptMovieclipUnique({figure,publication,tick,uid,selection}){
+    return this.movieclipBatch('Make movieclip unique',()=>{
+      this._identity(); // The original allocates before the definition event.
+      publishDefinition(this,figure);
+      adoptLayerSheet(this,publication,'Make movieclip unique',{selection});
+      this.seek(tick);this.select(uid);return figure;
     });
   },
   makeMovieclipUnique(){

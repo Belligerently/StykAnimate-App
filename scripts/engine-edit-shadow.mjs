@@ -5,7 +5,7 @@
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
 //   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
-//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--selection-adoption] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
+//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--selection-adoption] [--movieclip-unique] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -24,6 +24,10 @@
 // --own --default --figures-gate: only the first five ordinary interactions, proving
 // default admission and core adoption; not cost certification. Use the full paired
 // workload without --figures-gate to certify editing cost.
+// --own --default --warm --exact-math --movieclip-unique: only Make unique at ticks
+// 2 and 2.25 through its UI action, with each boundary and undo/redo compared.
+// Uses the recorded clip-unique-sheet document unless --file is supplied. Its
+// matched command cost is affected-command evidence, not full-class or idle speed.
 // --warm: the interactions run once untimed before the timed round (warmed-up code).
 // --capture <folder>: the first sessions that meet an unported call, a difference or another
 // error are saved there (`?engineEditCapture=on`) as `<run>-<n>.capture.json`, which
@@ -37,6 +41,9 @@ const root = path.resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
 const option = (name, fallback) => { const at = args.indexOf(name); return at < 0 ? fallback : args[at + 1]; };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const movieclipUnique = args.includes('--movieclip-unique');
+if (movieclipUnique && ['--own', '--default', '--warm', '--exact-math'].some(flag => !args.includes(flag)))
+  throw new Error('--movieclip-unique requires --own --default --warm --exact-math.');
 
 async function server() {
   const given = option('--url');
@@ -59,6 +66,7 @@ const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
 const requiredCalls = [
+  ...(movieclipUnique ? ['makeMovieclipUnique'] : []),
   ...(args.includes('--figures-gate') ? ['moveSelection', 'poseJoint', 'commitDrag'] : []),
   ...(args.includes('--selection-adoption') ? ['duplicateFigure', 'pasteSelection', 'duplicateSelection'] : []),
   ...(args.includes('--vfx-remaining') ? ['setVfxScope', 'applyVfxPreset', 'addVfxGroup', 'addVfxUserPreset'] : []),
@@ -112,7 +120,7 @@ async function run(mode) {
     await page.waitForFunction(() => styk.editor.report.figure_types.length > 0 && !styk.state.importing && styk.editor.name !== undefined, null, {timeout: 180000});
     await page.waitForFunction(name => (styk.editor.name ?? '').length > 0 && !styk.state.importing, path.basename(imported), {timeout: 180000});
   }
-  const file = option('--file');
+  const file = option('--file', movieclipUnique ? path.join(root, 'engine/tests/edit/clip-unique-sheet.document.json') : undefined);
   if (file) {
     const text = await readFile(path.resolve(file), 'utf8');
     await page.evaluate(({text, name}) => { styk.editor.load(JSON.parse(text), name); styk.editor.markSaved(); }, {text, name: path.basename(file)});
@@ -166,18 +174,95 @@ async function run(mode) {
     await page.mouse.up({button}); await sleep(120);
   };
   const steps = [];
+  const uniqueSnapshots = [];
+  const uniqueCalls = [];
   // A step the editor refuses on this document (its message shown to users, compared in the
   // shadow like any other answer) is noted and the run goes on.
   const refused = [];
   const step = async (name, run) => {
     if (args.includes('--verbose')) console.log(`${mode}: ${name}`);
-    await settled();
+    const ready = await settled();
+    if (movieclipUnique && !ready) throw new Error(`The engine was not ready before ${name}.`);
     try { await run(); steps.push(name); }
-    catch (error) { const message = String(error?.message ?? error).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0]; refused.push(`${name}: ${message}`); }
+    catch (error) {
+      if (movieclipUnique) throw error;
+      const message = String(error?.message ?? error).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0]; refused.push(`${name}: ${message}`);
+    }
   };
 
   /** The interactions, once. */
   const interactions = async () => {
+    if (movieclipUnique) {
+      const boundary = async (name, operation) => {
+        await step(name, operation);
+        if (!await settled()) throw new Error(`The engine was not ready after ${name}.`);
+        uniqueSnapshots.push(await page.evaluate(name => {
+          const e = styk.editor, runtime = (key, value) => ['_movieclipSample', 'runtime_segments'].includes(key) ? undefined : value;
+          return {name, document: JSON.stringify(e.report, runtime), undo: e._undo.map(command => command.label), redo: e._redo.map(command => command.label),
+            selection: {uid: e.selectedUid, uids: [...e.selectedUids], joint: e.selectedJoint, tick: e.tick},
+            phases: e.evaluatedFrame.objects.filter(object => e.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.movieclip)
+              .map(object => ({uid: object.unique_id, type: object.figure_type_id, phase: object._movieclipSample ?? null}))};
+        }, name));
+      };
+      for (const tick of [2, 2.25]) {
+        await boundary(`seek to ${tick} for Make unique`, () => page.evaluate(tick => {
+          const e = styk.editor;
+          if (!e.layerTimeline || !e.report._styk?.layerSheet || e.frameDraft || e._drag || e.report._styk.movieclipSource)
+            throw new Error('The Unique check needs an ordinary recorded sheet movieclip.');
+          e.seek(tick);
+          if (e.tick !== tick) throw new Error('The Unique check did not reach its requested tick.');
+        }, tick));
+        await boundary(`select the movieclip at ${tick}`, () => page.evaluate(() => {
+          const e = styk.editor, clip = e.evaluatedFrame.objects.find(object => e.report.figure_types.find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.movieclip);
+          if (!clip) throw new Error('The recorded movieclip is not visible at the requested tick.');
+          e.select(clip.unique_id, -1);
+        }));
+        const before = await page.evaluate(() => {
+          const r = globalThis.__stykEditShadow, e = styk.editor;
+          return {uid: e.selectedUid, type: e.figure.figure_type_id, phase: e.object._movieclipSample,
+            preludeState: {drag: Boolean(e._drag), animationEdit: Boolean(e._animationEdit)},
+            preludes: Object.fromEntries(['commitDrag', 'commitAnimationEdit'].map(name => [name, {...r.byCall?.[name]}])),
+            counter: {...r.byCall?.makeMovieclipUnique, owned: r.owned, failedOwned: r.failedOwned, globalCalls: r.calls}};
+        });
+        await boundary(`Make unique at ${tick}`, async () => {
+          await page.locator('[data-action=movieclip-unique]').click();
+          await page.evaluate(({before, tick}) => {
+            const e = styk.editor;
+            if (e.selectedUid === before.uid || e.figure?.figure_type_id === before.type || !e.figure?._styk?.movieclip
+                || e.tick !== Math.round(tick) || !Number.isFinite(before.phase) || e.object?._movieclipSample !== before.phase)
+              throw new Error('Make unique lost the independent identity or displayed phase.');
+          }, {before, tick});
+        });
+        uniqueCalls.push(await page.evaluate(({before, tick}) => {
+          const r = globalThis.__stykEditShadow, e = styk.editor, entry = r.byCall?.makeMovieclipUnique ?? {}, prior = before.counter;
+          const preludes = Object.fromEntries(['commitDrag', 'commitAnimationEdit'].map(name => {
+            const prior = before.preludes[name], after = {...r.byCall?.[name]};
+            const delta = Object.fromEntries(['calls', 'callMs', 'engineMs', 'adoptMs', 'editorMs', 'failedOwned', 'failedOwnedMs']
+              .map(key => [key, (after[key] ?? 0) - (prior[key] ?? 0)]));
+            return [name, {before: prior, after, delta}];
+          }));
+          return {tick, owned: r.owned - prior.owned, failedOwned: r.failedOwned - prior.failedOwned, globalCalls: r.calls - prior.globalCalls,
+            calls: (entry.calls ?? 0) - (prior.calls ?? 0), callMs: (entry.callMs ?? 0) - (prior.callMs ?? 0),
+            engineMs: (entry.engineMs ?? 0) - (prior.engineMs ?? 0), adoptMs: (entry.adoptMs ?? 0) - (prior.adoptMs ?? 0),
+            editorMs: (entry.editorMs ?? 0) - (prior.editorMs ?? 0), preludes,
+            preludeState: {before: before.preludeState, after: {drag: Boolean(e._drag), animationEdit: Boolean(e._animationEdit)}}};
+        }, {before, tick}));
+        const after = await page.evaluate(() => ({uid: styk.editor.selectedUid, type: styk.editor.figure.figure_type_id}));
+        await boundary(`undo Make unique at ${tick}`, () => page.evaluate(before => {
+          const e = styk.editor; e.undo();
+          if (e.selectedUid !== before.uid || e.figure?.figure_type_id !== before.type) throw new Error('Undo did not restore the original movieclip identity.');
+        }, before));
+        await boundary(`redo Make unique at ${tick}`, () => page.evaluate(after => {
+          const e = styk.editor; e.redo();
+          if (e.selectedUid !== after.uid || e.figure?.figure_type_id !== after.type) throw new Error('Redo did not restore the independent movieclip identity.');
+        }, after));
+        await boundary(`restore the original movieclip at ${tick}`, () => page.evaluate(before => {
+          const e = styk.editor; e.undo();
+          if (e.selectedUid !== before.uid || e.figure?.figure_type_id !== before.type) throw new Error('The Unique cycle did not restore its original identity.');
+        }, before));
+      }
+      return;
+    }
     if (args.includes('--selection-adoption')) {
       await step('duplicate a figure and restore its new selection', () => page.evaluate(() => {
         const e = styk.editor, object = e.evaluatedFrame.objects[0];
@@ -655,6 +740,8 @@ async function run(mode) {
     await settled();
     await page.evaluate(() => { const r = globalThis.__stykEditShadow; if (r) Object.assign(r, {calls: 0, compared: 0, rounded: 0, skipped: 0, jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0, ownableMs: 0, failedOwned: 0, failedOwnedMs: 0, byCall: {}, comparedByCall: {}}); });
     steps.length = 0;
+    if (movieclipUnique) uniqueSnapshots.length = 0;
+    if (movieclipUnique) uniqueCalls.length = 0;
   }
   await interactions();
   await settled();
@@ -670,7 +757,7 @@ async function run(mode) {
     return {after, undone: capture()};
   });
   await context.close();
-  return {report, outcome, steps, refused, problems};
+  return {report, outcome, steps, refused, problems, ...(movieclipUnique ? {uniqueSnapshots, uniqueCalls} : {})};
 }
 try {
   if (own) {
@@ -714,6 +801,52 @@ try {
       const found = near(a, b, `${phase} ${key}`);
       if (found) differences.push(found);
     }
+    let uniqueProof = null;
+    if (movieclipUnique) {
+      if (alone.uniqueSnapshots.length !== 12 || owned.uniqueSnapshots.length !== 12 || alone.steps.length !== 12 || steps.length !== 12)
+        differences.push('Make unique is missing one or more required boundaries.');
+      for (let index = 0; index < 12; index++) {
+        const [a, b] = [alone, owned].map(run => {
+          const snapshot = run.uniqueSnapshots[index];
+          return snapshot ? {...snapshot, document: JSON.parse(drawn(snapshot.document))} : null;
+        });
+        const found = near(a, b, `Make unique boundary ${index}`);
+        if (found) differences.push(found);
+      }
+      const entry = report.byCall?.makeMovieclipUnique, editor = alone.report?.byCall?.makeMovieclipUnique;
+      const positive = value => Number.isFinite(value) && value > 0;
+      // The actual UI action calls finishCurrentEdit first. Its two quiet
+      // commits are separately owned no-ops, not additional Unique calls.
+      const preludesMatch = (call, owned) => call.globalCalls === 3
+        && Object.values(call.preludeState.before).every(value => value === false)
+        && Object.values(call.preludeState.after).every(value => value === false)
+        && ['commitDrag', 'commitAnimationEdit'].every(name => {
+          const delta = call.preludes[name].delta;
+          return delta.calls === 1 && delta.failedOwned === 0 && delta.failedOwnedMs === 0
+            && ['callMs', 'engineMs', 'adoptMs', 'editorMs'].every(key => Number.isFinite(delta[key]) && delta[key] >= 0)
+            && (owned ? delta.editorMs === 0 && delta.engineMs >= delta.callMs
+              : delta.callMs === 0 && delta.engineMs === 0 && delta.adoptMs === 0);
+        });
+      const adopted = report.mode === 'classes' && report.owned >= 6 && entry?.calls === 2 && editor?.calls === 2
+        && alone.report.comparedByCall?.makeMovieclipUnique === 2 && positive(entry.callMs) && positive(entry.engineMs) && positive(entry.adoptMs)
+        && positive(editor.editorMs) && !entry.editorMs && !report.failedOwned && !report.broken && !alone.report.broken
+        && owned.uniqueCalls.length === 2 && alone.uniqueCalls.length === 2
+        && owned.uniqueCalls.every((call, index) => call.tick === [2, 2.25][index] && call.calls === 1 && call.owned === 3 && call.failedOwned === 0 && preludesMatch(call, true)
+          && positive(call.callMs) && positive(call.engineMs) && positive(call.adoptMs) && call.editorMs === 0)
+        && alone.uniqueCalls.every((call, index) => call.tick === [2, 2.25][index] && call.calls === 1 && call.owned === 0 && call.failedOwned === 0 && preludesMatch(call, false) && positive(call.editorMs))
+        && !refused.length && !alone.refused.length;
+      if (!adopted) differences.push('Make unique did not complete two positive default Native adoptions without fallback.');
+      const candidateMs = entry ? entry.engineMs + entry.adoptMs : null, editorMs = editor?.editorMs ?? null;
+      const costPass = adopted && (candidateMs <= editorMs * 1.05 || (candidateMs - editorMs) / 2 <= .1);
+      uniqueProof = {ticks: [2, 2.25], calls: entry?.calls ?? 0, adopted, nativeCallMs: entry?.callMs ?? null,
+        engineParseValidationMs: entry?.engineMs ?? null, adoptMs: entry?.adoptMs ?? null,
+        matchedCommandDiagnostic: {candidateMs, editorMs, costPass, extraAverageMs: adopted ? (candidateMs - editorMs) / 2 : null, gate: false},
+        fullClassRowAdvance: false, idleSpeedClaim: false,
+        invocationClocks: {editorAlone: alone.uniqueCalls, engineOwned: owned.uniqueCalls},
+        outcomes: {editorAlone: alone.outcome, engineOwned: owned.outcome},
+        boundaries: {editorAlone: alone.uniqueSnapshots, engineOwned: owned.uniqueSnapshots}};
+      console.log(`Make unique: ${adopted ? 'two default Native adoptions' : 'adoption proof failed'}; matched command cost ${candidateMs} / editor ${editorMs} ms (diagnostic only); not a full-class or idle-speed result`);
+    }
     console.log(differences.length ? `DIFFERENT from the editor alone:\n  ${differences.join('\n  ')}`
       : `the same as the editor alone: document (${alone.outcome.after.document.length} bytes; ${rounded} numbers differ in their last digits), history (${alone.outcome.after.undo.length} entries), selection, and after undoing everything`);
     // What each call cost the editor alone and the engine owning it (its call and the
@@ -727,7 +860,8 @@ try {
     for (const problem of [...alone.problems, ...problems].slice(0, 5)) console.log(`  page: ${problem}`);
     if (missingCalls(alone.report).length) console.log(`  required calls not compared: ${missingCalls(alone.report).join(', ')}`);
     const out = option('--out');
-    if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, editorAlone: alone.report, differences, problems, editorAloneProblems: alone.problems}, null, 1));
+    if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, editorAlone: alone.report, differences, problems, editorAloneProblems: alone.problems,
+      ...(movieclipUnique ? {uniqueProof} : {})}, null, 1));
     console.log(`  mode ${report.mode}`);
     failed = differences.length > 0 || report.mismatches.length > 0 || alone.report.mismatches.length > 0
       || (report.owned === 0 && !args.includes('--default')) || problems.length > 0 || alone.problems.length > 0

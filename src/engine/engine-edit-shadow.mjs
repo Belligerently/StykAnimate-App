@@ -26,6 +26,8 @@ import {layerFocusOf} from '../editor-layer-focus.mjs';
 import {figureHandleTransform} from '../editor-figure-transform.mjs';
 import {withDraws} from '../editor-draws.mjs';
 import {isMovieclip} from '../movieclips.mjs';
+import {validateLayerSheetChanges} from '../layer-sheet.mjs';
+import {validateLayerState} from '../layers.mjs';
 import {captureEditBounds} from './engine-edit-bounds.mjs';
 
 /** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
@@ -49,7 +51,7 @@ const PORTED = ['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selec
   'sheetSetDuration', 'sheetAppendFrame', 'joinTo', 'unjoinFigure', 'joinFigure', 'deleteSelection', 'deleteFigure', 'duplicateFigure', 'setConnectorPosition', 'setSpatialPose', 'setSpatialMotion', 'setSpatialIKTarget', 'resetSpatialPose', 'setPoseChoice', 'setNodeIK', 'rotateIKTarget', 'setSpatialFeetPinned',
   'renameLayer', 'setLayerColor', 'setLayerVisible', 'setLayerLocked', 'reorderLayers', 'moveLayerTo', 'createLayer', 'createLayerFolder', 'renameLayerFolder',
   'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder', 'addFigure', 'sheetMoveFrames', 'updateObject', 'updateSelection', 'updateSegment', 'setCameraMotion', 'deleteCameraMotion',
-  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'sheetTransferFrames', 'copySelection', 'cutSelection', 'pasteSelection', 'duplicateSelection', 'importFigure', 'setLayerParallax', 'renameMovieclip', 'setMovieclipPlayback', 'setMovieclipDrawing', 'restartMovieclip', 'removeMovieclipRestart', 'setFPS', 'setCanvasSize', 'updateProject', 'addPolygon', 'updatePolygon', 'removePolygon',
+  'addPaletteColor', 'addPaletteColors', 'removePaletteColor', 'movePaletteColor', 'sheetCopyFrames', 'sheetPasteFrames', 'sheetTransferFrames', 'copySelection', 'cutSelection', 'pasteSelection', 'duplicateSelection', 'importFigure', 'setLayerParallax', 'renameMovieclip', 'makeMovieclipUnique', 'setMovieclipPlayback', 'setMovieclipDrawing', 'restartMovieclip', 'removeMovieclipRestart', 'setFPS', 'setCanvasSize', 'updateProject', 'addPolygon', 'updatePolygon', 'removePolygon',
   'beginVfxClipEdit', 'commitVfxClipEdit', 'cancelVfxClipEdit', 'setVfxClip', 'trimVfxClipStart', 'deleteVfxClip', 'moveVfxClipOrder', 'reorderVfxGroupEffect',
   'setVfxClipParameter', 'setVfxClipParameters', 'toggleVfxClipKey', 'moveVfxClipKey', 'moveVfxClipKeys', 'deleteVfxClipKeys', 'setVfxClipEasing', 'undo', 'redo',
   // Property edits on a layer sheet (styk-edit/src/property_edit.rs).
@@ -84,7 +86,7 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
   // Style and draw-order edits recoloured or keyed on the figure on show publish the sheet; definition edits run in the editor.
   'updateBuilderSegmentStyle', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder',
-  ...SPLITS,
+  ...SPLITS, 'makeMovieclipUnique',
   // A motion-path gesture's pointer moves run in both (the app reads the editor's session for
   // its live trail); what its commit publishes is adopted.
   'commitMotionPathEdit']);
@@ -411,6 +413,78 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     try { figure = editor.figure; } catch { return null; }
     return figure && !isMovieclip(figure) && !figure._styk?.animationOrigin ? figure : null;
   };
+  const uniqueFigure = () => {
+    const styk = editor.report._styk;
+    if (!editor.layerTimeline || !styk?.layerSheet || styk.simpleFrameDraft || styk.movieclipSource
+      || editor._drag || editor._authoredPoseEdit || editor._frameDraft || editor._animationEdit
+      || editor._sheetPropertyPreview || editor._vfxClipEdit || editor._movieclipBatch || batching
+      || editingClass(editor.report) === 'unported') return null;
+    try { const figure = editor.figure; return isMovieclip(figure) ? figure : null; } catch { return null; }
+  };
+  const prepareUnique = (answer, original, selection) => {
+    const reject = why => ({why: `a movieclip unique packet ${why}`});
+    const record = value => value && typeof value === 'object' && !Array.isArray(value);
+    const {movieclipUnique: marker, state, events, definitions} = answer;
+    if (!record(marker) || Object.keys(marker).length !== 1 || marker.definitionIndex !== editor.report.figure_types.length
+      || !Array.isArray(definitions) || definitions.length !== 1 || !record(definitions[0])
+      || !record(state) || !Array.isArray(events) || events.length !== 5 || events.some(event => !record(event))) return reject('with an incomplete response');
+    const added = definitions[0], [definition, publication, seek, selected, closing] = events;
+    if (!Number.isInteger(added.figure_type_id) || added.figure_type_id < 0 || added.figure_type_id > 0xffffffff
+      || editor.report.figure_types.some(figure => figure.figure_type_id === added.figure_type_id)
+      || added.name !== `${original.name} copy` || answer.drag || answer.draft
+      || events.some(event => event.live)
+      || definition.kind !== 'edit' || definition.definition !== true || definition.layerSheet
+      || definition.structural !== true || definition.timing !== true || definition.label !== 'Create movieclip'
+      || publication.kind !== 'edit' || publication.layerSheet !== true || publication.definition
+      || publication.structural !== true || publication.timing !== true || publication.label !== 'Make movieclip unique'
+      || seek.kind !== 'seek' || selected.kind !== 'selection'
+      || closing.kind !== 'edit' || closing.layerSheet || closing.definition
+      || closing.structural !== true || closing.timing !== true || closing.label !== 'Make movieclip unique'
+      || definition.tick !== editor.tick || publication.tick !== editor.tick
+      || definition.frameIndex !== editor.frameIndex || publication.frameIndex !== editor.frameIndex
+      || !Number.isInteger(seek.tick) || seek.tick !== Math.round(editor.tick) || seek.tick !== state.tick || selected.tick !== seek.tick || closing.tick !== seek.tick
+      || seek.frameIndex !== state.frameIndex || selected.frameIndex !== state.frameIndex || closing.frameIndex !== state.frameIndex)
+      return reject('outside the original publication sequence');
+    if (state.selectedUid !== editor._nextUid || state.nextUid !== editor._nextUid + 1 || state.selectedJoint !== -1
+      || !Array.isArray(state.selectedUids) || state.selectedUids.length !== 1 || state.selectedUids[0] !== state.selectedUid
+      || !Number.isSafeInteger(state.nextFrameIdentity) || state.nextFrameIdentity < editor._nextFrameIdentity
+      || !Number.isSafeInteger(publication.layerRevision) || publication.layerRevision < editor.layerRevision
+      || !Number.isSafeInteger(state.layerRevision) || state.layerRevision < publication.layerRevision
+      || Object.keys(selectionMetadata(state)).length)
+      return reject('with a different final view');
+    if (!record(answer.sheet) || !record(answer.sheet.tracks) || !record(answer.sources)
+      || !Array.isArray(publication.sourceIds) || publication.sourceIds.length !== Object.keys(answer.sources).length
+      || publication.sourceIds.some((id, index) => typeof id !== 'string' || id !== Object.keys(answer.sources)[index]
+        || Object.hasOwn(editor.report._styk.frameSources ?? {}, id) || !record(answer.sources[id]) || !Array.isArray(answer.sources[id].objects)))
+      return reject('missing a captured source');
+    const before = editor.report._styk.layerSheet;
+    let sheet = answer.changesOnly ? {...before, ...answer.sheet} : {...answer.sheet};
+    if (answer.changesOnly) {
+      if (answer.sheetRemoved !== undefined && (!Array.isArray(answer.sheetRemoved) || answer.sheetRemoved.some(key => typeof key !== 'string'))) return reject('with invalid sheet removals');
+      for (const key of answer.sheetRemoved ?? []) delete sheet[key];
+      if (answer.sheetOrder !== undefined) {
+        if (!Array.isArray(answer.sheetOrder) || answer.sheetOrder.length !== Object.keys(sheet).length
+          || new Set(answer.sheetOrder).size !== answer.sheetOrder.length || answer.sheetOrder.some(key => !Object.hasOwn(sheet, key))) return reject('with an incomplete sheet order');
+        sheet = Object.fromEntries(answer.sheetOrder.map(key => [key, sheet[key]]));
+      }
+    }
+    const trackOrder = answer.trackOrder ?? Object.keys(before.tracks);
+    if (!Array.isArray(trackOrder) || new Set(trackOrder).size !== trackOrder.length
+      || trackOrder.some(id => typeof id !== 'string' || !Object.hasOwn(answer.sheet.tracks, id) && !Object.hasOwn(before.tracks, id))
+      || Object.keys(answer.sheet.tracks).some(id => !trackOrder.includes(id))) return reject('with an incomplete track order');
+    const layers = Object.hasOwn(answer, 'layers') ? answer.layers : editor.report._styk.layers;
+    // Native certifies the definition's unchanged COW children and key order.
+    // Reuse them rather than decoding a second nested movieclip document.
+    const figure = {...original, figure_type_id: added.figure_type_id, name: added.name};
+    const complete = {...sheet, tracks: Object.fromEntries(trackOrder.map(id => [id,
+      Object.hasOwn(answer.sheet.tracks, id) ? answer.sheet.tracks[id] : before.tracks[id]]))};
+    const candidate = {...editor.report, figure_types: [...editor.report.figure_types, figure], _styk: {...editor.report._styk,
+      layerSheet: complete, layers, frameSources: {...editor.report._styk.frameSources, ...answer.sources}}};
+    // Validate with the existing owners before the first definition write.
+    try { validateLayerState(layers); validateLayerSheetChanges(candidate, editor.report); } catch { return reject('with an invalid sheet publication'); }
+    return {figure, publication: {sheet, trackOrder, layers, sources: answer.sources, nextFrame: state.nextFrameIdentity},
+      tick: seek.tick, uid: state.selectedUid, selection};
+  };
   const prepareSplit = (answer, figure, selection) => {
     const packet = answer.topology, state = answer.state;
     const reject = why => ({why: `a topology packet ${why}`});
@@ -512,7 +586,11 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     }
   };
   /** What the editor does with an owned call's answer instead of computing it. */
-  const adopt = (name, answer, selection, args, topology) => {
+  const adopt = (name, answer, selection, args, topology, unique) => {
+    if (unique) {
+      try { return editor._adoptMovieclipUnique(unique); }
+      catch (error) { end('a movieclip unique publication failed'); throw error; }
+    }
     if (topology) return adoptSplit(topology, answer.state);
     // A camera drag the engine committed: the editor's ends, and its preview with it.
     if ((name === 'commitCameraDrag' || name === 'commitDrag') && editor._drag?.camera) { editor._drag = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
@@ -716,7 +794,9 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       if (depth > 0) return original.apply(this, args);
       let live = begin(), before = null, payload = null, measured = null, fallbackStarted = null;
       const topologyFigure = live && own && SPLITS.has(name) ? splitFigure() : null;
-      const ownCall = own && OWNED.has(name) && (!SPLITS.has(name) || Boolean(topologyFigure));
+      const movieclipFigure = live && own && name === 'makeMovieclipUnique' ? uniqueFigure() : null;
+      const ownCall = own && OWNED.has(name) && (!SPLITS.has(name) || Boolean(topologyFigure))
+        && (name !== 'makeMovieclipUnique' || Boolean(movieclipFigure));
       // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
       if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
       if (live && (RANGE.has(name) || TOPOLOGY.includes(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
@@ -735,7 +815,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (given.some(value => value === undefined || typeof value === 'function' || value instanceof Set || name === 'undo' || name === 'redo')) payload = name === 'undo' || name === 'redo' ? '[]' : null;
         else try { payload = measured ? measured.payload() : JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
-        else before = JSON.stringify({...view(), ...(ownCall ? {changesOnly: true} : {}), ...(topologyFigure ? {topologyPublication: true} : {})});
+        else before = JSON.stringify({...view(), ...(ownCall ? {changesOnly: true} : {}), ...(topologyFigure ? {topologyPublication: true} : {}), ...(movieclipFigure ? {movieclipUniquePublication: true} : {})});
       }
       // Rig releases emit plain/definition edits; own static patches bypass keyed styles.
       // Keep these routes in the original editor with their eligible fallback timed;
@@ -757,11 +837,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
         report.calls++;
         const topology = answer?.status === 'ok' && topologyFigure && answer.result !== false ? prepareSplit(answer, topologyFigure, selection) : null;
-        const why = answer?.status === 'ok' ? topology ? topology.why : unadoptable(answer) : null;
+        const unique = answer?.status === 'ok' && movieclipFigure ? prepareUnique(answer, movieclipFigure, selection) : null;
+        const why = answer?.status === 'ok' ? unique ? unique.why : topology ? topology.why : unadoptable(answer) : null;
         if (answer?.status === 'ok' && !why) {
           depth++;
           const adopting = performance.now();
-          try { return adopt(name, answer, selection, args, topology); }
+          try { return adopt(name, answer, selection, args, topology, unique); }
           finally {
             depth--; report.owned++; report.ownedMs += performance.now() - called;
             const entry = (report.byCall ??= {})[name] ??= {calls: 0};

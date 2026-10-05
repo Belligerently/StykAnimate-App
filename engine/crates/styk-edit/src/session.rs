@@ -168,6 +168,58 @@ fn split_topology_publication(before: &Value, report: &Value) -> Option<Value> {
     Some(response_value(fields))
 }
 
+/// A command-specific certificate for the existing definition + sheet batch.
+/// The payload remains in the ordinary answer fields, not a second history format.
+fn movieclip_unique_publication(before: &Value, original: &Value, report: &Value, result: &Value, events: &[Value]) -> Option<Value> {
+    if events.len() != 5 { return None; }
+    let edit = |event: &Value, label: &str, definition: bool, sheet: bool| {
+        event.get("kind").and_then(Value::as_str) == Some("edit")
+            && event.get("label").and_then(Value::as_str) == Some(label)
+            && event.get("structural") == Some(&Value::Bool(true))
+            && event.get("timing") == Some(&Value::Bool(true))
+            && event.get("definition").is_some_and(Value::truthy) == definition
+            && event.get("layerSheet").is_some_and(Value::truthy) == sheet
+            && !event.get("live").is_some_and(Value::truthy)
+    };
+    if !edit(&events[0], "Create movieclip", true, false)
+        || !edit(&events[1], "Make movieclip unique", false, true)
+        || events[2].get("kind").and_then(Value::as_str) != Some("seek")
+        || events[3].get("kind").and_then(Value::as_str) != Some("selection")
+        || !edit(&events[4], "Make movieclip unique", false, false)
+        || events[2..4].iter().any(|event| ["structural", "timing", "definition", "layerSheet", "live"].iter().any(|key| event.get(key).is_some_and(Value::truthy)))
+    { return None; }
+    let old = before.get("figure_types")?.elements()?;
+    let figures = report.get("figure_types")?.elements()?;
+    if figures.len() != old.len() + 1
+        || !old.iter().zip(figures.iter()).all(|(old, figure)| old.same_node(&figure))
+        || !old.iter().any(|figure| figure.same_node(original))
+        || !before.get("keyframes")?.same_node(report.get("keyframes")?)
+    { return None; }
+    let figure = figures.get(old.len())?;
+    let old_fields = original.as_obj()?;
+    let fields = figure.as_obj()?;
+    if !figure.same_node(result) || original.get("name")?.as_str().is_none()
+        || original.path(&["_styk", "animationOrigin"]).is_some()
+        || !old_fields.keys().eq(fields.keys())
+        || fields.iter().any(|(key, value)| !matches!(key.as_ref(), "figure_type_id" | "name")
+            && !old_fields.get(key).is_some_and(|old| old.same_node(value)))
+        || !figure.get("figure_type_id")?.as_f64()?.is_finite()
+        || figure.get("name")?.as_str().is_none()
+    { return None; }
+    // The existing response reads these sources from the final report. If
+    // collection lost an intermediate capture, JS must run its original owner.
+    let sources = events[1].get("sourceIds")?.elements()?;
+    if sources.is_empty() { return None; }
+    for id in sources.iter() {
+        let id = id.as_str()?;
+        let source = report.path(&["_styk", "frameSources", id])?;
+        source.as_obj()?;
+        source.get("objects")?.elements()?;
+        if before.path(&["_styk", "frameSources", id]).is_some() { return None; }
+    }
+    Some(response_value(vec![("definitionIndex", Value::Num(old.len() as f64))]))
+}
+
 impl Session {
     /// `state` is JSON: the editor's options (`propertyChannels`, `layerTimeline`,
     /// `autoKey`), view (`tick`, `frameIndex`, `selectedUid`, `selectedUids`,
@@ -230,6 +282,9 @@ impl Session {
     /// `topologyPublication: true` opts an ordinary sheet split (including its two
     /// aliases) into an additional `topology` packet of changed stored definitions,
     /// poses and animation fields. It does not change the command or default wire.
+    /// `movieclipUniquePublication: true` additionally certifies an ordinary sheet
+    /// Make Unique answer with `movieclipUnique: {definitionIndex}`. Its appended
+    /// definition, sheet and sources remain in their existing response fields.
     /// Returns the answer as JSON (see the module).
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
@@ -318,6 +373,13 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         && editor.native_token.is_none() && editor.batch.is_none()
         && before.path(&["_styk", "simpleFrameDraft"]).is_none()
         && before.path(&["_styk", "movieclipSource"]).is_none();
+    let unique_requested = view.get("movieclipUniquePublication") == Some(&Value::Bool(true))
+        && method == "makeMovieclipUnique" && editor.sheet()
+        && editor.drag.is_none() && draft.is_none()
+        && editor.property_edit.is_none() && editor.vfx_edit.is_none()
+        && editor.native_token.is_none() && editor.batch.is_none()
+        && before.path(&["_styk", "simpleFrameDraft"]).is_none()
+        && before.path(&["_styk", "movieclipSource"]).is_none();
     let mut answer = Vec::with_capacity(8);
     // Owned calls request only changed COW records. The default remains complete for
     // shadow comparison and existing native session consumers.
@@ -341,6 +403,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         }
         editor.set_sheet_selection(sheet_selection_of(view));
     }
+    // Capture through the existing selected-definition reader after view sync.
+    // Failure only omits the opt-in marker; dispatch keeps its original errors.
+    let unique_original = if unique_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure) } else { None };
     // What the editor drew at random during its own run of the call (D18).
     editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
     let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
@@ -381,6 +446,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         })
     };
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
+    let unique_result = unique_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     match result {
         Ok(result) => {
             answer.push(("status", Value::str("ok")));
@@ -518,6 +584,11 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         && let Some(topology) = split_topology_publication(&before, report)
     {
         answer.push(("topology", topology));
+    }
+    if let Some((original, result)) = unique_original.as_ref().zip(unique_result.as_ref())
+        && let Some(marker) = movieclip_unique_publication(&before, original, report, result, &events)
+    {
+        answer.push(("movieclipUnique", marker));
     }
     answer.push(("events", Value::array(events)));
     let figures = if changes_only {

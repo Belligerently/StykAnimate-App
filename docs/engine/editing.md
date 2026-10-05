@@ -104,6 +104,32 @@ GPU certification. See the separate
 [command measurement](../performance/RUST-EDITING-COMMANDS.md). Other Session answers
 and Rust signatures are unchanged; mobile consumers opting in must read the fields.
 
+### Ordinary sheet Unique publication (2026-10-05)
+
+Literal `view.movieclipUniquePublication: true` requests optional
+`answer.movieclipUnique: {definitionIndex}` for quiet ordinary-sheet
+`makeMovieclipUnique`. Existing `definitions[0]`, sheet, layers, sources, result,
+state and events remain the payload. The certificate binds a sole appended shallow
+copy to the selected original, with unchanged existing definitions/keyframes,
+complete new source frames and the original event order: definition edit, sheet
+edit, seek, selection and closing batch edit. An absent or
+unusable certificate retains the existing route; native-timeline worker refusal
+is unchanged.
+
+The facade preserves original shallow definition children and runs the existing
+`movieclipBatch`, definition publication and layer-sheet adoption tail. It validates
+marker/scalars/events/state/source order before writing through the original
+incremental layer-sheet validator. Application failure uses the original rollback
+and retires the advanced Native session; tick/selection follow original event points. This is additive opt-in Session JSON only; Rust signatures,
+document schema and stored math do not change. Mobile consumers opting in must
+handle the requested certificate. Focused checks pass 233 Rust tests, five
+recordings / 79 exact calls, 266 JS tests and Main check. Required-profile shipping
+is 10,257,065 bytes. Actual warmed default UI copies at ticks 2 and 2.25 preserve
+twelve paired document/history/selection/phase boundaries, undo/redo and full undo.
+Both Unique calls have positive Native/adoption clocks without fallback; the
+matched command timing is diagnostic only, not a class-cost gate. See
+[command measurements](../performance/RUST-EDITING-COMMANDS.md).
+
 ### Recorded worker movieclips, history and publication (2026-10-04)
 
 Native and sheet movieclip creation, splitting, unique copies, break apart, placement,

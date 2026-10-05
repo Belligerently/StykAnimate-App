@@ -889,3 +889,207 @@ fn selected_shape_angle_preserves_duplicate_uid_and_conflict_fallbacks() {
     assert!(duplicate > 0);
     eprintln!("SELECTED_ANGLE_EDGE conflicts={conflicts} compared={compared} duplicate={duplicate}");
 }
+
+/// The ordinary publication fields suffice; no report or history packet is added.
+fn apply_unique_answer(mut report: Value, answer: &Value) -> Value {
+    let sheet = reconstruct_sheet(&report, answer);
+    report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()
+        .extend(answer.get("definitions").unwrap().elements().unwrap().iter());
+    let styk = report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap();
+    if !styk.contains("frameSources") { styk.set("frameSources", Value::object(Obj::new())); }
+    let sources = styk.get_mut("frameSources").unwrap().make_obj().unwrap();
+    for (id, frame) in answer.get("sources").unwrap().as_obj().unwrap().iter() { sources.set(id, frame.clone()); }
+    if let Some(layers) = answer.get("layers") { styk.set("layers", layers.clone()); }
+    styk.set("layerSheet", sheet);
+    report
+}
+
+#[test]
+fn movieclip_unique_marker_keeps_recorded_answers_and_shallow_definition_ownership() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests");
+    for compact in [false, true] {
+        let mut markers = 0;
+        for (path, last) in [("edit/clip-unique-sheet", 12), ("movieclip-timed-sheet-expansion/unique-imported", 3), ("movieclip-timed-sheet-expansion/unique-authored", 3)] {
+            let reference = parse(&std::fs::read_to_string(folder.join(format!("{path}.reference.json"))).unwrap());
+            let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+            let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            let initial = requested.editor.report_json();
+            let mut expected = initial.clone();
+            let mut returned = Vec::new();
+            for step in &steps[1..=last] {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap().trim_start_matches('@');
+                let before = requested.report().clone();
+                let generated = requested.editor.generated_sources.clone();
+                let original = if method == "makeMovieclipUnique" { Some(requested.editor.selected_movieclip().unwrap().2) } else { None };
+                let original_bytes = original.as_ref().map(json);
+                let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+                view.set("autoKey", Value::Bool(ordinary.editor.auto_key));
+                view.set("changesOnly", Value::Bool(compact));
+                let args = Value::array(call[1..].to_vec());
+                let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
+                view.set("movieclipUniquePublication", Value::Bool(true));
+                let mut answer = requested.call_values(method, &args, &Value::object(view));
+                let label = format!("{path} step{} compact={compact}", step.get("step").unwrap());
+                assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{label}: {answer:?}");
+                if let Some(original) = &original {
+                    let marker = answer.get("movieclipUnique").unwrap().clone();
+                    let index = before.get("figure_types").unwrap().array_len().unwrap();
+                    assert_eq!(marker, parse(&format!(r#"{{"definitionIndex":{index}}}"#)));
+                    let definitions = answer.get("definitions").unwrap().elements().unwrap();
+                    assert_eq!(definitions.len(), 1);
+                    let figure = definitions.get(0).unwrap();
+                    assert!(figure.same_node(answer.get("result").unwrap()));
+                    assert!(figure.same_node(&requested.report().get("figure_types").unwrap().item(index).unwrap()));
+                    assert!(original.as_obj().unwrap().keys().eq(figure.as_obj().unwrap().keys()));
+                    for (key, value) in original.as_obj().unwrap().iter().filter(|(key, _)| !matches!(key.as_ref(), "figure_type_id" | "name")) {
+                        assert!(value.same_node(figure.get(key).unwrap()), "{label}: shallow child {key}");
+                    }
+                    let mut reconstructed = apply_unique_answer(before.clone(), &answer);
+                    // Recording a new branch can discard old generated sources.
+                    // Apply the existing cleanup result, not a deletion packet;
+                    // source retirement itself remains covered by its owner tests.
+                    let table = reconstructed.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().get_mut("frameSources").unwrap().make_obj().unwrap();
+                    for id in generated.iter().filter(|id| !requested.editor.generated_sources.contains(id)) { table.remove(id); }
+                    assert_eq!(json(&reconstructed), requested.editor.report_json(), "{label}: existing payload + original cleanup reconstruct stored bytes/order");
+                    let events = answer.get("events").unwrap().elements().unwrap();
+                    assert_eq!(events.len(), 5);
+                    // Fractional playhead stays unchanged for the definition and
+                    // sheet children, then the actual seek/select rounds it.
+                    let previous_tick = steps[step.get("step").unwrap().as_f64().unwrap() as usize - 1].get("state").unwrap().get("tick").unwrap();
+                    assert_eq!(events.get(0).unwrap().get("tick"), Some(previous_tick));
+                    assert_eq!(events.get(1).unwrap().get("tick"), Some(previous_tick));
+                    assert_eq!(events.get(2).unwrap().get("tick"), answer.get("state").unwrap().get("tick"));
+                    for id in events.get(1).unwrap().get("sourceIds").unwrap().elements().unwrap().iter() {
+                        let id = id.as_str().unwrap();
+                        assert!(answer.get("sources").unwrap().get(id).unwrap().same_node(requested.report().path(&["_styk", "frameSources", id]).unwrap()));
+                    }
+                    assert_eq!(json(original), original_bytes.unwrap(), "{label}: original immutable definition");
+                    returned.push((figure.clone(), json(&figure)));
+                    answer.make_obj().unwrap().remove("movieclipUnique");
+                    markers += 1;
+                } else { assert!(answer.get("movieclipUnique").is_none()); }
+                assert!(complete.get("movieclipUnique").is_none());
+                assert_eq!(json(&answer), json(&complete), "{label}: opt-in changes only the marker");
+                assert_eq!(json(answer.get("state").unwrap()), json(step.get("state").unwrap()), "{label}: recorded state");
+                assert_eq!(json(answer.get("events").unwrap()), json(step.get("events").unwrap()), "{label}: recorded event order");
+                if method != "seek" { assert_eq!(crate::replay::plain(answer.get("result").unwrap(), 4).unwrap_or(Value::Null), step.get("result").cloned().unwrap(), "{label}: result"); }
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.into(); }
+                assert_eq!(requested.editor.report_json(), expected, "{label}: recorded document");
+                assert_eq!(ordinary.editor.report_json(), expected);
+            }
+            // Timed expansion's later playback uses a different worker route.
+            // Here the existing Unique batch alone is undone/redone/full-undone.
+            if last == 3 {
+                for method in ["undo", "redo", "undo"] {
+                    let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+                    view.set("changesOnly", Value::Bool(compact));
+                    let complete = ordinary.call_values(method, &parse("[]"), &Value::object(view.clone()));
+                    view.set("movieclipUniquePublication", Value::Bool(true));
+                    let answer = requested.call_values(method, &parse("[]"), &Value::object(view));
+                    assert_eq!(json(&answer), json(&complete));
+                    assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+                }
+                assert_eq!(requested.editor.report_json(), initial, "{path}: full Unique undo");
+            }
+            for (figure, bytes) in returned { assert_eq!(json(&figure), bytes, "later history preserves returned shallow definition"); }
+        }
+        assert_eq!(markers, 4, "two ordinary and both fractional recorded Unique calls");
+    }
+}
+
+#[test]
+fn movieclip_unique_marker_reconstructs_zero_history_and_refuses_incomplete_certificates() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/movieclip-timed-sheet-expansion/unique-imported.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let state = reference.get("steps").unwrap().item(2).unwrap().get("state").unwrap().clone();
+    for compact in [false, true] { for limit in [0, 80] {
+        let mut ordinary = session_from_recorded_state(&reference, &state);
+        let mut requested = session_from_recorded_state(&reference, &state);
+        ordinary.editor.history_limits.count = limit;
+        requested.editor.history_limits.count = limit;
+        let before = requested.report().clone();
+        let original = requested.editor.selected_movieclip().unwrap().2;
+        let mut view = state.as_obj().unwrap().clone(); view.set("changesOnly", Value::Bool(compact));
+        let complete = ordinary.call_values("makeMovieclipUnique", &parse("[]"), &Value::object(view.clone()));
+        view.set("movieclipUniquePublication", Value::Bool(true));
+        let mut answer = requested.call_values("makeMovieclipUnique", &parse("[]"), &Value::object(view));
+        assert!(answer.get("movieclipUnique").is_some(), "marker is independent of undo tail at history={limit}");
+        assert_eq!(json(&apply_unique_answer(before.clone(), &answer)), requested.editor.report_json());
+        let events: Vec<Value> = answer.get("events").unwrap().elements().unwrap().iter().collect();
+        let figure = answer.get("result").unwrap();
+        let id = events[1].get("sourceIds").unwrap().item(0).unwrap();
+        let mut incomplete = requested.report().clone();
+        incomplete.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().get_mut("frameSources").unwrap().make_obj().unwrap().remove(id.as_str().unwrap());
+        assert!(movieclip_unique_publication(&before, &original, &incomplete, figure, &events).is_none(), "missing intermediate source cannot certify adoption");
+        let mut reordered = events.clone(); reordered.swap(2, 3);
+        assert!(movieclip_unique_publication(&before, &original, requested.report(), figure, &reordered).is_none());
+        let mut live = events.clone(); live[1].make_obj().unwrap().set("live", Value::Bool(true));
+        assert!(movieclip_unique_publication(&before, &original, requested.report(), figure, &live).is_none());
+        let mut deep_copy = requested.report().clone();
+        let index = answer.get("movieclipUnique").unwrap().get("definitionIndex").unwrap().as_f64().unwrap() as usize;
+        let mut altered = figure.as_obj().unwrap().clone();
+        altered.set("_styk", parse(&json(figure.get("_styk").unwrap())));
+        let altered = Value::object(altered);
+        deep_copy.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[index] = altered.clone();
+        assert!(movieclip_unique_publication(&before, &original, &deep_copy, &altered, &events).is_none(), "decoded deep children are not a shallow copy certificate");
+        if limit == 0 {
+            assert!(requested.editor.undo.is_empty());
+            assert!(!requested.can_undo());
+            let mut reconstructed = Editor::new(apply_unique_answer(before.clone(), &answer), requested.editor.options);
+            reconstructed.generated_sources = requested.editor.generated_sources.clone();
+            reconstructed.uid_counts = requested.editor.uid_counts.clone();
+            reconstructed.source_table_was_present = requested.editor.source_table_was_present;
+            reconstructed.prune_frame_sources();
+            assert_eq!(reconstructed.report_json(), requested.editor.report_json(), "existing prune owner keeps every required source at zero history");
+        } else {
+            let crate::history::CommandKind::Batch { commands } = &requested.editor.undo.last().unwrap().kind else { panic!("Unique must remain one compound batch") };
+            assert_eq!(commands.len(), 2);
+            assert!(matches!(&commands[0].kind, crate::history::CommandKind::MovieclipDefinition { .. }));
+            let crate::history::CommandKind::LayerSheet { sources, .. } = &commands[1].kind else { panic!("second child is the original sheet publication") };
+            for (id, source) in sources { assert!(answer.get("sources").unwrap().get(id).unwrap().same_node(source)); }
+            assert_eq!(commands[0].before_selection.tick, 2.25);
+            assert_eq!(commands[1].before_selection.tick, 2.25);
+        }
+        answer.make_obj().unwrap().remove("movieclipUnique");
+        assert_eq!(json(&answer), json(&complete));
+        assert_eq!(requested.editor.state_value(), ordinary.editor.state_value());
+    } }
+}
+
+#[test]
+fn movieclip_unique_opt_in_preserves_errors_and_native_worker_refusal() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests");
+    for (path, state_index, status) in [("edit/clip-unique-legacy-native", 1, "unported"), ("movieclip-timed-sheet-expansion/expansion-locked", 1, "error")] {
+        let reference = parse(&std::fs::read_to_string(folder.join(format!("{path}.reference.json"))).unwrap());
+        let state = reference.get("steps").unwrap().item(state_index).unwrap().get("state").unwrap().clone();
+        let mut ordinary = session_from_recorded_state(&reference, &state);
+        let mut requested = session_from_recorded_state(&reference, &state);
+        let complete = ordinary.call_values("makeMovieclipUnique", &parse("[]"), &state);
+        let mut view = state.as_obj().unwrap().clone(); view.set("movieclipUniquePublication", Value::Bool(true));
+        let answer = requested.call_values("makeMovieclipUnique", &parse("[]"), &Value::object(view));
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some(status));
+        assert!(answer.get("movieclipUnique").is_none());
+        assert_eq!(json(&answer), json(&complete));
+        assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+        if status == "unported" { assert_eq!(answer.get("reason").and_then(Value::as_str), Some("native movieclip editing requires worker preparation")); }
+        else {
+            assert_eq!(answer.get("error").and_then(Value::as_str), Some("errors.editorLayerSheet.unlockBeforeEditingIt"));
+            let recorded = reference.get("steps").unwrap().item(2).unwrap();
+            assert_eq!(json(answer.get("state").unwrap()), json(recorded.get("state").unwrap()));
+            assert_eq!(json(answer.get("events").unwrap()), json(recorded.get("events").unwrap()));
+        }
+    }
+    let reference = parse(&std::fs::read_to_string(folder.join("edit/clip-unique-sheet.reference.json")).unwrap());
+    let state = reference.get("steps").unwrap().item(2).unwrap().get("state").unwrap().clone();
+    for flag in [Value::Bool(false), Value::Num(1.0)] {
+        let mut ordinary = session_from_recorded_state(&reference, &state);
+        let mut requested = session_from_recorded_state(&reference, &state);
+        let complete = ordinary.call_values("makeMovieclipUnique", &parse("[]"), &state);
+        let mut view = state.as_obj().unwrap().clone(); view.set("movieclipUniquePublication", flag);
+        let answer = requested.call_values("makeMovieclipUnique", &parse("[]"), &Value::object(view));
+        assert!(answer.get("movieclipUnique").is_none());
+        assert_eq!(json(&answer), json(&complete), "only literal true requests the additive wire");
+    }
+}
