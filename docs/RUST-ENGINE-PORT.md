@@ -10,36 +10,37 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, same-layer selection reuse)
+## Handoff (2026-10-05, source-retention cleanup)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current decision:** channels remains closed. Selecting or restoring the same raw
-active-layer string now keeps the current report, preparation and evaluated frame.
-Changed-value writes, selection events/results and history retain their original path.
-**226 Rust tests**, **53 recordings / 2,060 exact calls**, **125 JS tests** and Main
-check pass. Shipping Wasm is **10,245,640 B** with the required profile.
+**Current decision:** channels remains closed. Source cleanup skips history sheet
+scans when current references or directly retained history captures already cover
+every generated source. Otherwise the original retention and removal path runs.
+**92 focused Rust tests**, **53 recordings / 2,060 exact calls**, **125 JS tests** and
+Main check pass. Shipping Wasm is **10,246,035 B** with the required profile.
 
-The fresh original full paired run has exact behavior but costs **224.030/181.885 ms**
-candidate/JS. Excess is **0.121806 ms** per 346 calls; both user cost arms fail, with
-**7.545 ms** remaining to the per-call limit. This loaded run establishes no causal
-speed gain or regression. No matching new checkpoint or default proof is claimed;
-the class patch remains unapplied. APIs, stored math and exclusions are unchanged.
+The fresh original full paired run preserves exact behavior but costs
+**240.965/176.585 ms** candidate/JS. Excess is **0.186069 ms** per 346 calls; both user
+cost arms fail, with **29.780 ms** remaining to the per-call limit. This loaded run
+establishes no causal speed gain or regression. No matching new checkpoint or default
+proof is claimed; the class patch remains unapplied. APIs, stored math and schema
+are unchanged.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
 eligible JS fallback and failed attempts once; `J` is editor-alone cost;
 `N = min(candidate.report.calls, editorAlone.report.calls)` for the complete paired
-workload. Channels has 346 calls on each page: latest excess 0.121806 ms fails the
+workload. Channels has 346 calls on each page: latest excess 0.186069 ms fails the
 0.1 ms arm and the +5% arm. Figures and movieclips remain open. Exact behavior and D13 are unchanged;
 [historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
 outcomes. The short default workload proves admission, not full cost.
 
 **Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
 1 removed** unchanged; **OWNED_CLASSES 4→4**; **deleted JS 2→2**; completed full cost
-rows **40→41**; **engine-1 0/28→0/28**. Historical measurements remain exact.
+rows **41→42**; **engine-1 0/28→0/28**. Historical measurements remain exact.
 
 **Next:** address only a concrete, measured channels cost cause. A verified fix needs
 fresh original full paired cost, a matching committed engine checkpoint and positive
@@ -293,7 +294,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 ## 6. Open problems
 
 - **Figures and movieclips opened:** the current user cost rule, matching committed engine checkpoints and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next channels.
-- **Channels cost blocker:** same-layer selection/restoration reuse passes focused checks, but the latest original full paired run costs 224.030/181.885 ms and fails both user arms at 0.121806 ms excess per call. The remaining gap is 7.545 ms. Channels stays closed; no default, new checkpoint or causal speed change is claimed. Future commands remain parked.
+- **Channels cost blocker:** source-retention cleanup passes focused checks, but the latest original full paired run costs 240.965/176.585 ms and fails both user arms at 0.186069 ms excess per call. The remaining gap is 29.780 ms. Channels stays closed; no default, matching new checkpoint or causal speed change is claimed. Future commands remain parked.
 
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
@@ -553,13 +554,13 @@ layer-sheet movieclip replacements.
 
 ## 7. Parity results
 
-Same-layer selection/restoration reuse passes 226 Rust tests with no failed, ignored
-or filtered tests; both new controls execute. All 53 recordings / 2,060 calls match;
-125 JS tests and Main check (2,000 JS / 93 stylesheets / 682 modules) pass. Recordings
-are unchanged, so no regeneration ran. The fresh full run preserves exact document,
-history, selection and full undo, but 224.030/181.885 ms candidate/JS fails both cost
-arms at 0.121806 ms excess per call, leaving 7.545 ms. Shipping keeps the required
-profile. No class opening, default, matching new checkpoint or causal speed claim.
+Source-retention cleanup passes 92 focused Rust tests in four groups, with no failed
+or ignored tests; both recorded controls execute. All 53 recordings / 2,060 calls match;
+125 JS tests and Main check (2,000 JS / 93 stylesheets / 682 modules / 8,066 references)
+pass. Recordings are unchanged. The fresh full run preserves exact document, history,
+selection and full undo, but 240.965/176.585 ms candidate/JS fails both cost arms at
+0.186069 ms excess per call, leaving 29.780 ms. Shipping keeps the required profile.
+No class opening, default, matching new checkpoint or causal speed claim.
 
 The prior channels full paired behavior/accounting matches; cost 226.105/179.890 ms
 and excess 0.133569 ms/full call fail both user arms, with 11.615 ms remaining to the
@@ -1177,3 +1178,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 14:54 UTC | Reuse imported frames during channel editing | Share successful source samples within one sheet evaluation; focused output/count controls pass 3→1. Targets the channels cost gate. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 39→40; engine-1 0/28 unchanged. | 184 Rust/2 ignored; 36 recordings/687 exact calls; 125 JS/Main check pass. Full cost 233.630/174.045 ms fails at 0.172211 ms excess/call, leaving 24.985 ms. Behavior is exact; channels stays closed. APIs and stored math unchanged. |
 
 | 2026-10-05 15:38 UTC | Keep preparation when selecting the current layer | Skip an identical raw active-layer string before copy-on-write; preserve changed writes and selection/history behavior. Targets channels cost. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 40→41; engine-1 0/28 unchanged. | 226 Rust; 53 recordings/2,060 exact calls; 125 JS/Main check pass. Full cost 224.030/181.885 ms fails at 0.121806 ms excess/call, leaving 7.545 ms. Channels stays closed; APIs and stored math unchanged. |
+
+| 2026-10-05 16:18 UTC | Skip redundant source-retention scans | Current references or directly retained history captures can end cleanup when they cover every generated source; otherwise retain the original full path. Targets channels cost; APIs, schema and stored math unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 41→42; engine-1 0/28 unchanged. | 92 focused Rust; 53 recordings / 2,060 exact calls; 125 JS/Main check pass. Full cost 240.965/176.585 ms fails at 0.186069 ms excess/call, leaving 29.780 ms. Channels stays closed; no causal speed claim. |

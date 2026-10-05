@@ -145,3 +145,70 @@ fn recorded_batch_revision_and_sheet_after_selection_do_not_change_prior_entries
         assert_eq!(observable(&editor), before);
     }
 }
+
+#[test]
+fn pruning_live_sheet_sources_preserves_imported_sources_and_current_heads() {
+    let (mut editor, reference) = recorded("edit/channels-figure-sheet.reference.json");
+    let imported = editor.report.path(&["_styk", "frameSources"]).unwrap().clone();
+    step(&mut editor, &reference, 1);
+    step(&mut editor, &reference, 2);
+    assert_eq!(editor.generated_sources.len(), 1);
+    let report = editor.report.clone();
+    let before = observable(&editor);
+    let generated = editor.generated_sources.clone();
+    let counts = editor.uid_counts.clone();
+    editor.prune_frame_sources();
+    assert!(editor.report.same_node(&report));
+    assert_eq!(observable(&editor), before);
+    assert_eq!(editor.generated_sources, generated);
+    assert_eq!(editor.uid_counts, counts);
+    for (id, source) in imported.as_obj().unwrap().iter() {
+        assert!(editor.report.path(&["_styk", "frameSources", id]).unwrap().same_node(source));
+    }
+}
+
+#[test]
+fn pruning_nested_redo_captures_keeps_history_sources_and_collects_a_discarded_leaf() {
+    let (mut editor, reference) = recorded("edit/move-sheet.reference.json");
+    for index in 1..=4 { step(&mut editor, &reference, index); }
+    editor.call("undo", &[]).unwrap();
+    editor.call("undo", &[]).unwrap();
+    assert_eq!(editor.generated_sources.len(), 2);
+    assert!(editor.undo.is_empty());
+    assert_eq!(editor.redo.len(), 2);
+    assert!(editor.report.path(&["_styk", "frameSources"]).is_none());
+    let discarded = match &editor.redo[0].kind {
+        CommandKind::LayerSheet { sources, .. } => sources[0].0.clone(),
+        _ => panic!("the recorded move must capture a sheet source"),
+    };
+    // Wrap the actual captured commands, preserving their complete before/after
+    // and source values, to exercise recursive undo/redo history retention.
+    for entry in Arc::make_mut(&mut editor.redo) {
+        let leaf = entry.command.clone();
+        let mut inner = leaf.clone();
+        inner.kind = CommandKind::Batch { commands: vec![leaf] };
+        entry.command.kind = CommandKind::Batch { commands: vec![inner] };
+    }
+    let report = editor.report.clone();
+    let before = observable(&editor);
+    let generated = editor.generated_sources.clone();
+    let counts = editor.uid_counts.clone();
+    editor.prune_frame_sources();
+    assert!(editor.report.same_node(&report));
+    assert_eq!(observable(&editor), before);
+    assert_eq!(editor.generated_sources, generated);
+    assert_eq!(editor.uid_counts, counts);
+
+    // Removing the farthest redo leaf makes its captured ID genuinely orphaned;
+    // the remaining nested capture must still survive the full cleanup path.
+    Arc::make_mut(&mut editor.redo).remove(0);
+    let before = observable(&editor);
+    let aliased = editor.report.clone();
+    let remaining: Vec<_> = generated.into_iter().filter(|id| id != &discarded).collect();
+    editor.prune_frame_sources();
+    assert_eq!(editor.generated_sources, remaining);
+    assert_eq!(observable(&editor), before);
+    assert_eq!(editor.uid_counts, counts);
+    assert!(editor.report.path(&["_styk", "frameSources"]).is_none());
+    assert_eq!(editor.report_json(), styk_doc::json::to_string(&crate::record::without_runtime(&aliased)));
+}

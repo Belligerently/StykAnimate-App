@@ -372,3 +372,31 @@ Owned classes 4, inventory 175/123/35/22/1, deleted JS 2 and engine-1 0/28 are u
 completed full rows 40→41 and metadata batches 14→15. Original clocks, argv, actual
 capture timestamps/load and source/package identities are retained in the companion
 JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-active-layer-full-1).
+
+
+## Channels source-retention cleanup — completed 2026-10-05, gate closed
+
+Cleanup skips history sheet scans only when current references or directly retained
+history capture IDs cover every generated source; otherwise the original retention
+and removal path runs. Both recorded controls and 92 focused Rust tests pass with no
+failures or ignored tests (87 library + 2 budget + 2 readiness + 1 session).
+All 53 recordings / 2,060 exact calls, 125 JS tests and Main check pass. Shipping
+Wasm is 10,246,035 B with the required profile; its build took 58.06 s. Bindings,
+codec and drawing are unchanged. APIs, schema and stored arithmetic are unchanged.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Current user rule |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Channels-figure | 176.585 | 232.095 | 8.815 | 0.055 | 240.965 | Fail |
+
+The original full paired run preserves exact document/history/selection/full undo,
+with 126 owned / 219 compared / one failed / 346 calls and 130 matching eligible calls.
+Both pages have 346 full calls; excess is 0.186069 ms/call, leaving 29.780 ms to the
+per-call arm. Both policy arms fail. The rejected Native paste and original JS fallback
+are distinct intervals counted once; comparison-only residual is zero. This loaded
+run establishes no causal speed gain or regression.
+
+Channels remains closed; no matching new checkpoint or default proof is claimed.
+Owned classes 4, inventory 175/123/35/22/1, deleted JS 2 and engine-1 0/28 are unchanged;
+completed full rows 41→42 and metadata batches 15→16. Original clocks, argv, actual
+capture timestamps/load and source/package identities are retained in the companion
+JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-source-prune-full-1).

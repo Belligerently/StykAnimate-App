@@ -1246,6 +1246,11 @@ impl Editor {
             }
         };
         keep_animation(self.report.path(&["_styk", "animation"]), &mut retained);
+        // History can only add retained IDs. If the live document already keeps
+        // every generated source, none can be collected.
+        if self.generated_sources.iter().all(|id| retained.contains(id)) {
+            return;
+        }
         // `historyCommands`: the entries of batches count as entries.
         fn flatten<'a>(commands: impl Iterator<Item = &'a Command>, out: &mut Vec<&'a Command>) {
             for command in commands {
@@ -1257,11 +1262,20 @@ impl Editor {
         }
         let mut history = Vec::new();
         flatten(self.undo.iter().chain(self.redo.iter()).map(|entry| &**entry), &mut history);
+        // Captures owned by a sheet command are unconditionally retained. Check
+        // those direct references before walking the commands' sheet snapshots.
+        for command in &history {
+            if let CommandKind::LayerSheet { sources, .. } = &command.kind {
+                retained.extend(sources.iter().map(|(id, _)| id.clone()));
+            }
+        }
+        if self.generated_sources.iter().all(|id| retained.contains(id)) {
+            return;
+        }
         for command in history {
-            if let CommandKind::LayerSheet { before, after, sources, .. } = &command.kind {
+            if let CommandKind::LayerSheet { before, after, .. } = &command.kind {
                 keep_sheet(Some(before), &mut retained);
                 keep_sheet(Some(after), &mut retained);
-                retained.extend(sources.iter().map(|(id, _)| id.clone()));
             }
             if let CommandKind::Animation { before, after, .. } = &command.kind {
                 keep_animation(before.as_ref(), &mut retained);

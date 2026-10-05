@@ -694,6 +694,17 @@ exact calls pass, alongside 125 JS tests and Main check. Fresh full cost remains
 the rule at 224.030/181.885 ms and 0.121806 ms excess/call, leaving 7.545 ms. Channels
 stays closed; no matching new checkpoint/default or causal speed claim. Public APIs
 and stored arithmetic are unchanged.
+
+Source cleanup now ends before history sheet scans when current references or
+flattened history capture IDs already cover every generated source. Otherwise the
+original retention readers and removal order run. Undo/redo, imported sources, frame
+identity and history behavior are unchanged. Both recorded controls and 92 focused
+Rust tests pass, as do 53 recordings / 2,060 exact calls, 125 JS tests and Main check.
+Fresh full cost is 240.965/176.585 ms with 0.186069 ms excess per call, leaving
+29.780 ms to the per-call arm; both cost arms fail. Channels stays closed, with no
+matching new checkpoint/default or causal speed claim. APIs, schema and stored
+arithmetic are unchanged; mobile needs no adaptation.
+
 Historical measurements below retain their original
 rule and outcomes.
 
