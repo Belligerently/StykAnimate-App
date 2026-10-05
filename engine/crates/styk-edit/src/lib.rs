@@ -66,6 +66,7 @@ mod vfx_stack;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use styk_doc::{Obj, Value};
 
@@ -162,8 +163,8 @@ pub struct Editor {
     /// (`_authoredCommitPreview` kept in `_evaluated`). Usually equal to evaluating
     /// again; not after editing a movieclip's replaced frame between its keys.
     pub(crate) retained: Option<Value>,
-    pub(crate) undo: Vec<history::Entry>,
-    pub(crate) redo: Vec<history::Entry>,
+    pub(crate) undo: Arc<Vec<history::Entry>>,
+    pub(crate) redo: Arc<Vec<history::Entry>>,
     pub(crate) history_limits: history::HistoryLimits,
     pub(crate) history_size: f64,
     pub(crate) worker_history: bool,
@@ -259,8 +260,8 @@ struct Snapshot {
     drag: Option<Drag>,
     authored: Option<Authored>,
     retained: Option<Value>,
-    undo: Vec<history::Entry>,
-    redo: Vec<history::Entry>,
+    undo: Arc<Vec<history::Entry>>,
+    redo: Arc<Vec<history::Entry>>,
     history_size: f64,
     counters: [u64; 6],
     uid_counts: Option<(HashMap<u32, i64>, std::collections::HashSet<u32>)>,
@@ -300,8 +301,8 @@ impl Editor {
             drag: None,
             authored: None,
             retained: None,
-            undo: Vec::new(),
-            redo: Vec::new(),
+            undo: Arc::new(Vec::new()),
+            redo: Arc::new(Vec::new()),
             history_limits: Default::default(),
             history_size: 0.0,
             worker_history: false,

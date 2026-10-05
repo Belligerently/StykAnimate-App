@@ -1256,7 +1256,7 @@ impl Editor {
             }
         }
         let mut history = Vec::new();
-        flatten(self.undo.iter().chain(&self.redo).map(|entry| &**entry), &mut history);
+        flatten(self.undo.iter().chain(self.redo.iter()).map(|entry| &**entry), &mut history);
         for command in history {
             if let CommandKind::LayerSheet { before, after, sources, .. } = &command.kind {
                 keep_sheet(Some(before), &mut retained);

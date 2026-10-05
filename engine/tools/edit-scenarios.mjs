@@ -163,6 +163,24 @@ scenario('locked-sheet', app, [
     ['selectMany', [1, instance]], ['moveSelection', 3, 3], ['@seek', 0], ['@select', instance, -1], ['scaleSelection', 1.3], ['@select', 2, -1], ['rotateSelection', 0.2],
     ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['undo'], ['redo'], ['redo'],
   ], 'sheet-movieclip-loose.document.json');
+  // An ordinary IK chain joined to a movieclip ancestor keeps the existing
+  // non-assembled pose path. Pointer inputs come from the actual editor.
+  {
+    const probe = open(JSON.parse(readFileSync(`${out}/sheet-movieclip-loose.document.json`, 'utf8')), app), steps = [];
+    const run = step => { steps.push(step); const [method, ...args] = step; return probe[method === '@select' ? 'select' : method](...args); };
+    run(['@select', 2, -1]); run(['joinTo', instance, 1]);
+    const handle = probe.figure.segments.findIndex(segment => segment.segment_id === 22);
+    run(['@select', 2, handle]); run(['setNodeIK', {enabled: true, pinned: false, chainLength: 2}]);
+    const tip = probe.geometry.objects.get(probe.selectedSlot).segments[handle].end;
+    run(['beginDrag', 'Pose figure']);
+    run(['poseJoint', tip.x + 13.25, tip.y - 8.125, {snap: false}]);
+    run(['poseJoint', tip.x + 18.5, tip.y - 3.75, {snap: false}]);
+    run(['commitDrag']); run(['undo']); run(['redo']);
+    const next = probe.geometry.objects.get(probe.selectedSlot).segments[handle].end;
+    run(['beginDrag', 'Pose figure']);
+    run(['poseJoint', next.x - 7.125, next.y + 11.25, {snap: false}]); run(['cancelDrag']);
+    scenario('ik-movieclip-parent-sheet', app, steps, 'sheet-movieclip-loose.document.json');
+  }
 }
 // Keys and frames of the layer timeline, on the two-layer sheet and on the sheet with a clip.
 scenario('keys-sheet', app, [

@@ -375,12 +375,25 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     // The gesture's draft: the engine's figures replace the editor's, and the editor's
     // snapshots take in what the engine's gesture took in.
     if (answer.drag && answer.draft) {
-      const objects = edit.frame.objects, taken = new Set(drag.before.map(object => object.unique_id));
-      for (const uid of answer.drag.before) if (!taken.has(uid)) {
-        const object = objects.find(item => item.unique_id === uid);
-        if (object) drag.before.push(structuredClone(object));
+      const objects = edit.frame.objects;
+      // Ordinary live poses keep their snapshots in frame order. When the
+      // engine names those exact snapshots, there is nothing to add or sort.
+      let ordered = (name === 'poseJoint' || name === 'moveSelection') && drag.authored && !edit.transaction
+        && Array.isArray(drag.before) && Array.isArray(answer.drag.before) && drag.before.length === answer.drag.before.length;
+      for (let index = 0; ordered && index < drag.before.length; index++) {
+        const object = drag.before[index];
+        if (!object || Array.isArray(object) || !Number.isInteger(object.unique_id) || object.unique_id !== answer.drag.before[index]
+          || !Number.isInteger(object.object_slot) || object.object_slot < 0 || objects[object.object_slot]?.unique_id !== object.unique_id
+          || index > 0 && drag.before[index - 1].object_slot >= object.object_slot) ordered = false;
       }
-      drag.before.sort((a, b) => a.object_slot - b.object_slot);
+      if (!ordered) {
+        const taken = new Set(drag.before.map(object => object.unique_id));
+        for (const uid of answer.drag.before) if (!taken.has(uid)) {
+          const object = objects.find(item => item.unique_id === uid);
+          if (object) drag.before.push(structuredClone(object));
+        }
+        drag.before.sort((a, b) => a.object_slot - b.object_slot);
+      }
       if (answer.drag.translation) drag.scope = 'translation';
       // Back at its start, a handle gesture restores what it moved (restoring the unmoved changes nothing).
       for (const state of drag.handleEdit?.states ?? []) state.moved = true;

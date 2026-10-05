@@ -147,6 +147,14 @@ impl Editor {
     /// Views may repeat a canonical selection without replacing hidden metadata.
     /// A changed optional field uses the same filtering owner as restoration.
     pub(crate) fn sync_selection_metadata(&mut self, value: &Value) -> Result<(), EditError> {
+        // No optional metadata is visible or hidden, and none was supplied.
+        // Explicit null fields and stale hidden records still use the same
+        // restoration/filtering owner below.
+        if self.selection_metadata.polygon.is_none() && self.selection_metadata.segments.is_none() && self.selection_metadata.branch.is_none()
+            && ["polygonSelection", "segmentIds", "branch"].iter().all(|key| value.get(key).is_none())
+        {
+            return Ok(());
+        }
         let mut current = styk_doc::Obj::new();self.selection_state().write_metadata(&mut current);
         let mut given = styk_doc::Obj::new();
         for key in ["polygonSelection", "segmentIds", "branch"] { if let Some(value) = value.get(key) { given.set(key, value.clone()); } }

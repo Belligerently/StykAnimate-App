@@ -6,11 +6,17 @@
 //! and byte limits. Synchronous UI sessions keep count-only readiness until their
 //! immutable transactions arrive with worker-prepared weights.
 
+use std::sync::Arc;
+
 use styk_doc::Value;
 
 use crate::record::{frame_mut, uid};
 use crate::select::SelectionState;
 use crate::{EditError, Editor};
+
+#[cfg(test)]
+#[path = "history_cow_tests.rs"]
+mod cow_tests;
 
 const HISTORY_LIMIT: usize = 80;
 
@@ -197,8 +203,10 @@ impl Editor {
         }
         self.history_size -= self.redo.iter().map(|entry| entry.weight.bytes).sum::<f64>();
         self.history_size += entry.weight.bytes;
-        self.undo.push(entry);
-        self.redo.clear();
+        Arc::make_mut(&mut self.undo).push(entry);
+        if collect {
+            self.redo = Arc::new(Vec::new());
+        }
         self.trim_history(collect);
         Ok(())
     }
@@ -297,11 +305,15 @@ impl Editor {
             })
             .transpose()?;
         check()?;
-        for (entry, weight) in self.undo.iter_mut().zip(undo) {
-            entry.weight = weight;
+        if !undo.is_empty() {
+            for (entry, weight) in Arc::make_mut(&mut self.undo).iter_mut().zip(undo) {
+                entry.weight = weight;
+            }
         }
-        for (entry, weight) in self.redo.iter_mut().zip(redo) {
-            entry.weight = weight;
+        if !redo.is_empty() {
+            for (entry, weight) in Arc::make_mut(&mut self.redo).iter_mut().zip(redo) {
+                entry.weight = weight;
+            }
         }
         if let Some(batch) = self.batch.as_mut() {
             for (entry, weight) in batch
@@ -332,7 +344,7 @@ impl Editor {
     fn trim_history(&mut self, mut collect: bool) {
         while self.undo.len() > self.history_limits.count || (self.worker_history && self.history_size > self.history_limits.bytes && self.undo.len() + self.redo.len() > 1) {
             let retired = if self.undo.len() > 1 { &mut self.undo } else if !self.redo.is_empty() { &mut self.redo } else { &mut self.undo };
-            self.history_size -= retired.remove(0).weight.bytes; collect = true;
+            self.history_size -= Arc::make_mut(retired).remove(0).weight.bytes; collect = true;
         }
         if collect { self.prune_frame_sources(); }
     }
@@ -378,7 +390,7 @@ impl Editor {
             let (commands,children): (Vec<_>,Vec<_>) = batch.commands.into_iter().map(|entry|(entry.command,entry.weight)).unzip();
             let weight=Weight { bytes:128.0+children.iter().map(|weight|weight.bytes).sum::<f64>(),children,topology:None };
             self.record_weight(Command { kind: CommandKind::Batch { commands }, label: batch.label.clone(), before_selection: batch.before_selection, after_selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false },Some(weight),None)?;
-            if let Some(command) = self.undo.last_mut() {
+            if let Some(command) = Arc::make_mut(&mut self.undo).last_mut() {
                 command.before_revision = batch.revision;
             }
             if self.sheet() {
@@ -404,17 +416,19 @@ impl Editor {
         if self.drag.is_some() {
             self.cancel_drag()?;
         }
-        let Some(command) = self.undo.pop() else { return Ok(false) };
+        if self.undo.is_empty() { return Ok(false) }
+        let Some(command) = Arc::make_mut(&mut self.undo).pop() else { return Ok(false) };
         self.apply(&command, Direction::Before)?;
-        self.redo.push(command);
+        Arc::make_mut(&mut self.redo).push(command);
         Ok(true)
     }
 
     pub(crate) fn redo(&mut self) -> Result<bool, EditError> {
         self.cancel_vfx_clip_edit()?;
-        let Some(command) = self.redo.pop() else { return Ok(false) };
+        if self.redo.is_empty() { return Ok(false) }
+        let Some(command) = Arc::make_mut(&mut self.redo).pop() else { return Ok(false) };
         self.apply(&command, Direction::After)?;
-        self.undo.push(command);
+        Arc::make_mut(&mut self.undo).push(command);
         Ok(true)
     }
 

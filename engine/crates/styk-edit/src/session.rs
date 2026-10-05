@@ -51,6 +51,23 @@ fn selection_of(view: &Value) -> Selection {
     }
 }
 
+/// `set_view` only assigns these stored values. An unchanged parsed view can
+/// borrow its UID sequence instead of allocating two equal replacement vectors.
+/// Missing/non-numeric sequences retain `selection_of`'s existing fallback.
+fn view_unchanged(editor: &Editor, view: &Value) -> bool {
+    if editor.tick.to_bits() != number(view, "tick").unwrap_or(0.0).to_bits()
+        || editor.frame_index != number(view, "frameIndex").unwrap_or(0.0) as usize
+        || editor.selection.uid != number(view, "selectedUid").map(|value| value as u32)
+        || editor.selection.joint != number(view, "selectedJoint").unwrap_or(-1.0) as i64
+    {
+        return false;
+    }
+    view.get("selectedUids").and_then(Value::elements).is_some_and(|uids| {
+        uids.len() == editor.selection.uids.len()
+            && uids.iter().zip(&editor.selection.uids).all(|(value, &uid)| value.as_f64().is_some_and(|value| value as u32 == uid))
+    })
+}
+
 /// These response fields have unique, nonnumeric keys, appended in the same
 /// order as the JSON owner emits them. Build their existing ordered shape once
 /// rather than replacing the shape after each missing-key `Obj::set`.
@@ -237,7 +254,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         answer.push(("changesOnly", Value::Bool(true)));
     }
     if view.is_object() {
-        editor.set_view(number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize, selection_of(view));
+        if !view_unchanged(editor, view) {
+            editor.set_view(number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize, selection_of(view));
+        }
         if let Err(error) = editor.sync_selection_metadata(view) {
             answer.push(("status", Value::str("unported")));
             answer.push(("reason", Value::str(&format!("{error:?}"))));

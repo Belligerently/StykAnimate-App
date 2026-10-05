@@ -728,5 +728,774 @@
         }
       }
     }
-  ]
+  ],
+  "ordinaryCoreDiagnostic": {
+    "scope": "B3/B4 loaded ordinary-core paired first-five-interaction diagnostics; not full class cost, engine-1 or baseline-0",
+    "notice": "No causal speedup or acceptance claim. Existing latest full startup/rig/joined-chain cost rows remain FAIL. No gate/source/document change by this read-only review.",
+    "baseHead": "758b7681bc999aeb6b93871cdc97af845e963253",
+    "sourceWasUncommitted": true,
+    "inputHash": "46de1ab70d07d920425b41fc731c4f44ae59180db9cefec6e8777898e96f721d",
+    "runnerHash": "40a33b6b937b532bdb0a69ead2305a1c697bc267fe2b6edc933a5b7ff424ac49",
+    "runtimes": {
+      "node": "v24.11.0",
+      "python": "Python 3.12.9"
+    },
+    "unchangedSourceHashes": 1524,
+    "totalSourceHashesEachRun": 1528,
+    "productionSourceDelta": {
+      "engine/crates/styk-edit/src/ik.rs": {
+        "old": {
+          "sha256": "c64769526ab57f0daa9d4b785d3265d7190d570092e263978b0d521a07c50026",
+          "bytes": 58047
+        },
+        "new": {
+          "sha256": "2708afe1be8b02c6073365e9dfe9edf9005f0ac5e84e89ef48d319460c4bc83b",
+          "bytes": 58065
+        }
+      },
+      "engine/crates/styk-edit/src/select.rs": {
+        "old": {
+          "sha256": "a649f392043dbf5d00afcd258308975a1e60ca345229afd3d2801ba3a912d568",
+          "bytes": 28054
+        },
+        "new": {
+          "sha256": "3a00b840273df243c708cd5d1ca392fedf35480f5f3087367b12c2f278e548a1",
+          "bytes": 28546
+        }
+      },
+      "engine/crates/styk-edit/src/session.rs": {
+        "old": {
+          "sha256": "36091d427881fac08173d19499a06ff9e0b9f433f19954b379ed82b306e60879",
+          "bytes": 23930
+        },
+        "new": {
+          "sha256": "b4a956f27fb8979c2879d3593563ff595ad449e3ab151138d605072d60c499d6",
+          "bytes": 24925
+        }
+      }
+    },
+    "testOnlySourceDelta": {
+      "engine/crates/styk-edit/src/session_tests.rs": {
+        "old": {
+          "sha256": "1f507abd80ad433401c1a55a4a27caf39efdb24188ff229a91d5eb940d1f561b",
+          "bytes": 22348
+        },
+        "new": {
+          "sha256": "c4fb7a682014d4789cc6d5976d34373518d40fa77b75eed9e4b055a348ad4216",
+          "bytes": 33708
+        }
+      }
+    },
+    "currentMainDeltaEndpointMatches": {
+      "engine/crates/styk-edit/src/ik.rs": {
+        "sha256": "2708afe1be8b02c6073365e9dfe9edf9005f0ac5e84e89ef48d319460c4bc83b",
+        "bytes": 58065
+      },
+      "engine/crates/styk-edit/src/select.rs": {
+        "sha256": "3a00b840273df243c708cd5d1ca392fedf35480f5f3087367b12c2f278e548a1",
+        "bytes": 28546
+      },
+      "engine/crates/styk-edit/src/session.rs": {
+        "sha256": "b4a956f27fb8979c2879d3593563ff595ad449e3ab151138d605072d60c499d6",
+        "bytes": 24925
+      },
+      "engine/crates/styk-edit/src/session_tests.rs": {
+        "sha256": "c4fb7a682014d4789cc6d5976d34373518d40fa77b75eed9e4b055a348ad4216",
+        "bytes": 33708
+      }
+    },
+    "unchangedFacade": {
+      "sha256": "69d8a20beedc311a58c984baa037c88e5d70b3f3385931f636be8119b6d4ca54",
+      "bytes": 53730
+    },
+    "adoptionTestScope": {
+      "currentAndPriorSealedEndpoint": "020ade163aae55479bc6ac24cfda3bb04bd34db4fdd6d0cb06a62f2a741a3b88",
+      "capturedByRunSnapshot": false,
+      "limitation": "The existing snapshot includes tests/support, not this adoption test. Current endpoint matches sealed reconciliation; its per-run before/after bytes were not captured."
+    },
+    "packageDelta": {
+      "src/engine/pkg/build-info.json": {
+        "old": {
+          "sha256": "addb95a2650c849199ca40b321c7669061a6e9f0fd4965b89b0be232e8e5e229",
+          "bytes": 745
+        },
+        "new": {
+          "sha256": "0e144d673d4d2d2818e77a26f945e6e7baa9f52b492fbfc18f4d6ed6ddc72ad7",
+          "bytes": 745
+        }
+      },
+      "src/engine/pkg/styk_engine_bg.wasm": {
+        "old": {
+          "sha256": "36ed40b529d24d86d427016c3dfa703cf6c4c53bc96e07772de61ce9b252c706",
+          "bytes": 10204765
+        },
+        "new": {
+          "sha256": "24e199e815ba17af25974df7fe5d7e7abfbd3047fb748eed123056fb2ae0513c",
+          "bytes": 10205559
+        }
+      }
+    },
+    "unchangedPackageFiles": 5,
+    "unchangedStandardDocumentInputs": {
+      "engine/tests/edit/startup.document.json": {
+        "sha256": "6b1572a59bcc486d99881b97752b9c6771b94d4fd505c39750b1d1adaf14e543",
+        "bytes": 5587
+      },
+      "engine/tests/edit/rig.document.json": {
+        "sha256": "e9d3a0e39fb7b5f0636413cb6742fe7d02871d4018166a34011b3e799c235810",
+        "bytes": 3022
+      },
+      "engine/tests/edit/joined-chain.document.json": {
+        "sha256": "7a79a4ab084d4f6e6b57c71d665e6ff168bd3db8b06b7b3887c4d731573b42f1",
+        "bytes": 6095
+      }
+    },
+    "runs": [
+      {
+        "label": "old-b2-shipping-1",
+        "head": "758b7681bc999aeb6b93871cdc97af845e963253",
+        "wasm": {
+          "profile": "wasm",
+          "toolchain": "nightly-2026-09-15",
+          "wasmBindgen": "0.2.129",
+          "maxMemory": 2147483648,
+          "wasmBytes": 10204765,
+          "wasmBytesBeforeOpt": 10204765,
+          "jsBytes": 201867,
+          "sha256": "36ed40b529d24d86d427016c3dfa703cf6c4c53bc96e07772de61ce9b252c706",
+          "codec": {
+            "toolchain": "stable",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+            "wasmBytes": 1532303,
+            "wasmBytesBeforeOpt": 1532303,
+            "jsBytes": 13846,
+            "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+          },
+          "drawing": {
+            "toolchain": "stable",
+            "wasmBytes": 449096,
+            "wasmBytesBeforeOpt": 449096,
+            "jsBytes": 53485,
+            "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+          }
+        },
+        "input": {
+          "sha256": "46de1ab70d07d920425b41fc731c4f44ae59180db9cefec6e8777898e96f721d",
+          "bytes": 290105
+        },
+        "scope": "Forced owned warmed first-five-interaction diagnostic only",
+        "sourceStable": true,
+        "strictParityHistorySelectionFullUndo": true,
+        "zeroProblemsErrorsMismatchesRounding": true,
+        "owned": 31,
+        "compared": 15,
+        "calls": 46,
+        "counts": {
+          "commitDrag": 3,
+          "moveSelection": 2,
+          "poseJoint": 24,
+          "rotateSelection": 1,
+          "scaleSelection": 1
+        },
+        "core": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.710000038146973,
+            "adoptMs": 8.949999928474426,
+            "callMs": 5.920000046491623,
+            "answerBytes": 48377
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.4399999976158142,
+            "adoptMs": 0.9199999868869781,
+            "callMs": 0.35499998927116394,
+            "answerBytes": 6784
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.0999999940395355,
+            "adoptMs": 2.3250000178813934,
+            "callMs": 0.9349999725818634,
+            "answerBytes": 9249
+          }
+        },
+        "editorMs": 17.004999935626984,
+        "ownedMs": 22.80000004172325,
+        "fallbackMs": 0,
+        "failedOwned": 0,
+        "failedOwnedMs": 0,
+        "totalMs": 22.80000004172325,
+        "costAccountingComplete": true,
+        "byCall": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.710000038146973,
+            "adoptMs": 8.949999928474426,
+            "callMs": 5.920000046491623,
+            "answerBytes": 48377
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.0999999940395355,
+            "adoptMs": 2.3250000178813934,
+            "callMs": 0.9349999725818634,
+            "answerBytes": 9249
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.4399999976158142,
+            "adoptMs": 0.9199999868869781,
+            "callMs": 0.35499998927116394,
+            "answerBytes": 6784
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "engineMs": 0.4749999940395355,
+            "adoptMs": 1.0750000178813934,
+            "callMs": 0.4150000214576721,
+            "answerBytes": 5194
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "engineMs": 0.3100000023841858,
+            "adoptMs": 0.550000011920929,
+            "callMs": 0.27000001072883606,
+            "answerBytes": 4729
+          }
+        },
+        "editorByCall": {
+          "poseJoint": {
+            "calls": 24,
+            "editorMs": 10.469999939203262
+          },
+          "commitDrag": {
+            "calls": 3,
+            "editorMs": 2.7450000047683716
+          },
+          "moveSelection": {
+            "calls": 2,
+            "editorMs": 1.3550000190734863
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "editorMs": 1.4199999868869781
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "editorMs": 1.0699999928474426
+          }
+        },
+        "beforeLoadAverage": [
+          1.03955078125,
+          2.98291015625,
+          5.39697265625
+        ],
+        "afterLoadAverage": [
+          7.6484375,
+          4.7255859375,
+          5.78466796875
+        ],
+        "elapsedSeconds": 93.51246675697621,
+        "started": "2026-10-05T01:07:34.627292+00:00",
+        "completed": "2026-10-05T01:09:08.144894+00:00"
+      },
+      {
+        "label": "b3-shipping-1",
+        "head": "758b7681bc999aeb6b93871cdc97af845e963253",
+        "wasm": {
+          "profile": "wasm",
+          "toolchain": "nightly-2026-09-15",
+          "wasmBindgen": "0.2.129",
+          "maxMemory": 2147483648,
+          "wasmBytes": 10205559,
+          "wasmBytesBeforeOpt": 10205559,
+          "jsBytes": 201867,
+          "sha256": "24e199e815ba17af25974df7fe5d7e7abfbd3047fb748eed123056fb2ae0513c",
+          "codec": {
+            "toolchain": "stable",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+            "wasmBytes": 1532303,
+            "wasmBytesBeforeOpt": 1532303,
+            "jsBytes": 13846,
+            "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+          },
+          "drawing": {
+            "toolchain": "stable",
+            "wasmBytes": 449096,
+            "wasmBytesBeforeOpt": 449096,
+            "jsBytes": 53485,
+            "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+          }
+        },
+        "input": {
+          "sha256": "46de1ab70d07d920425b41fc731c4f44ae59180db9cefec6e8777898e96f721d",
+          "bytes": 290105
+        },
+        "scope": "Forced owned warmed first-five-interaction diagnostic only",
+        "sourceStable": true,
+        "strictParityHistorySelectionFullUndo": true,
+        "zeroProblemsErrorsMismatchesRounding": true,
+        "owned": 31,
+        "compared": 15,
+        "calls": 46,
+        "counts": {
+          "commitDrag": 3,
+          "moveSelection": 2,
+          "poseJoint": 24,
+          "rotateSelection": 1,
+          "scaleSelection": 1
+        },
+        "core": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.9700000286102295,
+            "adoptMs": 9.06999996304512,
+            "callMs": 6.114999949932098,
+            "answerBytes": 48377
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.42499998211860657,
+            "adoptMs": 0.8949999809265137,
+            "callMs": 0.3399999737739563,
+            "answerBytes": 6784
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.0499999821186066,
+            "adoptMs": 2.060000032186508,
+            "callMs": 0.8949999809265137,
+            "answerBytes": 9249
+          }
+        },
+        "editorMs": 17.20499986410141,
+        "ownedMs": 22.759999960660934,
+        "fallbackMs": 0,
+        "failedOwned": 0,
+        "failedOwnedMs": 0,
+        "totalMs": 22.759999960660934,
+        "costAccountingComplete": true,
+        "byCall": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.9700000286102295,
+            "adoptMs": 9.06999996304512,
+            "callMs": 6.114999949932098,
+            "answerBytes": 48377
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.0499999821186066,
+            "adoptMs": 2.060000032186508,
+            "callMs": 0.8949999809265137,
+            "answerBytes": 9249
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.42499998211860657,
+            "adoptMs": 0.8949999809265137,
+            "callMs": 0.3399999737739563,
+            "answerBytes": 6784
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "engineMs": 0.47999998927116394,
+            "adoptMs": 0.9950000047683716,
+            "callMs": 0.41499999165534973,
+            "answerBytes": 5194
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "engineMs": 0.3099999725818634,
+            "adoptMs": 0.550000011920929,
+            "callMs": 0.2749999761581421,
+            "answerBytes": 4729
+          }
+        },
+        "editorByCall": {
+          "poseJoint": {
+            "calls": 24,
+            "editorMs": 10.889999896287918
+          },
+          "commitDrag": {
+            "calls": 3,
+            "editorMs": 2.865000009536743
+          },
+          "moveSelection": {
+            "calls": 2,
+            "editorMs": 1.1699999868869781
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "editorMs": 1.3650000095367432
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "editorMs": 0.9650000035762787
+          }
+        },
+        "beforeLoadAverage": [
+          3.6123046875,
+          4.45263671875,
+          5.37646484375
+        ],
+        "afterLoadAverage": [
+          9.064453125,
+          6.26171875,
+          5.9423828125
+        ],
+        "elapsedSeconds": 91.8257987970137,
+        "started": "2026-10-05T01:13:55.850705+00:00",
+        "completed": "2026-10-05T01:15:27.681200+00:00"
+      },
+      {
+        "label": "b4-shipping-1",
+        "head": "758b7681bc999aeb6b93871cdc97af845e963253",
+        "wasm": {
+          "profile": "wasm",
+          "toolchain": "nightly-2026-09-15",
+          "wasmBindgen": "0.2.129",
+          "maxMemory": 2147483648,
+          "wasmBytes": 10222396,
+          "wasmBytesBeforeOpt": 10222396,
+          "jsBytes": 201867,
+          "sha256": "d0aebc42737df29c2edfda1a169de82e0adbd7d9e29c9012f9aa421a43874b13",
+          "codec": {
+            "toolchain": "stable",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+            "wasmBytes": 1532303,
+            "wasmBytesBeforeOpt": 1532303,
+            "jsBytes": 13846,
+            "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+          },
+          "drawing": {
+            "toolchain": "stable",
+            "wasmBytes": 449096,
+            "wasmBytesBeforeOpt": 449096,
+            "jsBytes": 53485,
+            "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+          }
+        },
+        "input": {
+          "sha256": "46de1ab70d07d920425b41fc731c4f44ae59180db9cefec6e8777898e96f721d",
+          "bytes": 290105
+        },
+        "scope": "Forced owned warmed first-five-interaction diagnostic only",
+        "sourceStable": true,
+        "strictParityHistorySelectionFullUndo": true,
+        "zeroProblemsErrorsMismatchesRounding": true,
+        "owned": 31,
+        "compared": 15,
+        "calls": 46,
+        "sessions": 1,
+        "historyEntriesAfter": 10,
+        "counts": {
+          "commitDrag": 3,
+          "moveSelection": 2,
+          "poseJoint": 24,
+          "rotateSelection": 1,
+          "scaleSelection": 1
+        },
+        "core": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.555000007152557,
+            "adoptMs": 8.835000067949295,
+            "callMs": 5.719999998807907,
+            "answerBytes": 48377
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.4399999976158142,
+            "adoptMs": 0.8999999761581421,
+            "callMs": 0.35999998450279236,
+            "answerBytes": 6784
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.1399999558925629,
+            "adoptMs": 2.2549999952316284,
+            "callMs": 0.9449999630451202,
+            "answerBytes": 9249
+          }
+        },
+        "editorMs": 17.169999957084656,
+        "ownedMs": 22.38000002503395,
+        "fallbackMs": 0,
+        "failedOwned": 0,
+        "failedOwnedMs": 0,
+        "totalMs": 22.38000002503395,
+        "costAccountingComplete": true,
+        "byCall": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.555000007152557,
+            "adoptMs": 8.835000067949295,
+            "callMs": 5.719999998807907,
+            "answerBytes": 48377
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.1399999558925629,
+            "adoptMs": 2.2549999952316284,
+            "callMs": 0.9449999630451202,
+            "answerBytes": 9249
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.4399999976158142,
+            "adoptMs": 0.8999999761581421,
+            "callMs": 0.35999998450279236,
+            "answerBytes": 6784
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "engineMs": 0.5099999904632568,
+            "adoptMs": 0.9600000083446503,
+            "callMs": 0.4399999976158142,
+            "answerBytes": 5194
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "engineMs": 0.30000001192092896,
+            "adoptMs": 0.5449999868869781,
+            "callMs": 0.27000001072883606,
+            "answerBytes": 4729
+          }
+        },
+        "editorByCall": {
+          "poseJoint": {
+            "calls": 24,
+            "editorMs": 10.99499997496605
+          },
+          "commitDrag": {
+            "calls": 3,
+            "editorMs": 2.869999974966049
+          },
+          "moveSelection": {
+            "calls": 2,
+            "editorMs": 1.1650000214576721
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "editorMs": 1.270000010728836
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "editorMs": 0.9199999868869781
+          }
+        },
+        "beforeLoadAverage": [
+          1.63818359375,
+          2.1337890625,
+          3.55517578125
+        ],
+        "afterLoadAverage": [
+          9.2685546875,
+          4.60693359375,
+          4.298828125
+        ],
+        "elapsedSeconds": 93.7716941619874,
+        "started": "2026-10-05T01:29:08.953688+00:00",
+        "completed": "2026-10-05T01:30:42.730146+00:00",
+        "poseNativeCallMs": 5.719999998807907,
+        "poseCallToAdoptionResidualMs": 0.8350000083446503
+      }
+    ],
+    "latestFullClassCostStatus": {
+      "startup": "FAIL",
+      "rig": "FAIL",
+      "joined-chain": "FAIL"
+    },
+    "noFullClassCostRowsAdded": true,
+    "existingGateEvidenceFile": {
+      "path": "docs/performance/RUST-EDITING-CLASS-GATES.json",
+      "sha256": "ccc9bb07a9946b9fe8b6636f621f72bb78fe18976b477afc3fa7e7cad40cf8d9"
+    },
+    "timingBoundaryNote": "Totals use the existing global ownedMs+ownableMs+failedOwnedMs owner. Per-method engine/adopt/editor samples use subsequent performance.now calls; they are preserved separately, not substituted for global totals.",
+    "artifacts": {
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/old-b2-shipping-1/completion.json": {
+        "sha256": "9697d981a84aacc06ed39265127e105c55dbee14a100c30a4655a8be8c48e377",
+        "bytes": 543946
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/old-b2-shipping-1/driver.json": {
+        "sha256": "4971e5525dc33021bb4f1e9272a1b0c02465abcf43d23ab9746556b9284db72d",
+        "bytes": 2637
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/old-b2-shipping-1/app.log": {
+        "sha256": "32d2cd98c4bd1d52d103e747b0c751236282457440c5bc1b4614ff96ad58f1e6",
+        "bytes": 2173
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/old-b2-shipping-1/started.json": {
+        "sha256": "d030fa13644793a3353f90cb3e0ae2bef299726b0cc6601ffc9f6fa7c8cc99b5",
+        "bytes": 270955
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b3-shipping-1/completion.json": {
+        "sha256": "92d87c45160e8f03e3696ffe32ee050fd12b48c76ac6af81dc0300bf21c67101",
+        "bytes": 544692
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b3-shipping-1/driver.json": {
+        "sha256": "e078a2f101fdab35d2bf4f9058432b08bb5345834761ba3fb0b3667bf0b68998",
+        "bytes": 2635
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b3-shipping-1/app.log": {
+        "sha256": "9b166bc0a4aca437229075ba95c59fcfe6a68dd6e9cad66803f4a73b4c47b80b",
+        "bytes": 2173
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b3-shipping-1/started.json": {
+        "sha256": "b7684aaf11327a8cc71701774faa0a5ddbdb3ca946870314b02fd375f3560b11",
+        "bytes": 271327
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b4-shipping-1/completion.json": {
+        "sha256": "71dc4fc5be13415ffde617bb5e00fdcc8821e3a3c7cdaa38896f2a48a3990269",
+        "bytes": 545673
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b4-shipping-1/driver.json": {
+        "sha256": "e3b2cc2f46bdc896b03255ba286ce5ea6aa0981f581a8be18d576d5dfddea700",
+        "bytes": 2635
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b4-shipping-1/app.log": {
+        "sha256": "64f2469a2e42c0075d64cad053620c06dc125d4c825f7e9c65d429e4be2b85be",
+        "bytes": 2173
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b4-shipping-1/started.json": {
+        "sha256": "a496eee4113489b20852dbaa7e773925ddb75223c89bbfa1652a391e51850ebf",
+        "bytes": 271706
+      }
+    },
+    "priorSealedComparison": {
+      "path": "/tmp/styk-figures-ordinary-core-comparison-20261006/diagnostic-addition.json",
+      "sha256": "22795b098e4cfc782dd4f9be038da88437689f2a65cce092b33c75b9cd0ea5dd",
+      "firstTwoRunRowsPreservedExactly": true
+    },
+    "b3ToB4SourceDelta": {
+      "production": {
+        "engine/crates/styk-edit/src/lib.rs": {
+          "b3": {
+            "sha256": "d596e768008fade7f31db9befc364e6de8f3627b1d2eccbbcc49f52dfdec8711",
+            "bytes": 54351
+          },
+          "b4": {
+            "sha256": "884d3f782e0655d01f4f6a02b95ebb45a058eff45d8ebe2c41e607a54df78c50",
+            "bytes": 54411
+          }
+        },
+        "engine/crates/styk-edit/src/history.rs": {
+          "b3": {
+            "sha256": "3e88b4290395e694ae2595c005b4187c22c16cd8df18d350203e5b1aaf0b1fdd",
+            "bytes": 29914
+          },
+          "b4": {
+            "sha256": "e155599d26e4fafeb709bdd18db8301a599828f209f2cccce1782d95167bb95b",
+            "bytes": 30432
+          }
+        },
+        "engine/crates/styk-edit/src/sheet.rs": {
+          "b3": {
+            "sha256": "5610511139425ff364157567225e3e8a9bcfaa4547f97bde97ecab5d778861cc",
+            "bytes": 70690
+          },
+          "b4": {
+            "sha256": "a6306c845da896e136f19b12dcdf7922b760ee92293ae524c8b5e47c7397dacd",
+            "bytes": 70696
+          }
+        },
+        "engine/crates/styk-edit/src/sheet_frames.rs": {
+          "b3": {
+            "sha256": "231b39885686d3e395d6a79d9e64e73d87adcaa1391fa9dfcce6a79ed35242a4",
+            "bytes": 26697
+          },
+          "b4": {
+            "sha256": "5d6531d66c8449d90a863e1c2a2c8c7c21ae0501f124339b43dc9a74a3d1367b",
+            "bytes": 26795
+          }
+        }
+      },
+      "testOnlyTracked": {
+        "engine/crates/styk-edit/src/property_edit/native/live_tests.rs": {
+          "b3": {
+            "sha256": "599e02bf8c175aa77cb937f713d015e8dd00810d1b57cd7f6b0972dcd963b80e",
+            "bytes": 34360
+          },
+          "b4": {
+            "sha256": "353f4111743d4c7cec8fb881d4d4bb3fb5445267ce592832a1194e4df5987780",
+            "bytes": 34367
+          }
+        }
+      },
+      "capturedSourcesUnchanged": 1523,
+      "totalCapturedSources": 1528,
+      "currentMainEndpointsMatch": {
+        "engine/crates/styk-edit/src/lib.rs": {
+          "sha256": "884d3f782e0655d01f4f6a02b95ebb45a058eff45d8ebe2c41e607a54df78c50",
+          "bytes": 54411
+        },
+        "engine/crates/styk-edit/src/history.rs": {
+          "sha256": "e155599d26e4fafeb709bdd18db8301a599828f209f2cccce1782d95167bb95b",
+          "bytes": 30432
+        },
+        "engine/crates/styk-edit/src/sheet.rs": {
+          "sha256": "a6306c845da896e136f19b12dcdf7922b760ee92293ae524c8b5e47c7397dacd",
+          "bytes": 70696
+        },
+        "engine/crates/styk-edit/src/sheet_frames.rs": {
+          "sha256": "5d6531d66c8449d90a863e1c2a2c8c7c21ae0501f124339b43dc9a74a3d1367b",
+          "bytes": 26795
+        },
+        "engine/crates/styk-edit/src/property_edit/native/live_tests.rs": {
+          "sha256": "353f4111743d4c7cec8fb881d4d4bb3fb5445267ce592832a1194e4df5987780",
+          "bytes": 34367
+        }
+      },
+      "newTestOnlyUntracked": {
+        "path": "engine/crates/styk-edit/src/history_cow_tests.rs",
+        "sha256": "35369b28b2b90285d7a8088311355d68c2cd341be0881fa3df0d625616038400",
+        "bytes": 7529,
+        "cfgTestOnly": true,
+        "notInRunHashSnapshot": true,
+        "limitation": "Untracked test is named in unchanged before/after status and its current bytes match the source endpoint; existing snapshot hashes only tracked paths. Per-run file hash stability is not claimed."
+      }
+    },
+    "b3ToB4PackageDelta": {
+      "src/engine/pkg/build-info.json": {
+        "b3": {
+          "sha256": "0e144d673d4d2d2818e77a26f945e6e7baa9f52b492fbfc18f4d6ed6ddc72ad7",
+          "bytes": 745
+        },
+        "b4": {
+          "sha256": "37ef862ba0eed8d60caf756b45fa585a689023db5ebf503f7bfa38ec13e092d3",
+          "bytes": 745
+        }
+      },
+      "src/engine/pkg/styk_engine_bg.wasm": {
+        "b3": {
+          "sha256": "24e199e815ba17af25974df7fe5d7e7abfbd3047fb748eed123056fb2ae0513c",
+          "bytes": 10205559
+        },
+        "b4": {
+          "sha256": "d0aebc42737df29c2edfda1a169de82e0adbd7d9e29c9012f9aa421a43874b13",
+          "bytes": 10222396
+        }
+      }
+    },
+    "progressCounters": {
+      "provenance": "Root-stated milestone counters, unchanged by this read-only diagnostic addition",
+      "inventory": {
+        "JavaScript": 175,
+        "partial": 123,
+        "ported": 35,
+        "verified": 22,
+        "removed": 1
+      },
+      "defaultEditingClasses": 2,
+      "deletedJavaScriptModules": 2,
+      "engine1": {
+        "completed": 0,
+        "total": 28
+      },
+      "figuresFullClassGateAcceptedRows": 0,
+      "ordinaryDiagnosticMeasurementRows": 3
+    }
+  }
 }

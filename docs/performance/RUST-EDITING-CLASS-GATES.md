@@ -39,3 +39,21 @@ Owned/compared/failed calls remain 163/289/2, 119/171/1 and 125/213/0. Rig's fou
 The evidence JSON preserves the original three rows and appends these three with their own source/package/input and raw-receipt hashes. A fresh existing 3D default smoke again adopts 42 and compares 15, with every core method adopted and exact behavior; it does not certify the closed figures class or full editing cost. The matching committed-HEAD class checkpoint and figures default admission remain required.
 
 A separate private full-startup profile preserves exact parity and stable B2 inputs, but every instrumented time is diagnostic only. Its 48 owned poses emit exactly 48 edit events; synchronous event work is shared with the ordinary editor. The warmed active sheet source contains six unjoined figures, three with four enabled free IK targets. The next bounded candidate uses the existing scoped evaluator when posing one free limb, retaining join ancestors and removing unrelated geometry work. Unchanged-view and snapshot-reconciliation candidates remain subject to their focused checks. Native history-clone cost is unproved: the JavaScript history labels are not the native session's history size, and the final Wasm's sampled functions are unnamed.
+
+## Ordinary-pose diagnostics before the next full figures gate
+
+Three clean paired first-five-interaction runs use the same captured six-figure document and exact math. Each adopts 31 calls, compares 15, and matches document, history, selection and full undo with zero errors, mismatches or rounded comparisons. All three core methods adopt; per-method counts and failed-attempt accounting match. These are loaded diagnostics on one document, not the full class cost gate or engine-1.
+
+| Shipping Wasm | JavaScript ms | Candidate total ms |
+| --- | ---: | ---: |
+| B2 `36ed40b529d2` | 17.005 | 22.800 |
+| Scoped geometry/view `24e199e815ba` | 17.205 | 22.760 |
+| Shared history `d0aebc42737d` | 17.170 | 22.380 |
+
+No causal speedup is established. The final package is 10,222,396 bytes with the required Wasm profile. Its 24 ordinary poses spend 5.720 ms in the native call, 0.835 ms parsing and 8.835 ms adopting the answer. The final run retains one session and ends with ten history entries before the full undo comparison. All captured production sources, package files, inputs and HEAD remain stable per run. The existing snapshot excludes the untracked test-only history alias file; its exact source is separately verified by the native freeze. The original six full cost rows remain unchanged and the latest three still fail.
+
+The bounded native changes preserve unchanged parsed views and raw absent selection metadata, evaluate an unpinned limb with its join ancestors, and share private history heads until a write. A recorded clip-parent gesture matched the old engine before the scoped change; selected and parent geometry, full/compact answers and every recorded step remain exact. No public crate API or response schema changes.
+
+A separate 100-microsecond CPU profile retains exact parity but all its times are instrumented diagnostics. A private named binding has identical executable sections to shipping Wasm and maps its samples without guessed function offsets. Rendering and mirror samples are excluded from edit-session attribution. The small ordinary-pose sample count does not establish a dominant cost owner. Fresh full paired cost, a matching committed-HEAD full checkpoint and actual figures default adoption remain required.
+
+Evidence: `ordinaryCoreDiagnostic` in the companion JSON; `/tmp/styk-figures-ordinary-core-b4-comparison-20261006`; `tmp/root-verification-temp/figures-cost-batch3-*` and `figures-cost-batch4-*`; the final native/view/IK/history freezes and independent reviews.

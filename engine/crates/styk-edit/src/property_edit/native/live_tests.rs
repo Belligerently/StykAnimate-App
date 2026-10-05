@@ -856,7 +856,7 @@ fn existing_ordinary_live_115_complete_returns_remain_exact_on_final_owners() {
                 let actual = items(actual_history.get(side));
                 let expected = items(expected_history.get(side));
                 assert_eq!(actual.len(), expected.len(), "{at} {side} count");
-                for ((actual, expected), command) in actual.iter().zip(&expected).zip(commands) {
+                for ((actual, expected), command) in actual.iter().zip(&expected).zip(commands.iter()) {
                     // The existing canonical worker history view exports labels
                     // and exact weights. Verify private command kinds directly
                     // against their sole carrier, without another serializer.

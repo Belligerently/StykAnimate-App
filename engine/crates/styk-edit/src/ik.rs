@@ -585,7 +585,7 @@ impl Editor {
     /// bend in the controller. Unpinned IK is a posing tool: the target does not persist.
     fn bake_unpinned(&mut self, slot: usize, handle: u32, x: f64, y: f64) -> Result<(), EditError> {
         let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
-        let (prepared, frame, scene) = self.evaluate()?;
+        let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
         let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let id = uid(&object).ok_or_else(|| unported("of a figure without an identity"))?;
         let evaluated = frame.objects.iter().find(|o| o.uid == id).ok_or_else(|| unported("of a figure the engine does not draw"))?;

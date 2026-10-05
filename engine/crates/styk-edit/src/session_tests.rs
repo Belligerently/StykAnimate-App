@@ -53,6 +53,117 @@ fn ordered_state_response_matches_all_five_recorded_figure_tapes() {
     assert_eq!(calls, 130);
 }
 
+fn session_from_recorded_state(reference: &Value, state: &Value) -> Session {
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    let mut state = state.as_obj().unwrap().clone();
+    for (key, value) in reference.get("editor").unwrap().as_obj().unwrap().iter() { state.set(key, value.clone()); }
+    Session::start(parse(first.get("document").unwrap().as_str().unwrap()), &json(&Value::object(state))).unwrap()
+}
+
+#[test]
+fn unchanged_session_view_keeps_selection_storage_and_continues_options() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    for name in ["move-native", "selection-metadata-plain-sheet"] {
+        let reference = parse(&std::fs::read_to_string(root.join(format!("{name}.reference.json"))).unwrap());
+        let first = reference.get("steps").unwrap().item(0).unwrap();
+        let mut session = session_from_recorded_state(&reference, first.get("state").unwrap());
+        let pointer = session.editor.selection.uids.as_ptr();
+        assert!(!session.editor.selection.uids.is_empty());
+        let report = session.report().clone();
+        let state = session.editor.state_value();
+        let answer = session.call_values("updateProject", &parse("[{}]"), &state);
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+        assert_eq!(answer.get("result"), Some(&Value::Bool(false)));
+        assert_eq!(pointer, session.editor.selection.uids.as_ptr(), "{name}: unchanged view retains its existing selection allocation");
+        assert_eq!(answer.get("state"), Some(&state));
+        assert!(session.report().same_node(&report));
+        assert_eq!(answer.get("events").and_then(Value::array_len), Some(0));
+        assert_eq!(answer.get("drag"), Some(&Value::Null));
+        assert_eq!(answer.get("draft"), Some(&Value::Null));
+
+        let mut view = state.as_obj().unwrap().clone();
+        view.set("autoKey", Value::Bool(true));
+        view.set("sheetSelection", parse(r#"{"id":"camera","contents":true}"#));
+        if report.path(&["_styk", "layers"]).is_some() { view.set("activeLayerId", Value::str("camera")); }
+        let answer = session.call_values("updateProject", &parse("[{}]"), &Value::object(view));
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+        assert_eq!(pointer, session.editor.selection.uids.as_ptr());
+        assert!(session.editor.auto_key);
+        let sheet = session.editor.sheet_selection.as_ref().unwrap();
+        assert_eq!(sheet.id, "camera"); assert!(sheet.contents);
+        if report.path(&["_styk", "layers"]).is_some() {
+            assert_eq!(session.report().path(&["_styk", "layers", "activeId"]).and_then(Value::as_str), Some("camera"));
+        }
+    }
+}
+
+#[test]
+fn session_view_sync_keeps_existing_changed_cold_and_invalid_projection() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let reference = parse(&std::fs::read_to_string(root.join("move-native.reference.json")).unwrap());
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    for (view, tick, frame, uid, uids, joint) in [
+        (r#"{"tick":1.25,"frameIndex":1,"selectedUid":2,"selectedUids":[2,1],"selectedJoint":0}"#, 1.25f64, 1usize, Some(2u32), vec![2, 1], 0i64),
+        (r#"{"tick":-0,"frameIndex":0,"selectedUid":1,"selectedUids":[1],"selectedJoint":-1}"#, -0.0, 0, Some(1), vec![1], -1),
+        (r#"{}"#, 0.0, 0, None, vec![], -1),
+        (r#"{"tick":0,"frameIndex":0,"selectedUid":1,"selectedUids":[1,false],"selectedJoint":-1}"#, 0.0, 0, Some(1), vec![], -1),
+        (r#"{"tick":null,"frameIndex":0.75,"selectedUid":"1","selectedUids":null,"selectedJoint":1.5}"#, 0.0, 0, None, vec![], 1),
+        (r#"{"tick":0,"frameIndex":-1,"selectedUid":-1,"selectedUids":[-1,2.75],"selectedJoint":-1}"#, 0.0, 0, Some(0), vec![0, 2], -1),
+        (r#"{"tick":1e400,"frameIndex":0,"selectedUid":1,"selectedUids":[1],"selectedJoint":-1}"#, f64::INFINITY, 0, Some(1), vec![1], -1),
+    ] {
+        let mut session = session_from_recorded_state(&reference, first.get("state").unwrap());
+        let report = session.report().clone();
+        let answer = session.call_values("updateProject", &parse("[{}]"), &parse(view));
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{view}: {answer:?}");
+        assert_eq!(answer.get("result"), Some(&Value::Bool(false)));
+        assert_eq!(session.editor.tick.to_bits(), tick.to_bits(), "{view}: tick bits");
+        assert_eq!(session.editor.frame_index, frame); assert_eq!(session.editor.selection.uid, uid);
+        assert_eq!(session.editor.selection.uids, uids); assert_eq!(session.editor.selection.joint, joint);
+        assert!(session.report().same_node(&report));
+        assert_eq!(answer.get("events").and_then(Value::array_len), Some(0));
+    }
+}
+
+#[test]
+fn optional_view_sync_preserves_present_stale_and_explicit_null_metadata() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    for mode in ["native", "sheet"] {
+        let reference = parse(&std::fs::read_to_string(root.join(format!("selection-metadata-plain-{mode}.reference.json"))).unwrap());
+        let steps = reference.get("steps").unwrap().elements().unwrap();
+        for key in ["polygonSelection", "segmentIds", "branch"] {
+            let state = steps.iter().find_map(|step| step.get("state").filter(|state| state.get(key).is_some()).cloned()).unwrap();
+            let mut session = session_from_recorded_state(&reference, &state);
+            let raw = session.editor.selection_metadata.clone();
+            let shown = session.editor.state_value();
+            let answer = session.call_values("updateProject", &parse("[{}]"), &shown);
+            assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+            assert_eq!(raw, session.editor.selection_metadata, "{mode}/{key}: canonical repeated metadata");
+            assert_eq!(answer.get("state"), Some(&shown));
+            let mut view = shown.as_obj().unwrap().clone(); view.set(key, Value::Null);
+            let answer = session.call_values("updateProject", &parse("[{}]"), &Value::object(view));
+            assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+            assert!(session.editor.selection_metadata.polygon.is_none());
+            assert!(session.editor.selection_metadata.segments.is_none());
+            assert!(session.editor.selection_metadata.branch.is_none());
+            assert!(answer.get("state").unwrap().get(key).is_none());
+        }
+        let state = steps.iter().find_map(|step| step.get("state").filter(|state| state.get("branch").is_some()).cloned()).unwrap();
+        let mut session = session_from_recorded_state(&reference, &state);
+        let mut branch = session.editor.selection_metadata.branch.as_ref().unwrap().as_obj().unwrap().clone();
+        branch.set("unknown", parse(r#"{"retain":true}"#)); session.editor.selection_metadata.branch = Some(Value::object(branch));
+        let original = session.editor.selection_metadata.clone();
+        session.editor.selection.joint = -1;
+        let hidden = session.editor.state_value(); assert!(hidden.get("branch").is_none());
+        let answer = session.call_values("updateProject", &parse("[{}]"), &hidden);
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+        assert_eq!(original, session.editor.selection_metadata, "{mode}: absent canonical metadata retains hidden stale fields");
+        let mut view = hidden.as_obj().unwrap().clone(); view.set("branch", Value::Null);
+        let answer = session.call_values("updateProject", &parse("[{}]"), &Value::object(view));
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+        assert!(session.editor.selection_metadata.branch.is_none());
+    }
+}
+
 fn merge_figures(base: &Value, changed: &Value, order: Option<&Value>) -> Value {
     let mut objects: Vec<Value> = base.elements().unwrap().iter().collect();
     for figure in changed.elements().unwrap().iter() {
@@ -112,7 +223,7 @@ fn compact_answers_preserve_recorded_publications_drafts_and_history() {
     let mut savings = 0;
     for name in ["move-native", "drag-cancel", "range-native", "startup-sheet", "rig-sheet", "gestures-sheet", "layers-sheet", "figures-layers-sheet", "locked-sheet",
         "handle-edit-chain-sheet", "figure-clipboard-sheet", "figure-clipboard-clip-sheet", "movieclip-sheet", "movieclip-loose-sheet",
-        "channels-figure-sheet", "channels-movieclip-sheet", "channels-style-sheet", "property-clip-patches-sheet", "topology-sheet", "topology-native"] {
+        "channels-figure-sheet", "channels-movieclip-sheet", "channels-style-sheet", "property-clip-patches-sheet", "topology-sheet", "topology-native", "ik-movieclip-parent-sheet"] {
         let reference = styk_doc::json::parse(&std::fs::read(folder.join(format!("{name}.reference.json"))).unwrap()).unwrap();
         let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
         let mut state = steps[0].get("state").unwrap().as_obj().unwrap().clone();
@@ -172,6 +283,55 @@ fn compact_answers_preserve_recorded_publications_drafts_and_history() {
         }
     }
     assert!(savings > 100, "{savings} calls had a smaller answer");
+}
+
+#[test]
+fn unpinned_pose_under_movieclip_uses_the_same_selected_and_ancestor_geometry() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/ik-movieclip-parent-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+    let mut checked_poses = 0;
+    for compact in [false, true] {
+        let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut expected = steps[0].get("document").unwrap().as_str().unwrap().to_string();
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap().trim_start_matches('@');
+            if method == "poseJoint" {
+                let (prepared, frame, full) = session.editor.evaluate().unwrap();
+                let slot = frame.objects.iter().position(|object| object.uid == 2).unwrap();
+                let parent = frame.objects[slot].join.unwrap().slot as usize;
+                let figure = prepared.doc.figure(frame.objects[parent].figure).unwrap();
+                assert!(figure.movieclip.is_some(), "the recorded ancestor is a movieclip");
+                assert!(crate::ik::assembly_of(&prepared, &frame, slot).is_none(), "this pose takes the non-assembled bake_unpinned path");
+                let controller = frame.objects[slot].ik.as_ref().unwrap().get(22).unwrap();
+                assert!(controller.enabled && !controller.pinned);
+                let small = styk_eval::geometry::build_only(&prepared.doc, &frame, &[slot]);
+                for included in [parent, slot] {
+                    let before = &full.objects[included];
+                    let after = &small.objects[included];
+                    assert!(before.resolved && after.resolved);
+                    // Point-buffer offsets of unrelated objects are deliberately absent
+                    // from this comparison; bake_unpinned consumes the selected root.
+                    assert_eq!(before.root.map(f64::to_bits), after.root.map(f64::to_bits));
+                    assert_eq!(format!("{:?}", (&before.starts, &before.ends, &before.lengths, &before.spatial, &before.rig)),
+                        format!("{:?}", (&after.starts, &after.ends, &after.lengths, &after.spatial, &after.rig)));
+                }
+                checked_poses += 1;
+            }
+            let mut view = session.editor.state_value().as_obj().unwrap().clone();
+            view.set("autoKey", Value::Bool(session.editor.options.auto_key));
+            view.set("changesOnly", Value::Bool(compact));
+            let answer = parse(&session.call(method, &json(&Value::array(call[1..].to_vec())), &json(&Value::object(view))));
+            let label = format!("movieclip ancestor step {}, compact={compact}", step.get("step").unwrap());
+            assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{label}");
+            assert_eq!(answer.get("state"), step.get("state"), "{label}: state");
+            assert_eq!(answer.get("events"), step.get("events"), "{label}: events");
+            if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+            assert_eq!(session.editor.report_json(), expected, "{label}: document");
+        }
+    }
+    assert_eq!(checked_poses, 6);
 }
 
 #[test]

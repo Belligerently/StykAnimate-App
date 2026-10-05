@@ -549,3 +549,122 @@ for (const mode of ['shadow', 'own']) {
     assert.equal(report.owned, mode === 'own' ? 1 : 0);
   });
 }
+
+
+// Measure only this gesture's snapshot reconciliation, without replacing any
+// global collection or changing the snapshot records used by cancel/history.
+function snapshotTraffic(before) {
+  const map = before.map.bind(before), sort = before.sort.bind(before), calls = {map: 0, sort: 0};
+  Object.defineProperties(before, {
+    map: {configurable: true, value(...args) { calls.map++; return map(...args); }},
+    sort: {configurable: true, value(...args) { calls.sort++; return sort(...args); }},
+  });
+  return calls;
+}
+
+test('ordered ordinary live pose snapshots need no reconciliation or sorting', () => {
+  const {expected, owned, same, run} = adoptionPair(createStartupDocument());
+  run('select', 1, 3); run('beginDrag', 'Ordered pose');
+  const before = owned._drag.before, snapshots = before.slice(), text = json(before);
+  const source = owned._authoredPoseEdit.source, sourceText = json(source), history = json(owned._undo);
+  const calls = snapshotTraffic(before);
+  for (let index = 0; index < 4; index++) {
+    const tip = expected.geometry.objects.get(0).segments[3].end;
+    expected.poseJoint(tip.x + 4, tip.y - 2, {snap: false});
+    owned.poseJoint(tip.x + 4, tip.y - 2, {snap: false});
+    assert.deepEqual(calls, {map: 0, sort: 0}, 'the matching snapshots are neither recaptured nor sorted');
+    assert.equal(owned._drag.before, before);
+    assert.ok(before.every((object, slot) => object === snapshots[slot]));
+    assert.equal(json(before), text); assert.equal(json(source), sourceText); assert.equal(json(owned._undo), history);
+    same();
+  }
+  run('cancelDrag'); run('beginDrag', 'Ordered pose');
+  const tip = expected.geometry.objects.get(0).segments[3].end;
+  run('poseJoint', tip.x - 3, tip.y + 5, {snap: false}); run('commitDrag'); run('undo'); run('redo');
+});
+
+test('translation expansion reconciles once and preserves the ordered captured roots afterward', () => {
+  const document = emptyDocument(), figure = document.figure_types[0];
+  document.keyframes = [createFrame([
+    createObject(figure, 1, 200, 200),
+    createObject(figure, 2, 260, 200, {join: {target_unique_id: 1, target_object_slot: 0, target_handle_id: 3}}),
+    createObject(figure, 3, 500, 200),
+  ], 4)];
+  const {expected, owned, same, run} = adoptionPair(document);
+  run('select', 2, -1); run('beginDrag', 'Expand translation');
+  const before = owned._drag.before, child = before[0], calls = snapshotTraffic(before);
+  const source = owned._authoredPoseEdit.source, sourceText = json(source), history = json(owned._undo);
+  assert.deepEqual(before.map(object => object.unique_id), [2]); calls.map = 0;
+  expected.moveSelection(7, -3); owned.moveSelection(7, -3);
+  assert.deepEqual(calls, {map: 1, sort: 1}, 'newly captured roots still use the original reconciliation');
+  assert.equal(owned._drag.before, before); assert.equal(before[1], child);
+  assert.deepEqual(Array.from(before, object => object.unique_id), [1, 2]);
+  assert.equal(json(before), json(expected._drag.before));
+  const root = before[0], snapshots = json(before);
+  same();
+  for (const [dx, dy] of [[-2, 4], [3, 1]]) {
+    expected.moveSelection(dx, dy); owned.moveSelection(dx, dy);
+    assert.deepEqual(calls, {map: 1, sort: 1}, 'the already-expanded ordered snapshots are reused');
+    assert.equal(before[0], root); assert.equal(before[1], child); assert.equal(json(before), snapshots);
+    assert.equal(json(source), sourceText); assert.equal(json(owned._undo), history);
+    same();
+  }
+  run('cancelDrag'); run('beginDrag', 'Expand translation');
+  run('moveSelection', 5, 3); run('commitDrag'); run('undo'); run('redo');
+});
+
+for (const matchingWireOrder of [false, true]) {
+  test(`unordered pose snapshots retain the old sort fallback (${matchingWireOrder ? 'same unordered wire IDs' : 'different ordered wire IDs'})`, () => {
+    const document = emptyDocument(), figure = document.figure_types[0];
+    document.keyframes = [createFrame([
+      createObject(figure, 1, 200, 200),
+      createObject(figure, 2, 260, 200, {join: {target_unique_id: 1, target_object_slot: 0, target_handle_id: 3}}),
+    ], 4)];
+    const {expected, owned, session, same, run} = adoptionPair(document);
+    run('select', 1, 3); run('beginDrag', 'Unordered snapshots');
+    const before = owned._drag.before, originals = before.slice(), text = json(before);
+    assert.equal(before.length, 2);
+    before.reverse();
+    const calls = snapshotTraffic(before), call = session.call.bind(session);
+    if (matchingWireOrder) session.call = (method, ...args) => {
+      const answer = JSON.parse(call(method, ...args));
+      if (method === 'poseJoint') answer.drag.before.reverse();
+      return JSON.stringify(answer);
+    };
+    const tip = expected.geometry.objects.get(0).segments[3].end;
+    expected.poseJoint(tip.x + 4, tip.y + 3, {snap: false});
+    owned.poseJoint(tip.x + 4, tip.y + 3, {snap: false});
+    assert.deepEqual(calls, {map: 1, sort: 1}, 'wire equality alone cannot bypass frame-order validation');
+    assert.equal(owned._drag.before, before);
+    assert.ok(before.every((object, slot) => object === originals[slot])); assert.equal(json(before), text);
+    assert.equal(json(before), json(expected._drag.before));
+    session.call = call; same();
+    run('commitDrag'); run('undo'); run('redo');
+    run('beginDrag', 'Unordered snapshots'); run('cancelDrag');
+  });
+}
+
+test('a malformed snapshot slot retains the exact old reconciliation and cancel behavior', () => {
+  const {expected, owned, same, run} = adoptionPair(createStartupDocument());
+  run('select', 1, 3); run('beginDrag', 'Malformed snapshot');
+  const before = owned._drag.before;
+  assert.equal(before.length, 1);
+  before[0].object_slot = String(before[0].object_slot);
+  const text = json(before), calls = snapshotTraffic(before), history = json(owned._undo);
+  const source = owned._authoredPoseEdit.source, sourceText = json(source);
+  const tip = expected.geometry.objects.get(0).segments[3].end;
+  expected.poseJoint(tip.x + 2, tip.y + 4, {snap: false});
+  owned.poseJoint(tip.x + 2, tip.y + 4, {snap: false});
+  assert.deepEqual(calls, {map: 1, sort: 1}, 'a non-integer slot is left to the old fallback');
+  assert.equal(json(before), text); assert.equal(json(source), sourceText); assert.equal(json(owned._undo), history);
+  same(); run('cancelDrag');
+});
+
+test('other owned live commands retain their original snapshot reconciliation', () => {
+  const {expected, owned, same, run} = adoptionPair(createStartupDocument());
+  run('select', 1, -1); run('beginDrag', 'Rotate figure');
+  const before = owned._drag.before, text = json(before), calls = snapshotTraffic(before);
+  expected.rotateSelection(0.1); owned.rotateSelection(0.1);
+  assert.deepEqual(calls, {map: 1, sort: 1}); assert.equal(json(before), text);
+  same(); run('cancelDrag');
+});

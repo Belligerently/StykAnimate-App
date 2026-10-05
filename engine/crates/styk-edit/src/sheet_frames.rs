@@ -4,6 +4,8 @@
 //! Each plans on the sheet planner and publishes one history entry ([`crate::sheet`]).
 //! Drawing layers and audio ripple answer `Unported`.
 
+use std::sync::Arc;
+
 use styk_doc::{Obj, Value};
 
 use crate::frame::objects_of;
@@ -190,8 +192,10 @@ impl Editor {
         self.seek(start)?;
         // The entry redoes to the new frame.
         let after = self.selection_state();
-        if let Some(command) = self.undo.last_mut() {
-            command.after_selection = after;
+        if !self.undo.is_empty() {
+            if let Some(command) = Arc::make_mut(&mut self.undo).last_mut() {
+                command.after_selection = after;
+            }
         }
         Ok(true)
     }
