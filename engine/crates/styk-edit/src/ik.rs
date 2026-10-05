@@ -507,7 +507,7 @@ impl Editor {
     /// controller of the joined figures, its followers in their own figures or in others.
     fn rotate_assembly_followers(&mut self, slot: usize, joint: usize, selected: &HashSet<(usize, usize)>, delta: f64, include_joint: bool) -> Result<(), EditError> {
         let unported = |what: &str| EditError::Unported(format!("turning the followers of a joined IK target {what}"));
-        let (prepared, frame, _) = self.evaluate()?;
+        let (prepared, frame) = self.evaluate_frame()?;
         let assembly = assembly_of(&prepared, &frame, slot).ok_or_else(|| unported("outside an assembly"))?;
         let skeleton = assembly.skeleton();
         for (&id, c) in &assembly.controllers.controllers {

@@ -550,7 +550,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     editor[name] = function shadowed(...args) {
       // A ported call made by another call belongs to it.
       if (depth > 0) return original.apply(this, args);
-      let live = begin(), before = null, payload = null, measured = null;
+      let live = begin(), before = null, payload = null, measured = null, fallbackStarted = null;
       // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
       if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
       if (live && (RANGE.has(name) || TOPOLOGY.includes(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
@@ -570,6 +570,15 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         else try { payload = measured ? measured.payload() : JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
         else before = JSON.stringify({...view(), ...(own && OWNED.has(name) ? {changesOnly: true} : {})});
+      }
+      // Rig releases emit plain/definition edits; own static patches bypass keyed styles.
+      // Keep these routes in the original editor with their eligible fallback timed;
+      // comparison mode still sends the recorded commands to the session.
+      if (live && own && OWNED.has(name) && !measured &&
+          (name === 'commitDrag' && editor._drag?.rig || name === 'updateBuilderSegmentStyle' &&
+            args[0] && typeof args[0] === 'object' && !Array.isArray(args[0]) && Object.hasOwn(args[0], 'static'))) {
+        fallbackStarted = performance.now();
+        end('a rig or static-definition call outside owned adoption'); live = null;
       }
       if (!live) report.skipped++;
       // The engine runs the call in the editor's place.
@@ -623,7 +632,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       }
       const sheetBefore = editor.report._styk?.layerSheet;
       depth++; events = [];
-      const started = performance.now();
+      const started = fallbackStarted ?? performance.now();
       let result, thrown, draws = [];
       // What the editor draws at random during the call goes to the engine with it (D18).
       try { ({result, draws} = withDraws(() => original.apply(this, measured?.args ?? args))); } catch (error) { thrown = error; draws = error?.draws ?? []; } finally { depth--; }

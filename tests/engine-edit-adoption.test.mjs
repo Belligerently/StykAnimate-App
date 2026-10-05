@@ -668,3 +668,149 @@ test('other owned live commands retain their original snapshot reconciliation', 
   assert.deepEqual(calls, {map: 1, sort: 1}); assert.equal(json(before), text);
   same(); run('cancelDrag');
 });
+
+
+// These definition-only releases keep the same original Editor owner and eligible
+// fallback clock. The real-Editor compact oracle remains a comparison/adoption harness,
+// not evidence about the native runtime or the measured class cost.
+function knownFallbackDocument() {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/builder.document.json', import.meta.url), 'utf8'));
+  document.guardUnknown = {keep: ['document', 7]};
+  document.figure_types[0].guardUnknown = {keep: ['definition', 9]};
+  return document;
+}
+function observeFallbackSession(pair) {
+  const calls = [], call = pair.session.call.bind(pair.session);
+  let releases = 0;
+  pair.session.call = (name, ...args) => { calls.push(name); return call(name, ...args); };
+  pair.session.free = () => { releases++; };
+  return {calls, get releases() { return releases; }};
+}
+function originalFallbackHistory(pair) {
+  // A definition publication deliberately retires this harness's fixed Session.
+  // Exercise the same original history owner without reopening that stale oracle.
+  pair.owned.cancelVfxClipEdit = Editor.prototype.cancelVfxClipEdit;
+  for (const method of ['undo', 'redo']) {
+    assert.equal(Editor.prototype[method].call(pair.owned), Editor.prototype[method].call(pair.expected));
+    pair.same();
+  }
+}
+
+for (const changed of [false, true]) test(`owned rig release uses one original fallback (changed=${changed})`, t => {
+  const pair = adoptionPair(knownFallbackDocument()), {expected, owned, report, same, run} = pair;
+  run('select', 1, 1); run('beginRigDrag');
+  if (changed) {
+    const tip = expected.geometry.objects.get(0).segments[1].end;
+    run('editRigJoint', tip.x + 8, tip.y - 5);
+  }
+  assert.ok(owned._drag.rig);
+  const traffic = observeFallbackSession(pair), before = {calls: report.calls, owned: report.owned,
+    failedOwned: report.failedOwned, skipped: report.skipped, historySize: owned._historySize};
+  const commit = owned.commitRigDrag;
+  let originals = 0;
+  t.mock.method(owned, 'commitRigDrag', function (...args) {
+    originals++; assert.equal(traffic.releases, 1, 'the Session is released before the original rig mutation');
+    return commit.apply(this, args);
+  });
+  assert.equal(owned.commitDrag(), expected.commitDrag()); same();
+  assert.equal(originals, 1); assert.deepEqual(traffic.calls, []); assert.equal(traffic.releases, 1);
+  assert.equal(report.calls, before.calls); assert.equal(report.owned, before.owned);
+  assert.equal(report.failedOwned, before.failedOwned); assert.equal(report.skipped, before.skipped + 1);
+  assert.equal(report.byCall.commitDrag.calls, 1); assert.ok(Number.isFinite(report.byCall.commitDrag.editorMs));
+  assert.equal(owned._drag, null);
+  if (!changed) assert.equal(owned._historySize, before.historySize);
+  originalFallbackHistory(pair);
+});
+
+test('comparison mode still compares changed rig releases and unchanged cancellation', () => {
+  const pair = adoptionPair(knownFallbackDocument(), 'shadow'), {expected, report, run} = pair;
+  run('select', 1, 1); run('beginRigDrag');
+  const tip = expected.geometry.objects.get(0).segments[1].end;
+  run('editRigJoint', tip.x + 8, tip.y - 5);
+  const traffic = observeFallbackSession(pair), compared = report.compared;
+  run('commitDrag'); run('undo'); run('redo'); run('beginRigDrag'); run('commitDrag');
+  assert.equal(traffic.calls.filter(name => name === 'commitDrag').length, 2);
+  assert.equal(traffic.releases, 0); assert.equal(report.skipped, 0);
+  assert.ok(report.compared >= compared + 5); assert.equal(report.owned, 0); assert.equal(report.failedOwned, 0);
+});
+
+for (const [initial, patch] of [
+  [false, {static: true}], [true, {static: false}], [false, {static: false}],
+  [false, {static: true, opacity: .6, thickness: 5, color: '#aa3300'}],
+]) test(`an own static patch keeps original definition/history semantics (${initial} -> ${JSON.stringify(patch)})`, t => {
+  const seed = new Editor({demo: false}).load(knownFallbackDocument());
+  seed.select(1, 1); seed.updateBuilderSegmentStyle({static: initial});
+  const pair = adoptionPair(clean(seed.report)), {expected, owned, report, same, run} = pair;
+  run('select', 1, 1);
+  const traffic = observeFallbackSession(pair), calls = report.calls, skipped = report.skipped, figure = owned.figure;
+  const record = owned._record;
+  let records = 0;
+  t.mock.method(owned, '_record', function (...args) {
+    records++; assert.equal(traffic.releases, 1, 'the Session is released before the definition command is recorded');
+    return record.apply(this, args);
+  });
+  const result = owned.updateBuilderSegmentStyle(patch), alone = expected.updateBuilderSegmentStyle(patch);
+  assert.equal(result, alone); same();
+  assert.deepEqual(traffic.calls, []); assert.equal(traffic.releases, 1);
+  assert.equal(report.calls, calls); assert.equal(report.skipped, skipped + 1);
+  assert.equal(report.owned, 0); assert.equal(report.failedOwned, 0);
+  assert.equal(report.byCall.updateBuilderSegmentStyle.calls, 1);
+  assert.equal(records, result ? 1 : 0); assert.equal(owned.figure, figure);
+  originalFallbackHistory(pair);
+});
+
+for (const [patch, options, messageKey] of [
+  [{static: 'yes'}, {}, 'errors.editorBuilderBranch.staticMustBeTrueOrFalse'],
+  [{static: 'yes', color: '#oops', opacity: 2}, {}, 'errors.editorBuilderBranch.colorMustBeASixDigitHexColor'],
+  [{static: 'yes', opacity: 2}, {}, 'errors.editorBuilderBranch.mustBeAFiniteNumberBetweenAnd'],
+  [{static: 'yes'}, {branch: 'yes'}, 'errors.editorBuilderBranch.chooseWhetherToStyleTheWholeBranch'],
+]) test(`own static fallback preserves original validation priority (${messageKey})`, () => {
+  const pair = adoptionPair(knownFallbackDocument()), {expected, owned, report, same, run} = pair;
+  run('select', 1, 1);
+  const traffic = observeFallbackSession(pair), before = json(owned.report), history = owned._historySize;
+  let alone, result;
+  try { expected.updateBuilderSegmentStyle(patch, options); } catch (error) { alone = error; }
+  try { owned.updateBuilderSegmentStyle(patch, options); } catch (error) { result = error; }
+  assert.equal(alone?.messageKey, messageKey); assert.equal(result?.messageKey, alone.messageKey);
+  assert.equal(result.message, alone.message); same();
+  assert.equal(json(owned.report), before); assert.equal(owned._historySize, history);
+  assert.deepEqual(traffic.calls, []); assert.equal(traffic.releases, 1);
+  assert.equal(report.owned, 0); assert.equal(report.failedOwned, 0); assert.equal(report.skipped, 1);
+  assert.equal(report.byCall.updateBuilderSegmentStyle.calls, 1);
+});
+
+test('known static fallback charges Session cleanup once in the eligible original clock', t => {
+  const {owner, expected, observed, report} = timedFacade(t, 'updateBuilderSegmentStyle', null, {fixture: 'builder', joint: 1});
+  assert.equal(owner.updateBuilderSegmentStyle({static: true}), expected.updateBuilderSegmentStyle({static: true}));
+  assert.equal(json(owner.report), json(expected.report)); assert.deepEqual(state(owner), state(expected));
+  assert.equal(observed.originalCalls, 1); assert.equal(report.calls, 0); assert.equal(report.skipped, 1);
+  assert.equal(report.owned, 0); assert.equal(report.ownedMs, 0);
+  assert.equal(report.failedOwned, 0); assert.equal(report.failedOwnedMs, 0);
+  // timedFacade advances the real Session release by 2 ms and original Editor by 5 ms.
+  // The v1 pre-admission cleanup would report only 5 ms, omitting eligible work.
+  assert.equal(report.ownableMs, 7); assert.equal(report.jsMs, 7);
+  assert.equal(report.byCall.updateBuilderSegmentStyle.calls, 1);
+  assert.equal(report.byCall.updateBuilderSegmentStyle.editorMs, 7);
+  assert.equal(report.ownedMs + report.ownableMs + report.failedOwnedMs, 7, 'cleanup and original fallback are charged once');
+});
+
+test('keyed scalar and recolor patches without an own static bit remain adopted', () => {
+  const {report, run} = adoptionPair(knownFallbackDocument());
+  run('select', 1, 1);
+  for (const [patch, options] of [[{opacity: .6}, {}], [{thickness: 5}, {branch: true}], [{color: '#aa3300'}, {}]]) {
+    const adopted = report.owned;
+    run('updateBuilderSegmentStyle', patch, options);
+    assert.equal(report.owned, adopted + 1);
+  }
+  assert.equal(report.skipped, 0); assert.equal(report.failedOwned, 0);
+});
+
+test('comparison mode still records and compares own static definition patches', () => {
+  const pair = adoptionPair(knownFallbackDocument(), 'shadow'), {report, run} = pair;
+  run('select', 1, 1);
+  const traffic = observeFallbackSession(pair), compared = report.compared;
+  run('updateBuilderSegmentStyle', {static: true, opacity: .6, color: '#aa3300'});
+  assert.deepEqual(traffic.calls, ['updateBuilderSegmentStyle']); assert.equal(traffic.releases, 0);
+  assert.equal(report.compared, compared + 1); assert.equal(report.skipped, 0);
+  assert.equal(report.owned, 0); assert.equal(report.failedOwned, 0);
+});

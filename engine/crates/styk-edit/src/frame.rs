@@ -228,13 +228,32 @@ impl Editor {
     /// [`Editor::evaluate`] with the geometry of the figures in `slots` (and those they are
     /// joined to) only, when given.
     pub(crate) fn evaluate_only(&self, slots: Option<&[usize]>) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+        self.evaluate_geometry(slots, false)
+    }
+
+    /// The same shown-frame/typed owner, with only the geometry `shape` consumes.
+    /// Missing slot information keeps the original full build; the geometry owner
+    /// retains its full-output fallback for rigged and other rich figures.
+    pub(crate) fn evaluate_for_shape(&self, slots: Option<&[usize]>) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+        self.evaluate_geometry(slots, true)
+    }
+
+    /// The same guarded shown-frame conversion, for callers that do not read geometry.
+    /// This shares the existing Prepared lineage and latest typed view owner.
+    pub(crate) fn evaluate_frame(&self) -> Result<(Arc<Prepared>, styk_eval::eval::Frame), EditError> {
         let prepared = self.prepared()?;
         if let Some(feature) = prepared.doc.unsupported.first() {
             return Err(EditError::Unported(format!("geometry with {feature}")));
         }
         let record = self.shown_frame()?;
         let frame = self.eval.borrow_mut().edit_frame(&record, &prepared).map_err(|error| EditError::Invalid(error.to_string()))?;
+        Ok((prepared, frame))
+    }
+
+    fn evaluate_geometry(&self, slots: Option<&[usize]>, for_shape: bool) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+        let (prepared, frame) = self.evaluate_frame()?;
         let scene = match slots {
+            Some(slots) if for_shape => styk_eval::geometry::build_only_for_shape(&prepared.doc, &frame, slots),
             Some(slots) => styk_eval::geometry::build_only(&prepared.doc, &frame, slots),
             None => styk_eval::geometry::build(&prepared.doc, &frame),
         };
@@ -553,6 +572,117 @@ mod tests {
         assert_eq!(editor.camera_at_time(&frame, 90_000.0).unwrap(), frame.get("camera").cloned());
         assert!(editor.eval.borrow().prepared.is_none(), "empty camera clips prepared the document");
     }
+
+    fn assert_shape_query(editor: &Editor, counts: &mut [usize; 5]) {
+        let selected = editor.selection_frame().unwrap().iter().position(|object| uid(object) == editor.selection.uid);
+        let Some(slot) = selected else { return };
+        let (prepared, frame, full) = editor.evaluate_only(Some(&[slot])).unwrap();
+        let (query_prepared, query_frame, query) = editor.evaluate_for_shape(Some(&[slot])).unwrap();
+        assert!(Arc::ptr_eq(&prepared, &query_prepared));
+        assert_eq!(frame.objects.len(), query_frame.objects.len());
+        for (before, after) in frame.objects.iter().zip(&query_frame.objects) { assert!(Arc::ptr_eq(before, after)); }
+        assert_eq!(full.figure_of, query.figure_of);
+        assert_eq!(full.objects.len(), query.objects.len());
+        let rig_bits = |rig: &Option<Arc<[styk_eval::geometry::RigJoint]>>| rig.as_deref().map(|joints| joints.iter().map(|joint| (
+            joint.space.map(|space| (space.rotation.to_bits(), space.follow.map(|(a, b)| (a.to_bits(), b.to_bits())))),
+            joint.connector, [joint.angle, joint.bend, joint.length, joint.authored].map(f64::to_bits),
+        )).collect::<Vec<_>>());
+        for (geometry, actual) in full.objects.iter().zip(&query.objects) {
+            assert_eq!((geometry.slot, geometry.uid, geometry.figure, geometry.resolved), (actual.slot, actual.uid, actual.figure, actual.resolved));
+            assert_eq!(geometry.root.map(f64::to_bits), actual.root.map(f64::to_bits));
+            assert_eq!(geometry.scale.to_bits(), actual.scale.to_bits());
+            assert_eq!(geometry.starts.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(), actual.starts.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>());
+            assert_eq!(geometry.ends.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(), actual.ends.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>());
+            assert_eq!(rig_bits(&geometry.rig), rig_bits(&actual.rig));
+            if !geometry.resolved { continue; }
+            let at = geometry.slot as usize;
+            let object = &frame.objects[at];
+            let figure = object.figure_override.as_ref().or_else(|| prepared.doc.figure(object.figure)).unwrap();
+            for index in 0..figure.segments.len() {
+                assert_eq!(crate::ik::shape_angle(&prepared, &frame, &full, at, index).to_bits(), crate::ik::shape_angle(&query_prepared, &query_frame, &query, at, index).to_bits(), "shape angle slot{at}/joint{index}");
+            }
+            // Rig/connector shapes also consume item angle/bend/length and its
+            // curve. The geometry owner's rich-query fallback must retain them.
+            if geometry.rig.is_some() {
+                for item in full.items.iter().filter(|item| item.slot == geometry.slot && !matches!(item.kind, styk_eval::geometry::ItemKind::Poly | styk_eval::geometry::ItemKind::Mesh)) {
+                    let actual = query.items.iter().find(|actual| actual.slot == item.slot && actual.index == item.index && actual.kind == item.kind).unwrap();
+                    assert_eq!([item.angle, item.bend, item.length].map(f64::to_bits), [actual.angle, actual.bend, actual.length].map(f64::to_bits));
+                    assert_eq!(item.start.map(f64::to_bits), actual.start.map(f64::to_bits));
+                    assert_eq!(item.end.map(f64::to_bits), actual.end.map(f64::to_bits));
+                    assert_eq!(full.points_of(item).iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(), query.points_of(actual).iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>());
+                }
+            }
+            counts[0] += 1;
+            counts[1] += usize::from(geometry.rig.is_some());
+            counts[2] += usize::from(geometry.spatial.is_some());
+            counts[3] += usize::from(figure.movieclip.is_some());
+            counts[4] += usize::from(object.join.is_some());
+        }
+    }
+
+    #[test]
+    fn shape_query_preserves_consumed_geometry_on_recorded_live_history_and_rich_states() {
+        let mut counts = [0usize; 5];
+        let mut calls = 0usize;
+        for name in ["startup-sheet", "rig-sheet", "gestures-sheet", "drag-cancel", "pinned-ik-sheet", "ik-followers-sheet", "ik-joined-sheet", "ik-joined-late-sheet", "ik-settings-rig-sheet", "ik-spatial-joined-free-sheet", "ik-movieclip-parent-sheet", "origin-pose-support-free-native", "origin-pose-support-free-sheet", "origin-pose-support-pinned-native", "origin-pose-support-pinned-sheet"] {
+            let reference = recorded(name);
+            let mut editor = recorded_editor(&reference);
+            let steps = reference.get("steps").unwrap().elements().unwrap();
+            let mut expected = steps.get(0).unwrap().get("document").unwrap().as_str().unwrap().to_string();
+            assert_shape_query(&editor, &mut counts);
+            for step in steps.iter().skip(1) {
+                let call = step.get("call").unwrap().elements().unwrap().iter().collect::<Vec<_>>();
+                let method = call[0].as_str().unwrap();
+                let measured = step.get("boundsArgs").and_then(Value::elements).map(|items| items.iter().collect::<Vec<_>>());
+                editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
+                let result = editor.call(method, measured.as_deref().unwrap_or(&call[1..]));
+                match (result, step.get("error").filter(|error| !error.is_null())) {
+                    (Ok(_), None) => {},
+                    (Err(EditError::Invalid(key)), Some(error)) => assert_eq!(Some(key.as_str()), error.get("key").and_then(Value::as_str).or_else(|| error.get("message").and_then(Value::as_str))),
+                    (result, error) => panic!("{name}/{method}: {result:?}, recorded {error:?}"),
+                }
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+                assert_eq!(editor.report_json(), expected, "{name}/{method}: document");
+                assert_eq!(Some(&editor.state_value()), step.get("state"), "{name}/{method}: state");
+                assert_eq!(Some(&Value::array(editor.take_events())), step.get("events"), "{name}/{method}: events");
+                assert_shape_query(&editor, &mut counts);
+                calls += 1;
+            }
+        }
+        assert_eq!(calls, 576);
+        assert!(counts.iter().all(|&count| count > 0), "actual shape geometry / rig / spatial / movieclip / ancestor coverage: {counts:?}");
+    }
+
+    #[test]
+    fn shape_query_keeps_full_none_and_original_preparation_conversion_error_order() {
+        let reference = recorded("gestures-sheet");
+        let mut editor = recorded_editor(&reference);
+        let (prepared, frame, full) = editor.evaluate_only(None).unwrap();
+        let (query_prepared, query_frame, query) = editor.evaluate_for_shape(None).unwrap();
+        assert!(Arc::ptr_eq(&prepared, &query_prepared));
+        for (before, after) in frame.objects.iter().zip(&query_frame.objects) { assert!(Arc::ptr_eq(before, after)); }
+        assert_eq!(format!("{:?}", full.objects), format!("{:?}", query.objects));
+        assert_eq!(format!("{:?}", full.items), format!("{:?}", query.items));
+        assert_eq!(full.points.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(), query.points.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>());
+        let source = editor.shown_frame().unwrap();
+        let mut invalid = source.clone();
+        invalid.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[0] = Value::Null;
+        editor.authored = Some(crate::Authored { source, frame: invalid, tick: editor.tick, transaction: false, definitions_start: None });
+        let coherent = editor.eval.borrow().latest_typed.as_ref().unwrap().clone();
+        let old = editor.evaluate_only(Some(&[0])).err().unwrap();
+        assert!(matches!(&old, EditError::Invalid(_)));
+        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()));
+        assert!(Arc::ptr_eq(editor.eval.borrow().latest_typed.as_ref().unwrap(), &coherent), "conversion error never installs a partial typed frame");
+        let mut document = (*prepared.doc).clone();
+        document.unsupported.push("shape query unsupported control".into());
+        let loader = editor.eval.borrow().loader.clone();
+        editor.adopt_prepared(loader, Arc::new(Prepared::new(Arc::new(document))));
+        let old = editor.evaluate_only(Some(&[0])).err().unwrap();
+        assert!(matches!(&old, EditError::Unported(_)));
+        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()), "unsupported preparation precedes malformed shown-frame conversion");
+        assert!(editor.eval.borrow().latest_typed.is_none());
+    }
+
 }
 
 /// A contiguous native row splice (`kind: 'ranges'`), shared by native frame commands.

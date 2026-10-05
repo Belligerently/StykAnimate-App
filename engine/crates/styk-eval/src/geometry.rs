@@ -405,7 +405,7 @@ pub fn segment_pose(obj: &Object, seg: &crate::doc::Segment, i: usize) -> (f64, 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: bool) -> Built {
+fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: bool, render_output: bool) -> Built {
     let obj = &frame.objects[slot];
     let n = fig.segments.len();
     let scale = obj.scale;
@@ -415,16 +415,16 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let mut starts = vec![nan; n];
     let mut lengths = vec![f64::NAN; n];
     let mut raw_segments = vec![RawSegment::default(); n];
-    let mut items: Vec<Item> = Vec::with_capacity(n + fig.polyfills.len());
+    let mut items: Vec<Item> = if render_output { Vec::with_capacity(n + fig.polyfills.len()) } else { Vec::new() };
     let mut points: Vec<[f64; 2]> = Vec::new();
     // Segment item index per segment (for polygon edges).
-    let mut seg_item = vec![u32::MAX; n];
+    let mut seg_item = if render_output { vec![u32::MAX; n] } else { Vec::new() };
     let plan = &fig.plan;
     let black_override = version < 5 && !fig.segment_colors;
-    let mut segment_items: Vec<Item> = Vec::with_capacity(n);
-    let (transition, transitions) = match &obj.color_transition {
-        Some(c) => (0, vec![**c]),
-        None => (NO_TRANSITION, Vec::new()),
+    let mut segment_items: Vec<Item> = if render_output { Vec::with_capacity(n) } else { Vec::new() };
+    let (transition, transitions) = match (&obj.color_transition, render_output) {
+        (Some(c), true) => (0, vec![**c]),
+        _ => (NO_TRANSITION, Vec::new()),
     };
     // Rigged figures evaluate in dependency order with their rig context.
     let rig_plan = plan.rig.clone();
@@ -511,6 +511,10 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         };
         starts[i] = start;
         lengths[i] = length;
+        if !render_output {
+            raw_segments[i] = RawSegment { drawing_end: end, points: (p0, p1), thickness: seg.thickness * scale.abs() * width };
+            continue;
+        }
         let rgb = if black_override {
             if (obj.color as i32) < 0 { [0, 0, 0] } else { [(obj.color & 255) as u8, (obj.color >> 8 & 255) as u8, (obj.color >> 16 & 255) as u8] }
         } else {
@@ -567,6 +571,13 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
         }
         let item = segment_items.last().unwrap();
         raw_segments[i] = RawSegment { drawing_end: item.end, points: item.points, thickness: item.thickness };
+    }
+    // Shape queries keep the same segment arithmetic and curve samples. Polygon
+    // points, colors and drawable ordering do not change the joints just built.
+    if !render_output {
+        let mut built = Built::new(ObjectGeometry { slot: slot as u32, uid: obj.uid, figure: fig.id, root, scale, ends, starts, lengths, raw_segments, opacity, resolved: true, spatial: None, rig: None, extent: None });
+        built.points = points;
+        return built;
     }
     let joint = |handle: u32| -> Option<[f64; 2]> {
         if handle == 0 {
@@ -1059,18 +1070,31 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
 
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None, false)
+    build_filtered(doc, frame, None, false, true)
 }
 
 /// [`build`] with every figure's [`ObjectGeometry::extent`]: what a follow camera samples.
 pub fn build_measured(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None, true)
+    build_filtered(doc, frame, None, true, true)
 }
 
 /// [`build`] for the objects in `slots` and the objects they are joined to, the others
 /// left unresolved: what an editing call reads of one figure's geometry, without the
 /// whole frame's.
 pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
+    build_only_with(doc, frame, slots, true)
+}
+
+/// [`build_only`] for a shape query: ordinary 2D objects retain their joints,
+/// scaled lengths and raw segment curves, but omit colors and render primitives.
+/// Polygon constraints still participate in the unchanged IK solvers. Any needed
+/// rig, spatial pose, movieclip, mesh, surface or Stick Nodes shape uses the full builder.
+/// The returned scene is query geometry; callers must not render it.
+pub fn build_only_for_shape(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
+    build_only_with(doc, frame, slots, false)
+}
+
+fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output: bool) -> Scene {
     let count = frame.objects.len();
     let mut needed = vec![false; count];
     for &slot in slots {
@@ -1080,10 +1104,10 @@ pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
             at = frame.objects[i].join.map(|j| j.slot as usize);
         }
     }
-    build_filtered(doc, frame, Some(&needed), false)
+    build_filtered(doc, frame, Some(&needed), false, render_output)
 }
 
-fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: bool) -> Scene {
+fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: bool, render_output: bool) -> Scene {
     let count = frame.objects.len();
     let mut scene = Scene {
         objects: vec![ObjectGeometry::default(); count],
@@ -1135,6 +1159,22 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
             fig_of[i] = s;
         }
     }
+    // The full path keeps all output needed by complex shape callers and their
+    // ancestors. Inspect the already-resolved figure/pose, including style and
+    // Stick Nodes overrides; never infer eligibility from the stored definition.
+    let render_output = render_output || frame.objects.iter().enumerate().any(|(i, object)| {
+        if needed.is_some_and(|needed| !needed[i]) {
+            return false;
+        }
+        let Some(figure) = scene.figures.get(fig_of[i] as usize) else {
+            // Preserve the full builder's existing missing-figure behavior.
+            return true;
+        };
+        figure.plan.rig.is_some() || figure.plan.spatial || object.spatial.is_some()
+            || figure.movieclip.is_some() || figure.mesh.is_some()
+            || figure.polyfills.iter().any(|polygon| polygon.surface.is_some())
+            || figure.segments.iter().any(|segment| crate::sticknodes::shape_for(segment, object).is_some())
+    });
     // IK across joined figures solves once per assembly, before its objects build (`solveJoinedIK`).
     let joined_ik = crate::ik::joined::solve(frame, &|slot| fig_of.get(slot).filter(|&&s| s != u32::MAX).map(|&s| &scene.figures[s as usize]));
     let mut built: Vec<Option<Built>> = (0..count).map(|_| None).collect();
@@ -1184,7 +1224,7 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
                     local.as_ref()
                 }
             };
-            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik, measure)))
+            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik, measure, render_output)))
         };
         let results: Vec<(usize, Built)> = crate::par::map(&slots, 32, make).into_iter().flatten().collect();
         for (i, b) in results {
