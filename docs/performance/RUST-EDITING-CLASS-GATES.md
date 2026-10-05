@@ -202,3 +202,16 @@ Full cost rows advance **24→27**; all three new rows FAIL the literal unchange
 Counters remain **175 js / 123 partial / 35 ported / 22 verified / 1 removed**, **two owned classes**, **two deleted JavaScript modules**, **engine-1 0/28**. Figures remains closed. A measured cost fix, fresh unchanged all-three passing cost, matching committed-source checkpoint and positive actual default core adoption are still required. This completed evidence append introduces no implementation, gate, public API, response schema, stored-arithmetic or threshold change and is reserved for the next meaningful verified figures fix.
 
 Evidence: companion JSON B10 rows/batch; `figures-candidate-batch10-1/summary-accounted.json` `0e24675c`, approved input receipt `88c76647`, independent completed all-three acceptance `093c0a27`, and the private accounting receipt in the companion metadata. Independent startup `a9545728` and rig `10f75e4b` receipts remain unchanged. No additional completed-reader execution was needed. Exact double-precision values, artifact/package identities, commands and loads remain in those receipts; historical milestone text and all four ordinary diagnostics retain their original scope.
+
+
+## B11 instrumented full joined-pose diagnostic
+
+The full warmed joined-chain workload completed on committed `ebf5c694` with shipping Wasm `15cbbdc513ea` (10,241,300 bytes), while the full checkpoint ran concurrently. Document, history (79 entries), selection and full undo match; all 36 poses appear in three 12-call ranges on both pages. The instrumented whole-workload clocks are **305.950 ms candidate** (284.765 owned + 21.185 JS fallback + zero failed time) and **280.750 ms JavaScript**. CDP profiling and diagnostic wrappers make these attribution observations, not class-gate acceptance or a speed comparison. Independent acceptance and both profile reviews are complete, with sample limits preserved.
+
+| 36 pose calls | JavaScript ms | Native outer ms | Included Native call ms | Adoption ms |
+| --- | ---: | ---: | ---: | ---: |
+| Joined-chain | 25.860 | 17.315 | 15.330 | 22.085 |
+
+The Native call is already included in the outer clock. Helper clocks overlap; neither they nor CPU samples are added to official totals. One completed full-workload instrumented joined diagnostic advances **0→1**; the **27 official full cost rows, eight batch objects, four ordinary diagnostics, ownership classes and engine-1 counter remain unchanged**. Figures stays closed. Exact clocks, loads, source bindings and evidence are in the separate `joinedPoseDiagnostic` JSON object.
+
+Evidence: independent acceptance `83a2ca49`, Native profile review `57cfa98f` and JS/adoption review `34bb6172`; bounded raw artifact hashes are in the companion JSON. Two signed negative oracle sample intervals (-1/-2 µs) and boundary-overlapping intervals are excluded from attribution without changing the raw profiles. The launcher's original pending-acceptance flag is preserved; the separate independent receipt accepts this diagnostic only.

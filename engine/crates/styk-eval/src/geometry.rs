@@ -1108,13 +1108,14 @@ pub fn build_only_for_shape(doc: &Document, frame: &Frame, slots: &[usize]) -> S
     build_only_with(doc, frame, slots, false, None)
 }
 
-/// [`build_only_for_shape`] for one selected segment. An ordinary unjoined,
-/// unpinned 2D object builds only that segment and its segment ancestors, in the
-/// original geometry order. Other segment entries remain unresolved (NaN).
+/// [`build_only_for_shape`] for one selected segment. When no object has a pinned
+/// controller, an ordinary 2D object builds only that segment and its segment
+/// ancestors, in the original geometry order. Joined parent objects still build
+/// their complete numeric geometry; other selected-object segments remain NaN.
 /// The selected joint's endpoints, scaled length and raw curve are unchanged;
 /// callers must not render this scene or query unrelated joints from it.
-/// Rich figures, joins, pinned controllers, selected UID aliases and ambiguous
-/// topology retain the existing whole-object shape query.
+/// Rich needed figures, any pinned controller, selected UID aliases and ambiguous
+/// segment topology retain the existing whole-object shape query.
 pub fn build_joint_for_shape(doc: &Document, frame: &Frame, slot: usize, joint: usize) -> Scene {
     build_only_with(doc, frame, &[slot], false, Some((slot, joint)))
 }
@@ -1136,7 +1137,7 @@ fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output
 // dependencies are ambiguous simply retains the original complete segment loop.
 fn joint_ancestors(frame: &Frame, figure: &Figure, slot: usize, joint: usize) -> Option<Vec<bool>> {
     let object = frame.objects.get(slot)?;
-    if frame.objects.iter().any(|object| object.join.is_some() || crate::ik::has_pinned(object))
+    if frame.objects.iter().any(|object| crate::ik::has_pinned(object))
         || frame.objects.iter().filter(|other| other.uid == object.uid).count() != 1
     {
         return None;
@@ -1230,10 +1231,11 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
         let figure = scene.figures.get(*fig_of.get(slot)? as usize)?;
         joint_ancestors(frame, figure, slot, joint).map(|joints| (slot, joints))
     });
-    // A successful selected-joint mask already proved that the entire frame has
-    // no joins or pinned controllers. Its sole needed object has no join levels
-    // to resolve; keep the original topology owner for every other query.
-    let (level, order) = if joints.is_some() {
+    // The segment mask can also narrow an unpinned joined object. Only a frame
+    // without any joins has one needed object and no join levels to resolve;
+    // joined queries retain complete ancestor construction and global topology.
+    let single_root = joints.is_some() && frame.objects.iter().all(|object| object.join.is_none());
+    let (level, order) = if single_root {
         (vec![0; count], Vec::new())
     } else {
         let mut level = vec![u32::MAX; count];
@@ -1265,12 +1267,12 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
     // IK across joined figures solves once per assembly, before its objects build (`solveJoinedIK`).
     let joined_ik = crate::ik::joined::solve(frame, &|slot| fig_of.get(slot).filter(|&&s| s != u32::MAX).map(|&s| &scene.figures[s as usize]));
     let mut built: Vec<Option<Built>> = (0..count).map(|_| None).collect();
-    // The selected slot is borrowed directly, with no frame-wide root list or
-    // filtered copy. Publication below still follows the original draw order.
-    for slots in order.iter().map(Vec::as_slice).chain(joints.as_ref().map(|(slot, _)| std::slice::from_ref(slot))) {
+    // An unjoined selected slot is borrowed directly; joined queries keep the
+    // original level and needed filters. Publication still follows draw order.
+    for slots in order.iter().map(Vec::as_slice).chain(joints.as_ref().filter(|_| single_root).map(|(slot, _)| std::slice::from_ref(slot))) {
         let filtered: Vec<usize>;
         let slots = match needed {
-            Some(needed) if joints.is_none() => {
+            Some(needed) if !single_root => {
                 filtered = slots.iter().copied().filter(|&i| needed[i]).collect();
                 &filtered
             }

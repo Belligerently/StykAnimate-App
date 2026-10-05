@@ -864,15 +864,19 @@ families. Worker publication and durable Session ownership remain separate work.
 Ordinary joint shape reads use `geometry::build_joint_for_shape` through the same
 Prepared/shown-frame conversion. Only the selected segment and its ancestors are
 resolved; callers must neither render the returned Scene nor read other joints.
-Complex, joined, pinned, aliased or ambiguous topology retains the full shape query.
+When the complete typed frame has no pinned controller, ordinary joined objects
+also narrow their selected segments; every needed parent retains full numeric
+geometry. Rich needed figures, pins, aliases or ambiguous segment topology retain
+the full shape query.
 Nonfinite or overflowing retained geometry retries the original whole-object loop,
 preserving its previous-curve buffer behavior.
-The same eligibility guard proves that the complete typed frame has no joins or
-pinned controllers. That selected query borrows its sole slot directly instead of
-constructing whole-frame join levels and filtered root lists. Figure resolution,
-all-slot zero levels, warnings and the original draw-order publication remain;
-omitted slots stay unresolved and repeated slots publish once. Every other query
-retains the original topology traversal. No public API or stored field changes.
+Only a frame without joins also borrows its sole selected slot directly instead
+of constructing whole-frame join levels and filtered root lists. Joined queries
+keep the complete topology traversal, ancestor construction and needed filters.
+Figure resolution, warnings and original draw-order publication remain; omitted
+slots stay unresolved and repeated slots publish once. The existing portable
+query API now covers joined frames without pins; signatures and stored fields
+are unchanged.
 
 The Cache retains one coherent raw/typed frame pair. `Loader::edit_frame_reusing_ik`
 reuses an immutable parsed IK table only when the IK table node, slot UID/figure and

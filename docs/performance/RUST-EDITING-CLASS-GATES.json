@@ -41414,5 +41414,206 @@
       },
       "remainingGateWork": "new committed-source matching checkpoint, full startup/rig/joined cost, and actual default-class core adoption; classes remain largefigures+3d"
     }
+  },
+  "joinedPoseDiagnostic": {
+    "scope": "Completed instrumented FULL warmed joined-chain pose attribution; separate from official figures class-cost rows and engine-1",
+    "status": "COMPLETED_INSTRUMENTED_DIAGNOSTIC_ACCEPTED_WITH_SAMPLE_LIMITS",
+    "notice": "CDP CPU profiling and diagnostic wrappers ran with the full checkpoint concurrently. Clocks are attribution only, not an official gate, speed gain or causal performance comparison.",
+    "head": "ebf5c694c9339d4b2fa30f51d79594ab969b8e03",
+    "shippingWasm": {
+      "sha256": "15cbbdc513ea2ac455cf6e4609d1b8c59cd70863f661eac9ab84c889f5901bb0",
+      "bytes": 10241300,
+      "profile": "wasm"
+    },
+    "runtimes": {
+      "node": "v24.11.0",
+      "python": "Python 3.12.9"
+    },
+    "workload": "Unchanged full warmed joined-chain interactions; 47 steps and three timed 12-pose ranges",
+    "argv": [
+      "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+      "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/engine-edit-shadow-full-joined-pose.mjs",
+      "--own",
+      "--warm",
+      "--exact-math",
+      "--verbose",
+      "--file",
+      "engine/tests/edit/joined-chain.document.json",
+      "--out",
+      "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/driver.json"
+    ],
+    "elapsedSeconds": 978.0954007020046,
+    "sourceBinding": {
+      "sourceStable": true,
+      "timedBeforeAfterMapsEqual": true,
+      "identityCounts": {
+        "sources": 1529,
+        "packages": 7,
+        "inputs": 3
+      },
+      "approvedInputReceipt": {
+        "path": "tmp/root-verification-temp/figures-b11-joined-diagnostic-approved-input.json",
+        "sha256": "aa472e0b25966759231bdbe67270391450259863745c88bee5974dc25f668ff2"
+      },
+      "inputDocument": {
+        "path": "engine/tests/edit/joined-chain.document.json",
+        "sha256": "7a79a4ab084d4f6e6b57c71d665e6ff168bd3db8b06b7b3887c4d731573b42f1",
+        "bytes": 6095
+      },
+      "completion": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1.completion.json",
+        "sha256": "b3b627302552b3f8d2de75baa5e4a2dc4a24d059b466f760d495ce8fa3789a9c",
+        "bytes": 544228
+      },
+      "finalSourceGuard": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/final-source-guard.json",
+        "sha256": "71d03427cd8c0003aab2c080958684b0d3e4626f30249278ba60b98c85ebb170",
+        "bytes": 516
+      }
+    },
+    "loadBefore": [
+      6.56640625,
+      7.27880859375,
+      7.8779296875
+    ],
+    "loadAfter": [
+      15.97998046875,
+      16.546875,
+      13.9208984375
+    ],
+    "concurrentFullCheckpoint": true,
+    "observedWholeWorkloadMs": {
+      "nativeOwned": 284.7650000154972,
+      "javascriptFallback": 21.185000002384186,
+      "failedNative": 0,
+      "candidateTotal": 305.9500000178814,
+      "javascriptEligible": 280.7500000298023
+    },
+    "pose36Ms": {
+      "nativeOuterIncludingCall": 17.314999967813492,
+      "nativeCallIncluded": 15.3299999833107,
+      "adoption": 22.08499988913536,
+      "javascript": 25.860000014305115,
+      "answerBytes": 34499
+    },
+    "observedCounts": {
+      "candidateCalls": 338,
+      "candidateOwned": 125,
+      "candidateCompared": 213,
+      "candidateFailedOwned": 0,
+      "javascriptCalls": 338,
+      "poseCallsEach": 36,
+      "poseRangesEach": [
+        12,
+        12,
+        12
+      ]
+    },
+    "parity": {
+      "unexpectedErrors": 0,
+      "differences": 0,
+      "mismatches": 0,
+      "rounded": 0,
+      "documentBytes": 263000,
+      "historyEntries": 79,
+      "selectionEqual": true,
+      "fullUndoEqual": true
+    },
+    "artifacts": {
+      "driver.json": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/driver.json",
+        "sha256": "b122ddd20e9b8f27d0acf0038fbd464f1a28a8c133fd4b224001fb62116a9aa4",
+        "bytes": 25254
+      },
+      "coverage.json": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/coverage.json",
+        "sha256": "c000ec303d15363058012c2a8c7f5b595d4d764171034af202b22772cad331a0",
+        "bytes": 1232
+      },
+      "engine-owned.attribution.json": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/engine-owned.attribution.json",
+        "sha256": "2d1f710489c47d5a4c1abb4385b6ea53ef26fd26655cacdb637e7d697e6187d7",
+        "bytes": 100436
+      },
+      "editor-alone.attribution.json": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/editor-alone.attribution.json",
+        "sha256": "02b6855117453ff71be18137bc586e7ba1534fb12dfd58bebe7a54c268d847f1",
+        "bytes": 103997
+      },
+      "engine-owned.cpuprofile": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/engine-owned.cpuprofile",
+        "sha256": "449818d6edad241ef7d4e0827ea57c3d932d38d7c1617407890726c479bef84b",
+        "bytes": 9699785
+      },
+      "editor-alone.cpuprofile": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/editor-alone.cpuprofile",
+        "sha256": "523367227fcceae068996d4078462e3a207e02c67adc8d78dcd14162a564f2d2",
+        "bytes": 10157547
+      },
+      "engine-owned.clock-bridge.json": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/engine-owned.clock-bridge.json",
+        "sha256": "ae8c9575e8c9c5f551d1c95bc4fc079e980f45ea0bbe88e819c4fa452a4c0315",
+        "bytes": 1225
+      },
+      "editor-alone.clock-bridge.json": {
+        "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1/editor-alone.clock-bridge.json",
+        "sha256": "dc11fa34d12061905a4f57fa3c6a7051d8981184717b1b11d2dcfa1cf55fb41e",
+        "bytes": 1230
+      }
+    },
+    "appLog": {
+      "path": "/tmp/styk-figures-joined-pose-diagnostic-preparation-20261006/full-joined-b11-1.app.log",
+      "sha256": "131507caf7a8ebd708bd5da5d80ee3a224a894a0ca3b61db3489cfa2f860511f",
+      "bytes": 21869
+    },
+    "progressCounters": {
+      "completedFullWorkloadInstrumentedJoinedDiagnosticsBefore": 0,
+      "completedFullWorkloadInstrumentedJoinedDiagnosticsAfter": 1,
+      "officialFullClassCostRowsUnchanged": 27,
+      "officialBatchObjectsUnchanged": 8,
+      "ordinaryDiagnosticsUnchanged": 4,
+      "ownedClassesUnchanged": 2,
+      "engine1MeasuredUnchanged": 0
+    },
+    "limits": [
+      "Native outer clock includes the native call; do not add the call again. Helper clocks can overlap and are not added to official global totals.",
+      "Raw context labels observe the selected controller, not all joins, pins or the actual solver branch.",
+      "CDP samples are statistical attribution, not exact execution counts or per-call durations.",
+      "No B12 source/runtime/benefit, gate/default adoption, checkpoint acceptance or stored arithmetic/API claim.",
+      "Two editor-alone signed CPU timeDeltas (-1 and -2 us) lie outside every root call. Preserve raw bytes and exclude their invalid intervals, together with boundary-overlapping samples, from attribution.",
+      "The unchanged launcher still records diagnosticAccepted=false; the separate final independent acceptance receipt marks this diagnostic accepted.",
+      "The JS profile review observes one common emit/invalidation per pose on both pages and establishes no material removable duplicate from seven accepted non-event adoption samples."
+    ],
+    "diagnosticAccepted": true,
+    "officialCostGateAccepted": false,
+    "independentReviews": {
+      "acceptance": {
+        "path": "/tmp/styk-figures-b11-joined36-diagnostic-independent-review-20261006.json",
+        "sha256": "83a2ca49b082107b8d68d902e5e43c2fdc86e3a3c58b169ac88d9ac1a8ba39aa",
+        "bytes": 26944
+      },
+      "nativeProfile": {
+        "path": "/tmp/styk-figures-b11-joined-native-attribution-20261006.json",
+        "sha256": "57cfa98fe66657e1609a0a0da958a16fad99e943d07a86e10cec7e3f3b22b111",
+        "bytes": 42813
+      },
+      "javascriptProfile": {
+        "path": "/tmp/styk-figures-joined-b11-js-adoption-profile-review-20261006.json",
+        "sha256": "34bb6172fa0de752ac1e16195249202e600e7e9b18068abe1d11cff1d1fcc43e",
+        "bytes": 23850
+      }
+    },
+    "nativeProfileSamples": {
+      "ownedRetained": 56,
+      "ownedThreeRanges": [
+        18,
+        18,
+        20
+      ],
+      "baselineShadowRetained": 63,
+      "ownedNativeBoundaryOverlapsExcluded": 13,
+      "interpretation": "Baseline shadow is a separate Native execution after JS. Overlapping sample families establish no dominant owner or expected savings."
+    },
+    "profileReviewConclusion": "One common emit and invalidation per pose on both pages. No material removable JS duplicate or conclusively dominant Native owner is established."
   }
 }

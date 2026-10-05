@@ -431,3 +431,144 @@ fn selected_joint_query_keeps_unjoined_draw_order_omission_and_repetition() {
         geometry::build_joint_for_shape(&prepared.doc, &invalid, slot, joint);
     })).is_err());
 }
+
+#[test]
+fn selected_joint_query_preserves_unpinned_joined_parents_and_full_ancestors() {
+    let documents = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let mut skipped = 0;
+    let mut attached = 0;
+    let mut free_controllers = 0;
+    for (name, ticks) in [("joined-chain", &[0.0, 3.0, 6.0][..]), ("ik-joined-unpinned", &[0.0][..])] {
+        let prepared = styk_eval::prepare(styk_eval::open(&documents.join(format!("{name}.document.json"))).unwrap());
+        for &tick in ticks {
+            let mut frame = prepared.evaluate(tick);
+            assert!(frame.objects.iter().any(|object| object.join.is_some()));
+            assert!(!frame.objects.iter().any(|object| styk_eval::ik::has_pinned(object)));
+            // Derived finite curves expose raw point slices and parent attachments;
+            // the document/topology/controller sources are existing Editor recordings.
+            for object in &mut frame.objects {
+                let count = prepared.doc.figure(object.figure).unwrap().segments.len();
+                free_controllers += object.ik.as_ref().map_or(0, |table| table.controllers.values().filter(|controller| controller.enabled && !controller.pinned).count());
+                Arc::make_mut(object).bends = Some(Arc::from(vec![0.2; count]));
+            }
+            for slot in 0..frame.objects.len() {
+                let figure = prepared.doc.figure(frame.objects[slot].figure).unwrap();
+                let joint = usize::from(figure.segments.len() > 1);
+                let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[slot]);
+                let query = geometry::build_joint_for_shape(&prepared.doc, &frame, slot, joint);
+                same_selected_joint(&full, &query, slot, joint);
+                assert_eq!(full.warnings, query.warnings);
+                assert!(query.warnings.is_empty());
+                assert_eq!(format!("{:?}", full.camera), format!("{:?}", query.camera));
+                assert_eq!((full.background.0, full.background.1), (query.background.0, query.background.1));
+                same_number(full.background.2, query.background.2);
+                assert_eq!(full.background_color, query.background_color);
+                assert_eq!(full.figures.len(), query.figures.len());
+                assert!(full.figures.iter().zip(&query.figures).all(|(a, b)| Arc::ptr_eq(a, b)));
+                match (&full.vfx, &query.vfx) {
+                    (Some(a), Some(b)) => assert!(Arc::ptr_eq(a, b)),
+                    (None, None) => {},
+                    _ => panic!("frame effects changed"),
+                }
+                assert!(query.items.is_empty());
+                for (other, (a, b)) in full.objects.iter().zip(&query.objects).enumerate() {
+                    assert_eq!((a.slot, a.uid, a.figure, a.resolved), (b.slot, b.uid, b.figure, b.resolved));
+                    if other != slot {
+                        assert_eq!(a.ends.len(), b.ends.len());
+                        // Every needed parent retains ALL joints/curves; only the
+                        // selected object's unused segment entries may be omitted.
+                        for index in 0..a.ends.len() { same_selected_joint(&full, &query, other, index); }
+                    }
+                }
+                if let Some(join) = frame.objects[slot].join {
+                    let parent = join.slot as usize;
+                    let parent_figure = prepared.doc.figure(frame.objects[parent].figure).unwrap();
+                    same_point(query.objects[slot].root, full.objects[parent].joint(parent_figure, join.handle).unwrap());
+                    attached += 1;
+                }
+                skipped += query.objects[slot].ends.iter().enumerate().filter(|(index, point)| point[0].is_nan() && full.objects[slot].ends[*index][0].is_finite()).count();
+            }
+        }
+    }
+    assert!(skipped > 0 && attached > 0 && free_controllers > 0, "sparse={skipped}, attached={attached}, free={free_controllers}");
+}
+
+#[test]
+fn selected_joint_query_keeps_joined_publication_cycles_invalid_targets_and_pins() {
+    let documents = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let prepared = styk_eval::prepare(styk_eval::open(&documents.join("joined-chain.document.json")).unwrap());
+    let mut original = prepared.evaluate(0.0);
+    for object in &mut original.objects {
+        let count = prepared.doc.figure(object.figure).unwrap().segments.len();
+        Arc::make_mut(object).bends = Some(Arc::from(vec![0.2; count]));
+    }
+    let slot = 2;
+    let joint = 1;
+    assert_eq!(original.objects.len(), 3);
+    let mut published_points: Option<Vec<[f64; 2]>> = None;
+    for order in [vec![0, 1, 2], vec![2, 1, 0, 2], vec![2, 2], vec![0, 1], vec![]] {
+        let mut frame = original.clone();
+        frame.draw_order = order;
+        let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[slot]);
+        let query = geometry::build_joint_for_shape(&prepared.doc, &frame, slot, joint);
+        assert_eq!(full.figure_of, query.figure_of);
+        assert_eq!(full.warnings, query.warnings);
+        assert_eq!(full.objects[slot].resolved, query.objects[slot].resolved);
+        if query.objects[slot].resolved {
+            same_selected_joint(&full, &query, slot, joint);
+            // Even when parents are omitted from publication, their complete
+            // geometry was built before the child's attachment was resolved.
+            assert!(query.objects[slot].ends.iter().any(|point| point[0].is_nan()));
+            if frame.draw_order == [2, 2] { assert!(!query.objects[0].resolved && !query.objects[1].resolved); }
+            let raw = query.objects[slot].raw_segments[joint];
+            let points = &query.points[raw.points.0 as usize..raw.points.1 as usize];
+            match &published_points {
+                Some(before) => { assert_eq!(points.len(), before.len()); for (&a, &b) in points.iter().zip(before) { same_point(a, b); } },
+                None => published_points = Some(points.to_vec()),
+            }
+        } else {
+            same_query_geometry(&full, &query);
+        }
+    }
+    for case in ["selected-cycle", "unrelated-cycle", "invalid-target", "invalid-handle", "pinned"] {
+        let mut frame = original.clone();
+        match case {
+            "selected-cycle" => Arc::make_mut(&mut frame.objects[0]).join = Some(styk_eval::doc::Join { slot: 2, handle: 33 }),
+            "unrelated-cycle" => {
+                for (uid, parent) in [(1001, 4), (1002, 3)] {
+                    let mut object = frame.objects[0].clone();
+                    let object_mut = Arc::make_mut(&mut object);
+                    object_mut.uid = uid;
+                    object_mut.join = Some(styk_eval::doc::Join { slot: parent, handle: 11 });
+                    frame.objects.push(object);
+                }
+            },
+            "invalid-target" => Arc::make_mut(&mut frame.objects[slot]).join = Some(styk_eval::doc::Join { slot: u32::MAX, handle: 33 }),
+            "invalid-handle" => Arc::make_mut(&mut frame.objects[slot]).join.as_mut().unwrap().handle = u32::MAX,
+            "pinned" => {
+                let pinned = styk_eval::prepare(styk_eval::open(&folder().join("ik/startup-pinned.json")).unwrap());
+                let source = pinned.evaluate(0.0);
+                let mut object = source.objects[0].clone();
+                assert!(styk_eval::ik::has_pinned(&object));
+                let object_mut = Arc::make_mut(&mut object);
+                object_mut.uid = 1001;
+                object_mut.figure_override = Some(pinned.doc.figure(object_mut.figure).unwrap().clone());
+                frame.objects.push(object);
+            },
+            _ => unreachable!(),
+        }
+        let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[slot]);
+        let query = geometry::build_joint_for_shape(&prepared.doc, &frame, slot, joint);
+        assert_eq!(full.figure_of, query.figure_of, "{case}");
+        assert_eq!(full.warnings, query.warnings, "{case}");
+        if case == "selected-cycle" || case == "pinned" {
+            same_query_geometry(&full, &query);
+            if case == "selected-cycle" { assert!(!query.objects[slot].resolved && !query.warnings.is_empty()); }
+            else { assert_eq!(full.retained_bytes, query.retained_bytes); }
+        } else {
+            same_selected_joint(&full, &query, slot, joint);
+            if case == "unrelated-cycle" { assert_eq!(query.warnings.len(), 2); }
+            if case == "invalid-target" || case == "invalid-handle" { same_point(query.objects[slot].root, frame.objects[slot].root); }
+        }
+    }
+}
