@@ -270,3 +270,30 @@ Owned/compared/failed counts are **163/285/0**, **119/171/1** and **124/205/0**;
 Official full cost rows advance **33→36** and metadata batches **10→11**; all 33 historical raw rows/10 metadata objects/12 other top-level values/four ordinary diagnostics/one accepted instrumented joined diagnostic remain exact. The literal candidate owned+fallback+failed <= editor-alone threshold is unchanged; each native call clock is already included in `engineMs`. All three costs fail in this loaded round. The measurements establish no causal speed gain, default ownership, matching final checkpoint or engine-1 result. Inventory statuses, two owned classes and two deleted JS modules are unchanged.
 
 Evidence: raw `figures-candidate-batch14-1/summary-accounted.json` `3948d6ac`, approved input `b93e0676`, independent completed acceptance `e7f502ea`, unchanged startup `fc3670a7`/rig `fad700cd` receipts and descriptive method ranking `995e701c`. Companion JSON preserves exact measured values in the existing row schema, commands, loads and bounded artifact/identity references; complete raw receipts remain linked. Candidate-only boundary and net candidate-minus-JS excess residuals remain distinct, and family sums never replace official totals. No new runtime, API, stored-arithmetic or gate claim is introduced by this append.
+
+
+## Movieclips default class — completed 2026-10-05
+
+Both original full paired workloads pass the current user cost rule through the
+0.1 ms average-excess arm, with exact document/history/selection/full undo. Candidate
+cost includes owned/adoption, eligible JS fallback and failed attempts once;
+`N = min(candidate.report.calls, editorAlone.report.calls)`. Both literal `C <= J`
+comparisons remain false; the current policy result is separate from historical flags.
+
+| Original full input | Candidate / JS (ms) | Full candidate / JS calls | Excess / N (ms) | Current policy |
+| --- | ---: | ---: | ---: | --- |
+| sheet-movieclip | 246.210 / 228.600 | 416 / 438 | 0.042332 | PASS |
+| sheet-movieclip-loose | 202.875 / 176.945 | 341 / 341 | 0.076041 | PASS |
+
+The matching committed `379c2dbb` engine checkpoint passes 849 native tests, two
+existing ignored, 64 stages/358 containers. Final 87 focused JS tests/Main check and
+14 recorded replays/254 calls pass. Actual default sheet/loose runs have 18/31 owned,
+12/15 compared and 30/46 calls, positive Native pose/move/commit clocks and exact full
+undo. Method counts include fallback; short smoke timings prove admission only.
+Movieclips is opened; APIs, stored arithmetic and D13 remain unchanged.
+
+Inventory stays 175 js/123 partial/35 ported/22 verified/1 removed; owned classes
+3→4, completed full cost rows 36→38, deleted JS 2→2 and engine-1 0/28→0/28.
+These loaded runs establish no causal speed gain. Original clocks, argv, timestamps,
+load and separate default/checkpoint proofs are retained in the companion JSON and
+[raw evidence](/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1).

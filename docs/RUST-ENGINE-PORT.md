@@ -10,58 +10,53 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, figures opened)
+## Handoff (2026-10-05, movieclips opened)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current decision:** `figures` now joins `large figures` and `3d` in default editing.
-Stop pose micro-optimizations; proceed to `movieclips`, then `channels`. The matching
-committed engine checkpoint at `f4173cf0` passed **849 native tests**, two existing ignored
-diagnostics, **64 stages / 358 containers**, completed 15:36 CEST on 2026-10-05.
-The two final gate JavaScript files are covered by **86 focused tests**, Main check
-(2,000 JavaScript files, 93 stylesheets, 682 modules) and actual default app proof;
-they are outside that preceding full checkpoint. Each startup/rig/joined default run
-reports **31 owned / 15 compared / 46 calls**, with positive Native call/adoption clocks
-for pose, move and commit and exact document/history/selection/full undo. Core call
-counts are 24/2/5; these include fallback, not per-method adoption counts. No public API,
-stored arithmetic or mobile adaptation changes.
+**Current decision:** `movieclips` now joins `large figures`, `3d` and `figures`
+in default editing. The original full `sheet-movieclip` and loose workloads pass the
+user-approved cost rule: candidate/JS totals **246.210/228.600** and
+**202.875/176.945 ms**, with **0.042332/0.076041 ms** excess per conservative full call.
+The matching committed `379c2dbb` engine checkpoint passes **849 native tests**, two
+existing ignored diagnostics, **64 stages / 358 containers**, completed 16:00 CEST.
+Final gate checks pass **87 focused JavaScript tests** and Main check (2,000 JavaScript
+files, 93 stylesheets, 682 modules); 14 recordings/254 calls already cover this scope.
+Actual default sheet/loose runs report **18/31 owned**, **12/15 compared** and **30/46
+calls**, positive Native pose/move/commit clocks and exact document/history/selection/full
+undo. Core call counts are 12/2/4 and 24/2/5, including fallback. The two final gate
+JavaScript files are outside the preceding engine checkpoint. No API, stored arithmetic
+or mobile adaptation changes; playback comparison, worker-only conversion/Bake and
+native-channel/source/origin exclusions remain unchanged.
 
-**Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass the
-full paired workload when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes
-owned/adoption, eligible JS fallback and failed attempts once; `J` is editor-alone cost;
-`N = min(candidate.report.calls, editorAlone.report.calls)` across the complete timed
-runs. Exact behavior and D13 are unchanged. B14 excess averages are
-**0.047679 / 0.067983 / 0.071809 ms** over **448 / 295 / 329** calls for
-startup/rig/joined-chain, passing the absolute-average arm. Full page counts differ
-(448/474, 295/295, 329/338); eligible counts 171/128/129 match. Historical literal
-cost outcomes remain unchanged in the [cost report](performance/RUST-EDITING-CLASS-GATES.md)
-and its [data](performance/RUST-EDITING-CLASS-GATES.json).
+**Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
+when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
+eligible JS fallback and failed attempts once; `J` is editor-alone cost;
+`N = min(candidate.report.calls, editorAlone.report.calls)` for the complete paired
+workload. Movieclip denominators are **416/341**; full page counts are 416/438 and
+341/341. Both pass the absolute-average arm. Exact behavior and D13 remain unchanged;
+[historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
+outcomes. The short default workload proves admission, not full cost.
 
 **Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
-1 removed** unchanged; **OWNED_CLASSES 2→3**; **deleted JS 2→2**; completed full cost
-rows **33→36**; **engine-1 0/28→0/28**. Other command families remain JavaScript;
-the figures class flip does not promote their whole modules.
+1 removed** unchanged; **OWNED_CLASSES 3→4**; **deleted JS 2→2**; completed full cost
+rows **36→38**; **engine-1 0/28→0/28**. Other command families remain JavaScript;
+class ownership does not promote their whole modules.
 
-**Next:** close only the three `movieclips` gate requirements:
+**Next:** `channels` has only three gate requirements:
 
-1. Measure the unchanged full paired `sheet-movieclip` and `sheet-movieclip-loose`
-   workloads under the new rule, including fallback and failed attempts once.
-2. Prove actual default class admission with positive pose/move/commit native/adoption
-   clocks and exact document/history/selection/full undo. Mock class controls do not
-   replace this proof.
+1. Run the original full paired `channels-figure` workload under the current cost rule.
+2. Prove actual default core adoption and exact document/history/selection/full undo.
 3. Obtain the matching committed engine checkpoint before the flip, then verify the
-   tiny class Set change with focused final-gate tests and actual app proof. Existing 14 tapes/254 calls already cover recorded commands; no missing
-   Rust-command prerequisite is identified for this flip.
+   tiny class change with focused final-gate tests and actual app proof.
 
-Then verify `channels` under the same rule on its original inputs. Preserve classifier
-precedence and native-channel/movieclip-source/origin exclusions. Limit each class to
-about five concrete blockers.
-A prerequisite may resume only when it blocks the next class flip, engine-1 or deletion;
-name that outcome in the commit. The scoped renderer/export milestone is complete;
-remaining renderer, storage, async-command and physical-retirement work stays in
-[open problems](#6-open-problems). Do not open general prerequisites.
+Preserve classifier precedence and native-channel/movieclip-source/origin exclusions.
+Larger input controls are optional. Resume a prerequisite only for a confirmed next
+class blocker, engine-1 or deletion; do not restart pose micro-optimizations or general
+prerequisites. Remaining renderer, storage, async-command and retirement work stays in
+[open problems](#6-open-problems).
 
 ### Verification and ownership
 
@@ -96,8 +91,8 @@ Unported recordings do not establish command coverage. Never push, open PRs, pub
 release without user instruction. Preserve configured commit authorship and the required
 `Co-Authored-By` trailer.
 
-After class flips, stop all subagents and run the complete idle engine-1/baseline-0 matrix
-before deletion. Trace workers, dynamic imports, IPC and packaging before removing JS;
+After the remaining commands and class flips, stop all subagents and run the complete
+idle engine-1/baseline-0 matrix before deletion. Trace workers, dynamic imports, IPC and packaging before removing JS;
 retain platform/interface verification, no-threads and remaining mobile/browser gaps.
 Use Node 24.11.0 and Python 3.12.9, `nice -n 15` for heavy builds and `xvfb-run -a` with
 `ELECTRON_RUN_AS_NODE` unset for Electron. Do not use bare `git stash`, clean targets or
@@ -307,14 +302,14 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
-- **Figures opened:** the user-approved cost arm, matching `f4173cf0` engine checkpoint and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next movieclips, then channels.
-- **Next class:** verify the existing movieclip inputs with full paired cost under the same +5% **or** 0.1 ms-per-call rule, a matching class checkpoint and actual default core adoption; then channels. Broader publication/lifetime/accounting/D7 work remains parked unless it blocks that flip, engine-1 or deletion.
+- **Figures and movieclips opened:** the current user cost rule, matching committed engine checkpoints and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next channels.
+- **Next class:** channels follows the same rule on its original input. Broader publication/lifetime/accounting/D7 work remains parked unless it blocks that flip, engine-1 or deletion.
 
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
-- **Next movieclips gate:** remeasure the existing `sheet-movieclip` and `sheet-movieclip-loose` app inputs with full cost accounting, then prove nonzero default core adoption and a matching checkpoint. Their recorded gestures/publications already have parity evidence. Playback controls are compared, not adopted; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their current excluded classes; do not enable dense worker-only commands by changing the class Set.
+- **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set.
 
-- **Next channels gate:** after movieclips, measure the app-held saved `legacyAnimation` class on `channels-figure` and representative larger input before default core adoption and its matching checkpoint. The historical small input costs 289.3/116.9 ms candidate/JS and larger-class cost is unmeasured. Existing scalar/property replays do not certify that class cost; native saved channels and origins retain their separate admission guards.
+- **Next channels gate:** after movieclips, run the original full paired `channels-figure` workload under the current user cost rule, then matching committed engine checkpoint/focused gate checks and actual default core adoption/full undo. The historical 289.3/116.9 ms observation stays historical. Additional larger-input controls are optional, not a prerequisite; native saved channels and origins retain their separate admission guards.
 
 - **Canonical worker adoption and query readiness:** effect presets/scopes/paints now
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
@@ -324,8 +319,9 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   worker boundary. Broad owned sheet shadow attempts have no final comparison while
   the narrow duplicate/paste check passes. A bounded 180 s retry on `77d2e83b` completed
   its first warm-up round and began the next before timing out; it demonstrates progress,
-  not a confirmed hang. Retry complete flow before class
-  adoption. These additions do not open ownership or document-class gates.
+  not a confirmed hang. This broader worker flow is parked; resume only for a confirmed
+  next-class blocker, engine-1 or deletion. It is not an additional movieclips gate
+  requirement. These additions do not open ownership or document-class gates.
 
 - **D7 source audit, still open:** the interface calls JSON/edit-scene parsing, geometry
   and draw-list encoding through `Stage::edit_frame`; definitions-only mirror sync calls
@@ -339,8 +335,9 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Prepared generation/epoch/sample substitution is now closed with native tickets and
   actual-shown monitor guards; live edit-scene readiness remains separate. Worker stop
   has no cleanup acknowledgement. Use the existing worker/session,
-  frame/cache and retained-task owners to close these paths before gates or deletion;
-  the quiet worker actor alone does not certify them. Static findings are separate from
+  frame/cache and retained-task owners when a confirmed next-class blocker, engine-1
+  or deletion requires these paths; do not infer another movieclips prerequisite. The
+  quiet worker actor alone does not certify them. Static findings are separate from
   Chromium GPU load or delayed animation frames, which do not establish UI lock duration.
 
 - **Prepared playback and hardware-headless capture:** the reviewed renderer batch now
@@ -565,6 +562,15 @@ unpacked into `~/.cache/styk-webkit-libs`, nothing installed system-wide); pinne
 layer-sheet movieclip replacements.
 
 ## 7. Parity results
+
+Movieclips is now owned by default after both original full paired workloads pass the
+current cost rule, the committed `379c2dbb` engine checkpoint passes (849 native tests,
+two existing ignored, 64 stages/358 containers), and final 87 focused JS/Main checks
+pass. Actual default sheet/loose results are 18/31 owned, 12/15 compared and 30/46 calls,
+with positive Native core clocks and exact document/history/selection/full undo. The
+short default timings are admission proof only. Recorded scope remains 14 tapes/254
+calls; comparison-only playback, worker-only conversion/Bake and native/source/origin
+exclusions are unchanged. D13, APIs and stored math are unchanged.
 
 B14 retains exact focused verification: 405 native tests (224 edit, 181 eval), two existing ignored; five new controls, 28 recorded replays/942 steps, 82 JavaScript tests and check pass. All 3,670 fixture JSON remain unchanged. Completed full startup/rig/joined-chain behavior and accounting match; literal costs 234.310/212.950,143.690/123.635,164.870/141.245 ms remain FAIL/FAIL/FAIL. Under the current user policy, average excess over the smaller paired full call count is 0.047679/0.067983/0.071809 ms, so all three pass the absolute-average arm. The committed `f4173cf0` engine checkpoint passes 849 native tests, two existing ignored, 64 stages and 358 containers. Final gate verification passes 86 JavaScript tests and Main check; all three actual default runs report 31 owned/15 compared/46 calls, positive Native core clocks and exact full undo. Figures is opened; the short default workload is admission proof, not new cost evidence. No pixel threshold, stored arithmetic or API changes.
 
@@ -929,6 +935,10 @@ B8 focused verification: 209 editing and 174 evaluation tests pass with the same
 
 ## 8. Work queue
 
+**Immediate class task:** verify channels on its original full paired input, matching
+committed engine checkpoint and actual default core adoption under the same rule.
+General prerequisites remain parked; engine-1 must run idle before deletion.
+
 What remains, in dependency order. Each item ends with its parity results, docs and the
 deletion of what it replaces once nothing calls it. "Agent" marks items run by a subagent
 (up to the available five child slots, as authorized during takeover); root reviews and
@@ -1151,3 +1161,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 12:54 | Reuse unchanged effects while posing figures | Existing coherent raw/typed conversion shares warning-free effect tables; malformed/ambiguous data retain the original ordered diagnostics. This targets the measured figures cost blocker. Mobile: existing portable Loader API gains this reuse; signature/types/stored math/schema are unchanged. **Counters:** inventory 175 js / 123 partial / 35 ported / 22 verified / 1 removed unchanged (notes); OWNED_CLASSES 2→2; deleted JS 2→2; full class-cost benchmark rows 27→30; engine-1 0/28→0/28. | 400 owning Rust tests, two existing ignored; four new controls; 27 recorded replays / 925 exact steps; 3,670 fixtures unchanged; 82 JS/check pass. Native receipt 6f0e7504, independent runtime f457306b. Shipping e5476f401799 / 10,241,930 B, 64.07 s, required profile/source-stable, codec/drawing unchanged. Completed B12 full costs 245.100/205.235, 132.080/133.770, 153.885/138.660 ms FAIL/PASS/FAIL preserve parity/full undo/accounting, review 3c556bdd / append bad26295. No causal gain or B13 cost claim. Next unchanged committed B13 cost, matching checkpoint and actual default adoption; figures remains closed. |
 | 2026-10-05 13:58 | Reuse unchanged fields while posing figures | Existing coherent raw/typed conversion retains ordinary typed nonpose fields only within the 64-field same-Shape/raw-node guard. Changed pose conversion, metadata, rich/diagnostic fallbacks and duplicate-key lookup remain exact. Mobile: existing portable Loader semantics extend; signatures/types/stored math/schema are unchanged. **Counters:** inventory 175 js / 123 partial / 35 ported / 22 verified / 1 removed unchanged (notes); OWNED_CLASSES 2→2; deleted JS 2→2; full class-cost benchmark rows 30→33; engine-1 0/28→0/28. | 405 native tests (224 edit, 181 eval), two existing ignored, zero failed/filtered; all five new controls pass. Fresh CLI adc8cff6 / 347,875,280 B matches 28 references / 942 exact steps, 40 guards; 3,670 fixture JSON unchanged, source comparison039aebc1. Main 82 JS/check (2,000 files) pass. Source/native/runtime fe0538d3/f1ddde1f/1b63f9ef. Shipping10b6b47a17ed / 10,243,996 B, 81.92 s, required profile/source-stable, codec/drawing unchanged. Completed B13 full costs229.250/228.405,132.270/120.710,150.580/153.405 ms FAIL/FAIL/PASS preserve parity/full undo/accounting, reviewf26a1d97/appendf07d57a2. No causal saving, hit-rate or B14 cost claim. Next unchanged committed B14 cost, matching checkpoint and actual default adoption; figures remains closed. |
 | 2026-10-05 13:44 UTC | Enable default figure editing | Open the existing `figures` class after exact behavior, matching checkpoint and positive default core adoption. The user-approved class-cost rule permits up to +5% or 0.1 ms average excess per conservative full timed call. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 2→3; deleted JS 2→2; full cost rows 33→36; engine-1 0/28→0/28. | B14 excess 0.047679/0.067983/0.071809 ms over 448/295/329 calls passes the absolute-average arm; old literal FAIL rows remain exact. Matching committed engine checkpoint: 849 native tests, two existing ignored, 64 stages/358 containers. Final gate: 86 focused JS/check pass; actual default startup/rig/joined each31 owned/15 compared/46 calls, positive Native core clocks and exact full undo. Exact behavior/D13/API/stored math remain unchanged. Next movieclips, then channels. |
+
+| 2026-10-05 14:12 UTC | Enable default movieclip editing | Open the existing layer-sheet movieclips gesture/publication class; playback comparison and native/source/origin exclusions remain unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 3→4; deleted JS 2→2; full cost rows 36→38; engine-1 0/28→0/28. | Full sheet/loose costs 246.210/228.600 and 202.875/176.945 ms pass the user rule at 0.042332/0.076041 ms excess per full call. Matching committed engine checkpoint: 849 native, two existing ignored, 64 stages/358 containers. Final gate: 87 focused JS/Main check and actual default 18/31 owned, positive Native core clocks and exact full undo pass. Exact behavior/D13/API/stored math unchanged; next channels. |

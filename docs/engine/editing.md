@@ -667,7 +667,15 @@ per conservative full timed call, passing the absolute-average arm. The committe
 engine checkpoint and final focused gate checks pass. Actual default startup/rig/joined
 runs each report31 owned/15 compared/46 calls with positive Native pose/move/commit
 clocks and exact document/history/selection/full undo; their short timings are admission
-proof only. Historical measurements below retain their original rule and outcomes.
+proof only. Movieclips is owned by default on both original layer-sheet inputs. Full costs
+246.210/228.600 and 202.875/176.945 ms candidate/JS pass the same rule at
+0.042332/0.076041 ms excess over 416/341 conservative full calls. The committed
+`379c2dbb` engine checkpoint and 87 focused final gate tests/Main check pass. Actual
+default sheet/loose runs report 18/31 owned and positive Native pose/move/commit clocks
+with exact document/history/selection/full undo; method counts include fallback and
+short smoke timings prove admission only. Playback comparison, worker-only
+conversion/Bake and native/source/origin exclusions remain unchanged. Historical measurements below retain their original
+rule and outcomes.
 
 `large figures` since 2026-10-03. `node scripts/engine-edit-shadow.mjs --own --default`
 runs the shadow driver's interactions with the editor alone, then with the app as users get

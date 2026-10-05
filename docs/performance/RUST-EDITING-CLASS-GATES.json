@@ -3152,6 +3152,151 @@
   "receiptSha256": "213b5ef732e0d3539d9d0ced0dde26e13fd6464bd2c5de9804529c48f6f264a4",
   "logSha256": "ff71129603f636f8b428fb8030f35e2f1c1e6d6bdb7a3feec7cc1263ddd45f33"
 }
+  ,
+    {
+      "batch": "movieclips-1",
+      "case": "sheet-movieclip",
+      "round": 1,
+      "owned": 144,
+      "compared": 271,
+      "calls": 416,
+      "failedOwned": 0,
+      "editorMs": 228.5999999344349,
+      "adoptedMs": 227.40499997138977,
+      "fallbackMs": 18.804999977350235,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 246.20999994874,
+      "ratio": 1.0770341208195795,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": true,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 5,
+          "adoptionObserved": true
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "adoptionObserved": true
+        },
+        "commitDrag": {
+          "candidateCalls": 6,
+          "adoptionObserved": true
+        }
+      },
+      "comparisonOnlyResidualCalls": 1,
+      "failedAttemptsByMethod": {},
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 1,
+        "a rig or static-definition call outside owned adoption": 2,
+        "a call the engine has not ported": 1
+      },
+      "unported": {
+        "addSegment: drawing into a figure with rig relationships": 1
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/sheet-movieclip.document.json",
+        "--out",
+        "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1/r1-sheet-movieclip.driver.json"
+      ],
+      "elapsedSeconds": 226.79631730198162,
+      "loadBefore": [
+        1.10009765625,
+        1.41357421875,
+        3.2470703125
+      ],
+      "loadAfter": [
+        11.5986328125,
+        6.7880859375,
+        5.02392578125
+      ],
+      "driverSha256": "c34fbe54e27acc1b3899154f23d20e5434652fe704652c4d295e66d3302ab40b",
+      "receiptSha256": "99fdfe0d776a977df972ccee66e8655d40cc3bf9bcfb15e241c3905be6a88f90",
+      "logSha256": "6e3834fd8f95ce96516344fcf2ab7bb7b5df4f5b32c40b6ac0a81a66f701098a"
+    },
+    {
+      "batch": "movieclips-1",
+      "case": "sheet-movieclip-loose",
+      "round": 1,
+      "owned": 125,
+      "compared": 216,
+      "calls": 341,
+      "failedOwned": 0,
+      "editorMs": 176.9450000822544,
+      "adoptedMs": 191.33999973535538,
+      "fallbackMs": 11.534999966621399,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 202.87499970197678,
+      "ratio": 1.1465427087946456,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": true,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "adoptionObserved": true
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "adoptionObserved": true
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "adoptionObserved": true
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {},
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "a rig or static-definition call outside owned adoption": 2,
+        "a call the engine has not ported": 1,
+        "segment values the session did not copy": 1,
+        "history the session did not record": 1
+      },
+      "unported": {
+        "addSegment: drawing into a figure with rig relationships": 1
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/sheet-movieclip-loose.document.json",
+        "--out",
+        "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1/r1-sheet-movieclip-loose.driver.json"
+      ],
+      "elapsedSeconds": 641.0754925599904,
+      "loadBefore": [
+        11.5986328125,
+        6.7880859375,
+        5.02392578125
+      ],
+      "loadAfter": [
+        11.80126953125,
+        11.4375,
+        8.671875
+      ],
+      "driverSha256": "5c9dc1a4cb7de9f205e9bc81c188999c2a4951cc8e67577549eaa15ab07addc9",
+      "receiptSha256": "3d34bfbb9a0adcedaff634cea589091cbaffbfcc01d142f2b6611c060c060611",
+      "logSha256": "e027feb106e56346896561fec9937f01d89163b0b465b7173ba4adc2f57c6ef1"
+    }
   ],
   "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1",
   "summarySha256": "d974f370399c96e36d53d742b0f04b247a59ba83aec6ee86f9c8ac4bc1b94fbf",
@@ -41490,6 +41635,135 @@
     "instrumentedJoinedDiagnosticsUnchanged": 1
   }
 }
+  ,
+    {
+      "scope": "Completed original full loaded warmed movieclips eligible OWNED-call paired editing cost; not engine-1",
+      "notice": "Both pass the current user absolute-average arm. Historical literal outcomes and every old row/value remain unchanged; no causal speed claim. Default smoke is separate admission evidence.",
+      "baseHead": "379c2dbb88a4987bd0eac57538491b5606d543e8",
+      "sourceWasUncommitted": false,
+      "sourceBinding": {
+        "approvedInputReceipt": {
+          "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1/input-receipt.json",
+          "bytes": 236309,
+          "sha256": "a304273c3e70d81cc50b1207562686bb215d93ab775cc625f29e34d202b20947"
+        },
+        "capturedIdentityCounts": {
+          "productionSources": 1529,
+          "packageFiles": 7,
+          "documents": 2
+        },
+        "sourcePackageAndInputsStableEveryRun": true,
+        "completeMapsRetainedInRawReceipts": true
+      },
+      "packageBuildInfo": {
+        "profile": "wasm",
+        "toolchain": "nightly-2026-09-15",
+        "wasmBindgen": "0.2.129",
+        "maxMemory": 2147483648,
+        "wasmBytes": 10243996,
+        "wasmBytesBeforeOpt": 10243996,
+        "jsBytes": 201867,
+        "sha256": "10b6b47a17eda39aee18ae255888b207b28662cfca17cc417dcc2b8e55bbb585",
+        "codec": {
+          "toolchain": "stable",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+          "wasmBytes": 1532303,
+          "wasmBytesBeforeOpt": 1532303,
+          "jsBytes": 13846,
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+        },
+        "drawing": {
+          "toolchain": "stable",
+          "wasmBytes": 449096,
+          "wasmBytesBeforeOpt": 449096,
+          "jsBytes": 53485,
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+        }
+      },
+      "runtimes": {
+        "nodeVersion": "v24.11.0",
+        "pythonVersion": "Python 3.12.9"
+      },
+      "capturedUtcTimestamps": {
+        "sheet-movieclip": {
+          "beforeUtc": "2026-10-05T13:52:15.122970+00:00",
+          "afterUtc": "2026-10-05T13:56:01.924066+00:00"
+        },
+        "sheet-movieclip-loose": {
+          "beforeUtc": "2026-10-05T13:56:02.088997+00:00",
+          "afterUtc": "2026-10-05T14:06:43.163307+00:00"
+        }
+      },
+      "artifactLabelNote": "Actual captures are 2026-10-05; 20261006 in artifact names is a label.",
+      "costRule": "C <= 1.05 * J OR (C - J) / min(candidate.report.calls, editorAlone.report.calls) <= 0.1 ms",
+      "gate": {
+        "ownedClassesAtCostCapture": [
+          "large figures",
+          "3d",
+          "figures"
+        ],
+        "movieclipsDefaultOwnershipAtCostCapture": false,
+        "allTwoCurrentPolicyCostPass": true
+      },
+      "rawEvidence": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1",
+      "receiptInputs": {
+        "input-receipt.json": {
+          "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1/input-receipt.json",
+          "bytes": 236309,
+          "sha256": "a304273c3e70d81cc50b1207562686bb215d93ab775cc625f29e34d202b20947"
+        },
+        "plan.json": {
+          "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1/plan.json",
+          "bytes": 612,
+          "sha256": "56d2e2a873dd0a6d53ddbfb55a343bf098d1a2bed9786b09831785612d4c3491"
+        },
+        "summary-accounted.json": {
+          "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1/summary-accounted.json",
+          "bytes": 68777,
+          "sha256": "c675bfb5cf0d3657786f0b35456798638b6f2c7e6c0ed41a9a6a43f0b16dece0"
+        }
+      },
+      "independentCompletedAcceptance": {
+        "path": "/tmp/styk-movieclips-full2-cost-independent-review-20261005.json",
+        "bytes": 4490,
+        "sha256": "8fc8e680d2260b10700ec9052c86ab98ac86fc8ab45db3df57d0d3e11ef63971"
+      },
+      "priorSealedCaseReviews": [
+        {
+          "path": "/tmp/styk-movieclip-first-cost-independent-review-20261005.json",
+          "bytes": 3435,
+          "sha256": "ccb4f3fffcc0edaef683a72a75d2db86a2800aaf2058a5f1bacf997467de1b54"
+        }
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS"
+      ],
+      "accountingNotes": {
+        "methodClocks": "engineMs includes callMs; helper/method clocks are not added to global totals.",
+        "counts": "Full candidate/baseline calls are 416/438 and 341/341; eligible method counts match. One sheet comparison-only residual and zero loose residual are separate.",
+        "failedAttempts": "Both failed eligible totals are zero; eligible original JS fallback remains included once.",
+        "literalOutcomes": "Both C <= J comparisons fail; current user policy passes independently."
+      },
+      "progressCounters": {
+        "inventory": {
+          "js": 175,
+          "partial": 123,
+          "ported": 35,
+          "verified": 22,
+          "removed": 1
+        },
+        "ownedClassesBefore": 3,
+        "ownedClassesAfter": 4,
+        "deletedJavaScriptModules": 2,
+        "fullCostRowsBefore": 36,
+        "fullCostRowsAfter": 38,
+        "engine1MatrixMeasured": 0,
+        "engine1MatrixTotal": 28,
+        "ordinaryDiagnosticsUnchanged": 4,
+        "instrumentedJoinedDiagnosticsUnchanged": 1
+      }
+    }
   ],
   "ordinaryCoreDiagnostic": {
     "scope": "B3/B4/B5 loaded ordinary-core paired first-five-interaction diagnostics; not full class cost, engine-1 or baseline-0",
@@ -42876,5 +43150,155 @@
       "fullCostCertification": false
     }
   }
-}
+},
+  "movieclipsClassGate": {
+    "effectiveDate": "2026-10-05",
+    "scope": "Current movieclips class acceptance; preserve historical measurements and prior figures acceptance",
+    "formula": "C <= 1.05 * J OR (C - J) / min(candidate.report.calls, editorAlone.report.calls) <= 0.1 ms",
+    "results": [
+      {
+        "case": "sheet-movieclip",
+        "candidateMs": 246.20999994874,
+        "editorAloneMs": 228.5999999344349,
+        "candidateReportCalls": 416,
+        "baselineReportCalls": 438,
+        "conservativeFullTimedCalls": 416,
+        "excessPerCallMs": 0.042331730803618066,
+        "relativeFivePercentArm": false,
+        "absolutePointOneArm": true,
+        "literalCostNoHigher": false,
+        "currentPolicyCostPass": true
+      },
+      {
+        "case": "sheet-movieclip-loose",
+        "candidateMs": 202.87499970197678,
+        "editorAloneMs": 176.9450000822544,
+        "candidateReportCalls": 341,
+        "baselineReportCalls": 341,
+        "conservativeFullTimedCalls": 341,
+        "excessPerCallMs": 0.0760410546032914,
+        "relativeFivePercentArm": false,
+        "absolutePointOneArm": true,
+        "literalCostNoHigher": false,
+        "currentPolicyCostPass": true
+      }
+    ],
+    "allTwoCurrentPolicyCostPass": true,
+    "movieclipsOwnedByDefault": true,
+    "activationState": "VERIFIED_DEFAULT_NATIVE_ADOPTION",
+    "activationVerifiedAtUtc": "2026-10-05T14:12:33.170229+00:00",
+    "publicAPIAndStoredArithmeticUnchanged": true,
+    "checkpoint": {
+      "path": "tmp/root-verification-temp/checkpoint-379c2dbb-reviewed.json",
+      "bytes": 1080,
+      "sha256": "dadf536b3f005fd927e8dbe8891109af9d21168c7d0f1780354f3f74c7fa75e0",
+      "head": "379c2dbb88a4987bd0eac57538491b5606d543e8",
+      "nativePassed": 849,
+      "nativeIgnored": 2,
+      "stages": 64,
+      "containers": 358,
+      "scope": "Committed engine source before the two final gate JavaScript files",
+      "independentReview": {
+        "path": "/tmp/styk-checkpoint-379c2dbb-independent-review-20261005.json",
+        "bytes": 2812,
+        "sha256": "f80436a89efff2f859adb4acb28afef4115a4ad0e188efb9535756879408bccb"
+      }
+    },
+    "finalGate": {
+      "focusedJavaScriptPassed": 87,
+      "recordedReplays": 14,
+      "recordedCalls": 254,
+      "mainCheck": {
+        "path": "tmp/root-verification-temp/movieclips-gate-main-check.log",
+        "bytes": 1597,
+        "sha256": "b0859c8ad144c7bf797c275e866d6d533277a69e4c649ce6032aea3c11595095",
+        "javascriptFiles": 2000,
+        "stylesheets": 93,
+        "modules": 682,
+        "sourceMessageReferences": 8066
+      },
+      "scope": "Focused final gate checks and actual shipping default app proof; not a second full checkpoint"
+    },
+    "defaultAdoption": {
+      "rawEvidence": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-default-1",
+      "summary": {
+        "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-default-1/summary-accounted.json",
+        "bytes": 11359,
+        "sha256": "eb22f2baf67d293ea193f65149d7b74ead917c87f3d5696298967b86625845fb"
+      },
+      "approvedInputReceipt": {
+        "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-default-1/input-receipt.json",
+        "bytes": 236386,
+        "sha256": "cdc51eefb014accc623ea71f9c9a43c3b0b4819e1d632eb4a0ccd5decc48cff7"
+      },
+      "sourceWasUncommitted": true,
+      "changedSourcePaths": [
+        "src/engine/engine-edit-shadow.mjs",
+        "tests/engine-edit-adoption.test.mjs"
+      ],
+      "independentReview": {
+        "path": "/tmp/styk-movieclips-default2-independent-review-20261005.json",
+        "bytes": 5205,
+        "sha256": "8f4a618c795303ccdd6221db8ebfc4c6be471d3de562292233cf1be691a3b863"
+      },
+      "results": [
+        {
+          "case": "sheet-movieclip",
+          "owned": 18,
+          "compared": 12,
+          "calls": 30,
+          "coreCallCounts": {
+            "moveSelection": 2,
+            "poseJoint": 12,
+            "commitDrag": 4
+          },
+          "positiveNativeCallAndAdoptionClocksEachCore": true,
+          "strictDocumentHistorySelectionFullUndo": true,
+          "failedOwned": 0,
+          "perMethodCountsIncludeFallback": true,
+          "fullCostCertification": false,
+          "completedAtUtc": "2026-10-05T14:07:51.814897+00:00",
+          "driver": {
+            "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-default-1/r1-sheet-movieclip.driver.json",
+            "bytes": 2655,
+            "sha256": "a6ab0407e99d5589a38766c2965ee9145d9e6a36c69123ea54a962a79cc2697c"
+          },
+          "receipt": {
+            "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-default-1/r1-sheet-movieclip.receipt.json",
+            "bytes": 542481,
+            "sha256": "3a9e5f3b311c87a85d9b2c4ccb27757659a12d596ff7c3c332c0cf63dedce99b"
+          }
+        },
+        {
+          "case": "sheet-movieclip-loose",
+          "owned": 31,
+          "compared": 15,
+          "calls": 46,
+          "coreCallCounts": {
+            "moveSelection": 2,
+            "poseJoint": 24,
+            "commitDrag": 5
+          },
+          "positiveNativeCallAndAdoptionClocksEachCore": true,
+          "strictDocumentHistorySelectionFullUndo": true,
+          "failedOwned": 0,
+          "perMethodCountsIncludeFallback": true,
+          "fullCostCertification": false,
+          "completedAtUtc": "2026-10-05T14:08:10.525386+00:00",
+          "driver": {
+            "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-default-1/r1-sheet-movieclip-loose.driver.json",
+            "bytes": 2684,
+            "sha256": "c28276219ebab97591c7460b0054e84268d56cc9c3cab829672b2100822cc3f3"
+          },
+          "receipt": {
+            "path": "/tmp/styk-movieclips-gate-preparation-20261006/movieclips-default-1/r1-sheet-movieclip-loose.receipt.json",
+            "bytes": 542417,
+            "sha256": "69f40a782fa76419b5e28f5847e14fb3a648a7beaf56dad9e9a487e0eae66647"
+          }
+        }
+      ],
+      "noWarmOrForcedOwnership": true,
+      "costEvidence": false
+    }
+  }
 }

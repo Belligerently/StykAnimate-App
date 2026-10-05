@@ -139,7 +139,7 @@ export function editingClass(report) {
 /** The classes the engine edits by default: their measured cost meets the class limit,
  * adoption included (measured 2026-10-03, for `3d` 2026-10-04, and for
  * `figures` 2026-10-05: docs/engine/editing.md). */
-export const OWNED_CLASSES = new Set(['large figures', '3d', 'figures']);
+export const OWNED_CLASSES = new Set(['large figures', '3d', 'figures', 'movieclips']);
 
 /** Event details as plain data, as engine/tools/edit-replay.mjs records them. */
 const plain = (value, depth = 4) => {

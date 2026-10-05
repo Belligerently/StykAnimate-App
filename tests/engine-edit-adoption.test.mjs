@@ -873,7 +873,7 @@ for (const name of ['startup', 'rig', 'joined-chain']) {
 }
 
 test('default class admission preserves other classes and invalidates its cached classification', async () => {
-  assert.deepEqual([...OWNED_CLASSES].sort(), ['3d', 'figures', 'large figures']);
+  assert.deepEqual([...OWNED_CLASSES].sort(), ['3d', 'figures', 'large figures', 'movieclips']);
   const read = name => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'));
   const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).newDocument();
   let starts = 0;
@@ -893,12 +893,71 @@ test('default class admission preserves other classes and invalidates its cached
   for (const [file, type, admitted] of [
     ['engine/crates/styk-eval/tests/fixtures/ik/spatial.json', '3d', true],
     ['engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json', 'channels', false],
-    ['engine/tests/edit/sheet-movieclip.document.json', 'movieclips', false],
+    ['engine/tests/edit/sheet-movieclip.document.json', 'movieclips', true],
     ['engine/tests/edit/origin-pose-layout-sheet.document.json', 'unported', false],
   ]) { editor.load(read(file)); await probe(type, admitted); }
+  assert.equal(editingClass(read('engine/crates/styk-eval/tests/fixtures/channels/channels-figure.json')), 'unported', 'native property channels stay excluded');
+  const captured = read('engine/tests/edit/sheet-movieclip.document.json').figure_types.find(figure => figure._styk?.movieclip)._styk.movieclip.document;
+  assert.equal(editingClass(captured), 'unported', 'a captured source document stays excluded');
   editor.load(documentOf([Array.from({length: 1000}, (_, index) => [index + 1, 0, 10, .1])]));
   await probe('large figures', true);
   editor.newDocument(); await probe('figures', true);
   assert.equal(report.owned, 0, 'cold session admission preserves the editor fallback');
   assert.equal(report.mismatches.length, 0);
+});
+
+
+test('default classes compactly adopt movieclip instance transforms and full history', async () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/sheet-movieclip.document.json', import.meta.url), 'utf8'));
+  const open = () => {
+    const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(structuredClone(document));
+    editor.markSaved(); return editor;
+  };
+  const [expected, owned, oracle] = [open(), open(), open()];
+  assert.equal(editingClass(owned.report), 'movieclips');
+  const initial = json(expected.report), originals = {}, wire = [], session = sessionFor(oracle);
+  for (const method of ['moveSelection', 'rotateSelection', 'scaleSelection', 'commitDrag']) {
+    const original = owned[method]; originals[method] = 0;
+    owned[method] = function (...args) { originals[method]++; return original.apply(this, args); };
+  }
+  const call = session.call;
+  session.call = function (method, args, view) { wire.push({method, view: JSON.parse(view)}); return call.call(this, method, args, view); };
+  const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: () => session}},
+    mirror: {framesCurrent: () => true, syncFrames: async () => {}}}));
+  assert.equal(report.mode, 'classes', 'no forced ownership override');
+  const history = editor => ({size: editor.historySize,
+    undo: editor._undo.map(command => [command.label, command.bytes, command.beforeRevision, command.afterRevision]),
+    redo: editor._redo.map(command => [command.label, command.bytes, command.beforeRevision, command.afterRevision])});
+  const same = label => {
+    assert.equal(json(owned.report), json(expected.report), `${label}: document`);
+    assert.deepEqual(state(owned), state(expected), `${label}: history and selection`);
+    assert.deepEqual(history(owned), history(expected), `${label}: history entries and budget`);
+    assert.equal(json(owned.evaluatedFrame), json(expected.evaluatedFrame), `${label}: frame`);
+    assert.equal(report.mismatches.length, 0, `${label}: shadow comparisons ${json(report.mismatches)}`);
+  };
+  const run = async (method, ...args) => {
+    const before = originals[method], adopted = report.owned;
+    expected[method](...args); owned[method](...args);
+    if (Object.hasOwn(originals, method)) {
+      assert.equal(originals[method], before, `${method}: original editor method was skipped`);
+      assert.equal(report.owned, adopted + 1, `${method}: answer was adopted`);
+      assert.equal(wire.at(-1).view.changesOnly, true, `${method}: compact response requested`);
+    }
+    same(method); await Promise.resolve();
+  };
+  await run('seek', 3);
+  const instance = expected.selectionFrame.objects.find(object => expected.report.figure_types
+    .find(figure => figure.figure_type_id === object.figure_type_id)?._styk?.movieclip);
+  assert.ok(instance, 'the existing recorded clip instance is on show');
+  await run('select', instance.unique_id, -1);
+  await run('beginTranslationDrag', 'Move movieclip');
+  await run('moveSelection', 14, 6); await run('moveSelection', -2, 1); await run('commitDrag');
+  await run('beginDrag', 'Rotate movieclip'); await run('rotateSelection', .3); await run('commitDrag');
+  await run('beginDrag', 'Scale movieclip'); await run('scaleSelection', 1.3); await run('commitDrag');
+  await run('beginTranslationDrag', 'Cancel movieclip move'); await run('moveSelection', -5, 4); await run('cancelDrag');
+  await run('undo'); await run('redo');
+  while (expected.canUndo) await run('undo');
+  assert.equal(owned.canUndo, false); assert.ok(owned.canRedo); same('full undo');
+  assert.equal(json(owned.report), initial, 'full undo restores the original clip document');
+  assert.deepEqual(Object.keys(report.unported ?? {}), []);
 });
