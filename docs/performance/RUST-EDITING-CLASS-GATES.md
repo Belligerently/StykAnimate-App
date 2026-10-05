@@ -1,6 +1,10 @@
 # Rust editing class gates
 
-The figures class remains closed: exact app parity passes, but all three latest editing measurements cost more than JavaScript. These loaded measurements unblock work on that gate; they are separate from baseline-0 and the idle engine-1 matrix.
+Figures is now owned by default alongside large figures and 3D. B14 full paired figures cost passes the user-approved 2026-10-05 class rule; the matching committed engine checkpoint, focused final gate checks and actual default adoption pass. Historical literal cost outcomes are unchanged. Loaded class measurements remain separate from baseline-0 and the idle engine-1 matrix.
+
+For `figures`, `movieclips` and `channels`, cost passes when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption, eligible JS fallback and failed attempts once; `J` is editor-alone cost, and `N` is the smaller full timed `report.calls` count from the two pages. Exact behavior, D13, full workload and matched eligible-call counts remain required. B14 startup/rig/joined-chain uses conservative counts **448/295/329** with excess **0.047679/0.067983/0.071809 ms per call**, passing the absolute-average arm. The original literal **FAIL/FAIL/FAIL** flags below remain historical facts; this current-policy acceptance is a separate result.
+
+The committed engine checkpoint passes849 native tests (two existing ignored),64 stages and358 containers. Final gate JavaScript passes86 focused tests and Main check. Actual default startup/rig/joined each report31 owned/15 compared/46 calls, positive Native pose/move/commit clocks and exact document/history/selection/full undo. Core call counts24/2/5 include fallback; positive clocks do not mean every invocation was adopted. This cold first-five proof is admission/behavior only, and supplies no new class cost or speed result.
 
 ## Figures: recorded clipboard and compact adoption milestone
 
@@ -249,3 +253,20 @@ Owned/compared/failed counts are **163/289/0**, **119/171/1** and **125/213/0**;
 Official full cost rows advance **30→33** and metadata batches **9→10**; all 30 historical raw rows/nine metadata objects/four ordinary diagnostics/one accepted instrumented joined diagnostic remain exact. The literal candidate owned+fallback+failed <= editor-alone threshold is unchanged; each native call clock is already included in `engineMs`. Joined passes in this one loaded round, while startup and rig fail. These observations establish no causal speed gain, default ownership, matching final checkpoint or engine-1 result. Inventory statuses, two owned classes and two deleted JS modules are unchanged.
 
 Evidence: raw `figures-candidate-batch13-1/summary-accounted.json` `b41d89a0`, approved input `1cd57f55`, independent completed acceptance `f26a1d97`, unchanged startup `4628a432`/rig `a16a81e2` receipts and descriptive method ranking `19ed026c`. Companion JSON preserves exact raw doubles, commands, loads, artifact hashes and bounded identity references. Method residuals remain descriptive and are not substituted for official totals. No new runtime, API, stored-arithmetic or gate claim is introduced by this append.
+
+
+## B14 completed committed full cost
+
+The unchanged full warmed exact-math startup/rig/joined-chain workload completed on committed `f4173cf0d16dd7512684fc1073d6e8c4bc49eb97`, shipping Wasm `10b6b47a17eda39aee18ae255888b207b28662cfca17cc417dcc2b8e55bbb585` (10,243,996 bytes, unstripped `wasm` profile). Strict document/history/selection/full undo, matched eligible calls, failed-attempt accounting and positive native/adoption core work pass on all three cases. Before/after 1,529 source, seven package and three input maps are exact; Node 24.11.0, Python 3.12.9 and the full protocol are unchanged. Actual captures ran on 2026-10-05 from 12:09:50 to 12:38:14 UTC; artifact names retain their historical 20261006 label. Literal cost outcomes are **startup FAIL, rig FAIL, joined-chain FAIL**; figures remains closed.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Cost gate |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Startup | 212.950 | 193.940 | 40.370 | 0.000 | 234.310 | Fail |
+| Rig | 123.635 | 131.420 | 12.085 | 0.185 | 143.690 | Fail |
+| Joined-chain | 141.245 | 149.095 | 15.775 | 0.000 | 164.870 | Fail |
+
+Owned/compared/failed counts are **163/285/0**, **119/171/1** and **124/205/0**; eligible calls **171/128/129** match. Core pose/move/commit counts are **48/6/8**, **36/6/4** and **36/6/4**, with positive native/adoption clocks. Document sizes **710,546/187,660/263,000 bytes**, history entries **80/79/79**, selection and full undo match with zero unexpected errors, differences, mismatches, rounding or page problems. Rig’s expected failed Native paste, **0.1850000023841858 ms**, and its original JS fallback, **0.3999999761581421 ms**, are distinct intervals included once each; its four comparison-only residuals on both pages remain separate. Startup’s four fewer compared calls and joined’s 124/205/329 owned/compared/calls versus B13’s 125/213/338 are observed differences with unproved causes; eligible method counts and complete workload labels match.
+
+Official full cost rows advance **33→36** and metadata batches **10→11**; all 33 historical raw rows/10 metadata objects/12 other top-level values/four ordinary diagnostics/one accepted instrumented joined diagnostic remain exact. The literal candidate owned+fallback+failed <= editor-alone threshold is unchanged; each native call clock is already included in `engineMs`. All three costs fail in this loaded round. The measurements establish no causal speed gain, default ownership, matching final checkpoint or engine-1 result. Inventory statuses, two owned classes and two deleted JS modules are unchanged.
+
+Evidence: raw `figures-candidate-batch14-1/summary-accounted.json` `3948d6ac`, approved input `b93e0676`, independent completed acceptance `e7f502ea`, unchanged startup `fc3670a7`/rig `fad700cd` receipts and descriptive method ranking `995e701c`. Companion JSON preserves exact measured values in the existing row schema, commands, loads and bounded artifact/identity references; complete raw receipts remain linked. Candidate-only boundary and net candidate-minus-JS excess residuals remain distinct, and family sums never replace official totals. No new runtime, API, stored-arithmetic or gate claim is introduced by this append.

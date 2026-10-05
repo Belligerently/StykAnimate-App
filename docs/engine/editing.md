@@ -570,8 +570,8 @@ sends it in the call's view; such calls run in both and are compared, never owne
 
 The engine runs ported calls in the editor's place while a session lives (the same
 `src/engine/engine-edit-shadow.mjs`): by default for documents of an editing class in
-`OWNED_CLASSES` (D15: a class flips once its calls cost no more in the engine than in the
-editor), for every document with `?engineEdit=on` (or
+`OWNED_CLASSES` (D15: a class flips after exact behavior and the current class-cost
+gate below pass), for every document with `?engineEdit=on` (or
 `localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
 keeps the editor in charge and compares. `editingClass(report)` names a document's class:
 `unported` for classes whose full editing coverage is not yet established (property
@@ -654,6 +654,21 @@ roots the commit refreshes, so the next gesture began with a joined figure 13 px
 
 ### Which classes the engine edits by default
 
+For `figures`, `movieclips` and `channels`, the full paired cost gate is
+`C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
+eligible JS fallback and failed attempts once; `J` is editor-alone cost and
+`N = min(candidate.report.calls, editorAlone.report.calls)` for the complete timed
+workload, not only eligible calls. Full report counts may differ; eligible method
+counts and exact document/history/selection/full undo must match. A matching class
+checkpoint and positive actual default pose/move/commit adoption are also required.
+D13 is unchanged. `figures` is owned by default since 2026-10-05, alongside
+`large figures` and `3d`. Its three B14 excess averages are 0.047679/0.067983/0.071809 ms
+per conservative full timed call, passing the absolute-average arm. The committed
+engine checkpoint and final focused gate checks pass. Actual default startup/rig/joined
+runs each report31 owned/15 compared/46 calls with positive Native pose/move/commit
+clocks and exact document/history/selection/full undo; their short timings are admission
+proof only. Historical measurements below retain their original rule and outcomes.
+
 `large figures` since 2026-10-03. `node scripts/engine-edit-shadow.mjs --own --default`
 runs the shadow driver's interactions with the editor alone, then with the app as users get
 it; on large figure documents the engine owned every call it could and cost less in total,
@@ -663,6 +678,8 @@ in every run (headless Chromium, the machine under other load, two rounds):
 | --- | ---: | ---: | ---: | --- |
 | 20 figures of 200 segments | 54 | 163.2 ms, 213.6 ms | 100.1 ms, 175.8 ms | yes |
 | AyameDemo.piv (537 figure definitions, 6,854 segments) | 54 | 946.7 ms, 1,171.2 ms | 757.7 ms, 801.8 ms | yes |
+
+**Earlier figures measurements (class closed at capture):**
 
 `figures` stays with the editor: on the document the app starts with, the same run cost
 87.8 ms owned against 76.8 ms alone, a pose about 0.31 ms in the engine plus 0.49 ms to adopt

@@ -23,3 +23,9 @@ Commands: `npm run engine:build`, `npm run engine:test` (seconds once built),
 `npm run engine:parity` (`-- --corpus`, `-- --app`), `npm run engine:bench`
 (one benchmark run; `scripts/engine-bench-matrix.sh` for rounds) and
 `npm run engine:bench:summary <label>`.
+
+For `figures`, `movieclips` and `channels`, default editing requires exact behavior,
+a matching checkpoint and actual core adoption. Full paired cost may be at most 5%
+higher, or average excess may be at most 0.1 ms using the smaller complete timed call
+count from the pair; adoption, fallback and failed attempts are included once.
+D13 and historical measurements remain unchanged; see [editing.md](editing.md).

@@ -4,8 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
-import {editingClass, installEditShadow} from '../src/engine/engine-edit-shadow.mjs';
+import {editingClass, installEditShadow, OWNED_CLASSES} from '../src/engine/engine-edit-shadow.mjs';
 import {withDraws} from '../src/editor-draws.mjs';
+import {documentOf} from '../engine/tools/fixture-kit.mjs';
 import {createStartupDocument} from '../src/startup-document.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
@@ -813,4 +814,91 @@ test('comparison mode still records and compares own static definition patches',
   assert.deepEqual(traffic.calls, ['updateBuilderSegmentStyle']); assert.equal(traffic.releases, 0);
   assert.equal(report.compared, compared + 1); assert.equal(report.skipped, 0);
   assert.equal(report.owned, 0); assert.equal(report.failedOwned, 0);
+});
+
+for (const name of ['startup', 'rig', 'joined-chain']) {
+  test(`default classes compactly adopt figures without rerunning the editor: ${name}`, async () => {
+    const open = () => {
+      const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true});
+      if (name === 'startup') editor.newDocument();
+      else editor.load(JSON.parse(readFileSync(new URL(`../engine/tests/edit/${name}.document.json`, import.meta.url), 'utf8')));
+      editor.markSaved(); return editor;
+    };
+    const [expected, owned, oracle] = [open(), open(), open()];
+    assert.equal(editingClass(owned.report), 'figures');
+    const originals = {}, wire = [], session = sessionFor(oracle);
+    for (const method of ['moveSelection', 'poseJoint', 'commitDrag']) {
+      const original = owned[method]; originals[method] = 0;
+      owned[method] = function (...args) { originals[method]++; return original.apply(this, args); };
+    }
+    const call = session.call;
+    session.call = function (method, args, view) { wire.push({method, view: JSON.parse(view)}); return call.call(this, method, args, view); };
+    const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: text => {
+      const view = JSON.parse(text); assert.equal(view.propertyChannels, true); assert.equal(view.layerTimeline, true); return session;
+    }}}, mirror: {framesCurrent: () => true, syncFrames: async () => {}}}));
+    assert.equal(report.mode, 'classes', 'no forced ownership override');
+    const history = editor => ({size: editor.historySize,
+      undo: editor._undo.map(command => [command.label, command.bytes, command.beforeRevision, command.afterRevision]),
+      redo: editor._redo.map(command => [command.label, command.bytes, command.beforeRevision, command.afterRevision])});
+    const same = label => {
+      assert.equal(json(owned.report), json(expected.report), `${label}: document`);
+      assert.deepEqual(state(owned), state(expected), `${label}: history and selection`);
+      assert.deepEqual(history(owned), history(expected), `${label}: history entries and budget`);
+      assert.equal(json(owned.evaluatedFrame), json(expected.evaluatedFrame), `${label}: frame`);
+      assert.equal(report.mismatches.length, 0, `${label}: shadow comparisons ${json(report.mismatches)}`);
+    };
+    const run = async (method, ...args) => {
+      const before = originals[method], adopted = report.owned;
+      expected[method](...args); owned[method](...args);
+      if (Object.hasOwn(originals, method)) {
+        assert.equal(originals[method], before, `${method}: original editor method was skipped`);
+        assert.equal(report.owned, adopted + 1, `${method}: answer was adopted`);
+        assert.equal(wire.at(-1).view.changesOnly, true, `${method}: compact response requested`);
+      }
+      same(method); await Promise.resolve();
+    };
+    const uid = expected.selectionFrame.objects[0].unique_id;
+    await run('select', uid, -1); await run('beginTranslationDrag', 'Move figures');
+    await run('moveSelection', 8, -3); await run('moveSelection', 2, 1); await run('commitDrag');
+    await run('select', uid, 1); await run('beginDrag');
+    const joint = expected.geometry.objects.get(expected.selectedSlot).segments[1].end;
+    await run('poseJoint', joint.x + 15, joint.y + 9); await run('commitDrag');
+    await run('select', uid, -1); await run('beginTranslationDrag', 'Cancelled move');
+    await run('moveSelection', -5, 4); await run('cancelDrag');
+    await run('undo'); await run('redo');
+    while (expected.canUndo) await run('undo');
+    assert.equal(owned.canUndo, false); assert.ok(owned.canRedo); same('full undo');
+    assert.equal(report.unported && Object.keys(report.unported).length, 0);
+  });
+}
+
+test('default class admission preserves other classes and invalidates its cached classification', async () => {
+  assert.deepEqual([...OWNED_CLASSES].sort(), ['3d', 'figures', 'large figures']);
+  const read = name => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'));
+  const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).newDocument();
+  let starts = 0;
+  const report = installEditShadow(editor, () => ({engine: {handle: {edit_session() { starts++; return null; }}},
+    mirror: {framesCurrent: () => true, syncFrames: async () => {}}}));
+  const probe = async (type, admitted) => {
+    await report.prepare(); assert.equal(editingClass(editor.report), type);
+    const before = starts; editor.select(editor.selectionFrame.objects[0].unique_id, -1);
+    assert.equal(starts - before, admitted ? 1 : 0, `${type}: default admission`);
+  };
+  await probe('figures', true);
+  const root = editor.report, definitionRevision = editor.definitionRevision;
+  editor.setOrigin(editor.figure.segments[1].segment_id);
+  assert.equal(editor.report, root); assert.ok(editor.definitionRevision > definitionRevision);
+  await probe('unported', false);
+  editor.undo(); assert.equal(editor.report, root); await probe('figures', true);
+  for (const [file, type, admitted] of [
+    ['engine/crates/styk-eval/tests/fixtures/ik/spatial.json', '3d', true],
+    ['engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json', 'channels', false],
+    ['engine/tests/edit/sheet-movieclip.document.json', 'movieclips', false],
+    ['engine/tests/edit/origin-pose-layout-sheet.document.json', 'unported', false],
+  ]) { editor.load(read(file)); await probe(type, admitted); }
+  editor.load(documentOf([Array.from({length: 1000}, (_, index) => [index + 1, 0, 10, .1])]));
+  await probe('large figures', true);
+  editor.newDocument(); await probe('figures', true);
+  assert.equal(report.owned, 0, 'cold session admission preserves the editor fallback');
+  assert.equal(report.mismatches.length, 0);
 });

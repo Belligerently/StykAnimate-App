@@ -5,680 +5,120 @@ Rust. It is updated at every milestone. Read this page and `git log engine-rust`
 nothing here should need re-deriving.
 
 - **Branch:** `engine-rust` (from `main` at `96ebce85`). Not pushed, no PR, nothing released.
-- **Rule:** the interface does not change. Every feature stays. A visible change that is not
-  strictly faster is a bug.
+- **Rule:** the interface and editable behavior do not change. Every feature stays;
+  editing class cost follows the current user policy below, with D13 unchanged.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
-- **Handoff:** the next section, updated during the 2026-10-04 takeover.
-
-## Handoff (2026-10-04, takeover after `a19ae5d8`)
-
-Read this section, then the [milestone log](#milestone-log) (last entries), section 6 and
-section 8. Work is active; the isolated lanes below are not integrated until reviewed.
-`git log engine-rust` has the detail of every committed step.
-
-**Priority correction (user, 2026-10-04 22:37 CEST):** finish the current renderer/raster
-cel and crisp-export change first. Then open `figures`, `movieclips` and `channels` in
-that order. For each class, list at most about five concrete blockers, fix only those,
-run the required class-gate checkpoint, verify the actual app and cost, then flip and
-commit. Stop opening general offline prerequisites. A prerequisite is allowed only when
-it blocks the next class flip, engine-1 or a deletion; name that outcome in its commit
-body. Otherwise preserve it under open problems. D7, D13, D15, D16, the focused/checkpoint
-verification policy and the prohibition on pushing or releasing remain unchanged.
-
-Every new commit must advance an inventory status, `OWNED_CLASSES`, a deleted JavaScript
-module or a measured benchmark number. Each milestone records all four counters and
-their changes. Starting counters at `5928c21a`: inventory **176 js / 122 partial /
-35 ported / 22 verified / 1 removed** (356 engine modules); **2 owned classes**
-(`large figures`, `3d`); **2 deleted JavaScript modules** (1 engine, 1 platform);
-**0/28 engine-1 matrix cells measured**
-(cold start and build-size measurements also pending). Historical milestones retain
-their original scope and evidence.
-
-**Current figures next action (B14, 2026-10-05 14:05 CEST):** ordinary pose conversion retains existing typed nonpose fields only within the 64-field same-Shape/raw-node guard. Changed angles/root/scale use their original conversions; rich records, ordered diagnostics and sample/style metadata retain their original owner. Duplicate pose keys preserve narrow-first/wide-last lookup. **405 native tests** (224 edit, 181 eval; two existing ignored, zero failed/filtered), all five new controls and **28 replays / 942 exact steps** pass. Main passes **82 JavaScript tests** and check (2,000 files); all 3,670 fixture JSON are unchanged. Shipping **`10b6b47a17ed` / 10,243,996 B**, 81.92 s, retains the required profile and stable sources; codec/drawing are unchanged. Source/native/runtime reviews `fe0538d3` / `f1ddde1f` / `1b63f9ef` bind the fix. Completed B13 full costs are **229.250/228.405**, **132.270/120.710**, **150.580/153.405 ms** candidate/JS: **FAIL/FAIL/PASS**. Figures stays closed; no saving or runtime hit rate is established. Next: passing unchanged full cost on committed B14, its matching checkpoint and positive actual default core adoption. The committed predecessor `5d2f589a` checkpoint completed at 14:03 CEST with 844 tests, zero failures, two existing ignored, 64 stages and 358 containers; it does not certify B14. **Counters:** inventory **175 js / 123 partial / 35 ported / 22 verified / 1 removed** unchanged (notes); **OWNED_CLASSES 2→2**; **deleted JS 2→2**; official full class-cost benchmark rows **30→33** from completed B13; **engine-1 0/28→0/28**.
-
-**Mobile API note (B14):** the existing portable `Loader::edit_frame_reusing_ik` permits bounded ordinary Object pose-field retention from its original coherent predecessor. Its signature, public types, stored fields, arithmetic and response schema are unchanged; downstream API adaptation is unnecessary.
-
-**Previous verified figures candidate (B13, 2026-10-05 12:54 CEST):** pose conversion reuses unchanged warning-free effect tables through the existing coherent raw/typed pair. Node identity, UID/figure/slot, lineage, entry/effect counts and the existing stack limit guard reuse; malformed effects retain the original parser and ordered diagnostics. **400 native tests** (219 edit, 181 eval; two existing ignored), **27 recorded replays / 925 exact steps**, **82 JavaScript tests** and check pass; all 3,670 fixture JSON remain unchanged. Real editor pose controls prove raw-node and parsed-table sharing against fresh scene/notes. Shipping **`e5476f401799` / 10,241,930 B**, 64.07 s, retains the required profile and stable sources; codec/drawing are unchanged. Source/runtime reviews `d271437d` / `f457306b` bind the fix. Completed B12 full costs are **245.100/205.235**, **132.080/133.770**, **153.885/138.660 ms** candidate/JS: **FAIL/PASS/FAIL**. Figures stays closed. Next: unchanged full cost on committed B13, its matching checkpoint and positive actual default core adoption. Predecessor `69bbe7ab` checkpoint is green at 837 native tests / two existing ignored / 64 stages / 358 containers. **Counters:** inventory **175 js / 123 partial / 35 ported / 22 verified / 1 removed** unchanged (notes); **OWNED_CLASSES 2→2**; **deleted JS 2→2**; official full class-cost benchmark rows **27→30**; **engine-1 0/28→0/28**. Loaded B12 measurements establish no causal saving or B13 performance result.
-
-**Mobile API note (B12):** the existing platform-neutral `build_joint_for_shape` query now narrows selected segments in joined frames without pins. Parents remain complete, and the Scene remains query-only. Signatures, stored fields, response schema and stored arithmetic are unchanged; downstream callers must continue to read only the selected joint.
-
-**Mobile API note (B13):** existing portable `Loader::edit_frame_reusing_ik` also reuses unchanged warning-free VFX tables. Its signature, public types, stored fields, arithmetic and response schema are unchanged; downstream API adaptation is unnecessary. The complete coherent predecessor contract remains required.
-
-**Previous verified figures candidate (B11, 2026-10-05 11:32 CEST):** ordinary selected-joint queries skip whole-frame join-order construction only after the existing guards prove there are no joins or pinned controllers. Figure resolution, the numeric builder, warnings, draw-order omission/repetition and every full fallback remain exact. Focused checks pass **394 native tests** (215 edit, 179 eval; two existing diagnostics ignored), **15 recorded replays / 576 exact steps**, **82 JavaScript tests** and check (2,000 files); all 3,670 fixture JSON remain unchanged. Shipping **`15cbbdc513ea` / 10,241,300 bytes** is source-stable and retains the required profile. Source review `cd71cd87`, native receipt `c925ad49` and independent runtime review `ddc6369e` bind this scope. This removes confirmed work but establishes no measured B11 gain. The original joined-chain selection has children and retains its full path; use the prepared literal full joined-pose diagnostic to locate the remaining cost before another candidate. B10 full costs below all FAIL. Background checkpoint `69bbe7ab` is running; the final candidate still needs fresh all-three passing cost, its matching checkpoint and positive actual default core adoption before figures opens. **Counters:** inventory **175 js / 123 partial / 35 ported / 22 verified / 1 removed** unchanged (notes updated); **OWNED_CLASSES 2→2**; **deleted JS 2→2**; benchmark **completed full class-cost rows 24→27** (B10, three FAIL); **engine-1 0/28→0/28**. Public crate APIs and stored fields/math are unchanged; the mobile pin needs no API adaptation.
-
-**Previous verified figures candidate (B10, 2026-10-05 10:48 CEST):** the unchanged full warmed paired startup/rig/joined-chain cost workload is complete on committed `69bbe7ab`, shipping `61537fd7901f` / 10,241,121 bytes. Active unpinned IK contexts use the existing all-joint numeric query; context/capture/full-solution inputs stay exact, rich ancestors keep full output, and default/one-shot/pinned paths retain their original owner. Focused verification passes **215 editing-crate tests**, **12 recorded replays / 241 exact steps**, **82 JavaScript tests** and check (2,000 files); no recordings changed. Source review `223bc16f`, native receipt `833110f0` and the source-stable 55.17 s shipping build identify this scope. The full48 diagnostic matches strict app state and full undo and supports this unused draw-item owner; its instrumented clocks establish no speed gain. B10 strict parity/count/accounting passes, but all three costs FAIL: **240.255/214.480**, **138.295/130.040**, **162.835/142.495 ms** candidate/JS. After fresh all-three passing cost, the final committed candidate still needs its matching full checkpoint and positive actual default core adoption. **Counters:** inventory **175 js / 123 partial / 35 ported / 22 verified / 1 removed** unchanged; **OWNED_CLASSES 2→2**; **deleted JS 2→2**; benchmark **completed full class-cost rows 24→27** from B10; **engine-1 0/28→0/28**. Public crate APIs and stored fields/math are unchanged; the mobile pin needs no API adaptation.
-
-**Previous verified figures candidate (B9, 2026-10-05 09:42 CEST):** the unchanged full three-document cost workload is now complete on committed `75bb37f8`. All three parity/count/accounting checks pass, with startup and joined-chain cost FAIL and rig cost PASS; figures remains closed. Selected-joint queries retain the existing segment loop and ancestors; complex, joined, pinned or ambiguous topology keeps the full path, and nonfinite/overflow geometry retries the original full owner. The coherent raw/typed Cache reuses only an unchanged IK table under slot/UID/figure/node/Prepared-lineage agreement. Other fields still convert; failed conversion installs no pair. Focused checks pass **392 Rust tests** (214 edit, 178 eval; two existing diagnostics ignored), **36 recorded replays / 1,668 exact steps**, **70 JavaScript tests** and check (2,000 files); all 3,670 fixture JSON remain unchanged. Shipping **`b9cf70669501` / 10,240,701 bytes** is source-stable and retains the required profile. The invalid-curve regression failed before and passed after the correction. This targets the measured figures cost blocker; B9 completed costs are **237.455/229.515**, **136.735/141.250** and **156.620/138.235 ms** candidate/JS. The committed predecessor `c0048287` now has a green full checkpoint (**827 tests**, two existing ignored diagnostics, 64 stages, 358 containers), completed 09:31:42 CEST. The final candidate still needs its own checkpoint and positive actual default core adoption before figures opens. **Counters:** inventory **175 js / 123 partial / 35 ported / 22 verified / 1 removed** unchanged; **OWNED_CLASSES 2→2**; **deleted JS 2→2**; benchmark **completed full class-cost rows 21→24** from B9, startup FAIL / rig PASS / joined-chain FAIL; **engine-1 0/28→0/28**. No causal speed gain is claimed.
-
-**Mobile API note (B9):** additive, platform-neutral `styk_eval::geometry::build_joint_for_shape(&Document, &Frame, usize, usize) -> Scene` and `Loader::edit_frame_reusing_ik(&Value, &Value, &Frame, &Document) -> Result<Frame, Error>`. The Scene is query-only; the raw/typed predecessor must be coherent in the current Loader/document lineage. Existing stored fields and response schema are unchanged. The mobile pin can move to this milestone's commit after downstream review.
-
-**Latest app milestone (2026-10-05 00:04 CEST):** the recorded ordinary solid-background
-camera monitor and composited No smoothing export correction are integrated and verified
-on the shipping package `9a94cb89d2c9` (10,201,677 bytes). Main passes 793 native tests
-(two existing diagnostics ignored), 55 focused JavaScript tests, check (2,000 files),
-31 actual preview cases and six export comparisons under unchanged D13. All 3,660
-existing fixture JSON stay byte-stable over two regeneration rounds. The app uses the
-new Rust filtered-source production/consumption and bitmap presentation; `vfx-canvas`
-advances **js→partial**, limited to that recorded ordinary monitor subset.
-Current counters: **175 js / 123 partial / 35 ported / 22 verified / 1 removed**;
-**2 owned classes**, **2 deleted JavaScript modules**, **engine-1 0/28**. A new affected
-export measurement records warm frame medians **17.6 ms engine / 93.3 ms JavaScript**,
-with separate fresh-renderer startup/first-frame costs and load 2.7–3.1. This is not
-baseline-0/engine-1. The next action is the `figures` checkpoint and its three blockers
-below. SceneFX monitor, auxiliary onion and plain drawing No smoothing remain open;
-no general prerequisite lane is resumed.
-
-**Latest figures gate work (2026-10-05 03:37 CEST):** scoped free-IK geometry retains its join ancestors; unchanged views and absent metadata avoid replacement, ordinary snapshots preserve the editor's draft, and private history heads share until a write. The new clip-parent recording matched the old engine before the change. Focused verification passes **191 owning Rust tests**, **24 recorded CLI tapes/640 calls**, **197 JavaScript tests** and check (2,000 files); two oracle regeneration rounds preserve 1,332 old edit JSON and all 1,334 final files. No public crate API/schema changes. Shipping Wasm is `d0aebc42737d`/10,222,396 bytes with the required profile. Three clean ordinary-pose diagnostics match exact app behavior but remain above JS: **22.800/17.005**, **22.760/17.205**, **22.380/17.170 ms** (candidate/JS). They add **three measured diagnostic rows**, not full class acceptance or engine-1. The six historical full rows are preserved; the completed B4 results below add three more FAIL rows. Counters: **175 js / 123 partial / 35 ported / 22 verified / 1 removed**, **2 owned classes**, **2 deleted JS modules**, **engine-1 0/28**. The completed B4 cost and matching 3e checkpoint are recorded below; only measured-cost fixes and actual nonzero figures default core adoption can move the gate. A named copy has executable sections identical to shipping for bounded profiling; its instrumented times cannot open a gate. The latest full green is committed `c0048287` (827 native, two existing ignored diagnostics, 64 stages, 358 containers); the earlier 69 warm-reuse measurement remains historical. [Class-gate evidence](performance/RUST-EDITING-CLASS-GATES.md).
-
-**Latest completed figures cost (B10):** all three unchanged full warmed paired runs on committed `69bbe7ab` / shipping `61537fd7901f` pass strict document/history/selection/full undo, matched eligible calls and complete accounting. All three literal costs FAIL: **startup 240.255/214.480**, **rig 138.295/130.040**, **joined-chain 162.835/142.495 ms** candidate/JS; failed attempts **0/0.240/0 ms** are included once. Eligible calls **171/128/129** match; all core native/adoption clocks are positive, and rig retains four allowed comparison-only residuals. Exact before/after maps preserve 1,529 sources, seven packages and three inputs. Full rows advance **24→27** while all twenty-four historical rows, seven older batch metadata objects, four ordinary diagnostics and milestone history stay byte-exact. Summary `0e24675c`, input receipt `88c76647` and independent all-three acceptance `093c0a27` agree with the raw doubles. Figures stays closed; no causal speedup, matching B10 checkpoint, actual default admission or engine-1 claim follows. [Gate evidence](performance/RUST-EDITING-CLASS-GATES.md).
-
-**Previous completed figures cost (B9):** all three unchanged full warmed paired runs on committed `75bb37f8` / shipping `b9cf70669501` pass strict document/history/selection/full undo, matched eligible calls and complete accounting. Literal outcomes are **startup FAIL 237.455/229.515**, **rig PASS 136.735/141.250**, **joined-chain FAIL 156.620/138.235 ms** candidate/JS; failed attempts **0/0.200/0 ms** are included once. Eligible calls **171/128/129** match; all core native/adoption clocks are positive, and rig retains four allowed comparison-only residuals. Exact before/after maps preserve 1,529 sources, seven packages and three inputs. Full rows advance **21→24** while all twenty-one historical rows, six older batch metadata objects, four ordinary diagnostics and milestone history stay byte-exact. Summary `1c68c696`, input receipt `2a9ac16d` and independent all-three acceptance `ec7a9a86` agree with the raw doubles. Figures stays closed; no causal speedup, matching B9 checkpoint, actual default admission or engine-1 claim follows. [Gate evidence](performance/RUST-EDITING-CLASS-GATES.md).
-
-**Previous completed figures cost (B8):** unchanged full warmed paired runs on committed `c0048287` / shipping `8d47d635183e` (10,238,324 bytes) pass strict document/history/selection/full undo, matched eligible calls, positive core native/adoption work and complete failed-attempt accounting. All three cost FAIL: **startup 220.885/191.290**, **rig 141.865/121.675**, **joined-chain 167.985/144.420 ms** candidate/JS, including failed attempts **0/0.185/0 ms**. Eligible calls **171/128/129** match; rig retains the same four allowed comparison-only residual calls. Before/after maps preserve 1,529 sources, seven packages and three inputs. Full cost rows advance **18→21**; all eighteen earlier rows, five older batch metadata objects and four ordinary diagnostics remain byte-exact. These loaded measurements establish no causal speedup or idle engine-1 claim. Counters remain **175 js / 123 partial / 35 ported / 22 verified / 1 removed**, **two owned classes**, **two deleted JS modules**, **engine-1 0/28**. Figures remains closed. Next only a measured cost fix, its fresh unchanged full cost proof, matching committed-source checkpoint and positive actual default core adoption may move the gate. Summary `497e06af`, approved reader output `e2c0c183` and input receipt `112cd258` bind the completed evidence. This completed measurement append accompanies the B9 verified figures fix below. [Gate evidence](performance/RUST-EDITING-CLASS-GATES.md).
-
-**Latest figure cost-owner milestone (2026-10-05 06:29 CEST):** IK settings keep the evaluated pose already read for validation; active free and joined IK targets reuse the same call’s pose before any edit. All **201 editing-crate tests**, **21 recorded replays / 565 steps**, **56 focused JavaScript tests** and check pass. Count witnesses remove one evaluation in **22 active free / 16 active joined** calls; **34 one-shot/pinned controls** retain their evaluation and solver counts. Settings and real slot/ID/conversion guards pass; the original synthetic unknown-figure panic is preserved and excluded from that guard coverage. Shipping **`ffedaa2273a9` / 10,231,142B** retains the required profile and stable sources. No public crate API or stored-arithmetic change; the mobile pin needs no API adaptation. **Counters:** inventory **175 js / 123 partial / 35 ported / 22 verified / 1 removed** unchanged; **OWNED_CLASSES 2→2**; **deleted JS 2→2**; **engine-1 0/28→0/28**, with completed full class-cost benchmark rows **9→12** from B5 above. The completed B6 full cost above fails. Next: only the measured figures cost blocker, the final candidate’s matching checkpoint and actual default core adoption before the figures flip. [Evidence](performance/RUST-EDITING-CLASS-GATES.md).
-
-**Latest verified figures source (B7, 2026-10-05 07:22 CEST):** joint rotation updates packed angle arrays directly in their original order. The shape query solves only the selected joined component for its angle, retaining all controllers, conflict ordering, local fallback and the original global path for duplicate identities. All **207 editing-crate tests**, including six numeric/solver controls, **32 recorded replays / 1,519 steps**, **56 focused JavaScript tests** and check passed on this source. All 3,670 engine fixture JSON remain unchanged. Shipping **`e95371c6c75e` / 10,234,289 bytes** retains the required profile and stable sources. The completed B7 full app cost recorded below fails all three cases; its parity/accounting proof does not establish a speedup, default admission or a matching new checkpoint. No public crate API, response schema or stored-arithmetic change; the mobile pin needs no API adaptation. Counters remain **175 js / 123 partial / 35 ported / 22 verified / 1 removed**, **OWNED_CLASSES 2→2**, **deleted JS 2→2**, **engine-1 0/28→0/28**, with measured full rows **15→18**. B8 focused verification is recorded below and its completed full cost above fails; a cost fix, matching final checkpoint and actual default core adoption are still required. Native completion `f3307237`, independent runtime review `98e8b0d7`, composition review `dbaa1d11` and main focused receipt `figures-b7-main-final-verification.json` retain their original B7 source scope.
-
-**Latest verified figures candidate (B8, 2026-10-05 08:25 CEST):** ordinary 2D shape queries use the existing geometry builder without preparing unused render output. Ancestors, endpoints, curves and stored arithmetic retain their existing owners; complex geometry uses the full builder. Pinned assembly followers keep the first full read and skip a second discarded Scene. Known rig/static calls use the original editor directly, with session cleanup included in eligible fallback timing. This unblocks the next figures cost run. Focused verification passes **383 Rust tests** (209 editing, 174 evaluation; two existing diagnostics ignored), all six new controls, **36 recorded replays / 1,668 exact steps**, **70 JavaScript tests** and check (2,000 files). All 3,670 engine fixture JSON remain unchanged; no recordings changed. The shipping build **`8d47d635183e` / 10,238,324 bytes** retains the wasm profile, nightly-2026-09-15, bindgen 0.2.129, 2 GiB limit and `strip = false`; sources stay exact across the 64.70 s build, and codec/drawing packages are unchanged. The original test failure is preserved: editor fixtures contain a movieclip beside an ordinary figure and invisible construction rigs; only those new test assumptions were corrected, retaining all numeric and full-output comparisons. Native receipt `9b236200`, independent runtime review `8ab37927` and main source review `227d67c5` identify the verified source. **Counters:** inventory **175 js / 123 partial / 35 ported / 22 verified / 1 removed** unchanged; **OWNED_CLASSES 2→2**; **deleted JS 2→2**; **engine-1 0/28→0/28**. Actual completed B7 cost rows advance **15→18**, all three FAIL at 234.390/224.850, 135.060/133.930 and 153.110/147.280 ms candidate/JS. The completed B8 full app cost above fails all three cases; a cost fix, its matching committed-source checkpoint and actual default core adoption remain required before opening figures.
-
-**Mobile API note (B8):** additive, platform-neutral `styk_eval::geometry::build_only_for_shape(&Document, &Frame, &[usize]) -> Scene` returns query geometry. Rendering callers retain the existing full geometry entry points. Existing public types, stored fields and response schema are unchanged; the mobile pin can move to this milestone’s commit after downstream review.
-
-### Verification of the handed-over state
-
-Verified at `35f4c734` (the commit that adds this section changes documentation only):
-`npm run engine:build` ok; `npm run engine:test` 317 passed, 0 failed; `npm run engine:parity`
-every stage ok (Rust fixture suites, every fixture generator and the 201 command recordings
-regenerated byte for byte, the CLI build, 441 repository containers); `npm run check` ok
-(1,981 files, 0 syntax errors); `npm test` 4,411 tests, 4,378 pass, 6 fail (the known
-hand-face-pack ×5 and impact-fx-pack ×1), 26 skipped. Every command recording replays in full
-in `styk edit-replay`. The build, `npm run check` and `npm test` ran on `865c5e3f`; `35f4c734`
-adds only the two record fixture folders, and the Rust tests and parity ran on it again.
-
-Takeover verification at `a19ae5d8` matched the executable handoff: WebAssembly build,
-317 Rust tests, full fixture/regeneration/201 edit recording/441 container parity and
-JavaScript checks passed; `npm test` retained exactly the six known failures. `a19ae5d8`
-changes documentation after `35f4c734`; the pre-existing `.claude/` and `mockups/` were
-preserved. Node was explicitly selected as 24.11.0 and Python as the existing 3.12.9 venv.
-The mobile checkout remains untouched at `fa0c512f`.
-
-Latest cel milestone: 342 Rust tests pass; complete `engine:parity` and `npm run check`
-pass. Electron drawing-cels 4/4 and private ticks 46, 61–64 5/5 pass; native private
-thumbnails 132/132 and synthetic smooth comparisons 4/4 pass. Software web parity and
-synthetic crisp export remain open, as detailed in sections 6 and 7. No ownership gate
-was changed and no JavaScript was deleted.
-
-The later destination-grid cel milestone closes the original software-web stage gap:
-all four fitted/0.3×/2×/3× views pass on the final shipping build, while default Electron
-GPU remains unchanged. The same drawing/effect owners carry an explicit destination
-grid for software edit and preview paths; prepared/default GPU paths retain the world
-grid. Shared-type validation passes 632 native tests, 31 focused JavaScript tests and
-check. The two new editor-built fixtures regenerate byte-stable. Camera-monitor clipping,
-some auxiliary onion previews, private web verification and crisp export remain open;
-this is not comprehensive renderer or D7 certification. Details and mobile API notes
-are in `docs/engine/rendering.md` and the latest milestone below.
-
-Latest origin milestone: 353 Rust tests and `npm run check` pass; all 1,000 existing
-fixture files regenerate unchanged, with 222 recorded commands replaying fully. Whole-figure
-gestures, Set Origin and recorded topology preserve retained support. The app compares
-47 calls exactly, including Set Origin/history; affected Electron and web pictures pass
-6/6 each. Full repository parity passed on `d1087e39`: all fixture generators, 222 recordings and
-441 containers. Broader origin commands and class ownership remain open. No JavaScript was deleted.
-
-Latest origin pose/channel milestone: 365 Rust tests pass; all 1,097 fixture hashes are
-stable and 246 recordings replay fully. Thirteen joint/handle recordings and eleven saved
-channel recordings add 2,770 exact steps, including shown-frame reads. Future target and
-attachment-ancestor guards preserve live state on unsupported or malformed combinations.
-The app compares 142 calls exactly; forced ownership adopts 67 and compares 75, with
-identical document, 79 history entries, selection and full undo. Edited pose/channel
-pictures pass 12/12 on each of web and Electron. Engine wasm is 8,713 KiB; no public crate
-signature or field changed, no class gate opened and no JavaScript deleted.
-The complete generator adds 54 evaluated-record files for these scenarios: 179 groups /
-2,225 ticks match Rust and all 373 record JSON regenerate byte-stable. The first full run
-exposed their omission from `e5bb439f`; every other stage passed. The fixture-only
-correction is committed at `94a2fcfb`; the complete suite passes on that snapshot.
-
-Compact session responses are verified with 367 Rust tests, 18 JavaScript adoption tests,
-full fixture/regeneration/246 command/441 container parity and `npm run check` (1,982 files).
-Owned calls request `changesOnly`; shadow and existing native callers keep full responses.
-The origin app run adopts 62 calls and compares 65 exactly, preserving the 730,987-byte
-document, 79 history entries, selection and full undo. Engine wasm is 8,724 KiB. The
-startup retry passes: 165 adopted + 295 exact, identical 290,105-byte document, 80 history
-entries, selection and full undo. The preceding browser crash produced no comparison
-result; the successful retry used root-disk temporary files. No class flip or performance
-claim. The public Rust call signature is unchanged; the JSON response protocol adds compact fields.
-
-Camera, measured-bounds and remaining builder prerequisites are integrated and focused-verified:
-393 Rust tests, 43 affected JavaScript tests, 140 byte-stable fixture inputs and 49 command
-recordings. The 45 admitted recordings match all 1,290 steps; four guard recordings retain
-their explicit origin/native-channel refusals. The 41 new derived record groups (82 JSON,
-362 ticks) match exactly. Engine wasm is 8,845 KiB. Joined pinned motion paths pass in the
-app (one adopted commit, 11 exact calls); measured centering/alignment pass eight calls,
-and identity-capacity refusal passes two while leaving document/history/counters intact.
-Electron follow-camera pictures pass 9/9 across stored, preview and onion views
-(mean 0.0553–0.0884, maximum 120, zero solid pixels); the rendered preview was inspected.
-Hardware-web checks use the existing GPU opt-in; a broad software-web camera run was
-stopped after six minutes without a result. Follow read/bake replays are native-ready,
-but UI sessions still refuse cold follow paths and revisions, preserving D7; canonical
-worker readiness/publication remains required. No class gate, deletion or performance claim.
-Mobile API notes: additive `styk_math::log`, `Prepared::travel_ready`, `Pose::shot`,
-`CommandKind::FigureSplice`; browser-only `math_log` export stays in `styk-wasm`.
-
-Origin range/join and constrained 2D rig work is integrated: 63 new recordings / 9,764
-exact steps plus 63 derived groups / 647 exact ticks (126 JSON). There are now 358
-command recordings and 283 evaluated-record groups / 3,234 ticks. Shared-type validation
-passes 431 Rust tests; final focused edit/eval checks after marquee/read corrections
-pass 178 tests. All 93 affected replays match 12,050 steps and regenerate byte-stable;
-190 origin inputs, 66 handle/body/snap inputs and 22 bounds inputs also stay unchanged.
-JavaScript checks pass 137 focused tests and 1,987 syntax checks. The inspector reads
-fractional ticks without errors while whole keyframe writes/begins remain strict.
-App range and rig drivers compare 14 + 10 calls exactly with no page errors; no adoption
-or cost claim. Engine wasm is 8,881 KiB (SHA `aaae85f3e3a8`). Electron and default software
-web each pass 12/12 whole-tick stored/preview/onion/curved pictures, zero solids.
-Fractional camera preview remains open: tick 3.5 produces precisely the engine pixels
-of tick 3 (4,004 solid differences against the editor, mean 1.8362). Its integer playback
-binding and stage/cache owners are unchanged from `e5dbda24`; edit-frame tick 3.5 passes.
-Hardware-opt-in web captured an empty engine canvas (0/9); this is retained as failed
-evidence, not certified coverage. No class gate, deletion or threshold change.
-
-Prepared native picking/snapping and measured-bounds marquee queries borrow existing
-ready geometry; app actual-shown/resource/order preparation remains pending. Movieclip
-scene cache reservations bound retention across one Loader lineage (64 MiB/1,024
-entries) as well as each clip (64 scenes/64 MiB); this is not a whole-process memory bound.
-Mobile crate API notes: `CommandKind::Frame`; `rig::validate_2d`; public picking types,
-functions and `geometry::RawSegment`/`SceneBudget`; `Document::scene_budget`,
-`Loader::with_scene_limits`/`scene_budget`, `Scene::figure_of`/`retained_bytes`,
-`ObjectGeometry::lengths`/`raw_segments`, `Segment::control_detail`. All are platform neutral.
-
-Remaining effect presets, attached scopes and paint editing are integrated with 12 new
-recordings / 392 exact steps (370 command recordings total). Focused edit/eval checks
-pass 183 Rust tests; 103 JavaScript tests and all 27 affected replays / 898 steps pass.
-The 25 VFX catalogue/scenario JSON and 44 closest-joint inputs regenerate byte-stable;
-identical compiled catalogue regeneration preserves its mtime. App shadow compares
-19/19 calls exactly, including all four new methods and undo/redo; forced ownership
-adopts the existing paint-parameter call and compares 18 others, preserving the
-14,533-byte document, six history entries, selection and full undo. No page errors,
-refusals or class flip. Engine wasm is 8,904 KiB (SHA `234d5096decb`).
-`Session::call_values` reuses the same response builder as the JSON boundary; 830
-actual calls compare both forms. Borrowed closest-joint ordering matches 201,792
-editor queries, including live and reopened map order. Browser query adoption remains
-pending. Mobile API additions: `Session::call_values`, `records::paint_record`,
-`picking::{JointOrder, ClosestJointOptions, JointHit, closest_joint}` and
-`QueryError::InvalidOrder`, all platform neutral.
-
-The reviewed renderer, movie/layer/history/selection, canonical root publication and
-origin sheet motion prerequisites are integrated. Shared-type checks pass 615 native
-Rust tests; final planner test-setup strengthening passes its seven unit tests. All
-307 affected JavaScript tests and `npm run check` (1,994 files) pass. Affected CLI
-replays admit 75 new recordings / 6,446 exact steps plus 64 worker recordings / 643
-steps; 16 deliberate guards remain explicit. Regeneration preserves all 3,153 JSON,
-including 88 new evaluated-record groups / 798 ticks. Totals: 461 command recordings,
-371 evaluated groups / 4,032 ticks. Shipping Wasm is 9,528 KiB (`c14773c5a27f`).
-Software-web stored/fractional preview pictures pass 4/4, zero solids; actual selection
-adoption passes three owned calls plus six exact comparisons and preserves the
-22,810-byte document, six history entries, selection and full undo. No class gate,
-JavaScript deletion or performance claim. The broad sheet shadow run stalled without
-comparison and was stopped; focused verification passes, broader flow/readiness stays
-required before adoption gates. Missing fixture alias and empty focus attempts are
-retained as unsuccessful verification, never counted.
-Mobile API changes are listed in `docs/engine/editing.md` and `threading.md`: checked
-layer/canonical publication APIs and history owner, retained source/effect clocks,
-selection metadata and motion display; `FrameData::tick` is `f64`, `Engine::stage`
-returns a checked result and `PlanError::Unported` carries `String`. Keep crates neutral.
-The background full checkpoint on immutable committed `53e3bdd9` passed at
-2026-10-04 16:36 CEST: 421 Rust tests, byte-stable repository fixtures and all
-358 container comparisons. Its first release build used a cold persistent isolated
-target (2,297.5 s); after all regeneration the entire release test target is fresh
-in 0.43 s, with no recompilation. Retain that cache. Next regular checkpoint starts
-no earlier than 17:54 CEST; gate/benchmark/deletion requirements still apply.
-Logs: `tmp/root-verification-temp/checkpoint-53e3bdd9.log` and
-`checkpoint-53e3bdd9-cache-freshness.log`.
-
-Five recorded native origin motion families are now integrated: their 969 steps match
-fully, using the same motion/frame/membership/history owners. Shared-type checks pass
-623 native Rust tests; 79 focused JavaScript tests, check and shipping Wasm pass.
-All 65 motion JSON regenerate unchanged. The 30 admitted affected CLI recordings match
-5,799 steps; 11 saved-motion/scalar guard recordings remain explicit. Twenty-two actual
-commands certify enumerable history and the worker's exact retained weights; five
-fractional-read cases keep native held shown poses distinct from raw samples while
-scalar channels retain tick 3.5. Wasm is 9,582 KiB (`cdbde8b50169`). No app gate or
-adoption changes: native motion is an offline/worker prerequisite. Mobile pin additions:
-`FrameSlice`, `CommandKind::Ranges` (update exhaustive matches), and additive
-`Records::evaluated_editor_with`. The subsequent saved-native milestone below extends
-the two recorded saved-motion families; complex origin combinations remain guarded.
-Logs: `tmp/root-verification-temp/native-motion-*`.
-
-Saved native origin motion now also matches both original layout/support recordings,
-183 calls each, with authoritative and transient motion-frame reads kept separate.
-The existing native draft, channel sampler, pose-source table and Animation/history
-owners retain scalar insertion order during preview, rewrite allocated source IDs in
-place, and register sources only at commit. Forty-two actual draft displays and 122
-source lifecycle states additionally certify ordering, allocation and retention; eight
-complete history records match the editor. Focused edit/eval checks pass 286 tests,
-92 JavaScript tests, check and shipping Wasm (9,604 KiB, SHA `e06a24b83579`);
-all 67 affected motion JSON regenerate byte-stable.
-The 32 admitted affected CLI tapes match 6,165 steps, with nine explicit guards;
-14 capture tapes / 138 steps and 19 worker insertion tapes / 153 steps also match.
-An older refusal test was narrowed only for the newly recorded selection admission;
-its five unrecorded mutation refusals remain intact. No app adoption or class gate
-changes. Portable mobile pin addition: `Records::new_native_draft`; layer sheets
-remain excluded from that entry point. Evidence: `tmp/root-verification-temp/saved-native-*`.
-
-Prepared playback keys now bind generation, cache epoch and exact sample, with one
-coherent native read and a second identity check at the drawing boundary. Hidden,
-effects, decoded-resource and generation changes cannot substitute a newer same-tick
-frame for an old packet. Actual shown identity advances only on successful drawing;
-the prepared worker monitor rejects stale sources and retains its accepted bitmap at the same
-view. Explicit worker wait behavior still returns a produced frame immediately evicted
-by a tiny cache. Focused checks pass 140 engine tests, 35 JavaScript tests, check and
-shipping Wasm (9,588 KiB, SHA `d155ab99b159`). Four actual-source mutations are caught
-and restored. Real app refusals preserve surface, renderer ownership, document/history
-and selection. Full artifact-specific pictures and evidence are in the latest milestone.
-Portable API additions for the Android pin are `FrameSnapshot`,
-`Engine::{prepared_frame,frame_matches,frame_epoch_current,prepared_frame_now_at}` and
-`MonitorFrame::prepared_ticket`; browser-only ticket/getter exports stay in `styk-wasm`.
-Broader live shown/readiness, State latency and retirement D7 work remains open.
-
-Commit `65e1db72` omitted the verified shared progress helper from staging; the
-following fix-forward commit supplies it. Do not pin or checkpoint the incomplete
-intermediate snapshot. The working-source verification covered that helper; the
-correction reruns its affected JavaScript checks. No history is rewritten.
-
-The nonblocking cache, quiet canonical actor and portable exclusive live capability
-are integrated as scoped prerequisites. Shared-type checks pass 708 native tests;
-104 affected JavaScript tests, check and final shipping Wasm pass (9,862 KiB,
-SHA `e5c3d8b2a7ca`). All 59 handoff/quiet/live/complete-return JSON regenerate twice
-byte-stable and their four generators are included in full checkpoints. Quiet traces
-compare 80 actual calls; ten ordinary native/sheet live tapes compare all 115 calls
-including complete returns and actual displayed frames. At that milestone the eight
-native propertyChannels:true tapes still refused; the later recorded-worker milestone
-below closes them and portable Core live coupling. Five async preflight tapes remain
-unadmitted. Ready/shown ACK and app exclusive writer transfer remain open.
-The same finite progress owner handles 16 ms Busy retries. Review exposed and corrected
-both no-progress lock liveness and cancellation during a Ready retry; actual failed-before
-regressions and independent review are retained. Actual prepared-ticket/cache app checks
-and eight remapped-effect web/Electron pictures pass with unchanged D13. Logical cache
-budgets are unchanged; dense final owners, aggregate physical charging, presenter leases,
-shutdown ACK and all other D7 paths remain open. Portable API/pin additions are detailed
-in editing.md and threading.md. No class gate, deletion or performance claim.
-
-The portable Core live coupling and native scalar projection/accounting prerequisites
-are now integrated. Focused edit/eval/engine checks pass 505 tests (one loaded-machine
-diagnostic remains ignored), 59 JavaScript tests, check and the pinned threaded Wasm
-compile check. The rebuilt CLI admits 50 affected recordings / 6,581 exact steps;
-nine explicit guards remain. Projection regeneration preserves 3,577 source JSON;
-13 new derived groups / 147 ticks (26 JSON) regenerate twice byte-stable. There are
-421 evaluated-record groups. Existing app bindings do not activate live Core requests;
-shipping pkg regeneration is deferred to the next renderer app milestone, with no new
-app-picture claim here. Twelve recorded live methods use the same moved Session and
-final State guard. Actual history transitions publish even identical stored JSON;
-working-only operations preserve the Mirror stored root/Loader. Current/prior Scenes
-retain the same reservation, and committed prior roots remain through terminal ACK.
-Current-ready raw charging after ACK is now corrected through the SAME receiver
-reservation and original-Core retirement wake. Encoded/shown readiness, renderer CPU
-upload/final release and shutdown remain open. Native scalar projection matches 204
-curves/1,620 samples and 200 missing-property first writes; its eight recorded
-propertyChannels:true live tapes now match the same Worker/Core/strict replay owner.
-Legacy calls and wider native combinations remain guarded.
-The portable encoded allocation helper has no runtime caller or physical-cap claim.
-Mobile API additions: WorkerSession::prepare_worker_history, Handle::submit_live,
-Records::pose_source_frame (row hints require verified unique IDs), and
-styk_eval::drawlist::{retained_bytes_checked, RetainedBytesError}.
-
-Scoped worker publication candidates and the opt-in guarded typed pairing are integrated.
-The candidate borrows its exact prebuilt generation/assets under the same Mirror and
-CommitMarker guard. The typed route borrows the actual guarded after-Cache Loader and
-pairs the recorded Editor glyph Scene and image namespace with those assets; the
-ordinary independent-loader route remains unchanged. Raw layerSheet must be an object,
-and its actual typed sheet and existing checked planner must both admit it before
-pairing. Six malformed/missing-sheet cases now refuse atomically. Portable additions:
-GuardedTypedCache, GuardedPublication::typed_cache_worker and
-Engine::prepare_edit_typed_publication_worker (details in editing.md).
-
-Private typed Frame allocation observation is also integrated, using strongly held
-source identities, the same checked DrawList/Resolved visitors and an actual allocator
-ledger in tests. It has no runtime caller, reservation or public API; encountered map,
-mutable-cache and other unvisited branches remain explicit gaps. Focused verification
-passes 528 native tests (two opt-in diagnostics ignored), check, two typed fixture
-regenerations with all 3,634 captured JSON stable, and the pinned threaded Wasm typecheck.
-The shipping package was not rebuilt. These are prerequisites without Core/Stage/app
-adoption, class gate, physical-cap certification or deletion.
-
-Recorded native TRUE lifecycle and current-ready raw charging are integrated as one
-reviewed batch. The same response builder dispatches the original worker checked
-native owner, preserves original options/returns and propagates one-shot host errors.
-All 18 live families / 208 complete calls match Worker/Core/strict CLI; 20 conventional
-recordings also match 2,562 steps. The strict offline CLI checks actual initial
-state/history/display/runtime before dispatch and lossless counters before casts.
-Eight malformed initial inputs refuse with zero calls; original failed-before evidence
-and the additive correction are preserved. Portable mobile addition:
-replay::replay_session_live_worker; no legacy public call signature changes.
-
-Raw admission keeps canonical/prepared/response/current heads as one charged union;
-terminal ACK rescopes to the actual current raw record only after worker physical
-disposal. Hard Arc::get_mut uniqueness includes Weak aliases; detached aliases defer
-preparation with Busy, and drop-first retirement wakes only the original Core without
-self-polling. Receiver stays 1 GiB, editing/materialization 128 MiB. This is receiver/
-current-ready raw scope, not Editor history, typed/encoded memory or whole D7. Focused
-checks pass 381 edit/engine/CLI tests, check, four generator runs twice with all 3,635
-captured JSON stable, actual CLI positives/guards and pinned threaded Wasm typecheck.
-Shipping pkg, app call sites/classes and gates remain unchanged; no picture, cost or
-performance claim. Evidence: tmp/root-verification-temp/true-raw-*.
-
-The separate, still-uncommitted Renderer32 patch passes its 24 focused pictures on
-shipping Wasm `b155e35fe6a6` and its shared-type native checks, but MUST NOT be committed
-yet: the original full cel monitor regresses on default Electron. The exact before
-artifact `d2a887b0cc21` has mean .369287 and four strong pixels; after has mean .710108
-and 278 strong pixels. Legacy captures are byte-identical. Both exceed unchanged D13;
-the regression is concentrated in two artboard edge columns. Actual branch tracing
-rules out prepared monitor playback and duplicate background fills. Skipping only the
-later group/walker painting makes the Legacy border alpha 79 instead of 141; the active
-renderer lane is recording the existing GPU-source Canvas operations before choosing
-a correction. No full cel pass or renderer milestone is claimed. Preserve all
-`tmp/root-verification-temp/renderer-publication-*` receipts, including failed attempts.
-
-The corrected committed 805688d5 background checkpoint remains independent of this
-merge. Its first compile-only attempt ended with tool exit 143 and no wrapper completion
-or test failure; the log is preserved. The same exact HEAD/cache continuation passed at
-21:23 CEST: 56 stages, 691 release-selected native tests and 358 containers. After all
-generators, all 136 release executables remain fresh in 0.23 s with no compilation.
-The next regular checkpoint on committed `4f4808c0` passed at 23:12 CEST in the same
-persistent isolated target: **58 stages, 730 release-selected tests, two explicit
-diagnostics ignored, and 358 container comparisons**. The shared Rust changes required
-release relinking; after all generators, all **137 release executables remain fresh in
-0.29 s**, with no compilation. Main was still `5928c21a`; this certifies `4f4808c0`, not
-the later native commit or pending renderer. Logs: `tmp/root-verification-temp/checkpoint-4f4808c0.log`
-and `checkpoint-4f4808c0-post-regeneration-fresh.log`. Next regular run is no earlier
-than 2026-10-05 00:02 CEST. An actual later failure requires bisect/fix-forward from
-last green `4f4808c0`; the class gate still requires its own matching committed HEAD.
-
-### Where the port stands
-
-Awaited native/sheet movieclip Bake and full canonical record observation are integrated:
-37 default-budget families compare 234 calls, with two existing Frame/Ranges observer
-traces / 27 calls and three saved-native VFX read traces / 24 calls checked separately.
-The object-limit trace uses an explicit 1 GiB offline allowance; runtime/default replay
-budgets remain 128 MiB. The concurrent stale trace records its actual yield-time
-rename and explicitly refuses before that unsupported step. The first CLI check
-exposed a real difference at step 2 and an inaccurate lane Unported claim; the
-corrective metadata preserves every original captured field and adds no runtime
-concurrency support.
-All 159 affected JSON regenerate twice byte-stable; 54 applied/final typed views cover
-810 exact geometry/effect/camera/scene samples. Shared-type validation passes 659 native
-tests, 194 focused JavaScript tests, check and shipping Wasm (9,701 KiB, SHA `055ecc07c3d8`).
-Final remapped-effect native/sheet stored and fractional preview pictures pass 4/4 on
-software web (mean .017499) and 4/4 on default Electron GPU (.024497), zero solids.
-The same history-weight owner optionally observes enumerable records; normal calls
-allocate no full carrier. No app/class gate changes or deletion. Portable mobile pin
-changes: `CommandKind::LayerSheet.retain_geometry`, `styk_eval::vfx::remap_owner` and
-offline `replay_worker_with_source_budget`. Logs: `tmp/root-verification-temp/canonical-bake-*`.
-
-Recorded origin angle-lock definitions and spatial pose choices are integrated as
-offline/worker command prerequisites. Thirteen angle-lock recordings cover 2,158
-steps; 24 spatial choice/preset/mixed recordings cover 2,724, including six joined
-families. Both preserve raw definition validation, typed origin bases, retained
-support, fractional displayed frames and live commit/cancel behavior. Figure/parent
-angle-lock references are admitted only for recorded definition changes; posing
-with those references still refuses. Spatial admission is restricted to the one
-recorded selected origin instance. Native property projection/authoring, complex
-metadata and additional spatial instances remain refused. Existing history
-flags/labels and undo/redo are covered; these recordings do not certify full
-enumerable history carriers or new complete return views. No public crate API,
-app adoption or class gate changes. Evidence: `tmp/root-verification-temp/origin-constraints-choice-*`.
-
-The full background checkpoint on immutable committed `9728e86e` passed all 47
-stages, 615 tests in its eleven-crate release selection and 358 repository containers
-at 19:06 CEST. After every generator and CLI build, all 127 release test executables
-are fresh in 0.22 s, without recompilation. Changed production inputs required
-legitimate release compilation in this loaded run; this is no performance result.
-The next regular checkpoint starts no earlier than 19:54 CEST. Retain its existing
-isolated target and locked dependencies. Logs: `checkpoint-9728e86e.log` and
-`checkpoint-9728e86e-post-regeneration-fresh.log` under `tmp/root-verification-temp/`.
-
-| Stage | State |
-| --- | --- |
-| S0 plan, baseline | Done (sections 1–5; baseline worktree `tmp/baseline-worktree` at `96ebce85`). |
-| S1 formats | Done: the Rust codec runs in the app in place of Pyodide and the Python sidecar; the Python codec is a development oracle only. Left: `.styk` open/save through Rust once the engine owns the document; sidecar names in brand and release tooling. |
-| S2 store, evaluation, geometry | Done for every feature the gate checks: IK (2D, 3D, joined), channels, meshes, follow camera, text, movieclip replacements, effects as records. Camera motion now uses V8-exact maths. |
-| S3 renderer | WebGPU, WebGL2 and the CPU rasterizer (`styk-raster`, D13 parity with the GPU) draw every document the gate admits (380 of 382 corpus documents; the gate still refuses frame drafts and movieclips nested deeper than 16). Original drawing-cel stage views now match Electron and software web; auxiliary monitor/onion, private web and crisp parity remain open. Worker monitor and exact in-between sample prerequisites are assembled; actual-shown/resource ordering and audited D7 work remain. Left: item 8: deleting the JavaScript renderer (pages without cross-origin isolation have no engine threads and still need it: a decision is required). |
-| S4 export, thumbnails, previews | Done for documents the engine draws, on the GPU or the CPU; SVG stays JavaScript by design. |
-| S5 editing | `styk-edit` runs every gesture family the app uses on layer sheets (pose, move, transform, IK incl. 3D, Handle Edit Mode, figure handles, camera, motion paths), timeline and range commands, clipboards, layers, property edits, effect stacks and clips, camera motion clips, recolouring, builder and rig. 498 command recordings include recorded movieclip/native scalar/optional selection and origin motion, angle-lock definition and spatial-choice prerequisites, plus explicit unsupported guards. Canonical worker Session app adoption is pending. Other origin families remain gated. Owned by default for the classes below; phases 2 and 3 (the engine holds the document; JavaScript evaluation deleted) not started. |
-| S6 drawing raster engine | Done: `styk-drawing` (D17) runs in the drawing workers by default (`?drawingEngine=off` to compare). |
-| S7 | Not started: dead machinery, final screenshots, interleaved benchmarks, `docs/performance/RUST-ENGINE-PERFORMANCE.md`, Windows CI. |
-
-Inventory (`docs/engine/INVENTORY.md`, rendered from `engine/inventory.tsv`): 356 modules,
-4,053 KiB of engine source at the start; 175 js, 123 partial, 35 ported, 22 verified, 1
-removed; 20 % covered by Rust, 49 % partly covered, 0 % deleted. `styk-edit` alone: 89
-modules, 46 js, 39 partial, 4 ported.
-
-**Document classes the engine edits by default** (D15, `OWNED_CLASSES` in
-`src/engine/engine-edit-shadow.mjs`, `editingClass`): `large figures` (1,000 segments or more
-across the figure definitions) and `3d` (figures with 3D bones or meshes). Measured cheaper
-than the editor with adoption included, and identical with the engine's `Math`. Not yet:
-`figures` (small documents: the JSON boundary and adoption cost more than the editor's
-0.07 ms pose), `movieclips` (costlier on small documents), `channels` (saved property
-channels on a layer sheet: edited and compared, cost on large documents not measured), and
-`unported` (property channels on a native timeline, animation origins, a movieclip's own
-document). `?engineEdit=on` forces ownership for every class, `?engineShadow=on` compares
-without owning.
-
-### Next steps, in priority order
-
-The following immediate sequence supersedes the broader historical list below:
-
-1. **Completed:** the scoped ordinary monitor clip/paint/source and composited
-   No smoothing correction passes on the actual app, with unchanged D13. One
-   inventory row advances js→partial and the affected paired export cost is measured.
-   Original regressions and rejected prototypes remain preserved; proceed directly
-   to `figures`, without opening another general renderer prerequisite.
-2. Flip **`figures`**. Three remaining concrete blockers:
-   - **Cost:** completed B13 strict parity/count/accounting passes, but startup and
-     rig cost 229.250/228.405 and 132.270/120.710 ms candidate/JS; joined-chain
-     passes at 150.580/153.405 ms. B14 ordinary field reuse passes focused
-     native/CLI verification and source-stable shipping. Repeat the unchanged
-     full paired workload on committed B14, counting
-     owned, eligible fallback and failed attempts once. Loaded rounds establish
-     no causal savings.
-   - **Matching checkpoint:** predecessor `5d2f589a` is green at 844 native tests,
-     two existing ignored, 64 stages and 358 containers, completed 14:03 CEST. The final cost candidate
-     needs its own committed-source checkpoint before opening the class.
-   - **Default adoption:** require positive actual `poseJoint`, `moveSelection` and
-     `commitDrag` native/adoption clocks in mode `classes`, with strict paired
-     state/history/selection/full undo on startup, rig and joined-chain.
-     `--default --figures-gate` certifies admission/behavior, not full cost.
-   Clipboard parity is fixed by the two editor-recorded native/sheet scenarios
-   (62 steps) and the actual joined run. Stage geometry/upload and general D7 work
-   remain parked unless a concrete failure blocks this flip, engine-1 or deletion.
-3. Flip **`movieclips`**, then **`channels`**, each with at most about five concrete
-   blockers, their own recorded/app verification, class checkpoint and cost evidence.
-4. Run idle engine-1 with no subagents, report all before/after cells against baseline-0,
-   then delete dead JavaScript in checkpointed steps. Final platform/interface checks
-   remain required. Every commit and milestone follows the four-counter rule above.
-
-The historical subsystem follow-ups below remain tracked, but do not authorize new
-prerequisite work outside that sequence.
-
-1. **Close the remaining cel backend gaps**. Electron sampling, tight ink bounds and
-   destination-grid sampling are corrected and verified: original software-web
-   `drawing-cels` passes fitted/0.3×/2×/3× views. Auxiliary edit-monitor and some onion
-   previews still fail. The recorded ordinary solid-background monitor root clip,
-   foreground-source and DOM paint-history correction now passes the full CEL,
-   corner/tiny-angle and DPR/undo/source-switch app cases. The original failures remain
-   evidence. The scene-effects camera-image branch and its recorded source placement
-   remain a later benchmark/deletion blocker; do not resume them before the class flips.
-   Preserve the reviewed transient-refusal retry and one-paint-per-draw corrections.
-   Private web retries time out in the animation-frame settle even
-   with resource flags ready. Native crisp export differs identically before and after.
-   Investigate the existing owners without changing D13 or readiness checks. The other
-   command lanes can proceed independently.
-2. **Finish animation-origin editing.** Records, whole-figure synchronization, local
-   offsets, support rotation/reflection/reset, Set Origin and recorded topology now match.
-   Joint/handle and saved x/y/scale/rotation channel recordings now match, including shown
-   frames and future target/ancestor guards. Ranges/joins and recorded 2D rig combinations
-   now match. Optional selection metadata, native scalar authoring and recorded sheet motion paths
-   are assembled, including five native and two saved-native origin motion families,
-   recorded angle-lock definition changes and spatial pose choices. The authored native
-   property-channel lifecycle now matches its eight original worker recordings through
-   AuthoredDrag/Draft/Records and strict Worker/Core replay; retain its narrow ordinary
-   target scope. Finish unrecorded complex combinations. Every admitted command needs
-   its own recorded replay; app comparisons cover changed app behavior or adoption under
-   the current focused verification policy. Class ownership remains closed. Isolated lanes
-   coordinate dispatch and shared planner hunks; integrate frozen snapshots sequentially.
-3. **Flip the next classes (D15).** Compact COW response/adoption is integrated and verified
-   in `styk-edit/src/session.rs` and `src/engine/engine-edit-shadow.mjs`; next measure each
-   document class after the remaining command and readiness prerequisites.
-   Measure with `node scripts/engine-edit-shadow.mjs --own --warm --exact-math` per class
-   (`--file`), flip a class only when its calls cost no more than the editor's and the owned
-   run is "the same as the editor alone". Trap: this machine is shared and loaded; compare
-   interleaved runs and report the load.
-4. **Remaining editing commands**, each with recordings first: worker integration for native-ready follow-camera read/bake and joined 3D IK commands,
-   recorded movieclip command adoption and the remaining baking branch, recorded camera
-   centering/alignment, the asynchronous layer facade (native/sheet planning kernels are
-   assembled on workers, D7), worker adoption
-   of the now-recorded effect presets/scopes/paints, builder leftovers (branch thickness,
-   sprite segments, native property gestures and drawing a new figure now have exact native replays;
-   their facade/runtime adoption remains pending).
-   The joined pinned motion-path oracle fix and identity-capacity atomic refusal are integrated.
-5. **Measure engine-1 before deletion**: after the remaining commands and document-class
-   flips, stop all subagents and run the complete baseline-0 matrix on an idle machine.
-   Report the before/after table before starting any deletion.
-6. **S3 item 8, delete the JavaScript renderer**: first the camera monitor on WebGL2, frame
-   drafts and deep movieclips in the gate, in-between previews, and the no-threads decision;
-   then delete and trace every indirect use (workers, dynamic imports, packaging).
-7. **S5 phases 2–3**: handle positions, picking and snapping as engine queries; the engine
-   holds the document; delete the JavaScript evaluation, geometry, IK, rig, movieclip and
-   effect-model modules (each only once nothing calls it).
-8. **S7**: final interleaved benchmarks and `docs/performance/RUST-ENGINE-PERFORMANCE.md`,
-   interface screenshots against the baseline, Windows CI, documentation pass.
-
-### Open problems and unverified areas
-
-- **Parked after the 22:37 user correction:** private Core typed encode/dispose
-  (`tmp/engine-worktrees/core-typed-encode`), Static/owned-cache preparation
-  (`tmp/engine-worktrees/static-owned-cache`), native async early-completion scaffold
-  (`tmp/engine-worktrees/origin-async-preflight`) and packed pose storage normalization
-  (`tmp/engine-worktrees/native-storage-normalize`). Their recordings, diagnostic
-  failures, source drafts and exact restored mutation evidence are preserved. None is
-  an app milestone or authorized for immediate integration. Resume one only after
-  identifying the concrete next class flip, engine-1 or deletion it blocks. The actual
-  packed save/reopen bug remains recorded: byte-stable native roundtrip passes while
-  authored-pose evaluation differs. It does not currently block the `figures` flip.
-
-- Not verified at all: Windows and macOS builds, packaged desktop builds, CI for the engine
-  (no Windows CI), real phones and tablets (iOS shared-memory limits, Android), GPUs other
-  than this machine's, Firefox and Safari. Electron's WebGPU canvas shows nothing under Xvfb
-  here, so Electron parity ran on ANGLE/Vulkan or WebGL2.
-- Benchmarks not yet run: the final interleaved benchmark set and the performance report;
-  numbers in the milestone log are single runs on a shared, loaded machine.
-- `wasm-opt` is not installed: the WebAssembly modules are not size-optimized.
-- Native motion admits five remote-time and two saved-native families; native scalar
-  projection and the eight recorded native TRUE live families are integrated through
-  the same authored worker publication, preserving original options and complete views.
-  Wider ordinary/complex targets and browser owner admission remain refused; five
-  recorded asynchronous preflight tapes still require their awaited worker protocol.
-- Cache and quiet actor no-progress Busy retry gaps are corrected through the same
-  finite progress owner. The pre-Ready Busy cancellation race is also corrected before
-  integration. Portable Core live coupling is integrated; encoded readiness, exclusive
-  app writer transfer and actual shown/query ordering remain open. Global last-owner
-  retirement/physical accounting and shutdown
-  ACK remain separate D7 obligations.
-- Scoped generation/assets publication and recorded guarded typed glyph/image pairing
-  are integrated without actual Core/Stage adoption. The opt-in route uses the same
-  guarded after-Cache Loader; the ordinary independent-loader route still cannot encode
-  those actual Editor glyph identities. Native/nested/background imports and additional
-  typed heads remain refused. Private Frame allocation observation covers only its
-  explicitly visited branches, with no runtime admission or complete physical bound.
-  Current-ready raw roots now remain charged after terminal ACK through their existing
-  1 GiB receiver owner and exact worker disposal. This scope excludes Editor history/
-  clipboards, typed/encoded physical union and browser drain. The editing materialization/
-  source allowance remains a separate unchanged 128 MiB owner.
-- Section 6 lists the rest: auxiliary cel previews/monitor and crisp export, CPU rasterizer on nearly coplanar 3D
-  faces, out-of-memory not recovered, `svr_uriel.piv` too large for the reference tool,
-  Clippy warnings in `styk-eval`, the codec's `.stk` segment-edit defect.
-
-### Unmerged branches and worktrees
-
-| Branch / worktree | State |
-| --- | --- |
-| `worktree-agent-a94722e0321bf1854` in `.claude/worktrees/agent-a94722e0321bf1854` | Clean historical WIP at `5fbb3696`; its sampling changes were reviewed, extended and integrated in the cel milestone. No remaining edits there. |
-| `engine-origin-records` in `tmp/engine-worktrees/origin-records` | Record/pose/channel/range/join/2D-rig, strict validation, optional selection, native scalar lifecycle, sheet motion and native/saved-native motion integrated. Angle45 and spatial80 are reviewed and integrated. Native property-channel projection diagnosis/recording continues in `tmp/engine-worktrees/origin-native-saved`. Historical worktree and immutable snapshots remain preserved. |
-| `engine-session-deltas` in `tmp/engine-worktrees/session-deltas` | Canonical root/history/publication prerequisites integrated. Quiet actor, one-shot admission, expiry/input and final bounded-retry/cancellation corrections reviewed and integrated. Portable same-Session live/display capability and complete-return recordings and portable Core live coupling integrated; scoped prebuilt generation/assets and actual-shown ACK continue independently. No app gate. |
-| `engine-movieclip-commands` in `tmp/engine-worktrees/movieclip-commands` | Complete recorded source/capture/insertion/extension stack and canonical worker Bake/TOP/strict-history observer integrated. The concurrent stale trace explicitly refuses its recorded interleaving at step 2. All immutable dependency/source/evidence freezes remain preserved. This agent now owns the isolated FrameCache D7 work below. |
-| `tmp/engine-worktrees/frame-cache-d7` (detached at `011ac7ea`) | Reviewed single Storage owner, one-shot UI reads and Applied/Unchanged/Busy controls with finite coalesced playback retry integrated. Dense reset/trim/stale disposal moves outside State; portable encoded retained-buffer accounting is reviewed and integrated without a runtime caller. Final-owner retention/aggregate charging/shutdown remain open. Independent target/dependencies, no main/mobile edits or cache clean. |
-| `engine-camera-follow-edit` in `tmp/engine-worktrees/camera-follow-edit` | Camera/follow/bounds/native builder/sprite/new-figure group integrated. Handle/body/snapping/marquee queries and per-clip/lineage cache budgets integrated. Closest-joint borrowed-order query integrated. Independent layer/movie and assembled-main reviews completed; exact frozen source manifests retained for the integrated dependency stack. |
-| `engine-renderer-gaps` in `tmp/engine-worktrees/renderer-gaps` | Worker monitor, in-between sampling, cold-cache/camera readiness, WebGL resolve and dirty ownership reviewed; bounded common record lifting and canonical ACK receiver integrated. Reviewed destination-grid cel fix and single-child correction integrated from immutable 18-path freeze; original software-web and default Electron GPU 4/4 pass on main. Auxiliary clip/paint mismatch has an independent reproduction; coherent CanvasDirect32, exact root sampling and recorded real-source/DOM-history corrections are integrated and verified on main shipping9a94cb89. Main Electron10/web10/lifecycle11 and six composited exports pass unchanged D13; immutable rejected prototypes and exact Legacy before/after evidence are preserved. The source19 final freeze is tmp/styk-cel-monitor-real-source-final-20261005. SceneFX camera-image and residual cel/onion/crisp differences remain open. Immutable evidence retained; no early gate flips. |
-| `engine-root-integration` in `tmp/engine-worktrees/root-integration` | Root-owned preparation based on `e5bb439f`: compact/camera/origin range/rig/pose and strict-validation preparation integrated into main after review/focused verification. A separately isolated crisp owner prototype passed CPU/GPU but failed 13/16 original-GPU comparisons and was rejected; exact original sources restored. No copied tree is treated as a milestone. |
-| `tmp/engine-worktrees/movie-integration` (detached at `7ff82b2c`) | Separate clean dependency integration: reviewed movieclip/layer/history/readiness/publication/selection stack. Exact reviewed/focused-tested dependency snapshot has been integrated; preserve its immutable inputs/evidence, no runtime gate. |
-| `tmp/engine-worktrees/checkpoint` (detached, updated only between runs) | Persistent isolated checkout and Cargo cache for background full checkpoints on immutable committed HEAD. Shared locked dependencies; no concurrent checkout mutation. Earlier checkpoints `53e3bdd9`, `9728e86e` and `805688d5` passed; the interrupted `805688d5` compile attempt remains preserved. Committed `4f4808c0` passed at 23:12 CEST: 58 stages, 730 release-selected tests, two explicitly ignored diagnostics and 358 containers. All 137 release test executables remain fresh after regeneration in 0.29 s (0.34 s wall time). Main was `5928c21a` at completion; this result does not certify that later commit or the pending renderer. Next regular run no earlier than 2026-10-05 00:02 CEST; class gates, engine-1 and deletion still require their own committed-HEAD checkpoint. |
-| `tmp/baseline-worktree` (detached at `96ebce85`) | The pre-port baseline for before measurements and screenshots. Keep. |
-
-`main` and `mobile-android` are unrelated to the port. Do not touch the mobile worktree.
-Other historical stale worktree registrations were reported at takeover and preserved.
-
-### Standing rules
-
-**Verification policy (user correction, 2026-10-04):** per reviewed patch or milestone,
-run focused crate tests (whole workspace only for a shared-type change), affected command
-replays and their fixture regeneration, `npm run check` and touched JavaScript tests.
-Run affected app parity/shadow only for app-visible behavior or adoption. Commit when
-these pass; safely batch two or three independent patches before focused verification.
-Full `engine:parity` runs on a committed HEAD in the background at most about once every
-two hours; continue merging without waiting. It is required before a document-class
-gate, engine-1 and each deletion step. A failing checkpoint is bisected across commits
-since the last green run and fixed forward; never rewrite history. Checkpoints need an
-immutable source snapshot so concurrent merges cannot change their tested bytes. Keep
-its target cache and flags stable.
-
-**Release-cache diagnosis:** Cargo fingerprint logs identify regenerated origin JSON
-embedded by four `include_bytes!` calls as stale inputs even when bytes are unchanged.
-Those unit tests now read the same fixtures at runtime, like the replay tests. After
-regeneration, the affected release unit target is fresh in 0.05 s (previous unnecessary
-relink 65 s). Dependencies were cached; source changes legitimately relink release
-binaries with thin LTO, and single-crate versus full-workspace feature graphs keep
-distinct cached artifacts. The new logarithm binary fixture likewise reads at runtime; its release target remains fresh in 0.04 s after identical regeneration. The new origin rig, follow cold-path, movieclip, history and layer-planning test fixtures likewise read at runtime; no regenerated JSON fixture is embedded in a Rust test binary. After all affected regeneration, both edit/eval unit targets remain fresh (0.11 s, debug). The complete committed-HEAD checkpoint preserves its persistent isolated cache; after every generator the whole release test target is fresh in 0.43 s. Its first 2,297.5 s Rust stage was a cold isolated cache, not repeated cache loss. No target was cleaned and parity flags/profile are unchanged.
-
-- The user explicitly superseded the original two-subagent cap during takeover: use all
-  available slots for independent, bounded work (currently five child lanes plus root).
-  Every child prompt forbids nested subagents, agents and workflows. Heavy GPU/app checks
-  are serialized; engine-1 runs only when every child is stopped and the machine is idle.
-- Never push, open PRs, publish or release without the user asking. Commit only verified
-  states, as the configured git user, messages ending with the `Co-Authored-By` line.
-- Update this plan at every milestone (milestone log with the time from `date`, sections 6, 7
-  and 8), `docs/engine/`, and `engine/inventory.tsv` (then `node scripts/engine-inventory.mjs
-  --render`). Delete a JavaScript module once nothing calls it, after tracing workers, dynamic
-  imports, IPC and packaging.
-- D7: never block the interface thread. D13: never tune a parity threshold to pass. D15: the
-  engine owns a document class only once its calls cost no more than the editor's, adoption
-  included, and the owned run equals the editor alone. D16: arithmetic whose results are
-  stored uses `styk-math` (V8-exact), never `f64::sin` and friends. D18: values the editor
-  draws at random go through `src/editor-draws.mjs`.
-- A command is ported only with recorded replays that match the editor at every step
-  (recordings with `Unported` steps do not count), plus mutation checks.
-- Electron only under `xvfb-run -a` with `ELECTRON_RUN_AS_NODE` unset, never in loops; heavy
-  builds under `nice -n 15`; never a kill pattern on the same line as `pkill -f`; never bare
-  `git stash`; restore `artifacts/` after tests; the private corpus in `~/Downloads` is read
-  in place, never copied into the repository.
-
-### Daily commands
+- **Handoff:** the next section, current class gate and verification workflow.
+
+## Handoff (2026-10-05, figures opened)
+
+Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
+and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
+Preserve unrelated work and bind verification to the actual source and package tested.
+
+**Current decision:** `figures` now joins `large figures` and `3d` in default editing.
+Stop pose micro-optimizations; proceed to `movieclips`, then `channels`. The matching
+committed engine checkpoint at `f4173cf0` passed **849 native tests**, two existing ignored
+diagnostics, **64 stages / 358 containers**, completed 15:36 CEST on 2026-10-05.
+The two final gate JavaScript files are covered by **86 focused tests**, Main check
+(2,000 JavaScript files, 93 stylesheets, 682 modules) and actual default app proof;
+they are outside that preceding full checkpoint. Each startup/rig/joined default run
+reports **31 owned / 15 compared / 46 calls**, with positive Native call/adoption clocks
+for pose, move and commit and exact document/history/selection/full undo. Core call
+counts are 24/2/5; these include fallback, not per-method adoption counts. No public API,
+stored arithmetic or mobile adaptation changes.
+
+**Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass the
+full paired workload when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes
+owned/adoption, eligible JS fallback and failed attempts once; `J` is editor-alone cost;
+`N = min(candidate.report.calls, editorAlone.report.calls)` across the complete timed
+runs. Exact behavior and D13 are unchanged. B14 excess averages are
+**0.047679 / 0.067983 / 0.071809 ms** over **448 / 295 / 329** calls for
+startup/rig/joined-chain, passing the absolute-average arm. Full page counts differ
+(448/474, 295/295, 329/338); eligible counts 171/128/129 match. Historical literal
+cost outcomes remain unchanged in the [cost report](performance/RUST-EDITING-CLASS-GATES.md)
+and its [data](performance/RUST-EDITING-CLASS-GATES.json).
+
+**Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
+1 removed** unchanged; **OWNED_CLASSES 2→3**; **deleted JS 2→2**; completed full cost
+rows **33→36**; **engine-1 0/28→0/28**. Other command families remain JavaScript;
+the figures class flip does not promote their whole modules.
+
+**Next:** close only the three `movieclips` gate requirements:
+
+1. Measure the unchanged full paired `sheet-movieclip` and `sheet-movieclip-loose`
+   workloads under the new rule, including fallback and failed attempts once.
+2. Prove actual default class admission with positive pose/move/commit native/adoption
+   clocks and exact document/history/selection/full undo. Mock class controls do not
+   replace this proof.
+3. Obtain the matching committed engine checkpoint before the flip, then verify the
+   tiny class Set change with focused final-gate tests and actual app proof. Existing 14 tapes/254 calls already cover recorded commands; no missing
+   Rust-command prerequisite is identified for this flip.
+
+Then verify `channels` under the same rule on its original inputs. Preserve classifier
+precedence and native-channel/movieclip-source/origin exclusions. Limit each class to
+about five concrete blockers.
+A prerequisite may resume only when it blocks the next class flip, engine-1 or deletion;
+name that outcome in the commit. The scoped renderer/export milestone is complete;
+remaining renderer, storage, async-command and physical-retirement work stays in
+[open problems](#6-open-problems). Do not open general prerequisites.
+
+### Verification and ownership
+
+Per reviewed milestone, run focused crate tests (whole workspace only for shared types),
+affected recorded replays and byte-stable regeneration, `npm run check` and touched
+JavaScript tests. Run affected app parity/shadow for app behavior or adoption. Safely
+batch two or three independent patches; commit only verified states. Every milestone
+records inventory, owned-class, deleted-JS and measured-benchmark counters; every commit
+must advance at least one of them.
+
+Full `engine:parity` runs on an immutable committed HEAD in the background at most about
+once every two hours; keep its persistent isolated target, locked dependencies and flags.
+A matching committed engine checkpoint is required before a class gate, with focused
+verification of the final gate JavaScript; engine-1 and deletion also require a matching
+checkpoint. Bisect any failure across
+commits since the last green and fix forward; never rewrite history. An earlier green
+checkpoint does not certify later source. Generated test fixtures are read at runtime;
+byte-identical regeneration must not force embedded-fixture relinking.
+
+Root owns Main integration and serializes heavy GPU/app checks. Isolated owners use
+bounded tasks without nested agents, exchange exact frozen source/evidence and merge
+reviewed owning hunks; do not overwrite newer Main owners or clean another lane's cache.
+Keep the checkpoint worktree and `tmp/baseline-worktree` (`96ebce85`). Preserve historical
+worktrees and immutable experiments. General Core/static/cache/storage lanes are parked;
+active work is limited to the next class gate. The mobile checkout remains untouched at
+`661c6ad8`; no mobile API adaptation is needed for this milestone.
+
+D7 forbids blocking the interface; D13 forbids tuning pixel thresholds; D15 requires
+record-for-record behavior and the current class-cost rule; D16 requires `styk-math`
+for stored arithmetic. D18 routes editor randomness through `src/editor-draws.mjs`.
+Unported recordings do not establish command coverage. Never push, open PRs, publish or
+release without user instruction. Preserve configured commit authorship and the required
+`Co-Authored-By` trailer.
+
+After class flips, stop all subagents and run the complete idle engine-1/baseline-0 matrix
+before deletion. Trace workers, dynamic imports, IPC and packaging before removing JS;
+retain platform/interface verification, no-threads and remaining mobile/browser gaps.
+Use Node 24.11.0 and Python 3.12.9, `nice -n 15` for heavy builds and `xvfb-run -a` with
+`ELECTRON_RUN_AS_NODE` unset for Electron. Do not use bare `git stash`, clean targets or
+copy the private Downloads corpus into the repository; restore test artifacts.
+
+### Starting commands
 
 ```sh
 export STYK_PYTHON=$PWD/.venv/bin/python
-npm run engine:build                    # WebAssembly into src/engine/pkg/ (the app needs it)
-npm run engine:test                     # Rust tests
-npm run engine:parity                   # fixtures, regeneration byte-stable (needs a clean tree), containers
-npm run check && npm test               # JavaScript checks and unit tests (6 known failures)
-node engine/tools/edit-scenarios.mjs    # regenerate command scenarios
-node engine/tools/edit-replay.mjs <scenario.json> <reference.json>   # record in the JS editor
+npm run engine:build
+npm run engine:test
+npm run engine:parity                    # committed-source full checkpoint
+npm run check
+node engine/tools/edit-scenarios.mjs
+node engine/tools/edit-replay.mjs <scenario.json> <reference.json>
 (cd engine && cargo build --release -p styk-cli)
-engine/target/release/styk edit-replay engine/tests/edit/<name>.reference.json   # N/N steps match
-node scripts/engine-edit-shadow.mjs --exact-math [--file doc.json]  # app shadow, compared
-node scripts/engine-edit-shadow.mjs --own --warm --exact-math       # engine owning, against the editor alone
-node scripts/engine-edit-shadow.mjs --own --warm --exact-math --capture /tmp/cap
-engine/target/release/styk edit-session /tmp/cap/<run>-<n>.capture.json      # replay an app session natively
-node scripts/engine-app-parity.mjs …    # stage pixels with and without the engine (D13)
+engine/target/release/styk edit-replay engine/tests/edit/<name>.reference.json
+node scripts/engine-edit-shadow.mjs --own --warm --exact-math [--file doc.json]
+node scripts/engine-edit-shadow.mjs --own --default --figures-gate --exact-math [--file doc.json]
+node scripts/engine-app-parity.mjs …
 node scripts/engine-inventory.mjs --render
-npm run locales:build                   # when check reports a stale message context
-npm run changelog:check
 ```
 
 ## 1. What "the engine" is
@@ -867,13 +307,12 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
-- **Current figures gate:** completed B13 full cost preserves exact parity/accounting but is FAIL/FAIL/PASS: 229.250/228.405, 132.270/120.710 and 150.580/153.405 ms candidate/JS. B14 passes 405 native tests, 28 replays / 942 exact steps and source-stable shipping `10b6b47a17ed`; independent runtime review `1b63f9ef` accepts this focused scope. Three gate blockers remain after that verification: passing unchanged full startup/rig/joined cost on committed B14, its matching final checkpoint, and positive actual default core adoption with exact document/history/selection/full undo. Predecessor `5d2f589a` is green at 844 Rust tests (two existing ignored), 64 stages and 358 containers, completed 14:03 CEST with a clean checkout; it does not certify B14.
-- **Current figures cost candidate (B14):** the existing coherent raw/typed pair can retain an ordinary typed Object when its bounded raw guard proves only pose fields changed. Original numeric conversion, wrapper metadata and ordered diagnostic fallbacks remain. Five controls pass within the 405 native tests; fresh CLI matches all 28 references / 942 steps. Actual hit rate and full B14 workload cost are unmeasured; no saving or class admission is claimed.
+- **Figures opened:** the user-approved cost arm, matching `f4173cf0` engine checkpoint and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next movieclips, then channels.
+- **Next class:** verify the existing movieclip inputs with full paired cost under the same +5% **or** 0.1 ms-per-call rule, a matching class checkpoint and actual default core adoption; then channels. Broader publication/lifetime/accounting/D7 work remains parked unless it blocks that flip, engine-1 or deletion.
 
-- **Next figures gate (three blockers):** (1) fresh full startup/rig/joined cost must pass on the committed final candidate; completed B13 costs are 229.250/228.405, 132.270/120.710 and 150.580/153.405 ms candidate/JS (FAIL/FAIL/PASS), with strict state/full undo/count/accounting and positive core clocks exact; (2) the final candidate needs a matching committed-source checkpoint; (3) actual default `classes` pose/move/commit adoption must be positive. Figures remains closed. Thirty-three full rows preserve the historical evidence; failed attempts are included once and comparison-only residuals remain separate. General publication/lifetime/accounting/D7 work stays parked unless it blocks this flip, engine-1 or deletion.
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
-- **Next movieclips gate:** after figures, remeasure the existing `sheet-movieclip` and `sheet-movieclip-loose` app inputs with full cost accounting, then prove nonzero default core adoption and a matching checkpoint. Their recorded gestures/publications already have parity evidence. Playback controls are compared, not adopted; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their current excluded classes; do not enable dense worker-only commands by changing the class Set.
+- **Next movieclips gate:** remeasure the existing `sheet-movieclip` and `sheet-movieclip-loose` app inputs with full cost accounting, then prove nonzero default core adoption and a matching checkpoint. Their recorded gestures/publications already have parity evidence. Playback controls are compared, not adopted; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their current excluded classes; do not enable dense worker-only commands by changing the class Set.
 
 - **Next channels gate:** after movieclips, measure the app-held saved `legacyAnimation` class on `channels-figure` and representative larger input before default core adoption and its matching checkpoint. The historical small input costs 289.3/116.9 ms candidate/JS and larger-class cost is unmeasured. Existing scalar/property replays do not certify that class cost; native saved channels and origins retain their separate admission guards.
 
@@ -1127,7 +566,7 @@ layer-sheet movieclip replacements.
 
 ## 7. Parity results
 
-B14 passes **405 native tests** (224 edit, 181 eval), with two existing ignored, zero failed/filtered and all five new pose-field controls across 101 groups. Fresh CLI `adc8cff6` / 347,875,280 B matches **28 recorded references / 942 exact steps**, all 40 guards and stable executable identity. Main passes 82 JavaScript tests and check (2,000 files). All 3,670 fixture JSON remain unchanged; comparison of 4,256 engine paths differs only at the two reviewed source endpoints and the isolated lane’s older inventory notes (`039aebc1`). Source/native/runtime reviews `fe0538d3` / `f1ddde1f` / `1b63f9ef` certify this focused scope. Shipping `10b6b47a17ed` / 10,243,996 B, 81.92 s, retains the required wasm profile, stable 1,529-source/three-input maps and unchanged codec/drawing modules. Completed B13 full cost preserves strict document/history/selection/full undo, counts and accounting with literal FAIL/FAIL/PASS costs (229.250/228.405, 132.270/120.710, 150.580/153.405 ms candidate/JS), review `f26a1d97` and append review `f07d57a2`. The rig failed Native interval and its JS fallback are each included once; comparison-only residuals remain separate. The existing 33 full rows do not open figures or establish a causal saving. B14 full app cost, matching final checkpoint and default ownership remain pending.
+B14 retains exact focused verification: 405 native tests (224 edit, 181 eval), two existing ignored; five new controls, 28 recorded replays/942 steps, 82 JavaScript tests and check pass. All 3,670 fixture JSON remain unchanged. Completed full startup/rig/joined-chain behavior and accounting match; literal costs 234.310/212.950,143.690/123.635,164.870/141.245 ms remain FAIL/FAIL/FAIL. Under the current user policy, average excess over the smaller paired full call count is 0.047679/0.067983/0.071809 ms, so all three pass the absolute-average arm. The committed `f4173cf0` engine checkpoint passes 849 native tests, two existing ignored, 64 stages and 358 containers. Final gate verification passes 86 JavaScript tests and Main check; all three actual default runs report 31 owned/15 compared/46 calls, positive Native core clocks and exact full undo. Figures is opened; the short default workload is admission proof, not new cost evidence. No pixel threshold, stored arithmetic or API changes.
 
 B13 passes 400 native tests (219 edit + 181 eval), two existing ignored and zero filtered, including all four effect-reuse controls. Fresh CLI `1280d852` / 347,845,328 B matches 27 recorded references / 925 exact steps with all 39 guards and executable identity stable. All 3,670 JSON fixtures remain unchanged; comparison of 4,256 engine paths differs only at the two reviewed endpoints plus the isolated lane's older inventory notes. Main passes 82 JavaScript tests and check. Source `d271437d`, native receipt `6f0e7504` and independent runtime `f457306b` certify this focused scope. Shipping `e5476f401799` / 10,241,930 B retains the required wasm profile and stable sources, with codec/drawing unchanged. Completed B12 full cost has exact parity/accounting on all three inputs but FAIL/PASS/FAIL cost; review `3c556bdd` and append review `bad26295` preserve all historical evidence. B13 full app cost, matching final checkpoint and default ownership remain pending.
 
@@ -1711,3 +1150,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 12:06 | Skip unused segments when dragging joined figures | An ordinary selected-joint query narrows selected segments when the frame has no pins, retaining complete parents and original joined topology, warnings, publication and full fallbacks. This targets the measured figures class-cost blocker. Mobile: the existing portable query's semantic scope includes joined no-pin frames; signature/schema/stored math are unchanged. **Counters:** inventory 175 js / 123 partial / 35 ported / 22 verified / 1 removed unchanged (notes); OWNED_CLASSES 2→2; deleted JS 2→2; measured full-workload joined instrumented diagnostic 0→1 at candidate/JS 305.950/280.750 ms; official full class-cost rows 27→27; engine-1 0/28→0/28. | 396 native tests (215 edit, 181 eval), two existing ignored; both new controls and all old guards pass. Fresh CLI 16 tapes / 591 exact steps; all 3,670 fixture JSON unchanged. Main 82 JS/check 2,000 pass. Source f5463546, native 74d5902c, runtime 12347ec9; shipping b65ff69acb49 / 10,241,354 B, 68.33 s/source-stable, required profile, codec/drawing unchanged. Full B11 joined diagnostic parity/counts/clock bridges accept with signed-sample exclusions (83a2ca49/57cfa98f/34bb6172); no removable adoption duplicate found. Instrumented timings establish no speed gain. Predecessor 69bbe7ab checkpoint passes 837 native/two existing ignored, 64 stages and 358 containers with a clean checkout. Next: fresh committed three-document cost, matching final checkpoint and actual default adoption before figures opens. |
 | 2026-10-05 12:54 | Reuse unchanged effects while posing figures | Existing coherent raw/typed conversion shares warning-free effect tables; malformed/ambiguous data retain the original ordered diagnostics. This targets the measured figures cost blocker. Mobile: existing portable Loader API gains this reuse; signature/types/stored math/schema are unchanged. **Counters:** inventory 175 js / 123 partial / 35 ported / 22 verified / 1 removed unchanged (notes); OWNED_CLASSES 2→2; deleted JS 2→2; full class-cost benchmark rows 27→30; engine-1 0/28→0/28. | 400 owning Rust tests, two existing ignored; four new controls; 27 recorded replays / 925 exact steps; 3,670 fixtures unchanged; 82 JS/check pass. Native receipt 6f0e7504, independent runtime f457306b. Shipping e5476f401799 / 10,241,930 B, 64.07 s, required profile/source-stable, codec/drawing unchanged. Completed B12 full costs 245.100/205.235, 132.080/133.770, 153.885/138.660 ms FAIL/PASS/FAIL preserve parity/full undo/accounting, review 3c556bdd / append bad26295. No causal gain or B13 cost claim. Next unchanged committed B13 cost, matching checkpoint and actual default adoption; figures remains closed. |
 | 2026-10-05 13:58 | Reuse unchanged fields while posing figures | Existing coherent raw/typed conversion retains ordinary typed nonpose fields only within the 64-field same-Shape/raw-node guard. Changed pose conversion, metadata, rich/diagnostic fallbacks and duplicate-key lookup remain exact. Mobile: existing portable Loader semantics extend; signatures/types/stored math/schema are unchanged. **Counters:** inventory 175 js / 123 partial / 35 ported / 22 verified / 1 removed unchanged (notes); OWNED_CLASSES 2→2; deleted JS 2→2; full class-cost benchmark rows 30→33; engine-1 0/28→0/28. | 405 native tests (224 edit, 181 eval), two existing ignored, zero failed/filtered; all five new controls pass. Fresh CLI adc8cff6 / 347,875,280 B matches 28 references / 942 exact steps, 40 guards; 3,670 fixture JSON unchanged, source comparison039aebc1. Main 82 JS/check (2,000 files) pass. Source/native/runtime fe0538d3/f1ddde1f/1b63f9ef. Shipping10b6b47a17ed / 10,243,996 B, 81.92 s, required profile/source-stable, codec/drawing unchanged. Completed B13 full costs229.250/228.405,132.270/120.710,150.580/153.405 ms FAIL/FAIL/PASS preserve parity/full undo/accounting, reviewf26a1d97/appendf07d57a2. No causal saving, hit-rate or B14 cost claim. Next unchanged committed B14 cost, matching checkpoint and actual default adoption; figures remains closed. |
+| 2026-10-05 13:44 UTC | Enable default figure editing | Open the existing `figures` class after exact behavior, matching checkpoint and positive default core adoption. The user-approved class-cost rule permits up to +5% or 0.1 ms average excess per conservative full timed call. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 2→3; deleted JS 2→2; full cost rows 33→36; engine-1 0/28→0/28. | B14 excess 0.047679/0.067983/0.071809 ms over 448/295/329 calls passes the absolute-average arm; old literal FAIL rows remain exact. Matching committed engine checkpoint: 849 native tests, two existing ignored, 64 stages/358 containers. Final gate: 86 focused JS/check pass; actual default startup/rig/joined each31 owned/15 compared/46 calls, positive Native core clocks and exact full undo. Exact behavior/D13/API/stored math remain unchanged. Next movieclips, then channels. |

@@ -48,3 +48,11 @@ reproduced as Node computes it (D16). Runtime state the document does not carry 
 focus locks, the timeline's layer selection, counters, auto key) is handed to the engine
 with each session and call; `editing.md` lists it. Until the flip nothing the engine
 computes for an edit is shown to the user, so a wrong port cannot damage a document.
+
+## Cost gate revision (2026-10-05)
+
+For `figures`, `movieclips` and `channels`, the user-approved full paired class gate is
+`C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`, with adoption, eligible fallback and
+failed attempts counted once and `N` the smaller complete timed `report.calls` count.
+Exact record-for-record behavior and D13 remain unchanged; see
+[editing.md](../editing.md#which-classes-the-engine-edits-by-default).

@@ -10,7 +10,7 @@
  *
  * Engine-owned editing: the engine runs the calls in OWNED in the editor's place while a
  * session lives, by default for documents of an editing class in OWNED_CLASSES (D15:
- * classes measured not slower than the editor), for every document with `?engineEdit=on`
+ * classes that meet the accepted editing cost limit), for every document with `?engineEdit=on`
  * (or `localStorage['stykanimate.engine.ownEdit'] = 'on'`), never with `off`. The editor
  * adopts the gesture's draft and what the call published (`adoptLayerSheet`), with its own
  * bookkeeping, events and history, and does not compute them. The other ported calls
@@ -136,10 +136,10 @@ export function editingClass(report) {
   return figures.reduce((sum, figure) => sum + (figure?.segments?.length ?? 0), 0) >= LARGE ? 'large figures' : 'figures';
 }
 
-/** The classes the engine edits by default: their calls cost no more in the engine than in
- * the editor, adoption included (measured 2026-10-03 and, for `3d`, 2026-10-04:
- * docs/engine/editing.md). */
-export const OWNED_CLASSES = new Set(['large figures', '3d']);
+/** The classes the engine edits by default: their measured cost meets the class limit,
+ * adoption included (measured 2026-10-03, for `3d` 2026-10-04, and for
+ * `figures` 2026-10-05: docs/engine/editing.md). */
+export const OWNED_CLASSES = new Set(['large figures', '3d', 'figures']);
 
 /** Event details as plain data, as engine/tools/edit-replay.mjs records them. */
 const plain = (value, depth = 4) => {
