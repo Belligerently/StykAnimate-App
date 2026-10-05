@@ -304,6 +304,7 @@ impl Editor {
 
     /// `report._styk.layers.activeId = id`.
     pub(crate) fn set_active_layer(&mut self, id: &str) {
+        if self.report.path(&["_styk", "layers", "activeId"]).and_then(Value::as_str) == Some(id) { return; }
         let layers = self.report.make_obj().and_then(|r| r.get_mut("_styk")).and_then(Value::make_obj).and_then(|s| s.get_mut("layers")).and_then(Value::make_obj);
         if let Some(layers) = layers {
             layers.set("activeId", Value::str(id));

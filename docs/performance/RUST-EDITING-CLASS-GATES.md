@@ -345,3 +345,30 @@ checkpoint is certified. Owned classes 4, inventory 175/123/35/22/1 and deleted 
 stay unchanged; completed full rows 39→40, engine-1 remains 0/28. Historical raw values
 remain exact. Original clocks, argv, actual timestamps/load and source/package identities
 are in the companion JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1).
+
+
+## Channels same-layer selection reuse — completed 2026-10-05, gate closed
+
+Selecting or restoring an identical raw active-layer string now keeps the current
+report, preparation and evaluated frame. Changed-value writes, events/results and
+history are unchanged. Both new controls and 226 Rust tests pass with no failures,
+ignored or filtered tests; 53 recordings/2,060 exact calls, 125 JS tests and Main
+check pass. Recordings are unchanged. Shipping Wasm is 10,245,640 B with the required
+profile; the build took 56.86 s, with codec/drawing unchanged and generated JS unchanged.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Current user rule |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Channels-figure | 181.885 | 216.650 | 7.330 | 0.050 | 224.030 | Fail |
+
+The original full paired run preserves exact document/history/selection/full undo,
+with 126 owned/219 compared/one failed/346 calls and 130 matching eligible calls.
+Both pages have 346 full calls; excess is 0.121806 ms/call, leaving 7.545 ms to the
+per-call arm. Both policy arms fail. The rejected Native paste and original JS fallback
+are separate intervals counted once; comparison-only residual is zero. This loaded
+run establishes no causal speed gain or regression.
+
+Channels remains closed; no matching new checkpoint or default proof is claimed.
+Owned classes 4, inventory 175/123/35/22/1, deleted JS 2 and engine-1 0/28 are unchanged;
+completed full rows 40→41 and metadata batches 14→15. Original clocks, argv, actual
+capture timestamps/load and source/package identities are retained in the companion
+JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-active-layer-full-1).

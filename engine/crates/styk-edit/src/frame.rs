@@ -364,6 +364,72 @@ mod tests {
     }
 
     #[test]
+    fn same_active_layer_select_and_restore_reuse_the_current_evaluation() {
+        let reference = recorded("channels-figure-sheet");
+        let mut editor = recorded_editor(&reference);
+        let report = editor.report.clone();
+        let bytes = editor.report_json();
+        let history = styk_doc::json::to_string(&editor.history_value());
+        let state = styk_doc::json::to_string(&editor.state_value());
+        let selection = styk_doc::json::to_string(&editor.selection_state().history_value());
+        let prepared = editor.prepared().unwrap();
+        let shown = editor.shown_frame().unwrap();
+        let step = reference.get("steps").unwrap().item(1).unwrap();
+        let call = step.get("call").unwrap().elements().unwrap().iter().collect::<Vec<_>>();
+        let result = editor.call(call[0].as_str().unwrap(), &call[1..]).unwrap();
+        assert_eq!(result, *step.get("result").unwrap());
+        assert_eq!(Value::array(editor.take_events()), *step.get("events").unwrap(), "selection still emits its original event");
+        assert!(editor.report.same_node(&report), "selecting the current layer must not COW-replace the document");
+        assert!(Arc::ptr_eq(&prepared, &editor.prepared().unwrap()), "the second selection read retains the same preparation");
+        assert!(shown.same_node(&editor.shown_frame().unwrap()), "the second selection read retains the evaluated record");
+        assert_eq!(editor.report_json(), bytes);
+        assert_eq!(styk_doc::json::to_string(&editor.history_value()), history);
+        assert_eq!(styk_doc::json::to_string(&editor.state_value()), state);
+        assert_eq!(styk_doc::json::to_string(&editor.selection_state().history_value()), selection);
+
+        let restored = editor.selection_state();
+        editor.restore_selection(&restored).unwrap();
+        assert!(editor.report.same_node(&report), "history restoration to the same active layer keeps the current document");
+        assert!(Arc::ptr_eq(&prepared, &editor.prepared().unwrap()));
+        assert!(shown.same_node(&editor.shown_frame().unwrap()));
+        assert_eq!(editor.report_json(), bytes);
+        assert_eq!(styk_doc::json::to_string(&editor.history_value()), history);
+        assert_eq!(styk_doc::json::to_string(&editor.state_value()), state);
+        assert_eq!(styk_doc::json::to_string(&editor.selection_state().history_value()), selection);
+        assert!(editor.take_events().is_empty());
+    }
+
+    #[test]
+    fn active_layer_equality_preserves_missing_null_nonstring_and_changed_writes() {
+        for active in [None, Some(Value::Null), Some(Value::Num(0.0)), Some(Value::Bool(false)), Some(Value::str("camera"))] {
+            let mut editor = recorded_editor(&recorded("channels-figure-sheet"));
+            let layers = editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().get_mut("layers").unwrap().make_obj().unwrap();
+            match active { Some(active) => layers.set("activeId", active), None => { layers.remove("activeId"); } }
+            layers.set("futureActiveHint", parse(r#"{"preserve":[null,1,"layer-1"]}"#));
+            let report = editor.report.clone();
+            let history = styk_doc::json::to_string(&editor.history_value());
+            let state = styk_doc::json::to_string(&editor.state_value());
+            let prepared = editor.prepared().unwrap();
+            let shown = editor.shown_frame().unwrap();
+            let mut expected = report.clone();
+            expected.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().get_mut("layers").unwrap().make_obj().unwrap().set("activeId", Value::str("layer-1"));
+            editor.set_active_layer("layer-1");
+            assert!(!editor.report.same_node(&report), "only an existing equal string can omit the original write");
+            assert_eq!(editor.report_json(), styk_doc::json::to_string(&crate::record::without_runtime(&expected)));
+            assert_eq!(styk_doc::json::to_string(&editor.history_value()), history);
+            assert_eq!(styk_doc::json::to_string(&editor.state_value()), state);
+            assert!(editor.take_events().is_empty(), "the helper emits no event on its original write path");
+            assert!(!Arc::ptr_eq(&prepared, &editor.prepared().unwrap()), "a changed scalar keeps the original preparation invalidation");
+            let current = editor.report.clone();
+            let next = editor.shown_frame().unwrap();
+            assert_eq!(styk_doc::json::to_string(&shown), styk_doc::json::to_string(&next));
+            editor.set_active_layer("layer-1");
+            assert!(editor.report.same_node(&current));
+            assert!(next.same_node(&editor.shown_frame().unwrap()));
+        }
+    }
+
+    #[test]
     fn latest_typed_view_reuses_only_identical_slots_and_preserves_input() {
         let (editor, prepared, record) = shown("gestures-sheet");
         let before = styk_doc::json::to_string(&record);

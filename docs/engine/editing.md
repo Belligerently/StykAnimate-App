@@ -686,6 +686,14 @@ are not retained; focused count/output controls pass 3→1. This targets channel
 but the fresh full run still fails at 233.630/174.045 ms and 0.172211 ms excess per full
 call, with a 24.985 ms gap to the per-call arm. Exact behavior matches; no causal total
 speed, class opening, default, new checkpoint or API/stored-math/public-state claim.
+The same-layer guard skips only an identical raw active-layer string before report
+copy-on-write. Selection and restoration keep their current preparation/evaluated
+frame; missing, null, nonstring and different IDs retain original writes, events,
+results and history. Both new controls and 226 Rust tests / 53 recordings / 2,060
+exact calls pass, alongside 125 JS tests and Main check. Fresh full cost remains above
+the rule at 224.030/181.885 ms and 0.121806 ms excess/call, leaving 7.545 ms. Channels
+stays closed; no matching new checkpoint/default or causal speed claim. Public APIs
+and stored arithmetic are unchanged.
 Historical measurements below retain their original
 rule and outcomes.
 
