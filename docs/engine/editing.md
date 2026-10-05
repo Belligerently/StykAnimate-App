@@ -879,11 +879,14 @@ query API now covers joined frames without pins; signatures and stored fields
 are unchanged.
 
 The Cache retains one coherent raw/typed frame pair. `Loader::edit_frame_reusing_ik`
-reuses an immutable parsed IK table only when the IK table node, slot UID/figure and
-Prepared lineage agree; other fields retain their original conversion. A failed
-conversion installs no new pair. The caller must supply the complete raw record
-represented by the predecessor Frame from the current Loader/document lineage.
-These additive APIs do not change stored fields or the Session response schema.
+reuses immutable parsed IK and warning-free effect tables only when their raw nodes,
+slot UID/figure and Prepared lineage agree. Effect owner/entry and stack/effect counts,
+plus the existing 16-effect limit, exclude every warning-producing parser path;
+malformed or ambiguous effects reparse with the original ordered diagnostics.
+Other pose fields retain their original conversion. A failed conversion installs no
+new pair. The caller must supply the complete raw record represented by the
+predecessor Frame from the current Loader/document lineage. These portable APIs do
+not change stored fields, arithmetic or the Session response schema.
 
 Active unpinned IK target edits retain the current call’s all-joint numeric geometry
 through the existing `build_only_for_shape` owner. Context, capture and the complete

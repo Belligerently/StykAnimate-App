@@ -253,7 +253,7 @@ Engine logic: ported to Rust.
 | `src/vfx-preview.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
 | `src/vfx-registry.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags) |
 | `src/vfx-user-presets.mjs` | `styk-eval::vfx` | partial | Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS |
-| `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS |
+| `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending |
 | `src/vfx-generator-anchors.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-frame.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |

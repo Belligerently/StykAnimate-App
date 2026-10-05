@@ -2407,6 +2407,269 @@
       "driverSha256": "a707da13355a49580653a2c519795c3a29b38fd9317b61ae93f7a69a39860f5f",
       "receiptSha256": "ca3daaa88a1a4708fbc74156cdeec297d6670b1ba8f0e56ab9e0aaa485cd9a22",
       "logSha256": "76ae0bff6c1da86e218fa96ea43e63925ee56c149a1a5297fcd6789c07d6d7dd"
+    },
+    {
+      "batch": "B12",
+      "case": "startup",
+      "round": 1,
+      "owned": 163,
+      "compared": 285,
+      "calls": 448,
+      "failedOwned": 0,
+      "editorMs": 205.23500001430511,
+      "adoptedMs": 204.99999991059303,
+      "fallbackMs": 40.099999994039536,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 245.09999990463257,
+      "ratio": 1.1942407478624446,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.6200000047683716,
+          "nativeCallMs": 2.0550000071525574,
+          "adoptMs": 7.750000029802322,
+          "editorMs": 11.264999955892563
+        },
+        "poseJoint": {
+          "candidateCalls": 48,
+          "editorCalls": 48,
+          "adoptionObserved": true,
+          "engineMs": 15.60499992966652,
+          "nativeCallMs": 13.569999933242798,
+          "adoptMs": 17.375000089406967,
+          "editorMs": 20.760000079870224
+        },
+        "commitDrag": {
+          "candidateCalls": 8,
+          "editorCalls": 8,
+          "adoptionObserved": true,
+          "engineMs": 3.5900000631809235,
+          "nativeCallMs": 3.0500000715255737,
+          "adoptMs": 6.515000015497208,
+          "editorMs": 27.875
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {},
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "a rig or static-definition call outside owned adoption": 3,
+        "history the session did not record": 4
+      },
+      "unported": {},
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1/r1-startup.driver.json"
+      ],
+      "elapsedSeconds": 449.10754157800693,
+      "loadBefore": [
+        0.38232421875,
+        1.9248046875,
+        6.44140625
+      ],
+      "loadAfter": [
+        10.4990234375,
+        8.27099609375,
+        7.79150390625
+      ],
+      "driverSha256": "b3cbd9eb5ee139ebfe536254826a20589402cb70b8d71a585443816e5323882b",
+      "receiptSha256": "a150b00374af3e296f8cc583e9688ab7a11fa665f356b296305ff56f18ec9385",
+      "logSha256": "c9ca2e27119eb261364a3062ebecbeb83c6ffc0884bba8c26ebdf9a3747f95f6"
+    },
+    {
+      "batch": "B12",
+      "case": "rig",
+      "round": 1,
+      "owned": 119,
+      "compared": 171,
+      "calls": 295,
+      "failedOwned": 1,
+      "editorMs": 133.7699999809265,
+      "adoptedMs": 118.14999997615814,
+      "fallbackMs": 13.745000064373016,
+      "failedOwnedMs": 0.1850000023841858,
+      "candidateTotalMs": 132.08000004291534,
+      "ratio": 0.9873663755830744,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": true,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.240000009536743,
+          "nativeCallMs": 1.8949999809265137,
+          "adoptMs": 8.064999997615814,
+          "editorMs": 9.550000011920929
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "editorCalls": 36,
+          "adoptionObserved": true,
+          "engineMs": 9.054999887943268,
+          "nativeCallMs": 8.075000047683716,
+          "adoptMs": 8.730000048875809,
+          "editorMs": 10.999999970197678
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "editorCalls": 4,
+          "adoptionObserved": true,
+          "engineMs": 1.604999989271164,
+          "nativeCallMs": 1.3350000083446503,
+          "adoptMs": 3.175000011920929,
+          "editorMs": 3.695000022649765
+        }
+      },
+      "comparisonOnlyResidualCalls": 4,
+      "failedAttemptsByMethod": {
+        "pasteSegmentValues": {
+          "count": 1,
+          "ms": 0.1850000023841858
+        }
+      },
+      "ended": {
+        "layer focus": 2,
+        "a call the engine has not ported": 9,
+        "a rig or static-definition call outside owned adoption": 2,
+        "history the session did not record": 2
+      },
+      "unported": {
+        "selectBranch: origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition": 2,
+        "addSegment: drawing into a figure with rig relationships": 1,
+        "beginMotionPathEdit: a motion-path edit of rigged or 3D figures": 6
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/rig.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1/r1-rig.driver.json"
+      ],
+      "elapsedSeconds": 617.6445842179819,
+      "loadBefore": [
+        10.4990234375,
+        8.27099609375,
+        7.79150390625
+      ],
+      "loadAfter": [
+        9.95556640625,
+        9.80712890625,
+        8.951171875
+      ],
+      "driverSha256": "a5ddbe68a6a904b33748a4f7f6500a0f247f13d6e5a789563312d9885dca5740",
+      "receiptSha256": "836fd48dd3d6bda49f85ea3f172b7025ee92364b76b1471c697d9d40e8f857be",
+      "logSha256": "970f98606e6eb1f683d0882f409b353399258cd69c92226698d5bcd0f45ef771"
+    },
+    {
+      "batch": "B12",
+      "case": "joined-chain",
+      "round": 1,
+      "owned": 125,
+      "compared": 213,
+      "calls": 338,
+      "failedOwned": 0,
+      "editorMs": 138.6599998176098,
+      "adoptedMs": 143.05000004172325,
+      "fallbackMs": 10.83500000834465,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 153.8850000500679,
+      "ratio": 1.1098009537897355,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.2499999403953552,
+          "nativeCallMs": 1.8949999511241913,
+          "adoptMs": 8.290000021457672,
+          "editorMs": 9.11999997496605
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "editorCalls": 36,
+          "adoptionObserved": true,
+          "engineMs": 10.305000096559525,
+          "nativeCallMs": 9.230000138282776,
+          "adoptMs": 12.749999940395355,
+          "editorMs": 14.844999969005585
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "editorCalls": 4,
+          "adoptionObserved": true,
+          "engineMs": 2.2149999737739563,
+          "nativeCallMs": 1.875,
+          "adoptMs": 3.4300000369548798,
+          "editorMs": 4.814999967813492
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {},
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "a rig or static-definition call outside owned adoption": 2,
+        "a call the engine has not ported": 1,
+        "segment values the session did not copy": 1,
+        "history the session did not record": 1
+      },
+      "unported": {
+        "addSegment: drawing into a figure with rig relationships": 1
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/joined-chain.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1/r1-joined-chain.driver.json"
+      ],
+      "elapsedSeconds": 592.7037825059961,
+      "loadBefore": [
+        9.95556640625,
+        9.80712890625,
+        8.951171875
+      ],
+      "loadAfter": [
+        9.2998046875,
+        9.4541015625,
+        9.17529296875
+      ],
+      "driverSha256": "e8acddb47fb0a59a4d0172b233045ab0b55deaf3e8ab71b93211378c7ffa4b38",
+      "receiptSha256": "c76ff2434d8c45504bbfde9c0e5558ff2c9617f40ebcbc50b2a73556791ac1cb",
+      "logSha256": "dcb365c905bd129a065c7cad4cef49557cb0ec9fbd3a62cf7ee2adf188fcd238"
     }
   ],
   "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1",
@@ -40343,6 +40606,126 @@
         "fullCostRowsBefore": 24,
         "fullCostRowsAfter": 27,
         "ordinaryDiagnosticRowsUnchanged": 4
+      }
+    },
+    {
+      "scope": "B12 completed full loaded warmed eligible OWNED-call paired editing cost; not engine-1 or baseline-0",
+      "notice": "Parity/accounting valid on all three cases; literal outcomes FAIL/PASS/FAIL keep the overall figures gate closed. All27 older full rows/eight metadata batches/four ordinary diagnostics/accepted joined diagnostic remain raw byte-exact. Loaded measurements establish no causal gain, default admission or matching final checkpoint.",
+      "baseHead": "acf722ed56daa04ef6e06175bfd12be543414222",
+      "sourceWasUncommitted": false,
+      "sourceBinding": {
+        "approvedInputReceipt": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1/input-receipt.json",
+          "sha256": "5fc8165d95c600ce757f79af3203a97efcc7a6e449e178a3501fdbcff7ecbb29",
+          "bytes": 236446
+        },
+        "capturedIdentityCounts": {
+          "productionSources": 1529,
+          "packageFiles": 7,
+          "documents": 3
+        },
+        "sourcePackageAndInputsStableEveryRun": true,
+        "completeMapsRetainedInRawReceipts": true
+      },
+      "packageBuildInfo": {
+        "profile": "wasm",
+        "toolchain": "nightly-2026-09-15",
+        "wasmBindgen": "0.2.129",
+        "maxMemory": 2147483648,
+        "wasmBytes": 10241354,
+        "wasmBytesBeforeOpt": 10241354,
+        "jsBytes": 201867,
+        "sha256": "b65ff69acb49e7be421ec996f11de41bf9c90530ed97cfa2aadc6367ad0a1787",
+        "codec": {
+          "toolchain": "stable",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+          "wasmBytes": 1532303,
+          "wasmBytesBeforeOpt": 1532303,
+          "jsBytes": 13846,
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+        },
+        "drawing": {
+          "toolchain": "stable",
+          "wasmBytes": 449096,
+          "wasmBytesBeforeOpt": 449096,
+          "jsBytes": 53485,
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+        }
+      },
+      "runtimes": {
+        "nodeVersion": "v24.11.0",
+        "pythonVersion": "Python 3.12.9"
+      },
+      "costRule": "candidate ownedMs + ownableMs + failedOwnedMs <= editorAlone ownableMs; unchanged literal threshold",
+      "gate": {
+        "OWNED_CLASSES": [
+          "large figures",
+          "3d"
+        ],
+        "figuresDefaultOwnership": false,
+        "allThreeCostPass": false
+      },
+      "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1",
+      "receiptInputs": {
+        "input-receipt.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1/input-receipt.json",
+          "sha256": "5fc8165d95c600ce757f79af3203a97efcc7a6e449e178a3501fdbcff7ecbb29",
+          "bytes": 236446
+        },
+        "plan.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1/plan.json",
+          "sha256": "6583a4c551ea99a4ca6c67f2ee672802477c08435190321cd3264695126afde8",
+          "bytes": 228
+        },
+        "summary-accounted.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch12-1/summary-accounted.json",
+          "sha256": "8bbc1ed81160a15a8c75c63f0820da317d3057ed88f6622fca0565f277f01bc5",
+          "bytes": 97356
+        }
+      },
+      "independentCompletedAcceptance": {
+        "path": "/tmp/styk-figures-b12-joined-full3-cost-independent-review-20261006.json",
+        "sha256": "3c556bdd2448931acb2bfc0eed0c76acffb97dae308e2e2cda03b813fb018dc9",
+        "bytes": 15882
+      },
+      "priorSealedCaseReviews": [
+        {
+          "path": "/tmp/styk-figures-b12-startup-cost-independent-review-20261006.json",
+          "bytes": 12288,
+          "sha256": "8d1bf8e25e5760bda505a9fa078aa3c7fd30eb2778e22454f93b628ab39600d8"
+        },
+        {
+          "path": "/tmp/styk-figures-b12-rig-cost-independent-review-20261006.json",
+          "bytes": 11429,
+          "sha256": "36de2dca3ca196706d480c58b8c3792fd810176770490bf40b2745837d3978af"
+        }
+      ],
+      "outcomes": [
+        "startup FAIL",
+        "rig PASS",
+        "joined-chain FAIL"
+      ],
+      "accountingNotes": {
+        "rig": "Expected failed Native paste .1850000023841858ms and original JS fallback are distinct intervals included once each; four comparison-only residuals remain separate.",
+        "startup": "Four fewer comparisons than B10 (select1/beginRigDrag1/editRigJoint2); cause unknown, with171 eligible calls unchanged.",
+        "methodClocks": "engineMs includes callMs; diagnostic method clocks are not added to official global totals."
+      },
+      "progressCounters": {
+        "inventory": {
+          "js": 175,
+          "partial": 123,
+          "ported": 35,
+          "verified": 22,
+          "removed": 1
+        },
+        "ownedClasses": 2,
+        "deletedJavaScriptModules": 2,
+        "engine1MatrixMeasured": 0,
+        "engine1MatrixTotal": 28,
+        "fullCostRowsBefore": 27,
+        "fullCostRowsAfter": 30,
+        "ordinaryDiagnosticsUnchanged": 4,
+        "instrumentedJoinedDiagnosticsUnchanged": 1
       }
     }
   ],

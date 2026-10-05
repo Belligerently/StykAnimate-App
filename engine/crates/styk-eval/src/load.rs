@@ -711,7 +711,20 @@ impl Loader {
                     .is_some_and(|table| raw.get("_stykIK").is_some_and(|old| table.same_node(old))))
                 .and_then(|(_, typed)| typed.ik.clone())
                 .or_else(|| crate::ik::parse::table(o.get("_stykIK")).map(Arc::new)),
-            vfx: crate::vfx::parse::stacks(o.get("_stykVfx"), &mut self.notes),
+            vfx: previous.and_then(|(raw, typed)| {
+                if typed.uid != uid || typed.figure != figure { return None; }
+                let value = o.get("_stykVfx").filter(|value| value.truthy())?;
+                if !raw.get("_stykVfx").is_some_and(|old| value.same_node(old)) { return None; }
+                let owner = value.as_obj()?;
+                let stacks = typed.vfx.as_ref()?;
+                // With this coherent predecessor, equal cardinalities exclude
+                // every invalid key/effect, duplicate and generator removal.
+                // The stack limit also excludes the warning that drops nothing.
+                if owner.len() != stacks.entries.len() || !owner.iter().zip(&stacks.entries).all(|((_, raw), (_, effects))| {
+                    raw.as_arr().is_some_and(|items| items.len() <= crate::vfx::parse::STACK_LIMIT && items.len() == effects.len())
+                }) { return None; }
+                Some(stacks.clone())
+            }).or_else(|| crate::vfx::parse::stacks(o.get("_stykVfx"), &mut self.notes)),
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
             vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
             spatial: o.get("_stykSpatial").and_then(crate::spatial::parse_pose).map(Arc::new),
@@ -745,9 +758,11 @@ impl Loader {
     }
 
     /// Converts an edit frame with the previous coherent raw/typed record from
-    /// the same document/Loader lineage. Only an unchanged `_stykIK` object node
-    /// in the same UID/figure slot reuses its parsed immutable table. All
-    /// other pose fields and frame metadata follow the original conversion.
+    /// the same document/Loader lineage. Unchanged `_stykIK` object nodes and
+    /// warning-free `_stykVfx` object nodes in the same UID/figure slot reuse
+    /// their parsed immutable tables. Ambiguous or warning-producing effects
+    /// retain the original parse and notes; other pose fields and frame metadata
+    /// follow the original conversion.
     /// `previous_record` must be the complete record represented by `previous`,
     /// successfully converted by this Loader in `doc`'s current lineage.
     /// `value` may use the same null delta convention as [`Self::edit_frame`].

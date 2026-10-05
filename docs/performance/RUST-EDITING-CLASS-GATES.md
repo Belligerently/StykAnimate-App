@@ -215,3 +215,20 @@ The full warmed joined-chain workload completed on committed `ebf5c694` with shi
 The Native call is already included in the outer clock. Helper clocks overlap; neither they nor CPU samples are added to official totals. One completed full-workload instrumented joined diagnostic advances **0→1**; the **27 official full cost rows, eight batch objects, four ordinary diagnostics, ownership classes and engine-1 counter remain unchanged**. Figures stays closed. Exact clocks, loads, source bindings and evidence are in the separate `joinedPoseDiagnostic` JSON object.
 
 Evidence: independent acceptance `83a2ca49`, Native profile review `57cfa98f` and JS/adoption review `34bb6172`; bounded raw artifact hashes are in the companion JSON. Two signed negative oracle sample intervals (-1/-2 µs) and boundary-overlapping intervals are excluded from attribution without changing the raw profiles. The launcher's original pending-acceptance flag is preserved; the separate independent receipt accepts this diagnostic only.
+
+
+## B12 completed committed full cost
+
+The unchanged full warmed exact-math startup/rig/joined-chain workload completed on committed `acf722ed56daa04ef6e06175bfd12be543414222`, shipping Wasm `b65ff69acb49e7be421ec996f11de41bf9c90530ed97cfa2aadc6367ad0a1787` (10,241,354 bytes, unstripped `wasm` profile). Strict document/history/selection/full undo, matched eligible calls, failed-attempt accounting and positive native/adoption core work pass on all three cases. The before/after 1,529 source, seven package and three input maps are exact; Node24.11.0, Python3.12.9 and the full protocol are unchanged. Literal outcomes are **startup FAIL, rig PASS, joined-chain FAIL**; figures remains closed.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Cost gate |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Startup | 205.235 | 205.000 | 40.100 | 0.000 | 245.100 | Fail |
+| Rig | 133.770 | 118.150 | 13.745 | 0.185 | 132.080 | Pass |
+| Joined-chain | 138.660 | 143.050 | 10.835 | 0.000 | 153.885 | Fail |
+
+Owned/compared/failed counts are **163/285/0**, **119/171/1** and **125/213/0**; eligible calls **171/128/129** match. Core pose/move/commit counts are **48/6/8**, **36/6/4** and **36/6/4**, with positive native/adoption clocks. Document sizes **710,546/187,660/263,000 bytes**, history entries **80/79/79**, selection and full undo match with zero unexpected errors, differences, mismatches, rounding or page problems. Rig's expected failed Native paste, **0.1850000023841858 ms**, is counted once before its separate original JS fallback interval; its four comparison-only residuals remain separate. Startup has four fewer comparisons than B10 (select−1, beginRigDrag−1, editRigJoint−2); the cause is unknown, and all171 eligible calls are unchanged.
+
+Official full cost rows advance **27→30** and metadata batches **8→9**; all27 historical raw rows/eight metadata objects/four ordinary diagnostics/one accepted instrumented joined diagnostic remain exact. The literal candidate owned+fallback+failed <= editor-alone threshold is unchanged; each native call clock is already included in `engineMs`. These loaded measurements establish no causal speed gain, default ownership, matching final checkpoint or engine-1 result. Inventory statuses, two owned classes and two deleted JS modules are unchanged.
+
+Evidence: raw `figures-candidate-batch12-1/summary-accounted.json` `8bbc1ed8`, approved input `5fc8165d`, independent completed acceptance `3c556bdd` and unchanged startup `8d1bf8e2`/rig `36de2dca` receipts. Companion JSON preserves exact raw doubles, commands, loads, artifact hashes and bounded identity references. No new runtime, API, stored-arithmetic or gate claim is introduced by this append.

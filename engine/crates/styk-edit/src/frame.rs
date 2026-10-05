@@ -756,6 +756,175 @@ mod tests {
         assert_fresh(&cache, &next, &prepared, &frame);
     }
 
+    fn converted_vfx_frame(cache: &mut Cache, record: &Value, prepared: &Arc<Prepared>) -> styk_eval::eval::Frame {
+        let mut original = cache.loader.clone();
+        original.notes.clear();
+        let fresh = original.edit_frame(record, None, &prepared.doc).unwrap();
+        cache.loader.notes.clear();
+        let frame = cache.edit_frame(record, prepared).unwrap();
+        assert_eq!(cache.loader.notes, original.notes, "all conversion notes retain their original order");
+        assert_eq!(format!("{frame:?}"), format!("{fresh:?}"));
+        assert_fresh(cache, record, prepared, &frame);
+        frame
+    }
+
+    #[test]
+    fn latest_typed_view_vfx_reuse_preserves_output_notes_and_other_fields() {
+        let (editor, prepared, record) = shown("vfx-parameter-sheet");
+        let before = styk_doc::json::to_string(&record);
+        let mut cache = editor.eval.borrow().clone();
+        let first = cache.edit_frame(&record, &prepared).unwrap();
+        let slot = first.objects.iter().position(|object| object.vfx.as_ref().is_some_and(|vfx| !vfx.figure().is_empty())).unwrap();
+        let next = replace_object(&record, slot, |object| {
+            let mut angles = object.get("angles").unwrap().numbers().unwrap();
+            angles[0] += 0.125;
+            object.set("angles", Value::nums(&angles));
+            object.set("root_y", Value::Num(-0.0));
+            object.set("_stykVfxScope", Value::Num(1.0));
+            object.set("_vfxConnectedEffects", Value::Num(3.0));
+            object.set("_sticknodesSprite", parse(r#"{"ratio":1}"#));
+        });
+        let mut next = next;
+        next.make_obj().unwrap().set("_vfxTimelineScene", Value::Num(3.0));
+        let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+        assert!(!Arc::ptr_eq(&first.objects[slot], &frame.objects[slot]));
+        assert!(Arc::ptr_eq(first.objects[slot].vfx.as_ref().unwrap(), frame.objects[slot].vfx.as_ref().unwrap()), "identity witness only; fresh output/notes are the behavioral oracle");
+        assert!(frame.objects[slot].vfx_scope);
+        assert_eq!(frame.objects[slot].root[1].to_bits(), (-0.0f64).to_bits());
+        assert_eq!(cache.loader.notes.len(), 3, "sprite, connected stack and scene stack still parse");
+        assert_eq!(styk_doc::json::to_string(&record), before);
+    }
+
+    #[test]
+    fn latest_typed_view_vfx_reuses_unchanged_owner_through_editor_pose_commands() {
+        let (mut editor, _, _) = shown("vfx-parameter-sheet");
+        let (_, initial) = editor.evaluate_frame().unwrap();
+        let slot = initial.objects.iter().position(|object| object.vfx.as_ref().is_some_and(|vfx| !vfx.figure().is_empty())).unwrap();
+        editor.call("select", &[Value::Num(initial.objects[slot].uid as f64), Value::Num(0.0)]).unwrap();
+        editor.call("beginDrag", &[Value::str("Pose joint")]).unwrap();
+        let (prepared, first, scene) = editor.evaluate_only(Some(&[slot])).unwrap();
+        let original = editor.shown_frame().unwrap();
+        let owner = original.get("objects").unwrap().item(slot).unwrap().get("_stykVfx").unwrap().clone();
+        let before = first.objects[slot].vfx.as_ref().unwrap();
+        let end = scene.objects[slot].ends[0];
+        for offset in [5.0, 9.0] {
+            editor.eval.borrow_mut().loader.notes.clear();
+            assert_eq!(editor.call("poseJoint", &[Value::Num(end[0] + offset), Value::Num(end[1] + 3.0)]).unwrap(), Value::Bool(true));
+            let record = editor.shown_frame().unwrap();
+            assert!(owner.same_node(record.get("objects").unwrap().item(slot).unwrap().get("_stykVfx").unwrap()), "real angle mutation preserves the saved owner node");
+            let (current, frame) = editor.evaluate_frame().unwrap();
+            assert!(Arc::ptr_eq(&prepared, &current));
+            assert!(Arc::ptr_eq(before, frame.objects[slot].vfx.as_ref().unwrap()), "actual command/Cache consumer retains the parsed table");
+            let mut fresh = editor.eval.borrow().loader.clone();
+            fresh.notes.clear();
+            let cold = fresh.edit_frame(&record, None, &current.doc).unwrap();
+            assert_eq!(editor.eval.borrow().loader.notes, fresh.notes);
+            assert_eq!(format!("{frame:?}"), format!("{cold:?}"));
+            assert_fresh(&editor.eval.borrow(), &record, &current, &frame);
+        }
+        editor.call("cancelDrag", &[]).unwrap();
+    }
+
+    #[test]
+    fn latest_typed_view_vfx_reuse_limits_node_identity_slot_and_lineage() {
+        let (editor, prepared, record) = shown("vfx-parameter-sheet");
+        for case in ["node", "nested", "uid", "figure", "reorder", "count", "lineage"] {
+            let mut cache = editor.eval.borrow().clone();
+            let first = cache.edit_frame(&record, &prepared).unwrap();
+            let slot = first.objects.iter().position(|object| object.vfx.as_ref().is_some_and(|vfx| !vfx.figure().is_empty())).unwrap();
+            let owner = record.get("objects").unwrap().item(slot).unwrap().get("_stykVfx").unwrap().clone();
+            let mut next = replace_object(&record, slot, |object| { object.set("root_x", Value::Num(17.5)); });
+            let mut selected = slot;
+            match case {
+                "node" => next = replace_object(&next, slot, |object| { object.set("_stykVfx", parse(&styk_doc::json::to_string(&owner))); }),
+                "nested" => next = replace_object(&next, slot, |object| {
+                    let stack = object.get_mut("_stykVfx").unwrap().make_obj().unwrap().get_mut("figure").unwrap().make_arr().unwrap();
+                    stack[0].make_obj().unwrap().set("enabled", Value::Bool(false));
+                }),
+                "uid" => next = replace_object(&next, slot, |object| { object.set("unique_id", Value::Num(first.objects[slot].uid as f64 + 1000.0)); }),
+                "figure" => {
+                    let other = first.objects.iter().find(|object| object.figure != first.objects[slot].figure).unwrap().figure;
+                    next = replace_object(&next, slot, |object| { object.set("figure_type_id", Value::Num(other as f64)); });
+                },
+                "reorder" => {
+                    let other = (slot + 1) % first.objects.len();
+                    next.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap().swap(slot, other);
+                    selected = other;
+                },
+                "count" => { next.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap().push(record.get("objects").unwrap().item(slot).unwrap().clone()); },
+                _ => {},
+            }
+            let lineage = if case == "lineage" { Arc::new(Prepared::new(prepared.doc.clone())) } else { prepared.clone() };
+            let frame = converted_vfx_frame(&mut cache, &next, &lineage);
+            assert!(!Arc::ptr_eq(first.objects[slot].vfx.as_ref().unwrap(), frame.objects[selected].vfx.as_ref().unwrap()), "{case}: parsed table cannot be retained");
+        }
+        let mut cache = editor.eval.borrow().clone();
+        cache.edit_frame(&record, &prepared).unwrap();
+        let coherent = cache.latest_typed.as_ref().unwrap().clone();
+        let mut invalid = replace_object(&record, 0, |object| { object.set("root_y", Value::Num(-0.0)); });
+        invalid.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[1].make_obj().unwrap().remove("figure_type_id");
+        let expected = cache.loader.clone().edit_frame(&invalid, None, &prepared.doc).unwrap_err().to_string();
+        assert_eq!(cache.edit_frame(&invalid, &prepared).unwrap_err().to_string(), expected);
+        assert!(Arc::ptr_eq(cache.latest_typed.as_ref().unwrap(), &coherent), "a later malformed slot cannot publish a partial reused frame");
+    }
+
+    #[test]
+    fn latest_typed_view_vfx_reuse_repeats_every_lenient_diagnostic() {
+        let (editor, prepared, record) = shown("vfx-parameter-sheet");
+        let mut original = editor.eval.borrow().clone();
+        let first = original.edit_frame(&record, &prepared).unwrap();
+        let slot = first.objects.iter().position(|object| object.vfx.as_ref().is_some_and(|vfx| !vfx.figure().is_empty())).unwrap();
+        let effect = record.get("objects").unwrap().item(slot).unwrap().path(&["_stykVfx", "figure"]).unwrap().item(0).unwrap();
+        let owner = |stack: Value| { let mut value = Obj::new(); value.set("figure", stack); Value::object(value) };
+        let invalid_key = { let mut value = Obj::new(); value.set("opaque", Value::array(vec![effect.clone()])); Value::object(value) };
+        let invalid_param = { let mut value = effect.clone(); value.make_obj().unwrap().get_mut("params").unwrap().make_obj().unwrap().set("radius", Value::Num(f64::INFINITY)); value };
+        let invalid_record = { let mut value = effect.clone(); value.make_obj().unwrap().set("version", Value::Num(3.0)); value };
+        let unknown_param = { let mut value = effect.clone(); value.make_obj().unwrap().get_mut("params").unwrap().make_obj().unwrap().set("opaque", Value::Num(1.0)); value };
+        let vectors = styk_doc::json::parse(&std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../styk-eval/tests/fixtures/vfx/vectors.json")).unwrap()).unwrap();
+        let generator = vectors.get("neutral").unwrap().as_arr().unwrap().iter().filter_map(|case| case.get("effect"))
+            .find(|effect| effect.get("type").and_then(Value::as_str) == Some("particles")).unwrap().clone();
+        assert!(styk_eval::vfx::parse::effect(&generator).unwrap().kind().is_generator());
+        let excessive = (0..=styk_eval::vfx::parse::STACK_LIMIT).map(|index| {
+            let mut value = effect.clone(); value.make_obj().unwrap().set("id", Value::str(&format!("effect{index}"))); value
+        }).collect();
+        let disabled = { let mut value = effect.clone(); value.make_obj().unwrap().set("enabled", Value::Bool(false)); value };
+        for (name, table) in [
+            ("nonobject", Value::Num(3.0)), ("invalid-key", invalid_key),
+            ("nonarray", owner(Value::Num(3.0))), ("invalid-param", owner(Value::array(vec![invalid_param]))),
+            ("invalid-record", owner(Value::array(vec![invalid_record]))), ("unknown-param", owner(Value::array(vec![unknown_param]))),
+            ("duplicate", owner(Value::array(vec![effect.clone(), effect.clone()]))),
+            ("generator", owner(Value::array(vec![generator]))), ("over-limit", owner(Value::array(excessive))),
+        ] {
+            let mut cache = editor.eval.borrow().clone();
+            let warm = replace_object(&record, slot, |object| { object.set("_stykVfx", table); });
+            let before = cache.edit_frame(&warm, &prepared).unwrap();
+            let next = replace_object(&warm, slot, |object| { object.set("root_y", Value::Num(-0.0)); });
+            let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+            assert!(!cache.loader.notes.is_empty(), "{name}: original parser emitted no diagnostic");
+            assert!(!Arc::ptr_eq(before.objects[slot].vfx.as_ref().unwrap(), frame.objects[slot].vfx.as_ref().unwrap()), "{name}: warning-producing owner must parse again");
+        }
+        // Falsy owners remain absent. Valid empty owners/stacks remain present;
+        // a packed empty numeric stack is ambiguous and uses the original parser.
+        for (table, reusable) in [
+            (None, false), (Some(Value::Null), false), (Some(Value::Bool(false)), false),
+            (Some(Value::object(Obj::new())), true), (Some(owner(Value::array(vec![]))), true),
+            (Some(owner(Value::Nums(Arc::new(styk_doc::Nums::new(&[]))))), false),
+            (Some(owner(Value::array(vec![disabled]))), true),
+        ] {
+            let mut cache = editor.eval.borrow().clone();
+            let warm = replace_object(&record, slot, |object| { match table { Some(table) => { object.set("_stykVfx", table); }, None => { object.remove("_stykVfx"); } } });
+            let before = cache.edit_frame(&warm, &prepared).unwrap();
+            let next = replace_object(&warm, slot, |object| { object.set("root_x", Value::Num(-0.0)); });
+            let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+            assert!(cache.loader.notes.is_empty());
+            match (&before.objects[slot].vfx, &frame.objects[slot].vfx) {
+                (Some(a), Some(b)) => assert_eq!(Arc::ptr_eq(a, b), reusable),
+                (None, None) => assert!(!reusable),
+                _ => panic!("presence changed"),
+            }
+        }
+    }
+
     #[test]
     fn camera_without_motion_does_not_prepare_typed_document() {
         let report = styk_doc::json::parse(br#"{"_styk":{"cameraMotion":{"clips":[]}}}"#).unwrap();

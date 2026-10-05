@@ -531,7 +531,7 @@ src/vfx-surface.mjs	engine	styk-render::vfx	js	effect executors and surfaces
 src/vfx-user-presets.mjs	engine	styk-eval::vfx	partial	Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS
 src/vfx-viewport.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: layer density, crops and resolution caps per view (effects/plan.rs)
 src/vfx-webgpu.mjs	engine	styk-render::vfx	partial	effect executors and surfaces. Rust: every filter pass (styk-render effects/executor.rs, passes.wgsl) on WebGPU, native and WebGL2; still the oracle and the renderer of gated documents
-src/vfx.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS
+src/vfx.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending
 src/video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/web-library.mjs	platform	-	stays	file, storage and network services
 src/web-offline.mjs	platform	-	stays	file, storage and network services
