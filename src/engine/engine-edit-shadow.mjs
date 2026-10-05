@@ -28,12 +28,14 @@ import {withDraws} from '../editor-draws.mjs';
 import {isMovieclip} from '../movieclips.mjs';
 import {validateLayerSheetChanges} from '../layer-sheet.mjs';
 import {validateLayerState} from '../layers.mjs';
+import {validateLayerFolders} from '../layer-folders.mjs';
 import {captureEditBounds} from './engine-edit-bounds.mjs';
 
 /** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
 const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSegment', 'unsplitSegment', 'mirrorSegment', 'mirrorSegmentBranch', 'moveBuilderSegment',
   'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint', 'replaceFigureDefinition', 'setOrigin'];
 const SPLITS = new Set(['splitBuilderSegments', 'splitSegment', 'splitSegmentBranch']);
+const FOLDERS = new Set(['createLayerFolder', 'renameLayerFolder', 'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder']);
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames', 'alignFiguresInFrames'];
@@ -86,7 +88,7 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
   // Style and draw-order edits recoloured or keyed on the figure on show publish the sheet; definition edits run in the editor.
   'updateBuilderSegmentStyle', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder',
-  ...SPLITS, 'makeMovieclipUnique',
+  ...SPLITS, 'makeMovieclipUnique', ...FOLDERS,
   // A motion-path gesture's pointer moves run in both (the app reads the editor's session for
   // its live trail); what its commit publishes is adopted.
   'commitMotionPathEdit']);
@@ -421,6 +423,90 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       || editingClass(editor.report) === 'unported') return null;
     try { const figure = editor.figure; return isMovieclip(figure) ? figure : null; } catch { return null; }
   };
+  const folderReady = () => {
+    const styk = editor.report._styk;
+    return editor.layerTimeline && styk?.layerSheet && !styk.simpleFrameDraft && !styk.movieclipSource
+      && !editor._drag && !editor._authoredPoseEdit && !editor._frameDraft && !editor._animationEdit
+      && !editor._sheetPropertyPreview && !editor._vfxClipEdit && !editor._movieclipBatch && !batching
+      && editingClass(editor.report) !== 'unported';
+  };
+  // The native layer owner certifies the accepted operands, including null-valued
+  // removals. Apply them through the original history/publication owner, never a
+  // sheet publication or a reconstruction from the surviving undo entry.
+  const prepareFolder = (name, answer, selection) => {
+    const reject = why => ({why: `a layer folder packet ${why}`});
+    const record = value => value && typeof value === 'object' && !Array.isArray(value);
+    const labels = {createLayerFolder: 'Create layer folder', renameLayerFolder: 'Rename layer folder',
+      moveLayersToFolder: 'Move layers to folder', arrangeLayers: 'Move layers', deleteLayerFolder: 'Ungroup layer folder'};
+    const label = labels[name], structural = name !== 'renameLayerFolder', {state, events, layerPublication: packet} = answer;
+    if (!record(state) || !Array.isArray(events) || events.some(event => !record(event))
+      || answer.drag || answer.draft || answer.preview || answer.retained || answer.definitions?.length
+      || ['sheet', 'layers', 'sources', 'topology', 'movieclipUnique'].some(key => Object.hasOwn(answer, key))) return reject('with an unrelated publication');
+    if (state.tick !== editor.tick || state.frameIndex !== editor.frameIndex
+      || state.selectedUid !== (editor.selectedUid ?? null) || state.selectedJoint !== (editor.selectedJoint ?? -1)
+      || JSON.stringify(state.selectedUids) !== JSON.stringify(selection.uids)
+      || JSON.stringify(selectionMetadata(state)) !== JSON.stringify(selectionMetadata(selection))
+      || state.nextUid !== editor._nextUid || state.nextFrameIdentity !== editor._nextFrameIdentity) return reject('with a different view');
+    if (answer.result === false) {
+      if (name === 'createLayerFolder' || packet !== undefined || events.length || state.layerRevision !== editor.layerRevision
+        || ['canUndo', 'canRedo', 'undoLabel', 'redoLabel', 'dirty'].some(key => state[key] !== editor[key])) return reject('with a changed no-op');
+      return {label, structural, updates: []};
+    }
+    if (!record(packet) || Object.keys(packet).length !== 3 || packet.label !== label || packet.structural !== structural
+      || !Array.isArray(packet.updates) || !packet.updates.length || events.length !== 1) return reject('with incomplete operands');
+    const event = events[0];
+    if (event.kind !== 'edit' || event.label !== label || event.layers !== true || event.layerMetadata !== true
+      || event.structural !== structural || event.animation !== false || event.timing !== false
+      || event.live || event.layerSheet || event.definition || event.tick !== editor.tick || event.frameIndex !== editor.frameIndex
+      || !Number.isSafeInteger(event.layerRevision) || event.layerRevision <= editor.layerRevision
+      || state.layerRevision !== event.layerRevision) return reject('outside the original layer event');
+    const layers = editor.report._styk.layers, candidate = {...layers, byId: {...layers.byId}}, updates = [], paths = new Set();
+    if (layers.folders) candidate.folders = {...layers.folders, byId: {...layers.folders.byId}};
+    for (const update of packet.updates) {
+      if (!record(update) || !Array.isArray(update.path) || !update.path.length || typeof update.remove !== 'boolean'
+        || Object.keys(update).some(key => !['path', 'remove', 'value'].includes(key))
+        || !update.remove && !Object.hasOwn(update, 'value')) return reject('with invalid operands');
+      const path = update.path, key = JSON.stringify(path);
+      if (paths.has(key)) return reject('with repeated operands');
+      paths.add(key);
+      const order = path.length === 1 && path[0] === 'order' && name !== 'renameLayerFolder' && name !== 'deleteLayerFolder';
+      const member = path.length === 3 && path[0] === 'byId' && Object.hasOwn(layers.byId, path[1]) && path[2] === 'folderId'
+        && name !== 'renameLayerFolder';
+      const folders = name === 'createLayerFolder' && (path.length === 1 && path[0] === 'folders' && !layers.folders
+        || path.length === 3 && path[0] === 'folders' && path[1] === 'byId' && /^folder-[1-9]\d*$/.test(path[2]) && !Object.hasOwn(layers.folders?.byId ?? {}, path[2])
+        || path.length === 2 && path[0] === 'folders' && path[1] === 'nextId' && layers.folders);
+      const rename = name === 'renameLayerFolder' && path.length === 4 && path[0] === 'folders' && path[1] === 'byId'
+        && Object.hasOwn(layers.folders?.byId ?? {}, path[2]) && path[3] === 'name';
+      const remove = name === 'deleteLayerFolder' && path.length === 3 && path[0] === 'folders' && path[1] === 'byId'
+        && Object.hasOwn(layers.folders?.byId ?? {}, path[2]);
+      if (![order, member, folders, rename, remove].some(Boolean) || update.remove && !member && !remove
+        || remove && !update.remove || member && !update.remove && typeof update.value !== 'string') return reject('outside folder metadata');
+      if (name === 'createLayerFolder' && update.remove
+        || name === 'deleteLayerFolder' && (!update.remove || Object.hasOwn(update, 'value'))
+        || member && ['moveLayersToFolder', 'arrangeLayers'].includes(name) && update.remove && (!Object.hasOwn(update, 'value') || update.value !== null)
+        || rename && (update.remove || typeof update.value !== 'string' || update.value !== update.value.trim())) return reject('with different removal or name operands');
+      if (order && (update.remove || !Array.isArray(update.value) || update.value.length !== layers.order.length
+        || new Set(update.value).size !== update.value.length || update.value.some(id => !Object.hasOwn(layers.byId, id)))) return reject('with an invalid layer order');
+      // Copy only metadata on the received leaf path. The existing validator
+      // checks folder membership/grouping; it never reads retained pose tracks.
+      let object = candidate;
+      if (member) object = candidate.byId[path[1]] = {...candidate.byId[path[1]]};
+      else if (rename) object = candidate.folders.byId[path[2]] = {...candidate.folders.byId[path[2]]};
+      else if (path.length === 3) object = candidate.folders?.byId;
+      else if (path.length === 2) object = candidate.folders;
+      if (!record(object)) return reject('with a missing parent');
+      if (update.remove) delete object[path.at(-1)]; else object[path.at(-1)] = update.value;
+      updates.push([path, update.value, update.remove]);
+    }
+    try { validateLayerFolders(candidate); } catch { return reject('with invalid folders'); }
+    if (name === 'createLayerFolder') {
+      const result = answer.result;
+      if (!record(result) || Object.keys(result).join(',') !== 'id,kind,name' || result.kind !== 'folder'
+        || result.id !== `folder-${layers.folders?.nextId ?? 1}` || result.name !== candidate.folders?.byId[result.id]?.name
+        || candidate.folders.nextId !== (layers.folders?.nextId ?? 1) + 1) return reject('with a different created folder');
+    } else if (answer.result !== true) return reject('with a different result');
+    return {label, structural, updates};
+  };
   const prepareUnique = (answer, original, selection) => {
     const reject = why => ({why: `a movieclip unique packet ${why}`});
     const record = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -586,7 +672,13 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     }
   };
   /** What the editor does with an owned call's answer instead of computing it. */
-  const adopt = (name, answer, selection, args, topology, unique) => {
+  const adopt = (name, answer, selection, args, topology, unique, folder) => {
+    if (folder) {
+      try {
+        const result = editor._layerEdit(folder.label, folder.updates, {structural: folder.structural});
+        return name === 'createLayerFolder' ? answer.result : result;
+      } catch (error) { end('a layer folder publication failed'); throw error; }
+    }
     if (unique) {
       try { return editor._adoptMovieclipUnique(unique); }
       catch (error) { end('a movieclip unique publication failed'); throw error; }
@@ -795,8 +887,9 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       let live = begin(), before = null, payload = null, measured = null, fallbackStarted = null;
       const topologyFigure = live && own && SPLITS.has(name) ? splitFigure() : null;
       const movieclipFigure = live && own && name === 'makeMovieclipUnique' ? uniqueFigure() : null;
+      const folder = live && own && FOLDERS.has(name) && folderReady();
       const ownCall = own && OWNED.has(name) && (!SPLITS.has(name) || Boolean(topologyFigure))
-        && (name !== 'makeMovieclipUnique' || Boolean(movieclipFigure));
+        && (name !== 'makeMovieclipUnique' || Boolean(movieclipFigure)) && (!FOLDERS.has(name) || folder);
       // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
       if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
       if (live && (RANGE.has(name) || TOPOLOGY.includes(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
@@ -815,7 +908,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (given.some(value => value === undefined || typeof value === 'function' || value instanceof Set || name === 'undo' || name === 'redo')) payload = name === 'undo' || name === 'redo' ? '[]' : null;
         else try { payload = measured ? measured.payload() : JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
-        else before = JSON.stringify({...view(), ...(ownCall ? {changesOnly: true} : {}), ...(topologyFigure ? {topologyPublication: true} : {}), ...(movieclipFigure ? {movieclipUniquePublication: true} : {})});
+        else before = JSON.stringify({...view(), ...(ownCall ? {changesOnly: true} : {}), ...(topologyFigure ? {topologyPublication: true} : {}), ...(movieclipFigure ? {movieclipUniquePublication: true} : {}), ...(folder ? {layerPublication: true} : {})});
       }
       // Rig releases emit plain/definition edits; own static patches bypass keyed styles.
       // Keep these routes in the original editor with their eligible fallback timed;
@@ -838,11 +931,12 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         report.calls++;
         const topology = answer?.status === 'ok' && topologyFigure && answer.result !== false ? prepareSplit(answer, topologyFigure, selection) : null;
         const unique = answer?.status === 'ok' && movieclipFigure ? prepareUnique(answer, movieclipFigure, selection) : null;
-        const why = answer?.status === 'ok' ? unique ? unique.why : topology ? topology.why : unadoptable(answer) : null;
+        const folderPlan = answer?.status === 'ok' && folder ? prepareFolder(name, answer, selection) : null;
+        const why = answer?.status === 'ok' ? folderPlan ? folderPlan.why : unique ? unique.why : topology ? topology.why : unadoptable(answer) : null;
         if (answer?.status === 'ok' && !why) {
           depth++;
           const adopting = performance.now();
-          try { return adopt(name, answer, selection, args, topology, unique); }
+          try { return adopt(name, answer, selection, args, topology, unique, folderPlan); }
           finally {
             depth--; report.owned++; report.ownedMs += performance.now() - called;
             const entry = (report.byCall ??= {})[name] ??= {calls: 0};

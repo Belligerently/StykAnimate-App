@@ -64,3 +64,40 @@ The optional broader movieclip UI test is not a pass claim: both old and new app
 bytes time out waiting for the sixth repeated-paste counter in simple mode, before
 its first Unique action. That existing clipboard regression remains separate from
 the accepted scoped Unique proof.
+
+## Layer folders (2026-10-05)
+
+The scoped paired driver uses `--own --default --warm --exact-math
+--layer-folders` with the unchanged recorded sheet input. All five mutators adopt
+once with positive Native/engine/adoption clocks and no editor fallback. The
+Advanced timeline Ungroup folder action exercises `deleteLayerFolder`. All 21
+paired document/frame/history/selection/counter boundaries and both final outcomes
+match literally through undo→redo→undo.
+
+| Command | Adopted calls | Native call ms | Engine / parse / validation ms | Adoption ms | Owned subtotal ms | Editor-alone ms | Answer JSON length (UTF-16 units) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `createLayerFolder` | 1 | 0.795 | 1.000 | 1.960 | 2.960 | 3.565 | 799 |
+| `renameLayerFolder` | 1 | 0.455 | 0.580 | 1.160 | 1.740 | 1.115 | 668 |
+| `moveLayersToFolder` | 1 | 0.525 | 0.635 | 1.250 | 1.885 | 2.530 | 653 |
+| `arrangeLayers` | 1 | 0.490 | 0.615 | 9.705 | 10.320 | 1.390 | 614 |
+| `deleteLayerFolder` | 1 | 0.405 | 0.495 | 0.960 | 1.455 | 1.020 | 736 |
+
+Native call time is included in the engine column. The five observed subtotals
+sum to 18.360 ms versus 9.620 ms editor-alone. The regular checkpoint was running
+concurrently; these matched-command diagnostics impose no cost gate, advance no
+full-class rows, and establish no causal speed or idle engine-1 result.
+
+The actual run completes in 36.160 s with classes mode, 5 owned / 15 compared /
+20 calls and zero failed attempts, rounding, mismatches or page errors. All quiet
+UI prelude counts are zero, and all 6,412 guarded source/package inputs remain
+unchanged. Five individual measurements advance affected-command rows from two
+to seven; full-class rows remain 43, classes remain 5 and engine-1 remains 0/28.
+
+Focused checks pass 236 Rust tests (zero failed/ignored, 53 groups), three fresh
+recordings / 58 exact calls, 204 JS tests (zero failed/skipped), and final Main
+check in 90.776 s. Shipping uses the required Wasm profile: 10,291,828 bytes in
+118.211 s, with codecs unchanged. Raw accepted command clocks and paired snapshots
+are in `tmp/root-verification-temp/layer-folders-focused/app-default-folders.json`;
+`actual-app-summary.json` and `app-completion.json` record the accepted scope and
+completion. The existing joined one-shot event-time gap and repeated-paste UI
+regression remain separate from folder adoption.

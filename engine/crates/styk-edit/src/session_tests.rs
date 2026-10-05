@@ -1093,3 +1093,176 @@ fn movieclip_unique_opt_in_preserves_errors_and_native_worker_refusal() {
         assert_eq!(json(&answer), json(&complete), "only literal true requests the additive wire");
     }
 }
+
+fn layer_packet_updates(packet: &Value) -> Vec<crate::layers::Update> {
+    packet.get("updates").unwrap().elements().unwrap().iter().map(|update| {
+        let path = update.get("path").unwrap().elements().unwrap().iter().map(|key| key.as_str().unwrap().to_string()).collect();
+        (path, update.get("value").cloned(), update.get("remove") == Some(&Value::Bool(true)))
+    }).collect()
+}
+
+#[test]
+fn folder_publication_preserves_recorded_answers_and_original_layer_history() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/layers-folders-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+    for compact in [false, true] {
+        let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut expected = ordinary.editor.report_json();
+        let mut packets = Vec::new();
+        let mut methods = HashSet::new();
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap();
+            let before = requested.editor.snapshot();
+            let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+            view.set("changesOnly", Value::Bool(compact));
+            let args = Value::array(call[1..].to_vec());
+            let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
+            view.set("layerPublication", Value::Bool(true));
+            let mut answer = requested.call_values(method, &args, &Value::object(view));
+            let label = format!("folder step{} compact={compact}", step.get("step").unwrap());
+            if let Some(packet) = answer.get("layerPublication").cloned() {
+                assert!(matches!(method, "createLayerFolder" | "renameLayerFolder" | "moveLayersToFolder" | "arrangeLayers" | "deleteLayerFolder"));
+                methods.insert(method.to_string());
+                let events = answer.get("events").unwrap();
+                let event = events.item(0).unwrap();
+                assert_eq!(events.array_len(), Some(1));
+                assert_eq!(event.get("timing"), Some(&Value::Bool(false)));
+                assert!(event.get("layerSheet").is_none());
+                assert_eq!(packet.get("label"), event.get("label"));
+                assert_eq!(packet.get("structural"), event.get("structural"));
+                let after = requested.editor.snapshot();
+                let stored = requested.editor.report_json();
+                let state = requested.editor.state_value();
+                let history = requested.editor.history_value();
+                // Reconstruct with the original _layerEdit owner, not a report
+                // diff or undo-tail extraction. Preserve all prior history.
+                requested.editor.restore(before);
+                assert!(requested.editor.layer_edit(packet.get("label").unwrap().as_str().unwrap(), layer_packet_updates(&packet), packet.get("structural") == Some(&Value::Bool(true)), None).unwrap());
+                assert_eq!(requested.editor.report_json(), stored, "{label}: sheet tracks/order/unknown stored fields");
+                assert_eq!(requested.editor.state_value(), state, "{label}: selection/revisions");
+                assert_eq!(requested.editor.history_value(), history, "{label}: one original Layers entry");
+                assert_eq!(Value::array(requested.editor.take_events()), events.clone(), "{label}: original edit event");
+                let crate::history::CommandKind::Layers { timing, migration, .. } = &requested.editor.undo.last().unwrap().kind else { panic!("folder edit must be one Layers leaf") };
+                assert!(*timing, "stored command owns its sheet track-head patch");
+                assert!(migration.is_none());
+                requested.editor.restore(after);
+                packets.push((packet.clone(), json(&packet)));
+                answer.make_obj().unwrap().remove("layerPublication");
+            } else if matches!(method, "createLayerFolder" | "renameLayerFolder" | "moveLayersToFolder" | "arrangeLayers" | "deleteLayerFolder") && complete.get("status").and_then(Value::as_str) == Some("ok") && complete.get("result").is_some_and(Value::truthy) {
+                panic!("{label}: successful folder call omitted its accepted operands");
+            }
+            assert!(complete.get("layerPublication").is_none());
+            assert_eq!(json(&answer), json(&complete), "{label}: default answer bytes");
+            assert_eq!(json(answer.get("state").unwrap()), json(step.get("state").unwrap()), "{label}: recorded state");
+            assert_eq!(json(answer.get("events").unwrap()), json(step.get("events").unwrap()), "{label}: recorded event order");
+            if let Some(error) = step.get("error").filter(|error| !error.is_null()) { assert_eq!(answer.get("error"), error.get("key")); }
+            else { assert_eq!(crate::replay::plain(answer.get("result").unwrap(), 4).unwrap_or(Value::Null), step.get("result").cloned().unwrap()); }
+            if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.into(); }
+            assert_eq!(requested.editor.report_json(), expected, "{label}: recorded document");
+            assert_eq!(ordinary.editor.report_json(), expected);
+        }
+        assert_eq!(methods.len(), 5);
+        assert_eq!(packets.len(), 10);
+        for (packet, bytes) in packets { assert_eq!(json(&packet), bytes, "later undo/redo preserves returned immutable operands"); }
+    }
+}
+
+#[test]
+fn folder_publication_keeps_null_removals_absence_noops_and_zero_history() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/layers-folders-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let initial = reference.get("steps").unwrap().item(0).unwrap().get("state").unwrap().clone();
+    for compact in [false, true] {
+        let mut ordinary = session_from_recorded_state(&reference, &initial);
+        let mut requested = session_from_recorded_state(&reference, &initial);
+        for session in [&mut ordinary, &mut requested] {
+            session.editor.history_limits.count = 0;
+            let layers = session.editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().get_mut("layers").unwrap().make_obj().unwrap();
+            layers.set("unknownFolderMetadata", parse(r#"{"preserve":[null,3]}"#));
+        }
+        let mut captured = Vec::new();
+        for (method, args, packet_count) in [
+            ("createLayerFolder", r#"["Group",[]]"#, Some(1)),
+            ("renameLayerFolder", r#"["folder-1","Group"]"#, None),
+            ("moveLayersToFolder", r#"[["layer-1"],null]"#, Some(1)),
+            ("arrangeLayers", r#"[["layer-1","layer-2"],["layer-1"]]"#, None),
+            ("arrangeLayers", r#"[["layer-1","layer-2"],["layer-1"],null]"#, Some(1)),
+            ("deleteLayerFolder", r#"["folder-1"]"#, Some(1)),
+            ("renameLayerFolder", r#"["folder-1","Missing"]"#, None),
+        ] {
+            let old_report = requested.report().clone();
+            let before = requested.editor.snapshot();
+            let mut view = ordinary.editor.state_value().as_obj().unwrap().clone(); view.set("changesOnly", Value::Bool(compact));
+            let complete = ordinary.call_values(method, &parse(args), &Value::object(view.clone()));
+            view.set("layerPublication", Value::Bool(true));
+            let mut answer = requested.call_values(method, &parse(args), &Value::object(view));
+            if let Some(count) = packet_count {
+                let packet = answer.get("layerPublication").unwrap().clone();
+                let updates = packet.get("updates").unwrap(); assert_eq!(updates.array_len(), Some(count));
+                let update = updates.item(0).unwrap();
+                if method == "createLayerFolder" {
+                    assert_eq!(update.get("path"), Some(&parse(r#"["folders"]"#)), "absent folders are created as one head");
+                    assert_eq!(answer.get("result"), Some(&parse(r#"{"id":"folder-1","kind":"folder","name":"Group"}"#)));
+                } else if method == "deleteLayerFolder" {
+                    assert_eq!(update.get("remove"), Some(&Value::Bool(true)));
+                    assert!(update.get("value").is_none(), "undefined removal is omitted");
+                } else {
+                    assert_eq!(update.get("path"), Some(&parse(r#"["byId","layer-1","folderId"]"#)));
+                    assert_eq!(update.get("remove"), Some(&Value::Bool(true)));
+                    assert_eq!(update.get("value"), Some(&Value::Null), "absent-to-absent null still records");
+                }
+                assert!(requested.editor.undo.is_empty(), "packet cannot depend on the trimmed undo tail");
+                let after = requested.editor.snapshot();
+                requested.editor.restore(before);
+                assert!(requested.editor.layer_edit(packet.get("label").unwrap().as_str().unwrap(), layer_packet_updates(&packet), packet.get("structural") == Some(&Value::Bool(true)), None).unwrap());
+                assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+                assert_eq!(requested.editor.state_value(), ordinary.editor.state_value());
+                assert_eq!(Value::array(requested.editor.take_events()), answer.get("events").unwrap().clone());
+                requested.editor.restore(after);
+                captured.push((packet.clone(), json(&packet)));
+                answer.make_obj().unwrap().remove("layerPublication");
+            } else {
+                assert!(answer.get("layerPublication").is_none());
+                assert_eq!(answer.get("events").unwrap().array_len(), Some(0));
+                assert_eq!(json(requested.report()), json(&old_report), "no-op/error preserves stored bytes");
+            }
+            assert_eq!(json(&answer), json(&complete));
+            assert_eq!(requested.report().path(&["_styk", "layers", "unknownFolderMetadata"]), Some(&parse(r#"{"preserve":[null,3]}"#)));
+        }
+        for (packet, bytes) in captured { assert_eq!(json(&packet), bytes); }
+    }
+}
+
+#[test]
+fn folder_publication_is_literal_opt_in_and_keeps_quiet_sheet_admission() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/layers-folders-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let initial = reference.get("steps").unwrap().item(0).unwrap().get("state").unwrap().clone();
+    for context in ["false", "number", "native", "source", "frameDraft", "origin", "drag", "batch", "otherMethod"] {
+        let mut ordinary = session_from_recorded_state(&reference, &initial);
+        let mut requested = session_from_recorded_state(&reference, &initial);
+        for session in [&mut ordinary, &mut requested] {
+            match context {
+                "native" => { session.editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().remove("layerSheet"); }
+                "source" => { session.editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().set("movieclipSource", parse("{}")); }
+                "frameDraft" => { session.editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().set("simpleFrameDraft", parse("{}")); }
+                "origin" => { let figure = &mut session.editor.report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[0]; figure.make_obj().unwrap().set("_styk", parse(r#"{"animationOrigin":{}}"#)); }
+                "drag" => { session.editor.call("beginDrag", &parse(r#"["Existing gesture"]"#).elements().unwrap().iter().collect::<Vec<_>>()).unwrap(); session.editor.take_events(); }
+                "batch" => { session.editor.call("beginBatch", &parse(r#"["Existing batch"]"#).elements().unwrap().iter().collect::<Vec<_>>()).unwrap(); session.editor.take_events(); }
+                _ => {}
+            }
+        }
+        let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+        let method = if context == "otherMethod" { "renameLayer" } else { "createLayerFolder" };
+        let args = if context == "otherMethod" { parse(r#"["layer-1","Name"]"#) } else { parse(r#"["Name",[]]"#) };
+        let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
+        view.set("layerPublication", match context { "false" => Value::Bool(false), "number" => Value::Num(1.0), _ => Value::Bool(true) });
+        let answer = requested.call_values(method, &args, &Value::object(view));
+        assert!(answer.get("layerPublication").is_none(), "{context}: no new admission");
+        assert_eq!(json(&answer), json(&complete), "{context}: original status/result/state/events");
+        assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+    }
+}

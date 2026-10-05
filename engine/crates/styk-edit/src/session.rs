@@ -285,6 +285,9 @@ impl Session {
     /// `movieclipUniquePublication: true` additionally certifies an ordinary sheet
     /// Make Unique answer with `movieclipUnique: {definitionIndex}`. Its appended
     /// definition, sheet and sources remain in their existing response fields.
+    /// `layerPublication: true` requests a quiet ordinary sheet folder edit's
+    /// original accepted operands as `{label, structural, updates}`. Removals
+    /// preserve null versus an omitted undefined value. No-op calls omit it.
     /// Returns the answer as JSON (see the module).
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
@@ -380,6 +383,15 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         && editor.native_token.is_none() && editor.batch.is_none()
         && before.path(&["_styk", "simpleFrameDraft"]).is_none()
         && before.path(&["_styk", "movieclipSource"]).is_none();
+    let layer_requested = view.get("layerPublication") == Some(&Value::Bool(true))
+        && matches!(method, "createLayerFolder" | "renameLayerFolder" | "moveLayersToFolder" | "arrangeLayers" | "deleteLayerFolder")
+        && editor.sheet() && editor.drag.is_none() && draft.is_none()
+        && editor.property_edit.is_none() && editor.vfx_edit.is_none()
+        && editor.native_token.is_none() && editor.batch.is_none()
+        && before.path(&["_styk", "simpleFrameDraft"]).is_none()
+        && before.path(&["_styk", "movieclipSource"]).is_none()
+        && !before.get("figure_types").and_then(Value::elements).is_some_and(|figures| figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some()));
+    let mut layer_publication = None;
     let mut answer = Vec::with_capacity(8);
     // Owned calls request only changed COW records. The default remains complete for
     // shadow comparison and existing native session consumers.
@@ -431,11 +443,16 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
                     Err(forwarded)
                 }
             };
-            let result = editor.call_worker_checked(method, &Value::array(args), &mut checked);
+            let result = if layer_requested {
+                // The original worker path delegates ordinary sheet calls to
+                // Editor::call after this entry check, with the same rollback.
+                checked().and_then(|()| editor.call_layer_publication(method, &args, &mut layer_publication))
+            } else { editor.call_worker_checked(method, &Value::array(args), &mut checked) };
             if let Some(error) = interrupted { return Err(error); }
             result
         } else {
-            editor.call(method, &args)
+            if layer_requested { editor.call_layer_publication(method, &args, &mut layer_publication) }
+            else { editor.call(method, &args) }
         };
         result.and_then(|result| {
             // Legacy facades read these views locally. The exclusive worker has
@@ -447,6 +464,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     };
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
     let unique_result = unique_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
+    let layer_changed = layer_requested && result.as_ref().is_ok_and(Value::truthy);
     match result {
         Ok(result) => {
             answer.push(("status", Value::str("ok")));
@@ -589,6 +607,18 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         && let Some(marker) = movieclip_unique_publication(&before, original, report, result, &events)
     {
         answer.push(("movieclipUnique", marker));
+    }
+    if layer_changed && events.len() == 1
+        && events[0].get("kind").and_then(Value::as_str) == Some("edit")
+        && events[0].get("layerMetadata") == Some(&Value::Bool(true))
+        && events[0].get("layers") == Some(&Value::Bool(true))
+        && !events[0].get("layerSheet").is_some_and(Value::truthy)
+        && !events[0].get("live").is_some_and(Value::truthy)
+        && !events[0].get("timing").is_some_and(Value::truthy)
+        && !events[0].get("animation").is_some_and(Value::truthy)
+        && let Some(publication) = layer_publication
+    {
+        answer.push(("layerPublication", publication));
     }
     answer.push(("events", Value::array(events)));
     let figures = if changes_only {

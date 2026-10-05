@@ -130,6 +130,34 @@ Both Unique calls have positive Native/adoption clocks without fallback; the
 matched command timing is diagnostic only, not a class-cost gate. See
 [command measurements](../performance/RUST-EDITING-COMMANDS.md).
 
+### Layer folder publication (2026-10-05)
+
+Literal `view.layerPublication: true` requests optional `answer.layerPublication`
+for quiet ordinary-sheet create/rename/move/arrange/delete folder calls:
+`{label, structural, updates: [{path, remove, value?}]}`. Original accepted operands
+are captured in order before history recording or trimming. A null removal carries
+`value: null`; undefined removal omits `value`. False no-ops and errors omit the
+packet. Default answers remain unchanged without the opt-in field.
+
+The facade validates the command certificate and metadata paths before applying
+updates through the original `_layerEdit` filtering, history, source pruning,
+selection and sheet-track publication owner. It reuses the existing folder
+validator, copies metadata heads once and leaves retained tracks/report data in
+their existing owners. Native/source/origin/active-edit contexts retain their
+existing route. Public Rust signatures/layouts and stored math are unchanged;
+mobile consumers opting in must handle the additive JSON field, while the current
+mobile pin remains untouched.
+
+`getLayerFolders` is an ordered UI projection of published records, including
+unknown fields, with no independent validation, ordering or mutation. The module
+is verified after actual positive default adoption of all five mutators with exact
+query/return/history/selection/full undo. Normal editing-crate checks pass
+236 tests (zero failed/ignored, 53 groups), three fresh recorded replays /
+58 exact calls, 204 JS tests (zero failed/skipped) and final Main check. The actual
+Advanced timeline Ungroup action and all 21 paired boundaries match; each mutator
+has positive Native/adoption clocks and no editor fallback. Observed command timings
+are diagnostic only; class-cost policy and full-class row counts are unchanged.
+
 ### Recorded worker movieclips, history and publication (2026-10-04)
 
 Native and sheet movieclip creation, splitting, unique copies, break apart, placement,

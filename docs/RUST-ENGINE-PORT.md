@@ -10,23 +10,26 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, Make Movieclip Unique adopted)
+## Handoff (2026-10-05, layer folders adopted)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current milestone:** ordinary sheet Make Movieclip Unique adopts its shallow copied
-definition and sheet publication through the original movieclip batch/history tail.
-The actual warmed default UI at ticks 2 and 2.25 adopts both Unique calls, with exact
-document/history/selection/phase at twelve boundaries and full undo. Their observed
-subtotal is **22.030 ms** versus **19.740 ms** editor-alone; this is diagnostic,
-not a new class-cost gate or causal speed claim.
+**Current milestone:** create, rename, move, arrange and ungroup layer folders
+adopt Native ordered updates through the original `_layerEdit` history tail.
+All five commands have positive Native/adoption clocks and no editor fallback;
+21 paired document/frame/history/selection/counter boundaries and full undo match.
+`getLayerFolders` remains a direct UI projection of published records. The observed
+subtotal is **18.360 ms** versus **9.620 ms** editor-alone, diagnostic only under a
+concurrent checkpoint.
 
-Focused checks pass **233 Rust tests**, **five recordings / 79 exact calls**,
-**266 JS tests** and Main check. Required-profile shipping is **10,257,065 bytes**
-in **98.559 s**, with codecs unchanged. The last full green remains `c4c580de` and
-does not certify this new Rust; the regular committed-source checkpoint remains due.
+Focused checks pass **236 Rust tests**, **three recordings / 58 exact calls**,
+**204 JS tests** and final Main check. Required-profile shipping is **10,291,828 bytes**
+in **118.211 s**, with codecs unchanged. The last full green remains `c4c580de`;
+the regular immutable `53c11b8f` checkpoint is running. The persistent target stays
+intact; a package-only warm probe does not certify the broader parity feature
+variant, so downstream recompiles are expected. No new checkpoint green is claimed.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
@@ -37,9 +40,11 @@ workload. Channels has 346 calls on each page: latest excess 0.048887 ms and
 [historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
 outcomes. The short default workload proves admission, not full cost.
 
-**Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
-1 removed** unchanged; **OWNED_CLASSES 5→5**; **deleted JS 2→2**; completed full cost
-rows **43 unchanged**; **engine-1 0/28 unchanged**. Affected command benchmark rows **1→2**, recorded separately in
+**Milestone counters:** inventory **175 js / 123 partial / 34 ported / 23 verified /
+1 removed**: `editor-layer-folders.mjs` moves from ported to verified;
+**OWNED_CLASSES 5→5**, **deleted JS 2→2**, full cost rows **43 unchanged** and
+**engine-1 0/28 unchanged**. The five individual folder observations advance affected
+command measurement rows **2→7**, recorded in
 [command timings](performance/RUST-EDITING-COMMANDS.md).
 
 **Next:** remaining recorded app commands, preserving native-timeline worker refusals
@@ -71,8 +76,8 @@ reviewed owning hunks; do not overwrite newer Main owners or clean another lane'
 Keep the checkpoint worktree and `tmp/baseline-worktree` (`96ebce85`). Preserve historical
 worktrees and immutable experiments. General Core/static/cache/storage lanes are parked;
 active work is limited to remaining recorded command adoption. The mobile checkout remains untouched at
-`661c6ad8`. Split and Unique packets are additive opt-in Session JSON contracts; a mobile
-consumer that opts in must handle the requested fields. Rust signatures and stored math
+`661c6ad8`. Split, Unique and layer-publication packets are additive opt-in Session
+JSON contracts; a mobile consumer that opts in must handle the requested fields. Rust signatures and stored math
 are unchanged.
 
 D7 forbids blocking the interface; D13 forbids tuning pixel thresholds; D15 requires
@@ -300,9 +305,11 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set.
 
-- **Movieclip Unique:** ordinary sheet copies now adopt through the existing definition/sheet batch and history owners. Actual default UI checks preserve integer/fractional displayed phase, undo/redo and full undo; native/source/origin/draft exclusions retain fallback. Next remaining recorded commands, then idle engine-1/baseline-0 before deletion.
+- **Layer folders:** all five mutators now adopt ordered updates through the original `_layerEdit` tail, with exact actual default query/history/selection/full-undo proof. The getter remains a UI record projection. Next remaining recorded commands, then idle engine-1/baseline-0 before deletion.
 
 - **Existing movieclip clipboard UI regression:** the broader simple-mode test times out waiting for the sixth repeated-paste counter before its first Unique action, on both old and new app bytes. Fix clipboard adoption before benchmarking or deletion; this test is not claimed passed.
+
+- **Existing joined one-shot event-time gap:** `moveSelection` can expose stale geometry to live-event listeners before installing its retained result. This remains a final parity/deletion gap; it is not a layer-folder adoption prerequisite.
 
 - **Canonical worker adoption and query readiness:** effect presets/scopes/paints now
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
@@ -555,6 +562,17 @@ unpacked into `~/.cache/styk-webkit-libs`, nothing installed system-wide); pinne
 layer-sheet movieclip replacements.
 
 ## 7. Parity results
+
+Layer folders pass 236 normal editing-crate tests, zero failed or ignored across
+53 result groups; three fresh recorded replays / 58 exact calls; 204 JS tests,
+zero failed/skipped; and final Main check. Actual default classes mode adopts all
+five mutators with no editor fallback: 5 owned / 15 compared / 20 calls, zero
+failed attempts, rounding, mismatches or page errors. All 21 paired boundaries and
+both outcomes match literally through undo→redo→undo, including actual Advanced
+timeline Ungroup. All 6,412 source/package inputs remain unchanged. The observed
+18.360/9.620 ms subtotal is a diagnostic under concurrent checkpoint load, not a
+class-cost gate or causal speed claim. Shipping uses the required Wasm profile:
+10,291,828 bytes in 118.211 s, with codecs unchanged.
 
 Ordinary sheet Unique passes 233 Rust tests, five recordings / 79 exact calls,
 266 JS tests and Main check. The scoped warmed default UI run adopts both Unique
@@ -964,7 +982,7 @@ B8 focused verification: 209 editing and 174 evaluation tests pass with the same
 
 ## 8. Work queue
 
-**Immediate command task:** remaining recorded app commands after Split and Make Movieclip Unique. Run the complete idle engine-1/baseline-0 matrix after those
+**Immediate command task:** remaining recorded app commands after layer folder adoption. Run the complete idle engine-1/baseline-0 matrix after those
 commands and before JavaScript deletion; no further class-cost optimization is needed.
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
@@ -1208,3 +1226,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 18:05 UTC | Split builder segments through the engine | Ordinary sheet Split adopts the changed definition/poses through the original history tail; unsupported contexts retain fallback. Additive opt-in Session JSON; Rust signatures/math unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 5→5; deleted JS 2→2; affected-command measurements 0→1; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 94 Rust; 12 recordings / 272 exact calls; 225 JS/Main check; 1,340 stable JSON. One warmed Split 15.335/17.085 ms with exact full undo; Build UI Split/Undo/branch/repeated sessions/drawing/discard pass, screenshots inspected (compatibility renderer). No causal speed claim. |
 
 | 2026-10-05 18:47 UTC | Make independent movieclip copies through the engine | Ordinary sheet Unique adopts the shallow definition copy and original sheet batch/history tail; unsupported contexts retain fallback. Additive opt-in Session JSON; Rust signatures/math unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 5→5; deleted JS 2→2; affected-command measurements 1→2; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 233 Rust; five recordings / 79 exact calls; 266 JS/Main check pass. Two warmed default UI copies preserve twelve paired boundaries and full undo, with positive Native/adoption clocks. Observed 22.030/19.740 ms is diagnostic, not a class-cost gate or causal speed claim. |
+
+| 2026-10-05 19:17 UTC | Edit layer folders through the engine | All five mutators adopt ordered updates through the original layer history tail; the getter remains a UI projection. Additive opt-in Session JSON; Rust signatures/layout/math unchanged. **Counters:** inventory 175 js/123 partial/34 ported/23 verified/1 removed (one ported→verified); OWNED_CLASSES 5→5; deleted JS 2→2; command measurements 2→7; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 236 Rust; three recordings / 58 exact calls; 204 JS/Main check pass. All five default commands adopt without editor fallback; actual Ungroup, 21 paired boundaries and full undo are exact. Observed 18.360/9.620 ms is diagnostic under concurrent checkpoint load, not a class-cost gate or causal speed claim. |

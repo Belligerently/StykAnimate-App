@@ -1561,3 +1561,221 @@ test('native, drafted, captured-source, active and batched Unique routes do not 
   for (const editor of [batch.expected, batch.owned]) editor.movieclipBatch('Outer batch', () => editor.makeMovieclipUnique());
   batch.same(); assert.equal(batch.requests.length, 0); assert.equal(batch.report.owned, count);
 });
+
+// Project accepted operands at the separate actual Editor's original layer edit
+// boundary. Native tests independently certify the opt-in packet before trim.
+const folderCalls = ['createLayerFolder', 'renameLayerFolder', 'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder'];
+function folderPair(document, {layerTimeline = true, historyLimit, mode = 'classes', setup} = {}) {
+  const options = {demo: false, propertyChannels: true, layerTimeline};
+  const expected = new Editor(options).load(structuredClone(document)), owned = new Editor(options).load(structuredClone(document));
+  let oracle = new Editor(options).load(structuredClone(document)), session, current = true, alter = () => {};
+  const requests = [], packets = [], releases = [], originalCalls = {}, observations = [[], []];
+  if (historyLimit !== undefined) for (const editor of [expected, owned, oracle]) editor.historyLimit = historyLimit;
+  if (setup) for (const editor of [expected, owned, oracle]) setup(editor);
+  for (const name of folderCalls) {
+    const original = owned[name]; originalCalls[name] = 0;
+    owned[name] = function (...args) { originalCalls[name]++; return original.apply(this, args); };
+  }
+  const start = () => {
+    let accepted = null;
+    const original = oracle._layerEdit;
+    oracle._layerEdit = function (label, updates, options = {}) {
+      const state = this.report._styk.layers;
+      accepted = {label, structural: Boolean(options.structural), updates: updates.filter(([path, value, remove = false]) => {
+        let object = state; for (const part of path.slice(0, -1)) object = object[part];
+        const key = path.at(-1), before = {exists: Object.hasOwn(object, key), value: object[key]}, after = {exists: !remove, value};
+        return JSON.stringify(before) !== JSON.stringify(after);
+      }).map(([path, value, remove = false]) => ({path: path.slice(), remove, ...(value === undefined ? {} : {value: structuredClone(value)})}))};
+      return original.call(this, label, updates, options);
+    };
+    session = sessionFor(oracle);
+    const call = session.call.bind(session);
+    session.call = (name, args, viewText) => {
+      if (name === 'beginBatch') return json({status: 'unported', reason: 'this actual-Editor mock has no batch protocol'});
+      accepted = null; const view = JSON.parse(viewText);
+      if (view.layerPublication) requests.push({name, view});
+      const answer = JSON.parse(call(name, args, viewText));
+      if (view.layerPublication && answer.status === 'ok' && answer.result !== false && accepted) answer.layerPublication = accepted;
+      if (folderCalls.includes(name)) { packets.push(structuredClone(answer)); alter(answer); }
+      return json(answer);
+    };
+    session.free = () => { releases.push(json(owned.report)); current = false; oracle._layerEdit = original; };
+    return session;
+  };
+  const mirror = {framesCurrent: () => current, syncFrames: async () => {
+    oracle = new Editor(options).load(structuredClone(owned.report));
+    for (const key of ['_revision', '_revisionSerial', '_savedRevision', '_layerRevision', '_definitionRevision', '_nextUid', '_nextFrameIdentity']) oracle[key] = owned[key];
+    oracle._generatedFrameSources = new Set(owned._generatedFrameSources); oracle.historyLimit = owned.historyLimit;
+    oracle._restoreSelection(owned._selectionState()); oracle._invalidate(); current = true;
+  }};
+  const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: start}}, mirror}), {mode});
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => observations[index].push({event: clean(event.detail),
+    document: json(editor.report), state: state(editor), counters: topologyCounters(editor), history: json(editor._undo), redo: json(editor._redo),
+    frame: json(editor.evaluatedFrame), geometry: clean(editor.geometry.drawables)}));
+  const same = () => {
+    assert.equal(json(owned.report), json(expected.report), 'complete layer document');
+    assert.deepEqual(state(owned), state(expected), 'selection and history view');
+    assert.deepEqual(topologyCounters(owned), topologyCounters(expected), 'revision, identities, history size and source cleanup');
+    assert.deepEqual(owned._undo, expected._undo, 'literal Layers history including value presence');
+    assert.deepEqual(owned._redo, expected._redo, 'literal redo entries');
+    assert.equal(json(owned.evaluatedFrame), json(expected.evaluatedFrame), 'displayed frame');
+    assert.deepEqual(observations[1], observations[0], 'event-time document, history, counters and geometry');
+    assert.deepEqual(owned.geometry.drawables, buildGeometry(owned.report, owned.evaluatedFrame).drawables, 'fresh numeric geometry');
+    assert.equal(report.mismatches.length, 0, JSON.stringify(report.mismatches));
+  };
+  const run = (name, ...args) => {
+    let result, actual, error;
+    try { result = expected[name](...args); } catch (caught) { error = caught.messageKey ?? caught.message; }
+    if (error) assert.throws(() => owned[name](...args), caught => (caught.messageKey ?? caught.message) === error);
+    else actual = owned[name](...args);
+    same(); if (!error) assert.equal(json(actual), json(result), 'original result');
+    return {result: actual, error};
+  };
+  return {expected, owned, get oracle() { return oracle; }, get session() { return session; }, report, requests, packets, releases,
+    originalCalls, observations, same, run, alter: callback => { alter = callback; }};
+}
+const folderDocument = () => JSON.parse(readFileSync(new URL('../engine/tests/edit/sheet-layers.document.json', import.meta.url), 'utf8'));
+
+for (const family of ['layers-folders-sheet', 'layer-list-sheet', 'layers-native']) {
+  test(`layer folder adoption preserves each recorded original boundary: ${family}`, () => {
+    const folder = new URL('../engine/tests/edit/', import.meta.url), scenario = JSON.parse(readFileSync(new URL(`${family}.scenario.json`, folder), 'utf8'));
+    const document = JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8'));
+    // Adjacent layer-list/native tapes contain no folder calls. Keep their
+    // original event-time oracle in shadow mode; only the folder tape adopts.
+    const mode = family === 'layers-folders-sheet' ? 'classes' : 'shadow';
+    const pair = folderPair(document, {layerTimeline: Boolean(scenario.editor.layerTimeline), mode}), {expected, owned, report, run} = pair;
+    for (const [method, ...args] of scenario.steps) {
+      const name = method.replace(/^@/, ''), adopted = report.owned, original = pair.originalCalls[name];
+      const {error} = run(name, ...args.map(decode));
+      if (folderCalls.includes(name) && !error) {
+        assert.equal(report.owned, adopted + 1, 'the folder result was actually adopted');
+        assert.equal(pair.originalCalls[name], original, 'the original folder planner was skipped');
+      }
+    }
+    if (family === 'layers-folders-sheet') {
+      for (const name of folderCalls) assert.ok(pair.requests.some(request => request.name === name), `actual ${name} packet requested`);
+      assert.ok(pair.packets.some(answer => answer.status === 'error'), 'recorded errors replay the original owner');
+      while (expected.canUndo) run('undo'); while (expected.canRedo) run('redo');
+    }
+    if (!scenario.editor.layerTimeline) { assert.equal(pair.requests.length, 0); assert.equal(report.owned, 0); }
+    assert.equal(report.mode, mode); assert.equal(owned.layerTimeline, expected.layerTimeline);
+  });
+}
+
+test('folder null and omitted removals preserve accepted history operands, no-ops and immutable counters', () => {
+  const document = folderDocument(); document.folderUnknown = {keep: ['document', null]};
+  document._styk.layers.byId['layer-1'].folderUnknown = {keep: ['layer', null]};
+  const pair = folderPair(document), {owned, expected, report, run} = pair;
+  const layer = owned.report._styk.layers.byId['layer-1'], unknown = layer.folderUnknown;
+  const unchanged = () => ({nextUid: owned._nextUid, nextFrame: owned._nextFrameIdentity, definition: owned.definitionRevision,
+    frames: owned.report.keyframes, sources: owned.report._styk.frameSources, counts: owned._layerUidCounts, groups: owned._layerGroups,
+    arrays: [...owned._layerUidArrays], tracks: {...owned.report._styk.layerSheet.tracks}});
+  for (const editor of [expected, owned, pair.oracle]) editor.getLayers();
+  const before = unchanged();
+  const created = run('createLayerFolder', 'Group', ['layer-1']).result;
+  assert.deepEqual(created, {id: 'folder-1', kind: 'folder', name: 'Group'});
+  const folder = owned.report._styk.layers.folders.byId[created.id];
+  run('renameLayerFolder', created.id, ' Renamed ');
+  assert.equal(owned.report._styk.layers.folders.byId[created.id], folder, 'rename keeps the existing folder record');
+  const revision = owned.revision, events = pair.observations[1].length, adopted = report.owned;
+  assert.equal(run('renameLayerFolder', created.id, 'Renamed').result, false);
+  assert.equal(report.owned, adopted + 1, 'packet-free no-op was adopted'); assert.equal(owned.revision, revision);
+  assert.equal(pair.observations[1].length, events, 'no event or history for unchanged name');
+  run('arrangeLayers', owned.report._styk.layers.order.slice(), ['layer-1']);
+  assert.equal(owned.report._styk.layers.byId['layer-1'].folderId, created.id, 'omitted destination preserves membership');
+  run('moveLayersToFolder', ['layer-2'], null);
+  const nullRemoval = owned._undo.at(-1).changes.find(change => change.path.join('.') === 'byId.layer-2.folderId');
+  assert.deepEqual(nullRemoval.before, {exists: false, value: undefined});
+  assert.deepEqual(nullRemoval.after, {exists: false, value: null}, 'null removal on absent leaf deliberately records');
+  run('arrangeLayers', owned.report._styk.layers.order.slice(), ['layer-1'], null);
+  assert.equal(Object.hasOwn(owned.report._styk.layers.byId['layer-1'], 'folderId'), false);
+  run('moveLayersToFolder', ['layer-1'], created.id);
+  run('deleteLayerFolder', created.id);
+  const deleted = owned._undo.at(-1).changes;
+  assert.ok(deleted.every(change => change.after.exists === false && Object.hasOwn(change.after, 'value') && change.after.value === undefined));
+  const after = unchanged();
+  assert.equal(owned.report._styk.layers.byId['layer-1'], layer); assert.equal(layer.folderUnknown, unknown, 'unknown layer child identity survives');
+  assert.deepEqual(owned.report.folderUnknown, document.folderUnknown);
+  for (const key of ['nextUid', 'nextFrame', 'frames', 'sources', 'counts', 'groups']) assert.equal(after[key], before[key], `unchanged ${key}`);
+  for (const [id, track] of Object.entries(before.tracks)) assert.equal(after.tracks[id], track, `untouched track ${id}`);
+  for (const [id, array] of before.arrays) assert.equal(owned._layerUidArrays.get(id), array, `existing UID array ${id}`);
+  for (const observation of pair.observations[1]) if (observation.event.kind === 'edit') {
+    assert.equal(observation.event.layerSheet, undefined); assert.equal(observation.event.timing, false);
+    assert.equal(observation.event.animation, false); assert.equal(observation.event.layerMetadata, true);
+  }
+  while (expected.canUndo) run('undo'); while (expected.canRedo) run('redo');
+});
+
+test('folder history zero uses original source pruning and retained sheet-track identities', () => {
+  let first;
+  const pair = folderPair(folderDocument(), {setup(editor) {
+    editor.select(1, -1); editor.moveSelection(5, -2);
+    first ??= new Set(Object.keys(editor.report._styk.frameSources)); editor.moveSelection(-3, 4);
+  }}), {expected, owned, run, same} = pair;
+  for (const editor of [expected, owned, pair.oracle]) editor.historyLimit = 0;
+  const tracks = {...owned.report._styk.layerSheet.tracks}, sources = owned.report._styk.frameSources, adopted = pair.report.owned;
+  run('createLayerFolder', 'Zero history', ['layer-1']);
+  assert.equal(pair.report.owned, adopted + 1); assert.equal(owned._undo.length, 0); assert.equal(owned.canUndo, false);
+  assert.ok([...first].some(id => !Object.hasOwn(sources, id)), 'old history-only source really dropped');
+  for (const [id, track] of Object.entries(tracks)) assert.equal(owned.report._styk.layerSheet.tracks[id], track);
+  same();
+});
+
+test('malformed folder packets retire advanced Native before untouched original fallback', () => {
+  for (const alter of [
+    answer => { delete answer.layerPublication; }, answer => { answer.layerPublication.label = 'foreign'; },
+    answer => { answer.layerPublication.structural = false; }, answer => { answer.layerPublication.updates[0].path = ['activeId']; },
+    answer => { answer.layerPublication.updates[0].remove = 'yes'; }, answer => { delete answer.layerPublication.updates[0].value; },
+    answer => { answer.layerPublication.updates.push(answer.layerPublication.updates[0]); },
+    answer => { answer.layerPublication.updates[0].value.byId['folder-1'].name = ''; },
+    answer => { answer.layerPublication.updates.at(-1).value = ['layer-1']; },
+    answer => { answer.events[0].layerSheet = true; }, answer => { answer.events = null; }, answer => { answer.state.nextUid++; },
+    answer => { answer.result.id = 'folder-99'; },
+    answer => { answer.result = false; answer.events = []; delete answer.layerPublication; },
+  ]) {
+    const pair = folderPair(folderDocument()), {expected, owned, report, same} = pair;
+    pair.alter(alter); const before = json(owned.report), original = owned._layerEdit, adopted = report.owned;
+    owned._layerEdit = function (...args) {
+      assert.equal(pair.releases.length, 1, 'Native was retired before the original layer owner');
+      assert.equal(pair.releases[0], before, 'validation happened before the first adopted write');
+      return original.apply(this, args);
+    };
+    expected.createLayerFolder('Group', ['layer-1']); owned.createLayerFolder('Group', ['layer-1']); same();
+    assert.equal(pair.originalCalls.createLayerFolder, 1); assert.equal(report.owned, adopted); assert.equal(report.failedOwned, 1);
+    originalFallbackHistory(pair);
+  }
+});
+
+test('folder publication errors preserve original partial effects and discard the session before recovery', async () => {
+  const pair = folderPair(folderDocument()), {expected, owned, report, run, same} = pair;
+  const emits = [expected, owned].map(editor => editor._emit);
+  for (const [index, editor] of [expected, owned].entries()) editor._emit = function (kind, detail) {
+    if (kind === 'edit' && detail.layerMetadata) throw new Error('Rejected folder event');
+    return emits[index].call(this, kind, detail);
+  };
+  assert.throws(() => expected.createLayerFolder('First'), /Rejected folder event/);
+  assert.throws(() => owned.createLayerFolder('First'), /Rejected folder event/); same();
+  assert.equal(pair.releases.length, 1); assert.equal(report.ended['a layer folder publication failed'], 1);
+  for (const [index, editor] of [expected, owned].entries()) editor._emit = emits[index];
+  await report.prepare(); const sessions = report.sessions, adopted = report.owned;
+  run('createLayerFolder', 'Recovered'); assert.equal(report.sessions, sessions + 1); assert.equal(report.owned, adopted + 1);
+});
+
+test('native, source, origin, active and batched folder routes retain their original planner', () => {
+  for (const [document, options, setup, excluded] of [
+    [folderDocument(), {layerTimeline: false}, () => {}, editor => !editor.layerTimeline],
+    [folderDocument(), {}, editor => { editor.select(editor.evaluatedFrame.objects[0].unique_id, -1); editor.beginDrag('Active gesture'); }, editor => editor._drag],
+    [folderDocument(), {}, editor => editor.beginFrameDraft({mode: 'update'}), editor => editor._frameDraft],
+    [JSON.parse(readFileSync(new URL('../engine/tests/edit/origin-pose-layout-sheet.document.json', import.meta.url), 'utf8')), {}, () => {}, editor => editingClass(editor.report) === 'unported'],
+    [uniqueDocument('edit/clip-unique-sheet').figure_types.find(figure => figure._styk?.movieclip)._styk.movieclip.document, {}, () => {}, editor => editor.report._styk.movieclipSource],
+  ]) {
+    const pair = folderPair(document, options);
+    for (const editor of [pair.expected, pair.owned, pair.oracle]) { setup(editor); assert.ok(excluded(editor), 'the actual excluded owner is present'); }
+    const adopted = pair.report.owned, requests = pair.requests.length;
+    pair.run('createLayerFolder', 'Original route');
+    assert.equal(pair.report.owned, adopted); assert.equal(pair.requests.length, requests); assert.equal(pair.originalCalls.createLayerFolder, 1);
+  }
+  const pair = folderPair(folderDocument()), adopted = pair.report.owned;
+  for (const editor of [pair.expected, pair.owned]) editor.movieclipBatch('Folder batch', () => editor.createLayerFolder('Inside'));
+  pair.same(); assert.equal(pair.requests.length, 0); assert.equal(pair.report.owned, adopted); assert.equal(pair.originalCalls.createLayerFolder, 1);
+});

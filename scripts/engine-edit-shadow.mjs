@@ -5,7 +5,7 @@
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
 //   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
-//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--selection-adoption] [--movieclip-unique] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
+//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--selection-adoption] [--movieclip-unique | --layer-folders] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -28,6 +28,10 @@
 // 2 and 2.25 through its UI action, with each boundary and undo/redo compared.
 // Uses the recorded clip-unique-sheet document unless --file is supplied. Its
 // matched command cost is affected-command evidence, not full-class or idle speed.
+// --own --default --warm --exact-math --layer-folders: the five ordinary folder
+// commands, including the timeline Ungroup menu, with every boundary and full
+// undo/redo compared. Uses the document named by layers-folders-sheet.scenario.json.
+// Per-method clocks are diagnostic, not an additional class-cost gate.
 // --warm: the interactions run once untimed before the timed round (warmed-up code).
 // --capture <folder>: the first sessions that meet an unported call, a difference or another
 // error are saved there (`?engineEditCapture=on`) as `<run>-<n>.capture.json`, which
@@ -42,6 +46,11 @@ const args = process.argv.slice(2);
 const option = (name, fallback) => { const at = args.indexOf(name); return at < 0 ? fallback : args[at + 1]; };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const movieclipUnique = args.includes('--movieclip-unique');
+const layerFolders = args.includes('--layer-folders');
+const folderMethods = ['createLayerFolder', 'renameLayerFolder', 'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder'];
+if (layerFolders && ['--own', '--default', '--warm', '--exact-math'].some(flag => !args.includes(flag)))
+  throw new Error('--layer-folders requires --own --default --warm --exact-math.');
+if (layerFolders && movieclipUnique) throw new Error('--layer-folders and --movieclip-unique are separate scoped proofs.');
 if (movieclipUnique && ['--own', '--default', '--warm', '--exact-math'].some(flag => !args.includes(flag)))
   throw new Error('--movieclip-unique requires --own --default --warm --exact-math.');
 
@@ -66,6 +75,7 @@ const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
 const requiredCalls = [
+  ...(layerFolders ? folderMethods : []),
   ...(movieclipUnique ? ['makeMovieclipUnique'] : []),
   ...(args.includes('--figures-gate') ? ['moveSelection', 'poseJoint', 'commitDrag'] : []),
   ...(args.includes('--selection-adoption') ? ['duplicateFigure', 'pasteSelection', 'duplicateSelection'] : []),
@@ -120,11 +130,14 @@ async function run(mode) {
     await page.waitForFunction(() => styk.editor.report.figure_types.length > 0 && !styk.state.importing && styk.editor.name !== undefined, null, {timeout: 180000});
     await page.waitForFunction(name => (styk.editor.name ?? '').length > 0 && !styk.state.importing, path.basename(imported), {timeout: 180000});
   }
-  const file = option('--file', movieclipUnique ? path.join(root, 'engine/tests/edit/clip-unique-sheet.document.json') : undefined);
+  const folderScenario = layerFolders ? JSON.parse(await readFile(path.join(root, 'engine/tests/edit/layers-folders-sheet.scenario.json'), 'utf8')) : null;
+  const file = option('--file', layerFolders ? path.join(root, 'engine/tests/edit', folderScenario.document)
+    : movieclipUnique ? path.join(root, 'engine/tests/edit/clip-unique-sheet.document.json') : undefined);
   if (file) {
     const text = await readFile(path.resolve(file), 'utf8');
     await page.evaluate(({text, name}) => { styk.editor.load(JSON.parse(text), name); styk.editor.markSaved(); }, {text, name: path.basename(file)});
   }
+  if (layerFolders) await page.evaluate(() => styk.settingsUI.commit({timelineMode: 'advanced'}));
   /** Waits until the engine holds the editor's current revision, so a session can start. */
   const settled = async () => {
     for (let i = 0; i < 100; i++) {
@@ -176,22 +189,114 @@ async function run(mode) {
   const steps = [];
   const uniqueSnapshots = [];
   const uniqueCalls = [];
+  const folderSnapshots = [];
+  const folderCalls = [];
   // A step the editor refuses on this document (its message shown to users, compared in the
   // shadow like any other answer) is noted and the run goes on.
   const refused = [];
   const step = async (name, run) => {
     if (args.includes('--verbose')) console.log(`${mode}: ${name}`);
     const ready = await settled();
-    if (movieclipUnique && !ready) throw new Error(`The engine was not ready before ${name}.`);
+    if ((movieclipUnique || layerFolders) && !ready) throw new Error(`The engine was not ready before ${name}.`);
     try { await run(); steps.push(name); }
     catch (error) {
-      if (movieclipUnique) throw error;
+      if (movieclipUnique || layerFolders) throw error;
       const message = String(error?.message ?? error).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0]; refused.push(`${name}: ${message}`);
     }
   };
 
   /** The interactions, once. */
   const interactions = async () => {
+    if (layerFolders) {
+      const boundary = async (name, operation) => {
+        await step(name, operation);
+        if (!await settled()) throw new Error(`The engine was not ready after ${name}.`);
+        folderSnapshots.push(await page.evaluate(name => {
+          const e = styk.editor, runtime = (key, value) => ['_movieclipSample', 'runtime_segments'].includes(key) ? undefined : value;
+          return {name, document: JSON.stringify(e.report, runtime), frame: JSON.stringify(e.evaluatedFrame, runtime),
+            undo: JSON.stringify(e._undo, runtime), redo: JSON.stringify(e._redo, runtime),
+            selection: e._selectionState(), tick: e.tick, frameIndex: e.frameIndex, activeLayerId: e.activeLayerId,
+            counters: {layerRevision: e.layerRevision, definitionRevision: e.definitionRevision,
+              nextFrameIdentity: e._nextFrameIdentity, nextUid: e._nextUid, revision: e.revision, revisionSerial: e._revisionSerial,
+              historySize: e.historySize, dirty: e.dirty, canUndo: e.canUndo, canRedo: e.canRedo}};
+        }, name));
+      };
+      await boundary('prepare the ordinary layer-folder sheet', () => page.evaluate(() => {
+        const e = styk.editor;
+        if (!e.layerTimeline || !e.report._styk?.layerSheet || e.frameDraft || e._drag || e._animationEdit
+            || e.report._styk.movieclipSource || e.getLayerFolders().length || e.canUndo || e.report._styk.layers.order.length < 2)
+          throw new Error('The folder proof needs the quiet ordinary recorded sheet with two layers and no folders.');
+      }));
+      const initial = folderSnapshots.at(-1);
+      const ids = await page.evaluate(() => styk.editor.report._styk.layers.order.slice(0, 2));
+      const invoke = async (method, operation, ui = false) => {
+        const before = await page.evaluate(method => {
+          const r = globalThis.__stykEditShadow, e = styk.editor;
+          return {entry: {...r.byCall?.[method]}, owned: r.owned, failedOwned: r.failedOwned, calls: r.calls,
+            quiet: !e._drag && !e._animationEdit,
+            preludes: Object.fromEntries(['commitDrag', 'commitAnimationEdit'].map(name => [name, {...r.byCall?.[name]}]))};
+        }, method);
+        await boundary(`${ui ? 'timeline UI ' : ''}${method}`, operation);
+        folderCalls.push(await page.evaluate(({method, before, ui}) => {
+          const r = globalThis.__stykEditShadow, e = styk.editor, entry = r.byCall?.[method] ?? {};
+          const keys = ['calls', 'callMs', 'engineMs', 'adoptMs', 'editorMs', 'failedOwned', 'failedOwnedMs'];
+          const delta = (after, prior) => Object.fromEntries(keys.map(key => [key, (after[key] ?? 0) - (prior[key] ?? 0)]));
+          return {method, ui, ...delta(entry, before.entry), owned: r.owned - before.owned,
+            globalCalls: r.calls - before.calls, globalFailedOwned: r.failedOwned - before.failedOwned,
+            quiet: {before: before.quiet, after: !e._drag && !e._animationEdit},
+            preludes: Object.fromEntries(['commitDrag', 'commitAnimationEdit'].map(name => [name, delta(r.byCall?.[name] ?? {}, before.preludes[name])]))};
+        }, {method, before, ui}));
+      };
+      await invoke('createLayerFolder', () => page.evaluate(ids => {
+        const e = styk.editor, folder = e.createLayerFolder('Folder proof', [ids[0]]);
+        if (!folder || folder.kind !== 'folder' || e.getLayer(ids[0]).folderId !== folder.id)
+          throw new Error('Folder creation did not group the requested layer.');
+      }, ids));
+      const folderId = await page.evaluate(() => styk.editor.getLayerFolders()[0]?.id);
+      if (!folderId) throw new Error('The created folder is missing.');
+      await invoke('renameLayerFolder', () => page.evaluate(folderId => {
+        const e = styk.editor;
+        if (!e.renameLayerFolder(folderId, 'Renamed folder proof') || e.getLayerFolders().find(folder => folder.id === folderId)?.name !== 'Renamed folder proof')
+          throw new Error('Folder rename did not publish its new name.');
+      }, folderId));
+      await invoke('moveLayersToFolder', () => page.evaluate(({ids, folderId}) => {
+        const e = styk.editor;
+        if (!e.moveLayersToFolder([ids[1]], folderId) || ids.some(id => e.getLayer(id).folderId !== folderId))
+          throw new Error('Moving a layer into the folder did not preserve both memberships.');
+      }, {ids, folderId}));
+      await invoke('arrangeLayers', () => page.evaluate(ids => {
+        const e = styk.editor, before = [...e.report._styk.layers.order];
+        if (!e.arrangeLayers(before.toReversed()) || e.report._styk.layers.order.indexOf(ids[1]) >= e.report._styk.layers.order.indexOf(ids[0]))
+          throw new Error('Arranging layers did not reverse the grouped layer order.');
+      }, ids));
+      // This is the existing Advanced timeline folder menu, as exercised by
+      // tests/layer-folders.browser.mjs. Its original _run/quiet guards remain active.
+      await invoke('deleteLayerFolder', async () => {
+        await page.locator(`.sheet-layer[data-layer-id="${folderId}"]:visible`).click({button: 'right'});
+        await page.getByRole('menuitem', {name: 'Ungroup folder', exact: true}).click();
+        await page.waitForFunction(({folderId, ids}) => !styk.editor.getLayerFolders().some(folder => folder.id === folderId)
+          && ids.every(id => styk.editor.getLayer(id).folderId === undefined), {folderId, ids});
+      }, true);
+      // Every undo and redo is captured separately, including complete stored
+      // history entries and runtime counters, before returning to the warm baseline.
+      for (const action of ['undo', 'redo', 'undo']) for (let index = 0; index < 5; index++) {
+        await boundary(`${action} folder command ${index + 1}`, () => page.evaluate(action => {
+          const e = styk.editor;
+          if (!(action === 'undo' ? e.canUndo : e.canRedo)) throw new Error(`Missing ${action} for a folder command.`);
+          e[action]();
+        }, action));
+      }
+      await page.evaluate(ids => {
+        const e = styk.editor;
+        if (e.canUndo || e.getLayerFolders().length || ids.some(id => e.getLayer(id).folderId !== undefined)
+            || e.report._styk.layers.order[0] !== ids[0] || e.report._styk.layers.order[1] !== ids[1])
+          throw new Error('Folder full undo did not restore the original layer state.');
+      }, ids);
+      const restored = folderSnapshots.at(-1);
+      if (restored.document !== initial.document || JSON.stringify(restored.selection) !== JSON.stringify(initial.selection))
+        throw new Error('Folder full undo did not restore the initial document and selection.');
+      return;
+    }
     if (movieclipUnique) {
       const boundary = async (name, operation) => {
         await step(name, operation);
@@ -742,6 +847,8 @@ async function run(mode) {
     steps.length = 0;
     if (movieclipUnique) uniqueSnapshots.length = 0;
     if (movieclipUnique) uniqueCalls.length = 0;
+    if (layerFolders) folderSnapshots.length = 0;
+    if (layerFolders) folderCalls.length = 0;
   }
   await interactions();
   await settled();
@@ -757,7 +864,7 @@ async function run(mode) {
     return {after, undone: capture()};
   });
   await context.close();
-  return {report, outcome, steps, refused, problems, ...(movieclipUnique ? {uniqueSnapshots, uniqueCalls} : {})};
+  return {report, outcome, steps, refused, problems, ...(movieclipUnique ? {uniqueSnapshots, uniqueCalls} : {}), ...(layerFolders ? {folderSnapshots, folderCalls} : {})};
 }
 try {
   if (own) {
@@ -847,6 +954,62 @@ try {
         boundaries: {editorAlone: alone.uniqueSnapshots, engineOwned: owned.uniqueSnapshots}};
       console.log(`Make unique: ${adopted ? 'two default Native adoptions' : 'adoption proof failed'}; matched command cost ${candidateMs} / editor ${editorMs} ms (diagnostic only); not a full-class or idle-speed result`);
     }
+    let layerFoldersProof = null;
+    if (layerFolders) {
+      const boundaryCount = 21;
+      if (alone.folderSnapshots.length !== boundaryCount || owned.folderSnapshots.length !== boundaryCount
+          || alone.steps.length !== boundaryCount || steps.length !== boundaryCount)
+        differences.push('Layer folders is missing one or more required boundaries.');
+      for (let index = 0; index < boundaryCount; index++) {
+        const [a, b] = [alone, owned].map(run => {
+          const snapshot = run.folderSnapshots[index];
+          return snapshot ? {...snapshot, ...Object.fromEntries(['document', 'frame', 'undo', 'redo']
+            .map(key => [key, JSON.parse(drawn(snapshot[key]))]))} : null;
+        });
+        const found = near(a, b, `Layer-folder boundary ${index}`);
+        if (found) differences.push(found);
+      }
+      const positive = value => Number.isFinite(value) && value > 0;
+      const invocation = (call, native) => {
+        if (!call || !call.quiet.before || !call.quiet.after || call.calls !== 1 || call.globalFailedOwned
+            || call.failedOwned || call.failedOwnedMs) return false;
+        let preludeCalls = 0;
+        for (const name of ['commitDrag', 'commitAnimationEdit']) {
+          const delta = call.preludes[name];
+          if (!delta || ![0, ...(call.ui ? [1] : [])].includes(delta.calls) || delta.failedOwned || delta.failedOwnedMs
+              || !['callMs', 'engineMs', 'adoptMs', 'editorMs'].every(key => Number.isFinite(delta[key]) && delta[key] >= 0)
+              || (native ? delta.editorMs !== 0 || delta.engineMs < delta.callMs
+                : delta.callMs !== 0 || delta.engineMs !== 0 || delta.adoptMs !== 0)) return false;
+          preludeCalls += delta.calls;
+        }
+        return call.globalCalls === 1 + preludeCalls && call.owned === (native ? call.globalCalls : 0)
+          && (native ? positive(call.callMs) && positive(call.engineMs) && positive(call.adoptMs) && call.editorMs === 0
+            : positive(call.editorMs) && call.callMs === 0 && call.engineMs === 0 && call.adoptMs === 0);
+      };
+      const matchedCommandDiagnostics = folderMethods.map(method => {
+        const entry = report.byCall?.[method], editor = alone.report?.byCall?.[method];
+        const candidate = owned.folderCalls.find(call => call.method === method), oracle = alone.folderCalls.find(call => call.method === method);
+        const adopted = entry?.calls === 1 && editor?.calls === 1 && alone.report.comparedByCall?.[method] === 1
+          && invocation(candidate, true) && invocation(oracle, false)
+          && ['commitDrag', 'commitAnimationEdit'].every(name => candidate.preludes[name].calls === oracle.preludes[name].calls);
+        const candidateMs = entry ? entry.engineMs + entry.adoptMs : null, editorMs = editor?.editorMs ?? null;
+        return {method, calls: entry?.calls ?? 0, adopted, nativeCallMs: entry?.callMs ?? null,
+          engineParseValidationMs: entry?.engineMs ?? null, adoptMs: entry?.adoptMs ?? null, answerUtf16Units: entry?.answerBytes ?? null,
+          matchedCommandDiagnostic: {candidateMs, editorMs, excessMs: candidateMs === null || editorMs === null ? null : candidateMs - editorMs, gate: false}};
+      });
+      const adopted = report.mode === 'classes' && owned.folderCalls.length === 5 && alone.folderCalls.length === 5
+        && owned.folderCalls.map(call => call.method).join() === folderMethods.join()
+        && alone.folderCalls.map(call => call.method).join() === folderMethods.join()
+        && matchedCommandDiagnostics.every(command => command.adopted) && !report.failedOwned && !report.broken && !alone.report.broken
+        && !refused.length && !alone.refused.length;
+      if (!adopted) differences.push('Layer folders did not complete all five positive default Native adoptions without fallback.');
+      layerFoldersProof = {adopted, methods: matchedCommandDiagnostics, uiAction: 'Advanced timeline Ungroup folder',
+        timingGate: false, fullClassRowAdvance: false, idleSpeedClaim: false,
+        invocationClocks: {editorAlone: alone.folderCalls, engineOwned: owned.folderCalls},
+        outcomes: {editorAlone: alone.outcome, engineOwned: owned.outcome},
+        boundaries: {editorAlone: alone.folderSnapshots, engineOwned: owned.folderSnapshots}};
+      console.log(`Layer folders: ${adopted ? 'five default Native adoptions' : 'adoption proof failed'}; per-method clocks diagnostic only; not a full-class or idle-speed result`);
+    }
     console.log(differences.length ? `DIFFERENT from the editor alone:\n  ${differences.join('\n  ')}`
       : `the same as the editor alone: document (${alone.outcome.after.document.length} bytes; ${rounded} numbers differ in their last digits), history (${alone.outcome.after.undo.length} entries), selection, and after undoing everything`);
     // What each call cost the editor alone and the engine owning it (its call and the
@@ -861,7 +1024,7 @@ try {
     if (missingCalls(alone.report).length) console.log(`  required calls not compared: ${missingCalls(alone.report).join(', ')}`);
     const out = option('--out');
     if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, editorAlone: alone.report, differences, problems, editorAloneProblems: alone.problems,
-      ...(movieclipUnique ? {uniqueProof} : {})}, null, 1));
+      ...(movieclipUnique ? {uniqueProof} : {}), ...(layerFolders ? {layerFoldersProof} : {})}, null, 1));
     console.log(`  mode ${report.mode}`);
     failed = differences.length > 0 || report.mismatches.length > 0 || alone.report.mismatches.length > 0
       || (report.owned === 0 && !args.includes('--default')) || problems.length > 0 || alone.problems.length > 0

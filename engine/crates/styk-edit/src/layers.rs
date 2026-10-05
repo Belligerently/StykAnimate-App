@@ -254,12 +254,21 @@ impl Editor {
     }
 
     pub(crate) fn layer_edit_migration_checked(&mut self, label: &str, updates: Vec<Update>, structural: bool, active: Option<String>, migration: Option<crate::layer_planning::NativeMigration>, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        self.layer_edit_publication_checked(label, updates, structural, active, migration, check, None)
+    }
+
+    fn layer_edit_publication(&mut self, label: &str, updates: Vec<Update>, structural: bool, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
+        self.layer_edit_publication_checked(label, updates, structural, None, None, &mut || Ok(()), publication)
+    }
+
+    fn layer_edit_publication_checked(&mut self, label: &str, updates: Vec<Update>, structural: bool, active: Option<String>, migration: Option<crate::layer_planning::NativeMigration>, check: &mut impl FnMut() -> Result<(), EditError>, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         check()?;
         if self.drag.is_some() { self.commit_drag()?; }
         self.ensure_layer_state()?;
         if migration.is_some() { self.ensure_counts(); }
         let before_selection = self.selection_state();
         let state = self.layer_state();
+        let mut accepted = publication.as_ref().map(|_| Vec::new());
         let changes: Vec<LayerChange> = updates
             .into_iter()
             .map(|(path, value, remove)| {
@@ -268,13 +277,30 @@ impl Editor {
                 // `JSON.stringify(change.before) !== JSON.stringify(change.after)`
                 let before_text = side_json(&before.clone().map(Some));
                 let after_text = if remove { removed_json(&value) } else { side_json(&after) };
-                (LayerChange { path, before, after }, before_text != after_text)
+                let changed = before_text != after_text;
+                if changed && let Some(accepted) = &mut accepted {
+                    let mut update = Obj::new();
+                    update.set("path", Value::array(path.iter().map(|key| Value::str(key)).collect()));
+                    update.set("remove", Value::Bool(remove));
+                    // Removed null and omitted undefined differ in the JS
+                    // history filter, even when the stored key is absent.
+                    if let Some(value) = value { update.set("value", value); }
+                    accepted.push(Value::object(update));
+                }
+                (LayerChange { path, before, after }, changed)
             })
             .filter(|(_, changed)| *changed)
             .map(|(change, _)| change)
             .collect();
         if changes.is_empty() {
             return Ok(false);
+        }
+        if let Some(publication) = publication {
+            let mut packet = Obj::new();
+            packet.set("label", Value::str(label));
+            packet.set("structural", Value::Bool(structural));
+            packet.set("updates", Value::array(accepted.unwrap()));
+            *publication = Some(Value::object(packet));
         }
         let state = self.layer_state_mut().unwrap();
         for change in &changes {
@@ -643,7 +669,7 @@ impl Editor {
     }
 
     /// `createLayerFolder(name, ids)`: the folder's view.
-    pub(crate) fn create_layer_folder(&mut self, name: Option<&Value>, ids: &Value) -> Result<Value, EditError> {
+    pub(crate) fn create_layer_folder(&mut self, name: Option<&Value>, ids: &Value, publication: Option<&mut Option<Value>>) -> Result<Value, EditError> {
         self.ensure_layer_state()?;
         let selected = self.layer_members(ids)?;
         let state = self.layer_state();
@@ -673,7 +699,7 @@ impl Editor {
         let by_id = self.regrouped(&selected, Some(&folder_id));
         updates.extend(selected.iter().map(|layer| (path(&["byId", layer, "folderId"]), Some(folder_id.clone()), false)));
         updates.push(Self::order_update(folder_order(&by_id, &strings(state.get("order")))));
-        self.layer_edit("Create layer folder", updates, true, None)?;
+        self.layer_edit_publication("Create layer folder", updates, true, publication)?;
         let mut view = Obj::new();
         view.set("id", Value::str(&id));
         view.set("kind", Value::str("folder"));
@@ -682,17 +708,17 @@ impl Editor {
     }
 
     /// `renameLayerFolder(id, name)`.
-    pub(crate) fn rename_layer_folder(&mut self, id: &Value, name: &Value) -> Result<bool, EditError> {
+    pub(crate) fn rename_layer_folder(&mut self, id: &Value, name: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         if !self.folder_exists(id) {
             return Err(EditError::Invalid("errors.layerFolders.missingFolder".into()));
         }
         let name = Self::folder_name(name)?;
         let id = id.as_str().unwrap().to_string();
-        self.layer_edit("Rename layer folder", vec![(path(&["folders", "byId", &id, "name"]), Some(Value::str(&name)), false)], false, None)
+        self.layer_edit_publication("Rename layer folder", vec![(path(&["folders", "byId", &id, "name"]), Some(Value::str(&name)), false)], false, publication)
     }
 
     /// `moveLayersToFolder(ids, folderId)`: `null` takes them out of every folder.
-    pub(crate) fn move_layers_to_folder(&mut self, ids: &Value, folder: &Value) -> Result<bool, EditError> {
+    pub(crate) fn move_layers_to_folder(&mut self, ids: &Value, folder: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         self.ensure_layer_state()?;
         let selected = self.layer_members(ids)?;
         if !folder.is_null() && !self.folder_exists(folder) {
@@ -715,12 +741,12 @@ impl Editor {
         }
         let mut updates: Vec<Update> = selected.iter().map(|id| (path(&["byId", id, "folderId"]), Some(folder.clone()), folder.is_null())).collect();
         updates.push(Self::order_update(folder_order(&by_id, &order)));
-        self.layer_edit("Move layers to folder", updates, true, None)
+        self.layer_edit_publication("Move layers to folder", updates, true, publication)
     }
 
     /// `arrangeLayers(order, ids, folderId)`: the whole stack, and with `folderId` given
     /// (`null`: out of every folder) `ids` moved into it.
-    pub(crate) fn arrange_layers(&mut self, order: &Value, ids: Option<&Value>, folder: Option<&Value>) -> Result<bool, EditError> {
+    pub(crate) fn arrange_layers(&mut self, order: &Value, ids: Option<&Value>, folder: Option<&Value>, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         self.ensure_layer_state()?;
         let selected = match ids {
             Some(ids) => self.layer_members(ids)?,
@@ -744,11 +770,11 @@ impl Editor {
         let folder_value = folder.cloned().unwrap_or(Value::Null);
         let mut updates: Vec<Update> = moved.iter().map(|id| (path(&["byId", id, "folderId"]), Some(folder_value.clone()), folder_value.is_null())).collect();
         updates.push(Self::order_update(folder_order(&by_id, &stack)));
-        self.layer_edit("Move layers", updates, true, None)
+        self.layer_edit_publication("Move layers", updates, true, publication)
     }
 
     /// `deleteLayerFolder(id)`: its layers leave it; nothing else changes.
-    pub(crate) fn delete_layer_folder(&mut self, id: &Value) -> Result<bool, EditError> {
+    pub(crate) fn delete_layer_folder(&mut self, id: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         self.ensure_layer_state()?;
         if !self.folder_exists(id) {
             return Err(EditError::Invalid("errors.layerFolders.missingFolder".into()));
@@ -761,6 +787,6 @@ impl Editor {
                 updates.push((path(&["byId", &layer, "folderId"]), None, true));
             }
         }
-        self.layer_edit("Ungroup layer folder", updates, true, None)
+        self.layer_edit_publication("Ungroup layer folder", updates, true, publication)
     }
 }
