@@ -925,6 +925,194 @@ mod tests {
         }
     }
 
+    // Actual Editor-recorded startup prefix: pose, rotate, then stretch/bend.
+    // It supplies enabled numeric overrides without inventing new recordings.
+    fn pose_field_editor() -> Editor {
+        let reference = recorded("startup-sheet");
+        let mut editor = recorded_editor(&reference);
+        for step in reference.get("steps").unwrap().elements().unwrap().iter().skip(1).take(4) {
+            let call = step.get("call").unwrap();
+            let method = call.item(0).unwrap().as_str().unwrap().to_string();
+            let args = call.elements().unwrap().iter().skip(1).collect::<Vec<_>>();
+            editor.call(if method == "@select" { "select" } else { &method }, &args).unwrap();
+        }
+        editor
+    }
+
+    #[test]
+    fn latest_typed_view_pose_fields_share_actual_editor_numeric_overrides() {
+        let mut editor = pose_field_editor();
+        let report = styk_doc::json::to_string(&editor.report);
+        editor.call("beginDrag", &[Value::str("Pose figure")]).unwrap();
+        let (prepared, first, scene) = editor.evaluate_only(Some(&[0])).unwrap();
+        assert!(first.objects[0].lengths.is_some() && first.objects[0].bends.is_some());
+        let mut previous = editor.shown_frame().unwrap();
+        let end = scene.objects[0].ends[2];
+        for offset in [5.0, 9.0] {
+            editor.eval.borrow_mut().loader.notes.clear();
+            assert_eq!(editor.call("poseJoint", &[Value::Num(end[0] + offset), Value::Num(end[1] + 3.0), parse(r#"{"snap":false}"#)]).unwrap(), Value::Bool(true));
+            let record = editor.shown_frame().unwrap();
+            let old = previous.get("objects").unwrap().item(0).unwrap();
+            let raw = record.get("objects").unwrap().item(0).unwrap();
+            assert!(Arc::ptr_eq(old.as_obj().unwrap().shape(), raw.as_obj().unwrap().shape()));
+            assert!(raw.as_obj().unwrap().len() <= 64);
+            for ((key, value), old) in raw.as_obj().unwrap().iter().zip(old.as_obj().unwrap().values()) {
+                if !matches!(&**key, "angles" | "root_x" | "root_y" | "scale") { assert!(value.same_node(old), "unchanged {key}"); }
+            }
+            let (current, frame) = editor.evaluate_frame().unwrap();
+            assert!(Arc::ptr_eq(&prepared, &current));
+            assert!(Arc::ptr_eq(first.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()), "real changed pose retains its parsed lengths");
+            assert!(Arc::ptr_eq(first.objects[0].bends.as_ref().unwrap(), frame.objects[0].bends.as_ref().unwrap()), "real changed pose retains its parsed bends");
+            assert!(!Arc::ptr_eq(&first.objects[0].angles, &frame.objects[0].angles));
+            let mut fresh = editor.eval.borrow().loader.clone(); fresh.notes.clear();
+            let cold = fresh.edit_frame(&record, None, &current.doc).unwrap();
+            assert_eq!(editor.eval.borrow().loader.notes, fresh.notes);
+            assert_eq!(format!("{frame:?}"), format!("{cold:?}"));
+            assert_fresh(&editor.eval.borrow(), &record, &current, &frame);
+            previous = record;
+        }
+        editor.call("cancelDrag", &[]).unwrap();
+        assert_eq!(styk_doc::json::to_string(&editor.report), report);
+    }
+
+    #[test]
+    fn latest_typed_view_pose_fields_preserve_numeric_defaults_and_wrapper() {
+        let editor = pose_field_editor(); let prepared = editor.prepared().unwrap(); let record = editor.shown_frame().unwrap();
+        let record = replace_object(&record, 0, |object| { object.set("_movieclipSample", Value::Num(5.25)); });
+        let mut cache = editor.eval.borrow().clone();
+        let first = cache.edit_frame(&record, &prepared).unwrap();
+        assert_eq!(first.objects[0].clip_time, Some(5.25));
+        for angles in [Value::nums(&[-0.0, 0.125]), Value::Null, Value::array(vec![Value::str("invalid")])] {
+            let next = replace_object(&record, 0, |object| {
+                object.set("angles", angles);
+                object.set("root_x", Value::Null); object.set("root_y", Value::Num(-0.0)); object.set("scale", Value::str("invalid"));
+            });
+            let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+            assert_eq!(frame.objects[0].root.map(f64::to_bits), [0.0f64.to_bits(), (-0.0f64).to_bits()]);
+            assert_eq!(frame.objects[0].scale.to_bits(), 1.0f64.to_bits());
+            assert_eq!(frame.objects[0].clip_time, Some(5.25));
+            assert!(frame.objects[0].figure_override.is_none());
+            assert!(Arc::ptr_eq(first.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()));
+        }
+        let segment = prepared.doc.figure(first.objects[0].figure).unwrap().segments[0].id;
+        let styled = replace_object(&record, 0, |object| { object.set("_stykStyle", parse(&format!(r#"{{"segments":{{"{segment}":{{"thickness":7.25}}}}}}"#))); });
+        let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&styled, &prepared).unwrap();
+        let next = replace_object(&styled, 0, |object| { object.set("root_y", Value::Num(-0.0)); });
+        let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+        assert!(!Arc::ptr_eq(before.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()));
+        assert_eq!(frame.objects[0].figure_override.as_ref().unwrap().segments[0].thickness, 7.25);
+        assert_eq!(frame.objects[0].clip_time, Some(5.25));
+        let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&record, &prepared).unwrap();
+        let changed_clock = replace_object(&record, 0, |object| { object.set("_movieclipSample", Value::Null); object.set("root_y", Value::Num(-0.0)); });
+        let frame = converted_vfx_frame(&mut cache, &changed_clock, &prepared);
+        assert!(frame.objects[0].clip_time.is_none());
+        assert!(!Arc::ptr_eq(before.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()), "sample changes retain the original conversion");
+    }
+
+    #[test]
+    fn latest_typed_view_pose_fields_repeat_connected_and_sprite_notes() {
+        let editor = pose_field_editor(); let prepared = editor.prepared().unwrap(); let record = editor.shown_frame().unwrap();
+        let effect = parse(r#"{"version":2,"id":"effect1","type":"blur","enabled":true,"params":{"radius":4}}"#);
+        let over_limit = Value::array((0..=styk_eval::vfx::parse::STACK_LIMIT).map(|i| {
+            let mut value = effect.clone(); value.make_obj().unwrap().set("id", Value::str(&format!("effect{i}"))); value
+        }).collect());
+        for (name, connected, sprite, reusable) in [
+            ("absent", None, None, true), ("valid", Some(Value::array(vec![effect.clone()])), None, true),
+            ("null", Some(Value::Null), None, false), ("nonarray", Some(Value::Num(3.0)), None, false),
+            ("duplicate", Some(Value::array(vec![effect.clone(), effect])), None, false),
+            ("over-limit", Some(over_limit), None, false), ("invalid-sprite", None, Some(Value::Null), false),
+        ] {
+            let warm = replace_object(&record, 0, |object| {
+                if let Some(value) = connected { object.set("_vfxConnectedEffects", value); }
+                if let Some(value) = sprite { object.set("_sticknodesSprite", value); }
+            });
+            let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&warm, &prepared).unwrap();
+            let next = replace_object(&warm, 0, |object| { object.set("root_y", Value::Num(-0.0)); });
+            let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+            assert_eq!(Arc::ptr_eq(before.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()), reusable, "{name}");
+            assert_eq!(cache.loader.notes.is_empty(), reusable, "{name}");
+            if name == "valid" { assert!(Arc::ptr_eq(before.objects[0].vfx_connected.as_ref().unwrap(), frame.objects[0].vfx_connected.as_ref().unwrap())); }
+        }
+    }
+
+    #[test]
+    fn latest_typed_view_pose_fields_preserve_duplicate_key_resolution() {
+        let editor = pose_field_editor(); let prepared = editor.prepared().unwrap(); let record = editor.shown_frame().unwrap();
+        let raw = record.get("objects").unwrap().item(0).unwrap();
+        for wide in [false, true] {
+            for changed in ["angles", "root_x", "root_y", "scale"] {
+                let mut keys = ["unique_id", "figure_type_id", "angles", "root_x", "root_y", "scale"].iter().map(|key| Arc::<str>::from(*key)).collect::<Vec<_>>();
+                let mut values = keys.iter().map(|key| raw.get(key).unwrap().clone()).collect::<Vec<_>>();
+                keys.push(Arc::from(changed)); values.push(raw.get(changed).unwrap().clone());
+                if wide { for i in 0..2 { keys.push(Arc::from(format!("opaque{i}"))); values.push(Value::Null); } }
+                let shape = styk_doc::Shape::new(keys);
+                let warm = replace_object(&record, 0, |object| { *object = Obj::from_shape(shape.clone(), values); });
+                let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&warm, &prepared).unwrap();
+                let next = replace_object(&warm, 0, |object| { object.set(changed, if changed == "angles" { Value::nums(&[0.75]) } else { Value::Num(7.25) }); });
+                assert!(Arc::ptr_eq(warm.get("objects").unwrap().item(0).unwrap().as_obj().unwrap().shape(), next.get("objects").unwrap().item(0).unwrap().as_obj().unwrap().shape()));
+                // Obj resolves the first duplicate in narrow Shapes and the
+                // last in wide Shapes. Conversion must retain that same owner.
+                let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+                match changed {
+                    "angles" => { assert_eq!(frame.objects[0].angles[0].to_bits(), 0.75f64.to_bits()); assert!(!Arc::ptr_eq(&before.objects[0].angles, &frame.objects[0].angles)); },
+                    "root_x" => assert_eq!(frame.objects[0].root[0].to_bits(), 7.25f64.to_bits()),
+                    "root_y" => assert_eq!(frame.objects[0].root[1].to_bits(), 7.25f64.to_bits()),
+                    _ => assert_eq!(frame.objects[0].scale.to_bits(), 7.25f64.to_bits()),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn latest_typed_view_pose_fields_limit_field_scan_rich_nodes_and_lineage() {
+        let editor = pose_field_editor(); let prepared = editor.prepared().unwrap(); let record = editor.shown_frame().unwrap();
+        for count in [64, 65] {
+            let warm = replace_object(&record, 0, |object| {
+                while object.len() < count { object.set(&format!("opaque{}", object.len()), Value::Num(1.0)); }
+                assert_eq!(object.len(), count);
+            });
+            let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&warm, &prepared).unwrap();
+            let next = replace_object(&warm, 0, |object| { object.set("root_y", Value::Num(-0.0)); });
+            let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+            assert_eq!(Arc::ptr_eq(before.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()), count == 64);
+        }
+        for rich in ["_stykStyle", "_sticknodesSprite", "_sticknodesShapes", "_stykMovieclip", "_stykSpatial", "_stykAnimationOrigin", "color_transition"] {
+            let warm = replace_object(&record, 0, |object| { object.set(rich, Value::Null); });
+            let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&warm, &prepared).unwrap();
+            let next = replace_object(&warm, 0, |object| { object.set("root_y", Value::Num(-0.0)); });
+            let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+            assert!(!Arc::ptr_eq(before.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()), "{rich}");
+        }
+        for change in 0..4 {
+            let warm = replace_object(&record, 0, |object| { object.set("opaque", parse(r#"{"nested":1}"#)); });
+            let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&warm, &prepared).unwrap();
+            let next = replace_object(&warm, 0, |object| {
+                match change {
+                    0 => { object.set("unique_id", Value::Num(1234.0)); },
+                    1 => { object.set("opaque", parse(r#"{"nested":1}"#)); },
+                    2 => { object.set("opaque", parse(r#"{"nested":2}"#)); },
+                    _ => { object.set("new-key", Value::Null); },
+                }
+                object.set("root_y", Value::Num(-0.0));
+            });
+            let frame = converted_vfx_frame(&mut cache, &next, &prepared);
+            assert!(!Arc::ptr_eq(before.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()), "guard {change}");
+        }
+        let mut cache = editor.eval.borrow().clone(); let before = cache.edit_frame(&record, &prepared).unwrap();
+        let next = replace_object(&record, 0, |object| { object.set("root_y", Value::Num(-0.0)); });
+        let new_lineage = Arc::new(Prepared::new(prepared.doc.clone()));
+        let frame = converted_vfx_frame(&mut cache, &next, &new_lineage);
+        assert!(!Arc::ptr_eq(before.objects[0].lengths.as_ref().unwrap(), frame.objects[0].lengths.as_ref().unwrap()));
+        let coherent = cache.latest_typed.as_ref().unwrap().clone();
+        // Invalid identity/figure still follows the original converter's order.
+        for key in ["unique_id", "figure_type_id"] {
+            let malformed = replace_object(&next, 0, |object| { object.set(key, Value::Null); });
+            let old = cache.loader.clone().edit_frame(&malformed, None, &new_lineage.doc).unwrap_err().to_string();
+            assert_eq!(cache.edit_frame(&malformed, &new_lineage).unwrap_err().to_string(), old);
+            assert!(Arc::ptr_eq(cache.latest_typed.as_ref().unwrap(), &coherent));
+        }
+    }
+
     #[test]
     fn camera_without_motion_does_not_prepare_typed_document() {
         let report = styk_doc::json::parse(br#"{"_styk":{"cameraMotion":{"clips":[]}}}"#).unwrap();

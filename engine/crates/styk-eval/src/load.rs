@@ -9,6 +9,22 @@ use crate::doc::*;
 use crate::text::parse_svg_path;
 use crate::Error;
 
+// Private pose-conversion eligibility, not a document or parity limit. Larger
+// records retain the original converter without a new raw-field scan.
+const POSE_FIELD_REUSE_LIMIT: usize = 64;
+
+fn warning_free_stack(raw: &Value, count: usize) -> bool {
+    raw.as_arr().is_some_and(|items| items.len() <= crate::vfx::parse::STACK_LIMIT && items.len() == count)
+}
+
+fn warning_free_vfx(raw: &Value, stacks: &crate::vfx::Stacks) -> bool {
+    let Some(owner) = raw.as_obj() else { return false };
+    // Equal cardinalities exclude invalid keys/effects, duplicates and removed
+    // generators. The stack limit excludes the warning that drops nothing.
+    owner.len() == stacks.entries.len() && owner.iter().zip(&stacks.entries)
+        .all(|((_, raw), (_, effects))| warning_free_stack(raw, effects.len()))
+}
+
 /// Builds the typed views of a document and keeps them while their source
 /// records are unchanged.
 ///
@@ -666,6 +682,53 @@ impl Loader {
     fn object_reusing_ik(&mut self, o: &Value, previous: Option<(&Value, &Object)>) -> Option<Object> {
         let uid = int(o, "unique_id")? as u32;
         let figure = int(o, "figure_type_id")? as u32;
+        if let Some(object) = previous.and_then(|(raw, typed)| {
+            let current = o.as_obj()?;
+            // The bound precedes iteration; sharing a Shape also proves exact
+            // field presence/order. Unknown fields participate in the guard.
+            if current.len() > POSE_FIELD_REUSE_LIMIT || typed.uid != uid || typed.figure != figure {
+                return None;
+            }
+            let old = raw.as_obj()?;
+            if !Arc::ptr_eq(current.shape(), old.shape()) { return None; }
+            // Rich conversion and overlay resolution keep their existing owner.
+            if ["_stykStyle", "_sticknodesSprite", "_sticknodesShapes", "_stykMovieclip",
+                "_stykSpatial", "_stykAnimationOrigin", "color_transition"].iter().any(|key| current.contains(key))
+                || typed.style.is_some() || typed.sticknodes_sprite.is_some() || typed.figure_override.is_some()
+            { return None; }
+            let mut changed = [false; 4];
+            for ((key, value), old) in current.iter().zip(old.values()) {
+                match &**key {
+                    "angles" => changed[0] |= !value.same_node(old),
+                    "root_x" => changed[1] |= !value.same_node(old),
+                    "root_y" => changed[2] |= !value.same_node(old),
+                    "scale" => changed[3] |= !value.same_node(old),
+                    _ if value.same_node(old) => {},
+                    _ => return None,
+                }
+            }
+            match o.get("_stykVfx").filter(|value| value.truthy()) {
+                None if typed.vfx.is_none() => {},
+                Some(value) if value.as_obj().is_some_and(|owner| owner.len() <= POSE_FIELD_REUSE_LIMIT)
+                    && typed.vfx.as_ref().is_some_and(|stacks| warning_free_vfx(value, stacks)) => {},
+                _ => return None,
+            }
+            match o.get("_vfxConnectedEffects") {
+                None if typed.vfx_connected.is_none() => {},
+                Some(value) if typed.vfx_connected.as_ref().is_some_and(|stack| warning_free_stack(value, stack.len())) => {},
+                _ => return None,
+            }
+            let mut object = typed.clone();
+            if changed[0] { object.angles = self.numbers(o.get("angles")).unwrap_or_else(|| Arc::from(Vec::new())); }
+            if changed[1] { object.root[0] = num(o, "root_x").unwrap_or(0.0); }
+            if changed[2] { object.root[1] = num(o, "root_y").unwrap_or(0.0); }
+            if changed[3] { object.scale = num(o, "scale").unwrap_or(1.0); }
+            // The predecessor is Loader's complete edit-frame output. Restore
+            // constructor metadata before the unchanged wrapper assigns it.
+            object.clip_time = None;
+            object.figure_override = None;
+            Some(object)
+        }) { return Some(object); }
         let lengths = if truthy(o.get("len_flag")) { self.numbers(o.get("lengths")) } else { None };
         let bends = if truthy(o.get("bend_flag")) { self.numbers(o.get("bends")) } else { None };
         let join = o.get("join").filter(|j| j.is_object()).and_then(|j| {
@@ -715,14 +778,8 @@ impl Loader {
                 if typed.uid != uid || typed.figure != figure { return None; }
                 let value = o.get("_stykVfx").filter(|value| value.truthy())?;
                 if !raw.get("_stykVfx").is_some_and(|old| value.same_node(old)) { return None; }
-                let owner = value.as_obj()?;
                 let stacks = typed.vfx.as_ref()?;
-                // With this coherent predecessor, equal cardinalities exclude
-                // every invalid key/effect, duplicate and generator removal.
-                // The stack limit also excludes the warning that drops nothing.
-                if owner.len() != stacks.entries.len() || !owner.iter().zip(&stacks.entries).all(|((_, raw), (_, effects))| {
-                    raw.as_arr().is_some_and(|items| items.len() <= crate::vfx::parse::STACK_LIMIT && items.len() == effects.len())
-                }) { return None; }
+                if !warning_free_vfx(value, stacks) { return None; }
                 Some(stacks.clone())
             }).or_else(|| crate::vfx::parse::stacks(o.get("_stykVfx"), &mut self.notes)),
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
@@ -763,6 +820,10 @@ impl Loader {
     /// their parsed immutable tables. Ambiguous or warning-producing effects
     /// retain the original parse and notes; other pose fields and frame metadata
     /// follow the original conversion.
+    /// Plain records with at most 64 fields may retain the parsed Object when
+    /// only angle/root/scale nodes differ within the same Shape. Changed pose
+    /// fields use the original conversion; clip/style metadata is assigned by
+    /// the same wrapper. Larger, rich or diagnostic-producing records reparse.
     /// `previous_record` must be the complete record represented by `previous`,
     /// successfully converted by this Loader in `doc`'s current lineage.
     /// `value` may use the same null delta convention as [`Self::edit_frame`].

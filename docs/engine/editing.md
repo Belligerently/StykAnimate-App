@@ -883,8 +883,12 @@ reuses immutable parsed IK and warning-free effect tables only when their raw no
 slot UID/figure and Prepared lineage agree. Effect owner/entry and stack/effect counts,
 plus the existing 16-effect limit, exclude every warning-producing parser path;
 malformed or ambiguous effects reparse with the original ordered diagnostics.
-Other pose fields retain their original conversion. A failed conversion installs no
-new pair. The caller must supply the complete raw record represented by the
+Ordinary Object records with at most 64 fields may retain parsed nonpose fields
+when the exact Shape and every raw nonpose node agree. Only angles, root coordinates
+and scale may differ; changed fields use their original numeric/default conversion.
+Rich or diagnostic-producing records keep full conversion. The unchanged wrapper
+assigns sample/style metadata, and duplicate pose keys keep the existing lookup.
+A failed conversion installs no new pair. The caller must supply the complete raw record represented by the
 predecessor Frame from the current Loader/document lineage. These portable APIs do
 not change stored fields, arithmetic or the Session response schema.
 

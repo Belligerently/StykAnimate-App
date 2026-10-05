@@ -232,3 +232,20 @@ Owned/compared/failed counts are **163/285/0**, **119/171/1** and **125/213/0**;
 Official full cost rows advance **27→30** and metadata batches **8→9**; all27 historical raw rows/eight metadata objects/four ordinary diagnostics/one accepted instrumented joined diagnostic remain exact. The literal candidate owned+fallback+failed <= editor-alone threshold is unchanged; each native call clock is already included in `engineMs`. These loaded measurements establish no causal speed gain, default ownership, matching final checkpoint or engine-1 result. Inventory statuses, two owned classes and two deleted JS modules are unchanged.
 
 Evidence: raw `figures-candidate-batch12-1/summary-accounted.json` `8bbc1ed8`, approved input `5fc8165d`, independent completed acceptance `3c556bdd` and unchanged startup `8d1bf8e2`/rig `36de2dca` receipts. Companion JSON preserves exact raw doubles, commands, loads, artifact hashes and bounded identity references. No new runtime, API, stored-arithmetic or gate claim is introduced by this append.
+
+
+## B13 completed committed full cost
+
+The unchanged full warmed exact-math startup/rig/joined-chain workload completed on committed `5d2f589a52629726ae6934b6694af4937fe15407`, shipping Wasm `e5476f401799eda7a876c18d62ee374d44564ebef1cf5c46fbcf14a65665171a` (10,241,930 bytes, unstripped `wasm` profile). Strict document/history/selection/full undo, matched eligible calls, failed-attempt accounting and positive native/adoption core work pass on all three cases. The before/after 1,529 source, seven package and three input maps are exact; Node 24.11.0, Python 3.12.9 and the full protocol are unchanged. Actual captures completed on 2026-10-05; artifact names retain their historical 20261006 label. Literal outcomes are **startup FAIL, rig FAIL, joined-chain PASS**; figures remains closed.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Cost gate |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Startup | 228.405 | 194.730 | 34.520 | 0.000 | 229.250 | Fail |
+| Rig | 120.710 | 120.315 | 11.770 | 0.185 | 132.270 | Fail |
+| Joined-chain | 153.405 | 139.880 | 10.700 | 0.000 | 150.580 | Pass |
+
+Owned/compared/failed counts are **163/289/0**, **119/171/1** and **125/213/0**; eligible calls **171/128/129** match. Core pose/move/commit counts are **48/6/8**, **36/6/4** and **36/6/4**, with positive native/adoption clocks. Document sizes **710,546/187,660/263,000 bytes**, history entries **80/79/79**, selection and full undo match with zero unexpected errors, differences, mismatches, rounding or page problems. Rig's expected failed Native paste, **0.1850000023841858 ms**, and its original JS fallback, **0.1899999976158142 ms**, are distinct intervals counted once each; its four comparison-only residuals remain separate.
+
+Official full cost rows advance **30→33** and metadata batches **9→10**; all 30 historical raw rows/nine metadata objects/four ordinary diagnostics/one accepted instrumented joined diagnostic remain exact. The literal candidate owned+fallback+failed <= editor-alone threshold is unchanged; each native call clock is already included in `engineMs`. Joined passes in this one loaded round, while startup and rig fail. These observations establish no causal speed gain, default ownership, matching final checkpoint or engine-1 result. Inventory statuses, two owned classes and two deleted JS modules are unchanged.
+
+Evidence: raw `figures-candidate-batch13-1/summary-accounted.json` `b41d89a0`, approved input `1cd57f55`, independent completed acceptance `f26a1d97`, unchanged startup `4628a432`/rig `a16a81e2` receipts and descriptive method ranking `19ed026c`. Companion JSON preserves exact raw doubles, commands, loads, artifact hashes and bounded identity references. Method residuals remain descriptive and are not substituted for official totals. No new runtime, API, stored-arithmetic or gate claim is introduced by this append.

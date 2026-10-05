@@ -2670,6 +2670,269 @@
       "driverSha256": "e8acddb47fb0a59a4d0172b233045ab0b55deaf3e8ab71b93211378c7ffa4b38",
       "receiptSha256": "c76ff2434d8c45504bbfde9c0e5558ff2c9617f40ebcbc50b2a73556791ac1cb",
       "logSha256": "dcb365c905bd129a065c7cad4cef49557cb0ec9fbd3a62cf7ee2adf188fcd238"
+    },
+    {
+      "batch": "B13",
+      "case": "startup",
+      "round": 1,
+      "owned": 163,
+      "compared": 289,
+      "calls": 452,
+      "failedOwned": 0,
+      "editorMs": 228.40500003099442,
+      "adoptedMs": 194.73000007867813,
+      "fallbackMs": 34.520000010728836,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 229.25000008940697,
+      "ratio": 1.003699569003734,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.595000058412552,
+          "nativeCallMs": 2.1050000190734863,
+          "adoptMs": 7.94499996304512,
+          "editorMs": 11.395000010728836
+        },
+        "poseJoint": {
+          "candidateCalls": 48,
+          "editorCalls": 48,
+          "adoptionObserved": true,
+          "engineMs": 15.190000087022781,
+          "nativeCallMs": 13.200000077486038,
+          "adoptMs": 17.19500008225441,
+          "editorMs": 21.134999960660934
+        },
+        "commitDrag": {
+          "candidateCalls": 8,
+          "editorCalls": 8,
+          "adoptionObserved": true,
+          "engineMs": 3.4000000059604645,
+          "nativeCallMs": 2.8600000143051147,
+          "adoptMs": 5.024999976158142,
+          "editorMs": 32.860000014305115
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {},
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "a rig or static-definition call outside owned adoption": 4,
+        "history the session did not record": 4
+      },
+      "unported": {},
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1/r1-startup.driver.json"
+      ],
+      "elapsedSeconds": 461.699270254001,
+      "loadBefore": [
+        0.27490234375,
+        0.63720703125,
+        2.8681640625
+      ],
+      "loadAfter": [
+        9.30712890625,
+        7.9267578125,
+        5.6025390625
+      ],
+      "driverSha256": "650d20ba2884ddf249840c317f668274dfe186faf59dd7810306c6e62af84975",
+      "receiptSha256": "241e2bea462f021c02e05e7eabdff3e1cddc310ae5d755c1a1ba1424fc15e0e0",
+      "logSha256": "fb22dde89fd7e4be557db5bdffb55f4f9da43f91225a84f849558cd4c491e090"
+    },
+    {
+      "batch": "B13",
+      "case": "rig",
+      "round": 1,
+      "owned": 119,
+      "compared": 171,
+      "calls": 295,
+      "failedOwned": 1,
+      "editorMs": 120.70999976992607,
+      "adoptedMs": 120.31499990820885,
+      "fallbackMs": 11.770000010728836,
+      "failedOwnedMs": 0.1850000023841858,
+      "candidateTotalMs": 132.26999992132187,
+      "ratio": 1.095766715047877,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.0949999690055847,
+          "nativeCallMs": 1.7499999701976776,
+          "adoptMs": 7.560000032186508,
+          "editorMs": 8.799999982118607
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "editorCalls": 36,
+          "adoptionObserved": true,
+          "engineMs": 8.780000030994415,
+          "nativeCallMs": 7.860000014305115,
+          "adoptMs": 8.839999914169312,
+          "editorMs": 10.264999955892563
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "editorCalls": 4,
+          "adoptionObserved": true,
+          "engineMs": 1.629999965429306,
+          "nativeCallMs": 1.3899999856948853,
+          "adoptMs": 3.1550000309944153,
+          "editorMs": 3.4300000071525574
+        }
+      },
+      "comparisonOnlyResidualCalls": 4,
+      "failedAttemptsByMethod": {
+        "pasteSegmentValues": {
+          "count": 1,
+          "ms": 0.1850000023841858
+        }
+      },
+      "ended": {
+        "layer focus": 2,
+        "a call the engine has not ported": 9,
+        "a rig or static-definition call outside owned adoption": 2,
+        "history the session did not record": 2
+      },
+      "unported": {
+        "selectBranch: origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition": 2,
+        "addSegment: drawing into a figure with rig relationships": 1,
+        "beginMotionPathEdit: a motion-path edit of rigged or 3D figures": 6
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/rig.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1/r1-rig.driver.json"
+      ],
+      "elapsedSeconds": 612.5963331680105,
+      "loadBefore": [
+        9.30712890625,
+        7.9267578125,
+        5.6025390625
+      ],
+      "loadAfter": [
+        9.6953125,
+        9.53955078125,
+        7.6416015625
+      ],
+      "driverSha256": "afb76ea84d5895cd455de6b75fbd46a41f63b37f2e29c148d0feb18d7b2089be",
+      "receiptSha256": "cc80eea71e26752457d5c08242c48c0a26cbe3fa209e3ccb96334a5cd8478528",
+      "logSha256": "027860af6dead30e646d9e8a763f3e34027bbb1aaa6ba623125236ad3f400180"
+    },
+    {
+      "batch": "B13",
+      "case": "joined-chain",
+      "round": 1,
+      "owned": 125,
+      "compared": 213,
+      "calls": 338,
+      "failedOwned": 0,
+      "editorMs": 153.40500009059906,
+      "adoptedMs": 139.8799998164177,
+      "fallbackMs": 10.699999988079071,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 150.57999980449677,
+      "ratio": 0.9815846922562245,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": true,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.439999967813492,
+          "nativeCallMs": 2.0750000178813934,
+          "adoptMs": 7.655000030994415,
+          "editorMs": 11.264999955892563
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "editorCalls": 36,
+          "adoptionObserved": true,
+          "engineMs": 9.990000009536743,
+          "nativeCallMs": 8.879999965429306,
+          "adoptMs": 12.329999923706055,
+          "editorMs": 14.784999936819077
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "editorCalls": 4,
+          "adoptionObserved": true,
+          "engineMs": 2.205000013113022,
+          "nativeCallMs": 1.8800000250339508,
+          "adoptMs": 3.310000032186508,
+          "editorMs": 6.675000011920929
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {},
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "a rig or static-definition call outside owned adoption": 2,
+        "a call the engine has not ported": 1,
+        "segment values the session did not copy": 1,
+        "history the session did not record": 1
+      },
+      "unported": {
+        "addSegment: drawing into a figure with rig relationships": 1
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/joined-chain.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1/r1-joined-chain.driver.json"
+      ],
+      "elapsedSeconds": 611.7745347380114,
+      "loadBefore": [
+        9.6953125,
+        9.53955078125,
+        7.6416015625
+      ],
+      "loadAfter": [
+        9.00439453125,
+        9.71923828125,
+        8.7158203125
+      ],
+      "driverSha256": "2074873402f22eeef4053cf2941376a1e94042eea9bc42ee4cc0705c83689a06",
+      "receiptSha256": "8fa33f53488af18af5c65506f43c12f2aca8bc32ac3c91bc1874775e3e403e38",
+      "logSha256": "358c7b7781dd08d03160f4bcd2ed44030c486d670d933cb1046a44c25bcf4257"
     }
   ],
   "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1",
@@ -40724,6 +40987,146 @@
         "engine1MatrixTotal": 28,
         "fullCostRowsBefore": 27,
         "fullCostRowsAfter": 30,
+        "ordinaryDiagnosticsUnchanged": 4,
+        "instrumentedJoinedDiagnosticsUnchanged": 1
+      }
+    },
+    {
+      "scope": "B13 completed full loaded warmed eligible OWNED-call paired editing cost; not engine-1 or baseline-0",
+      "notice": "Parity/accounting valid on all three cases; literal outcomes FAIL/FAIL/PASS keep the overall figures gate closed. All30 older full rows/nine metadata batches/four ordinary diagnostics/accepted joined diagnostic remain raw byte-exact. Loaded measurements establish no causal gain, default admission or matching final checkpoint.",
+      "baseHead": "5d2f589a52629726ae6934b6694af4937fe15407",
+      "sourceWasUncommitted": false,
+      "sourceBinding": {
+        "approvedInputReceipt": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1/input-receipt.json",
+          "sha256": "1cd57f5520f843a8e5ea92e3efa75b650ab3cfc51912900ad563b1ce19984ff0",
+          "bytes": 236446
+        },
+        "capturedIdentityCounts": {
+          "productionSources": 1529,
+          "packageFiles": 7,
+          "documents": 3
+        },
+        "sourcePackageAndInputsStableEveryRun": true,
+        "completeMapsRetainedInRawReceipts": true
+      },
+      "packageBuildInfo": {
+        "profile": "wasm",
+        "toolchain": "nightly-2026-09-15",
+        "wasmBindgen": "0.2.129",
+        "maxMemory": 2147483648,
+        "wasmBytes": 10241930,
+        "wasmBytesBeforeOpt": 10241930,
+        "jsBytes": 201867,
+        "sha256": "e5476f401799eda7a876c18d62ee374d44564ebef1cf5c46fbcf14a65665171a",
+        "codec": {
+          "toolchain": "stable",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+          "wasmBytes": 1532303,
+          "wasmBytesBeforeOpt": 1532303,
+          "jsBytes": 13846,
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+        },
+        "drawing": {
+          "toolchain": "stable",
+          "wasmBytes": 449096,
+          "wasmBytesBeforeOpt": 449096,
+          "jsBytes": 53485,
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+        }
+      },
+      "runtimes": {
+        "nodeVersion": "v24.11.0",
+        "pythonVersion": "Python 3.12.9"
+      },
+      "capturedUtcTimestamps": {
+        "startup": {
+          "beforeUtc": "2026-10-05T11:01:12.324448+00:00",
+          "afterUtc": "2026-10-05T11:08:54.023983+00:00"
+        },
+        "rig": {
+          "beforeUtc": "2026-10-05T11:08:54.177151+00:00",
+          "afterUtc": "2026-10-05T11:19:06.776847+00:00"
+        },
+        "joined-chain": {
+          "beforeUtc": "2026-10-05T11:19:06.925518+00:00",
+          "afterUtc": "2026-10-05T11:29:18.699434+00:00"
+        }
+      },
+      "artifactLabelNote": "Actual captures are2026-10-05;20261006 in historical artifact names is a label.",
+      "costRule": "candidate ownedMs + ownableMs + failedOwnedMs <= editorAlone ownableMs; unchanged literal threshold",
+      "gate": {
+        "OWNED_CLASSES": [
+          "large figures",
+          "3d"
+        ],
+        "figuresDefaultOwnership": false,
+        "allThreeCostPass": false
+      },
+      "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1",
+      "receiptInputs": {
+        "input-receipt.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1/input-receipt.json",
+          "sha256": "1cd57f5520f843a8e5ea92e3efa75b650ab3cfc51912900ad563b1ce19984ff0",
+          "bytes": 236446
+        },
+        "plan.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1/plan.json",
+          "sha256": "6583a4c551ea99a4ca6c67f2ee672802477c08435190321cd3264695126afde8",
+          "bytes": 228
+        },
+        "summary-accounted.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch13-1/summary-accounted.json",
+          "sha256": "b41d89a0b2453f975a3c10eb92b6caa46651f5a254be4165877219c12a31db9a",
+          "bytes": 97325
+        }
+      },
+      "independentCompletedAcceptance": {
+        "path": "/tmp/styk-figures-b13-joined-full3-cost-independent-review-20261006.json",
+        "sha256": "f26a1d97b7be637f95427d47eb7e21836c78de400f20ac8c8e09f70e6ffd8a9e",
+        "bytes": 15592
+      },
+      "priorSealedCaseReviews": [
+        {
+          "path": "/tmp/styk-figures-b13-startup-cost-independent-review-20261006.json",
+          "bytes": 9781,
+          "sha256": "4628a43290958ee809435ad760b2dec3d38f397b9ad50e25c86aeb44dfc81526"
+        },
+        {
+          "path": "/tmp/styk-figures-b13-rig-cost-independent-review-20261006.json",
+          "bytes": 9231,
+          "sha256": "a16a81e2a0eff503b89d7952f7d562f4a80e621e5f62fb740cf041552029ec50"
+        }
+      ],
+      "methodCostRankingReview": {
+        "path": "/tmp/styk-figures-b13-full3-method-cost-ranking-20261006.json",
+        "sha256": "19ed026cf83bb5cd97c1a6ba43b6d099d42adfb3cf1836b1bd465cc64ac2444b",
+        "bytes": 31868
+      },
+      "outcomes": [
+        "startup FAIL",
+        "rig FAIL",
+        "joined-chain PASS"
+      ],
+      "accountingNotes": {
+        "rig": "Expected failed Native paste0.1850000023841858ms and original JS fallback0.1899999976158142ms are distinct intervals included once each; four comparison-only residuals remain separate.",
+        "methodClocks": "engineMs includes callMs; diagnostic method clocks and residuals are not added to official global totals.",
+        "ranking": "Descriptive method ranking preserves independent global/method clock residuals; no causal gain or predicted savings follows."
+      },
+      "progressCounters": {
+        "inventory": {
+          "js": 175,
+          "partial": 123,
+          "ported": 35,
+          "verified": 22,
+          "removed": 1
+        },
+        "ownedClasses": 2,
+        "deletedJavaScriptModules": 2,
+        "engine1MatrixMeasured": 0,
+        "engine1MatrixTotal": 28,
+        "fullCostRowsBefore": 30,
+        "fullCostRowsAfter": 33,
         "ordinaryDiagnosticsUnchanged": 4,
         "instrumentedJoinedDiagnosticsUnchanged": 1
       }
