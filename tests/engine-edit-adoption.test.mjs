@@ -37,7 +37,7 @@ function sessionFor(oracle) {
       try { ({result} = withDraws(() => oracle[name](...JSON.parse(argsText).map(decode)), () => draws.shift()[1])); }
       catch (caught) { error = caught.messageKey ?? caught.message; }
       const answer = {status: error ? 'error' : 'ok', ...(error ? {error} : {result: result ?? null}), state: state(oracle), events: events.slice(),
-        draft: null, drag: oracle._drag ? {before: oracle._drag.before.map(object => object.unique_id), translation: oracle._drag.scope === 'translation', label: oracle._drag.label} : null};
+        draft: null, drag: oracle._drag ? {before: (oracle._drag.before ?? []).map(object => object.unique_id), translation: oracle._drag.scope === 'translation', label: oracle._drag.label} : null};
       // View return values have no effect on owned adoption and can carry runtime state.
       if (['select', 'selectMany', 'seek', 'duplicateFigure', 'addFigure', 'importFigure', 'sheetAppendFrame', 'copySegmentValues', 'sheetCopyFrames', 'beginAnimationEdit'].includes(name)) answer.result = null;
       const frame = oracle._authoredPoseEdit?.frame;
@@ -163,8 +163,120 @@ function adoptionPair(document, mode = 'own') {
     assert.equal(report.mismatches.length, 0, JSON.stringify(report.mismatches));
   };
   const run = (method, ...args) => { for (const editor of [expected, owned]) editor[method](...args); same(); };
-  return {expected, owned, oracle, report, same, run};
+  return {expected, owned, oracle, session, report, same, run};
 }
+
+test('an adopted ordinary pose commit keeps the exact ready gesture frame and geometry', () => {
+  const {expected, owned, oracle, session, same, run} = adoptionPair(createStartupDocument());
+  run('select', 1, 3); run('beginDrag', 'Pose figure');
+  // Runtime clocks are omitted from native wire records, not discarded by a commit.
+  for (const editor of [expected, owned, oracle]) {
+    editor.report._styk.vfxClips = {version: 1, clips: []};
+    editor.frame._cameraMotionTick = 2;
+    editor.frame._vfxTimelineTick = 3;
+    editor.frame._vfxTimelineScene = [];
+  }
+  const tip = expected.geometry.objects.get(0).segments[3].end;
+  run('poseJoint', tip.x + 4, tip.y - 3, {snap: false});
+  const frames = [expected.evaluatedFrame, owned.evaluatedFrame], geometries = [expected.geometry, owned.geometry];
+  let response;
+  const call = session.call.bind(session);
+  session.call = (...args) => { const text = call(...args); if (args[0] === 'commitDrag') response = JSON.parse(text); return text; };
+  expected.commitDrag(); owned.commitDrag();
+  assert.deepEqual(response.retained, [], 'an empty compact retained delta is present, not absent');
+  assert.equal(response.retainedChanges, true);
+  assert.equal(response.retainedOrder, undefined);
+  assert.equal(response.retainedFields && Object.keys(response.retainedFields).length, 0);
+  for (const [index, editor] of [expected, owned].entries()) {
+    assert.ok(editor.evaluatedFrame === frames[index], 'the ordinary commit keeps its exact displayed gesture frame');
+    assert.ok(editor._geometry === geometries[index], 'the ready geometry remains the same publication');
+    assert.equal(editor.evaluatedFrame._cameraMotionTick, 2);
+    assert.equal(editor.evaluatedFrame._vfxTimelineTick, 3);
+  }
+  same(); run('undo'); run('redo');
+});
+
+test('an adopted ordinary pose commit retains pending incremental geometry without preparing it', () => {
+  const document = emptyDocument(), figure = document.figure_types[0];
+  document.keyframes = [createFrame([createObject(figure, 1, 200, 200)], 4)];
+  const {expected, owned, same, run} = adoptionPair(document);
+  run('select', 1, 3); run('beginDrag', 'Pending pose');
+  const tip = expected.geometry.objects.get(0).segments[3].end;
+  for (const editor of [expected, owned]) editor.poseJoint(tip.x + 7, tip.y + 2, {snap: false});
+  const frames = [expected.evaluatedFrame, owned.evaluatedFrame], pending = [expected._incremental, owned._incremental];
+  assert.ok(pending.every(value => value?.previous));
+  for (const editor of [expected, owned]) assert.equal(editor._geometry, null);
+  expected.commitDrag(); owned.commitDrag();
+  for (const [index, editor] of [expected, owned].entries()) {
+    assert.equal(editor._geometry, null, 'publication does not synchronously prepare pending geometry');
+    assert.ok(editor._incremental === pending[index], 'the same pending incremental owner survives');
+    assert.ok(editor.evaluatedFrame === frames[index]);
+  }
+  same(); run('undo'); run('redo');
+});
+
+test('an adopted joined-root correction keeps the existing reconstruction fallback', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/joined-chain.document.json', import.meta.url), 'utf8'));
+  const {expected, owned, session, same, run} = adoptionPair(document);
+  run('select', 1, 0); run('beginDrag', 'Joined pose');
+  const tip = expected.geometry.objects.get(0).segments[0].end;
+  run('poseJoint', tip.x + 17, tip.y - 12, {snap: false});
+  const frame = owned.evaluatedFrame, geometry = owned.geometry;
+  let response;
+  const call = session.call.bind(session);
+  session.call = (...args) => { const text = call(...args); if (args[0] === 'commitDrag') response = JSON.parse(text); return text; };
+  expected.commitDrag(); owned.commitDrag();
+  assert.ok(response.retained.length > 0, 'normalizing attached world roots sends actual replacements');
+  assert.notEqual(owned.evaluatedFrame, frame);
+  assert.notEqual(owned._geometry, geometry);
+  assert.equal(owned._geometry, null);
+  assert.equal(owned._incremental, null);
+  same(); run('undo'); run('redo');
+});
+
+test('an adopted membership transaction never reuses a ready gesture geometry', () => {
+  const {expected, owned, same, run} = adoptionPair(createStartupDocument());
+  run('select', 1, -1);
+  const frame = owned.evaluatedFrame, geometry = owned.geometry;
+  expected.duplicateFigure(); owned.duplicateFigure();
+  assert.notEqual(owned.evaluatedFrame, frame);
+  assert.notEqual(owned._geometry, geometry);
+  assert.equal(owned._geometry, null);
+  assert.equal(owned._incremental, null);
+  same(); run('undo'); run('redo');
+});
+
+test('an adopted movieclip clock change does not mistake absent retained data for an empty delta', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/sheet-movieclip.document.json', import.meta.url), 'utf8'));
+  const {expected, owned, session, same, run} = adoptionPair(document);
+  run('select', 4, -1); run('beginDrag', 'Movieclip clock'); run('updateObject', {_stykMovieclip: {mode: 'once', speed: 2}});
+  const frame = owned.evaluatedFrame, geometry = owned.geometry;
+  let response;
+  const call = session.call.bind(session);
+  session.call = (...args) => { const text = call(...args); if (args[0] === 'commitDrag') response = JSON.parse(text); return text; };
+  expected.commitDrag(); owned.commitDrag();
+  assert.equal(Object.hasOwn(response, 'retained'), false, 'the ordinary clock-change commit samples again');
+  assert.notEqual(owned.evaluatedFrame, frame);
+  assert.notEqual(owned._geometry, geometry);
+  assert.equal(owned._geometry, null);
+  assert.equal(owned._incremental, null);
+  same(); run('undo'); run('redo');
+});
+
+test('an adopted remote motion-path publication keeps ordinary invalidation semantics', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/motion-path.document.json', import.meta.url), 'utf8'));
+  const {expected, owned, same, run} = adoptionPair(document);
+  run('select', 1, -1);
+  run('beginMotionPathEdit', {kind: 'node', uid: 1, handleId: 0, joint: -1}, 6);
+  run('updateMotionPathEdit', {x: 272, y: 182});
+  const geometry = owned.geometry;
+  expected.commitMotionPathEdit(); owned.commitMotionPathEdit();
+  assert.equal(expected._geometry, null, 'the ordinary motion-path publisher invalidates geometry');
+  assert.equal(owned._geometry, null);
+  assert.equal(owned._incremental, null);
+  assert.notEqual(owned._geometry, geometry);
+  same(); run('undo'); run('redo');
+});
 
 test('owned pose/move adoption keeps the existing COW draft identity and exact live history', () => {
   const {expected, owned, run} = adoptionPair(createStartupDocument());

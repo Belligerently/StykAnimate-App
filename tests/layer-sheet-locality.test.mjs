@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {drawingSheetPlan} from '../src/editor-layer-sheet.mjs';
+import {adoptLayerSheet,drawingSheetPlan,drawingSheetPublish} from '../src/editor-layer-sheet.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {createLayerState} from '../src/layers.mjs';
 import {sampleLayerSheet,validateLayerSheet,validateLayerSheetChanges} from '../src/layer-sheet.mjs';
@@ -121,5 +121,68 @@ test('shared native samples are partitioned once while preserving layer order, j
   assert.deepEqual(sampled.objects.map(object=>object.unique_id),expected);
   const child=sampled.objects.find(object=>object.unique_id===2);assert.equal(sampled.objects[child.join.target_object_slot].unique_id,1);
   assert.deepEqual(continuations(sampled),steps);assert.deepEqual(native.objects,original.objects);
+  editor.drawingResources.dispose();
+});
+
+test('adopting a prepared sheet skips endpoint filtering and preserves publication and history',()=>{
+  const [expected,adopted]=[fixture(),fixture()];
+  for(const editor of [expected,adopted]){
+    editor.report._styk.custom={note:'retained metadata',values:[1,2,3]};
+    editor.report.keyframes[0].objects[0].custom={note:'retained pose'};
+    editor.report._styk.layerSheet.tracks['layer-1'].keys[0].custom={note:'retained key'};
+  }
+  const before=adopted.serialize(),state=adopted.report._styk.layerSheet,unchanged=state.tracks['layer-2'];
+  const events=[[],[]];
+  for(const [index,editor] of [expected,adopted].entries())editor.addEventListener('change',event=>events[index].push(structuredClone(event.detail)));
+  expected.sheetInsertKey(['layer-1'],5);
+  const command=expected._undo.at(-1),sheet=command.after;
+  const tracks=Object.fromEntries(Object.entries(sheet.tracks).filter(([id,track])=>track!==command.before.tracks[id]));
+  const sources=Object.fromEntries(command.frameSourceChanges.map(change=>[change.id,change.after.value]));
+  let filters=0;
+  const keys=[state.tracks['layer-1'].keys,tracks['layer-1'].keys];
+  for(const array of keys)Object.defineProperty(array,'filter',{configurable:true,value:function(...args){filters++;return Array.prototype.filter.apply(this,args);}});
+  try{
+    adoptLayerSheet(adopted,{sheet:{...sheet,tracks},trackOrder:Object.keys(sheet.tracks),layers:command.afterLayers,
+      sources,nextFrame:expected._nextFrameIdentity},command.label);
+  }finally{for(const array of keys)delete array.filter;}
+  assert.equal(filters,0,'A prepared adoption has no imported endpoints left to materialize.');
+  assert.equal(adopted.report._styk.layerSheet.tracks['layer-2'],unchanged);
+  assert.deepEqual(adopted.serialize(),expected.serialize());
+  assert.deepEqual(adopted._undo,expected._undo);
+  assert.equal(adopted.historySize,expected.historySize);
+  assert.deepEqual(adopted._selectionState(),expected._selectionState());
+  assert.deepEqual(events[1],events[0]);
+  for(const tick of [0,4,5,9,10,20]){
+    expected.seek(tick);adopted.seek(tick);
+    assert.deepEqual(adopted.evaluatedFrame,expected.evaluatedFrame);
+    assert.deepEqual(adopted.geometry.drawables,expected.geometry.drawables);
+  }
+  expected.seek(0);adopted.seek(0);
+  const after=adopted.serialize();
+  for(const editor of [expected,adopted]){editor.select(1);editor.beginTranslationDrag('Cancelled move');editor.moveSelection(4,2);editor.cancelDrag();}
+  assert.deepEqual(adopted.serialize(),after);assert.deepEqual(adopted._undo,expected._undo);
+  adopted.undo();assert.deepEqual(adopted.serialize(),before);adopted.redo();assert.deepEqual(adopted.serialize(),after);
+  const valid=adopted.serialize(),history=adopted.historySize,nextFrame=adopted._nextFrameIdentity;
+  const invalid=structuredClone(adopted.report._styk.layerSheet);
+  invalid.tracks['layer-1'].keys[0].id=invalid.tracks.camera.keys[0].id;
+  assert.throws(()=>adoptLayerSheet(adopted,{sheet:invalid,trackOrder:Object.keys(invalid.tracks),layers:adopted.report._styk.layers,
+    nextFrame},'Invalid prepared sheet'),/unique identities/i);
+  assert.deepEqual(adopted.serialize(),valid);assert.equal(adopted.historySize,history);assert.equal(adopted._nextFrameIdentity,nextFrame);
+  for(const editor of [expected,adopted])editor.drawingResources.dispose();
+});
+
+test('ordinary plans still materialize changed imported endpoints before publication',()=>{
+  const editor=fixture(),before=editor.serialize(),plan=drawingSheetPlan(editor,['layer-1']);
+  const key=plan.ownKey('layer-1',plan.get('layer-1').keys[1]);key.interpolation='constant';
+  const materialize=plan.materialize;let calls=0;
+  plan.materialize=(...args)=>{calls++;return materialize(...args);};
+  drawingSheetPublish(editor,plan,'Change imported easing');
+  assert.equal(calls,2);assert.equal(plan.sources.length,2);
+  const changed=editor.report._styk.layerSheet.tracks['layer-1'].keys;
+  assert.equal(changed[0].sourceTick,0);
+  for(const endpoint of changed.slice(1,3)){
+    assert.equal(Object.hasOwn(endpoint,'sourceTick'),false);assert.ok(endpoint.value.frameId);
+  }
+  const after=editor.serialize();editor.undo();assert.deepEqual(editor.serialize(),before);editor.redo();assert.deepEqual(editor.serialize(),after);
   editor.drawingResources.dispose();
 });

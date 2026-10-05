@@ -459,25 +459,41 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         let preview = null;
         const drafted = edit && drag ? edit.frame : shown;
         if (answer.retained && drafted) {
-          const byUid = new Map(drafted.objects.map(object => [object.unique_id, object]));
-          for (const object of answer.retained) if (byUid.get(object.unique_id)?._movieclipSample !== undefined) object._movieclipSample = byUid.get(object.unique_id)._movieclipSample;
-          let objects = answer.retained;
-          if (answer.retainedChanges) {
-            for (const object of answer.retained) byUid.set(object.unique_id, object);
-            objects = (answer.retainedOrder ?? drafted.objects.map(object => object.unique_id)).map(uid => byUid.get(uid));
+          const order = answer.retainedFieldOrder;
+          const fields = order && Object.keys(drafted).filter(key => !['_cameraMotionTick', '_vfxTimelineTick', '_vfxTimelineScene'].includes(key));
+          // An ended ordinary gesture already has its final displayed pose. An
+          // empty compact delta preserves it exactly, as `_commitSheetPose`
+          // does, including ready or still-pending incremental geometry.
+          // Actual replacements (notably corrected joined roots) keep the
+          // reconstruction below; absent retained data is not an empty delta.
+          const keepDraft = (name === 'commitDrag' || name === 'commitHandleEditDrag' || name === 'commitFigureHandleDrag')
+            && edit && drag?.authored && !drag.motionPath && !edit.transaction && edit.tick === editor.tick && !answer.drag
+            && answer.retainedChanges === true && Array.isArray(answer.retained) && answer.retained.length === 0
+            && !answer.retainedOrder && !Object.keys(answer.retainedFields ?? {}).length && !answer.retainedRemoved?.length
+            && !detail.definition && !answer.definitions?.length
+            && (!order || order.length === fields.length && order.every((key, index) => key === fields[index]));
+          if (keepDraft) preview = {frame: drafted, geometry: editor._geometry, incremental: editor._incremental};
+          else {
+            const byUid = new Map(drafted.objects.map(object => [object.unique_id, object]));
+            for (const object of answer.retained) if (byUid.get(object.unique_id)?._movieclipSample !== undefined) object._movieclipSample = byUid.get(object.unique_id)._movieclipSample;
+            let objects = answer.retained;
+            if (answer.retainedChanges) {
+              for (const object of answer.retained) byUid.set(object.unique_id, object);
+              objects = (answer.retainedOrder ?? drafted.objects.map(object => object.unique_id)).map(uid => byUid.get(uid));
+            }
+            // Geometry rebuilds: the commit may have moved joined figures' roots. Figures the
+            // call did not replace keep their identity and runtime movieclip sample.
+            let frame = {...drafted, ...answer.retainedFields, objects};
+            for (const key of answer.retainedRemoved ?? []) delete frame[key];
+            if (answer.retainedFieldOrder) {
+              const fields = new Set(answer.retainedFieldOrder);
+              // Engine records omit the JavaScript frame's runtime effect/camera clocks.
+              // Reorder its saved fields while keeping that runtime state on the preview.
+              frame = {...Object.fromEntries(answer.retainedFieldOrder.map(key => [key, frame[key]])),
+                ...Object.fromEntries(Object.entries(frame).filter(([key]) => !fields.has(key)))};
+            }
+            preview = {frame, geometry: null, incremental: null};
           }
-          // Geometry rebuilds: the commit may have moved joined figures' roots. Figures the
-          // call did not replace keep their identity and runtime movieclip sample.
-          let frame = {...drafted, ...answer.retainedFields, objects};
-          for (const key of answer.retainedRemoved ?? []) delete frame[key];
-          if (answer.retainedFieldOrder) {
-            const fields = new Set(answer.retainedFieldOrder);
-            // Engine records omit the JavaScript frame's runtime effect/camera clocks.
-            // Reorder its saved fields while keeping that runtime state on the preview.
-            frame = {...Object.fromEntries(answer.retainedFieldOrder.map(key => [key, frame[key]])),
-              ...Object.fromEntries(Object.entries(frame).filter(([key]) => !fields.has(key)))};
-          }
-          preview = {frame, geometry: null, incremental: null};
         }
         if (!answer.drag) { editor._drag = null; editor._authoredPoseEdit = null; }
         editor._authoredCommitPreview = preview;

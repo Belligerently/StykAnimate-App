@@ -51,6 +51,14 @@ fn selection_of(view: &Value) -> Selection {
     }
 }
 
+/// These response fields have unique, nonnumeric keys, appended in the same
+/// order as the JSON owner emits them. Build their existing ordered shape once
+/// rather than replacing the shape after each missing-key `Obj::set`.
+fn response_value(fields: Vec<(&'static str, Value)>) -> Value {
+    let (keys, values): (Vec<Arc<str>>, Vec<Value>) = fields.into_iter().map(|(key, value)| (Arc::from(key), value)).unzip();
+    Value::object(Obj::from_shape(styk_doc::Shape::new(keys), values))
+}
+
 /// The COW figures the call replaced, without evaluation's runtime movieclip clock.
 /// A draft keeps its slots; a retained frame can also add, remove or reorder figures.
 fn changed_figures(frame: &Value, previous: Option<&Value>, taken: Option<&HashSet<u32>>) -> Vec<Value> {
@@ -144,10 +152,10 @@ impl Session {
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
         let (Ok(args), Ok(view)) = parsed else {
-            let mut answer = Obj::new();
-            answer.set("status", Value::str("error"));
-            answer.set("error", Value::str("the call's arguments are not JSON"));
-            return styk_doc::json::to_string(&Value::object(answer));
+            let mut answer = Vec::with_capacity(8);
+            answer.push(("status", Value::str("error")));
+            answer.push(("error", Value::str("the call's arguments are not JSON")));
+            return styk_doc::json::to_string(&response_value(answer));
         };
         styk_doc::json::to_string(&self.call_values(method, &args, &view))
     }
@@ -221,19 +229,19 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
-    let mut answer = Obj::new();
+    let mut answer = Vec::with_capacity(8);
     // Owned calls request only changed COW records. The default remains complete for
     // shadow comparison and existing native session consumers.
     let changes_only = flag(view, "changesOnly");
     if changes_only {
-        answer.set("changesOnly", Value::Bool(true));
+        answer.push(("changesOnly", Value::Bool(true)));
     }
     if view.is_object() {
         editor.set_view(number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize, selection_of(view));
         if let Err(error) = editor.sync_selection_metadata(view) {
-            answer.set("status", Value::str("unported"));
-            answer.set("reason", Value::str(&format!("{error:?}")));
-            return Ok(Value::object(answer));
+            answer.push(("status", Value::str("unported")));
+            answer.push(("reason", Value::str(&format!("{error:?}"))));
+            return Ok(response_value(answer));
         }
         editor.set_auto_key(flag(view, "autoKey"));
         // Selecting changes the active layer without a new revision of the document.
@@ -283,22 +291,22 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     };
     match result {
         Ok(result) => {
-            answer.set("status", Value::str("ok"));
+            answer.push(("status", Value::str("ok")));
             // The facade returns these views from its adopted document. Repeating
             // their complete figure/frame data in the answer serves no purpose.
             let adopted_view = changes_only && matches!(method, "duplicateFigure" | "addFigure" | "importFigure" | "pasteSelection" | "duplicateSelection" | "sheetAppendFrame");
-            answer.set("result", if adopted_view { Value::Null } else { result });
+            answer.push(("result", if adopted_view { Value::Null } else { result }));
         }
         Err(EditError::Unported(what)) => {
-            answer.set("status", Value::str("unported"));
-            answer.set("reason", Value::str(&what));
+            answer.push(("status", Value::str("unported")));
+            answer.push(("reason", Value::str(&what)));
         }
         Err(EditError::Invalid(key)) => {
-            answer.set("status", Value::str("error"));
-            answer.set("error", Value::str(&key));
+            answer.push(("status", Value::str("error")));
+            answer.push(("error", Value::str(&key)));
         }
     }
-    answer.set("state", editor.state_value());
+    answer.push(("state", editor.state_value()));
     let events = editor.take_events();
     let report = editor.report();
     // A command published the sheet when one of its events says so, as the facade reads
@@ -314,7 +322,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         let current_sheet = styk.and_then(|s| s.get("layerSheet")).and_then(Value::as_obj).cloned().unwrap_or_default();
         let old_sheet = before.path(&["_styk", "layerSheet"]).and_then(Value::as_obj);
         if changes_only && !old_sheet.into_iter().flat_map(|sheet| sheet.keys()).eq(current_sheet.keys()) {
-            answer.set("sheetOrder", Value::array(current_sheet.keys().map(|key| Value::str(key)).collect()));
+            answer.push(("sheetOrder", Value::array(current_sheet.keys().map(|key| Value::str(key)).collect())));
         }
         let mut sheet = if changes_only {
             let mut delta = Obj::new();
@@ -325,7 +333,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             }
             let removed: Vec<Value> = old_sheet.into_iter().flat_map(|sheet| sheet.keys()).filter(|key| &***key != "tracks" && !current_sheet.contains(key)).map(|key| Value::str(key)).collect();
             if !removed.is_empty() {
-                answer.set("sheetRemoved", Value::array(removed));
+                answer.push(("sheetRemoved", Value::array(removed)));
             }
             delta
         } else { current_sheet };
@@ -334,16 +342,16 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             replaced.set(id, new.get(id).cloned().unwrap_or(Value::Null));
         }
         sheet.set("tracks", Value::object(replaced));
-        answer.set("sheet", Value::object(sheet));
+        answer.push(("sheet", Value::object(sheet)));
         if !changes_only || !old.keys().eq(new.keys()) {
-            answer.set("trackOrder", Value::array(new.keys().map(|id| Value::str(id)).collect()));
+            answer.push(("trackOrder", Value::array(new.keys().map(|id| Value::str(id)).collect())));
         }
         if !changes_only {
-            answer.set("changedTracks", Value::array(changed.iter().map(|id| Value::str(id)).collect()));
+            answer.push(("changedTracks", Value::array(changed.iter().map(|id| Value::str(id)).collect())));
         }
         let layers = styk.and_then(|s| s.get("layers")).cloned().unwrap_or(Value::Null);
         if !changes_only || !before.path(&["_styk", "layers"]).is_some_and(|old| old.same_node(&layers)) {
-            answer.set("layers", layers);
+            answer.push(("layers", layers));
         }
         let mut sources = Obj::new();
         for id in events.iter().flat_map(|event| event.get("sourceIds").and_then(Value::elements).map(|e| e.iter().collect::<Vec<_>>()).unwrap_or_default()) {
@@ -351,28 +359,28 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
                 sources.set(id, styk.and_then(|s| s.path(&["frameSources", id])).cloned().unwrap_or(Value::Null));
             }
         }
-        answer.set("sources", Value::object(sources));
+        answer.push(("sources", Value::object(sources)));
         // Figure definitions the publication added (a paste's copies), after the others.
         let count = |document: &Value| document.get("figure_types").and_then(Value::array_len).unwrap_or(0);
         if count(report) > count(&before) {
             let added: Vec<Value> = report.get("figure_types").and_then(Value::elements).map(|e| e.iter().skip(count(&before)).collect()).unwrap_or_default();
-            answer.set("definitions", Value::array(added));
+            answer.push(("definitions", Value::array(added)));
         }
         // A committed gesture's draft stays on show (`_authoredCommitPreview`), with what
         // the commit itself changed in it (joined figures' roots from geometry): its figures.
         if let Some(frame) = editor.retained_frame().filter(|frame| !retained.as_ref().is_some_and(|old| old.same_node(frame))) {
             if changes_only {
                 let previous = draft.as_ref().or(retained.as_ref());
-                answer.set("retained", Value::array(changed_figures(&frame, previous, None)));
+                answer.push(("retained", Value::array(changed_figures(&frame, previous, None))));
                 if let Some(previous) = previous {
                     let order = figure_order(&frame);
                     if order != figure_order(previous) {
-                        answer.set("retainedOrder", Value::array(order));
+                        answer.push(("retainedOrder", Value::array(order)));
                     }
-                    answer.set("retainedChanges", Value::Bool(true));
+                    answer.push(("retainedChanges", Value::Bool(true)));
                 }
             } else {
-                answer.set("retained", frame.get("objects").cloned().unwrap_or(Value::Null));
+                answer.push(("retained", frame.get("objects").cloned().unwrap_or(Value::Null)));
             }
             // A transaction can change frame-level order, counts or other fields as
             // well as figures. Keeping only its objects would leave the displayed
@@ -385,11 +393,11 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
                     fields.set(key, value.clone());
                 }
             }
-            if !fields.is_empty() { answer.set("retainedFields", Value::object(fields)); }
+            if !fields.is_empty() { answer.push(("retainedFields", Value::object(fields))); }
             let removed: Vec<Value> = previous.into_iter().flat_map(|frame| frame.keys()).filter(|key| &***key != "objects" && !current.contains(key)).map(|key| Value::str(key)).collect();
-            if !removed.is_empty() { answer.set("retainedRemoved", Value::array(removed)); }
+            if !removed.is_empty() { answer.push(("retainedRemoved", Value::array(removed))); }
             if !previous.into_iter().flat_map(|frame| frame.keys()).eq(current.keys()) {
-                answer.set("retainedFieldOrder", Value::array(current.keys().map(|key| Value::str(key)).collect()));
+                answer.push(("retainedFieldOrder", Value::array(current.keys().map(|key| Value::str(key)).collect())));
             }
         }
     }
@@ -407,9 +415,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             Value::object(object)
         });
         frame.set("objects", Value::array(objects.collect()));
-        answer.set("preview", Value::object(frame));
+        answer.push(("preview", Value::object(frame)));
     }
-    answer.set("events", Value::array(events));
+    answer.push(("events", Value::array(events)));
     let figures = if changes_only {
         match (&editor.authored, &editor.drag) {
             (Some(edit), Some(drag)) => {
@@ -419,9 +427,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             _ => None,
         }
     } else { editor.draft_figures() };
-    answer.set("draft", figures.map_or(Value::Null, Value::array));
-    answer.set("drag", editor.drag_value());
-    Ok(Value::object(answer))
+    answer.push(("draft", figures.map_or(Value::Null, Value::array)));
+    answer.push(("drag", editor.drag_value()));
+    Ok(response_value(answer))
 }
 
 #[cfg(test)]
