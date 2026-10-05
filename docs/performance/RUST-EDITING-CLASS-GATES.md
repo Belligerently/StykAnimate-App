@@ -164,3 +164,22 @@ Full cost rows advance **18→21**; all three new rows FAIL the literal candidat
 Counters remain **175 js / 123 partial / 35 ported / 22 verified / 1 removed**, **two owned classes**, **two deleted JavaScript modules**, **engine-1 0/28**. Figures remains closed. Only a measured cost fix, its fresh unchanged full cost proof, matching committed-source checkpoint and positive actual default core adoption can advance the gate. This measurement append introduces no implementation, gate, public API, response schema, stored-arithmetic or threshold change. This completed append accompanies the verified B9 source fix recorded in the port plan.
 
 Evidence: companion JSON B8 rows/batch; `figures-candidate-batch8-1/summary-accounted.json` `497e06af`, approved input receipt `112cd258`, approved reader output `e2c0c183`, and private raw-accounting receipt `a5858260`. Exact double-precision values, artifact/package identities, commands and loads remain in those receipts. Historical milestone text and all four ordinary diagnostics retain their original scope.
+
+
+## B9 completed committed full cost
+
+The unchanged warmed exact-math full paired workload completed on committed `75bb37f89ee491825f1a7c5284639c534120c385` with shipping Wasm `b9cf70669501635cf51b9bc313f94fffef0c35aac05cb395d038e0bc5308f31f`, 10,240,701 bytes and the required unstripped `wasm` profile. All three inputs pass strict document/history/selection/full undo, paired eligible-call counts, complete failed-attempt accounting and positive actual native/adoption work on each core method. All 1,529 source, seven package and three input maps match before and after; Node 24.11.0, Python 3.12.9 and the full driver workload are unchanged.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Cost gate |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Startup | 229.515 | 199.680 | 37.775 | 0.000 | 237.455 | Fail |
+| Rig | 141.250 | 121.825 | 14.710 | 0.200 | 136.735 | Pass |
+| Joined-chain | 138.235 | 145.340 | 11.280 | 0.000 | 156.620 | Fail |
+
+Owned/compared/failed counts are **163/285/0**, **119/171/1** and **125/213/0**. Core pose/move/commit counts are **48/6/8**, **36/6/4** and **36/6/4**; eligible method/call counts **76/171**, **65/128** and **66/129** match the paired editor. Startup history has 80 entries and rig/joined 79, with exact full undo and zero differences, mismatches, rounding or page problems. Rig's failed `pasteSegmentValues` attempt, **0.19999998807907104 ms**, is included once before fallback; no timed argument subtype is inferred. Rig retains the same four allowed comparison-only residual calls on both pages. Startup's actual compared count is 285 rather than B8's 289; all 171 eligible calls still match, and the raw counts are preserved without inferring a workload reduction.
+
+Full cost rows advance **21→24**. The literal unchanged candidate owned+fallback+failed <= editor-alone rule yields **startup FAIL, rig PASS, joined-chain FAIL**; the complete class gate does not pass. All twenty-one historical rows, six older batch metadata objects, four ordinary diagnostics and other historical JSON fields remain byte-exact. These loaded observations establish no causal speed gain or idle engine-1 result. Method clocks remain diagnostic: each `engineMs` includes its native `callMs`; it is not added again to the official total.
+
+Counters remain **175 js / 123 partial / 35 ported / 22 verified / 1 removed**, **two owned classes**, **two deleted JavaScript modules**, **engine-1 0/28**. Figures remains closed. A measured cost fix, fresh unchanged all-three passing cost, matching committed-source checkpoint and positive actual default core adoption are still required. This completed evidence append introduces no implementation, gate, public API, response schema, stored-arithmetic or threshold change and is reserved for the next meaningful verified figures fix.
+
+Evidence: companion JSON B9 rows/batch; `figures-candidate-batch9-1/summary-accounted.json` `1c68c696`, approved input receipt `2a9ac16d`, independent completed all-three acceptance `ec7a9a86`, and private accounting receipt `80fe0665`. Independent startup `9315c8be` and rig `cfebfa0e` receipts remain unchanged. No additional completed-reader execution was needed. Exact double-precision values, artifact/package identities, commands and loads remain in those receipts; historical milestone text and all four ordinary diagnostics retain their original scope.

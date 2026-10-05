@@ -211,7 +211,14 @@ impl Editor {
         if let Some(output) = evaluation.as_mut() { **output = None; }
         let Some(object) = self.selection_frame()?.get(slot).cloned() else { return Ok(None) };
         let Some(id) = uid(&object) else { return Ok(None) };
-        let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
+        // Only the active unpinned caller retains this tuple. Its context, capture
+        // and full solve read all joints; render output keeps the shape owner's
+        // existing rich-figure/ancestor fallback. Default callers stay unchanged.
+        let (prepared, frame, scene) = if evaluation.is_some() {
+            self.evaluate_for_shape(Some(&[slot]))?
+        } else {
+            self.evaluate_only(Some(&[slot]))?
+        };
         let mut kept_solved = evaluation.as_ref().map(|_| HashMap::new());
         let context = Self::spatial_context_of(slot, object, id, &prepared, &frame, &scene, None, kept_solved.as_mut());
         if context.is_some() && let Some(output) = evaluation {
@@ -995,6 +1002,14 @@ mod same_call_context_tests {
             context.starts.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(),
             context.ends.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(),
             context.raws.iter().map(|p| p.map(|p| p.map(f64::to_bits))).collect::<Vec<_>>(),
+            context.camera.as_ref().map(|c| (c.root.map(f64::to_bits), c.k.to_bits(), c.scale.to_bits())),
+            context.shape.as_ref().map(|s| s.iter().map(|(id, s)| (*id, [s.width, s.taper].map(f64::to_bits))).collect::<Vec<_>>()),
+            context.frames.iter().map(|f| f.map(|f| (
+                f.q.map(f64::to_bits), f.t.map(f64::to_bits), f.dual.map(f64::to_bits),
+                [f.native_bend, f.authored_bend, f.motion_value, f.stretch, f.rest_length].map(f64::to_bits),
+                f.origin.map(f64::to_bits), f.axis.map(f64::to_bits), f.choice_scale.map(f64::to_bits),
+                f.shape.map(|s| [s.width, s.taper].map(f64::to_bits)),
+            ))).collect::<Vec<_>>(),
         ))
     }
 
@@ -1079,5 +1094,82 @@ mod same_call_context_tests {
             assert!(changed_contexts > 0, "{name}: repeated samples must actually change the current context");
         }
         assert_eq!(checked, 6);
+    }
+
+
+    fn solved_bits(solved: &HashMap<u32, crate::ik::Solved>) -> Vec<(u32, String)> {
+        let mut values: Vec<_> = solved.iter().map(|(&uid, solved)| {
+            let solution = &solved.solution;
+            let results: Vec<_> = solution.results.iter().map(|(handle, outcome)| {
+                let reference = outcome.bend_reference.as_ref().map(|r| (
+                    [r.side, r.angle, r.axis, r.ratio].map(f64::to_bits),
+                    r.shape.as_ref().map(|v| v.iter().map(|v| v.to_bits()).collect::<Vec<_>>()),
+                ));
+                let followers = solved.followers_of(*handle).map(|v| v.iter().map(|(&id, &angle)| (id, angle.to_bits())).collect::<Vec<_>>());
+                let joined = solved.joined_followers_of(*handle).map(|v| v.iter().map(|(&uid, angles)| (
+                    uid, angles.iter().map(|(&id, &angle)| (id, angle.to_bits())).collect::<Vec<_>>(),
+                )).collect::<Vec<_>>());
+                (*handle, outcome.conflict, outcome.iterations, [outcome.error, outcome.stretch].map(f64::to_bits), outcome.chain.clone(), reference, followers, joined)
+            }).collect();
+            (uid, format!("{:?}", (
+                solution.angles.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                solution.lengths.as_ref().map(|v| v.iter().map(|v| v.to_bits()).collect::<Vec<_>>()),
+                results,
+            )))
+        }).collect();
+        values.sort_by_key(|(uid, _)| *uid);
+        values
+    }
+
+    #[test]
+    fn retained_numeric_context_preserves_recorded_joints_and_complete_solutions() {
+        for name in [
+            "startup-sheet", "ik-unpinned-sheet", "pinned-ik-sheet", "ik-followers-sheet",
+            "ik-joined-sheet", "ik-joined-unpinned-sheet", "ik-spatial-sheet",
+            "ik-spatial-free-sheet", "ik-spatial-joined-free-sheet", "ik-movieclip-parent-sheet",
+        ] {
+            let (mut editor, reference) = recorded_editor(name);
+            let steps = reference.get("steps").unwrap().elements().unwrap();
+            let mut expected = steps.get(0).unwrap().get("document").unwrap().as_str().unwrap().to_string();
+            let mut checked = 0;
+            let mut omitted_output = 0;
+            let mut nonempty_solutions = 0;
+            for step in steps.iter().skip(1) {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap();
+                if method == "poseJoint" {
+                    let slot = editor.object().unwrap().unwrap().0;
+                    let original = editor.spatial_context_at(slot).unwrap().unwrap();
+                    let (prepared, frame, full) = editor.evaluate_only(Some(&[slot])).unwrap();
+                    let full_solved = crate::ik::solve_frame(&prepared, &frame, &full);
+                    let mut retained = None;
+                    let numeric = editor.spatial_context_at_with(slot, Some(&mut retained)).unwrap().unwrap();
+                    let (_, _, query, solved) = retained.as_ref().unwrap();
+                    assert_eq!(context_bits(&numeric), context_bits(&original), "{name}: all context numeric fields");
+                    assert!(numeric.object.same_node(&original.object));
+                    assert!(Arc::ptr_eq(&numeric.figure, &original.figure));
+                    assert_eq!(solved_bits(solved), solved_bits(&full_solved), "{name}: the entire solved map, including joined followers/conflicts");
+                    if !solved.is_empty() { nonempty_solutions += 1; }
+                    if query.items.is_empty() && !full.items.is_empty() { omitted_output += 1; }
+                    if matches!(name, "ik-spatial-sheet" | "ik-spatial-free-sheet" | "ik-spatial-joined-free-sheet" | "ik-movieclip-parent-sheet") {
+                        assert_eq!(format!("{query:?}"), format!("{full:?}"), "{name}: rich figure or needed ancestor retains the complete scene");
+                    }
+                    checked += 1;
+                }
+                editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
+                editor.call(method, &call[1..]).unwrap();
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+                assert_eq!(editor.report_json(), expected, "{name}/{}: document", step.get("step").unwrap());
+                assert_eq!(editor.state_value(), *step.get("state").unwrap(), "{name}/{}: state", step.get("step").unwrap());
+                if method == "commitDrag" { break; }
+            }
+            assert!(checked > 0, "{name}: actual recorded posing reaches the comparison");
+            if matches!(name, "startup-sheet" | "ik-unpinned-sheet") {
+                assert!(omitted_output > 0, "{name}: visible ordinary geometry discards render output");
+            }
+            if matches!(name, "pinned-ik-sheet" | "ik-joined-sheet" | "ik-spatial-sheet") {
+                assert!(nonempty_solutions > 0, "{name}: pinned controls exercise a real solved map");
+            }
+        }
     }
 }

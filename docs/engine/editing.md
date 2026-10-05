@@ -874,3 +874,11 @@ Prepared lineage agree; other fields retain their original conversion. A failed
 conversion installs no new pair. The caller must supply the complete raw record
 represented by the predecessor Frame from the current Loader/document lineage.
 These additive APIs do not change stored fields or the Session response schema.
+
+Active unpinned IK target edits retain the current call’s all-joint numeric geometry
+through the existing `build_only_for_shape` owner. Context, capture and the complete
+solved map read the same coordinates and angles; ordinary render items are omitted.
+The default context route remains full, as do one-shot and pinned calls. Needed rich
+figures and ancestors retain the shape owner’s full-output fallback, and joined graph
+callbacks keep their separate complete scene. This private route changes no public
+API, command admission, cache, stored arithmetic or response field.
