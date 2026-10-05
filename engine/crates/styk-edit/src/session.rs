@@ -64,9 +64,16 @@ fn changed_figures(frame: &Value, previous: Option<&Value>, taken: Option<&HashS
         if before.and_then(|objects| objects.get(slot)).is_some_and(|old| crate::record::uid(&old) == Some(uid) && old.same_node(&figure)) {
             return None;
         }
-        let mut figure = figure.as_obj().cloned().unwrap_or_default();
-        figure.remove("_movieclipSample");
-        Some(Value::object(figure))
+        // Ordinary pose drafts already are immutable COW records. Reuse their
+        // values without copying every field just to remove an absent runtime
+        // movieclip clock; the serialized figure remains identical.
+        if figure.get("_movieclipSample").is_none() {
+            Some(figure)
+        } else {
+            let mut figure = figure.as_obj().cloned().unwrap_or_default();
+            figure.remove("_movieclipSample");
+            Some(Value::object(figure))
+        }
     }).collect()).unwrap_or_default()
 }
 

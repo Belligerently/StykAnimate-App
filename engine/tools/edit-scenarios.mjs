@@ -1066,6 +1066,22 @@ scenario('figures-layers-sheet', app, [
     ];
     scenario('handle-commands-native', {}, [['@seek', 6], ...handleSteps], 'joined-chain.document.json');
     scenario('handle-commands-sheet', app, [['@seek', 6], ...handleSteps, ['@seek', 3], ['@select', 2, 2], ['nudgeHandle', 4, 4], ['setSegmentValues', {angle: 90, bend: 5}], ['undo'], ['redo']], 'joined-chain.document.json');
+    // An omitted argument reads the real segment clipboard; explicit null is
+    // passed to parseSegmentValues and refuses before touching a live gesture.
+    const segmentClipboardSteps = [
+      ['pasteSegmentValues', null], ['@select', 3, 2], ['copySegmentValues'], ['@select', 3, 1],
+      ['pasteSegmentValues', null], ['segmentValues'], ['pasteSegmentValues'], ['undo'], ['redo'],
+      ['pasteSegmentValues', null, {relative: true}],
+      ['beginSegmentValueEdit'], ['setSegmentValues', {angle: 27, bend: 9, length: 62}],
+      ['pasteSegmentValues', null], ['segmentValues'], ['cancelDrag'],
+      ['beginSegmentValueEdit'], ['setSegmentValues', {angle: -13, bend: -6, length: 47}],
+      ['pasteSegmentValues', null], ['commitDrag'], ['undo'], ['redo'],
+      ['pasteSegmentValues', false], ['pasteSegmentValues', 0], ['pasteSegmentValues', {}],
+      ['pasteSegmentValues', ''], ['pasteSegmentValues', '12.5:0:58'], ['undo'], ['redo'],
+      ['pasteSegmentValues'], ['undo'], ['redo'],
+    ];
+    scenario('segment-clipboard-native', {}, segmentClipboardSteps, 'joined-chain.document.json');
+    scenario('segment-clipboard-sheet', app, segmentClipboardSteps, 'joined-chain.document.json');
     // Through a turned, zoomed camera, and a camera motion clip that does not move it here.
     {
       const document = JSON.parse(readFileSync(`${out}/joined-chain.document.json`, 'utf8'));

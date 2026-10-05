@@ -1,0 +1,318 @@
+{
+  "scope": "Loaded warmed eligible OWNED-call editing cost; not engine-1 or baseline-0",
+  "baseHead": "69e0646bd56937babba453bf5fa0a1e6fbd0072e",
+  "sourceWasUncommitted": true,
+  "sourceHashes": {
+    "src/editor.mjs": {
+      "sha256": "6f49cdb68533cb9a1968683a22d17cba3be2a17f2774b254cd0e48f12ffd18ce",
+      "bytes": 133216
+    },
+    "src/engine/engine-edit-shadow.mjs": {
+      "sha256": "ab910a3be17a2602c0ab835ac9747f55bb477ed909de6508e3fe30fae3e7ce7f",
+      "bytes": 51354
+    },
+    "scripts/engine-edit-shadow.mjs": {
+      "sha256": "c3ad5cb330123296b6e3527abdb4bea6c2cf1a5eaa6014db7b9a1122b81b243f",
+      "bytes": 64173
+    },
+    "engine/crates/styk-edit/src/lib.rs": {
+      "sha256": "d596e768008fade7f31db9befc364e6de8f3627b1d2eccbbcc49f52dfdec8711",
+      "bytes": 54351
+    },
+    "engine/crates/styk-edit/src/session.rs": {
+      "sha256": "9870cd77bcc4254b956e10385eb2386d9c876900dabba8b04b47a28f9b68e653",
+      "bytes": 23319
+    },
+    "engine/crates/styk-edit/src/session_tests.rs": {
+      "sha256": "1f507abd80ad433401c1a55a4a27caf39efdb24188ff229a91d5eb940d1f561b",
+      "bytes": 22348
+    },
+    "engine/crates/styk-edit/src/handle_commands.rs": {
+      "sha256": "4a518d043456e4947851360a579ac5ee904f73e7f197ceabb4a020bcc3bf9283",
+      "bytes": 32221
+    }
+  },
+  "packageBuildInfo": {
+    "profile": "wasm",
+    "toolchain": "nightly-2026-09-15",
+    "wasmBindgen": "0.2.129",
+    "maxMemory": 2147483648,
+    "wasmBytes": 10202308,
+    "wasmBytesBeforeOpt": 10202308,
+    "jsBytes": 201867,
+    "sha256": "6d128ac283b121e8a17db32b5a9bee2c81208c0130ab7d56c2177eb35e8113b6",
+    "codec": {
+      "toolchain": "stable",
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "wasmBytes": 1532303,
+      "wasmBytesBeforeOpt": 1532303,
+      "jsBytes": 13846,
+      "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+    },
+    "drawing": {
+      "toolchain": "stable",
+      "wasmBytes": 449096,
+      "wasmBytesBeforeOpt": 449096,
+      "jsBytes": 53485,
+      "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+    }
+  },
+  "runtimes": {
+    "nodeVersion": "v24.11.0",
+    "pythonVersion": "Python 3.12.9"
+  },
+  "costRule": "candidate ownedMs + ownableMs + failedOwnedMs <= editorAlone ownableMs; unchanged D13",
+  "rounds": [
+    {
+      "case": "joined-chain",
+      "round": 1,
+      "owned": 125,
+      "compared": 213,
+      "failedOwned": 0,
+      "editorMs": 149.63999995589256,
+      "adoptedMs": 156.58000010252,
+      "fallbackMs": 11.285000026226044,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 167.86500012874603,
+      "ratio": 1.1217923027146848,
+      "valid": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "adoptionObserved": true
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "adoptionObserved": true
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "adoptionObserved": true
+        }
+      },
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "an answer the editor cannot adopt (updateBuilderSegmentStyle: a edit event)": 1,
+        "a call the engine has not ported": 1,
+        "an answer the editor cannot adopt (commitDrag: a edit event)": 1,
+        "segment values the session did not copy": 1,
+        "history the session did not record": 1
+      },
+      "unported": {
+        "addSegment: drawing into a figure with rig relationships": 1
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/joined-chain.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1/r1-joined-chain.driver.json"
+      ],
+      "elapsedSeconds": 617.919841808005,
+      "loadBefore": [
+        14.43896484375,
+        15.35986328125,
+        13.7314453125
+      ],
+      "loadAfter": [
+        14.6875,
+        13.90576171875,
+        13.572265625
+      ],
+      "driverSha256": "1f0f7fc573311cc4d1d1245e16a8faec2489627a7ba69b3f837899b0df70af94",
+      "receiptSha256": "e721f4d89b9a84690a301bff47a15c4de92af62564f2d76962f2763b5582a8fa"
+    },
+    {
+      "case": "rig",
+      "round": 1,
+      "owned": 119,
+      "compared": 171,
+      "failedOwned": 1,
+      "editorMs": 162.51999992132187,
+      "adoptedMs": 147.39999994635582,
+      "fallbackMs": 14.325000017881393,
+      "failedOwnedMs": 0.2199999988079071,
+      "candidateTotalMs": 161.94499996304512,
+      "ratio": 0.9964619741659173,
+      "valid": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": true,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "adoptionObserved": true
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "adoptionObserved": true
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "adoptionObserved": true
+        }
+      },
+      "ended": {
+        "layer focus": 2,
+        "a call the engine has not ported": 9,
+        "an answer the editor cannot adopt (updateBuilderSegmentStyle: a edit event)": 1,
+        "an answer the editor cannot adopt (commitDrag: a edit event)": 1,
+        "history the session did not record": 2
+      },
+      "unported": {
+        "selectBranch: origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition": 2,
+        "addSegment: drawing into a figure with rig relationships": 1,
+        "beginMotionPathEdit: a motion-path edit of rigged or 3D figures": 6
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/rig.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1/r1-rig.driver.json"
+      ],
+      "elapsedSeconds": 679.3398136729957,
+      "loadBefore": [
+        17.0693359375,
+        13.72998046875,
+        12.4833984375
+      ],
+      "loadAfter": [
+        14.43896484375,
+        15.35986328125,
+        13.7314453125
+      ],
+      "driverSha256": "f21d99caeaf80bbade0e149abaf5062a50a4fdaceba4d6157fadcf00aa98cce4",
+      "receiptSha256": "dc024a6b83a305b16c8e2598d66853880cc37cc62433adadadcdd4a242c64d42"
+    },
+    {
+      "case": "startup",
+      "round": 1,
+      "owned": 163,
+      "compared": 289,
+      "failedOwned": 2,
+      "editorMs": 240.12500002980232,
+      "adoptedMs": 244.42499995231628,
+      "fallbackMs": 45.910000026226044,
+      "failedOwnedMs": 5.784999996423721,
+      "candidateTotalMs": 296.11999997496605,
+      "ratio": 1.2331910460727291,
+      "valid": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "adoptionObserved": true
+        },
+        "poseJoint": {
+          "candidateCalls": 48,
+          "adoptionObserved": true
+        },
+        "commitDrag": {
+          "candidateCalls": 8,
+          "adoptionObserved": true
+        }
+      },
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "an answer the editor cannot adopt (updateBuilderSegmentStyle: a edit event)": 2,
+        "history the session did not record": 4,
+        "an answer the editor cannot adopt (commitDrag: a edit event)": 1
+      },
+      "unported": {},
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1/r1-startup.driver.json"
+      ],
+      "elapsedSeconds": 530.0027449299814,
+      "loadBefore": [
+        6.61572265625,
+        10.5732421875,
+        11.39453125
+      ],
+      "loadAfter": [
+        17.0693359375,
+        13.72998046875,
+        12.4833984375
+      ],
+      "driverSha256": "77b58ad6e7994c4b21b5ef03440efa88b973841ff2e8ec913b4327b0da409c07",
+      "receiptSha256": "bb95c343cd724fdcba45c20785e737178324e0f088f0e13681a15bbe5fed103b"
+    }
+  ],
+  "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1",
+  "summarySha256": "d974f370399c96e36d53d742b0f04b247a59ba83aec6ee86f9c8ac4bc1b94fbf",
+  "existing3dDefaultSmoke": {
+    "valid": true,
+    "notice": "Admission/behavior only; no full-cost acceptance claim",
+    "fixture": "engine/tests/edit/ik-spatial-free.document.json",
+    "counts": {
+      "calls": 57,
+      "owned": 42,
+      "compared": 15,
+      "failedOwned": 0,
+      "failedOwnedMs": 0,
+      "mode": "classes"
+    },
+    "core": {
+      "poseJoint": {
+        "calls": 36,
+        "engineMs": 14.80500003695488,
+        "adoptMs": 14.144999951124191,
+        "callMs": 13.580000042915344,
+        "answerBytes": 51270
+      },
+      "moveSelection": {
+        "calls": 1,
+        "engineMs": 1.094999998807907,
+        "adoptMs": 1.0450000166893005,
+        "callMs": 1.0699999928474426,
+        "answerBytes": 3216
+      },
+      "commitDrag": {
+        "calls": 5,
+        "editorMs": 0.14499998092651367,
+        "engineMs": 4.740000009536743,
+        "adoptMs": 3.884999990463257,
+        "callMs": 4.564999997615814,
+        "answerBytes": 6151
+      }
+    },
+    "argv": [
+      "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+      "scripts/engine-edit-shadow.mjs",
+      "--file",
+      "engine/tests/edit/ik-spatial-free.document.json",
+      "--own",
+      "--default",
+      "--figures-gate",
+      "--exact-math",
+      "--verbose",
+      "--out",
+      "tmp/root-verification-temp/figures-batch1-3d-default-r2/driver.json"
+    ],
+    "receiptSha256": "2bf8feafc618bde58957d4f9bd9c2e9a2bad9db99188f358235566ccbd5aa248"
+  }
+}

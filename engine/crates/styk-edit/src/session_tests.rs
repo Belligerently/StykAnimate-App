@@ -6,6 +6,53 @@ use std::path::Path;
 fn json(value: &Value) -> String { styk_doc::json::to_string(value) }
 fn parse(text: &str) -> Value { styk_doc::json::parse(text.as_bytes()).unwrap() }
 
+#[test]
+fn compact_pose_records_reuse_cow_values_and_strip_only_runtime_movieclip_clock() {
+    let frame = parse(r#"{"objects":[{"unique_id":1,"angles":[-0,0.25],"unknown":{"_movieclipSample":{"keep":true}}},{"unique_id":2,"angles":[0.5],"_movieclipSample":{"tick":3},"unknown":"retained"},{"unique_id":3,"angles":[1]}]}"#);
+    let before = json(&frame);
+    let taken = HashSet::from([1, 2]);
+    let records = changed_figures(&frame, None, Some(&taken));
+    assert_eq!(records.len(), 2);
+    let first = frame.get("objects").unwrap().item(0).unwrap();
+    assert!(records[0].same_node(&first), "an ordinary live pose response borrows its existing COW record");
+    assert_eq!(json(&Value::array(records.clone())), r#"[{"unique_id":1,"angles":[0,0.25],"unknown":{"_movieclipSample":{"keep":true}}},{"unique_id":2,"angles":[0.5],"unknown":"retained"}]"#);
+    assert_eq!(json(&frame), before, "clock cleanup never edits the authored frame");
+    let mut later = records[0].clone();
+    later.make_obj().unwrap().set("angles", parse("[0.75]"));
+    assert_eq!(json(&records[0]), json(&first), "later edits retain the already returned pose");
+    assert!(changed_figures(&frame, Some(&frame), Some(&taken)).is_empty(), "unchanged records are still omitted");
+}
+
+#[test]
+fn ordered_state_response_matches_all_five_recorded_figure_tapes() {
+    let mut calls = 0;
+    for name in ["startup-sheet", "rig-sheet", "gestures-sheet", "figures-layers-sheet", "drag-cancel"] {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+        let reference = styk_doc::json::parse(&std::fs::read(file).unwrap()).unwrap();
+        let steps = reference.get("steps").unwrap().elements().unwrap();
+        let first = steps.get(0).unwrap();
+        let mut state = first.get("state").unwrap().as_obj().unwrap().clone();
+        if let Some(options) = reference.get("editor").and_then(Value::as_obj) {
+            for (key, value) in options.iter() { state.set(key, value.clone()); }
+        }
+        let mut session = Session::start(parse(first.get("document").unwrap().as_str().unwrap()), &json(&Value::object(state))).unwrap();
+        assert_eq!(json(&session.editor.state_value()), json(first.get("state").unwrap()), "{name}: initial state");
+        for (index, step) in steps.iter().enumerate().skip(1) {
+            let call = step.get("call").unwrap().elements().unwrap();
+            let method = call.get(0).unwrap();
+            let args = Value::array(call.iter().skip(1).collect());
+            let mut view = session.editor.state_value().as_obj().unwrap().clone();
+            view.set("autoKey", Value::Bool(session.editor.auto_key));
+            view.set("changesOnly", Value::Bool(true));
+            let answer = session.call_values(method.as_str().unwrap(), &args, &Value::object(view));
+            assert_ne!(answer.get("status").and_then(Value::as_str), Some("unported"), "{name} step {index}: {answer:?}");
+            assert_eq!(json(answer.get("state").unwrap()), json(step.get("state").unwrap()), "{name} step {index}: ordered state");
+            calls += 1;
+        }
+    }
+    assert_eq!(calls, 130);
+}
+
 fn merge_figures(base: &Value, changed: &Value, order: Option<&Value>) -> Value {
     let mut objects: Vec<Value> = base.elements().unwrap().iter().collect();
     for figure in changed.elements().unwrap().iter() {
@@ -63,7 +110,7 @@ fn reconstruct_sheet(before: &Value, answer: &Value) -> Value {
 fn compact_answers_preserve_recorded_publications_drafts_and_history() {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
     let mut savings = 0;
-    for name in ["move-native", "drag-cancel", "range-native", "gestures-sheet", "layers-sheet", "figures-layers-sheet", "locked-sheet",
+    for name in ["move-native", "drag-cancel", "range-native", "startup-sheet", "rig-sheet", "gestures-sheet", "layers-sheet", "figures-layers-sheet", "locked-sheet",
         "handle-edit-chain-sheet", "figure-clipboard-sheet", "figure-clipboard-clip-sheet", "movieclip-sheet", "movieclip-loose-sheet",
         "channels-figure-sheet", "channels-movieclip-sheet", "channels-style-sheet", "property-clip-patches-sheet", "topology-sheet", "topology-native"] {
         let reference = styk_doc::json::parse(&std::fs::read(folder.join(format!("{name}.reference.json"))).unwrap()).unwrap();

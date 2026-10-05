@@ -50,6 +50,8 @@ baseline-0/engine-1. The next action is the `figures` checkpoint and its three b
 below. SceneFX monitor, auxiliary onion and plain drawing No smoothing remain open;
 no general prerequisite lane is resumed.
 
+**Latest figures gate work:** the recorded clipboard refusal and implicit-paste guard now match the editor; compact responses reuse stored values and ordinary selection/pose adoption preserves live identities. Three fresh paired app runs pass strict document/history/selection/full-undo parity with complete failed-attempt accounting. Startup costs **296.120/240.125 ms**, rig **161.945/162.520 ms**, and joined-chain **167.865/149.640 ms** (candidate/JS). Startup and joined-chain still fail the unchanged cost rule, so the next work is limited to their measured response/adoption owners. [Exact class-gate evidence](performance/RUST-EDITING-CLASS-GATES.md) records three new benchmark rows; engine-1 remains **0/28**. Full checkpoint on committed `69e0646b` passed all 64 stages (791 selected release tests, two existing ignores, every byte-stable generator and 358 containers); repeated discovery reused all 144 release binaries in **0.328 s**, zero compilation or relinking. The source changes below require a new matching committed-HEAD class checkpoint. No public crate API changes.
+
 ### Verification of the handed-over state
 
 Verified at `35f4c734` (the commit that adds this section changes documentation only):
@@ -437,18 +439,24 @@ The following immediate sequence supersedes the broader historical list below:
    inventory row advances js→partial and the affected paired export cost is measured.
    Original regressions and rejected prototypes remain preserved; proceed directly
    to `figures`, without opening another general renderer prerequisite.
-2. Flip **`figures`**. Three concrete blockers remain: fresh parity/cost evidence for
-   the existing compact adoption route; explicit default classes-mode adoption proof
-   (`--default` currently permits zero owned calls); and the required committed-HEAD
-   class checkpoint with matching final renderer/package identities.
-   Older small-figure cost results precede compact responses; measure the existing
-   `--own --warm --exact-math` route on startup, rig and joined-chain before changing
-   source. Include the owned run's JavaScript fallback cost (`ownableMs`) and match call
-   counts, so a refused call cannot masquerade as a speed gain. If cost still fails,
-   fix the measured response/adoption owner only. No new functional command defect
-   was established by the read-only gate audits. General
-   Stage geometry/upload work already runs for this class before ownership and is not
-   established as a new blocker caused by this flip.
+2. Flip **`figures`**. Four concrete blockers, in order:
+   - **Clipboard parity — fixed:** two editor-recorded native/sheet scenarios match
+     all 62 steps; explicit null refuses before mutation and an unsuccessful copy
+     cannot certify an older clipboard. The full actual joined-chain run now matches.
+   - **Cost — open:** all three fresh paired app runs match exactly, but startup and
+     joined-chain fail (296.120/240.125 and 167.865/149.640 ms candidate/JS); rig passes
+     narrowly (161.945/162.520). Count owned adoption, JS fallback and failed eligible
+     owned attempts; match per-method calls. Fix only the measured response/adoption
+     owners, then repeat the same full `--own --warm --exact-math` workload.
+   - **Default adoption — open:** require nonzero adopted `poseJoint`, `moveSelection`
+     and `commitDrag`, mode `classes`, strict paired state/history/selection/full undo
+     on startup, rig and joined-chain. `--default --figures-gate` is only admission and
+     behavior smoke; it cannot certify the full editing-cost workload.
+   - **Matching class checkpoint — open:** committed `69e0646b` is green, including
+     byte-stable generators and 358 containers. Run the mandatory checkpoint on the
+     final committed candidate before opening `figures`; its Wasm/source identities
+     must match. Stage geometry/upload and general D7 work remain parked unless a
+     concrete failure blocks this flip, engine-1 or deletion.
 3. Flip **`movieclips`**, then **`channels`**, each with at most about five concrete
    blockers, their own recorded/app verification, class checkpoint and cost evidence.
 4. Run idle engine-1 with no subagents, report all before/after cells against baseline-0,
@@ -826,6 +834,14 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 `recent-files` logs a page error in a browser (it needs the desktop bridge) but is captured.
 
 ## 6. Open problems
+
+- **Next figures gate:** recorded clipboard parity is fixed, but fresh startup and
+  joined-chain cost fail with adoption, fallback and failed attempts all included.
+  Limit the next patch to response assembly, redundant prepared-sheet scanning and
+  ordinary pose-commit preview reuse. Require fresh paired cost, nonzero default
+  core adoption and the matching committed-HEAD full checkpoint before flipping.
+  Global publication/lifetime/accounting/D7 follow-ups remain parked unless they
+  become a concrete blocker for the next gate, engine-1 or deletion.
 
 - **Canonical worker adoption and query readiness:** effect presets/scopes/paints now
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
@@ -1609,3 +1625,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-04 22:02 | S5 guarded typed Scene/assets pairing and private Frame allocation observation | Batch two independently reviewed, disjoint freezes with one reviewed vfx module declaration adaptation. Opt-in pairing borrows the same guarded after-Cache Loader and exact candidate assets, preserving image namespace and actual imported glyph identities; six malformed/missing typed sheets refuse atomically through the existing checked planner. Private Frame observation reuses existing allocation visitors and a strongly held source baseline; it exposes gaps and has no runtime caller or charge. Mobile additions: GuardedTypedCache, GuardedPublication::typed_cache_worker, Engine::prepare_edit_typed_publication_worker; Frame observers remain private. No Core/Stage/app adoption, budget, gate, deletion or performance claim. | Touched edit/engine/eval tests: 528 pass, two explicit diagnostics ignored; npm check and generator syntax pass. Two typed regeneration runs preserve all 3,634 captured engine JSON. Pinned shipping-profile threaded Wasm typecheck passes; pkg remains unchanged. Actual recorded typed namespace/glyph comparisons and refusal guards pass in native tests. Independently reviewed typed scope correction closes six real failed-before cases; Frame allocator ledger and 18 actual source mutants remain preserved. Exact 23-source composition plus parity registration verified unchanged. Renderer32 remains uncommitted due to original full-CEL Electron regression. Full checkpoint last green805688d5; next eligible21:59 CEST. Evidence: tmp/root-verification-temp/typed-frame-*. |
 | 2026-10-04 22:17 | S5 recorded native TRUE worker lifecycle and current-ready raw retention | Batch independently reviewed TRUE11 plus corrected strict Worker/Core/CLI8 with Raw9 and four scoped typed-test contexts; preserve three earlier owning prerequisite adaptations and all newer typed Loader/CommitMarker owners. Same AuthoredDrag/Draft/Records/response/history/source and guard; one-shot host errors remain exact. Strict replay compares actual initial heads before dispatch and validates lossless counters. Continue SAME receiver charge for current raw record after terminal ACK; detached aliases block preparation until physical worker disposal and wake only original Core. No new budget, public runtime route, gate, deletion or performance claim. Mobile addition: replay::replay_session_live_worker; legacy APIs unchanged. | 381 touched edit/engine/CLI tests, zero ignored; check and pinned threaded Wasm typecheck pass. Four generators twice keep all 3,635 captured JSON stable. Actual rebuilt CLI TRUE8/93 + old10/115 + conventional20/2,562 exact; six pairing/refusal guards and eight malformed initial cases exit nonzero. Independent Raw composition65cc33b6 and strict-initial13993953 reviews clean, preserving all original freezes/source mutants. Source27 + checkpoint script union exact; no app adoption or pkg rebuild. Full checkpoint4f4808c0 started22:02 CEST in persistent isolated target, last green805688d5; merges continue. Logs: tmp/root-verification-temp/true-raw-*. |
 | 2026-10-05 00:04 | Preserve drawing edges and effects in camera previews and exports | App uses the recorded ordinary solid-background CanvasForeground source/paint path, actual completed GPU-source consumption and DOM-canvas paint history; resize/undo/source switches preserve the editor's pixels. Composited No smoothing follows the existing exportSVG policy; retained CPU/GPU mode changes preserve images/atlas/depth/additive artwork. Mobile API changes: Frame.export_vfx, Item.export_vfx, DrawList.composited_export (update exhaustive literals); portable background/paint helpers and CanvasForeground enum match; edges_for/set_edges, root_gpu_source and worker predicates additive. Browser metadata/DPR/callback stay in styk-wasm/adapters. **Counters:** inventory 176 js/122 partial→175 js/123 partial (35 ported/22 verified/1 removed unchanged); OWNED_CLASSES 2→2; deleted JS modules 2→2; engine-1 0/28→0/28, new affected export medians 17.6/93.3 ms engine/JS. Next: figures checkpoint and its three recorded blockers; general prerequisite lanes stay parked. | Composed main: 793 native tests pass, two existing diagnostics ignored; 55 affected JS tests, check2,000, shipping Wasm9a94cb89/10,201,677B. Four generators twice preserve3,660JSON. Actual Electron10/web10/lifecycle11 pass unchanged D13, zero solids/errors; full CEL .028777/.169556, six Electron corners exact, actual DPR2 .117618 and restoredDPR1 .025672. Six main composited None exports pass .2298/max50/zero solids; paired fresh medians total615.5/680ms, startup412/448ms, first202.5/232ms, load2.7–3.1. Plain drawing None .5124 remains pre-existing and byte-identical; SceneFX/onion/globalD7 remain open. Independently reviewed production/adaptations/source18 plus two corrections (final source19); source/pkg snapshots unchanged. Full checkpoint last green4f4808c0; required figures checkpoint starts on this committed milestone. Evidence current-renderer-* plus final source19 and export-policy freezes. |
+| 2026-10-05 02:03 | Match segment pastes and measure figures editing cost | The actual app's existing owned route keeps pose/selection identities and uses compact COW values; recorded explicit-null refusal and an implicit clipboard guard preserve the ordinary editor's behavior. Failed eligible owned attempts are included before JS fallback. This unblocks the figures parity/cost gate; startup/joined cost remains the immediate bounded blocker. Mobile: no public crate API or response schema changes. **Counters:** inventory175js/123partial/35ported/22verified/1removed unchanged (notes updated); OWNED_CLASSES2→2; deletedJS2→2; engine-1 0/28→0/28, **three new fully accounted figures cost rows**, startup296.120/240.125ms, rig161.945/162.520ms, joined167.865/149.640ms candidate/JS. | 182 owning Rust tests;10 affected recorded replays/293 exact calls including62 newly recorded clipboard calls;2 fixture regenerations preserve2185 existing editJSON and all2189 final editJSON byte-for-byte (3664 engineJSON total).106 focused JS and check2000 pass; Wasm6d128ac/10,202,308B retains profile/noStrip. Three actual paired app runs pass strict document/history/selection/fullundo and source/package stability with complete accounting; startup and joined cost FAIL, rig passes narrowly. Fresh existing3d default smoke modeclasses adopts42 and compares15; all three core methods adopt, strict document/history/selection/fullundo match with zero errors. Full69 checkpoint64stages/791release-tests/358containers and warm144binaries0.328s/zero recompile passed; new source needs matching checkpoint before figures opens. Evidence figures-clipboard-final-*, figures-cost-js, figures-candidate-clipboard-final-1 and class-gate report. |

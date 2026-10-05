@@ -203,7 +203,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     }
     return classed.owned;
   };
-  const report = globalThis.__stykEditShadow = {own, mode, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0};
+  const report = globalThis.__stykEditShadow = {own, mode, calls: 0, compared: 0, rounded: 0, skipped: 0, sessions: 0, ended: {}, unported: {}, mismatches: [], jsMs: 0, engineMs: 0, ownableMs: 0, owned: 0, ownedMs: 0, failedOwned: 0, failedOwnedMs: 0};
   let session = null, depth = 0, events = null;
   // A batch in progress (`movieclipBatch`): the session records it as one entry too, and a
   // session that ends inside it does not restart until it closes. `closing` collects the
@@ -387,14 +387,42 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       for (const figure of answer.draft) {
         const slot = objects[figure.object_slot]?.unique_id === figure.unique_id ? figure.object_slot : objects.findIndex(object => object.unique_id === figure.unique_id); if (slot < 0) continue;
         if (objects[slot]._movieclipSample !== undefined) figure._movieclipSample = objects[slot]._movieclipSample;
-        objects[slot] = figure; edit.owned.add(slot);
+        // Pose and move already own these COW records. Keep their identity, as
+        // the editor's own mutation does, so incremental geometry can retain
+        // its pose plan. Newly included slots still isolate the source first.
+        if ((name === 'poseJoint' || name === 'moveSelection') && edit.owned.has(slot)) {
+          const object = objects[slot], keys = Object.keys(figure), previous = Object.keys(object);
+          if (keys.length !== previous.length || keys.some((key, index) => key !== previous[index])) {
+            for (const key of previous) delete object[key];
+          }
+          for (const key of keys) {
+            if (key === '__proto__') Object.defineProperty(object, key, {value: figure[key], enumerable: true, configurable: true, writable: true});
+            else object[key] = figure[key];
+          }
+        } else objects[slot] = figure;
+        edit.owned.add(slot);
       }
     }
     // A handle transform accumulates the turns it crossed: the editor's own state keeps up.
     if (name === 'transformFigureHandle' && answer.drag && drag?.figureHandle) figureHandleTransform(drag.figureHandle.transform, {x: args[0], y: args[1]}, {...drag.figureHandle, ...args[2]});
-    const engineSelection = state.selectedUid !== editor.selectedUid || state.selectedJoint !== editor.selectedJoint
-      || JSON.stringify(state.selectedUids) !== JSON.stringify([...editor.selectedUids])
-      || JSON.stringify(selectionMetadata(state)) !== JSON.stringify(selectionMetadata(editor._selectionState()));
+    let engineSelection;
+    if ((name === 'poseJoint' || name === 'moveSelection')
+      && !editor._polygonSelection && !editor._segmentSelection && !editor._branchSelection
+      && !Object.hasOwn(state, 'polygonSelection') && !Object.hasOwn(state, 'segmentIds') && !Object.hasOwn(state, 'branch')) {
+      // Ordinary live poses already supplied their selection in the view. Check
+      // the answer directly instead of building it again and serializing both
+      // selections; the Set's order is part of the editor's selection contract.
+      engineSelection = state.selectedUid !== editor.selectedUid || state.selectedJoint !== editor.selectedJoint
+        || state.selectedUids.length !== editor.selectedUids.size;
+      if (!engineSelection) {
+        let index = 0;
+        for (const uid of editor.selectedUids) if (uid !== state.selectedUids[index++]) { engineSelection = true; break; }
+      }
+    } else {
+      engineSelection = state.selectedUid !== editor.selectedUid || state.selectedJoint !== editor.selectedJoint
+        || JSON.stringify(state.selectedUids) !== JSON.stringify([...editor.selectedUids])
+        || JSON.stringify(selectionMetadata(state)) !== JSON.stringify(selectionMetadata(editor._selectionState()));
+    }
     if (engineSelection) {
       const restored = editor._selectionState(), metadata = selectionMetadata(state);
       if (Object.keys(metadata).length || Object.keys(selectionMetadata(restored)).length) {
@@ -418,7 +446,11 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (editor._drag?.motionPath) editor._drag = null;
         editor._emit('edit', detail);
       } else if (kind === 'edit' && detail.live) {
-        if (drag) { drag.changed = true; editor._invalidateObjects(detail.changedUids, null, {pose: true}); }
+        if (drag) {
+          drag.changed = true;
+          if (name === 'poseJoint' || name === 'moveSelection') editor._invalidatePoseObjects(detail.changedUids, {translation: name === 'moveSelection'});
+          else editor._invalidateObjects(detail.changedUids, null, {pose: true});
+        }
         else editor._invalidate();
         editor._emit('edit', detail);
       } else if (kind === 'edit' && detail.layerSheet && !published) {
@@ -532,15 +564,33 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
             entry.callMs = (entry.callMs ?? 0) + parsing - called; entry.answerBytes = (entry.answerBytes ?? 0) + text.length;
           }
         }
-        if (answer?.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; keep(key); end('a call the engine has not ported'); }
-        else if (answer?.status === 'error') {
-          // The editor throws the error itself, with its message; both are unchanged.
-          depth++;
-          try { const result = original.apply(this, args); keep(`${name}: an error the editor did not raise`); end('an error the editor did not raise'); return result; }
-          catch (error) { if ((error.messageKey ?? error.message) !== answer.error) { keep(`${name}: a different error`); end('a different error'); } throw error; }
-          finally { depth--; }
-        } else if (answer) end(`an answer the editor cannot adopt (${name}: ${why})`);
-        live = null;
+        let replayStarted = null;
+        try {
+          if (answer?.status === 'unported') { const key = `${name}: ${answer.reason}`; report.unported[key] = (report.unported[key] ?? 0) + 1; keep(key); end('a call the engine has not ported'); }
+          else if (answer?.status === 'error') {
+            // The editor throws the error itself, with its message; both are unchanged.
+            depth++;
+            replayStarted = performance.now();
+            try { const result = original.apply(this, args); keep(`${name}: an error the editor did not raise`); end('an error the editor did not raise'); return result; }
+            catch (error) { if ((error.messageKey ?? error.message) !== answer.error) { keep(`${name}: a different error`); end('a different error'); } throw error; }
+            finally {
+              depth--;
+              const elapsed = performance.now() - replayStarted;
+              report.jsMs += elapsed; report.ownableMs = (report.ownableMs ?? 0) + elapsed;
+              const entry = (report.byCall ??= {})[name] ??= {calls: 0};
+              entry.calls++; entry.editorMs = (entry.editorMs ?? 0) + elapsed;
+            }
+          } else if (answer) end(`an answer the editor cannot adopt (${name}: ${why})`);
+          live = null;
+        } finally {
+          // Count a rejected owner attempt separately, including call/parse and refusal
+          // cleanup, but never its original JS replay or a successful adoption twice.
+          const elapsed = (replayStarted ?? performance.now()) - called;
+          report.failedOwned++; report.failedOwnedMs += elapsed;
+          const entry = (report.byCall ??= {})[name] ??= {calls: 0};
+          entry.failedOwned = (entry.failedOwned ?? 0) + 1;
+          entry.failedOwnedMs = (entry.failedOwnedMs ?? 0) + elapsed;
+        }
       }
       const sheetBefore = editor.report._styk?.layerSheet;
       depth++; events = [];
@@ -569,7 +619,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           else compare(name, args, answer, result, thrown, captured, sheetBefore);
           if (name === 'sheetCopyFrames' && session && !thrown) copied = editor._sheetClipboard;
           if ((name === 'copySelection' || name === 'cutSelection') && session && !thrown) copiedFigures = editor._selectionClipboard ?? null;
-          if (name === 'copySegmentValues' && session && !thrown) copiedValues = editor._segmentValuesClipboard ?? null;
+          if (name === 'copySegmentValues' && session && !thrown && typeof result === 'string') copiedValues = editor._segmentValuesClipboard ?? null;
           if (name === 'copyCamera' && session && !thrown) copiedCamera = editor._cameraClipboard ?? null;
           if (name === 'copyCameraMotion' && session && !thrown) copiedMotion = editor._cameraMotionClipboard ?? null;
           if ((name === 'copyVfxClip' || name === 'duplicateVfxClip') && session && !thrown) copiedVfxClip = editor._vfxClipClipboard ?? null;

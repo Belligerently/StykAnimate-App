@@ -254,6 +254,10 @@ export class Editor extends EventTarget {
     this._invalidate();
     if (previous) this._incremental = {previous, dirtySlots, renderSources, poseSlots};
   }
+  /** Both locally computed and adopted live poses use the same rigid-move eligibility. */
+  _invalidatePoseObjects(uids, {translation = false} = {}) {
+    this._invalidateObjects(uids, null, {pose: true, translation: translation && !this.animationChannels.length && !this._drag?.before.some(o => o.runtime_segments || o._stykSpatial?.camera?.strength || hasPinnedIK(o))});
+  }
   /** Definition edits invalidate every instance and joined dependent, retaining unrelated artwork. */
   _invalidateFigure(typeId, retained = null) {
     if (this.report._styk?.movieclipSource || this.report.figure_types.some(isMovieclip) || this.frame.objects.some(object => object._stykIK)) return this._invalidate();
@@ -633,7 +637,7 @@ export class Editor extends EventTarget {
     if(this._drag)this._synchronizeAnimationOrigins(this.frame,this._drag.before);
     if (this._drag) this._drag.changed = true;
     else this._revision = ++this._revisionSerial;
-    this._invalidateObjects(this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid],null,{pose:true,translation:translation && !this.animationChannels.length && !this._drag?.before.some(o=>o.runtime_segments || o._stykSpatial?.camera?.strength || hasPinnedIK(o))});
+    this._invalidatePoseObjects(this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid], {translation});
     this._rememberIKBends();
     this._emit('edit', {live: Boolean(this._drag),
       changedUids: this._drag?.before.map(o => o.unique_id) ?? [this.selectedUid]});

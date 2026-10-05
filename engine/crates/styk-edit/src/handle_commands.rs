@@ -422,7 +422,7 @@ impl Editor {
     /// `pasteSegmentValues(text, options)`.
     pub(crate) fn paste_segment_values(&mut self, text: Option<&Value>, options: &Value) -> Result<bool, EditError> {
         let text = match text {
-            None | Some(Value::Null) => self.segment_values_clipboard.clone(),
+            None => self.segment_values_clipboard.clone(),
             Some(value) => value.as_str().map(str::to_string),
         };
         let values = parse_segment_values(text.as_deref())?;

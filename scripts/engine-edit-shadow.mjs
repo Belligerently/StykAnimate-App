@@ -21,6 +21,9 @@
 // them, and after undoing everything, must be the same. Prints what each call cost both.
 // --own --default: the second run is the app's default (the engine owns editing for the
 // document classes it edits by default, and stays out of the others).
+// --own --default --figures-gate: only the first five ordinary interactions, proving
+// default admission and core adoption; not cost certification. Use the full paired
+// workload without --figures-gate to certify editing cost.
 // --warm: the interactions run once untimed before the timed round (warmed-up code).
 // --capture <folder>: the first sessions that meet an unported call, a difference or another
 // error are saved there (`?engineEditCapture=on`) as `<run>-<n>.capture.json`, which
@@ -56,6 +59,7 @@ const own = args.includes('--own');
 const exactMath = args.includes('--exact-math');
 const captureFolder = option('--capture');
 const requiredCalls = [
+  ...(args.includes('--figures-gate') ? ['moveSelection', 'poseJoint', 'commitDrag'] : []),
   ...(args.includes('--selection-adoption') ? ['duplicateFigure', 'pasteSelection', 'duplicateSelection'] : []),
   ...(args.includes('--vfx-remaining') ? ['setVfxScope', 'applyVfxPreset', 'addVfxGroup', 'addVfxUserPreset'] : []),
   ...(args.includes('--origin-range') ? ['rotateFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'resetPoseInFrames', 'centerFiguresInFrames', 'joinFiguresInFrames', 'detachFiguresInFrames'] : []),
@@ -327,6 +331,7 @@ async function run(mode) {
     if (origin0) await step('drag the figure by its origin', async () => { const now = await handles(); await drag(now.find(h => h.joint < 0) ?? origin0, 50, 20); });
     await step('undo and redo from the keyboard', async () => { await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+z'); await sleep(150); await page.keyboard.press('Control+y'); await sleep(150); });
     await step('seek and transform through the editor', () => page.evaluate(() => { const e = styk.editor, last = Math.max(0, e.totalTicks - 1); e.seek(Math.min(3, last)); e.rotateSelection(0.25); e.scaleSelection(1.1); e.moveSelection(12, -8); e.undo(); e.redo(); }));
+    if (args.includes('--figures-gate')) return;
     await step('keys and frames of the layer timeline', () => page.evaluate(() => { const e = styk.editor, layer = [e.activeLayerId]; e.sheetInsertKey(layer, Math.min(2, e.totalTicks - 1)); e.sheetDuplicateFrameAfter(); e.sheetSetEasing(layer, 0, 1, {interpolation: 'ease-in'}); e.sheetInsertFrames(layer, 1, 2); e.sheetRemoveFrames(layer, 1, 1); e.undo(); e.undo(); e.redo(); }));
     await step('rename, colour, hide, lock, create, move and group layers', () => page.evaluate(() => {
       const e = styk.editor, layers = () => e.report._styk?.layers;
@@ -648,7 +653,7 @@ async function run(mode) {
   if (args.includes('--warm')) {
     await interactions();
     await settled();
-    await page.evaluate(() => { const r = globalThis.__stykEditShadow; if (r) Object.assign(r, {calls: 0, compared: 0, rounded: 0, skipped: 0, jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0, ownableMs: 0, byCall: {}, comparedByCall: {}}); });
+    await page.evaluate(() => { const r = globalThis.__stykEditShadow; if (r) Object.assign(r, {calls: 0, compared: 0, rounded: 0, skipped: 0, jsMs: 0, engineMs: 0, owned: 0, ownedMs: 0, ownableMs: 0, failedOwned: 0, failedOwnedMs: 0, byCall: {}, comparedByCall: {}}); });
     steps.length = 0;
   }
   await interactions();
@@ -680,7 +685,7 @@ try {
     await saveCaptures(report, 'owned');
     console.log(`steps: ${steps.join('; ')}`);
     for (const line of refused) console.log(`  refused by the editor: ${line}`);
-    console.log(`engine-owned calls: ${report.owned} adopted from the engine (${report.ownedMs.toFixed(1)} ms), ${report.compared} run in both and the same, ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions`);
+    console.log(`engine-owned calls: ${report.owned} adopted from the engine (${report.ownedMs.toFixed(1)} ms), ${report.compared} run in both and the same, ${report.mismatches.length} different, ${report.skipped} not shadowed; ${report.sessions} sessions; ${report.failedOwned} failed owner attempts (${report.failedOwnedMs.toFixed(1)} ms)`);
     for (const [why, count] of Object.entries(report.ended)) console.log(`  session ended ${count}×: ${why}`);
     for (const [what, count] of Object.entries(report.unported)) console.log(`  not ported ${count}×: ${what}`);
     for (const mismatch of report.mismatches.slice(0, 8)) console.log(`  ${mismatch.call}(${JSON.stringify(mismatch.args ?? []).slice(0, 80)}):\n    ${mismatch.problems.join('\n    ').slice(0, 1500)}`);
@@ -716,13 +721,13 @@ try {
     const ms = value => (value ?? 0).toFixed(1);
     for (const [name, entry] of Object.entries(report.byCall ?? {})) {
       const editor = alone.report?.byCall?.[name];
-      console.log(`  ${name} ×${entry.calls}: editor ${editor ? `${ms(editor.editorMs)} ms (×${editor.calls})` : 'not measured'}, engine ${ms(entry.engineMs)} ms + adoption ${ms(entry.adoptMs)} ms, ${Math.round((entry.answerBytes ?? 0) / Math.max(1, entry.calls))} bytes an answer`);
+      console.log(`  ${name} ×${entry.calls}: editor ${editor ? `${ms(editor.editorMs)} ms (×${editor.calls})` : 'not measured'}, engine ${ms(entry.engineMs)} ms + adoption ${ms(entry.adoptMs)} ms, ${Math.round((entry.answerBytes ?? 0) / Math.max(1, entry.calls))} bytes an answer; ${entry.failedOwned ?? 0} failed owner attempts (${ms(entry.failedOwnedMs)} ms)`);
     }
-    if (alone.report) console.log(`  all owned calls: editor alone ${ms(alone.report.ownableMs)} ms, engine owning ${ms(report.ownedMs)} ms`);
+    if (alone.report) console.log(`  all owned calls: editor alone ${ms(alone.report.ownableMs)} ms, engine owning ${ms(report.ownedMs + report.ownableMs + report.failedOwnedMs)} ms (${ms(report.ownedMs)} ms adopted + ${ms(report.ownableMs)} ms JavaScript fallback + ${ms(report.failedOwnedMs)} ms failed attempts)`);
     for (const problem of [...alone.problems, ...problems].slice(0, 5)) console.log(`  page: ${problem}`);
     if (missingCalls(alone.report).length) console.log(`  required calls not compared: ${missingCalls(alone.report).join(', ')}`);
     const out = option('--out');
-    if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, differences, problems}, null, 1));
+    if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, editorAlone: alone.report, differences, problems, editorAloneProblems: alone.problems}, null, 1));
     console.log(`  mode ${report.mode}`);
     failed = differences.length > 0 || report.mismatches.length > 0 || alone.report.mismatches.length > 0
       || (report.owned === 0 && !args.includes('--default')) || problems.length > 0 || alone.problems.length > 0

@@ -4,8 +4,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
-import {installEditShadow} from '../src/engine/engine-edit-shadow.mjs';
+import {editingClass, installEditShadow} from '../src/engine/engine-edit-shadow.mjs';
 import {withDraws} from '../src/editor-draws.mjs';
+import {createStartupDocument} from '../src/startup-document.mjs';
+import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
 
 const json = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' || key === '_movieclipSample' ? undefined : item);
 const clean = value => JSON.parse(json(value));
@@ -53,7 +56,7 @@ function sessionFor(oracle) {
           if (json(Object.keys(beforeSheet)) !== json(Object.keys(sheet))) answer.sheetOrder = Object.keys(sheet);
         }
         if (!view.changesOnly || beforeLayers !== oracle.report._styk.layers) answer.layers = oracle.report._styk.layers;
-        answer.sources = Object.fromEntries(events.flatMap(event => event.sourceIds ?? []).map(id => [id, oracle.report._styk.frameSources[id] ?? null]));
+        answer.sources = Object.fromEntries(events.flatMap(event => event.sourceIds ?? []).map(id => [id, oracle.report._styk.frameSources?.[id] ?? null]));
         if (oracle.report.figure_types.length > beforeDefinitions) answer.definitions = oracle.report.figure_types.slice(beforeDefinitions);
         const retained = oracle._evaluated;
         if (retained?.objects) {
@@ -145,3 +148,292 @@ test('a dense pose and its commit preserve untouched figures and movieclip sampl
   assert.ok(report.owned >= 2);
   assert.equal(report.mismatches.length, 0);
 });
+
+function adoptionPair(document, mode = 'own') {
+  const [expected, owned, oracle] = Array.from({length: 3}, () => new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(structuredClone(document)));
+  const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: () => session}}, mirror: {framesCurrent: () => true}}), {mode});
+  const session = sessionFor(oracle), events = [[], []];
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => events[index].push(clean(event.detail)));
+  const same = () => {
+    assert.equal(json(owned.report), json(expected.report));
+    assert.deepEqual(state(owned), state(expected));
+    assert.equal(json(owned.evaluatedFrame), json(expected.evaluatedFrame));
+    assert.deepEqual(events[1], events[0]);
+    assert.deepEqual(owned.geometry.drawables, buildGeometry(owned.report, owned.evaluatedFrame).drawables);
+    assert.equal(report.mismatches.length, 0, JSON.stringify(report.mismatches));
+  };
+  const run = (method, ...args) => { for (const editor of [expected, owned]) editor[method](...args); same(); };
+  return {expected, owned, oracle, report, same, run};
+}
+
+test('owned pose/move adoption keeps the existing COW draft identity and exact live history', () => {
+  const {expected, owned, run} = adoptionPair(createStartupDocument());
+  run('select', 1, 3); run('beginDrag', 'Pose figure');
+  const source = owned._authoredPoseEdit.source, sourceText = json(source), draft = owned.object;
+  const snapshots = json(owned._drag.before), history = json(owned._undo);
+  assert.notEqual(draft, source.objects[owned.selectedSlot]);
+  for (let index = 0; index < 8; index++) {
+    const tip = expected.geometry.objects.get(expected.selectedSlot).segments[expected.selectedJoint].end;
+    run('poseJoint', tip.x + 3, tip.y - 2, {snap: false});
+    assert.equal(owned.object, draft, 'an already-owned live draft is updated in place');
+    assert.equal(json(source), sourceText, 'the source baseline is not mutated');
+    assert.equal(json(owned._drag.before), snapshots, 'cancel snapshots are not mutated');
+    assert.equal(json(owned._undo), history, 'live poses do not rewrite history');
+  }
+  run('cancelDrag');
+  run('beginDrag', 'Pose figure');
+  const tip = expected.geometry.objects.get(expected.selectedSlot).segments[expected.selectedJoint].end;
+  run('poseJoint', tip.x - 5, tip.y + 4, {snap: false});
+  run('commitDrag'); run('undo'); run('redo');
+});
+
+test('owned pose/move adoption retains translation sources and isolates expanded COW slots', () => {
+  const document = emptyDocument(), figure = document.figure_types[0];
+  document.keyframes = [createFrame([
+    createObject(figure, 1, 200, 200),
+    createObject(figure, 2, 260, 200, {join: {target_unique_id: 1, target_object_slot: 0, target_handle_id: 3}}),
+    createObject(figure, 3, 500, 200),
+  ], 4)];
+  const {owned, run} = adoptionPair(document);
+  run('select', 2, -1); run('beginDrag', 'Move figures');
+  const source = owned._authoredPoseEdit.source, sourceText = json(source), initial = owned.geometry;
+  const untouched = owned.frame.objects[2];
+  assert.equal(owned.frame.objects[0], source.objects[0], 'the external root starts unowned');
+  run('moveSelection', 11, -7);
+  const root = owned.frame.objects[0], child = owned.frame.objects[1];
+  assert.notEqual(root, source.objects[0], 'expanding the drag first isolates the new root');
+  assert.equal(owned.geometry.objects.get(0).renderSource, initial.objects.get(0));
+  assert.equal(owned.geometry.objects.get(1).renderSource, initial.objects.get(1));
+  run('moveSelection', -3, 5);
+  assert.equal(owned.frame.objects[0], root); assert.equal(owned.frame.objects[1], child);
+  assert.equal(owned.frame.objects[2], untouched);
+  assert.equal(json(source), sourceText);
+  assert.equal(owned.geometry.objects.get(0).renderSource, initial.objects.get(0));
+  run('cancelDrag');
+  run('beginDrag', 'Move figures'); run('moveSelection', 8, 3); run('commitDrag'); run('undo'); run('redo');
+});
+
+test('owned pose/move adoption never labels a pending pose or pinned IK as a rigid translation', () => {
+  const document = emptyDocument(), figure = document.figure_types[0];
+  document.keyframes = [createFrame([createObject(figure, 1, 200, 200)], 4)];
+  const {expected, owned, run} = adoptionPair(document);
+  run('select', 1, 3); run('beginDrag', 'Pose then move');
+  const tip = expected.geometry.objects.get(0).segments[3].end;
+  for (const editor of [expected, owned]) editor.poseJoint(tip.x + 8, tip.y + 3, {snap: false});
+  for (const editor of [expected, owned]) editor.moveSelection(5, 0);
+  assert.equal(owned.geometry.objects.get(0).renderSource, undefined);
+  run('cancelDrag');
+  const pinnedDocument = createStartupDocument();
+  pinnedDocument.keyframes[0].objects[0]._stykIK[8].pinned = true;
+  const pinned = adoptionPair(pinnedDocument);
+  pinned.run('select', 1, -1); pinned.run('beginDrag', 'Move pinned figure'); pinned.run('moveSelection', 5, 3);
+  assert.equal(pinned.owned.geometry.objects.get(0).renderSource, undefined);
+  pinned.run('cancelDrag');
+});
+
+test('owned pose/move adoption removes obsolete fields and preserves runtime samples and opaque keys', () => {
+  const document = emptyDocument(), figure = document.figure_types[0];
+  document.keyframes = [createFrame([createObject(figure, 1, 200, 200, {['__proto__']: {opaque: true}})], 4)];
+  const {expected, owned, oracle, run} = adoptionPair(document);
+  run('select', 1, -1); run('beginDrag', 'Move figure');
+  const sourceText = json(owned._authoredPoseEdit.source), sample = {tick: 3, localTick: 1}, draft = owned.object;
+  for (const editor of [expected, owned, oracle]) {
+    editor.object.runtime_segments = structuredClone(editor.figure.segments);
+    editor.object._movieclipSample = editor === owned ? sample : {...sample};
+  }
+  run('moveSelection', 7, 4);
+  assert.equal(owned.object, draft);
+  assert.equal(Object.hasOwn(owned.object, 'runtime_segments'), false);
+  assert.equal(owned.object._movieclipSample, sample);
+  assert.deepEqual(Object.keys(owned.object), Object.keys(expected.object));
+  assert.equal(Object.getPrototypeOf(owned.object), Object.prototype);
+  assert.deepEqual(owned.object['__proto__'], {opaque: true});
+  assert.equal(json(owned._authoredPoseEdit.source), sourceText);
+  run('cancelDrag');
+});
+
+test('owned pose/move adoption checks ordinary selection without rebuilding its captured state', () => {
+  const {expected, owned, run} = adoptionPair(createStartupDocument());
+  run('select', 1, 3); run('beginDrag', 'Pose figure');
+  const read = owned._selectionState.bind(owned);
+  let reads = 0;
+  owned._selectionState = () => { reads++; return read(); };
+  const tip = expected.geometry.objects.get(0).segments[3].end;
+  run('poseJoint', tip.x + 4, tip.y + 2, {snap: false});
+  assert.equal(reads, 2, 'the view and before-selection are the only complete selection captures');
+  run('cancelDrag');
+});
+
+test('owned 3D pose adoption reuses unchanged geometry and preserves cancel and history', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/ik-spatial-free.document.json', import.meta.url), 'utf8'));
+  const {expected, owned, report, run} = adoptionPair(document, 'classes');
+  assert.equal(editingClass(owned.report), '3d');
+  run('select', 1, 9); run('beginDrag', 'Pose spatial leg');
+  const source = owned._authoredPoseEdit.source, sourceText = json(source), draft = owned.object;
+  const snapshots = json(owned._drag.before), history = json(owned._undo);
+  assert.notEqual(draft, source.objects[0]);
+  for (const [index, [dx, dy]] of [[5, -3], [7, 4], [-9, 6]].entries()) {
+    const previous = owned.geometry.objects.get(0), tip = expected.geometry.objects.get(0).segments[9].end;
+    run('poseJoint', tip.x + dx, tip.y + dy, {snap: false});
+    assert.equal(owned.object, draft);
+    if (index > 0) assert.equal(owned.geometry.objects.get(0).segments[0], previous.segments[0], 'the unchanged control retains its existing pose geometry');
+    assert.equal(json(source), sourceText); assert.equal(json(owned._drag.before), snapshots);
+    assert.equal(json(owned._undo), history);
+  }
+  run('cancelDrag');
+  run('beginDrag', 'Pose spatial leg');
+  const tip = expected.geometry.objects.get(0).segments[9].end;
+  run('poseJoint', tip.x + 8, tip.y - 5, {snap: false});
+  run('commitDrag'); run('undo'); run('redo');
+  assert.equal(report.mode, 'classes'); assert.ok(report.owned >= 5);
+});
+
+function timedFacade(t, method, answer, {fixture = 'startup', joint = -1} = {}) {
+  const document = JSON.parse(readFileSync(new URL(`../engine/tests/edit/${fixture}.document.json`, import.meta.url), 'utf8'));
+  const open = () => {
+    const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(structuredClone(document));
+    editor.select(1, joint); editor.markSaved(); return editor;
+  };
+  const [owner, expected, oracle] = [open(), open(), open()], observed = {originalCalls: 0, error: null};
+  let elapsed = 0;
+  t.mock.method(performance, 'now', () => elapsed);
+  const original = owner[method];
+  owner[method] = function (...args) {
+    observed.originalCalls++; elapsed += 5;
+    try { return original.apply(this, args); } catch (error) { observed.error = error; throw error; }
+  };
+  const session = sessionFor(oracle), call = session.call;
+  session.call = function (name, ...args) {
+    elapsed += 7;
+    return answer ? json(typeof answer === 'function' ? answer(owner, name) : answer) : call.call(this, name, ...args);
+  };
+  session.free = () => { elapsed += 2; };
+  const report = installEditShadow(owner, () => ({engine: {handle: {edit_session: () => session}},
+    mirror: {framesCurrent: () => true, syncFrames: async () => {}}}), {mode: 'own'});
+  return {owner, expected, observed, report};
+}
+
+for (const [reason, answer] of [
+  ['unported', {status: 'unported', reason: 'recorded refusal'}],
+  ['unadoptable', {status: 'ok', events: [{kind: 'edit'}]}],
+]) test(`failed ownership cost includes the ${reason} attempt and one original fallback`, t => {
+  const {owner, expected, observed, report} = timedFacade(t, 'updateObject', answer);
+  const result = owner.updateObject({scale: 1.2}), alone = expected.updateObject({scale: 1.2});
+  assert.equal(json(result), json(alone)); assert.equal(json(owner.report), json(expected.report));
+  assert.deepEqual(state(owner), state(expected)); assert.equal(observed.originalCalls, 1);
+  assert.equal(report.owned, 0); assert.equal(report.ownedMs, 0);
+  assert.equal(report.failedOwned, 1); assert.equal(report.failedOwnedMs, 9);
+  assert.equal(report.ownableMs, 5); assert.equal(report.byCall.updateObject.calls, 1);
+  assert.equal(report.byCall.updateObject.failedOwned, 1); assert.equal(report.byCall.updateObject.failedOwnedMs, 9);
+  assert.equal(report.failedOwnedMs + report.ownableMs, 14);
+  assert.equal(report.mismatches.length, 0);
+});
+
+for (const matches of [true, false]) test(`owned error replay keeps its original thrown error and timing (matching=${matches})`, t => {
+  let expectedError;
+  const answer = () => ({status: 'error', error: matches ? expectedError.messageKey ?? expectedError.message : 'different error'});
+  const {owner, expected, observed, report} = timedFacade(t, 'setConnectorPosition', answer, {fixture: 'rig', joint: 5});
+  assert.throws(() => expected.setConnectorPosition(2), error => { expectedError = error; return true; });
+  assert.throws(() => owner.setConnectorPosition(2), error => error === observed.error
+    && (error.messageKey ?? error.message) === (expectedError.messageKey ?? expectedError.message));
+  assert.equal(json(owner.report), json(expected.report)); assert.deepEqual(state(owner), state(expected));
+  assert.equal(observed.originalCalls, 1); assert.equal(report.owned, 0);
+  assert.equal(report.failedOwned, 1); assert.equal(report.failedOwnedMs, 7);
+  assert.equal(report.ownableMs, matches ? 5 : 7);
+  assert.equal(report.byCall.setConnectorPosition.calls, 1);
+  assert.equal(report.byCall.setConnectorPosition.editorMs, report.ownableMs);
+  assert.equal(report.byCall.setConnectorPosition.failedOwnedMs, 7);
+  assert.equal(report.ended['a different error'] ?? 0, matches ? 0 : 1);
+});
+
+test('an engine error followed by an original success preserves that success and counts it once', t => {
+  const {owner, expected, observed, report} = timedFacade(t, 'updateObject', {status: 'error', error: 'unexpected error'});
+  const result = owner.updateObject({scale: 1.2}), alone = expected.updateObject({scale: 1.2});
+  assert.equal(json(result), json(alone)); assert.equal(json(owner.report), json(expected.report));
+  assert.deepEqual(state(owner), state(expected)); assert.equal(observed.originalCalls, 1);
+  assert.equal(report.owned, 0); assert.equal(report.failedOwned, 1); assert.equal(report.failedOwnedMs, 7);
+  assert.equal(report.ownableMs, 7); assert.equal(report.byCall.updateObject.calls, 1);
+  assert.equal(report.ended['an error the editor did not raise'], 1);
+});
+
+test('successful compact adoption has no failed ownership cost or original rerun', t => {
+  const {owner, expected, observed, report} = timedFacade(t, 'moveSelection');
+  owner.moveSelection(8, -3); expected.moveSelection(8, -3);
+  assert.equal(json(owner.report), json(expected.report)); assert.deepEqual(state(owner), state(expected));
+  assert.equal(observed.originalCalls, 0); assert.equal(report.owned, 1); assert.equal(report.ownedMs, 7);
+  assert.equal(report.failedOwned, 0); assert.equal(report.failedOwnedMs, 0);
+  assert.equal(report.ownableMs, 0, "cold ownership has no JavaScript fallback");
+  const total = report.ownedMs + report.ownableMs + report.failedOwnedMs;
+  assert.ok(Number.isFinite(total)); assert.equal(total, 7);
+  assert.equal(report.byCall.moveSelection.calls, 1); assert.equal(report.mismatches.length, 0);
+});
+
+test('a comparison-only refusal does not become a failed owner attempt', t => {
+  const {owner, expected, observed, report} = timedFacade(t, 'updateSegment', {status: 'unported', reason: 'comparison'}, {joint: 1});
+  owner.updateSegment({angle_rad: .7}); expected.updateSegment({angle_rad: .7});
+  assert.equal(json(owner.report), json(expected.report)); assert.deepEqual(state(owner), state(expected));
+  assert.equal(observed.originalCalls, 1); assert.equal(report.calls, 1); assert.equal(report.compared, 0);
+  assert.equal(report.failedOwned, 0); assert.equal(report.failedOwnedMs, 0); assert.equal(report.owned, 0);
+});
+
+for (const accepted of [true, false]) test(`batch comparison counters remain separate from owner failures (accepted=${accepted})`, t => {
+  const events = [];
+  const answer = (owner, name) => name === 'beginBatch' ? {status: 'ok'} : accepted
+    ? {status: 'ok', state: state(owner), events, draft: null} : {status: 'unported', reason: 'batch close'};
+  const {owner, report} = timedFacade(t, 'updateObject', answer);
+  owner.addEventListener('change', event => events.push(clean(event.detail)));
+  assert.equal(owner.movieclipBatch('No edit', () => 42), 42);
+  assert.equal(report.calls, 1); assert.equal(report.compared, accepted ? 1 : 0);
+  assert.equal(report.failedOwned, 0); assert.equal(report.failedOwnedMs, 0); assert.equal(report.owned, 0);
+  assert.equal(report.mismatches.length, 0);
+});
+
+for (const mode of ['shadow', 'own']) {
+  test(`segment values left by a null copy stay outside a fresh ${mode} session`, () => {
+    const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/joined-chain.document.json', import.meta.url), 'utf8'));
+    const open = () => new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(structuredClone(document));
+    const owner = open(), oracle = open();
+    owner.select(1, 1);
+    const copied = owner.copySegmentValues();
+    assert.equal(typeof copied, 'string');
+    owner.select(1, -1); oracle.select(1, -1);
+    const before = {document: json(owner.report), state: state(owner), frame: json(owner.evaluatedFrame), historySize: owner._historySize};
+    const calls = [], session = sessionFor(oracle), call = session.call;
+    session.call = function (name, ...args) { const answer = call.call(this, name, ...args); calls.push({name, answer: JSON.parse(answer)}); return answer; };
+    const report = installEditShadow(owner, () => ({engine: {handle: {edit_session: () => session}},
+      mirror: {framesCurrent: () => true, syncFrames: async () => {}}}), {mode});
+    assert.equal(owner.copySegmentValues(), null);
+    assert.equal(owner._segmentValuesClipboard, copied);
+    assert.equal(oracle._segmentValuesClipboard ?? null, null);
+    assert.equal(calls[0].answer.status, 'ok'); assert.equal(calls[0].answer.result, null);
+    assert.equal(owner.pasteSegmentValues(), false);
+    assert.deepEqual({document: json(owner.report), state: state(owner), frame: json(owner.evaluatedFrame), historySize: owner._historySize}, before);
+    assert.equal(report.mismatches.length, 0);
+    assert.deepEqual(calls.map(({name}) => name), ['copySegmentValues']);
+    assert.equal(report.ended['segment values the session did not copy'], 1);
+    assert.equal(report.owned, 0);
+  });
+
+  test(`a null copy preserves segment values already copied by the ${mode} session`, () => {
+    const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/joined-chain.document.json', import.meta.url), 'utf8'));
+    const editors = Array.from({length: 2}, () => new Editor({demo: false, propertyChannels: true, layerTimeline: true}).load(structuredClone(document)));
+    const [owner, oracle] = editors;
+    for (const editor of editors) editor.select(1, 1);
+    const calls = [], session = sessionFor(oracle), call = session.call;
+    session.call = function (name, ...args) { calls.push(name); return call.call(this, name, ...args); };
+    const report = installEditShadow(owner, () => ({engine: {handle: {edit_session: () => session}},
+      mirror: {framesCurrent: () => true, syncFrames: async () => {}}}), {mode});
+    const copied = owner.copySegmentValues();
+    assert.equal(typeof copied, 'string'); assert.equal(oracle._segmentValuesClipboard, copied);
+    owner.select(1, -1);
+    assert.equal(owner.copySegmentValues(), null);
+    assert.equal(owner._segmentValuesClipboard, copied); assert.equal(oracle._segmentValuesClipboard, copied);
+    const before = {document: json(owner.report), state: state(owner), frame: json(owner.evaluatedFrame), historySize: owner._historySize};
+    assert.equal(owner.pasteSegmentValues(), false);
+    assert.deepEqual({document: json(owner.report), state: state(owner), frame: json(owner.evaluatedFrame), historySize: owner._historySize}, before);
+    assert.equal(report.mismatches.length, 0);
+    assert.deepEqual(calls, ['copySegmentValues', 'select', 'copySegmentValues', 'pasteSegmentValues']);
+    assert.equal(report.ended['segment values the session did not copy'] ?? 0, 0);
+    assert.equal(report.owned, mode === 'own' ? 1 : 0);
+  });
+}

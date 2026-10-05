@@ -75,4 +75,5 @@ test('the editing facade keeps callback commands in the editor and sends only th
   assert.equal(received.name, 'alignFiguresInFrames');
   assert.deepEqual(received.args[3].boundsOf['@measuredBounds'].samples.map(row => row.uid), [1, 3, 1, 3]);
   assert.equal(report.owned, 0); assert.equal(report.calls, 1);
+  assert.equal(report.failedOwned, 0); assert.equal(report.failedOwnedMs, 0);
 });

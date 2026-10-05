@@ -447,20 +447,26 @@ impl Editor {
     /// The state as JSON, in the key order `engine/tools/edit-replay.mjs` records it.
     pub fn state_value(&self) -> Value {
         let state = self.state();
-        let mut object = styk_doc::Obj::new();
-        object.set("tick", Value::Num(state.tick));
-        object.set("frameIndex", Value::Num(state.frame_index as f64));
-        object.set("selectedUid", state.selected_uid.map_or(Value::Null, |u| Value::Num(u as f64)));
-        object.set("selectedUids", Value::array(state.selected_uids.iter().map(|&u| Value::Num(u as f64)).collect()));
-        object.set("selectedJoint", Value::Num(state.selected_joint as f64));
-        object.set("canUndo", Value::Bool(state.can_undo));
-        object.set("canRedo", Value::Bool(state.can_redo));
-        object.set("undoLabel", Value::str(&state.undo_label));
-        object.set("redoLabel", Value::str(&state.redo_label));
-        object.set("dirty", Value::Bool(state.dirty));
-        object.set("layerRevision", Value::Num(state.layer_revision as f64));
-        object.set("nextFrameIdentity", Value::Num(state.next_frame_identity as f64));
-        object.set("nextUid", Value::Num(state.next_uid as f64));
+        // These fixed response keys already are in JavaScript enumeration order.
+        // Construct their existing shape once instead of rebuilding it (and its
+        // lookup map) for each missing-key assignment on every pointer move.
+        let fields = [
+            ("tick", Value::Num(state.tick)),
+            ("frameIndex", Value::Num(state.frame_index as f64)),
+            ("selectedUid", state.selected_uid.map_or(Value::Null, |u| Value::Num(u as f64))),
+            ("selectedUids", Value::array(state.selected_uids.iter().map(|&u| Value::Num(u as f64)).collect())),
+            ("selectedJoint", Value::Num(state.selected_joint as f64)),
+            ("canUndo", Value::Bool(state.can_undo)),
+            ("canRedo", Value::Bool(state.can_redo)),
+            ("undoLabel", Value::str(&state.undo_label)),
+            ("redoLabel", Value::str(&state.redo_label)),
+            ("dirty", Value::Bool(state.dirty)),
+            ("layerRevision", Value::Num(state.layer_revision as f64)),
+            ("nextFrameIdentity", Value::Num(state.next_frame_identity as f64)),
+            ("nextUid", Value::Num(state.next_uid as f64)),
+        ];
+        let (keys, values): (Vec<std::sync::Arc<str>>, Vec<Value>) = fields.into_iter().map(|(key, value)| (std::sync::Arc::from(key), value)).unzip();
+        let mut object = styk_doc::Obj::from_shape(styk_doc::Shape::new(keys), values);
         if self.selection_metadata.polygon.is_some() || self.selection_metadata.segments.is_some() || self.selection_metadata.branch.is_some() {
             self.selection_state().write_metadata(&mut object);
         }
