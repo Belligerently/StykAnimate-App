@@ -83,10 +83,11 @@ impl Editor {
     }
 
     /// The figure of the frame on show in `slot`, as evaluation types it.
-    fn typed_figure(&self, slot: usize) -> Result<std::sync::Arc<styk_eval::doc::Figure>, EditError> {
-        let (prepared, frame, _) = self.evaluate_only(Some(&[slot]))?;
+    fn typed_figure(&self, slot: usize) -> Result<(std::sync::Arc<styk_eval::doc::Figure>, std::sync::Arc<styk_eval::eval::Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+        let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
         let object = frame.objects.get(slot).ok_or_else(|| EditError::Unported("configuring IK of a figure the engine does not draw".into()))?;
-        object.figure_override.clone().or_else(|| prepared.doc.figure(object.figure).cloned()).ok_or_else(|| EditError::Unported("configuring IK of a figure without a definition".into()))
+        let figure = object.figure_override.clone().or_else(|| prepared.doc.figure(object.figure).cloned()).ok_or_else(|| EditError::Unported("configuring IK of a figure without a definition".into()))?;
+        Ok((figure, prepared, frame, scene))
     }
 
     /// `getIKSettings()`: the controller's record over the defaults, and the longest chain.
@@ -145,7 +146,7 @@ impl Editor {
             }
             return Err(EditError::Unported("configuring IK on joined figures beyond the recorded pin lifecycle".into()));
         }
-        let figure = self.typed_figure(at.slot)?;
+        let (figure, prepared, frame, scene) = self.typed_figure(at.slot)?;
         let (settings, max) = self.ik_settings(&at, &figure);
         let mut next = settings.clone();
         for (key, value) in &entries {
@@ -185,8 +186,8 @@ impl Editor {
             next.set("spatialTarget", crate::spatial_ik::merged(spatial, &[("swivel", Value::Num(swivel))]));
             next.remove("swivel");
         }
-        // The followers a pinned limb is solved with.
-        let (prepared, frame, scene) = self.evaluate_only(Some(&[at.slot]))?;
+        // The followers a pinned limb is solved with. The tuple still represents the
+        // unchanged pose read for its typed figure before validating this patch.
         let id = crate::record::uid(&at.object).unwrap_or(0);
         let solved_frame = crate::ik::solve_frame(&prepared, &frame, &scene);
         let solved = solved_frame.get(&id);
@@ -355,7 +356,7 @@ impl Editor {
         let (capture, branches) = if free {
             let controller = at.controller.as_obj().cloned().unwrap_or_default();
             let capture = self.capture_with(at.slot, at.handle, &spec_of(&controller))?;
-            let figure = self.typed_figure(at.slot)?;
+            let (figure, _, _, _) = self.typed_figure(at.slot)?;
             let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
             let mut indices = skeleton.follower_indices(at.handle);
             let mut visited: std::collections::HashSet<usize> = indices.iter().copied().collect();

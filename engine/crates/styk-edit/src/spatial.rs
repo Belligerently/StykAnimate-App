@@ -202,20 +202,32 @@ impl Editor {
     /// The 3D context of the figure in `slot` of the frame on show (the gesture's draft
     /// during one).
     pub(crate) fn spatial_context_at(&self, slot: usize) -> Result<Option<Context>, EditError> {
+        self.spatial_context_at_with(slot, None)
+    }
+
+    /// Optionally keep this call's immutable pose and full solved map. The context's
+    /// original slot/UID/figure guards run before solving or installing that tuple.
+    pub(crate) fn spatial_context_at_with(&self, slot: usize, mut evaluation: Option<&mut Option<(Arc<Prepared>, Frame, Scene, HashMap<u32, crate::ik::Solved>)>>) -> Result<Option<Context>, EditError> {
+        if let Some(output) = evaluation.as_mut() { **output = None; }
         let Some(object) = self.selection_frame()?.get(slot).cloned() else { return Ok(None) };
         let Some(id) = uid(&object) else { return Ok(None) };
         let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
-        Ok(Self::spatial_context_of(slot, object, id, &prepared, &frame, &scene, None))
+        let mut kept_solved = evaluation.as_ref().map(|_| HashMap::new());
+        let context = Self::spatial_context_of(slot, object, id, &prepared, &frame, &scene, None, kept_solved.as_mut());
+        if context.is_some() && let Some(output) = evaluation {
+            *output = Some((prepared, frame, scene, kept_solved.unwrap()));
+        }
+        Ok(context)
     }
 
     /// Borrow this call's evaluated pose, but read the selection record just as the wrapper does.
     pub(crate) fn spatial_context_from(&self, slot: usize, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: &HashMap<u32, crate::ik::Solved>) -> Result<Option<Context>, EditError> {
         let Some(object) = self.selection_frame()?.get(slot).cloned() else { return Ok(None) };
         let Some(id) = uid(&object) else { return Ok(None) };
-        Ok(Self::spatial_context_of(slot, object, id, prepared, frame, scene, Some(solved)))
+        Ok(Self::spatial_context_of(slot, object, id, prepared, frame, scene, Some(solved), None))
     }
 
-    fn spatial_context_of(slot: usize, object: Value, id: u32, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: Option<&HashMap<u32, crate::ik::Solved>>) -> Option<Context> {
+    fn spatial_context_of(slot: usize, object: Value, id: u32, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: Option<&HashMap<u32, crate::ik::Solved>>, keep_solved: Option<&mut HashMap<u32, crate::ik::Solved>>) -> Option<Context> {
         let at = frame.objects.iter().position(|o| o.uid == id)?;
         let evaluated = &frame.objects[at];
         let figure = evaluated.figure_override.clone().or_else(|| prepared.doc.figure(evaluated.figure).cloned())?;
@@ -238,7 +250,16 @@ impl Editor {
         let shape = evaluated.spatial.as_ref().and_then(|s| s.shape.clone());
         let angles = match solved {
             Some(solved) => solved.get(&id).map(|s| s.solution.angles.clone()),
-            None => crate::ik::solve_frame(prepared, frame, scene).remove(&id).map(|s| s.solution.angles),
+            None => {
+                let mut solved = crate::ik::solve_frame(prepared, frame, scene);
+                if let Some(output) = keep_solved {
+                    let angles = solved.get(&id).map(|s| s.solution.angles.clone());
+                    *output = solved;
+                    angles
+                } else {
+                    solved.remove(&id).map(|s| s.solution.angles)
+                }
+            },
         };
         let angles = angles.unwrap_or_else(|| (0..figure.segments.len().max(object.get("angles").and_then(Value::array_len).unwrap_or(0))).map(|i| number_at(&object, "angles", i)).collect());
         Some(Context {
@@ -935,4 +956,128 @@ fn planted_limbs(context: &Context) -> Vec<(u32, Vec<usize>)> {
 fn planted_limb_end(context: &Context, index: usize) -> Option<usize> {
     let (handle, _) = planted_limbs(context).into_iter().find(|(_, chain)| chain.len() == 2 && chain[0] == index)?;
     context.figure.plan.index_of.get(&handle).map(|&i| i as usize)
+}
+
+#[cfg(test)]
+mod same_call_context_tests {
+    use super::*;
+    use crate::{Authored, Options, Selection};
+    use std::path::Path;
+
+    fn recorded_editor(name: &str) -> (Editor, Value) {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+        let reference = styk_doc::json::parse(&std::fs::read(path).unwrap()).unwrap();
+        let first = reference.get("steps").unwrap().item(0).unwrap();
+        let report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
+        let flag = |key: &str| reference.path(&["editor", key]).is_some_and(Value::truthy);
+        let mut editor = Editor::new(report, Options { property_channels: flag("propertyChannels"), layer_timeline: flag("layerTimeline"), auto_key: flag("autoKey") });
+        let state = first.get("state").unwrap();
+        editor.set_view(
+            state.get("tick").and_then(Value::as_f64).unwrap_or(0.0),
+            state.get("frameIndex").and_then(Value::as_f64).unwrap_or(0.0) as usize,
+            Selection {
+                uid: state.get("selectedUid").and_then(Value::as_f64).map(|n| n as u32),
+                uids: state.get("selectedUids").and_then(Value::numbers).unwrap_or_default().into_iter().map(|n| n as u32).collect(),
+                joint: state.get("selectedJoint").and_then(Value::as_f64).unwrap_or(-1.0) as i64,
+            },
+        );
+        let counter = |key: &str| state.get(key).and_then(Value::as_f64).unwrap_or(0.0) as u64;
+        editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"), counter("nextUid"));
+        editor.set_selection_metadata(state).unwrap();
+        (editor, reference)
+    }
+
+    fn context_bits(context: &Context) -> String {
+        format!("{:?}", (
+            context.angles.iter().map(|n| n.to_bits()).collect::<Vec<_>>(),
+            [context.figure_angle, context.scale].map(f64::to_bits), context.mirror,
+            context.root.map(f64::to_bits),
+            context.starts.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(),
+            context.ends.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(),
+            context.raws.iter().map(|p| p.map(|p| p.map(f64::to_bits))).collect::<Vec<_>>(),
+        ))
+    }
+
+    #[test]
+    fn stale_same_call_context_is_cleared_before_absent_or_invalid_current_pose() {
+        for case in ["slot", "uid", "malformed"] {
+            let (mut editor, _) = recorded_editor("ik-unpinned-sheet");
+            let slot = editor.object().unwrap().unwrap().0;
+            let source = editor.shown_frame().unwrap();
+            editor.authored = Some(Authored { frame: source.clone(), source, tick: editor.tick, transaction: false, definitions_start: None });
+            let mut evaluation = None;
+            assert!(editor.spatial_context_at_with(slot, Some(&mut evaluation)).unwrap().is_some());
+            assert!(evaluation.is_some(), "{case}: seed a real prior tuple");
+            let read_slot = match case {
+                "slot" => editor.selection_frame().unwrap().len(),
+                "uid" => {
+                    let object = editor.frame_object_mut(slot).unwrap();
+                    object.remove("unique_id");
+                    // The UID guard must precede conversion of this malformed figure.
+                    object.set("figure_type_id", Value::Null);
+                    slot
+                },
+                "malformed" => { editor.frame_object_mut(slot).unwrap().set("figure_type_id", Value::Null); slot },
+                _ => unreachable!(),
+            };
+            let raw = editor.shown_frame().unwrap();
+            let report = editor.report().clone();
+            let ordinary = editor.spatial_context_at(read_slot);
+            let kept = editor.spatial_context_at_with(read_slot, Some(&mut evaluation));
+            if case == "malformed" {
+                let message = |result: Result<Option<Context>, EditError>| match result {
+                    Err(EditError::Invalid(message)) => message,
+                    _ => panic!("malformed edit-frame conversion must retain the existing Invalid error"),
+                };
+                assert_eq!(message(ordinary), format!("object {slot} of the edit frame has no identity or figure"));
+                assert_eq!(message(kept), format!("object {slot} of the edit frame has no identity or figure"));
+            } else {
+                assert!(ordinary.unwrap().is_none(), "{case}: original absent-context result");
+                assert!(kept.unwrap().is_none(), "{case}: retained-tuple absent-context result");
+            }
+            assert!(evaluation.is_none(), "{case}: no stale output survives a missing or invalid current pose");
+            assert!(editor.shown_frame().unwrap().same_node(&raw));
+            assert!(editor.report().same_node(&report));
+        }
+    }
+
+    #[test]
+    fn active_free_2d_and_spatial_3d_context_tuple_tracks_each_recorded_pose() {
+        let mut checked = 0;
+        for name in ["ik-unpinned-sheet", "ik-spatial-free-sheet"] {
+            let (mut editor, reference) = recorded_editor(name);
+            let steps = reference.get("steps").unwrap().elements().unwrap();
+            let mut expected = steps.get(0).unwrap().get("document").unwrap().as_str().unwrap().to_string();
+            let mut evaluation = None;
+            let mut last_context = None;
+            let mut changed_contexts = 0;
+            for step in steps.iter().skip(1) {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap();
+                if method == "poseJoint" && editor.drag.is_some() {
+                    let slot = editor.object().unwrap().unwrap().0;
+                    let context = editor.spatial_context_at_with(slot, Some(&mut evaluation)).unwrap().unwrap();
+                    let (prepared, frame, scene, solved) = evaluation.as_ref().unwrap();
+                    let borrowed = editor.spatial_context_from(slot, prepared, frame, scene, solved).unwrap().unwrap();
+                    let ordinary = editor.spatial_context_at(slot).unwrap().unwrap();
+                    let bits = context_bits(&context);
+                    assert_eq!(bits, context_bits(&borrowed), "{name}: the tuple is the current immutable pose");
+                    assert_eq!(bits, context_bits(&ordinary), "{name}: original current-context numeric bits");
+                    assert!(context.object.same_node(&editor.selection_frame().unwrap()[slot]));
+                    assert_eq!(context.frames.iter().any(Option::is_some), name == "ik-spatial-free-sheet");
+                    if last_context.as_ref().is_some_and(|last| last != &bits) { changed_contexts += 1; }
+                    last_context = Some(bits);
+                    checked += 1;
+                }
+                editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
+                editor.call(method, &call[1..]).unwrap();
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+                assert_eq!(editor.report_json(), expected, "{name}/{}: document", step.get("step").unwrap());
+                assert_eq!(editor.state_value(), *step.get("state").unwrap(), "{name}/{}: state", step.get("step").unwrap());
+                if method == "commitDrag" { break; }
+            }
+            assert!(changed_contexts > 0, "{name}: repeated samples must actually change the current context");
+        }
+        assert_eq!(checked, 6);
+    }
 }

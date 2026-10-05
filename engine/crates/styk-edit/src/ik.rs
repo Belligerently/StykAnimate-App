@@ -121,18 +121,31 @@ impl Editor {
         let key = handle.to_string();
         let shown = self.frame_objects().get(slot).and_then(|o| o.path(&["_stykIK", &key]).cloned()).unwrap_or(Value::Null);
         let spatial_depth = shown.path(&["spatialTarget", "depth"]).and_then(Value::as_f64);
-        let context = self.spatial_context_at(slot)?;
+        let mut evaluation = None;
+        let context = if self.drag.is_some() && !truthy(&shown, "pinned") {
+            self.spatial_context_at_with(slot, Some(&mut evaluation))?
+        } else {
+            self.spatial_context_at(slot)?
+        };
         let depth = if truthy(&shown, "pinned") {
             spatial_depth.unwrap_or(0.0)
         } else {
             context.as_ref().and_then(|c| c.raw(handle)).map(|r| r[2]).or(spatial_depth).unwrap_or(0.0)
         };
         let [x, y] = context.as_ref().map_or([x, y], |c| c.unproject_at([x, y], depth));
-        let graph = self.in_assembly(slot)?;
-        self.object_edit("Move IK target", |editor| {
+        let mut graph_evaluation = None;
+        let graph = if self.drag.is_some() && !truthy(&shown, "pinned") {
+            self.in_assembly_with(slot, Some(&mut graph_evaluation))?
+        } else {
+            self.in_assembly(slot)?
+        };
+        // Only an already-active unpinned edit can reach the callback without
+        // beginning or baking a pose. Graphs need the classifier's complete scene.
+        let evaluation = if graph { None } else { evaluation };
+        self.object_edit("Move IK target", move |editor| {
             let current = editor.frame_objects().get(slot).and_then(|o| o.path(&["_stykIK", &key]).cloned()).unwrap_or(Value::Null);
             if !truthy(&current, "pinned") {
-                return if graph { editor.pose_graph(slot, handle, x, y) } else { editor.bake_unpinned(slot, handle, x, y) };
+                return if graph { editor.pose_graph(slot, handle, x, y, graph_evaluation.as_ref()) } else { editor.bake_unpinned(slot, handle, x, y, evaluation.as_ref()) };
             }
             // A pinned target persists where it is put; geometry solves the limb to it.
             let mut next = current.as_obj().cloned().unwrap_or_default();
@@ -170,12 +183,23 @@ impl Editor {
     /// `context()` is a graph: the figure in `slot` belongs to joined figures that compile
     /// into one skeleton.
     pub(crate) fn in_assembly(&self, slot: usize) -> Result<bool, EditError> {
+        self.in_assembly_with(slot, None)
+    }
+
+    /// Keep the classifier's complete immutable scene for an active graph callback.
+    /// Default callers still discard it; a false classification never supplies a tuple.
+    fn in_assembly_with(&self, slot: usize, mut evaluation: Option<&mut Option<(std::sync::Arc<Prepared>, Frame, Scene)>>) -> Result<bool, EditError> {
+        if let Some(output) = evaluation.as_mut() { **output = None; }
         let objects = self.selection_frame()?;
         if !objects.iter().any(|o| o.get("join").is_some_and(Value::truthy)) {
             return Ok(false);
         }
-        let (prepared, frame, _) = self.evaluate()?;
-        Ok(assembly_of(&prepared, &frame, slot).is_some())
+        let (prepared, frame, scene) = self.evaluate()?;
+        let graph = assembly_of(&prepared, &frame, slot).is_some();
+        if graph && let Some(output) = evaluation {
+            *output = Some((prepared, frame, scene));
+        }
+        Ok(graph)
     }
 
     /// `_ikPoseSlots(frame, slots)`: with IK on joined figures, a gesture takes in every
@@ -248,10 +272,17 @@ impl Editor {
     /// limb is captured across the assembly (`captureFor`), solved with the captured
     /// controller pinned at the pointer, and every figure of the assembly takes its part
     /// of the solution.
-    fn pose_graph(&mut self, slot: usize, handle: u32, x: f64, y: f64) -> Result<(), EditError> {
+    fn pose_graph(&mut self, slot: usize, handle: u32, x: f64, y: f64, evaluation: Option<&(std::sync::Arc<Prepared>, Frame, Scene)>) -> Result<(), EditError> {
         let unported = |what: &str| EditError::Unported(format!("posing a joined IK target {what}"));
-        let (prepared, frame, scene) = self.evaluate()?;
-        let mut assembly = assembly_of(&prepared, &frame, slot).ok_or_else(|| unported("outside an assembly"))?;
+        let owned;
+        let (prepared, frame, scene) = match evaluation {
+            Some((prepared, frame, scene)) => (&**prepared, frame, scene),
+            None => {
+                owned = self.evaluate()?;
+                (&*owned.0, &owned.1, &owned.2)
+            },
+        };
+        let mut assembly = assembly_of(prepared, frame, slot).ok_or_else(|| unported("outside an assembly"))?;
         self.expand_drag(&assembly.slots.clone());
         let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let key = handle.to_string();
@@ -259,7 +290,7 @@ impl Editor {
         let controller = ik::parse::table(object.get("_stykIK")).and_then(|t| t.get(handle).cloned()).ok_or_else(|| unported("with a controller the engine cannot read"))?;
         let id = assembly.id(slot, handle).ok_or_else(|| unported("of a handle outside the assembly"))?;
         let spec = crate::spatial_ik::CaptureSpec { rotation: controller.target.rotation, chain_length: controller.chain_length, bend_direction: Some(controller.bend_direction), bend_reference: controller.bend_reference.clone(), swivel: 0.0 };
-        let capture = self.capture_joined(&prepared, &frame, &scene, &assembly, slot, handle, &spec)?;
+        let capture = self.capture_joined(prepared, frame, scene, &assembly, slot, handle, &spec)?;
         let (followers, joined, captured, rotation) = (capture.followers.clone(), capture.joined_followers.clone().unwrap_or_default(), capture.bend_reference.clone(), spec.rotation);
         let temporary = Controller {
             pinned: true,
@@ -583,9 +614,16 @@ impl Editor {
     /// the captured controller pinned at the pointer (`solveObjectIK`), keep the solved
     /// angles (and stretched lengths) in the pose, and remember the followers and the
     /// bend in the controller. Unpinned IK is a posing tool: the target does not persist.
-    fn bake_unpinned(&mut self, slot: usize, handle: u32, x: f64, y: f64) -> Result<(), EditError> {
+    fn bake_unpinned(&mut self, slot: usize, handle: u32, x: f64, y: f64, evaluation: Option<&(std::sync::Arc<Prepared>, Frame, Scene, HashMap<u32, Solved>)>) -> Result<(), EditError> {
         let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
-        let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
+        let owned;
+        let (prepared, frame, scene, captured_solved) = match evaluation {
+            Some((prepared, frame, scene, solved)) => (&**prepared, frame, scene, Some(solved)),
+            None => {
+                owned = self.evaluate_only(Some(&[slot]))?;
+                (&*owned.0, &owned.1, &owned.2, None)
+            },
+        };
         let object = self.frame_objects().get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let id = uid(&object).ok_or_else(|| unported("of a figure without an identity"))?;
         let evaluated = frame.objects.iter().find(|o| o.uid == id).ok_or_else(|| unported("of a figure the engine does not draw"))?;
@@ -601,9 +639,16 @@ impl Editor {
         // has a 3D target (`_drag.ikCapture`).
         let rotation = controller.target.rotation;
         let capture_key = format!("{id}:{handle}");
+        let capture = |editor: &Editor| {
+            let owned_solved;
+            let solved = match captured_solved {
+                Some(solved) => solved,
+                None => { owned_solved = solve_frame(prepared, frame, scene); &owned_solved },
+            };
+            editor.capture_limb_from(slot, handle, prepared, frame, scene, solved)
+        };
         let fresh = if !self.drag.as_ref().is_some_and(|d| d.ik_captures.contains_key(&capture_key)) {
-            let solved = solve_frame(&prepared, &frame, &scene);
-            let capture = self.capture_limb_from(slot, handle, &prepared, &frame, &scene, &solved)?;
+            let capture = capture(self)?;
             if let Some(drag) = self.drag.as_mut() {
                 drag.ik_captures.insert(capture_key.clone(), capture.clone());
             }
@@ -616,10 +661,7 @@ impl Editor {
             // recapture the current selection pose; only a 3D target retains its baseline.
             _ => match fresh {
                 Some(capture) => capture,
-                None => {
-                    let solved = solve_frame(&prepared, &frame, &scene);
-                    self.capture_limb_from(slot, handle, &prepared, &frame, &scene, &solved)?
-                }
+                None => capture(self)?,
             },
         };
         let followers = captured.followers.clone();
