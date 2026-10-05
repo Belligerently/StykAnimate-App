@@ -79,9 +79,11 @@ function sessionFor(oracle) {
   };
 }
 
-for (const name of ['gestures-sheet', 'layers-sheet', 'figures-layers-sheet', 'figure-clipboard-sheet', 'figure-clipboard-clip-sheet',
+for (const mode of ['own', 'classes']) for (const name of mode === 'classes'
+  ? ['channels-figure-sheet', 'channels-pose-sheet', 'channels-vfx-sheet', 'channels-movieclip-sheet']
+  : ['gestures-sheet', 'layers-sheet', 'figures-layers-sheet', 'figure-clipboard-sheet', 'figure-clipboard-clip-sheet',
   'movieclip-sheet', 'movieclip-loose-sheet', 'channels-figure-sheet', 'channels-movieclip-sheet', 'property-clip-patches-sheet', 'locked-sheet', 'topology-sheet', 'topology-native', 'move-native', 'drag-cancel', 'camera-motion-handles-sheet', 'vfx-stack-sheet']) {
-  test(`compact owned adoption matches the editor after each step: ${name}`, async () => {
+  test(`${mode === 'classes' ? 'default classes compact adoption' : 'compact owned adoption'} matches the editor after each step: ${name}`, async () => {
     const folder = new URL('../engine/tests/edit/', import.meta.url);
     const scenario = JSON.parse(readFileSync(new URL(`${name}.scenario.json`, folder), 'utf8'));
     const document = typeof scenario.document === 'string' ? JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8')) : scenario.document;
@@ -90,12 +92,20 @@ for (const name of ['gestures-sheet', 'layers-sheet', 'figures-layers-sheet', 'f
     const owned = new Editor(options).load(structuredClone(document));
     const oracle = new Editor(options).load(structuredClone(document));
     for (const editor of [expected, owned, oracle]) editor.autoKey = Boolean(scenario.editor?.autoKey);
+    if (mode === 'classes') assert.equal(editingClass(owned.report), 'channels', 'saved outer channels precede figure/movieclip classification');
+    const originalCalls = {};
+    if (mode === 'classes') for (const method of ['moveSelection', 'poseJoint']) {
+      const original = owned[method]; originalCalls[method] = 0;
+      owned[method] = function (...args) { originalCalls[method]++; return original.apply(this, args); };
+    }
     const session = sessionFor(oracle);
-    const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: () => session}}, mirror: {framesCurrent: () => true, syncFrames: async () => {}}}), {mode: scenario.editor?.layerTimeline ? 'own' : 'shadow'});
+    const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: () => session}}, mirror: {framesCurrent: () => true, syncFrames: async () => {}}}), {mode: mode === 'classes' ? 'classes' : scenario.editor?.layerTimeline ? 'own' : 'shadow'});
+    if (mode === 'classes') assert.equal(report.mode, 'classes', 'no forced ownership override');
     let drawn = 0;
     const source = kind => { drawn++; return kind === 'uuid' ? `d0d0d0d0-0000-4000-8000-${String(drawn).padStart(12, '0')}` : kind === 'seed' ? Math.imul(drawn, 0x9e3779b1) >>> 0 : (Math.imul(drawn, 0x9e3779b1) >>> 0) / 2 ** 32; };
     for (const [index, call] of scenario.steps.entries()) {
       const [method, ...args] = call;
+      const adopted = report.owned, originalBefore = originalCalls[method];
       const run = editor => editor[method.replace(/^@/, '')](...args.map(decode));
       let expectedError, ownedError, draws;
       try { ({draws} = withDraws(() => run(expected), source)); } catch (error) { expectedError = error.messageKey ?? error.message; draws = error.draws ?? []; }
@@ -103,11 +113,19 @@ for (const name of ['gestures-sheet', 'layers-sheet', 'figures-layers-sheet', 'f
       try { withDraws(() => run(owned), () => draws[at++][1]); } catch (error) { ownedError = error.messageKey ?? error.message; }
       const label = `${name} step ${index + 1}: ${method}`;
       assert.equal(ownedError, expectedError, `${label}: error`);
+      if (Object.hasOwn(originalCalls, method)) {
+        assert.equal(originalCalls[method], originalBefore, `${label}: original editor method was skipped`);
+        assert.equal(report.owned, adopted + 1, `${label}: response was adopted`);
+      }
       assert.equal(json(owned.report), json(expected.report), `${label}: document`);
       assert.deepEqual(state(owned), state(expected), `${label}: history and selection`);
       assert.equal(json(owned.evaluatedFrame), json(expected.evaluatedFrame), `${label}: frame`);
       assert.equal(report.mismatches.length, 0, `${label}: shadow comparisons`);
       await Promise.resolve();
+    }
+    if (mode === 'classes') {
+      assert.ok(report.byCall.moveSelection?.calls > 0, 'recorded move calls were exercised in class mode');
+      if (scenario.steps.some(([method]) => method === 'poseJoint')) assert.ok(report.byCall.poseJoint?.calls > 0, 'recorded pose calls were exercised in class mode');
     }
     if (scenario.editor?.layerTimeline) assert.ok(report.owned > 0 || name === 'topology-sheet', 'the response was adopted, not run in the JavaScript editor');
     else assert.equal(report.owned, 0, 'native timeline sessions are compared without authored adoption');
@@ -873,7 +891,7 @@ for (const name of ['startup', 'rig', 'joined-chain']) {
 }
 
 test('default class admission preserves other classes and invalidates its cached classification', async () => {
-  assert.deepEqual([...OWNED_CLASSES].sort(), ['3d', 'figures', 'large figures', 'movieclips']);
+  assert.deepEqual([...OWNED_CLASSES].sort(), ['3d', 'channels', 'figures', 'large figures', 'movieclips']);
   const read = name => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'));
   const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: true}).newDocument();
   let starts = 0;
@@ -892,8 +910,9 @@ test('default class admission preserves other classes and invalidates its cached
   editor.undo(); assert.equal(editor.report, root); await probe('figures', true);
   for (const [file, type, admitted] of [
     ['engine/crates/styk-eval/tests/fixtures/ik/spatial.json', '3d', true],
-    ['engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json', 'channels', false],
+    ['engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json', 'channels', true],
     ['engine/tests/edit/sheet-movieclip.document.json', 'movieclips', true],
+    ['engine/crates/styk-eval/tests/fixtures/channels/channels-in-movieclip.sheet.json', 'movieclips', true],
     ['engine/tests/edit/origin-pose-layout-sheet.document.json', 'unported', false],
   ]) { editor.load(read(file)); await probe(type, admitted); }
   assert.equal(editingClass(read('engine/crates/styk-eval/tests/fixtures/channels/channels-figure.json')), 'unported', 'native property channels stay excluded');

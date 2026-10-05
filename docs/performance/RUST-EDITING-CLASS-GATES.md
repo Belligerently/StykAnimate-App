@@ -427,3 +427,24 @@ proof. Owned classes 4, inventory 175/123/35/22/1, deleted JS 2 and engine-1 0/2
 unchanged; completed full rows 42→43 and metadata batches 16→17. Original clocks,
 argv, actual capture timestamps/load and source/package identities are retained in
 the companion JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-one-shot-full-1).
+
+
+## Channels owned by default — completed 2026-10-05
+
+Channels is now owned by default. The existing original full paired cost passes both
+user arms at 369.790/352.875 ms, 4.793% and 0.048887 ms excess per 346 calls. The
+committed c4c580de engine checkpoint passes 856 native tests (two existing ignored),
+64 stages / 60 unchanged generators / 358 containers in 5m03. Final gate checks cover
+the two JavaScript files separately: 132 JS tests, four recordings / 94 exact calls
+and Main check (2,000 JS / 93 stylesheets / 682 modules / 8,066 references) pass.
+
+Actual cold default classes mode reports 31 owned / 15 compared / 46 calls, positive
+Native pose/move/commit clocks, zero failed attempts and exact document/history/
+selection/full undo. Core call counts 24/2/5 include fallback; positive clocks do not
+mean every invocation was adopted. This short workload proves admission only;
+its timings are not full class cost evidence. APIs, exclusions, stored arithmetic,
+shipping and D13 are unchanged; no causal speed gain is claimed.
+
+This opening adds no cost measurement: all 43 rows / 17 batches stay exact.
+OWNED_CLASSES advances 4→5; inventory 175/123/35/22/1, deleted JS 2 and engine-1 0/28
+are unchanged. Exact acceptance and activation references are in the companion JSON.

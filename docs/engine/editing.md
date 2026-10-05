@@ -712,6 +712,15 @@ All 128 JS tests, Main check and seven recordings / 158 calls pass. The
 original full paired cost is 369.790/352.875 ms, passing both user arms at 4.793% and
 0.048887 ms excess per call. This loaded result establishes no causal speed gain;
 channels remains closed pending matching checkpoint and actual default adoption.
+Channels is owned by default after its original full paired cost, matching committed
+c4c580de engine checkpoint and actual cold default adoption pass. Full cost is
+369.790/352.875 ms, passing both user arms at 4.793% and 0.048887 ms excess per full
+call. The checkpoint passes 856 native tests (two existing ignored), 64 stages and
+358 containers; 132 final JS tests, four recordings / 94 exact calls and Main check
+pass. Cold default classes mode reports 31 owned / 15 compared / 46 calls, positive
+Native pose/move/commit clocks and exact document/history/selection/full undo.
+Method counts include fallback; its short timings prove admission only. Native/source/
+origin exclusions, APIs, stored arithmetic, shipping and D13 are unchanged.
 Historical measurements below retain their original
 rule and outcomes.
 

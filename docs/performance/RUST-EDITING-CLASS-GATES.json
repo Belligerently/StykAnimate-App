@@ -44317,5 +44317,150 @@
       "noWarmOrForcedOwnership": true,
       "costEvidence": false
     }
+  },
+  "channelsClassGate": {
+    "effectiveDate": "2026-10-05",
+    "scope": "Current channels class acceptance and actual default activation; historical measurements and prior class acceptance unchanged",
+    "formula": "C <= 1.05 * J OR (C - J) / min(candidate.report.calls, editorAlone.report.calls) <= 0.1 ms",
+    "results": [
+      {
+        "case": "channels-figure",
+        "candidateMs": 369.7900000214577,
+        "editorAloneMs": 352.8749994635582,
+        "candidateReportCalls": 346,
+        "baselineReportCalls": 346,
+        "conservativeFullTimedCalls": 346,
+        "excessPerCallMs": 0.04888728484942045,
+        "relativeFivePercentArm": true,
+        "absolutePointOneArm": true,
+        "literalCostNoHigher": false,
+        "currentPolicyCostPass": true
+      }
+    ],
+    "allCurrentPolicyCostPass": true,
+    "channelsOwnedByDefault": true,
+    "activationState": "VERIFIED_DEFAULT_NATIVE_ADOPTION",
+    "activationVerifiedAtUtc": "2026-10-05T17:11:24.488394+00:00",
+    "publicAPIAndStoredArithmeticUnchanged": true,
+    "fullCostEvidence": {
+      "rawEvidence": "/tmp/styk-channels-gate-preparation-20261006/channels-one-shot-full-1",
+      "summary": {
+        "path": "/tmp/styk-channels-gate-preparation-20261006/channels-one-shot-full-1/summary-accounted.json",
+        "bytes": 32335,
+        "sha256": "1f7f6238be3ffd78f42aee79dd011616d53ff64ce62b4cc16e569480b8421803"
+      },
+      "scope": "Original full paired warmed workload, independently confirmed by Origin; timings under load establish no causal speed gain"
+    },
+    "checkpoint": {
+      "path": "tmp/root-verification-temp/checkpoint-c4c580de-reviewed.json",
+      "bytes": 672,
+      "sha256": "bc677be85d188cbcd66ed657fd4f6f508cb5803c5352a3468b77da3de9572a49",
+      "head": "c4c580de4f4e7b073544ed6bf35067121305df8a",
+      "completed": "2026-10-05T19:06:30.941173+02:00",
+      "nativePassed": 856,
+      "nativeIgnored": 2,
+      "nativeResultGroups": 158,
+      "stages": 64,
+      "fixtureGenerationStages": 60,
+      "containers": 358,
+      "elapsedSeconds": 303.25268,
+      "releaseCompilationObserved": false,
+      "scope": "Matching committed engine source before the two final gate JavaScript files"
+    },
+    "finalGate": {
+      "focusedJavaScriptPassed": 132,
+      "recordedReplays": 4,
+      "recordedCalls": 94,
+      "fixtureChanges": false,
+      "mainCheck": {
+        "exitCode": 0,
+        "javascriptFiles": 2000,
+        "stylesheets": 93,
+        "modules": 682,
+        "sourceMessageReferences": 8066
+      },
+      "scope": "Focused final gate JavaScript and actual shipping default app proof; not a second full checkpoint"
+    },
+    "defaultAdoption": {
+      "rawEvidence": "/tmp/styk-channels-gate-preparation-20261006/channels-default-current-1",
+      "summary": {
+        "path": "/tmp/styk-channels-gate-preparation-20261006/channels-default-current-1/summary-accounted.json",
+        "bytes": 6113,
+        "sha256": "5b852cef5e5626753b28be7ba8d4225d4c15d8d3fa408ecc36bc2c509a5a8003"
+      },
+      "approvedInputReceipt": {
+        "path": "/tmp/styk-channels-gate-preparation-20261006/channels-default-current-1/input-receipt.json",
+        "bytes": 236239,
+        "sha256": "2115dbfcf531110b0a653df51727d958d41f38d23bb0843b440f6ec98a233d38"
+      },
+      "sourceWasUncommitted": true,
+      "changedSourcePaths": [
+        "src/engine/engine-edit-shadow.mjs",
+        "tests/engine-edit-adoption.test.mjs"
+      ],
+      "sourcePackageInputStable": true,
+      "identityCounts": {
+        "productionSources": 1529,
+        "packageFiles": 7,
+        "documents": 1
+      },
+      "results": [
+        {
+          "case": "channels-figure",
+          "owned": 31,
+          "compared": 15,
+          "calls": 46,
+          "editorCalls": 46,
+          "coreCallCounts": {
+            "moveSelection": 2,
+            "poseJoint": 24,
+            "commitDrag": 5
+          },
+          "positiveNativeCallAndAdoptionClocksEachCore": true,
+          "strictDocumentHistorySelectionFullUndo": true,
+          "failedOwned": 0,
+          "perMethodCountsIncludeFallback": true,
+          "fullCostCertification": false,
+          "completedAtUtc": "2026-10-05T17:08:00.326423+00:00",
+          "elapsedSeconds": 18.535809511027765,
+          "driver": {
+            "path": "/tmp/styk-channels-gate-preparation-20261006/channels-default-current-1/r1-channels-figure.driver.json",
+            "bytes": 2673,
+            "sha256": "d9b3bd2116982dde86bcf841d6ef0c54814f8f9626e503be14dbaf3e4b4b80c1"
+          },
+          "receipt": {
+            "path": "/tmp/styk-channels-gate-preparation-20261006/channels-default-current-1/r1-channels-figure.receipt.json",
+            "bytes": 541986,
+            "sha256": "fe8a717dc26219f9cbdb5ee692c797ed57f49d2166bd4ca38f2031eac484b72d"
+          },
+          "log": {
+            "path": "/tmp/styk-channels-gate-preparation-20261006/channels-default-current-1/r1-channels-figure.log",
+            "bytes": 1659,
+            "sha256": "55dc296699c011b4378aaaa7e03a486f20f530be7b958fcac924b5db43fe3baf"
+          },
+          "coldDiagnosticCost": {
+            "candidateMs": 39.199999928474426,
+            "editorAloneMs": 23.740000069141388,
+            "costWithinUserRule": false,
+            "usedForClassCostAcceptance": false
+          }
+        }
+      ],
+      "noWarmOrForcedOwnership": true,
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--exact-math",
+        "--verbose",
+        "--default",
+        "--figures-gate",
+        "--file",
+        "engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json",
+        "--out",
+        "/tmp/styk-channels-gate-preparation-20261006/channels-default-current-1/r1-channels-figure.driver.json"
+      ],
+      "costEvidence": false
+    }
   }
 }

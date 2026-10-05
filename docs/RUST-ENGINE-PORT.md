@@ -10,41 +10,41 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, one-shot move adoption)
+## Handoff (2026-10-05, channels opened)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current decision:** channels cost now passes; default ownership remains closed.
-Successful isolated one-shot moves publish the original moved authored copy-on-write
-frame and preserve ready or pending scoped geometry. Complex/joined cases keep the
-original fallback. **128 JS tests**, Main check and **seven recordings / 158 exact
-calls** pass. Rust/Wasm APIs and the **10,246,035 B** shipping Wasm are unchanged.
+**Current decision:** channels is now owned by default, alongside large figures,
+3D, figures and movieclips. The original full paired cost passes both user arms at
+**369.790/352.875 ms**, **4.793%** and **0.048887 ms** excess per 346 calls. Exact
+behavior and D13 are unchanged; this loaded result establishes no causal speed gain.
 
-The original full paired run preserves exact behavior at **369.790/352.875 ms**
-candidate/JS. Excess is **4.793%** and **0.048887 ms** per 346 calls, passing both
-current cost arms. This loaded run establishes no causal speed gain. The background
-checkpoint is not complete and actual default adoption has not run; the class patch
-remains unapplied. APIs, stored math and schema are unchanged.
+The committed `c4c580de` engine checkpoint passes **856 native tests** (two existing
+ignored), **64 stages / 60 unchanged generators / 358 containers** in **5m03**.
+Final gate checks pass **132 JS tests**, **four recordings / 94 exact calls** and Main
+check. Actual cold default adoption reports **31 owned / 15 compared / 46 calls**,
+positive Native pose/move/commit clocks and exact document/history/selection/full undo.
+Its short timings prove admission only. APIs, shipping and exclusions are unchanged.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
 eligible JS fallback and failed attempts once; `J` is editor-alone cost;
 `N = min(candidate.report.calls, editorAlone.report.calls)` for the complete paired
 workload. Channels has 346 calls on each page: latest excess 0.048887 ms and
-4.793% pass the per-call and +5% arms. Figures and movieclips remain open. Exact behavior and D13 are unchanged;
+4.793% pass the per-call and +5% arms. Figures, movieclips and channels are open. Exact behavior and D13 are unchanged;
 [historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
 outcomes. The short default workload proves admission, not full cost.
 
 **Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
-1 removed** unchanged; **OWNED_CLASSES 4→4**; **deleted JS 2→2**; completed full cost
-rows **42→43**; **engine-1 0/28→0/28**. Historical measurements remain exact.
+1 removed** unchanged; **OWNED_CLASSES 4→5**; **deleted JS 2→2**; completed full cost
+rows **43→43**; **engine-1 0/28→0/28**. Historical measurements remain exact.
 
-**Next:** complete the matching committed engine checkpoint, then prove positive
-actual cold default core/full-undo adoption, flip channels and commit. No further cost
-prerequisite is required. Preserve native-channel/source/origin exclusions. Remaining
-recorded commands follow the flip, then idle engine-1/baseline-0 and deletion.
+**Next:** ordinary builder split-segment adoption, then remaining recorded commands.
+Preserve native-channel/source/origin exclusions. After those commands, run the
+complete idle engine-1/baseline-0 table before deleting JavaScript. No further class
+cost optimization or general migration prerequisite is required.
 
 ### Verification and ownership
 
@@ -69,7 +69,7 @@ bounded tasks without nested agents, exchange exact frozen source/evidence and m
 reviewed owning hunks; do not overwrite newer Main owners or clean another lane's cache.
 Keep the checkpoint worktree and `tmp/baseline-worktree` (`96ebce85`). Preserve historical
 worktrees and immutable experiments. General Core/static/cache/storage lanes are parked;
-active work is limited to the next class gate. The mobile checkout remains untouched at
+active work is limited to remaining recorded command adoption. The mobile checkout remains untouched at
 `661c6ad8`; no mobile API adaptation is needed for this milestone.
 
 D7 forbids blocking the interface; D13 forbids tuning pixel thresholds; D15 requires
@@ -290,14 +290,14 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
-- **Figures and movieclips opened:** the current user cost rule, matching committed engine checkpoints and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next channels.
-- **Channels gate:** guarded one-shot move adoption passes focused checks and the original full paired cost at 369.790/352.875 ms, with 4.793% and 0.048887 ms excess per call. Channels stays closed pending the matching committed checkpoint and positive actual default core/full-undo proof. No causal speed claim; future commands remain parked.
+- **Owned editing classes:** large figures, 3D, figures, movieclips and channels are open. The current user cost rule, matching committed checkpoints and actual default core/full-undo proof pass. Exact behavior and D13 are unchanged; no causal speed claim.
+- **Channels scope:** the original full paired cost passes at 369.790/352.875 ms, 4.793% and 0.048887 ms excess per full call. Matching c4c580de checkpoint and actual cold default adoption pass; final gate checks cover the two JavaScript files separately. Native/source/origin exclusions and APIs remain unchanged.
 
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
 - **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set.
 
-- **Next channels gate:** only after a verified measured cost fix, repeat the original full paired `channels-figure` workload under the current user rule, obtain its matching committed engine checkpoint, then focused gate/default core/full-undo proof. Historical measurements remain exact; larger-input controls are optional and native saved channels/origins retain their separate guards.
+- **Next command:** ordinary builder split-segment adoption, then remaining recorded commands. Keep native saved channels/origins in their separate guards. Run the complete idle engine-1/baseline-0 matrix after those commands and before JavaScript deletion.
 
 - **Canonical worker adoption and query readiness:** effect presets/scopes/paints now
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
@@ -551,12 +551,14 @@ layer-sheet movieclip replacements.
 
 ## 7. Parity results
 
-Guarded one-shot move adoption passes 128 JS tests; Main check passes
-(2,000 JS / 93 stylesheets / 682 modules / 8,066 references). Seven existing recordings
-/ 158 calls match exactly; no new fixtures or Rust rebuild. The original full run
-preserves exact document/history/selection/full undo at 369.790/352.875 ms candidate/JS.
-Both cost arms pass at 4.793% and 0.048887 ms excess per call. Shipping is unchanged.
-No default, completed matching checkpoint, class opening or causal speed claim.
+Channels default ownership passes the committed c4c580de checkpoint (856 native,
+two existing ignored; 64 stages / 60 unchanged generators / 358 containers), 132 final
+focused JS tests, four recordings / 94 exact calls and Main check (2,000 JS /
+93 stylesheets / 682 modules / 8,066 references). Actual cold default runs in classes
+mode: 31 owned / 15 compared / 46 calls, zero failed attempts, positive Native
+pose/move/commit clocks and exact document/history/selection/full undo. Per-method
+counts include fallback; the short workload proves admission only. Original full cost
+passes both user arms. APIs, shipping, exclusions and D13 are unchanged.
 
 The prior channels full paired behavior/accounting matches; cost 226.105/179.890 ms
 and excess 0.133569 ms/full call fail both user arms, with 11.615 ms remaining to the
@@ -938,10 +940,9 @@ B8 focused verification: 209 editing and 174 evaluation tests pass with the same
 
 ## 8. Work queue
 
-**Immediate class task:** address the measured original channels cost failure if a
-concrete fix is found, then fresh full cost and actual default proof after a matching
-checkpoint. Remaining commands precede idle engine-1/baseline-0 and deletion; no
-general prerequisites or larger-input requirement are added.
+**Immediate command task:** ordinary builder split-segment adoption, then remaining
+recorded commands. Run the complete idle engine-1/baseline-0 matrix after those
+commands and before JavaScript deletion; no further class-cost optimization is needed.
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
 deletion of what it replaces once nothing calls it. "Agent" marks items run by a subagent
@@ -1178,3 +1179,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 16:18 UTC | Skip redundant source-retention scans | Current references or directly retained history captures can end cleanup when they cover every generated source; otherwise retain the original full path. Targets channels cost; APIs, schema and stored math unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 41→42; engine-1 0/28 unchanged. | 92 focused Rust; 53 recordings / 2,060 exact calls; 125 JS/Main check pass. Full cost 240.965/176.585 ms fails at 0.186069 ms excess/call, leaving 29.780 ms. Channels stays closed; no causal speed claim. |
 
 | 2026-10-05 16:48 UTC | Keep the moved frame during one-shot adoption | Successful isolated one-shot moves publish the original authored COW frame and preserve ready/pending scoped geometry; complex/joined fallback is unchanged. Targets channels cost. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 42→43; engine-1 0/28 unchanged. | 128 JS/Main check; seven recordings / 158 exact calls. Original full cost 369.790/352.875 ms passes both arms at 4.793% and 0.048887 ms excess/call. Default ownership stays closed pending checkpoint/default proof; no causal speed claim. |
+
+| 2026-10-05 17:11 UTC | Edit channel animations in the engine by default | Open channels after full paired cost, matching committed checkpoint and actual cold default core/full-undo proof. APIs, exclusions and D13 are unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→5; deleted JS 2→2; full cost rows 43 unchanged; engine-1 0/28 unchanged. | Full cost 369.790/352.875 ms passes at 4.793% and 0.048887 ms excess/call; checkpoint 856 native/2 ignored, 64 stages/358 containers; 132 JS, four recordings / 94 exact calls and Main check pass. Cold default: 31 owned/15 compared/46 calls, positive core clocks and exact full undo; admission only, no causal speed claim. |
