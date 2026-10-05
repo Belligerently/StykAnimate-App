@@ -1190,31 +1190,6 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
         vfx: frame.vfx.clone(),
         ..Default::default()
     };
-    // Join levels: roots first, then children of resolved parents.
-    let mut level = vec![u32::MAX; count];
-    let mut order: Vec<Vec<usize>> = Vec::new();
-    let mut children: Vec<Vec<usize>> = vec![Vec::new(); count];
-    let mut current: Vec<usize> = Vec::new();
-    for (i, o) in frame.objects.iter().enumerate() {
-        match o.join {
-            Some(j) if (j.slot as usize) < count => children[j.slot as usize].push(i),
-            _ => current.push(i),
-        }
-    }
-    let mut depth = 0;
-    while !current.is_empty() {
-        let mut next = Vec::new();
-        for &i in &current {
-            level[i] = depth;
-            next.extend(children[i].iter().copied());
-        }
-        order.push(std::mem::take(&mut current));
-        current = next;
-        depth += 1;
-        if depth as usize > count {
-            break;
-        }
-    }
     // Figure table for items (styled instances resolve to their own figure).
     let mut figure_slot = std::collections::HashMap::new();
     let mut fig_of = vec![u32::MAX; count];
@@ -1255,17 +1230,51 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
         let figure = scene.figures.get(*fig_of.get(slot)? as usize)?;
         joint_ancestors(frame, figure, slot, joint).map(|joints| (slot, joints))
     });
+    // A successful selected-joint mask already proved that the entire frame has
+    // no joins or pinned controllers. Its sole needed object has no join levels
+    // to resolve; keep the original topology owner for every other query.
+    let (level, order) = if joints.is_some() {
+        (vec![0; count], Vec::new())
+    } else {
+        let mut level = vec![u32::MAX; count];
+        let mut order: Vec<Vec<usize>> = Vec::new();
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); count];
+        let mut current: Vec<usize> = Vec::new();
+        for (i, o) in frame.objects.iter().enumerate() {
+            match o.join {
+                Some(j) if (j.slot as usize) < count => children[j.slot as usize].push(i),
+                _ => current.push(i),
+            }
+        }
+        let mut depth = 0;
+        while !current.is_empty() {
+            let mut next = Vec::new();
+            for &i in &current {
+                level[i] = depth;
+                next.extend(children[i].iter().copied());
+            }
+            order.push(std::mem::take(&mut current));
+            current = next;
+            depth += 1;
+            if depth as usize > count {
+                break;
+            }
+        }
+        (level, order)
+    };
     // IK across joined figures solves once per assembly, before its objects build (`solveJoinedIK`).
     let joined_ik = crate::ik::joined::solve(frame, &|slot| fig_of.get(slot).filter(|&&s| s != u32::MAX).map(|&s| &scene.figures[s as usize]));
     let mut built: Vec<Option<Built>> = (0..count).map(|_| None).collect();
-    for slots in &order {
+    // The selected slot is borrowed directly, with no frame-wide root list or
+    // filtered copy. Publication below still follows the original draw order.
+    for slots in order.iter().map(Vec::as_slice).chain(joints.as_ref().map(|(slot, _)| std::slice::from_ref(slot))) {
         let filtered: Vec<usize>;
         let slots = match needed {
-            Some(needed) => {
+            Some(needed) if joints.is_none() => {
                 filtered = slots.iter().copied().filter(|&i| needed[i]).collect();
                 &filtered
             }
-            None => slots,
+            _ => slots,
         };
         let resolve_root = |i: usize, built: &[Option<Built>]| -> Option<[f64; 2]> {
             let o = &frame.objects[i];

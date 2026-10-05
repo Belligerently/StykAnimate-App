@@ -364,3 +364,70 @@ fn selected_joint_query_preserves_prior_curve_for_invalid_and_overflow_geometry(
         for (&a, &b) in full.points.iter().zip(&query.points) { same_point(a, b); }
     }
 }
+
+
+#[test]
+fn selected_joint_query_keeps_unjoined_draw_order_omission_and_repetition() {
+    let prepared = styk_eval::prepare(styk_eval::open(&folder().join("ik/startup.json")).unwrap());
+    let mut original = prepared.evaluate(0.0);
+    assert_eq!(original.objects.len(), 1);
+    let slot = 0;
+    let joint = 3;
+    let count = prepared.doc.figure(original.objects[slot].figure).unwrap().segments.len();
+    // Typed-owner publication control derived from the existing Editor fixture,
+    // not a new recording. Curves make duplicate point publication observable;
+    // unrelated unique objects keep global figure resolution in the query.
+    Arc::make_mut(&mut original.objects[slot]).bends = Some(Arc::from(vec![0.2; count]));
+    for offset in 1..=2 {
+        let mut object = original.objects[slot].clone();
+        Arc::make_mut(&mut object).uid += offset;
+        original.objects.push(object);
+    }
+    assert!(original.objects.iter().all(|object| object.join.is_none() && !styk_eval::ik::has_pinned(object)));
+    let mut published_points: Option<Vec<[f64; 2]>> = None;
+    for (name, order, published) in [
+        ("normal", vec![0, 1, 2], true),
+        ("omitted", vec![1, 2], false),
+        ("repeated", vec![2, 0, 1, 0], true),
+        ("selected twice", vec![0, 0], true),
+        ("empty", vec![], false),
+    ] {
+        let mut frame = original.clone();
+        frame.draw_order = order;
+        let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[slot]);
+        let query = geometry::build_joint_for_shape(&prepared.doc, &frame, slot, joint);
+        assert_eq!(full.figure_of, query.figure_of, "{name}: global figure table");
+        assert_eq!(full.warnings, query.warnings, "{name}: unrelated roots must not produce unresolved warnings");
+        assert!(query.warnings.is_empty());
+        assert_eq!(query.objects[slot].resolved, published, "{name}: draw order owns resolution");
+        assert_eq!(query.objects[slot].resolved, full.objects[slot].resolved);
+        assert!(query.objects.iter().enumerate().all(|(i, object)| i == slot || !object.resolved));
+        assert!(query.items.is_empty());
+        if published {
+            same_selected_joint(&full, &query, slot, joint);
+            assert!(query.points.len() > 0, "{name}: real curved point output");
+            assert!(query.objects[slot].ends.iter().any(|point| point[0].is_nan()), "{name}: ordinary sparse route is eligible");
+            match &published_points {
+                Some(points) => {
+                    assert_eq!(query.points.len(), points.len(), "{name}: repeated slots publish once");
+                    for (&a, &b) in query.points.iter().zip(points) { same_point(a, b); }
+                }
+                None => published_points = Some(query.points.clone()),
+            }
+        } else {
+            assert!(query.points.is_empty(), "{name}: unpublished geometry has no points");
+            same_query_geometry(&full, &query);
+        }
+    }
+    assert!(published_points.is_some());
+    // A malformed publication slot still reaches the existing indexed splice,
+    // after figure resolution and the unchanged selected-object build.
+    let mut invalid = original.clone();
+    invalid.draw_order = vec![invalid.objects.len() as u32];
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        geometry::build_only_for_shape(&prepared.doc, &invalid, &[slot]);
+    })).is_err());
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        geometry::build_joint_for_shape(&prepared.doc, &invalid, slot, joint);
+    })).is_err());
+}

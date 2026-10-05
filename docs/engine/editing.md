@@ -867,6 +867,12 @@ resolved; callers must neither render the returned Scene nor read other joints.
 Complex, joined, pinned, aliased or ambiguous topology retains the full shape query.
 Nonfinite or overflowing retained geometry retries the original whole-object loop,
 preserving its previous-curve buffer behavior.
+The same eligibility guard proves that the complete typed frame has no joins or
+pinned controllers. That selected query borrows its sole slot directly instead of
+constructing whole-frame join levels and filtered root lists. Figure resolution,
+all-slot zero levels, warnings and the original draw-order publication remain;
+omitted slots stay unresolved and repeated slots publish once. Every other query
+retains the original topology traversal. No public API or stored field changes.
 
 The Cache retains one coherent raw/typed frame pair. `Loader::edit_frame_reusing_ik`
 reuses an immutable parsed IK table only when the IK table node, slot UID/figure and
