@@ -145,3 +145,22 @@ Full cost rows advance **15→18**, all three new rows FAIL under literal candid
 Counters remain **175 js /123 partial /35 ported /22 verified /1 removed**, **two owned classes**, **two deleted JavaScript modules**, **engine-1 0/28**. Figures remains closed. B8 owning verification and shipping build are complete as recorded in the plan; full B8 cost, matching checkpoint and default admission remain pending. This B7 measurement append makes no B8 speed claim. A final candidate must pass the unchanged full cost rule, its matching committed-source checkpoint and actual default core adoption before the class opens.
 
 Evidence: companion JSON B7 rows/batch; `figures-candidate-batch7-1/summary-accounted.json`9cb5a93d, approved input receipt3e0222e6, approved reader output4b33c96e and independent complete review78164101. Exact artifact/package identities, double-precision values, commands and loads remain in those receipts. The old milestone history and four ordinary diagnostics keep their original scope.
+
+
+## B8 completed committed full cost
+
+The unchanged warmed exact-math full paired workload completed on committed `c0048287efb998c1fc3cdcb36ff111c87baa5b79` with shipping Wasm `8d47d635183e29b4a401f136d5544d88a8074864462e09e6c9e369f03c2454d9`, 10,238,324 bytes and the required unstripped `wasm` profile. All three inputs pass strict document/history/selection/full undo, paired eligible-call counts, complete failed-attempt accounting and positive actual native/adoption work on each core method. All 1,529 source, seven package and three input maps match before and after; Node 24.11.0, Python 3.12.9 and the full driver workload are unchanged.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Cost gate |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Startup | 191.290 | 186.300 | 34.585 | 0.000 | 220.885 | Fail |
+| Rig | 121.675 | 128.405 | 13.275 | 0.185 | 141.865 | Fail |
+| Joined-chain | 144.420 | 155.725 | 12.260 | 0.000 | 167.985 | Fail |
+
+Owned/compared/failed counts are **163/289/0**, **119/171/1** and **125/213/0**. Core pose/move/commit counts are **48/6/8**, **36/6/4** and **36/6/4**; eligible method/call counts **76/171**, **65/128** and **66/129** match the paired editor. Startup history has 80 entries and rig/joined 79, with exact full undo and zero differences, mismatches, rounding or page problems. Rig's failed `pasteSegmentValues` attempt, **0.1850000023841858 ms**, is included once before fallback; no argument subtype is inferred. Rig retains the same four allowed comparison-only residual calls on both pages, outside eligible timing with no method-count gap.
+
+Full cost rows advance **18→21**; all three new rows FAIL the literal candidate owned+fallback+failed <= editor-alone rule. All eighteen historical rows, five older batch metadata objects, four ordinary diagnostics and other historical JSON fields remain byte-exact. These loaded observations establish no causal speedup or idle engine-1 result. Method clocks remain diagnostic: each `engineMs` includes its native `callMs`; it is not added a second time to the official total.
+
+Counters remain **175 js / 123 partial / 35 ported / 22 verified / 1 removed**, **two owned classes**, **two deleted JavaScript modules**, **engine-1 0/28**. Figures remains closed. Only a measured cost fix, its fresh unchanged full cost proof, matching committed-source checkpoint and positive actual default core adoption can advance the gate. This measurement append introduces no implementation, gate, public API, response schema, stored-arithmetic or threshold change. This completed append accompanies the verified B9 source fix recorded in the port plan.
+
+Evidence: companion JSON B8 rows/batch; `figures-candidate-batch8-1/summary-accounted.json` `497e06af`, approved input receipt `112cd258`, approved reader output `e2c0c183`, and private raw-accounting receipt `a5858260`. Exact double-precision values, artifact/package identities, commands and loads remain in those receipts. Historical milestone text and all four ordinary diagnostics retain their original scope.

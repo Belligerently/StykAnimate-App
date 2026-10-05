@@ -49,21 +49,25 @@ impl Cache {
         }
         // Loader's null convention is a delta protocol, not a literal null in
         // the shown record. Only a complete, non-null object array can use it.
-        let delta = previous.as_ref().and_then(|pair| {
+        let reusable = previous.as_ref().filter(|pair| {
+            let Some(current) = record.get("objects").and_then(Value::as_arr) else { return false; };
+            let Some(old) = pair.record.get("objects").and_then(Value::as_arr) else { return false; };
+            current.len() == old.len() && current.len() == pair.frame.objects.len()
+                && current.iter().all(Value::is_object)
+        });
+        let delta = reusable.and_then(|pair| {
             let current = record.get("objects")?.as_arr()?;
             let old = pair.record.get("objects")?.as_arr()?;
-            if current.len() != old.len() || current.len() != pair.frame.objects.len()
-                || !current.iter().all(Value::is_object)
-                || !current.iter().zip(old).any(|(item, old)| item.same_node(old))
-            { return None; }
+            if !current.iter().zip(old).any(|(item, old)| item.same_node(old)) { return None; }
             let mut value = record.as_obj()?.clone();
             value.set("objects", Value::array(current.iter().zip(old).map(|(item, old)| {
                 if item.same_node(old) { Value::Null } else { item.clone() }
             }).collect()));
             Some(Value::object(value))
         });
-        let frame = match (&delta, &previous) {
-            (Some(delta), Some(pair)) => self.loader.edit_frame(delta, Some(&pair.frame), &prepared.doc),
+        let frame = match (&delta, reusable) {
+            (Some(delta), Some(pair)) => self.loader.edit_frame_reusing_ik(delta, &pair.record, &pair.frame, &prepared.doc),
+            (None, Some(pair)) => self.loader.edit_frame_reusing_ik(record, &pair.record, &pair.frame, &prepared.doc),
             _ => self.loader.edit_frame(record, None, &prepared.doc),
         }?;
         // A failed conversion leaves the previous coherent pair intact. This
@@ -228,14 +232,23 @@ impl Editor {
     /// [`Editor::evaluate`] with the geometry of the figures in `slots` (and those they are
     /// joined to) only, when given.
     pub(crate) fn evaluate_only(&self, slots: Option<&[usize]>) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
-        self.evaluate_geometry(slots, false)
+        self.evaluate_geometry(slots, false, None)
     }
 
     /// The same shown-frame/typed owner, with only the geometry `shape` consumes.
     /// Missing slot information keeps the original full build; the geometry owner
     /// retains its full-output fallback for rigged and other rich figures.
     pub(crate) fn evaluate_for_shape(&self, slots: Option<&[usize]>) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
-        self.evaluate_geometry(slots, true)
+        self.evaluate_geometry(slots, true, None)
+    }
+
+    /// The selected segment through the same guarded typed-frame and geometry
+    /// owners. Missing slot information preserves the original full build.
+    pub(crate) fn evaluate_for_joint_shape(&self, slot: Option<usize>, joint: usize) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+        match slot {
+            Some(slot) => self.evaluate_geometry(Some(&[slot]), true, Some((slot, joint))),
+            None => self.evaluate_for_shape(None),
+        }
     }
 
     /// The same guarded shown-frame conversion, for callers that do not read geometry.
@@ -250,12 +263,13 @@ impl Editor {
         Ok((prepared, frame))
     }
 
-    fn evaluate_geometry(&self, slots: Option<&[usize]>, for_shape: bool) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
+    fn evaluate_geometry(&self, slots: Option<&[usize]>, for_shape: bool, joint: Option<(usize, usize)>) -> Result<(Arc<Prepared>, styk_eval::eval::Frame, styk_eval::geometry::Scene), EditError> {
         let (prepared, frame) = self.evaluate_frame()?;
-        let scene = match slots {
-            Some(slots) if for_shape => styk_eval::geometry::build_only_for_shape(&prepared.doc, &frame, slots),
-            Some(slots) => styk_eval::geometry::build_only(&prepared.doc, &frame, slots),
-            None => styk_eval::geometry::build(&prepared.doc, &frame),
+        let scene = match (slots, joint) {
+            (Some(_), Some((slot, joint))) => styk_eval::geometry::build_joint_for_shape(&prepared.doc, &frame, slot, joint),
+            (Some(slots), _) if for_shape => styk_eval::geometry::build_only_for_shape(&prepared.doc, &frame, slots),
+            (Some(slots), _) => styk_eval::geometry::build_only(&prepared.doc, &frame, slots),
+            (None, _) => styk_eval::geometry::build(&prepared.doc, &frame),
         };
         Ok((prepared, frame, scene))
     }
@@ -564,6 +578,185 @@ mod tests {
     }
 
     #[test]
+    fn latest_typed_view_reuses_ik_on_changed_angles_even_without_unchanged_objects() {
+        for name in ["startup-sheet", "ik-unpinned-sheet", "ik-spatial-sheet"] {
+            let (editor, prepared, record) = shown(name);
+            let before = styk_doc::json::to_string(&record);
+            let mut cache = editor.eval.borrow().clone();
+            let first = cache.edit_frame(&record, &prepared).unwrap();
+            let mut next = record.clone();
+            for raw in next.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap() {
+                let object = raw.make_obj().unwrap();
+                let mut angles = object.get("angles").unwrap().numbers().unwrap();
+                assert!(!angles.is_empty());
+                angles[0] += 0.125;
+                object.set("angles", Value::nums(&angles));
+                object.set("root_y", Value::Num(-0.0));
+            }
+            let frame = cache.edit_frame(&next, &prepared).unwrap();
+            let mut reused = 0;
+            for (slot, (old, new)) in first.objects.iter().zip(&frame.objects).enumerate() {
+                assert!(!Arc::ptr_eq(old, new), "{name}: changed poses still convert");
+                assert_eq!(new.root[1].to_bits(), (-0.0f64).to_bits());
+                if let Some(old_ik) = &old.ik {
+                    let new_ik = new.ik.as_ref().unwrap();
+                    assert!(Arc::ptr_eq(old_ik, new_ik), "{name}: unchanged IK table in slot {slot}");
+                    assert!(record.get("objects").unwrap().item(slot).unwrap().get("_stykIK").unwrap()
+                        .same_node(next.get("objects").unwrap().item(slot).unwrap().get("_stykIK").unwrap()));
+                    reused += 1;
+                }
+            }
+            assert!(reused > 0, "{name}: actual recorded controllers");
+            assert_fresh(&cache, &next, &prepared, &frame);
+            assert_eq!(styk_doc::json::to_string(&record), before);
+        }
+    }
+
+    #[test]
+    fn latest_typed_view_reparses_replaced_and_nested_edited_ik_tables() {
+        let (editor, prepared, record) = shown("ik-spatial-sheet");
+        let before = styk_doc::json::to_string(&record);
+        let mut cache = editor.eval.borrow().clone();
+        let first = cache.edit_frame(&record, &prepared).unwrap();
+        let slot = first.objects.iter().position(|object| object.ik.as_ref().is_some_and(|ik| !ik.controllers.is_empty())).unwrap();
+        let original = first.objects[slot].ik.as_ref().unwrap();
+        let key = original.controllers.keys().next().unwrap().to_string();
+        let table = parse(&styk_doc::json::to_string(record.get("objects").unwrap().item(slot).unwrap().get("_stykIK").unwrap()));
+        let replaced = replace_object(&record, slot, |object| { object.set("_stykIK", table); });
+        let replacement = cache.edit_frame(&replaced, &prepared).unwrap();
+        let replacement_ik = replacement.objects[slot].ik.as_ref().unwrap();
+        assert_eq!(original, replacement_ik, "equal separately parsed data remains equal");
+        assert!(!Arc::ptr_eq(original, replacement_ik), "equal JSON is not unchanged node identity");
+        assert_fresh(&cache, &replaced, &prepared, &replacement);
+
+        let nested = replace_object(&replaced, slot, |object| {
+            let controller = object.get_mut("_stykIK").unwrap().make_obj().unwrap().get_mut(&key).unwrap().make_obj().unwrap();
+            controller.get_mut("target").unwrap().make_obj().unwrap().set("x", Value::Num(-0.0));
+            controller.get_mut("spatialTarget").unwrap().make_obj().unwrap().set("depth", Value::Num(-0.0));
+        });
+        let changed = cache.edit_frame(&nested, &prepared).unwrap();
+        let changed_ik = changed.objects[slot].ik.as_ref().unwrap();
+        assert!(!Arc::ptr_eq(replacement_ik, changed_ik));
+        let handle = *original.controllers.keys().next().unwrap();
+        assert_eq!(changed_ik.get(handle).unwrap().target.x.to_bits(), (-0.0f64).to_bits());
+        assert_eq!(changed_ik.get(handle).unwrap().spatial_target.as_ref().unwrap().depth.to_bits(), (-0.0f64).to_bits());
+        assert_eq!(original.get(handle).unwrap().target.x.to_bits(), replacement_ik.get(handle).unwrap().target.x.to_bits());
+        assert_fresh(&cache, &nested, &prepared, &changed);
+
+        let nonfinite = replace_object(&nested, slot, |object| {
+            object.get_mut("_stykIK").unwrap().make_obj().unwrap().get_mut(&key).unwrap().make_obj().unwrap()
+                .get_mut("target").unwrap().make_obj().unwrap().set("x", Value::Num(f64::NAN));
+        });
+        let changed = cache.edit_frame(&nonfinite, &prepared).unwrap();
+        assert!(changed.objects[slot].ik.as_ref().unwrap().get(handle).is_none(), "the original lenient parser discards the invalid controller");
+        assert_fresh(&cache, &nonfinite, &prepared, &changed);
+        assert_eq!(styk_doc::json::to_string(&record), before, "descendant edits leave the coherent source untouched");
+    }
+
+    #[test]
+    fn latest_typed_view_keeps_missing_null_and_malformed_ik_parser_semantics() {
+        let (editor, prepared, record) = shown("ik-unpinned-sheet");
+        for table in [None, Some(Value::Null), Some(Value::Bool(false)), Some(Value::Num(3.0)), Some(parse("[]")),
+            Some(parse(r#"{"22":{"enabled":true},"opaque":[1,2]}"#))]
+        {
+            let mut cache = editor.eval.borrow().clone();
+            cache.edit_frame(&record, &prepared).unwrap();
+            let next = replace_object(&record, 0, |object| {
+                match table.clone() { Some(table) => { object.set("_stykIK", table); }, None => { object.remove("_stykIK"); } }
+            });
+            let frame = cache.edit_frame(&next, &prepared).unwrap();
+            let parsed = styk_eval::ik::parse::table(table.as_ref());
+            assert_eq!(frame.objects[0].ik.as_deref(), parsed.as_ref());
+            assert_fresh(&cache, &next, &prepared, &frame);
+            if let Some(ik) = &frame.objects[0].ik {
+                assert!(ik.controllers.is_empty());
+                let changed = replace_object(&next, 0, |object| { object.set("root_x", Value::Num(12.5)); });
+                let again = cache.edit_frame(&changed, &prepared).unwrap();
+                assert!(Arc::ptr_eq(ik, again.objects[0].ik.as_ref().unwrap()), "unchanged lenient empty table is still an immutable parsed table");
+                assert_fresh(&cache, &changed, &prepared, &again);
+            }
+        }
+    }
+
+    #[test]
+    fn latest_typed_view_limits_ik_reuse_to_same_slot_identity_count_and_prepared() {
+        let (editor, prepared, record) = shown("ik-unpinned-sheet");
+        for change in 0..4 {
+            let mut cache = editor.eval.borrow().clone();
+            let first = cache.edit_frame(&record, &prepared).unwrap();
+            assert_eq!(first.objects.len(), 2);
+            assert_ne!(first.objects[0].figure, first.objects[1].figure);
+            let mut next = record.clone();
+            match change {
+                0 => { next = replace_object(&record, 0, |object| { object.set("unique_id", Value::Num(first.objects[0].uid as f64 + 1000.0)); }); }
+                1 => { next = replace_object(&record, 0, |object| { object.set("figure_type_id", Value::Num(first.objects[1].figure as f64)); }); }
+                2 => { next.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap().swap(0, 1); }
+                _ => { next.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap().pop(); }
+            }
+            let frame = cache.edit_frame(&next, &prepared).unwrap();
+            assert!(!Arc::ptr_eq(first.objects[0].ik.as_ref().unwrap(), frame.objects[0].ik.as_ref().unwrap()), "guard {change} reparses");
+            assert_fresh(&cache, &next, &prepared, &frame);
+        }
+
+        let mut cache = editor.eval.borrow().clone();
+        let first = cache.edit_frame(&record, &prepared).unwrap();
+        let previous_pair = Arc::downgrade(cache.latest_typed.as_ref().unwrap());
+        let snapshot = cache.clone();
+        let next = replace_object(&record, 0, |object| { object.set("root_x", Value::Num(17.5)); });
+        let frame = cache.edit_frame(&next, &prepared).unwrap();
+        assert!(Arc::ptr_eq(first.objects[0].ik.as_ref().unwrap(), frame.objects[0].ik.as_ref().unwrap()));
+        assert!(previous_pair.upgrade().is_some(), "an existing Cache snapshot pins its coherent pair");
+        drop(snapshot);
+        assert!(previous_pair.upgrade().is_none(), "the current pair does not retain a predecessor chain");
+        let coherent = cache.latest_typed.as_ref().unwrap().clone();
+        let mut invalid = replace_object(&next, 0, |object| { object.set("root_x", Value::Num(-0.0)); });
+        invalid.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[1].make_obj().unwrap().remove("figure_type_id");
+        let want = cache.loader.clone().edit_frame(&invalid, None, &prepared.doc).unwrap_err().to_string();
+        assert_eq!(cache.edit_frame(&invalid, &prepared).unwrap_err().to_string(), want);
+        assert!(Arc::ptr_eq(cache.latest_typed.as_ref().unwrap(), &coherent), "an error after an eligible first slot installs no partial pair");
+        assert!(coherent.record.same_node(&next));
+        let lineage = Arc::new(Prepared::new(prepared.doc.clone()));
+        let cold = cache.edit_frame(&next, &lineage).unwrap();
+        for (old, new) in frame.objects.iter().zip(&cold.objects) {
+            assert!(!Arc::ptr_eq(old.ik.as_ref().unwrap(), new.ik.as_ref().unwrap()));
+        }
+        assert_fresh(&cache, &next, &lineage, &cold);
+    }
+
+    #[test]
+    fn latest_typed_view_ik_reuse_still_converts_other_pose_and_frame_fields() {
+        let (editor, prepared, record) = shown("ik-unpinned-sheet");
+        let mut cache = editor.eval.borrow().clone();
+        let first = cache.edit_frame(&record, &prepared).unwrap();
+        let segment = prepared.doc.figure(first.objects[0].figure).unwrap().segments[0].id;
+        let style = parse(&format!(r#"{{"segments":{{"{segment}":{{"thickness":7.25,"color":1193046}}}}}}"#));
+        let mut next = replace_object(&record, 0, |object| {
+            object.set("_stykStyle", style);
+            object.set("_movieclipSample", Value::Num(5.25));
+            object.set("_sticknodesSprite", parse(r#"{"ratio":1}"#));
+            object.set("color_transition", parse(r#"{"from":4278190080,"to":4294967295,"t":0.375}"#));
+        });
+        let value = next.make_obj().unwrap();
+        value.set("tick", Value::Num(-0.0));
+        value.set("camera", parse(r#"{"is_default":false,"x":42,"y":-0,"scale":1.25,"angle_rad":0.125}"#));
+        value.set("_vfxTimelineTick", Value::Num(3.25));
+        let mut original = cache.loader.clone();
+        let cold = original.edit_frame(&next, None, &prepared.doc).unwrap();
+        let frame = cache.edit_frame(&next, &prepared).unwrap();
+        assert!(Arc::ptr_eq(first.objects[0].ik.as_ref().unwrap(), frame.objects[0].ik.as_ref().unwrap()));
+        assert!(!Arc::ptr_eq(&first.objects[0], &frame.objects[0]));
+        assert!(Arc::ptr_eq(&first.objects[1], &frame.objects[1]), "existing whole-object delta reuse remains");
+        assert_eq!(frame.objects[0].figure_override.as_ref().unwrap().segments[0].thickness, 7.25);
+        assert_eq!(frame.objects[0].clip_time, Some(5.25));
+        assert_eq!(frame.objects[0].color_transition.as_ref().unwrap().t, 0.375);
+        assert_eq!(frame.tick.to_bits(), (-0.0f64).to_bits());
+        assert_eq!(frame.retained_vfx_tick, Some(3.25));
+        assert_eq!(frame.camera, cold.camera);
+        assert_eq!(cache.loader.notes, original.notes, "the unchanged IK subview suppresses no unrelated conversion notes");
+        assert_fresh(&cache, &next, &prepared, &frame);
+    }
+
+    #[test]
     fn camera_without_motion_does_not_prepare_typed_document() {
         let report = styk_doc::json::parse(br#"{"_styk":{"cameraMotion":{"clips":[]}}}"#).unwrap();
         let mut editor = crate::Editor::new(report, crate::Options::default());
@@ -610,6 +803,22 @@ mod tests {
                     assert_eq!(item.start.map(f64::to_bits), actual.start.map(f64::to_bits));
                     assert_eq!(item.end.map(f64::to_bits), actual.end.map(f64::to_bits));
                     assert_eq!(full.points_of(item).iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>(), query.points_of(actual).iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>());
+                }
+            }
+            if at == slot {
+                let index = usize::try_from(editor.selection.joint).ok().filter(|&index| index < figure.segments.len()).unwrap_or(0);
+                if figure.segments.get(index).is_some() {
+                    let (joint_prepared, joint_frame, joint_scene) = editor.evaluate_for_joint_shape(Some(slot), index).unwrap();
+                    assert!(Arc::ptr_eq(&prepared, &joint_prepared));
+                    for (before, after) in frame.objects.iter().zip(&joint_frame.objects) { assert!(Arc::ptr_eq(before, after)); }
+                    let joint_geometry = &joint_scene.objects[slot];
+                    assert_eq!((geometry.slot, geometry.uid, geometry.figure, geometry.resolved), (joint_geometry.slot, joint_geometry.uid, joint_geometry.figure, joint_geometry.resolved));
+                    assert_eq!(geometry.root.map(f64::to_bits), joint_geometry.root.map(f64::to_bits));
+                    assert_eq!(geometry.starts[index].map(f64::to_bits), joint_geometry.starts[index].map(f64::to_bits));
+                    assert_eq!(geometry.ends[index].map(f64::to_bits), joint_geometry.ends[index].map(f64::to_bits));
+                    assert_eq!(geometry.lengths[index].to_bits(), joint_geometry.lengths[index].to_bits());
+                    assert_eq!(crate::ik::shape_angle(&prepared, &frame, &full, at, index).to_bits(), crate::ik::shape_angle(&joint_prepared, &joint_frame, &joint_scene, at, index).to_bits(), "selected shape angle slot{at}/joint{index}");
+                    assert_eq!(rig_bits(&geometry.rig), rig_bits(&joint_geometry.rig));
                 }
             }
             counts[0] += 1;
@@ -672,6 +881,7 @@ mod tests {
         let old = editor.evaluate_only(Some(&[0])).err().unwrap();
         assert!(matches!(&old, EditError::Invalid(_)));
         assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()));
+        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_joint_shape(Some(0), 0).err().unwrap()));
         assert!(Arc::ptr_eq(editor.eval.borrow().latest_typed.as_ref().unwrap(), &coherent), "conversion error never installs a partial typed frame");
         let mut document = (*prepared.doc).clone();
         document.unsupported.push("shape query unsupported control".into());
@@ -680,6 +890,7 @@ mod tests {
         let old = editor.evaluate_only(Some(&[0])).err().unwrap();
         assert!(matches!(&old, EditError::Unported(_)));
         assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_shape(Some(&[0])).err().unwrap()), "unsupported preparation precedes malformed shown-frame conversion");
+        assert_eq!(format!("{old:?}"), format!("{:?}", editor.evaluate_for_joint_shape(Some(0), 0).err().unwrap()), "joint query retains preparation-before-conversion priority");
         assert!(editor.eval.borrow().latest_typed.is_none());
     }
 

@@ -248,7 +248,7 @@ impl Editor {
             Some(slot) => Some(slot),
             None => self.selection_frame()?.iter().position(|o| uid(o) == uid(object)),
         };
-        let (prepared, frame, scene) = self.evaluate_for_shape(slot.as_ref().map(std::slice::from_ref))?;
+        let (prepared, frame, scene) = self.evaluate_for_joint_shape(slot, joint)?;
         let Some(id) = uid(object) else { return Ok(None) };
         let Some(evaluated) = frame.objects.iter().find(|o| o.uid == id) else { return Ok(None) };
         let Some(geometry) = scene.objects.iter().find(|g| g.uid == id && g.resolved) else { return Ok(None) };

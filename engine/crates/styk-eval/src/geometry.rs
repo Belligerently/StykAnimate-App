@@ -405,7 +405,7 @@ pub fn segment_pose(obj: &Object, seg: &crate::doc::Segment, i: usize) -> (f64, 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: bool, render_output: bool) -> Built {
+fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure_slot: u32, fig: &Figure, root: [f64; 2], ik: Option<&crate::ik::Solution>, measure: bool, render_output: bool, joints: Option<&[bool]>) -> Built {
     let obj = &frame.objects[slot];
     let n = fig.segments.len();
     let scale = obj.scale;
@@ -444,6 +444,9 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
     let mut start_raws: Vec<Option<[f64; 3]>> = if has_spatial { vec![None; n] } else { Vec::new() };
     for &i in order {
         let i = i as usize;
+        if joints.is_some_and(|joints| !joints[i]) {
+            continue;
+        }
         let seg = &fig.segments[i];
         let parent = plan.parent[i];
         let start = if parent == u32::MAX { root } else { ends[parent as usize] };
@@ -489,6 +492,12 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             let derived = seg.rig.as_ref().is_some_and(|r| r.spatial.is_some() || r.weighted.is_some());
             rig_handle = st.handle.map(|h| (h, derived));
         }
+        // A nonfinite arc can append nothing and then consume the previous
+        // segment's last curve point. Retain that whole-object ordering instead
+        // of using a partial buffer; the unmasked retry cannot recurse again.
+        if joints.is_some() && [start[0], start[1], angle, length, bend].iter().any(|value| !value.is_finite()) {
+            return build_object(doc, version, frame, slot, figure_slot, fig, root, ik, measure, render_output, None);
+        }
         let p0 = points.len() as u32;
         let end;
         if let Some((h, true)) = rig_handle {
@@ -502,6 +511,11 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
             if let Some(l) = points.last_mut() {
                 *l = end;
             }
+        }
+        // Finite inputs can overflow during arc sampling or fround. A later
+        // retained child must see the same prior curve buffer as the full loop.
+        if joints.is_some() && (!end[0].is_finite() || !end[1].is_finite() || points[p0 as usize..].iter().any(|point| !point[0].is_finite() || !point[1].is_finite())) {
+            return build_object(doc, version, frame, slot, figure_slot, fig, root, ik, measure, render_output, None);
         }
         let p1 = points.len() as u32;
         // Children and joins attach at the rig handle (a connector's slider), drawing ends at `end`.
@@ -1070,19 +1084,19 @@ fn build_clip(frame: &Frame, slot: usize, fig: &Figure, clip: &Movieclip, root: 
 
 /// Builds the scene for an evaluated frame.
 pub fn build(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None, false, true)
+    build_filtered(doc, frame, None, false, true, None)
 }
 
 /// [`build`] with every figure's [`ObjectGeometry::extent`]: what a follow camera samples.
 pub fn build_measured(doc: &Document, frame: &Frame) -> Scene {
-    build_filtered(doc, frame, None, true, true)
+    build_filtered(doc, frame, None, true, true, None)
 }
 
 /// [`build`] for the objects in `slots` and the objects they are joined to, the others
 /// left unresolved: what an editing call reads of one figure's geometry, without the
 /// whole frame's.
 pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
-    build_only_with(doc, frame, slots, true)
+    build_only_with(doc, frame, slots, true, None)
 }
 
 /// [`build_only`] for a shape query: ordinary 2D objects retain their joints,
@@ -1091,10 +1105,21 @@ pub fn build_only(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
 /// rig, spatial pose, movieclip, mesh, surface or Stick Nodes shape uses the full builder.
 /// The returned scene is query geometry; callers must not render it.
 pub fn build_only_for_shape(doc: &Document, frame: &Frame, slots: &[usize]) -> Scene {
-    build_only_with(doc, frame, slots, false)
+    build_only_with(doc, frame, slots, false, None)
 }
 
-fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output: bool) -> Scene {
+/// [`build_only_for_shape`] for one selected segment. An ordinary unjoined,
+/// unpinned 2D object builds only that segment and its segment ancestors, in the
+/// original geometry order. Other segment entries remain unresolved (NaN).
+/// The selected joint's endpoints, scaled length and raw curve are unchanged;
+/// callers must not render this scene or query unrelated joints from it.
+/// Rich figures, joins, pinned controllers, selected UID aliases and ambiguous
+/// topology retain the existing whole-object shape query.
+pub fn build_joint_for_shape(doc: &Document, frame: &Frame, slot: usize, joint: usize) -> Scene {
+    build_only_with(doc, frame, &[slot], false, Some((slot, joint)))
+}
+
+fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output: bool, joint: Option<(usize, usize)>) -> Scene {
     let count = frame.objects.len();
     let mut needed = vec![false; count];
     for &slot in slots {
@@ -1104,10 +1129,58 @@ fn build_only_with(doc: &Document, frame: &Frame, slots: &[usize], render_output
             at = frame.objects[i].join.map(|j| j.slot as usize);
         }
     }
-    build_filtered(doc, frame, Some(&needed), false, render_output)
+    build_filtered(doc, frame, Some(&needed), false, render_output, joint)
 }
 
-fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: bool, render_output: bool) -> Scene {
+// The compiled parent/order plan is the sole topology owner. A query whose
+// dependencies are ambiguous simply retains the original complete segment loop.
+fn joint_ancestors(frame: &Frame, figure: &Figure, slot: usize, joint: usize) -> Option<Vec<bool>> {
+    let object = frame.objects.get(slot)?;
+    if frame.objects.iter().any(|object| object.join.is_some() || crate::ik::has_pinned(object))
+        || frame.objects.iter().filter(|other| other.uid == object.uid).count() != 1
+    {
+        return None;
+    }
+    let plan = &figure.plan;
+    let count = figure.segments.len();
+    if joint >= count || plan.parent.len() != count || plan.order.len() != count || plan.index_of.len() != count {
+        return None;
+    }
+    for (i, segment) in figure.segments.iter().enumerate() {
+        if segment.id == 0 || plan.index_of.get(&segment.id).copied() != Some(i as u32) {
+            return None;
+        }
+        let parent = if segment.parent == 0 { u32::MAX } else { *plan.index_of.get(&segment.parent)? };
+        if plan.parent[i] != parent {
+            return None;
+        }
+    }
+    let mut joints = vec![false; count];
+    for &i in &plan.order {
+        let visited = joints.get_mut(i as usize)?;
+        if *visited {
+            return None;
+        }
+        *visited = true;
+    }
+    joints.fill(false);
+    let mut at = joint;
+    loop {
+        let visited = joints.get_mut(at)?;
+        if *visited {
+            return None;
+        }
+        *visited = true;
+        let parent = plan.parent[at];
+        if parent == u32::MAX {
+            break;
+        }
+        at = parent as usize;
+    }
+    Some(joints)
+}
+
+fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measure: bool, render_output: bool, joint: Option<(usize, usize)>) -> Scene {
     let count = frame.objects.len();
     let mut scene = Scene {
         objects: vec![ObjectGeometry::default(); count],
@@ -1175,6 +1248,13 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
             || figure.polyfills.iter().any(|polygon| polygon.surface.is_some())
             || figure.segments.iter().any(|segment| crate::sticknodes::shape_for(segment, object).is_some())
     });
+    // Narrow only the existing segment loop, after the original rich-output
+    // decision. All frame/figure resolution, joined solving and publication
+    // retain their original owners and order.
+    let joints = joint.filter(|_| !render_output).and_then(|(slot, joint)| {
+        let figure = scene.figures.get(*fig_of.get(slot)? as usize)?;
+        joint_ancestors(frame, figure, slot, joint).map(|joints| (slot, joints))
+    });
     // IK across joined figures solves once per assembly, before its objects build (`solveJoinedIK`).
     let joined_ik = crate::ik::joined::solve(frame, &|slot| fig_of.get(slot).filter(|&&s| s != u32::MAX).map(|&s| &scene.figures[s as usize]));
     let mut built: Vec<Option<Built>> = (0..count).map(|_| None).collect();
@@ -1224,7 +1304,8 @@ fn build_filtered(doc: &Document, frame: &Frame, needed: Option<&[bool]>, measur
                     local.as_ref()
                 }
             };
-            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik, measure, render_output)))
+            let joints = joints.as_ref().filter(|(slot, _)| *slot == i).map(|(_, joints)| joints.as_slice());
+            Some((i, build_object(doc, doc.version, frame, i, fig_of[i], fig, root, ik, measure, render_output, joints)))
         };
         let results: Vec<(usize, Built)> = crate::par::map(&slots, 32, make).into_iter().flatten().collect();
         for (i, b) in results {

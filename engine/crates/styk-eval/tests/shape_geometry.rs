@@ -199,3 +199,168 @@ fn shape_query_checks_the_resolved_needed_figure_and_its_ancestors() {
     assert!(!query.items.is_empty(), "a complex resolved ancestor needs the full builder");
     assert_eq!(format!("{:?}", full.items), format!("{:?}", query.items));
 }
+
+
+fn same_selected_joint(full: &Scene, query: &Scene, slot: usize, joint: usize) {
+    assert_eq!(full.figure_of, query.figure_of);
+    assert_eq!(full.warnings, query.warnings);
+    let (a, b) = (&full.objects[slot], &query.objects[slot]);
+    assert_eq!((a.slot, a.uid, a.figure, a.resolved), (b.slot, b.uid, b.figure, b.resolved));
+    same_point(a.root, b.root);
+    same_number(a.scale, b.scale);
+    same_number(a.opacity, b.opacity);
+    same_point(a.starts[joint], b.starts[joint]);
+    same_point(a.ends[joint], b.ends[joint]);
+    same_number(a.lengths[joint], b.lengths[joint]);
+    let (a, b) = (&a.raw_segments[joint], &b.raw_segments[joint]);
+    same_point(a.drawing_end, b.drawing_end);
+    same_number(a.thickness, b.thickness);
+    let a = &full.points[a.points.0 as usize..a.points.1 as usize];
+    let b = &query.points[b.points.0 as usize..b.points.1 as usize];
+    assert_eq!(a.len(), b.len());
+    for (&a, &b) in a.iter().zip(b) { same_point(a, b); }
+}
+
+#[test]
+fn selected_joint_query_preserves_ordinary_endpoints_curves_and_ancestor_order() {
+    let (mut selected, mut skipped, mut curves, mut ancestors, mut polygons) = (0, 0, 0, 0, 0);
+    for name in ["ik/startup", "ik/bent", "eval/color-transitions"] {
+        let prepared = styk_eval::prepare(styk_eval::open(&folder().join(format!("{name}.json"))).unwrap());
+        let reference = json(&folder().join(format!("{name}.reference.json")));
+        for sample in reference.get("frames").unwrap().elements().unwrap() {
+            let tick = sample.get("tick").unwrap().as_f64().unwrap();
+            let frame = prepared.evaluate(tick);
+            let slot = frame.objects.iter().position(|object| object.uid == 1).unwrap();
+            let figure = prepared.doc.figure(frame.objects[slot].figure).unwrap();
+            let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[slot]);
+            let rendered = geometry::build_only(&prepared.doc, &frame, &[slot]);
+            polygons += rendered.items.iter().filter(|item| item.kind == ItemKind::Poly).count();
+            for joint in 0..figure.segments.len() {
+                let query = geometry::build_joint_for_shape(&prepared.doc, &frame, slot, joint);
+                same_selected_joint(&full, &query, slot, joint);
+                assert!(query.items.is_empty());
+                for (i, point) in query.objects[slot].ends.iter().enumerate() {
+                    if point[0].is_nan() {
+                        if !full.objects[slot].ends[i][0].is_nan() { skipped += 1; }
+                    } else {
+                        // Every retained dependency still uses the original loop's bits.
+                        same_selected_joint(&full, &query, slot, i);
+                        ancestors += usize::from(i != joint);
+                    }
+                }
+                curves += usize::from(query.objects[slot].raw_segments[joint].points.1 > query.objects[slot].raw_segments[joint].points.0);
+                selected += 1;
+            }
+        }
+    }
+    assert!(selected > 0 && skipped > 0 && curves > 0 && ancestors > 0 && polygons > 0,
+        "selected={selected}, skipped={skipped}, curves={curves}, ancestors={ancestors}, polygons={polygons}");
+}
+
+#[test]
+fn selected_joint_query_keeps_pinned_joined_and_rich_whole_object_fallbacks() {
+    for name in ["ik/startup-pinned", "ik/joined", "ik/rig-follow", "ik/spatial", "ik/movieclip", "picking-construction/sticknodes", "spatial/surfaces-solid"] {
+        let prepared = styk_eval::prepare(styk_eval::open(&folder().join(format!("{name}.json"))).unwrap());
+        let reference = json(&folder().join(format!("{name}.reference.json")));
+        for sample in reference.get("frames").unwrap().elements().unwrap() {
+            let tick = sample.get("tick").unwrap().as_f64().unwrap();
+            let frame = if reference.get("native").and_then(Value::as_bool).unwrap_or(false) { prepared.native_at(tick) } else { prepared.evaluate(tick) };
+            let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[0]);
+            let query = geometry::build_joint_for_shape(&prepared.doc, &frame, 0, 0);
+            same_query_geometry(&full, &query);
+            assert_eq!(format!("{:?}", full.items), format!("{:?}", query.items), "{name}@{tick}: full fallback");
+            assert_eq!(format!("{:?}", full.meshes), format!("{:?}", query.meshes));
+            assert_eq!(format!("{:?}", full.depths), format!("{:?}", query.depths));
+            assert_eq!(format!("{:?}", full.transitions), format!("{:?}", query.transitions));
+            assert_eq!(full.chains, query.chains);
+            assert_eq!(full.retained_bytes, query.retained_bytes);
+        }
+    }
+}
+
+#[test]
+fn selected_joint_query_keeps_alias_cycles_override_and_invalid_index_behavior() {
+    let prepared = styk_eval::prepare(styk_eval::open(&folder().join("ik/startup.json")).unwrap());
+    let original = prepared.evaluate(0.0);
+    for case in ["uid", "handle", "cycle", "missing-parent", "joint", "slot", "override"] {
+        let mut frame = original.clone();
+        let mut slot = 0;
+        let mut joint = 0;
+        match case {
+            "uid" => {
+                frame.objects.push(frame.objects[0].clone());
+                frame.draw_order.push((frame.objects.len() - 1) as u32);
+            },
+            "handle" | "cycle" | "missing-parent" => {
+                let mut figure = (**prepared.doc.figure(frame.objects[0].figure).unwrap()).clone();
+                match case {
+                    "handle" => figure.segments[1].id = figure.segments[0].id,
+                    "cycle" => figure.segments[0].parent = figure.segments[1].id,
+                    _ => figure.segments[0].parent = u32::MAX,
+                }
+                figure.plan = styk_eval::doc::plan_figure(&figure.segments, &figure.polyfills);
+                Arc::make_mut(&mut frame.objects[0]).figure_override = Some(Arc::new(figure));
+            },
+            "joint" => joint = usize::MAX,
+            "slot" => slot = usize::MAX,
+            "override" => {
+                let rigged = styk_eval::prepare(styk_eval::open(&folder().join("ik/rig-follow.json")).unwrap());
+                let source = rigged.evaluate(0.0);
+                Arc::make_mut(&mut frame.objects[0]).figure_override = Some(rigged.doc.figure(source.objects[0].figure).unwrap().clone());
+            },
+            _ => unreachable!(),
+        }
+        let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[slot]);
+        let query = geometry::build_joint_for_shape(&prepared.doc, &frame, slot, joint);
+        same_query_geometry(&full, &query);
+        assert_eq!(format!("{:?}", full.items), format!("{:?}", query.items), "{case}");
+        assert_eq!(full.retained_bytes, query.retained_bytes, "{case}");
+    }
+}
+
+
+#[test]
+fn selected_joint_query_preserves_prior_curve_for_invalid_and_overflow_geometry() {
+    let prepared = styk_eval::prepare(styk_eval::open(&folder().join("ik/startup.json")).unwrap());
+    let original = prepared.evaluate(0.0);
+    // Typed owner differential: the first root-attached curve is unrelated to
+    // the selected branch, but the original arc's nonfinite-input fallback can
+    // consume its last point. This is not a new editable/accepted document.
+    let mut figure = (**prepared.doc.figure(original.objects[0].figure).unwrap()).clone();
+    figure.segments.truncate(3);
+    figure.segments[0].parent = 0;
+    figure.segments[1].parent = 0;
+    figure.segments[2].parent = figure.segments[1].id;
+    figure.plan = styk_eval::doc::plan_figure(&figure.segments, &figure.polyfills);
+    for case in ["angle", "bend", "length", "ancestor", "overflow"] {
+        let mut frame = original.clone();
+        let object = Arc::make_mut(&mut frame.objects[0]);
+        object.figure_override = Some(Arc::new(figure.clone()));
+        object.ik = None;
+        object.root = [120.0, 160.0];
+        object.scale = 1.0;
+        object.angles = Arc::from([0.3, 0.5, 0.7]);
+        object.bends = Some(Arc::from([0.8, 0.2, 0.4]));
+        object.lengths = Some(Arc::from([40.0, 30.0, 20.0]));
+        let selected = match case {
+            "angle" => { Arc::make_mut(&mut object.angles)[1] = f64::NAN; 1 },
+            "bend" => { Arc::make_mut(object.bends.as_mut().unwrap())[1] = f64::INFINITY; 1 },
+            "length" => { Arc::make_mut(object.lengths.as_mut().unwrap())[1] = f64::INFINITY; 1 },
+            "ancestor" => { Arc::make_mut(object.lengths.as_mut().unwrap())[1] = f64::INFINITY; 2 },
+            _ => {
+                Arc::make_mut(object.bends.as_mut().unwrap())[1] = 0.0;
+                Arc::make_mut(object.lengths.as_mut().unwrap())[1] = 1e40;
+                2
+            },
+        };
+        let full = geometry::build_only_for_shape(&prepared.doc, &frame, &[0]);
+        assert!(full.objects[0].raw_segments[0].points.1 > full.objects[0].raw_segments[0].points.0, "{case}: earlier unrelated curve");
+        let query = geometry::build_joint_for_shape(&prepared.doc, &frame, 0, selected);
+        same_selected_joint(&full, &query, 0, selected);
+        // A retry must preserve the whole original buffer, including the prior
+        // curve that the old arc branch reads and may overwrite.
+        same_query_geometry(&full, &query);
+        assert_eq!(full.points.len(), query.points.len(), "{case}");
+        for (&a, &b) in full.points.iter().zip(&query.points) { same_point(a, b); }
+    }
+}

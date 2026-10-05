@@ -860,3 +860,17 @@ undo matches the editor. Command-class cost/readiness gates stay separate.
 same response builder used by `Session::call`; it does not introduce another editor
 or serializer. Tests compare 830 actual full/compact and malformed calls across 14
 families. Worker publication and durable Session ownership remain separate work.
+
+Ordinary joint shape reads use `geometry::build_joint_for_shape` through the same
+Prepared/shown-frame conversion. Only the selected segment and its ancestors are
+resolved; callers must neither render the returned Scene nor read other joints.
+Complex, joined, pinned, aliased or ambiguous topology retains the full shape query.
+Nonfinite or overflowing retained geometry retries the original whole-object loop,
+preserving its previous-curve buffer behavior.
+
+The Cache retains one coherent raw/typed frame pair. `Loader::edit_frame_reusing_ik`
+reuses an immutable parsed IK table only when the IK table node, slot UID/figure and
+Prepared lineage agree; other fields retain their original conversion. A failed
+conversion installs no new pair. The caller must supply the complete raw record
+represented by the predecessor Frame from the current Loader/document lineage.
+These additive APIs do not change stored fields or the Session response schema.

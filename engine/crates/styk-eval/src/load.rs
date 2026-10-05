@@ -660,6 +660,10 @@ impl Loader {
     }
 
     fn object(&mut self, o: &Value) -> Option<Object> {
+        self.object_reusing_ik(o, None)
+    }
+
+    fn object_reusing_ik(&mut self, o: &Value, previous: Option<(&Value, &Object)>) -> Option<Object> {
         let uid = int(o, "unique_id")? as u32;
         let figure = int(o, "figure_type_id")? as u32;
         let lengths = if truthy(o.get("len_flag")) { self.numbers(o.get("lengths")) } else { None };
@@ -702,7 +706,11 @@ impl Loader {
                 _ => None,
             },
             figure_override: None,
-            ik: crate::ik::parse::table(o.get("_stykIK")).map(Arc::new),
+            ik: previous.filter(|(raw, typed)| typed.uid == uid && typed.figure == figure
+                && o.get("_stykIK").filter(|table| table.is_object())
+                    .is_some_and(|table| raw.get("_stykIK").is_some_and(|old| table.same_node(old))))
+                .and_then(|(_, typed)| typed.ik.clone())
+                .or_else(|| crate::ik::parse::table(o.get("_stykIK")).map(Arc::new)),
             vfx: crate::vfx::parse::stacks(o.get("_stykVfx"), &mut self.notes),
             vfx_scope: o.get("_stykVfxScope").and_then(Value::as_f64) == Some(1.0),
             vfx_connected: o.get("_vfxConnectedEffects").map(|v| Arc::from(crate::vfx::parse::stack(v, &mut self.notes))),
@@ -733,7 +741,24 @@ impl Loader {
     /// this slot is the one `previous` had". Only changed poses cross the boundary
     /// while a gesture runs. Figures come from `doc`.
     pub fn edit_frame(&mut self, value: &Value, previous: Option<&crate::eval::Frame>, doc: &Document) -> Result<crate::eval::Frame, Error> {
+        self.edit_frame_with_ik(value, previous, None, doc)
+    }
+
+    /// Converts an edit frame with the previous coherent raw/typed record from
+    /// the same document/Loader lineage. Only an unchanged `_stykIK` object node
+    /// in the same UID/figure slot reuses its parsed immutable table. All
+    /// other pose fields and frame metadata follow the original conversion.
+    /// `previous_record` must be the complete record represented by `previous`,
+    /// successfully converted by this Loader in `doc`'s current lineage.
+    /// `value` may use the same null delta convention as [`Self::edit_frame`].
+    pub fn edit_frame_reusing_ik(&mut self, value: &Value, previous_record: &Value, previous: &crate::eval::Frame, doc: &Document) -> Result<crate::eval::Frame, Error> {
+        self.edit_frame_with_ik(value, Some(previous), Some(previous_record), doc)
+    }
+
+    fn edit_frame_with_ik(&mut self, value: &Value, previous: Option<&crate::eval::Frame>, previous_record: Option<&Value>, doc: &Document) -> Result<crate::eval::Frame, Error> {
         let items = value.get("objects").and_then(Value::as_arr).unwrap_or(&[]);
+        let previous_items = previous_record.and_then(|record| record.get("objects")).and_then(Value::as_arr)
+            .filter(|old| old.len() == items.len() && previous.is_some_and(|frame| frame.objects.len() == items.len()));
         let mut objects = Vec::with_capacity(items.len());
         for (slot, item) in items.iter().enumerate() {
             if item.is_null() {
@@ -741,7 +766,9 @@ impl Loader {
                 objects.push(kept.clone());
                 continue;
             }
-            let mut object = self.object(item).ok_or_else(|| Error::Format(format!("object {slot} of the edit frame has no identity or figure")))?;
+            let prior = previous_items.and_then(|old| old.get(slot)).zip(previous.and_then(|frame| frame.objects.get(slot)))
+                .map(|(raw, typed)| (raw, typed.as_ref()));
+            let mut object = self.object_reusing_ik(item, prior).ok_or_else(|| Error::Format(format!("object {slot} of the edit frame has no identity or figure")))?;
             // The editor has already chosen each clip's local time.
             object.clip_time = match item.get("_movieclipSample") {
                 Some(Value::Num(time)) => Some(*time),
