@@ -705,6 +705,13 @@ Fresh full cost is 240.965/176.585 ms with 0.186069 ms excess per call, leaving
 matching new checkpoint/default or causal speed claim. APIs, schema and stored
 arithmetic are unchanged; mobile needs no adaptation.
 
+Successful isolated one-shot move adoption now publishes the original moved authored
+copy-on-write frame and preserves ready or pending scoped geometry. Complex/joined
+fallback, events, document/history/selection/full undo and Rust/Wasm APIs are unchanged.
+All 128 JS tests, Main check and seven recordings / 158 calls pass. The
+original full paired cost is 369.790/352.875 ms, passing both user arms at 4.793% and
+0.048887 ms excess per call. This loaded result establishes no causal speed gain;
+channels remains closed pending matching checkpoint and actual default adoption.
 Historical measurements below retain their original
 rule and outcomes.
 

@@ -961,3 +961,121 @@ test('default classes compactly adopt movieclip instance transforms and full his
   assert.equal(json(owned.report), initial, 'full undo restores the original clip document');
   assert.deepEqual(Object.keys(report.unported ?? {}), []);
 });
+
+
+test('a one-shot adopted move exposes the moved COW frame at both real Editor events', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json', import.meta.url), 'utf8'));
+  const {expected, owned, oracle, session, report, same, run} = adoptionPair(document);
+  // This is the original full driver's import-and-move route: the new UID is
+  // isolated even while the original UID1/UID3 component remains joined.
+  run('importFigure', structuredClone(expected.report.figure_types[0]), {position: {x: 200, y: 150}});
+  const source = owned.evaluatedFrame;
+  const untouched = source.objects.filter(object => !owned.selectedUids.has(object.unique_id));
+  assert.ok(untouched.some(object => object.join), 'unrelated joins remain on show');
+  for (const editor of [expected, owned, oracle]) {
+    // As in the existing ready-commit clock control, the runtime VFX clock
+    // belongs to an actual clip state, even when that state has no effects.
+    editor.report._styk.vfxClips = {version: 1, clips: []};
+    editor.evaluatedFrame._cameraMotionTick = 2.75;
+    editor.evaluatedFrame._vfxTimelineTick = 4.25;
+    editor.evaluatedFrame._vfxTimelineScene = [];
+  }
+  const initial = json(expected.report), sourceBytes = json(source);
+  // The first native retained head may carry the full frame despite compact
+  // sheet publication. Exercise that exact supported response shape.
+  const call = session.call.bind(session);
+  session.call = (...args) => {
+    const answer = JSON.parse(call(...args));
+    if (args[0] === 'moveSelection' && answer.retained) {
+      // JS's planner clones unchanged layers; Native keeps the same COW node
+      // and omits it in compact answers. Prove equality before modeling omission.
+      assert.deepEqual(answer.layers, owned.report._styk.layers); delete answer.layers;
+      const frame = oracle._evaluated;
+      answer.retained = frame.objects.map(clean);
+      answer.retainedFields = Object.fromEntries(Object.entries(frame).filter(([key]) => key !== 'objects' && !runtimeClock(key)));
+      delete answer.retainedChanges; delete answer.retainedOrder;
+    }
+    return json(answer);
+  };
+  const views = [[], []], frames = [[], []], geometries = [[], []];
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => {
+    if (event.detail.kind !== 'edit' || !event.detail.live && !event.detail.layerSheet) return;
+    const frame = editor.evaluatedFrame, geometry = editor.geometry;
+    views[index].push({detail: clean(event.detail), frame: json(frame), drawables: clean(geometry.drawables), state: state(editor), revision: editor.revision});
+    frames[index].push(frame); geometries[index].push(geometry);
+  });
+  const adopted = report.owned;
+  expected.moveSelection(10, 0); owned.moveSelection(10, 0);
+  assert.equal(report.owned, adopted + 1);
+  assert.equal(views[0].length, 2); assert.deepEqual(views[1], views[0], 'live and publication observers see the same moved frame, geometry and history');
+  assert.equal(frames[1][1], frames[1][0]); assert.equal(geometries[1][1], geometries[1][0]);
+  assert.equal(owned.evaluatedFrame, frames[1][0]); assert.equal(owned._geometry, geometries[1][0]);
+  assert.ok(untouched.every(object => owned.evaluatedFrame.objects.includes(object)), 'full packets preserve untouched COW records');
+  // Runtime clocks stay on the preview; the report/history sources are isolated.
+  assert.equal(owned.evaluatedFrame._cameraMotionTick, 2.75); assert.equal(owned.evaluatedFrame._vfxTimelineTick, 4.25);
+  assert.equal(json(source), sourceBytes);
+  assert.equal(owned._drag, null); assert.equal(owned._authoredPoseEdit, null);
+  same(); run('undo'); assert.equal(json(owned.report), initial); run('redo');
+  run('beginTranslationDrag', 'Cancel the next move'); run('moveSelection', -5, 3); run('cancelDrag');
+  while (expected.canUndo) run('undo');
+});
+
+test('a one-shot adopted move preserves pending scoped geometry through publication', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json', import.meta.url), 'utf8'));
+  const {expected, owned, session, same, run} = adoptionPair(document);
+  run('select', 2, -1);
+  const call = session.call.bind(session);
+  session.call = (...args) => {
+    const answer = JSON.parse(call(...args));
+    if (args[0] === 'moveSelection' && answer.retained) {
+      assert.deepEqual(answer.layers, owned.report._styk.layers); delete answer.layers;
+    }
+    return json(answer);
+  };
+  const source = owned.evaluatedFrame, untouched = source.objects.filter(object => object.unique_id !== 2);
+  const previous = owned.geometry, slot = owned.selectedSlot, views = [[], []], pending = [[], []], frames = [[], []];
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => {
+    if (event.detail.kind !== 'edit' || !event.detail.live && !event.detail.layerSheet) return;
+    views[index].push({detail: clean(event.detail), frame: json(editor.evaluatedFrame), state: state(editor)});
+    frames[index].push(editor.evaluatedFrame); pending[index].push(editor._incremental);
+    assert.equal(editor._geometry, null, 'listeners do not force preparation');
+  });
+  expected.moveSelection(-7, 4); owned.moveSelection(-7, 4);
+  assert.deepEqual(views[1], views[0]); assert.equal(views[1].length, 2);
+  assert.ok(pending[1][0]); assert.equal(pending[1][1], pending[1][0]);
+  assert.equal(owned._incremental, pending[1][0]); assert.equal(owned._incremental.previous, previous);
+  assert.deepEqual([...owned._incremental.dirtySlots], [slot]); assert.ok(owned._incremental.renderSources.has(slot));
+  assert.equal(frames[1][1], frames[1][0]);
+  assert.ok(untouched.every(object => owned.evaluatedFrame.objects.includes(object)));
+  same(); run('undo'); run('redo');
+});
+
+test('one-shot joined, rich, zero and failed moves keep the existing adoption fallback', () => {
+  const read = name => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'));
+  for (const [document, uid] of [
+    [read('engine/tests/edit/joined-chain.document.json'), 1],
+    [read('engine/crates/styk-eval/tests/fixtures/ik/spatial.json'), null],
+    [read('engine/tests/edit/origin-pose-layout-sheet.document.json'), null],
+  ]) {
+    const {expected, owned, run, same} = adoptionPair(document);
+    run('select', uid ?? expected.evaluatedFrame.objects[0].unique_id, -1);
+    let begins = 0;
+    const begin = owned._beginAuthoredPoseDrag;
+    owned._beginAuthoredPoseDrag = function (...args) { begins++; return begin.apply(this, args); };
+    expected.moveSelection(8, -3); owned.moveSelection(8, -3);
+    assert.equal(begins, 0, 'joined/solver/origin moves retain the original reconstruction route');
+    assert.equal(owned._drag, null); assert.equal(owned._authoredPoseEdit, null);
+    same(); run('undo'); run('redo');
+  }
+  const {expected, owned, run, same} = adoptionPair(createStartupDocument());
+  run('select', 1, -1);
+  let begins = 0;
+  const begin = owned._beginAuthoredPoseDrag;
+  owned._beginAuthoredPoseDrag = function (...args) { begins++; return begin.apply(this, args); };
+  const before = json(owned.report);
+  expected.moveSelection(0, 0); owned.moveSelection(0, 0);
+  assert.equal(begins, 0, 'a move without publication does not invent a draft'); same();
+  assert.throws(() => expected.moveSelection(Infinity, 0)); assert.throws(() => owned.moveSelection(Infinity, 0));
+  assert.equal(begins, 0, 'native errors replay the original validation before any draft');
+  assert.equal(json(owned.report), before); assert.equal(owned._drag, null); assert.equal(owned._authoredPoseEdit, null); same();
+});

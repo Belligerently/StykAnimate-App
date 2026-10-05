@@ -400,3 +400,30 @@ Owned classes 4, inventory 175/123/35/22/1, deleted JS 2 and engine-1 0/28 are u
 completed full rows 41→42 and metadata batches 15→16. Original clocks, argv, actual
 capture timestamps/load and source/package identities are retained in the companion
 JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-source-prune-full-1).
+
+
+## Channels one-shot move adoption — completed 2026-10-05, cost passes
+
+Successful isolated one-shot moves publish the original moved authored copy-on-write
+frame and preserve ready or pending scoped geometry; complex/joined fallback stays
+unchanged. All 128 JS tests and Main check (2,000 JS / 93 stylesheets /
+682 modules / 8,066 references) pass. Seven existing recordings / 158 calls match;
+no new fixtures or Rust rebuild. Rust/Wasm APIs and the required-profile 10,246,035 B
+shipping Wasm are unchanged.
+
+| Document | JavaScript ms | Adopted ms | JS fallback ms | Failed attempt ms | Candidate total ms | Current user rule |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Channels-figure | 352.875 | 360.140 | 9.585 | 0.065 | 369.790 | Pass (both arms) |
+
+The original full paired run preserves exact document/history/selection/full undo,
+with 126 owned / 219 compared / one failed / 346 calls and 130 matching eligible calls.
+Both pages have 346 full calls; excess is 4.793% and 0.048887 ms/call, passing both
+policy arms. The rejected Native paste and original JS fallback are distinct intervals
+counted once; comparison-only residual is zero. This loaded run establishes no causal
+speed gain. The background checkpoint was compiling during the run.
+
+Channels remains closed pending matching checkpoint and actual default core/full-undo
+proof. Owned classes 4, inventory 175/123/35/22/1, deleted JS 2 and engine-1 0/28 are
+unchanged; completed full rows 42→43 and metadata batches 16→17. Original clocks,
+argv, actual capture timestamps/load and source/package identities are retained in
+the companion JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-one-shot-full-1).

@@ -10,44 +10,41 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, source-retention cleanup)
+## Handoff (2026-10-05, one-shot move adoption)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current decision:** channels remains closed. Source cleanup skips history sheet
-scans when current references or directly retained history captures already cover
-every generated source. Otherwise the original retention and removal path runs.
-**92 focused Rust tests**, **53 recordings / 2,060 exact calls**, **125 JS tests** and
-Main check pass. Shipping Wasm is **10,246,035 B** with the required profile.
+**Current decision:** channels cost now passes; default ownership remains closed.
+Successful isolated one-shot moves publish the original moved authored copy-on-write
+frame and preserve ready or pending scoped geometry. Complex/joined cases keep the
+original fallback. **128 JS tests**, Main check and **seven recordings / 158 exact
+calls** pass. Rust/Wasm APIs and the **10,246,035 B** shipping Wasm are unchanged.
 
-The fresh original full paired run preserves exact behavior but costs
-**240.965/176.585 ms** candidate/JS. Excess is **0.186069 ms** per 346 calls; both user
-cost arms fail, with **29.780 ms** remaining to the per-call limit. This loaded run
-establishes no causal speed gain or regression. No matching new checkpoint or default
-proof is claimed; the class patch remains unapplied. APIs, stored math and schema
-are unchanged.
+The original full paired run preserves exact behavior at **369.790/352.875 ms**
+candidate/JS. Excess is **4.793%** and **0.048887 ms** per 346 calls, passing both
+current cost arms. This loaded run establishes no causal speed gain. The background
+checkpoint is not complete and actual default adoption has not run; the class patch
+remains unapplied. APIs, stored math and schema are unchanged.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
 eligible JS fallback and failed attempts once; `J` is editor-alone cost;
 `N = min(candidate.report.calls, editorAlone.report.calls)` for the complete paired
-workload. Channels has 346 calls on each page: latest excess 0.186069 ms fails the
-0.1 ms arm and the +5% arm. Figures and movieclips remain open. Exact behavior and D13 are unchanged;
+workload. Channels has 346 calls on each page: latest excess 0.048887 ms and
+4.793% pass the per-call and +5% arms. Figures and movieclips remain open. Exact behavior and D13 are unchanged;
 [historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
 outcomes. The short default workload proves admission, not full cost.
 
 **Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
 1 removed** unchanged; **OWNED_CLASSES 4→4**; **deleted JS 2→2**; completed full cost
-rows **41→42**; **engine-1 0/28→0/28**. Historical measurements remain exact.
+rows **42→43**; **engine-1 0/28→0/28**. Historical measurements remain exact.
 
-**Next:** address only a concrete, measured channels cost cause. A verified fix needs
-fresh original full paired cost, a matching committed engine checkpoint and positive
-actual default core/full-undo proof before the class flip. No larger-input or general
-prerequisite is required. Preserve native-channel/source/origin exclusions. Future
-commands stay parked during this blocker; remaining commands precede idle
-engine-1/baseline-0 and deletion.
+**Next:** complete the matching committed engine checkpoint, then prove positive
+actual cold default core/full-undo adoption, flip channels and commit. No further cost
+prerequisite is required. Preserve native-channel/source/origin exclusions. Remaining
+recorded commands follow the flip, then idle engine-1/baseline-0 and deletion.
 
 ### Verification and ownership
 
@@ -294,7 +291,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 ## 6. Open problems
 
 - **Figures and movieclips opened:** the current user cost rule, matching committed engine checkpoints and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next channels.
-- **Channels cost blocker:** source-retention cleanup passes focused checks, but the latest original full paired run costs 240.965/176.585 ms and fails both user arms at 0.186069 ms excess per call. The remaining gap is 29.780 ms. Channels stays closed; no default, matching new checkpoint or causal speed change is claimed. Future commands remain parked.
+- **Channels gate:** guarded one-shot move adoption passes focused checks and the original full paired cost at 369.790/352.875 ms, with 4.793% and 0.048887 ms excess per call. Channels stays closed pending the matching committed checkpoint and positive actual default core/full-undo proof. No causal speed claim; future commands remain parked.
 
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
@@ -554,13 +551,12 @@ layer-sheet movieclip replacements.
 
 ## 7. Parity results
 
-Source-retention cleanup passes 92 focused Rust tests in four groups, with no failed
-or ignored tests; both recorded controls execute. All 53 recordings / 2,060 calls match;
-125 JS tests and Main check (2,000 JS / 93 stylesheets / 682 modules / 8,066 references)
-pass. Recordings are unchanged. The fresh full run preserves exact document, history,
-selection and full undo, but 240.965/176.585 ms candidate/JS fails both cost arms at
-0.186069 ms excess per call, leaving 29.780 ms. Shipping keeps the required profile.
-No class opening, default, matching new checkpoint or causal speed claim.
+Guarded one-shot move adoption passes 128 JS tests; Main check passes
+(2,000 JS / 93 stylesheets / 682 modules / 8,066 references). Seven existing recordings
+/ 158 calls match exactly; no new fixtures or Rust rebuild. The original full run
+preserves exact document/history/selection/full undo at 369.790/352.875 ms candidate/JS.
+Both cost arms pass at 4.793% and 0.048887 ms excess per call. Shipping is unchanged.
+No default, completed matching checkpoint, class opening or causal speed claim.
 
 The prior channels full paired behavior/accounting matches; cost 226.105/179.890 ms
 and excess 0.133569 ms/full call fail both user arms, with 11.615 ms remaining to the
@@ -1180,3 +1176,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 15:38 UTC | Keep preparation when selecting the current layer | Skip an identical raw active-layer string before copy-on-write; preserve changed writes and selection/history behavior. Targets channels cost. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 40→41; engine-1 0/28 unchanged. | 226 Rust; 53 recordings/2,060 exact calls; 125 JS/Main check pass. Full cost 224.030/181.885 ms fails at 0.121806 ms excess/call, leaving 7.545 ms. Channels stays closed; APIs and stored math unchanged. |
 
 | 2026-10-05 16:18 UTC | Skip redundant source-retention scans | Current references or directly retained history captures can end cleanup when they cover every generated source; otherwise retain the original full path. Targets channels cost; APIs, schema and stored math unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 41→42; engine-1 0/28 unchanged. | 92 focused Rust; 53 recordings / 2,060 exact calls; 125 JS/Main check pass. Full cost 240.965/176.585 ms fails at 0.186069 ms excess/call, leaving 29.780 ms. Channels stays closed; no causal speed claim. |
+
+| 2026-10-05 16:48 UTC | Keep the moved frame during one-shot adoption | Successful isolated one-shot moves publish the original authored COW frame and preserve ready/pending scoped geometry; complex/joined fallback is unchanged. Targets channels cost. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 42→43; engine-1 0/28 unchanged. | 128 JS/Main check; seven recordings / 158 exact calls. Original full cost 369.790/352.875 ms passes both arms at 4.793% and 0.048887 ms excess/call. Default ownership stays closed pending checkpoint/default proof; no causal speed claim. |

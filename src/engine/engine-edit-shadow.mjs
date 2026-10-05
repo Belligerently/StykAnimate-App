@@ -25,6 +25,7 @@ import {adoptLayerSheet} from '../editor-layer-sheet.mjs';
 import {layerFocusOf} from '../editor-layer-focus.mjs';
 import {figureHandleTransform} from '../editor-figure-transform.mjs';
 import {withDraws} from '../editor-draws.mjs';
+import {isMovieclip} from '../movieclips.mjs';
 import {captureEditBounds} from './engine-edit-bounds.mjs';
 
 /** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
@@ -365,13 +366,81 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
   };
 
   const originals = new Map();
+  // Use the same retained-record reconstruction for commits and self-contained moves.
+  const retainedFrame = (answer, drafted) => {
+    const byUid = new Map(drafted.objects.map(object => [object.unique_id, object]));
+    for (const object of answer.retained) if (byUid.get(object.unique_id)?._movieclipSample !== undefined) object._movieclipSample = byUid.get(object.unique_id)._movieclipSample;
+    let objects = answer.retained;
+    if (answer.retainedChanges) {
+      for (const object of answer.retained) byUid.set(object.unique_id, object);
+      objects = (answer.retainedOrder ?? drafted.objects.map(object => object.unique_id)).map(uid => byUid.get(uid));
+    }
+    let frame = {...drafted, ...answer.retainedFields, objects};
+    for (const key of answer.retainedRemoved ?? []) delete frame[key];
+    if (answer.retainedFieldOrder) {
+      const fields = new Set(answer.retainedFieldOrder);
+      // Engine records omit the JavaScript frame's runtime effect/camera clocks.
+      frame = {...Object.fromEntries(answer.retainedFieldOrder.map(key => [key, frame[key]])),
+        ...Object.fromEntries(Object.entries(frame).filter(([key]) => !fields.has(key)))};
+    }
+    return frame;
+  };
+  const replacePoseObject = (object, figure) => {
+    const keys = Object.keys(figure), previous = Object.keys(object);
+    if (keys.length !== previous.length || keys.some((key, index) => key !== previous[index])) {
+      for (const key of previous) delete object[key];
+    }
+    for (const key of keys) {
+      if (key === '__proto__') Object.defineProperty(object, key, {value: figure[key], enumerable: true, configurable: true, writable: true});
+      else object[key] = figure[key];
+    }
+  };
   /** What the editor does with an owned call's answer instead of computing it. */
   const adopt = (name, answer, selection, args) => {
     // A camera drag the engine committed: the editor's ends, and its preview with it.
     if ((name === 'commitCameraDrag' || name === 'commitDrag') && editor._drag?.camera) { editor._drag = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
-    const {state} = answer, edit = editor._authoredPoseEdit, drag = editor._drag;
+    const {state} = answer;
+    let edit = editor._authoredPoseEdit, drag = editor._drag;
     // The frame a gesture the call began and ended itself drafted: the one on show.
     const shown = answer.retained && !editor._authoredPoseEdit ? editor.evaluatedFrame : null;
+    // An isolated one-shot move has the same frame at its live event and commit:
+    // no captured join is normalized, and no origin or solver changes it afterwards.
+    // Begin the existing COW owner only after a successful, adoptable answer.
+    let movedDraft = false;
+    const [liveEvent, publication] = answer.events;
+    if (name === 'moveSelection' && shown && !edit && !drag && !answer.drag && !answer.draft
+      && editor.report._styk?.layerSheet && !editor.report._styk.simpleFrameDraft && !editor.report._styk.movieclipSource
+      && !editor._sheetPropertyPreview && !editor._animationEdit && !editor._vfxClipEdit
+      && Number.isInteger(editor.tick) && state.tick === editor.tick && state.frameIndex === editor.frameIndex
+      && state.selectedUid === editor.selectedUid && state.selectedJoint === editor.selectedJoint
+      && state.selectedUids.length === editor.selectedUids.size && state.selectedUids.every((uid, index) => uid === selection.uids[index])
+      && !editor._polygonSelection && !editor._segmentSelection && !editor._branchSelection
+      && !Object.keys(selectionMetadata(state)).length && !editor.animationChannels.length
+      && answer.events.length === 2 && liveEvent.kind === 'edit' && liveEvent.live && !liveEvent.layerSheet
+      && liveEvent.tick === editor.tick && liveEvent.frameIndex === editor.frameIndex && !liveEvent.structural && !liveEvent.definition
+      && publication.kind === 'edit' && publication.layerSheet && !publication.live && !publication.definition
+      && publication.tick === editor.tick && publication.frameIndex === editor.frameIndex
+      && !answer.definitions?.length && !Object.hasOwn(answer, 'layers')
+      && !editor.report.figure_types.some(figure => figure._styk?.animationOrigin || figure.segments?.some(segment => segment._stykRig))
+      && !shown.objects.some(object => object._stykIK || object._stykSpatial || object.runtime_segments)) {
+      const slots = editor.resolveTranslationSelection(editor.selectedUids, {frame: shown}).affectedSlots;
+      if (slots.length && slots.every(slot => !shown.objects[slot].join
+          && !isMovieclip(editor.report.figure_types.find(figure => figure.figure_type_id === shown.objects[slot].figure_type_id)))
+        && liveEvent.changedUids?.length === slots.length && slots.every((slot, index) => liveEvent.changedUids[index] === shown.objects[slot].unique_id)) {
+        const frame = retainedFrame(answer, shown);
+        if (frame.objects.length === shown.objects.length && frame.objects.every((object, slot) => object?.unique_id === shown.objects[slot].unique_id)
+          && editor._beginAuthoredPoseDrag(publication.label, 'translation')) {
+          edit = editor._authoredPoseEdit; drag = editor._drag;
+          // A first compact response may carry the whole retained frame. Only the
+          // captured records changed; leave untouched COW nodes and samples alone.
+          try {
+            for (const slot of slots) replacePoseObject(edit.frame.objects[slot], frame.objects[slot]);
+            frame.objects = edit.frame.objects; edit.frame = frame; editor._evaluated = frame;
+            movedDraft = true;
+          } catch (error) { editor.cancelAuthoredPoseDrag(); throw error; }
+        }
+      }
+    }
     // The gesture's draft: the engine's figures replace the editor's, and the editor's
     // snapshots take in what the engine's gesture took in.
     if (answer.drag && answer.draft) {
@@ -404,14 +473,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         // the editor's own mutation does, so incremental geometry can retain
         // its pose plan. Newly included slots still isolate the source first.
         if ((name === 'poseJoint' || name === 'moveSelection') && edit.owned.has(slot)) {
-          const object = objects[slot], keys = Object.keys(figure), previous = Object.keys(object);
-          if (keys.length !== previous.length || keys.some((key, index) => key !== previous[index])) {
-            for (const key of previous) delete object[key];
-          }
-          for (const key of keys) {
-            if (key === '__proto__') Object.defineProperty(object, key, {value: figure[key], enumerable: true, configurable: true, writable: true});
-            else object[key] = figure[key];
-          }
+          replacePoseObject(objects[slot], figure);
         } else objects[slot] = figure;
         edit.owned.add(slot);
       }
@@ -459,13 +521,15 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (editor._drag?.motionPath) editor._drag = null;
         editor._emit('edit', detail);
       } else if (kind === 'edit' && detail.live) {
-        if (drag) {
-          drag.changed = true;
-          if (name === 'poseJoint' || name === 'moveSelection') editor._invalidatePoseObjects(detail.changedUids, {translation: name === 'moveSelection'});
-          else editor._invalidateObjects(detail.changedUids, null, {pose: true});
-        }
-        else editor._invalidate();
-        editor._emit('edit', detail);
+        try {
+          if (drag) {
+            drag.changed = true;
+            if (name === 'poseJoint' || name === 'moveSelection') editor._invalidatePoseObjects(detail.changedUids, {translation: name === 'moveSelection'});
+            else editor._invalidateObjects(detail.changedUids, null, {pose: true});
+          }
+          else editor._invalidate();
+          editor._emit('edit', detail);
+        } catch (error) { if (movedDraft) editor.cancelAuthoredPoseDrag(); throw error; }
       } else if (kind === 'edit' && detail.layerSheet && !published) {
         published = true;
         // As `_commitSheetPose`: the committed draft stays on show through publication.
@@ -485,27 +549,10 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
             && !answer.retainedOrder && !Object.keys(answer.retainedFields ?? {}).length && !answer.retainedRemoved?.length
             && !detail.definition && !answer.definitions?.length
             && (!order || order.length === fields.length && order.every((key, index) => key === fields[index]));
-          if (keepDraft) preview = {frame: drafted, geometry: editor._geometry, incremental: editor._incremental};
+          if (keepDraft || movedDraft) preview = {frame: drafted, geometry: editor._geometry, incremental: editor._incremental};
           else {
-            const byUid = new Map(drafted.objects.map(object => [object.unique_id, object]));
-            for (const object of answer.retained) if (byUid.get(object.unique_id)?._movieclipSample !== undefined) object._movieclipSample = byUid.get(object.unique_id)._movieclipSample;
-            let objects = answer.retained;
-            if (answer.retainedChanges) {
-              for (const object of answer.retained) byUid.set(object.unique_id, object);
-              objects = (answer.retainedOrder ?? drafted.objects.map(object => object.unique_id)).map(uid => byUid.get(uid));
-            }
-            // Geometry rebuilds: the commit may have moved joined figures' roots. Figures the
-            // call did not replace keep their identity and runtime movieclip sample.
-            let frame = {...drafted, ...answer.retainedFields, objects};
-            for (const key of answer.retainedRemoved ?? []) delete frame[key];
-            if (answer.retainedFieldOrder) {
-              const fields = new Set(answer.retainedFieldOrder);
-              // Engine records omit the JavaScript frame's runtime effect/camera clocks.
-              // Reorder its saved fields while keeping that runtime state on the preview.
-              frame = {...Object.fromEntries(answer.retainedFieldOrder.map(key => [key, frame[key]])),
-                ...Object.fromEntries(Object.entries(frame).filter(([key]) => !fields.has(key)))};
-            }
-            preview = {frame, geometry: null, incremental: null};
+            // Actual replacements may normalize joined roots; rebuild their geometry.
+            preview = {frame: retainedFrame(answer, drafted), geometry: null, incremental: null};
           }
         }
         if (!answer.drag) { editor._drag = null; editor._authoredPoseEdit = null; }

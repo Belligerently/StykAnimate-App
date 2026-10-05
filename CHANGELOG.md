@@ -25,6 +25,7 @@ What's new in each version of StykAnimate.
 
 ### Fixed
 
+- Moving a figure shows its new position immediately.
 - Pasting segment settings no longer fails after changing the selected segment.
 - Undoing a timeline change made of several steps keeps your selection and shows the right frame.
 - Timeline and camera previews show the correct frame and parallax layer positions.
