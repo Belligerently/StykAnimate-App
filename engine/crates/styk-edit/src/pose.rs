@@ -179,9 +179,19 @@ pub(crate) fn set_item_at(object: &mut Obj, key: &str, index: usize, value: f64)
     set_item(object, key, index, value);
 }
 
-/// `object.angles[i] += delta` for each of `indices`, the angle array unpacked once.
+/// `object.angles[i] += delta` for each of `indices`, in the supplied order.
 fn add_angles(object: &mut Obj, indices: &[usize], delta: f64) {
     let Some(angles) = object.get_mut("angles") else { return };
+    if let Some(numbers) = angles.as_nums() {
+        let mut values = numbers.to_vec();
+        for &index in indices {
+            if let Some(angle) = values.get_mut(index) {
+                *angle = *angle + delta;
+            }
+        }
+        *angles = Value::nums(&values);
+        return;
+    }
     let Some(list) = angles.make_arr() else { return };
     for &index in indices {
         if let Some(angle) = list.get_mut(index) {
@@ -254,7 +264,7 @@ impl Editor {
         let bend = if bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, evaluated).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { bend };
         // A pinned limb is drawn with its solved angles.
         let slot = frame.objects.iter().position(|o| o.uid == id).unwrap();
-        let angle = crate::ik::displayed_angle(&prepared, &frame, &scene, &crate::ik::solve_frame(&prepared, &frame, &scene), slot, joint);
+        let angle = crate::ik::shape_angle(&prepared, &frame, &scene, slot, joint);
         let length = styk_eval::geometry::segment_pose(evaluated, segment, joint).2 * evaluated.scale;
         let end = geometry.ends.get(joint).copied().unwrap_or([f64::NAN; 2]);
         Ok(Some(Shape { start, angle, bend, length, end, points: vec![start, end], space: None, connector: false }))
@@ -303,10 +313,9 @@ impl Editor {
     /// turn with what turns, then every target segment's angle.
     pub(crate) fn apply_joint_rotation(&mut self, slot: usize, joint: usize, targets: &[(usize, usize)], delta: f64, include_joint: bool) -> Result<(), EditError> {
         self.rotate_ik_followers(slot, joint, targets, delta, include_joint)?;
-        let targets = targets.to_vec();
         // Grouped by figure, in the order the figures first appear (each angle changes once).
         let mut by_object: Vec<(usize, Vec<usize>)> = Vec::new();
-        for (object_slot, segment) in targets {
+        for &(object_slot, segment) in targets {
             if include_joint || object_slot != slot || segment != joint {
                 match by_object.iter_mut().find(|(s, _)| *s == object_slot) {
                     Some((_, list)) => list.push(segment),
@@ -679,4 +688,111 @@ fn rig_finite(value: f64, min: f64, max: f64, _label: &str) -> Result<f64, EditE
         return Err(EditError::Invalid("errors.cameraMotion.mustBeBetweenAnd".into()));
     }
     Ok(value)
+}
+
+#[cfg(test)]
+mod angle_tests {
+    use super::*;
+    use std::sync::Arc;
+    use styk_doc::Nums;
+
+    fn record(angles: Value) -> Obj {
+        let mut object = Obj::new();
+        object.set("angles", angles);
+        object
+    }
+
+    fn assert_bits(value: &Value, expected: &[f64]) {
+        let got = value.numbers().unwrap();
+        assert_eq!(got.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
+            expected.iter().map(|value| value.to_bits()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn angle_additions_keep_sequential_duplicates_and_snapshot_bits() {
+        let original = Value::nums(&[9_007_199_254_740_992.0, -0.0, 0.0]);
+        let mut object = record(original.clone());
+        let snapshot = object.clone();
+        // Two separate additions of one round back to 2^53. Adding two at once
+        // would change it; repeated targets must remain sequential operations.
+        add_angles(&mut object, &[0, 2, 0, usize::MAX, 2], 1.0);
+        assert_bits(object.get("angles").unwrap(), &[9_007_199_254_740_992.0, -0.0, 2.0]);
+        assert!(snapshot.get("angles").unwrap().same_node(&original));
+        assert_bits(&original, &[9_007_199_254_740_992.0, -0.0, 0.0]);
+        assert!(!object.get("angles").unwrap().same_node(&original));
+    }
+
+    #[test]
+    fn angle_additions_repack_special_numeric_results_exactly() {
+        for (before, delta, expected, single) in [
+            (0.5, 0.1, 0.6, false),
+            (0.1, -0.1, 0.0, true),
+            (-0.0, -0.0, -0.0, true),
+            (-0.0, 0.0, 0.0, true),
+            (f64::INFINITY, 1.0, f64::INFINITY, true),
+            (f64::NEG_INFINITY, -1.0, f64::NEG_INFINITY, true),
+        ] {
+            let original = Value::nums(&[before]);
+            let mut object = record(original.clone());
+            add_angles(&mut object, &[0], delta);
+            let result = object.get("angles").unwrap();
+            assert_bits(result, &[expected]);
+            assert_eq!(matches!(result.as_nums(), Some(Nums::F32(_))), single);
+            assert_bits(&original, &[before]);
+        }
+        let payload = f64::from_bits(0x7ff8_0000_0000_1234);
+        let mut object = record(Value::nums(&[payload, 1.0]));
+        add_angles(&mut object, &[1], 1.0);
+        assert_bits(object.get("angles").unwrap(), &[payload, 2.0]);
+        assert!(matches!(object.get("angles").unwrap().as_nums(), Some(Nums::F64(_))));
+        let mut object = record(Value::nums(&[f64::NEG_INFINITY]));
+        add_angles(&mut object, &[0], f64::INFINITY);
+        let result = object.get("angles").unwrap();
+        assert!(result.item(0).unwrap().as_f64().unwrap().is_nan());
+        assert!(matches!(result.as_nums(), Some(Nums::F64(_))));
+    }
+
+    #[test]
+    fn angle_additions_keep_sparse_and_malformed_array_rules() {
+        let original = Value::Arr(Arc::new(vec![Value::Num(1.0), Value::Null, Value::str("unknown"), Value::Bool(true)]));
+        let mut object = record(original.clone());
+        add_angles(&mut object, &[0, 1, 0, usize::MAX], 0.5);
+        let result = object.get("angles").unwrap();
+        let items = result.as_arr().unwrap();
+        assert_eq!(items.len(), 4);
+        assert_eq!(items[0].as_f64().unwrap().to_bits(), 2.0f64.to_bits());
+        assert!(items[1].as_f64().unwrap().is_nan());
+        assert!(items[2].same_node(&original.item(2).unwrap()));
+        assert!(matches!(items[3], Value::Bool(true)));
+        assert!(original.item(1).unwrap().is_null());
+        let mut object = record(Value::Arr(Arc::new(vec![Value::Null])));
+        add_angles(&mut object, &[0], 1.0);
+        assert!(matches!(object.get("angles").unwrap().as_nums(), Some(Nums::F64(_))));
+        assert!(object.get("angles").unwrap().item(0).unwrap().as_f64().unwrap().is_nan());
+        for original in [Value::Null, Value::Bool(true), Value::Num(1.0), Value::str("unknown"), Value::object(Obj::new())] {
+            let mut object = record(original.clone());
+            add_angles(&mut object, &[0], 1.0);
+            assert!(object.get("angles").unwrap().same_node(&original));
+        }
+        let mut missing = Obj::new();
+        add_angles(&mut missing, &[0], 1.0);
+        assert!(missing.get("angles").is_none());
+    }
+
+    #[test]
+    fn angle_additions_repack_raw_empty_and_wide_numeric_arrays() {
+        let original = Value::Nums(Arc::new(Nums::F64(vec![0.5, -0.0].into_boxed_slice())));
+        let mut object = record(original.clone());
+        add_angles(&mut object, &[], 1.0);
+        let result = object.get("angles").unwrap();
+        assert_bits(result, &[0.5, -0.0]);
+        assert!(matches!(result.as_nums(), Some(Nums::F32(_))));
+        assert!(matches!(original.as_nums(), Some(Nums::F64(_))));
+        for original in [Value::Nums(Arc::new(Nums::F64(Vec::new().into_boxed_slice()))), Value::Arr(Arc::new(Vec::new()))] {
+            let mut object = record(original.clone());
+            add_angles(&mut object, &[0], 1.0);
+            assert!(object.get("angles").unwrap().as_arr().unwrap().is_empty());
+            assert_eq!(original.array_len(), Some(0));
+        }
+    }
 }

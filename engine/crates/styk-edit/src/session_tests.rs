@@ -610,3 +610,107 @@ fn same_call_ik_capture_borrows_full_solutions_for_rig_spatial_and_joined_ancest
     assert!(compared >= 8 && spatial > 0 && pinned > 0 && ancestor > 0, "capture coverage: {compared}/{spatial}/{pinned}/{ancestor}");
     assert!(retained_2d > 0 && retained_3d > 0, "repeated capture lifecycle: 2D={retained_2d}, 3D={retained_3d}");
 }
+
+fn check_recorded_shape_angle(editor: &Editor, label: &str, counts: &mut [usize; 4]) {
+    let Some(selected) = editor.selection.uid else { return };
+    if editor.selection.joint < 0 { return; }
+    let slot = editor.selection_frame().unwrap().iter().position(|object| crate::record::uid(object) == Some(selected));
+    let (prepared, frame, scene) = editor.evaluate_only(slot.as_ref().map(std::slice::from_ref)).unwrap();
+    let Some(slot) = frame.objects.iter().position(|object| object.uid == selected) else { return };
+    let Some(geometry) = scene.objects.iter().find(|geometry| geometry.uid == selected && geometry.resolved) else { return };
+    let object = &frame.objects[slot];
+    let Some(figure) = object.figure_override.as_ref().or_else(|| prepared.doc.figure(object.figure)) else { return };
+    let joint = editor.selection.joint as usize;
+    if figure.segments.get(joint).is_none() { return; }
+    let solved = crate::ik::solve_frame(&prepared, &frame, &scene);
+    let old = crate::ik::displayed_angle(&prepared, &frame, &scene, &solved, slot, joint);
+    let next = crate::ik::shape_angle(&prepared, &frame, &scene, slot, joint);
+    assert_eq!(old.to_bits(), next.to_bits(), "{label}: selected shape angle bits");
+    counts[0] += 1;
+    counts[1] += usize::from(frame.objects.iter().any(|object| styk_eval::ik::has_pinned(object)));
+    counts[2] += usize::from(styk_eval::ik::joined::components(&frame).iter().any(|slots| slots.len() > 1 && slots.contains(&slot)));
+    counts[3] += usize::from(geometry.rig.is_some());
+}
+
+#[test]
+fn selected_shape_angle_matches_recorded_pinned_joined_and_ordinary_states() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let mut counts = [0usize; 4];
+    let mut checked = 0usize;
+    for name in ["startup-sheet", "rig-sheet", "gestures-sheet", "pinned-ik-sheet", "ik-followers-sheet", "ik-joined-sheet", "ik-joined-late-sheet", "ik-settings-rig-sheet", "ik-spatial-joined-free-sheet", "ik-movieclip-parent-sheet", "origin-pose-support-free-native", "origin-pose-support-free-sheet", "origin-pose-support-pinned-native", "origin-pose-support-pinned-sheet"] {
+        let reference = parse(&std::fs::read_to_string(folder.join(format!("{name}.reference.json"))).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut expected = steps[0].get("document").unwrap().as_str().unwrap().to_string();
+        check_recorded_shape_angle(&session.editor, &format!("{name}/0"), &mut counts);
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap().trim_start_matches('@');
+            let label = format!("{name}/{} {method}", step.get("step").unwrap());
+            let args = step.get("boundsArgs").cloned().unwrap_or_else(|| Value::array(call[1..].to_vec()));
+            let mut view = session.editor.state_value().as_obj().unwrap().clone();
+            view.set("autoKey", Value::Bool(session.editor.options.auto_key));
+            view.set("draws", step.get("draws").cloned().unwrap_or(Value::Null));
+            let answer = session.call_values(method, &args, &Value::object(view));
+            if let Some(error) = step.get("error").filter(|error| !error.is_null()) {
+                assert_eq!(answer.get("error"), error.get("key"), "{label}: error priority");
+            } else {
+                assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{label}: {answer:?}");
+            }
+            assert_eq!(answer.get("events"), step.get("events"), "{label}: events");
+            if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+            assert_eq!(session.editor.report_json(), expected, "{label}: complete document/history");
+            assert_eq!(Some(&session.editor.state_value()), step.get("state"), "{label}: clock/selection/history");
+            check_recorded_shape_angle(&session.editor, &label, &mut counts);
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 559);
+    assert!(counts[0] > 20 && counts[1] > 0 && counts[2] > 0 && counts[3] > 0, "real state coverage: {counts:?}");
+    eprintln!("SELECTED_ANGLE_RECORDED steps={checked} angles={} pinned={} joined={} rig={}", counts[0], counts[1], counts[2], counts[3]);
+}
+
+#[test]
+fn selected_shape_angle_preserves_duplicate_uid_and_conflict_fallbacks() {
+    // Existing Editor-built evaluation fixture: genuine competing pinned chains.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../styk-eval/tests/fixtures/ik/conflict.json");
+    let editor = Editor::new(parse(&std::fs::read_to_string(path).unwrap()), crate::Options::default());
+    let (prepared, frame, _) = editor.evaluate().unwrap();
+    let mut conflicts = 0usize;
+    let mut compared = 0usize;
+    for (slot, object) in frame.objects.iter().enumerate() {
+        let Some(figure) = object.figure_override.as_ref().or_else(|| prepared.doc.figure(object.figure)) else { continue };
+        let scene = styk_eval::geometry::build_only(&prepared.doc, &frame, &[slot]);
+        let solved = crate::ik::solve_frame(&prepared, &frame, &scene);
+        conflicts += solved.values().flat_map(|solved| &solved.solution.results).filter(|(_, outcome)| outcome.conflict).count();
+        for index in 0..figure.segments.len() {
+            assert_eq!(crate::ik::displayed_angle(&prepared, &frame, &scene, &solved, slot, index).to_bits(), crate::ik::shape_angle(&prepared, &frame, &scene, slot, index).to_bits(), "actual conflict slot{slot}/joint{index}");
+            compared += 1;
+        }
+    }
+    assert!(conflicts > 0 && compared > 0, "actual conflict coverage {conflicts}/{compared}");
+    // Derived identity controls ONLY: preserve every source/angle/controller of a
+    // real joined recording; alias one typed UID to expose global map semantics.
+    // This is not represented as a new valid Editor document or new D15 tape.
+    let reference = parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/ik-joined-sheet.reference.json")).unwrap());
+    let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+    let session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+    let (prepared, frame, scene) = session.editor.evaluate().unwrap();
+    assert!(frame.objects.len() >= 2);
+    let mut duplicate = 0usize;
+    for aliased_slot in [0usize, frame.objects.len()-1] {
+        let other = if aliased_slot == 0 { frame.objects.len()-1 } else { 0 };
+        let mut aliased = frame.clone();
+        let duplicate_uid = aliased.objects[aliased_slot].uid;
+        std::sync::Arc::make_mut(&mut aliased.objects[other]).uid = duplicate_uid;
+        let solved = crate::ik::solve_frame(&prepared, &aliased, &scene);
+        let object = &aliased.objects[aliased_slot];
+        let figure = object.figure_override.as_ref().or_else(|| prepared.doc.figure(object.figure)).unwrap();
+        for index in 0..figure.segments.len() {
+            assert_eq!(crate::ik::displayed_angle(&prepared, &aliased, &scene, &solved, aliased_slot, index).to_bits(), crate::ik::shape_angle(&prepared, &aliased, &scene, aliased_slot, index).to_bits(), "derived duplicate UID slot{aliased_slot}/joint{index}");
+            duplicate += 1;
+        }
+    }
+    assert!(duplicate > 0);
+    eprintln!("SELECTED_ANGLE_EDGE conflicts={conflicts} compared={compared} duplicate={duplicate}");
+}

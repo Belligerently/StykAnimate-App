@@ -870,6 +870,56 @@ pub(crate) fn displayed_angle(prepared: &Prepared, frame: &Frame, scene: &Scene,
     }
 }
 
+/// The one angle `shape` reads, without unrelated solves or reporting followers.
+/// The full owning solver still processes every controller of the selected assembly.
+pub(crate) fn shape_angle(prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, index: usize) -> f64 {
+    let object = &frame.objects[slot];
+    // The global map is keyed by UID: duplicate identities preserve its original
+    // cross-component overwrite/skip order instead of selecting a slot's solve.
+    if frame.objects.iter().filter(|other| other.uid == object.uid).take(2).count() > 1 {
+        return displayed_angle(prepared, frame, scene, &solve_frame(prepared, frame, scene), slot, index);
+    }
+    // `shape` normally returns through its rig branch before reaching this helper.
+    let rigged = scene.objects.iter().find(|g| g.uid == object.uid && g.resolved).and_then(|g| g.rig.as_ref()).and_then(|rig| rig.get(index).copied());
+    if let Some(joint) = rigged {
+        return joint.angle;
+    }
+    let authored = || match figure_of(prepared, frame, slot).and_then(|f| f.segments.get(index)) {
+        Some(segment) => styk_eval::geometry::segment_pose(object, segment, index).0,
+        None => object.angles.get(index).copied().unwrap_or(f64::NAN),
+    };
+    if !frame.objects.iter().any(|other| ik::has_pinned(other)) {
+        return authored();
+    }
+    if frame.objects.iter().any(|other| other.join.is_some()) {
+        if let Some(slots) = ik::joined::components(frame).into_iter().find(|slots| slots.contains(&slot))
+            && slots.len() >= 2 && slots.iter().any(|&slot| ik::has_pinned(&frame.objects[slot]))
+            && let Some(assembly) = Assembly::new(frame, &slots, &|slot| figure_of(prepared, frame, slot))
+            && let Some(solution) = assembly.solve(&assembly.controllers)
+        {
+            // Match scatter's authored initialization and last exact-entry assignment.
+            // Mapping through a handle ID would instead choose the last duplicate ID.
+            let mut angle = object.angles.get(index).copied().or_else(|| figure_of(prepared, frame, slot).and_then(|figure| figure.segments.get(index)).map(|segment| segment.angle)).unwrap_or(f64::NAN);
+            for at in 0..assembly.skeleton().segments.len() {
+                let entry = assembly.entry(at);
+                if entry.slot == slot && entry.index == index {
+                    angle = solution.angles[at];
+                }
+            }
+            return angle;
+        }
+    }
+    // Match solve_frame's local fallback after an uncompiled/unsolved assembly,
+    // including its first geometry-UID root lookup (not a resolved-only lookup).
+    if ik::has_pinned(object) && let Some(figure) = figure_of(prepared, frame, slot) {
+        let root = scene.objects.iter().find(|g| g.uid == object.uid).map_or(object.root, |g| g.root);
+        if let Some(angle) = ik::solve_local(figure, object, root).and_then(|solution| solution.angles.get(index).copied()) {
+            return angle;
+        }
+    }
+    authored()
+}
+
 /// Followers of figures joined to a controller's owner, as the editor stores them
 /// (`joinedFollowers`: by identity, then by handle).
 pub(crate) fn joined_table(joined: &BTreeMap<u32, BTreeMap<u32, f64>>) -> Value {
