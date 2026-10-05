@@ -322,3 +322,26 @@ stay unchanged; completed full rows 38→39, engine-1 remains 0/28. Remaining co
 precede the idle engine-1/baseline-0 matrix and deletion. Exact clocks, argv, actual
 timestamps/load, source identities and the independent review are in the companion
 JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-full-1).
+
+
+## Channels imported-source reuse — completed 2026-10-05, gate closed
+
+The verified per-call source lookup shares successful imported samples across scene,
+camera, layers and mixed endpoints, using the original sampler. Focused count/output
+controls pass 3→1; 184 Rust tests/two existing ignored, 36 recordings/687 exact calls
+and 125 JS/Main check pass. Shipping Wasm is 10,245,579 B with the required profile.
+No API, stored arithmetic or public state changes.
+
+The fresh original warmed full workload matches strict document/history/selection/full
+undo, but costs 233.630 ms = 225.815 owned/adoption + 7.770 eligible JS fallback + 0.045
+failed eligible attempt, versus 174.045 ms JS. Both pages have 346 calls; excess/N is
+0.172211 ms, so both user cost arms fail. The remaining per-call-arm gap is 24.985 ms.
+Counts 126 owned/219 compared/one failed and eligible counts match; residual 0. Failed
+paste and original JS fallback are distinct once. This loaded full run establishes no
+causal total speed gain or regression.
+
+Channels remains closed; its class patch is unapplied, no default or matching new
+checkpoint is certified. Owned classes 4, inventory 175/123/35/22/1 and deleted JS 2
+stay unchanged; completed full rows 39→40, engine-1 remains 0/28. Historical raw values
+remain exact. Original clocks, argv, actual timestamps/load and source/package identities
+are in the companion JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1).

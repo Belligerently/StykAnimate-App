@@ -10,37 +10,38 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, channels measured cost blocker)
+## Handoff (2026-10-05, channels source sampling fix)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current decision:** movieclips is opened alongside large figures, 3d and figures.
-Channels remains closed: its original full paired workload has exact behavior but costs
-**226.105/179.890 ms** candidate/JS, excess **0.133569 ms** over 346 full calls,
-failing both current user cost arms. It needs **11.615 ms** less total cost to meet
-the per-call arm at these paired counts. The class patch stays unapplied; actual default
-admission has not run. Focused **129 JS tests** and **17 recordings/303 calls** pass.
-The fresh committed `39d9e06f` checkpoint passes **849 native tests**, two existing
-ignored, **64 stages / 60 unchanged fixture generations / 358 containers** in 6m29;
-warm Cargo finishes in 0.16 s without compilation.
-No larger-input or general prerequisite is added. Remaining commands precede idle
-engine-1/baseline-0 and deletion; APIs, stored arithmetic and exclusions remain unchanged.
+**Current decision:** channels remains closed. The verified source fix shares each
+successful imported frame once per source time during one layer-sheet sampling call,
+across scene, camera, layers and mixed imported endpoints. Focused controls reduce
+repeated sampling from 3 to 1 while preserving the original output. **184 Rust tests**,
+two existing ignored, **36 recordings / 687 exact calls**, **125 JS tests** and Main
+check pass. Shipping Wasm is **10,245,579 B** with the required profile.
+
+The fresh original full run has exact behavior but costs **233.630/174.045 ms**
+candidate/JS. Excess is **0.172211 ms** per 346 paired full calls; both cost arms fail.
+The remaining gap to the per-call arm is **24.985 ms**. This loaded result establishes
+no causal total speed gain or regression. No new matching checkpoint or default proof
+is claimed; the class patch remains unapplied. APIs, stored math, public state and
+native-channel/source/origin exclusions are unchanged.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
 eligible JS fallback and failed attempts once; `J` is editor-alone cost;
 `N = min(candidate.report.calls, editorAlone.report.calls)` for the complete paired
-workload. Channels has 346 calls on each page: excess 0.133569 ms fails the 0.1 ms arm
-and the +5% arm. Figures and movieclips remain open. Exact behavior and D13 are unchanged;
+workload. Channels has 346 calls on each page: latest excess 0.172211 ms fails the
+0.1 ms arm and the +5% arm. Figures and movieclips remain open. Exact behavior and D13 are unchanged;
 [historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
 outcomes. The short default workload proves admission, not full cost.
 
-**Completed measurement counters:** inventory **175 js / 123 partial / 35 ported /
-22 verified / 1 removed** unchanged; **OWNED_CLASSES 4→4**; **deleted JS 2→2**;
-completed full cost rows **38→39**; **engine-1 0/28→0/28**. This is a completed
-measurement milestone; it does not open channels or establish a speed gain.
+**Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
+1 removed** unchanged; **OWNED_CLASSES 4→4**; **deleted JS 2→2**; completed full cost
+rows **39→40**; **engine-1 0/28→0/28**. Historical measurements remain exact.
 
 **Next:** address only a concrete, measured channels cost cause. A verified fix needs
 fresh original full paired cost, a matching committed engine checkpoint and positive
@@ -294,7 +295,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 ## 6. Open problems
 
 - **Figures and movieclips opened:** the current user cost rule, matching committed engine checkpoints and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next channels.
-- **Channels cost blocker:** original full paired behavior matches, but 226.105/179.890 ms and 0.133569 ms excess/full call fail both user arms. The measured gap to the per-call arm is 11.615 ms. Channels stays closed, its class patch unapplied and default proof unrun. Focused 129 JS/17 recordings/303 calls and the fresh 39d9 engine checkpoint pass; broader prerequisites and future commands remain parked.
+- **Channels cost blocker:** the source sampling fix passes focused output/count controls, but the latest original full paired run costs 233.630/174.045 ms and fails both user arms at 0.172211 ms excess per call. The remaining per-call-arm gap is 24.985 ms. Channels stays closed; no default or new checkpoint is claimed. This loaded result does not establish causal total speed change. Other prerequisites and future commands remain parked.
 
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
@@ -554,7 +555,15 @@ layer-sheet movieclip replacements.
 
 ## 7. Parity results
 
-Channels original full paired behavior/accounting matches; cost 226.105/179.890 ms
+The imported-source sampling fix passes 184 Rust tests, two existing ignored,
+36 recordings / 687 exact calls, 125 JS tests and Main check. The original sampler,
+first evaluation time, ordered errors and raw output remain unchanged; only successful
+sourceAt results share a per-call lookup. Focused repeated-sampling controls pass 3→1.
+The fresh full original run matches strict document/history/selection/full undo, but
+233.630/174.045 ms candidate/JS and 0.172211 ms excess per full call fail both cost arms.
+No class opening, default adoption, new checkpoint or causal total speed claim.
+
+The prior channels full paired behavior/accounting matches; cost 226.105/179.890 ms
 and excess 0.133569 ms/full call fail both user arms, with 11.615 ms remaining to the
 per-call arm. Channels is closed, its class patch unapplied and default admission unrun.
 Existing 17 recordings/303 calls and 129 focused JS tests pass. The fresh committed
@@ -1166,3 +1175,5 @@ are review inputs, not completed milestones or class ownership evidence.
 
 
 | 2026-10-05 14:27 UTC | Measure saved-channel editing cost | Exact behavior passes; cost fails, so channels stays closed. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 38→39; engine-1 0/28 unchanged. | Candidate/JS 226.105/179.890 ms over 346 calls: 0.133569 ms excess/call, 11.615 ms gap to the limit. Checkpoint: 849 native/2 ignored, 64 stages/60 unchanged generators/358 containers in 6m29; warm Cargo 0.16 s. Focused 129 JS tests and 17 recordings/303 calls pass. |
+
+| 2026-10-05 14:54 UTC | Reuse imported frames during channel editing | Share successful source samples within one sheet evaluation; focused output/count controls pass 3→1. Targets the channels cost gate. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 39→40; engine-1 0/28 unchanged. | 184 Rust/2 ignored; 36 recordings/687 exact calls; 125 JS/Main check pass. Full cost 233.630/174.045 ms fails at 0.172211 ms excess/call, leaving 24.985 ms. Behavior is exact; channels stays closed. APIs and stored math unchanged. |

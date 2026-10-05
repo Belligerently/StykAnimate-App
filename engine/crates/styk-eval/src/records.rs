@@ -58,12 +58,36 @@ struct Group {
 
 #[derive(Clone, PartialEq)]
 enum Identity {
-    /// `sourceAt(time)`: the imported timeline at a time (bits of the time).
+    /// `sourceAt(time)`: the imported timeline at a JavaScript Map time key.
     Native(u64),
     /// A retained pose source, by id.
     Source(Arc<str>),
     /// A frame of a layer's own pose track: never the same object as another track's.
     Track(String),
+}
+
+// JavaScript Map's SameValueZero: signed zero shares a key, as do all NaNs.
+// The original first time is still passed unchanged to native evaluation.
+fn source_time_key(time: f64) -> u64 {
+    if time == 0.0 { 0 } else if time.is_nan() { f64::NAN.to_bits() } else { time.to_bits() }
+}
+
+fn source_at(samples: &std::cell::RefCell<HashMap<u64, Value>>, time: f64,
+    read: impl FnOnce(f64) -> Result<Value, Error>) -> Result<Value, Error>
+{
+    let key = source_time_key(time);
+    if let Some(frame) = samples.borrow().get(&key) {
+        return Ok(frame.clone());
+    }
+    // No lookup borrow survives evaluation. Failed samples are not retained.
+    let frame = read(time)?;
+    samples.borrow_mut().insert(key, frame.clone());
+    Ok(frame)
+}
+
+#[cfg(test)]
+thread_local! {
+    static NATIVE_SAMPLE_TIMES: std::cell::RefCell<Option<Vec<u64>>> = const { std::cell::RefCell::new(None) };
 }
 
 fn num(value: &Value, key: &str) -> Option<f64> {
@@ -321,6 +345,8 @@ impl<'a> Records<'a> {
     /// `sampleLegacy(report, time)`: the native timeline at a time with its property
     /// channels composed, in layer order.
     fn native_at(&self, time: f64) -> Result<Value, Error> {
+        #[cfg(test)]
+        NATIVE_SAMPLE_TIMES.with(|times| { if let Some(times) = times.borrow_mut().as_mut() { times.push(time.to_bits()); } });
         self.native_at_with(time, false, false)
     }
 
@@ -645,7 +671,7 @@ impl<'a> Records<'a> {
     }
 
     /// `baseSample(id, track)`: a layer's pose from its keys.
-    fn base_sample(&self, id: &str, track: &Value, tick: f64) -> Result<Option<Sample>, Error> {
+    fn base_sample(&self, id: &str, track: &Value, tick: f64, source_at: &impl Fn(f64) -> Result<Value, Error>) -> Result<Option<Sample>, Error> {
         let fixed = id == "scene" || id == "camera";
         let keys: Vec<Value> = items(track.get("keys")).into_iter().filter(|k| !truthy(k.get("patchOnly"))).collect();
         if !fixed && tick >= num(track, "end").unwrap_or(0.0) {
@@ -656,7 +682,7 @@ impl<'a> Records<'a> {
         let next = keys.get(at);
         let frame_id = |k: &Value| k.path(&["value", "frameId"]).cloned();
         let source_tick = |k: &Value| num(k, "sourceTick");
-        let native = |time: f64| -> Result<Option<Sample>, Error> { Ok(Some(Sample { frame: self.native_at(time)?, identity: Identity::Native(time.to_bits()) })) };
+        let native = |time: f64| -> Result<Option<Sample>, Error> { Ok(Some(Sample { frame: source_at(time)?, identity: Identity::Native(source_time_key(time)) })) };
         let held = |k: &Value| -> Result<Option<Sample>, Error> {
             match (source_tick(k), frame_id(k)) {
                 (Some(time), _) => native(time),
@@ -696,7 +722,7 @@ impl<'a> Records<'a> {
                 (tick - a) / (b - a)
             });
             let count = seq.keys.len();
-            let frame = self.interval(&seq, &|i| if i < count { self.window_frame(id, &keys, first + i, fixed).map(Some) } else { Ok(None) }, index - first, fraction, None)?;
+            let frame = self.interval(&seq, &|i| if i < count { self.window_frame(id, &keys, first + i, fixed, source_at).map(Some) } else { Ok(None) }, index - first, fraction, None)?;
             return Ok(Some(Sample { frame, identity: Identity::Track(id.to_string()) }));
         }
         self.pose_track(id, &keys, tick)
@@ -704,11 +730,11 @@ impl<'a> Records<'a> {
 
     /// One key of a mixed layer as a native keyframe (`baseSample`'s `imported` branch):
     /// an imported key is the layer's figures of the imported pose at its source tick.
-    fn window_frame(&self, id: &str, keys: &[Value], index: usize, fixed: bool) -> Result<Value, Error> {
+    fn window_frame(&self, id: &str, keys: &[Value], index: usize, fixed: bool, source_at: &impl Fn(f64) -> Result<Value, Error>) -> Result<Value, Error> {
         let entry = &keys[index];
         let frame = match num(entry, "sourceTick") {
             Some(time) => {
-                let source = self.native_at(time)?;
+                let source = source_at(time)?;
                 let uids: Vec<f64> = if fixed { Vec::new() } else { items(source.get("objects")).iter().filter_map(uid).filter(|&u| self.layer_of(u) == id).collect() };
                 Some(snapshot_pose_frame_of(&source, Some(&uids)))
             }
@@ -739,9 +765,9 @@ impl<'a> Records<'a> {
     }
 
     /// `sample(id)`: the base pose, then the movieclip frames its key replaces.
-    fn sample(&self, sheet: &Value, id: &str, tick: f64, skip_patches: bool) -> Result<Option<Sample>, Error> {
+    fn sample(&self, sheet: &Value, id: &str, tick: f64, skip_patches: bool, source_at: &impl Fn(f64) -> Result<Value, Error>) -> Result<Option<Sample>, Error> {
         let Some(track) = sheet.path(&["tracks", id]) else { return Ok(None) };
-        let mut sample = self.base_sample(id, track, tick)?;
+        let mut sample = self.base_sample(id, track, tick, source_at)?;
         let keys = items(track.get("keys"));
         let at = keys.partition_point(|k| num(k, "tick").unwrap_or(0.0) <= tick);
         let Some(key) = at.checked_sub(1).map(|i| &keys[i]) else { return Ok(sample) };
@@ -902,12 +928,22 @@ impl<'a> Records<'a> {
 
     /// `sampleLayerSheet(report, tick)`.
     fn sample_sheet(&self, sheet: &Value, tick: f64, skip_patches: bool) -> Result<Value, Error> {
+        // `sampleLayerSheet` clears its sourceAt map for every call. Share complete
+        // imported samples across scene, camera, layers and mixed endpoints only
+        // during this immutable sampling operation; retain no cross-call state.
+        let samples = std::cell::RefCell::new(HashMap::new());
+        self.sample_sheet_with(sheet, tick, skip_patches, &|time| source_at(&samples, time, |time| self.native_at(time)))
+    }
+
+    fn sample_sheet_with(&self, sheet: &Value, tick: f64, skip_patches: bool,
+        source_at: &impl Fn(f64) -> Result<Value, Error>) -> Result<Value, Error>
+    {
         let layers: Vec<String> = items(self.tree.path(&["_styk", "layers", "order"])).iter().filter_map(|id| id.as_str().map(str::to_string)).collect();
-        let scene = self.sample(sheet, "scene", tick, skip_patches)?;
-        let camera = self.sample(sheet, "camera", tick, skip_patches)?;
+        let scene = self.sample(sheet, "scene", tick, skip_patches, source_at)?;
+        let camera = self.sample(sheet, "camera", tick, skip_patches, source_at)?;
         let mut frames: Vec<(String, Option<Sample>)> = Vec::new();
         for id in &layers {
-            frames.push((id.clone(), self.sample(sheet, id, tick, skip_patches)?));
+            frames.push((id.clone(), self.sample(sheet, id, tick, skip_patches, source_at)?));
         }
         let continuations = |frame: &Value| items(frame.path(&["_styk", "movieclipContinuations"]));
         let frame_of = |layer: &str| frames.iter().find(|(id, _)| id == layer).and_then(|(_, sample)| sample.as_ref());
@@ -1346,4 +1382,105 @@ pub fn snapshot_pose_frame_of(frame: &Value, uids: Option<&[f64]>) -> Value {
     saved.set("object_draw_order", numbers(order.iter().map(|&s| s as f64)));
     saved.set("object_draw_order_unique_ids", Value::array(ids));
     Value::object(saved)
+}
+
+
+#[cfg(test)]
+mod source_time_tests {
+    use super::*;
+
+    fn fixture() -> Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/channels/channels-figure.sheet.json");
+        styk_doc::json::parse(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    fn measured(run: impl FnOnce() -> Value) -> (Value, Vec<u64>) {
+        NATIVE_SAMPLE_TIMES.with(|times| *times.borrow_mut() = Some(Vec::new()));
+        let frame = run();
+        let times = NATIVE_SAMPLE_TIMES.with(|times| times.borrow_mut().take().unwrap());
+        (frame, times)
+    }
+
+    fn compare(tree: &Value, tick: f64, expected_times: &[f64], old_count: usize) {
+        let before = styk_doc::json::to_string(tree);
+        let prepared = crate::prepare(crate::from_value(tree, "").unwrap());
+        let records = Records::new(tree, &prepared).unwrap();
+        let sheet = tree.path(&["_styk", "layerSheet"]).unwrap();
+        // The same original sampling/math owner with no sourceAt reuse.
+        let (reference, old_times) = measured(|| records.sample_sheet_with(sheet, tick, false,
+            &|time| records.native_at(time)).unwrap());
+        assert_eq!(old_times.len(), old_count);
+        let (actual, times) = measured(|| records.sample_sheet(sheet, tick, false).unwrap());
+        let expected: Vec<_> = expected_times.iter().map(|time| time.to_bits()).collect();
+        assert_eq!(times, expected, "each distinct imported time must compose once");
+        assert_eq!(styk_doc::json::to_string(&actual), styk_doc::json::to_string(&reference));
+        // Reusing this Records object starts another fresh per-call lookup.
+        let (again, times) = measured(|| records.sample_sheet(sheet, tick, false).unwrap());
+        assert_eq!(times, expected);
+        assert_eq!(styk_doc::json::to_string(&again), styk_doc::json::to_string(&reference));
+        assert_eq!(styk_doc::json::to_string(tree), before);
+    }
+
+    #[test]
+    fn imported_sheet_composes_each_source_time_once() {
+        let tree = fixture();
+        compare(&tree, 5.5, &[5.5], 3);
+        let mut distinct = tree.clone();
+        let keys = distinct.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap()
+            .get_mut("layerSheet").unwrap().make_obj().unwrap().get_mut("tracks").unwrap().make_obj().unwrap()
+            .get_mut("camera").unwrap().make_obj().unwrap().get_mut("keys").unwrap().make_arr().unwrap();
+        for key in keys {
+            let key = key.make_obj().unwrap();
+            let time = key.get("sourceTick").unwrap().as_f64().unwrap();
+            key.set("sourceTick", Value::Num(time + 0.25));
+        }
+        compare(&distinct, 5.5, &[5.5, 5.75], 3);
+    }
+
+    #[test]
+    fn mixed_imported_endpoints_share_the_same_source_lookup() {
+        let mut tree = fixture();
+        let key = tree.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap()
+            .get_mut("layerSheet").unwrap().make_obj().unwrap().get_mut("tracks").unwrap().make_obj().unwrap()
+            .get_mut("layer-1").unwrap().make_obj().unwrap().get_mut("keys").unwrap().make_arr().unwrap()[1]
+            .make_obj().unwrap();
+        key.remove("sourceTick");
+        let mut value = Obj::new(); value.set("frameId", Value::str("frame-3"));
+        key.set("value", Value::object(value));
+        compare(&tree, 0.0, &[0.0], 3);
+        compare(&tree, 1.5, &[1.5, 0.0], 3);
+        compare(&tree, 4.0, &[4.0, 5.0], 3);
+    }
+
+    #[test]
+    fn source_lookup_keeps_first_time_same_value_zero_and_failed_reads() {
+        let samples = std::cell::RefCell::new(HashMap::new());
+        let read = |time: f64| {
+            let mut frame = Obj::new();
+            frame.set("firstTimeBits", Value::str(&format!("{:016x}", time.to_bits())));
+            frame.set("unknown", Value::array(vec![Value::Num(7.0), Value::Null]));
+            Ok(Value::object(frame))
+        };
+        let first = source_at(&samples, -0.0, read).unwrap();
+        let zero = source_at(&samples, 0.0, |_| panic!("signed zero must share the first sample")).unwrap();
+        assert!(first.same_node(&zero));
+        assert_eq!(zero.get("firstTimeBits").unwrap().as_str(), Some("8000000000000000"));
+        // Raw private key semantics only: nonfinite sourceTick is not admitted by
+        // the validated document boundary. Different NaN payloads share a Map key.
+        let nan = f64::from_bits(0xfff8_0000_0000_0123);
+        let first_nan = source_at(&samples, nan, read).unwrap();
+        let other_nan = source_at(&samples, f64::from_bits(0x7ff8_0000_0000_0456), |_| panic!("NaNs share a key")).unwrap();
+        assert!(first_nan.same_node(&other_nan));
+        assert_eq!(other_nan.get("firstTimeBits").unwrap().as_str(), Some("fff8000000000123"));
+        let failed = source_at(&samples, 1.25, |_| Err(Error::Invalid("original failure".into())));
+        assert!(matches!(failed, Err(Error::Invalid(message)) if message == "original failure"));
+        assert_eq!(samples.borrow().len(), 2);
+        let recovered = source_at(&samples, 1.25, read).unwrap();
+        assert_eq!(recovered.get("firstTimeBits").unwrap().as_str(), Some("3ff4000000000000"));
+        assert_eq!(samples.borrow().len(), 3);
+        let adjacent = source_at(&samples, f64::from_bits(1.25f64.to_bits() + 1), read).unwrap();
+        assert!(!recovered.same_node(&adjacent));
+        assert_eq!(samples.borrow().len(), 4);
+    }
 }

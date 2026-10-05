@@ -3367,6 +3367,76 @@
       "receiptSha256": "f5a77f530429d2c872a4c2439d030039849d8efa4f3215df67df38eb3568b879",
       "logSha256": "a3944946ff95fa1a3f70c843c6427c70faf0e3a0ae6862efde8ded08d4b9634a"
     }
+  ,
+    {
+      "batch": "channels-source-at-1",
+      "case": "channels-figure",
+      "round": 1,
+      "owned": 126,
+      "compared": 219,
+      "calls": 346,
+      "failedOwned": 1,
+      "editorMs": 174.04500007629395,
+      "adoptedMs": 225.8150001168251,
+      "fallbackMs": 7.7700000405311584,
+      "failedOwnedMs": 0.04499998688697815,
+      "candidateTotalMs": 233.63000014424324,
+      "ratio": 1.3423539891512526,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "adoptionObserved": true
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "adoptionObserved": true
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "adoptionObserved": true
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {
+        "pasteSegmentValues": 1
+      },
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2
+      },
+      "unported": {},
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json",
+        "--out",
+        "/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1/r1-channels-figure.driver.json"
+      ],
+      "elapsedSeconds": 255.23808150697732,
+      "loadBefore": [
+        3.44970703125,
+        4.59814453125,
+        5.47705078125
+      ],
+      "loadAfter": [
+        10.7666015625,
+        9.11083984375,
+        7.22802734375
+      ],
+      "driverSha256": "30d9fb9cb5c481d7dc27626900215eb5aa852fdb9c9e1c930dd35131cd34251f",
+      "receiptSha256": "248cd704f008a222b8bc86317fea9d13421838a8761776a4221467377ef2f659",
+      "logSha256": "c77c17596e4449d3dde3846f91c629cf99934c18c7635a63a7087f8fb4ce9f5d"
+    }
   ],
   "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1",
   "summarySha256": "d974f370399c96e36d53d742b0f04b247a59ba83aec6ee86f9c8ac4bc1b94fbf",
@@ -41989,6 +42059,131 @@
         "candidateAllowedAtPerCallArmMs": 214.49000043272972,
         "classRemainsClosed": true,
         "defaultAdoptionHasNotRun": true
+      }
+    }
+  ,
+    {
+      "scope": "Completed original full loaded warmed channels-figure cost after per-call imported-source reuse; not engine-1",
+      "notice": "Strict behavior/accounting pass; both user cost arms fail. Focused same-owner controls reduce duplicate sampling 3→1, but this loaded run establishes no causal total speed gain or regression. Channels stays closed; no default or matching new checkpoint claim. All historical raw values remain exact.",
+      "baseHead": "f0384646b1e4067e0b87b5e36c75a85263c04605",
+      "sourceWasUncommitted": true,
+      "sourceBinding": {
+        "approvedInputReceipt": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1/input-receipt.json",
+          "bytes": 236203,
+          "sha256": "c078b145857f54fa44e77e0e7dcf1114f5f4e23d2acb0c86c4a0606c730b590a"
+        },
+        "capturedIdentityCounts": {
+          "productionSources": 1529,
+          "packageFiles": 7,
+          "documents": 1
+        },
+        "sourcePackageAndInputsStableEveryRun": true,
+        "changedProductionPath": "engine/crates/styk-eval/src/records.rs",
+        "testedSourceEndpoint": {
+          "sha256": "608535b4138100c23bb9342683be7a04a8ee32b2c70becc5386ab8f80993678d",
+          "bytes": 78809
+        },
+        "completeMapsRetainedInRawReceipts": true
+      },
+      "packageBuildInfo": {
+        "profile": "wasm",
+        "toolchain": "nightly-2026-09-15",
+        "wasmBindgen": "0.2.129",
+        "maxMemory": 2147483648,
+        "wasmBytes": 10245579,
+        "wasmBytesBeforeOpt": 10245579,
+        "jsBytes": 201867,
+        "sha256": "3d0187daa49571c32f5fc7efeb6a4c32439563b59bf91cb2db39b3b2da13abe6",
+        "codec": {
+          "toolchain": "stable",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+          "wasmBytes": 1532303,
+          "wasmBytesBeforeOpt": 1532303,
+          "jsBytes": 13846,
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+        },
+        "drawing": {
+          "toolchain": "stable",
+          "wasmBytes": 449096,
+          "wasmBytesBeforeOpt": 449096,
+          "jsBytes": 53485,
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+        }
+      },
+      "runtimes": {
+        "nodeVersion": "v24.11.0",
+        "pythonVersion": "Python 3.12.9"
+      },
+      "capturedUtcTimestamps": {
+        "channels-figure": {
+          "beforeUtc": "2026-10-05T14:47:26.575866+00:00",
+          "afterUtc": "2026-10-05T14:51:41.812711+00:00"
+        }
+      },
+      "artifactLabelNote": "Actual capture is 2026-10-05; 20261006 in artifact names is a label.",
+      "costRule": "C <= 1.05 * J OR (C - J) / min(candidate.report.calls, editorAlone.report.calls) <= 0.1 ms",
+      "gate": {
+        "OWNED_CLASSES": [
+          "large figures",
+          "3d",
+          "figures",
+          "movieclips"
+        ],
+        "channelsDefaultOwnership": false,
+        "currentPolicyCostPass": false,
+        "defaultAdoptionCertified": false,
+        "matchingNewCheckpointCertified": false,
+        "conservativeFullTimedCalls": 346,
+        "excessPerCallMs": 0.17221098285534478,
+        "remainingMsToPerCallArm": 24.985000067949294
+      },
+      "rawEvidence": "/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1",
+      "receiptInputs": {
+        "input-receipt.json": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1/input-receipt.json",
+          "bytes": 236203,
+          "sha256": "c078b145857f54fa44e77e0e7dcf1114f5f4e23d2acb0c86c4a0606c730b590a"
+        },
+        "plan.json": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1/plan.json",
+          "bytes": 587,
+          "sha256": "d4c866f7f9df6e1ce123785f6cef63b0e9f2e14f165c71da03be21e643b13fad"
+        },
+        "summary-accounted.json": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-source-at-full-1/summary-accounted.json",
+          "bytes": 32358,
+          "sha256": "a21dd8b87493cda7ab487b436a69e46856df90231c17a994be7075a609185be2"
+        }
+      },
+      "outcomes": [
+        "FAIL"
+      ],
+      "accountingNotes": {
+        "failedPaste": "Failed eligible Native pasteSegmentValues 0.04499998688697815ms and original JS fallback 0.08000001311302185ms are distinct intervals included once.",
+        "methodClocks": "engineMs includes callMs; diagnostic method clocks are not added to official totals.",
+        "counts": "126 owned + 219 compared + 1 failed equals 346; paired full counts 346/346 and eligible method counts match, comparison-only residual 0.",
+        "focusedSourceChecks": "184 Rust tests/two existing ignored, 36 recordings / 687 exact calls, 125 JS/Main check pass; focused output/count controls reduce sampling 3→1 within a call.",
+        "interpretation": "Loaded full-run totals establish no causal speed gain or regression; original prior rows are preserved."
+      },
+      "progressCounters": {
+        "inventory": {
+          "js": 175,
+          "partial": 123,
+          "ported": 35,
+          "verified": 22,
+          "removed": 1
+        },
+        "ownedClasses": 4,
+        "deletedJavaScriptModules": 2,
+        "fullCostRowsBefore": 39,
+        "fullCostRowsAfter": 40,
+        "metadataBatchesBefore": 13,
+        "metadataBatchesAfter": 14,
+        "engine1MatrixMeasured": 0,
+        "engine1MatrixTotal": 28,
+        "ordinaryDiagnosticsUnchanged": 4,
+        "instrumentedJoinedDiagnosticsUnchanged": 1
       }
     }
   ],
