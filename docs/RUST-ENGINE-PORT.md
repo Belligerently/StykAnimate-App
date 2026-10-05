@@ -10,53 +10,44 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, movieclips opened)
+## Handoff (2026-10-05, channels measured cost blocker)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current decision:** `movieclips` now joins `large figures`, `3d` and `figures`
-in default editing. The original full `sheet-movieclip` and loose workloads pass the
-user-approved cost rule: candidate/JS totals **246.210/228.600** and
-**202.875/176.945 ms**, with **0.042332/0.076041 ms** excess per conservative full call.
-The matching committed `379c2dbb` engine checkpoint passes **849 native tests**, two
-existing ignored diagnostics, **64 stages / 358 containers**, completed 16:00 CEST.
-Final gate checks pass **87 focused JavaScript tests** and Main check (2,000 JavaScript
-files, 93 stylesheets, 682 modules); 14 recordings/254 calls already cover this scope.
-Actual default sheet/loose runs report **18/31 owned**, **12/15 compared** and **30/46
-calls**, positive Native pose/move/commit clocks and exact document/history/selection/full
-undo. Core call counts are 12/2/4 and 24/2/5, including fallback. The two final gate
-JavaScript files are outside the preceding engine checkpoint. No API, stored arithmetic
-or mobile adaptation changes; playback comparison, worker-only conversion/Bake and
-native-channel/source/origin exclusions remain unchanged.
+**Current decision:** movieclips is opened alongside large figures, 3d and figures.
+Channels remains closed: its original full paired workload has exact behavior but costs
+**226.105/179.890 ms** candidate/JS, excess **0.133569 ms** over 346 full calls,
+failing both current user cost arms. It needs **11.615 ms** less total cost to meet
+the per-call arm at these paired counts. The class patch stays unapplied; actual default
+admission has not run. Focused **129 JS tests** and **17 recordings/303 calls** pass.
+The fresh committed `39d9e06f` checkpoint passes **849 native tests**, two existing
+ignored, **64 stages / 60 unchanged fixture generations / 358 containers** in 6m29;
+warm Cargo finishes in 0.16 s without compilation.
+No larger-input or general prerequisite is added. Remaining commands precede idle
+engine-1/baseline-0 and deletion; APIs, stored arithmetic and exclusions remain unchanged.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
 eligible JS fallback and failed attempts once; `J` is editor-alone cost;
 `N = min(candidate.report.calls, editorAlone.report.calls)` for the complete paired
-workload. Movieclip denominators are **416/341**; full page counts are 416/438 and
-341/341. Both pass the absolute-average arm. Exact behavior and D13 remain unchanged;
+workload. Channels has 346 calls on each page: excess 0.133569 ms fails the 0.1 ms arm
+and the +5% arm. Figures and movieclips remain open. Exact behavior and D13 are unchanged;
 [historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
 outcomes. The short default workload proves admission, not full cost.
 
-**Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
-1 removed** unchanged; **OWNED_CLASSES 3→4**; **deleted JS 2→2**; completed full cost
-rows **36→38**; **engine-1 0/28→0/28**. Other command families remain JavaScript;
-class ownership does not promote their whole modules.
+**Completed measurement counters:** inventory **175 js / 123 partial / 35 ported /
+22 verified / 1 removed** unchanged; **OWNED_CLASSES 4→4**; **deleted JS 2→2**;
+completed full cost rows **38→39**; **engine-1 0/28→0/28**. This is a completed
+measurement milestone; it does not open channels or establish a speed gain.
 
-**Next:** `channels` has only three gate requirements:
-
-1. Run the original full paired `channels-figure` workload under the current cost rule.
-2. Prove actual default core adoption and exact document/history/selection/full undo.
-3. Obtain the matching committed engine checkpoint before the flip, then verify the
-   tiny class change with focused final-gate tests and actual app proof.
-
-Preserve classifier precedence and native-channel/movieclip-source/origin exclusions.
-Larger input controls are optional. Resume a prerequisite only for a confirmed next
-class blocker, engine-1 or deletion; do not restart pose micro-optimizations or general
-prerequisites. Remaining renderer, storage, async-command and retirement work stays in
-[open problems](#6-open-problems).
+**Next:** address only a concrete, measured channels cost cause. A verified fix needs
+fresh original full paired cost, a matching committed engine checkpoint and positive
+actual default core/full-undo proof before the class flip. No larger-input or general
+prerequisite is required. Preserve native-channel/source/origin exclusions. Future
+commands stay parked during this blocker; remaining commands precede idle
+engine-1/baseline-0 and deletion.
 
 ### Verification and ownership
 
@@ -303,13 +294,13 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 ## 6. Open problems
 
 - **Figures and movieclips opened:** the current user cost rule, matching committed engine checkpoints and actual default core adoption pass. Exact document/history/selection/full undo and D13 are unchanged. Stop pose micro-optimizations; next channels.
-- **Next class:** channels follows the same rule on its original input. Broader publication/lifetime/accounting/D7 work remains parked unless it blocks that flip, engine-1 or deletion.
+- **Channels cost blocker:** original full paired behavior matches, but 226.105/179.890 ms and 0.133569 ms excess/full call fail both user arms. The measured gap to the per-call arm is 11.615 ms. Channels stays closed, its class patch unapplied and default proof unrun. Focused 129 JS/17 recordings/303 calls and the fresh 39d9 engine checkpoint pass; broader prerequisites and future commands remain parked.
 
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
 - **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set.
 
-- **Next channels gate:** after movieclips, run the original full paired `channels-figure` workload under the current user cost rule, then matching committed engine checkpoint/focused gate checks and actual default core adoption/full undo. The historical 289.3/116.9 ms observation stays historical. Additional larger-input controls are optional, not a prerequisite; native saved channels and origins retain their separate admission guards.
+- **Next channels gate:** only after a verified measured cost fix, repeat the original full paired `channels-figure` workload under the current user rule, obtain its matching committed engine checkpoint, then focused gate/default core/full-undo proof. Historical measurements remain exact; larger-input controls are optional and native saved channels/origins retain their separate guards.
 
 - **Canonical worker adoption and query readiness:** effect presets/scopes/paints now
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
@@ -562,6 +553,14 @@ unpacked into `~/.cache/styk-webkit-libs`, nothing installed system-wide); pinne
 layer-sheet movieclip replacements.
 
 ## 7. Parity results
+
+Channels original full paired behavior/accounting matches; cost 226.105/179.890 ms
+and excess 0.133569 ms/full call fail both user arms, with 11.615 ms remaining to the
+per-call arm. Channels is closed, its class patch unapplied and default admission unrun.
+Existing 17 recordings/303 calls and 129 focused JS tests pass. The fresh committed
+39d9 engine checkpoint passes 849 native tests, two existing ignored, 64 stages/60
+unchanged generators/358 containers in 6m29, warm Cargo 0.16 s without compilation.
+This measurement changes no API/math/D13 or classifier scope.
 
 Movieclips is now owned by default after both original full paired workloads pass the
 current cost rule, the committed `379c2dbb` engine checkpoint passes (849 native tests,
@@ -935,9 +934,10 @@ B8 focused verification: 209 editing and 174 evaluation tests pass with the same
 
 ## 8. Work queue
 
-**Immediate class task:** verify channels on its original full paired input, matching
-committed engine checkpoint and actual default core adoption under the same rule.
-General prerequisites remain parked; engine-1 must run idle before deletion.
+**Immediate class task:** address the measured original channels cost failure if a
+concrete fix is found, then fresh full cost and actual default proof after a matching
+checkpoint. Remaining commands precede idle engine-1/baseline-0 and deletion; no
+general prerequisites or larger-input requirement are added.
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
 deletion of what it replaces once nothing calls it. "Agent" marks items run by a subagent
@@ -1163,3 +1163,6 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 13:44 UTC | Enable default figure editing | Open the existing `figures` class after exact behavior, matching checkpoint and positive default core adoption. The user-approved class-cost rule permits up to +5% or 0.1 ms average excess per conservative full timed call. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 2→3; deleted JS 2→2; full cost rows 33→36; engine-1 0/28→0/28. | B14 excess 0.047679/0.067983/0.071809 ms over 448/295/329 calls passes the absolute-average arm; old literal FAIL rows remain exact. Matching committed engine checkpoint: 849 native tests, two existing ignored, 64 stages/358 containers. Final gate: 86 focused JS/check pass; actual default startup/rig/joined each31 owned/15 compared/46 calls, positive Native core clocks and exact full undo. Exact behavior/D13/API/stored math remain unchanged. Next movieclips, then channels. |
 
 | 2026-10-05 14:12 UTC | Enable default movieclip editing | Open the existing layer-sheet movieclips gesture/publication class; playback comparison and native/source/origin exclusions remain unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 3→4; deleted JS 2→2; full cost rows 36→38; engine-1 0/28→0/28. | Full sheet/loose costs 246.210/228.600 and 202.875/176.945 ms pass the user rule at 0.042332/0.076041 ms excess per full call. Matching committed engine checkpoint: 849 native, two existing ignored, 64 stages/358 containers. Final gate: 87 focused JS/Main check and actual default 18/31 owned, positive Native core clocks and exact full undo pass. Exact behavior/D13/API/stored math unchanged; next channels. |
+
+
+| 2026-10-05 14:27 UTC | Measure saved-channel editing cost | Exact behavior passes; cost fails, so channels stays closed. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 38→39; engine-1 0/28 unchanged. | Candidate/JS 226.105/179.890 ms over 346 calls: 0.133569 ms excess/call, 11.615 ms gap to the limit. Checkpoint: 849 native/2 ignored, 64 stages/60 unchanged generators/358 containers in 6m29; warm Cargo 0.16 s. Focused 129 JS tests and 17 recordings/303 calls pass. |

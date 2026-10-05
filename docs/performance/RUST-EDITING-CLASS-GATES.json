@@ -3297,6 +3297,76 @@
       "receiptSha256": "3d34bfbb9a0adcedaff634cea589091cbaffbfcc01d142f2b6611c060c060611",
       "logSha256": "e027feb106e56346896561fec9937f01d89163b0b465b7173ba4adc2f57c6ef1"
     }
+  ,
+    {
+      "batch": "channels-1",
+      "case": "channels-figure",
+      "round": 1,
+      "owned": 126,
+      "compared": 219,
+      "calls": 346,
+      "failedOwned": 1,
+      "editorMs": 179.89000043272972,
+      "adoptedMs": 218.03000006079674,
+      "fallbackMs": 8.034999996423721,
+      "failedOwnedMs": 0.03999999165534973,
+      "candidateTotalMs": 226.1050000488758,
+      "ratio": 1.256906995969619,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "adoptionObserved": true
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "adoptionObserved": true
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "adoptionObserved": true
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {
+        "pasteSegmentValues": 1
+      },
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2
+      },
+      "unported": {},
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/crates/styk-eval/tests/fixtures/channels/channels-figure.sheet.json",
+        "--out",
+        "/tmp/styk-channels-gate-preparation-20261006/channels-full-1/r1-channels-figure.driver.json"
+      ],
+      "elapsedSeconds": 215.823468763032,
+      "loadBefore": [
+        1.234375,
+        2.85888671875,
+        5.42626953125
+      ],
+      "loadAfter": [
+        13.42724609375,
+        8.2978515625,
+        7.10205078125
+      ],
+      "driverSha256": "bc6228a5aaf36da945b93d95627ca77982bd2d4a63019e1920324740ded6f30c",
+      "receiptSha256": "f5a77f530429d2c872a4c2439d030039849d8efa4f3215df67df38eb3568b879",
+      "logSha256": "a3944946ff95fa1a3f70c843c6427c70faf0e3a0ae6862efde8ded08d4b9634a"
+    }
   ],
   "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1",
   "summarySha256": "d974f370399c96e36d53d742b0f04b247a59ba83aec6ee86f9c8ac4bc1b94fbf",
@@ -41762,6 +41832,163 @@
         "engine1MatrixTotal": 28,
         "ordinaryDiagnosticsUnchanged": 4,
         "instrumentedJoinedDiagnosticsUnchanged": 1
+      }
+    }
+  ,
+    {
+      "scope": "Completed original full loaded warmed channels-figure eligible OWNED-call paired editing cost; not engine-1",
+      "notice": "Exact behavior/accounting pass; both user cost arms fail and channels remains closed. This completed measurement advances only the benchmark-row counter. All older raw rows/metadata/other values remain exact; no default adoption or speed-gain claim.",
+      "baseHead": "39d9e06fefb3c0b0f712ee36721a2b96aebe8678",
+      "sourceWasUncommitted": false,
+      "sourceBinding": {
+        "approvedInputReceipt": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-full-1/input-receipt.json",
+          "bytes": 236161,
+          "sha256": "5733757fc7a154ea72e4c0d58a071ce4eb52eeba9401cbb8a0f7f56334108a22"
+        },
+        "capturedIdentityCounts": {
+          "productionSources": 1529,
+          "packageFiles": 7,
+          "documents": 1
+        },
+        "sourcePackageAndInputsStableEveryRun": true,
+        "completeMapsRetainedInRawReceipts": true
+      },
+      "packageBuildInfo": {
+        "profile": "wasm",
+        "toolchain": "nightly-2026-09-15",
+        "wasmBindgen": "0.2.129",
+        "maxMemory": 2147483648,
+        "wasmBytes": 10243996,
+        "wasmBytesBeforeOpt": 10243996,
+        "jsBytes": 201867,
+        "sha256": "10b6b47a17eda39aee18ae255888b207b28662cfca17cc417dcc2b8e55bbb585",
+        "codec": {
+          "toolchain": "stable",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+          "wasmBytes": 1532303,
+          "wasmBytesBeforeOpt": 1532303,
+          "jsBytes": 13846,
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+        },
+        "drawing": {
+          "toolchain": "stable",
+          "wasmBytes": 449096,
+          "wasmBytesBeforeOpt": 449096,
+          "jsBytes": 53485,
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+        }
+      },
+      "runtimes": {
+        "nodeVersion": "v24.11.0",
+        "pythonVersion": "Python 3.12.9"
+      },
+      "capturedUtcTimestamps": {
+        "channels-figure": {
+          "beforeUtc": "2026-10-05T14:15:39.673320+00:00",
+          "afterUtc": "2026-10-05T14:19:15.495860+00:00"
+        }
+      },
+      "artifactLabelNote": "Actual capture is 2026-10-05; 20261006 in artifact names is a label.",
+      "costRule": "C <= 1.05 * J OR (C - J) / min(candidate.report.calls, editorAlone.report.calls) <= 0.1 ms",
+      "gate": {
+        "OWNED_CLASSES": [
+          "large figures",
+          "3d",
+          "figures",
+          "movieclips"
+        ],
+        "channelsDefaultOwnership": false,
+        "currentPolicyResults": [
+          {
+            "case": "channels-figure",
+            "candidateMs": 226.1050000488758,
+            "editorAloneMs": 179.89000043272972,
+            "candidateReportCalls": 346,
+            "baselineReportCalls": 346,
+            "conservativeFullTimedCalls": 346,
+            "excessPerCallMs": 0.13356936305244535,
+            "relativeFivePercentArm": false,
+            "absolutePointOneArm": false,
+            "literalCostNoHigher": false,
+            "currentPolicyCostPass": false
+          }
+        ],
+        "currentPolicyCostPass": false,
+        "defaultAdoptionCertified": false
+      },
+      "rawEvidence": "/tmp/styk-channels-gate-preparation-20261006/channels-full-1",
+      "receiptInputs": {
+        "input-receipt.json": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-full-1/input-receipt.json",
+          "bytes": 236161,
+          "sha256": "5733757fc7a154ea72e4c0d58a071ce4eb52eeba9401cbb8a0f7f56334108a22"
+        },
+        "plan.json": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-full-1/plan.json",
+          "bytes": 581,
+          "sha256": "8922f09a6e6c8313b7749b48e4f813cfe419af7b61a1a8ea204dfcc6eb9cf373"
+        },
+        "summary-accounted.json": {
+          "path": "/tmp/styk-channels-gate-preparation-20261006/channels-full-1/summary-accounted.json",
+          "bytes": 32295,
+          "sha256": "8c24a2e1b9a13379d0ce5845f1e8b6b82836a26f888b2f3e383b717539a30fe7"
+        }
+      },
+      "independentCompletedAcceptance": {
+        "path": "/tmp/styk-channels-full-cost-independent-review-20261005.json",
+        "bytes": 2714,
+        "sha256": "e9f14845715f9f3875b1ac489dadf857e349964053013bf0336876c6bb2e2963"
+      },
+      "outcomes": [
+        "FAIL"
+      ],
+      "accountingNotes": {
+        "failedPaste": "Failed eligible Native pasteSegmentValues0.03999999165534973ms and original JS fallback0.06499999761581421ms are separate intervals included once.",
+        "methodClocks": "engineMs includes callMs; method/helper clocks are diagnostic and are not added to official totals.",
+        "counts": "126 owned +219 compared +1 failed equals346 calls; paired complete counts346/346 and all eligible method counts match; comparison-only residual0.",
+        "behavior": "Strict document/history79/selection/full undo match with zero unexpected issues. Core method call counts include fallback."
+      },
+      "progressCounters": {
+        "inventory": {
+          "js": 175,
+          "partial": 123,
+          "ported": 35,
+          "verified": 22,
+          "removed": 1
+        },
+        "ownedClasses": 4,
+        "deletedJavaScriptModules": 2,
+        "fullCostRowsBefore": 38,
+        "fullCostRowsAfter": 39,
+        "metadataBatchesBefore": 12,
+        "metadataBatchesAfter": 13,
+        "engine1MatrixMeasured": 0,
+        "engine1MatrixTotal": 28,
+        "ordinaryDiagnosticsUnchanged": 4,
+        "instrumentedJoinedDiagnosticsUnchanged": 1
+      },
+      "matchingCommittedCheckpoint": {
+        "path": "tmp/root-verification-temp/checkpoint-39d9e06f-completion.json",
+        "bytes": 355,
+        "sha256": "5f2b8ebb677d500f2be590e6ef7386f38f0bfc6379f370b3cda2f6a3dfaad0f4",
+        "head": "39d9e06fefb3c0b0f712ee36721a2b96aebe8678",
+        "completedAt": "2026-10-05T16:21:59.159270+02:00",
+        "nativePassed": 849,
+        "nativeIgnored": 2,
+        "stages": 64,
+        "unchangedFixtureGenerators": 60,
+        "containers": 358,
+        "elapsedSeconds": 388.851857,
+        "warmCargoSeconds": 0.16,
+        "compilationObserved": false,
+        "scope": "Committed39d9 engine source; class gate remains unapplied"
+      },
+      "measuredCostBlocker": {
+        "remainingMsToPerCallArm": 11.614999616146093,
+        "candidateAllowedAtPerCallArmMs": 214.49000043272972,
+        "classRemainsClosed": true,
+        "defaultAdoptionHasNotRun": true
       }
     }
   ],

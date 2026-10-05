@@ -297,3 +297,28 @@ Inventory stays 175 js/123 partial/35 ported/22 verified/1 removed; owned classe
 These loaded runs establish no causal speed gain. Original clocks, argv, timestamps,
 load and separate default/checkpoint proofs are retained in the companion JSON and
 [raw evidence](/tmp/styk-movieclips-gate-preparation-20261006/movieclips-full-1).
+
+
+## Channels original full cost — completed 2026-10-05, gate closed
+
+The original warmed `channels-figure` paired workload matches exact document/history/
+selection/full undo, but fails both current user cost arms. Candidate cost is
+226.105 ms = 218.030 owned/adoption + 8.035 eligible JS fallback + 0.040 failed
+eligible attempt, versus 179.890 ms editor alone. Both pages have346 complete timed
+calls: excess/N is 0.133569 ms, above0.1 ms, and the +5% arm also fails. Counts are
+126 owned/219 compared/one failed; eligible method counts match and comparison-only
+residual is zero. The failed paste attempt and original JS fallback are separate
+intervals included once. No unexpected parity issues were found.
+
+Channels remains closed; its prepared class patch is unapplied and default admission
+is not certified. The next channel blocker is this measured cost gap, not a larger
+input or general prerequisite. The measured gap to the per-call arm is 11.615 ms.
+The fresh matching 39d9 engine checkpoint passes 849 native tests, two existing ignored,
+64 stages/60 unchanged fixture generators/358 containers in 6m29; warm Cargo 0.16s
+requires no compile. This is a completed measurement milestone, with no speed claim.
+Owned classes
+stay 4, inventory 175 js/123 partial/35 ported/22 verified/1 removed and deleted JS 2
+stay unchanged; completed full rows 38→39, engine-1 remains 0/28. Remaining commands
+precede the idle engine-1/baseline-0 matrix and deletion. Exact clocks, argv, actual
+timestamps/load, source identities and the independent review are in the companion
+JSON and [raw evidence](/tmp/styk-channels-gate-preparation-20261006/channels-full-1).

@@ -674,7 +674,12 @@ proof only. Movieclips is owned by default on both original layer-sheet inputs. 
 default sheet/loose runs report 18/31 owned and positive Native pose/move/commit clocks
 with exact document/history/selection/full undo; method counts include fallback and
 short smoke timings prove admission only. Playback comparison, worker-only
-conversion/Bake and native/source/origin exclusions remain unchanged. Historical measurements below retain their original
+conversion/Bake and native/source/origin exclusions remain unchanged. Channels stays closed: original full cost 226.105/179.890 ms and 0.133569 ms
+excess per 346 paired full calls fail both user arms despite exact behavior/accounting.
+The measured gap to the per-call arm is 11.615 ms. Focused 129 JS/17 recordings/303
+calls and the matching 39d9 engine checkpoint pass (849 native, two existing ignored,
+64 stages/60 unchanged generators/358 containers). The class patch is unapplied,
+default admission has not run, and native/source/origin exclusions are unchanged. Historical measurements below retain their original
 rule and outcomes.
 
 `large figures` since 2026-10-03. `node scripts/engine-edit-shadow.mjs --own --default`
