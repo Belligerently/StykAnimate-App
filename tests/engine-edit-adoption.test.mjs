@@ -1098,3 +1098,240 @@ test('one-shot joined, rich, zero and failed moves keep the existing adoption fa
   assert.equal(begins, 0, 'native errors replay the original validation before any draft');
   assert.equal(json(owned.report), before); assert.equal(owned._drag, null); assert.equal(owned._authoredPoseEdit, null); same();
 });
+
+// Project the agreed packet from the separate actual Editor's topology snapshot.
+// Native Session tests independently certify this opt-in wire projection.
+function splitPair(document, {mode = 'classes', historyLimit} = {}) {
+  const pair = adoptionPair(document, mode), {oracle, owned, session} = pair;
+  if (historyLimit !== undefined) for (const editor of [pair.expected, owned, oracle]) editor.historyLimit = historyLimit;
+  const call = session.call.bind(session);
+  session.call = (name, args, viewText) => {
+    const view = JSON.parse(viewText), figure = view.topologyPublication ? oracle.figure : null;
+    const index = figure ? oracle.report.figure_types.indexOf(figure) : -1;
+    const before = figure ? oracle._topologySnapshot(figure.figure_type_id) : null;
+    const fields = [oracle.report._styk, oracle.report._styk.layerSheet], keys = ['animation', 'legacyAnimation'];
+    const previous = fields.map((fields, index) => ({exists: Object.hasOwn(fields ?? {}, keys[index]), value: fields?.[keys[index]]}));
+    const answer = JSON.parse(call(name, args, viewText));
+    if (before && answer.status === 'ok' && answer.result === true && answer.events.length === 1
+      && answer.events[0].definition && !answer.events[0].layerSheet) {
+      const after = oracle._topologySnapshot(figure.figure_type_id, before);
+      const frames = after.frames.map(entry => {
+        const old = before.frames.find(frame => frame.index === entry.index && frame.sourceId === entry.sourceId);
+        const byUid = new Map(old.objects.map(object => [object.unique_id, json(object)]));
+        return {index: entry.index, ...(entry.sourceId ? {sourceId: entry.sourceId} : {}),
+          objects: entry.objects.filter(object => byUid.get(object.unique_id) !== json(object))
+            .map(object => clean(oracle._sourceFrame(entry).objects.find(value => value.unique_id === object.unique_id)))};
+      }).filter(entry => entry.objects.length);
+      answer.topology = {index, figure: after.figure, frames};
+      for (const [index, key] of keys.entries()) {
+        const fields = index ? oracle.report._styk.layerSheet : oracle.report._styk;
+        const exists = Object.hasOwn(fields ?? {}, key), value = fields?.[key];
+        if (exists !== previous[index].exists || value !== previous[index].value)
+          answer.topology[index ? 'sheetAnimation' : 'animation'] = {exists, ...(exists ? {value} : {})};
+      }
+    }
+    return json(answer);
+  };
+  return pair;
+}
+const splitDocument = () => JSON.parse(readFileSync(new URL('../engine/tests/edit/builder.document.json', import.meta.url), 'utf8'));
+const topologyCounters = editor => ({revision: editor.revision, serial: editor._revisionSerial,
+  saved: editor._savedRevision, definition: editor.definitionRevision, historySize: editor._historySize,
+  nextUid: editor._nextUid, nextFrame: editor._nextFrameIdentity, generated: [...editor._generatedFrameSources]});
+
+test('default Split direct and aliases adopt the recorded topology with one original history owner', () => {
+  const scenario = JSON.parse(readFileSync(new URL('../engine/tests/edit/builder-split-sheet.scenario.json', import.meta.url), 'utf8'));
+  const {expected, owned, report, run, same} = splitPair(splitDocument());
+  const initial = json(expected.report), edits = [[], []];
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => {
+    if (!event.detail.definition || event.detail.kind !== 'edit') return;
+    edits[index].push({detail: clean(event.detail), frame: json(editor.evaluatedFrame),
+      geometry: clean(editor.geometry.drawables), state: state(editor), counters: topologyCounters(editor)});
+  });
+  let originals = 0;
+  const original = owned._topologyEdit;
+  owned._topologyEdit = function (...args) { originals++; return original.apply(this, args); };
+  for (const [method, ...args] of scenario.steps) {
+    if (method === '@frame') { same(); continue; }
+    const name = method.replace(/^@/, ''), adopted = report.owned, beforeOriginal = originals;
+    let error;
+    try { expected[name](...args); } catch (caught) { error = caught.messageKey ?? caught.message; }
+    if (error) assert.throws(() => owned[name](...args), caught => (caught.messageKey ?? caught.message) === error);
+    else owned[name](...args);
+    same(); assert.deepEqual(topologyCounters(owned), topologyCounters(expected));
+    if (['splitBuilderSegments', 'splitSegment', 'splitSegmentBranch'].includes(name) && !error) {
+      assert.equal(originals, beforeOriginal, 'the original topology computation was skipped');
+      assert.equal(report.owned, adopted + 1, 'the response was actually adopted');
+      if (owned.selectedJoint >= 0) assert.equal(owned._undo.at(-1)?.kind, 'topology');
+    }
+  }
+  assert.deepEqual(edits[1], edits[0]); assert.equal(edits[1].length, 4);
+  assert.equal(json(owned.report), initial); assert.equal(owned.canUndo, false);
+  assert.equal(report.mode, 'classes'); assert.equal(report.failedOwned, 2, 'recorded validation errors replay once');
+});
+
+test('adopted Split preserves changed and untouched record identity, key order and source history', () => {
+  const document = splitDocument();
+  document.topologyUnknown = {keep: null}; document.figure_types[0].topologyUnknown = {keep: ['definition', 3]};
+  for (const frame of document.keyframes) for (const object of frame.objects) object.topologyUnknown = {keep: ['pose', object.unique_id]};
+  Object.defineProperty(document.figure_types[0], '__proto__', {value: {keep: 'definition'}, enumerable: true, configurable: true, writable: true});
+  const {expected, owned, oracle, report, run, same} = splitPair(document);
+  const initial = json(owned.report);
+  run('select', 1, -1); run('moveSelection', 5, -2); run('select', 1, 1);
+  const figure = owned.figure, frames = owned._allSourceFrames();
+  const records = frames.map(frame => frame.objects.slice()), layers = owned.report._styk.layers, sheet = owned.report._styk.layerSheet;
+  const before = json(owned.report), count = owned._undo.length, adopted = report.owned;
+  expected.splitBuilderSegments({branch: false, fraction: .5}); owned.splitBuilderSegments({branch: false, fraction: .5});
+  same(); assert.equal(report.owned, adopted + 1); assert.equal(owned.figure, figure);
+  frames.forEach((frame, index) => frame.objects.forEach((object, slot) => assert.equal(object, records[index][slot])));
+  assert.equal(owned.report._styk.layers, layers); assert.equal(owned.report._styk.layerSheet, sheet);
+  assert.equal(owned._undo.length, count + 1); assert.equal(owned._undo.at(-1).kind, 'topology');
+  assert.deepEqual(owned._undo.at(-1), expected._undo.at(-1));
+  assert.deepEqual(Object.keys(owned.figure), Object.keys(expected.figure));
+  assert.ok(owned._undo.at(-1).after.frames.some(entry => entry.sourceId), 'stored source poses join the same history snapshot');
+  const history = structuredClone(owned._undo.at(-1)), after = json(owned.report);
+  run('undo'); assert.equal(json(owned.report), before); run('redo'); assert.equal(json(owned.report), after);
+  assert.deepEqual(owned._undo.at(-1), history, 'replay does not mutate retained snapshots');
+  run('undo'); run('select', 1, 1); run('splitSegment', .3);
+  assert.equal(owned.canRedo, false, 'a new split retires the same redo branch');
+  while (expected.canUndo) run('undo'); assert.equal(json(owned.report), initial);
+  // Original pose history snapshots omit an own __proto__ key, but the raw
+  // stored pose and Native publication keep it through the forward split.
+  for (const editor of [expected, owned, oracle]) for (const frame of editor._allSourceFrames()) for (const object of frame.objects)
+    Object.defineProperty(object, '__proto__', {value: {keep: 'pose'}, enumerable: true, configurable: true, writable: true});
+  run('select', 1, 1); const forward = report.owned;
+  expected.splitSegment(.5); owned.splitSegment(.5); same(); assert.equal(report.owned, forward + 1);
+  assert.equal(Object.hasOwn(owned.report.keyframes[0].objects[0], '__proto__'), true);
+  assert.deepEqual(owned.report.keyframes[0].objects[0]['__proto__'], {keep: 'pose'});
+  assert.deepEqual(Object.keys(owned.report.keyframes[0].objects[0]), Object.keys(expected.report.keyframes[0].objects[0]));
+});
+
+test('zero-history Split retains the original source cleanup and revision owner', () => {
+  const {expected, owned, oracle, report, run, same} = splitPair(splitDocument());
+  run('select', 1, -1);
+  const priorSources = new Set(Object.keys(owned.report._styk.frameSources ?? {}));
+  run('moveSelection', 13, -4);
+  const firstSources = Object.keys(owned.report._styk.frameSources).filter(id => !priorSources.has(id));
+  assert.ok(firstSources.length, 'the first actual authored move allocated a retained source');
+  run('moveSelection', -7, 9); run('select', 1, 1);
+  assert.ok(firstSources.every(id => Object.hasOwn(owned.report._styk.frameSources, id)), 'the first source is still held by move history');
+  for (const editor of [expected, owned, oracle]) editor.historyLimit = 0;
+  const adopted = report.owned;
+  expected.splitBuilderSegments({branch: true, fraction: .5}); owned.splitBuilderSegments({branch: true, fraction: .5});
+  same(); assert.deepEqual(topologyCounters(owned), topologyCounters(expected));
+  assert.equal(report.owned, adopted + 1); assert.equal(owned.canUndo, false); assert.equal(owned._undo.length, 0);
+  assert.deepEqual(owned.report._styk.frameSources, expected.report._styk.frameSources);
+  assert.ok(firstSources.some(id => !Object.hasOwn(owned.report._styk.frameSources, id)), 'original zero-history cleanup drops the edited orphan source');
+});
+
+test('malformed Split packets fall back atomically before any adopted mutation', () => {
+  for (const alter of [
+    answer => { delete answer.topology; },
+    answer => { answer.topology.index = 999; },
+    answer => { answer.topology.frames = []; },
+    answer => { answer.topology.frames[0].objects[0].unique_id = 999; },
+    answer => { answer.topology.frames[0].objects[0].angles = []; },
+    answer => { answer.topology.frames.push(structuredClone(answer.topology.frames[0])); },
+    answer => { answer.topology.frames[0].sourceId = 'foreign-source'; answer.topology.frames[0].index = -1; },
+    answer => { answer.topology.animation = {exists: true}; },
+    answer => { answer.events = null; },
+    answer => { answer.state = null; },
+    answer => { answer.state.selectedUids.reverse(); answer.state.selectedUid = 999; },
+  ]) {
+    const pair = splitPair(splitDocument()), {expected, owned, session, report, run, same} = pair;
+    run('select', 1, 1);
+    const call = session.call.bind(session), before = json(owned.report);
+    session.call = (...args) => { const answer = JSON.parse(call(...args)); if (answer.topology) alter(answer); return json(answer); };
+    let originals = 0; const original = owned._topologyEdit;
+    owned._topologyEdit = function (...args) { originals++; assert.equal(json(this.report), before, 'no definition/pose write preceded refusal'); return original.apply(this, args); };
+    expected.splitBuilderSegments({branch: false, fraction: .5}); owned.splitBuilderSegments({branch: false, fraction: .5});
+    same(); assert.equal(originals, 1); assert.equal(report.owned, 0); assert.equal(report.failedOwned, 1);
+    assert.deepEqual(owned._undo.at(-1), expected._undo.at(-1)); originalFallbackHistory(pair);
+  }
+});
+
+test('a missing current generated Split source is refused even at zero history', () => {
+  const pair = splitPair(splitDocument()), {expected, owned, oracle, session, report, run, same} = pair;
+  run('select', 1, -1); run('moveSelection', 13, -4); run('select', 1, 1);
+  for (const editor of [expected, owned, oracle]) editor.historyLimit = 0;
+  const retained = owned._currentFrameSourceIds();
+  assert.ok(retained.size, 'the actual move left a current generated source reference');
+  const call = session.call.bind(session), before = json(owned.report), adopted = report.owned;
+  session.call = (...args) => {
+    const answer = JSON.parse(call(...args));
+    if (answer.topology) {
+      const count = answer.topology.frames.length;
+      answer.topology.frames = answer.topology.frames.filter(entry => !retained.has(entry.sourceId));
+      assert.ok(answer.topology.frames.length < count, 'the control removes an actual currently referenced source pose');
+    }
+    return json(answer);
+  };
+  let originals = 0; const original = owned._topologyEdit;
+  owned._topologyEdit = function (...args) { originals++; assert.equal(json(this.report), before); return original.apply(this, args); };
+  expected.splitBuilderSegments({branch: false, fraction: .5}); owned.splitBuilderSegments({branch: false, fraction: .5});
+  same(); assert.equal(originals, 1); assert.equal(report.owned, adopted, 'the refused Split did not add an adoption');
+  assert.equal(report.failedOwned, 1); assert.equal(owned.canUndo, false);
+});
+
+test('Split application failures restore the original topology and retire the advanced Native session', () => {
+  const {expected, owned, oracle, session, report, run, same} = splitPair(splitDocument());
+  run('select', 1, 1);
+  const before = json(owned.report), history = owned._undo.slice(), counters = topologyCounters(owned);
+  let releases = 0;
+  session.free = () => {
+    releases++;
+    assert.equal(json(owned.report), before, 'rollback precedes disposal of the advanced session');
+    // The next session starts from the mirror's restored report, not the
+    // successful Native split that the JavaScript application could not install.
+    oracle.load(structuredClone(owned.report));
+    // A fresh Native Session takes the mirror's original revision counters and
+    // startup layer state; reloading this reused Editor otherwise increments them.
+    for (const key of ['_revision', '_revisionSerial', '_savedRevision', '_layerRevision', '_definitionRevision']) oracle[key] = owned[key];
+    oracle._restoreSelection(owned._selectionState());
+  };
+  for (const editor of [expected, owned]) {
+    const object = editor.frame.objects.find(object => object.unique_id === 1), angles = object.angles;
+    Object.defineProperty(object, 'angles', {enumerable: true, configurable: true,
+      get: () => angles, set() { throw new Error('Rejected pose write'); }});
+  }
+  assert.throws(() => expected.splitBuilderSegments({branch: false, fraction: .5}), /Rejected pose write/);
+  assert.throws(() => owned.splitBuilderSegments({branch: false, fraction: .5}), /Rejected pose write/);
+  same(); assert.equal(json(owned.report), before); assert.deepEqual(owned._undo, history);
+  assert.deepEqual(topologyCounters(owned), counters); assert.equal(report.mismatches.length, 0);
+  assert.equal(releases, 1); assert.equal(report.ended['a topology packet application failed'], 1);
+  const adopted = report.owned, sessions = report.sessions;
+  expected.splitSegment(.5); owned.splitSegment(.5); same();
+  assert.equal(report.sessions, sessions + 1); assert.equal(report.owned, adopted + 1, 'a fresh coherent session can adopt the next call');
+});
+
+test('native, drafted, captured-source, origin and active Split routes keep their original fallback', () => {
+  const read = path => JSON.parse(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));
+  for (const [document, setup, excluded] of [
+    [splitDocument(), editor => editor.beginFrameDraft({mode: 'update'}), editor => editor._frameDraft],
+    [read('engine/tests/edit/origin-pose-layout-sheet.document.json'), () => {}, editor => editor.figure?._styk?.animationOrigin],
+    [splitDocument(), editor => editor.beginDrag('Existing gesture'), editor => editor._drag],
+    [read('engine/tests/edit/sheet-movieclip.document.json').figure_types.find(figure => figure._styk?.movieclip)._styk.movieclip.document,
+      () => {}, editor => editor.report._styk.movieclipSource],
+  ]) {
+    const {expected, owned, oracle, report, session, same} = splitPair(document);
+    for (const editor of [expected, owned, oracle]) { editor.select(editor.evaluatedFrame.objects[0].unique_id, 1); setup(editor); assert.ok(excluded(editor), 'the actual Editor has the excluded route'); }
+    const adopted = report.owned;
+    let requested = 0; const call = session.call.bind(session);
+    session.call = (name, args, view) => { if (JSON.parse(view).topologyPublication) requested++; return call(name, args, view); };
+    let expectedError, ownedError;
+    try { expected.splitBuilderSegments({branch: false, fraction: .5}); } catch (error) { expectedError = error.messageKey ?? error.message; }
+    try { owned.splitBuilderSegments({branch: false, fraction: .5}); } catch (error) { ownedError = error.messageKey ?? error.message; }
+    assert.equal(ownedError, expectedError); same(); assert.equal(requested, 0); assert.equal(report.owned, adopted, 'the Split itself was not adopted');
+  }
+  const document = splitDocument(), [expected, owned, oracle] = Array.from({length: 3}, () => new Editor({demo: false}).load(structuredClone(document)));
+  for (const editor of [expected, owned, oracle]) {
+    assert.equal(editor.layerTimeline, false); assert.equal(editor.report._styk.layerSheet, undefined);
+    editor.select(1, 1);
+  }
+  const session = sessionFor(oracle), call = session.call.bind(session); let requested = 0;
+  session.call = (name, args, view) => { if (JSON.parse(view).topologyPublication) requested++; return call(name, args, view); };
+  const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: () => session}}, mirror: {framesCurrent: () => true}}), {mode: 'own'});
+  expected.splitBuilderSegments({branch: false, fraction: .5}); owned.splitBuilderSegments({branch: false, fraction: .5});
+  assert.equal(json(owned.report), json(expected.report)); assert.deepEqual(state(owned), state(expected));
+  assert.equal(requested, 0); assert.equal(report.owned, 0);
+});

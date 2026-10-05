@@ -1401,6 +1401,12 @@ export class Editor extends EventTarget {
       for (const entry of before.frames) this._replaceObjects(entry.index, entry.objects, entry.sourceId, entry.draft,entry.sourceDepth);
       this._restoreSelection(beforeSelection); this._invalidate(); throw error;
     }
+    return this._finishTopologyEdit(label, {figure, index, typeId, before, beforeSelection, beforeAnimation,
+      sparse, segmentIndices, appendOnly, retainedGeometry});
+  }
+  /** The same history/publication owner for computed and adopted topology edits. */
+  _finishTopologyEdit(label, {figure, index, typeId, before, beforeSelection, beforeAnimation,
+    sparse = false, segmentIndices, appendOnly = false, retainedGeometry}) {
     figure.segment_count = figure.segments.length;
     // Native compressed ordering arrays no longer describe an edited topology.
     delete figure.segment_z_raw; delete figure.poly_z_raw;

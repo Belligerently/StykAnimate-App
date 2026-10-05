@@ -3,7 +3,8 @@
 // `native-properties` or `figure` history entry, or recoloured and keyed on the figure on show
 // as the app does it). Run by engine/tools/edit-scenarios-range.mjs.
 import {readFileSync, writeFileSync} from 'node:fs';
-import {documentOf} from './fixture-kit.mjs';
+import assert from 'node:assert/strict';
+import {documentOf, open} from './fixture-kit.mjs';
 
 const out = new URL('../tests/edit', import.meta.url).pathname;
 const app = {layerTimeline: true, propertyChannels: true};
@@ -132,6 +133,53 @@ const topologySteps = [
 ];
 scenario('topology-sheet', app, topologySteps, 'builder.document.json');
 scenario('topology-native', {}, topologySteps.slice(2), 'builder.document.json');
+// The actual builder button/shortcut calls splitBuilderSegments directly with .5.
+// Assert the real Editor succeeds before recording its ordinary sheet contract;
+// the reference still comes solely from edit-replay.mjs, including the shown frames.
+{
+  const editor = open(JSON.parse(readFileSync(`${out}/builder.document.json`, 'utf8')), app), steps = [], events = [];
+  editor.addEventListener('change', event => events.push(event.detail));
+  const report = () => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value);
+  const initial = report(), initialHistory = editor._undo.length;
+  const run = (method, ...args) => {
+    steps.push([method, ...args]); events.length = 0;
+    if (method === '@frame') return editor.evaluatedFrame;
+    return editor[method === '@select' ? 'select' : method](...args);
+  };
+  for (const call of [
+    ['splitBuilderSegments', {branch: false, fraction: .5}],
+    ['splitBuilderSegments', {branch: true, fraction: .5}],
+    ['splitSegment', .5], ['splitSegmentBranch', .5],
+  ]) {
+    run('@select', 1, 1);
+    const beforeSelection = editor._selectionState(), count = editor.figure.segments.length;
+    assert.equal(run(...call), true, `${call[0]} must be a successful split`);
+    assert.ok(editor.figure.segments.length > count);
+    assert.equal(editor._undo.length, initialHistory + 1);
+    assert.equal(editor._undo.at(-1).kind, 'topology');
+    assert.equal(events.length, 1); assert.equal(events[0].kind, 'edit');
+    assert.equal(events[0].structural, true); assert.equal(events[0].definition, true);
+    const after = report(), afterSelection = editor._selectionState();
+    run('@frame'); run('undo');
+    assert.equal(report(), initial); assert.deepEqual(editor._selectionState(), beforeSelection);
+    run('redo'); assert.equal(report(), after); assert.deepEqual(editor._selectionState(), afterSelection);
+    run('@frame'); run('undo'); assert.equal(report(), initial);
+  }
+  for (const [options, key] of [
+    [{fraction: 2}, 'errors.editorBuilderBranch.splitFractionMustBeBetweenZeroAndOne'],
+    [{branch: 'x'}, 'errors.editorBuilderBranch.chooseWhetherToSplitTheWholeBranch'],
+  ]) {
+    const selection = editor._selectionState(), undo = editor._undo.length, redo = editor._redo.length;
+    assert.throws(() => run('splitBuilderSegments', options), error => error.messageKey === key);
+    assert.equal(report(), initial); assert.deepEqual(editor._selectionState(), selection);
+    assert.equal(editor._undo.length, undo); assert.equal(editor._redo.length, redo); assert.equal(events.length, 0);
+  }
+  run('@select', 1, -1); assert.equal(run('splitBuilderSegments', {branch: false, fraction: .5}), false);
+  assert.equal(events.length, 0); run('@select', 1, 1);
+  assert.equal(report(), initial); assert.equal(editor._undo.length, initialHistory); assert.equal(editor.canUndo, false);
+  assert.equal(steps.length, 33);
+  scenario('builder-split-sheet', app, steps, 'builder.document.json');
+}
 // Figures joined to a removed handle stay where they were drawn; figures joined below a flipped
 // or refitted segment are placed again on its handle.
 scenario('topology-joined-sheet', app, [

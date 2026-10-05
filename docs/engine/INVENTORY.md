@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 89 | 1233 KiB | 46 | 39 | 4 | 0 | 0 | 2 % | 64 % | 0 % |
+| `styk-edit` | 89 | 1234 KiB | 46 | 39 | 4 | 0 | 0 | 2 % | 64 % | 0 % |
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
 | `styk-eval` | 81 | 758 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
 | `styk-formats` | 58 | 740 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
 | `styk-render` | 52 | 708 KiB | 31 | 16 | 5 | 0 | 0 | 9 % | 61 % | 0 % |
-| **Total** | 356 | 4053 KiB | 175 | 123 | 35 | 22 | 1 | 20 % | 49 % | 0 % |
+| **Total** | 356 | 4054 KiB | 175 | 123 | 35 | 22 | 1 | 20 % | 49 % | 0 % |
 
 ## Engine modules
 
@@ -80,7 +80,7 @@ Engine logic: ported to Rust.
 | `src/editor-audio.mjs` | `styk-edit` | partial | Rust: setAudioTrack, deleteAudioTrack, setAudioClip, deleteAudioClip, applyAudioCommand (styk-edit/src/audio.rs; not run in the app until the engine's document holds the audio); adding tracks, importing, splitting, duplicating and pasting clips (random identities) and rippleAudio still JS |
 | `src/editor-authored-pose.mjs` | `styk-edit` | partial | Rust: gesture drafts and whole-frame transactions on a layer sheet, their commit and cancel (the app runs them in the engine for large figure documents); recorded ordinary native TRUE translation/property gestures also use the same AuthoredDrag/Draft/Records worker owner; broader property-channel commits and native app adoption remain JS; owned session transport sends changed COW drafts/retained figures and sheet metadata, with exact compact/full reconstruction and adoption coverage |
 | `src/editor-branch-style.mjs` | `styk-edit` | partial | Rust: the draw order's held keys after a live preview (beginBranchStyleAnimation, previewBranchStyleValues, commitBranchStyleAnimation for moveBuilderOrder and setBuilderOrder: styk-edit/src/builder.rs); branch opacity and width gestures still JS |
-| `src/editor-builder-branch.mjs` | `styk-edit` | partial | Rust: builder styles/caps/fill, split branches and changeBranchThickness (native/sheet strict replays, exact f32 clamping); origin branch thickness and runtime facade admission remain gated |
+| `src/editor-builder-branch.mjs` | `styk-edit` | partial | Rust: builder styles/caps/fill, split branches and changeBranchThickness (native/sheet strict replays, exact f32 clamping); origin branch thickness and other runtime facade admission remain gated; ordinary sheet Split app adoption uses an opt-in Session topology packet and the original history/publication tail; 94 Rust, 12 recordings/272 calls, 225 JS/Main check and 1,340 stable JSON pass; one warmed default Split 15.335/17.085 ms with exact full undo; Build UI Split/Undo/branch/repeated sessions/drawing/discard pass; native/source/origin/live-draft guards remain, module stays partial and no causal speed claim |
 | `src/editor-builder-style.mjs` | `styk-edit` | partial | Rust: polygon opacity/draw order and recorded native-property token gestures with preview/commit/cancel; tokens remain replay/native prerequisites until facade adoption, origin gestures refuse |
 | `src/editor-builder-topology.mjs` | `styk-edit` | partial | Rust: recorded topology/support repair and joined spatial IK; native/sheet FigureSplice/history/capacity refusal; sole raw definition validator shared with recorded spatial-origin choices, existing VFX remapper retained; unproved origin/channel/3D combinations and topology adoption remain gated |
 | `src/editor-builder.mjs` | `styk-edit` | partial | Rust: addPolygon, updatePolygon (handles, order, surface removal; opacity keyed with property channels; colour recoloured on the figure on show), removePolygon, editDefinition (styk-edit/src/polygons.rs), updateFigureStyle with property channels (styk-edit/src/property_edit.rs) and on the definition, updateSegmentStyle, convertSegment (styk-edit/src/builder.rs), duplicateSegment, duplicateSegmentBranch (styk-edit/src/topology.rs); fitting a new polygon surface still JS |

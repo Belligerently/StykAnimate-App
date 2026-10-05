@@ -77,6 +77,33 @@ The 41 derived evaluated groups / 362 ticks are included. Public portable additi
 `math_log` is a browser export only in `styk-wasm`. The logarithm test reads its generated
 binary at runtime so identical regeneration does not invalidate release compilation.
 
+### Ordinary builder Split publication (2026-10-05)
+
+`splitBuilderSegments`, `splitSegment` and `splitSegmentBranch` can request the
+additive Session JSON field `view.topologyPublication: true` (strict boolean).
+For an admitted ordinary sheet call with one structural definition edit,
+`answer.topology` carries `{index, figure, frames}` and optional `animation` and
+`sheetAnimation`. Each frame names an existing keyframe index or a local source
+(`index: -1, sourceId`); its objects replace existing UIDs in their original order.
+Animation fields use `{exists, value?}` to distinguish absence from explicit null.
+The packet comes from pre-call/final COW reports, not the last undo entry. Consumers
+must reject an absent or unusable packet before mutation.
+
+Before mutation, the facade validates definition/pose identity, ordered frame/source
+coverage and absent/null animation fields. It applies the packet, then runs the
+original `_finishTopologyEdit` history/publication tail; rollback and source pruning
+remain in their existing owners. Native timelines, movieclip/source/origin figures,
+live gestures and drafts retain the original route.
+
+Focused checks pass 94 Rust tests, 12 recordings / 272 exact calls, 225 JS tests,
+Main check and 1,340 byte-stable fixture JSON. The full warmed default run adopts
+one Split with exact document/history/selection/full undo. Build UI Split/Undo,
+branch scope, repeated sessions and drawing/discard also pass without page errors;
+inspected desktop/compact screenshots use the compatibility renderer, not engine-1
+GPU certification. See the separate
+[command measurement](../performance/RUST-EDITING-COMMANDS.md). Other Session answers
+and Rust signatures are unchanged; mobile consumers opting in must read the fields.
+
 ### Recorded worker movieclips, history and publication (2026-10-04)
 
 Native and sheet movieclip creation, splitting, unique copies, break apart, placement,

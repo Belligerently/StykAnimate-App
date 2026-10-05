@@ -106,6 +106,68 @@ fn figure_order(frame: &Value) -> Vec<Value> {
     frame.get("objects").and_then(Value::elements).map(|objects| objects.iter().filter_map(|figure| crate::record::uid(&figure)).map(|uid| Value::Num(uid as f64)).collect()).unwrap_or_default()
 }
 
+/// The existing split command's stored changes, projected from its COW reports.
+/// History may already have trimmed the new command, so never read this from undo.
+fn split_topology_publication(before: &Value, report: &Value) -> Option<Value> {
+    if before.get("keyframes")?.array_len()? != report.get("keyframes")?.array_len()? { return None; }
+    let old = before.get("figure_types")?.elements()?;
+    let figures = report.get("figure_types")?.elements()?;
+    if old.len() != figures.len() { return None; }
+    let mut replaced = None;
+    for (index, figure) in figures.iter().enumerate() {
+        let previous = old.get(index)?;
+        if previous.same_node(&figure) { continue; }
+        if replaced.is_some() || previous.get("figure_type_id") != figure.get("figure_type_id")
+            || previous.path(&["_styk", "animationOrigin"]).is_some()
+        { return None; }
+        replaced = Some((index, figure));
+    }
+    let (index, figure) = replaced?;
+    let mut frames = Vec::new();
+    for place in crate::topology::places(report) {
+        let frame = crate::topology::frame_at(report, &place)?;
+        let previous = crate::topology::frame_at(before, &place)?;
+        if previous.same_node(frame) { continue; }
+        // This packet replaces poses only. Unsupported frame shape changes use
+        // the original JS command instead of silently losing metadata or slots.
+        let previous_fields = previous.as_obj()?;
+        let fields = frame.as_obj()?;
+        if !previous_fields.keys().eq(fields.keys())
+            || fields.iter().any(|(key, value)| key.as_ref() != "objects"
+                && !previous_fields.get(key).is_some_and(|old| old.same_node(value)))
+        { return None; }
+        let old_objects = previous.get("objects")?.elements()?;
+        let current_objects = frame.get("objects")?.elements()?;
+        if old_objects.len() != current_objects.len()
+            || old_objects.iter().zip(current_objects.iter()).any(|(old, current)|
+                crate::record::uid(&current).is_none() || crate::record::uid(&old) != crate::record::uid(&current))
+        { return None; }
+        let objects = changed_figures(frame, Some(previous), None);
+        if objects.is_empty() { continue; }
+        let mut fields = match place {
+            crate::topology::Place::Keyframe(index) => vec![("index", Value::Num(index as f64))],
+            crate::topology::Place::Source(id) => vec![("index", Value::Num(-1.0)), ("sourceId", Value::str(&id))],
+        };
+        fields.push(("objects", Value::array(objects)));
+        frames.push(response_value(fields));
+    }
+    let mut fields = vec![("index", Value::Num(index as f64)), ("figure", figure), ("frames", Value::array(frames))];
+    for (key, path) in [
+        ("animation", &["_styk", "animation"][..]),
+        ("sheetAnimation", &["_styk", "layerSheet", "legacyAnimation"][..]),
+    ] {
+        let previous = before.path(path);
+        let current = report.path(path);
+        if matches!((previous, current), (None, None))
+            || previous.zip(current).is_some_and(|(previous, current)| previous.same_node(current))
+        { continue; }
+        let mut change = vec![("exists", Value::Bool(current.is_some()))];
+        if let Some(current) = current { change.push(("value", current.clone())); }
+        fields.push((key, response_value(change)));
+    }
+    Some(response_value(fields))
+}
+
 impl Session {
     /// `state` is JSON: the editor's options (`propertyChannels`, `layerTimeline`,
     /// `autoKey`), view (`tick`, `frameIndex`, `selectedUid`, `selectedUids`,
@@ -165,6 +227,9 @@ impl Session {
     /// and sheet fields carry only changed COW records; optional order/removal fields
     /// reconstruct their previous layout. Results the facade returns from its adopted
     /// document are `null`. Default answers remain complete for shadow comparison.
+    /// `topologyPublication: true` opts an ordinary sheet split (including its two
+    /// aliases) into an additional `topology` packet of changed stored definitions,
+    /// poses and animation fields. It does not change the command or default wire.
     /// Returns the answer as JSON (see the module).
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
@@ -246,6 +311,13 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
+    let topology_requested = view.get("topologyPublication") == Some(&Value::Bool(true))
+        && matches!(method, "splitBuilderSegments" | "splitSegment" | "splitSegmentBranch")
+        && editor.sheet() && editor.drag.is_none() && draft.is_none()
+        && editor.property_edit.is_none() && editor.vfx_edit.is_none()
+        && editor.native_token.is_none() && editor.batch.is_none()
+        && before.path(&["_styk", "simpleFrameDraft"]).is_none()
+        && before.path(&["_styk", "movieclipSource"]).is_none();
     let mut answer = Vec::with_capacity(8);
     // Owned calls request only changed COW records. The default remains complete for
     // shadow comparison and existing native session consumers.
@@ -308,6 +380,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             else { Ok(result) }
         })
     };
+    let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
     match result {
         Ok(result) => {
             answer.push(("status", Value::str("ok")));
@@ -435,6 +508,16 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         });
         frame.set("objects", Value::array(objects.collect()));
         answer.push(("preview", Value::object(frame)));
+    }
+    if topology_changed && events.len() == 1
+        && events[0].get("kind").and_then(Value::as_str) == Some("edit")
+        && events[0].get("structural") == Some(&Value::Bool(true))
+        && events[0].get("definition") == Some(&Value::Bool(true))
+        && !events[0].get("layerSheet").is_some_and(Value::truthy)
+        && !events[0].get("live").is_some_and(Value::truthy)
+        && let Some(topology) = split_topology_publication(&before, report)
+    {
+        answer.push(("topology", topology));
     }
     answer.push(("events", Value::array(events)));
     let figures = if changes_only {

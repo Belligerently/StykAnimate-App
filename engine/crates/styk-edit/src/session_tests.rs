@@ -60,6 +60,181 @@ fn session_from_recorded_state(reference: &Value, state: &Value) -> Session {
     Session::start(parse(first.get("document").unwrap().as_str().unwrap()), &json(&Value::object(state))).unwrap()
 }
 
+/// Consume only the documented stored replacements; frame metadata/order stay local.
+fn apply_split_packet(mut report: Value, packet: &Value) -> Value {
+    let index = packet.get("index").unwrap().as_f64().unwrap() as usize;
+    report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[index] = packet.get("figure").unwrap().clone();
+    for change in packet.get("frames").unwrap().elements().unwrap().iter() {
+        let place = match change.get("sourceId").and_then(Value::as_str) {
+            Some(id) => { assert_eq!(change.get("index").and_then(Value::as_f64), Some(-1.0)); crate::topology::Place::Source(id.into()) }
+            None => crate::topology::Place::Keyframe(change.get("index").unwrap().as_f64().unwrap() as usize),
+        };
+        let frame = crate::topology::frame_mut(&mut report, &place).unwrap();
+        let objects = frame.get_mut("objects").unwrap().make_arr().unwrap();
+        for replacement in change.get("objects").unwrap().elements().unwrap().iter() {
+            let slot = objects.iter_mut().find(|object| crate::record::uid(object) == crate::record::uid(&replacement)).unwrap();
+            *slot = replacement;
+        }
+    }
+    for (key, path) in [("animation", &["_styk"][..]), ("sheetAnimation", &["_styk", "layerSheet"][..])] {
+        if let Some(change) = packet.get(key) {
+            let mut parent = &mut report;
+            for key in path { parent = parent.make_obj().unwrap().get_mut(key).unwrap(); }
+            let parent = parent.make_obj().unwrap();
+            let field = if key == "animation" { "animation" } else { "legacyAnimation" };
+            if change.get("exists") == Some(&Value::Bool(true)) { parent.set(field, change.get("value").unwrap().clone()); }
+            else { parent.remove(field); }
+        }
+    }
+    report
+}
+
+#[test]
+fn split_topology_packets_reconstruct_recorded_storage_without_changing_default_answers() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/builder-split-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+    for compact in [false, true] {
+        let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut expected = steps[0].get("document").unwrap().as_str().unwrap().to_string();
+        let mut packets = Vec::new();
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap();
+            let label = format!("builder split step{} compact={compact}", step.get("step").unwrap());
+            if method == "@frame" {
+                for session in [&ordinary, &requested] {
+                    let frame = session.editor.shown_frame().unwrap();
+                    assert_eq!(Some(&Value::str(&json(&styk_eval::records::snapshot_pose_frame(&frame)))), step.get("result"), "{label}: visible frame");
+                }
+            } else {
+                let before = requested.report().clone();
+                let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+                view.set("autoKey", Value::Bool(ordinary.editor.auto_key));
+                view.set("changesOnly", Value::Bool(compact));
+                let args = Value::array(call[1..].to_vec());
+                let ordinary_answer = ordinary.call_values(method.trim_start_matches('@'), &args, &Value::object(view.clone()));
+                view.set("topologyPublication", Value::Bool(true));
+                let mut answer = requested.call_values(method.trim_start_matches('@'), &args, &Value::object(view));
+                if let Some(packet) = answer.get("topology").cloned() {
+                    assert!(matches!(method, "splitBuilderSegments" | "splitSegment" | "splitSegmentBranch"));
+                    assert_eq!(answer.get("result"), Some(&Value::Bool(true)));
+                    assert_eq!(json(&apply_split_packet(before.clone(), &packet)), json(requested.report()), "{label}: stored definition and poses");
+                    if packets.is_empty() {
+                        let mut unsupported = requested.report().clone();
+                        crate::topology::frame_mut(&mut unsupported, &crate::topology::Place::Keyframe(0)).unwrap().set("unknownMetadata", Value::Bool(true));
+                        assert!(split_topology_publication(&before, &unsupported).is_none(), "a pose packet cannot elide frame metadata changes");
+                        let mut unsupported = requested.report().clone();
+                        crate::topology::frame_mut(&mut unsupported, &crate::topology::Place::Keyframe(0)).unwrap().set("objects", Value::array(Vec::new()));
+                        assert!(split_topology_publication(&before, &unsupported).is_none(), "a pose packet cannot remove membership");
+                        for (key, path, field) in [("animation", &["_styk"][..], "animation"), ("sheetAnimation", &["_styk", "layerSheet"][..], "legacyAnimation")] {
+                            let mut explicit_null = requested.report().clone();
+                            let mut parent = &mut explicit_null;
+                            for key in path { parent = parent.make_obj().unwrap().get_mut(key).unwrap(); }
+                            parent.make_obj().unwrap().set(field, Value::Null);
+                            let presence = split_topology_publication(&before, &explicit_null).unwrap();
+                            assert_eq!(presence.get(key).unwrap().get("exists"), Some(&Value::Bool(true)));
+                            assert_eq!(presence.get(key).unwrap().get("value"), Some(&Value::Null));
+                            assert_eq!(json(&apply_split_packet(before.clone(), &presence)), json(&explicit_null));
+                            let mut before_null = before.clone();
+                            let mut parent = &mut before_null;
+                            for key in path { parent = parent.make_obj().unwrap().get_mut(key).unwrap(); }
+                            parent.make_obj().unwrap().set(field, Value::Null);
+                            let absence = split_topology_publication(&before_null, requested.report()).unwrap();
+                            assert_eq!(absence.get(key).unwrap().get("exists"), Some(&Value::Bool(false)));
+                            assert!(absence.get(key).unwrap().get("value").is_none());
+                            assert_eq!(json(&apply_split_packet(before_null, &absence)), json(requested.report()));
+                        }
+                    }
+                    let index = packet.get("index").unwrap().as_f64().unwrap() as usize;
+                    assert!(packet.get("figure").unwrap().same_node(&requested.report().get("figure_types").unwrap().item(index).unwrap()), "{label}: COW definition");
+                    packets.push((packet.clone(), json(&packet)));
+                    answer.make_obj().unwrap().remove("topology");
+                } else if matches!(method, "splitBuilderSegments" | "splitSegment" | "splitSegmentBranch") && step.get("result") == Some(&Value::Bool(true)) {
+                    panic!("{label}: successful split did not publish its stored changes");
+                }
+                assert_eq!(json(&answer), json(&ordinary_answer), "{label}: existing answer bytes");
+                assert!(ordinary_answer.get("topology").is_none());
+                assert_eq!(json(answer.get("state").unwrap()), json(step.get("state").unwrap()), "{label}: recorded state");
+                assert_eq!(json(answer.get("events").unwrap()), json(step.get("events").unwrap()), "{label}: recorded events");
+                if let Some(error) = step.get("error").filter(|error| !error.is_null()) {
+                    assert_eq!(answer.get("status").and_then(Value::as_str), Some("error"));
+                    assert_eq!(answer.get("error"), error.get("key"));
+                } else {
+                    assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+                    assert_eq!(crate::replay::plain(answer.get("result").unwrap(), 4).unwrap_or(Value::Null), step.get("result").cloned().unwrap());
+                }
+            }
+            if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.into(); }
+            assert_eq!(requested.editor.report_json(), expected, "{label}: recorded document");
+            assert_eq!(ordinary.editor.report_json(), expected, "{label}: ordinary document");
+        }
+        assert_eq!(packets.len(), 4, "both direct modes and the two aliases publish");
+        for (packet, bytes) in packets { assert_eq!(json(&packet), bytes, "later history leaves a returned packet immutable"); }
+    }
+}
+
+#[test]
+fn split_topology_packet_survives_zero_history_and_keeps_source_cleanup_local() {
+    let reference = parse(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/builder-split-sheet.reference.json")).unwrap());
+    let first = reference.get("steps").unwrap().item(0).unwrap();
+    for limit in [0, 80] {
+        let mut session = session_from_recorded_state(&reference, first.get("state").unwrap());
+        // Existing authored moves create two real captured source owners; the first
+        // is retained only by history after the second replaces the current key.
+        for args in [parse("[3,0]"), parse("[1,0]")] {
+            let answer = session.call_values("moveSelection", &args, &session.editor.state_value());
+            assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+        }
+        let captured = session.editor.generated_sources.clone();
+        assert_eq!(captured.len(), 2);
+        let selected = session.call_values("select", &parse("[1,1]"), &session.editor.state_value());
+        assert_eq!(selected.get("status").and_then(Value::as_str), Some("ok"));
+        session.editor.history_limits.count = limit;
+        let before = session.report().clone();
+        let before_counts = session.editor.uid_counts.clone();
+        let source_table_was_present = session.editor.source_table_was_present;
+        let old_source = before.path(&["_styk", "frameSources", &captured[0]]).unwrap().clone();
+        let old_bytes = json(&old_source);
+        let mut view = session.editor.state_value().as_obj().unwrap().clone();
+        view.set("topologyPublication", Value::Bool(true));
+        let answer = session.call_values("splitBuilderSegments", &parse(r#"[{"branch":false,"fraction":0.5}]"#), &Value::object(view));
+        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"));
+        let packet = answer.get("topology").unwrap();
+        let changes: Vec<Value> = packet.get("frames").unwrap().elements().unwrap().iter().collect();
+        assert!(changes.iter().any(|change| change.get("sourceId").and_then(Value::as_str) == Some(captured[1].as_str())), "current captured poses are carried");
+        for change in &changes {
+            if let Some(id) = change.get("sourceId").and_then(Value::as_str) {
+                assert!(before.path(&["_styk", "frameSources", id]).is_some(), "packet introduces no source");
+                let current = session.report().path(&["_styk", "frameSources", id]).unwrap();
+                for pose in change.get("objects").unwrap().elements().unwrap().iter() {
+                    assert!(current.get("objects").unwrap().elements().unwrap().iter().any(|object| object.same_node(&pose)), "packet borrows the surviving stored pose");
+                }
+            }
+        }
+        if limit == 0 {
+            assert!(session.editor.undo.is_empty());
+            assert!(session.report().path(&["_styk", "frameSources", &captured[0]]).is_none(), "the existing zero-history cleanup drops the orphan");
+            assert!(!changes.iter().any(|change| change.get("sourceId").and_then(Value::as_str) == Some(captured[0].as_str())), "cleanup is not a source deletion packet");
+            // The adopter publishes the stored replacements and uses its existing
+            // record/prune owner. Reconstruct that same empty-history cleanup.
+            let mut reconstructed = Editor::new(apply_split_packet(before.clone(), packet), session.editor.options);
+            reconstructed.generated_sources = captured.clone();
+            reconstructed.uid_counts = before_counts;
+            reconstructed.source_table_was_present = source_table_was_present;
+            reconstructed.prune_frame_sources();
+            assert_eq!(json(reconstructed.report()), json(session.report()), "existing cleanup reconstructs final source table and order");
+            assert_eq!(reconstructed.generated_sources, session.editor.generated_sources);
+            assert_eq!(reconstructed.uid_counts, session.editor.uid_counts);
+        } else {
+            assert!(changes.iter().any(|change| change.get("sourceId").and_then(Value::as_str) == Some(captured[0].as_str())), "the kept topology snapshot retains the history-only source");
+            assert_eq!(json(&apply_split_packet(before.clone(), packet)), json(session.report()));
+        }
+        assert_eq!(json(&old_source), old_bytes, "pre-call source aliases are immutable");
+    }
+}
+
 #[test]
 fn unchanged_session_view_keeps_selection_storage_and_continues_options() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");

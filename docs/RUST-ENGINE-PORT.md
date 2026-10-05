@@ -10,23 +10,24 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, channels opened)
+## Handoff (2026-10-05, builder Split adopted)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current decision:** channels is now owned by default, alongside large figures,
-3D, figures and movieclips. The original full paired cost passes both user arms at
-**369.790/352.875 ms**, **4.793%** and **0.048887 ms** excess per 346 calls. Exact
-behavior and D13 are unchanged; this loaded result establishes no causal speed gain.
+**Current milestone:** ordinary sheet Split is adopted through the existing topology
+publication/history tail. The full warmed default app run adopts its one Split call:
+**15.335 ms** including validation/adoption versus **17.085 ms** editor-alone, with
+exact document/history/selection/full undo. Build UI Split/Undo, branch scope, repeated sessions and drawing/discard pass
+without page errors; desktop and compact screenshots were inspected. This observed call is not an idle or causal
+speed result; no class or full-class cost row changes.
 
-The committed `c4c580de` engine checkpoint passes **856 native tests** (two existing
-ignored), **64 stages / 60 unchanged generators / 358 containers** in **5m03**.
-Final gate checks pass **132 JS tests**, **four recordings / 94 exact calls** and Main
-check. Actual cold default adoption reports **31 owned / 15 compared / 46 calls**,
-positive Native pose/move/commit clocks and exact document/history/selection/full undo.
-Its short timings prove admission only. APIs, shipping and exclusions are unchanged.
+Focused checks pass **94 Rust tests**, **12 recordings / 272 exact calls**,
+**225 JS tests** and Main check; **1,340 fixture JSON** regenerate byte-stably.
+Shipping uses the required Wasm profile, **10,251,790 bytes** in **54.473 s**;
+codecs are unchanged. The last full green remains `c4c580de` and does not certify
+the new Rust; the next regular committed-source checkpoint remains due.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
@@ -38,13 +39,16 @@ workload. Channels has 346 calls on each page: latest excess 0.048887 ms and
 outcomes. The short default workload proves admission, not full cost.
 
 **Milestone counters:** inventory **175 js / 123 partial / 35 ported / 22 verified /
-1 removed** unchanged; **OWNED_CLASSES 4→5**; **deleted JS 2→2**; completed full cost
-rows **43→43**; **engine-1 0/28→0/28**. Historical measurements remain exact.
+1 removed** unchanged; **OWNED_CLASSES 5→5**; **deleted JS 2→2**; completed full cost
+rows **43 unchanged**; **engine-1 0/28 unchanged**. Affected command benchmark rows **0→1**, recorded separately in
+[command timings](performance/RUST-EDITING-COMMANDS.md).
 
-**Next:** ordinary builder split-segment adoption, then remaining recorded commands.
-Preserve native-channel/source/origin exclusions. After those commands, run the
-complete idle engine-1/baseline-0 table before deleting JavaScript. No further class
-cost optimization or general migration prerequisite is required.
+**Next:** Make Movieclip Unique, then remaining recorded commands. Its existing Rust
+recordings already cover unique copies. The app needs facade admission, exact adoption
+of the definition/sheet batch, and actual native-positive UI adoption with command timing.
+Keep native-timeline worker refusals and unsupported contexts on their existing fallback.
+After the remaining commands, run the complete idle engine-1/baseline-0 table before
+JavaScript deletion; no new general migration prerequisite is required.
 
 ### Verification and ownership
 
@@ -70,7 +74,8 @@ reviewed owning hunks; do not overwrite newer Main owners or clean another lane'
 Keep the checkpoint worktree and `tmp/baseline-worktree` (`96ebce85`). Preserve historical
 worktrees and immutable experiments. General Core/static/cache/storage lanes are parked;
 active work is limited to remaining recorded command adoption. The mobile checkout remains untouched at
-`661c6ad8`; no mobile API adaptation is needed for this milestone.
+`661c6ad8`. The Split packet is an additive opt-in Session JSON contract; a mobile
+consumer that opts in must handle it. Rust signatures and stored math are unchanged.
 
 D7 forbids blocking the interface; D13 forbids tuning pixel thresholds; D15 requires
 record-for-record behavior and the current class-cost rule; D16 requires `styk-math`
@@ -297,7 +302,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set.
 
-- **Next command:** ordinary builder split-segment adoption, then remaining recorded commands. Keep native saved channels/origins in their separate guards. Run the complete idle engine-1/baseline-0 matrix after those commands and before JavaScript deletion.
+- **Next command:** Make Movieclip Unique through the existing facade/publication/history owners. Its Rust recordings already exist; the remaining app work is facade admission, exact definition/sheet batch adoption and native-positive UI command timing. Preserve native saved-channel/source/origin guards. Run idle engine-1/baseline-0 after the remaining commands and before deletion.
 
 - **Canonical worker adoption and query readiness:** effect presets/scopes/paints now
   have exact native and app-shadow evidence; `Session::call_values` and borrowed
@@ -550,6 +555,17 @@ unpacked into `~/.cache/styk-webkit-libs`, nothing installed system-wide); pinne
 layer-sheet movieclip replacements.
 
 ## 7. Parity results
+
+Ordinary sheet Split passes 94 focused Rust tests, 12 recordings / 272 exact calls,
+225 JS tests, Main check and 1,340 byte-stable fixture JSON. The full warmed default
+app run reports 164 owned / 288 compared calls with zero failures, rounding or issues;
+its document JSON length of 710,546, 80-entry history, selection and full undo are exact.
+The single Split call takes 15.335 ms versus 17.085 ms editor-alone; this adds one
+affected-command measurement, not a full-class row or causal speed claim. Build UI
+Split/Undo, branch/repeated sessions and drawing/discard pass in 8.754 s without page
+errors. Desktop/compact screenshots use the existing compatibility renderer;
+this is not engine-1 or GPU certification.
+
 
 Channels default ownership passes the committed c4c580de checkpoint (856 native,
 two existing ignored; 64 stages / 60 unchanged generators / 358 containers), 132 final
@@ -940,8 +956,7 @@ B8 focused verification: 209 editing and 174 evaluation tests pass with the same
 
 ## 8. Work queue
 
-**Immediate command task:** ordinary builder split-segment adoption, then remaining
-recorded commands. Run the complete idle engine-1/baseline-0 matrix after those
+**Immediate command task:** Make Movieclip Unique, then remaining recorded commands. Run the complete idle engine-1/baseline-0 matrix after those
 commands and before JavaScript deletion; no further class-cost optimization is needed.
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
@@ -1181,3 +1196,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 16:48 UTC | Keep the moved frame during one-shot adoption | Successful isolated one-shot moves publish the original authored COW frame and preserve ready/pending scoped geometry; complex/joined fallback is unchanged. Targets channels cost. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→4; deleted JS 2→2; full cost rows 42→43; engine-1 0/28 unchanged. | 128 JS/Main check; seven recordings / 158 exact calls. Original full cost 369.790/352.875 ms passes both arms at 4.793% and 0.048887 ms excess/call. Default ownership stays closed pending checkpoint/default proof; no causal speed claim. |
 
 | 2026-10-05 17:11 UTC | Edit channel animations in the engine by default | Open channels after full paired cost, matching committed checkpoint and actual cold default core/full-undo proof. APIs, exclusions and D13 are unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 4→5; deleted JS 2→2; full cost rows 43 unchanged; engine-1 0/28 unchanged. | Full cost 369.790/352.875 ms passes at 4.793% and 0.048887 ms excess/call; checkpoint 856 native/2 ignored, 64 stages/358 containers; 132 JS, four recordings / 94 exact calls and Main check pass. Cold default: 31 owned/15 compared/46 calls, positive core clocks and exact full undo; admission only, no causal speed claim. |
+
+| 2026-10-05 18:05 UTC | Split builder segments through the engine | Ordinary sheet Split adopts the changed definition/poses through the original history tail; unsupported contexts retain fallback. Additive opt-in Session JSON; Rust signatures/math unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 5→5; deleted JS 2→2; affected-command measurements 0→1; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 94 Rust; 12 recordings / 272 exact calls; 225 JS/Main check; 1,340 stable JSON. One warmed Split 15.335/17.085 ms with exact full undo; Build UI Split/Undo/branch/repeated sessions/drawing/discard pass, screenshots inspected (compatibility renderer). No causal speed claim. |

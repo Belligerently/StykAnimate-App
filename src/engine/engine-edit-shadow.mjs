@@ -31,6 +31,7 @@ import {captureEditBounds} from './engine-edit-bounds.mjs';
 /** Topology edits of the selected figure's definition (styk-edit/src/topology.rs). */
 const TOPOLOGY = ['addSegment', 'addSegments', 'deleteSegment', 'deleteSingleSegment', 'unsplitSegment', 'mirrorSegment', 'mirrorSegmentBranch', 'moveBuilderSegment',
   'splitBuilderSegments', 'splitSegment', 'splitSegmentBranch', 'duplicateSegment', 'duplicateSegmentBranch', 'addConnector', 'addWeightedJoint', 'replaceFigureDefinition', 'setOrigin'];
+const SPLITS = new Set(['splitBuilderSegments', 'splitSegment', 'splitSegmentBranch']);
 /** The figure-range commands: an `undefined` argument means what `null` does to them. */
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames', 'alignFiguresInFrames'];
@@ -83,6 +84,7 @@ const OWNED = new Set(['moveSelection', 'rotateSelection', 'scaleSelection', 'sc
   'editFigureColors', 'setFigureColor', 'replaceFigureColor', 'resetFigureColors', 'removeVfx', 'resetVfx', 'moveVfx', 'reorderVfx',
   // Style and draw-order edits recoloured or keyed on the figure on show publish the sheet; definition edits run in the editor.
   'updateBuilderSegmentStyle', 'setPolygonOpacity', 'moveBuilderOrder', 'setBuilderOrder',
+  ...SPLITS,
   // A motion-path gesture's pointer moves run in both (the app reads the editor's session for
   // its live trail); what its commit publishes is adopted.
   'commitMotionPathEdit']);
@@ -395,8 +397,123 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       else object[key] = figure[key];
     }
   };
+  // Split publishes an existing definition and its stored poses, not a sheet.
+  // Keep native timelines, source documents, origins and live drafts on their
+  // original route; the native topology owner retains its other refusals.
+  const splitFigure = () => {
+    const styk = editor.report._styk;
+    if (!editor.layerTimeline || !styk?.layerSheet || styk.simpleFrameDraft || styk.movieclipSource
+      || editor._drag || editor._authoredPoseEdit || editor._frameDraft || editor._animationEdit
+      || editor._sheetPropertyPreview || editor._vfxClipEdit || editingClass(editor.report) === 'unported') return null;
+    let figure;
+    // Eligibility must not replace the original command's validation error
+    // with a failure while reading its currently shown selection.
+    try { figure = editor.figure; } catch { return null; }
+    return figure && !isMovieclip(figure) && !figure._styk?.animationOrigin ? figure : null;
+  };
+  const prepareSplit = (answer, figure, selection) => {
+    const packet = answer.topology, state = answer.state;
+    const reject = why => ({why: `a topology packet ${why}`});
+    const record = value => value && typeof value === 'object' && !Array.isArray(value);
+    if (!Array.isArray(answer.events) || !record(state)) return reject('with an incomplete response');
+    const event = answer.events[0];
+    if (answer.result !== true || !record(packet) || answer.events.length !== 1 || event?.kind !== 'edit'
+      || event.structural !== true || event.definition !== true || event.live || event.layerSheet
+      || typeof event.label !== 'string' || event.tick !== editor.tick || event.frameIndex !== editor.frameIndex
+      || answer.drag || answer.draft || answer.sheet || answer.definitions || answer.retained) return reject('outside a single split');
+    if (!Number.isInteger(packet.index) || editor.report.figure_types[packet.index] !== figure
+      || !record(packet.figure) || packet.figure.figure_type_id !== figure.figure_type_id
+      || !Array.isArray(packet.figure.segments) || !packet.figure.segments.length || !Array.isArray(packet.frames)) return reject('with a foreign definition');
+    if (state.tick !== editor.tick || state.frameIndex !== editor.frameIndex || state.selectedUid !== selection.uid
+      || !Array.isArray(state.selectedUids) || state.selectedUids.length !== selection.uids.length
+      || state.selectedUids.some((uid, index) => uid !== selection.uids[index])
+      || !Number.isInteger(state.selectedJoint) || state.selectedJoint < 0 || state.selectedJoint >= packet.figure.segments.length
+      || state.nextUid !== editor._nextUid || state.nextFrameIdentity !== editor._nextFrameIdentity
+      || state.layerRevision !== editor.layerRevision || Object.keys(selectionMetadata(state)).length) return reject('with a different view');
+    for (const key of ['animation', 'sheetAnimation']) if (Object.hasOwn(packet, key)) {
+      const field = packet[key];
+      if (!record(field) || typeof field.exists !== 'boolean' || field.exists !== Object.hasOwn(field, 'value')) return reject('with an incomplete animation field');
+    }
+    const before = editor._topologySnapshot(figure.figure_type_id), changes = [];
+    const placeKey = entry => Object.hasOwn(entry, 'sourceId') ? `source:${entry.sourceId}` : `keyframe:${entry.index}`;
+    const stored = new Map(before.frames.map((entry, index) => [placeKey(entry), {index,
+      captured: new Map(entry.objects.map((object, index) => [object.unique_id, index])),
+      targets: new Map(editor._sourceFrame(entry).objects.map(object => [object.unique_id, object]))}]));
+    let lastFrame = -1;
+    for (const entry of packet.frames) {
+      if (!record(entry) || !Number.isInteger(entry.index) || !Array.isArray(entry.objects) || !entry.objects.length
+        || Object.keys(entry).some(key => !['index', 'sourceId', 'objects'].includes(key))
+        || Object.hasOwn(entry, 'sourceId') && (entry.index !== -1 || typeof entry.sourceId !== 'string')) return reject('with an invalid stored frame');
+      const frame = stored.get(placeKey(entry));
+      if (!frame || frame.index <= lastFrame) return reject('with a foreign or repeated stored frame');
+      lastFrame = frame.index;
+      let lastObject = -1;
+      for (const object of entry.objects) {
+        const at = record(object) && Number.isInteger(object.unique_id) ? frame.captured.get(object.unique_id) : undefined;
+        if (at === undefined || at <= lastObject) return reject('with a foreign or repeated pose');
+        lastObject = at;
+        const target = frame.targets.get(object.unique_id);
+        if (!target || object.figure_type_id !== target.figure_type_id || object.object_slot !== target.object_slot) return reject('with a different pose identity');
+        if (object.figure_type_id === figure.figure_type_id && (!Array.isArray(object.angles) || object.angles.length !== packet.figure.segments.length
+          || object.len_flag && (!Array.isArray(object.lengths) || object.lengths.length !== packet.figure.segments.length)
+          || object.bend_flag && (!Array.isArray(object.bends) || object.bends.length !== packet.figure.segments.length))) return reject('with an incomplete split pose');
+        changes.push({target, object});
+      }
+    }
+    // Keyframes and current sources cannot disappear in a split. Only an
+    // unreferenced generated source can be absent after zero-history pruning;
+    // use the same current-reference owner as _record's source collector.
+    const changed = new Set(changes.map(change => change.target));
+    const currentSources = editor.historyLimit === 0 ? editor._currentFrameSourceIds() : null;
+    for (const entry of before.frames) {
+      const prunable = entry.sourceId && currentSources && editor._generatedFrameSources.has(entry.sourceId) && !currentSources.has(entry.sourceId);
+      if (prunable) continue;
+      for (const object of entry.objects)
+        if (object.figure_type_id === figure.figure_type_id && !changed.has(stored.get(placeKey(entry)).targets.get(object.unique_id)))
+          return reject('missing a split stored pose');
+    }
+    return {packet, figure, before, changes, selection, label: event.label};
+  };
+  const adoptSplit = ({packet, figure, before, changes, selection, label}, state) => {
+    const beforeAnimation = editor.report._styk.animation, beforeSheet = editor.report._styk.layerSheet;
+    try {
+      replacePoseObject(figure, packet.figure);
+      for (const {target, object} of changes) replacePoseObject(target, object);
+      if (packet.animation) {
+        if (packet.animation.exists) editor.report._styk.animation = packet.animation.value;
+        else delete editor.report._styk.animation;
+      }
+      if (packet.sheetAnimation) {
+        const sheet = {...beforeSheet};
+        if (packet.sheetAnimation.exists) sheet.legacyAnimation = packet.sheetAnimation.value;
+        else delete sheet.legacyAnimation;
+        editor.report._styk.layerSheet = sheet;
+      }
+      editor.selectedJoint = state.selectedJoint;
+    } catch (error) {
+      // Match _topologyEdit's rollback before its successful history tail.
+      try {
+        editor.report.figure_types[packet.index] = before.figure;
+        if (beforeAnimation === undefined) delete editor.report._styk.animation;
+        else editor.report._styk.animation = beforeAnimation;
+        editor.report._styk.layerSheet = beforeSheet;
+        for (const entry of before.frames) editor._replaceObjects(entry.index, entry.objects, entry.sourceId, entry.draft, entry.sourceDepth);
+        editor._restoreSelection(selection); editor._invalidate();
+      } finally { end('a topology packet application failed'); }
+      throw error;
+    }
+    try {
+      return editor._finishTopologyEdit(label, {figure, index: packet.index, typeId: figure.figure_type_id,
+        before, beforeSelection: selection, beforeAnimation});
+    } catch (error) {
+      // The original tail may already have recorded history. Keep those same
+      // partial effects, but never continue with the advanced Native session.
+      end('a topology publication failed'); throw error;
+    }
+  };
   /** What the editor does with an owned call's answer instead of computing it. */
-  const adopt = (name, answer, selection, args) => {
+  const adopt = (name, answer, selection, args, topology) => {
+    if (topology) return adoptSplit(topology, answer.state);
     // A camera drag the engine committed: the editor's ends, and its preview with it.
     if ((name === 'commitCameraDrag' || name === 'commitDrag') && editor._drag?.camera) { editor._drag = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
     const {state} = answer;
@@ -598,6 +715,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       // A ported call made by another call belongs to it.
       if (depth > 0) return original.apply(this, args);
       let live = begin(), before = null, payload = null, measured = null, fallbackStarted = null;
+      const topologyFigure = live && own && SPLITS.has(name) ? splitFigure() : null;
+      const ownCall = own && OWNED.has(name) && (!SPLITS.has(name) || Boolean(topologyFigure));
       // Selection changes inside shadowed calls (history restoring a branch) are not seen by the listener.
       if (live && runtimeState()) { end('runtime state the engine does not hold'); live = null; }
       if (live && (RANGE.has(name) || TOPOLOGY.includes(name) || (name === 'mirrorSelection' || name === 'mirrorFigure') && editor.selectedJoint >= 0) && legacyRuntime()) { end('poses with runtime segments'); live = null; }
@@ -616,7 +735,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (given.some(value => value === undefined || typeof value === 'function' || value instanceof Set || name === 'undo' || name === 'redo')) payload = name === 'undo' || name === 'redo' ? '[]' : null;
         else try { payload = measured ? measured.payload() : JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
-        else before = JSON.stringify({...view(), ...(own && OWNED.has(name) ? {changesOnly: true} : {})});
+        else before = JSON.stringify({...view(), ...(ownCall ? {changesOnly: true} : {}), ...(topologyFigure ? {topologyPublication: true} : {})});
       }
       // Rig releases emit plain/definition edits; own static patches bypass keyed styles.
       // Keep these routes in the original editor with their eligible fallback timed;
@@ -631,17 +750,18 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       // The engine runs the call in the editor's place.
       // Callback bounds have no owning query yet: observe only the measurements the editor
       // itself requested, never evaluate the range a second time to prepare an owned call.
-      if (live && own && OWNED.has(name) && !measured) {
+      if (live && ownCall && !measured) {
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
         try { text = call(live, name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
         catch (error) { if (report.mismatches.length < 50) report.mismatches.push({call: name, problems: [`the engine failed: ${error?.message ?? error}`]}); session = null; answer = null; broken = true; report.broken = String(error?.message ?? error).slice(0, 200); }
         report.calls++;
-        const why = answer?.status === 'ok' ? unadoptable(answer) : null;
+        const topology = answer?.status === 'ok' && topologyFigure && answer.result !== false ? prepareSplit(answer, topologyFigure, selection) : null;
+        const why = answer?.status === 'ok' ? topology ? topology.why : unadoptable(answer) : null;
         if (answer?.status === 'ok' && !why) {
           depth++;
           const adopting = performance.now();
-          try { return adopt(name, answer, selection, args); }
+          try { return adopt(name, answer, selection, args, topology); }
           finally {
             depth--; report.owned++; report.ownedMs += performance.now() - called;
             const entry = (report.byCall ??= {})[name] ??= {calls: 0};
