@@ -167,7 +167,9 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
   editor._record({kind:'layer-sheet',label,before,after:plan.state,beforeLayers:clone(beforeLayers),afterLayers:clone(plan.layers),
     frameSourceChanges:plan.sources,assets,beforeSelection:selection,afterSelection:editor._selectionState(),structural:true,timing:true,retainGeometry,
     precomputedBytes:JSON.stringify({tracks:Object.keys(plan.state.tracks).filter(id=>before.tracks[id]!==plan.state.tracks[id]).map(id=>[before.tracks[id],plan.state.tracks[id]]),beforeLayers,afterLayers:plan.layers,sources:plan.sources,assets}).length*2});
-  editor._layerChanged({reindex:true});editor._emit('edit',{label,structural:true,timing:true,layerSheet:true,
+  // Recording and source collection already maintain membership. A compact
+  // adoption retaining the exact layers needs only the revision/event change.
+  editor._layerChanged({reindex:plan.layers!==beforeLayers});editor._emit('edit',{label,structural:true,timing:true,layerSheet:true,
     definition:Boolean(assets?.figure_types),frameIndices:[],sourceIds:plan.sources.map(source=>source.id)});return true;
 }
 /** Publishes a layer sheet the engine computed for a call it ran in the editor's place

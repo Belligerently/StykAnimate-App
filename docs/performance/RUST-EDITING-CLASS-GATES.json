@@ -526,6 +526,277 @@
       "driverSha256": "f0087d91c5a80fe52e49687d612938e3986fa2e88b39e84dbf4b7f72bdc82d73",
       "receiptSha256": "18ae2764a0230f9c2d05650ff9396f5ecdebb0003adf3b2ab5592581befbc35c",
       "logSha256": "bc55eaacd3aa7eea1129f36eb8d0896bde157690af59e67407d3be0133dd3c90"
+    },
+    {
+      "batch": "B4",
+      "case": "joined-chain",
+      "round": 1,
+      "owned": 125,
+      "compared": 213,
+      "calls": 338,
+      "failedOwned": 0,
+      "editorMs": 147.6200000345707,
+      "adoptedMs": 159.2549998164177,
+      "fallbackMs": 10.394999980926514,
+      "failedOwnedMs": 0,
+      "candidateTotalMs": 169.6499997973442,
+      "ratio": 1.1492345194256495,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.929999977350235,
+          "nativeCallMs": 2.419999986886978,
+          "adoptMs": 9.245000004768372,
+          "editorMs": 10.554999947547913
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "editorCalls": 36,
+          "adoptionObserved": true,
+          "engineMs": 11.594999879598618,
+          "nativeCallMs": 10.46499988436699,
+          "adoptMs": 12.40000006556511,
+          "editorMs": 15.52500006556511
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "editorCalls": 4,
+          "adoptionObserved": true,
+          "engineMs": 2.3199999928474426,
+          "nativeCallMs": 1.9549999833106995,
+          "adoptMs": 3.8549999594688416,
+          "editorMs": 5.979999989271164
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {},
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "an answer the editor cannot adopt (updateBuilderSegmentStyle: a edit event)": 1,
+        "a call the engine has not ported": 1,
+        "an answer the editor cannot adopt (commitDrag: a edit event)": 1,
+        "segment values the session did not copy": 1,
+        "history the session did not record": 1
+      },
+      "unported": {
+        "addSegment: drawing into a figure with rig relationships": 1
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/joined-chain.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch4-quota-retry-1/r1-joined-chain.driver.json"
+      ],
+      "elapsedSeconds": 624.5684234859946,
+      "loadBefore": [
+        13.8544921875,
+        13.248046875,
+        11.70263671875
+      ],
+      "loadAfter": [
+        13.125,
+        11.9814453125,
+        11.6875
+      ],
+      "driverSha256": "839129bec2a9dbbd3593590a3259bedf6295986d38fbe7f28c408c6a2fa81426",
+      "receiptSha256": "4b1d0c863e71c3965389357f48333fa471e6a0da8b6953450d4b252646d2283b",
+      "logSha256": "178d91a7baa92e8befd00e5b41a1fbdeb9dddd3935a2c356af0e4c1a78075940"
+    },
+    {
+      "batch": "B4",
+      "case": "rig",
+      "round": 1,
+      "owned": 119,
+      "compared": 170,
+      "calls": 294,
+      "failedOwned": 1,
+      "editorMs": 137.56999987363815,
+      "adoptedMs": 150.50500002503395,
+      "fallbackMs": 15.455000042915344,
+      "failedOwnedMs": 0.2199999988079071,
+      "candidateTotalMs": 166.1800000667572,
+      "ratio": 1.2079668548331621,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.2350000143051147,
+          "nativeCallMs": 1.879999965429306,
+          "adoptMs": 7.7799999713897705,
+          "editorMs": 9.615000039339066
+        },
+        "poseJoint": {
+          "candidateCalls": 36,
+          "editorCalls": 36,
+          "adoptionObserved": true,
+          "engineMs": 11.049999922513962,
+          "nativeCallMs": 9.980000019073486,
+          "adoptMs": 9.500000089406967,
+          "editorMs": 12.814999997615814
+        },
+        "commitDrag": {
+          "candidateCalls": 4,
+          "editorCalls": 4,
+          "adoptionObserved": true,
+          "engineMs": 1.899999976158142,
+          "nativeCallMs": 1.6099999845027924,
+          "adoptMs": 3.0650000274181366,
+          "editorMs": 3.7849999964237213
+        }
+      },
+      "comparisonOnlyResidualCalls": 4,
+      "failedAttemptsByMethod": {
+        "pasteSegmentValues": {
+          "count": 1,
+          "durationMs": 0.2199999988079071
+        }
+      },
+      "ended": {
+        "layer focus": 2,
+        "a call the engine has not ported": 9,
+        "an answer the editor cannot adopt (updateBuilderSegmentStyle: a edit event)": 1,
+        "an answer the editor cannot adopt (commitDrag: a edit event)": 1,
+        "history the session did not record": 2
+      },
+      "unported": {
+        "selectBranch: origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition": 2,
+        "addSegment: drawing into a figure with rig relationships": 1,
+        "beginMotionPathEdit: a motion-path edit of rigged or 3D figures": 6
+      },
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--file",
+        "engine/tests/edit/rig.document.json",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch4-quota-retry-1/r1-rig.driver.json"
+      ],
+      "elapsedSeconds": 711.6649778599967,
+      "loadBefore": [
+        15.4052734375,
+        11.92431640625,
+        9.765625
+      ],
+      "loadAfter": [
+        13.8544921875,
+        13.248046875,
+        11.70263671875
+      ],
+      "driverSha256": "3de3d11690f0e8bfe02e27cae89644d574ededa736c0fd9a8850c16c0e950876",
+      "receiptSha256": "181987efa6817a0a8652362bd2d0dc49f6195ce21db4084d0de8dea875066a8b",
+      "logSha256": "e2e56aa7493a23d33f13317fa43b90c6bc3ff341ff89f9816b7022616647b0bf"
+    },
+    {
+      "batch": "B4",
+      "case": "startup",
+      "round": 1,
+      "owned": 163,
+      "compared": 285,
+      "calls": 449,
+      "failedOwned": 1,
+      "editorMs": 224.71500021219254,
+      "adoptedMs": 245.0000001490116,
+      "fallbackMs": 37.185000002384186,
+      "failedOwnedMs": 1.3599999845027924,
+      "candidateTotalMs": 283.5450001358986,
+      "ratio": 1.2617982772318466,
+      "valid": true,
+      "sourceStable": true,
+      "costAccountingComplete": true,
+      "costAcceptanceProven": false,
+      "countGaps": {},
+      "core": {
+        "moveSelection": {
+          "candidateCalls": 6,
+          "editorCalls": 6,
+          "adoptionObserved": true,
+          "engineMs": 2.6050000190734863,
+          "nativeCallMs": 2.0650000274181366,
+          "adoptMs": 7.620000004768372,
+          "editorMs": 11.495000004768372
+        },
+        "poseJoint": {
+          "candidateCalls": 48,
+          "editorCalls": 48,
+          "adoptionObserved": true,
+          "engineMs": 21.93500006198883,
+          "nativeCallMs": 19.780000030994415,
+          "adoptMs": 18.794999957084656,
+          "editorMs": 22.145000159740448
+        },
+        "commitDrag": {
+          "candidateCalls": 8,
+          "editorCalls": 8,
+          "adoptionObserved": true,
+          "engineMs": 4.289999961853027,
+          "nativeCallMs": 3.5049999952316284,
+          "adoptMs": 7.480000019073486,
+          "editorMs": 33.314999997615814
+        }
+      },
+      "comparisonOnlyResidualCalls": 0,
+      "failedAttemptsByMethod": {
+        "updateBuilderSegmentStyle": {
+          "count": 1,
+          "durationMs": 1.3599999845027924
+        }
+      },
+      "ended": {
+        "layer focus": 2,
+        "runtime state the engine does not hold": 2,
+        "an answer the editor cannot adopt (updateBuilderSegmentStyle: a edit event)": 2,
+        "history the session did not record": 4,
+        "an answer the editor cannot adopt (commitDrag: a edit event)": 1
+      },
+      "unported": {},
+      "argv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--own",
+        "--warm",
+        "--exact-math",
+        "--verbose",
+        "--out",
+        "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch4-quota-retry-1/r1-startup.driver.json"
+      ],
+      "elapsedSeconds": 499.8869418390095,
+      "loadBefore": [
+        1.9443359375,
+        4.52978515625,
+        7.2080078125
+      ],
+      "loadAfter": [
+        15.4052734375,
+        11.92431640625,
+        9.765625
+      ],
+      "driverSha256": "bc06f132a3d4d794c29fb03c84fe1a47dbb621b45fe95846f3e217494f60849d",
+      "receiptSha256": "50d3732a96c7be1838b2ff1780539584f7a0f1abf3a43e1ec56af2d4e57ccc5e",
+      "logSha256": "873ba4c94500e005333f81cafd213bdfdf02a70e2fbea697e79470114eaf1e96"
     }
   ],
   "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-clipboard-final-1",
@@ -727,10 +998,212 @@
           "bytes": 97836
         }
       }
+    },
+    {
+      "scope": "B4 completed full loaded warmed eligible OWNED-call paired editing cost; not engine-1 or baseline-0",
+      "notice": "All three new rows preserve strict parity and complete failed-attempt accounting; all three fail unchanged cost rule. Original six full rows and three ordinary diagnostic rows remain exact. No causal speedup, default figures adoption or Native history-depth claim.",
+      "baseHead": "3e0fe620925e7ff9cd0b91ed39a11dbe0278ef11",
+      "sourceWasUncommitted": false,
+      "sourceHashes": {
+        "src/editor.mjs": {
+          "sha256": "6f49cdb68533cb9a1968683a22d17cba3be2a17f2774b254cd0e48f12ffd18ce",
+          "bytes": 133216
+        },
+        "src/engine/engine-edit-shadow.mjs": {
+          "sha256": "69d8a20beedc311a58c984baa037c88e5d70b3f3385931f636be8119b6d4ca54",
+          "bytes": 53730
+        },
+        "scripts/engine-edit-shadow.mjs": {
+          "sha256": "c3ad5cb330123296b6e3527abdb4bea6c2cf1a5eaa6014db7b9a1122b81b243f",
+          "bytes": 64173
+        },
+        "engine/crates/styk-edit/src/ik.rs": {
+          "sha256": "2708afe1be8b02c6073365e9dfe9edf9005f0ac5e84e89ef48d319460c4bc83b",
+          "bytes": 58065
+        },
+        "engine/crates/styk-edit/src/select.rs": {
+          "sha256": "3a00b840273df243c708cd5d1ca392fedf35480f5f3087367b12c2f278e548a1",
+          "bytes": 28546
+        },
+        "engine/crates/styk-edit/src/session.rs": {
+          "sha256": "b4a956f27fb8979c2879d3593563ff595ad449e3ab151138d605072d60c499d6",
+          "bytes": 24925
+        },
+        "engine/crates/styk-edit/src/lib.rs": {
+          "sha256": "884d3f782e0655d01f4f6a02b95ebb45a058eff45d8ebe2c41e607a54df78c50",
+          "bytes": 54411
+        },
+        "engine/crates/styk-edit/src/history.rs": {
+          "sha256": "e155599d26e4fafeb709bdd18db8301a599828f209f2cccce1782d95167bb95b",
+          "bytes": 30432
+        },
+        "engine/crates/styk-edit/src/sheet.rs": {
+          "sha256": "a6306c845da896e136f19b12dcdf7922b760ee92293ae524c8b5e47c7397dacd",
+          "bytes": 70696
+        },
+        "engine/crates/styk-edit/src/sheet_frames.rs": {
+          "sha256": "5d6531d66c8449d90a863e1c2a2c8c7c21ae0501f124339b43dc9a74a3d1367b",
+          "bytes": 26795
+        }
+      },
+      "inputHashes": {
+        "engine/tests/edit/startup.document.json": {
+          "sha256": "6b1572a59bcc486d99881b97752b9c6771b94d4fd505c39750b1d1adaf14e543",
+          "bytes": 5587
+        },
+        "engine/tests/edit/rig.document.json": {
+          "sha256": "e9d3a0e39fb7b5f0636413cb6742fe7d02871d4018166a34011b3e799c235810",
+          "bytes": 3022
+        },
+        "engine/tests/edit/joined-chain.document.json": {
+          "sha256": "7a79a4ab084d4f6e6b57c71d665e6ff168bd3db8b06b7b3887c4d731573b42f1",
+          "bytes": 6095
+        }
+      },
+      "packageBuildInfo": {
+        "profile": "wasm",
+        "toolchain": "nightly-2026-09-15",
+        "wasmBindgen": "0.2.129",
+        "maxMemory": 2147483648,
+        "wasmBytes": 10222396,
+        "wasmBytesBeforeOpt": 10222396,
+        "jsBytes": 201867,
+        "sha256": "d0aebc42737df29c2edfda1a169de82e0adbd7d9e29c9012f9aa421a43874b13",
+        "codec": {
+          "toolchain": "stable",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+          "wasmBytes": 1532303,
+          "wasmBytesBeforeOpt": 1532303,
+          "jsBytes": 13846,
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+        },
+        "drawing": {
+          "toolchain": "stable",
+          "wasmBytes": 449096,
+          "wasmBytesBeforeOpt": 449096,
+          "jsBytes": 53485,
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+        }
+      },
+      "packageHashes": {
+        "src/engine/pkg/build-info.json": {
+          "sha256": "37ef862ba0eed8d60caf756b45fa585a689023db5ebf503f7bfa38ec13e092d3",
+          "bytes": 745
+        },
+        "src/engine/pkg/styk_codec.js": {
+          "sha256": "5a89877cf7c01aad1a123bd809c1123b46eb6313f8a4a289ca360fca836c8afb",
+          "bytes": 13846
+        },
+        "src/engine/pkg/styk_codec_bg.wasm": {
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9",
+          "bytes": 1532303
+        },
+        "src/engine/pkg/styk_drawing.js": {
+          "sha256": "665b9a26b20e5f9b896b59cd0f58353c9b08d1d652d9dd31c5849c379c929b72",
+          "bytes": 53485
+        },
+        "src/engine/pkg/styk_drawing_bg.wasm": {
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02",
+          "bytes": 449096
+        },
+        "src/engine/pkg/styk_engine.js": {
+          "sha256": "cf652195c1b141482f1ec909a7535b7e305e84722a6749e36cbf608f00d9ef54",
+          "bytes": 201867
+        },
+        "src/engine/pkg/styk_engine_bg.wasm": {
+          "sha256": "d0aebc42737df29c2edfda1a169de82e0adbd7d9e29c9012f9aa421a43874b13",
+          "bytes": 10222396
+        }
+      },
+      "runtimes": {
+        "nodeVersion": "v24.11.0",
+        "pythonVersion": "Python 3.12.9"
+      },
+      "capturedIdentityCounts": {
+        "productionSources": 1529,
+        "packageFiles": 7,
+        "documents": 3
+      },
+      "sourcePackageAndInputsStableEveryRun": true,
+      "costRule": "candidate ownedMs + ownableMs + failedOwnedMs <= editorAlone ownableMs; unchanged D13",
+      "gate": {
+        "OWNED_CLASSES": [
+          "large figures",
+          "3d"
+        ],
+        "figuresDefaultOwnership": false
+      },
+      "rawEvidence": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch4-quota-retry-1",
+      "receiptInputs": {
+        "input-receipt.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch4-quota-retry-1/input-receipt.json",
+          "sha256": "c22e955f2c5d522c834d8359fc0f32f28e0b7173abcef90d64f5015fb1dd66de",
+          "bytes": 236446
+        },
+        "plan.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch4-quota-retry-1/plan.json",
+          "sha256": "6583a4c551ea99a4ca6c67f2ee672802477c08435190321cd3264695126afde8",
+          "bytes": 228
+        },
+        "summary-accounted.json": {
+          "path": "/tmp/styk-figures-gate-execution-20261004/figures-candidate-batch4-quota-retry-1/summary-accounted.json",
+          "sha256": "918a9cd0005b53402e96d56425cb333ed3e025dcd3c11a8b9dea54057be83b58",
+          "bytes": 97642
+        }
+      },
+      "independentAccountingReview": {
+        "path": "/tmp/styk-figures-b4-complete-accounting-independent-review-20261006/manifest.json",
+        "sha256": "fe9c9a3193cb38b17e8a46795a900b8e0aa3acb818fe844425420b82a7dc6e37",
+        "bytes": 8103
+      },
+      "committedHeadFullCheckpoint": {
+        "scope": "Completed committed-HEAD full checkpoint; no rerun by this documentation preparation",
+        "head": "3e0fe620925e7ff9cd0b91ed39a11dbe0278ef11",
+        "nativePassed": 805,
+        "existingIgnoredDiagnostics": 2,
+        "successfulStages": 64,
+        "containers": 358,
+        "completion": {
+          "path": "tmp/root-verification-temp/checkpoint-3e0fe620-completion.json",
+          "sha256": "c9f3ebbf8bd5389cec1af4a72a827750ee55a1b547b254d389eeef9eb705bd43",
+          "bytes": 355
+        },
+        "log": {
+          "path": "tmp/root-verification-temp/checkpoint-3e0fe620-jobs6.log",
+          "sha256": "fc42b89a21f7b5d52846cc9c1799d8221b312c6d27346eb00508f5ccc6966faf",
+          "bytes": 98874
+        }
+      },
+      "localQuotaCorrection": {
+        "scope": "Confirmed local /tmp EDQUOT/resource correction; three earlier aborted attempts are incomplete, not cost/gate outcomes or an established native leak",
+        "attemptsNotCounted": 3,
+        "allProofPathsPreserved": true,
+        "pathCount": 6194,
+        "regularFiles": 6191,
+        "symlinks": 3,
+        "regularBytes": 2287477557,
+        "headroomBytesAfter": 2368860160,
+        "receipt": {
+          "path": "tmp/root-verification-temp/figures-owned-runtime-quota-relocation.json",
+          "sha256": "6fa7ca8ce442614ccfbdf4acfd57e99386e09b40c92f1086e6badabd21a58229",
+          "bytes": 1235079
+        },
+        "independentReview": {
+          "path": "/tmp/styk-figures-b4-quota-relocation-review-20261005/REVIEW.json",
+          "sha256": "e59f35b045aa25a1ae2e788d73321e3a00ce8abc7a354cf0528994af5425a96c",
+          "bytes": 1146
+        }
+      },
+      "nextBoundedCostCandidates": {
+        "nativeCacheAndSameCallIK": "PENDING root focused integration and fresh cost verification",
+        "javascriptUnchangedLayersReindex": "V2 source review clean; integration/check/fresh cost PENDING; private test receipts retained separately",
+        "newPatchMilestone": "PENDING root final verification; not claimed by this evidence addition"
+      },
+      "publicCrateApiOrResponseSchemaChanges": false
     }
   ],
   "ordinaryCoreDiagnostic": {
-    "scope": "B3/B4 loaded ordinary-core paired first-five-interaction diagnostics; not full class cost, engine-1 or baseline-0",
+    "scope": "B3/B4/B5 loaded ordinary-core paired first-five-interaction diagnostics; not full class cost, engine-1 or baseline-0",
     "notice": "No causal speedup or acceptance claim. Existing latest full startup/rig/joined-chain cost rows remain FAIL. No gate/source/document change by this read-only review.",
     "baseHead": "758b7681bc999aeb6b93871cdc97af845e963253",
     "sourceWasUncommitted": true,
@@ -1301,6 +1774,160 @@
         "completed": "2026-10-05T01:30:42.730146+00:00",
         "poseNativeCallMs": 5.719999998807907,
         "poseCallToAdoptionResidualMs": 0.8350000083446503
+      },
+      {
+        "label": "b5-shipping-1",
+        "head": "3e0fe620925e7ff9cd0b91ed39a11dbe0278ef11",
+        "sourceWasUncommitted": true,
+        "wasm": {
+          "profile": "wasm",
+          "toolchain": "nightly-2026-09-15",
+          "wasmBindgen": "0.2.129",
+          "maxMemory": 2147483648,
+          "wasmBytes": 10227868,
+          "wasmBytesBeforeOpt": 10227868,
+          "jsBytes": 201867,
+          "sha256": "ac4ddf356bac86f35dab233badd85558897bc8e93549870032f63272341daf84",
+          "codec": {
+            "toolchain": "stable",
+            "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+            "wasmBytes": 1532303,
+            "wasmBytesBeforeOpt": 1532303,
+            "jsBytes": 13846,
+            "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+          },
+          "drawing": {
+            "toolchain": "stable",
+            "wasmBytes": 449096,
+            "wasmBytesBeforeOpt": 449096,
+            "jsBytes": 53485,
+            "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+          }
+        },
+        "input": {
+          "sha256": "46de1ab70d07d920425b41fc731c4f44ae59180db9cefec6e8777898e96f721d",
+          "bytes": 290105
+        },
+        "scope": "Forced owned warmed first-five-interaction diagnostic only; approved current dirty source, no class-cost certification",
+        "sourceStable": true,
+        "strictParityHistorySelectionFullUndo": true,
+        "zeroProblemsErrorsMismatchesRounding": true,
+        "owned": 31,
+        "compared": 15,
+        "calls": 46,
+        "sessions": 1,
+        "historyEntriesAfter": 10,
+        "counts": {
+          "commitDrag": 3,
+          "moveSelection": 2,
+          "poseJoint": 24,
+          "rotateSelection": 1,
+          "scaleSelection": 1
+        },
+        "core": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.78000009059906,
+            "adoptMs": 9.254999935626984,
+            "callMs": 5.930000066757202,
+            "answerBytes": 48377
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.41499999165534973,
+            "adoptMs": 0.8750000298023224,
+            "callMs": 0.3400000035762787,
+            "answerBytes": 6784
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.0650000274181366,
+            "adoptMs": 2.074999988079071,
+            "callMs": 0.9200000464916229,
+            "answerBytes": 9249
+          }
+        },
+        "editorMs": 17.075000017881393,
+        "ownedMs": 22.92500001192093,
+        "fallbackMs": 0,
+        "failedOwned": 0,
+        "failedOwnedMs": 0,
+        "totalMs": 22.92500001192093,
+        "costAccountingComplete": true,
+        "byCall": {
+          "poseJoint": {
+            "calls": 24,
+            "engineMs": 6.78000009059906,
+            "adoptMs": 9.254999935626984,
+            "callMs": 5.930000066757202,
+            "answerBytes": 48377
+          },
+          "commitDrag": {
+            "calls": 3,
+            "engineMs": 1.0650000274181366,
+            "adoptMs": 2.074999988079071,
+            "callMs": 0.9200000464916229,
+            "answerBytes": 9249
+          },
+          "moveSelection": {
+            "calls": 2,
+            "engineMs": 0.41499999165534973,
+            "adoptMs": 0.8750000298023224,
+            "callMs": 0.3400000035762787,
+            "answerBytes": 6784
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "engineMs": 0.5250000059604645,
+            "adoptMs": 1.1200000047683716,
+            "callMs": 0.45500001311302185,
+            "answerBytes": 5194
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "engineMs": 0.33000001311302185,
+            "adoptMs": 0.5649999976158142,
+            "callMs": 0.2900000214576721,
+            "answerBytes": 4729
+          }
+        },
+        "editorByCall": {
+          "poseJoint": {
+            "calls": 24,
+            "editorMs": 10.855000019073486
+          },
+          "commitDrag": {
+            "calls": 3,
+            "editorMs": 2.8250000178813934
+          },
+          "moveSelection": {
+            "calls": 2,
+            "editorMs": 1.2449999749660492
+          },
+          "rotateSelection": {
+            "calls": 1,
+            "editorMs": 1.300000011920929
+          },
+          "scaleSelection": {
+            "calls": 1,
+            "editorMs": 0.8900000154972076
+          }
+        },
+        "beforeLoadAverage": [
+          0.92724609375,
+          1.8798828125,
+          3.716796875
+        ],
+        "afterLoadAverage": [
+          7.77587890625,
+          4.17626953125,
+          4.37109375
+        ],
+        "elapsedSeconds": 94.55027635101578,
+        "started": "2026-10-05T03:18:03.656974+00:00",
+        "completed": "2026-10-05T03:19:38.211927+00:00",
+        "poseNativeCallMs": 5.930000066757202,
+        "poseCallToAdoptionResidualMs": 0.8500000238418579
       }
     ],
     "latestFullClassCostStatus": {
@@ -1362,6 +1989,22 @@
       "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b4-shipping-1/started.json": {
         "sha256": "a496eee4113489b20852dbaa7e773925ddb75223c89bbfa1652a391e51850ebf",
         "bytes": 271706
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b5-shipping-1/completion.json": {
+        "sha256": "2487cb979b7898fc86bfbe628e5a06ee21f1d7876ff03f964ff5d7bd452f777f",
+        "bytes": 546192
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b5-shipping-1/driver.json": {
+        "sha256": "8041d2505955e83e2aa539f6d06b707e247441fe774a1a4ddde6bc7bf1bd5e90",
+        "bytes": 2634
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b5-shipping-1/app.log": {
+        "sha256": "887c6157eaded46b65aac223356aff5b5f9441fd425fdca9d12cc685e1a9e813",
+        "bytes": 2173
+      },
+      "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b5-shipping-1/started.json": {
+        "sha256": "57c6b4936c59771d0294cf5792cbca9cda8df3bf493b68a913def25559d053d2",
+        "bytes": 272009
       }
     },
     "priorSealedComparison": {
@@ -1495,7 +2138,137 @@
         "total": 28
       },
       "figuresFullClassGateAcceptedRows": 0,
-      "ordinaryDiagnosticMeasurementRows": 3
+      "ordinaryDiagnosticMeasurementRows": 4
+    },
+    "b5SourcePackageContext": {
+      "notice": "Actual94.55s completed probe after B5 shipping with approved dirty source on HEAD3e. Strict equal before/after source/package/input maps; no new full cost row or causal speedup claim. Earlier three ordinary run objects and all nine full cost rows are preserved.",
+      "head": "3e0fe620925e7ff9cd0b91ed39a11dbe0278ef11",
+      "sourceWasUncommitted": true,
+      "capturedIdentityCounts": {
+        "sources": 1529,
+        "packageFiles": 7,
+        "standardInputs": 3
+      },
+      "sameExactWarmInput": {
+        "sha256": "46de1ab70d07d920425b41fc731c4f44ae59180db9cefec6e8777898e96f721d",
+        "bytes": 290105
+      },
+      "runner": {
+        "sha256": "40a33b6b937b532bdb0a69ead2305a1c697bc267fe2b6edc933a5b7ff424ac49",
+        "bytes": 9645
+      },
+      "actualArgv": [
+        "~/.local/share/fnm/node-versions/v24.11.0/installation/bin/node",
+        "scripts/engine-edit-shadow.mjs",
+        "--file",
+        "/tmp/styk-figures-b2-adoption-profile-run-20261005/engine-owned.warm.document.json",
+        "--own",
+        "--warm",
+        "--figures-gate",
+        "--exact-math",
+        "--verbose",
+        "--out",
+        "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b5-shipping-1/driver.json"
+      ],
+      "shipping": {
+        "profile": "wasm",
+        "toolchain": "nightly-2026-09-15",
+        "wasmBindgen": "0.2.129",
+        "maxMemory": 2147483648,
+        "wasmBytes": 10227868,
+        "wasmBytesBeforeOpt": 10227868,
+        "jsBytes": 201867,
+        "sha256": "ac4ddf356bac86f35dab233badd85558897bc8e93549870032f63272341daf84",
+        "codec": {
+          "toolchain": "stable",
+          "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+          "wasmBytes": 1532303,
+          "wasmBytesBeforeOpt": 1532303,
+          "jsBytes": 13846,
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9"
+        },
+        "drawing": {
+          "toolchain": "stable",
+          "wasmBytes": 449096,
+          "wasmBytesBeforeOpt": 449096,
+          "jsBytes": 53485,
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02"
+        }
+      },
+      "packageHashes": {
+        "src/engine/pkg/build-info.json": {
+          "sha256": "66c48b86ca50166c3c2bda73bda6390a6c539fcbd8883e07e2c3893ca648a320",
+          "bytes": 745
+        },
+        "src/engine/pkg/styk_codec.js": {
+          "sha256": "5a89877cf7c01aad1a123bd809c1123b46eb6313f8a4a289ca360fca836c8afb",
+          "bytes": 13846
+        },
+        "src/engine/pkg/styk_codec_bg.wasm": {
+          "sha256": "831eb67ec33f33c5306a925ceefc1a199c68603fdad9c20ff0c811446f7c63a9",
+          "bytes": 1532303
+        },
+        "src/engine/pkg/styk_drawing.js": {
+          "sha256": "665b9a26b20e5f9b896b59cd0f58353c9b08d1d652d9dd31c5849c379c929b72",
+          "bytes": 53485
+        },
+        "src/engine/pkg/styk_drawing_bg.wasm": {
+          "sha256": "69df6ea195e7ecf3c370b0ce2998c7cb4c95b2ae13af87290dc67e2ce91dfa02",
+          "bytes": 449096
+        },
+        "src/engine/pkg/styk_engine.js": {
+          "sha256": "cf652195c1b141482f1ec909a7535b7e305e84722a6749e36cbf608f00d9ef54",
+          "bytes": 201867
+        },
+        "src/engine/pkg/styk_engine_bg.wasm": {
+          "sha256": "ac4ddf356bac86f35dab233badd85558897bc8e93549870032f63272341daf84",
+          "bytes": 10227868
+        }
+      },
+      "standardInputHashes": {
+        "engine/tests/edit/startup.document.json": {
+          "sha256": "6b1572a59bcc486d99881b97752b9c6771b94d4fd505c39750b1d1adaf14e543",
+          "bytes": 5587
+        },
+        "engine/tests/edit/rig.document.json": {
+          "sha256": "e9d3a0e39fb7b5f0636413cb6742fe7d02871d4018166a34011b3e799c235810",
+          "bytes": 3022
+        },
+        "engine/tests/edit/joined-chain.document.json": {
+          "sha256": "7a79a4ab084d4f6e6b57c71d665e6ff168bd3db8b06b7b3887c4d731573b42f1",
+          "bytes": 6095
+        }
+      },
+      "runtimes": {
+        "node": "v24.11.0",
+        "python": "Python 3.12.9"
+      },
+      "fullSnapshotReceipt": {
+        "path": "/tmp/styk-figures-ordinary-core-diagnostic-20261006/b5-shipping-1/completion.json",
+        "sha256": "2487cb979b7898fc86bfbe628e5a06ee21f1d7876ff03f964ff5d7bd452f777f",
+        "bytes": 546192
+      },
+      "nativeFinalSource": {
+        "path": "/tmp/styk-figures-native-union-final-20261006/source-manifest.json",
+        "sha256": "e88044bf819e0490dc2e40c44afc9cc433a1353a0be183305d508608a360e010",
+        "bytes": 5360
+      },
+      "mainJsVerification": {
+        "path": "/tmp/styk-figures-b5-main-js-verification-20261006/RESULT.json",
+        "sha256": "8ac3a6f480c1cef27c5ed3d61d43158f15eb39a6bf1992d79e962ceb46f66934",
+        "bytes": 2501
+      },
+      "shippingReceipt": {
+        "path": "tmp/root-verification-temp/figures-cost-batch5-shipping-completion.json",
+        "sha256": "6436c52388a678c2c23311d2634b08dfbfcc6794aa1e658cce1ce93d2dd05aa6",
+        "bytes": 9497
+      },
+      "nativeIndependentReview": {
+        "path": "/tmp/styk-figures-native-union-final-independent-review-20261006/manifest.json",
+        "sha256": "faddbef6c6a2946bb8b3cdbe63a348343276d2870ef9656d7fc86cf732b5f3ee",
+        "bytes": 795
+      },
+      "remainingGateWork": "new committed-source matching checkpoint, full startup/rig/joined cost, and actual default-class core adoption; classes remain largefigures+3d"
     }
   }
 }

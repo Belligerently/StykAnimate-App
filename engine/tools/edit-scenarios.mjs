@@ -1213,3 +1213,23 @@ await import('./edit-scenarios-native-transform-channels.mjs');
 
 // Remote-time motion previews and commits retain original animation pivots.
 await import('./edit-scenarios-origin-motion.mjs');
+
+// Same-call IK capture: an updated continuity reference feeds the second capture.
+// Invalid patch priority and refusal preserve the document/history before either capture.
+for (const [name, joint, chainLength, document] of [
+  ['ik-capture-double-2d-sheet', 3, 1, 'startup.document.json'],
+  ['ik-capture-double-spatial-sheet', 9, 2, '../../crates/styk-eval/tests/fixtures/ik/spatial.json'],
+]) {
+  scenario(name, {layerTimeline: true, propertyChannels: true}, [
+    ['@select', 1, joint], ['setNodeIK', {chainLength, bendDirection: 0}], ['@frame'],
+    ['undo'], ['@frame'], ['redo'], ['@frame'],
+    ['setNodeIK', {bogus: 1, chainLength: 99, enabled: 'yes', bendDirection: 0}], ['@frame'],
+    ['setNodeIK', {chainLength: 99, enabled: 'yes', bendDirection: 0}], ['@frame'],
+    ['setNodeIK', {enabled: 'yes', bendDirection: 0}], ['@frame'],
+    ['setNodeIK', {enabled: false}], ['@frame'],
+    ['setNodeIK', {enabled: true, pinned: false, chainLength, bendDirection: 0}], ['@frame'],
+    ['undo'], ['@frame'], ['redo'], ['@frame'],
+    ['@select', 1, -1], ['setNodeIK', {chainLength, bendDirection: 0}], ['@frame'],
+    ['@select', 1, joint], ['undo'], ['@frame'], ['redo'], ['@frame'],
+  ], document);
+}

@@ -601,16 +601,26 @@ impl Editor {
         // has a 3D target (`_drag.ikCapture`).
         let rotation = controller.target.rotation;
         let capture_key = format!("{id}:{handle}");
-        if !self.drag.as_ref().is_some_and(|d| d.ik_captures.contains_key(&capture_key)) {
-            let capture = self.capture_limb(slot, handle)?;
+        let fresh = if !self.drag.as_ref().is_some_and(|d| d.ik_captures.contains_key(&capture_key)) {
+            let solved = solve_frame(&prepared, &frame, &scene);
+            let capture = self.capture_limb_from(slot, handle, &prepared, &frame, &scene, &solved)?;
             if let Some(drag) = self.drag.as_mut() {
-                drag.ik_captures.insert(capture_key.clone(), capture);
+                drag.ik_captures.insert(capture_key.clone(), capture.clone());
             }
-        }
+            Some(capture)
+        } else { None };
         let cached = self.drag.as_ref().and_then(|d| d.ik_captures.get(&capture_key).cloned());
         let captured = match cached {
             Some(capture) if capture.spatial_target.is_some() => capture,
-            _ => self.capture_limb(slot, handle)?,
+            // A fresh 2D capture is valid within this invocation only. Subsequent drag calls
+            // recapture the current selection pose; only a 3D target retains its baseline.
+            _ => match fresh {
+                Some(capture) => capture,
+                None => {
+                    let solved = solve_frame(&prepared, &frame, &scene);
+                    self.capture_limb_from(slot, handle, &prepared, &frame, &scene, &solved)?
+                }
+            },
         };
         let followers = captured.followers.clone();
         // `{...next, ...captured}`: the captured 3D parts, else the controller's.

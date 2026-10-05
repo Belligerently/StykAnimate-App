@@ -10,7 +10,9 @@
 //! figure turned with its targets, and `resetSpatialPose`. Pose choices are in
 //! `pose_choice.rs`.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
+
+use styk_eval::{eval::{Frame, Prepared}, geometry::Scene};
 
 use styk_doc::{Obj, Value};
 use styk_eval::doc::Figure;
@@ -203,9 +205,20 @@ impl Editor {
         let Some(object) = self.selection_frame()?.get(slot).cloned() else { return Ok(None) };
         let Some(id) = uid(&object) else { return Ok(None) };
         let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
-        let Some(at) = frame.objects.iter().position(|o| o.uid == id) else { return Ok(None) };
+        Ok(Self::spatial_context_of(slot, object, id, &prepared, &frame, &scene, None))
+    }
+
+    /// Borrow this call's evaluated pose, but read the selection record just as the wrapper does.
+    pub(crate) fn spatial_context_from(&self, slot: usize, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: &HashMap<u32, crate::ik::Solved>) -> Result<Option<Context>, EditError> {
+        let Some(object) = self.selection_frame()?.get(slot).cloned() else { return Ok(None) };
+        let Some(id) = uid(&object) else { return Ok(None) };
+        Ok(Self::spatial_context_of(slot, object, id, prepared, frame, scene, Some(solved)))
+    }
+
+    fn spatial_context_of(slot: usize, object: Value, id: u32, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: Option<&HashMap<u32, crate::ik::Solved>>) -> Option<Context> {
+        let at = frame.objects.iter().position(|o| o.uid == id)?;
         let evaluated = &frame.objects[at];
-        let Some(figure) = evaluated.figure_override.clone().or_else(|| prepared.doc.figure(evaluated.figure).cloned()) else { return Ok(None) };
+        let figure = evaluated.figure_override.clone().or_else(|| prepared.doc.figure(evaluated.figure).cloned())?;
         let geometry = scene.objects.iter().find(|g| g.uid == id && g.resolved);
         let frames = geometry.and_then(|g| g.spatial.as_ref()).map(|s| s.frames.clone()).unwrap_or_default();
         let root = geometry.map_or(evaluated.root, |g| g.root);
@@ -223,9 +236,12 @@ impl Editor {
         let ends = geometry.map(|g| g.ends.clone()).unwrap_or_default();
         let raws = (0..figure.segments.len()).map(|i| geometry.and_then(|g| g.spatial.as_ref()).and_then(|s| s.depths.get(i)).and_then(|d| d.raw)).collect();
         let shape = evaluated.spatial.as_ref().and_then(|s| s.shape.clone());
-        let solved = crate::ik::solve_frame(&prepared, &frame, &scene).remove(&id).map(|s| s.solution.angles);
-        let angles = solved.unwrap_or_else(|| (0..figure.segments.len().max(object.get("angles").and_then(Value::array_len).unwrap_or(0))).map(|i| number_at(&object, "angles", i)).collect());
-        Ok(Some(Context {
+        let angles = match solved {
+            Some(solved) => solved.get(&id).map(|s| s.solution.angles.clone()),
+            None => crate::ik::solve_frame(prepared, frame, scene).remove(&id).map(|s| s.solution.angles),
+        };
+        let angles = angles.unwrap_or_else(|| (0..figure.segments.len().max(object.get("angles").and_then(Value::array_len).unwrap_or(0))).map(|i| number_at(&object, "angles", i)).collect());
+        Some(Context {
             slot,
             figure_angle: styk_eval::ik::figure_angle(&figure, evaluated),
             mirror: object.get("image_text_flags").is_some_and(Value::truthy),
@@ -240,7 +256,7 @@ impl Editor {
             ends,
             raws,
             shape,
-        }))
+        })
     }
 
     /// `getSpatialPose(index)`: the bone's bend, turn and pitch as the figure is drawn.

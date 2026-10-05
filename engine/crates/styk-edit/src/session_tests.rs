@@ -481,3 +481,132 @@ fn worker_session_preserves_cancellation_stale_views_and_quiet_refusals() {
     session.call_values("cancelDrag", &parse("[]"), &Value::Null);
     assert!(session.editor.drag.is_none());
 }
+
+fn ik_capture_bits(capture: &crate::spatial_ik::Capture) -> String {
+    let angles = |table: &std::collections::BTreeMap<u32, f64>| table.iter().map(|(&id, &angle)| (id, angle.to_bits())).collect::<Vec<_>>();
+    let quaternions = |table: &std::collections::BTreeMap<u32, [f64; 4]>| table.iter().map(|(&id, q)| (id, q.map(f64::to_bits))).collect::<Vec<_>>();
+    let reference = &capture.bend_reference;
+    format!("{:?}", (
+        capture.target.map(f64::to_bits), angles(&capture.followers),
+        capture.joined_followers.as_ref().map(|parts| parts.iter().map(|(&id, followers)| (id, angles(followers))).collect::<Vec<_>>()),
+        capture.bend_direction.to_bits(),
+        ([reference.side, reference.angle, reference.axis, reference.ratio].map(f64::to_bits), reference.shape.as_ref().map(|shape| shape.iter().map(|n| n.to_bits()).collect::<Vec<_>>())),
+        capture.spatial_followers.as_ref().map(quaternions),
+        capture.joined_spatial_followers.as_ref().map(|parts| parts.iter().map(|(&id, followers)| (id, quaternions(followers))).collect::<Vec<_>>()),
+        capture.spatial_target.as_ref().map(|target| (target.depth.to_bits(), target.pole.map(f64::to_bits), target.swivel.to_bits(), target.normals.map(|normals| normals.map(|n| n.map(f64::to_bits))))),
+    ))
+}
+
+#[test]
+fn same_call_ik_capture_matches_both_recorded_passes_and_refusal_order() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let mut checked = 0;
+    for name in ["ik-capture-double-2d-sheet", "ik-capture-double-spatial-sheet"] {
+        let reference = parse(&std::fs::read_to_string(root.join(format!("{name}.reference.json"))).unwrap());
+        let ordinary = crate::replay::replay(&reference).unwrap();
+        assert!(ordinary.mismatches.is_empty() && ordinary.unported.is_none(), "{name}: {ordinary:?}");
+        assert_eq!(ordinary.matched, 29);
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        for compact in [false, true] {
+            let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            let mut expected = steps[0].get("document").unwrap().as_str().unwrap().to_string();
+            for step in &steps[1..] {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap();
+                let label = format!("{name}/{} compact={compact}", step.get("step").unwrap());
+                if method == "@frame" {
+                    let frame = session.editor.shown_frame().unwrap();
+                    let snapshot = Value::str(&json(&styk_eval::records::snapshot_pose_frame(&frame)));
+                    assert_eq!(Some(&snapshot), step.get("result"), "{label}: visible pose");
+                } else {
+                    let before = session.editor.report().clone(); let drag = session.editor.drag_value();
+                    let mut view = session.editor.state_value().as_obj().unwrap().clone();
+                    view.set("autoKey", Value::Bool(session.editor.options.auto_key));
+                    view.set("changesOnly", Value::Bool(compact));
+                    view.set("draws", step.get("draws").cloned().unwrap_or(Value::Null));
+                    let answer = session.call_values(method.trim_start_matches('@'), &Value::array(call[1..].to_vec()), &Value::object(view));
+                    if let Some(error) = step.get("error").filter(|e| !e.is_null()) {
+                        assert_eq!(answer.get("status").and_then(Value::as_str), Some("error"), "{label}");
+                        assert_eq!(answer.get("error"), error.get("key"), "{label}: validation priority");
+                        assert!(session.editor.report().same_node(&before), "{label}: refused report identity");
+                        assert_eq!(session.editor.drag_value(), drag, "{label}: refused gesture");
+                    } else {
+                        assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{label}: {answer:?}");
+                        // The recorder and ordinary replay compare the same depth-4 view.
+                        // Full document/state/events and visible frames remain exact below.
+                        let returned = crate::replay::plain(answer.get("result").unwrap_or(&Value::Null), 4).unwrap_or(Value::Null);
+                        assert_eq!(Some(&returned), step.get("result"), "{label}: recorded result");
+                        if method == "setNodeIK" && answer.get("result") == Some(&Value::Bool(false)) {
+                            assert!(session.editor.report().same_node(&before), "{label}: false result report identity");
+                            assert_eq!(session.editor.drag_value(), drag, "{label}: false result gesture");
+                        }
+                    }
+                    assert_eq!(answer.get("events"), step.get("events"), "{label}: events");
+                }
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+                assert_eq!(session.editor.report_json(), expected, "{label}: report/history data");
+                assert_eq!(Some(&session.editor.state_value()), step.get("state"), "{label}: selection/clock/history");
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 116);
+}
+
+#[test]
+fn same_call_ik_capture_borrows_full_solutions_for_rig_spatial_and_joined_ancestors() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    let (mut compared, mut spatial, mut pinned, mut ancestor, mut retained_2d, mut retained_3d) = (0, 0, 0, 0, 0, 0);
+    for name in ["ik-settings-sheet", "ik-settings-pinned-sheet", "ik-settings-spatial-sheet", "ik-settings-followers-sheet", "ik-settings-rig-sheet", "ik-unpinned-sheet", "ik-spatial-free-sheet", "ik-movieclip-parent-sheet"] {
+        let reference = parse(&std::fs::read_to_string(root.join(format!("{name}.reference.json"))).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut expected = steps[0].get("document").unwrap().as_str().unwrap().to_string();
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap().trim_start_matches('@');
+            let label = format!("{name}/{} {method}", step.get("step").unwrap());
+            let prior = session.editor.drag.as_ref().map(|drag| drag.ik_captures.iter().map(|(key, capture)| (key.clone(), ik_capture_bits(capture))).collect::<std::collections::BTreeMap<_, _>>()).unwrap_or_default();
+            if matches!(method, "poseJoint" | "setNodeIK") && let Some((slot, object)) = session.editor.object().unwrap() {
+                let (prepared, frame, scene) = session.editor.evaluate_only(Some(&[slot])).unwrap();
+                let id = crate::record::uid(&object).unwrap();
+                let at = frame.objects.iter().position(|o| o.uid == id).unwrap();
+                let evaluated = &frame.objects[at];
+                let figure = evaluated.figure_override.as_deref().or_else(|| prepared.doc.figure(evaluated.figure).map(|figure| &**figure)).unwrap();
+                if let Some(segment) = figure.segments.get(session.editor.selection.joint as usize)
+                    && let Some(controller) = styk_eval::ik::parse::table(object.get("_stykIK")).and_then(|table| table.get(segment.id).cloned())
+                {
+                    let solved = crate::ik::solve_frame(&prepared, &frame, &scene);
+                    let mut keys = solved.keys().copied().collect::<Vec<_>>();keys.sort_unstable();
+                    let ordinary = session.editor.capture_limb(slot, segment.id).unwrap();
+                    let borrowed = session.editor.capture_limb_from(slot, segment.id, &prepared, &frame, &scene, &solved).unwrap();
+                    assert_eq!(ik_capture_bits(&borrowed), ik_capture_bits(&ordinary), "{label}: complete capture numeric bits");
+                    let mut after = solved.keys().copied().collect::<Vec<_>>();after.sort_unstable();assert_eq!(keys, after);
+                    compared += 1;spatial += usize::from(borrowed.spatial_target.is_some());pinned += usize::from(controller.pinned && !solved.is_empty());
+                    ancestor += usize::from(evaluated.join.is_some());
+                }
+            }
+            let mut view = session.editor.state_value().as_obj().unwrap().clone();view.set("autoKey", Value::Bool(session.editor.options.auto_key));
+            view.set("draws", step.get("draws").cloned().unwrap_or(Value::Null));
+            let args = step.get("boundsArgs").cloned().unwrap_or_else(|| Value::array(call[1..].to_vec()));
+            let answer = session.call_values(method, &args, &Value::object(view));
+            assert_ne!(answer.get("status").and_then(Value::as_str), Some("unported"), "{label}: {answer:?}");
+            if let Some(error) = step.get("error").filter(|e| !e.is_null()) {
+                assert_eq!(answer.get("error"), error.get("key"), "{label}: error");
+            } else { assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{label}: {answer:?}"); }
+            assert_eq!(answer.get("state"), step.get("state"), "{label}: state");assert_eq!(answer.get("events"), step.get("events"), "{label}: events");
+            if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
+            assert_eq!(session.editor.report_json(), expected, "{label}: report");
+            if method == "poseJoint" && let Some(drag) = &session.editor.drag {
+                for (key, capture) in &drag.ik_captures {
+                    if let Some(before) = prior.get(key) {
+                        assert_eq!(&ik_capture_bits(capture), before, "{label}: stored gesture baseline is unchanged");
+                        if capture.spatial_target.is_some() { retained_3d += 1; } else { retained_2d += 1; }
+                    }
+                }
+            }
+        }
+    }
+    assert!(compared >= 8 && spatial > 0 && pinned > 0 && ancestor > 0, "capture coverage: {compared}/{spatial}/{pinned}/{ancestor}");
+    assert!(retained_2d > 0 && retained_3d > 0, "repeated capture lifecycle: 2D={retained_2d}, 3D={retained_3d}");
+}

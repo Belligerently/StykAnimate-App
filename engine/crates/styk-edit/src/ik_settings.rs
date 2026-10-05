@@ -188,14 +188,15 @@ impl Editor {
         // The followers a pinned limb is solved with.
         let (prepared, frame, scene) = self.evaluate_only(Some(&[at.slot]))?;
         let id = crate::record::uid(&at.object).unwrap_or(0);
-        let solved = crate::ik::solve_frame(&prepared, &frame, &scene).remove(&id);
-        if let Some(followers) = solved.as_ref().and_then(|s| s.followers_of(at.handle)) {
+        let solved_frame = crate::ik::solve_frame(&prepared, &frame, &scene);
+        let solved = solved_frame.get(&id);
+        if let Some(followers) = solved.and_then(|s| s.followers_of(at.handle)) {
             next.set("followers", angle_table(followers));
         }
         // What the edit captures, from the limb as drawn before it (`captureFor`).
         let pin = matches!(given("pinned"), Some(Value::Bool(true))) && !flag(&settings, "pinned");
         if !flag(&settings, "enabled") || pin || given("chainLength").is_some() {
-            let capture = self.capture_with(at.slot, at.handle, &spec_of(&next))?;
+            let capture = self.capture_from(at.slot, at.handle, &spec_of(&next), &prepared, &frame, &scene, Some(&solved_frame))?;
             // `Object.assign(next, captureFor(...))`
             if let Some(followers) = &capture.spatial_followers {
                 next.set("spatialFollowers", quaternion_table(followers));
@@ -219,7 +220,7 @@ impl Editor {
         if let Some(direction) = given("bendDirection") {
             next.set("bendDirection", direction.clone());
             if direction.as_f64() == Some(0.0) {
-                let capture = self.capture_with(at.slot, at.handle, &spec_of(&next))?;
+                let capture = self.capture_from(at.slot, at.handle, &spec_of(&next), &prepared, &frame, &scene, Some(&solved_frame))?;
                 next.set("bendReference", reference_value(&capture.bend_reference));
             }
         }
@@ -230,7 +231,7 @@ impl Editor {
         self.object_edit_with("Configure IK", false, |editor| {
             let record = editor.frame_object_mut(slot).unwrap();
             // The limb keeps the pose it is drawn with (`_bakeIKFollowers`, `solvedAngles`).
-            if let Some(solved) = &solved {
+            if let Some(solved) = solved {
                 if record.get("angles").and_then(Value::array_len) != Some(solved.solution.angles.len()) {
                     return Err(EditError::Unported("configuring IK of a pose without one angle per segment".into()));
                 }

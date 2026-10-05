@@ -16227,7 +16227,7 @@
   "errors.editorLayerAsync.chooseFiguresPresentInThisAnimation": {
     "locations": [
       "src/editor-layer-async.mjs:98",
-      "src/editor-layer-sheet.mjs:235",
+      "src/editor-layer-sheet.mjs:237",
       "src/editor-layers.mjs:168"
     ],
     "context": "if (ids.some(uid => !this._layerUidCounts.has(uid))) throw messageError(new Error(''), \"errors.editorLayerAsync.chooseFiguresPresentInThisAnimation\", {});"
@@ -16241,7 +16241,7 @@
   "errors.editorLayerAsync.keepAtLeastOneUserLayer": {
     "locations": [
       "src/editor-layer-async.mjs:111",
-      "src/editor-layer-sheet.mjs:277",
+      "src/editor-layer-sheet.mjs:279",
       "src/editor-layers.mjs:141"
     ],
     "context": "if (state.order.length === 1) throw messageError(new Error(''), \"errors.editorLayerAsync.keepAtLeastOneUserLayer\", {});"
@@ -16321,7 +16321,7 @@
   "errors.editorLayerMigration.layerMigrationSourceMemoryBudgetMustBePositive": {
     "locations": [
       "src/editor-layer-migration.mjs:73",
-      "src/editor-layer-sheet.mjs:210"
+      "src/editor-layer-sheet.mjs:212"
     ],
     "context": "if (!(maxSourceBytes > 0)) throw messageError(new Error(''), \"errors.editorLayerMigration.layerMigrationSourceMemoryBudgetMustBePositive\", {});"
   },
@@ -16334,7 +16334,7 @@
   "errors.editorLayerMigration.thisLayerMigrationExceedsTheRetainedPoseMemory": {
     "locations": [
       "src/editor-layer-migration.mjs:92",
-      "src/editor-layer-sheet.mjs:221"
+      "src/editor-layer-sheet.mjs:223"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerMigration.thisLayerMigrationExceedsTheRetainedPoseMemory\", {});"
   },
@@ -16437,7 +16437,7 @@
   },
   "errors.editorLayerSheet.chooseAValidFrameCount": {
     "locations": [
-      "src/editor-layer-sheet.mjs:647"
+      "src/editor-layer-sheet.mjs:649"
     ],
     "context": "checkedTick(start);if(!Number.isInteger(count)||count<1||start+count>=MAX_SHEET_TICKS)throw messageError(new Error(''), \"errors.editorLayerSheet.chooseAValidFra"
   },
@@ -16449,20 +16449,20 @@
   },
   "errors.editorLayerSheet.copyTimelineFramesFirst": {
     "locations": [
-      "src/editor-layer-sheet.mjs:693",
+      "src/editor-layer-sheet.mjs:695",
       "src/shared-clipboard.mjs:119"
     ],
     "context": "const clipboard=this._sheetClipboard;if(!clipboard)throw messageError(new Error(''), \"errors.editorLayerSheet.copyTimelineFramesFirst\", {});"
   },
   "errors.editorLayerSheet.createEnoughDestinationLayersForThisRange": {
     "locations": [
-      "src/editor-layer-sheet.mjs:700"
+      "src/editor-layer-sheet.mjs:702"
     ],
     "context": "if(destinations.length!==clipboard.rows.length)throw messageError(new Error(''), \"errors.editorLayerSheet.createEnoughDestinationLayersForThisRange\", {});"
   },
   "errors.editorLayerSheet.drawingExposuresHoldTheirPixelsAndPoseUse": {
     "locations": [
-      "src/editor-layer-sheet.mjs:628"
+      "src/editor-layer-sheet.mjs:630"
     ],
     "context": "if(ids.some(id=>isDrawingLayer(this.getLayer(id)))&&!['constant','hold'].includes(easing.interpolation))throw messageError(new Error(''), \"errors.editorLayerShe"
   },
@@ -16474,8 +16474,8 @@
   },
   "errors.editorLayerSheet.exposureMustBe165535Frames": {
     "locations": [
-      "src/editor-layer-sheet.mjs:542",
-      "src/editor-layer-sheet.mjs:547"
+      "src/editor-layer-sheet.mjs:544",
+      "src/editor-layer-sheet.mjs:549"
     ],
     "context": "if(!Number.isInteger(value)||value<1||value>65535)throw messageError(new Error(''), \"errors.editorLayerSheet.exposureMustBe165535Frames\", {});"
   },
@@ -16487,19 +16487,19 @@
   },
   "errors.editorLayerSheet.figuresBelongToUserLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:232"
+      "src/editor-layer-sheet.mjs:234"
     ],
     "context": "if(!Object.hasOwn(editor.report._styk.layers.byId,id))throw messageError(new Error(''), \"errors.editorLayerSheet.figuresBelongToUserLayers\", {});"
   },
   "errors.editorLayerSheet.framesCannotMoveBeforeFrame1": {
     "locations": [
-      "src/editor-layer-sheet.mjs:752"
+      "src/editor-layer-sheet.mjs:754"
     ],
     "context": "if(!Number.isInteger(delta)||start+delta<0)throw messageError(new Error(''), \"errors.editorLayerSheet.framesCannotMoveBeforeFrame1\", {});if(!delta)return false;"
   },
   "errors.editorLayerSheet.objectIdentityCapacityReached": {
     "locations": [
-      "src/editor-layer-sheet.mjs:714",
+      "src/editor-layer-sheet.mjs:716",
       "src/editor-range-commands.mjs:73",
       "src/editor-range-commands.mjs:223",
       "src/editor.mjs:710"
@@ -16514,31 +16514,31 @@
   },
   "errors.editorLayerSheet.pastedFramesExceedTheTimelineLimit": {
     "locations": [
-      "src/editor-layer-sheet.mjs:705"
+      "src/editor-layer-sheet.mjs:707"
     ],
     "context": "if(finish>MAX_SHEET_TICKS)throw messageError(new Error(''), \"errors.editorLayerSheet.pastedFramesExceedTheTimelineLimit\", {});"
   },
   "errors.editorLayerSheet.pasteDrawingKeysIntoDrawingLayersAndFigure": {
     "locations": [
-      "src/editor-layer-sheet.mjs:701"
+      "src/editor-layer-sheet.mjs:703"
     ],
     "context": "if(clipboard.rows.some((row,i)=>Boolean(row.drawing)!==isDrawingLayer(this.getLayer(destinations[i]))))throw messageError(new Error(''), \"errors.editorLayerShee"
   },
   "errors.editorLayerSheet.pasteFramesIntoTheSameTrackKindFigures": {
     "locations": [
-      "src/editor-layer-sheet.mjs:703"
+      "src/editor-layer-sheet.mjs:705"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerSheet.pasteFramesIntoTheSameTrackKindFigures\", {});"
   },
   "errors.editorLayerSheet.preservingThisLayerChangeWouldExceedTheOne": {
     "locations": [
-      "src/editor-layer-sheet.mjs:209"
+      "src/editor-layer-sheet.mjs:211"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerSheet.preservingThisLayerChangeWouldExceedTheOne\", {});"
   },
   "errors.editorLayerSheet.sceneAndCameraCannotBeDeleted": {
     "locations": [
-      "src/editor-layer-sheet.mjs:276",
+      "src/editor-layer-sheet.mjs:278",
       "src/editor-layers.mjs:140"
     ],
     "context": "if(!Object.hasOwn(state.byId,id))throw messageError(new Error(''), \"errors.editorLayerSheet.sceneAndCameraCannotBeDeleted\", {});"
@@ -16551,31 +16551,31 @@
   },
   "errors.editorLayerSheet.selectDistinctDestinationLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:695"
+      "src/editor-layer-sheet.mjs:697"
     ],
     "context": "if(new Set(ids).size!==ids.length)throw messageError(new Error(''), \"errors.editorLayerSheet.selectDistinctDestinationLayers\", {});"
   },
   "errors.editorLayerSheet.selectDistinctSourceLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:677"
+      "src/editor-layer-sheet.mjs:679"
     ],
     "context": "if(new Set(ids).size!==ids.length)throw messageError(new Error(''), \"errors.editorLayerSheet.selectDistinctSourceLayers\", {});"
   },
   "errors.editorLayerSheet.selectFramesToRemove": {
     "locations": [
-      "src/editor-layer-sheet.mjs:667"
+      "src/editor-layer-sheet.mjs:669"
     ],
     "context": "const count=end-start+1;if(count<1)throw messageError(new Error(''), \"errors.editorLayerSheet.selectFramesToRemove\", {});"
   },
   "errors.editorLayerSheet.selectOneDestinationLayerOrTheSameNumber": {
     "locations": [
-      "src/editor-layer-sheet.mjs:697"
+      "src/editor-layer-sheet.mjs:699"
     ],
     "context": "if(ids.length!==1&&ids.length!==clipboard.rows.length)throw messageError(new Error(''), \"errors.editorLayerSheet.selectOneDestinationLayerOrTheSameNumber\", {});"
   },
   "errors.editorLayerSheet.theDestinationContainsKeyframesEnableReplaceKeyframesOn": {
     "locations": [
-      "src/editor-layer-sheet.mjs:758"
+      "src/editor-layer-sheet.mjs:760"
     ],
     "context": "throw messageError(new Error(''), \"errors.editorLayerSheet.theDestinationContainsKeyframesEnableReplaceKeyframesOn\", {});"
   },
@@ -16587,7 +16587,7 @@
   },
   "errors.editorLayerSheet.thisLayerChangeNeedsMoreThan10000": {
     "locations": [
-      "src/editor-layer-sheet.mjs:207"
+      "src/editor-layer-sheet.mjs:209"
     ],
     "context": "if(end>limits.maxTicks)throw messageError(new Error(''), \"errors.editorLayerSheet.thisLayerChangeNeedsMoreThan10000\", {});"
   },
@@ -16599,7 +16599,7 @@
   },
   "errors.editorLayerSheet.useDrawingKeyCopyPasteBetweenDrawingLayers": {
     "locations": [
-      "src/editor-layer-sheet.mjs:233"
+      "src/editor-layer-sheet.mjs:235"
     ],
     "context": "if(isDrawingLayer(editor.getLayer(id))||uids.some(uid=>isDrawingLayer(editor.getLayer(editor.layerForUid(uid)))))throw messageError(new Error(''), \"errors.edito"
   },

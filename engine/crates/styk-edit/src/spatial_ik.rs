@@ -9,7 +9,9 @@
 //! the pole handle of a planted limb and steering it (`getSpatialIKPole`, `setSpatialIKPole`);
 //! `setSpatialIKTarget`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+
+use styk_eval::{eval::{Frame, Prepared}, geometry::Scene};
 
 use styk_doc::{Obj, Value};
 use styk_eval::ik::spatial::{capture_spatial_target, cross, dot, normalize, flat_spatial_bend, spatial_knee, spatial_pole_for, spatial_world_quaternion, spatial_world_vector};
@@ -135,27 +137,44 @@ pub(crate) struct CaptureSpec {
 impl Editor {
     /// `capture(figure, object, geometry, handle, controller)` of the limb ending at
     /// `handle` of the figure in `slot`, with `captureSpatialIK`'s parts.
+    #[cfg(test)]
     pub(crate) fn capture_limb(&self, slot: usize, handle: u32) -> Result<Capture, EditError> {
+        let spec = self.capture_limb_spec(slot, handle)?;
+        self.capture_with(slot, handle, &spec)
+    }
+
+    /// The same selection-record capture, using evaluation from this immutable call only.
+    pub(crate) fn capture_limb_from(&self, slot: usize, handle: u32, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: &HashMap<u32, crate::ik::Solved>) -> Result<Capture, EditError> {
+        let spec = self.capture_limb_spec(slot, handle)?;
+        self.capture_from(slot, handle, &spec, prepared, frame, scene, Some(solved))
+    }
+
+    fn capture_limb_spec(&self, slot: usize, handle: u32) -> Result<CaptureSpec, EditError> {
         let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
         // The figure as selection reads it (on a layer sheet the frame on show), as `captureFor` reads `editor.object`.
         let object = self.selection_frame()?.get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let current = object.path(&["_stykIK", &handle.to_string()]).cloned().unwrap_or(Value::Null);
         let controller = ik::parse::table(object.get("_stykIK")).and_then(|table| table.get(handle).cloned()).ok_or_else(|| unported("with a controller the engine cannot read"))?;
-        let spec = CaptureSpec {
+        Ok(CaptureSpec {
             rotation: controller.target.rotation,
             chain_length: controller.chain_length,
             // `controller.bendDirection ?? bendDirection`
             bend_direction: current.get("bendDirection").is_some_and(|v| !v.is_null()).then_some(controller.bend_direction),
             bend_reference: controller.bend_reference.clone(),
             swivel: controller.spatial_target.as_ref().map_or(0.0, |s| s.swivel),
-        };
-        self.capture_with(slot, handle, &spec)
+        })
     }
 
-    /// [`Editor::capture_limb`] for the controller `spec` describes.
+    /// Capture for the controller `spec` describes.
     pub(crate) fn capture_with(&self, slot: usize, handle: u32, spec: &CaptureSpec) -> Result<Capture, EditError> {
-        let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
         let (prepared, frame, scene) = self.evaluate_only(Some(&[slot]))?;
+        self.capture_from(slot, handle, spec, &prepared, &frame, &scene, None)
+    }
+
+    /// Recalculate capture for each controller spec while borrowing the same pre-edit pose.
+    /// The full solved map is kept: joined followers and spatial context read it too.
+    pub(crate) fn capture_from(&self, slot: usize, handle: u32, spec: &CaptureSpec, prepared: &Prepared, frame: &Frame, scene: &Scene, solved: Option<&HashMap<u32, crate::ik::Solved>>) -> Result<Capture, EditError> {
+        let unported = |what: &str| EditError::Unported(format!("posing an IK target {what}"));
         let object = self.selection_frame()?.get(slot).cloned().ok_or_else(|| unported("outside the frame"))?;
         let id = uid(&object).ok_or_else(|| unported("of a figure without an identity"))?;
         let at = frame.objects.iter().position(|o| o.uid == id).ok_or_else(|| unported("of a figure the engine does not draw"))?;
@@ -163,8 +182,13 @@ impl Editor {
         let geometry = scene.objects.iter().find(|g| g.uid == id && g.resolved).ok_or_else(|| unported("of a figure the engine does not draw"))?;
         let figure = evaluated.figure_override.as_deref().or_else(|| prepared.doc.figure(evaluated.figure).map(|f| &**f)).ok_or_else(|| unported("of a figure without a definition"))?;
         let skeleton = Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None };
-        let solved = crate::ik::solve_frame(&prepared, &frame, &scene);
-        let drawn = |i: usize| crate::ik::displayed_angle(&prepared, &frame, &scene, &solved, at, i);
+        // Preserve the wrapper's validation order before solving when no map was supplied.
+        let owned_solved;
+        let solved = match solved {
+            Some(solved) => solved,
+            None => { owned_solved = crate::ik::solve_frame(prepared, frame, scene); &owned_solved }
+        };
+        let drawn = |i: usize| crate::ik::displayed_angle(prepared, frame, scene, solved, at, i);
         let rotation = spec.rotation;
         let follower_indices = skeleton.follower_indices(handle);
         let followers: BTreeMap<u32, f64> = follower_indices.iter().map(|&i| (figure.segments[i].id, drawn(i) - rotation)).collect();
@@ -197,13 +221,19 @@ impl Editor {
         let lengths: Vec<f64> = chain.iter().map(|&i| hypot(geometry.ends[i][0] - geometry.starts[i][0], geometry.ends[i][1] - geometry.starts[i][1])).collect();
         let bend_reference = ik::bend_reference(&points, &lengths, spec.bend_reference.as_ref());
         let bend_direction = spec.bend_direction.unwrap_or(bend_direction);
-        let spatial = self.capture_spatial(slot, &chain, &follower_indices, rotation, spec.swivel)?;
+        let context = self.spatial_context_from(slot, prepared, frame, scene, solved)?;
+        let spatial = Self::capture_spatial_from(context.as_ref(), &chain, &follower_indices, rotation, spec.swivel);
         Ok(Capture { target, followers, joined_followers: None, bend_direction, bend_reference, spatial_followers: spatial.spatial_followers, joined_spatial_followers: None, spatial_target: spatial.spatial_target })
     }
 
     /// `captureSpatialIK(figure, object, geometry, chain, followers, rotation, swivel)`.
     pub(crate) fn capture_spatial(&self, slot: usize, chain: &[usize], followers: &[usize], rotation: f64, swivel: f64) -> Result<SpatialCapture, EditError> {
-        let Some(context) = self.spatial_context_at(slot)? else { return Ok(SpatialCapture { spatial_followers: None, spatial_target: None }) };
+        let context = self.spatial_context_at(slot)?;
+        Ok(Self::capture_spatial_from(context.as_ref(), chain, followers, rotation, swivel))
+    }
+
+    fn capture_spatial_from(context: Option<&crate::spatial::Context>, chain: &[usize], followers: &[usize], rotation: f64, swivel: f64) -> SpatialCapture {
+        let Some(context) = context else { return SpatialCapture { spatial_followers: None, spatial_target: None } };
         let mut spatial_followers = BTreeMap::new();
         for &i in followers {
             if let Some(frame) = context.frames.get(i).copied().flatten() {
@@ -220,7 +250,7 @@ impl Editor {
             }
             _ => None,
         };
-        Ok(SpatialCapture { spatial_followers: (!spatial_followers.is_empty()).then_some(spatial_followers), spatial_target })
+        SpatialCapture { spatial_followers: (!spatial_followers.is_empty()).then_some(spatial_followers), spatial_target }
     }
 
     /// `_flatSpatialIKPole(handle, controller, target, spatialTarget)`: drags of a 3D hand or

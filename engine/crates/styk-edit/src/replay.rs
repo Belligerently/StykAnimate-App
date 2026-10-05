@@ -238,7 +238,7 @@ fn replay_with_worker(reference: &Value, worker: bool, max_source_bytes: usize) 
 }
 
 /// `plain()` in edit-replay.mjs: containers deeper than `depth` are dropped.
-fn plain(value: &Value, depth: u32) -> Option<Value> {
+pub(crate) fn plain(value: &Value, depth: u32) -> Option<Value> {
     match value {
         Value::Null | Value::Bool(_) | Value::Num(_) | Value::Str(_) | Value::Blob(_) => Some(value.clone()),
         _ if depth == 0 => None,
