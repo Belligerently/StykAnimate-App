@@ -288,6 +288,11 @@ impl Session {
     /// `layerPublication: true` requests a quiet ordinary sheet folder edit's
     /// original accepted operands as `{label, structural, updates}`. Removals
     /// preserve null versus an omitted undefined value. No-op calls omit it.
+    /// Literal `figureClipboardPastes: true` requests a successful top-level
+    /// `pasteSelection`'s existing clipboard count as `{before, after}`, or null when no
+    /// clipboard exists. For `duplicateSelection` this is its temporary copy,
+    /// before restoration; an empty copy returns null. Other calls and
+    /// unsuccessful answers omit it.
     /// Returns the answer as JSON (see the module).
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
@@ -421,6 +426,10 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     // What the editor drew at random during its own run of the call (D18).
     editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
     let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
+    let clipboard_requested = matches!(method, "pasteSelection" | "duplicateSelection")
+        && view.get("figureClipboardPastes") == Some(&Value::Bool(true));
+    let clipboard_before = if clipboard_requested && method == "pasteSelection" { editor.figure_clipboard_pastes() } else { None };
+    let mut duplicate_pastes = None;
     // Native movieclip insertion is admitted only by immutable worker preparation.
     // Legacy/live calls retain the same response owner and explicit refusal.
     let result = if !worker_preparation && !editor.sheet() && (method == "addFigure" || crate::movieclip_native::native_movieclip_method(method)) {
@@ -447,11 +456,14 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
                 // The original worker path delegates ordinary sheet calls to
                 // Editor::call after this entry check, with the same rollback.
                 checked().and_then(|()| editor.call_layer_publication(method, &args, &mut layer_publication))
+            } else if clipboard_requested && method == "duplicateSelection" {
+                editor.call_duplicate_pastes_checked(method, &args, true, &mut checked, &mut duplicate_pastes)
             } else { editor.call_worker_checked(method, &Value::array(args), &mut checked) };
             if let Some(error) = interrupted { return Err(error); }
             result
         } else {
             if layer_requested { editor.call_layer_publication(method, &args, &mut layer_publication) }
+            else if clipboard_requested && method == "duplicateSelection" { editor.call_duplicate_pastes_checked(method, &args, false, &mut || Ok(()), &mut duplicate_pastes) }
             else { editor.call(method, &args) }
         };
         result.and_then(|result| {
@@ -465,6 +477,15 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
     let unique_result = unique_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     let layer_changed = layer_requested && result.as_ref().is_ok_and(Value::truthy);
+    // Paste keeps this same clipboard owner; duplicate captures its temporary
+    // owner before restoring the saved one. Both increment after paste events.
+    let clipboard_pastes = if clipboard_requested && result.is_ok() {
+        if method == "duplicateSelection" { duplicate_pastes } else { match (clipboard_before, editor.figure_clipboard_pastes()) {
+            (None, None) => Some(Value::Null),
+            (Some(before), Some(after)) => Some(response_value(vec![("before", Value::Num(before)), ("after", Value::Num(after))])),
+            _ => None,
+        } }
+    } else { None };
     match result {
         Ok(result) => {
             answer.push(("status", Value::str("ok")));
@@ -620,6 +641,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     {
         answer.push(("layerPublication", publication));
     }
+    if let Some(pastes) = clipboard_pastes { answer.push(("figureClipboardPastes", pastes)); }
     answer.push(("events", Value::array(events)));
     let figures = if changes_only {
         match (&editor.authored, &editor.drag) {

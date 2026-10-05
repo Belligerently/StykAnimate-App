@@ -18,7 +18,7 @@ const chain = open(documentOf([limb(true), limb(), limb()], i => [200 + i * 140,
 chain.select(2); chain.joinTo(1, 33); chain.select(3); chain.joinTo(2, 22);
 nextKey(chain, 6); chain.select(1); chain.moveSelection(40, 0);
 writeFileSync(`${out}/joined-chain.document.json`, JSON.stringify(prune(chain.report), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
-const scenario = (name, editor, steps, document = 'two-limbs.document.json') => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps}, null, 1) + '\n');
+const scenario = (name, editor, steps, document = 'two-limbs.document.json', observeFigureClipboardPastes = false) => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps, ...(observeFigureClipboardPastes ? {observeFigureClipboardPastes: true} : {})}, null, 1) + '\n');
 scenario('move-native', {}, [
   ['@select', 1, -1], ['moveSelection', 30, -12], ['moveSelection', -5, 4], ['undo'], ['redo'],
   ['@select', 2, -1], ['beginDrag', 'Move figures'], ['moveSelection', 10, 10], ['moveSelection', 2, 0], ['commitDrag'], ['undo'],
@@ -253,6 +253,16 @@ scenario('frames-movieclip-sheet', app, [
     // A clip pasted with another figure onto a held cell keys the playhead.
     ['sheetSetEasing', ['layer-1'], 0, 0, {interpolation: 'constant'}], ['@seek', 1], ['addFigure', 1], ['@select', 4, -1], ['selectMany', [4, 10]], ['copySelection'], ['@seek', 3], ['pasteSelection'],
   ], 'sheet-movieclip.document.json');
+  // The figure clipboard counter is read only after the original paste returns.
+  // Explicit zero suppresses its increment; a cut's implicit zero offset does not.
+  // Duplicate temporarily copies/pastes, then restores the saved clipboard object.
+  scenario('figure-clipboard-pastes-sheet', app, [
+    ['@select', 4, -1], ['pasteSelection'], ['copySelection'], ['pasteSelection'], ['pasteSelection'], ['pasteSelection', {offset: 0}],
+    ['pasteSelection', {pasteMode: 'bogus'}], ['pasteSelection', {pasteDepth: 'x'}], ['pasteSelection', {offset: 'x'}],
+    ['@select', 4, -1], ['duplicateSelection'], ['duplicateSelection', {offset: 0}], ['selectMany', []], ['copySelection'], ['pasteSelection'],
+    ['@select', 4, -1], ['cutSelection'], ['pasteSelection'], ['pasteSelection', {offset: 0}], ['undo'], ['redo'], ['selectMany', []], ['duplicateSelection'],
+    ['@seek', 2], ['@select', 4, -1], ['copySelection'], ['pasteSelection'], ['@seek', 6], ['@select', 4, -1], ['deleteSelection'], ['pasteSelection'], ['undo'], ['redo'],
+  ], 'sheet-movieclip.document.json', true);
   // Range operations on a movieclip instance on a layer sheet: ordered, flipped, turned,
   // duplicated (the copy restarts on the presence clock), deleted at the playhead and across
   // keys (replacements by nothing); history.

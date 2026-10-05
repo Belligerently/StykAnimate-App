@@ -23,22 +23,39 @@ const decode = value => Array.isArray(value) ? value.map(decode) : value === nul
   : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
 
 function sessionFor(oracle) {
-  const events = [];
-  oracle.addEventListener('change', event => events.push(clean(event.detail)));
+  const events = []; let retainedPublication = null;
+  oracle.addEventListener('change', event => {
+    events.push(clean(event.detail));
+    if (event.detail.layerSheet) retainedPublication = oracle._authoredCommitPreview?.frame ?? null;
+  });
   return {
     revision: () => oracle.revision, can_undo: () => oracle.canUndo, can_redo: () => oracle.canRedo, free() {},
     call(name, argsText, viewText) {
       const view = JSON.parse(viewText), beforeSheet = oracle.report._styk.layerSheet, beforeLayers = oracle.report._styk.layers;
       const beforeDefinitions = oracle.report.figure_types.length;
+      const pasteBefore = (oracle._selectionClipboard ?? oracle._figureClipboard)?.pastes;
       const beforeFrame = clean(oracle.evaluatedFrame);
       const beforeObjects = new Map(beforeFrame.objects.map(object => [object.unique_id, json(object)]));
-      events.length = 0;
+      events.length = 0; retainedPublication = null;
       let result, error;
       const draws = view.draws?.slice() ?? [];
+      const paste = oracle.pasteSelection, ownPaste = Object.hasOwn(oracle, 'pasteSelection'); let duplicateCounter = null;
+      const observeDuplicate = view.figureClipboardPastes === true && name === 'duplicateSelection';
+      if (observeDuplicate) oracle.pasteSelection = function (...args) {
+        const clipboard = this._selectionClipboard ?? this._figureClipboard, before = clipboard?.pastes;
+        const result = paste.apply(this, args);
+        duplicateCounter = clipboard ? {before, after: clipboard.pastes} : null;
+        return result;
+      };
       try { ({result} = withDraws(() => oracle[name](...JSON.parse(argsText).map(decode)), () => draws.shift()[1])); }
       catch (caught) { error = caught.messageKey ?? caught.message; }
+      finally { if (observeDuplicate) { if (ownPaste) oracle.pasteSelection = paste; else delete oracle.pasteSelection; } }
       const answer = {status: error ? 'error' : 'ok', ...(error ? {error} : {result: result ?? null}), state: state(oracle), events: events.slice(),
         draft: null, drag: oracle._drag ? {before: (oracle._drag.before ?? []).map(object => object.unique_id), translation: oracle._drag.scope === 'translation', label: oracle._drag.label} : null};
+      if (view.figureClipboardPastes === true && (name === 'pasteSelection' || name === 'duplicateSelection') && !error) {
+        const clipboard = oracle._selectionClipboard ?? oracle._figureClipboard;
+        answer.figureClipboardPastes = name === 'duplicateSelection' ? duplicateCounter : clipboard ? {before: pasteBefore, after: clipboard.pastes} : null;
+      }
       // View return values have no effect on owned adoption and can carry runtime state.
       if (['select', 'selectMany', 'seek', 'duplicateFigure', 'addFigure', 'importFigure', 'sheetAppendFrame', 'copySegmentValues', 'sheetCopyFrames', 'beginAnimationEdit'].includes(name)) answer.result = null;
       const frame = oracle._authoredPoseEdit?.frame;
@@ -59,7 +76,9 @@ function sessionFor(oracle) {
         if (!view.changesOnly || beforeLayers !== oracle.report._styk.layers) answer.layers = oracle.report._styk.layers;
         answer.sources = Object.fromEntries(events.flatMap(event => event.sourceIds ?? []).map(id => [id, oracle.report._styk.frameSources?.[id] ?? null]));
         if (oracle.report.figure_types.length > beforeDefinitions) answer.definitions = oracle.report.figure_types.slice(beforeDefinitions);
-        const retained = oracle._evaluated;
+        // Native retained_frame is the committed authored preview, not a cache
+        // populated later by the original command's selectedObjects return.
+        const retained = retainedPublication;
         if (retained?.objects) {
           answer.retainedFields = Object.fromEntries(Object.entries(retained).filter(([key, value]) => key !== 'objects' && !runtimeClock(key) && json(beforeFrame[key]) !== json(value)));
           answer.retainedRemoved = Object.keys(beforeFrame).filter(key => !Object.hasOwn(retained, key));
@@ -74,7 +93,11 @@ function sessionFor(oracle) {
       }
       if (view.changesOnly) answer.changesOnly = true;
       if ((name === 'previewAnimationEdit' || name === 'updateCameraDrag') && oracle._sheetPropertyPreview) answer.preview = oracle._sheetPropertyPreview;
-      return json(answer);
+      const wire = clean(answer);
+      // The full Native view returns the original result, including clip samples.
+      // Drafts, retained records and all other body fields keep their wire cleanup.
+      if (!error && !view.changesOnly && (name === 'pasteSelection' || name === 'duplicateSelection')) wire.result = result ?? null;
+      return JSON.stringify(wire, (key, item) => key === 'runtime_segments' ? undefined : item);
     },
   };
 }
@@ -1778,4 +1801,238 @@ test('native, source, origin, active and batched folder routes retain their orig
   const pair = folderPair(folderDocument()), adopted = pair.report.owned;
   for (const editor of [pair.expected, pair.owned]) editor.movieclipBatch('Folder batch', () => editor.createLayerFolder('Inside'));
   pair.same(); assert.equal(pair.requests.length, 0); assert.equal(pair.report.owned, adopted); assert.equal(pair.originalCalls.createLayerFolder, 1);
+});
+
+const figureClipboard = editor => editor._selectionClipboard ?? editor._figureClipboard ?? null;
+const figureClipboardCount = editor => figureClipboard(editor)?.pastes ?? null;
+function clipboardPair({mode = 'classes'} = {}) {
+  const reference = JSON.parse(readFileSync(new URL('../engine/tests/edit/figure-clipboard-pastes-sheet.reference.json', import.meta.url), 'utf8'));
+  const document = JSON.parse(reference.steps[0].document), options = {demo: false, propertyChannels: true, layerTimeline: true};
+  const [expected, owned, initial] = Array.from({length: 3}, () => new Editor(options).load(structuredClone(document)));
+  for (const editor of [expected, owned, initial]) editor.autoKey = Boolean(reference.editor.autoKey);
+  let oracle = initial, current = true, alter = () => {}, session;
+  const requests = [], packets = [], releases = [], observations = [[], []], originalCalls = {pasteSelection: 0, duplicateSelection: 0};
+  for (const name of Object.keys(originalCalls)) {
+    const original = owned[name]; owned[name] = function (...args) { originalCalls[name]++; return original.apply(this, args); };
+  }
+  const start = () => {
+    session = sessionFor(oracle); const call = session.call.bind(session);
+    session.call = (name, args, viewText) => {
+      const view = JSON.parse(viewText);
+      if (view.figureClipboardPastes === true) { assert.ok(name === 'pasteSelection' || name === 'duplicateSelection'); requests.push({name, view}); }
+      const answer = JSON.parse(call(name, args, viewText));
+      if (name === 'pasteSelection' || name === 'duplicateSelection') { alter(answer); packets.push(structuredClone(answer)); }
+      return JSON.stringify(answer);
+    };
+    session.free = () => { releases.push({document: json(owned.report), state: state(owned), pastes: figureClipboardCount(owned)}); current = false; };
+    return session;
+  };
+  const mirror = {framesCurrent: () => current, syncFrames: async () => {
+    oracle = new Editor(options).load(structuredClone(owned.report));
+    oracle.autoKey = owned.autoKey;
+    for (const key of ['_revision', '_revisionSerial', '_savedRevision', '_layerRevision', '_definitionRevision', '_nextUid', '_nextFrameIdentity']) oracle[key] = owned[key];
+    oracle._generatedFrameSources = new Set(owned._generatedFrameSources); oracle.historyLimit = owned.historyLimit;
+    oracle._restoreSelection(owned._selectionState()); oracle._invalidate(); current = true;
+  }};
+  const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: start}}, mirror}), {mode});
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => observations[index].push({event: clean(event.detail), pastes: figureClipboardCount(editor)}));
+  let callIndex = 0, context = 'initial';
+  const same = () => {
+    assert.equal(json(owned.report), json(expected.report), 'complete document');
+    assert.deepEqual(state(owned), state(expected), 'history, selection and identities');
+    assert.deepEqual(owned._undo, expected._undo, 'literal undo history'); assert.deepEqual(owned._redo, expected._redo, 'literal redo history');
+    const actualFrame = owned.evaluatedFrame, expectedFrame = expected.evaluatedFrame;
+    assert.equal(json(actualFrame), json(expectedFrame), 'complete displayed frame');
+    const actualGeometry = json(owned.geometry.drawables), expectedGeometry = json(expected.geometry.drawables);
+    let difference;
+    if (actualGeometry !== expectedGeometry) {
+      const first = (actual, expected, path = 'drawables') => {
+        if (Object.is(actual, expected)) return null;
+        if (!actual || !expected || typeof actual !== 'object' || typeof expected !== 'object') return {path, actual, expected};
+        const keys = Object.keys(actual), expectedKeys = Object.keys(expected);
+        if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) return {path, actualKeys: keys, expectedKeys};
+        for (const key of keys) { const result = first(actual[key], expected[key], `${path}.${key}`); if (result) return result; }
+        return null;
+      };
+      const samples = frame => frame.objects.map(object => ({uid: object.unique_id, sample: object._movieclipSample}));
+      difference = {first: first(JSON.parse(actualGeometry), JSON.parse(expectedGeometry)), actualSamples: samples(actualFrame), expectedSamples: samples(expectedFrame)};
+    }
+    assert.equal(actualGeometry, expectedGeometry, `exact numeric geometry at ${context}: ${JSON.stringify(difference)}`);
+    assert.equal(figureClipboardCount(owned), figureClipboardCount(expected), 'current clipboard count');
+    assert.deepEqual(observations[1], observations[0], 'literal event-time counters and events');
+    assert.equal(report.mismatches.length, 0, JSON.stringify(report.mismatches));
+  };
+  const run = (name, ...args) => {
+    context = `${++callIndex}: ${name}(${JSON.stringify(args)})`;
+    const before = [expected, owned].map(editor => ({clipboard: figureClipboard(editor), pastes: figureClipboardCount(editor)}));
+    for (const events of observations) events.length = 0;
+    let result, actual, error, actualError;
+    try { result = expected[name](...args); } catch (caught) { error = caught; }
+    try { actual = owned[name](...args); } catch (caught) { actualError = caught; }
+    assert.equal(actualError?.messageKey ?? actualError?.message, error?.messageKey ?? error?.message, 'original error');
+    assert.equal(actualError?.message, error?.message, 'original translated message');
+    same(); if (!error) assert.equal(json(actual), json(result), 'original return value');
+    const counters = [expected, owned].map((editor, index) => ({before: before[index].pastes, after: figureClipboardCount(editor),
+      events: observations[index].map(event => event.pastes), sameClipboard: figureClipboard(editor) === before[index].clipboard}));
+    assert.deepEqual(counters[1], counters[0], 'saved clipboard identity and all event observations');
+    return {result: actual, error: actualError, counters: counters[1]};
+  };
+  return {expected, owned, get oracle() { return oracle; }, report, reference, requests, packets, releases, observations, originalCalls, same, run,
+    alter(callback) { alter = callback; }};
+}
+
+test('default paste adoption matches all 33 recorded clipboard counters, events and saved identities', () => {
+  const pair = clipboardPair(), {owned, expected, report, reference, run} = pair;
+  assert.equal(report.mode, 'classes'); assert.equal(editingClass(owned.report), 'movieclips');
+  for (const [index, [method, ...args]] of reference.steps.slice(1).map(step => step.call).entries()) {
+    const name = method.replace(/^@/, ''), adopted = report.owned, original = pair.originalCalls[name];
+    const {error, counters} = run(name, ...args.map(decode));
+    assert.deepEqual(counters, reference.steps[index + 1].figureClipboardPastes, `recorded step ${index + 1}`);
+    if (name === 'pasteSelection' || name === 'duplicateSelection') {
+      assert.equal(pair.originalCalls[name], original + (error ? 1 : 0), 'success skips the original top-level method; errors replay that owner');
+      if (!error) assert.equal(report.owned, adopted + 1, 'actual successful adoption');
+      else assert.equal(report.owned, adopted, 'original error is not a successful adoption');
+    }
+  }
+  assert.ok(pair.requests.length > 0); assert.ok(pair.packets.some(answer => answer.figureClipboardPastes === null));
+  assert.ok(pair.packets.some(answer => answer.figureClipboardPastes?.after > answer.figureClipboardPastes?.before));
+  assert.ok(pair.packets.some(answer => answer.status === 'error' && !Object.hasOwn(answer, 'figureClipboardPastes')));
+  while (expected.canUndo) run('undo'); while (expected.canRedo) run('redo');
+});
+
+test('zero increments do not write the saved counter, no clipboard returns [] with a selected figure', () => {
+  const pair = clipboardPair(), {expected, owned, run, report} = pair;
+  run('select', 4, -1); const before = report.owned;
+  assert.deepEqual(run('pasteSelection').result, []); assert.equal(owned.selectedUid, 4); assert.equal(report.owned, before + 1);
+  run('copySelection'); const saved = [expected, owned].map(figureClipboard), writes = [[], []];
+  for (const [index, clipboard] of saved.entries()) {
+    let value = clipboard.pastes;
+    Object.defineProperty(clipboard, 'pastes', {enumerable: true, configurable: true, get: () => value, set(next) { writes[index].push(next); value = next; }});
+  }
+  run('pasteSelection', {offset: 0}); run('pasteSelection', {offset: -0});
+  run('pasteSelection', {offset: 'x'}); run('pasteSelection', {pasteMode: 'bogus'});
+  run('selectMany', []); run('duplicateSelection');
+  assert.deepEqual(writes, [[], []], 'zero, error and no-copy routes perform no saved counter assignment');
+  run('pasteSelection'); assert.deepEqual(writes, [[1], [1]], 'one authoritative increment uses the original existing property');
+  assert.equal(figureClipboard(owned), saved[1]);
+});
+
+test('malformed or absent paste certificates retire Native before any original fallback write', () => {
+  for (const method of ['pasteSelection', 'duplicateSelection']) for (const change of [
+    answer => { delete answer.figureClipboardPastes; }, answer => { answer.figureClipboardPastes = null; },
+    answer => { answer.figureClipboardPastes = 1; }, answer => { answer.figureClipboardPastes = []; },
+    answer => { delete answer.figureClipboardPastes.before; }, answer => { delete answer.figureClipboardPastes.after; },
+    answer => { answer.figureClipboardPastes.before = 1; }, answer => { answer.figureClipboardPastes.before = -1; },
+    answer => { answer.figureClipboardPastes.before = .5; }, answer => { answer.figureClipboardPastes.after = null; },
+    answer => { answer.figureClipboardPastes.after = 2; }, answer => { answer.figureClipboardPastes.after = -1; },
+    answer => { answer.figureClipboardPastes.after = .5; }, answer => { answer.figureClipboardPastes.extra = true; },
+  ]) {
+    const pair = clipboardPair(), {owned, expected, run, report} = pair;
+    run('select', 4, -1); run('copySelection'); pair.alter(change);
+    const before = {document: json(owned.report), state: state(owned), pastes: figureClipboardCount(owned)}, adopted = report.owned;
+    run(method);
+    assert.deepEqual(pair.releases, [before], 'validation retires the advanced session while JS is still untouched');
+    assert.equal(report.owned, adopted); assert.equal(report.failedOwned, 1); assert.equal(pair.originalCalls[method], 1);
+    assert.deepEqual(owned._undo.at(-1), expected._undo.at(-1));
+  }
+  for (const value of [{before: 0, after: 0}, 0, [], false]) {
+    const pair = clipboardPair(); pair.run('select', 4, -1);
+    pair.alter(answer => { answer.figureClipboardPastes = value; });
+    assert.deepEqual(pair.run('pasteSelection').result, []); assert.equal(pair.releases.length, 1); assert.equal(pair.report.failedOwned, 1);
+  }
+});
+
+test('Native before rejects ambiguous counter drift and permits a fresh copied-session recovery', async () => {
+  const pair = clipboardPair(), {expected, owned, report, run} = pair;
+  run('select', 4, -1); run('copySelection');
+  for (const editor of [expected, owned]) figureClipboard(editor).pastes = 1;
+  const adopted = report.owned; run('pasteSelection');
+  assert.deepEqual(pair.packets.at(-1).figureClipboardPastes, {before: 0, after: 1}, 'after alone would falsely match JS before');
+  assert.equal(report.owned, adopted); assert.equal(pair.releases.length, 1); assert.equal(pair.releases[0].pastes, 1);
+  assert.equal(figureClipboardCount(owned), 2, 'fallback increment uses the original drifted counter');
+  await report.prepare(); const sessions = report.sessions;
+  run('select', 4, -1); run('copySelection'); const pasted = report.owned; run('pasteSelection');
+  assert.equal(report.sessions, sessions + 1); assert.equal(report.owned, pasted + 1); assert.equal(figureClipboardCount(owned), 1);
+});
+
+test('paste event mutation or replacement increments the captured old object after all events', () => {
+  for (const replace of [false, true]) {
+    const pair = clipboardPair(), {expected, owned, run, report} = pair;
+    run('select', 4, -1); run('copySelection'); const saved = [expected, owned].map(figureClipboard);
+    for (const [index, editor] of [expected, owned].entries()) {
+      let first = true;
+      editor.addEventListener('change', event => {
+        if (!first || !event.detail.layerSheet) return; first = false;
+        assert.equal(saved[index].pastes, 0, 'event sees the pre-call counter');
+        if (replace) editor._selectionClipboard = {...saved[index], pastes: 50};
+        else saved[index].pastes = 10;
+      });
+    }
+    const adopted = report.owned; run('pasteSelection'); assert.equal(report.owned, adopted + 1);
+    assert.deepEqual(saved.map(clipboard => clipboard.pastes), replace ? [1, 1] : [11, 11]);
+    assert.equal(figureClipboardCount(owned), replace ? 50 : 11);
+    const requests = pair.requests.length, pasted = report.owned; run('pasteSelection');
+    assert.equal(report.owned, pasted, 'changed clipboard or Native before drift retains original fallback');
+    assert.equal(pair.requests.length, requests + (replace ? 0 : 1)); assert.equal(pair.releases.length, 1);
+  }
+});
+
+test('duplicate child events complete the retained temporary clipboard then restore both saved owners', () => {
+  for (const offset of [undefined, 0]) for (const replace of [false, true]) {
+    const pair = clipboardPair(), {expected, owned, run, report} = pair;
+    run('select', 4, -1); run('copySelection'); run('pasteSelection'); run('select', 4, -1);
+    const saved = [expected, owned].map(editor => [editor._selectionClipboard, editor._figureClipboard]), retained = [], writes = [[], []];
+    for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => {
+      if (!event.detail.layerSheet) return;
+      const temporary = figureClipboard(editor); retained[index] = temporary;
+      assert.equal(temporary.pastes, 0, 'fresh child clipboard is installed at the edit event');
+      let value = temporary.pastes;
+      Object.defineProperty(temporary, 'pastes', {enumerable: true, configurable: true, get: () => value, set(next) { writes[index].push(next); value = next; }});
+      if (replace) editor._selectionClipboard = {...temporary, pastes: 50};
+      else temporary.pastes = 10;
+    });
+    const adopted = report.owned; run('duplicateSelection', offset === undefined ? {} : {offset}); assert.equal(report.owned, adopted + 1);
+    const increment = offset === undefined ? 1 : 0;
+    assert.deepEqual(retained.map(clipboard => clipboard.pastes), replace ? [increment, increment] : [10 + increment, 10 + increment], 'retained temporary object observes original postevent completion');
+    assert.deepEqual(writes[1], writes[0], 'explicit zero causes no postevent assignment');
+    assert.deepEqual(writes[1], replace ? increment ? [1] : [] : increment ? [10, 11] : [10]);
+    for (const [index, editor] of [expected, owned].entries()) {
+      assert.equal(editor._selectionClipboard, saved[index][0]); assert.equal(editor._figureClipboard, saved[index][1]);
+      assert.equal(figureClipboardCount(editor), 1, 'temporary event changes never reach the saved counter');
+    }
+    assert.equal(pair.originalCalls.duplicateSelection, 0); assert.equal(pair.requests.length, 2);
+    assert.deepEqual(pair.packets.at(-1).figureClipboardPastes, {before: 0, after: increment}, 'authoritative temporary certificate');
+  }
+});
+
+test('paste and duplicate publication errors keep original effects, counter and recovery boundary', async () => {
+  for (const method of ['pasteSelection', 'duplicateSelection']) {
+    const pair = clipboardPair(), {expected, owned, report, run, same} = pair;
+    run('select', 4, -1); run('copySelection'); const saved = [expected, owned].map(editor => [editor._selectionClipboard, editor._figureClipboard]);
+    const emit = [expected, owned].map(editor => editor._emit), failure = new Error('Rejected figure paste event');
+    for (const [index, editor] of [expected, owned].entries()) editor._emit = function (kind, detail) {
+      if (kind === 'edit' && detail.layerSheet) throw failure;
+      return emit[index].call(this, kind, detail);
+    };
+    assert.throws(() => expected[method](), error => error === failure); assert.throws(() => owned[method](), error => error === failure); same();
+    assert.equal(pair.releases.length, 1); assert.equal(report.ended['a figure paste publication failed'], 1);
+    for (const [index, editor] of [expected, owned].entries()) {
+      assert.equal(editor._selectionClipboard, saved[index][0]); assert.equal(editor._figureClipboard, saved[index][1]);
+      assert.equal(figureClipboardCount(editor), 0, 'failed publication never increments the saved clipboard'); editor._emit = emit[index];
+    }
+    await report.prepare(); const sessions = report.sessions;
+    run('select', 4, -1); run('copySelection'); const pasted = report.owned; run('pasteSelection');
+    assert.equal(report.sessions, sessions + 1); assert.equal(report.owned, pasted + 1);
+  }
+});
+
+test('foreign clipboard and comparison-only calls preserve the original guard and literal request exclusion', () => {
+  const pair = clipboardPair(), {expected, owned, report, run} = pair;
+  run('select', 4, -1); run('copySelection');
+  for (const editor of [expected, owned]) editor._selectionClipboard = {...figureClipboard(editor)};
+  const requests = pair.requests.length, adopted = report.owned; run('pasteSelection');
+  assert.equal(pair.requests.length, requests); assert.equal(report.owned, adopted); assert.equal(pair.originalCalls.pasteSelection, 1);
+  assert.equal(report.ended['a figure clipboard the session did not copy'], 1);
+  const shadow = clipboardPair({mode: 'shadow'}); shadow.run('select', 4, -1); shadow.run('copySelection'); shadow.run('pasteSelection');
+  assert.equal(shadow.requests.length, 0); assert.equal(shadow.report.owned, 0);
 });

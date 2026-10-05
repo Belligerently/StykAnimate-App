@@ -152,6 +152,11 @@ pub(crate) fn insert(frame: &Value, pasted: &[Value], order: &[u32]) -> Result<V
 }
 
 impl Editor {
+    /// Read the existing clipboard counter without copying its payload.
+    pub(crate) fn figure_clipboard_pastes(&self) -> Option<f64> {
+        self.figure_clipboard.as_ref().map(|clipboard| clipboard.pastes)
+    }
+
     /// `copySelection({wholeFigures})`: the selected figures, their definitions, layers and
     /// drawing order. Returns how many were copied.
     pub(crate) fn copy_selection(&mut self) -> Result<Value, EditError> {
@@ -257,12 +262,17 @@ impl Editor {
     /// `duplicateSelection({pasteMode, offset})`: copied and pasted with new identities as
     /// instances of the same definitions, the clipboard left as it was.
     pub(crate) fn duplicate_selection(&mut self, options: &Value) -> Result<Value, EditError> {
+        self.duplicate_selection_pastes(options, None)
+    }
+
+    pub(crate) fn duplicate_selection_pastes(&mut self, options: &Value, mut pastes: Option<&mut Option<Value>>) -> Result<Value, EditError> {
         if options.get("wholeFigures").is_some_and(Value::truthy) {
             return Err(EditError::Unported("duplicating whole figures of a branch selection".into()));
         }
         let kept = self.figure_clipboard.clone();
         let result = (|| {
             if self.copy_selection()?.as_f64() == Some(0.0) {
+                if let Some(pastes) = pastes.as_deref_mut() { *pastes = Some(Value::Null); }
                 return Ok(Value::array(Vec::new()));
             }
             let mut paste = Obj::new();
@@ -271,7 +281,17 @@ impl Editor {
             if let Some(offset) = options.get("offset") {
                 paste.set("offset", offset.clone());
             }
-            self.paste_selection(&Value::object(paste))
+            let before = if pastes.is_some() { self.figure_clipboard_pastes() } else { None };
+            let result = self.paste_selection(&Value::object(paste));
+            if result.is_ok() && let Some(pastes) = pastes.as_deref_mut()
+                && let Some((before, after)) = before.zip(self.figure_clipboard_pastes())
+            {
+                let mut counts = Obj::new();
+                counts.set("before", Value::Num(before));
+                counts.set("after", Value::Num(after));
+                *pastes = Some(Value::object(counts));
+            }
+            result
         })();
         self.figure_clipboard = kept;
         result

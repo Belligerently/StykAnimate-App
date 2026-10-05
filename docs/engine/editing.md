@@ -158,6 +158,32 @@ Advanced timeline Ungroup action and all 21 paired boundaries match; each mutato
 has positive Native/adoption clocks and no editor fallback. Observed command timings
 are diagnostic only; class-cost policy and full-class row counts are unchanged.
 
+### Figure clipboard counter publication (2026-10-05)
+
+Literal `view.figureClipboardPastes: true` requests successful top-level
+`pasteSelection` and `duplicateSelection` answers with `figureClipboardPastes:
+null | {before, after}`. Null represents no copied clipboard. A pair binds the
+actual clipboard counter; duplicate captures its temporary clipboard before
+restoring the saved clipboards. Defaults, errors and unrelated calls omit the field.
+
+Before any copy or publication, the facade validates the captured counter and an
+increment of zero or one. It runs the original events, then increments that same
+clipboard only when certified; duplicate reuses `copySelection` and restores both
+saved clipboards in the original `finally`. Listener-held temporary references,
+listener mutation/replacement, no-op writes and failure recovery retain their
+original behavior. Range paste history keeps its original geometry-retention flag
+independently of whether a committed retained frame is present. Foreign clipboard
+guards and unsupported-context routes are unchanged.
+
+This is additive opt-in Session JSON; public Rust signatures/layouts, document
+schema and stored math do not change. Mobile consumers opting in must handle the
+requested null/pair field; the mobile pin remains untouched. Checks pass 238 Rust
+tests, three recordings / 106 exact calls, 263 JS tests and Main check. The actual
+default proof matches all 34 paired boundaries and full undo, including nine
+successful pastes, three duplicates and three expected validation errors. See
+[command measurements](../performance/RUST-EDITING-COMMANDS.md); this does not
+advance a class gate or full-class cost row.
+
 ### Recorded worker movieclips, history and publication (2026-10-04)
 
 Native and sheet movieclip creation, splitting, unique copies, break apart, placement,

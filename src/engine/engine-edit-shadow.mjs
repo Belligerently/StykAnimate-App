@@ -672,7 +672,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
     }
   };
   /** What the editor does with an owned call's answer instead of computing it. */
-  const adopt = (name, answer, selection, args, topology, unique, folder) => {
+  const adopt = (name, answer, selection, args, topology, unique, folder, pasteClipboard, pasteIncrement) => {
     if (folder) {
       try {
         const result = editor._layerEdit(folder.label, folder.updates, {structural: folder.structural});
@@ -854,14 +854,20 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
           }
           adoptLayerSheet(editor, {sheet, trackOrder: answer.trackOrder ?? Object.keys(beforeSheet.tracks),
             layers: Object.hasOwn(answer, 'layers') ? answer.layers : editor.report._styk.layers, sources: answer.sources, nextFrame: state.nextFrameIdentity, definitions: answer.definitions},
-            detail.label, {selection: drag?.beforeSelection ?? selection, retainGeometry: Boolean(preview)});
+            detail.label, {selection: drag?.beforeSelection ?? selection, retainGeometry: Boolean(preview) || name === 'pasteSelection' || name === 'duplicateSelection'});
         } finally { editor._authoredCommitPreview = null; }
       } else if (kind === 'seek') originals.get('seek').call(editor, tick);
     }
     // A gesture that ended without publishing (nothing changed).
     if (!answer.drag && editor._drag && !published) { editor._drag = null; editor._authoredPoseEdit = null; editor._invalidate(); }
     if (name === 'duplicateFigure' || name === 'addFigure' || name === 'importFigure') return editor.object;
-    if (name === 'pasteSelection' || name === 'duplicateSelection') return editor.selectedObjects;
+    if (name === 'pasteSelection' || name === 'duplicateSelection') {
+      // The original owner increments its captured clipboard after publication.
+      // Listeners may replace it or change its count; keep that same local target.
+      if (!pasteClipboard) return [];
+      if (pasteIncrement === 1) pasteClipboard.pastes++;
+      return editor.selectedObjects;
+    }
     if (name === 'sheetAppendFrame') return editor.evaluatedFrame;
     return answer.result;
   };
@@ -908,7 +914,7 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         if (given.some(value => value === undefined || typeof value === 'function' || value instanceof Set || name === 'undo' || name === 'redo')) payload = name === 'undo' || name === 'redo' ? '[]' : null;
         else try { payload = measured ? measured.payload() : JSON.stringify(given, frameRanges); } catch { payload = null; }
         if (payload === null) { end('arguments that are not plain data'); live = null; }
-        else before = JSON.stringify({...view(), ...(ownCall ? {changesOnly: true} : {}), ...(topologyFigure ? {topologyPublication: true} : {}), ...(movieclipFigure ? {movieclipUniquePublication: true} : {}), ...(folder ? {layerPublication: true} : {})});
+        else before = JSON.stringify({...view(), ...(ownCall ? {changesOnly: true} : {}), ...(topologyFigure ? {topologyPublication: true} : {}), ...(movieclipFigure ? {movieclipUniquePublication: true} : {}), ...(folder ? {layerPublication: true} : {}), ...(ownCall && (name === 'pasteSelection' || name === 'duplicateSelection') && !measured ? {figureClipboardPastes: true} : {})});
       }
       // Rig releases emit plain/definition edits; own static patches bypass keyed styles.
       // Keep these routes in the original editor with their eligible fallback timed;
@@ -924,6 +930,8 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
       // Callback bounds have no owning query yet: observe only the measurements the editor
       // itself requested, never evaluate the range a second time to prepare an owned call.
       if (live && ownCall && !measured) {
+        const pasteClipboard = name === 'pasteSelection' ? editor._selectionClipboard ?? editor._figureClipboard ?? null : null;
+        const pasteBefore = pasteClipboard?.pastes;
         const selection = editor._selectionState(), called = performance.now();
         let answer, text = '', parsing = called;
         try { text = call(live, name, payload, before); parsing = performance.now(); answer = JSON.parse(text); }
@@ -932,12 +940,37 @@ export function installEditShadow(editor, engineSide, {mode = engineEditMode()} 
         const topology = answer?.status === 'ok' && topologyFigure && answer.result !== false ? prepareSplit(answer, topologyFigure, selection) : null;
         const unique = answer?.status === 'ok' && movieclipFigure ? prepareUnique(answer, movieclipFigure, selection) : null;
         const folderPlan = answer?.status === 'ok' && folder ? prepareFolder(name, answer, selection) : null;
-        const why = answer?.status === 'ok' ? folderPlan ? folderPlan.why : unique ? unique.why : topology ? topology.why : unadoptable(answer) : null;
+        let pasteIncrement = 0, pasteWhy = null;
+        if ((name === 'pasteSelection' || name === 'duplicateSelection') && answer?.status === 'ok') {
+          const counter = answer.figureClipboardPastes, duplicate = name === 'duplicateSelection';
+          const pair = duplicate ? counter !== null : Boolean(pasteClipboard);
+          if (!Object.hasOwn(answer, 'figureClipboardPastes') || (pair
+            ? !counter || typeof counter !== 'object' || Array.isArray(counter) || Object.keys(counter).length !== 2
+              || !Object.hasOwn(counter, 'before') || !Object.hasOwn(counter, 'after')
+              || !Number.isInteger(counter.before) || counter.before < 0 || !Number.isInteger(counter.after) || counter.after < 0
+              || counter.before !== (duplicate ? 0 : pasteBefore) || counter.after !== counter.before && counter.after !== counter.before + 1
+            : counter !== null || duplicate && (!Array.isArray(answer.events) || answer.events.length !== 0))) pasteWhy = 'a different figure clipboard counter';
+          else if (counter) pasteIncrement = counter.after - counter.before;
+        }
+        const why = answer?.status === 'ok' ? pasteWhy ?? (folderPlan ? folderPlan.why : unique ? unique.why : topology ? topology.why : unadoptable(answer)) : null;
         if (answer?.status === 'ok' && !why) {
           depth++;
           const adopting = performance.now();
-          try { return adopt(name, answer, selection, args, topology, unique, folderPlan); }
+          const groupClipboard = name === 'duplicateSelection' ? editor._selectionClipboard : null;
+          const singleClipboard = name === 'duplicateSelection' ? editor._figureClipboard : null;
+          try {
+            // Duplicate's original child events see its freshly copied clipboard.
+            // Reuse that owner, then restore both saved clipboards in its finally.
+            let counterClipboard = pasteClipboard;
+            if (name === 'duplicateSelection') {
+              if (answer.figureClipboardPastes === null) return [];
+              if (!originals.get('copySelection').call(editor, {wholeFigures: args[0]?.wholeFigures})) { end('a different duplicate clipboard'); return []; }
+              counterClipboard = editor._selectionClipboard ?? editor._figureClipboard;
+            }
+            return adopt(name, answer, selection, args, topology, unique, folderPlan, counterClipboard, pasteIncrement);
+          } catch (error) { if (name === 'pasteSelection' || name === 'duplicateSelection') end('a figure paste publication failed'); throw error; }
           finally {
+            if (name === 'duplicateSelection') { editor._selectionClipboard = groupClipboard; editor._figureClipboard = singleClipboard; }
             depth--; report.owned++; report.ownedMs += performance.now() - called;
             const entry = (report.byCall ??= {})[name] ??= {calls: 0};
             entry.calls++; entry.engineMs = (entry.engineMs ?? 0) + adopting - called; entry.adoptMs = (entry.adoptMs ?? 0) + performance.now() - adopting;

@@ -536,13 +536,24 @@ impl Editor {
         worker: bool,
         check: &mut dyn FnMut() -> Result<(), EditError>,
     ) -> Result<Value, EditError> {
-        self.call_checked_layer_publication(method, args, worker, check, None)
+        self.call_checked_layer_publication(method, args, worker, check, None, None)
     }
 
     /// Opt-in Session capture borrowed through the original checked dispatch.
     /// No publication state is retained on the editor or in history.
     pub(crate) fn call_layer_publication(&mut self, method: &str, args: &[Value], publication: &mut Option<Value>) -> Result<Value, EditError> {
-        self.call_checked_layer_publication(method, args, false, &mut || Ok(()), Some(publication))
+        self.call_checked_layer_publication(method, args, false, &mut || Ok(()), Some(publication), None)
+    }
+
+    /// Read duplicate's temporary clipboard before the original owner restores
+    /// the saved one. The capture is borrowed only for this checked command.
+    pub(crate) fn call_duplicate_pastes_checked(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>, pastes: &mut Option<Value>) -> Result<Value, EditError> {
+        if worker && (!self.options.property_channels || self.sheet()) {
+            // Same ordinary-call delegation and checks as call_worker_checked.
+            check()?;
+            return self.call_checked_layer_publication(method, args, false, &mut || Ok(()), None, Some(pastes));
+        }
+        self.call_checked_layer_publication(method, args, worker, check, None, Some(pastes))
     }
 
     fn call_checked_layer_publication(
@@ -552,9 +563,10 @@ impl Editor {
         worker: bool,
         check: &mut dyn FnMut() -> Result<(), EditError>,
         publication: Option<&mut Option<Value>>,
+        duplicate_pastes: Option<&mut Option<Value>>,
     ) -> Result<Value, EditError> {
         let snapshot = self.snapshot();
-        let result = check().and_then(|()| self.dispatch_layer_publication(method, args, worker, check, publication));
+        let result = check().and_then(|()| self.dispatch_layer_publication(method, args, worker, check, publication, duplicate_pastes));
         let result = result.and_then(|value| check().map(|()| value));
         if matches!(result, Err(EditError::Unported(_))) || (worker && result.is_err()) {
             self.restore(snapshot);
@@ -626,10 +638,10 @@ impl Editor {
     }
 
     fn dispatch_checked(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
-        self.dispatch_layer_publication(method, args, worker, check, None)
+        self.dispatch_layer_publication(method, args, worker, check, None, None)
     }
 
-    fn dispatch_layer_publication(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>, publication: Option<&mut Option<Value>>) -> Result<Value, EditError> {
+    fn dispatch_layer_publication(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>, publication: Option<&mut Option<Value>>, duplicate_pastes: Option<&mut Option<Value>>) -> Result<Value, EditError> {
         let projected_native=worker && self.native_projected_call(method,args);
         if worker && self.options.property_channels && !self.sheet() { self.native_projected_gate(method,args,check)?; }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
@@ -888,7 +900,10 @@ impl Editor {
             "cutSelection" => self.cut_selection(),
             "pasteSelection" => self.paste_selection(&arg(0)),
             "importFigure" => self.import_figure(&arg(0), &arg(1)),
-            "duplicateSelection" => self.duplicate_selection(&arg(0)),
+            "duplicateSelection" => match duplicate_pastes {
+                Some(pastes) => self.duplicate_selection_pastes(&arg(0), Some(pastes)),
+                None => self.duplicate_selection(&arg(0)),
+            },
             "addPolygon" => self.add_polygon(&arg(0), &arg(1)),
             "updatePolygon" => match args.get(1) {
                 None => self.update_polygon(&arg(0), &Value::Null),

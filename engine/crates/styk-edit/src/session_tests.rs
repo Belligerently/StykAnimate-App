@@ -1266,3 +1266,132 @@ fn folder_publication_is_literal_opt_in_and_keeps_quiet_sheet_admission() {
         assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
     }
 }
+
+#[test]
+fn figure_clipboard_pastes_consumes_recorded_counters_and_preserves_default_answers() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/figure-clipboard-pastes-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+    assert_eq!(steps.len(), 34);
+    for compact in [false, true] {
+        let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut expected = ordinary.editor.report_json();
+        let mut certificates = Vec::new();
+        let mut errors = 0;
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap();
+            let observation = step.get("figureClipboardPastes").unwrap();
+            let before = requested.editor.figure_clipboard_pastes().map_or(Value::Null, Value::Num);
+            assert_eq!(Some(&before), observation.get("before"), "step{}: authoritative pre-call count", step.get("step").unwrap());
+            let clipboard = requested.editor.figure_clipboard.clone();
+            let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+            view.set("changesOnly", Value::Bool(compact));
+            let args = Value::array(call[1..].to_vec());
+            let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
+            view.set("figureClipboardPastes", Value::Bool(true));
+            let mut answer = requested.call_values(method, &args, &Value::object(view));
+            let label = format!("clipboard step{} compact={compact}", step.get("step").unwrap());
+            let after = requested.editor.figure_clipboard_pastes().map_or(Value::Null, Value::Num);
+            assert_eq!(Some(&after), observation.get("after"), "{label}: authoritative post-call count");
+            assert_eq!(ordinary.editor.figure_clipboard_pastes(), requested.editor.figure_clipboard_pastes());
+            let ok = answer.get("status").and_then(Value::as_str) == Some("ok");
+            if matches!(method, "pasteSelection" | "duplicateSelection") && ok {
+                let certificate = answer.get("figureClipboardPastes").unwrap().clone();
+                if method == "duplicateSelection" {
+                    let expected = match step.get("step").and_then(Value::as_f64).unwrap() as usize {
+                        11 => parse(r#"{"before":0,"after":1}"#),
+                        12 => parse(r#"{"before":0,"after":0}"#),
+                        23 => Value::Null,
+                        _ => panic!("unexpected recorded duplicate"),
+                    };
+                    assert_eq!(certificate, expected, "{label}: actual temporary counter before saved-clipboard restoration");
+                } else if before.is_null() {
+                    assert_eq!(certificate, Value::Null);
+                    if !compact { assert_eq!(answer.get("result"), Some(&parse("[]")), "unrelated selection is not a paste result"); }
+                } else {
+                    assert_eq!(certificate.get("before"), Some(&before));
+                    assert_eq!(certificate.get("after"), Some(&after));
+                }
+                certificates.push((certificate.clone(), json(&certificate)));
+                answer.make_obj().unwrap().remove("figureClipboardPastes");
+            } else {
+                assert!(answer.get("figureClipboardPastes").is_none(), "{label}: no certificate for other calls/errors");
+                if method == "pasteSelection" { errors += 1; }
+            }
+            // These are the actual JS event observations. Native paste increments
+            // only after paste_figures returns; duplicate's events use its fresh
+            // temporary clipboard, and cut installs its new clipboard first.
+            let event_counts = observation.get("events").unwrap().elements().unwrap();
+            assert_eq!(event_counts.len(), answer.get("events").unwrap().array_len().unwrap(), "{label}: every recorded event observed");
+            let during = match method { "pasteSelection" => before.clone(), "duplicateSelection" => Value::Num(0.0), _ => after.clone() };
+            for count in event_counts.iter() { assert_eq!(count, during, "{label}: original counter/event ordering"); }
+            assert!(matches!(observation.get("sameClipboard"), Some(Value::Bool(_))));
+            if method == "duplicateSelection" {
+                assert_eq!(observation.get("sameClipboard"), Some(&Value::Bool(true)));
+                assert_eq!(requested.editor.figure_clipboard, clipboard, "{label}: duplicate restores the complete saved clipboard");
+            }
+            assert!(complete.get("figureClipboardPastes").is_none());
+            assert_eq!(json(&answer), json(&complete), "{label}: default full/compact answer bytes");
+            assert_eq!(json(answer.get("state").unwrap()), json(step.get("state").unwrap()), "{label}: recorded state");
+            assert_eq!(json(answer.get("events").unwrap()), json(step.get("events").unwrap()), "{label}: recorded events");
+            if let Some(error) = step.get("error").filter(|error| !error.is_null()) {
+                assert_eq!(answer.get("status").and_then(Value::as_str), Some("error"));
+                assert_eq!(answer.get("error"), error.get("key"));
+            } else {
+                assert!(ok, "{label}: {answer:?}");
+                if method != "@seek" && (!compact || !matches!(method, "pasteSelection" | "duplicateSelection")) {
+                    // Session seek returns null; the facade reads the visible
+                    // frame locally. Editor replay separately checks that view.
+                    assert_eq!(crate::replay::plain(answer.get("result").unwrap(), 4).unwrap_or(Value::Null), step.get("result").cloned().unwrap(), "{label}: original result");
+                }
+            }
+            if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.into(); }
+            assert_eq!(requested.editor.report_json(), expected, "{label}: recorded document");
+            assert_eq!(ordinary.editor.report_json(), expected);
+        }
+        assert_eq!(certificates.len(), 12, "nine pastes and three duplicate temporary owners");
+        assert_eq!(errors, 3);
+        for (certificate, bytes) in certificates { assert_eq!(json(&certificate), bytes, "later history preserves returned scalar pairs"); }
+    }
+}
+
+#[test]
+fn figure_clipboard_pastes_is_literal_opt_in_and_omits_unported_answers() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/figure-clipboard-pastes-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+    for compact in [false, true] {
+        for method in ["pasteSelection", "duplicateSelection"] {
+            for flag in [Value::Bool(false), Value::Num(1.0), Value::str("true"), parse("{}"), Value::Null, Value::Bool(true)] {
+                let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+                let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+                for step in &steps[1..4] {
+                    let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                    for session in [&mut ordinary, &mut requested] {
+                        let view = session.editor.state_value();
+                        assert_eq!(session.call_values(call[0].as_str().unwrap(), &Value::array(call[1..].to_vec()), &view).get("status").and_then(Value::as_str), Some("ok"));
+                    }
+                }
+                let unported = flag == Value::Bool(true);
+                if unported {
+                    for session in [&mut ordinary, &mut requested] { session.editor.tick = 0.5; }
+                }
+                let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+                view.set("changesOnly", Value::Bool(compact));
+                let complete = ordinary.call_values(method, &parse("[]"), &Value::object(view.clone()));
+                view.set("figureClipboardPastes", flag);
+                let answer = requested.call_values(method, &parse("[]"), &Value::object(view));
+                assert!(answer.get("figureClipboardPastes").is_none(), "only literal true and successful paste/duplicate request the handoff");
+                assert_eq!(json(&answer), json(&complete));
+                assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+                assert_eq!(requested.editor.figure_clipboard, ordinary.editor.figure_clipboard);
+                if unported {
+                    assert_eq!(answer.get("status").and_then(Value::as_str), Some("unported"));
+                    assert_eq!(answer.get("reason").and_then(Value::as_str), Some("pasting between frames"));
+                }
+            }
+        }
+    }
+}

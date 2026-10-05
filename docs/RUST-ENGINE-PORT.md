@@ -10,26 +10,28 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, layer folders adopted)
+## Handoff (2026-10-05, clipboard counters published)
 
 Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
 and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
 Preserve unrelated work and bind verification to the actual source and package tested.
 
-**Current milestone:** create, rename, move, arrange and ungroup layer folders
-adopt Native ordered updates through the original `_layerEdit` history tail.
-All five commands have positive Native/adoption clocks and no editor fallback;
-21 paired document/frame/history/selection/counter boundaries and full undo match.
-`getLayerFolders` remains a direct UI projection of published records. The observed
-subtotal is **18.360 ms** versus **9.620 ms** editor-alone, diagnostic only under a
-concurrent checkpoint.
+**Current milestone:** owned figure pastes publish the original clipboard counter;
+duplicate preserves its temporary clipboard during events and restores both saved
+clipboards afterward. All 34 paired boundaries and full undo match, including nine
+successful pastes, three duplicates and three expected validation errors.
 
-Focused checks pass **236 Rust tests**, **three recordings / 58 exact calls**,
-**204 JS tests** and final Main check. Required-profile shipping is **10,291,828 bytes**
-in **118.211 s**, with codecs unchanged. The last full green remains `c4c580de`;
-the regular immutable `53c11b8f` checkpoint is running. The persistent target stays
-intact; a package-only warm probe does not certify the broader parity feature
-variant, so downstream recompiles are expected. No new checkpoint green is claimed.
+Focused checks pass **238 Rust tests**, **three recordings / 106 exact calls**,
+**263 JS tests** and final Main check. Required-profile shipping is **10,293,395 bytes**
+in **55.648 s**, with codecs unchanged. The scoped default proof has **13 owned /
+17 compared / 33 attempted calls**; the 24.860/20.630 ms paste subtotal is diagnostic
+only. Actual simple UI keyboard pastes reach counter six; both broader automated
+UI attempts crash, so no overall UI pass is claimed.
+
+The last full green is `53c11b8f`: **861 native tests / two existing ignored**,
+**64 stages / 60 unchanged generators / 358 containers**, completed in **31m57s**.
+It certifies that commit, not later folder or clipboard changes. Keep the persistent
+target; broader parity feature variants can require downstream recompiles.
 
 **Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
 when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
@@ -41,11 +43,10 @@ workload. Channels has 346 calls on each page: latest excess 0.048887 ms and
 outcomes. The short default workload proves admission, not full cost.
 
 **Milestone counters:** inventory **175 js / 123 partial / 34 ported / 23 verified /
-1 removed**: `editor-layer-folders.mjs` moves from ported to verified;
-**OWNED_CLASSES 5→5**, **deleted JS 2→2**, full cost rows **43 unchanged** and
-**engine-1 0/28 unchanged**. The five individual folder observations advance affected
-command measurement rows **2→7**, recorded in
-[command timings](performance/RUST-EDITING-COMMANDS.md).
+1 removed unchanged**; **OWNED_CLASSES 5→5**, **deleted JS 2→2**, full cost rows
+**43 unchanged** and **engine-1 0/28 unchanged**. The aggregate paste observation
+advances affected-command measurement rows **7→8**; the broader editor modules
+remain partial. See [command timings](performance/RUST-EDITING-COMMANDS.md).
 
 **Next:** remaining recorded app commands, preserving native-timeline worker refusals
 and unsupported-context fallback. After those commands, run the complete idle
@@ -76,9 +77,9 @@ reviewed owning hunks; do not overwrite newer Main owners or clean another lane'
 Keep the checkpoint worktree and `tmp/baseline-worktree` (`96ebce85`). Preserve historical
 worktrees and immutable experiments. General Core/static/cache/storage lanes are parked;
 active work is limited to remaining recorded command adoption. The mobile checkout remains untouched at
-`661c6ad8`. Split, Unique and layer-publication packets are additive opt-in Session
-JSON contracts; a mobile consumer that opts in must handle the requested fields. Rust signatures and stored math
-are unchanged.
+`661c6ad8`. Split, Unique, layer-publication and clipboard-counter packets are additive opt-in
+Session JSON contracts; a mobile consumer that opts in must handle the requested
+fields. Rust signatures, layouts and stored math are unchanged.
 
 D7 forbids blocking the interface; D13 forbids tuning pixel thresholds; D15 requires
 record-for-record behavior and the current class-cost rule; D16 requires `styk-math`
@@ -307,7 +308,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Layer folders:** all five mutators now adopt ordered updates through the original `_layerEdit` tail, with exact actual default query/history/selection/full-undo proof. The getter remains a UI record projection. Next remaining recorded commands, then idle engine-1/baseline-0 before deletion.
 
-- **Existing movieclip clipboard UI regression:** the broader simple-mode test times out waiting for the sixth repeated-paste counter before its first Unique action, on both old and new app bytes. Fix clipboard adoption before benchmarking or deletion; this test is not claimed passed.
+- **Clipboard counters:** repeated-paste counters now match the original workflow in all 34 paired boundaries/full undo and actual simple UI keyboard pastes through counter six. Both broader movieclip UI attempts crash; that remains a final UI/deletion gap, not an overall UI pass.
 
 - **Existing joined one-shot event-time gap:** `moveSelection` can expose stale geometry to live-event listeners before installing its retained result. This remains a final parity/deletion gap; it is not a layer-folder adoption prerequisite.
 
@@ -562,6 +563,22 @@ unpacked into `~/.cache/styk-webkit-libs`, nothing installed system-wide); pinne
 layer-sheet movieclip replacements.
 
 ## 7. Parity results
+
+Figure clipboard publication passes 238 Rust tests, three recorded replays /
+106 exact calls, 263 JS tests and final Main check in 47.783 s. The scoped warmed
+default proof completes in 22.837 s with 13 owned / 17 compared / 33 attempted calls,
+including three expected validation errors. All twelve successful clipboard calls
+are Native-owned; nine pastes and two nonempty duplicates have positive
+Native/engine/adoption clocks. The empty duplicate permits zero adoption time.
+All 34 paired document/frame/history/selection/counter boundaries
+and full undo match literally. Actual simple UI keyboard pastes reach counter six
+with no shadow mismatch. Both broader automated UI attempts crash; neither is a
+pass claim. All 6,414 guarded inputs remain unchanged, with no
+unexpected errors, mismatches or rounding. Aggregate paste time is 24.860/20.630 ms,
+diagnostic only; full-class rows remain 43. Required-profile shipping is 10,293,395
+bytes in 55.648 s, with codecs unchanged. The completed `53c11b8f` checkpoint passes
+861 native tests, two existing ignored, 64 stages, 60 unchanged generators and
+358 containers; it does not certify later folder or clipboard source.
 
 Layer folders pass 236 normal editing-crate tests, zero failed or ignored across
 53 result groups; three fresh recorded replays / 58 exact calls; 204 JS tests,
@@ -982,7 +999,7 @@ B8 focused verification: 209 editing and 174 evaluation tests pass with the same
 
 ## 8. Work queue
 
-**Immediate command task:** remaining recorded app commands after layer folder adoption. Run the complete idle engine-1/baseline-0 matrix after those
+**Immediate command task:** remaining recorded app commands after clipboard publication. Run the complete idle engine-1/baseline-0 matrix after those
 commands and before JavaScript deletion; no further class-cost optimization is needed.
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
@@ -1228,3 +1245,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 18:47 UTC | Make independent movieclip copies through the engine | Ordinary sheet Unique adopts the shallow definition copy and original sheet batch/history tail; unsupported contexts retain fallback. Additive opt-in Session JSON; Rust signatures/math unchanged. **Counters:** inventory 175 js/123 partial/35 ported/22 verified/1 removed unchanged; OWNED_CLASSES 5→5; deleted JS 2→2; affected-command measurements 1→2; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 233 Rust; five recordings / 79 exact calls; 266 JS/Main check pass. Two warmed default UI copies preserve twelve paired boundaries and full undo, with positive Native/adoption clocks. Observed 22.030/19.740 ms is diagnostic, not a class-cost gate or causal speed claim. |
 
 | 2026-10-05 19:17 UTC | Edit layer folders through the engine | All five mutators adopt ordered updates through the original layer history tail; the getter remains a UI projection. Additive opt-in Session JSON; Rust signatures/layout/math unchanged. **Counters:** inventory 175 js/123 partial/34 ported/23 verified/1 removed (one ported→verified); OWNED_CLASSES 5→5; deleted JS 2→2; command measurements 2→7; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 236 Rust; three recordings / 58 exact calls; 204 JS/Main check pass. All five default commands adopt without editor fallback; actual Ungroup, 21 paired boundaries and full undo are exact. Observed 18.360/9.620 ms is diagnostic under concurrent checkpoint load, not a class-cost gate or causal speed claim. |
+| 2026-10-05 20:00 UTC | Preserve clipboard paste counters | Paste and duplicate publish certified counters through original events and clipboard restoration; additive opt-in Session JSON, Rust signatures/math unchanged. **Counters:** inventory unchanged 175/123/34/23/1; classes 5→5; deleted JS 2→2; command rows 7→8; full cost rows 43 and engine-1 0/28 unchanged. | 238 Rust / 106 recorded calls / 263 JS and Main check pass. All 34 paired boundaries and full undo match; aggregate paste 24.860/20.630 ms is diagnostic only. |

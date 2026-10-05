@@ -101,3 +101,35 @@ are in `tmp/root-verification-temp/layer-folders-focused/app-default-folders.jso
 `actual-app-summary.json` and `app-completion.json` record the accepted scope and
 completion. The existing joined one-shot event-time gap and repeated-paste UI
 regression remain separate from folder adoption.
+
+## Figure clipboard counters (2026-10-05)
+
+The scoped paired driver uses `--own --default --warm --exact-math
+--figure-clipboard-pastes` and the actual recorded sheet scenario. All 34 paired
+result/error/event/document/frame/history/selection/counter boundaries and full
+undo match. The default run has 13 owned / 17 compared / 33 attempted calls:
+30 successful calls plus three expected validation errors. Twelve clipboard calls
+adopt: nine pastes, two nonempty duplicates and one empty duplicate.
+Those eleven calls have positive Native/engine/adoption clocks; the empty
+no-op permits zero adoption time. There are no unexpected errors, mismatches or
+rounding, and all 6,414 guarded source/package inputs remain unchanged.
+
+| Command | Attempts | Native-adopted successes | Native call ms | Engine / parse / validation ms | Adoption ms | Eligible JS fallback ms | Failed Native ms | Candidate subtotal ms | Editor-alone ms | Answer JSON total (UTF-16 units) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pasteSelection` | 12 | 9 | 6.390 | 6.885 | 17.160 | 0.385 | 0.430 | 24.860 | 20.630 | 21,068 |
+
+Native call time is included in engine time. The three expected errors each
+include their failed Native attempt and separate original JS fallback exactly
+once. These clocks are a matched-command diagnostic, with no command-cost gate,
+full-class row advance or causal speed claim. The measurement counter advances
+from seven to eight; full-class rows stay 43, classes stay 5 and engine-1 stays 0/28.
+
+The accepted scoped run completes in 22.837 s. Checks pass 238 Rust tests, three
+recorded replays / 106 exact calls, 263 JS tests and final Main check in 47.783 s.
+Required-profile shipping is 10,293,395 bytes in 55.648 s, with codecs unchanged.
+Raw clocks, paired observations and completion are in
+`tmp/root-verification-temp/figure-clipboard-focused/app-final.json` and
+`app-final-completion.json`. Actual simple UI keyboard pastes reach counter six
+without a shadow mismatch. Both broader movieclip UI attempts crash with unchanged
+inputs; no overall UI pass is claimed. The joined one-shot event-time geometry gap
+remains separate.

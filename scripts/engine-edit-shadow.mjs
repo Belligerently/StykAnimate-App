@@ -5,7 +5,7 @@
 // the engine's answers compared with the JavaScript editor's (src/engine/engine-edit-shadow.mjs).
 //
 //   node scripts/engine-edit-shadow.mjs [--file <document.json> | --import <file.piv>] [--own [--default]] [--warm]
-//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--selection-adoption] [--movieclip-unique | --layer-folders] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
+//        [--origin] [--origin-pose] [--origin-channels] [--camera-follow | --joined-motion | --bounds | --capacity | --origin-range | --origin-rig] [--vfx-remaining] [--selection-adoption] [--movieclip-unique | --layer-folders | --figure-clipboard-pastes] [--focused] [--url http://127.0.0.1:47831] [--out <report.json>]
 //
 // Headless Chromium on the development server (started on a free port unless --url).
 // Without --file it edits the document the app starts with. Exit code 1 when any call
@@ -32,11 +32,15 @@
 // commands, including the timeline Ungroup menu, with every boundary and full
 // undo/redo compared. Uses the document named by layers-folders-sheet.scenario.json.
 // Per-method clocks are diagnostic, not an additional class-cost gate.
+// --own --default --warm --exact-math --figure-clipboard-pastes: the accepted
+// 33-call clipboard tape, including event-time counters, saved clipboard identity,
+// results, refusals and full undo. Paste timings are diagnostic, not a class gate.
 // --warm: the interactions run once untimed before the timed round (warmed-up code).
 // --capture <folder>: the first sessions that meet an unported call, a difference or another
 // error are saved there (`?engineEditCapture=on`) as `<run>-<n>.capture.json`, which
 // `styk edit-session <file>` replays natively (docs/engine/editing.md).
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {chromium} from '../tests/support/playwright.mjs';
@@ -47,12 +51,39 @@ const option = (name, fallback) => { const at = args.indexOf(name); return at < 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const movieclipUnique = args.includes('--movieclip-unique');
 const layerFolders = args.includes('--layer-folders');
+const figureClipboardPastes = args.includes('--figure-clipboard-pastes');
 const folderMethods = ['createLayerFolder', 'renameLayerFolder', 'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder'];
 if (layerFolders && ['--own', '--default', '--warm', '--exact-math'].some(flag => !args.includes(flag)))
   throw new Error('--layer-folders requires --own --default --warm --exact-math.');
 if (layerFolders && movieclipUnique) throw new Error('--layer-folders and --movieclip-unique are separate scoped proofs.');
 if (movieclipUnique && ['--own', '--default', '--warm', '--exact-math'].some(flag => !args.includes(flag)))
   throw new Error('--movieclip-unique requires --own --default --warm --exact-math.');
+if (figureClipboardPastes && (['--own', '--default', '--warm', '--exact-math'].some(flag => !args.includes(flag))
+    || movieclipUnique || layerFolders || args.includes('--import')))
+  throw new Error('--figure-clipboard-pastes requires --own --default --warm --exact-math and its separate recorded document.');
+const clipboardBinding = figureClipboardPastes ? {
+  scenario: 'engine/tests/edit/figure-clipboard-pastes-sheet.scenario.json',
+  scenarioSha256: '91be2dfb3dc80accb4a2253dda7e59124a5e564624966566e0c156a0260d11b0',
+  reference: 'engine/tests/edit/figure-clipboard-pastes-sheet.reference.json',
+  referenceSha256: '00d926809974abbf8419bd8d6337c71bf88b9296fe3504d76f6238df2ca692f0',
+  document: 'engine/tests/edit/sheet-movieclip.document.json',
+  documentSha256: '4c9a0d124be313f0b5bf263282d07db1748db57a97f36b7dbea8e02454bc397d',
+} : null;
+let clipboardScenario, clipboardReference, clipboardDocument;
+if (figureClipboardPastes) {
+  for (const key of ['scenario', 'reference', 'document']) {
+    const text = await readFile(path.join(root, clipboardBinding[key]), 'utf8');
+    if (createHash('sha256').update(text).digest('hex') !== clipboardBinding[`${key}Sha256`])
+      throw new Error(`The accepted clipboard ${key} changed.`);
+    if (key === 'scenario') clipboardScenario = JSON.parse(text);
+    if (key === 'reference') clipboardReference = JSON.parse(text);
+    if (key === 'document') clipboardDocument = text;
+  }
+  if (clipboardScenario.steps.length !== 33 || clipboardReference.steps.length !== 34
+      || clipboardReference.steps.some((step, index) => step.step !== index || !step.figureClipboardPastes
+        || JSON.stringify(step.call) !== JSON.stringify(index ? clipboardScenario.steps[index - 1] : null)))
+    throw new Error('The clipboard tape is missing its exact calls or counter observations.');
+}
 
 async function server() {
   const given = option('--url');
@@ -77,6 +108,7 @@ const captureFolder = option('--capture');
 const requiredCalls = [
   ...(layerFolders ? folderMethods : []),
   ...(movieclipUnique ? ['makeMovieclipUnique'] : []),
+  ...(figureClipboardPastes ? ['pasteSelection', 'duplicateSelection'] : []),
   ...(args.includes('--figures-gate') ? ['moveSelection', 'poseJoint', 'commitDrag'] : []),
   ...(args.includes('--selection-adoption') ? ['duplicateFigure', 'pasteSelection', 'duplicateSelection'] : []),
   ...(args.includes('--vfx-remaining') ? ['setVfxScope', 'applyVfxPreset', 'addVfxGroup', 'addVfxUserPreset'] : []),
@@ -132,12 +164,67 @@ async function run(mode) {
   }
   const folderScenario = layerFolders ? JSON.parse(await readFile(path.join(root, 'engine/tests/edit/layers-folders-sheet.scenario.json'), 'utf8')) : null;
   const file = option('--file', layerFolders ? path.join(root, 'engine/tests/edit', folderScenario.document)
-    : movieclipUnique ? path.join(root, 'engine/tests/edit/clip-unique-sheet.document.json') : undefined);
+    : movieclipUnique ? path.join(root, 'engine/tests/edit/clip-unique-sheet.document.json')
+    : figureClipboardPastes ? path.join(root, clipboardBinding.document) : undefined);
   if (file) {
     const text = await readFile(path.resolve(file), 'utf8');
+    if (figureClipboardPastes && text !== clipboardDocument) throw new Error('The clipboard proof must load its accepted document bytes.');
     await page.evaluate(({text, name}) => { styk.editor.load(JSON.parse(text), name); styk.editor.markSaved(); }, {text, name: path.basename(file)});
   }
   if (layerFolders) await page.evaluate(() => styk.settingsUI.commit({timelineMode: 'advanced'}));
+  if (figureClipboardPastes) await page.evaluate(({text, name, options}) => {
+    styk.settingsUI.commit({timelineMode: 'advanced', autoKey: options.autoKey ?? false});
+    const e = styk.editor;
+    if (!e.propertyChannels || !e.layerTimeline || e._selectionClipboard || e._figureClipboard)
+      throw new Error('The clipboard proof needs the actual app options and an initially empty figure clipboard.');
+    const saved = Object.fromEntries(['_selectionClipboard', '_figureClipboard'].map(key => [key, {present: Object.hasOwn(e, key), value: e[key]}]));
+    // The recorder's existing depth-four projection, used only for results/events.
+    const plain = (value, depth = 4) => {
+      if (value === null || ['number', 'string', 'boolean'].includes(typeof value)) return value;
+      if (value instanceof Set) return plain([...value], depth);
+      if (typeof value !== 'object' || depth <= 0) return undefined;
+      if (Array.isArray(value)) return value.map(item => plain(item, depth - 1)).filter(item => item !== undefined);
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plain(item, depth - 1)]).filter(([, item]) => item !== undefined));
+    };
+    const clipboard = () => e._selectionClipboard ?? e._figureClipboard;
+    const counter = () => clipboard()?.pastes ?? null;
+    const snapshot = () => ({document: JSON.stringify(e.report, (key, value) => key === 'runtime_segments' ? undefined : value),
+      frame: JSON.stringify(e.evaluatedFrame, (key, value) => key === 'runtime_segments' ? undefined : value),
+      undo: JSON.stringify(e._undo), redo: JSON.stringify(e._redo), selection: e._selectionState(),
+      state: {tick: e.tick, frameIndex: e.frameIndex, selectedUid: e.selectedUid ?? null, selectedUids: [...e.selectedUids], selectedJoint: e.selectedJoint ?? -1,
+        canUndo: e.canUndo, canRedo: e.canRedo, undoLabel: e.undoLabel, redoLabel: e.redoLabel, dirty: e.dirty,
+        layerRevision: e.layerRevision, nextFrameIdentity: e._nextFrameIdentity, nextUid: e._nextUid,
+        ...Object.fromEntries(Object.entries(e._selectionState()).filter(([key]) => ['polygonSelection', 'segmentIds', 'branch'].includes(key)))},
+      clipboardPastes: counter()});
+    globalThis.__stykClipboardProof = {snapshot,
+      reset() {
+        // Loading retires the old Native session. Restore the actual initial
+        // empty clipboards, which load deliberately preserves across documents.
+        e.load(JSON.parse(text), name); e.autoKey = options.autoKey ?? false; e.markSaved();
+        for (const [key, entry] of Object.entries(saved)) {
+          if (entry.present) e[key] = entry.value; else delete e[key];
+        }
+        if (clipboard() || e.canUndo || e.canRedo) throw new Error('The warm clipboard baseline was not restored.');
+      },
+      invoke(call, step) {
+        const method = call[0] === '@select' ? 'select' : call[0] === '@seek' ? 'seek' : call[0];
+        const r = globalThis.__stykEditShadow;
+        const beforeEntry = {...r.byCall?.[method]}, beforeOwned = r.owned, beforeFailed = r.failedOwned;
+        const beforeCalls = r.calls, beforeClipboard = clipboard(), before = counter(), events = [], counters = [], eventClipboards = [];
+        const observe = event => { events.push(plain(event.detail ?? null)); counters.push(counter()); eventClipboards.push(clipboard()); };
+        let result = null, error = null;
+        e.addEventListener('change', observe);
+        try { result = plain(e[method](...call.slice(1)) ?? null); }
+        catch (caught) { error = {message: caught.message, key: caught.messageKey ?? null}; }
+        finally { e.removeEventListener('change', observe); }
+        const entry = r.byCall?.[method] ?? {}, keys = ['calls', 'callMs', 'engineMs', 'adoptMs', 'editorMs', 'failedOwned', 'failedOwnedMs', 'answerBytes'];
+        return {step, call, result, error, events,
+          figureClipboardPastes: {before, after: counter(), events: counters, sameClipboard: clipboard() === beforeClipboard},
+          retainedEventClipboardPastes: eventClipboards.map(value => value?.pastes ?? null),
+          clock: {method, ...Object.fromEntries(keys.map(key => [key, (entry[key] ?? 0) - (beforeEntry[key] ?? 0)])),
+            owned: r.owned - beforeOwned, globalFailedOwned: r.failedOwned - beforeFailed, globalCalls: r.calls - beforeCalls}, snapshot: snapshot()};
+      }};
+  }, {text: clipboardDocument, name: clipboardScenario.name, options: clipboardScenario.editor});
   /** Waits until the engine holds the editor's current revision, so a session can start. */
   const settled = async () => {
     for (let i = 0; i < 100; i++) {
@@ -191,22 +278,36 @@ async function run(mode) {
   const uniqueCalls = [];
   const folderSnapshots = [];
   const folderCalls = [];
+  const clipboardRows = [];
   // A step the editor refuses on this document (its message shown to users, compared in the
   // shadow like any other answer) is noted and the run goes on.
   const refused = [];
   const step = async (name, run) => {
     if (args.includes('--verbose')) console.log(`${mode}: ${name}`);
     const ready = await settled();
-    if ((movieclipUnique || layerFolders) && !ready) throw new Error(`The engine was not ready before ${name}.`);
+    if ((movieclipUnique || layerFolders || figureClipboardPastes) && !ready) throw new Error(`The engine was not ready before ${name}.`);
     try { await run(); steps.push(name); }
     catch (error) {
-      if (movieclipUnique || layerFolders) throw error;
+      if (movieclipUnique || layerFolders || figureClipboardPastes) throw error;
       const message = String(error?.message ?? error).replace(/^page\.evaluate: (Error: )?/, '').split('\n')[0]; refused.push(`${name}: ${message}`);
     }
   };
 
   /** The interactions, once. */
   const interactions = async () => {
+    if (figureClipboardPastes) {
+      await page.evaluate(() => globalThis.__stykClipboardProof.reset());
+      if (!await settled()) throw new Error('The reloaded clipboard document was not ready.');
+      clipboardRows.push(await page.evaluate(() => ({step: 0, call: null, result: null, error: null, events: [],
+        figureClipboardPastes: {before: null, after: null, events: [], sameClipboard: true}, snapshot: globalThis.__stykClipboardProof.snapshot()})));
+      for (const [index, call] of clipboardScenario.steps.entries()) {
+        await step(`clipboard ${index + 1}: ${call[0]}`, async () => {
+          clipboardRows.push(await page.evaluate(({call, step}) => globalThis.__stykClipboardProof.invoke(call, step), {call, step: index + 1}));
+          if (!await settled()) throw new Error(`The clipboard call ${index + 1} did not become ready.`);
+        });
+      }
+      return;
+    }
     if (layerFolders) {
       const boundary = async (name, operation) => {
         await step(name, operation);
@@ -849,6 +950,7 @@ async function run(mode) {
     if (movieclipUnique) uniqueCalls.length = 0;
     if (layerFolders) folderSnapshots.length = 0;
     if (layerFolders) folderCalls.length = 0;
+    if (figureClipboardPastes) clipboardRows.length = 0;
   }
   await interactions();
   await settled();
@@ -863,8 +965,14 @@ async function run(mode) {
     while (e.canUndo) e.undo();
     return {after, undone: capture()};
   });
+  const clipboardUndone = figureClipboardPastes ? await page.evaluate(() => {
+    const r = globalThis.__stykEditShadow;
+    return {snapshot: globalThis.__stykClipboardProof.snapshot(),
+      shadow: {mode: r.mode, rounded: r.rounded, mismatches: r.mismatches, failedOwned: r.failedOwned, broken: r.broken ?? null}};
+  }) : null;
   await context.close();
-  return {report, outcome, steps, refused, problems, ...(movieclipUnique ? {uniqueSnapshots, uniqueCalls} : {}), ...(layerFolders ? {folderSnapshots, folderCalls} : {})};
+  return {report, outcome, steps, refused, problems, ...(movieclipUnique ? {uniqueSnapshots, uniqueCalls} : {}), ...(layerFolders ? {folderSnapshots, folderCalls} : {}),
+    ...(figureClipboardPastes ? {clipboardRows, clipboardUndone} : {})};
 }
 try {
   if (own) {
@@ -907,6 +1015,95 @@ try {
       const [a, b] = [alone, owned].map(run => key === 'document' ? JSON.parse(drawn(run.outcome[phase][key])) : run.outcome[phase][key]);
       const found = near(a, b, `${phase} ${key}`);
       if (found) differences.push(found);
+    }
+    let figureClipboardProof = null;
+    if (figureClipboardPastes) {
+      const check = (condition, message) => { if (!condition) differences.push(`Figure clipboard: ${message}`); };
+      const literal = (a, b, message) => check(JSON.stringify(a) === JSON.stringify(b), message);
+      for (const [label, run] of [['editor alone', alone], ['default owned', owned]]) {
+        check(run.clipboardRows?.length === 34 && run.steps.length === 33, `${label} is missing a recorded boundary`);
+        if (run.clipboardRows?.length !== 34) continue;
+        const offset = run.clipboardRows[0].snapshot.state.layerRevision - clipboardReference.steps[0].state.layerRevision;
+        check(Number.isSafeInteger(offset), `${label} has an invalid initial layer revision`);
+        let document = clipboardReference.steps[0].document;
+        for (const [index, row] of run.clipboardRows.entries()) {
+          const recorded = clipboardReference.steps[index];
+          if (recorded.document !== undefined) document = recorded.document;
+          literal(row.call, recorded.call, `${label} changed call ${index}`);
+          check(row.step === index, `${label} changed step order ${index}`);
+          literal(row.figureClipboardPastes, recorded.figureClipboardPastes, `${label} counter/event/identity at ${index}`);
+          if (index) {
+            literal(row.result, recorded.result, `${label} result at ${index}`);
+            literal(row.error, recorded.error, `${label} error at ${index}`);
+          }
+          // load has its existing page-local revision. Compare the recorded
+          // absolute revision plus that one explicit initial offset; no tolerance.
+          literal(row.snapshot.state, {...recorded.state, layerRevision: recorded.state.layerRevision + offset}, `${label} state at ${index}`);
+          literal(row.events, recorded.events.map(event => Object.hasOwn(event, 'layerRevision')
+            ? {...event, layerRevision: event.layerRevision + offset} : event), `${label} event ordering/details at ${index}`);
+          check(row.snapshot.document === document, `${label} stored document at ${index}`);
+        }
+        check(run.clipboardUndone?.snapshot.document === run.clipboardRows[0].snapshot.document, `${label} full undo did not restore its document`);
+        check(run.clipboardUndone?.snapshot.undo === '[]' && !run.clipboardUndone?.snapshot.state.canUndo, `${label} full undo left history`);
+        check(run.clipboardUndone?.snapshot.clipboardPastes === run.clipboardRows.at(-1).figureClipboardPastes.after, `${label} undo changed the clipboard counter`);
+        check(!run.clipboardUndone?.shadow.broken && run.clipboardUndone?.shadow.mismatches.length === 0
+          && run.clipboardUndone?.shadow.rounded === 0, `${label} full undo has a shadow failure`);
+      }
+      if (alone.clipboardRows?.length === 34 && owned.clipboardRows?.length === 34) {
+        for (let index = 0; index < 34; index++) literal(owned.clipboardRows[index].snapshot, alone.clipboardRows[index].snapshot,
+          `paired literal frame/document/history/selection at ${index}`);
+        for (let index = 1; index < 34; index++) literal(owned.clipboardRows[index].retainedEventClipboardPastes,
+          alone.clipboardRows[index].retainedEventClipboardPastes, `paired retained event-clipboard counters after return at ${index}`);
+        literal(owned.clipboardUndone?.snapshot, alone.clipboardUndone?.snapshot, 'paired literal full undo snapshot');
+      }
+      const success = [], validationErrors = [];
+      const finite = value => Number.isFinite(value) && value >= 0;
+      for (const row of owned.clipboardRows ?? []) {
+        if (!['pasteSelection', 'duplicateSelection'].includes(row.clock?.method)) continue;
+        const clock = row.clock, recorded = clipboardReference.steps[row.step];
+        check(clock.calls === 1 && clock.globalCalls === 1, `unmatched root invocation ${row.step}`);
+        if (recorded.error) {
+          validationErrors.push({step: row.step, ...clock});
+          check(clock.owned === 0 && clock.failedOwned === 1 && clock.globalFailedOwned === 1
+            && ['editorMs', 'failedOwnedMs'].every(key => finite(clock[key]))
+            && clock.callMs === 0 && clock.engineMs === 0 && clock.adoptMs === 0, `validation error accounting ${row.step}`);
+        } else {
+          const emptyDuplicateNoOp = row.step === 23 && clock.method === 'duplicateSelection'
+            && Array.isArray(recorded.result) && recorded.result.length === 0 && recorded.events.length === 0
+            && recorded.document === undefined && recorded.figureClipboardPastes.sameClipboard
+            && recorded.figureClipboardPastes.before === recorded.figureClipboardPastes.after;
+          success.push({step: row.step, ...clock, emptyDuplicateNoOp, zeroAdoptionClock: emptyDuplicateNoOp && clock.adoptMs === 0});
+          check(clock.owned === 1 && clock.failedOwned === 0 && clock.globalFailedOwned === 0 && clock.editorMs === 0
+            && ['callMs', 'engineMs'].every(key => Number.isFinite(clock[key]) && clock[key] > 0)
+            && Number.isFinite(clock.adoptMs) && (emptyDuplicateNoOp ? clock.adoptMs >= 0 : clock.adoptMs > 0)
+            && clock.engineMs >= clock.callMs, `successful default Native adoption ${row.step}`);
+        }
+      }
+      const expectedSuccess = clipboardReference.steps.filter(row => row.call && ['pasteSelection', 'duplicateSelection'].includes(row.call[0]) && !row.error).length;
+      const expectedErrors = clipboardReference.steps.filter(row => row.call?.[0] === 'pasteSelection' && row.error).length;
+      check(success.length === expectedSuccess && validationErrors.length === expectedErrors && expectedErrors === 3,
+        'missing successful calls or the three recorded validation errors');
+      check(report.mode === 'classes' && report.failedOwned === expectedErrors && alone.report.failedOwned === 0
+        && owned.clipboardUndone?.shadow.failedOwned === expectedErrors && !report.broken && !alone.report.broken,
+      'default mode or aggregate failed-attempt accounting');
+      const paste = report.byCall?.pasteSelection, editorPaste = alone.report.byCall?.pasteSelection;
+      const expectedPasteCalls = clipboardScenario.steps.filter(call => call[0] === 'pasteSelection').length;
+      check(paste?.calls === expectedPasteCalls && editorPaste?.calls === expectedPasteCalls && paste?.failedOwned === expectedErrors,
+        'aggregate paste call counts');
+      const candidateMs = paste ? (paste.engineMs ?? 0) + (paste.adoptMs ?? 0) + (paste.editorMs ?? 0) + (paste.failedOwnedMs ?? 0) : null;
+      const editorMs = editorPaste?.editorMs ?? null;
+      check(finite(candidateMs) && finite(editorMs), 'missing finite paste timings');
+      figureClipboardProof = {binding: clipboardBinding, adopted: differences.length === 0,
+        successfulInvocations: success, validationErrorInvocations: validationErrors,
+        nativeOwnedEmptyDuplicateSteps: success.filter(row => row.emptyDuplicateNoOp).map(row => row.step),
+        pasteSelection: {calls: paste?.calls ?? 0, nativeCallMs: paste?.callMs ?? null,
+          engineParseValidationMs: paste?.engineMs ?? null, adoptMs: paste?.adoptMs ?? null,
+          editorFallbackMs: paste?.editorMs ?? 0, failedOwnedMs: paste?.failedOwnedMs ?? 0, answerUtf16Units: paste?.answerBytes ?? null,
+          matchedCommandDiagnostic: {candidateMs, editorMs, gate: false}},
+        timingGate: false, fullClassRowAdvance: false, idleSpeedClaim: false,
+        boundaries: {editorAlone: alone.clipboardRows, engineOwned: owned.clipboardRows},
+        fullUndo: {editorAlone: alone.clipboardUndone, engineOwned: owned.clipboardUndone}};
+      console.log(`Figure clipboard: ${success.length} successful default Native calls, ${validationErrors.length} recorded error replays; paste clocks diagnostic only`);
     }
     let uniqueProof = null;
     if (movieclipUnique) {
@@ -1024,7 +1221,7 @@ try {
     if (missingCalls(alone.report).length) console.log(`  required calls not compared: ${missingCalls(alone.report).join(', ')}`);
     const out = option('--out');
     if (out) await writeFile(path.resolve(out), JSON.stringify({steps, report, editorAlone: alone.report, differences, problems, editorAloneProblems: alone.problems,
-      ...(movieclipUnique ? {uniqueProof} : {}), ...(layerFolders ? {layerFoldersProof} : {})}, null, 1));
+      ...(movieclipUnique ? {uniqueProof} : {}), ...(layerFolders ? {layerFoldersProof} : {}), ...(figureClipboardPastes ? {figureClipboardProof} : {})}, null, 1));
     console.log(`  mode ${report.mode}`);
     failed = differences.length > 0 || report.mismatches.length > 0 || alone.report.mismatches.length > 0
       || (report.owned === 0 && !args.includes('--default')) || problems.length > 0 || alone.problems.length > 0

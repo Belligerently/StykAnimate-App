@@ -9,6 +9,8 @@
 //
 // A scenario: {"name", "document": <path relative to the scenario | inline document>,
 // "editor": {"propertyChannels", "layerTimeline", "autoKey"}, "steps": [["method", ...arguments], …]}.
+// Optional observeFigureClipboardPastes:true records the existing clipboard counter
+// before/after each call and at each change event, outside the ordinary state/events.
 // A step may also be ["@batch", label, [steps]] (the steps inside one movieclipBatch), or
 // ["@frame"] (a saved pose snapshot), ["@seek", tick] or ["@select", uid, joint] (the same as the method
 // calls, spelled out for readability). The document recorded is the editor's in-memory
@@ -53,9 +55,15 @@ export function replay(scenario, base = repo) {
   const editor = new Editor({demo: false, ...options}).load(document, scenario.name ?? 'Scenario');
   // The app sets this from its settings (src/app.mjs): every edited track keys the playhead.
   editor.autoKey = autoKey;
-  const events = [];
+  const events = [], clipboardEvents = [];
+  const observeClipboard = scenario.observeFigureClipboardPastes === true;
+  const clipboard = () => editor._selectionClipboard ?? editor._figureClipboard;
+  const clipboardPastes = () => clipboard()?.pastes ?? null;
   // The editor dispatches every change as one 'change' event whose detail names its kind.
-  editor.addEventListener('change', event => events.push(plain(event.detail ?? null)));
+  editor.addEventListener('change', event => {
+    events.push(plain(event.detail ?? null));
+    if (observeClipboard) clipboardEvents.push(clipboardPastes());
+  });
   const state = () => ({
     tick: editor.tick, frameIndex: editor.frameIndex,
     selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])], selectedJoint: editor.selectedJoint ?? -1,
@@ -66,7 +74,8 @@ export function replay(scenario, base = repo) {
     ...Object.fromEntries(Object.entries(editor._selectionState()).filter(([key]) => ['polygonSelection', 'segmentIds', 'branch'].includes(key))),
   });
   let previous = reportJSON(editor);
-  const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: []}];
+  const steps = [{step: 0, call: null, state: state(), documentSha: sha(previous), document: previous, events: [],
+    ...(observeClipboard ? {figureClipboardPastes: {before: clipboardPastes(), after: clipboardPastes(), events: [], sameClipboard: true}} : {})}];
   // ["@batch", label, steps]: the steps inside one `movieclipBatch`, as the timeline runs
   // several commands; recorded as one step, returning the last step's result.
   let measured = null;
@@ -100,13 +109,17 @@ export function replay(scenario, base = repo) {
   };
   scenario.steps.forEach((call, index) => {
     events.length = 0;
+    clipboardEvents.length = 0;
+    const beforeClipboard = observeClipboard ? clipboard() : null;
+    const beforePastes = observeClipboard ? clipboardPastes() : null;
     measured = null;
     let result, error = null, draws = [];
     try { ({result, draws} = withDraws(() => run(call), source)); }
     catch (caught) { error = {message: caught.message, key: caught.messageKey ?? null}; draws = caught?.draws ?? []; }
     const text = reportJSON(editor);
     const boundsArgs = measured?.payload();
-    steps.push({step: index + 1, call, ...(boundsArgs ? {boundsArgs: JSON.parse(boundsArgs)} : {}), ...(draws.length ? {draws} : {}), result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice()});
+    steps.push({step: index + 1, call, ...(boundsArgs ? {boundsArgs: JSON.parse(boundsArgs)} : {}), ...(draws.length ? {draws} : {}), result: plain(result ?? null), error, state: state(), documentSha: sha(text), ...(text !== previous ? {document: text} : {}), events: events.slice(),
+      ...(observeClipboard ? {figureClipboardPastes: {before: beforePastes, after: clipboardPastes(), events: clipboardEvents.slice(), sameClipboard: clipboard() === beforeClipboard}} : {})});
     previous = text;
   });
   return {scenario: scenario.name, editor: scenario.editor ?? {}, steps};
