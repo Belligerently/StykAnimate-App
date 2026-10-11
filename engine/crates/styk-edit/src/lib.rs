@@ -40,6 +40,7 @@ mod movieclip_native;
 mod pose;
 mod pose_choice;
 mod palette;
+pub mod patch;
 mod polygons;
 mod project;
 pub mod publication;

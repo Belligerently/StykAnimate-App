@@ -20,3 +20,4 @@ Architecture decision records of the Rust engine port. Each states the context, 
 - [D16: Stored arithmetic uses one Math, the one Node's V8 has, bit for bit](0016-v8-exact-math.md)
 - [D17: The drawing raster engine is its own crate, run by the drawing workers in its own module](0017-drawing-raster-engine.md)
 - [D18: What the editor draws at random is handed to the engine](0018-editor-draws.md)
+- [D19: The engine owns the document; the editor keeps a read view patched from it](0019-engine-owns-the-document.md)

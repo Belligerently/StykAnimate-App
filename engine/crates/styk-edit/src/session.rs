@@ -746,6 +746,8 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         if changes_only && let Some((_, result)) = answer.iter_mut().find(|(key, _)| *key == "result") { *result = Value::Null; }
         answer.push(("movieclipRename", marker));
     }
+    // `patch: true`: what the call changed in the report, for the read view (D19).
+    if view.get("patch") == Some(&Value::Bool(true)) { answer.push(("patch", crate::patch::diff(&before, report))); }
     answer.push(("events", Value::array(events)));
     let figures = if changes_only {
         match (&editor.authored, &editor.drag) {

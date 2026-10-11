@@ -115,6 +115,9 @@ fn replay_with_worker(reference: &Value, worker: bool, max_source_bytes: usize) 
         editor.set_draws(step.get("draws").unwrap_or(&Value::Null));
         if let Some(records) = editor.replay_records.as_mut() { records.clear(); }
         // A replay-only read verifies the live pose using the existing snapshot owner.
+        // Every step also checks the read view's patch (D19): the operations from the
+        // document before to the document after rebuild the document after.
+        let previous = editor.report().clone();
         let result = if method == "@historyLimits" {
             editor.configure_worker_history(crate::HistoryLimits { count:call.get(1).and_then(Value::as_f64).unwrap_or(80.0) as usize,bytes:call.get(2).and_then(Value::as_f64).unwrap_or(48.0*1024.0*1024.0) }).map(|_|Value::Null)
         } else if method == "@trimHistory" {
@@ -188,6 +191,11 @@ fn replay_with_worker(reference: &Value, worker: bool, max_source_bytes: usize) 
         }
         if let Some(document) = step.get("document").and_then(Value::as_str) {
             expected = document.to_string();
+        }
+        match crate::patch::apply(&previous, &crate::patch::diff(&previous, editor.report())) {
+            Ok(patched) if patched == *editor.report() => {}
+            Ok(_) => differences.push("the document patch does not rebuild the document".into()),
+            Err(error) => differences.push(format!("the document patch does not apply: {error}")),
         }
         let actual = editor.report_json();
         if actual != expected {

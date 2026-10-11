@@ -29,6 +29,19 @@ impl EngineHandle {
 
 #[wasm_bindgen]
 impl EditSession {
+    /// Starts a session on `document` (its JSON, exactly as the editor holds it) instead
+    /// of the mirrored one: the session converts what it evaluates itself (D19).
+    pub fn from_document(document: &str, state: &str, revision: f64) -> Result<EditSession, JsError> {
+        let tree = styk_doc::json::parse(document.as_bytes()).map_err(js_error)?;
+        let session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
+        Ok(EditSession { session, revision })
+    }
+
+    /// The session's document as JSON (tests and recovery; never on an interactive path).
+    pub fn report_json(&self) -> String {
+        styk_doc::json::to_string(self.session.report())
+    }
+
     /// The interface revision of the document the session started from.
     pub fn revision(&self) -> f64 {
         self.revision

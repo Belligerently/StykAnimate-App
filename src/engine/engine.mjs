@@ -8,7 +8,7 @@
  * isolated page (COOP/COEP headers); without it the engine still runs, doing
  * its background work here between frames.
  */
-import init, {EngineHandle, Stage, api_version} from './pkg/styk_engine.js';
+import init, {EditSession, EngineHandle, Stage, api_version} from './pkg/styk_engine.js';
 import {declaredMemoryPages} from './engine-memory.mjs';
 
 /** The command/query API this loader was written for. */
@@ -149,6 +149,8 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
     get memoryBytes() { return memory.buffer.byteLength; },
     memoryMaximumBytes: reserved.maximumBytes,
     createStage: canvas => Stage.create(canvas, handle),
+    /** An edit session on the document `json` exactly as the editor holds it (D19). */
+    editSession: (json, state, revision) => EditSession.from_document(json, state, revision),
     /** Opens a file in the background and resolves with its description. */
     async open(bytes, extension, name) {
       handle.open(bytes, extension, name);
