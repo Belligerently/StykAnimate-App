@@ -20,6 +20,7 @@ mod camera_commands;
 mod camera_motion;
 mod figure_clipboard;
 mod figure_transform;
+mod external;
 mod figures;
 mod frame;
 mod handle_commands;
@@ -213,6 +214,8 @@ pub struct Editor {
     /// What the editor drew at random for the call being made (`[kind, value]` in order:
     /// `uuid`, `seed`, `random`; src/editor-draws.mjs, D18), handed over with the call.
     pub(crate) draws: std::collections::VecDeque<(String, Value)>,
+    /// The draws are a pool taken by kind, not the editor's recorded sequence (D19).
+    pub(crate) draw_pool: bool,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -329,6 +332,7 @@ impl Editor {
             camera_motion_clipboard: None,
             vfx_clip_clipboard: None,
             draws: Default::default(),
+            draw_pool: false,
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -363,6 +367,13 @@ impl Editor {
 
     /// The next value the editor drew, of `kind`; a call without it is not ported here.
     pub(crate) fn draw(&mut self, kind: &str) -> Result<Value, EditError> {
+        // A pool (D19): the owner hands a few values of each kind and the call takes
+        // the next one of the kind it draws.
+        if self.draw_pool {
+            let at = self.draws.iter().position(|(drawn, _)| drawn == kind)
+                .ok_or_else(|| EditError::Unported(format!("a call that draws more than the pool's {kind} values")))?;
+            return Ok(self.draws.remove(at).expect("found above").1);
+        }
         match self.draws.pop_front() {
             Some((drawn, value)) if drawn == kind => Ok(value),
             Some((drawn, _)) => Err(EditError::Unported(format!("a call that draws a {kind} where the editor drew a {drawn}"))),
@@ -485,6 +496,7 @@ impl Editor {
         value.set("before", Value::array(drag.before.iter().filter_map(record::uid).map(|u| Value::Num(u as f64)).collect()));
         value.set("translation", Value::Bool(drag.translation));
         value.set("label", Value::str(&drag.label));
+        value.set("changed", Value::Bool(drag.changed));
         Value::object(value)
     }
 
@@ -643,6 +655,20 @@ impl Editor {
     }
 
     fn dispatch_layer_publication(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>, publication: Option<&mut Option<Value>>, duplicate_pastes: Option<&mut Option<Value>>) -> Result<Value, EditError> {
+        // The owner's bookkeeping (D19, external.rs) is not a command: no document gate applies.
+        match method {
+            "@external" => return self.record_external(args),
+            "@sync" => return self.sync_records(args),
+            "@externalDone" => return self.external_done(args),
+            "@historyLimits" => return self.configure_history(args),
+            "@markSaved" => return self.mark_saved(),
+            "@revisions" => return self.set_revisions(args),
+            "@dropGesture" => return self.drop_gesture(),
+            "undo" | "redo" if let Some(id) = self.external_on_top(method == "redo") => {
+                return Err(EditError::Unported(format!("{}{id}", external::EXTERNAL_ENTRY)));
+            }
+            _ => {}
+        }
         let projected_native=worker && self.native_projected_call(method,args);
         if worker && self.options.property_channels && !self.sheet() { self.native_projected_gate(method,args,check)?; }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);

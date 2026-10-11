@@ -42,7 +42,7 @@ const LAYER_METADATA = new Set(['renameLayer', 'setLayerColor', 'setLayerVisible
 const RANGE_CALLS = ['addFigureInFrames', 'duplicateInFrames', 'duplicateFiguresInFrames', 'deleteFiguresInFrames', 'updateFiguresInFrames', 'orderFiguresInFrames',
   'joinFiguresInFrames', 'detachFiguresInFrames', 'mirrorFiguresInFrames', 'scaleFiguresInFrames', 'rotateFiguresInFrames', 'centerFiguresInFrames', 'resetPoseInFrames', 'alignFiguresInFrames'];
 /** Calls styk-edit runs (engine/crates/styk-edit/src/lib.rs, `dispatch`). */
-const PORTED = ['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
+export const PORTED = ['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'seek', 'selectSheetLayer', 'keepSelectionOnSeek', 'setActiveLayer', 'beginDrag', 'beginTranslationDrag', 'commitDrag', 'cancelDrag', 'moveSelection', 'rotateSelection',
   'beginHandleEditDrag', 'editHandlePosition', 'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag',
   'nudgeHandle', 'alignHandle', 'locateEditedHandle', 'segmentValues', 'beginSegmentValueEdit', 'setSegmentValues', 'copySegmentValues', 'pasteSegmentValues',
   'copyCamera', 'pasteCamera', 'setCameraValues', 'resetCamera', 'transformCamera', 'centerCamera', 'alignSelection', 'alignCameraToView', 'locateCamera', 'locateHandle', 'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'applyCameraToFigures',

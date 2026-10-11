@@ -119,7 +119,10 @@ fn changed_figures(frame: &Value, previous: Option<&Value>, taken: Option<&HashS
     let before = previous.and_then(|frame| frame.get("objects")).and_then(Value::elements);
     objects.map(|objects| objects.iter().enumerate().filter_map(|(slot, figure)| {
         let uid = crate::record::uid(&figure)?;
-        if taken.is_some_and(|taken| !taken.contains(&uid)) {
+        // Figures the gesture did not take do not change, except one added to its draft
+        // meanwhile (drawn while posing), which was not in the draft before the call.
+        let added = before.is_some_and(|objects| !objects.iter().any(|old| crate::record::uid(&old) == Some(uid)));
+        if taken.is_some_and(|taken| !taken.contains(&uid)) && !added {
             return None;
         }
         if before.and_then(|objects| objects.get(slot)).is_some_and(|old| crate::record::uid(&old) == Some(uid) && old.same_node(&figure)) {
@@ -496,7 +499,10 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     }
     if view.is_object() {
         if !view_unchanged(editor, view) {
-            editor.set_view(number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize, selection_of(view));
+            let (tick, frame_index) = (number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize);
+            // The editor seeked without the session (D19): the frame it kept on show is gone, as after `seek`.
+            if tick.to_bits() != editor.tick.to_bits() || frame_index != editor.frame_index { editor.retained = None; }
+            editor.set_view(tick, frame_index, selection_of(view));
         }
         if let Err(error) = editor.sync_selection_metadata(view) {
             answer.push(("status", Value::str("unported")));
@@ -516,6 +522,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let rename_original = if rename_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_none()) } else { None };
     // What the editor drew at random during its own run of the call (D18).
     editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
+    editor.draw_pool = view.get("drawPool") == Some(&Value::Bool(true));
     let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
     let clipboard_requested = matches!(method, "pasteSelection" | "duplicateSelection")
         && view.get("figureClipboardPastes") == Some(&Value::Bool(true));
@@ -747,7 +754,13 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         answer.push(("movieclipRename", marker));
     }
     // `patch: true`: what the call changed in the report, for the read view (D19).
-    if view.get("patch") == Some(&Value::Bool(true)) { answer.push(("patch", crate::patch::diff(&before, report))); }
+    if view.get("patch") == Some(&Value::Bool(true)) {
+        answer.push(("patch", crate::patch::diff(&before, report)));
+        answer.push(("revision", Value::Num(editor.revision as f64)));
+        answer.push(("depths", Value::array(vec![Value::Num(editor.undo.len() as f64), Value::Num(editor.redo.len() as f64)])));
+        // The timeline's chosen layer, which history restores with the selection.
+        answer.push(("sheetSelection", editor.sheet_selection.as_ref().map_or(Value::Null, |chosen| response_value(vec![("id", Value::str(&chosen.id)), ("contents", Value::Bool(chosen.contents))]))));
+    }
     answer.push(("events", Value::array(events)));
     let figures = if changes_only {
         match (&editor.authored, &editor.drag) {

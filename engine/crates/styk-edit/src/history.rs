@@ -99,6 +99,9 @@ pub enum CommandKind {
     NativeProperties { index: usize, before: crate::builder::Patch, after: crate::builder::Patch },
     /// A figure definition and the poses it changed, before and after (`kind: 'topology'`).
     Topology { index: usize, before: crate::topology::Snapshot, after: crate::topology::Snapshot },
+    /// An edit the JavaScript editor made and undoes itself (D19, `external.rs`): its
+    /// identity there and the pose sources it keeps alive.
+    External { id: u64, retained: Vec<String> },
 }
 
 /// `editor._movieclipBatch` in progress: its entries, label, the revision before it and the
@@ -247,6 +250,7 @@ impl Editor {
             check: &mut impl FnMut() -> Result<(), EditError>,
         ) -> Result<Weight, EditError> {
             check()?;
+            if matches!(command.kind, CommandKind::External { .. }) { return Ok(previous.clone()); }
             if matches!(command.kind, CommandKind::Topology { .. }) && previous.topology.is_none() {
                 return Err(EditError::Unported(
                     "original topology history estimate metadata is unavailable".into(),
@@ -357,7 +361,7 @@ impl Editor {
         fn summary(command: &Command, weight: &Weight, kinds: bool, children: bool) -> Value {
             let mut value = styk_doc::Obj::new();
             if kinds { value.set("kind", Value::str(match &command.kind {
-                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology",
+                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::External { .. } => "external",
             })); }
             value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
             if children && let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight,kinds,children)).collect())); }
@@ -417,6 +421,7 @@ impl Editor {
             self.cancel_drag()?;
         }
         if self.undo.is_empty() { return Ok(false) }
+        if let Some(id) = self.external_on_top(false) { return Err(EditError::Unported(format!("{}{id}", crate::external::EXTERNAL_ENTRY))); }
         let Some(command) = Arc::make_mut(&mut self.undo).pop() else { return Ok(false) };
         self.apply(&command, Direction::Before)?;
         Arc::make_mut(&mut self.redo).push(command);
@@ -426,10 +431,25 @@ impl Editor {
     pub(crate) fn redo(&mut self) -> Result<bool, EditError> {
         self.cancel_vfx_clip_edit()?;
         if self.redo.is_empty() { return Ok(false) }
+        if let Some(id) = self.external_on_top(true) { return Err(EditError::Unported(format!("{}{id}", crate::external::EXTERNAL_ENTRY))); }
         let Some(command) = Arc::make_mut(&mut self.redo).pop() else { return Ok(false) };
         self.apply(&command, Direction::After)?;
         Arc::make_mut(&mut self.undo).push(command);
         Ok(true)
+    }
+
+    /// Records an entry whose weight the JavaScript editor measured (D19).
+    pub(crate) fn record_external_entry(&mut self, command: Command, bytes: f64) -> Result<(), EditError> {
+        self.record_weight(command, Some(Weight { bytes, children: Vec::new(), topology: None }), None)
+    }
+
+    /// An external entry was applied by the JavaScript editor: it moves to the other
+    /// stack, and the revision is the one it restores.
+    pub(crate) fn move_history_entry(&mut self, redo: bool) {
+        let (from, to) = if redo { (&mut self.redo, &mut self.undo) } else { (&mut self.undo, &mut self.redo) };
+        let Some(entry) = Arc::make_mut(from).pop() else { return };
+        self.revision = if redo { entry.after_revision } else { entry.before_revision };
+        Arc::make_mut(to).push(entry);
     }
 
     /// Existing undo/redo owner for a worker transaction. This bypasses no UI
@@ -490,6 +510,7 @@ impl Editor {
             CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
             CommandKind::NativeProperties { .. } => self.apply_native_properties(command, direction)?,
             CommandKind::Topology { .. } => self.apply_topology(command, direction)?,
+            CommandKind::External { id, .. } => return Err(EditError::Unported(format!("{}{id}", crate::external::EXTERNAL_ENTRY))),
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };
                 for child in ordered {

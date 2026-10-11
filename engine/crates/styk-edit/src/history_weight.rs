@@ -609,6 +609,11 @@ fn command_projection_checked(
             flags(&mut metadata, false, false);
             projection_bytes(&mut metadata, record.is_some(), check)?
         }
+        // Measured by the JavaScript editor, which owns the entry (D19).
+        CommandKind::External { .. } => {
+            metadata.set("kind", Value::str("external"));
+            0.0
+        }
         CommandKind::Topology {
             index: at,
             before,
@@ -699,7 +704,7 @@ fn command_projection_checked(
             CommandKind::Ranges { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "afterSelection"],
             // These existing owners retain exact weight support. Full enumerable
             // observation needs their own recorded optional construction fields.
-            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
+            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::External { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
         };
         let mut fields = Obj::new();
         for key in order.iter().chain(["layerChanges", "layers", "beforeRevision", "afterRevision"].iter()) {
