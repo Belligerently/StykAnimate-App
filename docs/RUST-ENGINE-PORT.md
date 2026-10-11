@@ -10,90 +10,54 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-05, clipboard counters published)
+## Handoff (2026-10-11, third agent, in progress)
 
-Resume handshake: read this section, the last [milestones](#milestone-log), sections 6–8
-and the relevant engine contract; inspect `git status --short` and `git log engine-rust`.
-Preserve unrelated work and bind verification to the actual source and package tested.
+**Where it stands:** S0–S4 done; S6 done for the raster engine. S5 phase 1 (commands one
+at a time, adopted in the app) continues; then the JavaScript renderer and playback are
+deleted, then S5 phases 2–3 (the engine owns the document) and S7.
 
-**Current milestone:** owned figure pastes publish the original clipboard counter;
-duplicate preserves its temporary clipboard during events and restores both saved
-clipboards afterward. All 34 paired boundaries and full undo match, including nine
-successful pastes, three duplicates and three expected validation errors.
+**Counters now:** inventory **175 js / 123 partial / 34 ported / 23 verified / 1 removed**;
+**OWNED_CLASSES 5** (large figures, 3d, figures, movieclips, channels); **app-owned
+commands 110**; **deleted JS modules 2**.
 
-Focused checks pass **238 Rust tests**, **three recordings / 106 exact calls**,
-**263 JS tests** and final Main check. Required-profile shipping is **10,293,395 bytes**
-in **55.648 s**, with codecs unchanged. The scoped default proof has **13 owned /
-17 compared / 33 attempted calls**; the 24.860/20.630 ms paste subtotal is diagnostic
-only. Actual simple UI keyboard pastes reach counter six; both broader automated
-UI attempts crash, so no overall UI pass is claimed.
+**Next:** the commands the app still routes to JavaScript (section 8, item S5), each with
+recorded replays and adoption in the default classes mode; unsupported contexts keep their
+fallback until phase 3.
 
-The last full green is `53c11b8f`: **861 native tests / two existing ignored**,
-**64 stages / 60 unchanged generators / 358 containers**, completed in **31m57s**.
-It certifies that commit, not later folder or clipboard changes. Keep the persistent
-target; broader parity feature variants can require downstream recompiles.
+**Rules in force (user, 2026-10-11):**
 
-**Current cost policy (user, 2026-10-05):** `figures`, `movieclips` and `channels` pass
-when `C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
-eligible JS fallback and failed attempts once; `J` is editor-alone cost;
-`N = min(candidate.report.calls, editorAlone.report.calls)` for the complete paired
-workload. Channels has 346 calls on each page: latest excess 0.048887 ms and
-4.793% pass the per-call and +5% arms. Figures, movieclips and channels are open. Exact behavior and D13 are unchanged;
-[historical measurements](performance/RUST-EDITING-CLASS-GATES.md) retain their original
-outcomes. The short default workload proves admission, not full cost.
+- No subagents, workflows, delegated tasks or new threads. One agent, sequential, this checkout.
+- Never push, tag, open a PR, publish or release without asking. Local commits are expected.
+- D7, D10, D13, D15, D16, D18 stand. The JavaScript of a subsystem is the oracle until it is deleted.
+- Editing cost: a class or command passes if `C <= 1.05 × J` or `(C − J) / calls <= 0.1 ms`,
+  with exact behaviour. No micro-optimisation beyond that.
+- No long benchmarks. The engine-1 matrix is **cancelled**. Before deleting the JavaScript
+  renderer, one sanity comparison under 15 minutes: Electron with WebGPU, one run each of
+  `TDD2 URIEL NEMESIS 3.styk` and `tdd2 uriel nemesis.piv` (open time, playback longest gap,
+  joint drag p95, peak memory) against baseline-0 (section 5).
+- Every commit moves a counter (inventory status, OWNED_CLASSES, app-owned commands or
+  deleted JS modules). New infrastructure only when it blocks the next item. Short commit
+  messages and milestone notes; logs go under `tmp/`.
 
-**Milestone counters:** inventory **175 js / 123 partial / 34 ported / 23 verified /
-1 removed unchanged**; **OWNED_CLASSES 5→5**, **deleted JS 2→2**, full cost rows
-**43 unchanged** and **engine-1 0/28 unchanged**. The aggregate paste observation
-advances affected-command measurement rows **7→8**; the broader editor modules
-remain partial. See [command timings](performance/RUST-EDITING-COMMANDS.md).
+**Verification per commit:** focused crate tests (the workspace only when shared types
+change); affected recorded replays and byte-stable regeneration; `npm run check` and the
+touched JS tests; for app behaviour, the affected recorded tapes in the real app:
+`node scripts/engine-app-tape.mjs <tape…> --require <methods>` (default mode against
+`?engineEdit=off`, every step and full undo compared). Full `npm run engine:parity` runs in
+the background on a committed HEAD at most every ~2 h, and before a JS deletion and the
+final report; last green `53c11b8f`. Bisect a failing checkpoint from the last green and fix
+forward.
 
-**Next:** remaining recorded app commands, preserving native-timeline worker refusals
-and unsupported-context fallback. After those commands, run the complete idle
-engine-1/baseline-0 table before JavaScript deletion; no new general migration
-prerequisite is required.
+**Worktrees (2026-10-11):** the 51 subagent worktrees were removed after saving each one's
+uncommitted diff and untracked sources under `tmp/worktree-patches/` (`INDEX.txt` lists head,
+patch size and files). The only unmerged commit, `5fbb3696` (WIP: smooth drawing cels in
+effect layers as Canvas), stays on branch `worktree-agent-a94722e0321bf1854`. Kept:
+`tmp/baseline-worktree` (`96ebce85`) and `../StykAnimate-Mobile` (untouched).
 
-### Verification and ownership
-
-Per reviewed milestone, run focused crate tests (whole workspace only for shared types),
-affected recorded replays and byte-stable regeneration, `npm run check` and touched
-JavaScript tests. Run affected app parity/shadow for app behavior or adoption. Safely
-batch two or three independent patches; commit only verified states. Every milestone
-records inventory, owned-class, deleted-JS and measured-benchmark counters; every commit
-must advance at least one of them.
-
-Full `engine:parity` runs on an immutable committed HEAD in the background at most about
-once every two hours; keep its persistent isolated target, locked dependencies and flags.
-A matching committed engine checkpoint is required before a class gate, with focused
-verification of the final gate JavaScript; engine-1 and deletion also require a matching
-checkpoint. Bisect any failure across
-commits since the last green and fix forward; never rewrite history. An earlier green
-checkpoint does not certify later source. Generated test fixtures are read at runtime;
-byte-identical regeneration must not force embedded-fixture relinking.
-
-Root owns Main integration and serializes heavy GPU/app checks. Isolated owners use
-bounded tasks without nested agents, exchange exact frozen source/evidence and merge
-reviewed owning hunks; do not overwrite newer Main owners or clean another lane's cache.
-Keep the checkpoint worktree and `tmp/baseline-worktree` (`96ebce85`). Preserve historical
-worktrees and immutable experiments. General Core/static/cache/storage lanes are parked;
-active work is limited to remaining recorded command adoption. The mobile checkout remains untouched at
-`661c6ad8`. Split, Unique, layer-publication and clipboard-counter packets are additive opt-in
-Session JSON contracts; a mobile consumer that opts in must handle the requested
-fields. Rust signatures, layouts and stored math are unchanged.
-
-D7 forbids blocking the interface; D13 forbids tuning pixel thresholds; D15 requires
-record-for-record behavior and the current class-cost rule; D16 requires `styk-math`
-for stored arithmetic. D18 routes editor randomness through `src/editor-draws.mjs`.
-Unported recordings do not establish command coverage. Never push, open PRs, publish or
-release without user instruction. Preserve configured commit authorship and the required
-`Co-Authored-By` trailer.
-
-After the remaining commands and class flips, stop all subagents and run the complete
-idle engine-1/baseline-0 matrix before deletion. Trace workers, dynamic imports, IPC and packaging before removing JS;
-retain platform/interface verification, no-threads and remaining mobile/browser gaps.
-Use Node 24.11.0 and Python 3.12.9, `nice -n 15` for heavy builds and `xvfb-run -a` with
-`ELECTRON_RUN_AS_NODE` unset for Electron. Do not use bare `git stash`, clean targets or
-copy the private Downloads corpus into the repository; restore test artifacts.
+**Environment:** Node 24, `STYK_PYTHON=$PWD/.venv/bin/python`, `unset ELECTRON_RUN_AS_NODE`
+before Playwright or Electron, `nice -n 15` for heavy builds, git identity through
+`GIT_AUTHOR_*`/`GIT_COMMITTER_*`. Do not copy the private corpus into the repository;
+restore `artifacts/` after browser tests.
 
 ### Starting commands
 
@@ -110,6 +74,7 @@ engine/target/release/styk edit-replay engine/tests/edit/<name>.reference.json
 node scripts/engine-edit-shadow.mjs --own --warm --exact-math [--file doc.json]
 node scripts/engine-edit-shadow.mjs --own --default --figures-gate --exact-math [--file doc.json]
 node scripts/engine-app-parity.mjs …
+node scripts/engine-app-tape.mjs layer-list-sheet --require renameLayer
 node scripts/engine-inventory.mjs --render
 ```
 
@@ -306,7 +271,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set.
 
-- **Layer folders:** all five mutators now adopt ordered updates through the original `_layerEdit` tail, with exact actual default query/history/selection/full-undo proof. The getter remains a UI record projection. Next remaining recorded commands, then idle engine-1/baseline-0 before deletion.
+- **Layer folders:** all five mutators now adopt ordered updates through the original `_layerEdit` tail, with exact actual default query/history/selection/full-undo proof. The getter remains a UI record projection. Their eight metadata siblings adopt too (2026-10-11).
 
 - **Clipboard counters:** repeated-paste counters now match the original workflow in all 34 paired boundaries/full undo and actual simple UI keyboard pastes through counter six. Both broader movieclip UI attempts crash; that remains a final UI/deletion gap, not an overall UI pass.
 
@@ -999,8 +964,9 @@ B8 focused verification: 209 editing and 174 evaluation tests pass with the same
 
 ## 8. Work queue
 
-**Immediate command task:** remaining recorded app commands after clipboard publication. Run the complete idle engine-1/baseline-0 matrix after those
-commands and before JavaScript deletion; no further class-cost optimization is needed.
+**Immediate command task:** the commands the app still routes to JavaScript. The engine-1
+benchmark matrix is cancelled (user, 2026-10-11); a single short sanity comparison precedes
+the renderer deletion (Handoff).
 
 What remains, in dependency order. Each item ends with its parity results, docs and the
 deletion of what it replaces once nothing calls it. "Agent" marks items run by a subagent
@@ -1246,3 +1212,4 @@ are review inputs, not completed milestones or class ownership evidence.
 
 | 2026-10-05 19:17 UTC | Edit layer folders through the engine | All five mutators adopt ordered updates through the original layer history tail; the getter remains a UI projection. Additive opt-in Session JSON; Rust signatures/layout/math unchanged. **Counters:** inventory 175 js/123 partial/34 ported/23 verified/1 removed (one ported→verified); OWNED_CLASSES 5→5; deleted JS 2→2; command measurements 2→7; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 236 Rust; three recordings / 58 exact calls; 204 JS/Main check pass. All five default commands adopt without editor fallback; actual Ungroup, 21 paired boundaries and full undo are exact. Observed 18.360/9.620 ms is diagnostic under concurrent checkpoint load, not a class-cost gate or causal speed claim. |
 | 2026-10-05 20:00 UTC | Preserve clipboard paste counters | Paste and duplicate publish certified counters through original events and clipboard restoration; additive opt-in Session JSON, Rust signatures/math unchanged. **Counters:** inventory unchanged 175/123/34/23/1; classes 5→5; deleted JS 2→2; command rows 7→8; full cost rows 43 and engine-1 0/28 unchanged. | 238 Rust / 106 recorded calls / 263 JS and Main check pass. All 34 paired boundaries and full undo match; aggregate paste 24.860/20.630 ms is diagnostic only. |
+| 2026-10-11 | Adopt layer metadata, project settings and movieclip rename | The leftover diff from the stopped agent, finished: the eight layer metadata commands, `setFPS`/`setCanvasSize`/`updateProject` and sheet `renameMovieclip` adopt the engine's answer in the default classes mode. New `scripts/engine-app-tape.mjs` replays recorded tapes in the app. Worktrees archived and removed. **Counters:** inventory 175/123/34/23/1 unchanged; OWNED_CLASSES 5; app-owned commands 98→110; deleted JS 2. | styk-edit tests and 126 adoption tests pass; check passes. In the app, seven tapes (101 steps, 43 owned calls) match the editor alone at every step and after full undo. |

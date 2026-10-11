@@ -336,6 +336,11 @@ export const editorMovieclipMethods={
     if(name===this.figure.name)return;
     return publishDefinition(this,{...this.figure,name},this.report.figure_types.indexOf(this.figure),'Rename movieclip');
   },
+  /** Adopt only the Native name; keep the current definition's shallow children. */
+  _adoptMovieclipRename({figure,index,name}){
+    if(name===figure.name)return;
+    return publishDefinition(this,{...figure,name},index,'Rename movieclip');
+  },
   setMovieclipDrawing(uid,group,view){
     const object=this.selectionFrame.objects.find(o=>o.unique_id===uid),figure=this.report.figure_types.find(f=>f.figure_type_id===object?.figure_type_id),drawing=movieclipAsset(figure)?.drawingSets?.[group]?.views?.[view];
     if(!drawing||!Number.isInteger(group)||!Number.isInteger(view))throw messageError(new Error(''), "errors.editorMovieclips.chooseAnExistingDrawing", {});

@@ -16640,25 +16640,25 @@
   },
   "errors.editorMovieclips.bakeAShorterRangeForThisScene": {
     "locations": [
-      "src/editor-movieclips.mjs:525"
+      "src/editor-movieclips.mjs:530"
     ],
     "context": "count+=frame.objects.length;if(count>250000)throw messageError(new Error(''), \"errors.editorMovieclips.bakeAShorterRangeForThisScene\", {});"
   },
   "errors.editorMovieclips.bakeSupportsScenesUpTo5000Frames": {
     "locations": [
-      "src/editor-movieclips.mjs:521"
+      "src/editor-movieclips.mjs:526"
     ],
     "context": "if(end-start>5000)throw messageError(new Error(''), \"errors.editorMovieclips.bakeSupportsScenesUpTo5000Frames\", {});"
   },
   "errors.editorMovieclips.chooseAMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:534"
+      "src/editor-movieclips.mjs:539"
     ],
     "context": "const figure=this.report.figure_types.find(f=>f.figure_type_id===typeId);if(!isMovieclip(figure))throw messageError(new Error(''), \"errors.editorMovieclips.choo"
   },
   "errors.editorMovieclips.chooseAnExistingDrawing": {
     "locations": [
-      "src/editor-movieclips.mjs:341"
+      "src/editor-movieclips.mjs:346"
     ],
     "context": "if(!drawing||!Number.isInteger(group)||!Number.isInteger(view))throw messageError(new Error(''), \"errors.editorMovieclips.chooseAnExistingDrawing\", {});"
   },
@@ -16682,19 +16682,19 @@
   },
   "errors.editorMovieclips.finishDrawingPublicationBeforeEditingAMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:533"
+      "src/editor-movieclips.mjs:538"
     ],
     "context": "if(drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeEditingAMoviecli"
   },
   "errors.editorMovieclips.finishDrawingPublicationBeforeLeavingThisMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:556"
+      "src/editor-movieclips.mjs:561"
     ],
     "context": "if(save&&drawingResourcesFor(this.report)?.stats.unpublished)throw messageError(new Error(''), \"errors.editorMovieclips.finishDrawingPublicationBeforeLeavingThi"
   },
   "errors.editorMovieclips.placeThePlayheadInsideTheMovieclip": {
     "locations": [
-      "src/editor-movieclips.mjs:403"
+      "src/editor-movieclips.mjs:408"
     ],
     "context": "if(!Number.isInteger(tick)||tick<=p.start||p.end!==null&&tick>=p.end)throw messageError(new Error(''), \"errors.editorMovieclips.placeThePlayheadInsideTheMoviecl"
   },
@@ -16708,14 +16708,14 @@
     "locations": [
       "src/editor-movieclips.mjs:190",
       "src/editor-movieclips.mjs:334",
-      "src/editor-movieclips.mjs:348",
-      "src/editor-movieclips.mjs:359",
-      "src/editor-movieclips.mjs:365",
-      "src/editor-movieclips.mjs:369",
-      "src/editor-movieclips.mjs:401",
-      "src/editor-movieclips.mjs:438",
-      "src/editor-movieclips.mjs:461",
-      "src/editor-movieclips.mjs:518"
+      "src/editor-movieclips.mjs:353",
+      "src/editor-movieclips.mjs:364",
+      "src/editor-movieclips.mjs:370",
+      "src/editor-movieclips.mjs:374",
+      "src/editor-movieclips.mjs:406",
+      "src/editor-movieclips.mjs:443",
+      "src/editor-movieclips.mjs:466",
+      "src/editor-movieclips.mjs:523"
     ],
     "context": "if(!isMovieclip(this.figure))throw messageError(new Error(''), \"errors.editorMovieclips.selectAMovieclip\", {});"
   },
@@ -16739,25 +16739,25 @@
   },
   "errors.editorMovieclips.selectTheDrawingOrItsParentRig": {
     "locations": [
-      "src/editor-movieclips.mjs:342"
+      "src/editor-movieclips.mjs:347"
     ],
     "context": "if(uid!==this.selectedUid&&object.join?.target_unique_id!==this.selectedUid)throw messageError(new Error(''), \"errors.editorMovieclips.selectTheDrawingOrItsPare"
   },
   "errors.editorMovieclips.theSceneChangedWhileBakingTryAgain": {
     "locations": [
-      "src/editor-movieclips.mjs:527"
+      "src/editor-movieclips.mjs:532"
     ],
     "context": "if(performance.now()-lastYield>6){await new Promise(resolve=>setTimeout(resolve,0));lastYield=performance.now();if(this.report!==report||this.revision!==revisio"
   },
   "errors.editorMovieclips.thisIsAnAttachedMeshPoseItsParent": {
     "locations": [
-      "src/editor-movieclips.mjs:535"
+      "src/editor-movieclips.mjs:540"
     ],
     "context": "if(movieclipAsset(figure).spatialMeshes)throw messageError(new Error(''), \"errors.editorMovieclips.thisIsAnAttachedMeshPoseItsParent\", {});"
   },
   "errors.editorMovieclips.unlockTheDrawingLayerBeforeChangingIt": {
     "locations": [
-      "src/editor-movieclips.mjs:343"
+      "src/editor-movieclips.mjs:348"
     ],
     "context": "if(layerLocked(this.report,uid))throw messageError(new Error(''), \"errors.editorMovieclips.unlockTheDrawingLayerBeforeChangingIt\", {});"
   },

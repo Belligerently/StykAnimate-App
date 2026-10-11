@@ -23,7 +23,18 @@ const decode = value => Array.isArray(value) ? value.map(decode) : value === nul
   : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
 
 function sessionFor(oracle) {
-  const events = []; let retainedPublication = null;
+  const events = []; let retainedPublication = null, layerAccepted = null;
+  // The Native layer owner certifies the accepted operands of quiet sheet layer edits.
+  const layerEdit = oracle._layerEdit;
+  oracle._layerEdit = function (label, updates, options = {}) {
+    const layers = this.report._styk.layers;
+    layerAccepted = {label, structural: Boolean(options.structural), ...(options.activeId === undefined ? {} : {activeId: options.activeId}), updates: updates.filter(([path, value, remove = false]) => {
+      let object = layers; for (const part of path.slice(0, -1)) object = object[part];
+      const key = path.at(-1);
+      return JSON.stringify({exists: Object.hasOwn(object, key), value: object[key]}) !== JSON.stringify({exists: !remove, value});
+    }).map(([path, value, remove = false]) => ({path: path.slice(), remove, ...(value === undefined ? {} : {value: structuredClone(value)})}))};
+    return layerEdit.call(this, label, updates, options);
+  };
   oracle.addEventListener('change', event => {
     events.push(clean(event.detail));
     if (event.detail.layerSheet) retainedPublication = oracle._authoredCommitPreview?.frame ?? null;
@@ -36,7 +47,7 @@ function sessionFor(oracle) {
       const pasteBefore = (oracle._selectionClipboard ?? oracle._figureClipboard)?.pastes;
       const beforeFrame = clean(oracle.evaluatedFrame);
       const beforeObjects = new Map(beforeFrame.objects.map(object => [object.unique_id, json(object)]));
-      events.length = 0; retainedPublication = null;
+      events.length = 0; retainedPublication = null; layerAccepted = null;
       let result, error;
       const draws = view.draws?.slice() ?? [];
       const paste = oracle.pasteSelection, ownPaste = Object.hasOwn(oracle, 'pasteSelection'); let duplicateCounter = null;
@@ -56,6 +67,7 @@ function sessionFor(oracle) {
         const clipboard = oracle._selectionClipboard ?? oracle._figureClipboard;
         answer.figureClipboardPastes = name === 'duplicateSelection' ? duplicateCounter : clipboard ? {before: pasteBefore, after: clipboard.pastes} : null;
       }
+      if (view.layerPublication === true && !error && result !== false && layerAccepted) answer.layerPublication = layerAccepted;
       // View return values have no effect on owned adoption and can carry runtime state.
       if (['select', 'selectMany', 'seek', 'duplicateFigure', 'addFigure', 'importFigure', 'sheetAppendFrame', 'copySegmentValues', 'sheetCopyFrames', 'beginAnimationEdit'].includes(name)) answer.result = null;
       const frame = oracle._authoredPoseEdit?.frame;
@@ -1588,6 +1600,7 @@ test('native, drafted, captured-source, active and batched Unique routes do not 
 // Project accepted operands at the separate actual Editor's original layer edit
 // boundary. Native tests independently certify the opt-in packet before trim.
 const folderCalls = ['createLayerFolder', 'renameLayerFolder', 'moveLayersToFolder', 'arrangeLayers', 'deleteLayerFolder'];
+const layerMetadataCalls = ['renameLayer', 'setLayerColor', 'setLayerVisible', 'setLayerLocked', 'reorderLayers', 'moveLayerTo', 'createLayer', 'setLayerParallax'];
 function folderPair(document, {layerTimeline = true, historyLimit, mode = 'classes', setup} = {}) {
   const options = {demo: false, propertyChannels: true, layerTimeline};
   const expected = new Editor(options).load(structuredClone(document)), owned = new Editor(options).load(structuredClone(document));
@@ -1595,7 +1608,7 @@ function folderPair(document, {layerTimeline = true, historyLimit, mode = 'class
   const requests = [], packets = [], releases = [], originalCalls = {}, observations = [[], []];
   if (historyLimit !== undefined) for (const editor of [expected, owned, oracle]) editor.historyLimit = historyLimit;
   if (setup) for (const editor of [expected, owned, oracle]) setup(editor);
-  for (const name of folderCalls) {
+  for (const name of [...folderCalls, ...layerMetadataCalls]) {
     const original = owned[name]; originalCalls[name] = 0;
     owned[name] = function (...args) { originalCalls[name]++; return original.apply(this, args); };
   }
@@ -1604,7 +1617,7 @@ function folderPair(document, {layerTimeline = true, historyLimit, mode = 'class
     const original = oracle._layerEdit;
     oracle._layerEdit = function (label, updates, options = {}) {
       const state = this.report._styk.layers;
-      accepted = {label, structural: Boolean(options.structural), updates: updates.filter(([path, value, remove = false]) => {
+      accepted = {label, structural: Boolean(options.structural), ...(options.activeId === undefined ? {} : {activeId: options.activeId}), updates: updates.filter(([path, value, remove = false]) => {
         let object = state; for (const part of path.slice(0, -1)) object = object[part];
         const key = path.at(-1), before = {exists: Object.hasOwn(object, key), value: object[key]}, after = {exists: !remove, value};
         return JSON.stringify(before) !== JSON.stringify(after);
@@ -1619,7 +1632,7 @@ function folderPair(document, {layerTimeline = true, historyLimit, mode = 'class
       if (view.layerPublication) requests.push({name, view});
       const answer = JSON.parse(call(name, args, viewText));
       if (view.layerPublication && answer.status === 'ok' && answer.result !== false && accepted) answer.layerPublication = accepted;
-      if (folderCalls.includes(name)) { packets.push(structuredClone(answer)); alter(answer); }
+      if (folderCalls.includes(name) || layerMetadataCalls.includes(name)) { packets.push(structuredClone(answer)); alter(answer); }
       return json(answer);
     };
     session.free = () => { releases.push(json(owned.report)); current = false; oracle._layerEdit = original; };
@@ -2034,5 +2047,411 @@ test('foreign clipboard and comparison-only calls preserve the original guard an
   assert.equal(pair.requests.length, requests); assert.equal(report.owned, adopted); assert.equal(pair.originalCalls.pasteSelection, 1);
   assert.equal(report.ended['a figure clipboard the session did not copy'], 1);
   const shadow = clipboardPair({mode: 'shadow'}); shadow.run('select', 4, -1); shadow.run('copySelection'); shadow.run('pasteSelection');
+  assert.equal(shadow.requests.length, 0); assert.equal(shadow.report.owned, 0);
+});
+
+
+for (const family of ['layer-list-sheet', 'layers-folders-sheet', 'layers-native', 'layer-parallax-sheet', 'layer-parallax-camera-sheet']) {
+  test(`layer metadata adoption preserves every recorded original boundary: ${family}`, () => {
+    const folder = new URL('../engine/tests/edit/', import.meta.url), scenario = JSON.parse(readFileSync(new URL(`${family}.scenario.json`, folder), 'utf8'));
+    const reference = JSON.parse(readFileSync(new URL(`${family}.reference.json`, folder), 'utf8'));
+    const document = JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8'));
+    const pair = folderPair(document, {layerTimeline: Boolean(scenario.editor.layerTimeline), mode: scenario.editor.layerTimeline ? 'classes' : 'shadow'});
+    const {expected, owned, report, run} = pair;
+    let stored = reference.steps[0].document;
+    for (const [index, [method, ...args]] of scenario.steps.entries()) {
+      const name = method.replace(/^@/, ''), before = report.owned, original = pair.originalCalls[name];
+      // This tape's adjacent joined move is not a metadata command. Exercise its
+      // unchanged original owner in all three editors, retaining exact geometry.
+      let error;
+      if (name === 'moveSelection') {
+        for (const editor of [expected, owned, pair.oracle]) Editor.prototype.moveSelection.apply(editor, args.map(decode));
+        pair.same();
+      } else ({error} = run(name, ...args.map(decode)));
+      if (scenario.editor.layerTimeline && layerMetadataCalls.includes(name)) {
+        assert.equal(pair.originalCalls[name], original + (error ? 1 : 0), 'metadata success skips its original planner; errors preserve that owner');
+        assert.equal(report.owned, before + (error ? 0 : 1), 'successful changed and false/no-op answers are actually adopted');
+      }
+      const step = reference.steps[index + 1]; if (step.document !== undefined) stored = step.document;
+      assert.equal(json(owned.report), stored, `${family} step${index + 1}: literal recorded document`);
+      assert.deepEqual(state(owned), step.state, `${family} step${index + 1}: literal recorded state`);
+    }
+    if (!scenario.editor.layerTimeline) { assert.equal(report.owned, 0); assert.equal(pair.requests.length, 0); }
+    while (expected.canUndo) run('undo'); while (expected.canRedo) run('redo');
+    if (family === 'layer-list-sheet') for (const name of layerMetadataCalls.filter(name => name !== 'setLayerParallax')) {
+      assert.ok(pair.requests.some(request => request.name === name), `actual opt-in ${name} request`);
+    }
+    if (family.startsWith('layer-parallax')) assert.ok(pair.requests.some(request => request.name === 'setLayerParallax'));
+  });
+}
+
+test('metadata operands preserve unknown identities, null-removal history and unchanged track nodes', () => {
+  const document = folderDocument(); document._styk.layers.byId['layer-1'].unknownMetadata = {keep: [null, {value: 3}]};
+  const pair = folderPair(document), {owned, expected, run, report} = pair;
+  const layer = owned.report._styk.layers.byId['layer-1'], unknown = layer.unknownMetadata, tracks = {...owned.report._styk.layerSheet.tracks};
+  const before = report.owned;
+  run('renameLayer', 'layer-1', '  Renamed  '); run('setLayerColor', ['layer-1', 'layer-2', 'layer-1'], 'violet');
+  run('setLayerColor', ['layer-1'], null); run('setLayerColor', ['layer-1'], null);
+  assert.equal(owned._undo.at(-1).changes[0].after.exists, false); assert.equal(owned._undo.at(-1).changes[0].after.value, null);
+  run('setLayerVisible', 'scene', false); run('setLayerLocked', 'camera', true); run('setLayerLocked', 'camera', false);
+  run('reorderLayers', ['layer-2', 'layer-1']); run('moveLayerTo', 'layer-1', 0); run('setLayerParallax', 'layer-1', {enabled: true, x: .5});
+  assert.equal(report.owned, before + 10); assert.equal(owned.report._styk.layers.byId['layer-1'], layer); assert.equal(layer.unknownMetadata, unknown);
+  for (const [id, track] of Object.entries(tracks)) assert.equal(owned.report._styk.layerSheet.tracks[id], track, 'metadata retains original track children');
+  for (const name of ['renameLayer', 'setLayerColor', 'setLayerVisible', 'setLayerLocked', 'reorderLayers', 'moveLayerTo', 'setLayerParallax']) assert.equal(pair.originalCalls[name], 0);
+  while (expected.canUndo) run('undo'); while (expected.canRedo) run('redo');
+});
+
+test('create layer applies original activation, focus inclusion, folders, return descriptor and event-time counters', () => {
+  const pair = folderPair(folderDocument(), {setup(editor) {
+    editor.createLayerFolder('Group', ['layer-1']); editor.setLayerFocus(['layer-1']);
+  }}), {owned, run, report} = pair;
+  const before = report.owned, active = owned.activeLayerId;
+  const inactive = run('createLayer', 'Inactive', {activate: false, folderId: 'folder-1'}).result;
+  assert.equal(owned.activeLayerId, active); assert.equal(inactive, owned.getLayer(inactive.id)); assert.equal(inactive.folderId, 'folder-1');
+  assert.ok(owned.getLayerFocus().ids.has(inactive.id));
+  const created = run('createLayer', 'Active').result;
+  assert.equal(owned.activeLayerId, created.id); assert.equal(created, owned.getLayer(created.id)); assert.ok(owned.getLayerFocus().ids.has(created.id));
+  assert.equal(report.owned, before + 2); assert.equal(pair.originalCalls.createLayer, 0);
+  assert.equal(Object.hasOwn(pair.packets.filter(answer => answer.layerPublication?.label === 'Create layer')[0].layerPublication, 'activeId'), false);
+  assert.equal(pair.packets.at(-1).layerPublication.activeId, created.id);
+});
+
+test('metadata history zero reuses original source pruning and retains false/no-op and error semantics', () => {
+  const pair = folderPair(folderDocument(), {setup(editor) {
+    editor.select(1, -1); editor.moveSelection(5, 5); editor.moveSelection(0, -7); editor.historyLimit = 0;
+  }}), {expected, owned, run, report} = pair;
+  const sources = Object.keys(owned.report._styk.frameSources), before = report.owned;
+  run('setLayerColor', ['layer-1'], null); run('setLayerColor', ['layer-1'], null);
+  run('renameLayer', 'layer-1', 'Layer 1'); run('setLayerVisible', 'layer-2', false); run('setLayerVisible', 'layer-2', false);
+  run('createLayer', 'Zero', {activate: false});
+  assert.equal(report.owned, before + 6); assert.equal(owned._undo.length, 0); assert.equal(expected._undo.length, 0);
+  assert.ok(sources.some(id => !Object.hasOwn(owned.report._styk.frameSources, id)), 'the original metadata record pruned an actual history-only source');
+  const count = report.owned; assert.ok(run('setLayerLocked', 'layer-1', 'bad').error); assert.equal(report.owned, count);
+  assert.equal(pair.originalCalls.setLayerLocked, 1);
+});
+
+test('malformed metadata operands retire the advanced session before the original fallback', () => {
+  for (const change of [
+    answer => { delete answer.layerPublication; }, answer => { answer.layerPublication.label = 'Other'; },
+    answer => { answer.layerPublication.updates[0].path = ['assignments', '1']; },
+    answer => { answer.layerPublication.updates[0].path = ['byId', 'layer-2', 'name']; },
+    answer => { answer.layerPublication.updates[0].remove = true; }, answer => { answer.layerPublication.updates[0].value = ''; },
+    answer => { answer.layerPublication.updates.push(structuredClone(answer.layerPublication.updates[0])); },
+    answer => { answer.layerPublication.activeId = 'layer-2'; }, answer => { answer.events[0].live = true; },
+    answer => { answer.state.nextUid++; }, answer => { answer.sheet = {}; },
+  ]) {
+    const pair = folderPair(folderDocument()), before = json(pair.owned.report), adopted = pair.report.owned;
+    pair.alter(change); pair.run('renameLayer', 'layer-1', 'New');
+    assert.deepEqual(pair.releases, [before]); assert.equal(pair.originalCalls.renameLayer, 1); assert.equal(pair.report.owned, adopted); assert.equal(pair.report.failedOwned, 1);
+  }
+  for (const change of [
+    answer => { delete answer.layerPublication.activeId; }, answer => { answer.layerPublication.activeId = 'layer-1'; },
+    answer => { answer.layerPublication.updates.pop(); }, answer => { answer.layerPublication.updates[0].value.drawing = {version: 1}; },
+    answer => { answer.result.id = 'layer-99'; },
+  ]) {
+    const pair = folderPair(folderDocument()), before = json(pair.owned.report); pair.alter(change); pair.run('createLayer', 'New');
+    assert.deepEqual(pair.releases, [before]); assert.equal(pair.originalCalls.createLayer, 1); assert.equal(pair.report.failedOwned, 1);
+  }
+});
+
+test('metadata publication failure preserves original partial effects and fresh-session recovery', async () => {
+  const pair = folderPair(folderDocument()), {expected, owned, run, report} = pair;
+  const emit = [expected, owned].map(editor => editor._emit), failure = new Error('Rejected metadata event');
+  for (const [index, editor] of [expected, owned].entries()) editor._emit = function (kind, detail) {
+    if (kind === 'edit' && detail.layerMetadata) throw failure; return emit[index].call(this, kind, detail);
+  };
+  assert.throws(() => expected.renameLayer('layer-1', 'Rejected'), error => error === failure);
+  assert.throws(() => owned.renameLayer('layer-1', 'Rejected'), error => error === failure); pair.same();
+  assert.equal(pair.releases.length, 1);
+  for (const [index, editor] of [expected, owned].entries()) editor._emit = emit[index];
+  await report.prepare(); const before = report.owned; run('renameLayer', 'layer-1', 'Recovered');
+  assert.equal(report.owned, before + 1); assert.equal(pair.originalCalls.renameLayer, 0);
+});
+
+test('unrecorded drawing and unsupported metadata contexts keep the existing original route', () => {
+  for (const [document, options, setup, excluded] of [
+    [folderDocument(), {layerTimeline: false}, () => {}, editor => !editor.layerTimeline],
+    [folderDocument(), {}, editor => { editor.select(1, -1); editor.beginDrag('Existing'); }, editor => editor._drag],
+    [folderDocument(), {}, editor => editor.beginFrameDraft({mode: 'update'}), editor => editor._frameDraft],
+    [JSON.parse(readFileSync(new URL('../engine/tests/edit/origin-pose-layout-sheet.document.json', import.meta.url), 'utf8')), {}, () => {}, editor => editingClass(editor.report) === 'unported'],
+  ]) {
+    const pair = folderPair(document, {...options, setup}); for (const editor of [pair.expected, pair.owned, pair.oracle]) assert.ok(excluded(editor));
+    const before = pair.report.owned, requests = pair.requests.length; pair.run('renameLayer', 'layer-1', 'Original');
+    assert.equal(pair.report.owned, before); assert.equal(pair.requests.length, requests); assert.equal(pair.originalCalls.renameLayer, 1);
+  }
+  const pair = folderPair(folderDocument()), before = pair.report.owned, requests = pair.requests.length;
+  pair.run('createLayer', 'Drawing', {drawing: true});
+  assert.equal(pair.report.owned, before); assert.equal(pair.requests.length, requests); assert.equal(pair.originalCalls.createLayer, 1);
+});
+
+for (const [name, args] of [['setLayerColor', [{}, 'violet']], ['createLayer', ['New', null]]]) {
+  test(`unsupported ${name} operands preserve the original error before any Native call`, () => {
+    for (const mode of ['classes', 'shadow']) {
+      const pair = folderPair(folderDocument(), {mode}), {expected, owned, report} = pair;
+      const before = json(expected.report), undo = json(expected._undo), redo = json(expected._redo);
+      const view = state(expected), counters = topologyCounters(expected);
+      let failure;
+      try { expected[name](...args); } catch (error) { failure = error; }
+      assert.ok(failure instanceof TypeError, 'the actual original public method rejects the operands');
+      assert.throws(() => owned[name](...args), error => error.constructor === failure.constructor && error.message === failure.message);
+      pair.same();
+      assert.equal(json(expected.report), before); assert.equal(json(owned.report), before); assert.equal(json(pair.oracle.report), before);
+      assert.equal(json(owned._undo), undo); assert.equal(json(owned._redo), redo);
+      assert.deepEqual(state(owned), view); assert.deepEqual(topologyCounters(owned), counters);
+      assert.equal(pair.originalCalls[name], 1, 'the original runs exactly once');
+      assert.equal(report.calls, 0, 'neither ownership nor shadow sends a Native command');
+      assert.equal(report.owned, 0); assert.equal(report.failedOwned, 0); assert.equal(report.skipped, 1);
+      assert.equal(pair.requests.length, 0); assert.equal(pair.packets.length, 0);
+      assert.deepEqual(pair.releases, [before], 'the unchanged live session retires before the original error');
+      assert.equal(pair.observations[0].length, 0); assert.equal(pair.observations[1].length, 0);
+    }
+  });
+}
+
+function settingsPair(document, {mutate, historyLimit, mode = 'classes'} = {}) {
+  const options = {demo: false, layerTimeline: true, propertyChannels: true};
+  const expected = new Editor(options).load(structuredClone(document));
+  const owned = new Editor(options).load(structuredClone(document));
+  const oracle = new Editor(options).load(structuredClone(document));
+  if (historyLimit !== undefined) for (const editor of [expected, owned, oracle]) editor.historyLimit = historyLimit;
+  const methods = ['setFPS', 'setCanvasSize', 'updateProject'], originalCalls = {}, requests = [], events = [[], []];
+  for (const method of methods) {
+    const original = owned[method]; originalCalls[method] = 0;
+    owned[method] = function (...args) { originalCalls[method]++; return original.apply(this, args); };
+  }
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => {
+    events[index].push({detail: clean(event.detail), frame: json(editor.evaluatedFrame), state: state(editor)});
+  });
+  const session = sessionFor(oracle), call = session.call.bind(session);
+  session.call = (name, text, viewText) => {
+    const before = json(owned.report), view = JSON.parse(viewText), answer = JSON.parse(call(name, text, viewText));
+    if (view.projectFieldsPublication === true) {
+      requests.push(name);
+      const event = answer.events?.[0];
+      if (answer.status === 'ok' && answer.result === true && event?.projectFields) {
+        answer.projectFields = {label: event.label, timing: event.timing,
+          fields: event.projectFields.map(key => [key, oracle.report[key]])};
+      }
+      mutate?.(answer, name);
+      assert.equal(json(owned.report), before, 'packet preparation has not mutated the receiving editor');
+    }
+    return JSON.stringify(answer);
+  };
+  const report = installEditShadow(owned, () => ({engine: {handle: {edit_session: () => session}},
+    mirror: {framesCurrent: () => true, syncFrames: async () => {}}}), {mode});
+  const run = (method, ...args) => {
+    events[0].length = 0; events[1].length = 0;
+    let expectedResult, actualResult, expectedError, actualError;
+    try { expectedResult = expected[method](...structuredClone(args)); } catch (error) { expectedError = error.messageKey ?? error.message; }
+    try { actualResult = owned[method](...structuredClone(args)); } catch (error) { actualError = error.messageKey ?? error.message; }
+    assert.equal(actualError, expectedError, `${method}: original error`);
+    assert.deepEqual(actualResult, expectedResult, `${method}: original scalar result`);
+    assert.equal(json(owned.report), json(expected.report), `${method}: exact stored document`);
+    assert.deepEqual(state(owned), state(expected), `${method}: exact state/counters`);
+    assert.deepEqual(events[1], events[0], `${method}: event-time displayed frame and counters`);
+    assert.equal(json(owned.evaluatedFrame), json(expected.evaluatedFrame), `${method}: final displayed frame`);
+    assert.equal(json(owned._undo), json(expected._undo), `${method}: complete original undo records`);
+    assert.equal(json(owned._redo), json(expected._redo), `${method}: complete original redo records`);
+    return {result: actualResult, error: actualError};
+  };
+  return {expected, owned, oracle, report, run, requests, originalCalls};
+}
+
+for (const name of ['project-settings-sheet', 'project-settings-format4-sheet']) {
+  test(`default settings adoption preserves every recorded result/event/history: ${name}`, () => {
+    const folder = new URL('../engine/tests/edit/', import.meta.url);
+    const scenario = JSON.parse(readFileSync(new URL(`${name}.scenario.json`, folder), 'utf8'));
+    const document = JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8'));
+    const pair = settingsPair(document), initial = json(pair.owned.report);
+    for (const [method, ...args] of scenario.steps) {
+      const before = pair.report.owned, original = pair.originalCalls[method];
+      const {error} = pair.run(method, ...args);
+      if (Object.hasOwn(pair.originalCalls, method)) {
+        assert.equal(pair.originalCalls[method], original + Number(Boolean(error)), `${method}: only original validation error replay`);
+        assert.equal(pair.report.owned, before + Number(!error), `${method}: successful response (including no-op) adopted`);
+      }
+    }
+    while (pair.owned.canUndo) pair.run('undo');
+    assert.equal(json(pair.owned.report), initial, 'full undo restores the complete original document');
+    assert.equal(pair.report.mode, 'classes');
+    assert.deepEqual(pair.report.mismatches, []);
+    assert.equal(pair.report.rounded, 0);
+  });
+}
+
+test('settings packets preserve null scalar writes, input field order, format4 delay and zero history', () => {
+  const folder = new URL('../engine/tests/edit/', import.meta.url);
+  const document = JSON.parse(readFileSync(new URL('format4.document.json', folder), 'utf8'));
+  const pair = settingsPair(document, {historyLimit: 0});
+  const metadata = pair.owned.report._styk, figure = pair.owned.report.figure_types[0];
+  pair.run('updateProject', {canvas_height: 600, fps: 7, canvas_width: 720});
+  assert.equal(pair.owned.report.frame_delay_ms, Math.round(1000 / 7));
+  pair.run('updateProject', {canvas_width: null});
+  assert.equal(pair.owned.report.canvas_width, null, 'original null-coalesced validation still stores the literal null');
+  pair.run('setCanvasSize', 960, 540);
+  const before = pair.report.owned;
+  pair.run('updateProject', {});
+  assert.equal(pair.report.owned, before + 1, 'empty patch is an adopted original no-op');
+  assert.equal(pair.owned.report._styk, metadata, 'untouched metadata identity');
+  assert.equal(pair.owned.report.figure_types[0], figure, 'untouched definition identity');
+  assert.equal(pair.owned.canUndo, false); assert.equal(pair.owned.canRedo, false);
+  assert.equal(pair.report.failedOwned, 0);
+});
+
+test('malformed or missing settings certificates fall back atomically to the original once', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/startup.document.json', import.meta.url), 'utf8'));
+  for (const mutate of [answer => { delete answer.projectFields; }, answer => { answer.projectFields.label = 'Other'; },
+    answer => { answer.projectFields.timing = false; }, answer => { answer.projectFields.fields[0][1] = 32; },
+    answer => { answer.projectFields.fields.push(['fps', 31]); }, answer => { answer.projectFields.fields.push(['unknown', 1]); },
+    answer => { answer.events[0].live = true; }, answer => { answer.state.nextUid++; },
+    answer => { answer.state.canRedo = true; }, answer => { answer.state.undoLabel = 'Other'; }]) {
+    const pair = settingsPair(document, {mutate});
+    pair.run('setFPS', 31);
+    assert.equal(pair.report.owned, 0); assert.equal(pair.report.failedOwned, 1);
+    assert.equal(pair.originalCalls.setFPS, 1); assert.equal(pair.requests.length, 1);
+    assert.equal(pair.owned._undo.length, 1, 'no partial/double history mutation');
+    assert.deepEqual(pair.report.mismatches, []);
+  }
+});
+
+
+test('settings reject unknown JSON-omitted fields before adopting a no-op', () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/startup.document.json', import.meta.url), 'utf8'));
+  for (const key of ['unknown', 'frame_delay_ms']) for (const value of [undefined, () => 1, Symbol('unknown setting')]) {
+    const pair = settingsPair(document), initial = json(pair.owned.report), before = state(pair.owned);
+    const patch = {[key]: value};
+    assert.throws(() => pair.expected.updateProject(patch), error => error.messageKey === 'errors.editor.projectSettingIsNotEditableHere');
+    assert.throws(() => pair.owned.updateProject(patch), error => error.messageKey === 'errors.editor.projectSettingIsNotEditableHere');
+    assert.equal(json(pair.owned.report), initial); assert.deepEqual(state(pair.owned), before);
+    assert.equal(pair.owned._undo.length, 0); assert.equal(pair.owned._redo.length, 0);
+    assert.equal(pair.report.owned, 0); assert.equal(pair.report.failedOwned, 1);
+    assert.equal(pair.originalCalls.updateProject, 1); assert.equal(pair.requests.length, 1);
+    assert.deepEqual(pair.report.mismatches, []);
+  }
+  const pair = settingsPair(document), symbol = Symbol('opaque project value'), value = {unchanged: true};
+  const patch = {fps: 31, [symbol]: value};
+  assert.equal(pair.expected.updateProject(patch), true); assert.equal(pair.owned.updateProject(patch), true);
+  assert.equal(pair.owned.report[symbol], value, 'original spread/assign preserves the own symbol identity');
+  assert.equal(pair.expected.report[symbol], value); assert.equal(json(pair.owned.report), json(pair.expected.report));
+  assert.deepEqual(state(pair.owned), state(pair.expected));
+  assert.equal(json(pair.owned._undo), json(pair.expected._undo));
+  assert.equal(pair.requests.length, 0, 'non-JSON input stays on the original route before dispatch');
+  assert.equal(pair.report.owned, 0); assert.equal(pair.report.failedOwned, 0); assert.equal(pair.originalCalls.updateProject, 1);
+});
+
+
+// Only this opt-in mock projects the recorded rename's scalar certificate.
+// Native Session controls independently prove its shallow COW and default wire.
+function renamePair({mode = 'classes', historyLimit} = {}) {
+  const reference = JSON.parse(readFileSync(new URL('../engine/tests/edit/movieclip-rename-sheet.reference.json', import.meta.url), 'utf8'));
+  const pair = adoptionPair(JSON.parse(reference.steps[0].document), mode), {owned, oracle, session} = pair;
+  if (historyLimit !== undefined) for (const editor of [pair.expected, owned, oracle]) editor.historyLimit = historyLimit;
+  const requests = [], packets = [], call = session.call.bind(session); let alter = () => {};
+  session.call = (name, args, viewText) => {
+    const view = JSON.parse(viewText), figure = view.movieclipRenamePublication === true ? oracle.figure : null;
+    const index = figure ? oracle.report.figure_types.indexOf(figure) : -1, beforeName = figure?.name;
+    if (view.movieclipRenamePublication === true) { assert.equal(name, 'renameMovieclip'); requests.push({name, view}); }
+    const answer = JSON.parse(call(name, args, viewText));
+    if (figure && answer.status === 'ok') {
+      answer.movieclipRename = {index, beforeName, name: oracle.report.figure_types[index].name};
+      if (view.changesOnly) answer.result = null;
+    }
+    if (name === 'renameMovieclip') { alter(answer); packets.push(structuredClone(answer)); }
+    return json(answer);
+  };
+  const run = (name, ...args) => {
+    let result, actual, error;
+    try { result = pair.expected[name](...args); } catch (caught) { error = caught.messageKey ?? caught.message; }
+    if (error) assert.throws(() => owned[name](...args), caught => (caught.messageKey ?? caught.message) === error);
+    else actual = owned[name](...args);
+    pair.same(); assert.deepEqual(owned._undo, pair.expected._undo); assert.deepEqual(owned._redo, pair.expected._redo);
+    assert.deepEqual(topologyCounters(owned), topologyCounters(pair.expected));
+    if (!error) assert.equal(json(actual), json(result), 'original return value, including undefined no-op');
+    return {result: actual, error};
+  };
+  return {...pair, reference, requests, packets, run, alter(callback) { alter = callback; }};
+}
+
+test('default Rename adopts recorded definition edits and no-op without changing event-time history', () => {
+  const pair = renamePair(), {expected, owned, report, reference, run} = pair;
+  const observations = [[], []];
+  for (const [index, editor] of [expected, owned].entries()) editor.addEventListener('change', event => {
+    observations[index].push({event: clean(event.detail), document: json(editor.report), state: state(editor), counters: topologyCounters(editor), frame: json(editor.evaluatedFrame)});
+  });
+  let tails = 0; const tail = owned._adoptMovieclipRename;
+  owned._adoptMovieclipRename = function (...args) { tails++; return tail.apply(this, args); };
+  assert.equal(report.mode, 'classes'); assert.equal(editingClass(owned.report), 'movieclips');
+  for (const step of reference.steps.slice(1)) {
+    const [method, ...args] = step.call, name = method.replace(/^@/, ''), adopted = report.owned, priorTails = tails;
+    const figure = name === 'renameMovieclip' ? owned.figure : null, before = json(owned.report), entries = owned._undo.length;
+    const {result, error} = run(name, ...args.map(decode));
+    if (name === 'renameMovieclip' && !error) {
+      assert.equal(report.owned, adopted + 1); assert.equal(tails, priorTails + 1, 'original definition publication tail is used');
+      if (step.result === null) {
+        assert.equal(result, undefined); assert.equal(owned.figure, figure); assert.equal(json(owned.report), before); assert.equal(owned._undo.length, entries);
+      } else {
+        assert.equal(result, owned.figure);
+        for (const key of Object.keys(figure)) if (key !== 'name') assert.equal(result[key], figure[key], `shallow definition child ${key}`);
+        assert.deepEqual(Object.keys(result), Object.keys(figure)); assert.equal(owned._undo.at(-1).kind, 'movieclip-definition');
+      }
+    }
+  }
+  assert.equal(tails, 3, 'two changed names and one no-op'); assert.equal(pair.requests.length, 5, 'selected clip requests include both original validation errors');
+  assert.deepEqual(observations[1], observations[0], 'every listener sees the original report/view/revisions');
+  while (expected.canUndo) run('undo'); assert.equal(owned.canUndo, false);
+});
+
+test('Rename keeps held shallow unknown children and zero-history no-op semantics', () => {
+  const pair = renamePair({historyLimit: 0}), {owned, report, run} = pair;
+  run('seek', 3); run('select', 4, -1);
+  for (const editor of [pair.expected, owned, pair.oracle]) {
+    editor.figure.renameUnknown = {nested: ['keep', null]};
+    Object.defineProperty(editor.figure, '__proto__', {value: {keep: 'own data'}, enumerable: true, configurable: true, writable: true});
+  }
+  // Compact ownership carries no definition/document; held children are the
+  // publication's only source, including unknown and own __proto__ data.
+  pair.alter(answer => { if (answer.movieclipRename) assert.equal(answer.result, null); });
+  const original = owned.figure, adopted = report.owned;
+  const renamed = run('renameMovieclip', '  Zero history  ').result;
+  assert.equal(report.owned, adopted + 1); assert.equal(renamed.renameUnknown, original.renameUnknown); assert.equal(renamed['__proto__'], original['__proto__']);
+  assert.equal(renamed._styk, original._styk); assert.equal(renamed.segments, original.segments); assert.equal(owned._undo.length, 0);
+  const reportNode = owned.report, serial = topologyCounters(owned), events = pair.packets.length;
+  assert.equal(run('renameMovieclip', 'Zero history').result, undefined);
+  assert.equal(owned.report, reportNode); assert.equal(owned.figure, renamed); assert.deepEqual(topologyCounters(owned), serial);
+  assert.equal(pair.packets.length, events + 1); assert.deepEqual(pair.packets.at(-1).events, []); assert.equal(pair.packets.at(-1).result, null);
+});
+
+test('malformed Rename packets retire Native before the unchanged original publication', () => {
+  for (const alter of [
+    answer => { delete answer.movieclipRename; },
+    answer => { answer.movieclipRename.index++; },
+    answer => { answer.movieclipRename.beforeName = 'foreign held name'; },
+    answer => { answer.movieclipRename.extra = true; },
+    answer => { answer.events[0].live = true; },
+    answer => { answer.events = [null]; },
+    answer => { answer.state.nextUid++; },
+    answer => { answer.state.canUndo = false; },
+    answer => { answer.result = {name: 'large decoded definition'}; },
+    answer => { answer.sheet = {}; },
+  ]) {
+    const pair = renamePair(), {expected, owned, report, run} = pair;
+    run('seek', 3); run('select', 4, -1); pair.alter(alter);
+    const before = json(owned.report), original = owned.figure, adopted = report.owned; let tails = 0, releases = 0;
+    const tail = owned._adoptMovieclipRename;
+    owned._adoptMovieclipRename = function (...args) { tails++; return tail.apply(this, args); };
+    pair.session.free = () => { releases++; assert.equal(json(owned.report), before, 'no UI writes before Native retirement'); assert.equal(owned.figure, original); };
+    run('renameMovieclip', 'Original fallback');
+    assert.equal(tails, 0); assert.equal(report.owned, adopted); assert.equal(releases, 1); assert.equal(report.failedOwned, 1);
+    assert.deepEqual(owned._undo.at(-1), expected._undo.at(-1));
+  }
+  for (const key of ['dirty', 'canRedo']) {
+    const pair = renamePair(); pair.run('seek', 3); pair.run('select', 4, -1);
+    const held = pair.owned.figure, before = json(pair.owned.report), adopted = pair.report.owned;
+    pair.alter(answer => { answer.state[key] = !answer.state[key]; });
+    assert.equal(pair.run('renameMovieclip', held.name).result, undefined);
+    assert.equal(pair.report.owned, adopted); assert.equal(pair.report.failedOwned, 1);
+    assert.equal(pair.owned.figure, held); assert.equal(json(pair.owned.report), before); assert.equal(pair.owned._undo.length, 0);
+  }
+  const shadow = renamePair({mode: 'shadow'}); shadow.run('seek', 3); shadow.run('select', 4, -1); shadow.run('renameMovieclip', 'Compared');
   assert.equal(shadow.requests.length, 0); assert.equal(shadow.report.owned, 0);
 });

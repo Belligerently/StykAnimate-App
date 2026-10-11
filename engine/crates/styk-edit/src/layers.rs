@@ -300,6 +300,7 @@ impl Editor {
             packet.set("label", Value::str(label));
             packet.set("structural", Value::Bool(structural));
             packet.set("updates", Value::array(accepted.unwrap()));
+            if let Some(active) = &active { packet.set("activeId", Value::str(active)); }
             *publication = Some(Value::object(packet));
         }
         let state = self.layer_state_mut().unwrap();
@@ -405,6 +406,10 @@ impl Editor {
 
     /// `renameLayer(id, name)`.
     pub(crate) fn rename_layer(&mut self, id: &Value, name: &Value) -> Result<bool, EditError> {
+        self.rename_layer_publication(id, name, None)
+    }
+
+    pub(crate) fn rename_layer_publication(&mut self, id: &Value, name: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         let id = id.as_str().unwrap_or("").to_string();
         if FIXED.contains(&id.as_str()) {
             return Err(EditError::Invalid("errors.editorLayers.sceneAndCameraArePermanentTracksAndCannot".into()));
@@ -414,11 +419,11 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorLayers.chooseAnExistingUserLayer".into()));
         }
         let name = clean_name(name)?;
-        self.layer_edit("Rename layer", vec![(path(&["byId", &id, "name"]), Some(Value::str(&name)), false)], false, None)
+        self.layer_edit_publication("Rename layer", vec![(path(&["byId", &id, "name"]), Some(Value::str(&name)), false)], false, publication)
     }
 
     /// `setLayerColor(ids, color)`: `null` removes the colour.
-    pub(crate) fn set_layer_color(&mut self, ids: &Value, color: &Value) -> Result<bool, EditError> {
+    pub(crate) fn set_layer_color(&mut self, ids: &Value, color: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         if !color.is_null() && !color.as_str().is_some_and(|c| COLORS.contains(&c)) {
             return Err(EditError::Invalid("errors.editorLayers.chooseALayerColor".into()));
         }
@@ -435,12 +440,12 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorLayers.chooseExistingUserLayers".into()));
         }
         let updates = unique.iter().map(|id| (path(&["byId", id, "color"]), Some(color.clone()), color.is_null())).collect();
-        self.layer_edit("Set layer color", updates, false, None)
+        self.layer_edit_publication("Set layer color", updates, false, publication)
     }
 
     /// `setLayerParallax(id, patch)` (src/editor-camera-motion.mjs): a figure layer's
     /// response to camera travel, its reference the camera on show unless set.
-    pub(crate) fn set_layer_parallax(&mut self, id: &Value, patch: &Value) -> Result<bool, EditError> {
+    pub(crate) fn set_layer_parallax(&mut self, id: &Value, patch: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         self.ensure_layer_state()?;
         let state = self.layer_state();
         let Some(id) = id.as_str().filter(|id| state.path(&["byId", id]).is_some()).map(str::to_string) else {
@@ -491,11 +496,11 @@ impl Editor {
         if !valid {
             return Err(EditError::Invalid("errors.layerParallax.parallaxNeedsA0400ResponseAndA".into()));
         }
-        self.layer_edit("Edit layer parallax", vec![(path(&["byId", &id, "parallax"]), Some(Value::object(p)), false)], false, None)
+        self.layer_edit_publication("Edit layer parallax", vec![(path(&["byId", &id, "parallax"]), Some(Value::object(p)), false)], false, publication)
     }
 
     /// `setLayerVisible(id, visible)`, `setLayerLocked(id, locked)`.
-    pub(crate) fn set_layer_flag(&mut self, id: &Value, key: &str, value: &Value) -> Result<bool, EditError> {
+    pub(crate) fn set_layer_flag(&mut self, id: &Value, key: &str, value: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         let id = id.as_str().unwrap_or("").to_string();
         self.ensure_layer_state()?;
         if !matches!(value, Value::Bool(_)) || !self.has_layer(&id) {
@@ -503,11 +508,11 @@ impl Editor {
         }
         let owner = if FIXED.contains(&id.as_str()) { "fixed" } else { "byId" };
         let label = if key == "visible" { "Set layer visibility" } else { "Set layer lock" };
-        self.layer_edit(label, vec![(path(&[owner, &id, key]), Some(value.clone()), false)], false, None)
+        self.layer_edit_publication(label, vec![(path(&[owner, &id, key]), Some(value.clone()), false)], false, publication)
     }
 
     /// `reorderLayers(ids)`: every user layer once, folders kept together.
-    pub(crate) fn reorder_layers(&mut self, ids: &Value) -> Result<bool, EditError> {
+    pub(crate) fn reorder_layers(&mut self, ids: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         self.ensure_layer_state()?;
         let state = self.layer_state();
         let current = strings(state.get("order"));
@@ -519,11 +524,11 @@ impl Editor {
         }
         let by_id = state.get("byId").and_then(Value::as_obj).cloned().unwrap_or_default();
         let ordered = folder_order(&by_id, &order);
-        self.layer_edit("Reorder layers", vec![(path(&["order"]), Some(Value::array(ordered.iter().map(|id| Value::str(id)).collect())), false)], true, None)
+        self.layer_edit_publication("Reorder layers", vec![(path(&["order"]), Some(Value::array(ordered.iter().map(|id| Value::str(id)).collect())), false)], true, publication)
     }
 
     /// `moveLayerTo(id, index)`.
-    pub(crate) fn move_layer_to(&mut self, id: &Value, index: &Value) -> Result<bool, EditError> {
+    pub(crate) fn move_layer_to(&mut self, id: &Value, index: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
         self.ensure_layer_state()?;
         let mut order = strings(self.layer_state().get("order"));
         let id = id.as_str().unwrap_or("").to_string();
@@ -532,11 +537,11 @@ impl Editor {
         let (Some(from), Some(to)) = (from, to) else { return Err(EditError::Invalid("errors.editorLayers.chooseAValidUserLayerPosition".into())) };
         let layer = order.remove(from);
         order.insert(to as usize, layer);
-        self.reorder_layers(&Value::array(order.iter().map(|id| Value::str(id)).collect()))
+        self.reorder_layers(&Value::array(order.iter().map(|id| Value::str(id)).collect()), publication)
     }
 
     /// `createLayer(name, {index, activate, drawing, folderId})`: the new layer's view.
-    pub(crate) fn create_layer(&mut self, name: &Value, options: &Value) -> Result<Value, EditError> {
+    pub(crate) fn create_layer(&mut self, name: &Value, options: &Value, publication: Option<&mut Option<Value>>) -> Result<Value, EditError> {
         self.ensure_layer_state()?;
         let state = self.layer_state();
         let next = state.get("nextId").and_then(Value::as_f64).unwrap_or(f64::NAN);
@@ -600,7 +605,7 @@ impl Editor {
             (path(&["order"]), Some(Value::array(ordered.iter().map(|id| Value::str(id)).collect())), false),
             (path(&["nextId"]), Some(Value::Num(next + 1.0)), false),
         ];
-        self.layer_edit("Create layer", updates, true, activate.then(|| id.clone()))?;
+        self.layer_edit_publication_checked("Create layer", updates, true, activate.then(|| id.clone()), None, &mut || Ok(()), publication)?;
         Ok(self.layer_view(&id))
     }
 

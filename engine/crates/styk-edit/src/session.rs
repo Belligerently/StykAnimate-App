@@ -76,6 +76,42 @@ fn response_value(fields: Vec<(&'static str, Value)>) -> Value {
     Value::object(Obj::from_shape(styk_doc::Shape::new(keys), values))
 }
 
+/// The accepted ordered scalar patch from the existing project-settings event.
+/// Refuse any other stored change (including zero-history source pruning) rather
+/// than publishing a partial report. No history entry is read after trimming.
+fn project_fields_publication(before: &Value, report: &Value, event: &Value) -> Option<Value> {
+    if event.get("kind").and_then(Value::as_str) != Some("edit")
+        || ["live", "layerSheet", "definition", "structural", "animation"].iter().any(|key| event.get(key).is_some_and(Value::truthy))
+    { return None; }
+    let label = event.get("label")?.as_str()?;
+    let timing = event.get("timing")?;
+    if !matches!(timing, Value::Bool(_)) { return None; }
+    let keys = event.get("projectFields")?.elements()?;
+    if keys.len() == 0 || keys.len() > 4 { return None; }
+    let keys: Vec<Value> = keys.iter().collect();
+    let (old, new) = (before.as_obj()?, report.as_obj()?);
+    // This opt-in preparation is bounded; wider unknown root records keep the
+    // original conversion/response and the facade's existing fallback.
+    if old.len() > 64 || new.len() > 64 { return None; }
+    let mut names = Vec::with_capacity(keys.len());
+    let mut fields = Vec::with_capacity(keys.len());
+    for key in &keys {
+        let key = key.as_str()?;
+        if !["fps", "frame_delay_ms", "canvas_width", "canvas_height"].contains(&key) || names.contains(&key) { return None; }
+        let value = new.get(key)?;
+        if !matches!(value, Value::Null) && !value.as_f64().is_some_and(f64::is_finite) { return None; }
+        names.push(key);
+        fields.push(Value::array(vec![Value::str(key), value.clone()]));
+    }
+    if old.iter().any(|(key, value)| !names.contains(&key.as_ref()) && !new.get(key).is_some_and(|current| current.same_node(value)))
+        || new.keys().any(|key| !old.contains(key) && !names.contains(&key.as_ref()))
+    { return None; }
+    let mut order: Vec<&str> = old.keys().map(|key| key.as_ref()).collect();
+    order.extend(names.iter().copied().filter(|key| !old.contains(key)));
+    if !order.into_iter().eq(new.keys().map(|key| key.as_ref())) { return None; }
+    Some(response_value(vec![("label", Value::str(label)), ("timing", timing.clone()), ("fields", Value::array(fields))]))
+}
+
 /// The COW figures the call replaced, without evaluation's runtime movieclip clock.
 /// A draft keeps its slots; a retained frame can also add, remove or reorder figures.
 fn changed_figures(frame: &Value, previous: Option<&Value>, taken: Option<&HashSet<u32>>) -> Vec<Value> {
@@ -104,6 +140,37 @@ fn changed_figures(frame: &Value, previous: Option<&Value>, taken: Option<&HashS
 
 fn figure_order(frame: &Value) -> Vec<Value> {
     frame.get("objects").and_then(Value::elements).map(|objects| objects.iter().filter_map(|figure| crate::record::uid(&figure)).map(|uid| Value::Num(uid as f64)).collect()).unwrap_or_default()
+}
+
+/// A renamed existing definition keeps every other shallow child and key order.
+/// Read the command result/reports, never a history entry that may be trimmed.
+fn movieclip_rename_publication(before: &Value, original: &Value, report: &Value, result: &Value, events: &[Value]) -> Option<Value> {
+    let previous = before.get("figure_types")?.elements()?;
+    let figures = report.get("figure_types")?.elements()?;
+    if previous.len() != figures.len() { return None; }
+    let index = previous.iter().position(|figure| figure.same_node(original))?;
+    let renamed = figures.get(index)?;
+    let old = original.as_obj()?;
+    let fields = renamed.as_obj()?;
+    let before_name = original.get("name")?.as_str()?;
+    let name = renamed.get("name")?.as_str()?;
+    if !old.keys().eq(fields.keys())
+        || fields.iter().any(|(key, value)| key.as_ref() != "name" && !old.get(key).is_some_and(|old| old.same_node(value)))
+        || previous.iter().zip(figures.iter()).enumerate().any(|(slot, (old, new))| slot != index && !old.same_node(&new))
+    { return None; }
+    if name == before_name {
+        if !result.is_null() || !events.is_empty() || !renamed.same_node(original) { return None; }
+    } else {
+        if !result.same_node(&renamed) || events.len() != 1 { return None; }
+        let event = &events[0];
+        if event.get("kind").and_then(Value::as_str) != Some("edit")
+            || event.get("label").and_then(Value::as_str) != Some("Rename movieclip")
+            || event.get("structural") != Some(&Value::Bool(true)) || event.get("timing") != Some(&Value::Bool(true))
+            || event.get("definition") != Some(&Value::Bool(true))
+            || event.get("live").is_some_and(Value::truthy) || event.get("layerSheet").is_some_and(Value::truthy)
+        { return None; }
+    }
+    Some(response_value(vec![("index", Value::Num(index as f64)), ("beforeName", Value::str(before_name)), ("name", Value::str(name))]))
 }
 
 /// The existing split command's stored changes, projected from its COW reports.
@@ -285,14 +352,21 @@ impl Session {
     /// `movieclipUniquePublication: true` additionally certifies an ordinary sheet
     /// Make Unique answer with `movieclipUnique: {definitionIndex}`. Its appended
     /// definition, sheet and sources remain in their existing response fields.
-    /// `layerPublication: true` requests a quiet ordinary sheet folder edit's
+    /// `layerPublication: true` requests a quiet ordinary sheet layer edit's
     /// original accepted operands as `{label, structural, updates}`. Removals
-    /// preserve null versus an omitted undefined value. No-op calls omit it.
+    /// preserve null versus an omitted undefined value. Layer creation may include
+    /// its original `activeId`; no-op calls omit the packet.
     /// Literal `figureClipboardPastes: true` requests a successful top-level
     /// `pasteSelection`'s existing clipboard count as `{before, after}`, or null when no
     /// clipboard exists. For `duplicateSelection` this is its temporary copy,
     /// before restoration; an empty copy returns null. Other calls and
     /// unsuccessful answers omit it.
+    /// Literal `projectFieldsPublication: true` requests an ordered scalar
+    /// `projectFields` certificate for a quiet ordinary-sheet settings change.
+    /// Default, no-op, error and unsupported responses remain unchanged.
+    /// Literal `movieclipRenamePublication: true` requests a quiet ordinary
+    /// sheet rename's scalar `{index, beforeName, name}` certificate, including
+    /// unchanged names. Its original definition/history/result stays unchanged.
     /// Returns the answer as JSON (see the module).
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
         let parsed = (styk_doc::json::parse(args.as_bytes()), styk_doc::json::parse(view.as_bytes()));
@@ -374,6 +448,13 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
+    let project_requested = view.get("projectFieldsPublication") == Some(&Value::Bool(true))
+        && matches!(method, "setFPS" | "setCanvasSize" | "updateProject")
+        && editor.sheet() && editor.drag.is_none() && draft.is_none()
+        && editor.property_edit.is_none() && editor.vfx_edit.is_none()
+        && editor.native_token.is_none() && editor.batch.is_none()
+        && before.path(&["_styk", "simpleFrameDraft"]).is_none()
+        && before.path(&["_styk", "movieclipSource"]).is_none();
     let topology_requested = view.get("topologyPublication") == Some(&Value::Bool(true))
         && matches!(method, "splitBuilderSegments" | "splitSegment" | "splitSegmentBranch")
         && editor.sheet() && editor.drag.is_none() && draft.is_none()
@@ -389,7 +470,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         && before.path(&["_styk", "simpleFrameDraft"]).is_none()
         && before.path(&["_styk", "movieclipSource"]).is_none();
     let layer_requested = view.get("layerPublication") == Some(&Value::Bool(true))
-        && matches!(method, "createLayerFolder" | "renameLayerFolder" | "moveLayersToFolder" | "arrangeLayers" | "deleteLayerFolder")
+        && matches!(method, "createLayerFolder" | "renameLayerFolder" | "moveLayersToFolder" | "arrangeLayers" | "deleteLayerFolder"
+            | "renameLayer" | "setLayerColor" | "setLayerVisible" | "setLayerLocked" | "reorderLayers" | "moveLayerTo" | "createLayer" | "setLayerParallax")
+        && !(method == "createLayer" && args.elements().and_then(|args| args.get(1)).is_some_and(|options| options.get("drawing").is_some_and(Value::truthy)))
         && editor.sheet() && editor.drag.is_none() && draft.is_none()
         && editor.property_edit.is_none() && editor.vfx_edit.is_none()
         && editor.native_token.is_none() && editor.batch.is_none()
@@ -397,6 +480,13 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         && before.path(&["_styk", "movieclipSource"]).is_none()
         && !before.get("figure_types").and_then(Value::elements).is_some_and(|figures| figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some()));
     let mut layer_publication = None;
+    let rename_requested = view.get("movieclipRenamePublication") == Some(&Value::Bool(true))
+        && method == "renameMovieclip" && editor.sheet()
+        && editor.drag.is_none() && draft.is_none() && editor.property_edit.is_none()
+        && editor.vfx_edit.is_none() && editor.native_token.is_none() && editor.batch.is_none()
+        && before.path(&["_styk", "simpleFrameDraft"]).is_none()
+        && before.path(&["_styk", "movieclipSource"]).is_none()
+        && !before.get("figure_types").and_then(Value::elements).is_some_and(|figures| figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some()));
     let mut answer = Vec::with_capacity(8);
     // Owned calls request only changed COW records. The default remains complete for
     // shadow comparison and existing native session consumers.
@@ -423,6 +513,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     // Capture through the existing selected-definition reader after view sync.
     // Failure only omits the opt-in marker; dispatch keeps its original errors.
     let unique_original = if unique_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure) } else { None };
+    let rename_original = if rename_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_none()) } else { None };
     // What the editor drew at random during its own run of the call (D18).
     editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
     let args: Vec<Value> = args.elements().map(|e| e.iter().collect()).unwrap_or_default();
@@ -476,7 +567,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     };
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
     let unique_result = unique_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
+    let rename_result = rename_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     let layer_changed = layer_requested && result.as_ref().is_ok_and(Value::truthy);
+    let project_changed = project_requested && matches!(&result, Ok(Value::Bool(true)));
     // Paste keeps this same clipboard owner; duplicate captures its temporary
     // owner before restoring the saved one. Both increment after paste events.
     let clipboard_pastes = if clipboard_requested && result.is_ok() {
@@ -642,6 +735,17 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         answer.push(("layerPublication", publication));
     }
     if let Some(pastes) = clipboard_pastes { answer.push(("figureClipboardPastes", pastes)); }
+    if project_changed && events.len() == 1
+        && let Some(publication) = project_fields_publication(&before, report, &events[0])
+    { answer.push(("projectFields", publication)); }
+    if let Some((original, result)) = rename_original.as_ref().zip(rename_result.as_ref())
+        && let Some(marker) = movieclip_rename_publication(&before, original, report, result, &events)
+    {
+        // Owned rename consumes only the certified scalars. Its held definition
+        // supplies unchanged children; do not serialize its embedded document.
+        if changes_only && let Some((_, result)) = answer.iter_mut().find(|(key, _)| *key == "result") { *result = Value::Null; }
+        answer.push(("movieclipRename", marker));
+    }
     answer.push(("events", Value::array(events)));
     let figures = if changes_only {
         match (&editor.authored, &editor.drag) {

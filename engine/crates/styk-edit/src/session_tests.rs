@@ -1120,7 +1120,7 @@ fn folder_publication_preserves_recorded_answers_and_original_layer_history() {
             view.set("changesOnly", Value::Bool(compact));
             let args = Value::array(call[1..].to_vec());
             let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
-            view.set("layerPublication", Value::Bool(true));
+            if matches!(method, "createLayerFolder" | "renameLayerFolder" | "moveLayersToFolder" | "arrangeLayers" | "deleteLayerFolder") { view.set("layerPublication", Value::Bool(true)); }
             let mut answer = requested.call_values(method, &args, &Value::object(view));
             let label = format!("folder step{} compact={compact}", step.get("step").unwrap());
             if let Some(packet) = answer.get("layerPublication").cloned() {
@@ -1256,8 +1256,8 @@ fn folder_publication_is_literal_opt_in_and_keeps_quiet_sheet_admission() {
             }
         }
         let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
-        let method = if context == "otherMethod" { "renameLayer" } else { "createLayerFolder" };
-        let args = if context == "otherMethod" { parse(r#"["layer-1","Name"]"#) } else { parse(r#"["Name",[]]"#) };
+        let method = if context == "otherMethod" { "setFPS" } else { "createLayerFolder" };
+        let args = if context == "otherMethod" { parse("[30]") } else { parse(r#"["Name",[]]"#) };
         let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
         view.set("layerPublication", match context { "false" => Value::Bool(false), "number" => Value::Num(1.0), _ => Value::Bool(true) });
         let answer = requested.call_values(method, &args, &Value::object(view));
@@ -1393,5 +1393,389 @@ fn figure_clipboard_pastes_is_literal_opt_in_and_omits_unported_answers() {
                 }
             }
         }
+    }
+}
+
+
+fn metadata_method(method: &str) -> bool {
+    matches!(method, "renameLayer" | "setLayerColor" | "setLayerVisible" | "setLayerLocked" | "reorderLayers" | "moveLayerTo" | "createLayer" | "setLayerParallax")
+}
+
+#[test]
+fn layer_metadata_publication_matches_all_75_recorded_calls_and_original_owner() {
+    let mut methods = HashSet::new();
+    let mut total = 0;
+    for compact in [false, true] {
+        let mut calls = 0;
+        for name in ["layer-list-sheet", "layers-folders-sheet", "layers-native", "layer-parallax-sheet", "layer-parallax-camera-sheet"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+            let reference = parse(&std::fs::read_to_string(path).unwrap());
+            let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+            let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            let mut expected = ordinary.editor.report_json();
+            let mut packets = Vec::new();
+            for (index, step) in steps.iter().enumerate().skip(1) {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap();
+                let before = requested.editor.snapshot();
+                let quiet_sheet = requested.editor.sheet();
+                let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+                view.set("changesOnly", Value::Bool(compact));
+                let args = Value::array(call[1..].to_vec());
+                let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
+                if metadata_method(method) { view.set("layerPublication", Value::Bool(true)); }
+                let mut answer = requested.call_values(method, &args, &Value::object(view));
+                let label = format!("{name} step{index} compact={compact}");
+                if let Some(packet) = answer.get("layerPublication").cloned() {
+                    assert!(metadata_method(method), "{label}: only requested metadata methods capture");
+                    methods.insert(method.to_string());
+                    let events = answer.get("events").unwrap();
+                    let event = events.item(0).unwrap();
+                    assert_eq!(events.array_len(), Some(1));
+                    assert_eq!(event.get("layerMetadata"), Some(&Value::Bool(true)));
+                    assert_eq!(event.get("timing"), Some(&Value::Bool(false)));
+                    assert_eq!(event.get("animation"), Some(&Value::Bool(false)));
+                    assert!(event.get("layerSheet").is_none());
+                    assert_eq!(packet.get("label"), event.get("label"));
+                    assert_eq!(packet.get("structural"), event.get("structural"));
+                    if method != "createLayer" { assert!(packet.get("activeId").is_none()); }
+                    let after = requested.editor.snapshot();
+                    let report = requested.editor.report_json();
+                    let state = requested.editor.state_value();
+                    let history = requested.editor.history_value();
+                    requested.editor.restore(before);
+                    assert!(requested.editor.layer_edit(packet.get("label").unwrap().as_str().unwrap(), layer_packet_updates(&packet),
+                        packet.get("structural") == Some(&Value::Bool(true)), packet.get("activeId").and_then(Value::as_str).map(str::to_string)).unwrap());
+                    assert_eq!(requested.editor.report_json(), report, "{label}: original stored order/presence");
+                    assert_eq!(requested.editor.state_value(), state, "{label}: original revisions and selection");
+                    assert_eq!(requested.editor.history_value(), history, "{label}: original single Layers record");
+                    assert_eq!(Value::array(requested.editor.take_events()), events.clone(), "{label}: original event");
+                    let crate::history::CommandKind::Layers { timing, migration, .. } = &requested.editor.undo.last().unwrap().kind else { panic!("{label}: Layers owner") };
+                    assert!(*timing); assert!(migration.is_none());
+                    requested.editor.restore(after);
+                    packets.push((packet.clone(), json(&packet)));
+                    answer.make_obj().unwrap().remove("layerPublication");
+                } else if metadata_method(method) && quiet_sheet && complete.get("status").and_then(Value::as_str) == Some("ok") && complete.get("result").is_some_and(Value::truthy) {
+                    panic!("{label}: successful quiet metadata call omitted its operands");
+                }
+                assert!(complete.get("layerPublication").is_none());
+                assert_eq!(json(&answer), json(&complete), "{label}: full/default answer remains literal");
+                assert_eq!(answer.get("state"), step.get("state"), "{label}: recorded state");
+                assert_eq!(answer.get("events"), step.get("events"), "{label}: recorded events");
+                if let Some(error) = step.get("error").filter(|error| !error.is_null()) { assert_eq!(answer.get("error"), error.get("key")); }
+                else { assert_eq!(crate::replay::plain(answer.get("result").unwrap(), 4).unwrap_or(Value::Null), step.get("result").cloned().unwrap()); }
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.into(); }
+                assert_eq!(requested.editor.report_json(), expected, "{label}: recorded document");
+                assert_eq!(ordinary.editor.report_json(), expected);
+                calls += 1;
+            }
+            for (packet, bytes) in packets { assert_eq!(json(&packet), bytes, "later edits do not mutate accepted operands"); }
+        }
+        assert_eq!(calls, 75); total += calls;
+    }
+    assert_eq!(methods.len(), 8); assert_eq!(total, 150);
+}
+
+#[test]
+fn layer_metadata_publication_keeps_zero_history_removal_noop_and_create_activation() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/layer-list-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let initial = reference.get("steps").unwrap().item(0).unwrap().get("state").unwrap().clone();
+    for compact in [false, true] {
+        let mut ordinary = session_from_recorded_state(&reference, &initial);
+        let mut requested = session_from_recorded_state(&reference, &initial);
+        for session in [&mut ordinary, &mut requested] { session.editor.history_limits.count = 0; }
+        for (method, args, changed) in [
+            ("setLayerColor", r#"[["layer-1"],null]"#, true),
+            ("setLayerColor", r#"[["layer-1"],null]"#, true),
+            ("renameLayer", r#"["layer-1","Layer 1"]"#, false),
+            ("setLayerVisible", r#"["scene",false]"#, true),
+            ("setLayerVisible", r#"["scene",false]"#, false),
+            ("createLayer", r#"["Inactive",{"activate":false}]"#, true),
+            ("createLayer", r#"["Active"]"#, true),
+            ("setLayerLocked", r#"["camera",true]"#, true),
+            ("renameLayer", r#"["scene","Invalid"]"#, false),
+        ] {
+            let before = requested.editor.snapshot();
+            let mut view = ordinary.editor.state_value().as_obj().unwrap().clone(); view.set("changesOnly", Value::Bool(compact));
+            let complete = ordinary.call_values(method, &parse(args), &Value::object(view.clone()));
+            view.set("layerPublication", Value::Bool(true));
+            let mut answer = requested.call_values(method, &parse(args), &Value::object(view));
+            if changed {
+                let packet = answer.get("layerPublication").unwrap().clone();
+                if method == "setLayerColor" {
+                    let update = packet.get("updates").unwrap().item(0).unwrap();
+                    assert_eq!(update.get("remove"), Some(&Value::Bool(true))); assert_eq!(update.get("value"), Some(&Value::Null));
+                }
+                if method == "createLayer" {
+                    let active = !args.contains("false");
+                    assert_eq!(packet.get("activeId").is_some(), active);
+                    if active { assert_eq!(packet.get("activeId"), answer.get("result").unwrap().get("id")); }
+                }
+                let after = requested.editor.snapshot();
+                requested.editor.restore(before);
+                assert!(requested.editor.layer_edit(packet.get("label").unwrap().as_str().unwrap(), layer_packet_updates(&packet),
+                    packet.get("structural") == Some(&Value::Bool(true)), packet.get("activeId").and_then(Value::as_str).map(str::to_string)).unwrap());
+                assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+                assert_eq!(requested.editor.state_value(), ordinary.editor.state_value());
+                assert_eq!(Value::array(requested.editor.take_events()), answer.get("events").unwrap().clone());
+                assert!(requested.editor.undo.is_empty());
+                requested.editor.restore(after); answer.make_obj().unwrap().remove("layerPublication");
+            } else { assert!(answer.get("layerPublication").is_none()); assert_eq!(answer.get("events").unwrap().array_len(), Some(0)); }
+            assert_eq!(json(&answer), json(&complete));
+        }
+    }
+}
+
+#[test]
+fn layer_metadata_publication_keeps_literal_flags_and_unrecorded_drawing_original() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/layer-list-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let initial = reference.get("steps").unwrap().item(0).unwrap().get("state").unwrap().clone();
+    for (method, args, flag) in [("renameLayer", r#"["layer-1","New"]"#, Value::Bool(false)),
+        ("renameLayer", r#"["layer-1","New"]"#, Value::Num(1.0)),
+        ("createLayer", r#"["Drawing",{"drawing":true}]"#, Value::Bool(true)),
+        ("setFPS", "[30]", Value::Bool(true))] {
+        let mut ordinary = session_from_recorded_state(&reference, &initial);
+        let mut requested = session_from_recorded_state(&reference, &initial);
+        let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+        let complete = ordinary.call_values(method, &parse(args), &Value::object(view.clone()));
+        view.set("layerPublication", flag);
+        let answer = requested.call_values(method, &parse(args), &Value::object(view));
+        assert!(answer.get("layerPublication").is_none()); assert_eq!(json(&answer), json(&complete));
+        assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+    }
+}
+
+#[test]
+fn project_fields_certificate_preserves_both_recorded_settings_tapes_and_default_wire() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
+    for compact in [false, true] {
+        let mut calls = 0;
+        let mut certificates = 0;
+        for name in ["project-settings-sheet", "project-settings-format4-sheet"] {
+            let reference = parse(&std::fs::read_to_string(folder.join(format!("{name}.reference.json"))).unwrap());
+            let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+            let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            let mut expected = steps[0].get("document").unwrap().as_str().unwrap().to_string();
+            for step in &steps[1..] {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap();
+                let args = Value::array(call[1..].to_vec());
+                let before = requested.editor.report().clone();
+                let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+                view.set("changesOnly", Value::Bool(compact));
+                let full = ordinary.call_values(method, &args, &Value::object(view.clone()));
+                view.set("projectFieldsPublication", Value::Bool(true));
+                let mut answer = requested.call_values(method, &args, &Value::object(view));
+                let label = format!("{name} step{} compact={compact}", step.get("step").unwrap());
+                let changed = matches!(method, "setFPS" | "setCanvasSize" | "updateProject") && answer.get("result") == Some(&Value::Bool(true));
+                if changed {
+                    let packet = answer.get("projectFields").unwrap();
+                    let event = answer.get("events").unwrap().item(0).unwrap();
+                    assert_eq!(packet.get("label"), event.get("label"), "{label}");
+                    assert_eq!(packet.get("timing"), event.get("timing"), "{label}");
+                    let mut reconstructed = before;
+                    let mut names = Vec::new();
+                    for field in packet.get("fields").unwrap().elements().unwrap().iter() {
+                        let key = field.item(0).unwrap();
+                        let value = field.item(1).unwrap();
+                        names.push(key.clone());
+                        reconstructed.make_obj().unwrap().set(key.as_str().unwrap(), value);
+                    }
+                    assert_eq!(Value::array(names), event.get("projectFields").unwrap().clone(), "{label}: original order");
+                    assert_eq!(json(&reconstructed), requested.editor.report_json(), "{label}: complete stored report");
+                    answer.make_obj().unwrap().remove("projectFields");
+                    certificates += 1;
+                } else { assert!(answer.get("projectFields").is_none(), "{label}: no marker on no-op/error/history"); }
+                assert_eq!(json(&answer), json(&full), "{label}: default full/compact wire unchanged");
+                assert_eq!(requested.editor.history_value(), ordinary.editor.history_value(), "{label}: original history tail");
+                assert_eq!(json(answer.get("state").unwrap()), json(step.get("state").unwrap()), "{label}: recorded state");
+                assert_eq!(json(answer.get("events").unwrap()), json(step.get("events").unwrap()), "{label}: recorded event");
+                if let Some(error) = step.get("error").filter(|value| !value.is_null()) {
+                    assert_eq!(answer.get("status").and_then(Value::as_str), Some("error"));
+                    assert_eq!(answer.get("error"), error.get("key"));
+                } else { assert_eq!(answer.get("result"), step.get("result"), "{label}: original result"); }
+                if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.into(); }
+                assert_eq!(requested.editor.report_json(), expected, "{label}: recorded document");
+                assert_eq!(ordinary.editor.report_json(), expected);
+                calls += 1;
+            }
+        }
+        assert_eq!(calls, 21);
+        assert_eq!(certificates, 6);
+    }
+}
+
+#[test]
+fn project_fields_certificate_is_literal_opt_in_bounded_and_refuses_other_stored_changes() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/project-settings-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let initial = reference.get("steps").unwrap().item(0).unwrap().get("state").unwrap().clone();
+    for flag in [Value::Bool(false), Value::Num(1.0), Value::str("true"), Value::Null, Value::Bool(true)] {
+        let mut ordinary = session_from_recorded_state(&reference, &initial);
+        let mut requested = session_from_recorded_state(&reference, &initial);
+        let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+        let full = ordinary.call_values("setFPS", &parse("[31]"), &Value::object(view.clone()));
+        view.set("projectFieldsPublication", flag.clone());
+        let mut answer = requested.call_values("setFPS", &parse("[31]"), &Value::object(view));
+        assert_eq!(answer.get("projectFields").is_some(), flag == Value::Bool(true));
+        answer.make_obj().unwrap().remove("projectFields");
+        assert_eq!(json(&answer), json(&full));
+        assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+    }
+    let before = parse(r#"{"fps":24,"canvas_width":960,"unknown":{"keep":[1,2]},"_styk":{"keep":true}}"#);
+    // Keep the actual unchanged COW nodes, just as the stored settings owner does.
+    let mut after = before.as_obj().unwrap().clone();
+    after.set("canvas_width", Value::Null);
+    let after = Value::object(after);
+    let event = parse(r#"{"kind":"edit","label":"Project settings","timing":false,"projectFields":["canvas_width"]}"#);
+    assert_eq!(project_fields_publication(&before, &after, &event).unwrap().get("fields"), Some(&parse(r#"[["canvas_width",null]]"#)));
+    for malformed in [r#"{"kind":"edit","label":"Project settings","timing":false,"projectFields":["canvas_width","canvas_width"]}"#,
+        r#"{"kind":"edit","label":"Project settings","timing":false,"projectFields":["unknown"]}"#,
+        r#"{"kind":"edit","label":"Project settings","timing":false,"live":true,"projectFields":["canvas_width"]}"#] {
+        assert!(project_fields_publication(&before, &after, &parse(malformed)).is_none());
+    }
+    let mut changed = after.as_obj().unwrap().clone();
+    changed.set("_styk", parse(r#"{"keep":false}"#));
+    assert!(project_fields_publication(&before, &Value::object(changed), &event).is_none(), "source/metadata changes need the full original route");
+    let mut wide = before.as_obj().unwrap().clone();
+    for index in 0..65 { wide.set(&format!("unknown{index}"), Value::Num(index as f64)); }
+    let before = Value::object(wide.clone()); wide.set("canvas_width", Value::Null);
+    assert!(project_fields_publication(&before, &Value::object(wide), &event).is_none(), "early fixed root-field bound");
+}
+
+
+#[test]
+fn movieclip_rename_marker_preserves_recorded_answers_and_shallow_definition_children() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/movieclip-rename-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+    assert_eq!(steps.len(), 13);
+    for compact in [false, true] {
+        let mut ordinary = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut requested = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut expected = requested.editor.report_json();
+        let mut markers = Vec::new();
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap().trim_start_matches('@');
+            let before = requested.report().clone();
+            let original = if method == "renameMovieclip" { requested.editor.selected_movieclip().ok().map(|(_, _, figure)| figure) } else { None };
+            let original_bytes = original.as_ref().map(json);
+            let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+            view.set("changesOnly", Value::Bool(compact));
+            let args = Value::array(call[1..].to_vec());
+            let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
+            view.set("movieclipRenamePublication", Value::Bool(true));
+            let mut answer = requested.call_values(method, &args, &Value::object(view));
+            let label = format!("rename step{} compact={compact}", step.get("step").unwrap());
+            if method == "renameMovieclip" && answer.get("status").and_then(Value::as_str) == Some("ok") {
+                let original = original.as_ref().unwrap();
+                let marker = answer.get("movieclipRename").unwrap().clone();
+                let index = marker.get("index").unwrap().as_f64().unwrap() as usize;
+                let renamed = requested.report().get("figure_types").unwrap().item(index).unwrap();
+                assert_eq!(marker.as_obj().unwrap().len(), 3);
+                assert_eq!(marker.get("beforeName"), original.get("name"));
+                assert_eq!(marker.get("name"), renamed.get("name"));
+                assert!(original.as_obj().unwrap().keys().eq(renamed.as_obj().unwrap().keys()));
+                for (key, value) in original.as_obj().unwrap().iter().filter(|(key, _)| key.as_ref() != "name") {
+                    assert!(value.same_node(renamed.get(key).unwrap()), "{label}: shallow child {key}");
+                }
+                if marker.get("beforeName") == marker.get("name") {
+                    assert!(renamed.same_node(original)); assert!(requested.report().same_node(&before));
+                    assert_eq!(answer.get("result"), Some(&Value::Null));
+                    assert_eq!(answer.get("events").unwrap().array_len(), Some(0));
+                } else {
+                    let mut copied = original.as_obj().unwrap().clone();
+                    copied.set("name", marker.get("name").unwrap().clone());
+                    let mut reconstructed = before.clone();
+                    reconstructed.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[index] = Value::object(copied);
+                    assert_eq!(json(&reconstructed), requested.editor.report_json(), "{label}: scalar packet reconstructs the stored rename");
+                    if !compact { assert!(renamed.same_node(answer.get("result").unwrap())); }
+                }
+                assert_eq!(json(original), original_bytes.unwrap(), "{label}: original immutable definition");
+                markers.push((marker.clone(), json(&marker)));
+                answer.make_obj().unwrap().remove("movieclipRename");
+                if compact {
+                    assert_eq!(answer.get("result"), Some(&Value::Null), "{label}: owned wire carries no embedded definition/document");
+                    answer.make_obj().unwrap().set("result", complete.get("result").unwrap().clone());
+                }
+            } else { assert!(answer.get("movieclipRename").is_none(), "{label}: other methods/errors omit the marker"); }
+            assert!(complete.get("movieclipRename").is_none());
+            assert_eq!(json(&answer), json(&complete), "{label}: default full/compact answer unchanged");
+            assert_eq!(json(answer.get("state").unwrap()), json(step.get("state").unwrap()), "{label}: recorded history and selection");
+            assert_eq!(json(answer.get("events").unwrap()), json(step.get("events").unwrap()), "{label}: recorded events");
+            if let Some(error) = step.get("error").filter(|error| !error.is_null()) {
+                assert_eq!(answer.get("error"), error.get("key"), "{label}: original validation");
+            } else if method != "seek" {
+                assert_eq!(crate::replay::plain(complete.get("result").unwrap(), 4).unwrap_or(Value::Null), step.get("result").cloned().unwrap(), "{label}: original default result");
+            }
+            if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.into(); }
+            assert_eq!(requested.editor.report_json(), expected, "{label}: recorded document");
+            assert_eq!(ordinary.editor.report_json(), expected);
+        }
+        assert_eq!(markers.len(), 3, "two changed names and the unchanged-name certificate");
+        for (marker, bytes) in markers { assert_eq!(json(&marker), bytes, "later undo/redo keeps returned markers immutable"); }
+    }
+}
+
+#[test]
+fn movieclip_rename_marker_keeps_zero_history_noops_and_literal_quiet_admission() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit/movieclip-rename-sheet.reference.json");
+    let reference = parse(&std::fs::read_to_string(path).unwrap());
+    let steps = reference.get("steps").unwrap().elements().unwrap();
+    let selected = steps.get(2).unwrap().get("state").unwrap().clone();
+    for compact in [false, true] {
+        let mut ordinary = session_from_recorded_state(&reference, &selected);
+        let mut requested = session_from_recorded_state(&reference, &selected);
+        for session in [&mut ordinary, &mut requested] { session.editor.history_limits.count = 0; }
+        for name in ["Changed", "Changed"] {
+            let mut view = ordinary.editor.state_value().as_obj().unwrap().clone(); view.set("changesOnly", Value::Bool(compact));
+            let before = requested.report().clone(); let original = requested.editor.selected_movieclip().unwrap().2;
+            let args = Value::array(vec![Value::str(name)]);
+            let complete = ordinary.call_values("renameMovieclip", &args, &Value::object(view.clone()));
+            view.set("movieclipRenamePublication", Value::Bool(true));
+            let mut answer = requested.call_values("renameMovieclip", &args, &Value::object(view));
+            let marker = answer.get("movieclipRename").unwrap().clone();
+            assert_eq!(marker.get("beforeName"), original.get("name")); assert_eq!(marker.get("name"), Some(&Value::str(name)));
+            assert!(requested.editor.undo.is_empty(), "marker is independent of undo.last");
+            if original.get("name").and_then(Value::as_str) == Some(name) { assert!(requested.report().same_node(&before)); }
+            answer.make_obj().unwrap().remove("movieclipRename");
+            if compact { assert_eq!(answer.get("result"), Some(&Value::Null)); answer.make_obj().unwrap().set("result", complete.get("result").unwrap().clone()); }
+            assert_eq!(json(&answer), json(&complete));
+            assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
+        }
+    }
+    for context in ["false", "number", "native", "source", "frameDraft", "origin", "drag", "batch", "otherMethod"] {
+        let mut ordinary = session_from_recorded_state(&reference, &selected);
+        let mut requested = session_from_recorded_state(&reference, &selected);
+        for session in [&mut ordinary, &mut requested] {
+            match context {
+                "native" => { session.editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().remove("layerSheet"); }
+                "source" => { session.editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().set("movieclipSource", parse("{}")); }
+                "frameDraft" => { session.editor.report.make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().set("simpleFrameDraft", parse("{}")); }
+                "origin" => {
+                    let original = session.editor.selected_movieclip().unwrap().2;
+                    let index = session.editor.report.get("figure_types").unwrap().elements().unwrap().iter().position(|figure| figure.same_node(&original)).unwrap();
+                    session.editor.report.make_obj().unwrap().get_mut("figure_types").unwrap().make_arr().unwrap()[index]
+                        .make_obj().unwrap().get_mut("_styk").unwrap().make_obj().unwrap().set("animationOrigin", parse("{}"));
+                }
+                "drag" => { session.editor.call("beginDrag", &[Value::str("Existing gesture")]).unwrap(); session.editor.take_events(); }
+                "batch" => { session.editor.call("beginBatch", &[Value::str("Existing batch")]).unwrap(); session.editor.take_events(); }
+                _ => {}
+            }
+        }
+        let method = if context == "otherMethod" { "select" } else { "renameMovieclip" };
+        let args = if context == "otherMethod" { parse("[4,-1]") } else { parse(r#"["Changed"]"#) };
+        let mut view = ordinary.editor.state_value().as_obj().unwrap().clone();
+        let complete = ordinary.call_values(method, &args, &Value::object(view.clone()));
+        view.set("movieclipRenamePublication", match context { "false" => Value::Bool(false), "number" => Value::Num(1.0), _ => Value::Bool(true) });
+        let answer = requested.call_values(method, &args, &Value::object(view));
+        assert!(answer.get("movieclipRename").is_none(), "{context}: no new admission");
+        assert_eq!(json(&answer), json(&complete), "{context}: original answer unchanged");
+        assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
     }
 }
