@@ -15,9 +15,11 @@
  * receives the view with every call.
  */
 import {applyDocumentPatch} from './engine-patch.mjs';
+import {editorDraws, withDraws} from '../editor-draws.mjs';
 import {messageError} from '../localized-error.mjs';
 import {invalidateFrameIndex} from '../frame-ids.mjs';
 import {invalidateMovieclipTypes} from '../movieclips.mjs';
+import {layerIdForUid} from '../layers.mjs';
 
 /** The undo/redo answer when the entry to apply is the editor's own (external.rs). */
 const EXTERNAL_ENTRY = 'external history entry ';
@@ -76,9 +78,9 @@ const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segm
  *   the calls to route to it, `verify` compares the session's document after every call
  *   (tests), `draws` supplies the random values a call may take (D18).
  */
-export function installEngineOwner(editor, {start, methods = ownedMethods(editor), verify = false, draws = defaultDraws} = {}) {
+export function installEngineOwner(editor, {start, methods = ownedMethods(editor), verify = false, draws = null} = {}) {
   const report = {calls: 0, native: 0, fallback: 0, external: 0, synced: 0, refused: {}, verified: 0};
-  let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false;
+  let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [];
   /** JavaScript commands of the session's external entries, by identity. */
   const entries = new Map();
   /** Commands the editor recorded during the call it is running for the owner. */
@@ -104,6 +106,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       // Small metadata the editor changes in place (layers, palette): compared by text.
       stykText: styk ? new Map(Object.entries(styk).filter(([key]) => !['frameSources', 'layerSheet', 'audio', 'animation'].includes(key)).map(([key, value]) => [key, JSON.stringify(value)])) : null,
       sources: new Map(Object.entries(styk?.frameSources ?? {})),
+      activeId: styk?.layers?.activeId,
     };
     hints = null;
   };
@@ -162,7 +165,9 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     return ops;
   };
   const send = (method, args) => {
-    const text = session.call(method, JSON.stringify(args), JSON.stringify({...view(), patch: true}));
+    const viewText = JSON.stringify({...view(), patch: true});
+    report.capture?.push({name: method, args: JSON.stringify(args), view: viewText});
+    const text = session.call(method, JSON.stringify(args), viewText);
     report.trace?.push(`${method} ${JSON.stringify(args).slice(0, 120)} -> ${text.slice(0, 160)}`);
     const answer = JSON.parse(text);
     if (answer.status !== 'ok') throw new Error(`The engine refused the editor's records (${method}): ${answer.error ?? answer.reason}`);
@@ -171,13 +176,14 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (Array.isArray(answer.result) && answer.result.length) {
       applying = true;
       try {
+        const before = posesBefore();
         applyDocumentPatch(editor.report, answer.result);
         for (const op of answer.result) if (op.p[0] === '_styk' && op.p[1] === 'frameSources' && op.x) editor._generatedFrameSources?.delete(op.p[2]);
         if (answer.result.some(op => op.p[0] === '_styk' && op.p[1] === 'frameSources' && op.p.length === 2)) {
           const kept = new Set(Object.keys(editor.report._styk?.frameSources ?? {}));
           for (const id of [...(editor._generatedFrameSources ?? [])]) if (!kept.has(id)) editor._generatedFrameSources.delete(id);
         }
-        refresh(answer.result);
+        refresh(answer.result, before);
         editor._invalidate({timing: true});
       } finally { applying = false; }
     }
@@ -185,22 +191,31 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   };
   const generated = () => [...(editor._generatedFrameSources ?? [])];
   const counters = () => [editor.layerRevision, editor._nextFrameIdentity, editor._nextUid];
+  /** The frame the session retained, while the editor still shows it. */
+  let retainedShown = null;
+  const stillShown = () => Boolean(retainedShown) && editor._evaluated === retainedShown && !editor._authoredPoseEdit;
   /** The counters the session last had: a flush sends the editor's when they moved. */
   let known = null;
   /** Writes what the editor changed since the session last had its document. */
+  /** Whether the editor may have changed the document since the session last had it:
+   * a call it ran, a command recorded or an edit announced outside the session's calls. */
+  let pending = false;
   const flush = ({entry = null} = {}) => {
     if (!session || applying) return;
+    // Selecting changes the active layer in place, without an edit event.
+    if (!entry && !pending && !hints && JSON.stringify(counters()) === JSON.stringify(known) && editor.report._styk?.layers?.activeId === snapshot?.activeId) return;
+    pending = false;
     const ops = changes();
     if (entry) {
-      send('@external', [entry.label, entry.id, entry.retained, generated(), entry.bytes, ops, counters()]);
+      send('@external', [entry.label, entry.id, entry.retained, generated(), entry.bytes, ops, counters(), stillShown()]);
       report.external++;
-    } else if (ops.length || hints?.touched || JSON.stringify(counters()) !== JSON.stringify(known)) { send('@sync', [ops, generated(), Boolean(hints?.touched), counters()]); report.synced++; }
+    } else if (ops.length || hints?.touched || JSON.stringify(counters()) !== JSON.stringify(known)) { send('@sync', [ops, generated(), Boolean(hints?.touched), counters(), stillShown()]); report.synced++; }
     take();
     check();
   };
   const check = () => {
     if (!verify || !session) return;
-    const engine = session.report_json(), view = JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value);
+    const engine = session.report_json(), view = JSON.stringify(editor.report);
     if (engine !== view) {
       let at = 0; while (engine[at] === view[at]) at++;
       throw new Error(`The engine's document differs from the read view at ${at}: engine …${engine.slice(Math.max(0, at - 60), at + 60)}… view …${view.slice(Math.max(0, at - 60), at + 60)}…`);
@@ -210,27 +225,70 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
 
   // --- answers ------------------------------------------------------------------------
   /** Updates what the editor derives from the records a patch replaced. */
+  /** The pose records and layer state before a patch, to update the layer index from. */
+  const posesBefore = () => ({frames: editor.report.keyframes, sources: editor.report._styk?.frameSources, layers: editor.report._styk?.layers});
+  /** Updates what the editor derives from the records a patch replaced: the layer index
+   * from the poses that changed (by identity), frame and type indices, caches. */
   const refresh = (patch, before) => {
     const touched = new Set(patch.map(op => op.p[0] ?? '*'));
-    const frames = touched.has('keyframes') || touched.has('*') || patch.some(op => op.p[0] === '_styk' && (op.p[1] === 'frameSources' || op.p.length === 1));
-    if (frames || touched.has('_styk')) {
-      // Layer membership: counted again from the document, figures seen before kept.
-      const seen = editor._layerSeenUids;
+    const index = editor._layerUidCounts && before && !touched.has('*') ? before : null;
+    if (!index) {
+      // Counted again from the document, figures seen before kept.
+      const seen = editor._layerSeenUids, revision = editor._layerRevision;
       editor._initializeLayers();
+      // The session counts layer revisions; rebuilding the index is not one.
+      editor._layerRevision = revision;
       if (seen) for (const uid of seen) editor._layerSeenUids.add(uid);
+    } else {
+      const counts = editor._layerUidCounts, groups = editor._layerGroups, report = editor.report;
+      const delta = new Map(), crossed = [];
+      const count = (records, sign) => { for (const record of records) for (const object of record?.objects ?? []) delta.set(object.unique_id, (delta.get(object.unique_id) ?? 0) + sign); };
+      const compare = (old, next) => {
+        if (old === next) return;
+        const previous = new Set(old ?? []), current = new Set(next ?? []);
+        count([...previous].filter(record => !current.has(record)), -1);
+        count([...current].filter(record => !previous.has(record)), 1);
+      };
+      compare(index.frames, report.keyframes);
+      if (index.sources !== report._styk?.frameSources) compare(Object.values(index.sources ?? {}), Object.values(report._styk?.frameSources ?? {}));
+      for (const [uid, amount] of delta) {
+        if (!amount) continue;
+        const previous = counts.get(uid) ?? 0, next = previous + amount;
+        if (next > 0) { counts.set(uid, next); editor._layerSeenUids.add(uid); } else counts.delete(uid);
+        if ((previous > 0) !== (next > 0)) crossed.push(uid);
+      }
+      if (index.layers !== report._styk?.layers) {
+        // Assignments or layers changed: every figure regrouped.
+        const state = report._styk.layers;
+        editor._layerGroups = new Map(state.order.map(id => [id, new Set()]));
+        for (const uid of counts.keys()) editor._layerGroups.get(layerIdForUid(report, uid))?.add(uid);
+      } else for (const uid of crossed) {
+        const layer = groups.get(layerIdForUid(report, uid));
+        if (counts.has(uid)) layer?.add(uid); else for (const members of groups.values()) members.delete(uid);
+      }
+    }
+    if (verify && index) {
+      // The incremental index equals one counted again from the document.
+      const counts = new Map(editor._layerUidCounts), groups = new Map([...editor._layerGroups].map(([id, members]) => [id, [...members].sort((a, b) => a - b)]));
+      const seen = editor._layerSeenUids, revision = editor._layerRevision;
+      editor._initializeLayers();
+      editor._layerRevision = revision; for (const uid of seen) editor._layerSeenUids.add(uid);
+      const sorted = map => JSON.stringify([...map].sort(([a], [b]) => String(a).localeCompare(String(b))));
+      const fresh = new Map([...editor._layerGroups].map(([id, members]) => [id, [...members].sort((a, b) => a - b)]));
+      if (sorted(counts) !== sorted(editor._layerUidCounts) || sorted(groups) !== sorted(fresh)) throw new Error('The layer index after a patch differs from one counted from the document.');
     }
     if (touched.has('keyframes') || touched.has('*')) invalidateFrameIndex(editor.report);
     if (touched.has('figure_types') || touched.has('*')) invalidateMovieclipTypes(editor.report);
     editor._layerDescriptors = null; editor._layerUidArrays = new Map(); editor._nativeAnimationChannels = null;
-    void before;
   };
   const adoptState = (answer, {patch = true} = {}) => {
     const {state} = answer;
     if (patch && answer.patch?.length) {
       applying = true;
       try {
+        const before = posesBefore();
         applyDocumentPatch(editor.report, answer.patch);
-        refresh(answer.patch);
+        refresh(answer.patch, before);
         editor._invalidate({timing: true});
       } finally { applying = false; }
     }
@@ -261,7 +319,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       const chosen = answer.sheetSelection;
       editor._sheetSelection = chosen ? {...(editor._sheetSelection?.id === chosen.id ? editor._sheetSelection : {}), id: chosen.id, contents: chosen.contents} : null;
     }
-    if (Array.isArray(answer.depths)) mirror(answer);
+    if (Array.isArray(answer.depths)) { if (writing) lastDepths = answer.depths; else mirror(answer); }
     if (Number.isFinite(answer.revision)) {
       editor._revision = answer.revision;
       editor._revisionSerial = Math.max(editor._revisionSerial ?? 0, answer.revision);
@@ -270,13 +328,14 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   /** The editor's history stacks follow the session's: the editor's own commands for the
    * entries it applies, placeholders for the session's entries, so the editor's code that
    * reads or amends the entry on top keeps working. */
-  let depths = [0, 0];
+  let depths = [0, 0], writing = false, lastDepths = null;
   const mirror = answer => {
     const [undo, redo] = answer.depths, stacks = [editor._undo, editor._redo];
     const placeholder = label => ({kind: 'engine', label, bytes: 0, beforeRevision: editor._revision, afterRevision: answer.revision});
-    if (undo === depths[0] + 1 && redo === 0 && stacks[0].length === depths[0]) {
-      // A new entry the session recorded itself.
-      stacks[0].push(placeholder(answer.state?.undoLabel ?? '')); editor._redo = [];
+    if (undo > depths[0] && redo === 0 && stacks[0].length === depths[0]) {
+      // New entries the session recorded itself (a call may commit a gesture first).
+      for (let added = depths[0]; added < undo; added++) stacks[0].push(placeholder(added === undo - 1 ? answer.state?.undoLabel ?? '' : ''));
+      editor._redo = [];
     } else if (undo === depths[0] - 1 && redo === depths[1] + 1 && stacks[0].length) stacks[1].push(stacks[0].pop());
     else if (undo === depths[0] + 1 && redo === depths[1] - 1 && stacks[1].length) stacks[0].push(stacks[1].pop());
     // Entries the session retired (oldest first), or stacks out of step: as many as the session has.
@@ -302,16 +361,8 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
         before: source.objects.filter(object => taken.has(object.unique_id)).map(object => structuredClone(object)), beforeSelection: editor._selectionState(), changed: false};
     }
     editor._drag.label = drag.label; editor._drag.scope = drag.translation ? 'translation' : 'selection';
-    // The document changed under the gesture (a figure drawn meanwhile): the draft is the
-    // new frame on show with the gesture's own figures as the draft has them.
-    if (answer.patch?.length && editor._authoredPoseEdit?.engine) {
-      const previous = editor._authoredPoseEdit, taken = new Set(drag.before);
-      editor._authoredPoseEdit = null; editor._invalidate();
-      const source = editor.evaluatedFrame, kept = new Map(previous.frame.objects.filter(object => taken.has(object.unique_id)).map(object => [object.unique_id, object]));
-      editor._authoredPoseEdit = {...previous, source, frame: {...source, objects: source.objects.map(object => kept.get(object.unique_id) ?? object)},
-        owned: new Set(source.objects.flatMap((object, slot) => kept.has(object.unique_id) ? [slot] : []))};
-    }
     const edit = editor._authoredPoseEdit;
+    if (edit && answer.draftFields) edit.frame = {...edit.frame, ...answer.draftFields};
     if (edit && answer.draft?.length) {
       const objects = edit.frame.objects;
       for (const figure of answer.draft) {
@@ -347,35 +398,95 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   };
 
   // --- calls ----------------------------------------------------------------------------
+  /** Sessions of the documents open beside this one (editor sessions, tabs), by document. */
+  const parked = new Map();
+  const park = () => {
+    report.log?.push(`park ${Boolean(session)}`);
+    if (!session) return;
+    parked.set(document, {session, entries: new Map(entries), depths, history, known, snapshot, nextEntry});
+    // Bounded: the oldest parked document gives its session up (it becomes the editor's again).
+    while (parked.size > 8) { const [key, value] = parked.entries().next().value; value.session.free(); parked.delete(key); }
+    session = null; document = null;
+  };
+  const call = (method, args) => {
+    const answer = JSON.parse(session.call(method, JSON.stringify(args), JSON.stringify(view())));
+    if (answer.status !== 'ok') throw new Error(`${method}: ${answer.error ?? answer.reason}`);
+    return answer;
+  };
   const ensure = () => {
     if (session && document === editor.report) return session;
-    session?.free(); session = null;
-    if (editor._undo.length || editor._redo.length) return null;
+    report.log?.push(`ensure: session ${Boolean(session)} same ${document === editor.report} name ${editor.name}`);
+    park();
+    const resumed = parked.get(editor.report);
+    if (resumed) {
+      parked.delete(editor.report);
+      ({session} = resumed); document = editor.report;
+      entries.clear(); for (const [id, commands] of resumed.entries) entries.set(id, commands);
+      ({depths, history, known, snapshot, nextEntry} = resumed);
+      return session;
+    }
+    // The editor's history from before the session: its own commands, which it applies itself.
+    const stacks = [editor._undo, editor._redo];
+    if (stacks.some(stack => stack.some(command => command.kind === 'engine'))) return null;
     const started = start(editor);
+    report.log?.push(`start ${Boolean(started)}`);
     if (!started) return null;
     session = started; document = editor.report;
-    entries.clear(); depths = [0, 0];
+    entries.clear(); depths = [stacks[0].length, stacks[1].length];
     take();
     try {
-      for (const [method, args] of [['@historyLimits', [editor.historyLimit, editor.historyBytes]], ['@revisions', [editor._revision, editor._revisionSerial, editor._savedRevision]]]) {
-        const answer = JSON.parse(session.call(method, JSON.stringify(args), JSON.stringify(view())));
-        if (answer.status !== 'ok') throw new Error(`${method}: ${answer.error ?? answer.reason}`);
+      call('@historyLimits', [editor.historyLimit, editor.historyBytes]);
+      call('@revisions', [editor._revision, editor._revisionSerial, editor._savedRevision]);
+      // A session started from the mirror: the same records, maybe in another key order
+      // and without what the mirror leaves out (audio). Bring it to the read view.
+      const [rootKeys, stykKeys] = call('@shape', []).result, root = editor.report, ops = [];
+      const rebuild = (path, object, keys) => {
+        const held = new Set(keys), names = Object.keys(object ?? {});
+        if (JSON.stringify(keys) !== JSON.stringify(names) || names.some(name => !held.has(name))) ops.push({p: path, o: names.map(name => held.has(name) ? [name] : [name, object[name]])});
+      };
+      rebuild([], root, rootKeys);
+      if (root._styk && rootKeys.includes('_styk')) rebuild(['_styk'], root._styk, stykKeys);
+      if (ops.length) call('@sync', [ops, [], false, counters()]);
+      if (stacks[0].length || stacks[1].length) {
+        const described = stack => stack.map(command => {
+          const id = nextEntry++; entries.set(id, [command]);
+          return [command.label ?? '', id, retainedSources([command]), command.bytes ?? 0];
+        });
+        call('@externalStacks', [described(stacks[0]), described(stacks[1])]);
       }
-      history = {canUndo: false, canRedo: false, undoLabel: '', redoLabel: '', dirty: editor._revision !== editor._savedRevision};
+      history = {canUndo: stacks[0].length > 0, canRedo: stacks[1].length > 0, undoLabel: stacks[0].at(-1)?.label ?? '', redoLabel: stacks[1].at(-1)?.label ?? '',
+        dirty: editor._revision !== editor._savedRevision};
       check();
     } catch (error) {
-      session.free(); session = null; document = null;
+      session.free(); session = null; document = null; entries.clear();
       report.broken = String(error.message ?? error);
       return null;
     }
     return session;
   };
+  /** The values a call may draw: the spare ones, then the caller's (`draws`) or fresh ones
+   * up to a few of each kind. */
+  const pool = () => {
+    if (draws) return [...spare, ...draws()];
+    const values = [...spare];
+    for (const kind of ['uuid', 'seed', 'random']) for (let count = values.filter(([drawn]) => drawn === kind).length; count < 4; count++) values.push([kind, editorDraws[kind]()]);
+    return values;
+  };
+  /** The editor's own draws take the spare ones first (then draw as usual). */
+  const withSpare = run => {
+    const outer = {...editorDraws};
+    return withDraws(run, kind => {
+      const at = spare.findIndex(([drawn]) => drawn === kind);
+      return at >= 0 ? spare.splice(at, 1)[0][1] : outer[kind]();
+    }).result;
+  };
   /** Runs `name` in the JavaScript editor and writes what it changed back. */
   const fallback = (name, original, args) => {
     const outer = captured === null;
     if (outer) captured = [];
+    pending = true;
     depth++;
-    let result, pending = false;
+    let result, unsettled = false;
     const done = () => {
       depth--;
       if (outer) {
@@ -384,28 +495,38 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       }
     };
     try {
-      result = original.apply(editor, args);
+      result = spare.length ? withSpare(() => original.apply(editor, args)) : original.apply(editor, args);
       // An asynchronous call is one unit until it settles: calls made meanwhile run here too.
-      if (typeof result?.then === 'function') { pending = true; return result.finally(done); }
-    } finally { if (!pending) done(); }
+      if (typeof result?.then === 'function') { unsettled = true; return result.finally(done); }
+    } finally { if (!unsettled) done(); }
     return result;
   };
-  const writeBack = commands => {
-    if (commands.length) hintsOf(commands, hints ??= freshHints(), report);
+  const writeBack = recorded => {
+    if (recorded.length) hintsOf(recorded, hints ??= freshHints(), report);
+    // An editor call may record a command and then fold it into the next one: only what is
+    // still on the editor's stack, in its order, becomes the session's entries.
+    const stack = new Set(editor._undo), commands = recorded.filter(command => stack.has(command)).sort((a, b) => editor._undo.indexOf(a) - editor._undo.indexOf(b));
     // A gesture the editor runs edits the shown keyframe in place until it ends.
     if (editor._drag && !editor._drag.engine && !editor._drag.authored) (hints ??= freshHints()).frames.add(editor._drag.index ?? editor.frameIndex);
     if (!commands.length) { flush(); return; }
-    // One session entry per editor entry; the records changed go with the first.
-    for (const command of commands) {
-      const id = nextEntry++;
-      entries.set(id, [command]);
-      flush({entry: {id, label: command.label ?? '', bytes: command.bytes ?? 0, retained: retainedSources([command])}});
-    }
+    // One session entry per editor entry; the records changed go with the first. The
+    // editor's stack already holds them all: it follows the session's once, at the end.
+    writing = true;
+    try {
+      for (const command of commands) {
+        const id = nextEntry++;
+        entries.set(id, [command]);
+        flush({entry: {id, label: command.label ?? '', bytes: command.bytes ?? 0, retained: retainedSources([command])}});
+      }
+    } finally { writing = false; }
+    if (lastDepths) { depths = [editor._undo.length, editor._redo.length]; mirror({depths: lastDepths, state: null, revision: editor._revision}); lastDepths = null; }
   };
   const callSession = (name, original, args) => {
     const live = ensure();
     if (!live) return original.apply(editor, args);
+    const flushed = performance.now();
     flush();
+    if (report.ms) report.ms.flush += performance.now() - flushed;
     // A gesture the editor runs (or began) stays with it to its end.
     if (EDITOR_GESTURES.has(name) || (editor._drag && !editor._drag.engine) || editor._animationEdit || editor._vfxClipEdit || editor._frameDraftEnabled) {
       report.fallback++; (report.editor ??= {})[name] = (report.editor[name] ?? 0) + 1;
@@ -415,8 +536,27 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     try { payload = JSON.stringify(args, frameRanges); } catch { payload = null; }
     if (payload === null || args.some(value => typeof value === 'function')) { report.refused[`${name}: arguments that are not plain data`] = (report.refused[`${name}: arguments that are not plain data`] ?? 0) + 1; report.fallback++; return fallback(name, original, args); }
     report.calls++;
-    const answer = JSON.parse(live.call(name, payload, JSON.stringify({...view(), patch: true, changesOnly: true, draws: draws(), drawPool: true})));
+    const timing = report.ms ??= {flush: 0, session: 0, parse: 0, adopt: 0, emit: 0};
+    let mark = performance.now();
+    const viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(), drawPool: true});
+    report.capture?.push({name, args: payload, view: viewText});
+    const text = live.call(name, payload, viewText);
+    const spent = performance.now() - mark;
+    timing.session += spent; (timing.byMethod ??= {})[name] = (timing.byMethod[name] ?? 0) + spent; (timing.bytes ??= {})[name] = (timing.bytes[name] ?? 0) + text.length + viewText.length;
+    mark = performance.now();
+    const answer = JSON.parse(text);
+    timing.parse += performance.now() - mark;
+    // Draws the call did not take come first next time, so identities follow one sequence.
+    spare = [];
+    for (const pair of Array.isArray(answer.drawsLeft) ? answer.drawsLeft : []) if (spare.filter(([kind]) => kind === pair[0]).length < 4) spare.push(pair);
     report.trace?.push(`${name} -> ${answer.status} ${answer.reason ?? answer.error ?? ''} rev ${answer.revision} drag ${JSON.stringify(answer.drag)} draft ${JSON.stringify(answer.draft?.map(f => f.unique_id))} state ${JSON.stringify(answer.state).slice(0, 140)}`);
+    // An error the session raised without changing anything: the editor raises it itself,
+    // with its message and the values it draws on the way, as the editor alone would.
+    // (Not pastes: the clipboard a native copy filled is the session's.)
+    if (answer.status === 'error' && !answer.patch?.length && !answer.drag === !editor._drag?.engine && !/paste/i.test(name)) {
+      report.errors = (report.errors ?? 0) + 1;
+      return fallback(name, original, args);
+    }
     if (answer.status === 'unported') {
       const key = `${name}: ${answer.reason}`;
       report.refused[key] = (report.refused[key] ?? 0) + 1; report.fallback++;
@@ -429,9 +569,19 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       }
       return fallback(name, original, args);
     }
+    // A committed gesture's frame stays on show, as the session keeps it (`retained`),
+    // until the session lets it go.
+    mark = performance.now();
+    const shown = answer.retained ? (editor._authoredPoseEdit?.frame ?? editor.evaluatedFrame) : null;
+    const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
+    if (shown && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, shown); editor._geometry = null; editor._incremental = null; }
+    else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
+    if (!answer.retained && !answer.retainedKept) retainedShown = null;
     if (answer.patch?.length) take();
+    timing.adopt += performance.now() - mark; mark = performance.now();
     emit(answer);
+    timing.emit += performance.now() - mark;
     check();
     if (answer.status === 'error') throw failure(answer.error);
     report.native++;
@@ -447,18 +597,30 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (editor._animationEdit) editor.cancelAnimationEdit();
     if (!redo && editor._drag) editor.cancelDrag();
     flush();
-    const answer = JSON.parse(live.call(redo ? 'redo' : 'undo', '[]', JSON.stringify({...view(), patch: true})));
+    const historyView = JSON.stringify({...view(), patch: true});
+    report.capture?.push({name: redo ? 'redo' : 'undo', args: '[]', view: historyView});
+    const answer = JSON.parse(live.call(redo ? 'redo' : 'undo', '[]', historyView));
     if (answer.status === 'unported' && answer.reason?.startsWith(EXTERNAL_ENTRY)) {
-      const id = Number(answer.reason.slice(EXTERNAL_ENTRY.length)), commands = entries.get(id);
-      if (!commands) throw new Error(`The editor has no history entry ${id}.`);
+      const id = Number(answer.reason.slice(EXTERNAL_ENTRY.length)), [command] = entries.get(id) ?? [];
+      if (!command) throw new Error(`The editor has no history entry ${id}.`);
+      if ((redo ? editor._redo : editor._undo).at(-1) !== command) throw new Error('The editor\'s history is out of step with the session\'s.');
+      // The editor's own replay: drawing entries prepare their tiles first (it may wait),
+      // and it moves the entry on the editor's stacks.
       depth++;
-      try { for (const command of redo ? commands : [...commands].reverse()) editor._applyCommand(command, redo ? 'after' : 'before'); }
-      finally { depth--; }
-      hintsOf(commands, hints ??= freshHints(), report);
-      send('@externalDone', [id, redo, changes(), generated(), counters()]);
-      take();
-      check();
-      return true;
+      let result;
+      try { result = editor._drawingHistoryReplay(command, redo ? 'after' : 'before', args[0]?.signal); }
+      catch (error) { depth--; throw error; }
+      const finish = () => {
+        depth--;
+        hintsOf([command], hints ??= freshHints(), report);
+        depths = [editor._undo.length, editor._redo.length];
+        send('@externalDone', [id, redo, changes(), generated(), counters()]);
+        take();
+        check();
+        return true;
+      };
+      if (typeof result?.then === 'function') return result.then(finish, error => { depth--; throw error; });
+      return finish();
     }
     if (answer.status !== 'ok') throw new Error(`The engine could not ${redo ? 'redo' : 'undo'}: ${answer.error ?? answer.reason}`);
     adoptState(answer);
@@ -470,53 +632,62 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
 
   // --- installation ---------------------------------------------------------------------
   for (const name of ['seek', 'undo', 'redo', 'markSaved', '_record', '_pruneFrameSources']) originals.set(name, editor[name]);
+  // The owner's methods live on a layer between the editor and its class: document
+  // sessions (tabs) move the editor's own properties with each document, never these.
+  const dirty = findGetter(editor, 'dirty');
+  const getters = Object.fromEntries(['canUndo', 'canRedo', 'undoLabel', 'redoLabel'].map(name => [name, findGetter(editor, name)]));
+  const listen = editor._emit;
+  const layer = Object.create(Object.getPrototypeOf(editor));
+  Object.setPrototypeOf(editor, layer);
   for (const name of new Set(methods)) {
     const original = editor[name];
     if (typeof original !== 'function' || VIEW_CALLS.has(name) || name === 'undo' || name === 'redo') continue;
     originals.set(name, original);
-    editor[name] = function owned(...args) {
+    layer[name] = function owned(...args) {
       // A call made by a call the editor runs belongs to it.
       if (depth > 0 || editor._movieclipScopes?.length) return original.apply(this, args);
       return callSession(name, original, args);
     };
   }
-  editor.undo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('undo').apply(this, args) : historyCall(false, args); };
-  editor.redo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('redo').apply(this, args) : historyCall(true, args); };
-  editor.markSaved = function owned(...args) {
+  layer.undo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('undo').apply(this, args) : historyCall(false, args); };
+  layer.redo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('redo').apply(this, args) : historyCall(true, args); };
+  layer.markSaved = function owned(...args) {
     const result = originals.get('markSaved').apply(this, args);
     if (session && document === editor.report) { send('@markSaved', []); history.dirty = false; }
     return result;
   };
   // The editor's own commands record into the session's history, through the entry
   // their call writes back; their bookkeeping (revision, weight) still runs here.
-  editor._record = function owned(command) {
+  layer._record = function owned(command) {
     if (!session || document !== editor.report || editor._movieclipScopes?.length) return originals.get('_record').call(this, command);
     const length = this._undo.length;
     originals.get('_record').call(this, command);
     // Pushed (not folded into a batch still open): the session gets an entry for it.
     const recorded = this._undo.at(-1) === command && this._undo.length >= Math.min(length + 1, this.historyLimit) ? [command] : [];
+    pending = true;
     if (captured) captured.push(...recorded);
     else if (recorded.length) writeBack(recorded);
   };
   // Pose sources only history keeps alive are collected by the session, which holds history.
-  editor._pruneFrameSources = function owned(...args) {
+  layer._pruneFrameSources = function owned(...args) {
     if (!session || document !== editor.report) return originals.get('_pruneFrameSources').apply(this, args);
   };
   for (const [name, read] of Object.entries({
     canUndo: () => history.canUndo, canRedo: () => history.canRedo, undoLabel: () => history.undoLabel, redoLabel: () => history.redoLabel,
   })) {
-    const prototype = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(editor), name) ?? findGetter(editor, name);
-    Object.defineProperty(editor, name, {configurable: true, get() { return session && document === editor.report && history ? read() : prototype.get.call(this); }});
+    const prototype = getters[name];
+    Object.defineProperty(layer, name, {configurable: true, get() { return session && document === editor.report && history ? read() : prototype.get.call(this); }});
   }
-  const dirty = findGetter(editor, 'dirty');
-  Object.defineProperty(editor, 'dirty', {configurable: true,
+  Object.defineProperty(layer, 'dirty', {configurable: true,
     get() { return session && document === editor.report && history ? history.dirty || Boolean(this._drag?.changed || this._animationEdit?.changed) : dirty.get.call(this); },
     set(value) { dirty.set.call(this, value); }});
   // Edits other modules make in place, or announce without a command.
   editor.addEventListener('change', event => {
     const detail = event.detail;
+    if (detail?.kind === 'document') report.log?.push(`document ${JSON.stringify(detail).slice(0, 120)} name ${editor.name} at ${Math.round(performance.now())}`);
     if (!session || document !== editor.report || depth > 0 || applying || !['edit', 'history', 'document'].includes(detail?.kind)) return;
     if (detail.kind === 'document') return;
+    pending = true;
     hints ??= freshHints();
     for (const index of detail.figureIndices ?? []) hints.figures.add(index);
     for (const index of detail.frameIndices ?? []) hints.frames.add(index);
@@ -525,8 +696,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (detail.label === 'Project metadata') hints.touched = true;
   });
   // A call the editor runs names what it changed in place in its events.
-  const listen = editor._emit;
-  editor._emit = function owned(kind, detail = {}) {
+  layer._emit = function owned(kind, detail = {}) {
     if (session && document === editor.report && depth > 0 && !applying && ['edit', 'history'].includes(kind)) {
       hints ??= freshHints();
       for (const index of detail.figureIndices ?? []) hints.figures.add(index);
@@ -539,9 +709,31 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     return listen.call(this, kind, detail);
   };
   report.flush = () => flush();
+  report.depths = () => depths;
+  /** Whether the session holds the open document (starting it if it can). */
+  report.ready = () => Boolean(ensure());
   report.session = () => session;
-  report.release = () => { session?.free(); session = null; document = null; };
+  report.release = () => { session?.free(); session = null; document = null; for (const value of parked.values()) value.session.free(); parked.clear(); };
   return report;
+}
+
+/** The frame the session keeps on show after a commit: its changed figures (and fields)
+ * over the frame that was on show. */
+function retainedFrame(answer, drafted) {
+  const byUid = new Map(drafted.objects.map(object => [object.unique_id, object]));
+  for (const object of answer.retained) if (byUid.get(object.unique_id)?._movieclipSample !== undefined) object._movieclipSample = byUid.get(object.unique_id)._movieclipSample;
+  let objects = answer.retained;
+  if (answer.retainedChanges) {
+    for (const object of answer.retained) byUid.set(object.unique_id, object);
+    objects = (answer.retainedOrder ?? drafted.objects.map(object => object.unique_id)).map(uid => byUid.get(uid));
+  }
+  let frame = {...drafted, ...answer.retainedFields, objects};
+  for (const key of answer.retainedRemoved ?? []) delete frame[key];
+  if (answer.retainedFieldOrder) {
+    const fields = new Set(answer.retainedFieldOrder);
+    frame = {...Object.fromEntries(answer.retainedFieldOrder.map(key => [key, frame[key]])), ...Object.fromEntries(Object.entries(frame).filter(([key]) => !fields.has(key)))};
+  }
+  return frame;
 }
 
 const freshHints = () => ({figures: new Set(), frames: new Set(), backgrounds: new Set(), sources: new Set(), styk: new Set()});
@@ -606,13 +798,34 @@ function retainedSources(commands) {
   return [...ids];
 }
 
-/** Random values a call may take (D18): a few of each kind, drawn as the editor draws them. */
-function defaultDraws() {
-  const pool = [];
-  for (let index = 0; index < 4; index++) {
-    pool.push(['uuid', crypto.randomUUID()]);
-    pool.push(['seed', crypto.getRandomValues(new Uint32Array(1))[0]]);
-    pool.push(['random', Math.random()]);
-  }
-  return pool;
+/** `?engineOwner=on|off` (or `localStorage['stykanimate.engine.owner']`): whether the engine
+ * owns the open document (D19) instead of shadowing the editor's calls. */
+export function engineOwnerMode() {
+  try {
+    const value = new URLSearchParams(globalThis.location?.search ?? '').get('engineOwner');
+    if (value) return value === 'on';
+    return globalThis.localStorage?.getItem('stykanimate.engine.owner') === 'on';
+  } catch { return false; }
+}
+
+/**
+ * The app's session start: on the stage's mirrored document, once its frames are current
+ * (the session reuses the stage's prepared views). Until then the editor runs the calls,
+ * and the session takes its history when it starts.
+ * @param {() => object|null} engineSide the stage's engine side
+ */
+export function appSessionStart(engineSide) {
+  let syncing = null;
+  return editor => {
+    const side = engineSide();
+    if (!side || side.failed) return null;
+    if (!side.mirror.framesCurrent(editor.report, editor.revision)) {
+      syncing ??= side.mirror.syncFrames(editor.report, editor.revision).catch(() => {}).finally(() => { syncing = null; });
+      return null;
+    }
+    return side.engine.handle.edit_session(JSON.stringify({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null,
+      selectedUids: [...editor.selectedUids], selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey),
+      layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid,
+      propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)})) ?? null;
+  };
 }

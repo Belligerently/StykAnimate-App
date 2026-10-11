@@ -463,6 +463,7 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                 let mut object = original.as_obj().cloned().unwrap_or_default();
                 object.set("unique_id", Value::Num(renamed(uid(original)).unwrap_or(0) as f64));
                 object.set("object_slot", Value::Num(next_slots[&slot] as f64));
+                for (key, value) in materialized(original, figure_of(context.figures, original)) { object.set(key, value); }
                 let root = if joined(slot).is_some() { get_geometry()?[&slot].root() } else { [given(original, "root_x").unwrap_or(f64::NAN), given(original, "root_y").unwrap_or(f64::NAN)] };
                 object.set("root_x", Value::Num(native_finite(Some(root[0] + offset))?));
                 object.set("root_y", Value::Num(native_finite(Some(root[1] + offset))?));
@@ -873,8 +874,10 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
                 let object = &objects[slot];
                 let figure = figure_of(context.figures, object);
                 let definition_bends = || -> Vec<f64> { segments_of(figure).iter().map(|s| given(s, "bend_rad").unwrap_or(0.0)).collect() };
-                let held_bends = || if object.get("bend_flag").is_some_and(Value::truthy) { numbers(object.get("bends")) } else { definition_bends() };
-                let mut patch: Vec<(&str, Value)> = Vec::new();
+                // Effective lengths and bends from a legacy cache come first (`patch.bends ?? …`).
+                let mut patch: Vec<(&str, Value)> = materialized(object, figure);
+                let cached_bends = patch.iter().find(|(key, _)| *key == "bends").map(|(_, value)| numbers(Some(value)));
+                let held_bends = || cached_bends.clone().unwrap_or_else(|| if object.get("bend_flag").is_some_and(Value::truthy) { numbers(object.get("bends")) } else { definition_bends() });
                 if part_slot == Some(slot) {
                     let segments = segments_of(figure);
                     let flipped = |index: usize| segments.get(index).and_then(|s| given(s, "segment_id")).is_some_and(|id| part_handles.contains(&id));
@@ -964,4 +967,23 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
         }
     }
     Ok(changes.result(frame, matches!(operation.kind, Kind::Join { .. })))
+}
+
+/// A pose with the legacy `runtime_segments` cache keeps its effective lengths and bends
+/// when a range operation retires the cache: `len_flag`/`lengths` and `bend_flag`/`bends`
+/// from the cache, else the definition (range-figure-operations.mjs).
+fn materialized(object: &Value, figure: Option<&Value>) -> Vec<(&'static str, Value)> {
+    let Some(runtime) = object.get("runtime_segments").filter(|value| value.truthy()) else { return Vec::new() };
+    let segments = segments_of(figure);
+    let cached = |index: usize, key: &str| runtime.item(index).and_then(|entry| entry.get(key).filter(|value| !value.is_null()).cloned());
+    let mut patch = Vec::new();
+    if !object.get("len_flag").is_some_and(Value::truthy) {
+        patch.push(("len_flag", Value::Num(1.0)));
+        patch.push(("lengths", Value::array(segments.iter().enumerate().map(|(index, segment)| cached(index, "length").or_else(|| segment.get("length").cloned()).unwrap_or(Value::Null)).collect())));
+    }
+    if !object.get("bend_flag").is_some_and(Value::truthy) {
+        patch.push(("bend_flag", Value::Num(1.0)));
+        patch.push(("bends", Value::array(segments.iter().enumerate().map(|(index, segment)| cached(index, "bend_rad").or_else(|| segment.get("bend_rad").filter(|value| !value.is_null()).cloned()).unwrap_or(Value::Num(0.0))).collect())));
+    }
+    patch
 }

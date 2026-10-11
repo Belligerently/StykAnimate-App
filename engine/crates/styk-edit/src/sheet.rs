@@ -494,6 +494,7 @@ impl Editor {
     /// layers' membership, which is one more layer revision; the layer hints of the
     /// last publication are used once and dropped.
     pub(crate) fn track_frames(&mut self, previous: &[Value], next: &[Value], record: bool) -> Result<bool, EditError> {
+        let _scope = crate::prof::scope("sheet::track_frames");
         if previous.is_empty() && next.is_empty() {
             return Ok(false);
         }
@@ -1167,6 +1168,7 @@ impl Editor {
 
     /// `applyLayerSheetCommand(editor, command, direction)`.
     pub(crate) fn apply_sheet_command(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
+        let _scope = crate::prof::scope("sheet::apply_command");
         let CommandKind::LayerSheet { before, after, before_layers, after_layers, sources, definitions, .. } = &command.kind else { return Ok(()) };
         let (sheet, layers, selection, revision) = match direction {
             Direction::Before => (before, before_layers, &command.before_selection, command.before_revision),

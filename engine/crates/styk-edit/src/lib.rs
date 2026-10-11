@@ -41,6 +41,7 @@ mod movieclip_native;
 mod pose;
 mod pose_choice;
 mod palette;
+pub mod prof;
 pub mod patch;
 mod polygons;
 mod project;
@@ -459,6 +460,7 @@ impl Editor {
 
     /// The state as JSON, in the key order `engine/tools/edit-replay.mjs` records it.
     pub fn state_value(&self) -> Value {
+        let _scope = crate::prof::scope("editor::state_value");
         let state = self.state();
         // These fixed response keys already are in JavaScript enumeration order.
         // Construct their existing shape once instead of rebuilding it (and its
@@ -664,6 +666,8 @@ impl Editor {
             "@markSaved" => return self.mark_saved(),
             "@revisions" => return self.set_revisions(args),
             "@dropGesture" => return self.drop_gesture(),
+            "@shape" => return self.document_shape(),
+            "@externalStacks" => return self.external_stacks(args),
             "undo" | "redo" if let Some(id) = self.external_on_top(method == "redo") => {
                 return Err(EditError::Unported(format!("{}{id}", external::EXTERNAL_ENTRY)));
             }

@@ -964,11 +964,51 @@ effect-model modules have no callers and are deleted.
 
 ## Phase 3: the engine owns the document
 
-History moves to the engine (a generation per entry, sharing unchanged records),
-the JavaScript copy of the document becomes a read view the interface queries
-for what it displays (timeline rows, layer lists, inspector), and the mirror
-disappears. Opening and saving go through `styk-formats` and `styk-piv`
-directly.
+Decision [D19](decisions/0019-engine-owns-the-document.md). One `styk-edit` session per
+open document holds the document and its history; `src/engine/engine-owner.mjs` installs
+it on the editor (`?engineOwner=on` while it is verified in the app; the shadow above is
+the default until then).
+
+- **Calls.** Every public editor method except queries, view calls (selecting, seeking)
+  and lifecycle runs in the session. Its answer (`patch: true`) carries the document patch
+  (`styk_edit::patch`, copy-on-write identity diff), the state, the gesture and its draft,
+  the retained frame and the change events. The owner applies the patch to `editor.report`
+  copy-on-write (`src/engine/engine-patch.mjs`), refreshes what the editor derives from the
+  records (layer index, frame index, caches), sets selection and counters, mirrors the
+  gesture into `_drag`/`_authoredPoseEdit` and re-emits the events.
+- **Refusals.** A call the session refuses (`Unported`), a gesture whose live state the
+  interface reads from the editor (motion paths, figure handles, rigs, camera drags,
+  property and effect-clip edits, frame drafts) and an error the session raised without
+  changing anything run in the editor on the read view. What they recorded becomes
+  session history entries of kind `External` (`external.rs`): the session keeps their place,
+  label, weight and the pose sources they keep alive, and on undo/redo answers `external
+  history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and
+  the changed records are written back. Edits other modules make in place or through
+  `editor._record` are written back the same way before the next call.
+- **History.** Undo/redo are the session's. The editor's stacks mirror the session's
+  (`depths`): its own commands for external entries, placeholders for native ones, so code
+  that reads or amends the entry on top keeps working.
+- **Start.** In the app the session starts on the stage's mirrored document (it reuses the
+  stage's prepared views); `@shape` then brings key order and what the mirror leaves out
+  (audio) to the read view exactly. History the editor recorded before the session started
+  is taken over with `@externalStacks`. Sessions of documents open in other tabs are kept.
+- **Legacy pose caches.** Pivot imports carry `runtime_segments` on every pose; the range
+  operations materialize lengths and bends from it before dropping it, as the editor does.
+
+Checks: `tests/engine-owner.test.mjs` replays every recorded tape (325) on the editor alone
+and on an owned editor, from the exact document and from the mirror (there with the legacy
+pose cache on every pose), comparing document,
+selection, history and the frame on show after every step and after undoing everything,
+with the session's document compared to the read view after every call.
+`node scripts/engine-app-tape.mjs --owner <tape…>` does the same in the running app, and
+`node scripts/engine-owner-cost.mjs <file>` measures the editing cost rule.
+Known differences: the frame on show may lack the derived `object_count` the editor's
+caches sometimes keep, and the internal `layerRevision` cache key can differ by one around
+source pruning; neither is visible.
+
+Still to come: the frame on show, handles and picking as engine queries (phase 2), the
+remaining refusals ported, the stage committing the session's tree instead of the mirror,
+and opening and saving through `styk-formats` and `styk-piv` directly.
 
 ## Invariants
 

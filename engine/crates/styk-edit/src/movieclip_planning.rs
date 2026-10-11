@@ -80,6 +80,7 @@ impl TimelineWorker<'_> {
     }
 
     pub(crate) fn publish_plan_with_geometry(&mut self, editor: &mut Editor, plan: Plan, label: &str, selection: Option<crate::select::SelectionState>, retain_geometry: bool) -> Result<(), EditError> {
+        let _scope = crate::prof::scope("planning::publish");
         (self.check)()?;
         budget(self.max_source_bytes)?;
         let (_, poses, values) = memory(plan.sources.iter().map(|(_, frame)| frame), self.max_source_bytes, (0, 0, 0))?;

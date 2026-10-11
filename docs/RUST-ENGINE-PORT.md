@@ -12,17 +12,21 @@ nothing here should need re-deriving.
 
 ## Handoff (2026-10-11, third agent, in progress)
 
-**Where it stands:** S0–S4 done; S6 done for the raster engine. S5 phase 1 (commands one
-at a time, adopted in the app) continues; then the JavaScript renderer and playback are
-deleted, then S5 phases 2–3 (the engine owns the document) and S7.
+**Where it stands:** S0–S4 done; S6 done for the raster engine. S5 phase 3 has begun under
+D19 (user, 2026-10-11): one engine session per document owns document and history
+(`src/engine/engine-owner.mjs`, `?engineOwner=on`, not yet the default). Every recorded tape
+(325) gives the editor's documents, selection, history and frame on show with it; in the app
+28 tapes match. Calls the session refuses run in the editor and are written back.
 
 **Counters now:** inventory **175 js / 123 partial / 34 ported / 23 verified / 1 removed**;
-**OWNED_CLASSES 5** (large figures, 3d, figures, movieclips, channels); **app-owned
-commands 110**; **deleted JS modules 2**.
+**OWNED_CLASSES 5** (shadow mode, still the default); **owner:** all document classes
+eligible, 3,020 of 4,409 tape calls native; **deleted JS modules 2**.
 
-**Next:** the commands the app still routes to JavaScript (section 8, item S5), each with
-recorded replays and adoption in the default classes mode; unsupported contexts keep their
-fallback until phase 3.
+**Next:** make the owner the default. Blocker: the editing cost rule fails on the largest
+document (URIEL 3 in the app: C 145.9 ms against J 54.4 ms over 86 calls; Jay passes, C/J
+1.02). The session re-evaluates the whole frame on show after each change (~1.3 ms natively,
+2–4× that in WebAssembly); per-figure memoized records are the planned fix. Then delete the
+shadow and its per-command packets, port the refusals, phase 2 queries, renderer deletion.
 
 **Rules in force (user, 2026-10-11):**
 
@@ -1214,3 +1218,4 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 19:17 UTC | Edit layer folders through the engine | All five mutators adopt ordered updates through the original layer history tail; the getter remains a UI projection. Additive opt-in Session JSON; Rust signatures/layout/math unchanged. **Counters:** inventory 175 js/123 partial/34 ported/23 verified/1 removed (one ported→verified); OWNED_CLASSES 5→5; deleted JS 2→2; command measurements 2→7; full cost rows 43 unchanged; engine-1 0/28 unchanged. | 236 Rust; three recordings / 58 exact calls; 204 JS/Main check pass. All five default commands adopt without editor fallback; actual Ungroup, 21 paired boundaries and full undo are exact. Observed 18.360/9.620 ms is diagnostic under concurrent checkpoint load, not a class-cost gate or causal speed claim. |
 | 2026-10-05 20:00 UTC | Preserve clipboard paste counters | Paste and duplicate publish certified counters through original events and clipboard restoration; additive opt-in Session JSON, Rust signatures/math unchanged. **Counters:** inventory unchanged 175/123/34/23/1; classes 5→5; deleted JS 2→2; command rows 7→8; full cost rows 43 and engine-1 0/28 unchanged. | 238 Rust / 106 recorded calls / 263 JS and Main check pass. All 34 paired boundaries and full undo match; aggregate paste 24.860/20.630 ms is diagnostic only. |
 | 2026-10-11 | Adopt layer metadata, project settings and movieclip rename | The leftover diff from the stopped agent, finished: the eight layer metadata commands, `setFPS`/`setCanvasSize`/`updateProject` and sheet `renameMovieclip` adopt the engine's answer in the default classes mode. New `scripts/engine-app-tape.mjs` replays recorded tapes in the app. Worktrees archived and removed. **Counters:** inventory 175/123/34/23/1 unchanged; OWNED_CLASSES 5; app-owned commands 98→110; deleted JS 2. | styk-edit tests and 126 adoption tests pass; check passes. In the app, seven tapes (101 steps, 43 owned calls) match the editor alone at every step and after full undo. |
+| 2026-10-11 | D19: the engine owns the document | Generic document patches (`styk_edit::patch`, checked on every native replay step); the owner (`engine-owner.mjs`): persistent session per document, patches applied copy-on-write to the read view, session history with external entries for editor-run calls (`external.rs`), gestures mirrored, sessions per tab, start from the mirror with `@shape`, legacy Pivot pose caches materialized like the editor. Tools: `tests/engine-owner.test.mjs`, `scripts/engine-app-tape.mjs --owner`, `scripts/engine-owner-cost.mjs [--app]`. **Counters:** inventory unchanged; OWNED_CLASSES 5; deleted JS 2. | 325 tapes / 8,308 steps match in Node from the document and from the mirror (with legacy caches); 28 app tapes match. Cost in the app: Jay C 91.4 / J 89.5 ms (pass), URIEL 3 C 145.9 / J 54.4 ms (fail). Patch key-order fix: native heavy calls 6.3 → 2 ms. |

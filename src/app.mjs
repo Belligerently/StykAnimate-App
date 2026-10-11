@@ -33,6 +33,7 @@ import { createRenderer as createScriptRenderer,worldToScreen,screenToWorld } fr
 import { createStageRenderer } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
 import { installEditShadow, engineEditMode } from "./engine/engine-edit-shadow.mjs";
+import { installEngineOwner, engineOwnerMode, appSessionStart } from "./engine/engine-owner.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
@@ -604,7 +605,9 @@ const createRenderer = (surface, options) => createStageRenderer(surface, option
 // Ported editor calls run in the engine for the document classes it edits by default, or
 // for every document, or are compared with the editor's (docs/engine/editing.md).
 const engineEditing = engineEditMode();
-if (engineEditing !== 'off') installEditShadow(editor, () => state.renderer?.engineSide ?? null, {mode: engineEditing});
+// D19: the engine owns the document (opt-in while it is verified in the app).
+if (engineEditing !== 'off' && engineOwnerMode()) globalThis.__stykEngineOwner = installEngineOwner(editor, {start: appSessionStart(() => state.renderer?.engineSide ?? null)});
+else if (engineEditing !== 'off') installEditShadow(editor, () => state.renderer?.engineSide ?? null, {mode: engineEditing});
 const playback = createStagePlayback(new PlaybackCache({
   gpuIsolation: true,
   diagnostics:telemetry.performance,

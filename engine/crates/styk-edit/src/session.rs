@@ -379,7 +379,9 @@ impl Session {
             answer.push(("error", Value::str("the call's arguments are not JSON")));
             return styk_doc::json::to_string(&response_value(answer));
         };
-        styk_doc::json::to_string(&self.call_values(method, &args, &view))
+        let answer = { let _scope = crate::prof::scope("session::call_values"); self.call_values(method, &args, &view) };
+        let _scope = crate::prof::scope("session::json");
+        styk_doc::json::to_string(&answer)
     }
 
     /// The same command and response owner over already decoded COW values.
@@ -448,6 +450,7 @@ impl Session {
 
 /// Shared by legacy JSON calls and canonical worker transactions.
 fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, worker_preparation: bool, check: Option<&mut dyn FnMut() -> Result<(), EditError>>) -> Result<Value, EditError> {
+    let prelude_scope = crate::prof::scope("call::prelude");
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
@@ -520,6 +523,8 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     // Failure only omits the opt-in marker; dispatch keeps its original errors.
     let unique_original = if unique_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure) } else { None };
     let rename_original = if rename_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure).filter(|figure| figure.path(&["_styk", "animationOrigin"]).is_none()) } else { None };
+    drop(prelude_scope);
+    let command_scope = crate::prof::scope("call::command");
     // What the editor drew at random during its own run of the call (D18).
     editor.set_draws(view.get("draws").unwrap_or(&Value::Null));
     editor.draw_pool = view.get("drawPool") == Some(&Value::Bool(true));
@@ -572,6 +577,8 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             else { Ok(result) }
         })
     };
+    drop(command_scope);
+    let _answer_scope = crate::prof::scope("call::answer");
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
     let unique_result = unique_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     let rename_result = rename_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
@@ -755,9 +762,24 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     }
     // `patch: true`: what the call changed in the report, for the read view (D19).
     if view.get("patch") == Some(&Value::Bool(true)) {
-        answer.push(("patch", crate::patch::diff(&before, report)));
+        answer.push(("patch", { let _scope = crate::prof::scope("patch::diff"); crate::patch::diff(&before, report) }));
         answer.push(("revision", Value::Num(editor.revision as f64)));
         answer.push(("depths", Value::array(vec![Value::Num(editor.undo.len() as f64), Value::Num(editor.redo.len() as f64)])));
+        // The pool's draws the call did not take, in order: the editor's next ones.
+        if editor.draw_pool { answer.push(("drawsLeft", Value::array(editor.draws.iter().map(|(kind, value)| Value::array(vec![Value::str(kind), value.clone()])).collect()))); }
+        // The committed frame the session still keeps on show, unchanged by the call.
+        if editor.retained_frame().is_some_and(|frame| retained.as_ref().is_some_and(|old| old.same_node(&frame))) {
+            answer.push(("retainedKept", Value::Bool(true)));
+        }
+        // The gesture draft's frame fields (draw order) when the call changed them.
+        if let (Some(edit), Some(_)) = (&editor.authored, &editor.drag) {
+            let previous = draft.as_ref().and_then(Value::as_obj);
+            let mut fields = Obj::new();
+            for (key, value) in edit.frame.as_obj().map(|frame| frame.iter().filter(|(key, _)| &***key != "objects").map(|(key, value)| (key.clone(), value.clone())).collect::<Vec<_>>()).unwrap_or_default() {
+                if !previous.and_then(|frame| frame.get(&key)).is_some_and(|old| old.same_node(&value)) { fields.set(&key, value); }
+            }
+            if previous.is_some() && !fields.is_empty() { answer.push(("draftFields", Value::object(fields))); }
+        }
         // The timeline's chosen layer, which history restores with the selection.
         answer.push(("sheetSelection", editor.sheet_selection.as_ref().map_or(Value::Null, |chosen| response_value(vec![("id", Value::str(&chosen.id)), ("contents", Value::Bool(chosen.contents))]))));
     }

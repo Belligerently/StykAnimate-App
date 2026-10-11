@@ -134,7 +134,7 @@ impl Shape {
 
 /// The array index a JavaScript engine sees in a property key: the canonical
 /// decimal text of an integer from 0 to 2^32 - 2.
-pub(crate) fn index_key(key: &str) -> Option<u32> {
+pub fn index_key(key: &str) -> Option<u32> {
     let bytes = key.as_bytes();
     if bytes.is_empty() || bytes.len() > 10 || (bytes[0] == b'0' && bytes.len() > 1) || !bytes.iter().all(u8::is_ascii_digit) {
         return None;

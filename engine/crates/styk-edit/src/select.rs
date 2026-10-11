@@ -381,6 +381,7 @@ impl Editor {
 
     /// `_restoreSelection`.
     pub(crate) fn restore_selection(&mut self, state: &SelectionState) -> Result<(), EditError> {
+        let _scope = crate::prof::scope("select::restore");
         let frames = self.report.get("keyframes").and_then(Value::array_len).unwrap_or(1);
         self.frame_index = state.frame_index.min(frames.saturating_sub(1));
         let total = total_ticks(&rows(&self.report));

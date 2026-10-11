@@ -168,12 +168,16 @@ fn edit_session(file: &str) -> i32 {
     let calls: Vec<styk_doc::Value> = capture.get("calls").and_then(styk_doc::Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
     for (at, call) in calls.iter().enumerate() {
         let name = text(call.get("name"));
+        let started = std::time::Instant::now();
         let answer = session.call(&name, &text(call.get("args")), &text(call.get("view")));
+        let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+        let answer_len = answer.len();
         let answer = styk_doc::json::parse(answer.as_bytes()).unwrap_or(styk_doc::Value::Null);
         let status = text(answer.get("status"));
         let why = answer.get("reason").or(answer.get("error")).and_then(styk_doc::Value::as_str).map(|why| format!(": {why}")).unwrap_or_default();
-        println!("{at:>4} {name}: {status}{why}");
+        println!("{at:>4} {name}: {status}{why} ({elapsed:.2} ms, {} bytes)", answer_len);
     }
+    for (scope, count, ms) in styk_edit::prof::take() { println!("  {scope}: {count} × , {ms:.2} ms"); }
     0
 }
 

@@ -60,16 +60,16 @@ fn walk(before: &Value, after: &Value, path: &mut Vec<Value>, ops: &mut Vec<Valu
     }
 }
 
-/// The key order `delete` of the removed keys and assignment of the new ones produces.
+/// The key order `delete` of the removed keys and assignment of the new ones produces:
+/// JavaScript enumerates integer-like keys first, ascending, then the others in insertion
+/// order (kept keys in their old order, then the new ones).
 fn assigned_order(old: &Obj, new: &Obj) -> Vec<Arc<str>> {
-    let mut simulated = Obj::new();
-    for (key, _) in old.iter() {
-        if new.contains(key) { simulated.set(key, Value::Null); }
-    }
-    for (key, _) in new.iter() {
-        if !old.contains(key) { simulated.set(key, Value::Null); }
-    }
-    simulated.keys().cloned().collect()
+    let kept = old.keys().filter(|key| new.contains(key));
+    let added = new.keys().filter(|key| !old.contains(key));
+    let (mut integers, others): (Vec<Arc<str>>, Vec<Arc<str>>) = kept.chain(added).cloned().partition(|key| styk_doc::index_key(key).is_some());
+    integers.sort_by_key(|key| styk_doc::index_key(key));
+    integers.extend(others);
+    integers
 }
 
 fn object(old: &Obj, new: &Obj, path: &mut Vec<Value>, ops: &mut Vec<Value>) {

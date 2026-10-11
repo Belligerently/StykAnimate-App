@@ -43,6 +43,7 @@ impl Cache {
     }
 
     fn edit_frame(&mut self, record: &Value, prepared: &Arc<Prepared>) -> Result<styk_eval::eval::Frame, styk_eval::Error> {
+        let _scope = crate::prof::scope("frame::edit_frame");
         let previous = self.latest_typed.as_ref().filter(|pair| Arc::ptr_eq(&pair.prepared, prepared)).cloned();
         if let Some(pair) = &previous {
             if pair.record.same_node(record) { return Ok(pair.frame.clone()); }
@@ -129,6 +130,7 @@ impl Editor {
     /// `evaluatedFrame(report, …, tick)` as records; without `clips`, the frame a
     /// key's pose is captured from (`at(report, tick)`: movieclips not sampled).
     pub(crate) fn evaluated(&self, tick: f64, clips: bool) -> Result<Value, EditError> {
+        let _scope = crate::prof::scope("frame::evaluated");
         self.evaluated_mode(tick, clips, false)
     }
 
