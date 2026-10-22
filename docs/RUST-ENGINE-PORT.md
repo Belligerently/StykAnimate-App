@@ -69,7 +69,27 @@ Windows; baseline-0 worktree), `owner-gestures` (effect-clip and property edits 
 `private-fixtures` (engine tests that read the asset packs move to repository documents with
 the same coverage), `rust-files` (`.styk`, `.stkz`, `.stykmov` open and save through Rust).
 Briefs: `tmp/win/briefs/` (common rules, verifier, one file per stream); each stream runs as a
-workflow: implementer, then a fresh verifier, up to two fix rounds.
+workflow: implementer, then a fresh verifier, up to two fix rounds. Also running:
+`refusals-movieclips`, `refusals-bounds`, `perf-open`.
+
+**Open-path finding (2026-10-22, Node probe `tmp/win/open-stages.mjs`, machine loaded):**
+opening `tdd2 uriel nemesis.piv` costs the codec 16–23 s (197 MB of JSON out of WebAssembly),
+JSON.parse 1 s, the editor's load 0.4–1.1 s, and the mirror's sync to the engine 41–54 s, of
+which ~27 s is the engine's own commit (one function 18.5 s self) and ~7 s JavaScript lifting.
+`svr_uriel.piv`: codec 36 s, parse 5 s, load 4.6 s, mirror 60 s. The document crosses three
+times (codec JSON, the editor's objects, the mirror's lifted records); the end state crosses
+once: the engine decodes the file into its store and does the editor's load normalization,
+the session starts on that document, the stage draws the session's document, and the editor
+gets its read view as one JSON. `perf-open` first fixes the two hotspots.
+
+**Order after wave 1:** owner default and the shadow deleted (`delete-shadow`, after
+`owner-cost`); the remaining gesture families (`gestures-motion`, `gestures-handles`,
+`gestures-rig-camera`, after `owner-gestures` sets the mirroring pattern); the engine loads
+documents and the stage draws the session's document (the mirror deleted); handles, picking,
+snapping and hit tests as engine queries; the JavaScript renderer, playback workers and effect
+executors deleted (after the renderer census); performance passes on the section 5 workloads
+with the Windows driver; then the JavaScript command implementations and evaluation, with the
+recorded tapes as the frozen oracle.
 
 ## Handoff (2026-10-11, third agent; superseded by the 2026-10-22 handoff above)
 
