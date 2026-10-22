@@ -976,10 +976,22 @@ the default until then).
   copy-on-write (`src/engine/engine-patch.mjs`), refreshes what the editor derives from the
   records (layer index, frame index, caches), sets selection and counters, mirrors the
   gesture into `_drag`/`_authoredPoseEdit` and re-emits the events.
+- **Property and effect-clip edits.** `beginAnimationEdit`…`cancelAnimationEdit` and
+  `beginVfxClipEdit`…`cancelVfxClipEdit` run in the session. Every answer carries `vfxEdit`
+  (whether an effect-clip edit is open) and `animationEdit` (`null`, or the open edit's
+  `changed` and, on a layer sheet, its `value`; the call that opens it adds its target,
+  property, tick and initial value). The owner shows them as the editor's own records
+  (`_vfxClipEdit`, `_animationEdit`, marked `engine`), so the interface reads the same
+  fields as before. The frame a layer sheet's edit previews is the answer's `previewChanges`
+  (figures, order and fields that differ from the frame the edit began on) laid over the
+  edit's frame, as `_sheetPropertyPreview`. Ending an edit that is not open answers false
+  without asking the session.
 - **Refusals.** A call the session refuses (`Unported`), a gesture whose live state the
-  interface reads from the editor (motion paths, figure handles, rigs, camera drags,
-  property and effect-clip edits, frame drafts) and an error the session raised without
-  changing anything run in the editor on the read view. What they recorded becomes
+  interface reads from the editor (motion paths, figure handles, rigs, camera drags, frame
+  drafts) and an error the session raised without changing anything run in the editor on the
+  read view. If the session holds a property or effect-clip edit then, the edit becomes the
+  editor's own first (`@dropEdits`: the session forgets it, the mirrored record loses
+  `engine`), so the editor's code ends or amends it as it would have its own. What they recorded becomes
   session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and

@@ -32,15 +32,19 @@ const VIEW_CALLS = new Set(['select', 'selectMany', 'selectPolygon', 'toggleSegm
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']);
 
 /** Gestures whose live state the interface reads from the editor itself (motion-path
- * trails, figure-handle and rig sessions, camera drags, property and effect-clip edits,
- * frame drafts): the editor runs them until those reads are engine queries (phase 2). */
+ * trails, figure-handle and rig sessions, camera drags, frame drafts): the editor runs them
+ * until those reads are engine queries (phase 2). Pose drags, property edits and effect-clip
+ * edits run in the session, which the editor shows as its own (`gesture`, `edits`). */
 const EDITOR_GESTURES = new Set(['beginMotionPathEdit', 'updateMotionPathEdit', 'commitMotionPathEdit', 'cancelMotionPathEdit', 'setMotionPathFalloff',
   'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
-  'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'beginAnimationEdit', 'previewAnimationEdit', 'commitAnimationEdit',
-  'cancelAnimationEdit', 'beginVfxClipEdit', 'commitVfxClipEdit', 'cancelVfxClipEdit', 'beginSegmentValueEdit', 'beginHandleEditDrag', 'editHandlePosition',
+  'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'beginSegmentValueEdit', 'beginHandleEditDrag', 'editHandlePosition',
   'commitHandleEditDrag', 'beginFrameDraft', 'beginFrameDraftPreview', 'endFrameDraftPreview', 'commitFrameDraft', 'discardFrameDraft', 'updateDraftFrame',
   'addDraftFrame', 'editFrameDraftTimeline', 'enableFrameDrafts', 'disableFrameDrafts', 'beginDuplicateDrag', 'finishDuplicateDrag', 'beginTween', 'updateTween',
   'cancelAuthoredPoseDrag', 'commitAuthoredPoseDrag', 'movieclipBatch', 'movieclipTimelineEdit']);
+
+/** The calls that end an edit, and the editor's field that holds it: with none open they change
+ * nothing and answer false, which the owner knows without asking the session. */
+const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxClipEdit', commitAnimationEdit: '_animationEdit', cancelAnimationEdit: '_animationEdit'};
 
 /** Calls that read the document or the editor's state, open or close documents, or
  * configure the editor: never routed. */
@@ -80,7 +84,7 @@ const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segm
  */
 export function installEngineOwner(editor, {start, methods = ownedMethods(editor), verify = false, draws = null} = {}) {
   const report = {calls: 0, native: 0, fallback: 0, external: 0, synced: 0, refused: {}, verified: 0};
-  let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [];
+  let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [], handing = false;
   /** JavaScript commands of the session's external entries, by identity. */
   const entries = new Map();
   /** Commands the editor recorded during the call it is running for the owner. */
@@ -298,6 +302,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       editor.tick = state.tick; editor.frameIndex = state.frameIndex; editor._invalidate({viewOnly: true});
     }
     if (Object.hasOwn(answer, 'drag')) gesture(answer);
+    if (!handing) edits(answer);
     if (state) {
       history = {canUndo: state.canUndo, canRedo: state.canRedo, undoLabel: state.undoLabel, redoLabel: state.redoLabel, dirty: state.dirty};
       editor._nextUid = state.nextUid; editor._nextFrameIdentity = state.nextFrameIdentity; editor._layerRevision = state.layerRevision;
@@ -380,6 +385,45 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     editor._drag.changed = Boolean(drag.changed);
     editor._invalidate();
   };
+  /** The session's effect-clip and property edits, as the editor shows its own (`_vfxClipEdit`,
+   * `_animationEdit`, and the frame a layer sheet's edit previews, `_sheetPropertyPreview`).
+   * A mirror begins with the call that opens the edit (`mirrorEdit`); every answer says how the
+   * edit stands, and `engine` marks it as the session's until a call the editor runs takes it. */
+  const edits = answer => {
+    const edit = editor._animationEdit;
+    if (edit?.engine && Object.hasOwn(answer, 'animationEdit')) {
+      if (answer.animationEdit) {
+        edit.changed = answer.animationEdit.changed;
+        if (edit.sheet) edit.value = answer.animationEdit.value;
+      } else { editor._animationEdit = null; editor._sheetPropertyPreview = null; editor._invalidate(); }
+    }
+    if (answer.vfxEdit === false && editor._vfxClipEdit?.engine) editor._vfxClipEdit = null;
+    if (answer.previewChanges && editor._animationEdit?.engine) {
+      editor._sheetPropertyPreview = previewFrame(answer.previewChanges, editor._animationEdit.frame);
+      editor._geometry = null;
+    }
+  };
+  /** The edit a `begin` call opened in the session, as the editor's own would be. */
+  const mirrorEdit = (name, answer) => {
+    if (name === 'beginVfxClipEdit') { editor._vfxClipEdit = {engine: true, before: editor.report._styk.vfxClips}; return; }
+    const opened = answer.animationEdit;
+    if (!opened) return;
+    // The edit it replaces ended with the call, and its preview with it.
+    if (editor._animationEdit?.engine && editor._sheetPropertyPreview) { editor._sheetPropertyPreview = null; editor._invalidate(); }
+    const {target, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
+    editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: editor.evaluatedFrame})
+      : Object.assign(edit, {before: editor.report._styk?.animation ?? null, beforeChannel: editor.animationChannel(target, property, {exactTarget})});
+  };
+  /** A call the editor runs while the session holds an edit belongs to that edit (the editor's
+   * code ends or amends it): the edit becomes the editor's own, as it would have begun it. */
+  const handOver = () => {
+    const animation = editor._animationEdit?.engine ? editor._animationEdit : null, vfx = editor._vfxClipEdit?.engine ? editor._vfxClipEdit : null;
+    if (!animation && !vfx) return;
+    handing = true;
+    try { send('@dropEdits', [Boolean(animation), Boolean(vfx)]); } finally { handing = false; }
+    if (animation) delete animation.engine;
+    if (vfx) delete vfx.engine;
+  };
   /** The session's change events, for the interface: they describe what the session already has. */
   const emit = answer => {
     const events = answer.events ?? [];
@@ -393,6 +437,8 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (['duplicateFigure', 'addFigure', 'importFigure'].includes(name)) return editor.object;
     if (name === 'pasteSelection' || name === 'duplicateSelection') return editor.selectedObjects;
     if (name === 'sheetAppendFrame') return editor.evaluatedFrame;
+    if (name === 'beginAnimationEdit') return editor._animationEdit;
+    if (name === 'beginVfxClipEdit') return undefined;
     if (name === 'createLayer' && answer.result?.id) return editor.getLayer(answer.result.id);
     return answer.result;
   };
@@ -482,6 +528,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   };
   /** Runs `name` in the JavaScript editor and writes what it changed back. */
   const fallback = (name, original, args) => {
+    handOver();
     const outer = captured === null;
     if (outer) captured = [];
     pending = true;
@@ -524,11 +571,13 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   const callSession = (name, original, args) => {
     const live = ensure();
     if (!live) return original.apply(editor, args);
+    if (ENDS_EDIT[name] && !editor[ENDS_EDIT[name]]) { report.calls++; report.native++; return false; }
     const flushed = performance.now();
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
     // A gesture the editor runs (or began) stays with it to its end.
-    if (EDITOR_GESTURES.has(name) || (editor._drag && !editor._drag.engine) || editor._animationEdit || editor._vfxClipEdit || editor._frameDraftEnabled) {
+    if (EDITOR_GESTURES.has(name) || (editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine)
+        || (editor._vfxClipEdit && !editor._vfxClipEdit.engine) || editor._frameDraftEnabled) {
       report.fallback++; (report.editor ??= {})[name] = (report.editor[name] ?? 0) + 1;
       return fallback(name, original, args);
     }
@@ -575,6 +624,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     const shown = answer.retained ? (editor._authoredPoseEdit?.frame ?? editor.evaluatedFrame) : null;
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
+    if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
     if (shown && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, shown); editor._geometry = null; editor._incremental = null; }
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
@@ -734,6 +784,12 @@ function retainedFrame(answer, drafted) {
     frame = {...Object.fromEntries(answer.retainedFieldOrder.map(key => [key, frame[key]])), ...Object.fromEntries(Object.entries(frame).filter(([key]) => !fields.has(key)))};
   }
   return frame;
+}
+
+/** The frame a layer sheet's property edit previews: the changes over the frame it began on
+ * (the figures that changed, the order, the other fields), as a retained frame is laid. */
+function previewFrame({figures, order, fields, removed, fieldOrder}, base) {
+  return retainedFrame({retained: figures, retainedChanges: true, retainedOrder: order, retainedFields: fields, retainedRemoved: removed, retainedFieldOrder: fieldOrder}, base);
 }
 
 const freshHints = () => ({figures: new Set(), frames: new Set(), backgrounds: new Set(), sources: new Set(), styk: new Set()});

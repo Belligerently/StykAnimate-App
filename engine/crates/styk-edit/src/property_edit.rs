@@ -329,6 +329,34 @@ impl Editor {
         self.property_edit.as_ref().and_then(|edit| edit.preview.clone()).or_else(|| self.camera_drag().and_then(|drag| drag.preview.clone()))
     }
 
+    /// The open property edit as the owner mirrors it on the editor (`editor._animationEdit`):
+    /// after every call its `changed` (and a layer sheet's `value`), and when `begin` is set,
+    /// the call that opened it, the rest of its record too. `null` when no edit is open.
+    pub fn animation_edit_view(&self, begin: bool) -> Value {
+        let Some(edit) = &self.property_edit else { return Value::Null };
+        let sheet = edit.native.is_none();
+        let mut out = Obj::new();
+        if begin {
+            out.set("sheet", Value::Bool(sheet));
+            out.set("target", edit.target.clone());
+            out.set("property", Value::str(&edit.property));
+            out.set("exactTarget", Value::Bool(edit.exact));
+            out.set("tick", Value::Num(edit.tick));
+            out.set("initialValue", edit.initial.clone());
+        }
+        if sheet {
+            out.set("value", edit.value.clone());
+        }
+        out.set("changed", Value::Bool(edit.changed));
+        Value::object(out)
+    }
+
+    /// The frame a property edit on a layer sheet composes its previews on: the frame on show
+    /// when the edit began.
+    pub(crate) fn property_edit_base(&self) -> Option<Value> {
+        self.property_edit.as_ref().filter(|edit| edit.native.is_none()).map(|edit| edit.frame.clone())
+    }
+
     /// The evaluated frame as records of the current document.
     pub(crate) fn with_records<T>(&self, run: impl FnOnce(&Records) -> Result<T, EditError>) -> Result<T, EditError> {
         let prepared = self.prepared()?;

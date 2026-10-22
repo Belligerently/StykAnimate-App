@@ -354,6 +354,24 @@ fn merge_figures(base: &Value, changed: &Value, order: Option<&Value>) -> Value 
     Value::array(objects)
 }
 
+/// `base` with the figures and fields of a [`frame_delta`] laid over it, as the owner does.
+fn apply_frame_delta(base: &Value, delta: &Value) -> Value {
+    let figures = delta.get("figures").unwrap();
+    let mut frame = base.as_obj().unwrap().clone();
+    for (key, value) in delta.get("fields").and_then(Value::as_obj).into_iter().flat_map(|fields| fields.iter()) { frame.set(key, value.clone()); }
+    for key in delta.get("removed").and_then(Value::elements).into_iter().flat_map(|keys| keys.iter()) { frame.remove(key.as_str().unwrap()); }
+    frame.set("objects", merge_figures(&clean_objects(base), figures, delta.get("order")));
+    if let Some(order) = delta.get("fieldOrder") {
+        let mut ordered = Obj::new();
+        for key in order.elements().unwrap().iter() {
+            let key = key.as_str().unwrap();
+            ordered.set(key, frame.get(key).unwrap().clone());
+        }
+        frame = ordered;
+    }
+    Value::object(frame)
+}
+
 fn clean_objects(frame: &Value) -> Value {
     let objects = frame.get("objects").unwrap().elements().unwrap().iter().map(|figure| {
         let mut figure = figure.as_obj().unwrap().clone();
@@ -422,6 +440,11 @@ fn compact_answers_preserve_recorded_publications_drafts_and_history() {
             let complete = parse(&complete_text); let small = parse(&small_text);
             let label = format!("{name} step {} ({method})", step.get("step").unwrap());
             for key in ["status", "result", "reason", "error", "state", "events", "drag", "preview", "sources", "definitions", "retainedFields", "retainedRemoved", "retainedFieldOrder"] {
+                if key == "preview" && small.get("previewChanges").is_some() {
+                    let base = compact.editor.property_edit_base().expect("a preview composed on the frame the edit began on");
+                    assert_eq!(complete.get("preview").map(json), Some(json(&apply_frame_delta(&base, small.get("previewChanges").unwrap()))), "{label}: preview from its changes");
+                    continue;
+                }
                 if key == "result" && complete.get("status").and_then(Value::as_str) == Some("ok") && matches!(method, "duplicateFigure" | "addFigure" | "importFigure" | "pasteSelection" | "duplicateSelection" | "sheetAppendFrame") {
                     assert_eq!(small.get("result"), Some(&Value::Null));
                     continue;

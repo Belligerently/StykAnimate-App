@@ -141,6 +141,44 @@ fn changed_figures(frame: &Value, previous: Option<&Value>, taken: Option<&HashS
     }).collect()).unwrap_or_default()
 }
 
+/// A frame as its difference from `base`, the frame it was composed on: the figures that
+/// changed (`figures`), the figure order when it moved (`order`), and the other fields that
+/// differ (`fields`), went (`removed`) or moved (`fieldOrder`). The owner lays them over its
+/// copy of `base`. Composing copies every figure, so they are told apart by value: a copy
+/// shares its children with the figure it came from, which makes the comparison shallow.
+fn frame_delta(frame: &Value, base: &Value) -> Value {
+    let mut out = Obj::new();
+    let before: Vec<Value> = base.get("objects").and_then(Value::elements).map(|objects| objects.iter().collect()).unwrap_or_default();
+    let figures = frame.get("objects").and_then(Value::elements).map(|objects| objects.iter().enumerate().filter(|(slot, figure)| before.get(*slot) != Some(figure)).map(|(_, figure)| {
+        let mut figure = figure.as_obj().cloned().unwrap_or_default();
+        figure.remove("_movieclipSample");
+        Value::object(figure)
+    }).collect()).unwrap_or_default();
+    out.set("figures", Value::array(figures));
+    let order = figure_order(frame);
+    if order != figure_order(base) {
+        out.set("order", Value::array(order));
+    }
+    let (previous, current) = (base.as_obj().cloned().unwrap_or_default(), frame.as_obj().cloned().unwrap_or_default());
+    let mut fields = Obj::new();
+    for (key, value) in current.iter().filter(|(key, _)| &***key != "objects") {
+        if previous.get(key) != Some(value) {
+            fields.set(key, value.clone());
+        }
+    }
+    if !fields.is_empty() {
+        out.set("fields", Value::object(fields));
+    }
+    let removed: Vec<Value> = previous.keys().filter(|key| &***key != "objects" && !current.contains(key)).map(|key| Value::str(key)).collect();
+    if !removed.is_empty() {
+        out.set("removed", Value::array(removed));
+    }
+    if !previous.keys().eq(current.keys()) {
+        out.set("fieldOrder", Value::array(current.keys().map(|key| Value::str(key)).collect()));
+    }
+    Value::object(out)
+}
+
 fn figure_order(frame: &Value) -> Vec<Value> {
     frame.get("objects").and_then(Value::elements).map(|objects| objects.iter().filter_map(|figure| crate::record::uid(&figure)).map(|uid| Value::Num(uid as f64)).collect()).unwrap_or_default()
 }
@@ -711,15 +749,20 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     if (method == "previewAnimationEdit" || method == "updateCameraDrag")
         && let Some(preview) = editor.property_preview()
     {
-        let mut frame = preview.as_obj().cloned().unwrap_or_default();
-        let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-        let objects = objects.into_iter().map(|object| {
-            let mut object = object.as_obj().cloned().unwrap_or_default();
-            object.remove("_movieclipSample");
-            Value::object(object)
-        });
-        frame.set("objects", Value::array(objects.collect()));
-        answer.push(("preview", Value::object(frame)));
+        // The owner holds the frame the edit began on: it takes the difference.
+        if changes_only && method == "previewAnimationEdit" && let Some(base) = editor.property_edit_base() {
+            answer.push(("previewChanges", frame_delta(&preview, &base)));
+        } else {
+            let mut frame = preview.as_obj().cloned().unwrap_or_default();
+            let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+            let objects = objects.into_iter().map(|object| {
+                let mut object = object.as_obj().cloned().unwrap_or_default();
+                object.remove("_movieclipSample");
+                Value::object(object)
+            });
+            frame.set("objects", Value::array(objects.collect()));
+            answer.push(("preview", Value::object(frame)));
+        }
     }
     if topology_changed && events.len() == 1
         && events[0].get("kind").and_then(Value::as_str) == Some("edit")
@@ -780,6 +823,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             }
             if previous.is_some() && !fields.is_empty() { answer.push(("draftFields", Value::object(fields))); }
         }
+        // The effect-clip and property edits the session holds, which the editor shows as its own.
+        answer.push(("vfxEdit", Value::Bool(editor.vfx_edit.is_some())));
+        answer.push(("animationEdit", editor.animation_edit_view(method == "beginAnimationEdit")));
         // The timeline's chosen layer, which history restores with the selection.
         answer.push(("sheetSelection", editor.sheet_selection.as_ref().map_or(Value::Null, |chosen| response_value(vec![("id", Value::str(&chosen.id)), ("contents", Value::Bool(chosen.contents))]))));
     }

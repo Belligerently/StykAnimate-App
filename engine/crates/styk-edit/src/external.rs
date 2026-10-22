@@ -18,7 +18,7 @@
 //!   `@externalDone(id, redo, ops)`, which applies `ops` and moves the entry;
 //! - `@historyLimits(count, bytes)` sizes history as the editor does; `@revisions(revision,
 //!   serial, saved)` continues the editor's numbering; `@markSaved()`; `@dropGesture()`;
-//!   `@shape()`; `@externalStacks(undo, redo)` takes the editor's history from before the session.
+//!   `@dropEdits(animation, vfx)`; `@shape()`; `@externalStacks(undo, redo)` takes the editor's history from before the session.
 
 use std::collections::HashSet;
 
@@ -173,6 +173,19 @@ impl Editor {
     pub(crate) fn drop_gesture(&mut self) -> Result<Value, EditError> {
         self.drag = None;
         self.authored = None;
+        Ok(Value::Bool(true))
+    }
+
+    /// `@dropEdits(animation, vfx)`: the editor took the property edit and the effect-clip edit
+    /// over (a call it runs belongs to them): forgets the ones asked for without changing the
+    /// document, which already shows their previews.
+    pub(crate) fn drop_edits(&mut self, args: &[Value]) -> Result<Value, EditError> {
+        if args.first().is_some_and(Value::truthy) {
+            self.property_edit = None;
+        }
+        if args.get(1).is_some_and(Value::truthy) {
+            self.vfx_edit = None;
+        }
         Ok(Value::Bool(true))
     }
 

@@ -120,3 +120,110 @@ for (const {mirrored, legacy} of variants) test(`the engine owning the document 
   }
   assert.equal(failures.length, 0);
 });
+
+// Property and effect-clip edits run in the session; the editor shows them as its own.
+const recorded = name => {
+  const scenario = JSON.parse(readFileSync(new URL(`${name}.scenario.json`, folder), 'utf8'));
+  return {options: {demo: false, ...scenario.editor}, document: JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8'))};
+};
+/** An owned editor and an editor alone on the same document, and a call made on both. */
+async function pair(name) {
+  const {options, document} = recorded(name);
+  const {editor: owned, owner} = await ownedEditor(options, document);
+  const alone = new Editor(options).load(structuredClone(document));
+  const both = (method, ...args) => { const results = [owned, alone].map(editor => editor[method](...args)); return results; };
+  const agree = label => {
+    sameText(json(owned.report), json(alone.report), `${label}: document`);
+    same(state(owned), state(alone), `${label}: state`);
+    sameText(frameText(owned.evaluatedFrame), frameText(alone.evaluatedFrame), `${label}: frame on show`);
+  };
+  return {owned, alone, owner, both, agree};
+}
+
+test('a property edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('property-scrub-sheet');
+  both('select', 1, -1);
+  both('beginAnimationEdit', {kind: 'figure', uid: 1}, 'scale');
+  assert.ok(owned._animationEdit?.engine && owned._animationEdit.sheet, 'the session\'s edit is on the editor');
+  assert.equal(owned.dirty, false);
+  agree('begin');
+  // The session sends the figures the preview changed, not the whole frame.
+  const session = owner.session(), ask = session.call.bind(session), answers = [];
+  session.call = (...parts) => { const text = ask(...parts); answers.push(JSON.parse(text)); return text; };
+  both('previewAnimationEdit', 1.3);
+  session.call = ask;
+  assert.equal(answers.length, 1);
+  assert.equal(answers[0].preview, undefined);
+  assert.equal(answers[0].previewChanges.figures.length, 1);
+  assert.ok(owned.evaluatedFrame.objects.length > 1);
+  assert.equal(owned.dirty, true, 'a previewed change is unsaved');
+  assert.equal(owned._animationEdit.changed, alone._animationEdit.changed);
+  assert.equal(owned._animationEdit.value, 1.3);
+  assert.ok(owned._sheetPropertyPreview, 'the preview is the frame on show');
+  agree('preview');
+  both('commitAnimationEdit');
+  assert.equal(owned._animationEdit, null);
+  assert.equal(owned._sheetPropertyPreview, null);
+  agree('commit');
+  both('beginAnimationEdit', {kind: 'figure', uid: 2}, 'opacity');
+  both('previewAnimationEdit', 0.4);
+  both('cancelAnimationEdit');
+  assert.equal(owned._animationEdit, null);
+  agree('cancel');
+  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+});
+
+test('an effect-clip edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async () => {
+  const {owned, owner, both, agree} = await pair('vfx-clips-sheet');
+  const before = owned.report._styk.vfxClips;
+  both('beginVfxClipEdit');
+  assert.ok(owned._vfxClipEdit?.engine);
+  assert.equal(owned._vfxClipEdit.before, before, 'the clips as they were');
+  both('setVfxClipParameter', 'clip-glow', 'fx-glow', 'intensity', 1.5);
+  agree('preview');
+  assert.equal(owned.canUndo, false, 'a preview is not an entry');
+  both('commitVfxClipEdit');
+  assert.equal(owned._vfxClipEdit, null);
+  agree('commit');
+  both('beginVfxClipEdit');
+  both('setVfxClip', 'clip-tint', {strength: 0.2});
+  both('seek', 4);
+  assert.equal(owned._vfxClipEdit, null, 'moving the playhead ends the edit');
+  agree('seek');
+  both('beginVfxClipEdit');
+  both('setVfxClip', 'clip-tint', {strength: 0.4});
+  both('undo');
+  assert.equal(owned._vfxClipEdit, null);
+  agree('undo');
+  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+});
+
+test('ending an edit that is not open does not ask the session', {skip: !engineBuilt}, async () => {
+  const {owned, owner, both} = await pair('property-scrub-sheet');
+  owner.capture = [];
+  const calls = owner.native;
+  assert.deepEqual(both('commitVfxClipEdit'), [false, false]);
+  assert.deepEqual(both('cancelVfxClipEdit'), [false, false]);
+  assert.deepEqual(both('commitAnimationEdit'), [false, false]);
+  assert.deepEqual(both('cancelAnimationEdit'), [false, false]);
+  both('seek', 2);
+  assert.deepEqual(owner.capture, []);
+  assert.equal(owner.native - calls, 5, 'the owner answered them');
+  assert.equal(owned.tick, 2);
+});
+
+test('a call the editor runs takes over the edit the session holds', {skip: !engineBuilt}, async () => {
+  const {owned, alone, both, agree} = await pair('motion-path-sheet');
+  both('select', 1, -1);
+  both('beginAnimationEdit', {kind: 'figure', uid: 1}, 'scale');
+  both('previewAnimationEdit', 1.4);
+  assert.ok(owned._animationEdit.engine);
+  // Motion paths run in the editor, which ends the property edit before it begins its own.
+  both('beginMotionPathEdit', {kind: 'node', uid: 1, handleId: 0, joint: -1}, 6);
+  assert.equal(owned._animationEdit, null);
+  assert.equal(owned.undoLabel, alone.undoLabel);
+  agree('motion path');
+  both('commitMotionPathEdit');
+  agree('commit');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+});
