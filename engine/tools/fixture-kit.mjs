@@ -3,13 +3,15 @@
 // (tools/reference.mjs). Used by ik-fixtures.mjs, eval-fixtures.mjs and vfx-fixtures.mjs.
 import {execFileSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
 
 export const here = path.dirname(fileURLToPath(import.meta.url));
 export const repo = path.resolve(here, '../..');
-export const {Editor} = await import(`${repo}/src/editor.mjs`);
-export const {emptyDocument, createObject, createFrame} = await import(`${repo}/src/demo.mjs`);
+/** The repository as a URL: what `import()` takes on every platform. */
+export const repoUrl = pathToFileURL(repo).href;
+export const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
+export const {emptyDocument, createObject, createFrame} = await import(`${repoUrl}/src/demo.mjs`);
 
 /** A document with one figure made of `segments` ([id, parent, length, angle, extra]). */
 export function documentOf(figures, place = () => [300, 150]) {

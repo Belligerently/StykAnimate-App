@@ -5,15 +5,15 @@
 //
 //   node engine/tools/vfx-layer-bounds.mjs <project.json|.styk> <tick>
 import {readFileSync} from 'node:fs';
-import {repo, open} from './fixture-kit.mjs';
+import {repo, repoUrl, open} from './fixture-kit.mjs';
 
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repo}/src/native-container.mjs`);
-const {activeVfx, vfxStack} = await import(`${repo}/src/vfx.mjs`);
+const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
+const {activeVfx, vfxStack} = await import(`${repoUrl}/src/vfx.mjs`);
 
-const {buildGeometry} = await import(`${repo}/src/pivot/geometry.mjs`);
-const {connectedVfxGeometry} = await import(`${repo}/src/vfx-connected.mjs`);
-const {objectBounds} = await import(`${repo}/src/renderer-geometry.mjs`);
-const {drawableVfxPadding, hasDrawableVfx} = await import(`${repo}/src/vfx-canvas.mjs`);
+const {buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
+const {connectedVfxGeometry} = await import(`${repoUrl}/src/vfx-connected.mjs`);
+const {objectBounds} = await import(`${repoUrl}/src/renderer-geometry.mjs`);
+const {drawableVfxPadding, hasDrawableVfx} = await import(`${repoUrl}/src/vfx-canvas.mjs`);
 
 const [file, tick = '0'] = process.argv.slice(2);
 const kind = /\.(styk|stkz|stykmov)$/i.exec(file)?.[1].toLowerCase();

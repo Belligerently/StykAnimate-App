@@ -12,9 +12,9 @@
 import {mkdirSync} from 'node:fs';
 import {deflateSync} from 'node:zlib';
 import path from 'node:path';
-import {here, repo, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, repoUrl, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
 
-const {createImageFigure} = await import(`${repo}/src/media-authoring.mjs`);
+const {createImageFigure} = await import(`${repoUrl}/src/media-authoring.mjs`);
 
 // The editor names camera-motion clips at random; fixtures must be byte-stable, so
 // identities count up again from the same value for each fixture.

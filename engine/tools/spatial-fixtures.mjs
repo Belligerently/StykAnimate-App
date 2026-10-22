@@ -19,14 +19,14 @@
 // with the editor's commands.
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, emptyDocument, createObject, createFrame, open, joint, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, repoUrl, emptyDocument, createObject, createFrame, open, joint, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
 
-const {construction} = await import(`${repo}/src/rig-examples-3d.mjs`);
-const {convertDocumentSpatialMeshes} = await import(`${repo}/src/spatial-mesh-legacy.mjs`);
-const {movieclipFigure} = await import(`${repo}/src/movieclips.mjs`);
-const {rigExampleDocument} = await import(`${repo}/src/rig-examples.mjs`);
-const {interpolateSpatialPose} = await import(`${repo}/src/spatial-projection.mjs`);
-const {defaultFigure} = await import(`${repo}/src/demo.mjs`);
+const {construction} = await import(`${repoUrl}/src/rig-examples-3d.mjs`);
+const {convertDocumentSpatialMeshes} = await import(`${repoUrl}/src/spatial-mesh-legacy.mjs`);
+const {movieclipFigure} = await import(`${repoUrl}/src/movieclips.mjs`);
+const {rigExampleDocument} = await import(`${repoUrl}/src/rig-examples.mjs`);
+const {interpolateSpatialPose} = await import(`${repoUrl}/src/spatial-projection.mjs`);
+const {defaultFigure} = await import(`${repoUrl}/src/demo.mjs`);
 
 // ---------------------------------------------------------------- figures
 

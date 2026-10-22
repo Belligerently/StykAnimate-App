@@ -16,9 +16,9 @@
 // compares the engine with both, and checks that each fixture differs without its channels.
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, Editor, documentOf, limb, open, joint, whole, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, repoUrl, Editor, documentOf, limb, open, joint, whole, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
 
-const {animationChannelId} = await import(`${repo}/src/animation-channels.mjs`);
+const {animationChannelId} = await import(`${repoUrl}/src/animation-channels.mjs`);
 
 // The editor names effects at random; fixtures must be byte-stable, so identities count
 // up again from the same value for each fixture.

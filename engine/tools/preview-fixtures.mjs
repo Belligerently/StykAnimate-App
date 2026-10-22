@@ -2,8 +2,8 @@
 // In-between previews built by the editor, sampled by its read-only preview oracle.
 import {mkdirSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, documentOf, limb, open, whole, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
-const {createVfx} = await import(`${repo}/src/vfx.mjs`);
+import {here, repo, repoUrl, documentOf, limb, open, whole, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
+const {createVfx} = await import(`${repoUrl}/src/vfx.mjs`);
 
 function native() {
   const editor = open(documentOf([limb(true), limb()], i => [230 + i * 120, 170]));

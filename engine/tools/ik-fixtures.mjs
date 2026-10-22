@@ -10,11 +10,11 @@
 // engine/crates/styk-eval/tests/ik.rs compares the engine with each of them.
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, Editor, emptyDocument, createObject, createFrame, documentOf, limb, open, joint, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, repoUrl, Editor, emptyDocument, createObject, createFrame, documentOf, limb, open, joint, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
 
-const {createStartupDocument} = await import(`${repo}/src/startup-document.mjs`);
-const {construction} = await import(`${repo}/src/rig-examples-3d.mjs`);
-const {solveIKPoints, interpolateIK} = await import(`${repo}/src/ik.mjs`);
+const {createStartupDocument} = await import(`${repoUrl}/src/startup-document.mjs`);
+const {construction} = await import(`${repoUrl}/src/rig-examples-3d.mjs`);
+const {solveIKPoints, interpolateIK} = await import(`${repoUrl}/src/ik.mjs`);
 
 // ---------------------------------------------------------------- figures
 

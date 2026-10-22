@@ -12,11 +12,13 @@ import {readdirSync, readFileSync, statSync, writeFileSync, rmSync} from 'node:f
 import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 
-const here = path.dirname(new URL(import.meta.url).pathname), repo = path.resolve(here, '../..');
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repo}/src/native-container.mjs`);
-const {Editor} = await import(`${repo}/src/editor.mjs`);
-const {EngineEligibility} = await import(`${repo}/src/engine/engine-eligibility.mjs`);
+const here = path.dirname(fileURLToPath(import.meta.url)), repo = path.resolve(here, '../..');
+const repoUrl = pathToFileURL(repo).href;
+const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
+const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
+const {EngineEligibility} = await import(`${repoUrl}/src/engine/engine-eligibility.mjs`);
 
 const args = process.argv.slice(2), outAt = args.indexOf('--out');
 const out = outAt < 0 ? null : args[outAt + 1];

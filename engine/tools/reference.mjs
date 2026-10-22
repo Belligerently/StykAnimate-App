@@ -33,15 +33,16 @@
 // --native evaluates the document on its native timeline (the editor without layer sheets,
 // as documents with property channels were authored) instead of as the app loads it.
 import {readFileSync, writeFileSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repo}/src/native-container.mjs`);
-const {Editor} = await import(`${repo}/src/editor.mjs`);
-const {sampleInbetweenPreview} = await import(`${repo}/src/editor-inbetween.mjs`);
-const {buildGeometry} = await import(`${repo}/src/pivot/geometry.mjs`);
+const repoUrl = pathToFileURL(repo).href;
+const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
+const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
+const {sampleInbetweenPreview} = await import(`${repoUrl}/src/editor-inbetween.mjs`);
+const {buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
 if (!input || !output) {
@@ -180,8 +181,8 @@ function imageCorners(d) {
 
 /** What the scene camera does to a frame when it is shown (src/renderer.mjs, src/playback-worker.mjs). */
 async function shotDumper() {
-  const {cameraAtTime} = await import(`${repo}/src/camera-motion.mjs`);
-  const {parallaxResolver} = await import(`${repo}/src/layer-parallax.mjs`);
+  const {cameraAtTime} = await import(`${repoUrl}/src/camera-motion.mjs`);
+  const {parallaxResolver} = await import(`${repoUrl}/src/layer-parallax.mjs`);
   return (report, frame) => {
     const camera = cameraAtTime(report, frame), depth = parallaxResolver(report, frame);
     return {camera: camera ? {x: camera.x ?? 0, y: camera.y ?? 0, scale: camera.scale ?? 1, angle: camera.angle_rad ?? 0, isDefault: Boolean(camera.is_default)} : null,
@@ -210,13 +211,13 @@ async function shotDumper() {
  * scales and the canvas extent) and `vfxWorkingSlots`.
  */
 async function effectDumper() {
-  const {activeVfx, vfxStack, resolvedVfx, vfxPadding, vfxSamplingPadding, vfxWorkingSlots} = await import(`${repo}/src/vfx.mjs`);
-  const {vfxRenderFrame, vfxClips, vfxClipActiveAt, vfxFadeAt, sampleVfxClip} = await import(`${repo}/src/vfx-clips.mjs`);
-  const {connectedVfxGeometry} = await import(`${repo}/src/vfx-connected.mjs`);
-  const {isGeneratorType} = await import(`${repo}/src/vfx-registry.mjs`);
-  const {generatorClipActiveAt} = await import(`${repo}/src/vfx-generators.mjs`);
-  const {layerVisible} = await import(`${repo}/src/layers.mjs`);
-  const {movieclipTypes} = await import(`${repo}/src/movieclips.mjs`);
+  const {activeVfx, vfxStack, resolvedVfx, vfxPadding, vfxSamplingPadding, vfxWorkingSlots} = await import(`${repoUrl}/src/vfx.mjs`);
+  const {vfxRenderFrame, vfxClips, vfxClipActiveAt, vfxFadeAt, sampleVfxClip} = await import(`${repoUrl}/src/vfx-clips.mjs`);
+  const {connectedVfxGeometry} = await import(`${repoUrl}/src/vfx-connected.mjs`);
+  const {isGeneratorType} = await import(`${repoUrl}/src/vfx-registry.mjs`);
+  const {generatorClipActiveAt} = await import(`${repoUrl}/src/vfx-generators.mjs`);
+  const {layerVisible} = await import(`${repoUrl}/src/layers.mjs`);
+  const {movieclipTypes} = await import(`${repoUrl}/src/movieclips.mjs`);
   const effect = e => ({id: e.id, type: e.type, params: e.params});
   return (report, frame, geometry, tick) => {
     const extent = Math.max(report.canvas_width, report.canvas_height);

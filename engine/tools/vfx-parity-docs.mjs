@@ -13,12 +13,12 @@
 // <out>/ticks.json. Documents are plain JSON, opened as the editor opens a project.
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {repo, emptyDocument, createObject, createFrame, open} from './fixture-kit.mjs';
+import {repo, repoUrl, emptyDocument, createObject, createFrame, open} from './fixture-kit.mjs';
 
-const {createVfx} = await import(`${repo}/src/vfx.mjs`);
-const {TILE, TILE_BYTES} = await import(`${repo}/src/drawing-tiles.mjs`);
-const {TILE_BLOB_PREFIX, assembleTileBlobBytes, encodeTile} = await import(`${repo}/src/drawing-tile-codec.mjs`);
-const {defaultFigure} = await import(`${repo}/src/demo.mjs`);
+const {createVfx} = await import(`${repoUrl}/src/vfx.mjs`);
+const {TILE, TILE_BYTES} = await import(`${repoUrl}/src/drawing-tiles.mjs`);
+const {TILE_BLOB_PREFIX, assembleTileBlobBytes, encodeTile} = await import(`${repoUrl}/src/drawing-tile-codec.mjs`);
+const {defaultFigure} = await import(`${repoUrl}/src/demo.mjs`);
 
 // Stable identities, so a document is the same every time it is built.
 let counter = 0;

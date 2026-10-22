@@ -12,13 +12,15 @@
 // Outputs are SHA-256 prefixes (16 hex digits) of exact bytes: tiles, dab shapes as
 // little-endian doubles, PNGs. Inputs are exact (numbers as JSON writes them, tiles as
 // deflated base64). Regeneration is byte-stable: every input is generated from fixed seeds.
+import {pathToFileURL} from 'node:url';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 
 const repo = path.resolve(import.meta.dirname, '../..');
+const repoUrl = pathToFileURL(repo).href;
 const out = path.join(repo, 'engine/crates/styk-drawing/tests/fixtures');
-const src = name => import(`${repo}/src/${name}.mjs`);
+const src = name => import(`${repoUrl}/src/${name}.mjs`);
 const {TileStore, TILE, TILE_BYTES} = await src('drawing-tiles');
 const {BrushStroke, normalizeBrush, dabShape, pressureMap, jitterAt, StrokePath} = await src('drawing-brush');
 const {brushAtlas, ensureTexture, ATLAS_BYTES} = await src('drawing-brush-textures');

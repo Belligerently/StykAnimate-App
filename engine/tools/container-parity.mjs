@@ -7,6 +7,7 @@
 // A `.txt` argument is a list of files, one per line. For each file the JSON text
 // of both documents is compared byte for byte (JSON.stringify on the JS side,
 // `styk container json` on the Rust side). Exit code 1 when any file differs.
+import {pathToFileURL} from 'node:url';
 import {readFileSync, mkdtempSync, rmSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -14,7 +15,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 const repo = path.resolve(import.meta.dirname, '../..');
-const {decodeDocument} = await import(`${repo}/src/native-container.mjs`);
+const repoUrl = pathToFileURL(repo).href;
+const {decodeDocument} = await import(`${repoUrl}/src/native-container.mjs`);
 const args = process.argv.slice(2);
 const option = args.indexOf('--styk');
 const styk = option >= 0 ? args.splice(option, 2)[1] : path.join(repo, 'engine/target/release/styk');

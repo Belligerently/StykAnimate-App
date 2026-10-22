@@ -12,11 +12,11 @@
 // engine/crates/styk-eval/tests/vfx.rs compares the engine with each of them.
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, emptyDocument, createObject, createFrame, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, repoUrl, emptyDocument, createObject, createFrame, documentOf, limb, open, whole, nextKey, nextSheetKey, writeProject, writeReference} from './fixture-kit.mjs';
 
-const {createVfx, VFX_REGISTRY, vfxProperty, vfxPadding, vfxSamplingPadding, vfxWorkingSlots, neutralVfx, resolvedVfx, activeVfx} = await import(`${repo}/src/vfx.mjs`);
-const {interpolateVfxColor} = await import(`${repo}/src/vfx-paint.mjs`);
-const {createVfxClip, sampleVfxKeys} = await import(`${repo}/src/vfx-clips.mjs`);
+const {createVfx, VFX_REGISTRY, vfxProperty, vfxPadding, vfxSamplingPadding, vfxWorkingSlots, neutralVfx, resolvedVfx, activeVfx} = await import(`${repoUrl}/src/vfx.mjs`);
+const {interpolateVfxColor} = await import(`${repoUrl}/src/vfx-paint.mjs`);
+const {createVfxClip, sampleVfxKeys} = await import(`${repoUrl}/src/vfx-clips.mjs`);
 
 // The editor draws effect and clip identities, and generator seeds, at random.
 // Fixtures must be byte-stable: both start again from the same values for each one.

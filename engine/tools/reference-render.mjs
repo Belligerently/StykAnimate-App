@@ -9,12 +9,13 @@
 import {mkdir, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
+const repoUrl = pathToFileURL(repo).href;
 process.chdir(repo);
-const {chromium} = await import(`${repo}/tests/support/playwright.mjs`);
+const {chromium} = await import(`${repoUrl}/tests/support/playwright.mjs`);
 // The app from source; it decodes the file in its own codec worker.
 const {startDesktopHost} = createRequire(import.meta.url)(`${repo}/desktop/web-host.cjs`);
 

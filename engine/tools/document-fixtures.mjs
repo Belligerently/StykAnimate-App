@@ -2,8 +2,8 @@
 // The valid movieclip graph boundary, built through the editor before the depth gate opens.
 import {mkdirSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, documentOf, limb, open, whole, nextKey, emptyDocument, createObject, createFrame, writeProject, writeReference} from './fixture-kit.mjs';
-const {movieclipFigure, validateMovieclipGraph} = await import(`${repo}/src/movieclips.mjs`);
+import {here, repo, repoUrl, documentOf, limb, open, whole, nextKey, emptyDocument, createObject, createFrame, writeProject, writeReference} from './fixture-kit.mjs';
+const {movieclipFigure, validateMovieclipGraph} = await import(`${repoUrl}/src/movieclips.mjs`);
 
 export function nested(depth) {
   const e = open(documentOf([limb()], () => [180, 160]));

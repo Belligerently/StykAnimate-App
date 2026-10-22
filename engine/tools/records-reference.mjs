@@ -12,13 +12,15 @@
 import {createHash} from 'node:crypto';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-const here = path.dirname(new URL(import.meta.url).pathname), repo = path.resolve(here, '../..');
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repo}/src/native-container.mjs`);
-const {Editor} = await import(`${repo}/src/editor.mjs`);
-const {snapshotPoseFrame} = await import(`${repo}/src/pose-snapshot.mjs`);
-const {timeline, evaluatedFrame, evaluatedNativeFrame, buildGeometry} = await import(`${repo}/src/pivot/geometry.mjs`);
-const {composePoseChannels} = await import(`${repo}/src/animation-pose.mjs`);
-const {composeAnimationChannels, animationChannelId, normalizeAnimationTarget, validateAnimationValue} = await import(`${repo}/src/animation-channels.mjs`);
+import {fileURLToPath, pathToFileURL} from 'node:url';
+const here = path.dirname(fileURLToPath(import.meta.url)), repo = path.resolve(here, '../..');
+const repoUrl = pathToFileURL(repo).href;
+const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
+const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
+const {snapshotPoseFrame} = await import(`${repoUrl}/src/pose-snapshot.mjs`);
+const {timeline, evaluatedFrame, evaluatedNativeFrame, buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
+const {composePoseChannels} = await import(`${repoUrl}/src/animation-pose.mjs`);
+const {composeAnimationChannels, animationChannelId, normalizeAnimationTarget, validateAnimationValue} = await import(`${repoUrl}/src/animation-channels.mjs`);
 const [input, out, ...rest] = process.argv.slice(2);
 if (!input || !out) { console.error('usage: node engine/tools/records-reference.mjs <file> <out-folder> [--ticks a,b] [--every N] [--max N] [--full]'); process.exit(2); }
 const option = name => { const i = rest.indexOf(name); return i < 0 ? undefined : rest[i + 1]; };

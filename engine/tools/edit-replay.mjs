@@ -16,6 +16,7 @@
 // calls, spelled out for readability). The document recorded is the editor's in-memory
 // report as the engine's mirror receives it (`JSON.stringify(editor.report)` without the
 // `runtime_segments` caches): phase 1 ports start from the loaded report, not the file.
+import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync} from 'node:fs';
 import path from 'node:path';
@@ -26,9 +27,10 @@ import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const repo = path.resolve(here, '../..');
-const {Editor} = await import(`${repo}/src/editor.mjs`);
-const {withDraws} = await import(`${repo}/src/editor-draws.mjs`);
-const {cameraAtTime} = await import(`${repo}/src/camera-motion.mjs`);
+const repoUrl = pathToFileURL(repo).href;
+const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
+const {withDraws} = await import(`${repoUrl}/src/editor-draws.mjs`);
+const {cameraAtTime} = await import(`${repoUrl}/src/camera-motion.mjs`);
 
 const sha = text => createHash('sha256').update(text).digest('hex');
 /** The report as the mirror sends it (src/engine/engine-mirror.mjs strips the same caches). */

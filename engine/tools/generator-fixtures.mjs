@@ -16,14 +16,14 @@
 // values for each fixture.
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, documentOf, limb, open, whole, nextKey, nextSheetKey, prune, createObject, createFrame, emptyDocument} from './fixture-kit.mjs';
+import {here, repo, repoUrl, documentOf, limb, open, whole, nextKey, nextSheetKey, prune, createObject, createFrame, emptyDocument} from './fixture-kit.mjs';
 
-const {buildGeneratorBatch, evaluateParticle, rampColor, beamTip, beamWidth, steppedTime, RECORD_FLOATS, SHAPE} = await import(`${repo}/src/vfx-generators.mjs`);
-const {GeneratorAnchors} = await import(`${repo}/src/vfx-generator-anchors.mjs`);
-const {atlasRow, ATLAS_ROWS} = await import(`${repo}/src/vfx-generator-atlas.mjs`);
-const {createVfxClip} = await import(`${repo}/src/vfx-clips.mjs`);
-const {createVfx} = await import(`${repo}/src/vfx.mjs`);
-const {hash: particleHash, pcg} = await import(`${repo}/src/vfx-generators.mjs`);
+const {buildGeneratorBatch, evaluateParticle, rampColor, beamTip, beamWidth, steppedTime, RECORD_FLOATS, SHAPE} = await import(`${repoUrl}/src/vfx-generators.mjs`);
+const {GeneratorAnchors} = await import(`${repoUrl}/src/vfx-generator-anchors.mjs`);
+const {atlasRow, ATLAS_ROWS} = await import(`${repoUrl}/src/vfx-generator-atlas.mjs`);
+const {createVfxClip} = await import(`${repoUrl}/src/vfx-clips.mjs`);
+const {createVfx} = await import(`${repoUrl}/src/vfx.mjs`);
+const {hash: particleHash, pcg} = await import(`${repoUrl}/src/vfx-generators.mjs`);
 
 let counter = 0, state = 1;
 Object.defineProperty(globalThis.crypto, 'randomUUID', {configurable: true, value: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`});
