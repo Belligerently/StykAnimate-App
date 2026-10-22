@@ -72,7 +72,7 @@ Figure insertion, clipboard paste and decoded library drops share the range comm
 
 Movieclip presence clocks on ordinary layer sheets use a temporary projection containing only instance identities, playback descriptors and continuation records. The existing sheet sampler handles blank spans, remapped native time and frame replacements; the clock never interpolates unrelated joints or builds artwork. The derived index is reused across seeks and invalidated with document edits. Legacy authored channels and inherited movieclip sources retain the general evaluator. `tests/movieclip-membership.test.mjs` compares projected membership with that evaluator and traps reads of unrelated pose arrays.
 
-See [copy/paste and insertion verification](performance/INSERTION-PERFORMANCE.md) for measurements on the dense Akane scene and the remaining verification limits.
+
 
 Native connector and Smart Stretch relationships use the shared geometry evaluator,
 an iterative cached dependency plan and sparse editor commands. Connector midpoint
@@ -132,8 +132,7 @@ document edits discard stale staging. Replacement documents, native frame topolo
 changes, worker failures and idle disposal use the full snapshot fallback.
 The existing eight-request bound and filmstrip bitmap cache remain the owners of
 queued work and displayed previews. Source mirrors clear when their worker dies.
-See [Randombattle measurements](performance/RANDOMBATTLE-PERFORMANCE-2026-09-15.md) and
-`tests/thumbnail-patch.test.mjs`, `tests/thumbnail-source-patches.browser.mjs`.
+See `tests/thumbnail-patch.test.mjs` and `tests/thumbnail-source-patches.browser.mjs`.
 
 ## Saving, recovery and exports
 
@@ -292,7 +291,7 @@ The chain pen creates no document commands while clicking. Enter, double-click o
 
 Append and rig commands use sparse definition snapshots: history contains appended records or explicitly changed segment indices, plus the existing affected source-pose journal. Unchanged segment references exist only during the synchronous command and never enter its history payload. Origin-support figures retain the full topology repair path. New-figure creation journals a definition splice rather than copying the complete definition table. Geometry invalidation retains unrelated objects while rebuilding every instance and joined dependent of the edited definition; IK, movieclip and slot-remapping cases retain conservative invalidation.
 
-`builder-duplicate-preview.mjs` caches a high-contrast branch silhouette, including circle and polygon fills, in one bitmap capped at 2048 × 2048 pixels. Pointer movement translates the bitmap and queries its joint index. Placement preserves the existing duplicate command's native topology and undo behavior; cancellation drops the bitmap and index. See `docs/performance/BUILDER-PERFORMANCE.md` for measurements and limits.
+`builder-duplicate-preview.mjs` caches a high-contrast branch silhouette, including circle and polygon fills, in one bitmap capped at 2048 × 2048 pixels. Pointer movement translates the bitmap and queries its joint index. Placement preserves the existing duplicate command's native topology and undo behavior; cancellation drops the bitmap and index.
 
 Builder node selection uses transient native handle IDs scoped to one object UID; Shift-click toggles those IDs in the canvas and hierarchy. Explicit multi-selection style edits target exactly those segments, with a single undo entry; single-node branch editing retains its existing scope. Builder Delete dispatches to segment/branch or selected-fill commands even under Select, so it cannot accidentally remove and recreate the session object. Selection is restored with command history and does not enter the saved figure format.
 

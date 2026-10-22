@@ -23,9 +23,10 @@ StykAnimate is a local stick animation program built on sound architecture and g
 | JavaScript renderer and playback (being replaced) | `src/renderer.mjs`, `src/playback*.mjs`, `docs/renderer.md`, `docs/ADAPTIVE-PREVIEW.md` |
 | Import, formats, saving | `backend/README.md`, `codecs/`, `native/`, `docs/IMPORT-PIPELINE.md`, `docs/document-exports.md` |
 | Desktop and packaging | `desktop/`, `scripts/before-pack.cjs`, `docs/DESKTOP-RELEASE.md` |
-| Tests and measurements | `tests/`, `scripts/smoke-*.mjs`, `scripts/benchmark-*.mjs`, `artifacts/`, `docs/performance/` |
+| Tests and measurements | `tests/`, `scripts/smoke-*.mjs`, `scripts/benchmark-*.mjs`; generated output goes to the ignored `artifacts/` |
 | Release history and shipping | `CHANGELOG.md`, `docs/RELEASING.md`, `docs/UPDATES.md`, `.github/workflows/desktop-release.yml` |
-| Public site and catalogue | `../StykAnimate-Site` (active site); `docs/website.md` identifies the retired local copy |
+| Licensing and community | `LICENSE`, `THIRD_PARTY_NOTICES.md`, `CONTRIBUTING.md`, `SECURITY.md` |
+| Public site, catalogue and services | The separate StykAnimate-Site repository; `docs/WEB.md` covers the browser editor |
 
 Read the relevant contract before changing behavior. Current code and workflow configuration establish executable commands; older release reports certify only their original artifacts. Update documentation when its contract changes.
 

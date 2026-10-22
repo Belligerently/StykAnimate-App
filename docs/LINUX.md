@@ -128,9 +128,7 @@ missing file fails at once with that instruction. Tests that need the Pivot samp
 corpus beside the repository skip with the reason unless it is there or
 `STYK_REQUIRE_FIXTURES=1`.
 
-Known gaps on Linux, all outside the shipping editor's runtime: the experimental
-autopose lab has one scenario that stalls only here
-([details](AUTOPOSE-LAB.md#known-limitation-restore-phase-can-stall)), and a share of
+Known gaps on Linux, all outside the shipping editor's runtime: a share of
 the `tests/*.browser.mjs` scripts are not run by CI and no longer match the current
 interface on any platform.
 

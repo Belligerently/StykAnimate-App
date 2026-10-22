@@ -23,7 +23,7 @@ flowchart LR
 
 `desktop/telemetry.cjs` owns the private random32-byte installation token, hashes it for report identity, revalidates IPC and merges deltas. It saves locally outside the render path, batches uploads, respects Retry-After, aborts pending uploads on withdrawal, keeps at most seven days of unsent summaries, and retries requested deletion. Disabled reporting has no sampling, upload or persistence timer. An acknowledged baseline for today prevents a same-day opt-out/re-opt-in from reducing previously accepted totals. Local first-observed milestones and coarse first-success results survive a longer absence. Release, build and traffic classification come from the trusted desktop process; renderer IPC cannot replace them.
 
-`cloud/worker.mjs` enforces the same schema, derives identity from the bearer token, stores one cumulative installation/day snapshot with a monotonic sequence, and makes retries idempotent. The database never stores the private token. It rejects arbitrary fields, oversized JSON, invalid dates/metrics and deleted identities. A30-day hash-only deletion marker prevents delayed uploads from recreating erased reports. See `docs/analytics-service.md` for database budgets, authentication, retention and operational setup.
+The website's Cloudflare Worker enforces the same schema, derives identity from the bearer token, stores one cumulative installation/day snapshot with a monotonic sequence, and makes retries idempotent. The database never stores the private token. It rejects arbitrary fields, oversized JSON, invalid dates/metrics and deleted identities. A30-day hash-only deletion marker prevents delayed uploads from recreating erased reports.
 
 The public website, configuration and release manifest are static assets: normal visits execute no Worker code and access no D1 data. Only telemetry, feedback and administrator routes run Worker-first; unknown API routes return a Worker 404. Public pages contain no tracking code or third-party font requests. The dashboard uses a private server session in an HttpOnly cookie, same-origin mutation checks, login rate limits and no credentials in its client JavaScript. Secrets must never be placed in `desktop/service-config.json` or public assets.
 
@@ -92,7 +92,7 @@ The authenticated dashboard exposes p50/p95/p99 bucket upper bounds, units, coun
 
 ### Deploying and resetting diagnostic history
 
-Apply `cloud/migrations/0002_diagnostic_generation.sql` before deploying the Worker, then deploy collector and dashboard together before distributing a new desktop build. Cloudflare deployment alone cannot update installed desktop applications. Existing manual 30-second local performance traces remain available and are never uploaded automatically.
+Apply the diagnostic-generation migration before deploying the Worker, then deploy collector and dashboard together before distributing a new desktop build. Cloudflare deployment alone cannot update installed desktop applications. Existing manual 30-second local performance traces remain available and are never uploaded automatically.
 
 The authenticated same-origin `POST /api/v1/admin/diagnostics/reset` accepts only `{ "scope": "performance-and-problems" }`. Its D1 transaction advances a generation, invalidates the privacy/cache epoch, clears diagnostic histograms, resource gauges, errors, contexts, performance summaries and operation lifecycle counters from linked reports and rollups, and repairs stored-byte accounting. Product activity, milestones, consent, installations, submitted feedback, deletion tombstones and quota history remain. No raw-history backup is created by this operation.
 
@@ -116,7 +116,7 @@ Preferences → Privacy & diagnostics → details → performance trace records3
 
 The download page reads the validated release manifest. Publish a current, tested installer/portable artifact on a suitable download host and supply HTTPS URL, version, size and SHA-256 in `LATEST_RELEASE_JSON`. Then regenerate and deploy the public API assets together with the Worker. Until a release is configured, the download page honestly shows that the beta is not yet published. Existing Windows installers are larger than Cloudflare’s25MiB static-asset limit; they must use a separate release/download host.
 
-The production origin is https://stykanimate.com, with www.stykanimate.com bound to the same Worker. The private dashboard is /admin/. Its initial login key is in the ignored local file `artifacts/stykanimate-admin-key.txt`; it is never bundled into the app or public assets. `scripts/verify-cloudflare-live.mjs` checks HTTPS pages, security headers, static public API delivery and authenticated production D1 reads without submitting synthetic telemetry.
+The production origin is https://stykanimate.com, with www.stykanimate.com bound to the same Worker. The private dashboard is /admin/. Its login key is never bundled into the app or public assets.
 
 ## Verification
 
@@ -130,14 +130,10 @@ node --test tests/telemetry-build-provenance.test.mjs
 node scripts/benchmark-telemetry.mjs
 node scripts/benchmark-telemetry-measurements.mjs
 node scripts/benchmark-telemetry-desktop.mjs
-node scripts/smoke-telemetry.mjs
-node --test cloud/tests/*.test.mjs
-node cloud/tests/runtime.mjs
-node cloud/tests/dashboard.browser.mjs
 node scripts/check.mjs
 ```
 
-The Electron smoke test uses an isolated profile and local Worker routes backed by real SQLite. It exercises no-consent behavior, acceptance, actual edit/playback/native-save summaries, error redaction, administrator login and dashboard rendering, explicit feedback, Chromium trace capture/discard, deletion and rejected late replay. Synthetic fixtures stay local. Windows may require normal process access for Chromium’s GPU subprocess; the sandbox’s missing-DLL termination is not an application crash regression.
+The Worker, its SQL and the dashboard are tested in the website repository.
 
 Evidence lives under ignored `artifacts/telemetry/`, `artifacts/privacy-ui/`, `artifacts/public-site/` and `artifacts/telemetry-performance.json`. The collector microbenchmark isolates counter/histogram work; it does not establish a universal end-to-end performance percentage.
 

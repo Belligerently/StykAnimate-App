@@ -242,8 +242,7 @@ controls are FK tracks, rather than unconstrained three-axis finger IK.
 
 No channels or persistent evaluator state
 are added: figure meshes, playback, undo and native saving use the same
-channels. Mechanical joints are authored in definition data (see
-`scripts/pistol/build-3d.mjs`); Build Figure cannot create them yet, and earlier
+channels. Mechanical joints are authored in definition data; Build Figure cannot create them yet, and earlier
 versions reject files that contain them.
 
 Spatial IK evaluates only the driving dependency closure, excluding skin vertices

@@ -39,9 +39,7 @@ Scene VFX retains ghosts as an unfiltered overlay above the completed camera pre
 Both backends cache contiguous ghost layers within a hardware-derived memory
 budget, retaining committed pixels during live poses. View, visibility, resource,
 and sampled-geometry changes invalidate the affected layer. The
-[renderer contract](renderer.md) describes compositing, admission, and disposal;
-[paired measurements](performance/onion-compositing-performance.md) document the
-high-DPI cache-thrashing regression and its verification.
+[renderer contract](renderer.md) describes compositing, admission, and disposal.
 
 Regression checks cover both the legacy reader and the app's layer timeline:
 

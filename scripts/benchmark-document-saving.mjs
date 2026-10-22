@@ -97,10 +97,8 @@ if (!isMainThread) {
     adaptedControlHashes[file] = hash(adapted);
     await writeFile(path.join(controlDir, path.basename(file)), adapted);
   }
-  const fixtures = [
-    ['bamboo-demo', path.join(root, 'AssetReleases/Martial-Arts/04-Bamboo-Forest-Training-Grounds/Pack/Scenes/Bamboo-Training-Grounds-Demo.styk')],
-    ['karate-palette', path.join(root, 'AssetReleases/Martial-Arts/05-Martial-Artist-Rigs/Pack/Karate-Fighter/Belt-Colours/Karate-Fighter-Belt-Colours.styk')],
-  ];
+  // Pass your own projects with --input=<label>=<project path>.
+  const fixtures = [];
   for (const argument of process.argv.filter(value => value.startsWith('--input='))) {
     const match = /^--input=([a-z0-9-]+)=(.+)$/.exec(argument);
     if (!match) throw new Error('Use --input=<label>=<project path>, with a lowercase label.');

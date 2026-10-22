@@ -274,7 +274,7 @@ const shapes = Object.freeze({
     '<path d="m15 15 6 6" /> <path d="m15 9 6-6" /> <path d="M21 16v5h-5" /> <path d="M21 8V3h-5" /> <path d="M3 16v5h5" /> <path d="m3 21 6-6" /> <path d="M3 8V3h5" /> <path d="M9 9 3 3" />',
   collapse:
     '<path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8" /> <path d="M9 19.8V15m0 0H4.2M9 15l-6 6" /> <path d="M15 4.2V9m0 0h4.8M15 9l6-6" /> <path d="M9 4.2V9m0 0H4.2M9 9 3 3" />',
-  // Revision 4 glyphs from design/app-ui/reference/tools/build.mjs (visual-system.md §10): one drawing per command family.
+  // Revision 4 glyphs (docs/design/visual-system.md §10): one drawing per command family.
   // One step (Bring forward, Send backward): a plain arrow over a short stack line, never the barred to-front/to-back.
   "step-up": '<path d="M12 17V5.5M7.5 10l4.5-4.5 4.5 4.5"/><path d="M8.5 20h7" opacity=".5"/>',
   "step-down": '<path d="M12 7v11.5M7.5 14l4.5 4.5 4.5-4.5"/><path d="M8.5 4h7" opacity=".5"/>',
@@ -295,7 +295,7 @@ const shapes = Object.freeze({
   'arrows-move': '<path d="M12 2v20"/><path d="m15 19-3 3-3-3"/><path d="m19 9 3 3-3 3"/><path d="M2 12h20"/><path d="m5 9-3 3 3 3"/><path d="m9 5 3-3 3 3"/>',
   palette: '<circle cx="13.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/>',
   droplet: '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>',
-  // The stage header's view toggles and the join mode's message (design/app-ui/reference, revision 4).
+  // The stage header's view toggles and the join mode's message (revision 4).
   joints: '<circle cx="12" cy="5" r="2.6"/><path d="M12 8v6M12 14l-4 7M12 14l4 7M7 10.5l5-1.5 5 1.5"/>',
   highlight: '<path d="M6 18 18 6"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M3 9.5 5 10.5M9.5 3l1 2M14 20.5l-1-2M20.5 14l-2-1"/>',
   // Home and the tutorials (src/home/, src/tutorials/): the hub, learning, a help page, the grid and list

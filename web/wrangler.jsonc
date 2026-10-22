@@ -3,7 +3,7 @@
   // public site (the "stykanimate" Worker behind stykanimate.com), so the two deploy and roll back independently.
   // Cloudflare serves the built files and applies _headers; the Worker script (worker.js) answers only
   // /community/*, the editor's same-origin window onto the community library (docs/WEB.md).
-  "$schema": "../cloud/node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "stykanimate-app",
   "main": "worker.js",
   "compatibility_date": "2026-09-10",

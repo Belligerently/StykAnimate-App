@@ -10,8 +10,6 @@ Final Windows delivery verification on September 9 passed the packaged native
 WebGPU/import/save/close smoke, two-process settings and Italian locale persistence,
 and all 32 workspace/timeline checks. The final package contains the compact
 title-bar overflow fix and matches 159 web assets and 11 native modules.
-[Release notes](releases/RELEASE-0.3.0.md) state the measured limits;
-[the release marker](../release/0.3.0/verified-release.json) records exact binary hashes.
 This closes Windows delivery and the final integrated workspace walkthrough,
 not the remaining full native performance or cross-platform acceptance.
 

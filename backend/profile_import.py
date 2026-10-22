@@ -160,7 +160,7 @@ class Measurements:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path,
-        nargs="?", default=Path("C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv"))
+        nargs="?", default=Path.home() / "Downloads" / "16 Akane vs Akato Segundo round (3).piv")
     parser.add_argument("--out", type=Path, default=server.APP / "artifacts/backend-akane-profile.json")
     parser.add_argument("--cprofile", action="store_true", help="Enable slower deterministic profiling in the same single import.")
     args = parser.parse_args()

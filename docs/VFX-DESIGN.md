@@ -32,7 +32,7 @@ No captions, effect-cost badges, or additional animation modes appear in this pa
 | CRT / scanlines | Scanlines, spacing, curvature, RGB fringe, phase, paint |
 | Turbulent displacement | Amount, scale, evolution, detail, seed |
 
-Generated effects — Particles, Aura, Energy beam and Explosion — create artwork rather than filtering it and live only in effect clips; see [Generated effects](VFX-GENERATORS.md).
+Generated effects — Particles, Aura, Energy beam and Explosion — create artwork rather than filtering it and live only in effect clips.
 
 Every effect also has an animatable **Effect strength** from 0–100%. It mixes the completed effect with its input in premultiplied alpha. Zero strength bypasses filter work; 100% avoids the extra mixing pass. Older saved stacks resolve to 100% without changing their saved data.
 

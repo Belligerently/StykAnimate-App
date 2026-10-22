@@ -1,146 +1,103 @@
-# StykAnimate-webapp
+<p align="center">
+  <img src="assets/brand/svg/stykanimate-horizontal-primary.svg" alt="StykAnimate" width="420">
+</p>
 
-Repository contributors and agents: start with [AGENTS.md](AGENTS.md), track completed changes in [CHANGELOG.md](CHANGELOG.md), and follow [the shipping procedure](docs/RELEASING.md) when preparing a release.
+<p align="center">
+  A free, open-source stick figure animation app for Windows, Linux and the browser.<br>
+  Opens Pivot (<code>.piv</code>, <code>.stk</code>) and Stick Nodes projects, and keeps your work on your device.
+</p>
 
-A local desktop animation editor with a custom WebGPU canvas, Figma-style controls, and an Animate-style timeline. It opens real `.piv` and `.stk` files through its own Pivot codec, compiled to WebAssembly. Editing, decoding, saving, and rendering stay on the machine.
+<p align="center">
+  <a href="https://stykanimate.com">Website</a> ·
+  <a href="https://app.stykanimate.com">Open in the browser</a> ·
+  <a href="https://github.com/filippocalippo/styk-animate-releases/releases/latest">Download</a> ·
+  <a href="https://discord.gg/WTssQKBaJp">Discord</a> ·
+  <a href="https://www.youtube.com/channel/UCZg7hZc23PNufzxnX8mCaCw">YouTube</a>
+</p>
 
-## Run
+## Features
 
-Download Windows Setup or Portable and the Linux AppImage from the [public releases](https://github.com/filippocalippo/styk-animate-releases). Desktop packages need no separate Python or Node installation. The browser editor runs at [app.stykanimate.com](https://app.stykanimate.com).
+- **Pose stick figures** with fixed-length joints, IK for arms and legs, stretchy nodes and 3D figures with depth.
+- **Build your own figures** from lines, circles, polygons, text and images, with a shared rig and per-part styles.
+- **Two timelines:** a Simple, Pivot-style frame strip and an Advanced timeline with layers, folders, keys and easing.
+- **Motion paths, onion skins and camera moves,** including camera follow.
+- **Particle effects** (explosions, auras, beams, smoke) and brushes for drawing.
+- **Community library:** insert figures and movieclips shared by other animators.
+- **Export** MP4, WebM (with transparency), GIF, APNG, PNG/JPEG/SVG frames, and editable `.piv`/`.stk`.
+- **27 interface languages**, light and dark themes, a touch interface for phones and tablets.
 
-See [release preparation](docs/RELEASING.md) and [package verification](docs/DESKTOP-RELEASE.md) for current candidate checks; historical reports certify only their original builds. For source development:
+Everything (decoding, editing, saving and rendering) runs locally. Optional, consent-based diagnostics are described in [docs/telemetry.md](docs/telemetry.md).
+
+## Get StykAnimate
+
+- **Windows and Linux:** download Setup, Portable or the AppImage from the [releases page](https://github.com/filippocalippo/styk-animate-releases/releases/latest). Installed apps update themselves.
+- **Browser:** open [app.stykanimate.com](https://app.stykanimate.com). It works offline once loaded.
+
+## Build from source
+
+Requirements: Node.js 22+ (CI uses 24.11), the Rust toolchain below, and Python 3.11+ for tests and packaging (CI uses 3.12). Windows and Linux are tested on every change; macOS has an untested build target.
 
 ```sh
 npm ci
-npm run engine:build   # the engine and the Pivot codec, into src/engine/pkg/
-npm start
+npm run engine:build # the Rust engine and Pivot codec, into src/engine/pkg/
+npm start            # desktop app (Electron)
+npm run serve        # or the editor in your browser at http://127.0.0.1:47831
 ```
 
-`npm run engine:build` builds the Rust engine, the Pivot codec and the drawing raster engine (`engine/`) into `src/engine/pkg/`; it needs `rustup` with the pinned nightly and its source (`rustup toolchain install nightly-2026-09-15 --component rust-src --target wasm32-unknown-unknown`) for the engine, stable Rust with the same target (`rustup toolchain install stable --target wasm32-unknown-unknown`) for the codec and the drawing engine, `wasm-bindgen-cli` 0.2.129 (`cargo install wasm-bindgen-cli --version 0.2.129`) and clang for the WebAssembly target. Without the engine module the app keeps the JavaScript renderer; without the codec module it cannot open or export Pivot files; without the drawing module the Draw workspace keeps the JavaScript raster engine. Engine commands: `npm run engine:test`, `npm run engine:parity`, `npm run engine:bench`; see [docs/engine/](docs/engine/README.md).
+`npm run engine:build` needs `rustup` with the pinned nightly and its source (`rustup toolchain install nightly-2026-09-15 --component rust-src --target wasm32-unknown-unknown`), stable Rust with the same target, `wasm-bindgen-cli` 0.2.129 (`cargo install wasm-bindgen-cli --version 0.2.129 --locked`) and clang for the WebAssembly target. Python runs only the codec's development test oracle (`backend/`, `codecs/`) and the packaging scripts; set `STYK_PYTHON` to choose an interpreter.
 
-Development requires Node.js 22+ (CI runs Node 24.11). The Pivot codec runs in a worker of the editor page on every platform; Python is not needed to run or build the app. Python 3.11+ runs only the codec's development test oracle (`codecs/`, `backend/`) and the packaging scripts that stage the video encoder and the Windows codec helpers; set `STYK_PYTHON` to choose an interpreter. With dependencies already installed, Windows can run the current source directly using `node_modules\electron\dist\electron.exe .` from this directory. `npm run serve` starts browser development at `http://127.0.0.1:47831`.
-
-Windows and Linux are supported platforms and both are exercised on every change (`.github/workflows/ci.yml`); see [Linux support](docs/LINUX.md). macOS has a build target in `package.json` that has not been executed. Build the distribution on each target OS (the packaging scripts find Python themselves; see `scripts/run-python.mjs`):
+Packaging, on the matching operating system:
 
 ```sh
+python -m pip install -r scripts/requirements-build.txt
 npm run engine:build
 npm run build:video-encoder
-npm run pack
-npm run verify:package
-# Installers, on the matching host:
-npm run dist:win
-npm run dist:mac
-npm run dist:linux
+npm run pack && npm run verify:package
+npm run dist:win     # or dist:linux, dist:mac
 ```
 
-The editor also runs as a website, with the same Pivot codec and nothing sent to a server: `npm run web:build`, then `npm run web:deploy` for Cloudflare. See [Web build](docs/WEB.md). On phones and tablets it opens its touch interface; see [Touch interface](docs/TOUCH.md).
+The browser build: `npm run web:build`, then `npm run web:preview`. See [Web build](docs/WEB.md), [Linux](docs/LINUX.md) and [Touch interface](docs/TOUCH.md).
 
-## Editing
-
-These features describe current source. Package coverage applies only to the exact release artifact verified above.
-
-- Import PIV versions 2–5, reusable STK figures, or self-contained STYK projects. Native timing, camera transforms, sprites, text outlines, polygons, gradients, and joins retain the established Pivot document semantics.
-- Select or marquee several figures, move a group, align, rotate, scale, mirror, reorder, join, duplicate, or use the clipboard. Pose joints with fixed lengths or Ctrl-drag to stretch.
-- Hold **R** for pose-local Handle Edit, or **Ctrl+R** for its fixed-point mode. The separate **Rig** tool edits the shared figure definition and static construction joints. Create lines, circles, joint-bound polygons, editable text and sprites; split/unsplit, mirror or duplicate branches, delete a joint, change the origin and edit styles with undo/redo.
-- Choose **Simple** or **Advanced** in Settings. Simple provides Pivot-style thumbnails, inbetween sliders and stored-frame Add/Update/Discard behavior. Advanced provides independent layers, Scene/Camera tracks, sparse pose/property keys, blank keys and frame ranges. Both have virtualized navigation, native timing, clipboard and Insert Inbetween. Cross-document frame clipboard persists on desktop.
-- Float, move, resize, and dock Layers, Properties, or Timeline. Drag a panel grip/title, resize its edges, or use the dock target. Arrow keys move a focused grip; Enter docks and Home resets it. Desktop layout preferences and recovery copies survive process restarts.
-- Save STYK projects with recoverable working poses and native Recent Files. Export editable PIV/STK; PNG/JPEG/GIF/SVG frames or numbered sequences; GIF/APNG animation; WebM with VP9 transparency; MP4, WMV and AVI. Windows additionally exposes installed 32/64-bit VFW codecs and real Configure dialogs. Sampling modes include no smoothing, smoothing and 2× sprite filtering. See [format/platform coverage](docs/EXPORT-FORMATS.md).
-- Settings includes native canvas handle/onion preferences, timeline mode and 27 interface language choices. All 26 non-English packs cover the complete interface catalog and required plural forms. Language changes preserve animation data, history and canvas/time direction; [per-language review and verification](docs/LOCALIZATION-REVIEW.md) records coverage and remaining terminology and platform limits.
-- Choose **Light** or **Dark** in **Settings → Interface → Theme** (`Ctrl+,`). The theme updates immediately and is saved with editor preferences. Artwork, color swatches and exported frames keep their original colors.
-- Motion paths start hidden each session. Press **M** or use the Motion paths button in the stage header to enable them; their range, labels, and target options stay saved.
-
-The compact neutral UI uses blue selection accents. Canvas handles follow Pivot colors: red movable joints, orange origins, blue unselected handles, and white joined origins. Static construction joints appear in rig tools. Figures can extend beyond the artboard while editing; playback/export retain document clipping.
-
-Double-click an origin to select its connected figures (Shift adds the group to the selection). Double-click a node to select its descendant branch and attached figures without recoloring the artwork; its inspector enables branch-wide edits. Copy/paste or Duplicate preserves the branch pose, internal polygons, media, and joins; pasted branches use independent figure definitions. Click a different node or clear “Apply to branch” to return to single-node editing.
-
-See [implementation coverage](docs/IMPLEMENTATION.md) and the [Pivot acceptance checklist](docs/PIVOT_PARITY.md) for remaining work. Complete Pivot parity, exhaustive native pixel equality, and zero latency on arbitrary hardware are not established.
-
-## Performance evidence
-
-The architecture separates document/history, visible gesture previews, retained GPU resources and worker jobs. Whole-figure dragging updates GPU transforms; affected joint branches are reevaluated as needed. Prepared playback reuses GPU packets. The binary import transport avoids expanding full native pose JSON; editor validation/indexing yields between bounded work slices. Imports, export snapshots, recovery, native file transfer and asynchronous layer migration use bounded, acknowledged chunks. [Architecture details](docs/ARCHITECTURE.md) describe the separate document, CPU, and GPU caches.
-
-Historical development snapshots recorded on the available Windows / NVIDIA Lovelace machine, with the exact run boundaries in each artifact. These are not measurements of the final combined build:
-
-| Workload | Measured result | Evidence |
-| --- | --- | --- |
-| 1,000-figure drag, 59 samples | Renderer CPU p95 **0.6 ms**; zero geometry bytes uploaded; one draw call | [UI benchmark](artifacts/renderer-ui-performance-60fps.json) |
-| Prepared 1,000-figure playback at 60 FPS | **59.88** warm effective FPS; renderer CPU p95 **0.2 ms**, editor render-section p95 **0.4 ms**; no skipped ticks in the sampled run | [UI benchmark](artifacts/renderer-ui-performance-60fps.json) |
-| Akane frame 1478: 643 figures / 15,054 segments | Editing a 105-object connected rig: mutation + geometry + GPU submission p95 **5.7 ms** | [Incremental edit profile](artifacts/renderer-edit-profile/report.json) |
-| Complete Akane playback, 1,872 output ticks at 16 FPS | All ticks submitted in order; **117.264 s** versus **116.938 s** nominal first-to-last, interval p95 **69.5 ms**, p99 **70 ms**; isolated maximum **363.1 ms** | [Full-animation verification](artifacts/edit-freeze-16-akane-vs-akato-segundo-round--3--full-playback-budgeted/presentation-summary.json) |
-| Akane recovery autosave | Earlier **8.84 s** animation-frame gap removed; **zero UI long tasks**, animation-frame interval p95 **7.0 ms** in the measured autosave phase | [Current profile](artifacts/edit-freeze-16-akane-vs-akato-segundo-round--3--after-worker/report.json), [before](artifacts/edit-freeze-16-akane-vs-akato-segundo-round--3-/report.json) |
-| Akane backend import and encoded response | **10.92 → 4.84 s**; binary decode itself remained about **4.21 s** | [Before](artifacts/backend-akane-profile.json), [after](artifacts/backend-akane-profile-after.json) |
-| Optional C++ Akane decode component | **668.8 ms**, including **11.9 ms** native frame wrapper; excludes HTTP, JavaScript materialization and rendering | [Component diagnostic](artifacts/backend-akane-cpp-scan.json) |
-| Native 200 MiB Blob transfer | File save **2.37 s**, recovery write **2.11 s**, read **1.28 s**; zero renderer long tasks and exact SHA verification | [Native streaming smoke](artifacts/native-streams-smoke.json) |
-
-Matched original-Pivot versus current-app import/input/full-playback acceptance remains open in the [full-goal ledger](docs/GOAL-ACCEPTANCE.md). These measurements cover different phases; they are not interchangeable end-to-end latency figures. A browser long task is a task over 50 ms. CPU submission excludes GPU completion and display scanout. The Akane audit found and fixed repeated speculative rasterization that caused sustained dense-scene stalls; rare scheduling gaps remain. Large imports and background saves can still take seconds; cache misses can require playback preparation. Prepared playback supersedes the initial main-thread playback implementation.
-
-## Verify
-
-Run core checks from this directory:
+## Tests
 
 ```sh
-npm run check
-npm test
-python -m unittest discover -s backend -p "test_*.py"   # the Python codec oracle
-node scripts/test-reference.mjs
+npm run check        # syntax, stylesheet lint
+npm test             # unit tests
+python -m unittest discover -s backend -p "test_*.py"
 ```
 
-The Rust codec answers as the Python codec did: `engine/tools/piv/parity.sh` replays the oracle's recorded answers against it (see [Pivot files and the codec service](docs/engine/formats-piv.md)).
+Browser tests (`tests/*.browser.mjs`) run against `npm run serve` with Chrome or Playwright Chromium, for example `node tests/timeline.browser.mjs`. Some tests read a local corpus of Pivot projects that is not distributed; they skip and name the missing file. [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows what runs on every pull request.
 
-`.github/workflows/ci.yml` runs the syntax, stylesheet lint, changelog, unit, codec and website tests on every push to `main` and every pull request; the release workflow runs the same unit and codec tests before building. Cases that read the Pivot corpus beside the repository, generated `artifacts/` inventories or built encoders skip in a clean checkout and name the missing file. Set `STYK_REQUIRE_FIXTURES=1` locally to make a missing fixture fail instead.
-
-Start `npm run serve` for UI tests. The following groups reproduce the main acceptance paths; they use installed Chrome or Playwright Chromium:
-
-```sh
-node tests/creation.browser.mjs
-node tests/builder.browser.mjs
-node tests/rig.browser.mjs
-node tests/timeline.browser.mjs
-node tests/shell-layout.browser.mjs
-node tests/document-export-browser.mjs
-node tests/image-export-browser.mjs
-node tests/svg-export.browser.mjs
-node tests/renderer-ui-performance.mjs --fps=60
-node tests/renderer-corpus.mjs --prepared
-npm run test:preferences:desktop
-npm run test:streams:desktop
-npm run test:desktop
-npm run test:desktop:packaged
-```
-
-The native round-trip tests include saving a 207.95 MB Akane project, restarting the codec, reopening it, and exporting the original PIV SHA exactly. The GPU corpus compares 101 sampled frames from all 37 supplied PIV files against the established Canvas renderer. Prepared rendering matches the normal GPU path for those samples; antialiasing differences against the reference remain. Test reports live in `artifacts/`; package smoke evidence applies to the package snapshot actually tested.
-
-## Code map
+## How the code is organized
 
 | Location | Responsibility |
 | --- | --- |
-| `src/editor*.mjs`, `src/pivot/` | Document commands/history, rig construction, native evaluation and validation |
-| `src/renderer*.mjs`, `src/prepared-frames.mjs` | WebGPU primitives, incremental edits, bounded GPU playback packets |
-| `src/playback*.mjs`, `src/document-transport.mjs` | Worker evaluation, CPU packet cache, bounded document/frame snapshots |
-| `src/import-*.mjs`, `src/codec-*.mjs`, `src/editor-load.mjs`, `engine/crates/styk-piv` | Pivot decoding in the codec worker, binary frame transport, source preservation and cooperative editor preparation |
-| `src/document-export*.mjs`, `src/native-files.mjs` | Worker save/recovery snapshots and native Blob streaming |
-| `src/image-*.mjs`, `src/svg-export.mjs`, `src/video-export.mjs` | Image/vector/video encoding and containers |
-| `src/text-authoring.mjs`, `src/media-authoring.mjs` | Portable glyph outlines, sprites and backgrounds |
-| `src/app.mjs`, `src/timeline.mjs`, `src/simple-timeline.mjs`, `src/workspace-*.mjs` | Custom interaction, two timeline modes and movable workspace |
-| `src/settings.mjs`, `src/localization*.mjs`, `src/locales/` | Persistent editor preferences and explicit language bindings |
-| `desktop/`, `scripts/`, `native/vfw-bridge.cpp` | Isolated Electron bridge, Recent Files/clipboard/preferences, sample list, native encoders and packaging |
+| `src/editor*.mjs`, `src/pivot/` | Document model, commands, undo/redo, rigs, native evaluation and validation |
+| `src/renderer*.mjs`, `src/prepared-frames.mjs` | WebGPU rendering, incremental edits, GPU playback packets |
+| `src/playback*.mjs`, `src/document-transport.mjs` | Worker evaluation, playback caches, bounded document snapshots |
+| `engine/` | The Rust engine: document store, Pivot and Stick Nodes codecs, evaluation, rendering, editing (`docs/RUST-ENGINE-PORT.md`) |
+| `src/engine/` | How the app reaches the engine (stage, playback, export, editing) |
+| `src/import-*.mjs`, `backend/`, `codecs/`, `native/` | Import into the editor, the Python codec kept as a test oracle, native helpers |
+| `src/document-export*.mjs`, `src/image-*.mjs`, `src/video-export.mjs` | Saving, recovery and image/video export |
+| `src/app.mjs`, `src/shell/`, `src/ui/`, `src/styles/` | Interface, workspaces, timelines and styles |
+| `src/locales/`, `src/localization*.mjs` | Translations |
+| `desktop/` | Electron main process, preload bridge, file access, updates |
+| `web/` | Browser build: service worker and Cloudflare configuration |
+| `tests/`, `scripts/` | Tests, smoke tests, benchmarks, build and release scripts |
+| `docs/` | Feature contracts and architecture |
 
-## Repository layout
+Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Feature behavior is documented in `docs/`, for example [the timeline](docs/TIMELINE.md), [scene editing](docs/SCENE-EDITING.md) and [the renderer](docs/renderer.md).
 
-| Folder | Contents |
-| --- | --- |
-| `src/`, `index.html`, `vendor/` | Editor web client and vendored libraries |
-| `desktop/`, `native/` | Electron shell, native helpers |
-| `engine/` | The Rust engine and the Pivot codec (built to `src/engine/pkg/`) |
-| `backend/`, `codecs/` | The Python Pivot codec: the development test oracle, not shipped |
-| `cloud/`, `website/` | Public website, catalogue, and support services |
-| `tests/`, `scripts/`, `artifacts/` | Tests, smoke/benchmark/build scripts, recorded measurement evidence |
-| `docs/` | Feature contracts; `docs/performance/`, `docs/audits/`, `docs/releases/` and `docs/research/` hold dated reports and evidence |
-| `labs/` | Experimental systems (autopose, VFX generators) not yet shipped in the editor |
-| `AssetReleases/` | Store-ready asset packs generated by `scripts/martial-arts/release-packs.mjs` |
-| `design/brand/` | Brand sources for `npm run build:brand` |
-| `videos/tutorials/` | Tutorial episodes and the capture/animation kit that produces them |
+## Contributing
 
-`tmp/` (scratch output) and `samples/` (local Pivot test projects) are ignored and never committed.
+Bug reports, ideas, translations and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first, and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately as described in [SECURITY.md](SECURITY.md).
 
-The original `tools/`, `studio/`, and native `StykAnimate/` projects remain separate. Third-party font/parser/triangulation licenses are retained with their vendored files.
+## License
+
+StykAnimate is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE), version 3 or (at your option) any later version. Bundled third-party components keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Trademarks
+
+The StykAnimate name and logo identify the official project. The GPL lets you fork and redistribute the code, but please give modified versions a different name and icon so people can tell them apart from official releases.
+
+StykAnimate is an independent project. It is not affiliated with or endorsed by Pivot Animator or Stick Nodes; those names are used only to describe file compatibility.

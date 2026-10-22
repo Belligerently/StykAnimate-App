@@ -1,9 +1,5 @@
 # Export experience and high-resolution verification
 
-For the September 13 direct-worker export optimization, Akane benchmark,
-compression comparisons and current validation, see
-[Export performance verification](performance/EXPORT-PERFORMANCE.md).
-
 The export dialog (`src/export-sheet.mjs`, a kit dialog with the id
 `export-dialog`) shows a preview beside the settings. The preview draws the
 first exported frame through the thumbnail worker (only while the dialog is

@@ -205,7 +205,8 @@ export function openColorPicker({anchor, paint, gradients = true, alpha = true, 
     else if(t.closest('[data-palette-rename]'))menu({form:'rename'});
     else if(t.closest('[data-palette-delete]'))menu('delete');
     else if(t.closest('[data-palette-cancel]'))menu('list');
-    else if(t.closest('[data-palette-delete-confirm]'))paletteAction(()=>{deletePersonalPalette(mine.id);paletteMenu=null;},'[data-palette-menu]');
+    // Deletion synchronously refreshes subscribers; the confirmation needs the palette to exist.
+    else if(t.closest('[data-palette-delete-confirm]'))paletteAction(()=>{paletteMenu=null;deletePersonalPalette(mine.id);},'[data-palette-menu]');
     else if(t.closest('[data-palette-to-project]'))paletteAction(()=>{source.addMany(mine.colors);setPaletteView('project');paletteMenu=null;},'[data-palette-view="project"]');
     else if(t.closest('[data-palette-add]'))paletteAction(()=>saveColor(hexColor(stop().color)));
     else if(swatch){stop().color=parseColor(swatch.dataset.paletteSwatch).color;hue=hsv(stop().color)[0];draw();commit();}

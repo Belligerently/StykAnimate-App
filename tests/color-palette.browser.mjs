@@ -156,6 +156,32 @@ try{
   await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
   await primary.click();await picker.waitFor();await frame();
   await page.screenshot({path:`${output}/picker-draw-dark.png`,clip:await picker.boundingBox()});
+  // Deleting the final palette must close the confirmation before subscribers redraw.
+  // Cover both empty and populated palettes, and both automatic fallback views.
+  for(const {name,colors,projectColors,fallback} of [
+    {name:'Night scene',colors:10,projectColors:['#123456'],fallback:'project'},
+    {name:'My palette',colors:0,projectColors:[],fallback:'recent'},
+  ]){
+    await page.evaluate(async({name,projectColors})=>{
+      const m=await import('/src/color-palette.mjs');
+      if(!m.personalPalettes().length)m.createPersonalPalette(name);
+      for(const color of m.projectColors(styk.editor.report))styk.editor.removePaletteColor(color);
+      for(const color of projectColors)styk.editor.addPaletteColor(color);
+    },{name,projectColors});
+    await picker.locator('[data-palette-menu]').click();await picker.locator('[data-palette-delete]').click();
+    check(`last palette confirmation names ${name} and its colors`,(await picker.locator('.paint-palette-form p').textContent()).includes(`and its ${colors} colors?`));
+    await picker.locator('[data-palette-cancel]').click();
+    check('cancelling deletion keeps the last palette',await page.evaluate(async()=>(await import('/src/color-palette.mjs')).personalPalettes().length)===1);
+    await picker.locator('[data-palette-delete]').click();
+    await picker.locator('[data-palette-delete-confirm]').click();
+    check(`deleting ${name} closes the confirmation without an error`,await picker.locator('[data-palette-delete-confirm]').count()===0
+      &&await picker.locator('.paint-error').textContent()==='');
+    check(`the last palette falls back to ${fallback}`,await picker.locator(`[data-palette-view="${fallback}"]`).getAttribute('aria-pressed')==='true'
+      &&await picker.locator('[data-palette-menu]').getAttribute('aria-expanded')==='false');
+    check('focus returns to the palette menu',await picker.locator('[data-palette-menu]').evaluate(el=>el===document.activeElement));
+    check('deletion is saved',await page.evaluate(()=>JSON.parse(localStorage.getItem('stykanimate.colors.v1')).palettes.length)===0);
+    await page.screenshot({path:`${output}/deleted-last-${fallback}.png`,clip:await picker.boundingBox()});
+  }
   await page.keyboard.press('Escape');
   check('no uncaught browser errors',errors.length===0);
 }catch(error){

@@ -31,9 +31,7 @@ changing duration or shifting later keys; the opening key at tick zero is retain
 Remove Frames remains a separate command that removes time.
 
 The ruler coalesces pending pointer positions while an editable preview is being
-prepared and submitted. Release requests the exact final tick. See
-[editable scrubbing measurements](performance/SCRUB-PERFORMANCE.md) for the scheduling
-contract, correctness checks, and remaining performance limits.
+prepared and submitted. Release requests the exact final tick.
 
 With a VFX clip selected, previous/next frame shortcuts move the playhead without
 selecting a layer cell or clearing the clip selection, including outside its duration.

@@ -1,7 +1,7 @@
 # Project tabs
 
 Several projects stay open in one window, as tabs in the top band. One project is live at a time; the others
-rest. The design was chosen from the mockups in `design/tabs-concepts/` (concept 6, "Calm band").
+rest. The design was chosen from a set of mockups (concept 6, "Calm band").
 
 ## The band
 

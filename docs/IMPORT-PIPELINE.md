@@ -41,5 +41,4 @@ with the same native parser, and publishes only its current incoming generation.
 Cancellation cannot publish a partial mirror. Edited projects, legacy/container
 imports, zero-frame working-pose normalization and rejected admission keep the
 ordinary lossless document transport. Source bytes are released after this first
-mirror and never become saved document/history fields. See
-[measured results and limits](performance/PERFORMANCE-IMPROVEMENTS-2026-09-21.md#verified-native-import-playback-handoff-22-september).
+mirror and never become saved document/history fields.

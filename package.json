@@ -3,6 +3,15 @@
   "productName": "StykAnimate",
   "version": "1.2.5",
   "description": "A WebGPU desktop workspace for Pivot animation and stick figures.",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://stykanimate.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/filippocalippo/StykAnimate-App.git"
+  },
+  "bugs": {
+    "url": "https://github.com/filippocalippo/StykAnimate-App/issues"
+  },
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",
@@ -36,13 +45,7 @@
     "test:streams:desktop": "node scripts/smoke-native-streams.mjs",
     "test:preferences": "node --test scripts/preferences.test.mjs",
     "test:telemetry": "node --test tests/telemetry*.test.mjs",
-    "test:support": "node --test tests/support-service.test.mjs cloud/tests/support.test.mjs",
-    "test:support:ui": "node cloud/tests/support.browser.mjs",
-    "test:support:desktop": "node scripts/smoke-support.mjs",
-    "test:telemetry:desktop": "node scripts/smoke-telemetry.mjs",
     "benchmark:telemetry": "node scripts/benchmark-telemetry.mjs",
-    "site:dev": "node cloud/local-server.mjs",
-    "site:test": "node --test cloud/tests/*.test.mjs",
     "web:build": "node scripts/engine-verify-pkg.mjs && node scripts/build-web.mjs",
     "web:verify": "node scripts/verify-web.mjs",
     "web:preview": "node scripts/build-web.mjs && node scripts/serve-web.mjs",

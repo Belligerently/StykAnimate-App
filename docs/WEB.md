@@ -22,20 +22,19 @@ It is served at `https://app.stykanimate.com` (a custom domain on the site's zon
 `stykanimate-app.<account>.workers.dev`.
 
 ```bash
-npm ci --prefix cloud                   # once: installs the pinned wrangler
-npx --prefix cloud wrangler login       # or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+npm ci --prefix web                   # once: installs the pinned wrangler
+npx --prefix web wrangler login       # or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 npm run web:deploy -- --dry-run         # build, verify, let wrangler validate the config
 npm run web:deploy                      # deploy
 STYK_WEB_URL=https://... npm run test:web   # run the end-to-end test against the deployment
-npx --prefix cloud wrangler rollback --config web/wrangler.jsonc   # go back to the previous version
+npx --prefix web wrangler rollback --config web/wrangler.jsonc   # go back to the previous version
 ```
 
 `web:deploy` refuses to deploy a site that fails `web:verify`, and deploys what is built from
 the working tree: build from a clean checkout of the commit you mean to publish. Cloudflare
 applies `web/_headers` to every static response.
 
-The active marketing site lives in the separate `StykAnimate-Site` repository
-(see `docs/website.md`). Its launch links point to the browser editor. Static app
+The active marketing site lives in the separate `StykAnimate-Site` repository. Its launch links point to the browser editor. Static app
 pages allow indexing; `/community/*` API responses remain `noindex` and excluded
 in `robots.txt`. Deploy the verified editor before deploying the site's launch links.
 

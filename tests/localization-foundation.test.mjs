@@ -140,17 +140,3 @@ test('import notice presentation leaves stored warnings and recovery records unt
   assert.equal(importWarningMessage({code:'external',message:'External detail'}).message,'External detail');
 });
 
-test('generated shared support assets load with every localization dependency', async () => {
-  const {mkdtemp,rm}=await import('node:fs/promises');
-  const {tmpdir}=await import('node:os');
-  const {join}=await import('node:path');
-  const {pathToFileURL}=await import('node:url');
-  const {generateSupportAssets}=await import('../cloud/generate-support-assets.mjs');
-  const directory=await mkdtemp(join(tmpdir(),'styk-localized-support-'));
-  try {
-    await generateSupportAssets(directory);
-    await generateSupportAssets(directory,true);
-    const {SupportCenter}=await import(pathToFileURL(join(directory,'assets/support-center.mjs')));
-    assert.equal(typeof SupportCenter,'function');
-  } finally {await rm(directory,{recursive:true,force:true});}
-});

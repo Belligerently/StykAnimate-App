@@ -40,12 +40,12 @@ existing Windows 0.2.0 package artifacts predate several of these changes.
 Neither this update nor a passing focused test asserts full Pivot parity.
 
 Baseline: the supplied Pivot Animator **5.2.11**, dated 2025-02-11 in
-[ReadMe.txt](../../Pivot%20Animator%20v5/ReadMe.txt). Its `pivot.exe` SHA-256 was
+ReadMe.txt. Its `pivot.exe` SHA-256 was
 verified on 2026-09-08:
 `2c7911d3303cc28de2ac016c3f7575082aa47680e63a0fe8930ce8799de3df98`.
 The [official Pivot 5.2 manual](https://pivotanimator.net/help5-2/index.htm)
 and the feature pages linked below were inspected on the same date. The earlier
-[StykAnimate contract](../../StykAnimate/docs/PIVOT_PARITY.md) supplied additional
+StykAnimate contract supplied additional
 edge cases; its Windows-native architecture is not the architecture requested here.
 
 ## Preserve the animation philosophy
@@ -136,10 +136,10 @@ silently simplifying imported animation is not.
   **Progress:** import and clipboard remapping work in actual UI tests; the full
   sparse-ID/record-order acceptance matrix is not yet recorded for this app.
 
-References: [corpus](../../docs/CORPUS.md),
-[document/API contract](../../docs/PIV_DOCUMENT_MODEL.md),
-[full writer](../../docs/PIV_FULL_WRITER.md),
-[migration](../../docs/PIV_MIGRATION.md),
+References: corpus,
+document/API contract,
+full writer,
+migration,
 [figure controls](https://pivotanimator.net/help5-2/figure_controls.htm).
 
 ## Posing, selection, and attachments
@@ -223,8 +223,8 @@ References: [corpus](../../docs/CORPUS.md),
   assets. Complete topology/multi-frame/media/source combinations remain open.
 References: [posing](https://pivotanimator.net/help5-2/positioning_figures.htm),
 [joining](https://pivotanimator.net/help5-2/joining_figures.htm),
-[local native join/static rules](../../docs/PIV_JOIN_EDITING.md),
-[style findings](../../docs/PIV_STYLE_FINDINGS.md).
+local native join/static rules,
+style findings.
 
 ## Timeline, interpolation, and playback
 
@@ -333,8 +333,8 @@ References: [posing](https://pivotanimator.net/help5-2/positioning_figures.htm),
 
 References: [frame controls](https://pivotanimator.net/help5-2/animation_frame_controls.htm),
 [inbetweening](https://pivotanimator.net/help5-2/frame_inbetweening.htm),
-[reference evaluator](../../studio/geometry.mjs),
-[native easing tests](../../tests/test_native_easing.mjs), local 5.2.9 release notes.
+reference evaluator,
+native easing tests, local 5.2.9 release notes.
 
 ## Figure construction
 
@@ -414,8 +414,8 @@ References: [frame controls](https://pivotanimator.net/help5-2/animation_frame_c
   interaction at this limit is not implied by these model-level checks.
 
 References: [figure building](https://pivotanimator.net/help5-2/creating_figure_types.htm),
-local release notes, [polygon paths](../../docs/PIV_POLY_PATH_FINDINGS.md),
-[stroke rules](../../docs/PIV_STROKE_CACHE_FINDINGS.md).
+local release notes, polygon paths,
+stroke rules.
 
 ## Rendering, media, backgrounds, and camera
 
@@ -502,10 +502,10 @@ References: [sprites](https://pivotanimator.net/help5-2/sprites.htm),
 [backgrounds](https://pivotanimator.net/help5-2/backgrounds.htm),
 [camera](https://pivotanimator.net/help5-2/virtual_camera.htm),
 [onion skins](https://pivotanimator.net/help5-2/onion_skins.htm),
-[image/text details](../../docs/PIV_IMAGE_TEXT_RENDERING.md),
-[bent media](../../docs/PIV_BENT_MEDIA_FINDINGS.md),
-[bitmap sampling](../../docs/PIV_BITMAP_SAMPLING.md),
-[background coverage](../../docs/PIV_BACKGROUND_CAMERA_COVERAGE.md).
+image/text details,
+bent media,
+bitmap sampling,
+background coverage.
 
 ## Export and desktop product behavior
 
@@ -610,14 +610,14 @@ mock data. The following inventory was inspected for this task:
 
 | Component | Reuse and boundary |
 | --- | --- |
-| [tools/pivot_decoder.py](../../tools/pivot_decoder.py), [piv_codec.py](../../tools/piv_codec.py) | Established binary decoding, legacy handling, source retention, assets. Keep parsing off the UI thread. |
-| [tools/piv_server.py](../../tools/piv_server.py) | Existing loopback API: project listing/loading, binary PIV import, conservative/full export, and migration. The original API does not itself define an STK import endpoint. |
-| [studio/model.mjs](../../studio/model.mjs) | `validateScene`, `syncDerived`, native numeric normalization, resource limits. |
-| [studio/geometry.mjs](../../studio/geometry.mjs) | `timeline`, `frameTicks`, `evaluatedFrame`, `buildGeometry`, `drawGeometry`: reference timing, evaluation, and Canvas2D fidelity. |
-| [studio/background.mjs](../../studio/background.mjs) | Native camera/background/blending semantics. |
-| [studio/structure.mjs](../../studio/structure.mjs) | Stable identities, ordering, add/duplicate/delete, and rotation propagation. |
-| [studio/definitions.mjs](../../studio/definitions.mjs) | Existing definition/project editor behavior; its DOM form implementation can be replaced. |
-| [tools/pivot_ik_solver.js](../../tools/pivot_ik_solver.js) | Optional existing IK solver. IK and foot locking are extensions, not features attributed to Pivot 5.2.11. |
+| tools/pivot_decoder.py, piv_codec.py | Established binary decoding, legacy handling, source retention, assets. Keep parsing off the UI thread. |
+| tools/piv_server.py | Existing loopback API: project listing/loading, binary PIV import, conservative/full export, and migration. The original API does not itself define an STK import endpoint. |
+| studio/model.mjs | `validateScene`, `syncDerived`, native numeric normalization, resource limits. |
+| studio/geometry.mjs | `timeline`, `frameTicks`, `evaluatedFrame`, `buildGeometry`, `drawGeometry`: reference timing, evaluation, and Canvas2D fidelity. |
+| studio/background.mjs | Native camera/background/blending semantics. |
+| studio/structure.mjs | Stable identities, ordering, add/duplicate/delete, and rotation propagation. |
+| studio/definitions.mjs | Existing definition/project editor behavior; its DOM form implementation can be replaced. |
+| tools/pivot_ik_solver.js | Optional existing IK solver. IK and foot locking are extensions, not features attributed to Pivot 5.2.11. |
 
 For this desktop application, a portable web UI plus a WebGPU canvas should be
 hosted by a desktop shell. Decoding/export can use a persistent native/Python
@@ -684,7 +684,7 @@ Pivot 5 already advertises GPU rendering in its supplied release notes.
 - [ ] Q06 Verify malformed-file handling, cancellation, large limits, dirty
   close/recovery, device loss, keyboard focus, and packages on each claimed OS.
 
-The older [browser review](../../docs/STUDIO_REVIEW.md) records comparison of
+The older browser review records comparison of
 2,396 outputs across 37 source projects and explicitly limits those findings to
 its tested implementation. The tests and reference artifacts are reusable
 oracles; those pass claims must not be relabeled as StykAnimate-webapp results.

@@ -4,7 +4,7 @@ The redesign of the StykAnimate editor: the Islands backbone and the brand (whit
 
 ## In this repository
 
-The spec was written and measured outside the repository and copied here with repo-relative paths. "Today's app" in these documents is `main` at `c82312fb`, where it was measured.
+The spec was written and measured outside the repository and copied here with repo-relative paths. The reference editor, design tooling and concept mockups it cites under `design/` are not part of the public repository; those paths are kept as historical references. "Today's app" in these documents is `main` at `c82312fb`, where it was measured.
 
 - **`docs/design/`**: this README, `experience.md`, `visual-system.md`, `components.md`, `function-ledger.md`, `ui-architecture.md` (the spec's `architecture.md`) and `DECISIONS.md`, the sign-off of revision 4.3, which overrides `experience.md` §11 where they differ.
 - **`design/app-ui/reference/`**: the reference editor's source. `tools/build.mjs` generates `editor.html` from the app's icons and brand symbol, `reference.css` and `reference.js`; `tools/states.mjs` lists its states, `tools/homes.mjs` is `experience.md` §8 as data, `tools/tasks.json` holds the 53 tasks and `tools/today-tiers.json` today's app measured at the tier sizes.

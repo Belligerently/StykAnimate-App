@@ -48,8 +48,6 @@ node scripts/check.mjs
 
 The mode regression tests cover pose/curve checkpoints, camera and Scene, stored worker output, Add/Discard, previous-tick preservation, a 65,535-tick exposure without per-tick source allocation, stored-frame deletion, shared rig splitting and rollback, history across modes, invalid checkpoint rejection, rejected transitions, and project serialization/reopening. The browser test exercises actual Settings switches and Simple Update, checks the final playback pose and rejected-switch recovery, and captures both timelines under `artifacts/animation-mode-sync/`.
 
-Large-project workloads, measured latency, memory retention, and the performance invariants are documented in [Animation mode performance](performance/animation-mode-performance.md).
-
 ## Draw workspace
 
 Draw is presentation state over the same document and timeline modes. Entering

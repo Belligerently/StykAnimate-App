@@ -30,7 +30,7 @@ jobs:
       - name: Install locked dependencies and browsers
         run: |
           npm ci --no-audit --no-fund
-          npm ci --prefix cloud --no-audit --no-fund
+          npm ci --prefix web --no-audit --no-fund
           npx playwright install --with-deps chromium
           if [ "$RUNNER_OS" = Linux ]; then npx playwright install --with-deps firefox webkit; fi
       - uses: ./.github/actions/engine-build

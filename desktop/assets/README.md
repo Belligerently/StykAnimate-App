@@ -1,6 +1,6 @@
 # Native brand assets
 
-Generated from `design/brand/svg/stykanimate-app-icon-blue.svg` using the checked-in
+Generated from `assets/brand/svg/stykanimate-app-icon-blue.svg` using the checked-in
 resvg WASM renderer. Run `npm run build:brand`; packaging regenerates these assets.
 
 - `stykanimate.png`: 512px window/Linux icon.

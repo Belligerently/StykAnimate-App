@@ -29,3 +29,16 @@ native/bin/darwin-*/
 
 # Local Python environments.
 .venv/
+
+# Not part of the app: kept outside the public repository.
+/AssetReleases/
+/labs/
+/videos/
+/website/
+/cloud/
+/design/
+/artifacts/
+
+# MSVC linker byproducts; only the DLL is used.
+native/bin/**/*.exp
+native/bin/**/*.lib

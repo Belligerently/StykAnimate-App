@@ -272,7 +272,7 @@ def run(args, plan):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=Path("C:/Users/aleri/Downloads/16 Akane vs Akato Segundo round (3).piv"))
+    parser.add_argument("--input", type=Path, default=Path.home() / "Downloads" / "16 Akane vs Akato Segundo round (3).piv")
     parser.add_argument("--output", type=Path, default=Path("artifacts/native-clipboard-akane-v1"))
     parser.add_argument("--cases", nargs="+", type=int, default=[1, 64, 1479])
     parser.add_argument("--timeout", type=float, default=25, help="Owned-process wall deadline in seconds, including Frida setup and initialization")

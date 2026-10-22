@@ -5,7 +5,7 @@
 //
 // Authentication is wrangler's: `wrangler login`, or CLOUDFLARE_API_TOKEN and
 // CLOUDFLARE_ACCOUNT_ID in the environment. wrangler is the pinned copy installed
-// for the public site (`npm ci --prefix cloud`), so there is one version of it.
+// in web/ (`npm ci --prefix web`).
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -16,14 +16,14 @@ import { verifyWeb } from './verify-web.mjs';
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export function wranglerEntry(root = appRoot) {
-  const entry = path.join(root, 'cloud', 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+  const entry = path.join(root, 'web', 'node_modules', 'wrangler', 'bin', 'wrangler.js');
   return existsSync(entry) ? entry : null;
 }
 
 async function main(args) {
   const entry = wranglerEntry();
   if (!entry) {
-    console.error('wrangler is not installed. Run: npm ci --prefix cloud');
+    console.error('wrangler is not installed. Run: npm ci --prefix web');
     return 1;
   }
   const built = await buildWeb();

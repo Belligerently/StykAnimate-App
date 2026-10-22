@@ -2,8 +2,7 @@
 
 Home is the page the app opens on: the person's projects, a way to start a new animation, and the tutorials.
 It is a page over the editor, not another document. The open projects stay open behind it, and it steps aside
-as soon as a project comes to the front or a command works on the animation. The design is concept 5 of
-`design/hub-concepts/` (Home as a place of its own in the band), with the project organization added.
+as soon as a project comes to the front or a command works on the animation. The design is the "Home as a place of its own in the band" concept, with the project organization added.
 
 ## Where it lives
 

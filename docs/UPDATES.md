@@ -18,12 +18,12 @@ The welcome splash appears once each process launch (not every renderer reload).
 
 1. Follow [the release history procedure](RELEASING.md): move completed `CHANGELOG.md` Unreleased entries into one new highest `x.y.z` section and align `package.json` and both root version fields in `package-lock.json`.
 2. Run `npm run release:prepare`, `npm run changelog:check`, `npm run test:updates`, and `npm run test:updates:desktop`. Commit both generated note files with the history and version files; do not author `desktop/release-info.json` directly.
-3. Push the prepared source to the private repository and dispatch **Build and verify release** with both inputs off. This verifies Windows, Linux and browser candidates without publication. Review its artifacts and installation evidence. When shipping is authorized, enable `upload_draft` for a draft, or `publish` for publication; a matching `v<version>` tag also publishes automatically.
+3. Push the prepared source and dispatch **Build and verify release** with both inputs off. This verifies Windows, Linux and browser candidates without publication. Review its artifacts and installation evidence. When shipping is authorized, enable `upload_draft` for a draft, or `publish` for publication; a matching `v<version>` tag also publishes automatically.
 4. Confirm the workflow passed and the public release has the Setup installer, Portable executable, Setup `.blockmap`, `latest.yml`, Linux AppImage, `latest-linux.yml`, and `SHA256SUMS.txt`. Deploy and verify the browser build, then refresh the website catalogue when shipping all three platforms.
 
 Do not overwrite published releases; increment the version for corrections. Published GitHub assets must remain accessible and retain their generated filenames.
 
-Builds use exact JavaScript/Python dependencies and the Rust engine and Pivot codec built from the private repository (`node scripts/engine-build.mjs`). No sibling checkout is required. The uploader validates installer version, filename, size and hash before uploading, then checks GitHub's asset names and available digests before publishing. It uploads a fixed allowlist, never the source tree or build logs. Public tags are created in the releases repository, which contains no app source.
+Builds use exact JavaScript/Python dependencies and the Rust engine and Pivot codec built from this repository's `engine/` (`node scripts/engine-build.mjs`). No sibling checkout is required. The uploader validates installer version, filename, size and hash before uploading, then checks GitHub's asset names and available digests before publishing. It uploads a fixed allowlist, never the source tree or build logs. Public tags are created in the releases repository, which contains no app source.
 
 ## Build and publish locally
 

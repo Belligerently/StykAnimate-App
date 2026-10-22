@@ -138,8 +138,7 @@ statement before querying report data. Reservations are never refunded after fai
 The read reservation covers the largest bounded query for that route; write reservations
 include indexes, triggers and actor ledgers. The ledger itself and rejected probes still
 consume D1 operations. Nightly cleanup is separately bounded; the app does not represent
-the ledger as exact billed usage. Existing analytics has its own limits in
-[analytics-service.md](analytics-service.md). Check account-wide headroom before enabling
+the ledger as exact billed usage. Existing analytics has its own limits. Check account-wide headroom before enabling
 the new service alongside any other Workers, D1 databases or R2 buckets.
 
 Live updates use a separate D1 admission ledger (`0004_support_live.sql`), so reaching
@@ -193,11 +192,11 @@ backlogged. Never enable public access or another writer on the dedicated R2 buc
 
 ## Source and API
 
-`cloud/support.mjs` owns authorization, admission, validation and workflows.
-`cloud/migrations/0003_support.sql` owns counters and report relations.
-`src/support-contract.mjs`, `src/support-center.mjs` and `src/support-center.css` are
-canonical. `cloud/generate-support-assets.mjs` copies them into public assets and the
-existing generator fingerprints dependencies. Do not edit their public copies by hand.
+The service itself (the Worker that owns authorization, admission, validation and
+workflows, its D1 migrations and the admin UI) lives in the StykAnimate website
+repository. `src/support-contract.mjs`, `src/support-center.mjs` and
+`src/support-center.css` in this repository are canonical; the website copies them into
+its public assets. Do not edit those copies by hand.
 
 Creator routes live under `/api/v1/support`; matching admin routes use
 `/api/v1/admin/support`. All JSON and binary responses are private/no-store.
@@ -233,32 +232,21 @@ deployment:
 3. Apply migrations through `0004_support_live.sql` to `stykanimate-analytics`, including
    prior migrations. Existing feedback and analytics rows are preserved.
 4. Generate and validate the public assets. Deploy the Worker **and** assets, R2 binding,
-   support limiter, `SUPPORT_LIVE` binding, SQLite Durable Object migration and variables together. `scripts/cloudflare-prepare.mjs` includes the
-   R2 and Durable Object bindings in API deployment metadata. For repeat API uploads,
-   set `CLOUDFLARE_MIGRATION_TAG` to the deployed migration tag; Wrangler resolves it
-   automatically for normal deploys. Existing administrator secrets are retained.
+   support limiter, `SUPPORT_LIVE` binding, SQLite Durable Object migration and variables together. Existing administrator secrets are retained.
 5. Verify public page, creator isolation, admin session, binding readiness, CSP, and
    scheduled cleanup on the actual deployment. Do not put synthetic reports in production
    without an explicit test scope. Observe actual CPU/billed operations before widening use.
 6. Ship the desktop integration through the documented desktop release process when
    authorized. Updating the website alone cannot change an already installed app.
 
-Local checks (Node 24.11.0, pinned dependencies):
+App-side checks (Node 24.11.0, pinned dependencies):
 
 ```text
 npm run check
 npm test
-node --test cloud/tests/*.test.mjs
-node cloud/generate-public-api.mjs --check
-node cloud/tests/support.browser.mjs
-node cloud/tests/dashboard.browser.mjs
-node scripts/smoke-support.mjs
-node cloud/node_modules/wrangler/bin/wrangler.js deploy --config cloud/wrangler.jsonc --dry-run --outdir .wrangler/support-dry-run
-node cloud/tests/support-runtime.mjs
 ```
 
-The SQLite tests execute real SQL. The R2 map in `cloud/local-bucket.mjs` is an explicit
-test adapter; it is never a production fallback. The runtime test uses actual workerd
-with local D1 and R2. Browser and Electron checks use isolated profiles and a test server.
+The service's own tests (real SQL, workerd with local D1 and R2, browser checks) live
+with it in the website repository.
 Evidence is written to ignored `artifacts/support/`. These checks do not establish live
 Cloudflare CPU, billing, physical-device behavior, or a packaged desktop release.

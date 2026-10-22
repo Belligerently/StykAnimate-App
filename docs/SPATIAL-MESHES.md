@@ -65,13 +65,6 @@ vertices of other fills keep the native representation, which remains
 supported. `node scripts/convert-spatial-meshes.mjs <input> <output>` converts a
 STYK or STKZ file without modifying the input.
 
-`tests/spatial-mesh.test.mjs` compares converted Spider-Man meshes with the
-native skin surfaces in plain, reflected, perspective and near-clipped views
-(identical positions and visible faces). It also covers validation, conversion
-refusals, live posing against fresh evaluation, snapshot sharing, Builder
-protection, bounds, painter-order splitting and artwork identity.
-`tests/spider-man-rig.test.mjs` checks the generated mesh asset.
-docs/performance/SPATIAL-FIGURE-PERFORMANCE.md records the measurements.
 
 ## Attached movieclip meshes
 

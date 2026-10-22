@@ -65,7 +65,8 @@ if (mode === 'evidence') {
     'Concurrent unrelated renderer/drawing/timeline/VFX development is preserved. Per-run hashes and source differences identify measurement states.',
     'No private dense PIV corpus, packaged release, second GPU, active marketing site or deployed D1 database was measured.',
     'Local logs include failed first attempts; those are excluded from valid benchmark conclusions and documented in the audit.'];
-  const filename = 'docs/performance/codebase-sweep-2026-10-01.json';
+  const filename = 'artifacts/codebase-sweep/evidence.json';
+  await mkdir(path.dirname(filename), {recursive: true});
   const clean = JSON.stringify(evidence, null, 2).replaceAll(JSON.stringify(process.cwd()).slice(1, -1), '<repo>').replaceAll(process.cwd(), '<repo>')
     .replaceAll(process.cwd().replaceAll('\\', '/'), '<repo>');
   await writeFile(filename, clean + '\n');

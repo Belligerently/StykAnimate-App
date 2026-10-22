@@ -27,12 +27,8 @@ this file as its surfaces land.
 | `docs/design/function-ledger.md` | Every function of the editor as measured at `c82312fb`, with its clicks then and in the redesign (generated) |
 | `docs/design/ui-architecture.md` | The build plan: layers and lint, the UI kit, the shell and layout model, contracts, milestones M0–M9, and their status |
 
-The reference editor is in `design/app-ui/reference/`, with the spec's
-`tokens.css` and `components.css` it renders with in `design/app-ui/`. Run
-`node design/app-ui/reference/tools/build.mjs` to regenerate `editor.html` and
-`node design/app-ui/reference/tools/shoot.mjs` to render and audit its states
-into `artifacts/ui-redesign/reference/`. The research behind the spec is not in
-the repository.
+The reference editor used to design and audit the redesign, and the research
+behind the spec, are not part of this repository.
 
 ## Stylesheets and cascade layers
 

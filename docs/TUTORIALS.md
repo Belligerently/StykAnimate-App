@@ -2,8 +2,8 @@
 
 A tutorial teaches by having the person do things in the real editor, one step at a time. It runs in Animate,
 with the Advanced timeline, on a practice animation of its own. It adds no row to the window: its strip takes
-the stage header's start, where the scene's name is. The design is concept 5's lesson of
-`design/hub-concepts/`, moved into the stage header so it costs no height on small screens.
+the stage header's start, where the scene's name is. The design is the Home concept's lesson,
+moved into the stage header so it costs no height on small screens.
 
 ## The five tutorials
 
