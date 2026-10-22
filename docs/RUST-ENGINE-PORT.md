@@ -69,7 +69,9 @@ Windows; baseline-0 worktree), `owner-gestures` (effect-clip and property edits 
 `private-fixtures` (engine tests that read the asset packs move to repository documents with
 the same coverage), `rust-files` (`.styk`, `.stkz`, `.stykmov` open and save through Rust).
 Briefs: `tmp/win/briefs/` (common rules, verifier, one file per stream); each stream runs as a
-workflow: implementer, then a fresh verifier, up to two fix rounds. Also running:
+workflow: implementer, then a fresh verifier, up to two fix rounds. Never message a running
+workflow agent: `SendMessage` to its id starts a second copy in the same worktree (seen
+2026-10-22; both copies were stopped). Also running:
 `refusals-movieclips`, `refusals-bounds`, `perf-open`.
 
 **Open-path finding (2026-10-22, Node probe `tmp/win/open-stages.mjs`, machine loaded):**
