@@ -71,7 +71,14 @@ the same coverage), `rust-files` (`.styk`, `.stkz`, `.stykmov` open and save thr
 Briefs: `tmp/win/briefs/` (common rules, verifier, one file per stream); each stream runs as a
 workflow: implementer, then a fresh verifier, up to two fix rounds. Never message a running
 workflow agent: `SendMessage` to its id starts a second copy in the same worktree (seen
-2026-10-22; both copies were stopped). Also running:
+2026-10-22; both copies were stopped). Create worktrees with `tmp/win/new-worktree.sh <name>`
+(a `node_modules` junction, the built `src/engine/pkg` and the checkout's compiled third-party
+dependencies, 2.2 GB, so only changed crates compile) and remove them with
+`tmp/win/remove-worktree.sh <name>`: `git worktree remove --force` follows the junction and
+empties this checkout's `node_modules` (happened once; restored with `npm ci`). Load rule
+(user, 2026-10-23): at most five implementation agents; agents run focused checks only and
+`--dev` or copied WebAssembly builds; verifiers mostly review; the orchestrator alone runs the
+full-optimization build, whole suites and parity, once per merge batch. Also running:
 `refusals-movieclips`, `refusals-bounds`, `perf-open`.
 
 **Open-path finding (2026-10-22, Node probe `tmp/win/open-stages.mjs`, machine loaded):**
