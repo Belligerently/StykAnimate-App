@@ -4,7 +4,10 @@ The single source of truth for moving StykAnimate's engine from JavaScript and P
 Rust. It is updated at every milestone. Read this page and `git log engine-rust` to resume;
 nothing here should need re-deriving.
 
-- **Branch:** `engine-rust` (from `main` at `96ebce85`). Not pushed, no PR, nothing released.
+- **Branch:** `engine-rust` (from `main` at `96ebce85`), public on GitHub since 2026-10-22 and followed
+  in a draft pull request against `main`; nothing released. That day its history was moved onto the
+  open-source history: commit IDs written earlier on this page and in `docs/engine/` are the old ones,
+  and [`engine/history-map.tsv`](../engine/history-map.tsv) gives the commit each became.
 - **Rule:** the interface and editable behavior do not change. Every feature stays;
   editing class cost follows the current user policy below, with D13 unchanged.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
