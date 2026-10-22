@@ -13,7 +13,65 @@ nothing here should need re-deriving.
 - **Status in one line:** see [Milestone log](#milestone-log), last entry.
 - **Handoff:** the next section, current class gate and verification workflow.
 
-## Handoff (2026-10-11, third agent, in progress)
+## Handoff (2026-10-22, Windows session: orchestrator with subagents, in progress)
+
+**Goal of this session (user, 2026-10-22):** finish the port so the app switches to the Rust
+engine for good, with measured large speed-ups. Done means: the engine owns every open
+document by default (shadow/opt-in modes, adoption packets, mirror write-back and the
+renderer gate deleted; every tape replays with zero refusals); handles, picking, snapping
+and hit tests are engine queries and the engine draws every path (section 8 gaps closed);
+`.styk` and Pivot open and save through Rust, byte-identical, atomic replacement and
+recovery intact, no Python in the shipped app; the replaced JavaScript deleted (no `js` or
+`partial` inventory rows); all checks green on Windows; the section 5 protocol shows the
+speed-ups; docs and `CHANGELOG.md` current.
+
+**Rules in force (user, 2026-10-22; replace the 2026-10-11 ones):** an orchestrator plans,
+reviews, verifies and integrates; Claude Sonnet 5.5 subagents implement, each in its own
+worktree and branch (`../wt/<name>`, branch `agent/<name>`, `node_modules` a junction to this
+checkout's), on distinct crates or modules, shared types (`styk-doc`, `styk-draw`, the patch
+format) changed one at a time. Every result is reviewed, its checks rerun here (a fresh
+Sonnet verifier for parity and performance claims), then squash-merged into `engine-rust`
+and the worktree and branch removed. Push `engine-rust` at each milestone; never `main`, PR
+#17 stays a draft, no tags, releases, deploys or settings. D7, D10, D13, D15, D16, D18, D19
+stand; the JavaScript of a subsystem is the oracle until it is deleted. Cost rule unchanged:
+`C <= 1.05 × J` or `(C − J) / calls <= 0.1 ms`, with exact behaviour.
+
+**Environment (this Windows 11 PC; Ryzen 5 5500, 64 GB, RTX 4070 SUPER):** in Git Bash,
+`source ~/.styk-tools/env.sh` first. It puts wasm-bindgen 0.2.129 (`~/.styk-tools/bin`) and a
+portable clang 23 (`~/.styk-tools/llvm`, needed by `zstd-sys` for WebAssembly) on `PATH`,
+sets `RUSTUP_TOOLCHAIN=1.99.1` (stable as CI uses it; the machine's own stable is older and
+cannot compile `if let` guards) and `STYK_PYTHON` (miniconda 3.12.9). The WebAssembly build
+names `nightly-2026-09-15` itself. No wasm-opt yet. Private documents: `~/Downloads/pivs` is a
+junction to `Desktop/uriel pivot` (svr_uriel, tdd2 uriel nemesis, AyameDemo, hitoshi, finisher,
+Uriel 19-2-2026, tdd2 uriel nemesis 2); `Desktop/Folder` holds the Akane files
+(`STYK_CORPUS_DIR`). `TDD2 URIEL NEMESIS 3.styk`, `Jay on a new app (repaired).styk`,
+`WafflesPack` and `AssetReleases/` are not on this machine. Baseline-0 (section 5) was measured
+on the Linux machine: before/after on this PC are both measured here, with the same driver.
+
+**State at the start (2026-10-22, `fda6b19b` + Windows fixes):** engine module builds on
+Windows (3.5 min); `npm run check` passes; the owner tape suite passes on Windows (325 tapes,
+8,308 steps; native 3,020, editor 1,389; from the mirror 2,989 / 1,434). The 1,389 editor
+calls are gestures the owner leaves to the editor (`EDITOR_GESTURES`: effect-clip gizmo 365,
+motion paths 296, figure handles 182, Handle Edit Mode 176, property edits 86, rig drags 56,
+camera drags 20, segment values 18, drags begun by the editor 30) and about 105 refusals
+(native movieclip commands needing worker preparation 67, bounds-callback alignment 31, origin
+and native-channel combinations 6). Windows here: `cargo test --workspace --exclude styk-wasm
+--no-fail-fast` 870 pass, 11 fail, 2 ignored (the drawing parity `pressure-size-curve`, the
+platform `pow`; ten tests that open the asset packs, absent here and in CI); `npm test` 4,112:
+4,102 pass, 2 fail (the Python oracle decodes Pivot text differently on Windows; a launcher
+test assumes no Miniconda), 8 skipped. Draft PR CI on Windows also failed four JavaScript test
+files (one an absolute-path import, fixed in `f78648b7`).
+
+**Streams (wave 1, 2026-10-22):** `win-paths` (scripts, tools and tests on Windows paths;
+parity runs on Windows), `v8-pow` (one V8-exact `pow` in `styk-math`), `owner-cost` (per-figure
+memoized records; the default-ownership blocker), `bench-windows` (the section 5 driver on
+Windows; baseline-0 worktree), `owner-gestures` (effect-clip and property edits in the session),
+`private-fixtures` (engine tests that read the asset packs move to repository documents with
+the same coverage), `rust-files` (`.styk`, `.stkz`, `.stykmov` open and save through Rust).
+Briefs: `tmp/win/briefs/` (common rules, verifier, one file per stream); each stream runs as a
+workflow: implementer, then a fresh verifier, up to two fix rounds.
+
+## Handoff (2026-10-11, third agent; superseded by the 2026-10-22 handoff above)
 
 **Where it stands:** S0–S4 done; S6 done for the raster engine. S5 phase 3 has begun under
 D19 (user, 2026-10-11): one engine session per document owns document and history
