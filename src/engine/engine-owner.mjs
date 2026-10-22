@@ -199,11 +199,11 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   /** Writes what the editor changed since the session last had its document. */
   /** Whether the editor may have changed the document since the session last had it:
    * a call it ran, a command recorded or an edit announced outside the session's calls. */
-  let pending = false;
+  let pending = false, announced = 0;
   const flush = ({entry = null} = {}) => {
     if (!session || applying) return;
-    // Selecting changes the active layer in place, without an edit event.
-    if (!entry && !pending && !hints && JSON.stringify(counters()) === JSON.stringify(known) && editor.report._styk?.layers?.activeId === snapshot?.activeId) return;
+    // (Selecting changes the active layer in place; every call's view carries it.)
+    if (!entry && !pending && !hints && JSON.stringify(counters()) === JSON.stringify(known)) return;
     pending = false;
     const ops = changes();
     if (entry) {
@@ -281,7 +281,9 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (touched.has('figure_types') || touched.has('*')) invalidateMovieclipTypes(editor.report);
     editor._layerDescriptors = null; editor._layerUidArrays = new Map(); editor._nativeAnimationChannels = null;
   };
-  const adoptState = (answer, {patch = true} = {}) => {
+  /** `preview`: the frame (and its geometry) to keep on show, as `_commitSheetPose` keeps a
+   * committed draft (`_authoredCommitPreview`). */
+  const adoptState = (answer, {patch = true, preview = null} = {}) => {
     const {state} = answer;
     if (patch && answer.patch?.length) {
       applying = true;
@@ -289,15 +291,20 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
         const before = posesBefore();
         applyDocumentPatch(editor.report, answer.patch);
         refresh(answer.patch, before);
-        editor._invalidate({timing: true});
+        editor._authoredCommitPreview = preview;
+        try { editor._invalidate({timing: true, retainGeometry: Boolean(preview?.geometry)}); }
+        finally { editor._authoredCommitPreview = null; }
       } finally { applying = false; }
+    } else if (preview) {
+      editor._evaluated = preview.frame;
+      if (preview.geometry) { editor._geometry = preview.geometry; editor._incremental = preview.incremental; }
     }
     // The playhead first: the selection belongs to the frame it shows. Set as history
     // sets it: the editor's seek would also end a gesture the session keeps going.
     if (state && (state.tick !== editor.tick || state.frameIndex !== editor.frameIndex)) {
       editor.tick = state.tick; editor.frameIndex = state.frameIndex; editor._invalidate({viewOnly: true});
     }
-    if (Object.hasOwn(answer, 'drag')) gesture(answer);
+    if (Object.hasOwn(answer, 'drag')) gesture(answer, Boolean(preview));
     if (state) {
       history = {canUndo: state.canUndo, canRedo: state.canRedo, undoLabel: state.undoLabel, redoLabel: state.redoLabel, dirty: state.dirty};
       editor._nextUid = state.nextUid; editor._nextFrameIdentity = state.nextFrameIdentity; editor._layerRevision = state.layerRevision;
@@ -347,12 +354,14 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   };
   /** The session's gesture in progress, as the editor shows it: its draft on show and
    * `_drag` with the figures it took as they were. */
-  const gesture = answer => {
+  const gesture = (answer, kept = false) => {
     const drag = answer.drag;
     if (!drag) {
-      if (editor._drag?.engine) { editor._drag = null; editor._authoredPoseEdit = null; editor._invalidate(); }
+      // Ended: the frame on show is the one adoption kept, else the document's.
+      if (editor._drag?.engine) { editor._drag = null; editor._authoredPoseEdit = null; if (!kept) editor._invalidate(); }
       return;
     }
+    const begun = !editor._drag?.engine;
     if (!editor._drag?.engine) {
       const source = editor.evaluatedFrame;
       editor._authoredPoseEdit = answer.draft ? {frame: {...source, objects: source.objects.slice()}, source, owned: new Set(), tick: editor.tick, engine: true} : null;
@@ -374,11 +383,17 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
           continue;
         }
         if (objects[slot]._movieclipSample !== undefined) figure._movieclipSample = objects[slot]._movieclipSample;
-        objects[slot] = figure; edit.owned.add(slot);
+        // A figure the draft already owns keeps its identity, as the editor's own pose
+        // edits do, so incremental geometry keeps its plan.
+        if (edit.owned.has(slot)) replacePoseObject(objects[slot], figure);
+        else { objects[slot] = figure; edit.owned.add(slot); }
       }
     }
     editor._drag.changed = Boolean(drag.changed);
-    editor._invalidate();
+    // Only the figures the move changed are evaluated again; a gesture's start keeps it all.
+    const live = (answer.events ?? []).find(event => event.kind === 'edit' && event.live);
+    if (edit && live?.changedUids) editor._invalidatePoseObjects(live.changedUids, {translation: Boolean(drag.translation)});
+    else if (!begun || !edit) editor._invalidate();
   };
   /** The session's change events, for the interface: they describe what the session already has. */
   const emit = answer => {
@@ -483,15 +498,15 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   /** Runs `name` in the JavaScript editor and writes what it changed back. */
   const fallback = (name, original, args) => {
     const outer = captured === null;
-    if (outer) captured = [];
-    pending = true;
+    if (outer) { captured = []; announced = 0; }
     depth++;
     let result, unsettled = false;
     const done = () => {
       depth--;
       if (outer) {
         const commands = captured; captured = null;
-        writeBack(commands);
+        // A call that recorded nothing and announced no edit changed nothing to write back.
+        if (commands.length || announced) { pending = true; writeBack(commands); }
       }
     };
     try {
@@ -572,12 +587,19 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     // A committed gesture's frame stays on show, as the session keeps it (`retained`),
     // until the session lets it go.
     mark = performance.now();
-    const shown = answer.retained ? (editor._authoredPoseEdit?.frame ?? editor.evaluatedFrame) : null;
-    const kept = answer.retainedKept ? editor._evaluated : null;
-    adoptState(answer);
-    if (shown && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, shown); editor._geometry = null; editor._incremental = null; }
-    else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
-    if (!answer.retained && !answer.retainedKept) retainedShown = null;
+    let preview = null;
+    if (answer.retained && !answer.drag) {
+      // A committed gesture: its draft stays on show with its geometry when the commit
+      // changed none of it, else the frame the session retained.
+      const drafted = editor._authoredPoseEdit?.frame ?? editor.evaluatedFrame;
+      const unchanged = answer.retainedChanges && !answer.retained.length && !answer.retainedOrder && !answer.retainedFieldOrder
+        && !Object.keys(answer.retainedFields ?? {}).length && !answer.retainedRemoved?.length;
+      preview = unchanged ? {frame: drafted, geometry: editor._geometry, incremental: editor._incremental} : {frame: retainedFrame(answer, drafted), geometry: null, incremental: null};
+    } else if (answer.retainedKept && !answer.drag && editor._evaluated && !editor._authoredPoseEdit) {
+      preview = {frame: editor._evaluated, geometry: editor._geometry, incremental: editor._incremental};
+    }
+    adoptState(answer, {preview});
+    retainedShown = preview?.frame ?? null;
     if (answer.patch?.length) take();
     timing.adopt += performance.now() - mark; mark = performance.now();
     emit(answer);
@@ -697,6 +719,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   });
   // A call the editor runs names what it changed in place in its events.
   layer._emit = function owned(kind, detail = {}) {
+    if (depth > 0 && !applying && ['edit', 'history', 'document', 'preview'].includes(kind)) announced++;
     if (session && document === editor.report && depth > 0 && !applying && ['edit', 'history'].includes(kind)) {
       hints ??= freshHints();
       for (const index of detail.figureIndices ?? []) hints.figures.add(index);
@@ -715,6 +738,13 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   report.session = () => session;
   report.release = () => { session?.free(); session = null; document = null; for (const value of parked.values()) value.session.free(); parked.clear(); };
   return report;
+}
+
+/** A figure record replaced by the session's, in place (keys and order as the session's). */
+function replacePoseObject(object, figure) {
+  const keys = Object.keys(figure), previous = Object.keys(object);
+  if (keys.length !== previous.length || keys.some((key, index) => key !== previous[index])) for (const key of previous) delete object[key];
+  for (const key of keys) object[key] = figure[key];
 }
 
 /** The frame the session keeps on show after a commit: its changed figures (and fields)

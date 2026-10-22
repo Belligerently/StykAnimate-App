@@ -20,6 +20,7 @@
 //! file format hashes and stores.
 
 pub mod json;
+pub mod prof;
 mod number;
 mod value;
 

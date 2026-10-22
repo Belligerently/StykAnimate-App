@@ -41,7 +41,7 @@ mod movieclip_native;
 mod pose;
 mod pose_choice;
 mod palette;
-pub mod prof;
+pub use styk_doc::prof;
 pub mod patch;
 mod polygons;
 mod project;

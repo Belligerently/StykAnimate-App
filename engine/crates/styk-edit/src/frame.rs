@@ -118,8 +118,9 @@ impl Editor {
             {
                 return Err(EditError::Unported("follow projections require this revision's worker-prepared document".into()));
             }
-            let document = cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
-            cache.prepared = Some(Arc::new(Prepared::new(Arc::new(document))));
+            let document = { let _scope = crate::prof::scope("prepared::loader"); cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))? };
+            let previous = cache.prepared.take();
+            cache.prepared = Some({ let _scope = crate::prof::scope("prepared::new"); Arc::new(Prepared::new_after(Arc::new(document), previous.as_deref())) });
             cache.report = Some(self.report.clone());
             cache.frames.clear();
             cache.latest_typed = None;
@@ -140,7 +141,8 @@ impl Editor {
         if let Some((_, _, _, frame)) = self.eval.borrow().frames.iter().find(|(at, with, editor, _)| *at == tick.to_bits() && *with == clips && *editor == editor_native) {
             return Ok(frame.clone());
         }
-        let records = Records::new(&self.report, &prepared)?;
+        let records = { let _scope = crate::prof::scope("records::new"); Records::new(&self.report, &prepared)? };
+        let _scope = crate::prof::scope("records::evaluate");
         let frame = if editor_native { records.evaluated_editor_with(tick, clips)? } else { records.evaluated_with(tick, clips)? };
         let mut cache = self.eval.borrow_mut();
         if cache.frames.len() >= 4 {

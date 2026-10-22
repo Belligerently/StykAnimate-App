@@ -55,6 +55,14 @@ pub struct Loader {
     vfx_clips: HashMap<usize, (Value, Option<Arc<crate::vfx::Clips>>)>,
     /// Property channels by the address of the animation record they were built from.
     animations: HashMap<usize, (Value, Option<Arc<crate::channels::Animation>>)>,
+    /// Layer sheet tracks by the address of the track record they were built from: an
+    /// edit replaces the tracks it changes, the others are not converted again.
+    tracks: HashMap<usize, (Value, Arc<SheetTrack>)>,
+    /// Keyframe views whose styles were resolved against the figures named by
+    /// `styled_figures` (their addresses): an unchanged view is not scanned again. The views
+    /// are held, so an address cannot be reused while it is in the set.
+    styled_frames: HashMap<usize, Arc<Keyframe>>,
+    styled_figures: Vec<usize>,
     /// Records converted (not reused) by the last [`Loader::document`] call.
     pub converted: Converted,
 }
@@ -173,6 +181,9 @@ impl Loader {
             styled: HashMap::new(),
             vfx_clips: HashMap::new(),
             animations: HashMap::new(),
+            tracks: HashMap::new(),
+            styled_frames: HashMap::new(),
+            styled_figures: Vec::new(),
             converted: Converted::default(),
         }
     }
@@ -431,6 +442,8 @@ impl Loader {
         self.keyframes.retain(|_, (source, _)| !source_unshared(source));
         self.vfx_clips.retain(|_, (source, _)| !source_unshared(source));
         self.animations.retain(|_, (source, _)| !source_unshared(source));
+        self.tracks.retain(|_, (source, _)| !source_unshared(source));
+        self.styled_frames.clear();
         let live: std::collections::HashSet<usize> = self.figures.values().map(|(_, figure)| Arc::as_ptr(figure) as usize).collect();
         self.styled.retain(|(base, _), _| live.contains(base));
     }
@@ -957,6 +970,12 @@ impl Loader {
         let mut tracks = HashMap::new();
         if let Some(Value::Obj(map)) = s.get("tracks") {
             for (id, t) in map.iter() {
+                if let Some(address) = node_address(t)
+                    && let Some((_, track)) = self.tracks.get(&address)
+                {
+                    tracks.insert(id.to_string(), track.clone());
+                    continue;
+                }
                 let keys = t
                     .get("keys")
                     .and_then(Value::as_arr)
@@ -989,7 +1008,9 @@ impl Loader {
                             .collect(),
                     })
                     .collect();
-                tracks.insert(id.to_string(), Arc::new(SheetTrack { end: int(t, "end").unwrap_or(0) as u32, keys }));
+                let track = Arc::new(SheetTrack { end: int(t, "end").unwrap_or(0) as u32, keys });
+                if let Some(address) = node_address(t) { self.tracks.insert(address, (t.clone(), track.clone())); }
+                tracks.insert(id.to_string(), track);
             }
         }
         LayerSheet { duration: int(s, "duration").unwrap_or(1).max(1) as u32, tracks }
@@ -1175,7 +1196,16 @@ impl Loader {
     /// figures that have not changed since is kept as it is.
     fn resolve_styles(&mut self, doc: &mut Document) {
         let figures: HashMap<u32, Arc<Figure>> = doc.figures.iter().map(|f| (f.id, f.clone())).collect();
+        let signature: Vec<usize> = doc.figures.iter().map(|f| Arc::as_ptr(f) as usize).collect();
+        if signature != self.styled_figures {
+            self.styled_figures = signature;
+            self.styled_frames.clear();
+        }
+        let mut checked = std::mem::take(&mut self.styled_frames);
         let mut fix = |frame: &mut Arc<Keyframe>| {
+            if checked.contains_key(&(Arc::as_ptr(frame) as usize)) {
+                return;
+            }
             let stale = |object: &Arc<Object>| {
                 if object.style.is_none() && object.sticknodes_sprite.is_none() {
                     return false;
@@ -1186,15 +1216,15 @@ impl Loader {
                     (None, Some(_)) => true,
                 }
             };
-            if !frame.objects.iter().any(stale) {
-                return;
-            }
-            let frame = Arc::make_mut(frame);
-            for object in frame.objects.iter_mut() {
-                if let Some(base) = figures.get(&object.figure) {
-                    self.styled_object(base, object);
+            if frame.objects.iter().any(stale) {
+                let resolved = Arc::make_mut(frame);
+                for object in resolved.objects.iter_mut() {
+                    if let Some(base) = figures.get(&object.figure) {
+                        self.styled_object(base, object);
+                    }
                 }
             }
+            checked.insert(Arc::as_ptr(frame) as usize, frame.clone());
         };
         for k in doc.keyframes.iter_mut() {
             fix(k);
@@ -1202,6 +1232,10 @@ impl Loader {
         for k in doc.frame_sources.values_mut() {
             fix(k);
         }
+        // Views of earlier revisions that this one no longer holds are forgotten.
+        let live: std::collections::HashSet<usize> = doc.keyframes.iter().chain(doc.frame_sources.values()).map(|k| Arc::as_ptr(k) as usize).collect();
+        checked.retain(|address, _| live.contains(address));
+        self.styled_frames = checked;
     }
 }
 

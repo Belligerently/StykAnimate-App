@@ -171,6 +171,8 @@ fn edit_session(file: &str) -> i32 {
         let started = std::time::Instant::now();
         let answer = session.call(&name, &text(call.get("args")), &text(call.get("view")));
         let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+        // `STYK_EDIT_PROFILE_SKIP=N`: the profile leaves out the first N calls (warming up).
+        if std::env::var("STYK_EDIT_PROFILE_SKIP").ok().and_then(|n| n.parse::<usize>().ok()) == Some(at + 1) { styk_edit::prof::take(); }
         let answer_len = answer.len();
         let answer = styk_doc::json::parse(answer.as_bytes()).unwrap_or(styk_doc::Value::Null);
         let status = text(answer.get("status"));

@@ -125,6 +125,9 @@ async function appCost() {
       if (owned) await page.waitForFunction(() => Boolean(globalThis.__stykEngineOwner?.ready() && globalThis.__stykEngineOwner.session() && styk.editor.canUndo === false),
         null, {timeout: 180000, polling: 300});
       else await page.waitForTimeout(1500);
+      const profiling = args.includes('--profile') && owned && round === 0;
+      const cdp = profiling ? await context.newCDPSession(page) : null;
+      if (cdp) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', {interval: 100}); await cdp.send('Profiler.start'); }
       const result = await page.evaluate(source => {
         const editor = styk.editor, calls = {}; let total = 0;
         globalThis.__stykEngineOwner?.log?.push(`before workload: session ${Boolean(globalThis.__stykEngineOwner.session())} at ${Math.round(performance.now())}`);
@@ -136,6 +139,20 @@ async function appCost() {
         const why = o ? {ms: o.ms, log: o.log?.filter(line => !/^(park false|start false|ensure: session false)/.test(line)).slice(-14), broken: o.broken ?? null, session: Boolean(o.session()), calls: o.calls, side: Boolean(styk.state?.renderer?.engineSide), current: styk.state?.renderer?.engineSide?.mirror?.framesCurrent(editor.report, editor.revision)} : null;
         return {why, total, calls, hash, native: globalThis.__stykEngineOwner?.native ?? 0, fallback: globalThis.__stykEngineOwner?.fallback ?? 0, refused: globalThis.__stykEngineOwner?.refused ?? {}};
       }, workload.toString());
+      if (cdp) {
+        const {profile} = await cdp.send('Profiler.stop');
+        const byId = new Map(profile.nodes.map(node => [node.id, node])), self = new Map(), total = new Map();
+        const parent = new Map(); for (const node of profile.nodes) for (const child of node.children ?? []) parent.set(child, node.id);
+        const counts = new Map(); for (const id of profile.samples) counts.set(id, (counts.get(id) ?? 0) + 1);
+        const name = node => `${node.callFrame.functionName || '(anonymous)'} ${node.callFrame.url.split('/').pop()}:${node.callFrame.lineNumber + 1}`;
+        for (const [id, count] of counts) {
+          const node = byId.get(id); self.set(name(node), (self.get(name(node)) ?? 0) + count);
+          const seen = new Set(); for (let at = id; at !== undefined; at = parent.get(at)) { const label = name(byId.get(at)); if (!seen.has(label)) { seen.add(label); total.set(label, (total.get(label) ?? 0) + count); } }
+        }
+        const ms = count => (count * 0.1).toFixed(1);
+        console.log('  self:', [...self].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, v]) => `${k} ${ms(v)}`).join(' | '));
+        console.log('  total:', [...total].sort((a, b) => b[1] - a[1]).slice(0, 45).map(([k, v]) => `${k} ${ms(v)}`).join(' | '));
+      }
       runs[owned ? 'owned' : 'alone'].push(result);
       await context.close();
     }

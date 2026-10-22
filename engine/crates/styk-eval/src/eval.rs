@@ -93,7 +93,10 @@ pub struct Prepared {
     /// The pose track of each replaced movieclip, by layer and replaced uid (`patchChannels`).
     patches: HashMap<(String, u32), Arc<Seq>>,
     /// Presence-clock spans per movieclip instance: (start, end, elapsed, rate).
-    presence: HashMap<u32, Vec<(f64, f64, f64, f64)>>,
+    presence: Arc<HashMap<u32, Vec<(f64, f64, f64, f64)>>>,
+    /// What [`Prepared::presence_index`] read ([`presence_key`]): a revision that keeps it
+    /// keeps the index.
+    presence_key: u64,
     /// Follow camera clips and their shaped paths ([`crate::follow`]).
     follow: Option<crate::follow::Follow>,
     /// The property channels the native timeline is evaluated with ([`crate::channels`]).
@@ -724,6 +727,12 @@ const FIXED: [&str; 2] = ["scene", "camera"];
 
 impl Prepared {
     pub fn new(doc: Arc<Document>) -> Prepared {
+        Self::new_after(doc, None)
+    }
+
+    /// [`Prepared::new`] for the next revision of the document `previous` was prepared
+    /// for: what that revision's edit cannot have changed is reused.
+    pub fn new_after(doc: Arc<Document>, previous: Option<&Prepared>) -> Prepared {
         let native = Seq {
             keys: doc
                 .keyframes
@@ -735,6 +744,7 @@ impl Prepared {
             auto_easing: doc.auto_easing,
             ticks: Vec::new(),
         };
+        let _scope = styk_doc::prof::scope("prepared::tracks");
         let mut rows = native_timeline(&doc);
         let clip_end = doc.camera_motion.iter().map(|c| c.start + c.duration).fold(0.0, f64::max) as u32;
         let channels = doc.animation.as_ref().map(|animation| crate::channels::Compiled::new(&doc, animation));
@@ -766,11 +776,16 @@ impl Prepared {
         let has_vfx = crate::vfx::has_own_vfx(&doc)
             || doc.animation.as_ref().is_some_and(|a| a.vfx)
             || doc.figures.iter().any(|f| f.movieclip.as_ref().is_some_and(|clip| clip.prepared.has_vfx));
-        let follow = crate::follow::Follow::new(&doc);
+        drop(_scope);
+        let follow = { let _scope = styk_doc::prof::scope("prepared::follow"); crate::follow::Follow::new(&doc) };
         let source = doc.movieclip_source.as_ref().map(|source| Arc::new(Prepared::new(source.document.clone())));
         let has_vfx = has_vfx || source.as_ref().is_some_and(|source| source.has_vfx);
-        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: HashMap::new(), follow, channels, source };
-        prepared.presence = prepared.presence_index();
+        let presence_key = presence_key(&doc, &rows);
+        let mut prepared = Prepared { doc, native, rows, total_ticks, has_vfx, tracks, imported, patches, presence: Arc::new(HashMap::new()), presence_key, follow, channels, source };
+        prepared.presence = match previous.filter(|previous| previous.presence_key == presence_key && previous.has_clips() == prepared.has_clips()) {
+            Some(previous) => previous.presence.clone(),
+            None => { let _scope = styk_doc::prof::scope("prepared::presence"); Arc::new(prepared.presence_index()) }
+        };
         prepared
     }
 
@@ -1518,6 +1533,54 @@ enum Sampled {
 }
 
 /// The pose track of a layer: its keys that carry a pose of their own.
+/// Everything [`Prepared::presence_index`] reads: the times between keys, the keys' layout,
+/// and the movieclip instances (with their playback) and continuations of every pose a key
+/// can show, with the movieclip definitions. Poses, roots and styles are not part of it.
+fn presence_key(doc: &Document, rows: &[Row]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    let playback = |hash: &mut std::collections::hash_map::DefaultHasher, p: &MovieclipPlayback| {
+        (p.start.to_bits(), p.end.map(f64::to_bits), p.offset.to_bits(), p.speed.to_bits(), p.mode as u8, p.presence).hash(hash);
+        for (tick, offset) in &p.restarts { (tick.to_bits(), offset.to_bits()).hash(hash); }
+    };
+    let frame = |hash: &mut std::collections::hash_map::DefaultHasher, k: &Keyframe| {
+        for o in &k.objects {
+            if let Some(p) = &o.movieclip { (o.uid, o.figure).hash(hash); playback(hash, p); }
+        }
+        for (uid, p) in &k.continuations { uid.hash(hash); playback(hash, p); }
+        k.objects.len().hash(hash);
+    };
+    for figure in &doc.figures {
+        if figure.movieclip.is_some() { (figure.id, Arc::as_ptr(figure) as usize).hash(&mut hash); }
+    }
+    for r in rows { (r.start, r.count).hash(&mut hash); }
+    for k in &doc.keyframes { frame(&mut hash, k); }
+    for channel in doc.animation.iter().flat_map(|a| &a.channels) { for key in channel.keys.iter() { key.tick.to_bits().hash(&mut hash); } }
+    if let Some(sheet) = &doc.sheet {
+        sheet.duration.hash(&mut hash);
+        let mut ids: Vec<&String> = sheet.tracks.keys().collect();
+        ids.sort();
+        for id in ids {
+            let track = &sheet.tracks[id];
+            (id, track.end).hash(&mut hash);
+            for key in &track.keys {
+                (key.tick, key.hidden, key.patch_only, format!("{:?}", key.easing)).hash(&mut hash);
+                match &key.value {
+                    // The pose's contents, not its id: a commit captures the same poses anew.
+                    SheetValue::Frame(Some(id)) => { 1u8.hash(&mut hash); match doc.frame_sources.get(id) { Some(k) => frame(&mut hash, k), None => 4u8.hash(&mut hash) } }
+                    SheetValue::Frame(None) => 2u8.hash(&mut hash),
+                    SheetValue::SourceTick(tick) => { 3u8.hash(&mut hash); tick.to_bits().hash(&mut hash); }
+                }
+                for patch in &key.movieclip_patches {
+                    (patch.uid, patch.replacement_uid, patch.order_index).hash(&mut hash);
+                    match doc.frame_sources.get(&patch.frame_id) { Some(k) => frame(&mut hash, k), None => 4u8.hash(&mut hash) }
+                }
+            }
+        }
+    }
+    hash.finish()
+}
+
 fn pose_track(doc: &Document, id: &str, track: &SheetTrack) -> Seq {
     let keys = track.keys.iter().filter(|k| !k.patch_only).map(|k| (k, if let SheetValue::Frame(Some(fid)) = &k.value { Some(fid) } else { None }));
     virtual_track(doc, FIXED.contains(&id), keys.collect())

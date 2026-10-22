@@ -451,7 +451,7 @@ impl Session {
 /// Shared by legacy JSON calls and canonical worker transactions.
 fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, worker_preparation: bool, check: Option<&mut dyn FnMut() -> Result<(), EditError>>) -> Result<Value, EditError> {
     let prelude_scope = crate::prof::scope("call::prelude");
-    let before = editor.report().clone();
+    let mut before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
     let project_requested = view.get("projectFieldsPublication") == Some(&Value::Bool(true))
@@ -519,6 +519,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         }
         editor.set_sheet_selection(sheet_selection_of(view));
     }
+    // The document as the editor holds it when the call begins: the view's active layer
+    // is already in it, so the patch carries only what the call changed (D19).
+    if view.get("patch") == Some(&Value::Bool(true)) && !editor.report().same_node(&before) { before = editor.report().clone(); }
     // Capture through the existing selected-definition reader after view sync.
     // Failure only omits the opt-in marker; dispatch keeps its original errors.
     let unique_original = if unique_requested { editor.selected_movieclip().ok().map(|(_, _, figure)| figure) } else { None };
