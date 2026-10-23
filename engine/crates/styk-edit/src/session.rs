@@ -571,50 +571,44 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         && view.get("figureClipboardPastes") == Some(&Value::Bool(true));
     let clipboard_before = if clipboard_requested && method == "pasteSelection" { editor.figure_clipboard_pastes() } else { None };
     let mut duplicate_pastes = None;
-    // Native movieclip insertion is admitted only by immutable worker preparation.
-    // Legacy/live calls retain the same response owner and explicit refusal.
-    let result = if !worker_preparation && !editor.sheet() && (method == "addFigure" || crate::movieclip_native::native_movieclip_method(method)) {
-        Err(EditError::Unported(if method == "addFigure" { "native movieclip insertion requires worker preparation" } else { "native movieclip editing requires worker preparation" }.into()))
-    } else {
-        let result = if let Some(check) = check {
-            // A recorded Invalid belongs in the canonical JSON response. Host
-            // cancellation must instead escape the same preparation operation,
-            // including a one-shot failure that later checks would not repeat.
-            // This stack-local error retains no callback or authoritative state.
-            let mut interrupted = None;
-            let mut checked = || match check() {
-                Ok(()) => Ok(()),
-                Err(error) => {
-                    let forwarded = match &error {
-                        EditError::Invalid(message) => EditError::Invalid(message.clone()),
-                        EditError::Unported(message) => EditError::Unported(message.clone()),
-                    };
-                    interrupted = Some(error);
-                    Err(forwarded)
-                }
-            };
-            let result = if layer_requested {
-                // The original worker path delegates ordinary sheet calls to
-                // Editor::call after this entry check, with the same rollback.
-                checked().and_then(|()| editor.call_layer_publication(method, &args, &mut layer_publication))
-            } else if clipboard_requested && method == "duplicateSelection" {
-                editor.call_duplicate_pastes_checked(method, &args, true, &mut checked, &mut duplicate_pastes)
-            } else { editor.call_worker_checked(method, &Value::array(args), &mut checked) };
-            if let Some(error) = interrupted { return Err(error); }
-            result
-        } else {
-            if layer_requested { editor.call_layer_publication(method, &args, &mut layer_publication) }
-            else if clipboard_requested && method == "duplicateSelection" { editor.call_duplicate_pastes_checked(method, &args, false, &mut || Ok(()), &mut duplicate_pastes) }
-            else { editor.call(method, &args) }
+    let called = if let Some(check) = check {
+        // A recorded Invalid belongs in the canonical JSON response. Host
+        // cancellation must instead escape the same preparation operation,
+        // including a one-shot failure that later checks would not repeat.
+        // This stack-local error retains no callback or authoritative state.
+        let mut interrupted = None;
+        let mut checked = || match check() {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let forwarded = match &error {
+                    EditError::Invalid(message) => EditError::Invalid(message.clone()),
+                    EditError::Unported(message) => EditError::Unported(message.clone()),
+                };
+                interrupted = Some(error);
+                Err(forwarded)
+            }
         };
-        result.and_then(|result| {
-            // Legacy facades read these views locally. The exclusive worker has
-            // the sole owner, so it returns the recorded view from that owner.
-            if worker_preparation && matches!(method, "seek" | "@seek") { editor.shown_frame() }
-            else if worker_preparation && method == "beginAnimationEdit" { editor.animation_edit_value_worker() }
-            else { Ok(result) }
-        })
+        let result = if layer_requested {
+            // The original worker path delegates ordinary sheet calls to
+            // Editor::call after this entry check, with the same rollback.
+            checked().and_then(|()| editor.call_layer_publication(method, &args, &mut layer_publication))
+        } else if clipboard_requested && method == "duplicateSelection" {
+            editor.call_duplicate_pastes_checked(method, &args, true, &mut checked, &mut duplicate_pastes)
+        } else { editor.call_worker_checked(method, &Value::array(args), &mut checked) };
+        if let Some(error) = interrupted { return Err(error); }
+        result
+    } else {
+        if layer_requested { editor.call_layer_publication(method, &args, &mut layer_publication) }
+        else if clipboard_requested && method == "duplicateSelection" { editor.call_duplicate_pastes_checked(method, &args, false, &mut || Ok(()), &mut duplicate_pastes) }
+        else { editor.call(method, &args) }
     };
+    let result = called.and_then(|result| {
+        // Legacy facades read these views locally. The exclusive worker has
+        // the sole owner, so it returns the recorded view from that owner.
+        if worker_preparation && matches!(method, "seek" | "@seek") { editor.shown_frame() }
+        else if worker_preparation && method == "beginAnimationEdit" { editor.animation_edit_value_worker() }
+        else { Ok(result) }
+    });
     drop(command_scope);
     let _answer_scope = crate::prof::scope("call::answer");
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));

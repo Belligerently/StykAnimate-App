@@ -113,8 +113,8 @@ state and events remain the payload. The certificate binds a sole appended shall
 copy to the selected original, with unchanged existing definitions/keyframes,
 complete new source frames and the original event order: definition edit, sheet
 edit, seek, selection and closing batch edit. An absent or
-unusable certificate retains the existing route; native-timeline worker refusal
-is unchanged.
+unusable certificate retains the existing route; a native timeline has no sheet to
+certify and runs the command without one.
 
 The facade preserves original shallow definition children and runs the existing
 `movieclipBatch`, definition publication and layer-sheet adoption tail. It validates
@@ -193,6 +193,15 @@ entry points do not bypass the app's readiness or document-class gates; unrecord
 IK/draft combinations and runtime adoption remain guarded.
 `styk edit-replay --worker <reference.json>` exercises this same dispatch and compares
 every editor step. Ordinary replay retains its explicit refusal behavior.
+
+Native-timeline movieclip commands (create, empty, place, split, break apart, playback,
+restart, unique, next-keyframe extension, library insertion) also run in the owner's
+interface-thread Session (D19), through the same `Editor::call` implementation: the
+editor ran them synchronously on that thread, the Session takes no lock, and a refused
+call became an external history entry instead. The Session's earlier "requires worker
+preparation" refusal is gone: 67 recorded tape calls were refused, now none. Documents
+with IK controllers or a saved working frame still refuse atomically before any change.
+`tests/movieclip_session_integration.rs` replays 56 native tapes through the Session.
 
 Awaited Bake now uses this central worker replay for 37 default-budget families /
 234 calls, including recorded saved figure/scene VFX reads. The same materializer,

@@ -29,15 +29,14 @@ fn pose_key(id: &str, tick: f64, source: Option<&str>) -> Value {
     object(&[("id", Value::str(id)), ("tick", Value::Num(tick)), ("interpolation", Value::str("hold")), ("value", object(&[("frameId", source.map(Value::str).unwrap_or(Value::Null))]))])
 }
 
-/// Static movie command classification shared by tool admission and Session's
-/// cold UI refusal. Library definitions are resolved only on the owning worker.
+/// Static movie command classification for the IK and saved-draft admission gates,
+/// shared by the interface Session and worker preparation (one implementation).
 pub(crate) fn native_movieclip_method(method: &str) -> bool {
     matches!(method, "createEmptyMovieclip" | "createMovieclip" | "makeMovieclipUnique" | "placeMovieclip" | "splitMovieclip" | "breakApartMovieclip" | "renameMovieclip" | "restartMovieclip" | "removeMovieclipRestart" | "setMovieclipPlayback" | "setMovieclipDrawing" | "addMovieclipToNextKeyframes" | "bakeMovieclip")
 }
 
 impl Editor {
     /// Native movieclip mutations whose draft/IK composition is not recorded yet.
-    /// This same narrow predicate keeps synchronous library insertion out of Session.
     pub(crate) fn native_movieclip_mutation(&self, method: &str, args: &[Value]) -> bool {
         if self.sheet() { return false; }
         if method == "addFigure" {

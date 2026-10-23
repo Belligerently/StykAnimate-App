@@ -364,7 +364,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 - **Superseded figures query hypothesis:** B12 narrows ordinary selected segments in joined frames without pins while preserving complete parents and joined topology. It covers parent slots as well as unrelated joins. Its completed loaded full cost fails startup/joined; those measurements establish no causal savings.
 
-- **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set.
+- **Movieclips scope:** recorded gestures/publications are now owned by default. Playback controls remain compared; conversion/Bake app routing remains outside the existing facade. Keep native channels, origins and captured-source documents in their excluded classes; do not enable dense worker-only commands through the class Set. The owner (D19) is not a class: its interface-thread Session runs the native-timeline movieclip commands as the editor did (`editing.md`); awaited Bake and the timed sheet commands stay worker-only.
 
 - **Layer folders:** all five mutators now adopt ordered updates through the original `_layerEdit` tail, with exact actual default query/history/selection/full-undo proof. The getter remains a UI record projection. Their eight metadata siblings adopt too (2026-10-11).
 

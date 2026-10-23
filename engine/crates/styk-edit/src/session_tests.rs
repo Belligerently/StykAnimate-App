@@ -1082,9 +1082,9 @@ fn movieclip_unique_marker_reconstructs_zero_history_and_refuses_incomplete_cert
 }
 
 #[test]
-fn movieclip_unique_opt_in_preserves_errors_and_native_worker_refusal() {
+fn movieclip_unique_opt_in_preserves_errors_and_omits_the_certificate_on_native_timelines() {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests");
-    for (path, state_index, status) in [("edit/clip-unique-legacy-native", 1, "unported"), ("movieclip-timed-sheet-expansion/expansion-locked", 1, "error")] {
+    for (path, state_index, status) in [("edit/clip-unique-legacy-native", 1, "ok"), ("movieclip-timed-sheet-expansion/expansion-locked", 1, "error")] {
         let reference = parse(&std::fs::read_to_string(folder.join(format!("{path}.reference.json"))).unwrap());
         let state = reference.get("steps").unwrap().item(state_index).unwrap().get("state").unwrap().clone();
         let mut ordinary = session_from_recorded_state(&reference, &state);
@@ -1096,13 +1096,12 @@ fn movieclip_unique_opt_in_preserves_errors_and_native_worker_refusal() {
         assert!(answer.get("movieclipUnique").is_none());
         assert_eq!(json(&answer), json(&complete));
         assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
-        if status == "unported" { assert_eq!(answer.get("reason").and_then(Value::as_str), Some("native movieclip editing requires worker preparation")); }
-        else {
-            assert_eq!(answer.get("error").and_then(Value::as_str), Some("errors.editorLayerSheet.unlockBeforeEditingIt"));
-            let recorded = reference.get("steps").unwrap().item(2).unwrap();
-            assert_eq!(json(answer.get("state").unwrap()), json(recorded.get("state").unwrap()));
-            assert_eq!(json(answer.get("events").unwrap()), json(recorded.get("events").unwrap()));
-        }
+        let recorded = reference.get("steps").unwrap().item(2).unwrap();
+        // A native timeline has no sheet to certify: the command runs as the editor ran it.
+        if status == "ok" { assert_eq!(requested.editor.report_json(), recorded.get("document").unwrap().as_str().unwrap()); }
+        else { assert_eq!(answer.get("error").and_then(Value::as_str), Some("errors.editorLayerSheet.unlockBeforeEditingIt")); }
+        assert_eq!(json(answer.get("state").unwrap()), json(recorded.get("state").unwrap()));
+        assert_eq!(json(answer.get("events").unwrap()), json(recorded.get("events").unwrap()));
     }
     let reference = parse(&std::fs::read_to_string(folder.join("edit/clip-unique-sheet.reference.json")).unwrap());
     let state = reference.get("steps").unwrap().item(2).unwrap().get("state").unwrap().clone();
