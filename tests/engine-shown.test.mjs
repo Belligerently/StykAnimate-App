@@ -195,3 +195,28 @@ test('a read made while the editor\'s edits are being written to the session is 
     assert.equal(JSON.parse(owner.session().report_json())._styk.name, 'Renamed in place');
   } finally { owner.release(); }
 });
+
+test('a motion-path edit shows the pose it makes at the playhead, and its geometry, while the playhead is in the ticks it changes', {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/motion-path.document.json', import.meta.url), 'utf8'));
+  const {editor, owner} = await ownedEditor(options, document);
+  try {
+    editor.select(1, -1);
+    editor.seek(6);
+    const before = editor.evaluatedFrame.objects.find(object => object.unique_id === 1).root_x;
+    editor.beginMotionPathEdit({kind: 'node', uid: 1, handleId: 0, joint: -1}, 6);
+    assert.equal(editor._drag.display, null, 'nothing moved yet: the document is shown');
+    editor.updateMotionPathEdit({x: 260, y: 170});
+    const drag = editor._drag, display = drag.display;
+    assert.ok(drag.motionPath && display, 'the playhead is inside the ticks the edit changes');
+    const shown = display.frame.objects.find(object => object.unique_id === 1);
+    assert.notEqual(shown.root_x, before, "the pose shown is the edit's, not the document's");
+    assert.equal(editor.evaluatedFrame.objects.find(object => object.unique_id === 1).root_x, before, "the frame on show stays the document's");
+    const geometry = display.geometry, slot = display.frame.objects.indexOf(shown);
+    assert.equal(geometry.objects.get(slot).root.x, shown.root_x, 'its geometry is built from the pose it shows');
+    assert.notEqual(geometry.objects.get(slot).root.x, editor.geometry.objects.get(slot).root.x, "and is not the document's");
+    editor.updateMotionPathEdit({x: 272, y: 182});
+    assert.notEqual(drag.display.frame.objects.find(object => object.unique_id === 1).root_x, shown.root_x, 'a later move shows its own pose');
+    editor.commitMotionPathEdit();
+    assert.equal(editor._drag, null);
+  } finally { owner.release(); }
+});
