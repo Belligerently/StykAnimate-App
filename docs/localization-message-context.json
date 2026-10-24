@@ -16310,7 +16310,7 @@
       "src/editor-load.mjs:122",
       "src/editor.mjs:494",
       "src/engine/engine-open.mjs:34",
-      "src/engine/engine-open.mjs:129",
+      "src/engine/engine-open.mjs:131",
       "src/import-wire.mjs:110",
       "src/import-worker.mjs:26"
     ],
@@ -16319,7 +16319,7 @@
   "errors.editorLoad.importTimeSlicesMustBeGreaterThanZero": {
     "locations": [
       "src/editor-load.mjs:121",
-      "src/engine/engine-open.mjs:127"
+      "src/engine/engine-open.mjs:129"
     ],
     "context": "if (!Number.isFinite(sliceMs)||sliceMs<=0||sliceMs>16) throw messageError(new Error(''), \"errors.editorLoad.importTimeSlicesMustBeGreaterThanZero\", {});"
   },
@@ -17146,13 +17146,13 @@
   },
   "errors.engineOwner.invalidValue": {
     "locations": [
-      "src/engine/engine-owner.mjs:983"
+      "src/engine/engine-owner.mjs:993"
     ],
     "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
   },
   "errors.engineOwner.notSupported": {
     "locations": [
-      "src/engine/engine-owner.mjs:990"
+      "src/engine/engine-owner.mjs:1000"
     ],
     "context": "const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});"
   },
@@ -39911,7 +39911,7 @@
   },
   "vfxChannels.enabled": {
     "locations": [
-      "src/engine/engine-owner.mjs:970",
+      "src/engine/engine-owner.mjs:980",
       "src/vfx-clip-inspector.mjs:63",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"

@@ -802,6 +802,14 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   }
   layer.undo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('undo').apply(this, args) : historyCall(false, args); };
   layer.redo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('redo').apply(this, args) : historyCall(true, args); };
+  // Entering a movieclip loads its own document into the editor before the scope is recorded: that document
+  // gets no session (its calls run in the editor, which keeps its history and dirty state meanwhile).
+  let entering = false;
+  const enterMovieclip = editor.enterMovieclip;
+  layer.enterMovieclip = function owned(...args) {
+    entering = true;
+    try { return enterMovieclip.apply(this, args); } finally { entering = false; }
+  };
   layer.markSaved = function owned(...args) {
     const result = originals.get('markSaved').apply(this, args);
     if (session && document === editor.report) { send('@markSaved', []); history.dirty = false; }
@@ -872,7 +880,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       // The session exists from the moment the document opens (or comes back from a tab). A movieclip's own
       // document gets one as it loads (the stage draws the session's document), but its calls then run in the
       // editor (`_movieclipScopes`) and come back as one edit on leaving.
-      if (!applying && depth === 0 && !editor._movieclipScopes?.length) ensure();
+      if (!applying && depth === 0 && !entering && !editor._movieclipScopes?.length) ensure();
     }
     if (!session || document !== editor.report || depth > 0 || applying || !['edit', 'history', 'document'].includes(detail?.kind)) return;
     if (detail.kind === 'document') return;

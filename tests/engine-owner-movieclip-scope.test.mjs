@@ -69,3 +69,29 @@ for (const name of documents) {
     } finally { owner.release(); }
   });
 }
+
+// While a movieclip is entered, its calls run in the editor, which keeps its history and dirty state; the owner
+// shows those, not an empty session's (the app would otherwise report unsaved work inside a clip as saved).
+for (const name of documents) {
+  test(`${name}: inside an entered movieclip the history and dirty state are the editor's`, {skip: !engineBuilt}, async () => {
+    const document = JSON.parse(readFileSync(new URL(`../engine/tests/edit/${name}.document.json`, import.meta.url), 'utf8'));
+    const states = [];
+    for (const owned of [false, true]) {
+      const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));
+      const owner = owned ? installEngineOwner(editor) : null;
+      try {
+        editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
+        const clip = editor.createMovieclip({start: editor.tick, end: editor.tick + 6});
+        editor.markSaved();
+        editor.enterMovieclip(clip.figure_type_id);
+        const entered = [editor.undoLabel, editor.canUndo, editor.dirty];
+        editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
+        editor.moveSelection(25, 10);
+        states.push({entered, moved: [editor.undoLabel, editor.canUndo, editor.dirty]});
+        editor.leaveMovieclip();
+      } finally { owner?.release(); }
+    }
+    assert.deepEqual(states[1], states[0]);
+    assert.equal(states[1].moved[2], true, 'a move inside the clip leaves the project with unsaved changes');
+  });
+}
