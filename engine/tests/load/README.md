@@ -18,4 +18,4 @@ the same text (`styk_edit::load::TYPE_ERROR` for the exception). The editor's me
 but not compared: the engine does not carry them yet.
 
 Documents that are not in the repository are compared by `node engine/tools/load-private.mjs` (the `.piv` files
-of `~/Downloads/pivs` and `STYK_CORPUS_DIR`) against `styk load`.
+of the folders `STYK_CORPUS_DIR` names) against `styk load`.

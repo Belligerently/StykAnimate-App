@@ -5,7 +5,7 @@
 //
 //   node --max-old-space-size=32768 engine/tools/load-private.mjs [file…] [--styk <path to styk>]
 //
-// Without files: the .piv files of ~/Downloads/pivs and of STYK_CORPUS_DIR (default ~/Desktop/Folder).
+// Without files: the .piv files of the folders STYK_CORPUS_DIR names (separated as PATH is).
 // Exit code 1 when any document differs. Scratch files go to the temporary folder and are removed.
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -20,7 +20,7 @@ const option = args.indexOf('--styk');
 const styk = option >= 0 ? args.splice(option, 2)[1] : path.join(repo, `engine/target/release/styk${process.platform === 'win32' ? '.exe' : ''}`);
 const fallback = path.join(repo, `engine/target/debug/styk${process.platform === 'win32' ? '.exe' : ''}`);
 const binary = existsSync(styk) ? styk : fallback;
-const folders = [path.join(os.homedir(), 'Downloads/pivs'), process.env.STYK_CORPUS_DIR ?? path.join(os.homedir(), 'Desktop/Folder')];
+const folders = (process.env.STYK_CORPUS_DIR ?? '').split(path.delimiter).filter(Boolean);
 const files = args.length ? args : folders.filter(existsSync).flatMap(folder => readdirSync(folder).filter(name => /\.piv$/i.test(name)).sort().map(name => path.join(folder, name)));
 if (!files.length) { console.error('no documents found; pass files or set STYK_CORPUS_DIR'); process.exit(2); }
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'styk-load-'));
