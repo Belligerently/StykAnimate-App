@@ -30,7 +30,7 @@ async function brokenApart() {
 
 test('a copied drawing pastes as a cel of its own on a new definition', opts, async () => {
   const {document, layer, cels: original} = await paintedDocument();
-  for (const how of ['paste', 'cut']) {
+  for (const how of ['copy', 'cut']) {
     const {owned} = await bothWays(document, editor => {
       const [figure] = editor.getLayerFigureUids(layer);
       editor.select(figure, -1);
@@ -54,7 +54,7 @@ test('importing figures with animation origins finds their pivots again', opts, 
     const source = recordedDocument('branch-thickness-origin-sheet');
     assert.ok(source.figure_types.some(figure => figure._styk?.animationOrigin), 'the file holds a figure with an origin');
     const figure = editor.importFigure(source, {position: {x: 300, y: 200}});
-    assert.ok(figure, 'the first figure is selected');
+    assert.ok(figure?._stykAnimationOrigin, 'the first figure is selected and has its pivot');
     assert.equal(editor.undoLabel, 'Import figure');
   }, {expectEntries: 1});
 });
@@ -105,6 +105,17 @@ test('moving or copying frames of a drawing layer onto another layer is one step
       assert.equal(editor.undoLabel, copy ? 'Copy frames to layer' : 'Move frames to layer');
     }, {expectEntries: 1});
   }
+});
+
+test('copying drawing keys along their layer makes cels of their own', opts, async () => {
+  const {document, layer, cels: original} = await paintedDocument();
+  const {owned} = await bothWays(document, editor => {
+    editor.sheetMoveFrames([layer], 0, 5, 12, {copy: true});
+    assert.equal(editor.undoLabel, 'Copy frames');
+    const made = cels(editor.report).filter(id => !original.includes(id));
+    assert.equal(made.length, original.length, 'every copied cel is a new one');
+  }, {expectEntries: 1});
+  assert.ok(owned.states.length);
 });
 
 test('pasting frames with the parts of a broken-apart movieclip keeps them with their instance', opts, async () => {

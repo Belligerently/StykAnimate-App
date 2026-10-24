@@ -2,7 +2,8 @@
 //! `sheetDuplicateFrameAfter`, `sheetSetEasing`, `sheetClearKeys`, `sheetClearFrames`,
 //! `sheetInsertFrames`, `sheetRemoveFrames`, `sheetSetDuration`, `sheetAppendFrame`.
 //! Each plans on the sheet planner and publishes one history entry ([`crate::sheet`]).
-//! Drawing layers and audio ripple answer `Unported`.
+//! Copied drawing keys are cels of their own (new definitions and cel identities, the copied cels' pixels forked for the
+//! interface to copy). Audio ripple answers `Unported`.
 
 use std::sync::Arc;
 
@@ -463,6 +464,11 @@ impl Editor {
         let mut plan = self.planner(&ids)?;
         let finish = end + delta;
         let tick_of = |key: &Value| num(key, "tick").unwrap_or(f64::NAN);
+        // The cels a copy makes, after the largest definition (`drawingType`).
+        let figures = items(self.report.get("figure_types"));
+        let mut next_type = figures.iter().fold(1.0f64, |largest, figure| largest.max(num(figure, "figure_type_id").unwrap_or(f64::NAN) + 1.0));
+        let mut added: Vec<Value> = Vec::new();
+        let mut forks: Vec<(String, String)> = Vec::new();
         for id in &ids {
             let mut selected: Vec<Value> = plan.keys(id).into_iter().filter(|k| tick_of(k) >= start && tick_of(k) <= end).collect();
             if selected.is_empty() {
@@ -486,13 +492,36 @@ impl Editor {
             let drawing = self.report.path(&["_styk", "layers", "byId", id, "drawing"]).is_some_and(Value::truthy);
             for key in &materialized {
                 let source = key.path(&["value", "frameId"]).and_then(Value::as_str).and_then(|frame| plan.captured(frame).cloned().or_else(|| self.frame_by_id(frame)));
-                if copy && source.is_some() && drawing {
-                    return Err(EditError::Unported("copying the frames of a drawing layer".into()));
-                }
                 let mut moved = key.as_obj().cloned().unwrap_or_default();
                 moved.set("tick", Value::Num(tick_of(key) + delta));
                 if copy {
                     moved.set("id", Value::str(&plan.cell()));
+                }
+                // Copied drawing keys show cels of their own.
+                if let (true, true, Some(frame)) = (copy, drawing, source.as_ref()) {
+                    let mut objects = objects_of(frame);
+                    for object in objects.iter_mut() {
+                        let original = figures.iter().find(|f| f.get("figure_type_id") == object.get("figure_type_id")).cloned().ok_or_else(|| EditError::Unported("a drawing of a figure the document lacks".into()))?;
+                        let cel = format!("cel-{}", self.draw_uuid()?);
+                        let mut figure = original.clone();
+                        if let Some(record) = figure.make_obj() {
+                            record.set("figure_type_id", Value::Num(next_type));
+                            if let Some(metadata) = record.get_mut("_styk").and_then(Value::make_obj).and_then(|styk| styk.get_mut("drawing")).and_then(Value::make_obj) {
+                                if let Some(from) = metadata.get("celId").and_then(Value::as_str) {
+                                    forks.push((from.to_string(), cel.clone()));
+                                }
+                                metadata.set("celId", Value::str(&cel));
+                            }
+                        }
+                        if let Some(record) = object.make_obj() {
+                            record.set("figure_type_id", Value::Num(next_type));
+                        }
+                        next_type += 1.0;
+                        added.push(figure);
+                    }
+                    let mut copied = frame.as_obj().cloned().unwrap_or_default();
+                    copied.set("objects", Value::array(objects));
+                    moved.set("value", plan.capture(&Value::object(copied), id));
                 }
                 // A movieclip on the document's clock moves its span with the frame.
                 if let Some(frame) = source.as_ref().filter(|frame| objects_of(frame).iter().any(|o| o.get("_stykMovieclip").is_some_and(Value::truthy))) {
@@ -506,8 +535,11 @@ impl Editor {
             plan.set_end(id, track_end);
             plan.duration = plan.duration.max(track_end);
         }
+        plan.definitions = added;
         let selection = self.selection_state();
-        self.publish(plan, if copy { "Copy frames" } else { "Move frames" }, selection, None)
+        let published = self.publish(plan, if copy { "Copy frames" } else { "Move frames" }, selection, None)?;
+        self.drawing_forks.extend(forks);
+        Ok(published)
     }
 }
 

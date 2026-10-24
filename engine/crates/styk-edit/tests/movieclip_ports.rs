@@ -237,3 +237,20 @@ fn capturing_a_drawing_layer_gives_the_clip_cels_and_drawing_keys_of_its_own() {
     assert!(inside.path(&["_styk", "frameSources"]).and_then(Value::as_obj).is_some_and(|sources| !sources.is_empty()), "each exposure has a pose of its own");
     assert_eq!(undo_label(&mut session), "Create movieclip");
 }
+
+#[test]
+fn copied_drawing_keys_show_cels_of_their_own() {
+    let mut session = with_a_cel();
+    let first = cels(&session)[0].clone();
+    let answer = drawn(&mut session, "sheetMoveFrames", r#"[["layer-2"],0,5,12,{"copy":true}]"#, 0, &[]);
+    assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{answer:?}");
+    let after = cels(&session);
+    assert_eq!(after.len(), 2);
+    assert_eq!(forks_of(&answer), vec![(first, after[1].clone())], "the pixels of the copied cel go to the new one");
+    assert_eq!(undo_label(&mut session), "Copy frames");
+    // Moving them copies nothing.
+    let moved = drawn(&mut session, "sheetMoveFrames", r#"[["layer-2"],0,5,14]"#, 0, &[]);
+    assert_eq!(moved.get("status").and_then(Value::as_str), Some("ok"), "{moved:?}");
+    assert_eq!(cels(&session).len(), 2);
+    assert!(forks_of(&moved).is_empty());
+}
