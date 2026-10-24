@@ -78,7 +78,7 @@ export async function exportSVG({report, frame, frameIndex = 0, geometry, width,
   const sceneHeight = dimension(report.canvas_height ?? 480, 'Scene height');
   width = dimension(width ?? sceneWidth, 'SVG width'); height = dimension(height ?? sceneHeight, 'SVG height');
   geometry ??= buildGeometry(report, frame);
-  const {hasDrawableVfx}=await import('./vfx-canvas.mjs'),{generatorBatchFor}=await import('./vfx-generator-frame.mjs');
+  const {hasDrawableVfx}=await import('./vfx-drawable.mjs'),{generatorBatchFor}=await import('./vfx-generator-frame.mjs');
   // Filters and generated effects have no vector form: embed the rendered frame.
   if(activeVfx(vfxStack(frame)).length||generatorBatchFor(report,frame,geometry)||geometry.drawables.some(item=>hasDrawableVfx(item)||item.type==='mesh'||item.poly?._stykSurface?.depthTest)){
     if(!cameraEnabled)frame={...frame,camera:null};

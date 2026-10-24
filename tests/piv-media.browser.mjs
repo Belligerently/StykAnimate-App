@@ -30,7 +30,7 @@ try {
       for(const index of [...new Set([0,Math.floor(frames.length/2),frames.length-1])]) {
         editor.selectFrame(index);styk.fit();
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-        await state.renderer.device.queue.onSubmittedWorkDone();
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
         if(editor.geometry.objects.size!==counts[index])throw new Error('Import dropped figures');
         samples.push({index,objects:counts[index],rasterBytes:state.renderer.rasterCache.bytes});
       }

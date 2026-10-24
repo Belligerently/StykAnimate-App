@@ -195,7 +195,7 @@ export async function benchmarkDrags(page,result,output,{source,cpu=false}){
       if(scenario.modifier)await page.keyboard.up(scenario.modifier);
       // A rig commit can take longer than a fixed 300 ms observation window.
       // Require its release render so a missing slow sample cannot look faster.
-      await page.waitForFunction(()=>{const b=__dragBench,up=b.inputs.findLast(i=>i.type==='pointerup');return up&&!styk.state.editablePreparing&&b.frames.some(f=>f.at>=up.at&&!f.editablePreparing&&f.revision===styk.editor.revision);},null,{timeout:30000});
+      await page.waitForFunction(()=>{const b=__dragBench,up=b.inputs.findLast(i=>i.type==='pointerup');return up&&b.frames.some(f=>f.at>=up.at&&!f.editablePreparing&&f.revision===styk.editor.revision);},null,{timeout:30000});
       // Include the first release render in 'up', then separately observe deferred work.
       await page.waitForTimeout(80);await page.evaluate(()=>__dragBench.part='settle');await page.waitForTimeout(220);
       if(client){const {profile}=await client.send('Profiler.stop');await writeFile(path.join(output,`${name}.cpuprofile`),JSON.stringify(profile));}

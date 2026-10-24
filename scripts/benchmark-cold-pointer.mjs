@@ -17,7 +17,7 @@ try {
     const frames=e.report.keyframes.map((f,i)=>({i,size:f.objects.reduce((n,o)=>n+counts.get(o.figure_type_id),0)}));
     e.selectFrame(frames.reduce((a,b)=>a.size>b.size?a:b).i);styk.fit();
   });
-  await page.waitForFunction(()=>!styk.state.editablePreparing&&styk.performance().editingPresentation?.tick===styk.editor.tick);
+  await page.waitForFunction(()=>styk.performance().editingPresentation?.tick===styk.editor.tick);
   const target=await page.evaluate(async()=>{
     const {getPivotHandles,pickCanvasHandle}=await import('/src/canvas-interactions.mjs'),{worldToScreen}=await import('/src/renderer-geometry.mjs');
     const e=styk.editor,s=styk.state,g=s.renderer.lastGeometry,frame=e.evaluatedFrame;
@@ -56,7 +56,7 @@ try {
   }
   await page.mouse.up();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   const result=await page.evaluate(async()=>{
-    const b=pointerBench,e=styk.editor;await styk.state.renderer.device.queue.onSubmittedWorkDone();b.active=false;b.observer.disconnect();
+    const b=pointerBench,e=styk.editor;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));b.active=false;b.observer.disconnect();
     const read=()=>JSON.stringify(e.evaluatedFrame.objects,(_k,v)=>_k==='runtime_segments'?undefined:v),changed=read()!==b.before,commands=e._undo.length-b.history;
     e.undo();const restored=read()===b.before;e.markSaved();
     return {events:b.events,longTasks:b.tasks,changed,commands,restored};

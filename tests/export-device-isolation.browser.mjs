@@ -158,7 +158,7 @@ try {
   });
   await page.waitForFunction(() => document.querySelector('#renderer-error').hidden &&
     styk.state.renderer !== window.lostExportRenderer &&
-    ['WebGPU','Canvas 2D fallback'].includes(styk.state.renderer.stats.backend));
+    ['WebGPU', 'WebGL2'].includes(styk.state.renderer.stats.backend));
   await page.screenshot({path: path.join(output, 'reconnected-editor.png')});
   const final = await page.evaluate(() => ({revision: styk.editor.revision,
     backend: styk.state.renderer.stats.backend,

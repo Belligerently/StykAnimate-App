@@ -107,7 +107,7 @@ async function appInternals(page, request, args = {}) {
         const rect = document.querySelector('#overlay')?.getBoundingClientRect() ?? document.querySelector('#viewport').getBoundingClientRect();
         const centre = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         const screen = async () => {
-          const { worldToScreen } = await import('/src/renderer.mjs');
+          const { worldToScreen } = await import('/src/renderer-geometry.mjs');
           const options = { report: editor.report, frame: editor.evaluatedFrame ?? editor.frame, view: state.view, cameraEnabled: false };
           return (point) => { const s = worldToScreen(point, options); return { x: rect.left + s.x, y: rect.top + s.y }; };
         };

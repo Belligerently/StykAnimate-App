@@ -244,7 +244,7 @@ async function run(mode) {
   /** Client coordinates of the handles of the figure with the most segments. */
   const handles = () => page.evaluate(async () => {
     const {editor, state} = styk;
-    const {worldToScreen} = await import('/src/renderer.mjs');
+    const {worldToScreen} = await import('/src/renderer-geometry.mjs');
     const {getPivotHandles} = await import('/src/canvas-interactions.mjs');
     const segments = new Map(editor.report.figure_types.map(figure => [figure.figure_type_id, figure.segments.length]));
     const figure = [...editor.evaluatedFrame.objects].sort((a, b) => (segments.get(b.figure_type_id) ?? 0) - (segments.get(a.figure_type_id) ?? 0))[0];
@@ -899,7 +899,7 @@ async function run(mode) {
         if (!state.motionPaths) actions['toggle-motion-paths']();
         for (let i = 0; i < 8; i++) await new Promise(resolve => requestAnimationFrame(resolve));
         const {samplePathPoint} = await import('/src/motion-path.mjs');
-        const {worldToScreen} = await import('/src/renderer.mjs');
+        const {worldToScreen} = await import('/src/renderer-geometry.mjs');
         const tick = e.tick >= 1 ? 0 : Math.min(2, Math.ceil(e.totalTicks) - 1);
         const world = samplePathPoint(e.report, {kind: 'node', uid, handleId: 0, joint: -1}, tick);
         if (!world || !Number.isFinite(world.x)) return null;

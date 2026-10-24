@@ -20,7 +20,6 @@ StykAnimate is a local stick animation program built on sound architecture and g
 | Home, project list, tutorials | `src/home/`, `src/tutorials/`, `desktop/project-library.cjs`, `docs/HOME.md`, `docs/TUTORIALS.md` |
 | Rust engine: plan, decisions, subsystems | `docs/RUST-ENGINE-PORT.md` (read first), `docs/engine/README.md`, `docs/engine/decisions/`, `docs/engine/INVENTORY.md`, `engine/` |
 | Engine in the app: stage, mirror, playback, gate | `src/engine/`, `docs/engine/rendering.md`, `docs/engine/threading.md`, `docs/engine/document.md` |
-| JavaScript renderer and playback (being replaced) | `src/renderer.mjs`, `src/playback*.mjs`, `docs/renderer.md`, `docs/ADAPTIVE-PREVIEW.md` |
 | Import, formats, saving | `backend/README.md`, `codecs/`, `native/`, `docs/IMPORT-PIPELINE.md`, `docs/document-exports.md` |
 | Desktop and packaging | `desktop/`, `scripts/before-pack.cjs`, `docs/DESKTOP-RELEASE.md` |
 | Tests and measurements | `tests/`, `scripts/smoke-*.mjs`, `scripts/benchmark-*.mjs`; generated output goes to the ignored `artifacts/` |

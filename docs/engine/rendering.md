@@ -418,10 +418,10 @@ build before this work against this one).
 
 ## In the app
 
-`src/engine/engine-stage.mjs` puts the engine's canvas (`#scene-engine`)
-where the JavaScript renderer's is and draws the edit frame, onion skins and
-prepared playback frames of every document ([D4](decisions/0004-strangler-gate.md),
-[Every document](#every-document)). The WebGPU surface is configured with
+`src/engine/engine-stage.mjs` draws the page's scene canvas (`#scene`) with the
+engine: the edit frame, onion skins and prepared playback frames of every document
+([D4](decisions/0004-strangler-gate.md), [Every document](#every-document)); no other
+renderer draws a frame. The WebGPU surface is configured with
 premultiplied alpha so the page shows through the pasteboard. Through the scene
 camera (prepared playback frames, and edit frames in the camera preview) the scene is
 seen through `cameraAtTime` (follow clips, camera-motion impulses) and parallax layers
@@ -436,17 +436,37 @@ spatial bone turns.
 ### Every document
 
 The engine draws every document the editor holds: no document keeps the JavaScript
-renderer (the eligibility gate, `engine-eligibility.mjs`, is gone). What still sends a
-frame to the JavaScript renderer is a condition of the frame, not of its document: the engine
-has failed (it refused the document or a frame sync; the stage stays with JavaScript for the
-session), a drawing has unpublished strokes, a drawing is being previewed, the view is rotated
-or mirrored, or the editor has no geometry for the frame (`refusal` in `engine-stage.mjs`;
-`eligible` in `engine-playback.mjs` takes the first two for playback, thumbnails and exports).
-The gate's last two reasons went by drawing what they named:
+renderer (the renderer and the eligibility gate are gone). What the stage does with a frame it
+cannot draw is a condition of the frame, never another renderer:
+
+- **Not ready yet.** The document is committing (`engine_busy`: drawn again at the engine's next
+  progress), a followed camera pose awaits its worker (`Stage::camera_pending`: the frames sync, then
+  a redraw), the surface is being resized (`Stage::surface_pending`: the next animation frame) or a
+  drawing's new cel is only being previewed. `render` returns false and the previous picture stays.
+- **Refused.** An error from the store, a sync or the draw is reported once (`onError`), the previous
+  picture stays and the document's next revision is tried again (`engine-failure.mjs`: a refusal
+  belongs to one revision of one document, no longer to the page).
+- **A lost device.** Polled every second and on every frame (`Stage::device_lost`, and
+  `take_device_errors` for errors nothing captured, which would otherwise panic and stop the engine
+  module); the stage reports it (`onStatus`) and draws nothing more. The app replaces the canvas and
+  creates a stage on a new device: the engine keeps the document and decodes the pictures again
+  (`Engine::redecode_images`). `Stage::lose_device` destroys the device for the tests of that path.
+- **A turned or mirrored Draw view.** `Stage::set_view_orientation` (rotation in radians about the
+  artboard's centre, then a horizontal mirror, as `cameraMatrix` in `renderer-geometry.mjs` places
+  it): `styk_eval::view::orientation` composes after the scene camera, and the artboard, its
+  background, the camera image of scene effects and the artboard clip follow the turned quad
+  (`orient_*` in the view uniform of `prim.wgsl`; `orientation` tests in styk-render).
+- **The quality ladder.** The surface scale through `resize` and the edge sampling through
+  `Stage::set_multisampled` (four samples or one).
+- **A surface larger than the device's textures** is clamped (`Stage::max_texture`).
+- **An engine that cannot start** (no shared memory, no graphics device) is a localized error
+  (`errors.engineStage.theDrawingEngineCouldNotStart`) in the renderer panel.
+
+Two conditions of a document the gate used to count:
 
 - **Movieclips nested deeper than 16 levels.** Nothing in the engine limits the depth but the
   store's: it reads 512 levels of JSON, a clip taking five of them, so 100 clips open and 102 are
-  refused (the JavaScript renderer then draws, as it does for any document the engine refuses). A file
+  refused (the stage then keeps its previous picture and reports the refusal, as for any document the engine refuses). A file
   opens eight levels (`validateMovieclipGraph`), so only nested editing in a session builds
   deeper documents: `deep-seventeen` and `deep-twenty-four`
   (`engine/tools/document-fixtures.mjs`: each clip made, placed and entered in turn, the figure

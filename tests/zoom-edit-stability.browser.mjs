@@ -32,7 +32,7 @@ try {
         frames: report.keyframes.length, figuresPerFrame: 400, segmentsPerFrame: 400 * figure.segments.length};
     });
     assert.equal(initial.backend, rendererMode === 'gpu' ? 'WebGPU' : 'Canvas 2D fallback');
-    const settle = () => page.waitForFunction(() => !styk.state.dirtyRender && !styk.state.editablePreparing);
+    const settle = () => page.waitForFunction(() => !styk.state.dirtyRender );
     await settle();
     for (let cycle = 0; cycle < 3; cycle++) for (const scale of [.001, .1, 1, 4, 16, 100]) {
       const p = await page.evaluate(({scale, cycle}) => {

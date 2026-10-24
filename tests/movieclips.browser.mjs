@@ -56,10 +56,6 @@ try{
   await page.waitForFunction(count=>styk.editor.evaluatedFrame.objects.length>count,oldCount);check('Reusable movieclip imports');
   check('Imported movieclip already has an explicit end',await page.evaluate(()=>styk.editor.object._stykMovieclip.end===styk.editor.tick+20));
   await page.waitForFunction(()=>styk.timeline.tracks.find(t=>t.kind==='figure'&&t.uid===styk.editor.selectedUid)?.name==='Walk cycle');check('Imported clip track uses its asset name');
-  const gpu=await page.evaluate(async()=>{
-    const {compilePlaybackPacket}=await import('/src/playback-worker.mjs'),e=styk.editor;
-    const packet=await compilePlaybackPacket(e.report,0);return {shapes:packet.shapes.length,groups:packet.groups.length};
-  });check('Movieclips compile through worker renderer',gpu.shapes>0&&gpu.groups>0);
   const pixels=await page.evaluate(async()=>{
     const {Editor}=await import('/src/editor.mjs'),{buildGeometry,drawGeometry}=await import('/src/pivot/geometry.mjs'),{exportSVG}=await import('/src/svg-export.mjs');
     const e=new Editor({propertyChannels:true}),source=e.geometry;

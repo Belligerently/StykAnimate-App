@@ -22,7 +22,7 @@ import {localizedMarkup} from './localization-bindings.mjs';
  *
  * DOM-free at import. ctx (from app.mjs): {editor, state, actions, desktop,
  * importer, telemetry, audioEngine, exportJobs, playback,
- * editablePreparation, fail, status, toast, persistentFailure,
+ * fail, status, toast, persistentFailure,
  * finishCurrentEdit, pause, interruptRecovery, runDocumentExport,
  * writeNativeBlob, currentFrame, nameOf, simpleFrameCount}; optionally
  * overlays (the overlay stack), localization() and commitSettings(patch),
@@ -52,7 +52,7 @@ import { icon } from "./icons.mjs";
 
 export function createExportFlow(ctx) {
   const {
-    editor, state, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
+    editor, state, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback,
     fail, status, toast, persistentFailure, finishCurrentEdit, pause, interruptRecovery,
     runDocumentExport, writeNativeBlob, currentFrame, nameOf, simpleFrameCount,
   } = ctx;
@@ -211,12 +211,9 @@ export function createExportFlow(ctx) {
     if ([...exportJobs].some(job => job.raster)) throw messageError(new Error(''), "errors.exportFlow.anExportIsAlreadyRunningWaitForIt", {});
     pause();
     interruptRecovery();
-    // Drop speculative playback pixels while keeping the editable document and
-    // active scene. Workers reload their disposable cache when playback resumes.
-    editablePreparation.cancel();
-    state.editingPacket = null;
+    // Drop speculative playback frames while keeping the editable document and
+    // active scene. The engine prepares them again when playback resumes.
     playback.invalidate();
-    state.renderer?.clearPreparedFrames?.();
     const controller = new AbortController(),
       job = { controller, recovery: false, raster: true },
       source = editor.report;
