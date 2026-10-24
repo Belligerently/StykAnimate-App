@@ -4,8 +4,8 @@
 //
 //   node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks 0,5,9] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native]
 //
-// Pivot .piv files go through the repository's Python codec first
-// (tools/decode-piv.sh), exactly like the desktop app's import service.
+// A Pivot .piv is decoded first with `node engine/tools/decode-piv.mjs <file.piv> <out.json>`
+// (the repository's Python codec); this tool reads the decoded JSON.
 //
 // --vfx adds, per tick, the effects the editor resolves (`frames[].vfx`): the
 // stacks the renderers hand to the effect executors, the generated effects,

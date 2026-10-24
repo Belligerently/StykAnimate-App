@@ -1,8 +1,9 @@
 // Inactive connector descriptors survive Editor.load and keep ordinary joint semantics.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 for (const [kind, value] of [['null', null], ['false', false], ['zero', 0]]) for (const mode of ['native', 'sheet', 'autokey-sheet']) {
   const source = JSON.parse(readFileSync(`${out}/origin-rig-pose-support-${mode}.document.json`, 'utf8'));

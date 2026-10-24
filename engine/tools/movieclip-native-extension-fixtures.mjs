@@ -1,9 +1,10 @@
 // Actual native editor next-keyframe extensions, recorded before Rust changes.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf, limb, open, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
-const folder = new URL('../tests/movieclip-native-extension/', import.meta.url).pathname;
-const views = new URL('../crates/styk-eval/tests/fixtures/movieclip-native-extension/', import.meta.url).pathname;
+const folder = fileURLToPath(new URL('../tests/movieclip-native-extension/', import.meta.url));
+const views = fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-native-extension/', import.meta.url));
 mkdirSync(folder, {recursive: true}); mkdirSync(views, {recursive: true});
 const app = {};
 const json = value => JSON.stringify(value, (key, value) => key === 'runtime_segments' ? undefined : value);
@@ -25,7 +26,7 @@ const write = (name, e, steps) => {
   const document = json(e.report);
   writeFileSync(`${folder}/${name}.document.json`, document + '\n');
   writeFileSync(`${folder}/${name}.scenario.json`, JSON.stringify({name, document: `${name}.document.json`, editor: app, steps}, null, 1) + '\n');
-  execFileSync(process.execPath, [new URL('./edit-replay.mjs', import.meta.url).pathname, `${folder}/${name}.scenario.json`, `${folder}/${name}.reference.json`], {stdio: 'inherit'});
+  execFileSync(process.execPath, [fileURLToPath(new URL('./edit-replay.mjs', import.meta.url)), `${folder}/${name}.scenario.json`, `${folder}/${name}.reference.json`], {stdio: 'inherit'});
   const reference = JSON.parse(readFileSync(`${folder}/${name}.reference.json`, 'utf8'));
   const applied = reference.steps.find(step => step.call?.[0] === 'addMovieclipToNextKeyframes' && step.document && !step.error) ?? reference.steps[0];
   for (const [suffix, step] of [['applied', applied], ['final', reference.steps.findLast(step => step.document)]]) {

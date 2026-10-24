@@ -1,7 +1,8 @@
 // Movieclip command recordings built with the editor before their Rust ports.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
 import {documentOf, limb, open, nextKey, prune} from './fixture-kit.mjs';
-const out = new URL('../tests/edit/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit/', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const write = (name, editor, steps, document) => {
   writeFileSync(`${out}/${name}.document.json`, JSON.stringify(prune(document), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');

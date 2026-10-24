@@ -1,14 +1,15 @@
 // Timed movieclip continuations recorded in the real editor before the Rust port.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf, limb, open, nextKey, prune, writeProject, writeReference} from './fixture-kit.mjs';
-const folder = new URL('../tests/edit/', import.meta.url).pathname;
-const views = new URL('../crates/styk-eval/tests/fixtures/movieclip-timed-native/', import.meta.url).pathname;
+const folder = fileURLToPath(new URL('../tests/edit/', import.meta.url));
+const views = fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-timed-native/', import.meta.url));
 mkdirSync(views, {recursive: true});
 const write = (name, document, steps) => {
   writeFileSync(`${folder}/${name}.document.json`, JSON.stringify(prune(structuredClone(document)), (key, value) => key === 'runtime_segments' ? undefined : value) + '\n');
   writeFileSync(`${folder}/${name}.scenario.json`, JSON.stringify({name, document: `${name}.document.json`, editor: {}, steps}, null, 1) + '\n');
-  execFileSync(process.execPath, [new URL('./edit-replay.mjs', import.meta.url).pathname, `${folder}/${name}.scenario.json`, `${folder}/${name}.reference.json`], {stdio: 'inherit'});
+  execFileSync(process.execPath, [fileURLToPath(new URL('./edit-replay.mjs', import.meta.url)), `${folder}/${name}.scenario.json`, `${folder}/${name}.reference.json`], {stdio: 'inherit'});
   const replay = JSON.parse(readFileSync(`${folder}/${name}.reference.json`, 'utf8'));
   for (const [suffix, step] of [['applied', replay.steps.find(step => step.step > 0 && step.document && !step.error)], ['final', replay.steps.findLast(step => step.document)]]) {
     const document = JSON.parse(step.document), lastSeek = open(structuredClone(document), {propertyChannels: true}).totalTicks - 1;

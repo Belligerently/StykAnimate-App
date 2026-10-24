@@ -16,11 +16,12 @@
 import {spawnSync} from 'node:child_process';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2), option = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
-const src = name => import(path.join(root, 'src', `${name}.mjs`));
+const rootUrl = pathToFileURL(root).href;
+const src = name => import(`${rootUrl}/src/${name}.mjs`);
 const {TileStore, TILE} = await src('drawing-tiles');
 const {BrushStroke, normalizeBrush} = await src('drawing-brush');
 const {DrawingStroke, lassoMask} = await src('drawing-pixels');
@@ -29,8 +30,8 @@ const {drawingWorkerOperation} = await src('drawing-worker-operations');
 const {encodeTileBlob} = await src('drawing-tile-codec');
 const {encodeHistoryChunk, decodeHistoryChunk} = await src('drawing-history-codec');
 const {materializeDrawingTiles} = await src('drawing-preparation');
-const engineModule = await import(path.join(root, 'src/engine/engine-drawing.mjs'));
-const {drawingEngineOperation} = await import(path.join(root, 'src/engine/engine-drawing-worker.mjs'));
+const engineModule = await import(`${rootUrl}/src/engine/engine-drawing.mjs`);
+const {drawingEngineOperation} = await import(`${rootUrl}/src/engine/engine-drawing-worker.mjs`);
 const PRESETS = (await src('drawing-view')).BRUSH_PRESETS;
 if (!await engineModule.loadDrawingEngine({enabled: true})) throw new Error('Build the drawing engine first: npm run engine:build');
 

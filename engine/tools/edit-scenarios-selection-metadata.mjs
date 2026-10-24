@@ -1,9 +1,10 @@
 // Optional selection state uses the real Editor owner; these replays make no
 // selection-sensitive geometry-command admission. @selection/@restoreSelection
 // are replay-only reads/restores of _selectionState/_restoreSelection.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open, nextKey, prune, documentOf, limb} from './fixture-kit.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 const base = JSON.parse(readFileSync(`${out}/builder.document.json`, 'utf8'));
 const others = documentOf([limb(), limb(), limb()], index => [480 + index * 80, 200]);

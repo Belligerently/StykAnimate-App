@@ -1,11 +1,12 @@
 // Awaited real bakeMovieclip calls (D15); standalone async publication capture,
 // following the existing publication fixture protocol. No synchronous Promise replay.
+import {fileURLToPath} from 'node:url';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {open,documentOf,writeProject,writeReference} from './fixture-kit.mjs';
 import {createMovieclipMaterializer} from '../../src/movieclip-materialize.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-const folder=new URL('../tests/movieclip-bake/',import.meta.url).pathname;
-const views=new URL('../crates/styk-eval/tests/fixtures/movieclip-bake/',import.meta.url).pathname;
+const folder=fileURLToPath(new URL('../tests/movieclip-bake/',import.meta.url));
+const views=fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-bake/',import.meta.url));
 mkdirSync(folder,{recursive:true});mkdirSync(views,{recursive:true});
 const json=value=>JSON.stringify(value,(key,value)=>key==='runtime_segments'?undefined:value);
 // Exactly edit-replay.mjs's plain-data protocol: absent fields remain absent.

@@ -16,7 +16,7 @@
 // calls, spelled out for readability). The document recorded is the editor's in-memory
 // report as the engine's mirror receives it (`JSON.stringify(editor.report)` without the
 // `runtime_segments` caches): phase 1 ports start from the loaded report, not the file.
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync} from 'node:fs';
 import path from 'node:path';
@@ -25,7 +25,7 @@ import {recordedBounds} from './edit-bounds-callbacks.mjs';
 import {nativePropertyReplay} from './edit-native-property.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
 const repoUrl = pathToFileURL(repo).href;
 const {Editor} = await import(`${repoUrl}/src/editor.mjs`);

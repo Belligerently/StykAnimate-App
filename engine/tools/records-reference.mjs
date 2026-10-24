@@ -13,6 +13,7 @@ import {createHash} from 'node:crypto';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {decodePiv} from './decode-piv.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url)), repo = path.resolve(here, '../..');
 const repoUrl = pathToFileURL(repo).href;
 const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
@@ -29,10 +30,10 @@ if (/\.(styk|stkz|stykmov)$/i.test(input)) {
   const kind = /\.(styk|stkz|stykmov)$/i.exec(input)[1].toLowerCase();
   document = normalizeDecodedDocument((await decodeDocument(new Uint8Array(readFileSync(input)), kind)).document, kind);
 } else if (/\.(piv|stk)$/i.test(input)) {
-  // Through the repository's codec, as tools/reference.mjs does.
-  const {execFileSync} = await import('node:child_process'), {tmpdir} = await import('node:os'), {rmSync} = await import('node:fs');
+  // Through the repository's Python codec (engine/tools/decode-piv.mjs).
+  const {tmpdir} = await import('node:os'), {rmSync} = await import('node:fs');
   const decoded = path.join(tmpdir(), `styk-records-${process.pid}.json`);
-  execFileSync(`${here}/decode-piv.sh`, [input, decoded], {stdio: ['ignore', 'ignore', 'inherit']});
+  decodePiv(input, decoded, {stdio: ['ignore', 'ignore', 'inherit']});
   document = JSON.parse(readFileSync(decoded, 'utf8')); rmSync(decoded, {force: true});
 } else document = JSON.parse(readFileSync(input, 'utf8'));
 const native = rest.includes('--native');

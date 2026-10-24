@@ -4,10 +4,11 @@
 // a branch, and moving figures across frames. Run by engine/tools/edit-scenarios-property.mjs.
 // A frame range as the app passes it on a layer sheet (an array carrying `sheetTicks`) is
 // written `{"@array": [...], "sheetTicks": [...]}` (engine/tools/edit-replay.mjs).
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const scenario = (name, editor, steps, document) => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps}, null, 1) + '\n');
 const range = (sheetTicks, indices = [0]) => ({'@array': indices, sheetTicks});

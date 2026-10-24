@@ -1,10 +1,11 @@
 // Native presence clocks: breaks, imported continuation steps, gaps and history.
+import {fileURLToPath} from 'node:url';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf,limb,open,nextKey,createObject,createFrame,writeProject,writeReference} from './fixture-kit.mjs';
 import {presencePlayback} from '../../src/movieclip-presence.mjs';
-const folder=new URL('../tests/edit/',import.meta.url).pathname;
-const views=new URL('../crates/styk-eval/tests/fixtures/movieclip-native-presence/',import.meta.url).pathname;mkdirSync(views,{recursive:true});
+const folder=fileURLToPath(new URL('../tests/edit/',import.meta.url));
+const views=fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-native-presence/',import.meta.url));mkdirSync(views,{recursive:true});
 const base=({gaps=false,continuation=false,mode='loop'}={})=>{
  const child=open(documentOf([limb(),limb()],i=>[200+i*120,180]));child.select(2);child.joinTo(1,22);nextKey(child,7);child.select(1);child.moveSelection(63,-14);child.seek(0);const figure=child.createMovieclip({uids:[1],start:0,end:8,replace:false,name:'Presence clip'});
  const report=documentOf([limb()]);report.figure_types.push(figure);report.fps=48;
@@ -24,7 +25,7 @@ const cases=[
 for(const [name,document,steps]of cases){
  writeFileSync(`${folder}/${name}.document.json`,JSON.stringify(document,(key,value)=>key==='runtime_segments'?undefined:value)+'\n');
  writeFileSync(`${folder}/${name}.scenario.json`,JSON.stringify({name,document:`${name}.document.json`,editor:{},steps},null,1)+'\n');
- execFileSync(process.execPath,[new URL('./edit-replay.mjs',import.meta.url).pathname,`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
+ execFileSync(process.execPath,[fileURLToPath(new URL('./edit-replay.mjs',import.meta.url)),`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
  const replay=JSON.parse(readFileSync(`${folder}/${name}.reference.json`,'utf8')),final=JSON.parse(replay.steps.findLast(step=>step.document).document);
  const ticks=[0,.25,.75,1,1.5,2,2.25,2.75,3,3.5,4,4.75,5,5.25,5.75,6,6.5,7,8,9,10,11];
  const written=writeProject(views,name,final,ticks,{vfx:true,camera:true,native:true});writeReference(written,name);

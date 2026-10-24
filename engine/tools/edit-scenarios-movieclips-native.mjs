@@ -1,13 +1,14 @@
 // Native movieclip channels/history recorded before their Rust implementation.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf,limb,open,nextKey,prune} from './fixture-kit.mjs';
-const folder=new URL('../tests/edit/',import.meta.url).pathname;
+const folder=fileURLToPath(new URL('../tests/edit/',import.meta.url));
 const base=()=>{const e=open(documentOf([limb(),limb()],i=>[180+i*170,150]));nextKey(e,6);e.select(1);e.moveSelection(32.5,-7.25);e.rotateFigure(.175);e.seek(0);return e;};
 const write=(name,document,steps)=>{
  writeFileSync(`${folder}/${name}.document.json`,JSON.stringify(prune(structuredClone(document)),(key,value)=>key==='runtime_segments'?undefined:value)+'\n');
  writeFileSync(`${folder}/${name}.scenario.json`,JSON.stringify({name,document:`${name}.document.json`,editor:{},steps},null,1)+'\n');
- execFileSync(process.execPath,[new URL('./edit-replay.mjs',import.meta.url).pathname,`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
+ execFileSync(process.execPath,[fileURLToPath(new URL('./edit-replay.mjs',import.meta.url)),`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
 };
 const legacy=()=>{
  const e=base();e.select(1);const figure=e.createMovieclip({start:0,end:7,replace:false,name:'Legacy clip'});

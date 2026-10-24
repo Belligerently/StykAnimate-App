@@ -1,8 +1,9 @@
 // Single-frame origin joins: recorded errors, live drags, branch selection and redo drops.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 for (const kind of ['layout', 'offsets', 'support', 'saved-layout', 'saved-support']) for (const mode of ['native', 'sheet', 'autokey-sheet']) {

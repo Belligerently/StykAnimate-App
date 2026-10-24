@@ -253,6 +253,13 @@ tolerance the current export tests use.
 | `styk parity formats` (S1) | decoded documents and written bytes against the JS and Python codecs |
 | `scripts/ui-snapshots.mjs --touch --compare … --chrome-only` | the interface, pixel by pixel |
 
+The tools and scripts run on Windows as well as Linux, from a folder whose path has a drive letter and
+a space: a file URL becomes a path with `fileURLToPath` (never `.pathname`; `tests/windows-paths.test.mjs`
+guards it), an absolute path given to `import()` goes through `pathToFileURL`, the Rust CLI is
+`styk.exe`, and the Python codec oracle runs through `engine/tools/decode-piv.mjs` (the interpreter
+`scripts/run-python.mjs` picks) instead of a shell script. Generators that use `Math.pow` regenerate
+differently on Windows (the platform's `pow`, not V8's fdlibm) until the oracle's `pow` is pinned.
+
 Corpus: every file in `~/Downloads`, `~/Downloads/pivs`, `~/Downloads/WafflesPack` (127 files,
 with its `.stk` folders), the repository fixtures and asset packs. `Jay on a new app.styk`
 (unrepaired) is rejected by the current editor ("Pose array does not match its figure"); the

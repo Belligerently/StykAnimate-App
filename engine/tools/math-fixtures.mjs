@@ -7,8 +7,9 @@
 // Little-endian doubles. Inputs come from a fixed sequence, so the files only
 // change if V8's results do. Ordinary angles, tiny and large values, every n·π/2 up to 64 and its
 // neighbours, the kernel's switch points and special values.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
-const out = new URL('../crates/styk-math/tests/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../crates/styk-math/tests/', import.meta.url));
 let seed = 2026; const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 4294967296; };
 const nudge = (value, ulps) => { const f = new Float64Array([value]), u = new BigInt64Array(f.buffer); u[0] += BigInt(ulps); return f[0]; };
 const xs = [0, -0, NaN, Infinity, -Infinity, 5e-324, -5e-324, 2.2250738585072014e-308, 1e-300, 1e300, -1e300, 1.7976931348623157e308, 823550, 823551, 1e6, 1e9, 1e15, 1e22, 1e100];

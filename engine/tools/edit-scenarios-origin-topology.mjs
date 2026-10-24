@@ -1,7 +1,8 @@
 // Set Origin recordings built before extending the native command implementation.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
 import {documentOf, limb, open, joint, nextKey} from './fixture-kit.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 let counter = 0;
 Object.defineProperty(globalThis.crypto, 'randomUUID', {configurable: true, value: () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`});

@@ -1,8 +1,9 @@
 // Record the actual app callback owner before Rust consumes its measurements.
+import {fileURLToPath} from 'node:url';
 import {writeFileSync} from 'node:fs';
 import {documentOf, limb, open, nextKey, prune} from './fixture-kit.mjs';
 import {createVfx} from '../../src/vfx.mjs';
-const out = new URL('../tests/edit/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit/', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const bounds = {boundsOf: {'@boundsCallback': 'app'}};
 const constant = value => ({boundsOf: {'@boundsCallback': 'constant', value}});

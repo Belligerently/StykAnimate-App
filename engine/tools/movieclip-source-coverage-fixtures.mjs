@@ -1,10 +1,11 @@
 // Additive retained-source coverage: source clocks, effects, native channels and follow sampling.
+import {fileURLToPath} from 'node:url';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {timeline,evaluatedFrame} from '../../src/pivot/geometry.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 import {documentOf,limb,open,nextKey,createFrame,writeProject,writeReference,prune} from './fixture-kit.mjs';
-const folder=new URL('../crates/styk-eval/tests/fixtures/movieclip-source-coverage/',import.meta.url).pathname;
+const folder=fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-source-coverage/',import.meta.url));
 const fixture=name=>JSON.parse(readFileSync(new URL(`../crates/styk-eval/tests/fixtures/${name}.json`,import.meta.url),'utf8'));
 mkdirSync(folder,{recursive:true});let counter=0;
 Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:()=>`c0c0c0c0-0000-4000-8000-${String(++counter).padStart(12,'0')}`});

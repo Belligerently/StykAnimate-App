@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import {waitForEngineProgress} from '../src/engine/engine.mjs';
 import {createStagePlayback, engineTick, engineTicket} from '../src/engine/engine-playback.mjs';
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+/** Waits for `condition`, polling for at most `ms`: a timer takes up to 16 ms to fire on Windows, so a fixed sleep is too short there. */
+async function until(condition, ms = 2000) {
+  for (const end = performance.now() + ms; !condition() && performance.now() < end;) await sleep(1);
+}
+
 function playbackSide({maxFrames} = {}) {
   let current = null, generation = 7, epoch = 2;
   let readinessReads = 0;
@@ -329,7 +335,7 @@ test('one bounded continuation retries latest admission without progress and dis
   ready.set(2.5, {tick: 2.5});
   assert.equal(playback.get(2.5), null, 'unaccepted demand keeps even a previously ready native frame cold');
   busy = false;
-  await new Promise(resolve => setTimeout(resolve, 35));
+  await until(() => requests.length > 0);
   assert.deepEqual(requests.map(request => [...request.samples]), [[2.5]], 'lock release without progress retries actual latest demand without another get');
   assert.equal(maximum, 1, 'only one waiter may be active');
   assert.equal(Atomics.load(progress, 0), 0, 'a retry cannot fabricate progress');
@@ -337,7 +343,8 @@ test('one bounded continuation retries latest admission without progress and dis
   busy = true; await playback.prepareRange([1.5]);
   playback.dispose();
   busy = false;
-  await new Promise(resolve => setTimeout(resolve, 35));
+  await until(() => active === 0);
+  await sleep(50);
   assert.equal(requests.length, 1, 'a late scheduled retry cannot admit disposed playback demand');
   assert.equal(active, 0, 'disposed waiters finish at their actual bounded deadline');
 });

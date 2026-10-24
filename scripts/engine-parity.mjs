@@ -29,7 +29,9 @@ const run = (name, command, commandArgs, options = {}) => {
   if (!ok && options.quiet) process.stdout.write(`${result.stdout ?? ''}${result.stderr ?? ''}`.split('\n').slice(-30).join('\n') + '\n');
   return result;
 };
-const nice = process.platform === 'win32' ? [] : ['nice', '-n', '10'];
+const windows = process.platform === 'win32';
+const nice = windows ? [] : ['nice', '-n', '10'];
+const styk = `engine/target/release/styk${windows ? '.exe' : ''}`;
 /** Whether `paths` are as committed: no changed file and no new one (`git diff` misses new files). */
 const unchanged = (...paths) => spawnSync('git', ['status', '--porcelain', '--untracked-files=all', '--', ...paths], {cwd: root, encoding: 'utf8'}).stdout.trim() === '';
 const cargo = (...rest) => [nice[0] ?? 'cargo', [...nice.slice(1), ...(nice.length ? ['cargo'] : []), ...rest, '--manifest-path', 'engine/Cargo.toml']];
@@ -111,7 +113,7 @@ run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: 
 const livePairs = readdirSync(path.join(root, 'engine/tests/session-live-return'))
   .filter(name => name.endsWith('.json')).sort()
   .flatMap(name => [`engine/tests/session-live/${name}`, `engine/tests/session-live-return/${name}`]);
-run('live worker command replays', 'engine/target/release/styk',
+run('live worker command replays', styk,
   ['edit-replay', '--live-worker', ...livePairs], {quiet: true});
 const natives = [];
 const walk = dir => {
@@ -126,7 +128,9 @@ const temp = mkdtempSync(path.join(os.tmpdir(), 'styk-parity-'));
 try {
   const list = path.join(temp, 'native-files.txt');
   writeFileSync(list, natives.join('\n') + '\n');
-  run(`containers (${natives.length} repository files)`, process.execPath, ['engine/tools/container-parity.mjs', list], {quiet: true});
+  // The repository holds no native files since its asset packs left: nothing to compare is not a failure.
+  if (natives.length) run(`containers (${natives.length} repository files)`, process.execPath, ['engine/tools/container-parity.mjs', list], {quiet: true});
+  else results.push({name: 'containers (no native files in the repository)', ok: true, seconds: 0});
 } finally { rmSync(temp, {recursive: true, force: true}); }
 
 if (args.has('--corpus')) {
@@ -135,7 +139,7 @@ if (args.has('--corpus')) {
   for (const file of files) {
     const reference = path.join(os.tmpdir(), `styk-reference-${path.basename(file).replace(/\W+/g, '-')}.json`);
     run(`reference ${path.basename(file)}`, process.execPath, ['engine/tools/reference.mjs', file, reference, '--every', '1', '--vfx'], {quiet: true});
-    run(`geometry and effects ${path.basename(file)}`, 'engine/target/release/styk', ['compare', file, reference], {quiet: true,
+    run(`geometry and effects ${path.basename(file)}`, styk, ['compare', file, reference], {quiet: true,
       check: result => /, 0 mismatched primitives, \d+ joints, 0 mismatched joints, 0 frames with differences/.test(result.stdout) && !/[1-9]\d* mismatched effects/.test(result.stdout)});
   }
   if (!files.length) results.push({name: 'corpus (not present on this machine)', ok: true, seconds: 0});
@@ -144,14 +148,14 @@ if (args.has('--corpus')) {
     'AssetReleases/Vehicles/Scenes/Vehicles-Pivot-3D.styk', 'AssetReleases/Impact-FX/Scenes/Impact-Motion-FX-Pivot.styk'].filter(file => existsSync(path.join(root, file)))) {
     const reference = path.join(os.tmpdir(), `styk-reference-${path.basename(file).replace(/\W+/g, '-')}.json`);
     run(`reference ${path.basename(file)}`, process.execPath, ['engine/tools/reference.mjs', file, reference, '--every', '1'], {quiet: true});
-    run(`geometry ${path.basename(file)}`, 'engine/target/release/styk', ['compare', file, reference], {quiet: true,
+    run(`geometry ${path.basename(file)}`, styk, ['compare', file, reference], {quiet: true,
       check: result => /, 0 mismatched primitives, \d+ joints, 0 mismatched joints, 0 frames with differences/.test(result.stdout)});
   }
   // The evaluated frame as records, every tick, against the editor (hashes: the frames are large).
   for (const file of files) {
     const folder = path.join(os.tmpdir(), `styk-records-${path.basename(file).replace(/\W+/g, '-')}`);
     run(`records reference ${path.basename(file)}`, process.execPath, ['--max-old-space-size=12000', 'engine/tools/records-reference.mjs', file, folder], {quiet: true});
-    run(`evaluated records ${path.basename(file)}`, 'engine/target/release/styk', ['records', folder], {quiet: true});
+    run(`evaluated records ${path.basename(file)}`, styk, ['records', folder], {quiet: true});
   }
   const recording = path.join(root, 'engine/target/piv-parity');
   if (existsSync(recording)) run('Pivot codec replay', ...cargo('run', '--release', '-p', 'styk-piv', '--bin', 'styk-piv', '--', 'replay', recording), {quiet: true});

@@ -1,8 +1,9 @@
 // Retained source generator census and batches, recorded with the actual editor.
+import {fileURLToPath} from 'node:url';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {documentOf,limb,open,nextKey,createFrame,writeProject,writeReference,prune} from './fixture-kit.mjs';
 import {generatorBatchFor} from '../../src/vfx-generator-frame.mjs';
-const folder=new URL('../crates/styk-eval/tests/fixtures/movieclip-source-generators/',import.meta.url).pathname;
+const folder=fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-source-generators/',import.meta.url));
 mkdirSync(folder,{recursive:true});let counter=0,state=1;
 Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:()=>`c1c1c1c1-0000-4000-8000-${String(++counter).padStart(12,'0')}`});
 Math.random=()=> (state=(Math.imul(state,1103515245)+12345)>>>0)/2**32;

@@ -1,8 +1,9 @@
 // Origin property editing on the app's exposure sheet, including saved channels.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {open} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 const poseJSON = editor => JSON.stringify(editor.evaluatedFrame.objects.map(object => Object.fromEntries(['root_x', 'root_y', 'scale', 'angles', 'len_flag', 'lengths', 'bend_flag', 'bends', '_stykAnimationOrigin'].filter(key => key in object).map(key => [key, object[key]]))));

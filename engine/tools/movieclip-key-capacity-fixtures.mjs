@@ -1,9 +1,10 @@
 // Actual native authored key capacity/collision calls, recorded after the owning
 // JS non-progress fix and BEFORE its Rust publication validation.
+import {fileURLToPath} from 'node:url';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf,limb,open,nextKey} from './fixture-kit.mjs';
-const folder=new URL('../tests/movieclip-key-capacity/',import.meta.url).pathname;mkdirSync(folder,{recursive:true});
+const folder=fileURLToPath(new URL('../tests/movieclip-key-capacity/',import.meta.url));mkdirSync(folder,{recursive:true});
 const MAX=Number.MAX_SAFE_INTEGER,json=value=>JSON.stringify(value,(key,value)=>key==='runtime_segments'?undefined:value);
 function prepared(){
  const e=open(documentOf([limb(),limb(),limb()],i=>[180+i*170,150]));nextKey(e,4);e.seek(0);e.select(2);e.createMovieclip({uids:[2],start:0,end:5,replace:false});
@@ -15,5 +16,5 @@ for(const [name,counter,collisions,tick] of [['capacity-maximum',MAX,[],3],['cap
  open(structuredClone(document)).serialize();writeFileSync(`${folder}/${name}.document.json`,json(document)+'\n');
  const steps=[['@seek',tick],['addFigure',4],['undo'],['redo'],['undo'],['createEmptyMovieclip','Capacity branch'],['redo']];
  writeFileSync(`${folder}/${name}.scenario.json`,JSON.stringify({name,document:`${name}.document.json`,editor:{},steps},null,1)+'\n');
- execFileSync(process.execPath,[new URL('./edit-replay.mjs',import.meta.url).pathname,`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
+ execFileSync(process.execPath,[fileURLToPath(new URL('./edit-replay.mjs',import.meta.url)),`${folder}/${name}.scenario.json`,`${folder}/${name}.reference.json`],{stdio:'inherit'});
 }

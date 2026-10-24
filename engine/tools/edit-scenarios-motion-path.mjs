@@ -4,11 +4,12 @@
 // each shape reshaping the target's keys nearby (`setMotionPathFalloff`, `motionPathFalloff`):
 // figures' origins and joints, joined figures, IK targets pinned and free, two layers, a
 // movieclip, the camera; refusals and history. Run by engine/tools/edit-scenarios.mjs.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {documentOf, limb, open, nextKey, prune} from './fixture-kit.mjs';
 import {falloffWeight, MOTION_PATH_FALLOFF_SHAPES} from '../../src/motion-path-falloff.mjs';
 
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const scenario = (name, editor, steps, document) => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps}, null, 1) + '\n');
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';

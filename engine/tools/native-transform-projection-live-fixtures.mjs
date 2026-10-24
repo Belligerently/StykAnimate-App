@@ -3,9 +3,10 @@
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 const root=process.cwd(),out=path.resolve('engine/tests/edit');
-const {open}=await import(path.resolve(root,'engine/tools/fixture-kit.mjs'));
-const {sampleAnimationChannel}=await import(path.resolve(root,'src/animation-channels.mjs'));
+const {open}=await import(pathToFileURL(path.resolve(root,'engine/tools/fixture-kit.mjs')).href);
+const {sampleAnimationChannel}=await import(pathToFileURL(path.resolve(root,'src/animation-channels.mjs')).href);
 const source=path.resolve('engine/tests/session-live');
 const returnSource=path.resolve('engine/tests/session-live-return');
 const json=value=>JSON.stringify(value,(key,item)=>key==='runtime_segments'?undefined:item);

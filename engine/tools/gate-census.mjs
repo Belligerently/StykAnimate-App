@@ -5,14 +5,14 @@
 //
 //   node engine/tools/gate-census.mjs <file-or-folder>... [--out census.json]
 //
-// Pivot animations (.piv) go through the repository's codec (tools/decode-piv.sh), as
-// tools/reference.mjs does; Pivot figures (.stk) are left out: opening one adds it to the
-// animation on screen. Prints the count drawn and the files refused per reason.
+// Pivot animations (.piv) go through the repository's codec (engine/tools/decode-piv.mjs);
+// Pivot figures (.stk) are left out: opening one adds it to the animation on screen. Prints
+// the count drawn and the files refused per reason.
 import {readdirSync, readFileSync, statSync, writeFileSync, rmSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {decodePiv} from './decode-piv.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url)), repo = path.resolve(here, '../..');
 const repoUrl = pathToFileURL(repo).href;
@@ -38,7 +38,7 @@ async function load(file) {
   if (kind === 'piv') {
     const decoded = path.join(tmpdir(), `styk-census-${process.pid}.json`);
     try {
-      execFileSync(`${here}/decode-piv.sh`, [file, decoded], {stdio: ['ignore', 'ignore', 'ignore']});
+      decodePiv(file, decoded);
       return JSON.parse(readFileSync(decoded, 'utf8'));
     } finally { rmSync(decoded, {force: true}); }
   }

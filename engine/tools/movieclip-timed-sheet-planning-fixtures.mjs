@@ -1,10 +1,11 @@
 // Real editor calls and their owning layer-sheet publication payloads, recorded
 // before the borrowed Rust worker planners. No alternate pose evaluator.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {documentOf, limb, open, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
-const out = new URL('../tests/movieclip-timed-sheet/', import.meta.url).pathname;
-const views = new URL('../crates/styk-eval/tests/fixtures/movieclip-timed-sheet/', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/movieclip-timed-sheet/', import.meta.url));
+const views = fileURLToPath(new URL('../crates/styk-eval/tests/fixtures/movieclip-timed-sheet/', import.meta.url));
 mkdirSync(out, {recursive: true});
 mkdirSync(views, {recursive: true});
 const app = {layerTimeline: true, propertyChannels: true};
@@ -27,7 +28,7 @@ const write = (name, e, steps) => {
   const document = json(e.report);
   writeFileSync(`${out}/${name}.document.json`, document + '\n');
   writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document: `${name}.document.json`, editor: app, steps}, null, 1) + '\n');
-  execFileSync(process.execPath, [new URL('./edit-replay.mjs', import.meta.url).pathname, `${out}/${name}.scenario.json`, `${out}/${name}.reference.json`], {stdio: 'inherit'});
+  execFileSync(process.execPath, [fileURLToPath(new URL('./edit-replay.mjs', import.meta.url)), `${out}/${name}.scenario.json`, `${out}/${name}.reference.json`], {stdio: 'inherit'});
   const recorded = JSON.parse(readFileSync(`${out}/${name}.reference.json`, 'utf8'));
   const editor = open(JSON.parse(document), app), payloads = [];
   let step = 0;

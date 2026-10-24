@@ -2,11 +2,12 @@
 // segment styles, branch caps and circle fills, the figure's name and outline (one
 // `native-properties` or `figure` history entry, or recoloured and keyed on the figure on show
 // as the app does it). Run by engine/tools/edit-scenarios-range.mjs.
+import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import {documentOf, open} from './fixture-kit.mjs';
 
-const out = new URL('../tests/edit', import.meta.url).pathname;
+const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const app = {layerTimeline: true, propertyChannels: true};
 const scenario = (name, editor, steps, document) => writeFileSync(`${out}/${name}.scenario.json`, JSON.stringify({name, document, editor, steps}, null, 1) + '\n');
 
