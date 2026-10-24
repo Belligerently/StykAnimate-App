@@ -101,6 +101,9 @@ pub enum CommandKind {
     NativeProperties { index: usize, before: crate::builder::Patch, after: crate::builder::Patch },
     /// A figure definition and the poses it changed, before and after (`kind: 'topology'`).
     Topology { index: usize, before: crate::topology::Snapshot, after: crate::topology::Snapshot },
+    /// A branch made a figure of its own in every pose of the figure: the part inserted in each, the definitions added
+    /// to the library (`kind: 'disconnect'`, `disconnect.rs`).
+    Disconnect { piece: u32, figure_index: usize, figures: Vec<Value>, changes: Vec<crate::disconnect::Change> },
     /// An edit the JavaScript editor made and undoes itself (D19, `external.rs`): its
     /// identity there and the pose sources it keeps alive.
     External { id: u64, retained: Vec<String> },
@@ -364,7 +367,7 @@ impl Editor {
         fn summary(command: &Command, weight: &Weight, kinds: bool, children: bool) -> Value {
             let mut value = styk_doc::Obj::new();
             if kinds { value.set("kind", Value::str(match &command.kind {
-                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Scene { .. } => "scene", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::External { .. } => "external",
+                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Scene { .. } => "scene", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::Disconnect { .. } => "disconnect", CommandKind::External { .. } => "external",
             })); }
             value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
             if children && let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight,kinds,children)).collect())); }
@@ -537,6 +540,7 @@ impl Editor {
             CommandKind::FigureRange { .. } => self.apply_figure_range_command(command, direction)?,
             CommandKind::NativeProperties { .. } => self.apply_native_properties(command, direction)?,
             CommandKind::Topology { .. } => self.apply_topology(command, direction)?,
+            CommandKind::Disconnect { .. } => self.apply_disconnect(command, direction)?,
             CommandKind::External { id, .. } => return Err(EditError::Unported(format!("{}{id}", crate::external::EXTERNAL_ENTRY))),
             CommandKind::Batch { commands } => {
                 let ordered: Vec<&Command> = if direction == Direction::Before { commands.iter().rev().collect() } else { commands.iter().collect() };

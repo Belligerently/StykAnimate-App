@@ -1029,7 +1029,7 @@ impl Editor {
     }
 
     /// The typed view of a posed frame and its geometry (`buildGeometry(report, working)`).
-    fn posed_scene(&self, record: &Value) -> Result<(Arc<Prepared>, Frame, Scene), EditError> {
+    pub(crate) fn posed_scene(&self, record: &Value) -> Result<(Arc<Prepared>, Frame, Scene), EditError> {
         let (prepared, frame) = self.posed_frame(record)?;
         let scene = styk_eval::geometry::build(&prepared.doc, &frame);
         Ok((prepared, frame, scene))
@@ -1045,7 +1045,7 @@ impl Editor {
     }
 
     /// `geometry.objects.get(slot).joints.get(handle)`.
-    fn joint_point(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, handle: f64) -> Option<[f64; 2]> {
+    pub(crate) fn joint_point(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, handle: f64) -> Option<[f64; 2]> {
         let object = frame.objects.get(slot)?;
         let geometry = scene.objects.iter().find(|g| g.uid == object.uid && g.resolved)?;
         if handle == 0.0 {

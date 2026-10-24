@@ -18,7 +18,7 @@ const text = editor => JSON.stringify(editor.report);
 async function bothWays(document, options, script) {
   const run = async owned => {
     const editor = new Editor({demo: false, ...options}).load(structuredClone(document));
-    const owner = owned ? installEngineOwner(editor) : null;
+    const owner = owned ? installEngineOwner(editor, {verify: true}) : null;
     const steps = [];
     const note = (label, value) => steps.push({label, value, document: text(editor), undo: editor.undoLabel, redo: editor.redoLabel, canUndo: editor.canUndo, canRedo: editor.canRedo, dirty: editor.dirty});
     try {
@@ -167,4 +167,100 @@ test('motion paths of a 3D figure in perspective with IK are edited, undone and 
   });
   const documents = new Set(plain.steps.map(step => step.document));
   assert.ok(documents.size > 3, 'the trails changed the document');
+});
+
+/** `run()`'s outcome as the interface sees a command: its answer, or the message of the error it raised. */
+const attempt = run => { try { return run(); } catch (error) { return `throws: ${error.message}`; } };
+const jointOf = (editor, name) => editor.figure.segments.findIndex(segment => segment.name === name);
+
+test('disconnecting a segment makes a figure of its branch in every frame, and undoes, like the editor does', {skip: !engineBuilt}, async () => {
+  const document = load('edit/startup.document.json');
+  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+    // Blue walks right while her left arm swings, over three held poses.
+    for (const tick of [4, 8]) editor.sheetInsertKey(['layer-1'], tick);
+    [0, 4, 8].forEach((tick, i) => {
+      editor.seek(tick);
+      editor.select(1); editor.updateObject({root_x: editor.object.root_x + 30 * i});
+      editor.select(1, jointOf(editor, 'Left upper arm')); editor.rotateJoint(0.4 * i);
+      editor.select(1, jointOf(editor, 'Left forearm')); editor.rotateJoint(-0.3 * i);
+    });
+    editor.seek(4);
+    editor.select(1, jointOf(editor, 'Left upper arm'));
+    note('selected', editor.canDisconnectSegment());
+    const piece = editor.disconnectSegment();
+    note('disconnected', [piece.unique_id, piece.join, editor.selectedUid, editor.figure.name, editor.undoLabel]);
+    assert.equal(editor.undoLabel, 'Disconnect segment');
+    assert.equal(editor.figure.segments.length, 2);
+    for (const tick of [0, 8]) { editor.seek(tick); note(`frame ${tick}`, editor.evaluatedFrame.objects.map(object => [object.unique_id, object.figure_type_id, object.root_x, object.root_y])); }
+    editor.seek(4);
+    await unwind(editor, note, 1);
+  });
+  assert.notEqual(plain.steps.find(step => step.label === 'disconnected').document, plain.steps.find(step => step.label === 'selected').document);
+});
+
+test('disconnecting from a linked instance, with figures joined to the part, matches the editor', {skip: !engineBuilt}, async () => {
+  const document = load('edit/startup.document.json');
+  // Joined figures with IK controllers are the topology edits' own case.
+  for (const frame of document.keyframes) for (const object of frame.objects) delete object._stykIK;
+  await bothWays(document, sheet, async (editor, note) => {
+    // A second instance of the figure, a hand attached to the first one's arm and a body part attached to its chest.
+    const typeId = editor.figure.figure_type_id;
+    editor.addFigure(typeId);
+    editor.addFigure(typeId); const hand = editor.selectedUid; editor.joinTo(1, 4);
+    editor.addFigure(typeId); const chest = editor.selectedUid; editor.joinTo(1, 1);
+    note('prepared');
+    editor.select(1, jointOf(editor, 'Left upper arm'));
+    const piece = editor.disconnectSegment();
+    const joins = () => editor.selectionFrame.objects.map(object => [object.unique_id, object.figure_type_id, object.join?.target_unique_id, object.join?.target_handle_id]);
+    note('disconnected', [piece.unique_id, joins(), editor.report.figure_types.map(figure => [figure.figure_type_id, figure.name, figure.segments.length])]);
+    assert.equal(editor.selectionFrame.objects.find(object => object.unique_id === hand).join.target_unique_id, piece.unique_id, 'the hand stays on the arm');
+    assert.equal(editor.selectionFrame.objects.find(object => object.unique_id === chest).join.target_unique_id, 1, 'the chest stays on the body');
+    // The other instance shares the definition: this one splits again from the fork.
+    editor.select(1); editor.select(1, jointOf(editor, 'Right upper arm'));
+    note('again', editor.disconnectSegment().unique_id);
+    await unwind(editor, note, 2);
+  });
+});
+
+test('disconnecting a segment of a pinned limb keeps its displayed pose, as the editor does', {skip: !engineBuilt}, async () => {
+  const document = load('edit/startup.document.json');
+  const {plain} = await bothWays(document, sheet, async (editor, note) => {
+    editor.select(1, jointOf(editor, 'Left forearm')); note('pinned', editor.setNodeIK({pinned: true}));
+    editor.select(1); editor.updateObject({root_x: editor.object.root_x - 25}); note('moved');
+    editor.select(1, jointOf(editor, 'Left forearm'));
+    const piece = editor.disconnectSegment();
+    note('disconnected', [piece.unique_id, piece._stykIK, editor.selectionFrame.objects.find(object => object.unique_id === 1)._stykIK]);
+    await unwind(editor, note, 2);
+  });
+  assert.equal(plain.steps.find(step => step.label === 'pinned').value, true);
+});
+
+test('fills move with their part and a fill across the cut is refused without a change, as the editor does', {skip: !engineBuilt}, async () => {
+  const document = load('edit/startup.document.json');
+  await bothWays(document, sheet, async (editor, note) => {
+    editor.addPolygon([1, 3, 4]); editor.addPolygon([0, 7, 9]);
+    editor.select(1, jointOf(editor, 'Left upper arm'));
+    const piece = editor.disconnectSegment();
+    note('disconnected', [piece.unique_id, editor.figure.polyfills.map(polygon => polygon.segment_ids)]);
+    await unwind(editor, note, 1);
+    assert.equal(await editor.undo(), true); editor.select(1);
+    const depth = editor._undo.length;
+    editor.addPolygon([2, 3, 4]);
+    editor.select(1, jointOf(editor, 'Left upper arm'));
+    note('refused', attempt(() => editor.disconnectSegment()));
+    assert.equal(editor._undo.length, depth + 1, 'the refusal recorded nothing');
+  });
+});
+
+test('what cannot be disconnected is refused with the editor\'s message', {skip: !engineBuilt}, async () => {
+  const document = load('edit/startup.document.json');
+  await bothWays(document, sheet, async (editor, note) => {
+    editor.select(1);
+    note('whole figure', [editor.canDisconnectSegment(), attempt(() => editor.disconnectSegment())]);
+    editor.select(1, jointOf(editor, 'Left upper arm')); editor.disconnectSegment();
+    editor.select(editor.selectedUid, 0);
+    note('the part is a whole figure now', [editor.canDisconnectSegment(), attempt(() => editor.disconnectSegment())]);
+    editor.select(1); editor.select(1, jointOf(editor, 'Head')); editor.setLayerLocked(editor.layerForUid(1), true);
+    note('locked layer', attempt(() => editor.disconnectSegment()));
+  });
 });

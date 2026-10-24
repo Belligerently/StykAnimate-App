@@ -138,7 +138,7 @@ impl Editor {
     }
 
     /// `layerLocked(report, uid)` without focus locks, which the facade keeps in JavaScript.
-    fn layer_locked(&self, uid: u32) -> bool {
+    pub(crate) fn layer_locked(&self, uid: u32) -> bool {
         matches!(self.report.path(&["_styk", "layers", "byId", &self.layer_of(uid), "locked"]), Some(Value::Bool(true)))
     }
 
