@@ -10,7 +10,7 @@
  *
  * The frame on show is the session's: the engine evaluates it and draws it (`Stage::edit_session`), nothing
  * crosses from the interface. Two frames are the interface's own and cross as poses (only the objects whose
- * geometry the editor rebuilt since the last frame): a movieclip being edited in place, whose edits the editor
+ * geometry the editor rebuilt since the last frame): a movieclip being edited in place, whose commands the editor
  * runs until the session edits movieclips, and the first stroke on a blank exposure, whose new cel the session
  * does not hold yet. Onion skins cross as poses as well.
  */

@@ -74,15 +74,24 @@ test('a gesture rebuilds the groups of the figures it moves and keeps the others
   } finally { owner.release(); }
 });
 
-test('a document the editor edits itself is evaluated here: no session answers while it runs a call', {skip: !engineBuilt}, async () => {
-  const {editor, owner} = await poses();
+test('a movieclip edited in place is evaluated by the editor, which runs its commands', {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/startup.document.json', import.meta.url), 'utf8'));
+  const {editor, owner} = await ownedEditor(options, document);
   try {
-    assert.ok(editor._shown.geometry(editor.evaluatedFrame), 'the session answers');
-    editor._movieclipScopes = [{}];
-    assert.equal(editor._shown.geometry(editor.evaluatedFrame), null, 'a movieclip edited in place is the editor\'s');
-    assert.equal(editor._shown.frame(), null);
-    assert.equal(editor._shown.source(false), null);
-    editor._movieclipScopes = [];
+    editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
+    const clip = editor.createMovieclip({start: editor.tick, end: editor.tick + 6});
+    editor.enterMovieclip(clip.figure_type_id);
+    assert.ok(editor._movieclipScopes.length, 'the movieclip is open for editing');
+    assert.equal(editor._shown.frame(), null, 'the session does not answer for it');
+    assert.equal(editor._shown.geometry(editor.evaluatedFrame), null);
+    assert.equal(editor._shown.source(false), null, 'the stage gets its poses from the editor');
+    editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
+    const before = editor.evaluatedFrame.objects[0].root_x;
+    editor.moveSelection(25, 10);
+    assert.equal(editor.evaluatedFrame.objects[0].root_x, before + 25, 'the frame follows the edit');
+    assert.equal(editor.geometry.objects.get(0).root.x, before + 25);
+    editor.leaveMovieclip();
+    assert.ok(editor._shown.frame(), 'back in the project the session answers');
   } finally { owner.release(); }
 });
 

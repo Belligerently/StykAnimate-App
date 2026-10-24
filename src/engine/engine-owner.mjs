@@ -131,7 +131,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
    * writes the editor's records to it nor tells it the editor's view (the selection is applied after the playhead). */
   let adopting = 0;
   /** Whether the session answers for the editor's document: not while the editor runs a call of its own (its records
-   * are not the session's until it ends) or edits a movieclip in place. */
+   * are not the session's until it ends), and not in a movieclip it edits in place, whose commands run in the editor
+   * without a call the owner could mark (cut4-structure moves them into the session). */
   const reading = () => depth === 0 && !editor._movieclipScopes?.length && (document === editor.report || Boolean(ensure()));
   /** Where the playhead is: the session needs no more to say what the frame on show is (the selection is the editor's to
    * tell with a call, and asking for it here would read the frame on show). */
