@@ -84,6 +84,16 @@ pub const OPEN_BYTES_PER_BYTE: usize = 16;
 /// took 60 MB), so 96 MiB.
 const OPEN_MINIMUM_BYTES: usize = 96 << 20;
 
+/// Whether the engine has the memory to take a file of `file_bytes` bytes in and open it: the bytes cross into the
+/// module first (one block, which a memory with room left in many pieces may not have: it is tried), then the open
+/// reserves what it needs ([`open_estimate`]). The interface asks before it copies a file in, because the copy itself
+/// cannot be refused.
+pub fn admit_open(file_bytes: usize) -> Result<(), OpenError> {
+    styk_alloc::admit(file_bytes.saturating_add(open_estimate(file_bytes))).map_err(OpenError::out_of_memory)?;
+    let mut copy: Vec<u8> = Vec::new();
+    copy.try_reserve_exact(file_bytes).map_err(|_| OpenError::out_of_memory(styk_alloc::OutOfMemory { requested: file_bytes, available: styk_alloc::headroom() }))
+}
+
 /// What opening a document of `file_bytes` bytes may take, for the reservation that precedes the open.
 pub fn open_estimate(file_bytes: usize) -> usize {
     file_bytes.saturating_mul(OPEN_BYTES_PER_BYTE).max(OPEN_MINIMUM_BYTES)

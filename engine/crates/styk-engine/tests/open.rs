@@ -187,3 +187,13 @@ fn a_large_file_asks_for_more_memory_than_a_small_one() {
     assert_eq!(open_estimate(40 << 20), (40 << 20) * OPEN_BYTES_PER_BYTE, "a 40 MiB file");
     assert_eq!(open_estimate(usize::MAX), usize::MAX, "no overflow");
 }
+
+#[test]
+fn the_interface_asks_before_it_copies_a_file_in() {
+    use styk_engine::document::admit_open;
+    assert!(admit_open(1 << 20).is_ok());
+    let refused = styk_alloc::with_limit(64 << 20, || admit_open(1 << 20)).unwrap_err();
+    assert_eq!(refused.key.as_deref(), Some("errors.engine.outOfMemory"));
+    // A file that is larger than the address space the module could ever have is refused without a block being made.
+    assert_eq!(admit_open(usize::MAX / 2).unwrap_err().code.as_deref(), Some("out_of_memory"));
+}

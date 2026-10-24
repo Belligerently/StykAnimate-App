@@ -90,3 +90,18 @@ test('an editing call the memory cannot hold is refused as an error, and the ses
     assert.notEqual(answer.error, 'errors.engine.outOfMemory');
   } finally { session.free(); }
 });
+
+test('an undo or a redo asks the memory for more than an edit does', {skip: !engineBuilt}, async () => {
+  const session = await sessionFromDocument(startup(), STATE, 1);
+  try {
+    const view = JSON.stringify({tick: 0});
+    await withLimit(200 * MIB, async () => {
+      const edit = JSON.parse(session.call('select', JSON.stringify([1, -1]), view));
+      assert.equal(edit.status, 'ok', 'an edit needs 64 MiB, which 200 MiB has');
+      for (const method of ['undo', 'redo']) {
+        assert.deepEqual(JSON.parse(session.call(method, '[]', view)), {status: 'error', error: 'errors.engine.outOfMemory'}, `${method} needs 256 MiB, which 200 MiB lacks`);
+      }
+    });
+    assert.notEqual(JSON.parse(session.call('undo', '[]', view)).error, 'errors.engine.outOfMemory');
+  } finally { session.free(); }
+});

@@ -70,12 +70,11 @@ impl EngineHandle {
         Ok(id)
     }
 
-    /// Whether the engine has the memory to open a file of `file_bytes` bytes: the bytes cross into the module first,
-    /// then the open reserves what it needs ([`styk_engine::document::open_estimate`]). Checked by the interface
-    /// before it copies a file in, because the copy itself cannot be refused. The error is an open error.
+    /// Whether the engine has the memory to open a file of `file_bytes` bytes ([`styk_engine::document::admit_open`]).
+    /// Checked by the interface before it copies a file in. The error is an open error.
     pub fn admit_open(&self, file_bytes: f64) -> Result<(), JsError> {
         let bytes = crate::engine::counter(file_bytes).map_or(usize::MAX, |bytes| bytes as usize);
-        styk_alloc::admit(bytes.saturating_add(styk_engine::document::open_estimate(bytes))).map_err(|error| js_error(OpenError::out_of_memory(error).to_json()))
+        styk_engine::document::admit_open(bytes).map_err(|error| js_error(error.to_json()))
     }
 
     /// Asks a job to stop at its next checkpoint; its outcome is still taken (as a cancellation).
