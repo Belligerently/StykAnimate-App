@@ -32,11 +32,14 @@ pub(crate) struct Store {
     pub(crate) assets: Option<Arc<Assets>>,
     /// The typed views of `tree`, as published with its generation.
     pub(crate) prepared: Option<Arc<Prepared>>,
+    /// The token of the draft the engine's generation holds on top of this document, if it does
+    /// (`Engine::publish_draft`): the tree and views above never include it.
+    pub(crate) draft: Option<u64>,
 }
 
 impl Default for Store {
     fn default() -> Self {
-        Store { tree: Value::object(Obj::new()), revision: 0, loader: Loader::new(), lineage: 0, assets: None, prepared: None }
+        Store { tree: Value::object(Obj::new()), revision: 0, loader: Loader::new(), lineage: 0, assets: None, prepared: None, draft: None }
     }
 }
 

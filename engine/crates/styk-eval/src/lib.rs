@@ -13,6 +13,7 @@ pub mod eval;
 pub mod follow;
 pub mod geometry;
 pub mod ik;
+pub mod live;
 pub mod load;
 pub mod materialize;
 pub mod onion;

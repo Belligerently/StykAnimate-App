@@ -15,6 +15,8 @@ import {loadEngine} from './engine.mjs';
 import {holdsRevision} from './engine-open.mjs';
 import {engineTicket} from './engine-playback.mjs';
 import {failEngine, engineRefusal} from './engine-failure.mjs';
+import {drawingResourcesFor} from '../drawing-resources.mjs';
+import {LiveCels} from './engine-live-cels.mjs';
 import {EngineCameraMonitor} from './engine-previews.mjs';
 import {viewportBackingSize} from '../preview-quality.mjs';
 import {messageError} from '../localized-error.mjs';
@@ -28,6 +30,8 @@ const perStage = () => ({
   groups: [], count: -1, fields: null, frameSent: false,
   /** Onion skin poses the engine holds, by the editor's sampled frame. */
   ghosts: new WeakMap(), nextGhost: 1,
+  /** The drawing cels the engine holds live: strokes drawn before they are published. */
+  live: null,
   /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
   pictureWait: 0,
   /** Frames in a row the engine did not yet hold the editor's revision for. */
@@ -40,6 +44,8 @@ async function engineSide(load) {
   if (shared) return shared;
   const engine = await load();
   return shared = {engine, stage: null, frameReport: null, failed: null, failure: null, lastRefusal: null,
+    /** The drawing cel a first stroke is about to create that the engine holds in its document (`draft`): outlives a stage. */
+    draft: null,
     stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, pictureRedraws: 0, retries: 0}, ...perStage()};
 }
 
@@ -116,7 +122,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   try { stage = await side.engine.createStage(canvas); }
   catch (error) { throw messageError(error, 'errors.engineStage.theDrawingEngineCouldNotStart', {reason: error?.message ?? error}); }
   // The engine keeps the document; a stage on a new device starts from empty poses.
-  Object.assign(side, perStage(), {stage, failed: null, failure: null});
+  Object.assign(side, perStage(), {stage, live: new LiveCels(stage), failed: null, failure: null});
   /** The stage's pixels per CSS pixel (the last `resize`), and a frame the stage has drawn. */
   let deviceRatio = 1, engineShown = false, destroyed = false, lost = '', retrying = false, redrawQueued = false, preparedError = null;
   const warnings = [];
@@ -220,11 +226,36 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     throw Object.assign(error, {code: 'engine_busy'});
   };
 
+  /**
+   * A first stroke on a blank exposure draws a cel the document does not hold yet: the frame is drawn from a draft of
+   * the editor's report that holds it (`documentReport` of the request is the report itself). The engine draws its
+   * document with the draft's figures added until the next publication, which has the cel for real, or until a frame
+   * is drawn without a draft. A publication meanwhile (the engine's document moved) takes the draft out: it is held
+   * again here before the frame is drawn.
+   */
+  const draft = request => {
+    const document = request.documentReport ?? request.report, handle = side.engine.handle;
+    if (request.report === document) {
+      if (side.draft) { side.draft = null; handle.clear_draft(); }
+      return;
+    }
+    if (side.draft?.report === request.report && handle.draft_held(side.draft.token)) return;
+    const added = (request.report.figure_types ?? []).slice((document.figure_types ?? []).length), before = document._styk?.layers?.assignments ?? {};
+    const assignments = Object.fromEntries(Object.entries(request.report._styk?.layers?.assignments ?? {}).filter(([uid, layer]) => before[uid] !== layer));
+    const token = (side.draft?.token ?? 0) + 1;
+    handle.set_draft(token, JSON.stringify(added), JSON.stringify(assignments));
+    side.draft = {report: request.report, token};
+  };
+
   const drawEdit = request => {
     const started = performance.now(), seen = side.engine.progressSeen();
     holds(request.revision ?? 0);
+    draft(request);
     // A pose of another document starts the engine's edit scene over.
     if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
+    // Strokes, fills and floating selections not yet published are drawn from the tiles held live.
+    side.live.invalidate = invalidate;
+    side.live.sync(drawingResourcesFor(request.documentReport ?? request.report));
     const {frame, geometry} = request, objects = frame.objects ?? [];
     const json = frameJSON(frame, geometry, side);
     // An unchanged frame is not parsed again; the first frame and every changed one are.
@@ -246,6 +277,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     const drawn = stage.render_edit((view.scale ?? 1) * deviceRatio, (view.x ?? 0) * deviceRatio, (view.y ?? 0) * deviceRatio, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
       Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
+    if (drawn) side.live.presented();
     Object.assign(side.stats, {frames: side.stats.frames + (drawn ? 1 : 0), lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
     // Generated effects whose trails are still being sampled refine on the next frame
     // (6 ms of sampling a frame).
@@ -291,8 +323,6 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
       if (destroyed) return false;
       pollDevice();
       if (lost) return false;
-      // The new-cel preview of a drawing is a document the engine does not hold.
-      if (request.drawingPreview) return false;
       const revision = request.revision ?? 0;
       if (engineRefusal(side, request.report, revision)) return false;
       try {

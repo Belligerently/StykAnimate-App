@@ -1,7 +1,8 @@
-//! The drawing engine against the JavaScript drawing engine, case by case: every fixture
-//! (engine/tools/drawing-fixtures.mjs) was produced by the editor's modules in Node; the
-//! same inputs run here and must produce the same bytes (SHA-256 prefixes of tiles, dab
-//! shapes and encoded data), the same undo records, the same order and the same error keys.
+//! The drawing engine against the recordings of the JavaScript drawing engine it replaced, case
+//! by case: every fixture was produced by the editor's JavaScript modules in Node and is frozen
+//! (the modules are gone); the same inputs run here and must produce the same bytes (SHA-256
+//! prefixes of tiles, dab shapes and encoded data), the same undo records, the same order and
+//! the same error keys.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -25,7 +26,7 @@ use styk_drawing::{clipboard, history, png, prepare, region, textures, zlib};
 
 fn load(name: &str) -> Value {
     let path = format!("{}/tests/fixtures/{name}.json", env!("CARGO_MANIFEST_DIR"));
-    parse(&std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e} (run node engine/tools/drawing-fixtures.mjs)"))).unwrap()
+    parse(&std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))).unwrap()
 }
 
 fn get<'a>(v: &'a Value, key: &str) -> &'a Value {

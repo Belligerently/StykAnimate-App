@@ -33,7 +33,7 @@ struct Aux {
     config: wgpu::SurfaceConfiguration,
     renderer: Renderer,
     /// The stage atlas (lineage, pages) the renderer samples.
-    shared: Option<(u64, u32)>,
+    shared: Option<(u64, u32, u32)>,
 }
 
 /// Browser presentation of the actual shown source. The shared native frame
@@ -139,9 +139,10 @@ impl Aux {
     /// Draws `list` under `view` into the canvas, at `width × height`.
     fn draw(&mut self, stage: &Stage, list: &Arc<DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid) -> bool {
         self.renderer.set_drawing_grid(grid);
-        if self.shared != stage.atlas_of {
+        let atlas = stage.atlas_of.map(|(lineage, pages)| (lineage, pages, stage.atlas_serial));
+        if self.shared != atlas {
             self.renderer.share_sprites(&stage.renderer);
-            self.shared = stage.atlas_of;
+            self.shared = atlas;
         }
         let (width, height) = (width.max(1), height.max(1));
         if (width, height) != (self.config.width, self.config.height) {
@@ -286,7 +287,7 @@ impl Stage {
                 match self.views.monitor_list.as_ref().filter(|(known, _, _)| *known == key) {
                     Some((_, list, camera)) => (list.clone(), *camera),
                     None => {
-                        let options = EditOptions { hidden: &key.hidden, translations: &key.translations, background: None, onions: &[], bypass_effects: !effects, camera: true, prepare_camera: true, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
+                        let options = EditOptions { hidden: &key.hidden, translations: &key.translations, background: None, onions: &[], bypass_effects: !effects, camera: true, prepare_camera: true, clock: Some(crate::clock), anchor_budget_ms: 6.0, live: None };
                         let mut scene = scene.snapshot();
                         let Some(list) = scene.draw_list(&generation, &options).map_err(js_error)? else { return Ok(false) };
                         let camera = scene.camera();

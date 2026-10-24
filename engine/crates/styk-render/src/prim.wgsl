@@ -415,7 +415,7 @@ fn vs_main(in: VsIn) -> VsOut {
     } else if (kind == K_IMAGE) {
         if ((p.kind & F_DRAWING) != 0u) {
             // A drawing tile of display level b.w: the view shows one level per cel,
-            // floor(-log2(target pixels per cel pixel)) clamped to 0..8 (drawing-gpu.mjs).
+            // floor(-log2(target pixels per cel pixel)) clamped to 0..8 (docs/engine/drawing.md).
             let level = p.b.w;
             let tile_pixels = length(p.a.zw) / (64.0 * aa);
             // The equivalent interval test preserves exact power-of-two boundaries:

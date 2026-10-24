@@ -462,7 +462,7 @@ impl<'a> Frame<'a> {
         // Canvas sampling, as prim.wgsl: positive blends its parent, negative uses Mitchell.
         let mut sampling = 0.0f32;
         if drawing {
-            // A tile of display level b.w: the view shows one level per cel (`drawing-gpu.mjs`).
+            // A tile of display level b.w: the view shows one level per cel (docs/engine/drawing.md).
             let level = p.b[3];
             let tile_pixels = (u[0] * u[0] + u[1] * u[1]).sqrt() / (64.0 * layer.aa);
             // Equivalent to floor(-log2(base pixels)), without GPU rounding at exact

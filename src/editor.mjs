@@ -199,7 +199,7 @@ export class Editor extends EventTarget {
   }
   get dragging() { return Boolean(this._drag); }
   get historySize() { return this._historySize; }
-  get drawingResources() { return drawingResourcesFor(this.report) ?? new DrawingResources(this.report); }
+  get drawingResources() { return drawingResourcesFor(this.report) ?? new DrawingResources(this.report, {onPublished: figure => this._drawingPublished(figure)}); }
   get revision() { return this._revision; }
   get definitionRevision() { return this._definitionRevision ?? 0; }
   get layers() { return this.getLayers(); }
@@ -488,7 +488,6 @@ export class Editor extends EventTarget {
     if (report === this.report) throw messageError(new Error(''), "errors.editor.asynchronousImportRequiresASeparateIncomingDocument", {});
     const request = this._loadRequestId = (this._loadRequestId ?? 0) + 1;
     if(name!==undefined&&name!==null&&typeof name!=='string')throw messageError(new Error(''), "errors.editor.theDocumentNameMustBeText", {});
-    if(options.prepareScene!==undefined&&typeof options.prepareScene!=='function')throw messageError(new Error(''), "errors.editor.provideAnInitialScenePreparationFunction", {});
     const token = this._documentToken, revision = this.revision, drag = this._drag, animationEdit = this._animationEdit,
       draftRevision=this.frameDraftRevision,draftEnabled=this._frameDraftEnabled;
     const checkCurrent = () => {
@@ -500,23 +499,12 @@ export class Editor extends EventTarget {
     };
     const prepared = await prepareLoad(document,{...options,layerTimeline:this.layerTimeline,checkCurrent});
     checkCurrent();
-    if(options.prepareScene){
-      const started=performance.now(),initial=initialLoadState(prepared.report,options,draftEnabled),row=initial.timeline[initial.frameIndex];
-      const t=row?.count>1?clamp((initial.tick-row.start)/row.count,0,1):0;
-      const frame=evaluatedFrame(prepared.report,initial.frameIndex,t,initial.tick);
-      checkCurrent();
-      const scene=await options.prepareScene({report:prepared.report,frameIndex:initial.frameIndex,tick:initial.tick,frame,signal:options.signal,checkCurrent});
-      checkCurrent();
-      if(!scene||!(scene.geometry?.objects instanceof Map)||scene.frame!==undefined&&scene.frame!==frame)
-        throw messageError(new Error(''), "errors.editor.preparedGeometryMustBelongToTheExactInitial", {});
-      prepared.scene={...initial,frame,geometry:scene.geometry};prepared.timings.sceneMs=performance.now()-started;
-    }
     return this._publishLoadedReport(prepared, name, options);
   }
   _publishLoadedReport(prepared, name, {initialFrameIndex=0, initialTick, preserveDrawingResources=false, onDetach} = {}) {
     const {report} = prepared;
     if (name !== undefined && name !== null && typeof name !== 'string') throw messageError(new Error(''), "errors.editor.theDocumentNameMustBeText", {});
-    const initial=prepared.scene??initialLoadState(report,{initialFrameIndex,initialTick},this._frameDraftEnabled),index=initial.frameIndex;
+    const initial=initialLoadState(report,{initialFrameIndex,initialTick},this._frameDraftEnabled),index=initial.frameIndex;
     const started = performance.now();
     // The open document stays open beside the loaded one (editor-sessions.mjs): its owner receives it whole.
     if(onDetach)this.handOverDocument(onDetach);
@@ -541,9 +529,8 @@ export class Editor extends EventTarget {
     this._invalidate({timing: true}); invalidateFrameIndex(report);
     this.tick=initial.tick;this._timeline=initial.timeline;this._timelineDraftIndex=initial.draftIndex;this._timelineDraftDuration=initial.draftDuration;this._timelineDraftAnimation=initial.draftAnimation;
     this._timelineDraftEndTick=animationEndTick({_styk:{animation:initial.draftAnimation}});
-    if(prepared.scene){this._evaluated=prepared.scene.frame;this._geometry=prepared.scene.geometry;this.selectedUid=prepared.scene.frame.objects[0]?.unique_id??null;}
     const published = performance.now();
-    this._emit('document', {structural: true, timing: true, prepared: true,scenePrepared:Boolean(prepared.scene)});
+    this._emit('document', {structural: true, timing: true, prepared: true});
     this.lastLoadTimings = {...prepared.timings, publishMs:published-started, listenersMs:performance.now()-published, commitMs:performance.now()-started};
     return this;
   }

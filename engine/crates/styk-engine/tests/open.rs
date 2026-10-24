@@ -114,3 +114,50 @@ fn a_revision_that_moves_with_the_tree_untouched_is_published_without_converting
     assert!(std::sync::Arc::ptr_eq(&before.prepared, &after.prepared), "the typed views are the same");
     assert_eq!(engine.stored().unwrap().0, 2);
 }
+
+#[test]
+fn a_draft_is_drawn_with_the_document_until_the_document_is_published_again() {
+    use styk_engine::document::Draft;
+    let engine = engine();
+    let text = std::fs::read(repo("engine/tests/edit/startup.document.json")).unwrap();
+    let opened = engine.open_document(OpenSource::Json { bytes: &text, name: "Untitled" }, APP, &|| false).unwrap();
+    engine.activate(&opened.typed, &opened.tree, 3).unwrap();
+    let before = engine.generation().unwrap();
+    let held = before.prepared.doc.figures.len();
+    // A figure the document does not hold yet, on a layer.
+    let mut figure = json::parse(json::to_string(&opened.tree.path(&["figure_types"]).unwrap().item(0).unwrap()).as_bytes()).unwrap();
+    figure.make_obj().unwrap().set("figure_type_id", Value::Num(40.0));
+    let assignments = json::parse(br#"{"41":"layer-1"}"#).unwrap();
+    let draft = Draft { figures: vec![figure], assignments: assignments.as_obj().unwrap().clone() };
+
+    assert!(!engine.draft_held(1));
+    let committed = engine.publish_draft(1, &draft).unwrap().expect("a document is open");
+    let drawn = engine.generation().unwrap();
+    assert_eq!(drawn.id, committed.generation);
+    assert!(drawn.id > before.id);
+    assert_eq!((drawn.revision, drawn.prepared.doc.figures.len()), (3, held + 1), "the draft's figure is drawn, at the editor's revision");
+    assert!(engine.draft_held(1) && !engine.draft_held(2));
+    // What an edit session or a planner reads never includes it.
+    let (revision, tree) = engine.stored().unwrap();
+    assert_eq!((revision, tree.path(&["figure_types"]).unwrap().array_len()), (3, Some(held)));
+    assert!(tree.path(&["_styk", "layers", "assignments"]).and_then(|assignments| assignments.get("41")).is_none());
+
+    // The same draft again, under a new token, replaces the one in front instead of stacking on it.
+    engine.publish_draft(2, &draft).unwrap();
+    assert_eq!(engine.generation().unwrap().prepared.doc.figures.len(), held + 1);
+    assert!(engine.draft_held(2) && !engine.draft_held(1));
+
+    // Taking it out draws the document again; nothing is held after.
+    let cleared = engine.clear_draft().expect("a draft was held");
+    let after = engine.generation().unwrap();
+    assert_eq!((after.id, after.revision, after.prepared.doc.figures.len()), (cleared.generation, 3, held));
+    assert!(std::sync::Arc::ptr_eq(&after.prepared, &before.prepared), "the document's own views are drawn again");
+    assert!(!engine.draft_held(2));
+    assert!(engine.clear_draft().is_none(), "nothing to take out");
+
+    // A publication of the document takes a draft out too.
+    engine.publish_draft(3, &draft).unwrap();
+    engine.publish_tree(opened.lineage(), opened.tree.clone(), 4).unwrap().expect("the document is in front");
+    assert!(!engine.draft_held(3));
+    assert_eq!(engine.generation().unwrap().prepared.doc.figures.len(), held);
+}

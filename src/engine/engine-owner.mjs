@@ -42,6 +42,11 @@ const EDITOR_GESTURES = new Set([
   'addDraftFrame', 'editFrameDraftTimeline', 'enableFrameDrafts', 'disableFrameDrafts', 'beginDuplicateDrag', 'finishDuplicateDrag', 'beginTween', 'updateTween',
   'cancelAuthoredPoseDrag', 'commitAuthoredPoseDrag', 'movieclipBatch', 'movieclipTimelineEdit']);
 
+/** Calls that carry a drawing's pixels (tile buffers): the editor applies them to the drawing
+ * store and the records they change reach the session by write-back. Their pixels are never
+ * turned into JSON for the session, which does not take them (a stroke is megabytes). */
+const PIXEL_CALLS = new Set(['commitDrawingPixels', 'resampleDrawing']);
+
 /** The calls that make up a motion-path edit: the editor replays them when it takes the edit over. */
 const MOTION_PATH_CALLS = new Set(['beginMotionPathEdit', 'updateMotionPathEdit', 'setMotionPathFalloff']);
 
@@ -721,7 +726,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
     // A gesture the editor runs (or began) stays with it to its end.
-    if (EDITOR_GESTURES.has(name) || (editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine)
+    if (EDITOR_GESTURES.has(name) || PIXEL_CALLS.has(name) || (editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine)
         || (editor._vfxClipEdit && !editor._vfxClipEdit.engine) || editor._frameDraftEnabled) {
       report.fallback++; (report.editor ??= {})[name] = (report.editor[name] ?? 0) + 1;
       return fallback(name, original, args);
@@ -873,6 +878,15 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     pending = true;
     if (captured) captured.push(...recorded);
     else if (recorded.length) writeBack(recorded);
+  };
+  // A drawing's encoded tiles attached to its definition in place (derived publication, no edit event): the session's copy gets them.
+  layer._drawingPublished = function owned(figure) {
+    if (!session || document !== editor.report) return;
+    const index = editor.report.figure_types.indexOf(figure);
+    if (index < 0) return;
+    pending = true;
+    (hints ??= freshHints()).figures.add(index);
+    settle();
   };
   // Pose sources only history keeps alive are collected by the session, which holds history.
   layer._pruneFrameSources = function owned(...args) {

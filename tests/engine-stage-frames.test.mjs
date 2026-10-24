@@ -35,14 +35,17 @@ function standInStage(behaviour = {}) {
 async function open(behaviour = {}, options = {}) {
   const stage = standInStage(behaviour);
   const progress = [], published = {revision: behaviour.published ?? 1};
-  const engine = {handle: {frame_ticket_ready: () => true, try_document_identity: () => [1, 1, published.revision]}, threaded: false, progressSeen: () => 0,
+  const drafts = [], draft = {held: false};
+  const engine = {handle: {frame_ticket_ready: () => true, try_document_identity: () => [1, 1, published.revision],
+    draft_held: () => draft.held, set_draft: (token, figures, assignments) => { drafts.push(['set', token, JSON.parse(figures), JSON.parse(assignments)]); draft.held = true; },
+    clear_draft: () => drafts.push(['clear'])}, threaded: false, progressSeen: () => 0,
     whenProgress: () => new Promise(resolve => progress.push(resolve)), createStage: async () => stage};
   const createStage = await freshStage();
   const canvas = {width: 300, height: 150};
   const events = {invalidations: 0, errors: [], statuses: []};
   const renderer = await createStage(canvas, {onInvalidate: () => events.invalidations++, onError: error => events.errors.push(error),
     onStatus: message => events.statuses.push(message), ...options}, async () => engine);
-  return {renderer, stage, canvas, events, published, progress, engine};
+  return {renderer, stage, canvas, events, published, progress, engine, drafts, draft};
 }
 
 const frame = {objects: [], camera: null};
@@ -138,10 +141,35 @@ test('a revision the engine never publishes is refused, once', async () => {
   renderer.destroy();
 });
 
-test('the new-cel preview of a drawing is not a document the engine holds', async () => {
-  const {renderer, stage} = await open();
-  assert.equal(renderer.render(request({drawingPreview: true})), false);
-  assert.equal(stage.calls.length, 0);
+test("the new-cel preview of a drawing is drawn from its draft while the document stays the engine's", async () => {
+  const {renderer, stage, drafts, draft: held, events} = await open();
+  const figure = {figure_type_id: 7}, editor = {figure_types: [{figure_type_id: 1}], _styk: {layers: {assignments: {1: 'layer-1'}}}};
+  // The draft holds the cel the first stroke is about to create and the layer of its object; the editor's report does not.
+  const draft = {figure_types: [...editor.figure_types, figure], _styk: {layers: {assignments: {1: 'layer-1', 2: 'layer-2'}}}};
+  assert.equal(renderer.render(request({report: draft, documentReport: editor})), true);
+  assert.deepEqual(drafts, [['set', 1, [figure], {2: 'layer-2'}]], 'the engine got the figures and layers the draft adds');
+  assert.equal(renderer.render(request({report: draft, documentReport: editor})), true);
+  assert.equal(drafts.length, 1, 'a draft the engine holds is not sent again');
+  held.held = false;
+  assert.equal(renderer.render(request({report: draft, documentReport: editor})), true);
+  assert.deepEqual(drafts.at(-1), ['set', 2, [figure], {2: 'layer-2'}], 'one a publication took out is sent again');
+  assert.equal(renderer.render(request({report: editor, documentReport: editor})), true);
+  assert.deepEqual(drafts.at(-1), ['clear'], 'a frame of the document itself takes it out');
+  const count = drafts.length;
+  assert.equal(renderer.render(request({report: editor, documentReport: editor})), true);
+  assert.equal(drafts.length, count, 'and only once');
+  assert.equal(events.errors.length, 0);
+  assert.ok(stage.calls.some(([name]) => name === 'render_edit'), 'the preview is a frame the engine draws, never one it refuses');
+  renderer.destroy();
+});
+
+test('live drawing cels are synced before an edited frame and told once it was drawn', async () => {
+  const order = [];
+  const {renderer} = await open({render_edit() { order.push('render'); return order.filter(name => name === 'render').length > 1; }});
+  renderer.engineSide.live = {sync() { order.push('sync'); }, presented() { order.push('presented'); }};
+  assert.equal(renderer.render(request()), false);
+  assert.equal(renderer.render(request()), true);
+  assert.deepEqual(order, ['sync', 'render', 'sync', 'render', 'presented'], 'a frame the engine did not draw presents nothing');
   renderer.destroy();
 });
 

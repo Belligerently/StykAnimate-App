@@ -48,6 +48,12 @@ pub struct Stage {
     backend: String,
     /// The document lineage and page count the sprite atlas is allocated for.
     pub(crate) atlas_of: Option<(u64, u32)>,
+    /// Counts the sprite textures allocated, so the views sharing the stage's follow a new one.
+    pub(crate) atlas_serial: u32,
+    /// Drawing cels the interface holds live, drawn in place of their published tiles
+    /// (`styk_eval::live`), and the atlas pages after the document's own allocated for their slots.
+    pub(crate) live: styk_eval::live::LiveCels,
+    live_pages: u32,
     /// The atlas places uploaded so far, and whether the last frame drawn lacked a
     /// picture ([`Stage::pictures_pending`]).
     uploaded: Uploaded,
@@ -163,6 +169,9 @@ impl Stage {
             renderer,
             backend: format!("{:?} · {}", info.backend, info.name),
             atlas_of: None,
+            atlas_serial: 0,
+            live: Default::default(),
+            live_pages: 0,
             uploaded: Uploaded::default(),
             pictures: PICTURES_COMPLETE,
             upload_bytes: 0,
@@ -364,7 +373,7 @@ impl Stage {
             .collect();
         // Generated effects evaluate earlier anchors for at most 6 ms a frame, as the editor does
         // (`INTERACTIVE_SAMPLING_MS`); the rest refine over the next frames (`refining`).
-        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, prepare_camera: false, clock: Some(crate::clock), anchor_budget_ms: 6.0 };
+        let options = EditOptions { hidden, translations: &translations, background: (background >= 0.0).then_some(background as u32), onions: &onion_list, bypass_effects: !self.effects, camera, prepare_camera: false, clock: Some(crate::clock), anchor_budget_ms: 6.0, live: (!self.live.is_empty()).then_some(&self.live) };
         let Some(list) = self.edit.draw_list(&generation, &options).map_err(js_error)? else {
             if let Some(tick) = self.edit.camera_pending()
                 && !generation.prepared.doc.keyframes.is_empty()
@@ -393,17 +402,7 @@ impl Stage {
     /// Lays the sprite atlas out for `generation` and uploads a slice of the pictures decoded
     /// since (the camera monitor and thumbnails sample the same atlas).
     pub(crate) fn sync_images(&mut self, generation: &Generation) {
-        let layout = (generation.lineage, generation.assets.pages);
-        if self.atlas_of != Some(layout) {
-            // Another project, or more atlas pages than before: the texture is allocated
-            // again and every image decoded so far is uploaded again by the engine.
-            self.renderer.prepare_sprites(&generation.assets);
-            self.uploaded.clear();
-            if self.atlas_of.is_some_and(|(lineage, _)| lineage == layout.0) {
-                self.engine.redecode_images();
-            }
-            self.atlas_of = Some(layout);
-        }
+        self.sync_atlas(generation);
         let images = self.engine.take_images(IMAGE_UPLOAD_BYTES);
         self.upload_bytes = images.iter().map(|image| image.rgba.len()).sum();
         if !images.is_empty() {
@@ -411,6 +410,41 @@ impl Stage {
             for image in &images {
                 self.uploaded.record(&generation.assets, image);
             }
+        }
+    }
+
+    /// Lays the sprite atlas out for `generation`, with room for the live drawing cels' slots.
+    fn sync_atlas(&mut self, generation: &Generation) {
+        let layout = (generation.lineage, generation.assets.pages);
+        let live_pages = self.live.pages();
+        if self.atlas_of != Some(layout) {
+            // Another project, or more atlas pages than before: the texture is allocated
+            // again and every image decoded so far is uploaded again by the engine.
+            self.renderer.prepare_sprites_live(&generation.assets, live_pages);
+            self.live_pages = live_pages;
+            self.atlas_serial += 1;
+            self.uploaded.clear();
+            if self.atlas_of.is_some_and(|(lineage, _)| lineage == layout.0) {
+                self.engine.redecode_images();
+            }
+            self.atlas_of = Some(layout);
+            // The live slots lived in the texture that was replaced.
+            let uploads = self.live.uploads();
+            self.write_live(&uploads);
+        } else if live_pages > self.live_pages {
+            // More live slots than pages: the texture grows and keeps what it holds.
+            self.renderer.grow_sprites(&generation.assets, live_pages);
+            self.live_pages = live_pages;
+            self.atlas_serial += 1;
+        }
+    }
+
+    /// Writes live drawing slots into the atlas laid out for the document drawn last.
+    fn write_live(&mut self, uploads: &[styk_eval::live::Upload]) {
+        let Some((_, base)) = self.atlas_of else { return };
+        self.renderer.upload_live(base, uploads);
+        for upload in uploads {
+            self.uploaded.mark(base + upload.page, upload.x, upload.y);
         }
     }
 
@@ -486,6 +520,70 @@ impl Stage {
         self.queue.present(target);
         self.pictures = self.pictures_after(list);
         Ok(true)
+    }
+
+    /// Replaces tiles of the drawing cel `id` the interface holds live, so edit frames draw its
+    /// pixels before they are published (`styk_eval::live`). `tiles` holds records of the tile
+    /// coordinates (two little-endian `i32`) and its 64×64 straight-alpha RGBA pixels; `removed`
+    /// pairs of coordinates of tiles that are gone. `float` addresses the floating selection
+    /// instead of the cel itself. The cel is hidden until [`Stage::live_cel_show`]. Fails with
+    /// "full" when the live slots are used up (the cel is dropped).
+    pub fn live_cel_tiles(&mut self, id: &str, float: bool, tiles: &[u8], removed: &[i32]) -> Result<(), JsError> {
+        const RECORD: usize = 8 + styk_eval::live::TILE_BYTES;
+        if tiles.len() % RECORD != 0 || removed.len() % 2 != 0 {
+            return Err(js_error("a live tile list is cut short"));
+        }
+        let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        let mut changes: Vec<((i32, i32), Option<Vec<u8>>)> = tiles
+            .chunks_exact(RECORD)
+            .map(|record| {
+                let coordinate = |at: usize| i32::from_le_bytes(record[at..at + 4].try_into().expect("four bytes"));
+                ((coordinate(0), coordinate(4)), Some(record[8..].to_vec()))
+            })
+            .collect();
+        changes.extend(removed.chunks_exact(2).map(|pair| ((pair[0], pair[1]), None)));
+        let uploads = self.live.update(id, float, changes).map_err(|_| js_error("the live drawing slots are full"))?;
+        self.sync_atlas(&generation);
+        self.write_live(&uploads);
+        Ok(())
+    }
+
+    /// Chooses what the live cel `id` shows: its own pixels in place of the published cel, and
+    /// its floating selection over them.
+    pub fn live_cel_show(&mut self, id: &str, base: bool, float: bool) {
+        self.live.show(id, base, float);
+    }
+
+    /// Sets the transform of the live cel's floating selection: `[a, b, c, d, e, f]` taking cel
+    /// pixel `(x, y)` to `(a x + c y + e, b x + d y + f)`.
+    pub fn live_cel_matrix(&mut self, id: &str, matrix: &[f64]) -> Result<(), JsError> {
+        let matrix: [f64; 6] = matrix.try_into().map_err(|_| js_error("a transform has six numbers"))?;
+        if !matrix.iter().all(|v| v.is_finite()) {
+            return Err(js_error("a transform has finite numbers"));
+        }
+        self.live.set_matrix(id, matrix);
+        Ok(())
+    }
+
+    /// Empties the live cel's floating selection and gives its slots back.
+    pub fn live_cel_clear_float(&mut self, id: &str) {
+        self.live.clear_float(id);
+    }
+
+    /// Lets go of the live cel `id`: edit frames draw its published tiles again.
+    pub fn live_cel_drop(&mut self, id: &str) {
+        self.live.drop_cel(id);
+    }
+
+    /// Lets go of every live cel (another document is open).
+    pub fn live_cel_reset(&mut self) {
+        self.live.clear();
+    }
+
+    /// The live cels held: `{cels, tiles, slots, pages}` as JSON.
+    pub fn live_cel_stats(&self) -> String {
+        let s = self.live.stats();
+        format!("{{\"cels\":{},\"tiles\":{},\"slots\":{},\"pages\":{}}}", s.cels, s.tiles, s.slots, s.pages)
     }
 
     /// Primitive, isolation group and pass counts of the last frame, its effect layers and

@@ -468,9 +468,10 @@ impl Loader {
         let is_drawing = styk.get("drawing").is_some();
         let pixels_per_unit = styk.get("drawing").and_then(|d| num(d, "pixelsPerUnit")).unwrap_or(1.0);
         let drawing_bounds = styk.path(&["drawing", "bounds"]).and_then(|b| Some([num(b, "x")?, num(b, "y")?, num(b, "width")?, num(b, "height")?]));
+        let cel_id: Option<Arc<str>> = styk.path(&["drawing", "celId"]).and_then(Value::as_str).filter(|id| !id.is_empty()).map(Arc::from);
         let mut images = Vec::new();
         for a in f.get("image_assets").and_then(Value::as_arr).into_iter().flatten() {
-            images.push(self.image_asset(a, is_drawing, pixels_per_unit, drawing_bounds));
+            images.push(self.image_asset(a, is_drawing, pixels_per_unit, drawing_bounds, cel_id.as_ref()));
         }
         let mut texts = Vec::new();
         for a in f.get("text_assets").and_then(Value::as_arr).into_iter().flatten() {
@@ -600,7 +601,7 @@ impl Loader {
         }
     }
 
-    fn image_asset(&mut self, a: &Value, smooth: bool, pixels_per_unit: f64, bounds: Option<[f64; 4]>) -> ImageAsset {
+    fn image_asset(&mut self, a: &Value, smooth: bool, pixels_per_unit: f64, bounds: Option<[f64; 4]>, cel_id: Option<&Arc<str>>) -> ImageAsset {
         let index = ["asset_index", "table_index", "image_index", "sprite_index"]
             .iter()
             .find_map(|k| num(a, k))
@@ -632,7 +633,8 @@ impl Loader {
             (Some(w), Some(h)) => Some([w, h]),
             _ => None,
         };
-        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, size, image, smooth, tiles }
+        let cel = cel_id.map(|id| CelRef { id: id.clone(), anchor: point(a.get("drawing_anchor")).unwrap_or(start) });
+        ImageAsset { index, anchor_start: start, anchor_end: end, anchor_length, anchor_angle, display_size, size, image, smooth, tiles, cel }
     }
 
     fn movieclip(&mut self, m: &Value) -> Result<Option<Arc<Movieclip>>, Error> {

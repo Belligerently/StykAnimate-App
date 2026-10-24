@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use styk_doc::Value;
+use styk_doc::{Obj, Value};
 use styk_eval::assets::Assets;
 use styk_eval::eval::Prepared;
 use styk_eval::load::Loader;
@@ -238,12 +238,84 @@ impl Engine {
         let generation = Generation { id: 0, lineage: store.lineage, revision, prepared: prepared.clone(), assets: assets.clone(), open_ms: self.now() - started, anchors: None };
         store.tree = tree;
         store.revision = revision;
+        // A publication of the document itself takes a draft out.
+        store.draft = None;
         store.prepared = Some(prepared);
         store.assets = Some(assets);
         store.loader.release_unused();
         drop(store);
         let id = self.publish(generation);
         Ok(Committed { generation: id, revision, converted, ms: self.now() - started })
+    }
+}
+
+/// What a draft adds to the document: the figure definitions after its own, and the layers the objects
+/// it draws belong to (object `unique_id` to layer id).
+pub struct Draft {
+    pub figures: Vec<Value>,
+    pub assignments: Obj,
+}
+
+impl Draft {
+    /// `tree` with the draft added, or `None` when `tree` has no place for it (it is not a document).
+    fn applied(&self, tree: &Value) -> Option<Value> {
+        let mut root = tree.clone();
+        root.make_obj()?.get_mut("figure_types")?.make_arr()?.extend(self.figures.iter().cloned());
+        if !self.assignments.is_empty() {
+            let layers = root.make_obj()?.get_mut("_styk")?.make_obj()?.get_mut("layers")?;
+            let assignments = layers.make_obj()?.get_mut("assignments")?.make_obj()?;
+            for (uid, layer) in self.assignments.iter() {
+                assignments.set(uid, layer.clone());
+            }
+        }
+        Some(root)
+    }
+}
+
+impl Engine {
+    /// Whether the engine's generation holds the draft `token` made.
+    pub fn draft_held(&self, token: u64) -> bool {
+        self.inner.store.try_lock().is_ok_and(|store| store.draft == Some(token))
+    }
+
+    /// Draws the engine's document with `draft` added, as the generation in front, until the next publication of
+    /// the document or [`Engine::clear_draft`]. A cel a first stroke is about to create is drawn this way: the
+    /// document only has it once the stroke commits. The stored tree, its views and what an edit session or
+    /// a planner reads never include a draft. `None` while no document is open.
+    pub fn publish_draft(&self, token: u64, draft: &Draft) -> Result<Option<Committed>, OpenError> {
+        let started = self.now();
+        let mut store = self.inner.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if store.prepared.is_none() {
+            return Ok(None);
+        }
+        let tree = draft.applied(&store.tree).ok_or_else(|| OpenError::decode("The draft has no document to be added to."))?;
+        let name = tree.path(&["_styk", "name"]).and_then(Value::as_str).unwrap_or("").to_string();
+        let document = store.loader.document(&tree, &name).map_err(|error| OpenError { stage: OpenStage::Prepare, ..OpenError::decode(error.to_string()) })?;
+        let converted = store.loader.converted;
+        let assets = Arc::new(match &store.assets {
+            Some(previous) => previous.extended(&document),
+            None => Assets::build(&document),
+        });
+        let revision = store.revision;
+        let generation = Generation { id: 0, lineage: store.lineage, revision, prepared: Arc::new(Prepared::new(Arc::new(document))), assets, open_ms: self.now() - started, anchors: None };
+        store.draft = Some(token);
+        store.loader.release_unused();
+        drop(store);
+        let id = self.publish(generation);
+        Ok(Some(Committed { generation: id, revision, converted, ms: self.now() - started }))
+    }
+
+    /// Takes a draft out: the document itself is the generation in front again. `None` when none is held.
+    pub fn clear_draft(&self) -> Option<Committed> {
+        let started = self.now();
+        let mut store = self.inner.store.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        store.draft.take()?;
+        let (prepared, assets) = (store.prepared.clone()?, store.assets.clone()?);
+        let revision = store.revision;
+        let generation = Generation { id: 0, lineage: store.lineage, revision, prepared, assets, open_ms: 0.0, anchors: None };
+        drop(store);
+        let id = self.publish(generation);
+        Some(Committed { generation: id, revision, converted: Default::default(), ms: self.now() - started })
     }
 }
 

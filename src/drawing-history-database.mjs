@@ -1,5 +1,5 @@
 import {messageError} from './localized-error.mjs';
-import {HISTORY_CHUNK_BYTES,encodeHistoryChunk,decodeHistoryChunk} from './drawing-history-codec.mjs';
+import {HISTORY_CHUNK_BYTES} from './drawing-history-codec.mjs';
 
 const DB_NAME='stykanimate-drawing-history-v1';
 const request=req=>new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
@@ -12,9 +12,8 @@ const lockName=id=>'stykanimate-drawing-history:'+id;
 /** Temporary, session-owned disk backing. A manifest becomes readable only
  * after all chunks commit. Web Locks protect other live editors from cleanup. */
 export class DrawingHistoryDatabase {
-  /** `codec` encodes and decodes undo chunks: the drawing raster engine's when the
-   * worker loaded it, drawing-history-codec.mjs otherwise. */
-  constructor({name=DB_NAME,maxBytes=512*1024*1024,session=crypto.randomUUID(),externalLease=false,codec={encode:encodeHistoryChunk,decode:decodeHistoryChunk}}={}){this.name=name;this.maxBytes=maxBytes;this.session=session;this.externalLease=externalLease;this.codec=codec;this.bytes=0;this.writes=new Map();}
+  /** `codec` encodes and decodes undo chunks: the drawing raster engine's (`historyCodec` in engine-drawing.mjs). */
+  constructor({name=DB_NAME,maxBytes=512*1024*1024,session=crypto.randomUUID(),externalLease=false,codec}={}){this.name=name;this.maxBytes=maxBytes;this.session=session;this.externalLease=externalLease;this.codec=codec;this.bytes=0;this.writes=new Map();}
   open(){
     if(this.opening)return this.opening;if(this.db)return Promise.resolve();
     return this.opening=this.initialize().catch(async error=>{

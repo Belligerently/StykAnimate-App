@@ -64,6 +64,14 @@ documents of one editor, so `holdsRevision` (the document identity the engine re
 engine holds a given document at a given state; the stage never brings the engine up to date itself.
 A document in a background tab keeps its session; coming to the front activates it again.
 
+Edits the editor makes outside the session's calls reach the session too, once the code that made them
+has finished (`settle` in `engine-owner.mjs`, at the editor's revision): a document marked as changed
+(a new revision with the tree untouched, published without converting anything), a definition published
+after leaving a movieclip, and the encoded tiles of a drawing attached to its definition in place (a
+derived publication, `DrawingResources.onPublished`; the revision does not move). A frame the stage
+draws of a cel that only a gesture's draft holds goes through `EngineHandle.set_draft`
+([drawing.md](drawing.md#live-cels)).
+
 `Engine::open` (bytes and an extension, no normalization) remains for the command-line tools and the
 Rust tests that open recorded documents as they are.
 

@@ -93,6 +93,12 @@ let pendingFiles = process.argv.slice(app.isPackaged ? 1 : 2).filter((arg) => /\
 // Vulkan WebGPU opt-in to reach the GPU; see gpu-switches.cjs.
 applyGpuSwitches(app.commandLine);
 
+// Development only: STYK_BACKGROUND_WINDOW=1 (scripts and agents driving the app) opens the
+// window off-screen, out of the taskbar and without taking focus, and keeps it drawing there
+// (Windows would otherwise count an off-screen window as occluded and stop its frames).
+const backgroundWindow = !app.isPackaged && process.env.STYK_BACKGROUND_WINDOW === '1';
+if (backgroundWindow) app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+
 app.setName('StykAnimate');
 const profileDirectory = process.env.STYK_USER_DATA_DIR || (!app.isPackaged ? path.join(APP_ROOT, '.desktop-data') : null);
 if (profileDirectory) {
@@ -759,6 +765,7 @@ async function createWindow() {
   const view = startupView();
   window = new BrowserWindow({
     width: 1560, height: 1000, minWidth: 1000, minHeight: 680,
+    ...(backgroundWindow ? { x: -20000, y: -20000, skipTaskbar: true } : {}),
     backgroundColor: '#0a0b0f', show: false,
     title: 'StykAnimate',
     icon: path.join(__dirname, 'assets', 'stykanimate.png'),
@@ -769,7 +776,7 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, allowRunningInsecureContent: false,
-      backgroundThrottling: true, spellcheck: false,
+      backgroundThrottling: !backgroundWindow, spellcheck: false,
       additionalArguments: view ? [`--styk-startup-view=${view}`] : [],
     },
   });
@@ -837,7 +844,7 @@ async function createWindow() {
     }
   });
   window.on('closed', () => { window = null; });
-  window.once('ready-to-show', () => window.show());
+  window.once('ready-to-show', () => backgroundWindow ? window.showInactive() : window.show());
   window.webContents.on('did-start-loading', () => { pageLoaded = false; });
   // A page that loads again opens its own documents; the previous page's cannot be written any more.
   window.webContents.on('did-start-navigation', (event, _url, inPlace, mainFrame) => {

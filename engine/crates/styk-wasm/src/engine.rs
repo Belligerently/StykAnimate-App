@@ -1,9 +1,10 @@
 //! The engine as JavaScript sees it.
 
+use styk_engine::document::Draft;
 use styk_engine::{Budgets, Engine};
 use wasm_bindgen::prelude::*;
 
-use crate::clock;
+use crate::{clock, js_error};
 
 /// The engine. Create one, give its [`EngineHandle::address`] to each worker.
 #[wasm_bindgen]
@@ -49,6 +50,31 @@ impl EngineHandle {
     /// undefined while the engine is busy: this never waits on worker cache or publication locks.
     pub fn try_document_identity(&self) -> Option<Vec<f64>> {
         self.engine.generation_identity_now().map(|identity| identity.map(|value| value as f64).to_vec())
+    }
+
+    /// Whether the open document is drawn with the draft that `token` named in [`EngineHandle::set_draft`]:
+    /// a publication of the document itself takes a draft out.
+    pub fn draft_held(&self, token: f64) -> bool {
+        counter(token).is_some_and(|token| self.engine.draft_held(token))
+    }
+
+    /// Draws the open document with a draft added until its next publication or [`EngineHandle::clear_draft`]: the
+    /// figure definitions `figures` (a JSON array) go after the document's own, and `assignments` (a JSON object, the
+    /// object `unique_id` to the id of its layer) joins its layer assignments. This is how the stage draws the cel a
+    /// first stroke is about to create, which the document only has once the stroke commits.
+    pub fn set_draft(&self, token: f64, figures: &str, assignments: &str) -> Result<(), JsError> {
+        let token = counter(token).ok_or_else(|| js_error("the draft token is not a counter"))?;
+        let figures = styk_doc::json::parse(figures.as_bytes()).map_err(|_| js_error("the draft's figures are not JSON"))?;
+        let assignments = styk_doc::json::parse(assignments.as_bytes()).map_err(|_| js_error("the draft's layer assignments are not JSON"))?;
+        let (Some(figures), Some(assignments)) = (figures.as_arr().map(<[_]>::to_vec).or_else(|| (figures.array_len() == Some(0)).then(Vec::new)), assignments.as_obj().cloned()) else {
+            return Err(js_error("the draft is a list of figures and an object of layer assignments"));
+        };
+        self.engine.publish_draft(token, &Draft { figures, assignments }).map(|_| ()).map_err(|error| js_error(error.to_json()))
+    }
+
+    /// Takes the draft out of the open document, if it is drawn with one.
+    pub fn clear_draft(&self) {
+        self.engine.clear_draft();
     }
 
     /// The interface revision of the open document, or -1 when there is none.

@@ -441,8 +441,11 @@ cannot draw is a condition of the frame, never another renderer:
 
 - **Not ready yet.** The document is committing (`engine_busy`: drawn again at the engine's next
   progress), a followed camera pose awaits its worker (`Stage::camera_pending`: the frames sync, then
-  a redraw), the surface is being resized (`Stage::surface_pending`: the next animation frame) or a
-  drawing's new cel is only being previewed. `render` returns false and the previous picture stays.
+  a redraw) or the surface is being resized (`Stage::surface_pending`: the next animation frame).
+  `render` returns false and the previous picture stays.
+- **A drawing in progress** is not a condition: strokes not yet published, fills, floating selections
+  and the first stroke on a blank exposure (the new cel being previewed) are drawn from the tiles the
+  interface holds for them ([Live cels](drawing.md#live-cels)).
 - **Refused.** An error from the store, a sync or the draw is reported once (`onError`), the previous
   picture stays and the document's next revision is tried again (`engine-failure.mjs`: a refusal
   belongs to one revision of one document, no longer to the page).
