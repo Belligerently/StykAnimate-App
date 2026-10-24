@@ -9,10 +9,15 @@ import {roundTrip} from './support/codec.mjs';
 const clone = value => structuredClone(value);
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1kAAAAASUVORK5CYII=';
 const gradient = {kind: 3, name: 'Dawn', x1: 0.1, y1: 0.2, x2: 0.9, y2: 0.7, color_a: 0xffffaa44, color_b: 0xff4488ee};
+/** A background in the document's table, as an opened document brings it (importing one is the engine session's command). */
+function addBackground(editor, source) {
+  const asset = {...clone(source), background_id: Math.max(0, ...(editor.report.backgrounds ?? []).map(background => background.background_id)) + 1};
+  (editor.report.backgrounds ??= []).push(asset); return asset;
+}
 function fixture({pose = false, historyLimit = 80} = {}) {
   const editor = new Editor({demo: false, historyLimit}); editor.addFigure();
-  editor.setFrameDuration(10); editor.duplicateFrame(); editor.moveSelection(30, 5); editor.duplicateFrame(); editor.moveSelection(45, -10);
-  const asset = editor.importSceneBackground(gradient), second = editor.importSceneBackground({kind: 2, color: 0xff112233, name: 'Night'});
+  editor.setFramesDuration([editor.frameIndex], 10); editor.duplicateFrame(); editor.moveSelection(30, 5); editor.duplicateFrame(); editor.moveSelection(45, -10);
+  const asset = addBackground(editor, gradient), second = addBackground(editor, {kind: 2, color: 0xff112233, name: 'Night'});
   editor.setSceneBackground(asset.background_id, {indices: [0, 1]}); editor.selectFrame(0);
   if (pose) editor.addAnimationKeys([
     {target: {kind: 'scene'}, property: 'pose', tick: 0, value: {frameId: editor.getFrameId(0)}, interpolation: 'linear'},
@@ -41,7 +46,7 @@ test('native scene range color uses one tiny history command and retains unrelat
 });
 
 test('ordinary Scene edits do not implicitly create scalar animation channels', () => {
-  const {editor} = fixture(); editor.setSceneColor(0xff335577); editor.importSceneBackground({kind: 1, name: 'Pixel', data_url: png});
+  const {editor} = fixture(); editor.setSceneColor(0xff335577); editor.setSceneBackground(addBackground(editor, {kind: 1, name: 'Pixel', data_url: png}).background_id);
   assert.equal(editor.animationChannels.length, 0);
   editor.seek(5); editor.setSceneColor(0xff556677); assert.equal(editor.tick, 0);
   assert.equal(colorOf(editor, editor.evaluatedFrame), 0xff556677);
@@ -94,29 +99,10 @@ test('existing scalar color updates are absolute across sparse native key ticks 
   editor.undo(); assert.deepEqual(editor.serialize(), before);
 });
 
-test('imported media plus Scene.pose/current color reset are one atomic command', () => {
-  const {editor} = fixture({pose: true}); editor.addAnimationKeys([{target: {kind: 'scene'}, property: 'color', tick: 0, value: 0xffeeddcc}]); editor.seek(6);
-  const before = editor.serialize(), count = editor._undo.length;
-  const imported = editor.importSceneBackground({kind: 1, name: 'Pixel', data_url: png, mime_type: 'image/png'});
-  assert.equal(at(editor, 6).background_id, imported.background_id); assert.equal(at(editor, 6)._stykBackgroundColor, undefined);
-  assert.equal(editor._undo.length, count + 1); editor.undo(); assert.deepEqual(editor.serialize(), before);
-  editor.redo(); assert.equal(at(editor, 6).background_id, imported.background_id);
-});
-
-test('renaming an image background patches only its name, preserving media identity and bytes', () => {
-  const {editor} = fixture(); const image = editor.importSceneBackground({kind: 1, data_url: `${png}${'x'.repeat(1_000_000)}`, name: 'Old name'});
-  const count = editor._undo.length, bytes = image.data_url;
-  assert.equal(editor.renameSceneBackground(image.background_id, '  New name  '), true);
-  assert.equal(editor.report.backgrounds.find(asset => asset.background_id === image.background_id), image);
-  assert.equal(image.data_url, bytes); assert.equal(image.name, 'New name'); assert.equal(editor._undo.length, count + 1); assert.ok(editor._undo.at(-1).bytes < 2000);
-  editor.undo(); assert.equal(image.name, 'Old name'); editor.redo(); assert.equal(image.name, 'New name');
-});
-
 test('invalid, locked and hidden Scene edits reject before changing any document state', () => {
   const {editor} = fixture(), before = editor.serialize(), count = editor._undo.length;
   assert.throws(() => editor.setSceneBackground(999999), /existing/);
   assert.throws(() => editor.setSceneColor(-1), /ARGB/);
-  assert.throws(() => editor.importSceneBackground({...gradient, x1: NaN}), /finite/);
   assert.deepEqual(editor.serialize(), before); assert.equal(editor._undo.length, count);
   editor.setLayerLocked('scene', true); let locked = editor.serialize(); assert.throws(() => editor.setSceneColor(0), /Unlock/); assert.deepEqual(editor.serialize(), locked);
   editor.setLayerLocked('scene', false); editor.setLayerVisible('scene', false); locked = editor.serialize(); assert.throws(() => editor.setSceneColor(0), /Show/); assert.deepEqual(editor.serialize(), locked);
@@ -140,9 +126,9 @@ test('Scene source history survives pruning earlier commands and undo to the pre
   editor.undo(); assert.equal(colorOf(editor, at(editor, 5)), 0xff113355);
 });
 
-test('authored Scene colors and imported PNG backgrounds survive real native PIV export/reimport', async () => {
+test('authored Scene colors and PNG backgrounds survive real native PIV export/reimport', async () => {
   const {editor} = fixture({pose: true}); editor.seek(5); editor.setSceneColor(0x804466aa);
-  editor.seek(12); editor.importSceneBackground({kind: 1, name: 'Pixel', data_url: png, mime_type: 'image/png'});
+  editor.seek(12); editor.setSceneBackground(addBackground(editor, {kind: 1, name: 'Pixel', data_url: png, mime_type: 'image/png'}).background_id);
   const document = materializePivotDocument(editor.serialize());
   const imported = await roundTrip({document, format: 'piv'});
   assert.equal(imported.keyframes.length, document.keyframes.length);

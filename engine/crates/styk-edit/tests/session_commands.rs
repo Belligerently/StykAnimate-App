@@ -305,3 +305,18 @@ fn drawing_commands_refuse_a_layer_that_is_not_a_drawing_that_can_be_drawn_on() 
     ok(&mut session, "setLayerVisible", r#"["layer-2",false]"#);
     assert_eq!(refused(&mut session, "drawingKey", r#"[["layer-2"],1]"#), "errors.editorDrawing.showAndUnlockBeforeDrawing");
 }
+
+#[test]
+fn a_key_or_a_frame_after_on_a_drawing_layer_is_a_cel() {
+    let mut session = with_a_cel();
+    // The layer timeline's insert key: on a drawing layer it keys a cel.
+    assert_eq!(ok(&mut session, "sheetInsertKey", r#"[["layer-2"],3,{"blank":true}]"#), Value::Bool(true));
+    assert_eq!(keys_of(&session, "layer-2"), vec![(0.0, false), (3.0, true)]);
+    assert_eq!(undo_label(&mut session), "Blank drawing");
+    ok(&mut session, "undo", "[]");
+    // The duplicate after the playhead: the next cel, a copy.
+    let drawn = draw(&mut session, "sheetDuplicateFrameAfter", r#"[["layer-2"],0]"#, "");
+    assert_eq!(drawn.get("result"), Some(&Value::Bool(true)), "{drawn:?}");
+    assert_eq!(cels(&session).len(), 2);
+    assert_eq!(undo_label(&mut session), "Next copied drawing");
+}

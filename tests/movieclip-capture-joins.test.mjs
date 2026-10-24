@@ -6,7 +6,7 @@ import {buildGeometry,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
 const sample=(report,tick)=>{const rows=timeline(report),index=Math.max(0,rows.findLastIndex(r=>r.start<=tick)),row=rows[index];return buildGeometry(report,evaluatedFrame(report,index,row.count?(tick-row.start)/row.count:0,tick));};
 const joined=()=>{
  const document=emptyDocument(),figure=document.figure_types[0];document.keyframes=[createFrame([1,2,3,4].map(uid=>createObject(figure,uid,100+uid*100,180)),10)];
- const e=new Editor({demo:false,propertyChannels:true}).load(document);e.select(3);e.joinTo(2,1);e.duplicateFrame();e.selectFrame(1);e.duplicateFrame();e.selectFrame(2);e.setFrameDuration(1);
+ const e=new Editor({demo:false,propertyChannels:true}).load(document);e.select(3);e.joinTo(2,1);e.duplicateFrame();e.selectFrame(1);e.duplicateFrame();e.selectFrame(2);e.setFramesDuration([e.frameIndex], 1);
  e.seek(4);e.select(2);e.moveSelection(13,-7);e.seek(6);e.rotateSelection(.3);e.seek(12);e.captureFrameSource(e.evaluatedFrame);return e;
 };
 for(const uid of [2,3])test(`capturing joined UID${uid} remaps saved join slots before native crop normalization`,()=>{

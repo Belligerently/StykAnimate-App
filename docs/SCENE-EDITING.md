@@ -70,7 +70,7 @@ Every color picker ends with the palette (`src/color-palette.mjs`), under a hair
 
 The color picker opens with canvas sampling off, so clicking outside the panel dismisses it. Click the Eyedropper button to enable sampling and its canvas cursor; click it again to turn sampling off. A floating loupe enlarges an 11×11 pixel neighborhood, marks the center pixel and shows its HEX color. Click to copy the rendered RGB color into the solid color or selected gradient stop, preserving opacity. Sampling keeps the picker and canvas selection open; Escape or clicking another control closes the picker. The normal paint command supplies undo. Pixels are read immediately after a requested render, with GPU handles omitted for that sample, so idle WebGPU canvases and scaled preview buffers are supported. Hover requests are coalesced to at most 30 per second with one readback in flight, stop when the pointer is idle, and cancel on leaving the canvas or closing the picker. The loupe never intercepts canvas input or enters the sampled artwork.
 
-`src/editor-scene.mjs` is installed on `Editor`. It supplies these commands:
+`src/editor-scene.mjs` is installed on `Editor`. It supplies the first, second and last of these commands; `importSceneBackground` and `renameSceneBackground` are commands of the engine session (`styk-edit/src/scene_backgrounds.rs`, layer-sheet documents, which the app always opens):
 
 | API | Behavior |
 | --- | --- |

@@ -115,7 +115,7 @@ export class CameraMotionControls {
       else if(action==='delete')editor.deleteCameraMotion(id);
       else if(action==='duplicate')editor._selectedCameraMotion=editor.duplicateCameraMotion(id);
       else if(action==='randomize')editor.randomizeCameraMotion(id);
-      else if(action==='bake'){button.disabled=true;localizedText(button, "cameraMotionUi.baking", {});const selected=editor.getCameraMotions().find(c=>c.id===editor._selectedCameraMotion)??editor.getCameraMotions()[0],range=root.querySelector('[data-motion-bake-range]')?.value==='clip'?{start:selected.start,end:Math.min(editor.totalTicks,selected.start+selected.duration)}:{};return editor.bakeCameraMotion(range).finally(()=>this.onRender?.());}
+      else if(action==='bake'){button.disabled=true;localizedText(button, "cameraMotionUi.baking", {});const selected=editor.getCameraMotions().find(c=>c.id===editor._selectedCameraMotion)??editor.getCameraMotions()[0],range=root.querySelector('[data-motion-bake-range]')?.value==='clip'?{start:selected.start,end:Math.min(editor.totalTicks,selected.start+selected.duration)}:{};return new Promise(resolve=>setTimeout(resolve)).then(()=>editor.bakeCameraMotion(range)).finally(()=>this.onRender?.());}
       else if(action==='preview')this.onPreview?.(editor.getCameraMotions().find(c=>c.id===id));
       this.onRender?.();
     });});

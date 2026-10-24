@@ -391,8 +391,8 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Scene backgrounds (`styk-edit/src/scene_backgrounds.rs`): `importSceneBackground` (the asset in the table, the chosen frames showing it: one batch), `renameSceneBackground`; a `scene` history entry holds the one asset or its fields, never the table | yes (layer sheets) | `tests/engine-owner-commands.test.mjs` |
 | `setFrameDuration` (the exposure under the playhead: `sheetSetDuration`), `addMovieclipToNextKeyframes` on a layer sheet (`extend_sheet_movieclip` with an inline worker context) | yes | movieclip-sheet-extension (the owner tapes and `movieclip_sheet_extension.rs` replay its eight recordings through the session's own call), `session_commands.rs` |
 | Layer membership (`styk-edit/src/layer_membership.rs`): `assignFiguresToLayer`, `deleteLayer` plan with `layer_planning::sheet_layer_plan` and publish in one call (`deleteLayer` into a chosen layer is refused) | yes (layer sheets) | layer-sheet-migration (`tests/layer_sheet_commands.rs`) |
-| Drawing structure (`styk-edit/src/drawing_structure.rs`): `createDrawingLayer`, `addDrawingFrame`, `nextDrawing`, `extendDrawing`, `drawingKey`, `autoKeyDrawing`; a drawing layer's one-cel rule is the sheet writer's (`Plan::write`). A copied cel is a definition of its own with a draw identity (`cel-<uuid>`); the answer names the cels it copied (`drawingForks`) so that the owner gives the copy the pixels of the cel it copies | yes (layer sheets) | `session_commands.rs` |
-| `bakeCameraMotion` (`styk-edit/src/camera_bake.rs`): the motion sampled with `camera_at_time` / `camera_travel_at`, held keys on the camera track, the clips muted over the range | yes (layer sheets) | `session_commands.rs` |
+| Drawing structure (`styk-edit/src/drawing_structure.rs`): `createDrawingLayer`, `addDrawingFrame`, `nextDrawing`, `extendDrawing`, `drawingKey`, `autoKeyDrawing`; a drawing layer's one-cel rule is the sheet writer's (`Plan::write`). A copied cel is a definition of its own with a draw identity (`cel-<uuid>`); the answer names the cels it copied (`drawingForks`) so that the owner gives the copy the pixels of the cel it copies. A key (`sheetInsertKey`) or a frame after the playhead (`sheetDuplicateFrameAfter`) on a drawing layer is a cel (`drawingKey`, `nextDrawing`) | yes (layer sheets) | `session_commands.rs` |
+| `bakeCameraMotion` (`styk-edit/src/camera_bake.rs`): the motion sampled with `camera_at_time` / `camera_travel_at`, held keys on the camera track, the clips muted over the range; sampled in the call itself (the editor's worker and its cancellation are gone) | yes (layer sheets) | `session_commands.rs` |
 | `pasteFiguresInFrames`: the figure clipboard into every chosen frame (the playhead paste's planner over several frames, `commit_sheet_range`) | yes (layer sheets) | `session_commands.rs` |
 | `undo`, `redo` of what those record | yes | all of the above |
 | everything else | no: `Unported` | |
@@ -456,10 +456,10 @@ document difference the harness can see):
   whether a command adds one more layer revision (a figure appears or disappears
   altogether). The engine counts them from the document when first needed; the editor's
   set of figures *ever seen* can be larger after figures were deleted and collected.
-- **Layer focus locks** are runtime state of the JavaScript editor: a focus lock refuses
-  edits on the other layers. The facade starts no engine session while one is on, and
-  changing the focus ends the current session (measured with the driver's focus step:
-  without this, owned editing inserted a key the editor refuses on a locked layer).
+- **Layer focus** (view-only or with locks) is runtime state of the JavaScript editor; the session knows none of it. The owner
+  adds the layers a call creates to the focus the editor holds (a layer Draw makes can be drawn on under Focus and lock). A
+  focus lock is not enforced for a session call: a key inserted or a cel added on a layer the lock holds is not refused
+  (a limitation, for every command the session runs).
 - **Frame ranges**: on a layer sheet the app passes a timeline range as an array carrying the
   chosen ticks (`rangeFrames()`, `sheetTicks`), which JSON drops; the facade sends such arrays
   as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way
@@ -648,9 +648,8 @@ it on the editor, for every document.
   not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
   not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
 - **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
-  name) runs in the JavaScript editor on the read view (the drawing commits, the layer and background commands, the
-  bakes, inbetweens, the frame clipboard, disconnecting and combining figures, 3D rig values); `report.editor` counts
-  them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
+  name) runs in the JavaScript editor on the read view (the drawing pixel commits, inbetweens, the frame clipboard,
+  disconnecting and combining figures); `report.editor` counts them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and
   the changed records are written back. A session gesture or edit still open when such a call is made is committed first.

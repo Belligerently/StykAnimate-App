@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {ownedEditorSync, plainEditorWithDrawings} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {figureFocusLocked, layerFocusLocked} from '../src/editor-layer-focus.mjs';
 import {createLayerState, layerLocked} from '../src/layers.mjs';
@@ -56,13 +57,12 @@ test('Focus and lock preserves saved locks, visibility, history and source repor
   assert.equal(editor.getLayer('layer-3').visible, false);
 });
 
-test('temporary locks reject off-focus sheet and drawing edits before publication', () => {
-  const editor = fixture(), drawing = editor.createDrawingLayer('Sketch'); editor.select(1); editor.markSaved();
+test('temporary locks reject off-focus sheet edits before publication', () => {
+  const {editor} = plainEditorWithDrawings({demo: false, layerTimeline: true}, fixture().report, ['Sketch']); editor.select(1); editor.markSaved();
   editor.setLayerFocus(['layer-1', 'layer-2'], {lock: true});
   const before = editor.serialize(), history = editor._undo.length;
   assert.throws(() => editor.sheetInsertKey(['layer-3'], 3), /Unlock Reference/);
   assert.throws(() => editor.sheetInsertKey(['scene'], 3), /Unlock Scene/);
-  assert.throws(() => editor.drawingKey([drawing.id], 3, {blank: true}), /Show and unlock/);
   assert.throws(() => editor.applyFigureRange({kind: 'scale', value: 2}, {uids: [3], atPlayhead: true}), /Unlock Reference/);
   assert.deepEqual(editor.serialize(), before); assert.equal(editor._undo.length, history);
   assert.equal(editor.selectSheetLayer('layer-3'), false); assert.equal(editor.selectedUid, 1);
@@ -133,7 +133,8 @@ for (const lock of [false, true]) {
   });
 
   test(`the first Draw stroke can create and select its layer during ${lock ? 'Focus and lock' : 'view-only focus'}`, () => {
-    const editor = fixture(); editor.setLayerFocus(['layer-1'], {lock}); editor.selectSheetLayer('layer-1');
+    // Creating the layer is the engine session's: the layer joins the focus the editor holds.
+    const {editor} = ownedEditorSync({demo: false, layerTimeline: true}, fixture().report, {recorded: false}); editor.setLayerFocus(['layer-1'], {lock}); editor.selectSheetLayer('layer-1');
     const history = editor._undo.length, selected = [];
     const drawing = {editor, tool: 'brush', state: {}, onStatus() {}, sync() {}, onUI() {},
       getTimeline: () => ({selectTrack: id => selected.push(id)})};

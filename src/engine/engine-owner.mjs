@@ -56,6 +56,8 @@ const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxCl
  * all the same; where no session runs the document they fail. */
 const SESSION_COMMANDS = Object.freeze([
   'setSpatialCamera', 'setSpatialProportions', 'resetSpatialProportions',
+  'createDrawingLayer', 'addDrawingFrame', 'drawingKey', 'nextDrawing', 'extendDrawing', 'autoKeyDrawing',
+  'importSceneBackground', 'renameSceneBackground', 'bakeCameraMotion', 'setFrameDuration', 'pasteFiguresInFrames',
 ]);
 
 /** Calls that read the document or the editor's state, open or close documents, or
@@ -68,7 +70,7 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'nearestAnimationKey', 'prepareGeometry', 'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
   'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'previewInbetween', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
-  'setFrameClipboardWorker', 'setInbetweenPlanner', 'enterMovieclip', 'leaveMovieclip',
+  'setFrameClipboardWorker', 'restoreFrameClipboard', 'restoreFrameClipboardAsync', 'setInbetweenPlanner', 'enterMovieclip', 'leaveMovieclip',
   'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'touch', 'sheetEditTimes', 'deleteLayerAsync', 'assignFiguresToLayerAsync', 'undo', 'redo', 'constructor']);
 
 /** The editor's public methods the owner routes: everything but queries and view calls, and the commands only the session has. */
@@ -313,9 +315,11 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (patch && answer.patch?.length) {
       applying = true;
       try {
-        const before = posesBefore();
+        const before = posesBefore(), layers = new Set(Object.keys(editor.report._styk?.layers?.byId ?? {}));
         applyDocumentPatch(editor.report, answer.patch);
         refresh(answer.patch, before);
+        // A layer a call creates joins the layer focus the editor holds (the session knows no focus), as the editor's own creations do.
+        editor._includeCreatedLayersInFocus(Object.keys(editor.report._styk?.layers?.byId ?? {}).filter(id => !layers.has(id)));
         editor._invalidate({timing: true});
       } finally { applying = false; }
     }

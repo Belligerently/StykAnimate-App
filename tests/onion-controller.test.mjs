@@ -33,7 +33,7 @@ test('superseded views cannot commit or cancel a newer gesture',()=>{
 test('seek, document edits, disposal and failed commits leave no preview behind',()=>{
   const {controller,editor,commits,errors}=fixture(),owner={};
   controller.begin(owner);controller.preview(owner,{onionRangeBefore:40});editor.seek(60);controller.commit(owner);assert.equal(commits.length,0);assert.equal(controller.session,null);
-  controller.begin(owner);controller.preview(owner,{onionRangeBefore:40});editor.setFrameDuration(4);controller.commit(owner);assert.equal(commits.length,0);
+  controller.begin(owner);controller.preview(owner,{onionRangeBefore:40});editor.setFramesDuration([editor.frameIndex], 4);controller.commit(owner);assert.equal(commits.length,0);
   controller.onCommit=()=>{throw new Error('Failed setting');};controller.begin(owner);controller.preview(owner,{onionRangeBefore:30});controller.commit(owner);assert.equal(errors.length,1);assert.equal(controller.session,null);
   controller.begin(owner);controller.preview(owner,{onionRangeBefore:30});controller.destroy();assert.equal(controller.session,null);assert.equal(controller.listeners.size,0);
 });

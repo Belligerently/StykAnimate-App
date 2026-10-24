@@ -190,7 +190,6 @@ export const editorMovieclipMethods={
     if(!isMovieclip(this.figure))throw messageError(new Error(''), "errors.editorMovieclips.selectAMovieclip", {});
     if(!Number.isSafeInteger(count)||count<1)throw messageError(new Error(''), "errors.editorMovieclips.enterAPositiveWholeNumberOfKeyframes", {});
     if(this.getLayer(this.layerForUid(this.selectedUid))?.locked)throw messageError(new Error(''), "errors.editorMovieclips.unlockTheMovieclipLayerBeforeEditingIt", {});
-    if(this.report._styk?.layerSheet)return this.sheetExtendMovieclip(count);
     const uid=this.selectedUid,source=filteredFrame(this.selectionFrame,new Set([uid])).objects[0],selection=this._selectionState();
     const layer=this.layerForUid(uid),orderIndex=frameOrder(this.selectionFrame).filter(id=>this.layerForUid(id)===layer).indexOf(uid);
     const ticks=this.timeline.filter(row=>row.start>this.tick&&row.count>0).slice(0,count).map(row=>row.start);

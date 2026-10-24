@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parse} from '../vendor/text/opentype.mjs';
 import {Editor} from '../src/editor.mjs';
+import {plainEditorWithDrawings} from './support/owned-editor.mjs';
 import {emptyDocument, createFrame, createObject, defaultFigure} from '../src/demo.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
@@ -170,8 +171,8 @@ test('scene, camera, keyframe and layer contexts keep every control', () => {
 
   const sheet = new Editor({layerTimeline: true, propertyChannels: true});
   assertNothingLost({editor: sheet, context: 'frame'}, 'an exposure');
-  sheet.createDrawingLayer();
-  assertNothingLost({editor: sheet, context: 'layer'}, 'a drawing layer with parallax');
+  const {editor: inked} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
+  assertNothingLost({editor: inked, context: 'layer'}, 'a drawing layer with parallax');
 });
 
 test('figure contexts keep every control: figure, joints, ranges, builder, rig tool', () => {
@@ -338,8 +339,7 @@ test('fills, long palettes, 3D rigs and the drawing tools keep every control', (
   assertNothingLost({editor: rig}, 'a 3D rig limb with IK');
   assertNothingLost({editor: rig, builder: true}, 'a 3D rig in the builder');
 
-  const drawing = new Editor({layerTimeline: true, propertyChannels: true});
-  drawing.createDrawingLayer();
+  const {editor: drawing} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
   const settings = {color: '#223344', color2: '#ffffff', blend: 'multiply', alphaLock: true, preset: 'ink', hardness: 0.5, roundness: 1, angle: 0, spacingRatio: 0.08,
     taperIn: 0, taperOut: 0, stabilizerMode: 'average', tip: 'round', angleMode: 'fixed', grain: 'noise', texture: 0, grainScale: 1, pressureSize: true,
     pressureOpacity: false, pressureFlow: false, sizeCurve: 1, opacityCurve: 1, sizeJitter: 0, opacityJitter: 0, angleJitter: 0, scatter: 0, mirrorY: false,

@@ -149,7 +149,8 @@ impl Editor {
         let (ids, tick) = (self.list(ids), self.tick_or_playhead(tick));
         let blank = options.get("blank").is_some_and(Value::truthy);
         if self.drawing_layer(&ids) {
-            return Err(EditError::Unported("keys on a drawing layer".into()));
+            // A drawing layer shows cels: a key there is a cel (`drawingKey`).
+            return self.drawing_key(&Value::array(ids.iter().map(|id| Value::str(id)).collect()), &Value::Num(tick), options);
         }
         checked_tick(tick)?;
         let mut plan = self.planner(&ids)?;
@@ -169,7 +170,10 @@ impl Editor {
     pub(crate) fn sheet_duplicate_frame_after(&mut self, ids: &Value, tick: &Value) -> Result<bool, EditError> {
         let (ids, tick) = (self.list(ids), self.tick_or_playhead(tick));
         if self.drawing_layer(&ids) {
-            return Err(EditError::Unported("frames on a drawing layer".into()));
+            // On a drawing layer the next frame is the next cel, a copy (`nextDrawing`).
+            let mut copied = Obj::new();
+            copied.set("blank", Value::Bool(false));
+            return self.next_drawing(&Value::array(ids.iter().map(|id| Value::str(id)).collect()), &Value::object(copied));
         }
         checked_tick(tick)?;
         let start = checked_tick(tick + 1.0)?;

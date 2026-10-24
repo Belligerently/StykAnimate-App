@@ -7,7 +7,7 @@ import {followStats, followSamplingReport} from '../src/camera-follow.mjs';
 import {worldToScreen} from '../src/renderer-geometry.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {parallaxResolver} from '../src/layer-parallax.mjs';
-import {cameraSamplingReport, sampleMotionBake} from '../src/camera-motion-bake.mjs';
+import {ownedEditorSync} from './support/owned-editor.mjs';
 
 const near = (a, b, tolerance, label = '') => assert.ok(Math.abs(a - b) <= tolerance, `${label} ${a} != ${b}`);
 /** Figure 1 walks right by 20px per frame for 30 frames, then stands still; figure 2 stays at x=700. */
@@ -106,18 +106,18 @@ test('follow drives parallax without baking, unlike shake', () => {
   assert.equal(parallaxResolver(shaken.report, frameAt(shaken, 20))(2).x, 0);
 });
 
-test('baking follow reproduces the live camera and keeps it as travel', async () => {
-  const editor = fixture(); follow(editor, undefined, {lag: 4});
+test('baking follow reproduces the live camera and keeps it as travel', () => {
+  // Baking is a command of the engine session: the camera it keys on every frame shows what the follow and the shake showed.
+  const editor = ownedEditorSync({demo: false, layerTimeline: true, propertyChannels: true}, fixture().report, {recorded: false}).editor;
+  editor.sheetSetEasing([editor.layerForUid(1)], 0, 60, {interpolation: 'linear'});
+  follow(editor, undefined, {lag: 4});
   editor.addCameraMotion('shake', {start: 0, duration: 60});
-  const source = cameraSamplingReport(editor.report);
-  assert.ok(source.keyframes.every(frame => frame.objects.every(object => object.unique_id === 1)), 'only the followed figure is sent to the bake');
-  assert.equal(source.figure_types.length, 1);
-  const frames = await sampleMotionBake(editor.report, {start: 0, end: 60});
-  for (const tick of [3, 22, 50]) {
-    const live = cameraAtTime(editor.report, frameAt(editor, tick)), baked = frames.find(f => f.tick === tick).camera;
-    near(baked.x, live.x, 1e-6); near(baked.y, live.y, 1e-6); near(baked.scale, live.scale, 1e-9);
-    const travel = cameraTravelAt(editor.report, frameAt(editor, tick));
-    near(baked._parallaxMotionOffset.x, live.x - travel.x, 1e-6, 'only the shake is impulse');
+  const live = [3, 22, 50].map(tick => ({tick, camera: cameraAtTime(editor.report, frameAt(editor, tick))}));
+  assert.equal(editor.bakeCameraMotion({start: 0, end: 60}), true);
+  assert.ok(editor.getCameraMotions().every(clip => !clip.enabled), 'the motion is silenced where it was baked');
+  for (const {tick, camera} of live) {
+    const baked = cameraAtTime(editor.report, frameAt(editor, tick));
+    near(baked.x, camera.x, 1e-6); near(baked.y, camera.y, 1e-6); near(baked.scale, camera.scale, 1e-9);
   }
 });
 

@@ -1,7 +1,5 @@
-//! Baking camera motion into the camera track (src/editor-camera-motion.mjs `bakeCameraMotion`,
-//! src/camera-motion-bake.mjs `sampleMotionBake`, src/editor-layer-sheet.mjs `_sheetBakeCameraFrames`):
-//! the camera the motion clips make is keyed on every frame of the range, and the clips are muted over it,
-//! as one history entry.
+//! `bakeCameraMotion`: the camera the motion clips make is keyed on every frame of the range, and the clips are muted
+//! over it, as one history entry. The frames are sampled in the session's own call (the editor had a worker for it).
 
 use styk_doc::{Obj, Value};
 

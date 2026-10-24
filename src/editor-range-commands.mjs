@@ -352,7 +352,6 @@ export const editorRangeCommandMethods = {
     this._emit('edit', {label, animation: true, structural: true, timing: true, changedUids: [...new Set(plans.flatMap(plan => plan.changedUids))]});
   },
   addFigureInFrames(typeId, indices, options = {}) { return this.applyFigureRange({kind: 'add', typeId, x: options.x, y: options.y}, {...options, indices}); },
-  pasteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'paste', offset: options.offset, pasteMode: options.pasteMode ?? 'default', pasteDepth: options.pasteDepth}, {...options, indices}); },
   duplicateFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'duplicate', offset: options.offset}, {...options, indices}); },
   duplicateInFrames(indices, options = {}) { return this.duplicateFiguresInFrames(indices, options); },
   deleteFiguresInFrames(indices, options = {}) { return this.applyFigureRange({kind: 'delete'}, {...options, indices}); },

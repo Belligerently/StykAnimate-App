@@ -19,3 +19,19 @@ export function ownedEditorSync(options, document, {verify = true, recorded = tr
 export async function ownedEditor(options, document, settings) {
   return ownedEditorSync(options, document, settings);
 }
+
+/** An editor the engine does not own, on a document with drawing layers (one per name) that the engine session made on the way: the
+ * structure of a drawing layer is the session's, and the tests of what stays the editor's own (its history, inspectors, focus,
+ * painting) start from the result. The last layer is the active one, as after creating it. */
+export function plainEditorWithDrawings(options, document, names = [undefined]) {
+  const owned = new Editor(options);
+  if (document) owned.load(structuredClone(document));
+  const owner = installEngineOwner(owned);
+  assert.ok(owner.ready(), 'the document has its session');
+  const made = names.map(name => owned.createDrawingLayer(name));
+  const editor = new Editor(options).load(structuredClone(owned.report));
+  owner.release();
+  const layers = made.map(layer => editor.getLayer(layer.id));
+  editor.selectSheetLayer(layers.at(-1).id);
+  return {editor, layers};
+}

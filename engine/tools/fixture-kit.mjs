@@ -37,7 +37,8 @@ export const joint = (editor, id, uid = editor.selectedUid ?? 1) => {
 export const whole = (editor, uid = 1) => { editor.select(uid, -1); return editor; };
 /** A second native keyframe after the current one; the editor moves onto it. */
 export function nextKey(editor, ticks) {
-  editor.setFrameDuration(ticks); editor.duplicateFrame();
+  if (editor.report._styk?.layerSheet) editor.sheetSetDuration(ticks); else editor.setFramesDuration([editor.frameIndex], ticks);
+  editor.duplicateFrame();
   editor.selectFrame(editor.report.keyframes.length - 1);
   return editor;
 }
