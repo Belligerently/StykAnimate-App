@@ -158,6 +158,19 @@ export function ensureCameraFrames(side, {report, revision = 0}, redraw) {
 }
 
 /**
+ * What the status line and telemetry call the graphics adapter: the browser's own description of it
+ * (vendor, architecture, device) where WebGPU exists, else the name the engine got from the backend.
+ */
+async function adapterName(stage) {
+  try {
+    const info = (await globalThis.navigator?.gpu?.requestAdapter?.())?.info;
+    const name = [info?.vendor, info?.architecture, info?.device].filter(Boolean).join(' · ');
+    if (name) return name;
+  } catch { /* the engine's own name will do */ }
+  return stage.backend().split(' · ')[1] ?? '';
+}
+
+/**
  * The stage over `canvas`, the page's scene canvas: the engine's surface for as long as the stage lives.
  * Rejects with a localized error when the engine or its graphics device cannot start.
  * @param {HTMLCanvasElement} canvas the scene canvas (a canvas keeps one context type: a stage replaced after a lost device gets a new canvas)
@@ -178,10 +191,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   const warnings = [];
   /** The engine's counters, read from the stage once per frame drawn. */
   let statsAt = -1, gpuStats = null;
-  const backend = (() => {
-    const [kind, adapter = ''] = stage.backend().split(' · ');
-    return {name: kind === 'BrowserWebGpu' ? 'WebGPU' : 'WebGL2', adapter};
-  })();
+  const backend = {name: stage.backend().startsWith('BrowserWebGpu') ? 'WebGPU' : 'WebGL2', adapter: await adapterName(stage)};
 
   const invalidate = () => options.onInvalidate?.();
   /** Another attempt at a frame the engine could not draw yet, on the next animation frame. */
