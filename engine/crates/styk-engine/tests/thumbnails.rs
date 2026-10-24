@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use styk_engine::thumbnails::library::{fitted, LibraryPreview, SAMPLES};
+use styk_engine::thumbnails::library::{fit, fitted, LibraryPreview, SAMPLES};
 use styk_engine::{Budgets, Engine};
 
 fn clock() -> f64 {
@@ -95,4 +95,34 @@ fn a_library_file_decodes_its_own_pictures() {
     assert!(!preview.images().is_empty());
     let other = library("engine/crates/styk-eval/tests/fixtures/drawlist/drawing-cel.json");
     assert_ne!(preview.lineage, other.lineage, "each file's pictures are its own");
+}
+
+#[test]
+fn a_figure_thumbnail_fits_its_artwork_with_a_margin_in_pixels() {
+    // Wider than tall: the width decides; the artwork is centred.
+    let framing = fit([10.0, 20.0, 100.0, 50.0], 54, 54, 4.0);
+    assert!((framing.zoom - 0.46).abs() < 1e-12, "(54 - 8) / 100, got {}", framing.zoom);
+    assert_eq!(framing.artboard, [0.0, 0.0, 54.0, 54.0]);
+    let at = styk_eval::view::apply(framing.matrix, [60.0, 45.0]);
+    assert!((at[0] - 27.0).abs() < 1e-9 && (at[1] - 27.0).abs() < 1e-9, "the centre of the artwork lands in the centre: {at:?}");
+    // Taller than wide, in a wider picture; a point-sized artwork is fitted as one world unit.
+    assert!((fit([0.0, 0.0, 20.0, 80.0], 100, 60, 10.0).zoom - 0.5).abs() < 1e-12, "(60 - 20) / 80");
+    assert!((fit([5.0, 5.0, 0.0, 0.0], 40, 40, 0.0).zoom - 40.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_sketch_is_drawn_on_transparency_or_on_the_documents_own_background() {
+    // The file's artwork, first on transparency (a library preview), then on a given colour and on its own backgrounds.
+    let preview = library("engine/crates/styk-export/tests/fixtures/policy/plain-vector.json");
+    let fill_alpha = |background| {
+        let sample = preview.sample_on(0.0, clock, background);
+        assert!(sample.drawn && sample.bounds.is_some(), "the walker is drawn");
+        let list = &sample.list;
+        assert!(list.background_prims >= 1);
+        list.prims[0].color >> 24
+    };
+    assert_eq!(fill_alpha(Some(0)), 0, "transparent, as library previews are");
+    assert_eq!(fill_alpha(Some(0xff15_131d)), 255);
+    assert_eq!(fill_alpha(None), 255, "the document's own white background");
+    assert_eq!(preview.sample(0.0, clock).list.prims[0].color >> 24, 0, "sample is the transparent one");
 }

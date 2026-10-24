@@ -1,9 +1,9 @@
 import {chromium} from './support/playwright.mjs';
 import assert from 'node:assert/strict';
 // The workers that open and save StykAnimate's own files load the Rust container module themselves
-// (src/native-file-codec.mjs): the import worker opens a .styk, a .stkz and a .stykmov, the library
-// preview worker draws a figure file, and the export worker writes the same bytes the page's own
-// copy of the module does. Needs the app served (STYK_URL, default http://127.0.0.1:47843).
+// (src/native-file-codec.mjs): the import worker opens a .styk, a .stkz and a .stykmov, and the export
+// worker writes the same bytes the page's own copy of the module does. Needs the app served
+// (STYK_URL, default http://127.0.0.1:47843).
 const browser = await chromium.launch({channel: 'chrome', headless: true});
 try {
   const page = await browser.newPage();
@@ -30,17 +30,11 @@ try {
         frames: imported.document.keyframes.length, source: imported.sourceId};
     }
     importer.dispose();
-    const preview = await new Promise((resolve, reject) => {
-      const worker = new Worker('/src/library-preview-worker.mjs', {type: 'module'});
-      worker.onmessage = ({data}) => { worker.terminate(); data.blob ? resolve({type: data.blob.type, size: data.blob.size}) : reject(new Error(data.error)); };
-      worker.onerror = event => reject(new Error(event.message));
-      worker.postMessage({baseURL: location.href, file: new File([files['figure.stkz']], 'figure.stkz')});
-    });
     const exporter = new DocumentExporter();
     const saved = new Uint8Array(await (await exporter.export(editor.report, {format: 'styk'})).arrayBuffer());
     const figureSaved = new Uint8Array(await (await exporter.export(plain.report, {format: 'stkz', figureUid: 1, tick: 0})).arrayBuffer());
     exporter.dispose();
-    return {opened, preview, clip: Boolean(clip && clipUid),
+    return {opened, clip: Boolean(clip && clipUid),
       savedMagic: new TextDecoder().decode(saved.subarray(0, 4)), savedVersion: saved[4],
       savedReopens: (await decodeDocument(saved, 'styk')).document.keyframes.length === editor.report.keyframes.length,
       figureMagic: new TextDecoder().decode(figureSaved.subarray(0, 4)), figureReopens: (await decodeDocument(figureSaved, 'stkz')).document.figure_types.length > 0};
@@ -49,8 +43,7 @@ try {
   assert.deepEqual(Object.fromEntries(Object.entries(result.opened).map(([name, item]) => [name, [item.kind, item.transport]])),
     {'project.styk': ['styk', 'local-container-v2'], 'figure.stkz': ['stkz', 'local-container-v2'], 'clip.stykmov': ['stykmov', 'local-container-v2']});
   assert.ok(result.opened['project.styk'].frames >= 1 && result.opened['figure.stkz'].frames === 1 && result.opened['clip.stykmov'].frames === 1);
-  assert.deepEqual([result.preview.type, result.preview.size > 100], ['image/png', true]);
   assert.deepEqual([result.savedMagic, result.savedVersion, result.savedReopens, result.figureMagic, result.figureReopens], ['STYK', 2, true, 'STKZ', true]);
   assert.deepEqual(errors, []);
-  console.log('The import, library-preview and document-export workers open and save native files through the Rust container module.');
+  console.log('The import and document-export workers open and save native files through the Rust container module.');
 } finally { await browser.close(); }

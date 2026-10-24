@@ -1,23 +1,31 @@
-// Export frames from the engine (src/engine/engine-export.mjs): which renderer an export
-// gets, how the engine's worker is started, released and replaced, and the JavaScript
-// renderer taking over before the first frame when the engine cannot draw.
+// Export frames from the engine (src/engine/engine-export.mjs): how an export's worker is
+// started, warmed, released and replaced; the request, timeout, revision and canvas rules
+// around it; the retry ladder for GPU memory failures; and vector (SVG) exports.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ExportFrameRenderer} from '../src/export-frame-renderer.mjs';
 import {createExportFrameRenderer, EngineExportFrames, ENGINE_TILE_SIDE, prewarmExportRenderer} from '../src/engine/engine-export.mjs';
 
-/** Fake workers, canvases and bitmaps (as tests/export-robustness.test.mjs); `respond(message, worker)` answers. */
+const MiB = 1024 * 1024;
+
+/** Fake workers, canvases and bitmaps; `respond(message, worker, bitmap)` answers a request (nothing: it stalls). */
 function environment(t, respond) {
-  const workers = [];
-  const bitmap = (width = 32, height = 32) => ({width, height, closed: false, close() { this.closed = true; }});
+  const workers = [], canvases = [], bitmaps = [];
+  const bitmap = (width = 32, height = 32) => {
+    const value = {width, height, closed: false, close() { this.closed = true; }};
+    bitmaps.push(value);
+    return value;
+  };
   class Canvas extends EventTarget {
-    constructor() { super(); this.width = this.height = 32;
-      this.context = {canvas: this, isContextLost: () => false, setTransform() {}, clearRect() {}, drawImage() {}}; }
+    constructor() {
+      super();
+      canvases.push(this);
+      this.width = this.height = 32;
+      this.context = {canvas: this, isContextLost: () => this.lost, setTransform() {}, clearRect() {}, drawImage() {}};
+    }
     getContext() { return this.context; }
   }
   class Worker extends EventTarget {
     constructor(url, init) { super(); this.url = String(url); this.name = init?.name; this.messages = []; workers.push(this); }
-    get engine() { return this.url.endsWith('engine-export-worker.mjs'); }
     postMessage(message) {
       this.messages.push(message);
       const response = respond(message, this, bitmap);
@@ -31,16 +39,16 @@ function environment(t, respond) {
     Object.defineProperty(globalThis, key, {value, configurable: true, writable: true});
     t.after(() => { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; });
   }
-  return {workers};
+  return {workers, canvases, bitmaps};
 }
 
-/** Answers both workers' requests; the engine's worker says when it released what it held. */
+/** Answers the worker's requests; it says when it released what it held. */
 const answer = (overrides = {}) => (message, worker, bitmap) => {
   if (message.operation === 'release') return {released: true};
   if (message.operation === 'warm') return overrides.warm?.(message, worker) ?? {warmed: true};
-  const custom = overrides[message.operation]?.(message, worker);
+  const custom = overrides[message.operation]?.(message, worker, bitmap);
   if (custom !== undefined) return custom && {id: message.id, ...custom};
-  return {id: message.id, ok: true, ...(message.operation === 'render' ? {bitmap: bitmap()} : {}), ...(message.operation === 'start' && worker.engine ? {engine: {backend: 'test', tiles: 1}} : {})};
+  return {id: message.id, ok: true, ...(message.operation === 'render' ? {bitmap: bitmap()} : {}), ...(message.operation === 'start' ? {engine: {backend: 'test', tiles: 1}} : {})};
 };
 
 /** The app's stage renderer and playback adapter, as the export sees them. */
@@ -61,40 +69,36 @@ function app({refusal = null, current = true, threaded = true, busy = 0} = {}) {
 }
 
 const report = () => ({figure_types: [], keyframes: [{duration_raw: 1, objects: []}]});
+const exporter = (options = {}, context = {}) => createExportFrameRenderer({width: 32, height: 32, ...options}, {...app(), revision: 1, ...context});
 
-test('exports get the engine renderer only where the engine runs with workers, never for SVG', t => {
+test('exports need the engine with worker threads', t => {
   environment(t, answer());
   const {stage, playback} = app();
   const options = {width: 32, height: 32};
-  const engine = createExportFrameRenderer(options, {stage, playback, revision: 3, range: [0, 9]});
-  assert.ok(engine instanceof EngineExportFrames);
-  for (const [why, context] of [
-    ['SVG is vector output', {stage, playback, revision: 3, vector: true}],
-    ['no engine', {stage: {}, playback, revision: 3}],
-    ['the JavaScript renderer is the whole stage', {stage: undefined, playback}],
-    ['no worker threads (not cross-origin isolated)', {...app({threaded: false}), revision: 3}],
-  ]) {
-    const renderer = createExportFrameRenderer(options, context);
-    assert.ok(!(renderer instanceof EngineExportFrames), why);
-    assert.ok(renderer instanceof ExportFrameRenderer, why);
+  for (const vector of [false, true]) {
+    const renderer = createExportFrameRenderer(options, {stage, playback, revision: 3, range: [0, 9], vector});
+    assert.ok(renderer instanceof EngineExportFrames, vector ? 'SVG is the engine\'s too' : 'pixels');
     renderer.dispose();
   }
-  engine.dispose();
+  for (const [why, context] of [
+    ['no engine', {stage: {}, playback, revision: 3}],
+    ['no stage', {stage: undefined, playback}],
+    ['no worker threads (not cross-origin isolated)', {...app({threaded: false}), revision: 3}],
+  ]) assert.throws(() => createExportFrameRenderer(options, context), {code: 'engine_unavailable', cause: 'no engine with worker threads'}, why);
 });
 
 test('the engine draws a document it holds: its worker starts with the export settings', async t => {
-  const {workers} = environment(t, (message, worker, bitmap) => answer({render: () => ({ok: true, bitmap: bitmap(640, 360)})})(message, worker, bitmap));
+  const {workers} = environment(t, answer({render: (message, worker, bitmap) => ({ok: true, bitmap: bitmap(640, 360)})}));
   const {stage, playback, calls} = app();
   const renderer = createExportFrameRenderer({width: 640, height: 360, smoothing: 'sprites'}, {stage, playback, revision: 7, range: [5, 20]});
-  assert.equal(workers.length, 0, 'no worker before the renderer knows which one draws');
+  assert.equal(workers.length, 0, 'no worker before the document is the engine\'s');
   await renderer.load(report());
   assert.deepEqual(calls, [['frames', 7], ['definitions', 7]], 'frames through the playback adapter, then what only the stage knows, at the export revision');
   assert.equal(workers.length, 1);
-  assert.ok(workers[0].engine);
   const start = workers[0].messages[0];
   assert.equal(start.operation, 'start');
-  assert.deepEqual({revision: start.revision, width: start.width, height: start.height, smoothing: start.smoothing, tileSize: start.tileSize, last: start.last, address: start.address},
-    {revision: 7, width: 640, height: 360, smoothing: 'sprites', tileSize: ENGINE_TILE_SIDE, last: 20, address: 4096});
+  assert.deepEqual({revision: start.revision, width: start.width, height: start.height, smoothing: start.smoothing, tileSize: start.tileSize, last: start.last, address: start.address, vector: start.vector},
+    {revision: 7, width: 640, height: 360, smoothing: 'sprites', tileSize: ENGINE_TILE_SIDE, last: 20, address: 4096, vector: false});
   assert.equal(start.module, 'module');
   assert.equal(renderer.stats.renderer, 'engine');
   const canvas = await renderer.renderTick(5);
@@ -107,58 +111,121 @@ test('the engine draws a document it holds: its worker starts with the export se
   assert.equal(workers[0].terminated, true);
 });
 
-test('the export waits for a background commit instead of falling back', async t => {
+test('an SVG export asks the engine for vector artwork, which needs no GPU device', async t => {
+  const blob = new Blob(['<svg/>'], {type: 'image/svg+xml'});
+  const {workers} = environment(t, answer({render: () => ({ok: true, svg: blob, stats: {workerMs: 3}})}));
+  const renderer = createExportFrameRenderer({width: 640, height: 360}, {...app(), revision: 2, range: [0, 3], vector: true});
+  await renderer.load(report());
+  const start = workers[0].messages[0];
+  assert.equal(start.vector, true);
+  assert.equal(await renderer.renderSVGTick(3), blob);
+  assert.deepEqual({...workers[0].messages.at(-1), id: undefined}, {id: undefined, operation: 'render', tick: 3, override: false, svg: true, native: false, preserveAlpha: false});
+  // The pose the editor shows is sent to the worker first, as chunks.
+  assert.equal(await renderer.renderSVGFrame({objects: []}), blob);
+  const operations = workers[0].messages.map(message => message.operation), posed = operations.lastIndexOf('frame-start');
+  assert.ok(posed > 0 && operations.slice(posed + 1, -1).every(operation => operation === 'frame-chunk') && operations.at(-1) === 'render');
+  renderer.dispose();
+});
+
+test('the export waits for a background commit', async t => {
   const {workers} = environment(t, answer());
   const {stage, playback, calls} = app({busy: 2});
   const renderer = createExportFrameRenderer({width: 32, height: 32}, {stage, playback, revision: 2});
   await renderer.load(report());
   assert.deepEqual(calls.map(call => call[0]), ['frames', 'definitions', 'progress', 'definitions', 'progress', 'definitions']);
   assert.equal(renderer.stats.renderer, 'engine');
-  assert.ok(workers[0].engine);
-  renderer.dispose();
-});
-
-test('a document the engine does not draw keeps the JavaScript renderer', async t => {
-  const {workers} = environment(t, answer());
-  const renderer = createExportFrameRenderer({width: 32, height: 32}, {...app({refusal: 'property channels'}), revision: 1});
-  await renderer.load(report());
-  assert.equal(renderer.stats.renderer, 'javascript');
-  assert.equal(renderer.stats.engineRefusal, 'property channels');
   assert.equal(workers.length, 1);
-  assert.ok(!workers[0].engine, 'the JavaScript export worker');
-  assert.equal((await renderer.renderTick(0)).width, 32);
   renderer.dispose();
-  assert.equal(workers[0].terminated, true);
 });
 
-test('an engine worker that cannot start the export leaves it to the JavaScript renderer before the first frame', async t => {
-  // (A worker without a GPU device draws on the CPU instead, in the worker: engine-export-worker.mjs.)
+test('a document the engine does not draw fails the export with the reason', async t => {
+  const {workers} = environment(t, answer());
+  const renderer = exporter({}, app({refusal: 'property channels'}));
+  await assert.rejects(renderer.load(report()), {code: 'engine_unavailable', cause: 'property channels', messageKey: 'errors.exportFrameRenderer.exportRenderingFailed'});
+  assert.equal(workers.length, 0, 'no worker was started');
+  renderer.dispose();
+});
+
+test('an engine worker that cannot start the export fails it and is released, not killed', async t => {
   const {workers} = environment(t, answer({
-    start: (message, worker) => worker.engine ? {ok: false, code: 'engine_unavailable', error: 'the engine holds revision 2 of the document, the export is of revision 1'} : undefined,
+    start: () => ({ok: false, code: 'engine_unavailable', error: 'the engine holds revision 2 of the document, the export is of revision 1'}),
   }));
-  const renderer = createExportFrameRenderer({width: 32, height: 32}, {...app(), revision: 1});
-  await renderer.load(report());
-  assert.equal(renderer.stats.renderer, 'javascript');
-  assert.match(renderer.stats.engineRefusal, /holds revision 2/);
-  assert.equal(workers.length, 2);
-  assert.equal(workers[0].messages.at(-1).operation, 'release', 'the engine worker is released, not killed');
+  const renderer = exporter();
+  await assert.rejects(renderer.load(report()), {code: 'engine_unavailable', cause: /holds revision 2/});
+  assert.equal(workers.length, 1);
+  assert.equal(workers[0].messages.at(-1).operation, 'release');
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(workers[0].terminated, true);
-  assert.equal((await renderer.renderTick(0)).width, 32);
   renderer.dispose();
 });
 
-test('a GPU memory failure retries the frame in smaller tiles', async t => {
+test('a GPU memory failure retries the frame in smaller tiles, keeping the worker', async t => {
   let renders = 0;
   const {workers} = environment(t, answer({
     render: () => ++renders === 1 ? {ok: false, error: 'out of memory', code: 'export_gpu_memory', recoverable: true} : undefined,
   }));
-  const renderer = createExportFrameRenderer({width: 32, height: 32}, {...app(), revision: 1});
+  const renderer = exporter();
   await renderer.load(report());
   assert.equal((await renderer.renderTick(0)).width, 32);
   const retile = workers[0].messages.find(message => message.operation === 'retile');
   assert.equal(retile.tileSize, ENGINE_TILE_SIDE / 2);
+  assert.equal(renders, 2);
+  assert.equal(renderer.tileSize, ENGINE_TILE_SIDE / 2, 'the working size persists for later frames');
+  assert.equal(workers.length, 1);
   renderer.dispose();
+});
+
+test('failures through the tile floor rebuild the worker and still deliver the frame', async t => {
+  let renders = 0, starts = 0;
+  const state = environment(t, answer({
+    render: (message, worker, bitmap) => state.workers.length === 1
+      ? (++renders, {ok: false, code: 'export_memory_limit', error: 'allocation failed.', recoverable: true})
+      : {ok: true, bitmap: bitmap()},
+    start: () => { starts++; },
+  }));
+  const renderer = exporter();
+  await renderer.load(report());
+  assert.equal((await renderer.renderTick(0)).width, 32);
+  assert.equal(renders, 7, 'the ladder tried 2048, 1024, 512, 256, 128, 64 and 32');
+  assert.equal(state.workers.length, 2);
+  assert.equal(state.workers[0].messages.at(-1).operation, 'release');
+  assert.equal(starts, 2, 'the rebuilt worker started the export again');
+  assert.equal(renderer.tileSize, 32);
+  renderer.dispose();
+});
+
+test('a wedged retile request falls through to the worker rebuild', async t => {
+  const state = environment(t, answer({
+    render: (message, worker, bitmap) => state.workers.length > 1 ? {ok: true, bitmap: bitmap()} : {ok: false, code: 'vfx_surface_budget', error: 'too big.', recoverable: true},
+    retile: (message) => state.workers.length > 1 ? undefined : null,
+  }));
+  const renderer = exporter({timeoutMs: 10});
+  await renderer.load(report());
+  assert.equal((await renderer.renderTick(0)).width, 32);
+  assert.equal(state.workers.length, 2);
+  assert.equal(state.workers[0].messages.at(-1).operation, 'release');
+  renderer.dispose();
+});
+
+test('a rebuilt worker that still fails surfaces the original error instead of looping', async t => {
+  const state = environment(t, answer({render: () => ({ok: false, code: 'vfx_surface_budget', error: 'permanent.', recoverable: true})}));
+  const renderer = exporter();
+  await renderer.load(report());
+  await assert.rejects(renderer.renderTick(0), {code: 'vfx_surface_budget'});
+  assert.equal(state.workers.length, 2, 'exactly one rebuild was attempted');
+  renderer.dispose();
+});
+
+test('stalled rendering rebuilds the worker and still delivers the frame', async t => {
+  const state = environment(t, answer({render: (message, worker, bitmap) => state.workers.length === 1 ? null : {ok: true, bitmap: bitmap()}}));
+  const first = exporter({timeoutMs: 10});
+  await first.load(report());
+  // The first worker stalls; the retry ladder rebuilds and the frame arrives.
+  assert.equal((await first.renderTick(0)).width, 32);
+  assert.ok(state.workers.length >= 2);
+  assert.equal(state.workers[0].messages.at(-1).operation, 'release');
+  assert.equal(first.canvas.width, 32);
+  first.dispose();
 });
 
 test('a worker that does not release in time is terminated, and cancellation rejects at once', async t => {
@@ -166,17 +233,72 @@ test('a worker that does not release in time is terminated, and cancellation rej
     : answer()(message, worker, bitmap));
   t.mock.timers.enable({apis: ['setTimeout']});
   const controller = new AbortController();
-  const renderer = createExportFrameRenderer({width: 32, height: 32, signal: controller.signal}, {...app(), revision: 1});
+  const renderer = exporter({signal: controller.signal});
   const loading = renderer.load(report());
   await t.mock.timers.runAll?.();
   await loading;
   const pending = renderer.renderTick(0);
   controller.abort();
   await assert.rejects(pending, {name: 'AbortError'});
+  assert.equal(renderer.canvas.width, 1, 'the output surface is freed');
   assert.equal(workers[0].messages.at(-1).operation, 'release');
   assert.equal(workers[0].terminated, undefined, 'given time to free its memory');
   t.mock.timers.tick(5000);
   assert.equal(workers[0].terminated, true);
+  renderer.dispose();
+});
+
+test('invalid allowances and pre-aborted jobs allocate no worker or canvas', t => {
+  const state = environment(t, answer());
+  assert.throws(() => exporter({width: 3840, height: 2160, maxWorkingBytes: 4 * MiB}), {code: 'export_memory_limit'});
+  const controller = new AbortController();
+  controller.abort();
+  assert.throws(() => exporter({signal: controller.signal}), {name: 'AbortError'});
+  assert.equal(state.canvases.length, 0);
+  assert.equal(state.workers.length, 0);
+});
+
+test('lost or undersized frames cannot be returned to an encoder, even if context restores', async t => {
+  let undersized = false;
+  const state = environment(t, answer({render: (message, worker, bitmap) => ({ok: true, bitmap: bitmap(undersized ? 1 : 32)})}));
+  for (const failure of ['lost', 'restored', 'undersized']) {
+    const renderer = exporter();
+    await renderer.load(report());
+    if (failure === 'lost') renderer.canvas.lost = true;
+    if (failure === 'restored') renderer.canvas.dispatchEvent(new Event('contextlost'));
+    undersized = failure === 'undersized';
+    await assert.rejects(renderer.renderTick(0), failure === 'undersized' ? /incomplete frame/ : {code: 'export_canvas_lost'});
+    assert.equal(renderer.stats.renderedFrames, 0);
+    assert.equal(renderer.canvas.width, 1);
+    renderer.dispose();
+  }
+  assert.ok(state.bitmaps.every(bitmap => bitmap.closed));
+});
+
+test('native frame delivery rejects stale revisions and malformed PNG responses before publishing', async t => {
+  let revision = 1, malformed = false;
+  const state = environment(t, answer({render: () => ({ok: true, nativeFrame: {width: 32, height: 32, blob: new Blob(malformed ? [] : ['png'], {type: 'image/png'})}})}));
+  for (const scenario of ['stale', 'malformed']) {
+    const renderer = exporter({getRevision: () => revision});
+    await renderer.load(report());
+    malformed = scenario === 'malformed';
+    const pending = renderer.renderNativeTick(0);
+    if (scenario === 'stale') revision++;
+    await assert.rejects(pending, scenario === 'stale' ? {name: 'AbortError'} : /incomplete native frame/);
+    assert.equal(renderer.stats.renderedFrames, 0);
+    assert.equal(renderer.canvas.width, 1);
+    renderer.dispose();
+  }
+  assert.ok(state.workers.every(worker => worker.messages.at(-1).operation === 'release'));
+});
+
+test('worker failures keep their actionable error and release the export', async t => {
+  const frames = [{module: 'engine-export-worker.mjs', line: 180}];
+  const state = environment(t, answer({start: () => ({ok: false, code: 'export_memory_limit', error: 'Source image exceeds allowance.', name: 'RangeError', telemetryCode: 'out_of_memory', telemetryStage: 'prepare', telemetryFrames: frames})}));
+  const renderer = exporter();
+  await assert.rejects(renderer.load(report()), {code: 'export_memory_limit', name: 'RangeError', telemetryCode: 'out_of_memory', telemetryStage: 'prepare', telemetryFrames: frames});
+  assert.equal(renderer.canvas.width, 1);
+  assert.equal(state.workers[0].messages.at(-1).operation, 'release');
   renderer.dispose();
 });
 

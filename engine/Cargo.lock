@@ -1201,6 +1201,8 @@ dependencies = [
 name = "styk-export"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "image",
  "pollster",
  "styk-doc",
  "styk-draw",

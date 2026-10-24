@@ -14,6 +14,9 @@ use crate::js_error;
 /// sprites fills its atlas over a few frames instead of stalling one.
 const IMAGE_UPLOAD_BYTES: usize = 8 << 20;
 
+/// Device errors kept for the interface between two reads; later ones are dropped.
+const MAX_REPORTED_ERRORS: usize = 8;
+
 /// [`Stage::pictures_pending`]: the last frame drawn has all its pictures (or none it
 /// lacks can still come), lacks some that are decoded and wait for upload (draw again
 /// on the next frame), or lacks some still being decoded (draw again once the engine's
@@ -55,12 +58,24 @@ pub struct Stage {
     /// picture ([`Stage::pictures_pending`]).
     uploaded: Uploaded,
     pictures: u32,
+    /// Bytes of pictures the last frame uploaded to the atlas.
+    upload_bytes: usize,
     pub(crate) edit: EditScene,
     /// Effects are drawn (the editor's effects preview is on).
     pub(crate) effects: bool,
+    /// The workspace view's rotation (radians) and mirroring, applied to every frame drawn
+    /// ([`Stage::set_view_orientation`]).
+    rotation: f64,
+    flip: bool,
     /// Edit and ghost poses received, so a camera monitor list knows when it is stale.
     pub(crate) edits: u64,
     pub(crate) shown: Shown,
+    /// Why the device was lost, once it is (polled by the interface: `Stage::device_lost`).
+    lost: Arc<std::sync::OnceLock<String>>,
+    /// Errors the device reported that nobody captured, until the interface takes them.
+    errors: Arc<std::sync::Mutex<Vec<String>>>,
+    /// The last frame drawn nothing because the surface had no texture to give (lost or resizing).
+    surface_missed: bool,
     /// The camera monitor and frame thumbnails, drawn on this device (`views.rs`).
     pub(crate) views: crate::views::Views,
 }
@@ -120,7 +135,28 @@ impl Stage {
             color_space: Default::default(),
         };
         surface.configure(&device, &config);
+        let lost = Arc::new(std::sync::OnceLock::new());
+        let reason = lost.clone();
+        device.set_device_lost_callback(move |why, message| {
+            let _ = reason.set(format!("{why:?}: {message}"));
+        });
+        // An error nobody captures would otherwise panic and stop the whole engine module: it is
+        // kept for the interface to report, and running out of memory ends the device.
+        let errors: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+        let (reported, exhausted) = (errors.clone(), lost.clone());
+        device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
+            if matches!(error, wgpu::Error::OutOfMemory { .. }) {
+                let _ = exhausted.set(format!("out of memory: {error}"));
+            }
+            let mut kept = reported.lock().unwrap_or_else(|e| e.into_inner());
+            if kept.len() < MAX_REPORTED_ERRORS {
+                kept.push(error.to_string());
+            }
+        }));
         let renderer = Renderer::new(&device, &queue, format);
+        // A stage over a document that is already open (the canvas was replaced after a lost device):
+        // the pictures decoded so far went to the stage before it.
+        engine.engine.redecode_images();
         let is_webgpu = info.backend == wgpu::Backend::BrowserWebGpu;
         Ok(Stage {
             engine: engine.engine.clone(),
@@ -138,17 +174,65 @@ impl Stage {
             live_pages: 0,
             uploaded: Uploaded::default(),
             pictures: PICTURES_COMPLETE,
+            upload_bytes: 0,
             edit: EditScene::default(),
             effects: true,
+            rotation: 0.0,
+            flip: false,
             edits: 0,
             shown: Shown::Nothing,
+            lost,
+            errors,
+            surface_missed: false,
             views: Default::default(),
         })
+    }
+
+    /// Why the graphics device was lost (the browser reset it, the driver stopped), or an empty
+    /// string while it is not. A lost stage draws nothing more: the page makes a new one.
+    pub fn device_lost(&self) -> String {
+        self.lost.get().cloned().unwrap_or_default()
+    }
+
+    /// The errors the device reported that nothing captured since the last call (validation
+    /// errors, out of memory), newline-separated: empty when there are none.
+    pub fn take_device_errors(&self) -> String {
+        std::mem::take(&mut *self.errors.lock().unwrap_or_else(|e| e.into_inner())).join("\n")
+    }
+
+    /// Destroys the graphics device as a driver reset would: the stage then reports it lost
+    /// ([`Stage::device_lost`]). For tests of the interface's recovery.
+    pub fn lose_device(&self) {
+        self.device.destroy();
+    }
+
+    /// Whether the last frame drew nothing because the surface had no texture to give (it was lost
+    /// or being resized and is configured again): asking again on the next animation frame works.
+    pub fn surface_pending(&self) -> bool {
+        self.surface_missed
     }
 
     /// Turns effects on or off (the editor's effects preview).
     pub fn set_effects(&mut self, on: bool) {
         self.effects = on;
+    }
+
+    /// Rotates the workspace view by `rotation` radians about the artboard's centre and mirrors it
+    /// horizontally when `flip` (the Draw view): every frame drawn from now on, edited or prepared.
+    pub fn set_view_orientation(&mut self, rotation: f64, flip: bool) {
+        self.rotation = if rotation.is_finite() { rotation } else { 0.0 };
+        self.flip = flip;
+    }
+
+    /// Lowers (`false`) or restores (`true`) the multisampling of the stage's edges: the preview's
+    /// quality ladder under load.
+    pub fn set_multisampled(&mut self, on: bool) {
+        self.renderer.set_multisampled(on);
+    }
+
+    /// The largest texture side the device allows: the surface cannot be larger.
+    pub fn max_texture(&self) -> u32 {
+        self.device.limits().max_texture_dimension_2d
     }
 
     /// The selected browser presenter uses direct Canvas drawing semantics.
@@ -164,7 +248,9 @@ impl Stage {
 
     /// Sets the drawing buffer size in device pixels.
     pub fn resize(&mut self, width: u32, height: u32) {
-        let (width, height) = (width.max(1), height.max(1));
+        // A surface larger than the device's textures cannot be configured.
+        let limit = self.device.limits().max_texture_dimension_2d;
+        let (width, height) = (width.clamp(1, limit), height.clamp(1, limit));
         if (width, height) != (self.config.width, self.config.height) {
             self.config.width = width;
             self.config.height = height;
@@ -318,6 +404,7 @@ impl Stage {
     pub(crate) fn sync_images(&mut self, generation: &Generation) {
         self.sync_atlas(generation);
         let images = self.engine.take_images(IMAGE_UPLOAD_BYTES);
+        self.upload_bytes = images.iter().map(|image| image.rgba.len()).sum();
         if !images.is_empty() {
             self.renderer.upload_images(&generation.assets, images.iter().map(|image| &**image));
             for image in &images {
@@ -375,9 +462,17 @@ impl Stage {
     }
 
     fn draw(&mut self, generation: &Arc<Generation>, list: &Arc<styk_eval::drawlist::DrawList>, camera: Option<styk_eval::doc::Camera>, zoom: f64, pan: [f64; 2], clip_to_artboard: bool) -> Result<bool, JsError> {
+        // A lost device draws nothing more (the interface makes a new stage); drawing on it would only raise errors.
+        if self.lost.get().is_some() {
+            return Ok(false);
+        }
         self.sync_images(generation);
         let doc = &generation.prepared.doc;
-        let m = styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan);
+        // The Draw view turns and mirrors about the artboard's centre, after the scene camera.
+        let orientation = styk_eval::view::orientation(self.rotation, self.flip, [pan[0] + doc.canvas[0] as f64 * zoom / 2.0, pan[1] + doc.canvas[1] as f64 * zoom / 2.0]);
+        let upright = styk_eval::view::camera_matrix(doc, camera.as_ref(), zoom, pan);
+        let m = orientation.map_or(upright, |o| styk_eval::view::compose(o, upright));
+        self.renderer.set_orientation(orientation);
         // The artboard is the scene rectangle under the workspace view alone: the camera moves the scene inside it.
         let (p0, p1) = (pan, [pan[0] + doc.canvas[0] as f64 * zoom, pan[1] + doc.canvas[1] as f64 * zoom]);
         let view = ViewParams {
@@ -396,9 +491,11 @@ impl Stage {
             _ => {
                 // The surface was lost or is being resized: configure it again and draw next frame.
                 self.surface.configure(&self.device, &self.config);
+                self.surface_missed = true;
                 return Ok(false);
             }
         };
+        self.surface_missed = false;
         self.renderer.set_list(list);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk frame") });
         self.renderer.render(&mut encoder, &view, [self.config.width, self.config.height]);
@@ -491,12 +588,14 @@ impl Stage {
 
     /// Primitive, isolation group and pass counts of the last frame, its effect layers and
     /// passes, the GPU memory of the effect slots, isolation atlases and depth buffers, and the
-    /// glyph masks kept, filled by the last frame and their memory, as JSON.
+    /// glyph masks kept, filled by the last frame and their memory, the picture bytes the last frame
+    /// uploaded, the pictures held and whether edges are multisampled, as JSON.
     pub fn stats(&self) -> String {
         let s = &self.renderer.stats;
         format!(
-            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{},\"materialBytes\":{},\"glyphMasks\":{},\"glyphMasksFilled\":{},\"glyphBytes\":{}}}",
-            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes, s.material_bytes, s.glyph_masks, s.glyph_masks_filled, s.glyph_bytes
+            "{{\"prims\":{},\"groups\":{},\"passes\":{},\"downscaled\":{},\"rounds\":{},\"effectLayers\":{},\"effectPasses\":{},\"effectBytes\":{},\"layerBytes\":{},\"depthBytes\":{},\"materialBytes\":{},\"glyphMasks\":{},\"glyphMasksFilled\":{},\"glyphBytes\":{},\"uploadBytes\":{},\"pictures\":{},\"multisampled\":{}}}",
+            s.prims, s.groups, s.passes, s.downscaled, s.rounds, s.effect_layers, s.effect_passes, s.effect_bytes, s.layer_bytes, s.depth_bytes, s.material_bytes, s.glyph_masks, s.glyph_masks_filled, s.glyph_bytes,
+            self.upload_bytes, self.uploaded.len(), self.renderer.multisampled()
         )
     }
 }

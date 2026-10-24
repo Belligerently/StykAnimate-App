@@ -112,10 +112,9 @@ const dialog = new InsertInbetweenDialog({
 const onInsertInbetween = indices => dialog.open(indices);
 ```
 
-Omit `renderThumbnail` to give the modal its own thumbnail worker. The preview
-uses a 512×288 canvas, byte-bounded document transport, one render in flight and
-coalesced latest-ratio requests. Once loaded, the worker snapshot is reused for
-slider and onion changes. Closing aborts requests and releases an owned worker.
+`renderThumbnail` is required: the engine draws the preview (`src/engine/engine-thumbnails.mjs`, the
+preview worker's `inbetween` request). The preview uses a 512×288 canvas, one render in flight and
+coalesced latest-ratio requests, from the document the engine already holds. Closing aborts requests.
 
 Clicking the preview cycles adjacent before/after skins, the user's configured
 skin count/direction/opacity, and no skins. A dropdown previews any selected key;

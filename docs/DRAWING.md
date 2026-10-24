@@ -583,9 +583,9 @@ rig conversion or vector tracing.
 
 ## Evidence and limits
 
-Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` with
-the local app at port 47839 (or set `STYK_URL`). See
-[verification report](../artifacts/drawing/VERIFICATION.md).
+Run `node --test tests/drawing.test.mjs`; the browser suites
+(`tests/drawing-*.browser.mjs`) run against the local app at port 47839 (or set
+`STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
 `tests/drawing-latency.browser.mjs` measures input-to-frame latency.
 The pan, expansion and shortcut refinements have a separate regression suite:
 `node tests/drawing-ux.browser.mjs`; see its [report](../artifacts/drawing-ux/VERIFICATION.md). A run writes its
@@ -599,7 +599,6 @@ selection moved and applied checked on the engine's stage.
 painting and fills, the magic wand, symmetry, straight lines, colour picking,
 brush resizing, view flipping and alpha lock through real input,
 `tests/drawing-stroke.browser.mjs` covers the worker stroke pipeline,
-`tests/drawing-render.browser.mjs` covers visible-tile rendering and seams,
 `tests/drawing-save.browser.mjs` covers save/reload/recovery fidelity and
 `tests/drawing-timeline.browser.mjs` covers cache bounding and the
 drawing-free-document overhead contract.

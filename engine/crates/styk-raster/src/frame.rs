@@ -71,7 +71,7 @@ impl<'a> Frame<'a> {
         let n = list.groups.len().max(1);
         let planned = plan::plan_with_grid(
             list,
-            &plan::View { matrix: view.matrix, size, zoom: view.zoom, pan: view.pan, stretch: view.stretch, camera_view: view.camera_view, camera_limit: view.camera_limit, max_texture: MAX_TEXTURE },
+            &plan::View { matrix: view.matrix, size, zoom: view.zoom, pan: view.pan, orient: plan::IDENTITY, stretch: view.stretch, camera_view: view.camera_view, camera_limit: view.camera_limit, max_texture: MAX_TEXTURE },
             drawing_grid,
         );
         let det = view.matrix[0] * view.matrix[3] - view.matrix[1] * view.matrix[2];

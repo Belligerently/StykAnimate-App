@@ -12,7 +12,7 @@ async function until(condition, ms = 2000) {
 function playbackSide({maxFrames} = {}) {
   let current = null, generation = 7, epoch = 2;
   let readinessReads = 0;
-  const requests = [], ready = new Map(), legacyCalls = [];
+  const requests = [], ready = new Map();
   const handle = {
     request_samples(playhead, samples) { requests.push({playhead, samples}); },
     try_request_samples(playhead, samples) { handle.request_samples(playhead, samples); return 2; },
@@ -25,17 +25,16 @@ function playbackSide({maxFrames} = {}) {
     set_hidden() {}, total_ticks: () => 9,
     try_set_hidden() { return 1; }, try_set_effects() { return 1; },
   };
-  const side = {engine: {handle, pump() {}}, drawingUnpublished: () => false,
+  const side = {engine: {handle, pump() {}},
     mirror: {stats: {}, async syncFrames(report, revision) { current = {report, revision}; },
       framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
-  const legacy = {report: null, maxFrames, load(...args) { legacyCalls.push(args); }, dispose() {}, invalidate() {}, setVfxEnabled() {}};
-  return {playback: createStagePlayback(legacy, {stage: () => ({engineSide: side})}), ready, requests, legacyCalls,
+  return {playback: createStagePlayback({stage: () => ({engineSide: side}), maxTickets: maxFrames}), ready, requests,
     reads: () => readinessReads,
     nextGeneration() { generation++; }, nextEpoch() { epoch++; }, handle, engine: side.engine};
 }
 
 test('fractional range requests retain Float64 samples and distinct ready packet metadata', async () => {
-  const {playback, ready, requests, legacyCalls} = playbackSide();
+  const {playback, ready, requests} = playbackSide();
   playback.load({}, {revision: 1});
   await playback.prepareRange([3, 3.5]);
   assert.equal(requests.length, 1);
@@ -54,7 +53,6 @@ test('fractional range requests retain Float64 samples and distinct ready packet
   assert.equal(engineTick(fractional.key), 3.5);
   assert.notEqual(integer.key, fractional.key);
   assert.equal(playback.cache.size, 2);
-  assert.equal(legacyCalls.length, 0);
 });
 
 test('native eviction prunes 100,000 distinct fractional metadata tickets', async () => {
@@ -356,5 +354,27 @@ test('a busy scalar generation header cannot certify buffered playback', async (
   assert.equal(playback.bufferedAhead(0, 2), true);
   handle.total_ticks = () => 0;
   assert.equal(playback.bufferedAhead(0, 2), false, 'a ready sample alone cannot fill a header whose read was busy');
+  playback.dispose();
+});
+
+test('a document loaded before the stage exists waits for it, and the engine takes it when the app loads it again', async () => {
+  let stage = null;
+  const synced = [], handle = {try_request_samples: () => 2, try_set_hidden: () => 1, try_set_effects: () => 1, generation: () => 1, total_ticks: () => 9, frame_meta: () => undefined, frame_ticket_ready: () => false};
+  let current = null;
+  const side = {engine: {handle, pump() {}}, mirror: {stats: {}, async syncFrames(report, revision) { synced.push([report, revision]); current = {report, revision}; },
+    framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
+  const playback = createStagePlayback({stage: () => stage});
+  const report = {};
+  playback.load(report, {revision: 1});
+  assert.equal(playback.report, report, 'the transport knows the document');
+  assert.equal(playback.get(0), null);
+  assert.equal(playback.bufferedAhead(0, 2), false);
+  assert.equal(await playback.exportDocument(report, 1), false, 'no stage, no engine to hold it');
+  assert.equal(synced.length, 0);
+  await playback.prepareRange([0, 1]);
+  stage = {engineSide: side};
+  playback.load(report, {revision: 1});
+  await playback.prepareRange([0]);
+  assert.deepEqual(synced, [[report, 1]], 'the engine now holds it');
   playback.dispose();
 });

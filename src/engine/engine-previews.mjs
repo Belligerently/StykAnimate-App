@@ -11,17 +11,16 @@
  * the engine holds. Requests from every client run one at a time in arrival order; one
  * cancelled before it starts is never sent, one cancelled while it runs has its answer dropped.
  *
- * The worker starts with the first request and is released after five idle minutes, as the
- * JavaScript thumbnail worker is: it destroys its device, frees what it holds in the
- * engine's memory and its thread's stack, then ends (a worker that does not answer within
- * 5 s is terminated; what it held then stays allocated). Without the engine, worker threads
- * (a page that is not cross-origin isolated) or an OffscreenCanvas, the helpers below resolve
- * null and callers keep their JavaScript workers.
+ * The worker starts with the first request and is released after five idle minutes: it
+ * destroys its device, frees what it holds in the engine's memory and its thread's stack,
+ * then ends (a worker that does not answer within 5 s is terminated; what it held then stays
+ * allocated). Without the engine, worker threads (a page that is not cross-origin isolated)
+ * or an OffscreenCanvas, the helpers below resolve null and no preview is drawn.
  */
 import {loadEngine} from './engine.mjs';
 
 const WORKER_NAME = 'StykAnimate previews (engine)';
-/** How long an idle worker keeps its pictures and thread (the JavaScript thumbnail worker's rest). */
+/** How long an idle worker keeps its pictures and thread. */
 export const PREVIEW_IDLE_MS = 300000;
 /** How long a worker may take to release the engine memory it holds. */
 const RELEASE_MS = 5000;
@@ -65,7 +64,7 @@ export class EnginePreviewWorker {
       active?.reject(new Error(message));
       for (const request of this.queue.splice(0)) { settled(request); request.reject(new Error(message)); }
     };
-    // The thread could not join the engine: every request since falls back to the JavaScript workers.
+    // The thread could not join the engine: every request since fails.
     worker.addEventListener('message', ({data}) => {
       if (data?.id !== 0) return this._answer(worker, data);
       if (!data.ok) return fail(`The preview worker could not start: ${data.error}`, true);
@@ -169,9 +168,9 @@ function dismiss(worker) {
 let shared = null;
 
 /**
- * The page's preview worker, or null where previews keep their JavaScript workers: the
- * engine failed to load, the page has no worker threads (not cross-origin
- * isolated), or the browser has no OffscreenCanvas.
+ * The page's preview worker, or null where previews cannot be drawn: the engine failed to
+ * load, the page has no worker threads (not cross-origin isolated), or the browser has no
+ * OffscreenCanvas.
  */
 export function enginePreviews() {
   if (typeof Worker !== 'function' || typeof OffscreenCanvas === 'undefined') return Promise.resolve(null);
@@ -293,8 +292,7 @@ export function libraryExtension(file, fallback = 'stkz') {
 /**
  * A library file's poster drawn by the engine: a 320-pixel PNG of its first frame with
  * artwork, fitted on transparency. Resolves null where the engine does not draw it (no
- * preview worker, a file it cannot read): the caller's JavaScript worker does. Without a
- * preview worker it resolves at once, before `file` is ready, so the caller can start its own.
+ * preview worker, a file it cannot read).
  * @param {Blob|Promise<Blob>} file the saved asset's bytes (or the export making them)
  * @param {string} [extension] `stkz` or `stykmov` (by default from the file's name)
  */
@@ -312,7 +310,7 @@ let sessions = 0;
 
 /**
  * A library file's hover animation drawn by the engine, or null where the engine does not
- * draw it (the caller's JavaScript worker does). `frame(elapsed)` resolves with the frame at
+ * draw it. `frame(elapsed)` resolves with the frame at
  * `elapsed` seconds (`{bitmap, tick}`; the caller closes the bitmap) or null once the engine
  * declines; `close()` ends it. One animation is open at a time: opening another ends this one.
  * @param {Blob} file

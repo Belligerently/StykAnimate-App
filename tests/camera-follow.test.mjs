@@ -206,15 +206,3 @@ test('validation: follow needs figures; older preset clips stay valid', () => {
   assert.deepEqual([clip.targets, clip.start, clip.duration], [[{uid: 1, weight: 1}], 0, 61], 'selected figures, to the end');
 });
 
-test('playback packets place the camera exactly as the editor does', async () => {
-  const {compilePlaybackPacket, PlaybackResources} = await import('../src/playback-worker.mjs');
-  const editor = fixture(); follow(editor, [{uid: 1, weight: 1}, {uid: 2, weight: .5}], {lag: 5, deadZone: .05, zoomFit: .5});
-  const copy = structuredClone(editor.report), resources = new PlaybackResources();
-  try {
-    for (const tick of [40, 3, 21]) {
-      const packet = await compilePlaybackPacket(copy, tick, {resources, revision: 1}), live = cameraAtTime(editor.report, frameAt(editor, tick));
-      for (const key of ['x', 'y', 'scale', 'angle_rad']) near(packet.frame.camera[key], live[key], 1e-6, `${key} at ${tick}`);
-      for (const item of packet.compatibility) item.bitmap?.close();
-    }
-  } finally { resources.dispose(); }
-});

@@ -8,7 +8,7 @@ import os from 'node:os'; import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 async function measure(file) {
   const profile = mkdtempSync(path.join(os.tmpdir(), 'styk-mem-'));
-  writeFileSync(path.join(profile, 'editor-settings.json'), JSON.stringify({theme: 'light', locale: 'en', rendererMode: 'auto'}));
+  writeFileSync(path.join(profile, 'editor-settings.json'), JSON.stringify({theme: 'light', locale: 'en'}));
   const env = {...process.env, STYK_STARTUP_VIEW: 'editor', STYK_USER_DATA_DIR: profile, STYK_LIBRARY_DIR: path.join(profile, 'library'), STYK_PYTHON: path.join(root, '.venv/bin/python')}; delete env.ELECTRON_RUN_AS_NODE;
   const app = await _electron.launch({executablePath: createRequire(path.join(root, 'package.json'))('electron'), args: [root, '--js-flags=--expose-gc'], cwd: root, env});
   const page = await app.firstWindow();
@@ -25,7 +25,7 @@ async function measure(file) {
     await new Promise(r => setTimeout(r, 2000));
     globalThis.gc?.();
     const engineModule = side ? await import('/src/engine/engine.mjs') : null;
-    return {engine: Boolean(styk.state.renderer.engineActive), refusal: styk.state.renderer.engineStats?.refusal ?? null,
+    return {refusal: styk.state.renderer.engineStats?.refusal ?? null,
       wasmMiB: side ? +(side.engine.memoryBytes / 1048576).toFixed(1) : 0,
       heapMiB: +(performance.memory.usedJSHeapSize / 1048576).toFixed(1), framesSynced: side ? side.mirror.framesRevision === styk.editor.revision : null};
   });

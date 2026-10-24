@@ -3,9 +3,6 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {Editor} from '../src/editor.mjs';
-import {nativePlaybackSnapshot,materializePlaybackSnapshot} from '../src/playback-native.mjs';
-import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
 import {NATIVE_FRAME_CONTENT_TYPE,unpackNativeFrameResponse,materializeNativeFrames} from '../src/import-wire.mjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 import {nodeCodec} from './support/codec.mjs';
@@ -28,24 +25,11 @@ test('all native v5 corpus wire frames recreate every canonical field exactly',{
     for await(const row of corpusTransfers()) {
       rows++;
       const buffer=row.buffer, packet=unpackNativeFrameResponse(buffer), expected=row.expected;
-      const nativeMeta={...packet.result.nativeFrames};
       const result=await materializeNativeFrames(packet.result,buffer,packet.offset,{yieldControl:()=>Promise.resolve()});
       assert.deepEqual(result.document,expected.document,row.name);
       // Preserve enumerable field ordering too: existing native-save comparisons
       // and diagnostic clients use the canonical parser's JSON property order.
       assert.equal(JSON.stringify(result.document),JSON.stringify(expected.document),row.name);
-      const snapshot=nativePlaybackSnapshot(result.document,buffer,packet.offset,nativeMeta);
-      if(snapshot){
-        const editor=new Editor({demo:false,propertyChannels:true,layerTimeline:true});editor.load(result.document);
-        let mirror,ordinary;
-        for(const chunk of documentChunks(editor.report,{sharedFigures:true}))ordinary=applyDocumentChunk(ordinary,structuredClone(chunk));
-        const header={...editor.report,keyframes:editor.report.keyframes.map(frame=>({_styk:frame._styk}))};
-        for(const chunk of documentChunks(header,{sharedFigures:true}))mirror=applyDocumentChunk(mirror,structuredClone(chunk));
-        const bytes=new Uint8Array(buffer.slice(packet.offset));
-        await materializePlaybackSnapshot(mirror,{bytes,meta:nativeMeta,position:bytes.length},{yieldControl:()=>Promise.resolve()});
-        assert.deepEqual(mirror,ordinary,`native playback: ${row.name}`);
-        assert.equal(JSON.stringify(mirror),JSON.stringify(ordinary),`native playback property order: ${row.name}`);
-      }
       const invalid=buffer.slice(0,-1); assert.throws(()=>unpackNativeFrameResponse(invalid),/metadata/);
       const fresh=unpackNativeFrameResponse(buffer);
       await assert.rejects(materializeNativeFrames(fresh.result,buffer,fresh.offset,{isCancelled:()=>true}),{name:'AbortError'});
