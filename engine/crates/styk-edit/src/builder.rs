@@ -669,7 +669,14 @@ impl Editor {
         let Some(fields) = patch.as_obj() else { return Err(invalid("errors.editorBuilderBranch.chooseASegmentStylePatch")) };
         let mut style = fields.clone();
         let shape = style.remove("shape");
-        let targets = branch(&selected.figure, selected.joint, whole, fields.contains("color") || fields.contains("opacity"));
+        // Several joints selected with Shift are styled together (`selectionTargets`).
+        let chosen = self.selected_segment_ids(Some(&selected.figure));
+        let targets = if chosen.len() > 1 {
+            let indices: Vec<usize> = segments_of(&selected.figure).iter().enumerate().filter(|(_, s)| s.get("segment_id").is_some_and(|id| chosen.iter().any(|other| crate::history::js_strict_eq(other, id)))).map(|(i, _)| i).collect();
+            Branch { queue: indices.clone(), indices, polygons: Vec::new() }
+        } else {
+            branch(&selected.figure, selected.joint, whole, fields.contains("color") || fields.contains("opacity"))
+        };
         let (mut entries, _) = style_patch(&selected.figure, selected.joint, &style, &targets)?;
         let segments = segments_of(&selected.figure);
         let polygons = polygons_of(&selected.figure);
@@ -1099,6 +1106,13 @@ fn style_targets(figure: &Value, entries: &[Drawable], target: (bool, usize), br
         })
         .map(|entry| (entry.polygon, entry.index))
         .collect()
+}
+
+/// How many drawables `builderStyleTargets(figure, {kind: 'segment', index: joint}, {branch})` names.
+pub(crate) fn style_target_count(figure: &Value, joint: usize, branch: bool) -> Result<usize, EditError> {
+    let entries = drawables(figure, None)?;
+    let target = resolve_target(figure, &Value::object(Obj::new()), joint as i64)?;
+    Ok(style_targets(figure, &entries, target, branch).len())
 }
 
 fn items_of(value: Option<&Value>) -> Vec<Value> {

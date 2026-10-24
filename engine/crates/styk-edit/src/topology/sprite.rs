@@ -1,7 +1,7 @@
 //! `editor-sprite-segment`: attach portable embedded image data through the existing
 //! topology transaction. No image decoding or additional resource cache is involved.
 use super::{
-    MAX_SEGMENTS, Pose, TopologyOptions, instances, invalid, items, objects_mut, remove, set,
+    MAX_SEGMENTS, Pose, TopologyOptions, instances, invalid, items, objects_mut, remove, retain_runtime_pose, set,
 };
 use crate::{EditError, Editor};
 use std::collections::HashMap;
@@ -193,25 +193,6 @@ fn embedded_png(data: &str) -> bool {
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || c == b'+' || c == b'/')
 }
-fn derived_runtime_pose(object: &Value, segments: &[Value]) -> bool {
-    let Some(runtime) = object.get("runtime_segments").filter(|v| v.truthy()) else {
-        return false;
-    };
-    [("len_flag", "length"), ("bend_flag", "bend_rad")]
-        .into_iter()
-        .any(|(flag, field)| {
-            !object.get(flag).is_some_and(Value::truthy)
-                && segments.iter().enumerate().any(|(i, segment)| {
-                    runtime
-                        .item(i)
-                        .and_then(|s| s.get(field).cloned())
-                        .is_some_and(|value| {
-                            value != segment.get(field).cloned().unwrap_or(Value::Num(0.0))
-                        })
-                })
-        })
-}
-
 impl Editor {
     pub(super) fn add_sprite_segment(
         &mut self,
@@ -329,14 +310,6 @@ impl Editor {
                 "errors.editorSpriteSegment.aFigureSupportsAtMost65535Image",
             ));
         }
-        if segments
-            .iter()
-            .any(|s| s.get("_stykRig").is_some_and(Value::truthy))
-        {
-            return Err(EditError::Unported(
-                "sprite attachment to rig-derived runtime geometry".into(),
-            ));
-        }
         let segment_index = segments.len();
         let type_id = figure.get("figure_type_id").cloned().unwrap_or(Value::Null);
         self.topology_edit(
@@ -383,11 +356,7 @@ impl Editor {
                     };
                     for slot in slots {
                         let object = &mut objects[slot];
-                        if derived_runtime_pose(object, &segments) {
-                            return Err(EditError::Unported(
-                                "sprite attachment retaining derived runtime pose".into(),
-                            ));
-                        }
+                        retain_runtime_pose(object, &segments);
                         let mut pose = Pose::of(object);
                         pose.angles.push(angle);
                         if let Some(v) = pose.lengths.as_mut() {

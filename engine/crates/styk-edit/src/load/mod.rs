@@ -48,6 +48,30 @@ pub(crate) fn validate_background(report: &Value, background: &Value) -> Result<
     scene::validate_scene(&Value::object(source), None)
 }
 
+/// What `validateScene` checks of a figure definition beyond its hierarchy and rig, for the edits that change one:
+/// the segments' pose choices, the figure's pose-choice groups and its 3D mesh.
+pub(crate) fn validate_figure_extensions(figure: &Value) -> Result<(), EditError> {
+    for segment in items(figure.get("segments")) {
+        figure::pose_choice(&segment)?;
+    }
+    figure::figure_pose_choices(figure)?;
+    figure::spatial_mesh(figure)
+}
+
+/// `validateSurface(polygon, ids)`: the face visibility a polygon holds, against the handles of its figure.
+pub(crate) fn validate_surface(polygon: &Value, handles: &[f64]) -> Result<(), EditError> {
+    let mut known = NumberSet::default();
+    for &handle in handles {
+        known.insert(handle);
+    }
+    figure::surface(polygon, &known)
+}
+
+/// `validateAnimationDocument(report)`: the authored channels of `report._styk.animation`.
+pub(crate) fn validate_animation(report: &Value) -> Result<(), EditError> {
+    animation::validate_document(report)
+}
+
 /// What `prepareEditorLoad` returns: the normalized report and the indexes the editor adopts.
 #[derive(Clone, Debug)]
 pub struct Prepared {

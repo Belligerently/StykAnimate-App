@@ -242,6 +242,10 @@ pub struct RigJoint {
     pub length: f64,
     /// The angle the pose authored for it before the rig's own turns (`authoredAngle`).
     pub authored: f64,
+    /// The rotation it inherits (`rigRotation`), and the space the joints below it are authored in
+    /// (`rigChildSpace`) when it passes one on.
+    pub rotation: f64,
+    pub child_space: Option<crate::rig::Space>,
 }
 
 /// The 3D side of an evaluated figure: what surfaces, meshes and attached
@@ -874,6 +878,8 @@ fn build_object(doc: &Document, version: u32, frame: &Frame, slot: usize, figure
                 bend: state.map_or(f64::NAN, |s| s.bend),
                 length: state.map_or(f64::NAN, |s| s.length),
                 authored: state.map_or(f64::NAN, |s| s.authored_angle),
+                rotation: state.map_or(f64::NAN, |s| s.rotation),
+                child_space: state.and_then(|s| s.child_space),
             })
             .collect()
     });

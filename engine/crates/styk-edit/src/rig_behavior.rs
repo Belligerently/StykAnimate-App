@@ -687,8 +687,8 @@ impl Editor {
         let scale = num(&object, "scale").filter(|_| object.get("scale").is_some_and(|s| !s.is_null())).unwrap_or(1.0).abs().max(1e-8);
         let connector = segment.path(&["_stykRig", "connector"]).filter(|c| c.truthy());
         let current = match self.drawn_joint(index)? {
-            // A connector's drawn end (its far anchor through the arc it bends along) is not kept by the engine's geometry.
-            Some(_) if connector.is_some() => return Err(EditError::Unported("Smart Stretch on a connector".into())),
+            // A connector stretches from the span it is drawn across: its far anchor, through the arc it bends along.
+            Some(shape) if connector.is_some() => shape.span / scale,
             Some(shape) => shape.length.abs() / scale,
             None => connector.and_then(|c| c.get("restLength")).filter(|v| !v.is_null()).and_then(Value::as_f64).unwrap_or_else(|| num(segment, "length").unwrap_or(f64::NAN).abs()),
         };
@@ -752,7 +752,15 @@ impl Editor {
             f.set("segments", Value::array(segments.clone()));
             f
         });
-        let indices = if whole { crate::builder::branch(&figure, index, true, false).indices } else { vec![index] };
+        let chosen = self.selected_segment_ids(Some(&figure));
+        let indices = if whole {
+            crate::builder::branch(&figure, index, true, false).indices
+        } else if chosen.len() > 1 {
+            // The joints selected with Shift.
+            segments.iter().enumerate().filter(|(_, s)| s.get("segment_id").is_some_and(|id| chosen.iter().any(|other| crate::history::js_strict_eq(other, id)))).map(|(i, _)| i).collect()
+        } else {
+            vec![index]
+        };
         let driver = driver.cloned().unwrap_or(Value::Null);
         let mut changes = Vec::new();
         for i in indices {
@@ -889,7 +897,9 @@ impl Editor {
         let Some(drawn) = shapes.get(index) else { return Ok(None) };
         let geometry = scene.objects.iter().find(|g| g.uid == frame.objects[at].uid && g.resolved);
         let rig = geometry.and_then(|g| g.rig.as_ref()).and_then(|r| r.get(index).copied());
-        Ok(Some(Shape { angle: drawn.angle, length: rig.map_or(drawn.length, |r| r.length), authored: rig.map(|r| r.authored) }))
+        // `shape.end - shape.start`: where the segment is drawn to (a connector's far anchor), not the handle its children attach at.
+        let span = geometry.and_then(|g| Some((g.starts.get(index).copied()?, g.raw_segments.get(index)?.drawing_end))).map_or(f64::NAN, |(start, end)| styk_math::hypot(end[0] - start[0], end[1] - start[1]));
+        Ok(Some(Shape { angle: drawn.angle, length: rig.map_or(drawn.length, |r| r.length), authored: rig.map(|r| r.authored), span }))
     }
 }
 
@@ -898,6 +908,8 @@ struct Shape {
     angle: f64,
     length: f64,
     authored: Option<f64>,
+    /// The distance from where the segment starts to where it is drawn to.
+    span: f64,
 }
 
 /// `changes.set(index, rig)`: a joint changed again keeps its place.

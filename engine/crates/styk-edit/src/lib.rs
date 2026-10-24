@@ -782,6 +782,10 @@ impl Editor {
         self.selection_metadata_gate(method)?;
         self.native_transform_gate(method, args, projected_native)?;
         if let Some(reason) = self.unported_document() {
+            // The animation-origin owner is recorded without a selected fill, joints or branch: those calls stay closed there.
+            if reason.starts_with("with animation origins") && self.selection_metadata_visible() && !select::metadata_recorded_call(method) {
+                return Err(EditError::Unported(format!("{method} with optional selection metadata")));
+            }
             let recorded = match reason {
                 "with animation origins" => origin::recorded_call(method) || select::metadata_recorded_call(method),
                 "with animation origins and property channels" => origin::recorded_channel_call(method) || select::metadata_recorded_call(method),

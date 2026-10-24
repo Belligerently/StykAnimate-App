@@ -101,12 +101,12 @@ export function ownedMethods(editor) {
 
 /** A call's arguments as text for the session: frame ranges keep their `sheetTicks`, and the app's
  * figure-bounds callback is the marker the engine measures for itself (engine-edit-bounds.mjs). Any other
- * function, or what JSON cannot hold, is not data: `null`. */
+ * function, or what JSON cannot hold, is not data: `null`. A `Set` (the selected segments) is the list of its members. */
 function sessionPayload(args) {
   let data = true;
   const replacer = (key, value) => {
     if (typeof value === 'function') { const marker = appBoundsMarker(value); data &&= Boolean(marker); return marker; }
-    return Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
+    return value instanceof Set ? [...value] : Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
   };
   try { const text = JSON.stringify(args, replacer); return data ? text : null; } catch { return null; }
 }
@@ -130,6 +130,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   const entries = new Map();
   /** Commands the editor recorded during the call it is running for the owner. */
   let captured = null;
+  /** Whether the figures last copied are the editor's (a copy the session refused): the session holds none to paste. */
+  let editorClipboard = false;
   /** Records the editor changed in place, as its change events name them. */
   let hints = null;
   /** The identity of every record when the session last had the same document. */
@@ -718,6 +720,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       // An asynchronous call is one unit until it settles: calls made meanwhile run here too.
       if (typeof result?.then === 'function') { unsettled = true; return result.finally(done); }
     } finally { if (!unsettled) done(); }
+    if ((name === 'copySelection' || name === 'cutSelection') && result) editorClipboard = true;
     return result;
   };
   const writeBack = recorded => {
@@ -759,7 +762,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     const flushed = performance.now();
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
-    if (PIXEL_CALLS.has(name)) return runInEditor(name, original, args);
+    if (PIXEL_CALLS.has(name) || (editorClipboard && name === 'pasteSelection')) return runInEditor(name, original, args);
     // A gesture or edit the editor runs (the session refused to begin it) stays with the editor to its end.
     if ((editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine) || (editor._vfxClipEdit && !editor._vfxClipEdit.engine)
         || editor._frameDraftEnabled) {
@@ -815,7 +818,9 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     check();
     if (answer.status === 'error') { report.errors = (report.errors ?? 0) + 1; throw failure(answer.error, answer.errorParams); }
     report.native++;
-    return resultOf(name, answer);
+    const result = resultOf(name, answer);
+    if ((name === 'copySelection' || name === 'cutSelection') && result) editorClipboard = false;
+    return result;
   };
   /** `movieclipBatch(label, operation)`: the session records what `operation` does as one history entry. */
   const batchCall = (original, args) => {

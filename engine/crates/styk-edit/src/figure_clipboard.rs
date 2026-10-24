@@ -624,11 +624,12 @@ impl Editor {
             entries.push((*tick, frame, inserted.clone()));
         }
         // Published, the pasted figures are selected and the identities taken; refused, neither.
-        let (selection, previous, previous_next) = (self.selection_state(), self.selection.clone(), self.next_uid);
+        let (selection, previous, previous_next, branch) = (self.selection_state(), self.selection.clone(), self.next_uid, self.selection_metadata.branch.take());
         self.selection = crate::Selection { uid: order.last().copied(), uids: order.clone(), joint: -1 };
         self.next_uid = next_uid;
         if let Err(error) = self.commit_sheet_range(&entries, &order, &hints, added, label, selection, Some((&pasted, true)), None) {
             self.selection = previous;
+            self.selection_metadata.branch = branch;
             self.next_uid = previous_next;
             return Err(error);
         }
