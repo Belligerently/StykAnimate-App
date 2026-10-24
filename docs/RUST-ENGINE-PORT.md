@@ -62,6 +62,19 @@ platform `pow`; ten tests that open the asset packs, absent here and in CI); `np
 test assumes no Miniconda), 8 skipped. Draft PR CI on Windows also failed four JavaScript test
 files (one an absolute-path import, fixed in `f78648b7`).
 
+**State on 2026-10-24 (`63e8aafa`, pushed):** merged since the start: the tools and tests on
+Windows paths; effect-clip, property and motion-path edits in the session; native movieclip
+commands in the session; `.styk`, `.stkz`, `.stykmov` open and save through Rust (the
+JavaScript container codec and the vendored zstd deleted); one V8 `pow` with the fixture tools
+pinned to it (regeneration byte-stable on Windows and Linux). Counters: owner tapes 325 / 8,308
+steps, 0 failing, native 3,836, editor 549 (from the mirror 3,805 / 594); refusals left:
+bounds-callback alignment 32, origin/native-channel combinations 6, follow projections (mirror
+variant only). Inventory 357: 173 js, 126 partial, 33 ported, 23 verified, 2 removed. Windows:
+`npm test` 4,121 tests, 0 fail; Rust 886 pass, 11 fail before the pow merge (10 read the asset
+packs: `private-fixtures`); parity 59 ok, 5 fail before the pow merge (all pow regeneration
+stages and the Rust suite). The weekly usage limit stopped all streams on 2026-10-23; they were
+resumed from their worktrees on 2026-10-24 with continuation notes in their briefs.
+
 **Streams (wave 1, 2026-10-22):** `win-paths` (scripts, tools and tests on Windows paths;
 parity runs on Windows), `v8-pow` (one V8-exact `pow` in `styk-math`), `owner-cost` (per-figure
 memoized records; the default-ownership blocker), `bench-windows` (the section 5 driver on
@@ -1326,3 +1339,5 @@ are review inputs, not completed milestones or class ownership evidence.
 | 2026-10-05 20:00 UTC | Preserve clipboard paste counters | Paste and duplicate publish certified counters through original events and clipboard restoration; additive opt-in Session JSON, Rust signatures/math unchanged. **Counters:** inventory unchanged 175/123/34/23/1; classes 5→5; deleted JS 2→2; command rows 7→8; full cost rows 43 and engine-1 0/28 unchanged. | 238 Rust / 106 recorded calls / 263 JS and Main check pass. All 34 paired boundaries and full undo match; aggregate paste 24.860/20.630 ms is diagnostic only. |
 | 2026-10-11 | Adopt layer metadata, project settings and movieclip rename | The leftover diff from the stopped agent, finished: the eight layer metadata commands, `setFPS`/`setCanvasSize`/`updateProject` and sheet `renameMovieclip` adopt the engine's answer in the default classes mode. New `scripts/engine-app-tape.mjs` replays recorded tapes in the app. Worktrees archived and removed. **Counters:** inventory 175/123/34/23/1 unchanged; OWNED_CLASSES 5; app-owned commands 98→110; deleted JS 2. | styk-edit tests and 126 adoption tests pass; check passes. In the app, seven tapes (101 steps, 43 owned calls) match the editor alone at every step and after full undo. |
 | 2026-10-11 | D19: the engine owns the document | Generic document patches (`styk_edit::patch`, checked on every native replay step); the owner (`engine-owner.mjs`): persistent session per document, patches applied copy-on-write to the read view, session history with external entries for editor-run calls (`external.rs`), gestures mirrored, sessions per tab, start from the mirror with `@shape`, legacy Pivot pose caches materialized like the editor. Tools: `tests/engine-owner.test.mjs`, `scripts/engine-app-tape.mjs --owner`, `scripts/engine-owner-cost.mjs [--app]`. **Counters:** inventory unchanged; OWNED_CLASSES 5; deleted JS 2. | 325 tapes / 8,308 steps match in Node from the document and from the mirror (with legacy caches); 28 app tapes match. Cost in the app: Jay C 91.4 / J 89.5 ms (pass), URIEL 3 C 145.9 / J 54.4 ms (fail). Patch key-order fix: native heavy calls 6.3 → 2 ms. |
+| 2026-10-23 | S7 Windows; S5 owner gestures; S1 native files | The tools and tests run on Windows paths; effect-clip and property edits and native movieclip commands run in the session; `.styk`/`.stkz`/`.stykmov` open and save through `styk-formats` in the codec module, the JavaScript container codec and vendored zstd deleted. **Counters:** owner editor calls 1,389 → 849; inventory 175/123/34/23/1 → 173/126/33/23/2; deleted JS modules +2 (native-container, vendored zstd). | Owner tapes 0 failing in both variants; `npm test` on Windows 4,121, 0 fail; old and new container codecs equal on 259 native files and two large documents (documents, saves, cache) before deletion. |
+| 2026-10-24 | D16 pow; S5 motion paths | `styk_math::pow` is V8's legacy fdlibm pow and every fixture tool pins Node to it (`engine/tools/v8-pin.mjs`); motion-path edits run in the session (redo under an open edit hands it to the editor). **Counters:** engine pow call sites on platform pow 9 → 0; owner editor calls 849 → 549. | pow: 0 mismatches on 6.17 M recorded and 2 M fresh inputs; regeneration byte-stable on Windows and Linux; four crates 455 tests pass; owner tapes 0 failing. |
