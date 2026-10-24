@@ -101,12 +101,15 @@ export class EngineMirror {
   /**
    * Brings the engine's properties, figure definitions and backgrounds to `report`
    * before returning. `figureIndices` names figures edited in place; `allFigures`
-   * resends every one (a definition change that did not say which).
+   * resends every one (a definition change that did not say which). `document` is the
+   * editor's report when `report` is a draft of it (the cel a first stroke is about to create
+   * is in the draft only): the mirror stays that document's, and the next sync of the report
+   * itself takes the draft's figure out again.
    */
-  syncDefinitions(report, revision, {figureIndices = [], allFigures = false} = {}) {
+  syncDefinitions(report, revision, {figureIndices = [], allFigures = false, document = report} = {}) {
     const handle = this.engine.handle, started = performance.now();
     try {
-      this._begin(report);
+      this._begin(document);
       handle.stage_properties(0, JSON.stringify(playbackProperties(report)));
       const figures = report.figure_types ?? [];
       const named = allFigures ? new Set(figures.keys()) : new Set(figureIndices);

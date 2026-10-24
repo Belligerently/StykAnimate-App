@@ -162,6 +162,17 @@ pub struct ImageAsset {
     pub smooth: bool,
     /// Drawing cel tiles, placed in the cel's pixel space at `drawing_anchor`.
     pub tiles: Option<Arc<DrawingTiles>>,
+    /// The drawing cel this asset belongs to (`_styk.drawing.celId`), whose pixels the
+    /// interface may hold live ([`crate::live`]) before they are published as tiles.
+    pub cel: Option<CelRef>,
+}
+
+/// A drawing cel by identity.
+#[derive(Clone, Debug)]
+pub struct CelRef {
+    pub id: Arc<str>,
+    /// Where the cel's pixel (0, 0) sits in the figure's asset space (`drawing_anchor`).
+    pub anchor: [f64; 2],
 }
 
 #[derive(Clone, Debug)]

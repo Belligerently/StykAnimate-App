@@ -42,6 +42,11 @@ const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
 const VIEW_CALLS = new Set(['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'selectConnected', 'selectMarquee',
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']);
 
+/** Calls that carry a drawing's pixels (tile buffers): the editor applies them to the drawing
+ * store and the records they change reach the session by write-back. Their pixels are never
+ * turned into JSON for the session, which does not take them (a stroke is megabytes). */
+const PIXEL_CALLS = new Set(['commitDrawingPixels', 'resampleDrawing']);
+
 /** The calls that end an edit, and the editor's field that holds it: with none open they change
  * nothing and answer false, which the owner knows without asking the session. */
 const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxClipEdit', commitAnimationEdit: '_animationEdit', cancelAnimationEdit: '_animationEdit'};
@@ -671,6 +676,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     const flushed = performance.now();
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
+    if (PIXEL_CALLS.has(name)) return runInEditor(name, original, args);
     const payload = sessionPayload(args);
     if (payload === null) throw refuse(name, 'arguments that are not plain data');
     report.calls++;

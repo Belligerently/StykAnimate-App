@@ -107,6 +107,18 @@ impl ExportFrames {
         self.generation.playable_ticks()
     }
 
+    /// The artwork of `tick` as the drawing workspace samples it for fills and the magic wand:
+    /// the figures the document shows, on transparency (no background), without effects, the
+    /// scene camera or parallax. Evaluated on the calling thread: a worker's.
+    pub fn composite(&self, tick: u32) -> Arc<styk_eval::drawlist::DrawList> {
+        let prepared = &self.generation.prepared;
+        let frame = prepared.evaluate(tick as f64);
+        let scene = styk_eval::geometry::build(&prepared.doc, &frame);
+        let hidden = crate::frames::hidden_slots(&self.generation, &frame, &[]);
+        let overrides = styk_eval::drawlist::Overrides { hidden: &hidden, background: Some(0), bypass_effects: true, ..Default::default() };
+        Arc::new(styk_eval::drawlist::encode_with(&prepared.doc, &self.generation.assets, &scene, &overrides))
+    }
+
     /// Decodes every image and drawing cel of the document on the engine's workers.
     pub fn decode_images(&self) {
         self.decode_images_since(None);

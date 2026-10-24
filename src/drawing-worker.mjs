@@ -1,40 +1,18 @@
 import {errorMessageData} from './localized-error.mjs';
-import {materializeDrawingTiles} from './drawing-preparation.mjs';
 import {loadDrawingEngine,drawingEngineMemory,drawingEngineGeneration} from './engine/engine-drawing.mjs';
 
-// The drawing raster engine (Rust, src/engine/engine-drawing.mjs) answers every
-// request once this worker has loaded it; without it (the
-// module cannot load) the JavaScript engine below does.
+// The drawing raster engine (Rust, src/engine/engine-drawing.mjs) answers every request.
 const engine=loadDrawingEngine();
-let engineOperations=null;
+let operations=null;
 
-// Preparing a commit needs only the tile kernel. Load codecs, brush/fill and
-// preview machinery on their first request, in the same bounded worker.
+// The operations load on the first request, in the same bounded worker.
 self.onmessage=async({data})=>{
-  // Which raster engine answers this worker (diagnostics and tests).
-  if(data.kind==='engine'){const rust=await engine;self.postMessage({id:data.id,engine:rust?'rust':'javascript',memory:drawingEngineMemory(),generation:drawingEngineGeneration()});return;}
-  if(await engine){
-    try{engineOperations??=await import('./engine/engine-drawing-worker.mjs');}
-    catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error),fatal:true});return;}
-    await engineOperations.drawingEngineOperation(data);return;
+  // The module's memory and instance (diagnostics and tests).
+  if(data.kind==='engine'){
+    try{await engine;}catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error),fatal:true});return;}
+    self.postMessage({id:data.id,memory:drawingEngineMemory(),generation:drawingEngineGeneration()});return;
   }
-  if(data.kind==='prepare-tiles'){
-    try{
-      const tiles=materializeDrawingTiles(data.tiles);
-      self.postMessage({id:data.id,tiles},tiles.flatMap(t=>t.pixels?[t.pixels]:[]));
-    }catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error)});}
-    return;
-  }
-  if(data.kind==='preview'){
-    let preview;
-    try{preview=await import('./drawing-worker-preview.mjs');}
-    catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error),fatal:true});return;}
-    try{const bitmap=preview.drawingWorkerPreview(data);self.postMessage({id:data.id,bitmap},[bitmap]);}
-    catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error)});}
-    return;
-  }
-  let operations;
-  try{operations=await import('./drawing-worker-operations.mjs');}
+  try{await engine;operations??=await import('./engine/engine-drawing-worker.mjs');}
   catch(error){self.postMessage({id:data.id,error:error.message, ...errorMessageData(error),fatal:true});return;}
-  await operations.drawingWorkerOperation(data);
+  await operations.drawingEngineOperation(data);
 };

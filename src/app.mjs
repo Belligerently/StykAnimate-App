@@ -32,6 +32,8 @@ import { Editor } from "./editor.mjs";
 import { worldToScreen, screenToWorld, objectBounds } from "./renderer-geometry.mjs";
 import { createStage } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
+import { engineDocument } from "./engine/engine-document.mjs";
+import { engineComposite } from "./engine/engine-composite.mjs";
 import { installEngineOwner, appSessionStart } from "./engine/engine-owner.mjs";
 import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
@@ -1719,7 +1721,7 @@ function loop(now) {
       state.renderer.render({
         vfxEnabled: state.vfxEnabled,
         report: drawingPreview?.report??editor.report,
-        drawingPreview: Boolean(drawingPreview),
+        documentReport: editor.report,
         frame,
         geometry,
         view: state.view,
@@ -6286,7 +6288,7 @@ async function init() {
   actions['chain-cancel'] = () => construction.cancel();
   actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:()=>{if(!state.playing&&!state.previewing)syncBackgroundInteraction(Boolean(viewGestureActive()));requestRender();},onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},getImageSource:()=>({baseURL:importer.baseURL}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:()=>{if(!state.playing&&!state.previewing)syncBackgroundInteraction(Boolean(viewGestureActive()));requestRender();},onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},artwork:({bounds,matrix,signal})=>engineComposite({document:(report,revision,check)=>engineDocument({stage:state.renderer,playback,report,revision,check}),engine:()=>state.renderer?.engineSide?.engine,current:()=>({report:editor.report,revision:editor.revision,tick:editor.tick}),bounds,matrix,signal}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
     // A finger draws in the touch interface (Settings › Draw with a finger); elsewhere it pans, as before.
     // Automatic draws with a finger only in the touch interface; Always also does on a desktop layout.
     fingerDrawing:()=>{const mode=state.settings.fingerDraw;return mode==='auto'&&!touchMode?.active?'never':mode;}});

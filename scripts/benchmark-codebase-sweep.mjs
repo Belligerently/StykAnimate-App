@@ -24,11 +24,11 @@ if (mode === 'evidence') {
       platform: process.platform, release: os.release(), releaseRuntimeMismatch: 'Node 24.16.0 and Python 3.11.15; release CI pins Node 24.11.0/Python 3.12.9'},
     measurements: {}};
   for (const name of ['benchmark-codebase-sweep.mjs', 'benchmark-codec-topology-sweep.py',
-    'benchmark-drawing-filter-sweep.mjs', 'benchmark-layer-sheet-sweep.mjs',
+    'benchmark-layer-sheet-sweep.mjs',
     'benchmark-localization-sweep.mjs'])
     evidence.benchmarkSources[`scripts/${name}`] = createHash('sha256').update(await readFile(`scripts/${name}`)).digest('hex');
   for (const name of ['animation-modes', 'animation-locality', 'builder', 'node-selection',
-    'rig-constraints', 'movieclips', 'telemetry', 'connected-transactions', 'drawing-filters'])
+    'rig-constraints', 'movieclips', 'telemetry', 'connected-transactions'])
     evidence.measurements[name] = await read(`${base}/${name}.json`);
   evidence.measurements.audio = await read(`${base}/audio/benchmark.json`);
   evidence.measurements.animationMemory = await read(`${base}/animation-memory/memory.json`);
@@ -43,9 +43,6 @@ if (mode === 'evidence') {
   evidence.verification = await read(`${later}/verification.json`);
   evidence.measurements.desktop = await Promise.all([30, 300].map(async figures => ({figures,
     report: await read(`artifacts/performance-goal/sweep-20261001-r2-${figures}/report.json`)})));
-  evidence.measurements.fill = {};
-  for (const kind of ['drawing-fill-4k', 'drawing-fill-sparse'])
-    evidence.measurements.fill[kind] = JSON.parse((await readFile(`${base}/${kind}.log`, 'utf8')).split('\n').find(line => line.startsWith('{')));
   // Full hashes appear once where many reports certify the same bytes. Keep
   // per-run differences explicitly; never flatten differing source versions.
   for (const item of evidence.measurements.desktop) {
@@ -114,9 +111,6 @@ async function run(name, args, env = {}) {
     ['movieclips', ['scripts/benchmark-movieclips.mjs']],
     ['audio', ['scripts/benchmark-audio.mjs'], {STYK_BENCH_OUT: path.join(output, 'audio')}],
     ['telemetry', ['scripts/benchmark-telemetry.mjs']],
-    ['drawing-filters', ['--expose-gc', 'scripts/benchmark-drawing-filter-sweep.mjs', path.join(output, 'drawing-filters.json')]],
-    ['drawing-fill-4k', ['--expose-gc', 'scripts/benchmark-drawing-fill.mjs', '--sample', new URL('../src/drawing-fill.mjs', import.meta.url).href, 'uniform4k']],
-    ['drawing-fill-sparse', ['--expose-gc', 'scripts/benchmark-drawing-fill.mjs', '--sample', new URL('../src/drawing-fill.mjs', import.meta.url).href, 'distant']],
   ];
   for (const [name, args, env] of jobs) await run(name, args, env);
   for (const [name, source] of Object.entries({
