@@ -359,6 +359,12 @@ impl<'a> Records<'a> {
             };
             (index, t)
         };
+        self.native_sample(index, t, time, clips)
+    }
+
+    /// `evaluatedFrame(report, index, t, time)` on a native timeline, before movieclips:
+    /// the interval's frame with the property channels composed at `time`.
+    fn native_sample(&self, index: usize, t: f64, time: f64, clips: bool) -> Result<Value, Error> {
         let frame = match (
             &self.source_tree,
             &self.prepared.source,
@@ -417,6 +423,23 @@ impl<'a> Records<'a> {
             _ => self.native(index, t)?,
         };
         Ok(self.layer_order(self.compose(frame, &self.legacy, time)?))
+    }
+
+    /// `evaluatedFrame(report, index, t, tick)` of a native timeline: the interval `index` at
+    /// fraction `t`, its channels sampled at `tick` (an in-between samples between the rows'
+    /// own times), and movieclips at `tick`.
+    pub fn evaluated_interval(&self, index: usize, t: f64, tick: f64) -> Result<Value, Error> {
+        if self.tree.path(&["_styk", "layerSheet"]).is_some() {
+            return unported("an interval of a layer sheet");
+        }
+        let frame = self.native_sample(index, t, tick, true)?;
+        let frame = self.sample_clips(frame, tick)?;
+        Ok(self.layer_order(frame))
+    }
+
+    /// `evaluatedNativeFrame(report, index, t)`: the interval's frame without channels.
+    pub fn native_interval(&self, index: usize, t: f64) -> Result<Value, Error> {
+        self.native(index, t)
     }
 
     /// `evaluatedNativeFrame(report, index, t)` on the document's own keyframes.

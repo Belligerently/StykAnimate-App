@@ -10,6 +10,8 @@
  * threads, and a "packet" is only a ticket: the tick, the frame's camera and
  * backgrounds for the overlay, and a key the stage renderer recognises.
  */
+import {messageError} from '../localized-error.mjs';
+import {planEngineLayerMigration, planEngineInbetweens, planOnInterface, isUnported} from './engine-planning.mjs';
 
 /** Keys of engine packets: the stage renderer draws these with the engine. */
 export const ENGINE_KEY = 'engine:';
@@ -262,18 +264,41 @@ export function createStagePlayback(legacy, {stage}) {
     },
     stageNativeSnapshot(...args) { return engineMode ? false : legacy.stageNativeSnapshot(...args); },
     discardNativeSnapshot() { return legacy.discardNativeSnapshot(); },
-    // Planning jobs still run on the JavaScript mirror: load it only when one is asked for.
-    planLayerMigration(request, options) { return planner().planLayerMigration(request, options); },
-    planInsertInbetweens(request, options) { return planner().planInsertInbetweens(request, options); },
+    // The editor's background planning jobs: on the engine's workers for the document it holds.
+    planLayerMigration(request, options) { return planning('layers', request, options); },
+    planInsertInbetweens(request, options) { return planning('inbetweens', request, options); },
     dispose() {
       pendingHidden = pendingEffects = pendingRequest = null;
       controlLifetime++; retryScheduled = false;
       dropPackets(); return legacy.dispose();
     },
   };
-  const planner = () => {
-    if (engineMode && (legacy.report !== report || legacy.documentRevision !== revision)) legacy.load(report, {revision});
-    return legacy;
+  /**
+   * A planning job for the document the playback holds (the app brings it to the editor's
+   * first). The engine plans it when it holds it and has worker threads; what it does not plan
+   * is planned on the interface in slices, by the editor's own planners.
+   */
+  const planning = async (kind, request, options = {}) => {
+    const document = engineMode ? report : legacy.report;
+    if (!document) {
+      const label = kind === 'layers' ? ['errors.playbackPlanning.layerMigrationLabel', 'layer migration'] : ['errors.playbackPlanning.inbetweenInsertionLabel', 'insert inbetween'];
+      throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value: {messageKey: label[0], diagnosticValue: label[1]}});
+    }
+    if (engineMode) {
+      const planned = report, plannedRevision = revision;
+      // The engine plans what it has acknowledged: wait for the mirror to catch up.
+      while (syncing) await syncing;
+      // A mirror the engine refused (syncError) leaves the plan to the interface, as an unplanned one does.
+      if (engineMode && report === planned && revision === plannedRevision && mirrored()) {
+        const isCurrent = () => engineMode && report === planned && revision === plannedRevision && (options.isCurrent?.() ?? true);
+        try {
+          return await (kind === 'layers' ? planEngineLayerMigration : planEngineInbetweens)(side().engine, plannedRevision, request, {...options, isCurrent});
+        } catch (error) {
+          if (!isUnported(error)) throw error;
+        }
+      }
+    }
+    return planOnInterface(kind, document, request, options);
   };
   return new Proxy(playback, {
     get(target, property) {

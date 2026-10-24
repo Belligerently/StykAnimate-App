@@ -1,8 +1,7 @@
 // Read-only native planning and actual async editor publication oracles (D15).
 import {writeFileSync, mkdirSync} from 'node:fs';
 import {documentOf, limb, open, nextKey} from './fixture-kit.mjs';
-import {planLayerMembershipMigrationSteps} from '../../src/editor-layer-migration.mjs';
-import {migrationPlanPayload} from '../../src/playback-planning.mjs';
+import {planLayerMembershipMigrationSteps, migrationPlanPayload} from '../../src/editor-layer-migration.mjs';
 const out = new URL('../tests/layer-migration/', import.meta.url);
 mkdirSync(out, {recursive: true});
 const json = value => JSON.stringify(value, (key, value) => key === 'runtime_segments' ? undefined : value);

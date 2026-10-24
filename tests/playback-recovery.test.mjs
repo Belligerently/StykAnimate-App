@@ -52,7 +52,6 @@ test('consecutive crashes are bounded per document revision and an edit earns an
       await assert.rejects(request);
     }
     await assert.rejects(cache.prepareRange([0]), /simulated worker crash/);
-    await assert.rejects(cache.planLayerMigration({}), /simulated worker crash/);
     assert.equal(created.length, 3, 'the same revision does not spawn a fourth pool');
     cache.load(report, { revision: 2 });
     await cache.prepareRange([0]); assert.ok(cache.get(0));

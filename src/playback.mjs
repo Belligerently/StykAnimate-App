@@ -5,7 +5,6 @@ import { timeline } from './pivot/geometry.mjs';
 import { documentChunks } from './document-transport.mjs';
 import {nativePlaybackChunks, MAX_NATIVE_PLAYBACK_BYTES} from './playback-native.mjs';
 import { playbackProperties, retainedSourceChanges } from './playback-patch.mjs';
-import {PlaybackPlanner} from './playback-planning.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import {PlaybackBitmapPool,packetFootprint,closePacketBitmaps} from './playback-bitmap-pool.mjs';
 import {playbackMemoryBudget, playbackWorkerMemoryPlan, playbackWorkerCount, playbackWorkerAdmissionBudget, playbackWorkerAdmission} from './playback-budget.mjs';
@@ -58,8 +57,6 @@ export class PlaybackCache {
     if(!(this.maxWorkerBytes>0))throw messageError(new Error(''), "errors.playback.playbackWorkerAllowanceMustBePositive", {});
     this.workers=[];this.workerMemoryPlan=playbackWorkerMemoryPlan(maxBytes);
     this.stats.workerCaches=[];this.stats.workerCacheTotals={};this._resizeWorkers(count);
-    // The primary worker owns one background planning stream across resizes.
-    this.planner = new PlaybackPlanner(this);
   }
   /** Replaces a failed worker pool on its next use. Each document revision gets
    * a bounded number of fresh pools, so a scene that deterministically crashes
@@ -179,8 +176,6 @@ export class PlaybackCache {
       throw messageError(new Error(''), "errors.playback.playbackFrameUpdatesMustReferenceAFrameIn", {});
     return this.updateDocument({frameIndices: [index], revision, loadKind: 'frame'});
   }
-  planLayerMigration(request, options) {return this.planner.planLayerMigration(request, options);}
-  planInsertInbetweens(request, options) {return this.planner.planInsertInbetweens(request, options);}
   _refreshTimeline() {
     const report = this.storedFrames ? storedFrameReport(this.report, {validate: false}) : this.report;
     this.entries = timeline(report); const last = this.entries.at(-1); this.totalTicks = last ? last.start + last.count : 0;
@@ -268,7 +263,6 @@ export class PlaybackCache {
   invalidate({ scale = this.scale, revision = this.documentRevision, cameraEnabled = this.cameraEnabled, storedFrames = this.storedFrames,
     softwareFrames = this.softwareFrames, hiddenUids = this.hiddenUids, hiddenKey = this.hiddenKey, retainDocument = false, retainTicks } = {}) {
     this.discardNativeSnapshot();
-    this.planner.cancel(abortError('Background planning was invalidated by a document or view change.'));
     this._abortLoad(abortError('Playback snapshot was invalidated by a document change.'));
     this.stats.nativeSourceBytes = 0;
     this.revision++; this.scale = scale; this.documentRevision = revision; this.cameraEnabled = cameraEnabled; this.storedFrames = storedFrames;
@@ -531,7 +525,6 @@ export class PlaybackCache {
   }
   _acceptMessage(message, client = this.workers[0]) {
     if (this.disposed || this.failure || this.workers[client.index]!==client || message.revision !== this.revision) { closePacket(message.packet); return; }
-    if (client === this.workers[0] && this.planner.receive(message)) return;
     const loading = client.loadAck;
     if (loading && message.type === loading.responseType && message.sequence === loading.sequence) {
       clearTimeout(loading.timer); client.loadAck = null; loading.resolve(); return;
@@ -615,7 +608,6 @@ export class PlaybackCache {
     this.failure = error; this.stats.failure = error.message;
     this._failures = this._failedRevision === this.documentRevision ? this._failures + 1 : 1; this._failedRevision = this.documentRevision;
     this.diagnostics?.recovery('playback_worker','started');
-    this.planner.cancel(error);
     this._abortLoad(error);
     for (const client of this.workers) client.worker.terminate();
     this.stats.workerCaches.fill(null); this.stats.workerCacheTotals = {};

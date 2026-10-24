@@ -381,6 +381,18 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
+- **Planning jobs on the engine's workers** (2026-10-24): the editor's layer-move and
+  in-between planners run on the engine's worker threads (`src/engine/engine-planning.mjs`,
+  `Engine::plan_layers`, `Engine::plan_inbetweens`); the JavaScript playback worker no longer
+  plans. Open: (1) a layer-sheet document never reaches the layer planner, because the editor
+  plans its moves itself on the interface thread (`prepareSheet`, sliced), so the engine's
+  sheet kernel (`sheet_layer_plan`) is not used by the app; (2) an in-between on a layer sheet,
+  or of authored poses with camera-motion or effect clips, answers `EngineUnported` and is
+  planned on the interface thread in slices (as is any host without worker threads); (3) the
+  browser and Akane runs of `docs/INSERT-INBETWEEN.md` were made with the old worker planner
+  and are not repeated; (4) no recorded tape reaches a background planner (the tapes with layer
+  commands move layers and folders, not figures), so the recordings under `engine/tests/layer-migration`,
+  `layer-sheet-migration` and `inbetween` are the evidence.
 - **Owner gesture mirror reuses `_drag` when a begin replaces an open gesture** (2026-10-24,
   low): `gesture()` keeps the mirrored engine `_drag` object when a `begin*` call commits the
   open gesture and starts another in the same call, so the figure-handle pivot marker and a

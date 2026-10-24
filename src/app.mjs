@@ -6498,13 +6498,16 @@ async function init() {
   });
   installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
   timelineHost.attach(shell);
+  // The editor's background planning jobs run on the engine's workers against the document
+  // synced for them; the editor still checks its own document again before it publishes a plan.
+  const currentDocument = () => { const report = editor.report, revision = editor.revision; return () => editor.report === report && editor.revision === revision; };
   editor.setLayerMigrationPlanner((params, options) => {
     syncPlayback();
-    return playback.planLayerMigration(params, options);
+    return playback.planLayerMigration(params, { ...options, isCurrent: currentDocument() });
   });
   editor.setInbetweenPlanner((params, options) => {
     syncPlayback();
-    return playback.planInsertInbetweens(params, options);
+    return playback.planInsertInbetweens(params, { ...options, isCurrent: currentDocument() });
   });
   cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},getResources:()=>state.renderer?.resources});
   propertyControls = new PropertyControls($("inspector"), {

@@ -18,7 +18,6 @@ import { compileVectorObject, requiresCompatibilityTexture, objectBounds, camera
 import { applyDocumentChunk } from './document-transport.mjs';
 import {MAX_NATIVE_PLAYBACK_BYTES, NATIVE_PLAYBACK_CHUNK_BYTES, materializePlaybackSnapshot} from './playback-native.mjs';
 import { applyPlaybackPatch } from './playback-patch.mjs';
-import {PlaybackPlanningService} from './playback-planning.mjs';
 import {storedFrameReport} from './pivot-frame-draft.mjs';
 import { RasterSurfacePool } from './raster-surfaces.mjs';
 import {ArtworkRegistry} from './render-artwork.mjs';
@@ -526,7 +525,6 @@ export function createPlaybackWorkerEndpoint(postMessage) {
   const artworkRegistry=new ArtworkRegistry();
   const geometryCache=new PlaybackGeometryCache();
   const tweenCache=new PlaybackTweenCache();
-  const planning = new PlaybackPlanningService({snapshot: () => current, postMessage, onIdle: () => {void drain();}});
   const disposeCurrentResources = () => {
     if (!current) return;
     // This endpoint owns its worker realm. End the shared software executor's
@@ -539,7 +537,7 @@ export function createPlaybackWorkerEndpoint(postMessage) {
     if (running) return;
     running = true;
     try {
-      while (queue.length && !planning.busy && !suspended) {
+      while (queue.length && !suspended) {
         const request = queue.shift(), snapshot = current, generation = serial;
         if (!snapshot || request.revision !== snapshot.revision) continue;
         const started=request.queuedAt!==undefined?performance.now():null;
@@ -580,7 +578,6 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       return;
     }
     if(message.type==='interaction'){suspended=Boolean(message.active);if(!suspended)void drain();return;}
-    if (planning.receive(message)) return;
     if (message.type === 'patch-chunk') {
       if (message.revision < latestRevision) return;
       try {
@@ -633,7 +630,6 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       latestRevision = message.revision;
       try {
         if (message.chunk.header) {
-          planning.cancel();
           tweenCache.clear();
           serial++; releaseDelivery(); queue.length = 0; disposeCurrentResources(); current = null;
           incoming = { ...message.options, revision: message.revision, report: applyDocumentChunk(null, message.chunk) };
@@ -690,7 +686,6 @@ export function createPlaybackWorkerEndpoint(postMessage) {
         }
       })();
     } else if (message.type === 'load') {
-      planning.cancel();
       tweenCache.clear();
       serial++; releaseDelivery(); queue.length = 0; disposeCurrentResources();
       latestRevision = message.revision; incoming = null;
@@ -698,7 +693,6 @@ export function createPlaybackWorkerEndpoint(postMessage) {
       postMessage({ type: 'loaded', revision: message.revision });
       warmEffects(current);
     } else if (message.type === 'invalidate') {
-      planning.cancel();
       serial++; releaseDelivery(); latestRevision = message.revision; queue.length = 0; incoming = null; incomingFrames = null; incomingPatch = null;
       tweenCache.clear();
       if (message.retainDocument && current) { current.resources.previewScale = 1; current.resources.previewPressureScale = undefined; current.resources.previewRecovery = null; geometryCache.retainRevision(message.revision);invalidateEvaluationCaches(current.report); current = refreshSampling({ ...current, ...message.options, revision: message.revision }); }
