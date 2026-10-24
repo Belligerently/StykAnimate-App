@@ -22,8 +22,7 @@ function standInStage(behaviour = {}) {
     device_lost: () => behaviour.lost?.() ?? '',
     max_texture: () => 4096,
     refining: () => false, camera_pending: () => false, pictures_pending: () => 0, surface_pending: () => behaviour.pending?.() ?? false,
-    has_ghost: () => false,
-    ...Object.fromEntries(['resize', 'set_effects', 'set_canvas_drawing', 'set_view_orientation', 'set_multisampled', 'edit_frame', 'edit_session', 'edit_ghost', 'lose_device', 'free']
+    ...Object.fromEntries(['resize', 'set_effects', 'set_canvas_drawing', 'set_view_orientation', 'set_multisampled', 'edit_frame', 'edit_session', 'set_onions', 'clear_onions', 'lose_device', 'free']
       .map(name => [name, record(name)])),
     render_edit: (...args) => { calls.push(['render_edit', ...args]); return behaviour.render_edit ? behaviour.render_edit(...args) : true; },
     render_ticket: (...args) => { calls.push(['render_ticket', ...args]); return behaviour.render_ticket ? behaviour.render_ticket(...args) : true; },
@@ -51,7 +50,7 @@ async function open(behaviour = {}, options = {}) {
 const frame = {objects: [], camera: null};
 const report = {};
 const request = (overrides = {}) => ({report, frame, geometry: null, view: {scale: 1, x: 0, y: 0}, revision: 1, artworkRevision: 1,
-  vfxEnabled: true, cameraEnabled: false, hiddenUids: {has: () => false}, onionFrames: [], ...overrides});
+  vfxEnabled: true, cameraEnabled: false, hiddenUids: {has: () => false}, onions: null, ...overrides});
 
 test('an edited frame is drawn by the engine, with or without editor geometry', async () => {
   const {renderer, stage} = await open();
@@ -59,6 +58,19 @@ test('an edited frame is drawn by the engine, with or without editor geometry', 
   const call = stage.calls.find(([name]) => name === 'render_edit');
   assert.ok(call, 'the engine drew the frame');
   assert.equal(renderer.engineSide.stats.frames, 1);
+  renderer.destroy();
+});
+
+test("the onion skins are the session's: the stage is told which, or that there are none", async () => {
+  const {renderer, stage} = await open();
+  const onions = {session: {name: 'session'}, view: '{"tick":3,"frameIndex":0}', request: '{"onionBefore":1}'};
+  assert.equal(renderer.render(request({onions})), true);
+  assert.deepEqual(stage.calls.filter(([name]) => name === 'set_onions' || name === 'clear_onions'), [['set_onions', onions.session, onions.view, onions.request]]);
+  stage.calls.length = 0;
+  assert.equal(renderer.render(request()), true);
+  assert.deepEqual(stage.calls.filter(([name]) => name === 'set_onions' || name === 'clear_onions'), [['clear_onions']]);
+  const [render] = stage.calls.filter(([name]) => name === 'render_edit');
+  assert.equal(render.length, 9, 'the frame is drawn with the skins the stage holds: no list crosses');
   renderer.destroy();
 });
 

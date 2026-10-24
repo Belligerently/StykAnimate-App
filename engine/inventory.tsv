@@ -32,7 +32,7 @@ src/builder-outliner.mjs	ui	-	stays
 src/builder-session.mjs	engine	styk-edit	js	
 src/builder-surface-ui.mjs	ui	-	stays	
 src/camera-bake-authored.mjs	engine	styk-eval::camera	js	
-src/camera-follow.mjs	engine	styk-eval::follow	partial	Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS
+src/camera-follow.mjs	engine	styk-eval::follow	partial	Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS; the inspector's framing offset is styk_eval::follow::framing_offset
 src/camera-monitor.mjs	ui	-	stays	draws through the engine stage/worker; constant-size solid paint with retained foreground; successful paint history follows the actual DOM canvas, preserving resize/undo/source switches; keeps accepted same-view pixels while the shown ticket is cold
 src/camera-motion-bake-client.mjs	engine	styk-eval::camera	removed	deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs)
 src/camera-motion-bake-worker.mjs	engine	styk-eval::camera	removed	deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs)
@@ -85,6 +85,7 @@ src/drawing-clipboard.mjs	engine	styk-drawing	ported	pixel clipboard packet vali
 src/drawing-composite-transport.mjs	engine	styk-drawing	removed	deleted: fills and the magic wand sample the artwork drawn by the engine (src/engine/engine-composite.mjs)
 src/drawing-composite-worker.mjs	engine	styk-drawing	removed	deleted: fills and the magic wand sample the artwork drawn by the engine (src/engine/engine-composite.mjs)
 src/drawing-composite.mjs	engine	styk-drawing	removed	deleted: fills and the magic wand sample the artwork drawn by the engine (src/engine/engine-composite.mjs)
+src/drawing-cel-prefetch.mjs	ui	-	stays	which drawing cels the decode queue loads ahead and which it keeps (moved out of onion-skin.mjs)
 src/drawing-controller.mjs	ui	-	stays	
 src/drawing-fill.mjs	engine	styk-drawing	removed	deleted: fill and wand run in styk-drawing (src/engine/engine-drawing-worker.mjs)
 src/drawing-flatten.mjs	engine	styk-drawing	js	
@@ -255,7 +256,7 @@ src/media-image-worker.mjs	engine	styk-edit	js
 src/message-error-core.mjs	ui	-	stays	
 src/motion-path-controls.mjs	ui	-	stays	
 src/motion-path-falloff.mjs	engine	styk-edit	ported	motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay
-src/motion-path.mjs	engine	styk-eval	js	onion sampling and motion-path projection
+src/motion-path.mjs	ui	-	stays	trails and the pose at a trail point are sampled by styk-edit trails.rs; targets, the held trails, projection, hit testing and drawing stay, and keyTicksForTarget for editor-motion-path.mjs
 src/movieclip-drawings-view.mjs	ui	-	stays	
 src/movieclip-drawings.mjs	engine	styk-eval::movieclips	partial	Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS
 src/movieclip-geometry.mjs	engine	styk-eval::movieclips	partial	Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS
@@ -286,8 +287,8 @@ src/onion-controller.mjs	ui	-	stays
 src/onion-controls.mjs	ui	-	stays	
 src/onion-frame-field.mjs	ui	-	stays	
 src/onion-range-drag.mjs	ui	-	stays	
-src/onion-range.mjs	engine	styk-eval	js	onion sampling and motion-path projection
-src/onion-skin.mjs	engine	styk-eval	partial	onion sampling and motion-path projection. Rust: ghost drawing, tint and order; sampling still JS
+src/onion-range.mjs	ui	-	stays	the range the controls show and the counts the onion request carries (the plan is styk-edit onion_skins.rs)
+src/onion-skin.mjs	engine	styk-edit	removed	deleted: the session plans the onion skins (styk-edit onion_skins.rs) and the stage draws them; the drawing cels' prefetch moved to src/drawing-cel-prefetch.mjs (19636 bytes)
 src/onion-surface-cache.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/onion-timeline-range.mjs	ui	-	stays	
 src/paint.mjs	engine	styk-eval	partial	Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS
@@ -318,7 +319,7 @@ src/playback-resources.mjs	engine	styk-engine::playback	js	worker preparation, p
 src/playback-retention.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/playback-software-painter.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/playback-software-size.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/playback-tween-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
+src/playback-tween-cache.mjs	engine	styk-engine::playback	removed	deleted: only the JavaScript motion-path sampling used it (1243 bytes)
 src/playback-upload.mjs	engine	styk-engine::playback	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/playback-vector-cache.mjs	engine	styk-engine::playback	js	worker preparation, packet caches
 src/playback-window.mjs	engine	styk-engine::playback	js	scheduling, budgets

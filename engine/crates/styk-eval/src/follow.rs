@@ -312,31 +312,7 @@ impl Clip {
     fn measure(&self, tick: f64, canvas: [f64; 2]) -> Sample {
         let frame = self.projection.evaluate_figures(tick);
         let scene = crate::geometry::build_measured(&self.projection.doc, &frame);
-        let (mut cx, mut cy, mut total) = (0.0, 0.0, 0.0);
-        let mut union = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
-        // In the order the editor builds objects: roots by slot, then joined children level by level.
-        for slot in build_order(&frame) {
-            let Some(geometry) = scene.objects.get(slot).filter(|g| g.resolved) else { continue };
-            let Some(&(_, weight)) = self.targets.iter().find(|(uid, _)| *uid == geometry.uid) else { continue };
-            let Some(own) = geometry.extent else { continue };
-            if weight > 0.0 {
-                cx += (own[0] + own[2]) / 2.0 * weight;
-                cy += (own[1] + own[3]) / 2.0 * weight;
-                total += weight;
-            }
-            union = [js_min(union[0], own[0]), js_min(union[1], own[1]), js_max(union[2], own[2]), js_max(union[3], own[3])];
-        }
-        let camera = match frame.camera {
-            Some(c) if !c.is_default => [c.x, c.y, c.scale, c.angle],
-            _ => [0.0, 0.0, 1.0, 0.0],
-        };
-        let found = total > 0.0;
-        Sample {
-            found,
-            center: if found { [cx / total, cy / total] } else { [canvas[0] / 2.0, canvas[1] / 2.0] },
-            size: if found { [union[2] - union[0], union[3] - union[1]] } else { [0.0, 0.0] },
-            camera,
-        }
+        measure_frame(&frame, &scene, &self.targets, canvas)
     }
 
     /// `ShapedPath.target`: the sample aimed at for clip frame `frame` (the look-ahead
@@ -408,6 +384,51 @@ impl Clip {
             path.frames.push([x as f32, y as f32, z as f32]);
         }
     }
+}
+
+/// What the `targets` look like in `frame`, whose `scene` was built by [`crate::geometry::build_measured`].
+fn measure_frame(frame: &crate::eval::Frame, scene: &crate::geometry::Scene, targets: &[(u32, f64)], canvas: [f64; 2]) -> Sample {
+    let (mut cx, mut cy, mut total) = (0.0, 0.0, 0.0);
+    let mut union = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+    // In the order the editor builds objects: roots by slot, then joined children level by level.
+    for slot in build_order(frame) {
+        let Some(geometry) = scene.objects.get(slot).filter(|g| g.resolved) else { continue };
+        let Some(&(_, weight)) = targets.iter().find(|(uid, _)| *uid == geometry.uid) else { continue };
+        let Some(own) = geometry.extent else { continue };
+        if weight > 0.0 {
+            cx += (own[0] + own[2]) / 2.0 * weight;
+            cy += (own[1] + own[3]) / 2.0 * weight;
+            total += weight;
+        }
+        union = [js_min(union[0], own[0]), js_min(union[1], own[1]), js_max(union[2], own[2]), js_max(union[3], own[3])];
+    }
+    let camera = match frame.camera {
+        Some(c) if !c.is_default => [c.x, c.y, c.scale, c.angle],
+        _ => [0.0, 0.0, 1.0, 0.0],
+    };
+    let found = total > 0.0;
+    Sample {
+        found,
+        center: if found { [cx / total, cy / total] } else { [canvas[0] / 2.0, canvas[1] / 2.0] },
+        size: if found { [union[2] - union[0], union[3] - union[1]] } else { [0.0, 0.0] },
+        camera,
+    }
+}
+
+/// `followFramingOffset`: the offset (output pixels, seen through the frame's own camera) that keeps `targets` where they
+/// stand in `frame`, or `None` when none of them with a positive weight is drawn.
+pub fn framing_offset(doc: &Document, frame: &crate::eval::Frame, targets: &[(u32, f64)]) -> Option<[f64; 2]> {
+    let scene = crate::geometry::build_measured(doc, frame);
+    let canvas = [doc.canvas[0] as f64, doc.canvas[1] as f64];
+    let sample = measure_frame(frame, &scene, targets, canvas);
+    if !sample.found {
+        return None;
+    }
+    let [camera_x, camera_y, scale, angle] = sample.camera;
+    let (cos, sin) = (styk_math::cos(angle), styk_math::sin(angle));
+    let dx = sample.center[0] - canvas[0] / 2.0 - camera_x;
+    let dy = sample.center[1] - canvas[1] / 2.0 - camera_y;
+    Some([(cos * dx + sin * dy) / scale, (cos * dy - sin * dx) / scale])
 }
 
 /// Slots in the order the editor builds a frame's objects: every unjoined object by
