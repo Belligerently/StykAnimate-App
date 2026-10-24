@@ -870,6 +870,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   // The editor's own commands record into the session's history, through the entry
   // their call writes back; their bookkeeping (revision, weight) still runs here.
   layer._record = function owned(command) {
+    // A command recorded as the editor comes back to a document (leaving a movieclip) belongs to that document's session.
+    if (!editor._movieclipScopes?.length && depth === 0 && !applying && document !== editor.report) ensure();
     if (!session || document !== editor.report || editor._movieclipScopes?.length) return originals.get('_record').call(this, command);
     const length = this._undo.length;
     originals.get('_record').call(this, command);
@@ -926,8 +928,9 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     const detail = event.detail;
     if (detail?.kind === 'document') {
       report.log?.push(`document ${JSON.stringify(detail).slice(0, 120)} name ${editor.name} at ${Math.round(performance.now())}`);
-      // The session exists from the moment the document opens (or comes back from a tab).
-      if (!applying && depth === 0) ensure();
+      // The session exists from the moment the document opens (or comes back from a tab). A movieclip's own
+      // document, entered for editing, has none: its calls run in the editor and come back as one edit on leaving.
+      if (!applying && depth === 0 && !editor._movieclipScopes?.length) ensure();
     }
     if (!session || document !== editor.report || depth > 0 || applying || !['edit', 'history', 'document'].includes(detail?.kind)) return;
     if (detail.kind === 'document') return;
