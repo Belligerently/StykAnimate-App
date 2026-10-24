@@ -18,23 +18,13 @@
  * (a page that is not cross-origin isolated) or an OffscreenCanvas, the helpers below resolve
  * null and callers keep their JavaScript workers.
  */
-import {engineCpuForced, loadEngine} from './engine.mjs';
+import {loadEngine} from './engine.mjs';
 
 const WORKER_NAME = 'StykAnimate previews (engine)';
 /** How long an idle worker keeps its pictures and thread (the JavaScript thumbnail worker's rest). */
 export const PREVIEW_IDLE_MS = 300000;
 /** How long a worker may take to release the engine memory it holds. */
 const RELEASE_MS = 5000;
-
-/** `?enginePreviews=off` (or the stored setting, or `?engine=off`) keeps the JavaScript workers, for comparisons. */
-export function enginePreviewsEnabled() {
-  try {
-    const params = new URLSearchParams(globalThis.location?.search ?? '');
-    if (params.get('engine') === 'off' || params.get('enginePreviews') === 'off') return false;
-    if (params.get('enginePreviews') === 'on') return true;
-    return globalThis.localStorage?.getItem('stykanimate.engine') !== 'off' && globalThis.localStorage?.getItem('stykanimate.engine.previews') !== 'off';
-  } catch { return true; }
-}
 
 const abortError = () => new DOMException('The preview was superseded.', 'AbortError');
 const settled = request => request?.signal?.removeEventListener('abort', request.onAbort);
@@ -85,7 +75,7 @@ export class EnginePreviewWorker {
     worker.addEventListener('error', event => { event.preventDefault(); fail(event.message || 'The preview worker stopped.', false); });
     worker.addEventListener('messageerror', () => fail('A preview could not be transferred.', false));
     const {module, memory, stack, progress} = this.engine.join;
-    worker.postMessage({operation: 'start', id: 0, module, memory, stack, progress, cpu: engineCpuForced()});
+    worker.postMessage({operation: 'start', id: 0, module, memory, stack, progress});
     return worker;
   }
 
@@ -180,11 +170,11 @@ let shared = null;
 
 /**
  * The page's preview worker, or null where previews keep their JavaScript workers: the
- * engine is off or failed to load, the page has no worker threads (not cross-origin
+ * engine failed to load, the page has no worker threads (not cross-origin
  * isolated), or the browser has no OffscreenCanvas.
  */
 export function enginePreviews() {
-  if (!enginePreviewsEnabled() || typeof Worker !== 'function' || typeof OffscreenCanvas === 'undefined') return Promise.resolve(null);
+  if (typeof Worker !== 'function' || typeof OffscreenCanvas === 'undefined') return Promise.resolve(null);
   return shared ??= loadEngine().then(engine => engine.threaded ? new EnginePreviewWorker(engine) : null, () => null);
 }
 

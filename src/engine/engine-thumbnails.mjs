@@ -26,7 +26,6 @@ import {layerAppearance, thumbnailVisualChange} from '../thumbnail-validity.mjs'
 import {drawingBarrier} from '../drawing-resources.mjs';
 import {engineDocument} from './engine-document.mjs';
 import {enginePreviews} from './engine-previews.mjs';
-import {engineCpuForced} from './engine.mjs';
 
 const abortError = () => new DOMException('The thumbnail was superseded.', 'AbortError');
 /** `_route`'s answer while the app is still creating its stage: the caller asks again later. */
@@ -183,14 +182,14 @@ export class EngineThumbnails {
       await drawingBarrier(report, {signal: controller.signal});
       check();
       // A stage that cannot draw thumbnails needs the preview worker: known before the engine is brought to the revision.
-      if (options.inbetween || engineCpuForced() || this.stage()?.engineSide?.thumbnails === false) await this._cpuReady();
+      if (options.inbetween || this.stage()?.engineSide?.thumbnails === false) await this._cpuReady();
       const reason = this._route(options.inbetween) ?? await engineDocument({stage: this.stage(), playback: this.playback(), report, revision, check});
       check();
       // An edit landed meanwhile: the engine follows it, and the caller asks again.
       if (editor.revision !== revision || editor.report !== report) return false;
       if (reason) return this._fallback(index, canvas, options, reason);
       const started = performance.now(), request = {revision, tick, ...(options.inbetween ? {index, inbetween: options.inbetween} : {}), width: canvas.width, height: canvas.height};
-      const stageless = () => options.inbetween || engineCpuForced() || this.stage().engineSide?.thumbnails === false;
+      const stageless = () => options.inbetween || this.stage().engineSide?.thumbnails === false;
       let result = stageless() ? 'refused' : await this.stage().renderThumbnail(request, canvas, {signal: controller.signal});
       // The stage cannot draw thumbnails on this device: the preview worker draws them on the CPU.
       if (result === 'refused' && stageless()) result = await this._cpu(request, canvas, controller.signal);

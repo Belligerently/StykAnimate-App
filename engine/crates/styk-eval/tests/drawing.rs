@@ -3,7 +3,7 @@
 //! `tests/fixtures/drawlist/drawing-cel.json` holds the largest drawing cel of
 //! `Jay on a new app (repaired).styk` (2,248 × 382 cel pixels at 2 pixels per
 //! unit), one object of it in the middle of the canvas.
-//! `scripts/engine-app-parity.mjs --zoom` compares the pixels with the editor's
+//! The app-parity rule (D13) compared the pixels with the editor's
 //! GPU drawing display at several zoom levels.
 
 use std::path::Path;

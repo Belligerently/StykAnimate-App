@@ -19,11 +19,9 @@ and after), and emit change events the interface listens to.
   records into the same bytes, leaves the same selection and returns the same
   event detail (`kind`, `frameIndices`, `figureIndices`, `sourceIds`,
   `structural`, `definition`, labels).
-- In the app a ported command first runs in **shadow** (below): the JavaScript editor
-  stays in charge and the engine's answer is compared, on real documents and gestures.
-  Ownership of a document moves to the engine in one step once its commands are ported
-  ([D15](decisions/0015-commands-record-for-record.md), revised): adopting records command
-  by command would need two copies of the editor's runtime state kept equal by hand.
+- In the app the engine owns the open document (Phase 3 below,
+  [D15](decisions/0015-commands-record-for-record.md) and [D19](decisions/0019-engine-owns-the-document.md)):
+  ported commands run in its session, and the editor shows what the session answers.
 - Every port is checked by the **command-replay harness**: a scenario (a
   document, editor options, a list of `[method, ...arguments]` steps including
   undo and redo) runs in the JavaScript editor, which records the document
@@ -68,7 +66,7 @@ resources. The corners of sprites and text are placed with `styk-math`'s `sin`, 
 `hypot` (the deltas and camera positions stored from these bounds depend on them); segment
 points come from the evaluation geometry, whose straight-segment ends are single-precision
 (plan section 6). Recorded measurements of any other callback still replay (8,192 samples,
-receiver/UID/tick/range order preserved; only a shadowing facade hands them over); a callback the
+receiver/UID/tick/range order preserved; the recorder hands them over); a callback the
 session is not given as one of these, data where a function is wanted, and the editor's default
 callback refuse or fail as the editor does. The four measured-bounds recordings give the editor's
 documents at every step with the engine measuring, and `picking-bounds` fixtures compare the
@@ -113,8 +111,7 @@ Main check and 1,340 byte-stable fixture JSON. The full warmed default run adopt
 one Split with exact document/history/selection/full undo. Build UI Split/Undo,
 branch scope, repeated sessions and drawing/discard also pass without page errors;
 inspected desktop/compact screenshots use the compatibility renderer, not engine-1
-GPU certification. See the separate
-[command measurement](../performance/RUST-EDITING-COMMANDS.md). Other Session answers
+GPU certification. Other Session answers
 and Rust signatures are unchanged; mobile consumers opting in must read the fields.
 
 ### Ordinary sheet Unique publication (2026-10-05)
@@ -140,8 +137,7 @@ recordings / 79 exact calls, 266 JS tests and Main check. Required-profile shipp
 is 10,257,065 bytes. Actual warmed default UI copies at ticks 2 and 2.25 preserve
 twelve paired document/history/selection/phase boundaries, undo/redo and full undo.
 Both Unique calls have positive Native/adoption clocks without fallback; the
-matched command timing is diagnostic only, not a class-cost gate. See
-[command measurements](../performance/RUST-EDITING-COMMANDS.md).
+matched command timing is diagnostic only, not a class-cost gate.
 
 ### Layer folder publication (2026-10-05)
 
@@ -193,9 +189,7 @@ schema and stored math do not change. Mobile consumers opting in must handle the
 requested null/pair field; the mobile pin remains untouched. Checks pass 238 Rust
 tests, three recordings / 106 exact calls, 263 JS tests and Main check. The actual
 default proof matches all 34 paired boundaries and full undo, including nine
-successful pastes, three duplicates and three expected validation errors. See
-[command measurements](../performance/RUST-EDITING-COMMANDS.md); this does not
-advance a class gate or full-class cost row.
+successful pastes, three duplicates and three expected validation errors.
 
 ### Recorded worker movieclips, history and publication (2026-10-04)
 
@@ -595,96 +589,6 @@ document difference the harness can see):
 - **Audio ripple** (`editor.audioRipple`): inserting or removing frames on every track
   also shifts audio in the editor; the facade runs those in JavaScript while it is on.
 
-## Shadow editing in the app
-
-With `?engineShadow=on` (or `localStorage['stykanimate.engine.shadowEdit'] = 'on'`) every
-ported call the app makes also runs in the engine: `EngineHandle.edit_session` starts
-`styk_edit::session::Session` on the mirrored document with the editor's view and
-counters, `EditSession.call` answers each call as JSON (result, state, events, the
-gesture's draft, and the sheet, layers and pose sources a command published), and
-`src/engine/engine-edit-shadow.mjs` compares that with what the editor did. The editor
-stays in charge; nothing from the engine is applied. A session lives while every change
-to the document goes through calls it shadows; anything else ends it, and the next one
-starts when the mirror holds the editor's revision again. Results accumulate in
-`globalThis.__stykEditShadow`.
-
-With `--exact-math` the driver replaces the page's `Math.sin`, `cos`, `atan2`, `hypot`,
-`asin` and `acos` by the engine's (exported from the WebAssembly binding for this purpose,
-`styk-wasm/src/math.rs`) before the document loads: the editor then computes what Node
-computes, and the comparison is exact. This is how a difference is told from the browser's
-own rounding: on the Kung-Fu Master and Karate Fighter rigs, dragging a free 3D foot
-differed by up to 1.54 rad in 34 angles with Chromium's `Math` (a knee's side decided on a
-nearly degenerate limb) and was identical with the engine's (95 of 95 calls on each rig,
-measured 2026-10-03; also exact: the start-up document 94 of 94, a 3D catalogue scene 74 of
-74, joined 55 of 55, the rigged document 78 of 78, sheet-movieclip-loose 78 of 78). With
-the driver's 3D steps added (a planted knee dragged, a bone twisted with the right button,
-the rig reset), measured the same day: the planted-leg fixture 140 of 140, the Kung-Fu
-Master and Karate Fighter rigs 115 of 115 each, a 3D dojo prop 94 of 94.
-With the driver's property steps (scrubs with their previews, keyed values, the scene's
-colour and background, the figure's outline, an effect's parameter keyed and scrubbed),
-measured 2026-10-04 with the engine's `Math`: the start-up document 211 of 211 calls the same,
-the property calls among them (`beginAnimationEdit` 4, `previewAnimationEdit` 6,
-`commitAnimationEdit` 3, `cancelAnimationEdit` 3, `addAnimationKeys` 2, `setSceneColor`,
-`setBackgroundColor`, `setSceneBackground`, `updateFigureStyle` and `setVfxParameter` 1 each);
-owned editing the same as the editor alone (106,877 bytes, 55 history entries, and after
-undoing everything). The previews are compared: an engine composing a preview with the edit's
-first value instead of its last was caught (2 previews different). On documents saved with
-property channels (the channel fixtures as the app holds them), the same day: `channels-figure`
-184 of 184 calls the same, owned editing the same as the editor alone (70,724 bytes, 46
-history entries, and after undoing everything); `channels-pose` 152 of 152; `channels-vfx`
-184 of 184.
-
-With the driver's motion-path steps (trail points of the figure's origin, a joint and an IK hand
-dragged at another tick, a falloff switched and changed mid-gesture, a cancelled one, and two
-gestures made with the pointer on the shown trail, one with the right button), measured
-2026-10-04 with the engine's `Math`: the start-up document 392 of 392 calls the same, among them
-`beginMotionPathEdit` 8, `updateMotionPathEdit` 33, `commitMotionPathEdit` 7,
-`setMotionPathFalloff` 2 and `cancelMotionPathEdit` 1; owned editing (one round) the same as the
-editor alone (290,090 bytes, 80 history entries, and after undoing everything) with the 7 commits
-adopted, and warmed up (`--warm`) the same again.
-
-`node scripts/engine-edit-shadow.mjs [--file <document.json>]` drives the real app in
-headless Chromium: pointer drags on joint handles and on the origin, keyboard undo and
-redo, transforms, timeline keys and frames, duplicate/join/unjoin/delete, motion-path trail
-points (through the editor, and with the pointer on the shown trail), on a figure with
-3D bones a planted knee, a right-button twist and resetting the rig, and on a rig with pose
-choices another choice. Measured
-2026-10-03 (WebAssembly, SwiftShader), one run each:
-
-| Document | Calls run in the engine | The same as the editor | Different | Editor time | Engine time |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| joined-chain (imported, joined figures) | 77 | 77 | 0 | 57.7 ms | 28.2 ms |
-| sheet-layers (two layers, held key) | 77 | 77 | 0 | 59.9 ms | 30.2 ms |
-| sheet-movieclip-loose (a movieclip) | 77 | 77 | 0 | 62.6 ms | 30.6 ms |
-| sheet-mixed-keys (imported and authored keys) | 77 | 77 | 0 | 57.9 ms | 27.8 ms |
-| the document the app starts with (unpinned IK on every limb) | 77 | 77 | 0 | 174.0 ms | 81.7 ms |
-| startup-pinned (every limb pinned) | 88 | 88 | 0 | 167.1 ms | 100.0 ms |
-| followers (a pinned foot with followers and a polygon) | 88 | 88 | 0 | 181.5 ms | 93.3 ms |
-| joined (IK across four joined figures) | 54 | 54 | 0 | 71.4 ms | 43.9 ms |
-
-"The same" means equal keys, order, strings and integers, and numbers within 1e-9
-relative: 28 to 53 of the 77 calls differ from Chromium's editor in the last digits of a
-pose, because Chromium's `Math` is not Node's ([D16](decisions/0016-v8-exact-math.md)).
-The engine time includes the JSON boundary. The IK documents were measured 2026-10-03
-after IK editing was ported, joined figures included: every call the script makes runs in
-the engine (on joined, two undos reach history from before the session, which ends it and
-starts the next). Their times include a duplicate, join and unjoin that each re-evaluate
-the frame with IK.
-
-### Replaying an app session natively
-
-With `?engineEditCapture=on` (or `localStorage['stykanimate.engine.editCapture'] = 'on'`) the
-facade keeps each session's starting document and state and every call it sends (name,
-arguments and the view, draws included); the first eight sessions to meet an unported call,
-a difference or another error are kept in `__stykEditShadow.captures`, one per reason.
-`node scripts/engine-edit-shadow.mjs … --capture <folder>` writes them as
-`<run>-<n>.capture.json`, and `styk edit-session <file>` replays one in `styk-edit` natively,
-printing each answer's status, so a refusal or difference met in the app can be debugged
-without the browser. The first one found this way (2026-10-04): `setNodeIK` on any figure
-but the first refused with "posing an IK target outside the frame", because the limb was
-captured from the native keyframe, which on a layer sheet holds fewer figures than the frame
-on show (`ik-settings-second-figure-sheet`).
-
 ## Values the editor draws at random (D18)
 
 Commands that draw identities or seeds draw them through `src/editor-draws.mjs`. The recorder
@@ -692,255 +596,8 @@ Commands that draw identities or seeds draw them through `src/editor-draws.mjs`.
 and stores each step's draws as `draws: [[kind, value], …]`; the replay hands them to the
 engine before the step (`Editor::set_draws`), and a port takes them in order and by kind
 (`draw_uuid`, `draw_seed`, `draw_random`), answering `Unported` when it would draw what it was
-not handed. In the app the facade records what the editor drew during its run of the call and
-sends it in the call's view; such calls run in both and are compared, never owned.
-
-## Engine-owned editing in the app
-
-The engine runs ported calls in the editor's place while a session lives (the same
-`src/engine/engine-edit-shadow.mjs`): by default for documents of an editing class in
-`OWNED_CLASSES` (D15: a class flips after exact behavior and the current class-cost
-gate below pass), for every document with `?engineEdit=on` (or
-`localStorage['stykanimate.engine.ownEdit'] = 'on'`), and never with `off`; `?engineShadow=on`
-keeps the editor in charge and compares. `editingClass(report)` names a document's class:
-`unported` for classes whose full editing coverage is not yet established (property
-channels on a native timeline, animation origins, a captured movieclip's own document;
-the engine draws them). Origin whole-figure calls can be compared or forced through the
-recorded whitelist, and the topology calls can be compared in shadow; their class has
-not flipped (D15).
-`channels` for documents whose layer sheet keeps saved property channels (`legacyAnimation`,
-edited since 2026-10-04; not owned by default: on `channels-figure` owned editing cost
-289.3 ms against the editor's 116.9 ms in one run, and large documents are not measured),
-`movieclips` when a
-figure is a movieclip, `3d` when a figure has 3D bones or a mesh,
-`large figures` from 1,000 segments across its figure definitions, else `figures`. The
-calls that change the document
-(the gestures' moves, poses and transforms, `commitDrag`, the layer timeline's keys and
-frames, joining, duplicating and deleting figures) run in the engine only; the editor
-adopts what they produced and does not compute it:
-
-- a gesture's draft: the engine's figures replace the editor's in its draft, and the
-  editor's snapshots take in the figures the engine's gesture took in (`drag` in the
-  answer: their identities and whether the gesture moves whole connected figures);
-- what a call published: `adoptLayerSheet` (src/editor-layer-sheet.mjs) runs the editor's
-  own `publish` on a plan made of the engine's sheet, layers and new pose sources, so
-  validation, layer bookkeeping, events and the history entry are the editor's. The answer
-  carries only the tracks the call replaced (`trackOrder` names them all); the others stay
-  the editor's objects, shared with history as before;
-- a committed gesture's draft stays on show as in `_commitSheetPose`
-  (`_authoredCommitPreview`): the answer carries its figures (`retained`), as the commit
-  leaves them (joined figures' roots refreshed from geometry), in place of the editor's
-  draft or, for a gesture the call began and ended itself, of the frame it showed;
-- the selection, the next figure identity, the live-edit events and a seek the call made.
-
-Owned calls request `changesOnly: true` in the existing session view. The response
-contains only changed COW draft/retained figures and sheet fields, with explicit order,
-removal and retained-frame metadata when needed. The facade reconstructs the publication
-from its current records, preserving untouched identities and runtime movieclip samples.
-Full responses remain the default for shadow comparison and native session consumers;
-public Rust signatures are unchanged. Eighteen recorded families / 483 native calls and
-18 JavaScript adoption tests compare the compact and full paths. The actual origin app
-run adopts 62 calls and compares 65 exactly, with document/history/selection/full undo
-identical. The startup app retry adopts 165 and compares 295 exactly, preserving its
-290,105-byte document, 80 history entries, selection and full undo. This protocol change
-does not open another document class.
-
-Selecting, seeking, starting and cancelling a gesture, and undo and redo run in both and are
-compared as in shadow mode (history stays the editor's). A motion-path gesture's begin, pointer
-moves, falloff changes and cancel run in both too, since the app draws the live trail from the
-editor's session (`motionPathReport`, its display frame); its commit is owned: the editor
-adopts what it publishes and ends its own session (a commit that changed nothing ends it too). Commands the timeline groups into one history entry
-(`movieclipBatch`) run their ported calls through the session, then the batch's own event ends
-it, and undoing the batch ends the next one (history the session did not record); measured
-with the driver's batch step, owned editing still matches the editor alone. A call the engine refuses, or whose
-answer the editor cannot adopt, runs in the editor alone and ends the session; an error runs
-the editor's call so that the editor raises it with its message. If the engine itself fails a call (it
-throws), the editor runs it and engine sessions stop for the rest of the page. In shadow mode the answer's
-unchanged tracks are checked to be the editor's unchanged objects.
-
-`node scripts/engine-edit-shadow.mjs --own [--file <document.json> | --import <file.piv>]`
-runs the same interactions twice, with the editor alone and with the engine owning, and
-compares the documents, the history labels and the selection after them and after undoing
-everything. Numbers may differ in their last digits ([D16](decisions/0016-v8-exact-math.md)):
-the engine computes with Node's `Math`, the browser's editor with Chromium's. Measured
-2026-10-03, headless Chromium:
-
-| Document | Calls adopted from the engine | Same as the editor alone | Numbers differing in last digits |
-| --- | ---: | --- | ---: |
-| the document the app starts with | 54 | yes (32,872 bytes, 13 history entries) | 31 |
-| startup-pinned | 65 | yes | 43 |
-| followers | 65 | yes | 76 |
-| joined (four joined figures with IK) | 39 | yes | 38 |
-| joined-chain | 54 | yes | 50 |
-| sheet-layers | 54 | yes | 80 |
-| sheet-movieclip-loose | 54 | yes | 28 |
-| AyameDemo.piv, imported (48.7 MB document) | 55 | yes (10 history entries) | 996 |
-
-Two adoption defects were found this way and fixed: on AyameDemo the committed draft the
-editor keeps on show was dropped, so the next gesture began from a fresh evaluation
-(another figure slot and keyframe index); on joined-chain the kept draft lacked the joined
-roots the commit refreshes, so the next gesture began with a joined figure 13 px away.
-
-### Which classes the engine edits by default
-
-For `figures`, `movieclips` and `channels`, the full paired cost gate is
-`C <= 1.05 × J` **or** `(C − J) / N <= 0.1 ms`. `C` includes owned/adoption,
-eligible JS fallback and failed attempts once; `J` is editor-alone cost and
-`N = min(candidate.report.calls, editorAlone.report.calls)` for the complete timed
-workload, not only eligible calls. Full report counts may differ; eligible method
-counts and exact document/history/selection/full undo must match. A matching class
-checkpoint and positive actual default pose/move/commit adoption are also required.
-D13 is unchanged. `figures` is owned by default since 2026-10-05, alongside
-`large figures` and `3d`. Its three B14 excess averages are 0.047679/0.067983/0.071809 ms
-per conservative full timed call, passing the absolute-average arm. The committed
-engine checkpoint and final focused gate checks pass. Actual default startup/rig/joined
-runs each report31 owned/15 compared/46 calls with positive Native pose/move/commit
-clocks and exact document/history/selection/full undo; their short timings are admission
-proof only. Movieclips is owned by default on both original layer-sheet inputs. Full costs
-246.210/228.600 and 202.875/176.945 ms candidate/JS pass the same rule at
-0.042332/0.076041 ms excess over 416/341 conservative full calls. The committed
-`379c2dbb` engine checkpoint and 87 focused final gate tests/Main check pass. Actual
-default sheet/loose runs report 18/31 owned and positive Native pose/move/commit clocks
-with exact document/history/selection/full undo; method counts include fallback and
-short smoke timings prove admission only. Playback comparison, worker-only
-conversion/Bake and native/source/origin exclusions remain unchanged. The prior channels full measurement costs 226.105/179.890 ms and 0.133569 ms
-excess per 346 paired full calls fail both user arms despite exact behavior/accounting.
-The measured gap to the per-call arm is 11.615 ms. Focused 129 JS/17 recordings/303
-calls and the matching 39d9 engine checkpoint pass (849 native, two existing ignored,
-64 stages/60 unchanged generators/358 containers). The class patch is unapplied,
-default admission has not run, and native/source/origin exclusions are unchanged. The verified source-sampling fix shares successful imported frames once per source time
-within one layer-sheet sampling call, using the original sampler across scene, camera,
-layers and mixed imported endpoints. The lookup is cleared per call and failed reads
-are not retained; focused count/output controls pass 3→1. This targets channels cost,
-but the fresh full run still fails at 233.630/174.045 ms and 0.172211 ms excess per full
-call, with a 24.985 ms gap to the per-call arm. Exact behavior matches; no causal total
-speed, class opening, default, new checkpoint or API/stored-math/public-state claim.
-The same-layer guard skips only an identical raw active-layer string before report
-copy-on-write. Selection and restoration keep their current preparation/evaluated
-frame; missing, null, nonstring and different IDs retain original writes, events,
-results and history. Both new controls and 226 Rust tests / 53 recordings / 2,060
-exact calls pass, alongside 125 JS tests and Main check. Fresh full cost remains above
-the rule at 224.030/181.885 ms and 0.121806 ms excess/call, leaving 7.545 ms. Channels
-stays closed; no matching new checkpoint/default or causal speed claim. Public APIs
-and stored arithmetic are unchanged.
-
-Source cleanup now ends before history sheet scans when current references or
-flattened history capture IDs already cover every generated source. Otherwise the
-original retention readers and removal order run. Undo/redo, imported sources, frame
-identity and history behavior are unchanged. Both recorded controls and 92 focused
-Rust tests pass, as do 53 recordings / 2,060 exact calls, 125 JS tests and Main check.
-Fresh full cost is 240.965/176.585 ms with 0.186069 ms excess per call, leaving
-29.780 ms to the per-call arm; both cost arms fail. Channels stays closed, with no
-matching new checkpoint/default or causal speed claim. APIs, schema and stored
-arithmetic are unchanged; mobile needs no adaptation.
-
-Successful isolated one-shot move adoption now publishes the original moved authored
-copy-on-write frame and preserves ready or pending scoped geometry. Complex/joined
-fallback, events, document/history/selection/full undo and Rust/Wasm APIs are unchanged.
-All 128 JS tests, Main check and seven recordings / 158 calls pass. The
-original full paired cost is 369.790/352.875 ms, passing both user arms at 4.793% and
-0.048887 ms excess per call. This loaded result establishes no causal speed gain;
-channels remains closed pending matching checkpoint and actual default adoption.
-Channels is owned by default after its original full paired cost, matching committed
-c4c580de engine checkpoint and actual cold default adoption pass. Full cost is
-369.790/352.875 ms, passing both user arms at 4.793% and 0.048887 ms excess per full
-call. The checkpoint passes 856 native tests (two existing ignored), 64 stages and
-358 containers; 132 final JS tests, four recordings / 94 exact calls and Main check
-pass. Cold default classes mode reports 31 owned / 15 compared / 46 calls, positive
-Native pose/move/commit clocks and exact document/history/selection/full undo.
-Method counts include fallback; its short timings prove admission only. Native/source/
-origin exclusions, APIs, stored arithmetic, shipping and D13 are unchanged.
-Historical measurements below retain their original
-rule and outcomes.
-
-`large figures` since 2026-10-03. `node scripts/engine-edit-shadow.mjs --own --default`
-runs the shadow driver's interactions with the editor alone, then with the app as users get
-it; on large figure documents the engine owned every call it could and cost less in total,
-in every run (headless Chromium, the machine under other load, two rounds):
-
-| Document | Calls owned | Editor alone | Engine owning, adoption included | Same document, history and selection |
-| --- | ---: | ---: | ---: | --- |
-| 20 figures of 200 segments | 54 | 163.2 ms, 213.6 ms | 100.1 ms, 175.8 ms | yes |
-| AyameDemo.piv (537 figure definitions, 6,854 segments) | 54 | 946.7 ms, 1,171.2 ms | 757.7 ms, 801.8 ms | yes |
-
-**Earlier figures measurements (class closed at capture):**
-
-`figures` stays with the editor: on the document the app starts with, the same run cost
-87.8 ms owned against 76.8 ms alone, a pose about 0.31 ms in the engine plus 0.49 ms to adopt
-its answer against the editor's 0.58 ms for the whole call (medians of 48 in the app; the
-answer crosses the JSON boundary and the editor's own events and caches still run). Warmed
-up (`--warm`: the interactions once untimed, then timed, since the browser optimizes hot
-WebAssembly after its first calls: session calls measured in one page went from 0.24 to
-0.09–0.13 ms a pose), small figure documents still cost more owned: the start document 66.1
-against 50.5 ms, rig 123.3 against 50.9 ms, joined-chain 75.1 against 46.1 ms (startup-pinned
-95.3 against 260.2 ms). The editor computes a pose of a ten-segment figure in about 0.07 ms;
-the engine's call (0.25–0.35 ms in the app) and the adoption of its answer cannot get below
-that while both editors keep their own bookkeeping, so small documents wait for the engine
-to own the document outright (S5, phases 2 and 3). Running the animation while calling the
-session did not slow the calls (the engine's worker threads do not contend with it).
-
-`3d` flipped on 2026-10-04: with every 3D command and gesture the shadow driver drives ported,
-owned editing was the same as the editor alone and cost less on each 3D document measured
-(`node scripts/engine-edit-shadow.mjs --own --warm --exact-math`, one run each, the machine
-under other load):
-
-| Document | Calls owned | Editor alone | Engine owning, adoption included |
-| --- | ---: | ---: | ---: |
-| a planted 3D leg (ik/spatial) | 97 | 217.6 ms | 101.5 ms |
-| Kung-Fu Master (81 segments, 3D, IK; imported) | 100 | 510.1 ms | 228.9 ms |
-| Hand-Right (3D hand; imported) | 110 | 513.4 ms | 480.3 ms |
-
-With the browser's own `Math` instead of the engine's, an owned 3D pose can differ from the
-editor's by more than its last digits (one angle of the planted leg by 4.6e-6 rad after a
-drag): the 3D solvers iterate on values the browser rounds differently (D16); the engine's
-answer is the same in every browser. `movieclips` stays with the editor: every call the driver
-makes on the movieclip documents now runs in the engine (229 of 229 the same), but these small
-documents cost more owned, as small figure documents do (sheet-movieclip 433.9 ms against
-299.4, sheet-movieclip-loose 528.3 against 337.4, owned the same as the editor alone).
-
-What the same calls cost on AyameDemo.piv (one run each; the editor's time from a shadow
-run, the engine's from an owned run, adoption included). The first measurement found
-`poseJoint` at 200.6 ms; the causes were fixed: a rotation's targets were found with list
-membership tests (quadratic in the figure's 515 segments) and on every call, each angle was
-changed by unpacking and repacking the whole angle array, every evaluation scanned the
-document for 3D, and every call drew the whole frame. Sessions now also start from the
-mirror's prepared document instead of converting it again.
-
-| Call | Calls | Editor | Engine | Adoption |
-| --- | ---: | ---: | ---: | ---: |
-| `poseJoint` (pointer drags) | 36 | 25.3 ms | 56.1 ms | 15.9 ms |
-| `moveSelection` | 3 | 10.2 ms | 17.0 ms | 8.0 ms |
-| `sheetInsertFrames` | 1 | 393.3 ms | 359.6 ms | 70.8 ms |
-| `duplicateFigure`, `joinTo`, `unjoinFigure`, `deleteSelection` | 4 | 365.9 ms | about 100 ms | about 40 ms |
-
-All owned calls together: 899 ms against the editor's 898 ms. Those whole-run totals mix in
-the session's first call (about 6 ms once, while the browser compiles the engine's code to
-its fast tier) and the load of the machine, so the costs were then measured call by call.
-
-`node scripts/engine-edit-cost.mjs <file>...` (headless Chromium, the same document,
-figure and joint): four drags of 15 pointer moves, the first not counted, through an edit
-session as engine-owned editing calls it (the answer parsed) and through the editor (the
-time its change listeners take subtracted: both pay it). Adopting a pose answer adds about
-0.05 ms. Medians, 2026-10-03, after two fixes found this way: publishing a gesture matched
-each key of a layer against every earlier key (quadratic in a layer's keys), and the
-document's typed views re-read every style overlay after each commit (AyameDemo's commit
-was 7.7 ms in WebAssembly, and natively 12.7 to 13.0 ms against 1.5 to 1.7 ms after, in
-interleaved runs of `styk edit-bench`):
-
-| Document | Class | Pose: editor | Pose: engine | Commit: editor | Commit: engine |
-| --- | --- | ---: | ---: | ---: | ---: |
-| the document the app starts with (10 segments, unpinned IK) | figures | 0.325 ms | 0.16 ms | 0.81 ms | 0.22 ms |
-| rig (connectors, angle locks) | figures | 0.19 ms | 0.065 ms | 0.58 ms | 0.115 ms |
-| joined-chain (three joined figures) | figures | 0.22 ms | 0.075 ms | 0.68 ms | 0.185 ms |
-| 20 figures of 200 segments | figures | 0.36 ms | 0.23 ms | 4.02 ms | 1.915 ms |
-| AyameDemo.piv (105 figures, largest 699 segments) | figures | 1.59 ms | 0.835 ms | 3.1 ms | 2.69 ms |
-| a planted 3D leg (ik/spatial) | 3d | 0.855 ms | 0.895 ms | 0.585 ms | 0.195 ms |
-| Kung-Fu Master (81 segments, 3D, IK) | 3d | 1.66 ms | 0.74 ms | 0.5 ms | 0.25 ms |
-| Hand-and-Face Talk and React (6 figures) | 3d | 1.985 ms | 1.31 ms | 0.055 ms | 0.115 ms |
-
-Figures of 10 to 800 segments (synthetic trees, one figure) measured the same way: poses
-0.07 to 0.235 ms in the engine against 0.185 to 0.93 ms, commits 0.11 to 0.44 ms against
-0.52 to 1.36 ms.
+not handed. In the app the owner hands the session a few fresh values of each kind with every
+call (`pool` in `src/engine/engine-owner.mjs`) and keeps the ones the call did not take.
 
 ## What a gesture costs in the engine
 
@@ -958,10 +615,10 @@ report. Native build, one run each while the machine was busy with other work
 | Undo | 6.1 ms | 5.2 ms |
 
 The same tool on AyameDemo as the app holds it after import (its layer sheet, 105 figures
-on show, uid 9043 with 515 segments at tick 734), after the fixes above: a joint-pose step
-median 0.39 ms (8.42 ms before: also the drag's cached rotation targets, as the editor's
-`_drag.rotationTargets`, and the geometry of the posed figure and those it hangs from only,
-`geometry::build_only`), a move step 0.02 ms, commits 5.0–9.0 ms, undo 2.1 ms.
+on show, uid 9043 with 515 segments at tick 734): a joint-pose step median 0.39 ms (8.42 ms
+before the drag cached its rotation targets, as the editor's `_drag.rotationTargets`, and built
+the geometry of the posed figure and those it hangs from only, `geometry::build_only`), a move
+step 0.02 ms, commits 5.0–9.0 ms, undo 2.1 ms.
 
 Not measured: WebAssembly, and the boundary (arguments in, changed records out).
 
@@ -994,8 +651,7 @@ effect-model modules have no callers and are deleted.
 
 Decision [D19](decisions/0019-engine-owns-the-document.md). One `styk-edit` session per
 open document holds the document and its history; `src/engine/engine-owner.mjs` installs
-it on the editor (`?engineOwner=on` while it is verified in the app; the shadow above is
-the default until then).
+it on the editor, for every document.
 
 - **Calls.** Every public editor method except queries, view calls (selecting, seeking)
   and lifecycle runs in the session. Its answer (`patch: true`) carries the document patch
@@ -1091,8 +747,6 @@ and on an owned editor, from the exact document and from the mirror (there with 
 pose cache on every pose), comparing document,
 selection, history and the frame on show after every step and after undoing everything,
 with the session's document compared to the read view after every call.
-`node scripts/engine-app-tape.mjs --owner <tape…>` does the same in the running app, and
-`node scripts/engine-owner-cost.mjs <file>` measures the editing cost rule.
 Known differences: the frame on show may lack the derived `object_count` the editor's
 caches sometimes keep, and the internal `layerRevision` cache key can differ by one around
 source pruning; neither is visible.

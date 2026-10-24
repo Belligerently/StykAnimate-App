@@ -33,7 +33,7 @@ const {materializeDrawingTiles} = await src('drawing-preparation');
 const engineModule = await import(`${rootUrl}/src/engine/engine-drawing.mjs`);
 const {drawingEngineOperation} = await import(`${rootUrl}/src/engine/engine-drawing-worker.mjs`);
 const PRESETS = (await src('drawing-view')).BRUSH_PRESETS;
-if (!await engineModule.loadDrawingEngine({enabled: true})) throw new Error('Build the drawing engine first: npm run engine:build');
+if (!await engineModule.loadDrawingEngine()) throw new Error('Build the drawing engine first: npm run engine:build');
 
 // ---------------------------------------------------------------- inputs
 

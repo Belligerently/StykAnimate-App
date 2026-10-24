@@ -30,11 +30,6 @@ const cancelled = new Set();
 async function start(message) {
   wasm ??= initSync({module: message.module, memory: message.memory, thread_stack_size: message.stack});
   progress ??= new Int32Array(message.memory.buffer, message.progress, 1);
-  if (!previews && message.cpu) {
-    // `?engineCpu=on`: the CPU draws, as without a GPU device.
-    gpuRefusal = 'the CPU rasterizer was asked for';
-    previews = Previews.create_cpu();
-  }
   if (!previews) {
     try {
       canvas = new OffscreenCanvas(SIZE, SIZE);

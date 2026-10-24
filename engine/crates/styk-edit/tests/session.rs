@@ -1,4 +1,4 @@
-//! The session's JSON interface (what `src/engine/engine-edit-shadow.mjs` drives)
+//! The session's JSON interface (what `src/engine/engine-owner.mjs` drives)
 //! answers a recorded scenario as the editor did: state and events at every step,
 //! and the published sheet in the document the editor ended with.
 

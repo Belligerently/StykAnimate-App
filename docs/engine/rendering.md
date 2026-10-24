@@ -233,7 +233,7 @@ screen's density, the engine as the WebGPU renderer does, as for polygon seams a
 generated effects.
 
 **Measured** (2026-10-03, RTX 4070 SUPER, machine shared with other work at a load
-average of 5 to 40). App parity (`scripts/engine-app-parity.mjs`, D13 limits unchanged,
+average of 5 to 40). App parity (the app-parity script, since deleted; D13 limits unchanged,
 onion skins on, 1,440×900 window, Electron under Xvfb with the Linux Vulkan switches),
 the engine on WebGPU against the editor's WebGPU renderer, before (engine-rust at
 `904cad9e`) and after:
@@ -498,8 +498,7 @@ App parity (D13 limits unchanged) on these documents with onion skins and after 
 `deep-seventeen`, `deep-twenty-four`, `frame-draft-add`, `frame-draft-update`,
 `frame-draft-sheet` (also with the draft enabled in the app, `--frame-draft`) and
 `empty-animation`: 14 runs and 120 steps, every one drawn by the engine, no solid pixel, mean
-difference at most 0.049 levels (web) and 0.036 (Electron). `node scripts/engine-app-parity.mjs --file <fixture>.json --deep`
-opens documents nested past the file check. The engine's thumbnail and export document sync
+difference at most 0.049 levels (web) and 0.036 (Electron). The engine's thumbnail and export document sync
 (`engineDocument`) accepted `deep-twenty-four` and `frame-draft-sheet` in the web build, and
 the thumbnail drawn was the engine's.
 
@@ -694,7 +693,7 @@ so edge coverage alone exceeds the app-parity mean (D13).
 
 ### Measured
 
-`scripts/engine-preview-parity.mjs` (2026-10-04, RTX 4070 SUPER, the machine shared with other work
+The preview parity script (since deleted; 2026-10-04, RTX 4070 SUPER, the machine shared with other work
 at load averages 18–23). Electron under Xvfb with `--use-angle=vulkan` (WebGPU on the NVIDIA
 adapter, whose canvases can then be copied); the JavaScript paths in the same page.
 
@@ -719,7 +718,7 @@ movieclips' animated frames by their glow and particles (0.50–2.18, at most 10
 movieclips' posters are blank in both (their clips begin on an empty frame). The fitted bounds of the
 three movieclips' hover animations equal the editor's at every compared tick.
 
-**Camera monitor** against the JavaScript monitor (`?engine=off`, Canvas 2D while paused; one tick
+**Camera monitor** against the JavaScript monitor (Canvas 2D while paused; one tick
 each): the figure-effect fixture passes (0.234); the others fail by the mean (parallax and follow
 fixtures 0.42–0.45, Karate 0.50 with 2 solid pixels, Impact 1.30, Vehicles 6.68 with 27 solid
 pixels, its captions and vehicles drawn from rasters as on the stage).
@@ -768,9 +767,7 @@ never evaluated by asking, the library fit and wrap-around, a file's own picture
 particle), `node --test tests/engine-previews.test.mjs` (which renderer draws a thumbnail, the
 preview worker's CPU thumbnails from the engine's document, the fallbacks, the preview worker's
 queue, messages made when sent, cancellation, failure and release),
-`tests/thumbnail-renderer.browser.mjs` (the JavaScript worker's parallax), and
-`scripts/engine-preview-parity.mjs [--target electron --electron-arg --use-angle=vulkan]
-[--file …] [--library …] [--monitor] [--export-check] [--cpu-check] [--timing]`.
+and `tests/thumbnail-renderer.browser.mjs` (the JavaScript worker's parallax).
 
 ### The CPU paths
 
@@ -782,12 +779,10 @@ workers: thumbnails and library previews in the preview worker (`Previews::thumb
 four waiting, so nothing is drawn ahead). Pictures are the decoded images the engine's workers give
 them, shared rather than copied; the preview worker keeps those of the open document's lineage
 between thumbnails and lets them go with its idle release (five minutes) or a new document; an
-export's go with its worker. `?engineCpu=on` (or `localStorage['stykanimate.engine.cpu'] = 'on'`)
-draws all three on the CPU even where a GPU device exists, as devices without one do, for
-comparisons. Devices whose stage gets no GPU device at all keep the JavaScript thumbnails and
+export's go with its worker. Devices whose stage gets no GPU device at all keep the JavaScript thumbnails and
 exports: the engine then holds no document (library previews still use the CPU there).
 
-**Measured** (`scripts/engine-preview-parity.mjs --cpu-check`, Electron under Xvfb with
+**Measured** (the preview parity script's CPU check, since deleted, Electron under Xvfb with
 `--use-angle=vulkan`, 2026-10-04, load averages 8–18): each engine thumbnail drawn by the stage's
 GPU and again by the preview worker's CPU, each library poster and hover frame by a GPU preview
 worker and a CPU one, and an export frame of each tick at the canvas size by a GPU export worker and
@@ -870,9 +865,7 @@ pipelines) took 400–500 ms in Electron, so the export dialog starts one when i
 within a minute is released. A worker that cannot get a GPU device draws the export with the CPU
 rasterizer instead ([The CPU paths](#the-cpu-paths)). A document the engine does not draw, a page
 without worker threads (not cross-origin isolated) or an engine worker that cannot start the export
-exports with the JavaScript worker, decided before the first frame; an export never mixes the two. `?engineExport=off` (or
-`localStorage['stykanimate.engine.export'] = 'off'`) keeps the JavaScript renderer for
-comparisons.
+exports with the JavaScript worker, decided before the first frame; an export never mixes the two.
 
 **Frames.** `styk_engine::export::ExportFrames` pins the generation of the export's revision
 and evaluates ticks as playback does: effects drawn (exports ignore the editor's effects
@@ -949,7 +942,7 @@ IPC copy of every frame for what WebGPU in a worker already gives.
 
 ### Measured
 
-`scripts/engine-export-parity.mjs` in Electron under Xvfb (`--use-angle=vulkan`, so WebGPU is the
+The export parity script (since deleted) in Electron under Xvfb (`--use-angle=vulkan`, so WebGPU is the
 NVIDIA adapter), 2026-10-03, the machine shared with other work (load averages 1.6–18 during the
 runs; each run notes its own). Frames are the lossless PNGs the APNG, PNG-sequence and native video
 encoders receive.
@@ -1018,7 +1011,7 @@ Load averages 10–18 during the start document's runs, 3–17 during Impact's. 
 process: 1,058–1,164 / 1,044–1,098 MiB and 1,354–1,731 / 1,296–1,672 MiB; GPU memory 233–274 /
 231–236 MiB and 262–490 / 253–314 MiB. Before the dialog started the worker, the start document's
 exports took 0.06–1.2 s longer with the engine than with the JavaScript renderer (worker start
-400–500 ms, now 11–57 ms). The outputs, decoded by `scripts/engine-export-compare.py` (Pillow, the
+400–500 ms, now 11–57 ms). The outputs, decoded by the export comparison script (since deleted; Pillow, the
 bundled FFmpeg), engine against JavaScript, mean |Δ| over all frames (worst frame): the start
 document PNG, PNG sequence, GIF and APNG 0.016, MP4 0.099 (0.100), WebM 0.123 (0.129); Impact PNG
 0.572, PNG sequence and APNG 0.599 (0.669), GIF 1.287 (1.443), MP4 0.983 (1.113), WebM 0.729
@@ -1054,11 +1047,7 @@ frame by D13 with no seam along tile edges, crisp edges without partly covered p
 sprites as the average of a frame drawn twice as large, the black matte);
 `cargo test -p styk-engine --test export`; `cargo test -p styk-render --test glyphs` (crisp
 edges fill no glyph mask); `node --test tests/engine-export.test.mjs`; `styk export <file>
-<ticks> <out> [--size WxH] [--smoothing edges|none|sprites] [--tile N] [--cpu]`;
-`scripts/engine-export-parity.mjs` (frames from both renderers and the stage, timings and memory,
-the app's own exports per format with `--formats`, cancellation and failure with `--cancel` and
-`--integrity`) and `scripts/engine-export-compare.py` (decodes and compares the exports of a
-format).
+<ticks> <out> [--size WxH] [--smoothing edges|none|sprites] [--tile N] [--cpu]`.
 
 `cargo test -p styk-raster` (the target's samples, the rasterization rules, effect windows
 against per-pixel shading; strokes covered by distance, no seams between adjacent triangles,
@@ -1072,6 +1061,4 @@ finer curves for large text; each fails without its rule), `-p styk-render --tes
 (masks draw the glyphs, are kept across frames, give way to triangles past density 8) and
 the `styk-draw` unit test of `GlyphMask::layout`; `styk render` prints the rounds, layer
 memory and glyph masks of a frame; `styk render` / `styk raster` /
-`styk diff` for native comparisons; `scripts/engine-app-parity.mjs` for the
-running app (Electron WebGPU and Chromium WebGL2, several zoom levels,
-[D13](decisions/0013-app-parity-rule.md)).
+`styk diff` for native comparisons ([D13](decisions/0013-app-parity-rule.md)).

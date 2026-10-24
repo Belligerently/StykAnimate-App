@@ -32,8 +32,7 @@ import { Editor } from "./editor.mjs";
 import { worldToScreen, screenToWorld, objectBounds } from "./renderer-geometry.mjs";
 import { createStage } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
-import { installEditShadow, engineEditMode } from "./engine/engine-edit-shadow.mjs";
-import { installEngineOwner, engineOwnerMode, appSessionStart } from "./engine/engine-owner.mjs";
+import { installEngineOwner, appSessionStart } from "./engine/engine-owner.mjs";
 import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
@@ -562,12 +561,8 @@ function syncShell() {
 }
 // The stage: the engine draws every frame of the scene canvas (docs/engine/rendering.md).
 const createRenderer = (surface, options) => createStage(surface, options);
-// Ported editor calls run in the engine for the document classes it edits by default, or
-// for every document, or are compared with the editor's (docs/engine/editing.md).
-const engineEditing = engineEditMode();
-// D19: the engine owns the document (opt-in while it is verified in the app).
-if (engineEditing !== 'off' && engineOwnerMode()) globalThis.__stykEngineOwner = installEngineOwner(editor, {start: appSessionStart(() => state.renderer?.engineSide ?? null)});
-else if (engineEditing !== 'off') installEditShadow(editor, () => state.renderer?.engineSide ?? null, {mode: engineEditing});
+// D19: the engine owns the document (docs/engine/editing.md).
+installEngineOwner(editor, {start: appSessionStart(() => state.renderer?.engineSide ?? null)});
 // Playback is the engine's: the document goes to it once, and a tick is a ticket for a frame it has ready.
 const playback = createStagePlayback({stage: () => state.renderer});
 // Who is hidden is part of each prepared frame, so the engine's frames observe the same

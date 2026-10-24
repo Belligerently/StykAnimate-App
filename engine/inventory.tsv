@@ -79,24 +79,24 @@ src/document-normalize.mjs	engine	styk-formats::service	js	import/export transpo
 src/document-save.mjs	platform	-	stays	file, storage and network services
 src/document-transport.mjs	engine	styk-formats::service	js	import/export transport
 src/drawing-brush-labels.mjs	ui	-	stays	
-src/drawing-brush-textures.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
-src/drawing-brush.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
-src/drawing-clipboard.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-brush-textures.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
+src/drawing-brush.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
+src/drawing-clipboard.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-composite-transport.mjs	engine	styk-drawing	js	
 src/drawing-composite-worker.mjs	engine	styk-drawing	js	
 src/drawing-composite.mjs	engine	styk-drawing	js	
 src/drawing-controller.mjs	ui	-	stays	
-src/drawing-fill.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-fill.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-flatten.mjs	engine	styk-drawing	js	
 src/drawing-gpu.mjs	engine	styk-render::drawing	partial	Rust: committed cel display, exact box levels/tile seams and explicit destination-grid software single-drawing effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes/GPU brush, auxiliary onion/monitor and crisp gaps remain
-src/drawing-history-codec.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-history-codec.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-history-database.mjs	engine	styk-drawing	js	
 src/drawing-history-worker.mjs	engine	styk-drawing	partial	Rust: the history worker encodes undo chunks with styk-drawing; the worker shell is JS
 src/drawing-history.mjs	engine	styk-drawing	js	
-src/drawing-lasso.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-lasso.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-model.mjs	engine	styk-drawing	js	
-src/drawing-pixels.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
-src/drawing-png.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-pixels.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
+src/drawing-png.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-preparation.mjs	engine	styk-drawing	partial	Rust: tile preparation (styk-drawing); its orchestration still JS
 src/drawing-pressure-curve.mjs	ui	-	stays	
 src/drawing-preview-cache.mjs	engine	styk-drawing	js	
@@ -106,19 +106,19 @@ src/drawing-render-dependencies.mjs	engine	styk-drawing	js
 src/drawing-resources.mjs	engine	styk-drawing	js	
 src/drawing-selection.mjs	engine	styk-drawing	partial	Rust: the selection matrix and moving selected pixels (styk-drawing); selection state still JS
 src/drawing-sliders.mjs	ui	-	stays	
-src/drawing-smoother.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
-src/drawing-stroke-engine.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
-src/drawing-stroke-region.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-smoother.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
+src/drawing-stroke-engine.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
+src/drawing-stroke-region.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-stroke-worker.mjs	engine	styk-drawing	partial	Rust: the stroke worker hands its strokes to styk-drawing; the worker shell is JS
-src/drawing-tile-codec.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-tile-codec.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-tile-memory.mjs	engine	styk-drawing	js	
 src/drawing-tiles.mjs	engine	styk-drawing	partial	Rust: the tile store of worker jobs (styk-drawing); the interface thread's store still JS
-src/drawing-transform.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-transform.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-view.mjs	ui	-	stays	
 src/drawing-wet-ink.mjs	engine	styk-drawing	js	
 src/drawing-worker-client.mjs	engine	styk-drawing	js	
-src/drawing-worker-operations.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
-src/drawing-worker-preview.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off
+src/drawing-worker-operations.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
+src/drawing-worker-preview.mjs	engine	styk-drawing	ported	styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load
 src/drawing-worker.mjs	engine	styk-drawing	partial	Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS
 src/editable-scene-preparation.mjs	engine	styk-render	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/editor-animation.mjs	engine	styk-edit	partial	Rust: sheet scalar editing and fractional read-only animation frame/property values; whole stored key times/begins retained, recorded worker-only native x/y property-channel begin/preview/commit/cancel/replace and shown-frame reads match the original TRUE tapes; wider native combinations, key editing and app adoption remain JS

@@ -1,11 +1,11 @@
 import {errorMessageData} from './localized-error.mjs';
 import {materializeDrawingTiles} from './drawing-preparation.mjs';
-import {drawingEngineEnabled,loadDrawingEngine,drawingEngineMemory,drawingEngineGeneration} from './engine/engine-drawing.mjs';
+import {loadDrawingEngine,drawingEngineMemory,drawingEngineGeneration} from './engine/engine-drawing.mjs';
 
 // The drawing raster engine (Rust, src/engine/engine-drawing.mjs) answers every
-// request once this worker has loaded it; without it (the gate is off or the
+// request once this worker has loaded it; without it (the
 // module cannot load) the JavaScript engine below does.
-const engine=loadDrawingEngine({enabled:drawingEngineEnabled(self.location)});
+const engine=loadDrawingEngine();
 let engineOperations=null;
 
 // Preparing a commit needs only the tile kernel. Load codecs, brush/fill and

@@ -67,11 +67,6 @@ async function warm(message) {
   wasm ??= initSync({module: message.module, memory: message.memory, thread_stack_size: message.stack});
   progress ??= new Int32Array(message.memory.buffer, message.progress, 1);
   if (device && !device.usable()) { device.dispose(); device.free(); device = null; }
-  // `?engineCpu=on`: the CPU draws, as without a GPU device.
-  if (message.cpu) {
-    noDevice ??= 'the CPU rasterizer was asked for';
-    if (device) { device.dispose(); device.free(); device = null; }
-  }
   if (!device && !noDevice) {
     try { device = await ExportDevice.create(new OffscreenCanvas(1, 1)); }
     catch (error) { noDevice = String(error?.message ?? error); }

@@ -12,7 +12,7 @@ The app must work at every commit while subsystems move to Rust one at a time.
 
 ## Evidence
 
-The start-up document, the repository's test projects and asset packs, the IK fixtures, the large Pivot files and the documents the gate refused last (frame drafts, movieclips 17 and 24 levels deep, an animation with no keys: [rendering.md](../rendering.md#every-document)) are drawn by the engine and compared with the JavaScript renderers (`scripts/engine-app-parity.mjs`, plan section 7).
+The start-up document, the repository's test projects and asset packs, the IK fixtures, the large Pivot files and the documents the gate refused last (frame drafts, movieclips 17 and 24 levels deep, an animation with no keys: [rendering.md](../rendering.md#every-document)) were drawn by the engine and compared with the JavaScript renderers until the engine became the only stage (plan section 7).
 
 ## Consequences
 
