@@ -2,7 +2,7 @@
 // Records the existing Editor/exportSVG branch before changing Rust export policy.
 import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {repo,emptyDocument,createObject,createFrame,open} from './fixture-kit.mjs';
+import {repo,emptyDocument,createObject,createFrame,open, setDuration} from './fixture-kit.mjs';
 import {createVfx,activeVfx,vfxStack} from '../../src/vfx.mjs';
 import {exportFrameGeometry} from '../../src/export-frame-core.mjs';
 import {hasDrawableVfx} from '../../src/vfx-drawable.mjs';
@@ -21,7 +21,7 @@ const add=(name,editor,ticks=[0])=>fixtures.push({name,editor,ticks});
 add('plain-vector',open(base()));
 const drawing=JSON.parse(readFileSync(`${repo}/engine/crates/styk-eval/tests/fixtures/drawlist/drawing-cel.json`));
 add('plain-drawing',open(drawing));
-const alternating=open(structuredClone(drawing),{propertyChannels:false,layerTimeline:false});alternating.changeVfxStack({kind:'figure',uid:1},s=>s.push(...stack()));alternating.setFrameDuration(2);alternating.duplicateFrame();alternating.selectFrame(1);alternating.changeVfxStack({kind:'figure',uid:1},s=>s.splice(0));add('alternating-drawing',alternating,[0,2,0]);
+const alternating=open(structuredClone(drawing),{propertyChannels:false,layerTimeline:false});alternating.changeVfxStack({kind:'figure',uid:1},s=>s.push(...stack()));setDuration(alternating, 2);alternating.duplicateFrame();alternating.selectFrame(1);alternating.changeVfxStack({kind:'figure',uid:1},s=>s.splice(0));add('alternating-drawing',alternating,[0,2,0]);
 add('figure-filter',saved('figure',stack()));
 add('disabled-filter',saved('figure',stack().map(e=>({...e,enabled:false}))));
 add('neutral-filter',saved('figure',stack('blur',{radius:0})));

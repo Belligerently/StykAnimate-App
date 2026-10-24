@@ -14379,15 +14379,9 @@
     ],
     "context": "if (occupied.has(key.tick)) throw messageError(new Error(''), \"errors.editorAnimation.anotherKeyAlreadyOccupiesThatTimeOnThis\", {});"
   },
-  "errors.editorAnimation.aRestoredPoseNeedsAtLeastOneFrame": {
-    "locations": [
-      "src/editor-animation.mjs:377"
-    ],
-    "context": "if (!Number.isInteger(duration) || duration < 1) throw messageError(new Error(''), \"errors.editorAnimation.aRestoredPoseNeedsAtLeastOneFrame\", {});"
-  },
   "errors.editorAnimation.beginAPropertyEditBeforePreviewingIt": {
     "locations": [
-      "src/editor-animation.mjs:468"
+      "src/editor-animation.mjs:448"
     ],
     "context": "const edit = this._animationEdit; if (!edit) throw messageError(new Error(''), \"errors.editorAnimation.beginAPropertyEditBeforePreviewingIt\", {});"
   },
@@ -14399,7 +14393,7 @@
   },
   "errors.editorAnimation.duplicateKeysByAWholeNumberOfFrames": {
     "locations": [
-      "src/editor-animation.mjs:433"
+      "src/editor-animation.mjs:413"
     ],
     "context": "if (!Number.isInteger(deltaTick)) throw messageError(new Error(''), \"errors.editorAnimation.duplicateKeysByAWholeNumberOfFrames\", {});"
   },
@@ -14429,13 +14423,13 @@
   },
   "errors.editorAnimation.moveKeysByAWholeNumberOfFrames": {
     "locations": [
-      "src/editor-animation.mjs:405"
+      "src/editor-animation.mjs:385"
     ],
     "context": "if (!Number.isInteger(deltaTick)) throw messageError(new Error(''), \"errors.editorAnimation.moveKeysByAWholeNumberOfFrames\", {});"
   },
   "errors.editorAnimation.onlyPoseKeysCanBeHidden": {
     "locations": [
-      "src/editor-animation.mjs:349"
+      "src/editor-animation.mjs:339"
     ],
     "context": "if (channel.property !== 'pose' || typeof patch.hidden !== 'boolean') throw messageError(new Error(''), \"errors.editorAnimation.onlyPoseKeysCanBeHidden\", {});"
   },
@@ -14447,29 +14441,29 @@
   },
   "errors.editorAnimation.theAnimationKeyNoLongerExists": {
     "locations": [
-      "src/editor-animation.mjs:344",
-      "src/editor-animation.mjs:365",
-      "src/editor-animation.mjs:393",
-      "src/editor-animation.mjs:410"
+      "src/editor-animation.mjs:334",
+      "src/editor-animation.mjs:355",
+      "src/editor-animation.mjs:373",
+      "src/editor-animation.mjs:390"
     ],
     "context": "if (!key) throw messageError(new Error(''), \"errors.editorAnimation.theAnimationKeyNoLongerExists\", {});"
   },
   "errors.editorAnimation.theSelectedFigureIsNotPresentAtThis": {
     "locations": [
       "src/editor-animation.mjs:140",
-      "src/editor-animation.mjs:455"
+      "src/editor-animation.mjs:435"
     ],
     "context": "if (raw === undefined) throw messageError(new Error(''), \"errors.editorAnimation.theSelectedFigureIsNotPresentAtThis\", {});"
   },
   "errors.editorAnimation.timingScaleMustBeGreaterThanZero": {
     "locations": [
-      "src/editor-animation.mjs:387"
+      "src/editor-animation.mjs:367"
     ],
     "context": "if (!Number.isFinite(factor) || factor <= 0) throw messageError(new Error(''), \"errors.editorAnimation.timingScaleMustBeGreaterThanZero\", {});"
   },
   "errors.editorAnimation.usePoseKeysToEditALayerPose": {
     "locations": [
-      "src/editor-animation.mjs:452"
+      "src/editor-animation.mjs:432"
     ],
     "context": "if (property === 'pose') throw messageError(new Error(''), \"errors.editorAnimation.usePoseKeysToEditALayerPose\", {});"
   },
@@ -15462,7 +15456,7 @@
   },
   "errors.editorFrameClipboard.theSavedFrameClipboardHasAnUnsupportedFormat": {
     "locations": [
-      "src/editor-frame-clipboard.mjs:262"
+      "src/editor-frame-clipboard.mjs:261"
     ],
     "context": "if (document?._styk?.frameClipboardVersion !== 1) throw messageError(new Error(''), \"errors.editorFrameClipboard.theSavedFrameClipboardHasAnUnsupportedFormat\", "
   },

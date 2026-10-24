@@ -3,7 +3,7 @@
 import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
-import {documentOf, limb, open, joint, nextKey, prune} from './fixture-kit.mjs';
+import {documentOf, limb, open, joint, nextKey, prune, setDuration} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 import {findAnimationChannel, sampleAnimationChannel} from '../../src/animation-channels.mjs';
 const out = new URL('../tests/edit/', import.meta.url);
@@ -30,7 +30,7 @@ function seed(kind) {
     joint(e,22,2);e.setOrigin(22);
   }
   e.select(2);e.joinTo(1,55);
-  nextKey(e,6);e.select(1);e.rotateSelection(.63);e.moveSelection(22,-11);e.select(2);e.scaleSelected(.9);e.setFrameDuration(6);e.seek(0);
+  nextKey(e,6);e.select(1);e.rotateSelection(.63);e.moveSelection(22,-11);e.select(2);e.scaleSelected(.9);setDuration(e, 6);e.seek(0);
   for (const frame of e.report.keyframes) for (const object of frame.objects) {
     if (object._stykAnimationOrigin) {
       object._stykAnimationOrigin.futureNativePivot={retained:[7,2]};

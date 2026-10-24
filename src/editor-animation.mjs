@@ -259,16 +259,6 @@ export const editorAnimationMethods = {
     const visible=animationPropertyValue(this.report,frame,target,property,context(this));
     return exactTarget&&property!=='pose'&&visible!==undefined?(sampleAnimationChannel(findAnimationChannel(this.report,target,property),tick)??visible):visible;
   },
-  nearestAnimationKey(target, property, direction, tick = this.tick, options={}) {
-    const keys = this.animationChannel(target, property,options)?.keys ?? []; let low = 0, high = keys.length;
-    while (low < high) {
-      const mid = (low + high) >>> 1;
-      if (direction < 0 ? keys[mid].tick < tick : keys[mid].tick <= tick) low = mid + 1; else high = mid;
-    }
-    for (let index = direction < 0 ? low - 1 : low; index >= 0 && index < keys.length; index += direction < 0 ? -1 : 1)
-      if (!keys[index].hidden) return keys[index];
-    return null;
-  },
   /** Native descriptors are lazy, so unopened tracks allocate no per-frame keys. */
   nativePoseChannel(target, {nativeOnly = false} = {}) {
     if(this.report._styk?.layerSheet){
@@ -371,16 +361,6 @@ export const editorAnimationMethods = {
         return {changed};
       });
       return draft.changed;
-    });
-  },
-  revealAnimationKey(channelId, keyId, duration = 1) {
-    if (!Number.isInteger(duration) || duration < 1) throw messageError(new Error(''), "errors.editorAnimation.aRestoredPoseNeedsAtLeastOneFrame", {});
-    return mutateAnimation(this, 'Restore hidden pose key', draft => {
-      const channel = draft.channel(channelId), index = channel?.keys.findIndex(key => key.id === keyId);
-      if (!channel || index < 0 || !channel.keys[index].hidden) return false;
-      const tick = channel.keys[index].tick; delete channel.keys[index].hidden;
-      for (let i = index + 1; i < channel.keys.length; i++) channel.keys[i].tick = checkTick(channel.keys[i].tick + duration);
-      checkCollisions(channel.keys); sortKeys(channel.keys); draft.changed = true; return tick;
     });
   },
   scaleAnimationKeys(selection, factor, anchorTick) {

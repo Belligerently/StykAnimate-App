@@ -226,7 +226,6 @@ export const editorFrameClipboardMethods = {
     this._emit('edit', {label: command.label, structural: true, timing: true, animation: Boolean(authored)}); return frames.length;
   },
   appendClipboardFrames() { return this.pasteFrames(this.report.keyframes.length); },
-  insertClipboardFrames(index = this.frameIndex) { return this.pasteFrames(index); },
   _applyFrameClipboardAssets(command, direction) {
     if (applySparseClipboardAssets(this,command,direction)) return;
     if (applyAsyncClipboardCommand(this,command,direction)) return;

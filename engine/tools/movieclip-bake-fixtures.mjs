@@ -2,7 +2,7 @@
 // following the existing publication fixture protocol. No synchronous Promise replay.
 import {fileURLToPath} from 'node:url';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
-import {open,documentOf,writeProject,writeReference} from './fixture-kit.mjs';
+import {open,documentOf,writeProject,writeReference, setDuration} from './fixture-kit.mjs';
 import {createMovieclipMaterializer} from '../../src/movieclip-materialize.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 const folder=fileURLToPath(new URL('../tests/movieclip-bake/',import.meta.url));
@@ -66,7 +66,7 @@ try{
  await write('bake-native-layer-pose-fractional',layerPose,layerCalls);
  await write('bake-native-layer-pose',layerPose,layerCalls.map(call=>call[0]==='seek'&&call[1]===2.25?[call[0],2]:call));
  await write('bake-native-stale',base(false),[['select',2,-1],['bakeMovieclip'],['undo'],['redo']],{stale:true});
- const long=base(false);long.selectFrame(0);long.setFrameDuration(5001);long.select(2);long.setMovieclipPlayback({end:null},{allFrames:true});
+ const long=base(false);long.selectFrame(0);setDuration(long, 5001);long.select(2);long.setMovieclipPlayback({end:null},{allFrames:true});
  await write('bake-native-limit',long,[['select',2,-1],['bakeMovieclip'],['select',1,-1],['bakeMovieclip']],{evaluate:false});
  // These are actual effect-authoring calls. Stored pose stacks and timeline
  // clips have different materialization contracts; record both without folding
@@ -103,7 +103,7 @@ try{
  // limit at tick 4901 (51 x 4902 = 250002). No large publication is attempted.
  const dense=open(documentOf([[[11,0,1,0]]]));for(let i=1;i<51;i++)dense.addFigure(1);
  dense.selectMany(dense.evaluatedFrame.objects.map(object=>object.unique_id));dense.createMovieclip({start:0,end:1});const denseUid=dense.selectedUid;
- dense.selectFrame(0);dense.duplicateFrame();dense.selectFrame(0);dense.setFrameDuration(5000);dense.select(denseUid);dense.placeMovieclip({start:0,end:5000,mode:'loop'});
+ dense.selectFrame(0);dense.duplicateFrame();dense.selectFrame(0);setDuration(dense, 5000);dense.select(denseUid);dense.placeMovieclip({start:0,end:5000,mode:'loop'});
  await write('bake-native-object-limit',dense,[['select',denseUid,-1],['bakeMovieclip'],['undo'],['redo']],{evaluate:false});
  // Preserve the existing two remapper replay sets while capturing their full
  // optional selection, byte history and _record layouts for canonical replay.

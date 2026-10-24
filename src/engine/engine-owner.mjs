@@ -67,7 +67,7 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'getFrameById', 'getFrameId', 'getIKSettings', 'getLayer', 'getLayerFigureUids', 'getLayerFocus', 'getLayerFolders', 'getLayers', 'getSpatialCamera',
   'getSpatialIKPole', 'getSpatialMotion', 'getSpatialPose', 'getSpatialProportions', 'getVfxClips', 'isFigureFocusLocked', 'isLayerFocusLocked',
   'joinedFigureIds', 'layerForUid', 'layerFrameKeys', 'motionPathReport', 'movieclipProjectReport', 'nativePoseChannel', 'nativePropertyChannel',
-  'nearestAnimationKey', 'prepareGeometry', 'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
+  'prepareGeometry', 'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
   'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'previewInbetween', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
   'setFrameClipboardWorker', 'restoreFrameClipboard', 'restoreFrameClipboardAsync', 'setInbetweenPlanner', 'enterMovieclip', 'leaveMovieclip',

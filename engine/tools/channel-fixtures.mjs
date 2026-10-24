@@ -16,7 +16,7 @@
 // compares the engine with both, and checks that each fixture differs without its channels.
 import {mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, repoUrl, Editor, documentOf, limb, open, joint, whole, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, repoUrl, Editor, documentOf, limb, open, joint, whole, nextKey, importBackground, writeProject, writeReference} from './fixture-kit.mjs';
 
 const {animationChannelId} = await import(`${repoUrl}/src/animation-channels.mjs`);
 
@@ -111,7 +111,7 @@ const fixtures = {
     for (const tick of [2, 6, 12]) ease(e, camera, 'x', tick, 'auto');
     ease(e, camera, 'scale', 4, 'constant');
     e.seek(3); e.setSceneColor(0xff204060);
-    e.seek(7); e.importSceneBackground({kind: 2, color: 0xffe0c080, name: 'Warm'});
+    e.seek(7); importBackground(e, {kind: 2, color: 0xffe0c080, name: 'Warm'});
     e.seek(11); e.setSceneColor(0xff80f080);
     return {document: e.serialize(), ticks: every(0, 16), camera: true, scene: true};
   },
