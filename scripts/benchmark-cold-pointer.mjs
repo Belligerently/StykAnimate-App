@@ -20,7 +20,7 @@ try {
   await page.waitForFunction(()=>styk.performance().editingPresentation?.tick===styk.editor.tick);
   const target=await page.evaluate(async()=>{
     const {getPivotHandles,pickCanvasHandle}=await import('/src/canvas-interactions.mjs'),{worldToScreen}=await import('/src/renderer-geometry.mjs');
-    const e=styk.editor,s=styk.state,g=s.renderer.lastGeometry,frame=e.evaluatedFrame;
+    const e=styk.editor,s=styk.state,g=e.geometry,frame=e.evaluatedFrame;
     const children=new Map();for(const o of frame.objects)if(o.join){const slot=o.join.target_object_slot;if(!children.has(slot))children.set(slot,[]);children.get(slot).push(o.object_slot);}
     const subtree=slot=>{const slots=new Set([slot]),queue=[slot];for(let i=0;i<queue.length;i++)for(const child of children.get(queue[i])??[])if(!slots.has(child)){slots.add(child);queue.push(child);}return slots;};
     const group=frame.objects.filter(o=>!o.join).map(o=>subtree(o.object_slot)).sort((a,b)=>b.size-a.size)[0];

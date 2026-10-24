@@ -50,7 +50,7 @@ try {
     const seekPresented=async(name,index)=>{
       const start=performance.now();measure(name,()=>e.selectFrame(index));
       await raf();
-      while(styk.state.editablePreparing||styk.performance().editingPresentation?.tick!==e.tick||styk.performance().editingPresentation?.revision!==e.revision){
+      while(styk.performance().editingPresentation?.tick!==e.tick||styk.performance().editingPresentation?.revision!==e.revision){
         if(performance.now()-start>10000)throw Error('Seek did not present the requested frame.');await raf();
       }
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));

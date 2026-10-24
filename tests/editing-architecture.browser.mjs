@@ -52,7 +52,7 @@ try {
   await page.waitForFunction(()=>styk.performance().editingPresentation?.tick===styk.editor.tick);
   const seek=await page.evaluate(async()=>{
     const {buildGeometry}=await import('/src/pivot/geometry.mjs'),e=styk.editor,r=styk.state.renderer;
-    const before=r.lastGeometry.drawables.map(({obj,fig,...item})=>({...item,obj:obj.unique_id,fig:fig.figure_type_id}));
+    const before=e.geometry.drawables.map(({obj,fig,...item})=>({...item,obj:obj.unique_id,fig:fig.figure_type_id}));
     const expected=buildGeometry(e.report,e.evaluatedFrame).drawables.map(({obj,fig,...item})=>({...item,obj:obj.unique_id,fig:fig.figure_type_id}));
     return {frame:e.frameIndex,exact:JSON.stringify(before)===JSON.stringify(expected),leases:r.rasterCache.leasedBytes??0};
   });
