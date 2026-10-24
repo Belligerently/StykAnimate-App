@@ -261,8 +261,11 @@ fn the_settings_of_a_controller_are_the_defaults_over_what_the_node_has() {
     let longest = node.get("maxLength").and_then(Value::as_f64).unwrap();
     assert!(longest >= 1.0);
     assert_eq!(node.get("chainLength").and_then(Value::as_f64), Some(longest.min(2.0)));
-    // A node of a figure with others joined to it: the controllers act across the assembly, which the editor answers.
+    // A node of a figure with others joined to it: the chain it can have runs across the assembly.
     call(&mut session, "select", "[2,0]");
-    let at = view(&session);
-    assert!(session.query("getIKSettings", "[]", &at).unwrap_err().starts_with(crate::session::UNPORTED));
+    let joined = read(&mut session, "getIKSettings", "[]");
+    let joined = joined.get("v").unwrap();
+    let across = joined.get("maxLength").and_then(Value::as_f64).unwrap();
+    assert!(across >= 1.0);
+    assert_eq!(joined.get("chainLength").and_then(Value::as_f64), Some(across.min(2.0)));
 }

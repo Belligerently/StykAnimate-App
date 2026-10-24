@@ -344,7 +344,7 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   Unchanged: the same geometry object comes back.
 - The values the interface shows of the frame (`animationValue`, `vfxEffects`, `segmentAnimationTarget`,
   `getIKSettings`) are the session's reads too (`Editor::interface_query`, at the editor's whole view): a document the
-  session does not answer them for (one that is not on a layer sheet, a controller of joined figures) is read by the
+  session does not answer them for (one that is not on a layer sheet) is read by the
   editor from the frame and geometry the engine gave it (`unported: …`). The other queries the owner leaves to the editor
   (`animationChannel`, `nativePoseChannel`, `sampleVfxClip`, `getSpatialPose`, `resolveTranslationSelection`, …) read
   records and the engine's frame and geometry; none evaluates a pose at the playhead.
