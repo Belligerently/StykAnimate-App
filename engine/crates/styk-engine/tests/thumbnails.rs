@@ -25,7 +25,8 @@ fn library(path: &str) -> LibraryPreview {
 
 #[test]
 fn a_thumbnail_frame_is_prepared_on_a_worker_and_never_evaluated_on_the_asking_thread() {
-    let file = repository("AssetReleases/Vehicles/Scenes/Vehicles-Pivot-3D.styk");
+    // A project of a 3D mesh (faces in depth runs) in the file the app saves.
+    let file = repository("engine/tests/containers/project-arrays.styk");
     let engine = Engine::new(clock, Budgets::for_device(None));
     engine.open(&std::fs::read(&file).unwrap(), "styk", "test").unwrap();
     let frames = engine.export_frames(0).unwrap();
@@ -40,7 +41,7 @@ fn a_thumbnail_frame_is_prepared_on_a_worker_and_never_evaluated_on_the_asking_t
 
 #[test]
 fn a_library_poster_frames_its_artwork_with_a_margin() {
-    let preview = library("AssetReleases/Vehicles/Pack/Figures/01-sedan.stkz");
+    let preview = library("engine/tests/containers/figure.stkz");
     let (sample, bounds) = preview.poster(clock);
     assert!(sample.drawn && !sample.list.prims.is_empty());
     assert_eq!(sample.bounds, Some(bounds));
@@ -52,6 +53,8 @@ fn a_library_poster_frames_its_artwork_with_a_margin() {
     assert!((centre[0] - 160.0).abs() < 1e-9 && (centre[1] - 160.0).abs() < 1e-9);
     // No background: the list fills nothing but the artwork.
     assert!(sample.list.prims.iter().take(sample.list.background_prims as usize).all(|p| p.color >> 24 == 0), "the background is transparent");
+    // Records are stored by depth, so a mesh's depth runs may come before the background: look at every fill.
+    assert!(sample.list.prims.iter().filter(|p| p.kind & 255 == styk_draw::K_FILL_VIEW).all(|p| p.color >> 24 == 0), "no record fills the view with a colour");
     let f = fitted([10.0, 20.0, 100.0, 50.0], 320);
     assert_eq!(f.matrix[0], 2.88);
     assert_eq!(styk_eval::view::apply(f.matrix, [60.0, 45.0]), [160.0, 160.0]);
@@ -59,26 +62,29 @@ fn a_library_poster_frames_its_artwork_with_a_margin() {
 
 #[test]
 fn a_library_animation_keeps_a_stable_fit_and_wraps() {
-    let mut preview = library("AssetReleases/Impact-FX/Pack/Movieclips/12-hit-spark-fan.stykmov");
-    assert!(preview.duration > 1.0, "a movieclip lasts its own duration ({})", preview.duration);
-    let samples = preview.begin(clock);
-    assert!(!samples.is_empty() && samples.len() <= SAMPLES as usize);
-    let union = samples.iter().fold(None::<[f64; 4]>, |acc, (_, b)| Some(match acc {
-        None => *b,
-        Some(a) => {
-            let (x0, y0) = (a[0].min(b[0]), a[1].min(b[1]));
-            [x0, y0, (a[0] + a[2]).max(b[0] + b[2]) - x0, (a[1] + a[3]).max(b[1] + b[3]) - y0]
-        }
-    }));
-    let (first, bounds, tick) = preview.frame(0.0, clock);
-    assert_eq!(tick, 0.0);
-    assert!(first.drawn);
-    let u = union.unwrap();
-    assert!(bounds[0] <= u[0] && bounds[1] <= u[1] && bounds[2] >= u[2] && bounds[3] >= u[3], "the fit holds every sample");
-    let period = preview.duration / preview.fps;
-    let (_, later, wrapped) = preview.frame(period + 0.5 / preview.fps, clock);
-    assert!(wrapped < preview.duration, "tick {wrapped} wraps around {}", preview.duration);
-    assert!(later[2] >= bounds[2] && later[3] >= bounds[3], "the fit only grows");
+    // Generated effects growing through a clip, and a figure swinging out and back (the widest bounds are mid-clip).
+    for path in ["engine/tests/containers/movieclip-effects.stykmov", "engine/tests/containers/movieclip-motion.stykmov"] {
+        let mut preview = library(path);
+        assert!(preview.duration > 1.0, "{path}: a movieclip lasts its own duration ({})", preview.duration);
+        let samples = preview.begin(clock);
+        assert!(!samples.is_empty() && samples.len() <= SAMPLES as usize);
+        let union = samples.iter().fold(None::<[f64; 4]>, |acc, (_, b)| Some(match acc {
+            None => *b,
+            Some(a) => {
+                let (x0, y0) = (a[0].min(b[0]), a[1].min(b[1]));
+                [x0, y0, (a[0] + a[2]).max(b[0] + b[2]) - x0, (a[1] + a[3]).max(b[1] + b[3]) - y0]
+            }
+        }));
+        let (first, bounds, tick) = preview.frame(0.0, clock);
+        assert_eq!(tick, 0.0);
+        assert!(first.drawn);
+        let u = union.unwrap();
+        assert!(bounds[0] <= u[0] && bounds[1] <= u[1] && bounds[2] >= u[2] && bounds[3] >= u[3], "{path}: the fit holds every sample");
+        let period = preview.duration / preview.fps;
+        let (_, later, wrapped) = preview.frame(period + 0.5 / preview.fps, clock);
+        assert!(wrapped < preview.duration, "{path}: tick {wrapped} wraps around {}", preview.duration);
+        assert!(later[2] >= bounds[2] && later[3] >= bounds[3], "{path}: the fit only grows");
+    }
 }
 
 #[test]

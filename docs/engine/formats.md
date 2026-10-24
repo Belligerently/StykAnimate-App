@@ -29,6 +29,12 @@ the bytes of every save, and 1,760 damaged copies: [the plan](../RUST-ENGINE-POR
 Repository files are checked by `npm run engine:parity`:
 `engine/tools/container-parity.mjs` compares the document the app's open path
 produces with the store's reader, and the bytes its save path writes with the file.
+The repository's own native files are `engine/tests/containers` (a version 1 project, version 2
+projects with array, shared-array and payload sections, a drawing, an image, a figure and two
+movieclips; [its README](../../engine/tests/containers/README.md)), written from fixture documents by
+`engine/tools/container-fixtures.mjs` through the app's save path; the same stage regenerates them and
+fails when a file changes or when it finds no native file to compare. Engine tests that need a figure or
+movieclip file (`styk-engine`'s library previews) open these, not the local asset packs.
 
 ## Opening and saving for the app's workers
 

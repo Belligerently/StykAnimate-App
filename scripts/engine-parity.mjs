@@ -107,6 +107,10 @@ run('typed pairing fixtures regenerate unchanged', process.execPath,
     check: () => unchanged('engine/tests/typed-pairing')});
 
 // Containers: every native file in the repository, read and written again by the app's path against the Rust store.
+// The repository's own are engine/tests/containers (container-fixtures.mjs writes them through the app's save path,
+// byte-stable); files of the local asset packs and artifacts are compared too where they exist.
+run('container fixtures regenerate unchanged', process.execPath, ['engine/tools/container-fixtures.mjs'], {quiet: true,
+  check: () => unchanged('engine/tests/containers')});
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});
 // Complete-return recordings identify the admitted live-worker pairs; async
 // preflight tapes have no admitted return recording and remain explicit guards.
@@ -123,14 +127,14 @@ const walk = dir => {
     else if (/\.(styk|stkz|stykmov)$/i.test(entry.name) && statSync(path.join(root, relative)).size < 64 * 1024 * 1024) natives.push(path.join(root, relative));
   }
 };
-for (const dir of ['artifacts', 'AssetReleases', 'tests', 'assets']) if (existsSync(path.join(root, dir))) walk(dir);
+for (const dir of ['artifacts', 'AssetReleases', 'tests', 'assets', 'engine/tests/containers']) if (existsSync(path.join(root, dir))) walk(dir);
 const temp = mkdtempSync(path.join(os.tmpdir(), 'styk-parity-'));
 try {
   const list = path.join(temp, 'native-files.txt');
   writeFileSync(list, natives.join('\n') + '\n');
-  // The repository holds no native files since its asset packs left: nothing to compare is not a failure.
+  // A stage that compares nothing must not pass: engine/tests/containers always holds files.
   if (natives.length) run(`containers (${natives.length} repository files)`, process.execPath, ['engine/tools/container-parity.mjs', list], {quiet: true});
-  else results.push({name: 'containers (no native files in the repository)', ok: true, seconds: 0});
+  else results.push({name: 'containers (no native files found)', ok: false, seconds: 0});
 } finally { rmSync(temp, {recursive: true, force: true}); }
 
 if (args.has('--corpus')) {

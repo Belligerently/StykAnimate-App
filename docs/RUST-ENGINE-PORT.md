@@ -259,6 +259,7 @@ tolerance the current export tests use.
 | `engine/tools/reference.mjs` + `styk compare` | geometry, primitive by primitive, against the JS editor |
 | `engine/tools/reference-render.mjs` + `styk diff` | pixels against the app's renderer |
 | `engine/tools/container-parity.mjs` | the document the app's open path produces against the Rust store's reader (`styk container json`), and the bytes the app's save path writes against the file (`styk container roundtrip` does the same in the store); the JavaScript reader it was checked against is deleted |
+| `engine/tools/container-fixtures.mjs` → `engine/tests/containers` | the repository's native files (projects of versions 1 and 2 with every section kind, a figure, movieclips), written from fixture documents through the app's save path; regeneration is byte-stable and the parity container stage compares them. No engine test reads the local asset packs |
 | `engine/tools/ik-fixtures.mjs`, `engine/tools/eval-fixtures.mjs` → `cargo test -p styk-eval` | small projects the editor builds with its own commands, and what it evaluates (IK, movieclip replacements); regeneration is byte-stable |
 | `scripts/engine-app-parity.mjs` | the running app with and without the engine (`?engine=off`): stage pixels per tick, with onion skins and after playback |
 | `styk edit-replay --worker <reference.json>` | recorded worker-only native/sheet commands through the same strict every-step comparator |

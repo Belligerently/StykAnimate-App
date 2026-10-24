@@ -130,8 +130,13 @@ fn tiles_draw_the_pixels_of_the_whole_frame() {
         eprintln!("skipped: no GPU adapter");
         return;
     };
-    // Effects, generated effects and captions; 3D faces and text; scene effects through the camera.
-    for (path, tick) in [("AssetReleases/Impact-FX/Scenes/Impact-FX-Fight.styk", 185), ("AssetReleases/Vehicles/Scenes/Vehicles-Pivot-3D.styk", 3), ("engine/crates/styk-eval/tests/fixtures/vfx/scene-clips.json", 6)] {
+    // Generated effects; 3D faces; text; scene effects through the camera.
+    for (path, tick) in [
+        ("engine/crates/styk-eval/tests/fixtures/generators/explosions.json", 9),
+        ("engine/crates/styk-eval/tests/fixtures/spatial/mesh-instances.json", 1),
+        ("engine/crates/styk-eval/tests/fixtures/drawlist/outlined-text.json", 0),
+        ("engine/crates/styk-eval/tests/fixtures/vfx/scene-clips.json", 6),
+    ] {
         for smoothing in [Smoothing::Edges, Smoothing::Sprites] {
             let settings = Settings::new(1280, 720, smoothing, MAX_PIXELS).unwrap();
             let (whole, one) = export(&gpu, &open(path).1, settings, styk_export::TILE_SIDE, tick, false);
@@ -181,30 +186,32 @@ fn smooth_sprites_average_a_frame_drawn_twice_as_large() {
         eprintln!("skipped: no GPU adapter");
         return;
     };
-    let path = "AssetReleases/Impact-FX/Scenes/Impact-FX-Fight.styk";
-    let (_engine, frames) = open(path);
-    let (sprites, _) = export(&gpu, &frames, Settings::new(640, 360, Smoothing::Sprites, MAX_PIXELS).unwrap(), styk_export::TILE_SIDE, 30, false);
-    let (_engine, frames) = open(path);
-    let (large, _) = export(&gpu, &frames, Settings::new(1280, 720, Smoothing::Edges, MAX_PIXELS).unwrap(), styk_export::TILE_SIDE, 30, false);
-    // The large frame's straight pixels, premultiplied again and averaged by the JavaScript rule.
-    let mut expected = vec![0u8; 640 * 360 * 4];
-    for y in 0..360 {
-        for x in 0..640 {
-            let at = |dx: usize, dy: usize| &large[((2 * y + dy) * 1280 + 2 * x + dx) * 4..][..4];
-            let block = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
-            let alpha: f64 = block.iter().map(|p| p[3] as f64).sum();
-            let out = &mut expected[(y * 640 + x) * 4..][..4];
-            out[3] = (alpha / 4.0).round() as u8;
-            if alpha > 0.0 {
-                for c in 0..3 {
-                    out[c] = (block.iter().map(|p| p[c] as f64 * p[3] as f64).sum::<f64>() / alpha).round() as u8;
+    // Sprites of generated effects, and additive, translucent particles.
+    for (path, tick) in [("engine/crates/styk-eval/tests/fixtures/generators/smoke.json", 12), ("engine/crates/styk-eval/tests/fixtures/generators/explosions.json", 9)] {
+        let (_engine, frames) = open(path);
+        let (sprites, _) = export(&gpu, &frames, Settings::new(640, 360, Smoothing::Sprites, MAX_PIXELS).unwrap(), styk_export::TILE_SIDE, tick, false);
+        let (_engine, frames) = open(path);
+        let (large, _) = export(&gpu, &frames, Settings::new(1280, 720, Smoothing::Edges, MAX_PIXELS).unwrap(), styk_export::TILE_SIDE, tick, false);
+        // The large frame's straight pixels, premultiplied again and averaged by the JavaScript rule.
+        let mut expected = vec![0u8; 640 * 360 * 4];
+        for y in 0..360 {
+            for x in 0..640 {
+                let at = |dx: usize, dy: usize| &large[((2 * y + dy) * 1280 + 2 * x + dx) * 4..][..4];
+                let block = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
+                let alpha: f64 = block.iter().map(|p| p[3] as f64).sum();
+                let out = &mut expected[(y * 640 + x) * 4..][..4];
+                out[3] = (alpha / 4.0).round() as u8;
+                if alpha > 0.0 {
+                    for c in 0..3 {
+                        out[c] = (block.iter().map(|p| p[c] as f64 * p[3] as f64).sum::<f64>() / alpha).round() as u8;
+                    }
                 }
             }
         }
+        // Unpremultiplied once more in the large frame, a translucent colour moves by a level.
+        let (count, largest) = differing(&sprites, &expected);
+        assert!(largest <= 1, "{path}: {count} pixels differ by up to {largest}");
     }
-    // Unpremultiplied once more in the large frame, a translucent colour moves by a level.
-    let (count, largest) = differing(&sprites, &expected);
-    assert!(largest <= 1, "{count} pixels differ by up to {largest}");
 }
 
 #[test]
