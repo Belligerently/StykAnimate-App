@@ -221,7 +221,7 @@ test('the tweener pushes a 3D figure past the pose it began with', {skip: !engin
   near([shown().root_x, shown().root_y], [x, y], 'amount 0 is the pose it began with');
   assert.ok(Math.abs(shown()._stykSpatial.camera.strength - 0.65) < 1e-9);
   assert.equal(editor.cancelDrag(), true);
-  assert.deepEqual(owner.editor, {setSpatialCamera: 3}, 'only the perspective settings ran in the editor, the tween in the session');
+  assert.equal(owner.fallback, 0, 'no call ran in the editor: the perspective settings and the tween ran in the session');
 });
 
 test('movieclipBatch groups what its operation does into one entry and undoes all of it when it fails', {skip: !engineBuilt}, async () => {

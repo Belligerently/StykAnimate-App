@@ -20,7 +20,7 @@ fn object_at<'a>(objects: &'a [Value], slot: V) -> V<'a> {
 }
 
 /// `projectedDrawing(objects, object, figures)` (src/spatial-projection.mjs).
-fn projected_drawing(objects: &[Value], object: &Value, figures: &[Value]) -> bool {
+pub(crate) fn projected_drawing(objects: &[Value], object: &Value, figures: &[Value]) -> bool {
     let figure = |id: V| figures.iter().find(|f| f.get("figure_type_id") == id && id.is_some());
     let parent = object_at(objects, path(Some(object), &["join", "target_object_slot"]));
     let clip = figure(object.get("figure_type_id")).and_then(|f| movieclip::asset(f));

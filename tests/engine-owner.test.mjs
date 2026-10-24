@@ -19,6 +19,8 @@ import {ownedEditor} from './support/owned-editor.mjs';
 import {recordedBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
 
 const folder = new URL('../engine/tests/edit/', import.meta.url);
+/** Recordings of commands the session took over from the editor (the same format as the tapes in `folder`). */
+const otherFolders = ['movieclip-sheet-extension'].map(name => new URL(`../engine/tests/${name}/`, import.meta.url));
 const json = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' || key === '_movieclipSample' ? undefined : item);
 const frameText = frame => { const {object_count, ...rest} = frame ?? {}; return json(rest); };
 const state = editor => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null,
@@ -71,7 +73,7 @@ const same = (actual, wanted, message) => {
   const differing = Object.keys(wanted).filter(key => JSON.stringify(actual[key]) !== JSON.stringify(wanted[key]));
   if (differing.length) assert.fail(`${message}: ${differing.map(key => `${key} ${JSON.stringify(actual[key])} (wanted ${JSON.stringify(wanted[key])})`).join(', ')}`);
 };
-const scenarios = readdirSync(folder).filter(name => name.endsWith('.scenario.json') && (!process.env.OWNER_TAPE || name.startsWith(`${process.env.OWNER_TAPE}.`))).sort();
+const scenarios = [folder, ...otherFolders].flatMap(where => readdirSync(where).filter(name => name.endsWith('.scenario.json') && (!process.env.OWNER_TAPE || name.startsWith(`${process.env.OWNER_TAPE}.`))).sort().map(name => ({where, name})));
 // Legacy Pivot poses carry an empty `runtime_segments` cache (styk-piv's legacy decoder):
 // the same tapes with it on every pose.
 const withCache = document => {
@@ -126,11 +128,11 @@ for (const {legacy} of variants) test(`the engine owning the document gives what
   let tapes = 0, steps = 0, native = 0, fallback = 0;
   const editorCalls = {}, refusedCalls = {}, frontiers = {}, unnamedErrors = {};
   const failures = [];
-  for (const name of scenarios) {
-    const scenario = JSON.parse(readFileSync(new URL(name, folder), 'utf8'));
+  for (const {where, name} of scenarios) {
+    const scenario = JSON.parse(readFileSync(new URL(name, where), 'utf8'));
     if (!supported(scenario)) continue;
-    const reference = JSON.parse(readFileSync(new URL(name.replace('.scenario.json', '.reference.json'), folder), 'utf8'));
-    const loaded = typeof scenario.document === 'string' ? JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8')) : scenario.document;
+    const reference = JSON.parse(readFileSync(new URL(name.replace('.scenario.json', '.reference.json'), where), 'utf8'));
+    const loaded = typeof scenario.document === 'string' ? JSON.parse(readFileSync(new URL(scenario.document, where), 'utf8')) : scenario.document;
     const document = legacy ? withCache(loaded) : loaded;
     const options = {demo: false, ...scenario.editor};
     let made;

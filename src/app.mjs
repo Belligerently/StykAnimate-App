@@ -3512,7 +3512,7 @@ async function importMediaFile(
       return false;
     finishCurrentEdit();
     if (editor.report !== destination) return false;
-    if (background) editor.importBackground(media);
+    if (background) editor.importSceneBackground(media);
     else editor.importFigure(media);
     notify(interfaceText("app.imported2", {name: file.name}), "app.imported2", {name: file.name});
     return true;

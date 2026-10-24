@@ -62,7 +62,7 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'previewInbetween', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
   'setFrameClipboardWorker', 'setInbetweenPlanner', 'setLayerMigrationPlanner', 'enterMovieclip', 'leaveMovieclip',
-  'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'undo', 'redo', 'constructor']);
+  'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'touch', 'sheetEditTimes', 'undo', 'redo', 'constructor']);
 
 /** The editor's public methods the owner routes: everything but queries and view calls. */
 export function ownedMethods(editor) {

@@ -58,6 +58,7 @@ mod record;
 pub mod replay;
 mod rig_behavior;
 mod rig_drag;
+mod scene_backgrounds;
 mod select;
 pub mod session;
 mod sheet;
@@ -65,6 +66,7 @@ mod sheet_clipboard;
 mod sheet_frames;
 mod spatial;
 mod spatial_ik;
+mod spatial_shape;
 mod timeline;
 mod topology;
 mod transform;
@@ -899,6 +901,11 @@ impl Editor {
             "slideConnector" => self.slide_selected_connector(number(0), number(1)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "importSceneBackground" => self.import_scene_background(&arg(0), &arg(1)),
+            "renameSceneBackground" => self.rename_scene_background(&arg(0), &arg(1)).map(Value::Bool),
+            "setSpatialCamera" => self.set_spatial_camera(&arg(0)).map(Value::Bool),
+            "setSpatialProportions" => self.set_spatial_proportions(&arg(0)).map(Value::Bool),
+            "resetSpatialProportions" => self.reset_spatial_proportions().map(Value::Bool),
             "setAudioTrack" => self.set_audio_track(&arg(0), &arg(1)).map(Value::Bool),
             "deleteAudioTrack" => self.delete_audio_track(&arg(0)).map(Value::Bool),
             "addAudioTrack" => self.add_audio_track(args.first()),
@@ -934,7 +941,10 @@ impl Editor {
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
-            "addMovieclipToNextKeyframes" if !self.sheet() => self.extend_native_movieclip(number(0)),
+            "addMovieclipToNextKeyframes" if self.sheet() => self.inline_timeline(|editor, worker| editor.extend_sheet_movieclip(number(0), worker)),
+            "addMovieclipToNextKeyframes" => self.extend_native_movieclip(number(0)),
+            "setFrameDuration" if self.sheet() => self.sheet_set_duration(number(0), &Value::Null, &Value::Null).map(Value::Bool),
+            "setFrameDuration" => Err(EditError::Unported("setFrameDuration on a native timeline".into())),
             "addFigure" => self.add_figure((!args.is_empty()).then(|| arg(0)).as_ref()),
             "renameLayer" => self.rename_layer_publication(&arg(0), &arg(1), publication).map(Value::Bool),
             "setLayerColor" => self.set_layer_color(&arg(0), &arg(1), publication).map(Value::Bool),
