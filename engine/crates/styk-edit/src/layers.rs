@@ -58,7 +58,7 @@ fn removed_json(value: &Option<Value>) -> String {
 }
 
 /// `createLayerState()`.
-fn created_state() -> Value {
+pub(crate) fn created_state() -> Value {
     let flags = || {
         let mut flags = Obj::new();
         flags.set("visible", Value::Bool(true));

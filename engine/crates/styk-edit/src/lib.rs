@@ -30,6 +30,7 @@ mod ik;
 mod ik_settings;
 mod layers;
 pub mod inbetween_planning;
+pub mod load;
 pub mod layer_planning;
 pub mod movieclip_planning;
 mod history_weight;

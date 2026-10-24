@@ -78,7 +78,7 @@ fn validate_targets(targets: Option<&Value>) -> Result<(), EditError> {
 }
 
 /// `validateCameraMotion(state)`.
-fn validate(state: &Value) -> Result<(), EditError> {
+pub(crate) fn validate(state: &Value) -> Result<(), EditError> {
     let clips: Vec<Value> = state.get("clips").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
     if state.get("version").and_then(Value::as_f64) != Some(1.0) || state.get("clips").and_then(Value::elements).is_none() || clips.len() > CLIP_LIMIT {
         return Err(invalid("errors.cameraMotion.invalidCameraMotionTableMaximum256Clips"));

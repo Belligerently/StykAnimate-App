@@ -11,3 +11,6 @@ styk-doc = { path = "../styk-doc" }
 styk-eval = { path = "../styk-eval" }
 styk-math = { path = "../styk-math" }
 thiserror = "2"
+
+[dev-dependencies]
+sha2 = "0.10"
