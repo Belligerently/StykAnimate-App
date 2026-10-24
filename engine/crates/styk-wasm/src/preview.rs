@@ -22,6 +22,7 @@
 //! the CPU's pictures), replaced when another file is drawn (library files hold few
 //! pictures, if any).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use styk_engine::edit::{EditOptions, EditScene};
@@ -30,7 +31,7 @@ use styk_engine::thumbnails::library::{fit, fitted, LibraryPreview, Sample, NOWH
 use styk_engine::thumbnails::{card, Framing, CARD, MAX_SIDE};
 use styk_engine::thumbnails::inbetween::{InbetweenPreview, Onions};
 use styk_engine::{Engine, Generation};
-use styk_raster::{Edges, Images, Raster};
+use styk_raster::{Edges, Images, Place, Raster};
 use styk_render::{DrawingGrid, Renderer, ViewParams, wgpu};
 use wasm_bindgen::prelude::*;
 
@@ -49,8 +50,11 @@ struct Gpu {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     renderer: Renderer,
-    /// The library file whose pictures the atlas holds (its lineage).
+    /// The library file whose pictures the atlas holds (its lineage), or the pinned document (its lineage and pages).
     atlas: Option<(u64, u32, usize)>,
+    /// The pictures of the pinned document uploaded into the atlas. The device holds them: the CPU keeps only the
+    /// ones it is asked to draw with, and decodes again a picture it must upload once more.
+    uploaded: HashSet<Place>,
 }
 
 /// The open document's frames for thumbnails, and its pictures for the CPU.
@@ -140,7 +144,7 @@ impl Previews {
         };
         surface.configure(&device, &config);
         let renderer = Renderer::new(&device, &queue, format);
-        Ok(Previews::with(Some(Gpu { device, queue, surface, config, renderer, atlas: None }), format!("{:?} · {}", info.backend, info.name)))
+        Ok(Previews::with(Some(Gpu { device, queue, surface, config, renderer, atlas: None, uploaded: HashSet::new() }), format!("{:?} · {}", info.backend, info.name)))
     }
 
     /// Previews drawn by the CPU rasterizer (styk-raster): every picture is handed over as
@@ -371,7 +375,9 @@ impl Previews {
                 if self.gpu.is_some() {
                     self.raster.set_drawing_grid(grid);
                     self.raster.set_paint_context(paint);
-                    self.picture = (width,height,self.raster.render(&list,&self.thumbnails.as_ref().expect("pinned above").images,&view,[width,height]).straight());
+                    let pictures = self.thumbnails.as_mut().expect("pinned above");
+                    pictures.images.ensure(&list, &generation.prepared.doc, &generation.assets).map_err(js_error)?;
+                    self.picture = (width,height,self.raster.render(&list,&pictures.images,&view,[width,height]).straight());
                 }
                 self.monitor_pixels = true;
             }
@@ -443,6 +449,7 @@ impl Previews {
             return Ok(WAIT);
         }
         let doc = &thumbnails.frames.generation().prepared.doc;
+        thumbnails.images.ensure(&frame.list, doc, &assets).map_err(js_error)?;
         let framing = card(doc, frame.camera.as_ref(), width, height);
         let view = view_of(framing, CARD, true, true);
         // The thumbnail worker paints directly on its fitted Canvas destination.
@@ -487,6 +494,7 @@ impl Previews {
             return Ok(WAIT);
         }
         let list = pictures.frames.composite(tick);
+        pictures.images.ensure(&list, &pictures.frames.generation().prepared.doc, &assets).map_err(js_error)?;
         self.raster.set_drawing_grid(DrawingGrid::Destination);
         self.raster.set_paint_context(styk_render::paint::PaintContext::Native);
         let [a, b, c, d, e, f] = matrix;
@@ -602,14 +610,20 @@ impl Previews {
     /// Monitor and in-between frames share this worker's existing atlas/device and
     /// the pinned document's decoded pictures; library files reuse the same device.
     fn draw_document(&mut self, generation: &Generation, list: &Arc<styk_draw::DrawList>, view: &ViewParams, width: u32, height: u32, grid: DrawingGrid, paint: styk_render::paint::PaintContext) -> Result<(), JsError> {
-        let pictures = self.thumbnails.as_ref().expect("a document is pinned");
+        let pictures = self.thumbnails.as_mut().expect("a document is pinned");
+        // The pictures the list samples are held on the CPU (decoded again where the budget dropped them) ...
+        pictures.images.ensure(list, &generation.prepared.doc, &generation.assets).map_err(js_error)?;
         if let Some(gpu) = self.gpu.as_mut() {
-            let layout = (generation.lineage, generation.assets.pages, pictures.images.len());
+            let layout = (generation.lineage, generation.assets.pages, 0);
             if gpu.atlas != Some(layout) {
                 gpu.renderer.prepare_sprites(&generation.assets);
-                gpu.renderer.upload_images(&generation.assets, pictures.images.decoded());
+                gpu.uploaded.clear();
                 gpu.atlas = Some(layout);
             }
+            // ... and the device is given the ones it lacks: it keeps them, so the CPU need not.
+            let lacking: Vec<(Place, &Arc<styk_eval::assets::DecodedImage>)> = Images::places(list).into_iter().filter(|place| !gpu.uploaded.contains(place)).filter_map(|place| Some((place, pictures.images.get(place)?))).collect();
+            gpu.renderer.upload_images(&generation.assets, lacking.iter().map(|(_, image)| &***image));
+            gpu.uploaded.extend(lacking.into_iter().map(|(place, _)| place));
             gpu.renderer.set_drawing_grid(grid);
             gpu.renderer.set_paint_context(paint);
             gpu.draw(list, view, width, height)?;
@@ -650,6 +664,7 @@ impl Previews {
             let images = preview.images();
             gpu.renderer.upload_images(preview.assets(), images.iter());
             gpu.atlas = Some((preview.lineage, preview.assets().pages, images.len()));
+            gpu.uploaded.clear();
         }
         gpu.renderer.set_drawing_grid(DrawingGrid::Destination);
         gpu.renderer.set_paint_context(styk_render::paint::PaintContext::Native);

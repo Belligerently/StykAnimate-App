@@ -8,9 +8,10 @@
 //! decoded for the export's own renderer, which has its own GPU device.
 //!
 //! Memory is bounded: at most [`AHEAD`] frames wait to be taken, and decoded images wait
-//! only until the renderer uploads them.
+//! only until the renderer takes them: pictures are decoded [`DECODERS`] at a time, and only
+//! while the ones waiting are under the engine's picture budget ([`crate::Budgets::picture_bytes`]).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -24,6 +25,25 @@ use crate::{Engine, Generation};
 /// many as six ahead while earlier ones are read back).
 pub const AHEAD: usize = 8;
 
+/// Pictures decoded at the same time at most: more than the engine has workers would only wait.
+const DECODERS: usize = 8;
+
+/// A picture an export has yet to decode.
+#[derive(Clone, Copy)]
+enum Todo {
+    Image(usize),
+    Cel(usize),
+}
+
+impl Todo {
+    fn picture(self) -> crate::images::Picture {
+        match self {
+            Todo::Image(index) => crate::images::Picture::Image(index),
+            Todo::Cel(cel) => crate::images::Picture::Cel(cel),
+        }
+    }
+}
+
 #[derive(Default)]
 struct State {
     epoch: u64,
@@ -32,7 +52,14 @@ struct State {
     /// Requested frames wait here while this renderer preloads its pictures.
     pending: Vec<u32>,
     images: Vec<Arc<DecodedImage>>,
+    /// Pictures not yet landed (to decode, decoding, or just decoded), and the ones still to start.
     images_left: usize,
+    todo: VecDeque<Todo>,
+    /// Pictures being decoded now, and what they will take (estimated).
+    decoding: usize,
+    decoding_bytes: usize,
+    /// Pixels in `images`.
+    image_bytes: usize,
 }
 
 /// Starts the bounded set of requested frames once their resource rectangles
@@ -62,15 +89,50 @@ fn prepare_pending(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Sh
     }
 }
 
-fn pictures_ready(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Shared<State>>, ended: &Arc<AtomicBool>, epoch: u64, images: impl IntoIterator<Item = DecodedImage>) {
+/// Starts decoding the pictures still to do, up to [`DECODERS`] at once and while the pictures waiting to be taken
+/// (and those being decoded) are under the engine's picture budget; one is always started when nothing is held,
+/// so a picture larger than the budget is decoded alone.
+fn start_decoders(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Shared<State>>, ended: &Arc<AtomicBool>) {
+    let budget = engine.inner.picture_bytes;
+    let (jobs, epoch) = {
+        let mut held = state.lock();
+        let mut jobs = Vec::new();
+        while held.decoding < DECODERS && !held.todo.is_empty() {
+            let bytes = held.image_bytes + held.decoding_bytes;
+            if bytes >= budget && bytes > 0 { break }
+            let todo = held.todo.pop_front().expect("checked above");
+            let estimate = crate::images::estimate(generation, todo.picture());
+            held.decoding += 1;
+            held.decoding_bytes += estimate;
+            jobs.push((todo, estimate));
+        }
+        (jobs, held.epoch)
+    };
+    for (todo, estimate) in jobs {
+        let (generation, state, ended) = (generation.clone(), state.clone(), ended.clone());
+        engine.spawn(move |engine| {
+            if ended.load(Ordering::Relaxed) {
+                return;
+            }
+            let decoded = engine.decode_pixels(&generation, todo.picture());
+            pictures_ready(engine, &generation, &state, &ended, epoch, estimate, decoded);
+        });
+    }
+}
+
+fn pictures_ready(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Shared<State>>, ended: &Arc<AtomicBool>, epoch: u64, estimate: usize, images: Vec<DecodedImage>) {
     {
         let mut state = state.lock();
         if ended.load(Ordering::Relaxed) || epoch != state.epoch {
             return;
         }
         state.images_left = state.images_left.saturating_sub(1);
+        state.decoding = state.decoding.saturating_sub(1);
+        state.decoding_bytes = state.decoding_bytes.saturating_sub(estimate);
+        state.image_bytes += images.iter().map(|image| image.rgba.len()).sum::<usize>();
         state.images.extend(images.into_iter().map(Arc::new));
     }
+    start_decoders(engine, generation, state, ended);
     prepare_pending(engine, generation, state, ended);
 }
 
@@ -133,10 +195,10 @@ impl ExportFrames {
         let count = generation.prepared.doc.images.len();
         let since = since.filter(|earlier| earlier.lineage == generation.lineage);
         let known = since.map_or(0, |earlier| earlier.prepared.doc.images.len().min(count));
-        let cels: Vec<usize> = generation.assets.cels.keys().copied().filter(|cel| !since.is_some_and(|earlier| earlier.assets.cels.contains_key(cel))).collect();
-        let epoch = {
+        let todo: VecDeque<Todo> = (known..count).map(Todo::Image).chain(generation.assets.cels.keys().copied().filter(|cel| !since.is_some_and(|earlier| earlier.assets.cels.contains_key(cel))).map(Todo::Cel)).collect();
+        {
             let mut state = self.state.lock();
-            let remaining = count - known + cels.len();
+            let remaining = todo.len();
             if remaining != 0 {
                 state.epoch = state.epoch.wrapping_add(1);
                 let mut redo: Vec<_> = state.ready.keys().chain(state.inflight.iter()).copied().collect();
@@ -147,53 +209,32 @@ impl ExportFrames {
                 state.ready.clear();
             }
             state.images_left = remaining;
-            state.epoch
-        };
-        for index in known..count {
-            let (generation, state, ended) = (generation.clone(), self.state.clone(), self.ended.clone());
-            self.engine.spawn(move |engine| {
-                if ended.load(Ordering::Relaxed) {
-                    return;
-                }
-                let image = styk_eval::assets::decode_image(&generation.prepared.doc, &generation.assets, index);
-                pictures_ready(engine, &generation, &state, &ended, epoch, image);
-            });
+            state.todo = todo;
+            // Pictures an earlier call still decodes land nowhere (their epoch is over).
+            state.decoding = 0;
+            state.decoding_bytes = 0;
         }
-        for cel in cels {
-            let (generation, state, ended) = (generation.clone(), self.state.clone(), self.ended.clone());
-            self.engine.spawn(move |engine| {
-                if ended.load(Ordering::Relaxed) {
-                    return;
-                }
-                let tiles = match generation.assets.cels.get(&cel) {
-                    Some((tiles, _)) => {
-                        let before = tiles.artwork_bounds();
-                        let decoded = styk_eval::assets::decode_cel(&generation.assets, tiles);
-                        if tiles.artwork_bounds() != before {
-                            engine.drawing_bounds_changed(&generation, tiles);
-                        }
-                        decoded
-                    }
-                    None => Vec::new(),
-                };
-                pictures_ready(engine, &generation, &state, &ended, epoch, tiles);
-            });
-        }
+        start_decoders(&self.engine, generation, &self.state, &self.ended);
         prepare_pending(&self.engine, generation, &self.state, &self.ended);
     }
 
     /// Decoded pictures not yet taken, up to `max_bytes` of pixels (at least one).
     pub fn take_images(&self, max_bytes: usize) -> Vec<Arc<DecodedImage>> {
-        let mut state = self.state.lock();
         let mut taken = Vec::new();
-        let mut bytes = 0;
-        while let Some(image) = state.images.last() {
-            if !taken.is_empty() && bytes + image.rgba.len() > max_bytes {
-                break;
+        {
+            let mut state = self.state.lock();
+            let mut bytes = 0;
+            while let Some(image) = state.images.last() {
+                if !taken.is_empty() && bytes + image.rgba.len() > max_bytes {
+                    break;
+                }
+                bytes += image.rgba.len();
+                taken.push(state.images.pop().expect("checked above"));
             }
-            bytes += image.rgba.len();
-            taken.push(state.images.pop().expect("checked above"));
+            state.image_bytes = state.image_bytes.saturating_sub(bytes);
         }
+        // Room for more pictures: the ones that waited are decoded now.
+        start_decoders(&self.engine, &self.generation, &self.state, &self.ended);
         taken
     }
 
@@ -272,7 +313,57 @@ impl Drop for ExportFrames {
         let mut state = self.state.lock();
         state.ready.clear();
         state.images.clear();
+        state.todo.clear();
         state.pending.clear();
         state.inflight.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Budgets;
+
+    fn clock() -> f64 { 0.0 }
+
+    /// The drawing fixture opened by an engine whose pictures may wait only up to `picture_bytes`, and an export of
+    /// it that has its cel to decode three times.
+    fn export(picture_bytes: usize) -> (Engine, ExportFrames) {
+        let engine = Engine::new(clock, Budgets { picture_bytes, ..Budgets::for_device(None) });
+        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../styk-eval/tests/fixtures/drawlist/drawing-cel.json");
+        engine.open(&std::fs::read(file).unwrap(), "json", "pictures").unwrap();
+        while engine.step() {}
+        let _ = engine.take_images(usize::MAX);
+        let frames = engine.export_frames(0).unwrap();
+        let cel = *frames.generation.assets.cels.keys().next().unwrap();
+        {
+            let mut state = frames.state.lock();
+            state.todo.extend([Todo::Cel(cel); 3]);
+            state.images_left = 3;
+        }
+        start_decoders(&engine, &frames.generation, &frames.state, &frames.ended);
+        (engine, frames)
+    }
+
+    #[test]
+    fn an_export_decodes_a_picture_only_while_the_ones_it_has_not_taken_are_under_the_budget() {
+        let (engine, frames) = export(usize::MAX);
+        while engine.step() {}
+        let total = frames.take_images(usize::MAX).len();
+        assert_eq!(frames.images_pending(), 0);
+
+        let (engine, frames) = export(1);
+        while engine.step() {}
+        let first = frames.take_images(usize::MAX).len();
+        assert_eq!(first * 3, total, "a picture at a time: the one decoded first leaves no room");
+        assert_eq!(frames.state.lock().todo.len(), 1, "the third waits");
+        let mut taken = first;
+        for _ in 0..4 {
+            while engine.step() {}
+            taken += frames.take_images(usize::MAX).len();
+        }
+        assert_eq!(taken, total, "every picture arrives, as the renderer takes the ones before it");
+        assert_eq!(frames.images_pending(), 0);
+        assert_eq!(frames.state.lock().image_bytes, 0);
     }
 }

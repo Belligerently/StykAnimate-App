@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {waitForPictures} from '../src/engine/engine-stage.mjs';
+import {uploadRemainingPictures, waitForPictures} from '../src/engine/engine-stage.mjs';
 
 /** A stage side whose last frame lacks pictures as `pending` says, and an engine whose progress counter the test advances. */
 function side(pending) {
@@ -82,6 +82,57 @@ test('another frame drawn meanwhile takes over the wait', async () => {
   await settle();
   assert.equal(first, 0, 'the superseded wait does not draw');
   assert.equal(second, 0, 'the frame drawn last had its pictures');
+});
+
+/** A stage whose document still has pictures: `left` says what each `upload_pictures` answers (the frame itself is complete). */
+function idle(left) {
+  const timers = [];
+  const uploads = [];
+  const engine = side([]);
+  engine.side.stage.upload_pictures = () => { uploads.push(true); return left.shift() ?? 0; };
+  return {...engine, timers, uploads, schedule: (callback, ms) => timers.push({callback, ms}), runTimer() { const timer = timers.shift(); timer.callback(); return timer.ms; }};
+}
+
+test('pictures of the document the frame does not need are taken in while the stage is idle, a slice at a time', () => {
+  const stage = idle([1, 1, 0]);
+  uploadRemainingPictures(stage.side, stage.schedule);
+  assert.equal(stage.uploads.length, 0, 'not in the frame that was just drawn');
+  assert.equal(stage.timers[0].ms, 50, 'after the stage has been idle for a moment');
+  stage.runTimer();
+  assert.equal(stage.uploads.length, 1);
+  assert.equal(stage.timers[0].ms, 16, 'the next slice a frame later');
+  stage.runTimer();
+  assert.equal(stage.uploads.length, 2);
+  stage.runTimer();
+  assert.equal(stage.uploads.length, 3);
+  assert.equal(stage.timers.length, 0, 'every picture is in: nothing more is scheduled');
+});
+
+test('another frame drawn meanwhile ends the idle uploads', () => {
+  const stage = idle([1, 1]);
+  uploadRemainingPictures(stage.side, stage.schedule);
+  stage.side.pictureWait++;
+  stage.runTimer();
+  assert.equal(stage.uploads.length, 0, 'the frame takes its own slice');
+  assert.equal(stage.timers.length, 0);
+});
+
+test('pictures still being decoded are waited for on the engine, not on a timer', async () => {
+  const stage = idle([2, 0]);
+  uploadRemainingPictures(stage.side, stage.schedule);
+  stage.runTimer();
+  assert.equal(stage.uploads.length, 1);
+  assert.equal(stage.timers.length, 0);
+  stage.advance();
+  await settle();
+  assert.equal(stage.uploads.length, 2, 'taken in again once the engine finished a picture');
+});
+
+test('a frame that lacks pictures leaves the uploads to its own redraw', () => {
+  const stage = idle([1]);
+  stage.side.stage.pictures_pending = () => 1;
+  uploadRemainingPictures(stage.side, stage.schedule);
+  assert.equal(stage.timers.length, 0);
 });
 
 test('actual nonthreaded monitor presentation records success before a threaded route switch',()=>{

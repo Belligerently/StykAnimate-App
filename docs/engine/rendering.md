@@ -523,6 +523,9 @@ wait for upload, or once the engine's progress counter advances when they are st
 (`waitForPictures` in `engine-stage.mjs`: one `Atomics.waitAsync` at a time, dropped when
 another frame is drawn, a timeout without progress waiting again without drawing, at most a
 minute). A picture that cannot be decoded ends the waiting once nothing else is pending.
+The document's other pictures are taken in while the stage is idle (`Stage::upload_pictures`,
+`uploadRemainingPictures`), and workers decode them only while the ones waiting are under a budget
+([memory.md](memory.md)).
 Measured opening URIEL 3 at tick 44 in Electron: 9 and 13 extra frames in two runs, all within
 the first 1.3 s, none afterwards; the cel is there.
 

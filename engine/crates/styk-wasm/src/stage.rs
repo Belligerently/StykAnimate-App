@@ -344,6 +344,21 @@ impl Stage {
         if self.edit.camera_pending().is_some() { 2 } else { self.pictures }
     }
 
+    /// Uploads a slice of the pictures decoded since the last frame, without drawing one: the document's pictures
+    /// the frame shown does not need are taken in while the interface is idle, so decoded pixels do not wait in the
+    /// engine's memory (and the engine decodes the next ones). Answers like [`Stage::pictures_pending`] for the
+    /// document: 0 when every picture is in, 1 when some are decoded and wait for the next slice, 2 when the
+    /// rest is still being decoded.
+    pub fn upload_pictures(&mut self) -> u32 {
+        if self.lost.get().is_some() {
+            return PICTURES_COMPLETE;
+        }
+        let Some(generation) = self.engine.generation() else { return PICTURES_COMPLETE };
+        self.sync_images(&generation);
+        let (decoding, decoded) = self.engine.images_backlog();
+        if decoded > 0 { PICTURES_DECODED } else if decoding > 0 { PICTURES_DECODING } else { PICTURES_COMPLETE }
+    }
+
     /// A cold followed pose is accepted but awaits the engine worker's shared path.
     pub fn camera_pending(&self) -> bool { self.edit.camera_pending().is_some() }
 

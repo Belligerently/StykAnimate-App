@@ -113,6 +113,8 @@ impl Editor {
         let mut cache = self.eval.borrow_mut();
         if cache.prepared.is_none() || !cache.report.as_ref().is_some_and(|report| report.same_node(&self.report)) {
             let document = cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+            // The views of records the document and its history no longer hold go with them.
+            cache.loader.release_unused();
             cache.prepared = Some(Arc::new(Prepared::new(Arc::new(document))));
             cache.report = Some(self.report.clone());
             cache.frames.clear();
