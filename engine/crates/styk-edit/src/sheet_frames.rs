@@ -261,8 +261,37 @@ impl Editor {
         self.publish(plan, "Clear frames", selection, None)
     }
 
+    /// Whether an edit of these layers' frames moves the audio with it (`audioRipple`: every layer is edited).
+    fn ripples_audio(&self, ids: &[String]) -> bool {
+        self.audio_ripple && !self.audio_rippling && {
+            let order = self.report.path(&["_styk", "layers", "order"]).and_then(Value::elements).map(|order| order.iter().filter_map(|id| id.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
+            ["scene".to_string(), "camera".to_string()].iter().chain(&order).all(|id| ids.contains(id))
+        }
+    }
+
+    /// Runs `operation` as one history entry with the audio rippled before it (`movieclipBatch(label, …)`).
+    fn with_audio_ripple(&mut self, label: &str, start: f64, removed: f64, inserted: f64, operation: impl FnOnce(&mut Editor) -> Result<bool, EditError>) -> Result<bool, EditError> {
+        let outer = self.batch.is_none();
+        self.begin_batch(label)?;
+        self.audio_rippling = true;
+        let result = self.ripple_audio(start, removed, inserted).and_then(|_| operation(self));
+        self.audio_rippling = false;
+        match result {
+            Ok(done) => self.end_batch().map(|()| done),
+            Err(error) => {
+                if outer { self.abort_batch()?; } else { self.end_batch()?; }
+                Err(error)
+            }
+        }
+    }
+
     pub(crate) fn sheet_insert_frames(&mut self, ids: &Value, start: f64, count: &Value) -> Result<bool, EditError> {
-        let ids = self.list(ids);
+        let layers = self.list(ids);
+        if self.ripples_audio(&layers) {
+            let inserted = if count.is_null() { 1.0 } else { count.as_f64().unwrap_or(f64::NAN) };
+            return self.with_audio_ripple("Insert scene frames with audio", start, 0.0, inserted, |editor| editor.sheet_insert_frames(ids, start, count));
+        }
+        let ids = layers;
         let count = if count.is_null() { 1.0 } else { count.as_f64().unwrap_or(f64::NAN) };
         checked_tick(start)?;
         if count.fract() != 0.0 || count.is_nan() || count < 1.0 || start + count >= MAX_SHEET_TICKS {
@@ -320,7 +349,11 @@ impl Editor {
     }
 
     pub(crate) fn sheet_remove_frames(&mut self, ids: &Value, start: f64, end: &Value) -> Result<bool, EditError> {
-        let (ids, end) = (self.list(ids), end.as_f64().unwrap_or(start));
+        let (layers, end) = (self.list(ids), end.as_f64().unwrap_or(start));
+        if self.ripples_audio(&layers) {
+            return self.with_audio_ripple("Remove scene frames with audio", start, end - start + 1.0, 0.0, |editor| editor.sheet_remove_frames(ids, start, &Value::Num(end)));
+        }
+        let ids = layers;
         let count = end - start + 1.0;
         if count.is_nan() || count < 1.0 {
             return Err(EditError::Invalid("errors.editorLayerSheet.selectFramesToRemove".into()));

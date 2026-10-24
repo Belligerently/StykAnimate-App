@@ -347,7 +347,6 @@ impl Session {
         }
         let mut session = Self::start_prepared(report, state, loader, prepared)?;
         session.editor.set_revision_counters(counters.revision, counters.serial, counters.saved);
-        session.editor.worker_prepared_only = true;
         Ok(session)
     }
 
@@ -493,6 +492,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
+    let gesture_before = editor.drag.as_ref().map(|drag| drag.serial);
     let project_requested = view.get("projectFieldsPublication") == Some(&Value::Bool(true))
         && matches!(method, "setFPS" | "setCanvasSize" | "updateProject")
         && editor.sheet() && editor.drag.is_none() && draft.is_none()
@@ -552,6 +552,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             return Ok(response_value(answer));
         }
         editor.set_auto_key(flag(view, "autoKey"));
+        editor.audio_ripple = flag(view, "audioRipple");
         // Selecting changes the active layer without a new revision of the document.
         if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
             editor.set_active_layer_id(active);
@@ -640,9 +641,12 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             answer.push(("status", Value::str("unported")));
             answer.push(("reason", Value::str(&what)));
         }
-        Err(EditError::Invalid(key)) => {
+        Err(EditError::Invalid(text)) => {
             answer.push(("status", Value::str("error")));
-            answer.push(("error", Value::str(&key)));
+            answer.push(("error", Value::str(crate::error_key(&text))));
+            if let Some(params) = crate::error_params(&text) {
+                answer.push(("errorParams", params));
+            }
         }
     }
     answer.push(("state", editor.state_value()));
@@ -847,6 +851,11 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         }
     } else { editor.draft_figures() };
     answer.push(("draft", figures.map_or(Value::Null, Value::array)));
+    // A call that ended a gesture and began another: the new draft as its difference from the old one on show,
+    // since figures the gestures did not take (joined ones the commit moved) changed with the first.
+    if changes_only && let (Some(edit), Some(drag), Some(old), Some(previous)) = (&editor.authored, &editor.drag, gesture_before, draft.as_ref()) && drag.serial != old {
+        answer.push(("draftBase", frame_delta(&edit.frame, previous)));
+    }
     answer.push(("drag", editor.drag_value()));
     Ok(response_value(answer))
 }

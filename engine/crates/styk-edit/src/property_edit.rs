@@ -142,7 +142,7 @@ fn text(value: Option<&Value>) -> String {
 pub(crate) fn channel_id(target: &Value, property: &str) -> Result<String, EditError> {
     let kind = target.get("kind").and_then(Value::as_str).unwrap_or("");
     if !supported(kind, property) {
-        return Err(invalid("errors.animationChannels.propertyCannotAnimateOn"));
+        return Err(crate::invalid_with("errors.animationChannels.propertyCannotAnimateOn", vec![("property", Value::str(property)), ("kind", Value::str(kind))]));
     }
     let identity = match kind {
         "polygon" => format!("{}/{}@{}", text(target.get("uid")), text(target.get("polygonId")), text(target.get("figureTypeId"))),
@@ -252,7 +252,15 @@ pub(crate) fn validate_vfx_value(property: &str, value: Option<&Value>) -> Resul
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max && (!(color || discrete) || n.fract() == 0.0) => Ok(Value::Num(*n)),
         Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if color => crate::recolor::normalize_paint(paint).map(|paint| paint.value()),
-        _ => Err(invalid("errors.cameraMotion.mustBeBetweenAnd")),
+        _ => {
+            let mut parts = property.split(':').skip(1);
+            let (type_name, _, param) = (parts.next().unwrap_or(""), parts.next(), parts.next().unwrap_or(""));
+            Err(if property == "vfxScope" {
+                crate::invalid_with("errors.cameraMotion.mustBeBetweenAnd", vec![("label", crate::message("vfxInspector.wholeFigure")), ("min", Value::Num(min)), ("max", Value::Num(max))])
+            } else {
+                crate::vfx_clips::vfx_range_error(type_name, param, min, max)
+            })
+        }
     }
 }
 
@@ -734,8 +742,8 @@ impl Editor {
         let empty = Value::object(Obj::new());
         let patch = patch.unwrap_or(&empty);
         let fields = patch.as_obj().ok_or_else(|| EditError::Unported("a figure style change that is not an object".into()))?;
-        if fields.keys().any(|key| !["name", "outlineWidth", "outlineColor", "outlineOpacity"].contains(&&**key)) {
-            return Err(invalid("errors.editorBuilder.figurePropertyIsNotEditable"));
+        if let Some(key) = fields.keys().find(|key| !["name", "outlineWidth", "outlineColor", "outlineOpacity"].contains(&&***key)) {
+            return Err(crate::invalid_with("errors.editorBuilder.figurePropertyIsNotEditable", vec![("key", Value::str(key))]));
         }
         let object = self.object()?;
         let (true, Some((_, object)), false) = (self.options.property_channels, object, fields.contains("name")) else {

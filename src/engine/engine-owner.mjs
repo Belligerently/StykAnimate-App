@@ -6,10 +6,13 @@
  * this module applies copy-on-write to `editor.report`, which the interface keeps reading
  * as a read view, then the session's selection, counters and change events.
  *
- * A call the session refuses runs in the JavaScript editor, on the read view. What it
- * changed is written back into the session as records, with a history entry the session
- * keeps in its place and asks the editor to apply on undo and redo (`external.rs`). The
- * same happens to edits other modules make through `editor._record` or in place.
+ * A call the session refuses raises a localized error: the editor never runs it in the session's
+ * place. What still runs in the editor is what the session has no command for at all (answered
+ * `unported` with the method's own name: `report.editor` counts them) and the editing of a
+ * movieclip's own document (`editor._movieclipScopes`). Those calls are written back into the
+ * session as records, with a history entry the session keeps in its place and asks the editor to
+ * apply on undo and redo (`external.rs`). Edits other modules make in place (gizmo previews)
+ * reach the session before its next call.
  *
  * Calls that only move the view (selecting, seeking) stay with the editor; the session
  * receives the view with every call.
@@ -17,6 +20,9 @@
 import {applyDocumentPatch} from './engine-patch.mjs';
 import {editorDraws, withDraws} from '../editor-draws.mjs';
 import {messageError} from '../localized-error.mjs';
+import {validationLabel} from '../validation-labels.mjs';
+import {motionParameterMessages} from '../camera-motion-localization.mjs';
+import english from '../locales/en.mjs';
 import {invalidateFrameIndex} from '../frame-ids.mjs';
 import {invalidateMovieclipTypes} from '../movieclips.mjs';
 import {layerIdForUid} from '../layers.mjs';
@@ -24,6 +30,10 @@ import {appBoundsMarker} from './engine-edit-bounds.mjs';
 
 /** The undo/redo answer when the entry to apply is the editor's own (external.rs). */
 const EXTERNAL_ENTRY = 'external history entry ';
+/** How many values of each kind a call that draws many identities is handed. */
+const MANY_DRAWS = 512;
+/** What the editor shows of a copied audio clip, which the session holds: the interface asks only whether there is one. */
+const AUDIO_COPIED = Object.freeze({inSession: true});
 /** The tables the read view tracks record by record. */
 const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
 
@@ -32,23 +42,10 @@ const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
 const VIEW_CALLS = new Set(['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'selectConnected', 'selectMarquee',
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']);
 
-/** Gestures whose live state the interface reads from the editor itself (frame drafts): the
- * editor runs them until those reads are engine queries (phase 2). Pose drags, figure-handle,
- * Handle Edit Mode and segment-value gestures, rig and camera drags, motion-path edits, property
- * edits and effect-clip edits run in the session, which the editor shows as its own (`gesture`,
- * `handles`, `motion`, `edits`). */
-const EDITOR_GESTURES = new Set([
-  'beginFrameDraft', 'beginFrameDraftPreview', 'endFrameDraftPreview', 'commitFrameDraft', 'discardFrameDraft', 'updateDraftFrame',
-  'addDraftFrame', 'editFrameDraftTimeline', 'enableFrameDrafts', 'disableFrameDrafts', 'beginDuplicateDrag', 'finishDuplicateDrag', 'beginTween', 'updateTween',
-  'cancelAuthoredPoseDrag', 'commitAuthoredPoseDrag', 'movieclipBatch', 'movieclipTimelineEdit']);
-
 /** Calls that carry a drawing's pixels (tile buffers): the editor applies them to the drawing
  * store and the records they change reach the session by write-back. Their pixels are never
  * turned into JSON for the session, which does not take them (a stroke is megabytes). */
 const PIXEL_CALLS = new Set(['commitDrawingPixels', 'resampleDrawing']);
-
-/** The calls that make up a motion-path edit: the editor replays them when it takes the edit over. */
-const MOTION_PATH_CALLS = new Set(['beginMotionPathEdit', 'updateMotionPathEdit', 'setMotionPathFalloff']);
 
 /** The calls that end an edit, and the editor's field that holds it: with none open they change
  * nothing and answer false, which the owner knows without asking the session. */
@@ -57,7 +54,7 @@ const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxCl
 /** Calls that read the document or the editor's state, open or close documents, or
  * configure the editor: never routed. */
 const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEvent', 'animationChannel', 'animationValue', 'canDisconnectSegment',
-  'drawingKey', 'drawingTarget', 'figurePalette', 'frameClipboardDocument', 'frameClipboardDocumentView', 'frameIndexForId', 'getCameraMotions',
+  'drawingTarget', 'figurePalette', 'frameClipboardDocument', 'frameClipboardDocumentView', 'frameIndexForId', 'getCameraMotions',
   'getFrameById', 'getFrameId', 'getIKSettings', 'getLayer', 'getLayerFigureUids', 'getLayerFocus', 'getLayerFolders', 'getLayers', 'getSpatialCamera',
   'getSpatialIKPole', 'getSpatialMotion', 'getSpatialPose', 'getSpatialProportions', 'getVfxClips', 'isFigureFocusLocked', 'isLayerFocusLocked',
   'joinedFigureIds', 'layerForUid', 'layerFrameKeys', 'motionPathReport', 'movieclipProjectReport', 'nativePoseChannel', 'nativePropertyChannel',
@@ -79,13 +76,17 @@ export function ownedMethods(editor) {
   return names;
 }
 
-/** A call's arguments as the session takes them: frame ranges keep their `sheetTicks`, and the app's
- * figure-bounds callback is the marker the engine measures for itself (engine-edit-bounds.mjs). */
-const sessionArguments = (key, value) => typeof value === 'function' ? appBoundsMarker(value)
-  : Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
-/** The reverse of the frame ranges `sessionArguments` writes, as a `JSON.parse` reviver. */
-const unframeRanges = (key, value) => value && typeof value === 'object' && Object.hasOwn(value, '@array')
-  ? Object.assign(value['@array'], Object.fromEntries(Object.entries(value).filter(([name]) => name !== '@array'))) : value;
+/** A call's arguments as text for the session: frame ranges keep their `sheetTicks`, and the app's
+ * figure-bounds callback is the marker the engine measures for itself (engine-edit-bounds.mjs). Any other
+ * function, or what JSON cannot hold, is not data: `null`. */
+function sessionPayload(args) {
+  let data = true;
+  const replacer = (key, value) => {
+    if (typeof value === 'function') { const marker = appBoundsMarker(value); data &&= Boolean(marker); return marker; }
+    return Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
+  };
+  try { const text = JSON.stringify(args, replacer); return data ? text : null; } catch { return null; }
+}
 const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segmentIds', 'branch'].filter(key => Object.hasOwn(state, key)).map(key => [key, state[key]]));
 
 /**
@@ -97,11 +98,9 @@ const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segm
  */
 export function installEngineOwner(editor, {start = openingSession, methods = ownedMethods(editor), verify = false, draws = null} = {}) {
   const report = {calls: 0, native: 0, fallback: 0, external: 0, synced: 0, refused: {}, verified: 0};
-  let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [], handing = false;
-  /** The calls (as JSON) of the session's motion-path edit, from the one that began it. */
-  let motionCalls = null;
-  /** The same for the session's rig or camera drag, which the editor runs by state it builds itself. */
-  let heldCalls = null;
+  let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [];
+  /** How many `movieclipBatch` operations the owner is running: the session records them as one entry. */
+  let batches = 0;
   /** JavaScript commands of the session's external entries, by identity. */
   const entries = new Map();
   /** Commands the editor recorded during the call it is running for the owner. */
@@ -113,7 +112,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   const originals = new Map();
 
   const view = () => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null, selectedUids: [...(editor.selectedUids ?? [])],
-    selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey),
+    selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey), audioRipple: Boolean(editor.audioRipple),
     sheetSelection: editor._sheetSelection ? {id: editor._sheetSelection.id, contents: Boolean(editor._sheetSelection.contents)} : null,
     ...selectionMetadata(editor._selectionState())});
 
@@ -321,7 +320,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (answer.motionPathError) throw new Error(`The engine could not show the motion-path edit: ${answer.motionPathError}`);
     if (Object.hasOwn(answer, 'drag')) gesture(answer);
     if (Object.hasOwn(answer, 'handleGesture')) handles(answer);
-    if (!handing) edits(answer);
+    edits(answer);
     if (state) {
       history = {canUndo: state.canUndo, canRedo: state.canRedo, undoLabel: state.undoLabel, redoLabel: state.redoLabel, dirty: state.dirty};
       editor._nextUid = state.nextUid; editor._nextFrameIdentity = state.nextFrameIdentity; editor._layerRevision = state.layerRevision;
@@ -369,26 +368,38 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     while (editor._redo.length < redo) editor._redo.unshift(placeholder(''));
     depths = [undo, redo];
   };
+  /** Whether the gesture the session holds is a rig edit or a camera drag (the editor's `_drag` does not say). */
+  let rigOrCamera = false;
   /** The session's gesture in progress, as the editor shows it: its draft on show and
    * `_drag` with the figures it took as they were. */
   const gesture = answer => {
     const drag = answer.drag;
+    rigOrCamera = Boolean(drag?.rig || drag?.camera);
     if (!drag) {
       if (editor._drag?.engine) {
         // A motion-path edit changed no frame on show: the document's patch invalidated what changed.
         const motion = Boolean(editor._drag.motionPath);
         if (editor._drag.cameraBase) editor._sheetPropertyPreview = null;
-        editor._drag = null; editor._authoredPoseEdit = null; motionCalls = null; heldCalls = null;
+        editor._drag = null; editor._authoredPoseEdit = null;
         if (!motion) editor._invalidate();
       }
       return;
     }
     if (answer.motionPath) { motion(answer); return; }
+    // A call can end one gesture and begin the next (a duplicate drag opened over another, a rig edit over a move): the new one
+    // starts from the draft the session composed, else from the frame the document now shows.
+    let base = null;
+    if (editor._drag?.engine && editor._drag.serial !== drag.serial) {
+      const previous = editor._authoredPoseEdit;
+      editor._drag = null; editor._authoredPoseEdit = null;
+      if (answer.draftBase && previous) base = previewFrame(answer.draftBase, previous.frame);
+      else editor._invalidate();
+    }
     if (!editor._drag?.engine) {
-      const source = editor.evaluatedFrame;
+      const source = base ?? editor.evaluatedFrame;
       editor._authoredPoseEdit = answer.draft ? {frame: {...source, objects: source.objects.slice()}, source, owned: new Set(), tick: editor.tick, engine: true} : null;
       const taken = new Set(drag.before);
-      editor._drag = {engine: true, label: drag.label, scope: drag.translation ? 'translation' : 'selection', authored: Boolean(answer.draft), index: editor.frameIndex,
+      editor._drag = {engine: true, serial: drag.serial, label: drag.label, scope: drag.translation ? 'translation' : 'selection', authored: Boolean(answer.draft), index: editor.frameIndex,
         before: source.objects.filter(object => taken.has(object.unique_id)).map(object => structuredClone(object)), beforeSelection: editor._selectionState(), changed: false};
     }
     editor._drag.label = drag.label; editor._drag.scope = drag.translation ? 'translation' : 'selection';
@@ -413,9 +424,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   };
   /** The session's figure-handle, Handle Edit Mode and segment-value gesture, as the editor shows its own
    * (`_drag.figureHandle`, `_drag.handleEdit`, `_drag.segmentValueOptions`). The stage's pivot marker reads the
-   * transform's origin; every answer says where the turns stand, the rest is told once. The editor's own
-   * code reads the rest (the figures that move, the arcs the gesture solves) only when it takes the gesture
-   * over, which asks the session for it (`takeHandles`). */
+   * transform's origin; every answer says where the turns stand, the rest is told once. */
   const handles = answer => {
     const drag = editor._drag?.engine && !editor._drag.motionPath ? editor._drag : null;
     if (!drag) return;
@@ -503,65 +512,6 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       editor._geometry = null;
     }
   };
-  /** A call the editor runs while the session holds a motion-path edit (or the session refuses a call of
-   * it): the editor's code ends or amends the gesture as its own, so it replays the calls that made it,
-   * which gives its session what the session had (a move the session rejected is not among them: it
-   * changed nothing the edit shows or publishes). The session forgets the gesture; the document is
-   * unchanged by it until it ends. */
-  const takeMotion = () => {
-    const calls = motionCalls ?? [];
-    motionCalls = null;
-    handing = true;
-    try { send('@dropGesture', []); } finally { handing = false; }
-    editor._drag = null;
-    depth++;
-    try { for (const [name, payload] of calls) originals.get(name).apply(editor, JSON.parse(payload)); } finally { depth--; }
-  };
-  /** A call the editor runs while the session holds a figure-handle, Handle Edit Mode or segment-value
-   * gesture (the session refused it, or raised an error the editor raises itself): the gesture becomes
-   * the editor's own, as it would have begun it. The session forgets it (`@dropGesture`; the document
-   * it changed is the read view's) and tells what the editor's code needs to carry it on, which only the
-   * session holds: the figures that move and the arcs it solves. */
-  const takeHandles = () => {
-    const drag = editor._drag, held = call('@gestureState', []).result;
-    delete drag.engine;
-    if (editor._authoredPoseEdit?.engine) delete editor._authoredPoseEdit.engine;
-    handing = true;
-    try { send('@dropGesture', []); } finally { handing = false; }
-    const snapshots = new Map(drag.before.map(object => [object.unique_id, object]));
-    const snapshot = slot => snapshots.get(editor.frame.objects[slot].unique_id);
-    if (drag.figureHandle) drag.figureHandle.targets = held.figureHandle.map(slot => ({slot, before: snapshot(slot)}));
-    if (drag.handleEdit) {
-      drag.handleEdit = {uid: drag.handleEdit.uid, index: drag.handleEdit.index, point: drag.handleEdit.point, states: held.handleEdit.map(state => ({
-        slot: state.slot, vertex: state.vertex, g: {segments: state.drawn.map(bend => ({bend}))}, before: snapshot(state.slot), indices: state.indices,
-        incident: state.incident.map(shape => ({index: shape.index, seg: {segment_id: shape.id, primitive_code: shape.line ? 0 : 1}, angle: shape.angle, bend: shape.bend,
-          start: {x: shape.start[0], y: shape.start[1]}, end: {x: shape.end[0], y: shape.end[1]}})),
-        lengths: state.lengths, bends: state.bends, moved: state.moved})), bend: drag.handleEdit.bend};
-    }
-  };
-  /** Keeps the calls of the session's rig or camera drag while it is open. The editor runs these
-   * gestures by state the session does not share (the rig's geometry and snapshot, the camera's
-   * keys), so taking one over means replaying them. A pointer move sets the state from its own
-   * arguments, so it replaces the move before it; a keyboard nudge (`fromStart` false) adds to it. */
-  const holdCall = (name, payload, answer) => {
-    if (!answer.drag?.rig && !answer.drag?.camera) { heldCalls = null; return; }
-    if (!heldCalls || name === 'beginRigDrag' || name === 'beginCameraDrag') { heldCalls = [[name, payload]]; return; }
-    const moves = name === 'editRigJoint' || name === 'updateCameraDrag' && JSON.parse(payload)[1]?.fromStart !== false;
-    if (moves && heldCalls.at(-1)[0] === name) heldCalls[heldCalls.length - 1] = [name, payload]; else heldCalls.push([name, payload]);
-  };
-  /** A call the editor runs while the session holds a rig or camera drag (or the session refuses a call
-   * of it): the editor's code ends or amends the gesture as its own. The session forgets it; a pose it
-   * previewed in the document goes back as it was, and the editor replays the calls that made the gesture. */
-  const takeHeld = () => {
-    const drag = editor._drag, calls = heldCalls;
-    heldCalls = null;
-    handing = true;
-    try { send('@dropGesture', []); } finally { handing = false; }
-    if (!drag.authored && drag.before.length) editor._replaceObjects(drag.index, drag.before);
-    editor._invalidate();
-    depth++;
-    try { for (const [name, payload] of calls) originals.get(name).apply(editor, JSON.parse(payload, unframeRanges)); } finally { depth--; }
-  };
   /** The edit a `begin` call opened in the session, as the editor's own would be. */
   const mirrorEdit = (name, answer) => {
     if (name === 'beginVfxClipEdit') { editor._vfxClipEdit = {engine: true, before: editor.report._styk.vfxClips}; return; }
@@ -572,19 +522,6 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     const {target, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
     editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: editor.evaluatedFrame})
       : Object.assign(edit, {before: editor.report._styk?.animation ?? null, beforeChannel: editor.animationChannel(target, property, {exactTarget})});
-  };
-  /** A call the editor runs while the session holds an edit belongs to that edit (the editor's
-   * code ends or amends it): the edit becomes the editor's own, as it would have begun it. */
-  const handOver = ({rigAndCamera = true} = {}) => {
-    if (editor._drag?.engine && editor._drag.motionPath) takeMotion();
-    else if (editor._drag?.engine && (editor._drag.figureHandle || editor._drag.handleEdit || editor._drag.segmentValueOptions)) takeHandles();
-    else if (rigAndCamera && editor._drag?.engine && heldCalls) takeHeld();
-    const animation = editor._animationEdit?.engine ? editor._animationEdit : null, vfx = editor._vfxClipEdit?.engine ? editor._vfxClipEdit : null;
-    if (!animation && !vfx) return;
-    handing = true;
-    try { send('@dropEdits', [Boolean(animation), Boolean(vfx)]); } finally { handing = false; }
-    if (animation) delete animation.engine;
-    if (vfx) delete vfx.engine;
   };
   /** The session's change events, for the interface: they describe what the session already has. */
   const emit = answer => {
@@ -656,10 +593,10 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   };
   /** The values a call may draw: the spare ones, then the caller's (`draws`) or fresh ones
    * up to a few of each kind. */
-  const pool = () => {
+  const pool = (each = 4) => {
     if (draws) return [...spare, ...draws()];
     const values = [...spare];
-    for (const kind of ['uuid', 'seed', 'random']) for (let count = values.filter(([drawn]) => drawn === kind).length; count < 4; count++) values.push([kind, editorDraws[kind]()]);
+    for (const kind of ['uuid', 'seed', 'random']) for (let count = values.filter(([drawn]) => drawn === kind).length; count < each; count++) values.push([kind, editorDraws[kind]()]);
     return values;
   };
   /** The editor's own draws take the spare ones first (then draw as usual). */
@@ -670,9 +607,19 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       return at >= 0 ? spare.splice(at, 1)[0][1] : outer[kind]();
     }).result;
   };
-  /** Runs `name` in the JavaScript editor and writes what it changed back. */
-  const fallback = (name, original, args, options) => {
-    handOver(options);
+  /** Ends the edits the session holds before the editor runs a call of its own: they are the session's,
+   * and the editor's code would not know to commit them. */
+  const endSessionEdits = () => {
+    if (editor._animationEdit?.engine) editor.commitAnimationEdit();
+    if (editor._vfxClipEdit?.engine) editor.commitVfxClipEdit();
+    if (editor._drag?.engine) editor.commitDrag();
+  };
+  /** Runs `name` in the JavaScript editor, which the session has no command for, and writes what it changed back. */
+  const runInEditor = (name, original, args) => {
+    // A session batch holds the entries recorded meanwhile as one; the editor's entry would be a child it cannot undo.
+    if (batches > 0) throw refuse(name, 'a call the engine does not run inside a grouped edit');
+    endSessionEdits();
+    report.fallback++; (report.editor ??= {})[name] = (report.editor[name] ?? 0) + 1;
     const outer = captured === null;
     if (outer) captured = [];
     pending = true;
@@ -697,8 +644,6 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // An editor call may record a command and then fold it into the next one: only what is
     // still on the editor's stack, in its order, becomes the session's entries.
     const stack = new Set(editor._undo), commands = recorded.filter(command => stack.has(command)).sort((a, b) => editor._undo.indexOf(a) - editor._undo.indexOf(b));
-    // A gesture the editor runs edits the shown keyframe in place until it ends.
-    if (editor._drag && !editor._drag.engine && !editor._drag.authored) (hints ??= freshHints()).frames.add(editor._drag.index ?? editor.frameIndex);
     if (!commands.length) { flush(); return; }
     // One session entry per editor entry; the records changed go with the first. The
     // editor's stack already holds them all: it follows the session's once, at the end.
@@ -712,34 +657,33 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     } finally { writing = false; }
     if (lastDepths) { depths = [editor._undo.length, editor._redo.length]; mirror({depths: lastDepths, state: null, revision: editor._revision}); lastDepths = null; }
   };
+  /** A call the session refuses: counted, and raised as the error the interface shows. */
+  const refuse = (name, reason) => {
+    const key = `${name}: ${reason}`;
+    report.refused[key] = (report.refused[key] ?? 0) + 1;
+    return unsupported(name, reason);
+  };
   const callSession = (name, original, args) => {
     const live = ensure();
     if (!live) return original.apply(editor, args);
     if (ENDS_EDIT[name] && !editor[ENDS_EDIT[name]]) { report.calls++; report.native++; return false; }
-    // A pointer that is not finite is rejected by the editor's own check, before it touches the gesture
-    // (the mirror carries the document token that check follows): the session keeps its edit as it was.
-    if (name === 'updateMotionPathEdit' && editor._drag?.engine && editor._drag.motionPath && !(Number.isFinite(args[0]?.x) && Number.isFinite(args[0]?.y))) {
-      report.errors = (report.errors ?? 0) + 1;
-      return original.apply(editor, args);
-    }
     const flushed = performance.now();
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
-    // A gesture the editor runs (or began) stays with it to its end.
-    if (EDITOR_GESTURES.has(name) || PIXEL_CALLS.has(name) || (editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine)
-        || (editor._vfxClipEdit && !editor._vfxClipEdit.engine) || editor._frameDraftEnabled) {
-      report.fallback++; (report.editor ??= {})[name] = (report.editor[name] ?? 0) + 1;
-      return fallback(name, original, args);
-    }
-    let payload;
-    try { payload = JSON.stringify(args, sessionArguments); } catch { payload = null; }
-    if (payload === null || args.some(value => typeof value === 'function')) { report.refused[`${name}: arguments that are not plain data`] = (report.refused[`${name}: arguments that are not plain data`] ?? 0) + 1; report.fallback++; return fallback(name, original, args); }
+    if (PIXEL_CALLS.has(name)) return runInEditor(name, original, args);
+    const payload = sessionPayload(args);
+    if (payload === null) throw refuse(name, 'arguments that are not plain data');
     report.calls++;
     const timing = report.ms ??= {flush: 0, session: 0, parse: 0, adopt: 0, emit: 0};
     let mark = performance.now();
-    const viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(), drawPool: true});
+    let viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(), drawPool: true});
     report.capture?.push({name, args: payload, view: viewText});
-    const text = live.call(name, payload, viewText);
+    let text = live.call(name, payload, viewText);
+    // A call that makes more identities than the pool holds (rippling the audio cuts many clips) changed nothing: it asks again with enough.
+    if (text.includes('"unported"') && JSON.parse(text).reason?.startsWith('a call that draws more than the pool')) {
+      viewText = JSON.stringify({...view(), patch: true, changesOnly: true, draws: pool(MANY_DRAWS), drawPool: true});
+      text = live.call(name, payload, viewText);
+    }
     const spent = performance.now() - mark;
     timing.session += spent; (timing.byMethod ??= {})[name] = (timing.byMethod[name] ?? 0) + spent; (timing.bytes ??= {})[name] = (timing.bytes[name] ?? 0) + text.length + viewText.length;
     mark = performance.now();
@@ -749,27 +693,10 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     spare = [];
     for (const pair of Array.isArray(answer.drawsLeft) ? answer.drawsLeft : []) if (spare.filter(([kind]) => kind === pair[0]).length < 4) spare.push(pair);
     report.trace?.push(`${name} -> ${answer.status} ${answer.reason ?? answer.error ?? ''} rev ${answer.revision} drag ${JSON.stringify(answer.drag)} draft ${JSON.stringify(answer.draft?.map(f => f.unique_id))} state ${JSON.stringify(answer.state).slice(0, 140)}`);
-    // A pointer move the session rejected leaves its edit open, as the editor's does.
-    const rejected = answer.status === 'error' && name === 'updateMotionPathEdit' && Boolean(answer.motionPath && editor._drag?.engine && editor._drag.motionPath);
-    // An error the session raised without changing anything: the editor raises it itself,
-    // with its message and the values it draws on the way, as the editor alone would.
-    // (Not pastes: the clipboard a native copy filled is the session's.) A rig edit or camera drag
-    // it leaves open stays the session's: the editor's check throws before it touches one.
-    if (answer.status === 'error' && !rejected && !answer.patch?.length && !answer.drag === !editor._drag?.engine && !/paste/i.test(name)) {
-      report.errors = (report.errors ?? 0) + 1;
-      return fallback(name, original, args, {rigAndCamera: false});
-    }
     if (answer.status === 'unported') {
-      const key = `${name}: ${answer.reason}`;
-      report.refused[key] = (report.refused[key] ?? 0) + 1; report.fallback++;
-      // The session's gesture, ended by the editor because the session refuses to.
-      if (editor._drag?.engine && (name === 'commitDrag' || name === 'cancelDrag')) {
-        const ended = fallback(name, original, args);
-        send('@dropGesture', []);
-        if (editor._drag?.engine) { editor._drag = null; editor._authoredPoseEdit = null; editor._invalidate(); }
-        return ended;
-      }
-      return fallback(name, original, args);
+      // The session answers a call it has no command for with the call's own name: the editor runs it.
+      if (answer.reason === name) return runInEditor(name, original, args);
+      throw refuse(name, answer.reason);
     }
     // A committed gesture's frame stays on show, as the session keeps it (`retained`),
     // until the session lets it go.
@@ -777,12 +704,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     const shown = answer.retained ? (editor._authoredPoseEdit?.frame ?? editor.evaluatedFrame) : null;
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
-    if (answer.status === 'ok') holdCall(name, payload, answer);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
-    if (answer.status === 'ok' && MOTION_PATH_CALLS.has(name)) {
-      if (name === 'beginMotionPathEdit') motionCalls = answer.motionPath ? [[name, payload]] : null;
-      else motionCalls?.push([name, payload]);
-    }
+    if (answer.status === 'ok' && (name === 'copyAudioClip' || name === 'cutAudioClip')) editor._audioClipboard = AUDIO_COPIED;
     if (shown && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, shown); editor._geometry = null; editor._incremental = null; }
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
@@ -791,9 +714,26 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     emit(answer);
     timing.emit += performance.now() - mark;
     check();
-    if (answer.status === 'error') throw failure(answer.error);
+    if (answer.status === 'error') { report.errors = (report.errors ?? 0) + 1; throw failure(answer.error, answer.errorParams); }
     report.native++;
     return resultOf(name, answer);
+  };
+  /** `movieclipBatch(label, operation)`: the session records what `operation` does as one history entry. */
+  const batchCall = (original, args) => {
+    const [label, operation] = args;
+    if (typeof operation !== 'function' || !ensure()) return original.apply(editor, args);
+    callSession('beginBatch', original, [label]);
+    batches++;
+    let result;
+    try { result = operation(); }
+    catch (error) {
+      batches--;
+      try { callSession('abortBatch', original, []); } catch { /* the operation's own error is the one raised */ }
+      throw error;
+    }
+    batches--;
+    callSession('endBatch', original, []);
+    return result;
   };
 
   /** Undo or redo: the session's entry, or the editor's own when it is on top. */
@@ -803,10 +743,9 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // As the editor's undo and redo begin.
     if (editor._vfxClipEdit) editor.cancelVfxClipEdit();
     if (editor._animationEdit) editor.cancelAnimationEdit();
-    if (!redo && editor._drag) editor.cancelDrag();
-    // The editor's redo leaves an open motion-path edit, rig edit or camera drag open (the session
-    // refuses to redo under some): the gesture becomes the editor's own first, as a call it runs would make it.
-    if (redo && editor._drag?.engine) { if (editor._drag.motionPath) takeMotion(); else if (heldCalls) takeHeld(); }
+    // Undo ends a gesture first. Redo leaves a pose gesture open under the entry it applies, as the editor's does; the session
+    // does not redo under a motion-path edit, a rig edit or a camera drag, which end first as undo ends them.
+    if (editor._drag && (!redo || editor._drag.motionPath || rigOrCamera)) editor.cancelDrag();
     flush();
     const historyView = JSON.stringify({...view(), patch: true});
     report.capture?.push({name: redo ? 'redo' : 'undo', args: '[]', view: historyView});
@@ -833,6 +772,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       if (typeof result?.then === 'function') return result.then(finish, error => { depth--; throw error; });
       return finish();
     }
+    if (answer.status === 'unported') throw refuse(redo ? 'redo' : 'undo', answer.reason);
     if (answer.status !== 'ok') throw new Error(`The engine could not ${redo ? 'redo' : 'undo'}: ${answer.error ?? answer.reason}`);
     adoptState(answer);
     if (answer.patch?.length) take();
@@ -857,7 +797,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     layer[name] = function owned(...args) {
       // A call made by a call the editor runs belongs to it.
       if (depth > 0 || editor._movieclipScopes?.length) return original.apply(this, args);
-      return callSession(name, original, args);
+      return name === 'movieclipBatch' ? batchCall(original, args) : callSession(name, original, args);
     };
   }
   layer.undo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('undo').apply(this, args) : historyCall(false, args); };
@@ -1019,9 +959,37 @@ function hintsOf(commands, into, report) {
   }
 }
 
-/** The editor's error for an engine refusal: a message key, or the editor's own text. */
-function failure(error) {
-  try { return messageError(new Error(''), error, {}); } catch { return new Error(error); }
+/** A value an engine error names, as the editor's message takes it: a field label or camera-motion parameter the
+ * interface translates, else the value itself. */
+function errorParam(value) {
+  if (value && typeof value === 'object') {
+    if (Object.hasOwn(value, '@label')) return validationLabel(value['@label']);
+    if (Object.hasOwn(value, '@motionParameter')) return {messageKey: motionParameterMessages[value['@motionParameter'].key], diagnosticValue: value['@motionParameter'].label};
+    if (Object.hasOwn(value, '@message')) return {messageKey: value['@message'], diagnosticValue: english[value['@message']]};
+    if (Object.hasOwn(value, '@vfxParameter')) {
+      const {type, param} = value['@vfxParameter'], messageKey = param === 'enabled' ? 'vfxChannels.enabled' : `vfxCatalog.parameter.${type}.${param}.label`;
+      return {messageKey, diagnosticValue: english[messageKey] ?? param};
+    }
+  }
+  return value;
+}
+
+/** The editor's error for an engine refusal: a message key and the values the message names. A message that needs a
+ * value the engine did not name says only that a value is not valid (`error.unnamed` holds the message it stands for). */
+function failure(error, params) {
+  try {
+    const values = Object.fromEntries(Object.entries(params ?? {}).map(([name, value]) => [name, errorParam(value)]));
+    const needed = [...String(english[error] ?? '').matchAll(/\{([A-Za-z]\w*)\}/g)].map(match => match[1]);
+    if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error});
+    return messageError(new Error(''), error, values);
+  } catch { return new Error(error); }
+}
+
+/** The error for a call the session refuses (a document it does not edit yet): the call ran nowhere. */
+function unsupported(name, reason) {
+  const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});
+  error.reason = `${name}: ${reason}`;
+  return error;
 }
 
 function findGetter(object, name) {

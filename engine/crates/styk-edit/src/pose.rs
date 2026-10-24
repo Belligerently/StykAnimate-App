@@ -345,7 +345,7 @@ impl Editor {
     }
 
     pub(crate) fn rotate_joint(&mut self, delta: f64, options: &Value) -> Result<bool, EditError> {
-        finite(delta)?;
+        finite(delta, "Joint rotation")?;
         let Some(Joint { slot, segments, joint, .. }) = self.joint_context()? else { return Ok(false) };
         if joint >= segments.len() {
             return Ok(false);
@@ -373,9 +373,9 @@ impl Editor {
             return Ok(false);
         }
         let options = PoseOptions::from_value(options);
-        finite(x)?;
-        finite(y)?;
-        finite(options.snap_tolerance)?;
+        finite(x, "Joint X")?;
+        finite(y, "Joint Y")?;
+        finite(options.snap_tolerance, "Snap tolerance")?;
         if options.snap_tolerance < 0.0 {
             return Err(EditError::Invalid("errors.editor.snapToleranceCannotBeNegative".into()));
         }
@@ -497,9 +497,9 @@ impl Editor {
     pub(crate) fn bend_joint(&mut self, x: f64, y: f64, options: &Value) -> Result<bool, EditError> {
         let raw_options = options.clone();
         let options = PoseOptions::from_value(options);
-        finite(x)?;
-        finite(y)?;
-        finite(options.snap_tolerance)?;
+        finite(x, "Joint X")?;
+        finite(y, "Joint Y")?;
+        finite(options.snap_tolerance, "Snap tolerance")?;
         if options.snap_tolerance < 0.0 {
             return Err(EditError::Invalid("errors.editor.snapToleranceCannotBeNegative".into()));
         }
@@ -688,9 +688,9 @@ impl Editor {
 }
 
 /// `finite(value, min, max, label)` of the rig commands.
-fn rig_finite(value: f64, min: f64, max: f64, _label: &str) -> Result<f64, EditError> {
+fn rig_finite(value: f64, min: f64, max: f64, label: &str) -> Result<f64, EditError> {
     if !value.is_finite() || value < min || value > max {
-        return Err(EditError::Invalid("errors.cameraMotion.mustBeBetweenAnd".into()));
+        return Err(crate::out_of_range("errors.cameraMotion.mustBeBetweenAnd", label, ("min", "max"), (min, max)));
     }
     Ok(value)
 }

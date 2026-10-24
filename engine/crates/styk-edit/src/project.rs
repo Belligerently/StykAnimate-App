@@ -109,8 +109,8 @@ impl Editor {
     /// `updateProject(patch)`: the canvas size and frame rate from the project settings.
     pub(crate) fn update_project(&mut self, patch: &Value) -> Result<bool, EditError> {
         let patch = patch.as_obj().ok_or_else(|| EditError::Unported("project settings that are not an object".into()))?;
-        if patch.keys().any(|key| !["canvas_width", "canvas_height", "fps"].contains(&&**key)) {
-            return Err(invalid("errors.editor.projectSettingIsNotEditableHere"));
+        if let Some(key) = patch.keys().find(|key| !["canvas_width", "canvas_height", "fps"].contains(&&***key)) {
+            return Err(crate::invalid_with("errors.editor.projectSettingIsNotEditableHere", vec![("key", Value::str(key))]));
         }
         let size = |key: &str| patch.get(key).filter(|v| !v.is_null()).or_else(|| self.report.get(key)).cloned();
         if whole_between(size("canvas_width").as_ref(), 1.0, 100000.0).is_none() || whole_between(size("canvas_height").as_ref(), 1.0, 100000.0).is_none() {

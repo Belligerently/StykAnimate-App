@@ -49,6 +49,19 @@ pub(crate) fn create_object(figure: &Value, identity: u32, x: f64, y: f64) -> Va
     Value::object(object)
 }
 
+/// `createObject`'s pivot for a figure with an animation origin (`{initialize: true}`): a support figure gets its ghosts;
+/// the synchronization of the frame the figure is added to places the pivot.
+pub(crate) fn with_origin_pivot(figure: &Value, mut object: Value) -> Value {
+    if figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy) {
+        let record = object.make_obj().unwrap();
+        crate::origin::reset_support(figure, record);
+        if !record.contains("_stykAnimationOrigin") {
+            record.set("_stykAnimationOrigin", Value::object(Obj::new()));
+        }
+    }
+    object
+}
+
 /// `{...join, [key]: value}` on a figure's join, in place.
 fn set_join_field(object: &mut Obj, key: &str, value: Option<Value>) {
     let Some(mut join) = object.get("join").filter(|j| j.truthy()).and_then(Value::as_obj).cloned() else { return };
@@ -306,10 +319,11 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorRangeCommands.figurePositionMustBeFinite".into()));
         }
         let identity = self.next_uid;
-        let object = create_object(&figure, identity as u32, x, y);
+        let object = with_origin_pivot(&figure, create_object(&figure, identity as u32, x, y));
         // `insert(frame, payload)`: the frame on show with the figure added, slots following
         // unique ids, drawn in front.
-        let mut frame = self.shown_frame()?.as_obj().cloned().unwrap_or_default();
+        let shown = self.shown_frame()?;
+        let mut frame = shown.as_obj().cloned().unwrap_or_default();
         let mut ids = frame_order(&frame);
         let mut objects = objects_of(&Value::object(frame.clone()));
         if objects.len() >= 65535 {
@@ -328,7 +342,9 @@ impl Editor {
         let (selection, previous) = (self.selection_state(), self.selection.clone());
         self.selection = crate::Selection { uid: Some(identity as u32), uids: vec![identity as u32], joint: -1 };
         self.next_uid += 1;
-        if let Err(error) = self.commit_sheet_range_with(&Value::object(frame), &[identity as u32], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection) {
+        let mut frame = Value::object(frame);
+        self.synchronize_origin_frame(&mut frame, &objects_of(&shown), true)?;
+        if let Err(error) = self.commit_sheet_range_with(&frame, &[identity as u32], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection) {
             self.selection = previous;
             self.next_uid = identity;
             return Err(error);
@@ -348,7 +364,7 @@ impl Editor {
             if let Some(value) = given(field)
                 && !value.as_f64().is_some_and(f64::is_finite)
             {
-                return Err(EditError::Invalid(crate::transform::NOT_FINITE.into()));
+                return Err(crate::transform::not_finite(field));
             }
         }
         if given("scale").and_then(|v| v.as_f64()).is_some_and(|scale| scale < 0.0) {
@@ -423,7 +439,7 @@ impl Editor {
         let mut pose: Vec<(&str, f64)> = Vec::new();
         for field in ["angle_rad", "length", "bend_rad"] {
             if let Some(value) = given(field) {
-                let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(EditError::Invalid(crate::transform::NOT_FINITE.into())) };
+                let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(crate::transform::not_finite(field)) };
                 pose.push((field, value));
             }
         }
@@ -475,7 +491,7 @@ impl Editor {
             return Err(EditError::Invalid("errors.editor.useTheFigureBuilderToChangeJointHierarchy".into()));
         }
         if let Some((_, thickness)) = style.iter().find(|(k, _)| k == "thickness") {
-            let Some(thickness) = thickness.as_f64().filter(|t| t.is_finite()) else { return Err(EditError::Invalid(crate::transform::NOT_FINITE.into())) };
+            let Some(thickness) = thickness.as_f64().filter(|t| t.is_finite()) else { return Err(crate::transform::not_finite("Thickness")) };
             if thickness < 0.0 {
                 return Err(EditError::Invalid("errors.editor.thicknessCannotBeNegative".into()));
             }

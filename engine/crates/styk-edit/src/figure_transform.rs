@@ -45,11 +45,6 @@ impl FigureHandle {
         value.set("rotation", Value::Num(self.transform.rotation));
         Value::object(value)
     }
-
-    /// The slots of the figures that move, which the editor needs to carry on the gesture.
-    pub(crate) fn targets(&self) -> Value {
-        Value::array(self.targets.iter().map(|(slot, _)| Value::Num(*slot as f64)).collect())
-    }
 }
 
 fn coordinates(x: f64, y: f64) -> Result<(), EditError> {

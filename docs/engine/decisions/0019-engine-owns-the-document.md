@@ -24,9 +24,11 @@ away once the engine owns the document (phase 3).
   reading `editor.report`, now a read view. Key order follows JavaScript's rules on both sides,
   so the read view stays byte-identical to the engine's document.
 - Undo and redo are the session's; the editor's history getters read the session's state.
-- A call the session refuses (`Unported`) still runs in the JavaScript editor, on the read view.
+- A call the session has no command for yet runs in the JavaScript editor, on the read view.
   Its changed records are written back into the session with a history entry that the
-  JavaScript editor undoes itself, until the refusal is ported and the entry kind disappears.
+  JavaScript editor undoes itself, until the call is ported and the entry kind disappears.
+  A call the session refuses for any other reason raises a localized error; it never runs
+  in the editor.
 - Every native replay also checks that the patch of each step rebuilds the document after it.
 
 ## Consequences

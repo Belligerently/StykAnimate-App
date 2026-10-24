@@ -1868,7 +1868,7 @@ fn motion_path_answers_tell_the_owner_how_the_edit_stands() {
 
 #[test]
 fn handle_gesture_answers_tell_the_owner_where_the_gesture_stands() {
-    let (mut figure, mut edit, mut options, mut turned, mut taken) = (0, 0, 0, 0, 0);
+    let (mut figure, mut edit, mut options, mut turned) = (0, 0, 0, 0);
     for name in ["figure-transform-sheet", "figure-transform-native", "handle-edit-sheet", "handle-edit-native", "handle-commands-sheet", "segment-clipboard-sheet"] {
         let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
         let reference = parse(&std::fs::read_to_string(file).unwrap());
@@ -1881,7 +1881,6 @@ fn handle_gesture_answers_tell_the_owner_where_the_gesture_stands() {
             let mut view = session.editor.state_value().as_obj().unwrap().clone();
             view.set("autoKey", Value::Bool(session.editor.auto_key));
             view.set("changesOnly", Value::Bool(true));
-            let quiet = Value::object(view.clone());
             view.set("patch", Value::Bool(true));
             let label = format!("{name} step {} ({method})", step.get("step").unwrap());
             let answer = session.call_values(method, &Value::array(call[1..].to_vec()), &Value::object(view));
@@ -1891,9 +1890,6 @@ fn handle_gesture_answers_tell_the_owner_where_the_gesture_stands() {
                 continue;
             }
             assert!(!answer.get("drag").unwrap().is_null(), "{label}: the gesture is a drag");
-            let held = session.call_values("@gestureState", &Value::array(Vec::new()), &quiet);
-            assert_eq!(held.get("status").and_then(Value::as_str), Some("ok"), "{label}: the state the editor takes over");
-            let held = held.get("result").unwrap();
             if let Some(handle) = live.get("figureHandle") {
                 figure += 1;
                 assert_eq!(handle.get("origin").unwrap().numbers().unwrap().len(), 2, "{label}: the pivot");
@@ -1903,25 +1899,11 @@ fn handle_gesture_answers_tell_the_owner_where_the_gesture_stands() {
                 let now = handle.get("rotation").unwrap().as_f64().unwrap();
                 turned += usize::from(now != rotation);
                 rotation = now;
-                assert!(!held.get("figureHandle").unwrap().numbers().unwrap().is_empty(), "{label}: the figures that move");
-                taken += 1;
-            } else {
-                assert!(held.get("figureHandle").is_none(), "{label}: no figure-handle gesture");
             }
             if let Some(handle) = live.get("handleEdit") {
                 edit += 1;
                 assert_eq!(handle.get("point").unwrap().numbers().unwrap().len(), 2, "{label}: where the handle began");
                 assert!(handle.get("index").is_some() && handle.get("uid").is_some() && handle.get("bend").is_some(), "{label}: the handle being edited");
-                let states: Vec<Value> = held.get("handleEdit").unwrap().elements().unwrap().iter().collect();
-                assert!(!states.is_empty(), "{label}: the figures that move");
-                for state in states {
-                    let segments = state.get("drawn").unwrap().numbers().unwrap().len();
-                    assert!(state.get("lengths").unwrap().numbers().unwrap().len() == segments && state.get("bends").unwrap().numbers().unwrap().len() == segments, "{label}: an arc per segment");
-                    assert!(state.get("incident").unwrap().array_len().unwrap() == state.get("indices").unwrap().array_len().unwrap(), "{label}: the arcs that meet the handle");
-                }
-                taken += 1;
-            } else {
-                assert!(held.get("handleEdit").is_none(), "{label}: no handle-edit gesture");
             }
             if let Some(chosen) = live.get("segmentValueOptions") {
                 options += 1;
@@ -1929,7 +1911,7 @@ fn handle_gesture_answers_tell_the_owner_where_the_gesture_stands() {
             }
         }
     }
-    assert!(figure >= 6 && edit >= 8 && options >= 6 && turned >= 3 && taken >= 14, "figure {figure}, edit {edit}, options {options}, turned {turned}, taken {taken}");
+    assert!(figure >= 6 && edit >= 8 && options >= 6 && turned >= 3, "figure {figure}, edit {edit}, options {options}, turned {turned}");
 }
 
 /// What a session tells the owner of its open rig edit or camera drag while a recorded tape runs:

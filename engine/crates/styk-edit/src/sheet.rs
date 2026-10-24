@@ -548,6 +548,9 @@ impl Editor {
         let transaction = edit.transaction;
         let definitions_start = edit.definitions_start;
         let (before, after, tick) = (edit.source.clone(), edit.frame.clone(), edit.tick);
+        // Auto key behaves like pressing A during the gesture: every edited track keys the playhead (a tween does too).
+        let at_playhead = edit.key_at_playhead || self.auto_key;
+        let keyed_layers = edit.key_at_playhead_layers.clone();
         let (old, current) = (objects_of(&before), objects_of(&after));
         let find = |objects: &[Value], id: u32| objects.iter().find(|o| uid(o) == Some(id)).cloned();
         // A gesture can only have changed the figures it took; a command, any figure.
@@ -563,7 +566,7 @@ impl Editor {
                 _ => true,
             })
             .collect();
-        let mut ids: Vec<String> = Vec::new();
+        let mut ids: Vec<String> = keyed_layers;
         for &id in &changed {
             let owner = self.owner(id)?;
             if !ids.contains(&owner) {
@@ -632,7 +635,7 @@ impl Editor {
                     changed_here.push(figure);
                 }
             }
-            if let (false, Some(index), false) = (self.auto_key, at_key, patches.is_empty()) {
+            if let (false, Some(index), false) = (at_playhead, at_key, patches.is_empty()) {
                 let members = |patch: &Value| -> Vec<u32> {
                     patch.get("frameId").and_then(Value::as_str).and_then(|frame| self.frame_by_id(frame)).map(|frame| objects_of(&frame).iter().filter_map(uid).collect()).unwrap_or_default()
                 };
@@ -676,7 +679,7 @@ impl Editor {
                 membership |= self.owner(figure)? == *id && find(&old, figure).is_some() != find(&current, figure).is_some();
             }
             let at = match &key {
-                Some(key) if hold && !membership && !self.auto_key => num(key, "tick").unwrap_or(tick),
+                Some(key) if hold && !membership && !at_playhead => num(key, "tick").unwrap_or(tick),
                 _ => tick,
             };
             let held = constant();
@@ -922,7 +925,7 @@ impl Editor {
                 return Err(EditError::Invalid("errors.editorLayerSheet.theSelectedLayerNoLongerExists".into()));
             }
             if state.and_then(|s| s.get("locked")).is_some_and(Value::truthy) {
-                return Err(EditError::Invalid("errors.editorLayerSheet.unlockBeforeEditingIt".into()));
+                return Err(crate::invalid_with("errors.editorLayerSheet.unlockBeforeEditingIt", vec![("name", Value::str(&crate::layers::layer_title(Some(&layers), id)))]));
             }
         }
         let Some(before) = styk.and_then(|s| s.get("layerSheet")).cloned() else { return Err(EditError::Invalid("errors.editorLayerSheet.openTheLayerTimelineFirst".into())) };

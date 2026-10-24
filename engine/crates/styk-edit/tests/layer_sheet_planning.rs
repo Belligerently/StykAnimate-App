@@ -292,7 +292,7 @@ fn recorded_refusals_cancellation_and_stale_publication_preserve_the_owner() {
             },
             clock,
         );
-        assert_eq!(result.unwrap_err().to_string(), key, "{name}");
+        assert_eq!(styk_edit::error_key(&result.unwrap_err().to_string()), key, "{name}");
         assert_json(
             &json::to_string(&report),
             reference.get("document").unwrap().as_str().unwrap(),

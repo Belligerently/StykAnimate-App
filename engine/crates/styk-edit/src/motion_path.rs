@@ -353,10 +353,10 @@ fn checked_camera(current: &Value, x: f64, y: f64) -> Result<Value, EditError> {
     let field = |key: &str| camera.get(key).and_then(Value::as_f64);
     let mut values = [0.0; 4];
     for (i, key) in ["x", "y", "scale", "angle_rad"].into_iter().enumerate() {
-        values[i] = field(key).filter(|v| v.is_finite()).ok_or_else(|| EditError::Invalid("errors.editorCamera.mustBeFinite".into()))?;
+        values[i] = field(key).filter(|v| v.is_finite()).ok_or_else(|| crate::camera_commands::camera_not_finite(key))?;
     }
-    if values[..3].iter().any(|&v| !(v as f32).is_finite()) {
-        return Err(EditError::Invalid("errors.editorCamera.cameraExceedsTheNativeRange".into()));
+    if let Some(bad) = values[..3].iter().position(|&v| !(v as f32).is_finite()) {
+        return Err(crate::invalid_with("errors.editorCamera.cameraExceedsTheNativeRange", vec![("field", Value::str(["x", "y", "scale"][bad]))]));
     }
     if values[2] <= 0.0 {
         return Err(EditError::Invalid("errors.editorCamera.cameraScaleMustBePositive".into()));
@@ -876,6 +876,9 @@ impl Editor {
             authored: false,
             rig: None,
             motion_path: Some(Box::new(session)),
+            duplicate: None,
+            tweener: None,
+            serial: self.next_drag_serial(),
         });
         Ok(true)
     }
@@ -1052,7 +1055,7 @@ impl Editor {
         if !point.is_object() {
             return Err(EditError::Unported("a motion-path point that is not an object".into()));
         }
-        let coordinate = |key: &str| point.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| EditError::Invalid("errors.editorCamera.mustBeFinite".into()));
+        let coordinate = |key: &str| point.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| crate::transform::not_finite(&format!("Motion-path {}", key.to_uppercase())));
         let point_xy = [coordinate("x")?, coordinate("y")?];
         let mut session = self.take_motion_path();
         session.last = Some((point.clone(), options.clone()));

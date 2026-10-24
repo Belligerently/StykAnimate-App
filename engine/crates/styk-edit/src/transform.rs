@@ -13,6 +13,11 @@ use crate::{Drag, EditError, Editor};
 
 pub(crate) const NOT_FINITE: &str = "errors.editorCamera.mustBeFinite";
 
+/// A value the editor's `finite(value, label)` refuses.
+pub(crate) fn not_finite(label: &str) -> EditError {
+    crate::invalid_with(NOT_FINITE, vec![("label", crate::label(label))])
+}
+
 /// `moveSelection`'s options.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct MoveOptions {
@@ -64,6 +69,9 @@ impl Editor {
             camera: None,
             rig: None,
             motion_path: None,
+            duplicate: None,
+            tweener: None,
+            serial: self.next_drag_serial(),
             authored: false,
         });
         Ok(true)
@@ -135,6 +143,9 @@ impl Editor {
     pub(crate) fn commit_drag(&mut self) -> Result<bool, EditError> { self.commit_drag_checked(&mut || Ok(())) }
     pub(crate) fn commit_drag_checked(&mut self, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
         check()?;
+        if self.drag.as_ref().is_some_and(|drag| drag.duplicate.is_some()) {
+            return self.finish_duplicate_drag(true);
+        }
         if self.rig_drag().is_some() {
             return self.commit_rig_drag();
         }
@@ -188,6 +199,9 @@ impl Editor {
     }
 
     pub(crate) fn cancel_drag(&mut self) -> Result<bool, EditError> {
+        if self.drag.as_ref().is_some_and(|drag| drag.duplicate.is_some()) {
+            return self.finish_duplicate_drag(false);
+        }
         if self.rig_drag().is_some() {
             return self.cancel_rig_drag();
         }
@@ -211,9 +225,8 @@ impl Editor {
     pub(crate) fn move_selection(&mut self, dx: f64, dy: f64, options: &Value) -> Result<bool, EditError> { self.move_selection_checked(dx, dy, options, &mut || Ok(())) }
     pub(crate) fn move_selection_checked(&mut self, dx: f64, dy: f64, options: &Value, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
         check()?;
-        if !dx.is_finite() || !dy.is_finite() {
-            return Err(EditError::Invalid(NOT_FINITE.into()));
-        }
+        finite(dx, "Translation X")?;
+        finite(dy, "Translation Y")?;
         let options = MoveOptions::from_value(options);
         self.object_edit_with_checked("Move figures", false, |editor| {
             if !options.detach_external {
@@ -325,9 +338,8 @@ impl Editor {
                 Some(center) => center,
                 None => editor.selection_center(&ids)?,
             };
-            if !pivot[0].is_finite() || !pivot[1].is_finite() {
-                return Err(EditError::Invalid(NOT_FINITE.into()));
-            }
+            finite(pivot[0], "Transform center X")?;
+            finite(pivot[1], "Transform center Y")?;
             let figures: Vec<Value> = editor.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
             for (slot, object) in editor.frame_objects().iter().enumerate() {
                 if !uid(object).is_some_and(|u| ids.contains(&u)) {
@@ -345,7 +357,7 @@ impl Editor {
     }
 
     pub(crate) fn rotate_selection(&mut self, radians: f64, options: &Value) -> Result<bool, EditError> {
-        finite(radians)?;
+        finite(radians, "Rotation")?;
         let (c, s) = (styk_math::cos(radians), styk_math::sin(radians));
         let (center, selected_only) = transform_options(options)?;
         self.transform_selection("Rotate figures", center, selected_only, |_, object, pivot, root, figure| {
@@ -363,7 +375,7 @@ impl Editor {
 
     /// `scaleSelection` (label "Scale figures") and `scaleSelected` (selected figures only).
     pub(crate) fn scale_selection(&mut self, factor: f64, options: &Value, selected: bool) -> Result<bool, EditError> {
-        finite(factor)?;
+        finite(factor, "Scale")?;
         if factor < 0.0 {
             return Err(EditError::Invalid("errors.editor.scaleCannotBeNegative".into()));
         }
@@ -419,7 +431,7 @@ impl Editor {
         if self.selected_objects()?.len() > 1 {
             return self.rotate_selection(radians, &Value::Null);
         }
-        finite(radians)?;
+        finite(radians, "Rotation")?;
         self.object_edit("Rotate figure", |editor| {
             let figures: Vec<Value> = editor.report.get("figure_types").and_then(Value::elements).map(|items| items.iter().collect()).unwrap_or_default();
             let ids: Vec<u32> = editor.drag.as_ref().unwrap().before.iter().filter_map(uid).collect();
@@ -470,8 +482,9 @@ impl Editor {
     }
 }
 
-pub(crate) fn finite(value: f64) -> Result<f64, EditError> {
-    if value.is_finite() { Ok(value) } else { Err(EditError::Invalid(NOT_FINITE.into())) }
+/// `finite(value, label)`.
+pub(crate) fn finite(value: f64, label: &str) -> Result<f64, EditError> {
+    if value.is_finite() { Ok(value) } else { Err(not_finite(label)) }
 }
 
 /// A numeric field as JavaScript arithmetic reads it (missing is NaN).

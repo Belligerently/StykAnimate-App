@@ -98,6 +98,7 @@ impl Editor {
             return Err(invalid("errors.editor.theSegmentParentDoesNotExist"));
         }
         let coordinate = |key: &str, fallback: f64| -> Result<f64, EditError> {
+            let label = format!("Figure {}", key.to_uppercase());
             match first
                 .get("start")
                 .and_then(|v| v.get(key))
@@ -107,7 +108,7 @@ impl Editor {
                 Some(value) => value
                     .as_f64()
                     .filter(|v| v.is_finite())
-                    .ok_or_else(|| invalid("errors.editorCamera.mustBeFinite")),
+                    .ok_or_else(|| crate::transform::not_finite(&label)),
             }
         };
         let x = coordinate(
@@ -118,8 +119,11 @@ impl Editor {
             "y",
             num(&self.report, "canvas_height").unwrap_or(f64::NAN) / 2.0,
         )?;
-        if !x.is_finite() || !y.is_finite() {
-            return Err(invalid("errors.editorCamera.mustBeFinite"));
+        if !x.is_finite() {
+            return Err(crate::transform::not_finite("Figure X"));
+        }
+        if !y.is_finite() {
+            return Err(crate::transform::not_finite("Figure Y"));
         }
         if self.next_uid > 0x7fff_fffe {
             return Err(invalid(

@@ -24,7 +24,7 @@ fn unrecorded_saved_origin_channel_commands_refuse_atomically() {
     editor.call("beginTranslationDrag", &[]).unwrap();
     editor.call("moveSelection", &[Value::Num(4.0), Value::Num(-2.0)]).unwrap();
     let before = (editor.report_json(), editor.state());
-    for method in ["setOrigin", "mirrorSegment", "addSegment", "deleteSingleSegment", "applyFigureRange", "addFigureInFrames", "beginMotionPathEdit", "deleteFiguresInFrames", "duplicateFigure", "deleteSelection", "beginHandleEditDrag", "transformFigureHandle"] {
+    for method in ["setOrigin", "mirrorSegment", "addSegment", "deleteSingleSegment", "applyFigureRange", "addFigureInFrames", "beginMotionPathEdit", "deleteFiguresInFrames", "duplicateFigure", "beginHandleEditDrag", "transformFigureHandle"] {
         assert!(matches!(editor.call(method, &[]), Err(styk_edit::EditError::Unported(_))), "{method}");
         assert_eq!((editor.report_json(), editor.state()), before, "{method} changed state on refusal");
     }

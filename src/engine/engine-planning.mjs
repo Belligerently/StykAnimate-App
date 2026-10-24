@@ -33,7 +33,12 @@ function failure(error, kind, signal) {
   if (error?.name === 'EngineUnported') return error;
   // Cancelled, replaced by a newer document or timed out: all retire the job as aborted.
   if (error?.name === 'AbortError') return signal?.aborted ? KINDS[kind].cancelled() : KINDS[kind].stale();
-  return restoreMessageError(error, {messageKey: error?.message});
+  // A refusal that names a value (`Unlock {name} before editing it`) carries its JSON after the key.
+  const text = String(error?.message ?? ''), at = text.indexOf('\u001f');
+  if (at === -1) return restoreMessageError(error, {messageKey: text});
+  let messageParams;
+  try { messageParams = JSON.parse(text.slice(at + 1)); } catch { messageParams = undefined; }
+  return restoreMessageError(error, {messageKey: text.slice(0, at), messageParams});
 }
 
 /** Whether the engine's worker threads can run this kind of job. */

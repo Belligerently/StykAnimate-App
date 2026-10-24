@@ -70,7 +70,7 @@ test('unsupported nested option data leaves getters, toJSON and the original cal
 
 /** The editor owned by the real engine, as the app has it: the session its open started edits the document. */
 const owned = editor => installEngineOwner(editor);
-test('the engine measures the app\'s bounds callback itself; any other callback runs in the editor', {skip: !engineBuilt}, async () => {
+test('the engine measures the app\'s bounds callback itself; any other callback is refused', {skip: !engineBuilt}, async () => {
   const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/measured-bounds.document.json', import.meta.url), 'utf8'));
   const outcomes = [];
   for (const app of [false, true]) {
@@ -78,12 +78,22 @@ test('the engine measures the app\'s bounds callback itself; any other callback 
     editor.selectMany([1, 3]);
     const owner = owned(editor), order = [], queries = appBounds();
     const boundsOf = entry => { order.push(entry.obj.unique_id); return queries(entry); };
-    const result = editor.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf: app ? markAppBounds(boundsOf) : boundsOf});
+    if (!app) {
+      // A function that is not the app's marker is not data for the session: refused, never run in the editor.
+      const before = JSON.stringify(editor.report);
+      assert.throws(() => editor.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf}), error => error.messageKey === 'errors.engineOwner.notSupported');
+      assert.deepEqual(order, [], 'nothing measured the figures');
+      assert.equal(owner.native, 0); assert.equal(owner.fallback, 0);
+      assert.deepEqual(owner.refused, {'alignFiguresInFrames: arguments that are not plain data': 1});
+      assert.equal(JSON.stringify(editor.report), before);
+      owner.release();
+      continue;
+    }
+    const result = editor.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf: markAppBounds(boundsOf)});
     assert.deepEqual(result, {changedFrames: 2, changedTicks: [0, 6], insertedUids: []});
-    if (app) { assert.deepEqual(order, [], 'the engine did not call back'); assert.equal(owner.native, 1); assert.equal(owner.fallback, 0); }
-    else { assert.deepEqual(order, [1, 3, 1, 3], 'the editor measured the figures'); assert.equal(owner.native, 0); assert.equal(owner.fallback, 1); }
+    assert.deepEqual(order, [], 'the engine did not call back'); assert.equal(owner.native, 1); assert.equal(owner.fallback, 0);
     outcomes.push(JSON.stringify(editor.report));
     owner.release();
   }
-  assert.equal(outcomes[0], outcomes[1], 'the engine moved the figures as the editor does');
+  assert.equal(outcomes.length, 1);
 });

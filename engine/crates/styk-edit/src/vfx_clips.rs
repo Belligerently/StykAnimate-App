@@ -61,6 +61,8 @@ fn object_is(a: Option<&Value>, b: Option<&Value>) -> bool {
 /// the parameter's kind and range (`enabled` is a switch).
 pub(crate) struct Descriptor {
     kind: Kind,
+    /// The effect's type as the property names it.
+    type_name: String,
     id: String,
     param: String,
     color: bool,
@@ -86,7 +88,7 @@ pub(crate) fn descriptor(property: &str) -> Option<Descriptor> {
         let spec = kind.specs()[kind.param(param)?];
         (spec.kind == ParamKind::Color, spec.kind.discrete(), spec.min, spec.max)
     };
-    Some(Descriptor { kind, id: id.to_string(), param: param.to_string(), color, discrete, min, max })
+    Some(Descriptor { kind, type_name: parts[1].to_string(), id: id.to_string(), param: param.to_string(), color, discrete, min, max })
 }
 
 /// `vfxProperty(type, id, param)`.
@@ -102,8 +104,18 @@ pub(crate) fn check_value(found: &Descriptor, value: Option<&Value>) -> Result<(
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= found.min && *n <= found.max && (!(found.color || found.discrete) || n.fract() == 0.0) => Ok(()),
         Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if found.color => crate::recolor::normalize_paint(paint).map(|_| ()),
-        _ => Err(invalid("errors.cameraMotion.mustBeBetweenAnd")),
+        _ => Err(vfx_range_error(&found.type_name, &found.param, found.min, found.max)),
     }
+}
+
+/// A value outside an effect parameter's range: the parameter is named as the interface names it.
+pub(crate) fn vfx_range_error(type_name: &str, param: &str, min: f64, max: f64) -> EditError {
+    let mut parameter = Obj::new();
+    parameter.set("type", Value::str(type_name));
+    parameter.set("param", Value::str(param));
+    let mut reference = Obj::new();
+    reference.set("@vfxParameter", Value::object(parameter));
+    crate::invalid_with("errors.cameraMotion.mustBeBetweenAnd", vec![("label", Value::object(reference)), ("min", Value::Num(min)), ("max", Value::Num(max))])
 }
 
 /// `validateVfxStack(stack)`, effects in `known` (already checked) skipped.
@@ -269,7 +281,7 @@ fn check_clip(clip: &Value, old: Option<&Value>) -> Result<(), EditError> {
                 Some(mode) => mode.as_str().map(|m| if m == "hold" { "constant" } else { m }).unwrap_or("").to_string(),
             };
             if found.discrete && mode != "constant" {
-                return Err(invalid("errors.keyframeEasing.useConstantEasing"));
+                return Err(crate::invalid_with("errors.keyframeEasing.useConstantEasing", vec![("value", crate::message("keyframeEasing.backgroundIdentities"))]));
             }
         }
     }
@@ -322,6 +334,7 @@ impl Editor {
     /// `unlocked(editor, target)`: the layer of the clip's target must not be locked.
     fn vfx_unlocked(&self, target: Option<&Value>) -> Result<(), EditError> {
         let layers = self.report.path(&["_styk", "layers"]);
+        let mut owner = "scene".to_string();
         let locked = match target.and_then(|t| t.get("kind")).and_then(Value::as_str) {
             Some("scene") => layers.and_then(|l| l.path(&["fixed", "scene", "locked"])).is_some_and(Value::truthy),
             _ => {
@@ -330,11 +343,13 @@ impl Editor {
                     Some(uid) => self.layer_of(uid as u32),
                     None => return Err(EditError::Unported("an effect clip without a figure".into())),
                 };
-                layers.and_then(|l| l.path(&["byId", &layer, "locked"])).is_some_and(Value::truthy)
+                let locked = layers.and_then(|l| l.path(&["byId", &layer, "locked"])).is_some_and(Value::truthy);
+                owner = layer;
+                locked
             }
         };
         if locked {
-            return Err(invalid("errors.editorVfxClips.unlockBeforeEditingEffects"));
+            return Err(crate::invalid_with("errors.editorVfxClips.unlockBeforeEditingEffects", vec![("name", Value::str(&crate::layers::layer_title(layers, &owner)))]));
         }
         Ok(())
     }
@@ -1023,6 +1038,71 @@ impl Editor {
         clips.push(Value::object(clip));
         self.publish_vfx(clips, if animation { "Paste effect animation" } else { "Paste effect values" })?;
         Ok(Value::str(&id))
+    }
+
+    /// `_pasteFigureVfxClips(clips, uidMap, typeMap, shift)`: the effect clips of copied figures on the
+    /// pasted ones, with new clip and effect identities; a timed clip moves by `shift` frames, trimmed
+    /// where that takes it before the first frame. A figure that kept its identity gets none.
+    pub(crate) fn paste_figure_vfx_clips(&mut self, clips: &[Value], uid_map: &[(u32, u32)], type_map: &[(f64, f64)], shift: f64) -> Result<bool, EditError> {
+        let mut added = Vec::new();
+        for source in clips {
+            let old = source.path(&["target", "uid"]).and_then(Value::as_f64);
+            let Some(uid) = old.and_then(|old| uid_map.iter().find(|(from, _)| *from as f64 == old)).map(|(_, to)| *to) else { continue };
+            if Some(uid as f64) == old {
+                continue;
+            }
+            let effects = list(source.get("effects"));
+            let mut ids: Vec<(Option<Value>, String)> = Vec::new();
+            for effect in &effects {
+                ids.push((effect.get("id").cloned(), self.draw_uuid()?));
+            }
+            let fresh = |old: Option<&Value>| ids.iter().rev().find(|(k, _)| object_is(k.as_ref(), old)).map(|(_, id)| id.clone());
+            let mut target = source.get("target").and_then(Value::as_obj).cloned().unwrap_or_default();
+            target.set("uid", Value::Num(uid as f64));
+            if let Some(figure_type) = target.get("figureTypeId").and_then(Value::as_f64) {
+                if let Some((_, to)) = type_map.iter().find(|(from, _)| *from == figure_type) {
+                    target.set("figureTypeId", Value::Num(*to));
+                }
+            }
+            let mut keys = Obj::new();
+            for (property, channel) in source.get("keys").and_then(Value::as_obj).cloned().unwrap_or_default().iter() {
+                let found = descriptor(property).ok_or_else(|| EditError::Unported("effect keys of an unknown parameter".into()))?;
+                let id = fresh(Some(&Value::str(&found.id))).ok_or_else(|| EditError::Unported("effect keys of an effect the clip does not hold".into()))?;
+                keys.set(&property_of(found.kind.name(), &id, &found.param)?.0, channel.clone());
+            }
+            let id = self.draw_uuid()?;
+            let mut renamed = Vec::new();
+            for effect in &effects {
+                let id = fresh(effect.get("id")).ok_or_else(|| EditError::Unported("a copied effect without its identity".into()))?;
+                renamed.push(with(effect, "id", Value::str(&id)));
+            }
+            let mut clip = source.as_obj().cloned().unwrap_or_default();
+            clip.set("id", Value::str(&id));
+            clip.set("target", Value::object(target));
+            clip.set("effects", Value::array(renamed));
+            clip.set("keys", Value::object(keys));
+            if !matches!(clip.get("duration"), Some(Value::Null)) {
+                let number = |key: &str| clip.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
+                let start = number("start") + shift;
+                let cut = js_max(0.0, -start);
+                let duration = number("duration");
+                if cut >= duration || start + duration > 10_000_000.0 {
+                    continue;
+                }
+                let (offset, fade_in) = (number("offset") + cut, js_max(0.0, number("fadeIn") - cut));
+                clip.set("start", Value::Num(start + cut));
+                clip.set("offset", Value::Num(offset));
+                clip.set("duration", Value::Num(duration - cut));
+                clip.set("fadeIn", Value::Num(fade_in));
+            }
+            added.push(Value::object(clip));
+        }
+        if added.is_empty() {
+            return Ok(false);
+        }
+        let mut clips = self.vfx_clips();
+        clips.extend(added);
+        self.publish_vfx(clips, "Paste figure effects")
     }
 
     /// `duplicateVfxClip(id)`: copied, then pasted on the same target after the clip.

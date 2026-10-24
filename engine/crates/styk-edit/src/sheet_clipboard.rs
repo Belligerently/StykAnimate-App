@@ -117,7 +117,7 @@ impl Editor {
             }
             let state = layers.and_then(|l| if fixed(id) { l.path(&["fixed", id]) } else { l.path(&["byId", id]) });
             if state.and_then(|s| s.get("locked")).is_some_and(Value::truthy) {
-                return Err(invalid("unlockBeforeEditingIt"));
+                return Err(crate::invalid_with("errors.editorLayerSheet.unlockBeforeEditingIt", vec![("name", Value::str(&crate::layers::layer_title(layers, id)))]));
             }
         }
         Ok(())

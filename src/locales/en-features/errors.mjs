@@ -1688,5 +1688,7 @@ export default Object.freeze({
   "errors.importWorker.serviceFailed": "The file service failed ({status}).",
   "errors.importWorker.importFailed": "Import failed ({status}).",
   "errors.documentExportWorker.busy": "The document export worker is busy.",
-  "errors.playbackPlanning.invalidResultBudget": "Invalid background planning result budget."
+  "errors.playbackPlanning.invalidResultBudget": "Invalid background planning result budget.",
+  "errors.engineOwner.notSupported": "This edit is not supported for this project yet.",
+  "errors.engineOwner.invalidValue": "One of the values is not valid."
 });

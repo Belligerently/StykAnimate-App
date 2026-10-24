@@ -416,6 +416,29 @@ impl Editor {
         Ok(())
     }
 
+    /// `_movieclipBatch = commands` (a gesture collecting what it records): entries go to the collector, not to history.
+    pub(crate) fn start_collecting(&mut self) {
+        self.batch = Some(Batch { commands: Vec::new(), label: String::new(), revision: self.revision, before_selection: self.selection_state(), nested: 0 });
+    }
+
+    /// The entries the collector holds; history records into itself again.
+    pub(crate) fn finish_collecting(&mut self) -> Vec<Entry> {
+        self.batch.take().map(|batch| batch.commands).unwrap_or_default()
+    }
+
+    /// `movieclipBatch(label, …, {beforeSelection})` begun with entries already in it.
+    pub(crate) fn begin_batch_with(&mut self, label: &str, before_selection: SelectionState, commands: Vec<Entry>) {
+        self.batch = Some(Batch { commands, label: label.into(), revision: self.revision, before_selection, nested: 0 });
+    }
+
+    /// Applies entries before their commands, last first (`_applyCommand(command, 'before')`).
+    pub(crate) fn undo_entries(&mut self, entries: &[Entry]) -> Result<(), EditError> {
+        for entry in entries.iter().rev() {
+            self.apply(&entry.command, Direction::Before)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn undo(&mut self) -> Result<bool, EditError> {
         self.cancel_vfx_clip_edit()?;
         if self.drag.is_some() {

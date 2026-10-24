@@ -112,12 +112,6 @@ impl Editor {
     pub(crate) fn prepared(&self) -> Result<Arc<Prepared>, EditError> {
         let mut cache = self.eval.borrow_mut();
         if cache.prepared.is_none() || !cache.report.as_ref().is_some_and(|report| report.same_node(&self.report)) {
-            if self.worker_prepared_only && self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::elements)
-                .is_some_and(|clips| clips.iter().any(|clip| clip.get("type").and_then(Value::as_str) == Some("follow")
-                    && clip.get("targets").and_then(Value::array_len).is_some_and(|count| count > 0)))
-            {
-                return Err(EditError::Unported("follow projections require this revision's worker-prepared document".into()));
-            }
             let document = cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
             // The views of records the document and its history no longer hold go with them.
             cache.loader.release_unused();
@@ -1186,8 +1180,7 @@ mod tests {
     #[test]
     fn camera_without_motion_does_not_prepare_typed_document() {
         let report = styk_doc::json::parse(br#"{"_styk":{"cameraMotion":{"clips":[]}}}"#).unwrap();
-        let mut editor = crate::Editor::new(report, crate::Options::default());
-        editor.worker_prepared_only = true;
+        let editor = crate::Editor::new(report, crate::Options::default());
         let frame = styk_doc::json::parse(br#"{"camera":{"is_default":false,"x":4}}"#).unwrap();
         assert_eq!(editor.camera_at_time(&frame, 90_000.0).unwrap(), frame.get("camera").cloned());
         assert!(editor.eval.borrow().prepared.is_none(), "empty camera clips prepared the document");
@@ -1274,7 +1267,7 @@ mod tests {
                 let result = editor.call(method, measured.as_deref().unwrap_or(&call[1..]));
                 match (result, step.get("error").filter(|error| !error.is_null())) {
                     (Ok(_), None) => {},
-                    (Err(EditError::Invalid(key)), Some(error)) => assert_eq!(Some(key.as_str()), error.get("key").and_then(Value::as_str).or_else(|| error.get("message").and_then(Value::as_str))),
+                    (Err(EditError::Invalid(key)), Some(error)) => assert_eq!(Some(crate::error_key(&key)), error.get("key").and_then(Value::as_str).or_else(|| error.get("message").and_then(Value::as_str))),
                     (result, error) => panic!("{name}/{method}: {result:?}, recorded {error:?}"),
                 }
                 if let Some(document) = step.get("document").and_then(Value::as_str) { expected = document.to_string(); }
@@ -1303,7 +1296,7 @@ mod tests {
         let source = editor.shown_frame().unwrap();
         let mut invalid = source.clone();
         invalid.make_obj().unwrap().get_mut("objects").unwrap().make_arr().unwrap()[0] = Value::Null;
-        editor.authored = Some(crate::Authored { source, frame: invalid, tick: editor.tick, transaction: false, definitions_start: None });
+        editor.authored = Some(crate::Authored { source, frame: invalid, tick: editor.tick, transaction: false, definitions_start: None, key_at_playhead: false, key_at_playhead_layers: Vec::new() });
         let coherent = editor.eval.borrow().latest_typed.as_ref().unwrap().clone();
         let old = editor.evaluate_only(Some(&[0])).err().unwrap();
         assert!(matches!(&old, EditError::Invalid(_)));

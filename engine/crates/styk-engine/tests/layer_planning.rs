@@ -297,7 +297,7 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
         let job = engine.plan_layers(1, request).unwrap();
         engine.step();
         assert_eq!(
-            job.poll().error.unwrap().to_string(),
+            styk_edit::error_key(&job.poll().error.unwrap().to_string()),
             reference
                 .path(&["failure", "messageKey"])
                 .unwrap()

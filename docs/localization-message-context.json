@@ -15831,7 +15831,7 @@
     "locations": [
       "src/editor-inbetween-async.mjs:102",
       "src/editor-inbetween.mjs:15",
-      "src/engine/engine-planning.mjs:139"
+      "src/engine/engine-planning.mjs:144"
     ],
     "context": "if(typeof ratio!=='number'||!Number.isFinite(ratio)||ratio<0||ratio>1)throw messageError(new Error(''), \"errors.editorInbetweenAsync.chooseAnInterpolationRatioF"
   },
@@ -17143,6 +17143,18 @@
       "src/editor-vfx-clips.mjs:45"
     ],
     "context": "setVfxClip(id,patch){const c=find(this,id);if(Object.keys(patch).some(k=>!['name','start','duration','offset','enabled','strength','fadeIn','fadeOut','includeAt"
+  },
+  "errors.engineOwner.invalidValue": {
+    "locations": [
+      "src/engine/engine-owner.mjs:983"
+    ],
+    "context": "if (needed.some(name => !Object.hasOwn(values, name))) return Object.assign(messageError(new Error(''), 'errors.engineOwner.invalidValue', {}), {unnamed: error}"
+  },
+  "errors.engineOwner.notSupported": {
+    "locations": [
+      "src/engine/engine-owner.mjs:990"
+    ],
+    "context": "const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});"
   },
   "errors.engineStage.theDrawingEngineCouldNotStart": {
     "locations": [
@@ -39899,11 +39911,12 @@
   },
   "vfxChannels.enabled": {
     "locations": [
+      "src/engine/engine-owner.mjs:970",
       "src/vfx-clip-inspector.mjs:63",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"
     ],
-    "context": "return `<div class=\"vfx-key-navigation\"><button type=\"button\" class=\"vfx-channel-trigger\" data-clip-action=\"channels\" aria-label=\"Visible effect keys\" aria-hasp"
+    "context": "const {type, param} = value['@vfxParameter'], messageKey = param === 'enabled' ? 'vfxChannels.enabled' : `vfxCatalog.parameter.${type}.${param}.label`;"
   },
   "vfxChannels.figure": {
     "locations": [
