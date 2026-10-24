@@ -309,20 +309,3 @@ export function sampleFollow(report, clips, tick) {
   if (total > 1) { x /= total; y /= total; zoom /= total; }
   return {x, y, zoom};
 }
-
-/** The framing offset that keeps these figures where they are in the shot at this frame, or null when absent. */
-export function followFramingOffset(report, frame, targets) {
-  const weights = new Map(targets.map(t => [t.uid, t.weight])), own = {};
-  let cx = 0, cy = 0, total = 0;
-  for (const entry of buildGeometry(report, frame).objects.values()) {
-    const weight = entry && weights.get(entry.obj.unique_id);
-    if (!(weight > 0)) continue;
-    own.minX = own.minY = Infinity; own.maxX = own.maxY = -Infinity;
-    if (!figureBounds(entry, own)) continue;
-    cx += (own.minX + own.maxX) / 2 * weight; cy += (own.minY + own.maxY) / 2 * weight; total += weight;
-  }
-  if (!total) return null;
-  const camera = frame.camera?.is_default ? {} : frame.camera ?? {}, scale = camera.scale ?? 1, angle = camera.angle_rad ?? 0;
-  const dx = cx / total - report.canvas_width / 2 - (camera.x ?? 0), dy = cy / total - report.canvas_height / 2 - (camera.y ?? 0);
-  return {x: (Math.cos(angle) * dx + Math.sin(angle) * dy) / scale, y: (Math.cos(angle) * dy - Math.sin(angle) * dx) / scale};
-}

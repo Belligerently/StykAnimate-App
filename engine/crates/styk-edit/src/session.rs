@@ -440,6 +440,17 @@ impl Session {
                     other => self.editor.interface_frame(other),
                 }
             }
+            // What is sampled from the document besides the frame on show, at the playhead: the trails, the pose at a trail point, the
+            // onion skins (as the stage takes them, `Session::onions`) and the camera.
+            "trails" | "ghost" | "onions" | "shot" | "frameCamera" | "cameraSamples" | "framing" => {
+                apply_playhead(&mut self.editor, &view);
+                match kind {
+                    "trails" => self.editor.interface_trails(&args),
+                    "ghost" => self.editor.interface_trail_ghost(&args),
+                    "onions" => self.editor.onion_summary(&styk_doc::json::to_string(&args)),
+                    other => self.editor.interface_camera(other, &args),
+                }
+            }
             // The editor's own reads: the view is its whole state (the selection too).
             name => {
                 apply_view(&mut self.editor, &view).map_err(|error| format!("{error:?}"))?;
@@ -457,6 +468,22 @@ impl Session {
             // What the session does not evaluate yet: the editor reads it itself.
             EditError::Unported(message) => format!("{UNPORTED}{message}"),
         })
+    }
+
+    /// The onion skins the stage draws behind the frame on show, for the settings, the hidden figures and the selection in `request`
+    /// (JSON), at `view` (its playhead). The same set while nothing it depends on changed.
+    pub fn onions(&mut self, view: &str, request: &str) -> Result<Arc<crate::OnionSet>, String> {
+        let view = styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?;
+        apply_playhead(&mut self.editor, &view);
+        self.editor.onion_set(request).map_err(|error| match error {
+            EditError::Invalid(message) => message,
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
+        })
+    }
+
+    /// The clock reads that are given a time to take are held to (milliseconds).
+    pub fn set_clock(&mut self, clock: fn() -> f64) {
+        self.editor.clock = Some(clock);
     }
 
     /// The frame the stage draws, at `view` (its playhead): the gesture in progress, else the document at the playhead; with `motion`,

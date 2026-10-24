@@ -21,6 +21,7 @@ mod bounds;
 mod camera_bake;
 mod camera_commands;
 mod camera_motion;
+mod camera_views;
 mod figure_clipboard;
 mod figure_transform;
 mod external;
@@ -46,6 +47,7 @@ mod origin;
 mod origin_topology;
 mod movieclip_commands;
 mod movieclip_native;
+mod onion_skins;
 mod pose;
 mod pose_choice;
 mod palette;
@@ -73,6 +75,7 @@ mod spatial_ik;
 mod spatial_shape;
 mod timeline;
 mod topology;
+mod trails;
 mod transform;
 mod tweener;
 mod vfx_clips;
@@ -86,6 +89,7 @@ use styk_doc::{Obj, Value};
 
 pub use history::{Command, CommandKind, HistoryLimits};
 pub use frame::FrameSlice;
+pub use onion_skins::{Ghost, OnionSet, MAX_GHOSTS};
 pub use select::Selection;
 
 /// What a failed call says. `Unported` means "run this in JavaScript": the call
@@ -309,6 +313,12 @@ pub struct Editor {
     pub(crate) eval: RefCell<frame::Cache>,
     /// What the interface was last told of the geometry of the frame on show (and of the motion-path display).
     pub(crate) shown: RefCell<[interface::Cache; 2]>,
+    /// What the interface reads besides the frame on show: the motion-path trails, the onion skins and the camera's views.
+    pub(crate) trails: RefCell<trails::Cache>,
+    pub(crate) onions: RefCell<onion_skins::Cache>,
+    pub(crate) camera_views: RefCell<camera_views::Cache>,
+    /// The host's clock (milliseconds), which a read that is given a time to take is held to; without one it takes what it needs.
+    pub(crate) clock: Option<fn() -> f64>,
     /// The last document checked for unported features, and the answer.
     gate: RefCell<Option<(Value, Option<&'static str>)>>,
 }
@@ -426,6 +436,10 @@ impl Editor {
             events: Vec::new(),
             eval: RefCell::default(),
             shown: RefCell::default(),
+            trails: RefCell::default(),
+            onions: RefCell::default(),
+            camera_views: RefCell::default(),
+            clock: None,
             gate: RefCell::new(None),
         }
     }
@@ -1190,3 +1204,6 @@ mod native_projection_tests;
 
 #[cfg(test)]
 mod interface_tests;
+
+#[cfg(test)]
+mod views_tests;

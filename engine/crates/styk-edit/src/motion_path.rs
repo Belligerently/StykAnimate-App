@@ -204,6 +204,22 @@ pub(crate) struct Session {
     /// that its virtual report (`session.report`) was refreshed by a pointer move.
     fresh: bool,
     refreshed: bool,
+    /// How many pointer moves changed the virtual report: with the gesture's serial, what a read of it can tell from another
+    /// (`motion_stamp`).
+    moves: u64,
+}
+
+/// An open motion-path edit as the trails and the stage read it ([`Editor::motion_live`]).
+pub(crate) struct MotionLive {
+    pub stamp: (u64, u64),
+    /// The ticks the edit changes, `[low, high)` (`session.range`).
+    pub range: [f64; 2],
+    /// The tick of the grabbed frame.
+    pub tick: f64,
+    pub report: Value,
+    pub prepared: Arc<Prepared>,
+    /// The property channels of a native edit's draft, which the document does not hold yet.
+    pub draft: Option<Vec<Value>>,
 }
 
 /// `Math.round`.
@@ -379,14 +395,39 @@ impl Editor {
         let Some(session) = self.drag.as_ref().and_then(|drag| drag.motion_path.as_ref()).filter(|session| session.moved) else { return Ok(None) };
         let range = self.display_range(session);
         if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
-        let report = self.motion_virtual_report(session)?;
-        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
-        let prepared = Prepared::new(Arc::new(doc));
-        let records = match &session.draft {
-            Some(draft) => styk_eval::records::Records::new_native_draft(&report, &prepared, draft.channels())?,
-            None => styk_eval::records::Records::new(&report, &prepared)?,
+        // The same document as the trails sample, made once for each pointer move.
+        let Some(live) = self.shared_motion_live()? else { return Ok(None) };
+        let records = match &live.draft {
+            Some(draft) => styk_eval::records::Records::new_native_draft(&live.report, &live.prepared, draft)?,
+            None => styk_eval::records::Records::new(&live.report, &live.prepared)?,
         };
         Ok(Some(records.evaluated(self.tick)?))
+    }
+
+    /// Which state of an open motion-path edit that has moved a read of it sees: the gesture and how many pointer moves have
+    /// changed what it shows. `None` with no edit open, or before the first move (the trails are the document's).
+    pub(crate) fn motion_stamp(&self) -> Option<(u64, u64)> {
+        let drag = self.drag.as_ref()?;
+        let session = drag.motion_path.as_deref().filter(|session| session.moved)?;
+        Some((drag.serial, session.moves))
+    }
+
+    /// The document as an open motion-path edit that has moved shows it, with the typed views of it: what the trails sample and
+    /// the stage draws while the point is dragged. [`Editor::motion_stamp`] says whether it is the one a reader holds; the
+    /// readers share one made for each pointer move ([`Editor::shared_motion_live`]).
+    pub(crate) fn motion_live(&self) -> Result<Option<MotionLive>, EditError> {
+        let Some(stamp) = self.motion_stamp() else { return Ok(None) };
+        let session = self.drag.as_ref().and_then(|drag| drag.motion_path.as_deref()).expect("an edit is open");
+        let report = self.motion_virtual_report(session)?;
+        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+        Ok(Some(MotionLive {
+            stamp,
+            range: self.display_range(session),
+            tick: session.tick,
+            report,
+            prepared: Arc::new(Prepared::new(Arc::new(doc))),
+            draft: session.draft.as_ref().map(|draft| draft.channels().to_vec()),
+        }))
     }
 
     /// The ticks the gesture's virtual report changes (`session.range`) once it has moved: a
@@ -838,6 +879,7 @@ impl Editor {
             last: None,
             fresh: true,
             refreshed: false,
+            moves: 0,
         };
         if falloff_mode {
             if !self.begin_falloff(&mut session)? {
@@ -1104,6 +1146,7 @@ impl Editor {
         let changed = changed_uids(posed, None);
         if session.mode == Mode::Channels { self.write_channels(session, 0, &changed)?; }
         session.refreshed = true;
+        session.moves += 1;
         self.emit("edit", vec![("live", Value::Bool(true)), ("motionPath", Value::Bool(true)), ("changedUids", uid_array(&changed))]);
         Ok(true)
     }
@@ -1143,6 +1186,7 @@ impl Editor {
                 }
             }
             session.refreshed = true;
+            session.moves += 1;
         }
         let mut changed: Vec<u32> = Vec::new();
         for posed in session.posed.iter().filter(|p| p.moved) {

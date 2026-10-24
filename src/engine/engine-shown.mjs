@@ -5,6 +5,10 @@
  * pickers read: `{objects: Map<slot, group|null>, orderedObjects, drawables, token, changedSlots, warnings}`
  * with groups `{slot, obj, fig, root, joints, segments, polys, bounds, solvedAngles, solvedLengths}`.
  *
+ * The session also samples the frames around the one on show (docs/engine/evaluation.md, "The interface's views"): the
+ * motion-path trails and the pose at a trail point, the onion skins the stage draws, and the camera (the shot the frame is
+ * seen through, another frame's camera, the samples of a camera-motion clip, the framing that keeps followed figures put).
+ *
  * The session evaluates and builds; this module only reads what it sends. A geometry read names the read the
  * interface holds, and the session sends the groups of the figures that changed since: the others are the
  * groups already held, so the objects the canvas keeps by identity (handle descriptors) stay valid.
@@ -179,6 +183,32 @@ export function createShown(owner) {
     },
     /** What the stage draws from: the session and the view it is at, or `null`. */
     source: motion => owner.source(motion),
+    /**
+     * The onion skins the stage draws for `request` (the settings and the figures hidden and selected, see
+     * onion_skins.rs) behind the frame on show: the session, the view it is at and the request as text; `null` where the
+     * engine does not hold the document.
+     */
+    onions(request) {
+      const source = owner.source(false);
+      return source && {session: source.session, view: source.view, request: JSON.stringify(request)};
+    },
+    /** The onion skins for `request` as the session plans them: `{ghosts: [{tick, opacity, tint, showOnTop, hidden, roots}]}`, far to near (`roots`: `uid, x, y` of every figure). */
+    skins: request => read('onions', request),
+    /**
+     * The motion-path trails of `request.targets` as far as the session has sampled them: `{entries: [{key, version, complete,
+     * ticks?, points?}]}` (trails.rs), or `null` where the engine does not hold the document.
+     */
+    trails: request => read('trails', request),
+    /** The pose of the figures joined with `target` at `tick`, `{rx, ry, lines, circles}`, or `null`. */
+    trailGhost: (target, tick) => read('ghost', {target, tick}),
+    /** The camera the frame on show is seen through at the playhead (`cameraAtTime`), `null` for none. */
+    shot: () => read('shot'),
+    /** The camera an evaluated frame of the document holds at `tick`, `null` for the default one. */
+    frameCamera: tick => read('frameCamera', {tick}),
+    /** What `clip` alone does to the shot at each of `ticks`: `[x, y, rotation, zoom, …]`, a clip being edited included. */
+    cameraSamples: (clip, ticks) => read('cameraSamples', {clip, ticks}),
+    /** The framing offset that keeps these followed figures (`[{uid, weight}]`) where they stand in the frame on show. */
+    framing: targets => read('framing', {targets}),
     /** Forgets the geometry held (another document is open). */
     release() { held[0] = held[1] = null; },
   };

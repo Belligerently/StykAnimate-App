@@ -10,7 +10,7 @@ try {
   state.view={x:300,y:160,scale:0.55};
   window.scrubView={...state.view};
   window.renders=[];const render=state.renderer.render.bind(state.renderer);
-  state.renderer.render=options=>{if(state.scrubbing)renders.push({tick:editor.tick,clipToCanvas:options.clipToCanvas,cameraEnabled:options.cameraEnabled,view:{...options.view},onions:options.onionFrames.length,handles:options.canvasHandles?.length,selected:[...editor.selectedUids]});return render(options)};
+  state.renderer.render=options=>{if(state.scrubbing)renders.push({tick:editor.tick,clipToCanvas:options.clipToCanvas,cameraEnabled:options.cameraEnabled,view:{...options.view},onions:options.onions?1:0,handles:options.canvasHandles?.length,selected:[...editor.selectedUids]});return render(options)};
  });
  const box=await page.locator('.styk-timeline-scroll').boundingBox();
  await page.mouse.move(box.x+40,box.y+15);await page.mouse.down();

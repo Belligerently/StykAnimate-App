@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 169 KiB | 11 | 7 | 8 | 0 | 10 | 23 % | 23 % | 0 % |
-| `styk-edit` | 89 | 1210 KiB | 38 | 44 | 6 | 1 | 0 | 3 % | 70 % | 0 % |
-| `styk-engine` | 24 | 40 KiB | 12 | 0 | 0 | 0 | 12 | 0 % | 0 % | 0 % |
-| `styk-eval` | 83 | 747 KiB | 22 | 47 | 9 | 0 | 5 | 16 % | 69 % | 0 % |
+| `styk-edit` | 90 | 1230 KiB | 38 | 44 | 6 | 1 | 1 | 5 % | 69 % | 2 % |
+| `styk-engine` | 24 | 40 KiB | 11 | 0 | 0 | 0 | 13 | 3 % | 0 % | 3 % |
+| `styk-eval` | 80 | 688 KiB | 20 | 46 | 9 | 0 | 5 | 17 % | 72 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
-| **Total** | 358 | 3262 KiB | 132 | 116 | 27 | 23 | 60 | 22 % | 50 % | 1 % |
+| **Total** | 356 | 3222 KiB | 129 | 115 | 27 | 23 | 62 | 23 % | 50 % | 2 % |
 
 ## Engine modules
 
@@ -139,6 +139,7 @@ Engine logic: ported to Rust.
 | `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated, native propertyChannels:true authored-pose commands and app facade/worker adoption pending |
 | `src/native-property-ranges.mjs` | `styk-edit` | js |  |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
+| `src/onion-skin.mjs` | `styk-edit` | removed | deleted: the session plans the onion skins (styk-edit onion_skins.rs) and the stage draws them; the drawing cels' prefetch moved to src/drawing-cel-prefetch.mjs (19636 bytes) |
 | `src/polygon-draft.mjs` | `styk-edit` | js |  |
 | `src/pose-property-split.mjs` | `styk-edit` | js |  |
 | `src/project-tabs.mjs` | `styk-edit` | js |  |
@@ -166,7 +167,7 @@ Engine logic: ported to Rust.
 | `src/playback-retention.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-software-painter.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-software-size.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/playback-tween-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
+| `src/playback-tween-cache.mjs` | `styk-engine::playback` | removed | deleted: only the JavaScript motion-path sampling used it (1243 bytes) |
 | `src/playback-upload.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-vector-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-window.mjs` | `styk-engine::playback` | js | scheduling, budgets |
@@ -188,12 +189,9 @@ Engine logic: ported to Rust.
 | `src/layer-folders.mjs` | `styk-eval` | js |  |
 | `src/layer-sheet.mjs` | `styk-eval` | partial | Rust: sampleLayerSheet incl. movieclip replacements and layers mixing imported and authored keys, typed and as records; validation still JS |
 | `src/layers.mjs` | `styk-eval` | partial | Rust: layer order and membership (applyLayerOrder); layer commands and validation still JS |
-| `src/motion-path.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
 | `src/native-pose-projection.mjs` | `styk-eval` | js |  |
 | `src/native-property-projection.mjs` | `styk-eval` | partial | Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded |
 | `src/object-identity.mjs` | `styk-eval` | js |  |
-| `src/onion-range.mjs` | `styk-eval` | js | onion sampling and motion-path projection |
-| `src/onion-skin.mjs` | `styk-eval` | partial | onion sampling and motion-path projection. Rust: ghost drawing, tint and order; sampling still JS |
 | `src/paint.mjs` | `styk-eval` | partial | Rust: segment paints and gradients in draw lists; normalizePaint, segmentPaint, samplePaint, parseColor and hexColor for recolouring (styk-edit/src/recolor.rs); CSS and SVG helpers still JS |
 | `src/pivot/background.mjs` | `styk-eval` | partial | Rust: background tween and colour key; painting still JS |
 | `src/pivot/geometry-definition.mjs` | `styk-eval` | js | evaluation and world geometry |
@@ -212,7 +210,7 @@ Engine logic: ported to Rust.
 | `src/animation-properties.mjs` | `styk-eval::channels` | partial | Rust: property vocabulary, discrete and colour properties; validation and names still JS |
 | `src/animation-style.mjs` | `styk-eval::channels` | partial | Rust: style overlays and style channels (setAnimationStyle, applicability); resolveInstanceFigure's segment and polygon overlays, styleColor and meshPaletteColor for recolouring (styk-edit/src/recolor.rs); validation still JS |
 | `src/native-property-curve.mjs` | `styk-eval::channels` | partial | Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor |
-| `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS |
+| `src/camera-follow.mjs` | `styk-eval::follow` | partial | Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS; the inspector's framing offset is styk_eval::follow::framing_offset |
 | `src/movieclip-drawings.mjs` | `styk-eval::movieclips` | partial | Rust: rotatedDrawing, drawingRotationReference, drawingSelection (geometry.rs); validation still JS |
 | `src/movieclip-geometry.mjs` | `styk-eval::movieclips` | partial | Rust: nested clip geometry, drawings a spatial bone turns; clip effects still JS |
 | `src/movieclip-materialize.mjs` | `styk-eval::movieclips` | partial | Rust: shared recorded materializer/source clocks and native/sheet Bake capture; portable effect remapping shared with topology/clipboard; unrecorded combinations and runtime app adoption pending |
@@ -476,6 +474,7 @@ Interface: stays in JS.
 | `src/color-picker-magnifier.mjs` |  | stays |  |
 | `src/color-picker.mjs` |  | stays |  |
 | `src/drawing-brush-labels.mjs` |  | stays |  |
+| `src/drawing-cel-prefetch.mjs` |  | stays | which drawing cels the decode queue loads ahead and which it keeps (moved out of onion-skin.mjs) |
 | `src/drawing-controller.mjs` |  | stays |  |
 | `src/drawing-pressure-curve.mjs` |  | stays |  |
 | `src/drawing-sliders.mjs` |  | stays |  |
@@ -516,12 +515,14 @@ Interface: stays in JS.
 | `src/localized-error.mjs` |  | stays |  |
 | `src/message-error-core.mjs` |  | stays |  |
 | `src/motion-path-controls.mjs` |  | stays |  |
+| `src/motion-path.mjs` |  | stays | trails and the pose at a trail point are sampled by styk-edit trails.rs; targets, the held trails, projection, hit testing and drawing stay, and keyTicksForTarget for editor-motion-path.mjs |
 | `src/movieclip-drawings-view.mjs` |  | stays |  |
 | `src/movieclip-ui.mjs` |  | stays |  |
 | `src/onion-controller.mjs` |  | stays |  |
 | `src/onion-controls.mjs` |  | stays |  |
 | `src/onion-frame-field.mjs` |  | stays |  |
 | `src/onion-range-drag.mjs` |  | stays |  |
+| `src/onion-range.mjs` |  | stays | the range the controls show and the counts the onion request carries (the plan is styk-edit onion_skins.rs) |
 | `src/onion-timeline-range.mjs` |  | stays |  |
 | `src/pen-input.mjs` |  | stays |  |
 | `src/project-tabs-host.mjs` |  | stays |  |

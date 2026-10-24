@@ -41,7 +41,6 @@ import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
-import { OnionSkinCache } from "./onion-skin.mjs";
 import {hasPinnedIK} from './ik.mjs';
 import { OnionControls } from "./onion-controls.mjs";
 import { OnionController } from "./onion-controller.mjs";
@@ -157,7 +156,7 @@ import {
   imageFileToBackground,
 } from "./media-authoring.mjs";
 import { icon, hydrateIcons } from "./icons.mjs";
-import { MotionPathCache, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath, drawMotionPathGhost, affineProjection } from "./motion-path.mjs";
+import { MotionTrails, motionPathTargets, motionPathTargetKey, pickMotionPathPoint, drawMotionPath, drawMotionPathGhost, affineProjection } from "./motion-path.mjs";
 import { MOTION_PATH_FALLOFF_MAX } from "./motion-path-falloff.mjs";
 import { CanvasGuides } from "./canvas-guides.mjs";
 import { MotionPathControls } from "./motion-path-controls.mjs";
@@ -176,7 +175,7 @@ import { createCommandPalette } from "./ui/command-palette.mjs";
 import { kitText } from "./ui/ui-strings.mjs";
 import { installTooltips } from "./ui/ui-tooltip.mjs";
 import { withShiftHint } from "./ui/quick-actions.mjs";
-import { buildGeometry, evaluatedFrame } from "./pivot/geometry.mjs";
+import { buildGeometry } from "./pivot/geometry.mjs";
 import {
   cameraIsIdentity,
   gradientAngleFromBackground,
@@ -1052,15 +1051,29 @@ function requestOverlayRender() {
   state.dirtyOverlay = true;
   if (!raf) raf = requestAnimationFrame(loop);
 }
-function currentFrame() {
+/** The frame on show; with `shot`, as the scene camera shoots it (the preview and playback always are). */
+function currentFrame({ shot = state.playing || state.previewing } = {}) {
   // Playback already evaluated this exact tick in the worker. Overlays need
   // its camera/scene metadata, not another evaluation of all figures on input.
   const packet = state.playing && state.playbackPacket;
   const motionPath = editor._drag?.motionPath;
   const frame = motionPath?.display?.frame ?? (packet?.tick === editor.tick ? packet.frame : editor.evaluatedFrame || editor.frame);
+  const seen = shot ? shotThrough(frame) : frame;
   return editor.report._styk?.layers?.fixed?.camera?.visible === false
-    ? { ...frame, camera: null }
-    : frame;
+    ? { ...seen, camera: null }
+    : seen;
+}
+const shotFrames = new WeakMap();
+/** A frame of the editor seen through the scene camera: shot with the camera the engine works out for the playhead (follow travel,
+ * then the presets' shake) instead of the authored one. A playback frame already is. */
+function shotThrough(frame) {
+  if (frame._cameraMotionTick === undefined) return frame;
+  let shot = shotFrames.get(frame);
+  if (!shot) {
+    const { _cameraMotionTick, ...still } = frame;
+    shotFrames.set(frame, shot = { ...still, camera: editor._shown?.shot() ?? frame.camera });
+  }
+  return shot;
 }
 function previewPacket() {
   if (!state.previewing || state.scrubbing) return null;
@@ -1077,7 +1090,7 @@ function worldPoint(event) {
 function cameraSelected() {
   return state.inspectorContext === 'camera' && state.selectedTrackId === 'camera';
 }
-const pathCache = new MotionPathCache();
+const trails = new MotionTrails(editor);
 const PATH_COLORS = ['#0d99ff', '#e8590c', '#12b886', '#7048e8', '#e64980', '#f08c00', '#0ca678', '#1098ad'];
 /** Every active trail: the camera, each selected figure, or every figure when
  * "all targets" is on — with limb tips per figure when that is chosen. Each
@@ -1088,7 +1101,6 @@ function activeMotionPaths({sample = true} = {}) {
   if (!["select", "pose"].includes(state.tool)) return [];
   const camera = cameraSelected() && state.settings.showCamera;
   const range = Math.round(state.settings.motionPathRange) || 0;
-  const session = editor._drag?.motionPath ? editor._drag : null;
   let targets;
   if (camera) {
     const track = editor.report._styk?.layers?.fixed?.camera;
@@ -1098,8 +1110,8 @@ function activeMotionPaths({sample = true} = {}) {
   if (!targets.length) return [];
   const maxPoints = Math.min(1600, Math.floor(6400 / targets.length));
   const entries = sample
-    ? pathCache.sample(editor, targets, {session, range, deadline: performance.now() + pathCache.budgetMs, maxPoints})
-    : targets.map(target => pathCache.peek(editor, target));
+    ? trails.read(targets, {range, maxPoints})
+    : targets.map(target => trails.peek(target));
   const colors = new Map(), out = [];
   let pending = false;
   targets.forEach((target, i) => {
@@ -1426,7 +1438,6 @@ function drawCanvasHandles(geometry) {
     width: overlay.width / d, height: overlay.height / d, dpr: d, translations,
     outline: state.settings.outlineHandles});
 }
-const onionCache = new OnionSkinCache();
 let onionControls;
 const onionController = new OnionController({editor,
   getSettings: () => state.settings, getEnabled: () => state.onion,
@@ -1437,9 +1448,10 @@ let tweenerControls;
 let canvasGuides;
 // Motion path badges on the overlay draw text in the bundled UI font.
 onFontsReady(requestRender);
+/** The onion skins the engine draws behind the frame, or none when they are off or the animation plays. */
 function onionSkins() {
-  if (!state.onion || state.playing || state.previewing) return [];
-  return onionCache.get(editor, onionController.settings, {selected: selection(), hidden: effectiveHidden(), visibilityKey:[...state.hidden]});
+  if (!state.onion || state.playing || state.previewing) return null;
+  return editor._shown?.onions(onionController.request({selected: selection(), hidden: state.hidden})) ?? null;
 }
 /** What the open falloff gesture changes. */
 function pathInfluence(tick, falloff) {
@@ -1473,7 +1485,7 @@ function drawMotionPaths() {
       faint: motionPaths.length > 1 && focus && focus.key !== key,
     });
   }
-  if (ghost) drawMotionPathGhost(ctx, pathCache.ghost(editor.motionPathReport(), ghost.target, focus.tick, `${editor.revision}:${editor.layerRevision}`), project,
+  if (ghost) drawMotionPathGhost(ctx, trails.ghost(ghost.target, focus.tick), project,
     {color: ghost.color, entry: ghost.entry, relative, tick: editor.tick});
 }
 function overlayRender(geometry) {
@@ -1507,7 +1519,7 @@ function overlayRender(geometry) {
         ctx,
         cameraViewport(
           editor.report,
-          evaluatedFrame(editor.report, editor.frameIndex - 1),
+          { camera: editor._shown?.frameCamera(editor.timeline[editor.frameIndex - 1].start) },
           state.view,
         ),
         screenPoint,
@@ -1737,7 +1749,7 @@ function loop(now) {
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
         revision: editor.revision,
         artworkRevision: editor.definitionRevision,
-        onionFrames: onionSkins(),
+        onions: onionSkins(),
         hiddenUids: effectiveHidden(),
         clipToCanvas: false,
         dragTranslations: state.drag?.translations,
@@ -6039,13 +6051,13 @@ async function init() {
       if (patch.hotkeys) { hotkeys.setBindings(next.hotkeys); refreshHotkeyHints(hotkeys); }
       onionController.sync();
       syncAutoKey();
-      if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) pathCache.clear();
+      if (patch.motionPathRange !== undefined || patch.motionPathAllTargets !== undefined) trails.clear();
       state.handles = drawingController?.active ? false : next.showHandles;
       state.loop = next.loopPlayback;
       state.motionPaths = next.motionPaths;
       pathControls?.sync();
       canvasGuides?.sync();
-      if (!state.motionPaths) { state.hoverPathPoint = null; syncPathTooltip(); pathCache.clear(); }
+      if (!state.motionPaths) { state.hoverPathPoint = null; syncPathTooltip(); trails.clear(); }
       if (patch.motionPathFalloffRadius !== undefined || patch.motionPathFalloffShape !== undefined || patch.motionPaths !== undefined) syncPathFalloff();
       appLocalization.setLocale(next.locale);
       canvasHandleOverlay.clear();
@@ -6096,7 +6108,7 @@ async function init() {
     getState: () => ({settings: state.settings, view: state.view, report: editor.report,
       hidden: state.playing || state.previewing}),
     onChange: patch => editorSettings.commit(patch)});
-  window.styk.onionCache = onionCache;
+  window.styk.onionSkins = () => onionSkins() && editor._shown.skins(onionController.request({selected: selection(), hidden: state.hidden}));
   // The shell: the stored layout loads before its first commit, then the dock
   // host lays the panels out and owns which one shows where.
   shell = await installShell({
@@ -6242,7 +6254,7 @@ async function init() {
   window.styk.vfx=vfxInspector;
   // The timeline's VFX rows follow the VFX panel's visibility, which the shell owns.
   shell.define({id:'vfx',root:()=>$('vfx-panel'),onVisibility:visible=>{editor._vfxTimelineVisible=visible;editor._emit('vfx-selection');vfxInspector.panelVisible(visible);}});
-  vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,pickNativeHandle:event=>pick(worldPoint(event)),getOptions:()=>({report:editor.report,frame:currentFrame(),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
+  vfxGizmos=new VfxGizmos({canvas:overlay,inspector:vfxInspector,editor,pickNativeHandle:event=>pick(worldPoint(event)),getOptions:()=>({report:editor.report,frame:currentFrame({shot:true}),geometry:state.playing?null:editor.geometry,view:state.view,cameraEnabled:state.playing||state.previewing,playing:state.playing,vfxEnabled:state.vfxEnabled,resources}),onChange:()=>{queueUI();requestRender();},onError:fail});
   window.styk.vfxGizmos=vfxGizmos;
   $('vfx-preview').addEventListener('click',()=>{finishCurrentEdit();pause();state.vfxEnabled=!state.vfxEnabled;playback.setVfxEnabled(state.vfxEnabled);state.playbackPacket=null;syncStageHead();requestRender();queueUI();});
   assetLibrary = new AssetLibrary($("asset-list"), {

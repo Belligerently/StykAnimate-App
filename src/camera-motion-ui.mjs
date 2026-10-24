@@ -4,7 +4,6 @@ import {messageError} from './localized-error.mjs';
 import {t as interfaceText} from './localization.mjs';
 
 import {CAMERA_MOTION_TYPES,MOTION_PARAMETERS,isWholeMotionParameter,validateCameraMotion} from './camera-motion.mjs';
-import {followFramingOffset} from './camera-follow.mjs';
 import {motionTypeMessages,motionParameterMessages,motionDescriptionMessages} from './camera-motion-localization.mjs';
 import {CameraMotionGraph,motionGraphView} from './camera-motion-graph.mjs';
 import {cameraMonitorVisible} from './camera-monitor.mjs';
@@ -111,7 +110,7 @@ export class CameraMotionControls {
       if(button.hasAttribute('data-parallax-reference')){const c=editor.evaluatedFrame.camera??{};editor.setLayerParallax(button.closest('[data-parallax-layer]').dataset.parallaxLayer,{reference:{x:c.x??0,y:c.y??0}});}
       else if(action==='toggle-add')editor._cameraMotionAdding=!editor._cameraMotionAdding;
       else if(action==='follow-selected'){const clip=editor.getCameraMotions().find(c=>c.id===id),known=new Set(clip.targets.map(t=>t.uid));editor.setCameraMotion(id,{targets:[...clip.targets,...[...editor.selectedUids].filter(uid=>!known.has(uid)).map(uid=>({uid,weight:1}))]});}
-      else if(action==='keep-framing'){const clip=editor.getCameraMotions().find(c=>c.id===id),offset=followFramingOffset(editor.report,editor.evaluatedFrame,clip.targets);if(!offset)throw messageError(new Error(''), "errors.cameraMotionUi.theFollowedFiguresAreNotInThisFrame", {});editor.setCameraMotion(id,{params:{offsetX:Math.round(offset.x),offsetY:Math.round(offset.y)}});}
+      else if(action==='keep-framing'){const clip=editor.getCameraMotions().find(c=>c.id===id),offset=editor._shown?.framing(clip.targets);if(!offset)throw messageError(new Error(''), "errors.cameraMotionUi.theFollowedFiguresAreNotInThisFrame", {});editor.setCameraMotion(id,{params:{offsetX:Math.round(offset.x),offsetY:Math.round(offset.y)}});}
       else if(action==='delete')editor.deleteCameraMotion(id);
       else if(action==='duplicate')editor._selectedCameraMotion=editor.duplicateCameraMotion(id);
       else if(action==='randomize')editor.randomizeCameraMotion(id);
