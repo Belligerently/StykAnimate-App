@@ -12,14 +12,14 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | Rust owner | Modules | Source at start | js | partial | ported | verified | removed | Covered by Rust | Partly covered | Deleted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
-| `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 89 | 1237 KiB | 44 | 41 | 3 | 1 | 0 | 2 % | 66 % | 0 % |
+| `styk-drawing` | 36 | 273 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
+| `styk-edit` | 89 | 1236 KiB | 44 | 41 | 3 | 1 | 0 | 2 % | 66 % | 0 % |
 | `styk-engine` | 24 | 169 KiB | 17 | 2 | 0 | 0 | 5 | 0 % | 59 % | 0 % |
 | `styk-eval` | 81 | 756 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 763 KiB | 29 | 5 | 1 | 22 | 2 | 63 % | 8 % | 6 % |
 | `styk-render` | 52 | 708 KiB | 31 | 16 | 5 | 0 | 0 | 9 % | 61 % | 0 % |
-| **Total** | 357 | 4009 KiB | 170 | 121 | 33 | 23 | 10 | 20 % | 50 % | 1 % |
+| **Total** | 357 | 4007 KiB | 170 | 121 | 33 | 23 | 10 | 20 % | 50 % | 1 % |
 
 ## Engine modules
 
@@ -29,22 +29,22 @@ Engine logic: ported to Rust.
 | --- | --- | --- | --- |
 | `src/pivot/model.mjs` | `styk-doc` | js | validation and structure |
 | `src/pivot/structure.mjs` | `styk-doc` | partial | Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS |
-| `src/drawing-brush-textures.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-brush.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-clipboard.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-brush-textures.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-brush.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-clipboard.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-composite-transport.mjs` | `styk-drawing` | js |  |
 | `src/drawing-composite-worker.mjs` | `styk-drawing` | js |  |
 | `src/drawing-composite.mjs` | `styk-drawing` | js |  |
-| `src/drawing-fill.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-fill.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-flatten.mjs` | `styk-drawing` | js |  |
-| `src/drawing-history-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-history-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-history-database.mjs` | `styk-drawing` | js |  |
 | `src/drawing-history-worker.mjs` | `styk-drawing` | partial | Rust: the history worker encodes undo chunks with styk-drawing; the worker shell is JS |
 | `src/drawing-history.mjs` | `styk-drawing` | js |  |
-| `src/drawing-lasso.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-lasso.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-model.mjs` | `styk-drawing` | js |  |
-| `src/drawing-pixels.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-png.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-pixels.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-png.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-preparation.mjs` | `styk-drawing` | partial | Rust: tile preparation (styk-drawing); its orchestration still JS |
 | `src/drawing-preview-cache.mjs` | `styk-drawing` | js |  |
 | `src/drawing-provider.mjs` | `styk-drawing` | js |  |
@@ -52,18 +52,18 @@ Engine logic: ported to Rust.
 | `src/drawing-render-dependencies.mjs` | `styk-drawing` | js |  |
 | `src/drawing-resources.mjs` | `styk-drawing` | js |  |
 | `src/drawing-selection.mjs` | `styk-drawing` | partial | Rust: the selection matrix and moving selected pixels (styk-drawing); selection state still JS |
-| `src/drawing-smoother.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-stroke-engine.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-stroke-region.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-smoother.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-stroke-engine.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-stroke-region.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-stroke-worker.mjs` | `styk-drawing` | partial | Rust: the stroke worker hands its strokes to styk-drawing; the worker shell is JS |
-| `src/drawing-tile-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-tile-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-tile-memory.mjs` | `styk-drawing` | js |  |
 | `src/drawing-tiles.mjs` | `styk-drawing` | partial | Rust: the tile store of worker jobs (styk-drawing); the interface thread's store still JS |
-| `src/drawing-transform.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-transform.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-wet-ink.mjs` | `styk-drawing` | js |  |
 | `src/drawing-worker-client.mjs` | `styk-drawing` | js |  |
-| `src/drawing-worker-operations.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-worker-preview.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-worker-operations.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-worker-preview.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-worker.mjs` | `styk-drawing` | partial | Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS |
 | `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 history weights and warm checkpoints; same exclusive Session coupled to portable quiet/live Core with terminal-ACK retirement; actual browser shown/release and persistent current charge pending; private undo/redo heads share until recorded writes, five alias plus191 owning controls pass; exact limits/prune/rollback/ACK owner retained, no public API change |
 | `src/builder-appearance.mjs` | `styk-edit` | partial | Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view) |

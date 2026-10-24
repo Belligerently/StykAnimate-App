@@ -233,7 +233,7 @@ screen's density, the engine as the WebGPU renderer does, as for polygon seams a
 generated effects.
 
 **Measured** (2026-10-03, RTX 4070 SUPER, machine shared with other work at a load
-average of 5 to 40). App parity (`scripts/engine-app-parity.mjs`, D13 limits unchanged,
+average of 5 to 40). App parity (the app-parity script, since deleted; D13 limits unchanged,
 onion skins on, 1,440×900 window, Electron under Xvfb with the Linux Vulkan switches),
 the engine on WebGPU against the editor's WebGPU renderer, before (engine-rust at
 `904cad9e`) and after:
@@ -478,8 +478,7 @@ App parity (D13 limits unchanged) on these documents with onion skins and after 
 `deep-seventeen`, `deep-twenty-four`, `frame-draft-add`, `frame-draft-update`,
 `frame-draft-sheet` (also with the draft enabled in the app, `--frame-draft`) and
 `empty-animation`: 14 runs and 120 steps, every one drawn by the engine, no solid pixel, mean
-difference at most 0.049 levels (web) and 0.036 (Electron). `node scripts/engine-app-parity.mjs --file <fixture>.json --deep`
-opens documents nested past the file check. The engine's thumbnail and export document sync
+difference at most 0.049 levels (web) and 0.036 (Electron). The engine's thumbnail and export document sync
 (`engineDocument`) accepted `deep-twenty-four` and `frame-draft-sheet` in the web build, and
 the thumbnail drawn was the engine's.
 
@@ -699,9 +698,7 @@ workers: thumbnails and library previews in the preview worker (`Previews::thumb
 four waiting, so nothing is drawn ahead). Pictures are the decoded images the engine's workers give
 them, shared rather than copied; the preview worker keeps those of the open document's lineage
 between thumbnails and lets them go with its idle release (five minutes) or a new document; an
-export's go with its worker. `?engineCpu=on` (or `localStorage['stykanimate.engine.cpu'] = 'on'`)
-draws all three on the CPU even where a GPU device exists, as devices without one do, for
-comparisons. A stage that gets no GPU device at all holds no document in the engine: thumbnails and exports
+export's go with its worker. A stage that gets no GPU device at all holds no document in the engine: thumbnails and exports
 are then not drawn (library previews still use the CPU there).
 
 **Measured** (a parity script since removed with the JavaScript paths it compared against, `--cpu-check`, Electron under Xvfb with
@@ -909,6 +906,4 @@ finer curves for large text; each fails without its rule), `-p styk-render --tes
 (masks draw the glyphs, are kept across frames, give way to triangles past density 8) and
 the `styk-draw` unit test of `GlyphMask::layout`; `styk render` prints the rounds, layer
 memory and glyph masks of a frame; `styk render` / `styk raster` /
-`styk diff` for native comparisons; `scripts/engine-app-parity.mjs` for the
-running app (Electron WebGPU and Chromium WebGL2, several zoom levels,
-[D13](decisions/0013-app-parity-rule.md)).
+`styk diff` for native comparisons ([D13](decisions/0013-app-parity-rule.md)).

@@ -97,8 +97,8 @@ test('the engine draws a document it holds: its worker starts with the export se
   assert.equal(workers.length, 1);
   const start = workers[0].messages[0];
   assert.equal(start.operation, 'start');
-  assert.deepEqual({revision: start.revision, width: start.width, height: start.height, smoothing: start.smoothing, tileSize: start.tileSize, last: start.last, address: start.address, vector: start.vector, cpu: start.cpu},
-    {revision: 7, width: 640, height: 360, smoothing: 'sprites', tileSize: ENGINE_TILE_SIDE, last: 20, address: 4096, vector: false, cpu: false});
+  assert.deepEqual({revision: start.revision, width: start.width, height: start.height, smoothing: start.smoothing, tileSize: start.tileSize, last: start.last, address: start.address, vector: start.vector},
+    {revision: 7, width: 640, height: 360, smoothing: 'sprites', tileSize: ENGINE_TILE_SIDE, last: 20, address: 4096, vector: false});
   assert.equal(start.module, 'module');
   assert.equal(renderer.stats.renderer, 'engine');
   const canvas = await renderer.renderTick(5);
@@ -111,13 +111,13 @@ test('the engine draws a document it holds: its worker starts with the export se
   assert.equal(workers[0].terminated, true);
 });
 
-test('an SVG export asks the engine for vector artwork, drawn without a GPU device', async t => {
+test('an SVG export asks the engine for vector artwork, which needs no GPU device', async t => {
   const blob = new Blob(['<svg/>'], {type: 'image/svg+xml'});
   const {workers} = environment(t, answer({render: () => ({ok: true, svg: blob, stats: {workerMs: 3}})}));
   const renderer = createExportFrameRenderer({width: 640, height: 360}, {...app(), revision: 2, range: [0, 3], vector: true});
   await renderer.load(report());
   const start = workers[0].messages[0];
-  assert.deepEqual({vector: start.vector, cpu: start.cpu}, {vector: true, cpu: true});
+  assert.equal(start.vector, true);
   assert.equal(await renderer.renderSVGTick(3), blob);
   assert.deepEqual({...workers[0].messages.at(-1), id: undefined}, {id: undefined, operation: 'render', tick: 3, override: false, svg: true, native: false, preserveAlpha: false});
   // The pose the editor shows is sent to the worker first, as chunks.

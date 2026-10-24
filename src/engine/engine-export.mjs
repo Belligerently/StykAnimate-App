@@ -24,7 +24,6 @@ import {exportMemoryPlan} from '../export-memory.mjs';
 import {exportContext, checkExportContext} from '../export-canvas.mjs';
 import {EXPORT_MAX_PIXELS} from '../export-sampling.mjs';
 import {engineDocument} from './engine-document.mjs';
-import {engineCpuForced} from './engine.mjs';
 
 /** Rendered pixels a side of an export tile at most (styk-export `TILE_SIDE`). */
 export const ENGINE_TILE_SIDE = 2048;
@@ -61,7 +60,7 @@ export function prewarmExportRenderer({stage} = {}) {
   const worker = new Worker(new URL('./engine-export-worker.mjs', import.meta.url), {type: 'module', name: WORKER_NAME});
   const entry = warm = {worker, timer: setTimeout(() => { if (warm === entry) { warm = null; release(worker); } }, WARM_MS)};
   worker.addEventListener('message', ({data}) => { if (data?.warmed === false && warm === entry) { warm = null; clearTimeout(entry.timer); release(worker); } });
-  worker.postMessage({operation: 'warm', ...engine.join, cpu: engineCpuForced()});
+  worker.postMessage({operation: 'warm', ...engine.join});
 }
 
 /** The warmed worker, for an export that uses it. */
@@ -218,8 +217,6 @@ export class EngineExportFrames {
     return {
       ...engine.join, address: engine.handle.address(), revision: this.engine.revision,
       width: this.width, height: this.height, smoothing: this.smoothing, maxPixels: EXPORT_MAX_PIXELS, tileSize, vector,
-      // An SVG is vectors written by the engine: the picture of a frame without a vector form is drawn on the CPU.
-      cpu: vector || engineCpuForced(),
       last: this.engine.range?.[1] ?? null,
     };
   }

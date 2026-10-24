@@ -24,8 +24,8 @@ digits depending on the browser it runs in, and there is no single set of bytes 
 match. The engine takes one definite answer, Node's, because the command-replay and
 record harnesses run the editor in Node: there the comparison is byte for byte, which
 is what found wrong key orders, a 2π winding and a held pose. In a browser the shadow
-comparison (`src/engine/engine-edit-shadow.mjs`) accepts numbers within 1e-9 relative
-and requires everything else to be equal.
+comparison (since deleted) accepted numbers within 1e-9 relative
+and required everything else to be equal.
 
 ## Consequences
 

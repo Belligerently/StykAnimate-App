@@ -73,7 +73,7 @@ fn difference(a: &[u8], b: &[u8], at: usize) -> u8 {
     (0..4).map(|k| a[at * 4 + k].abs_diff(b[at * 4 + k])).max().unwrap()
 }
 
-/// The app-parity rule (D13, scripts/engine-app-parity.mjs): pixels differing by more than 32
+/// The app-parity rule (D13): pixels differing by more than 32
 /// levels together with all eight neighbours, and the mean difference not counting
 /// differences of two levels or less.
 fn d13(a: &[u8], b: &[u8], width: usize) -> (usize, f64) {

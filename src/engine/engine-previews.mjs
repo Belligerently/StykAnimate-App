@@ -17,7 +17,7 @@
  * allocated). Without the engine, worker threads (a page that is not cross-origin isolated)
  * or an OffscreenCanvas, the helpers below resolve null and no preview is drawn.
  */
-import {engineCpuForced, loadEngine} from './engine.mjs';
+import {loadEngine} from './engine.mjs';
 
 const WORKER_NAME = 'StykAnimate previews (engine)';
 /** How long an idle worker keeps its pictures and thread. */
@@ -74,7 +74,7 @@ export class EnginePreviewWorker {
     worker.addEventListener('error', event => { event.preventDefault(); fail(event.message || 'The preview worker stopped.', false); });
     worker.addEventListener('messageerror', () => fail('A preview could not be transferred.', false));
     const {module, memory, stack, progress} = this.engine.join;
-    worker.postMessage({operation: 'start', id: 0, module, memory, stack, progress, cpu: engineCpuForced()});
+    worker.postMessage({operation: 'start', id: 0, module, memory, stack, progress});
     return worker;
   }
 

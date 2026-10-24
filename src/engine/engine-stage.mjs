@@ -20,15 +20,6 @@ import {EngineCameraMonitor} from './engine-previews.mjs';
 /** The engine side of the stage, shared by every renderer the app creates (it survives a device loss of the other). */
 let shared = null;
 
-/** `?engine=off` (or the stored setting) keeps the JavaScript renderer for comparisons. */
-export function engineEnabled() {
-  try {
-    const query = new URLSearchParams(globalThis.location?.search ?? '').get('engine');
-    if (query) return query !== 'off';
-    return globalThis.localStorage?.getItem('stykanimate.engine') !== 'off';
-  } catch { return true; }
-}
-
 async function engineSide(canvas) {
   if (shared) return shared;
   const engine = await loadEngine();
@@ -182,7 +173,6 @@ export function ensureCameraFrames(side, {report, revision = 0}, redraw) {
  */
 export async function createStageRenderer(canvas, options, create) {
   const legacy = await create(canvas, options);
-  if (!engineEnabled()) return legacy;
   let side;
   try { side = await engineSide(canvas); }
   catch (error) {

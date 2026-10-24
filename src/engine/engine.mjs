@@ -21,19 +21,6 @@ export function defaultWorkerCount(cores = globalThis.navigator?.hardwareConcurr
   return Math.max(1, Math.min(8, cores - 1));
 }
 
-/**
- * `?engineCpu=on` (or `localStorage['stykanimate.engine.cpu'] = 'on'`): thumbnails, library
- * previews and exports are drawn by the CPU rasterizer (styk-raster) in their workers even
- * where a GPU device exists, as devices without one draw them (for comparisons).
- */
-export function engineCpuForced() {
-  try {
-    const query = new URLSearchParams(globalThis.location?.search ?? '').get('engineCpu');
-    if (query) return query === 'on';
-    return globalThis.localStorage?.getItem('stykanimate.engine.cpu') === 'on';
-  } catch { return false; }
-}
-
 let loading = null;
 
 /**
@@ -53,16 +40,13 @@ const MEMORY_MAXIMA = [32768, 16384, 8192];
  * The engine's shared memory. Its maximum is reserved when it is created and can
  * never change (docs/engine/decisions/0014-shared-memory-maximum.md): a device that
  * cannot reserve 2 GiB of address space (mobile WebKit is the risk) gets the largest
- * maximum it accepts. `stykanimate.engine.memory` (MiB) overrides it for testing.
+ * maximum it accepts.
  * It starts at `initial` pages, the size the module declares (`declaredMemoryPages`):
  * a smaller memory does not link, and the size changes with the module's static data.
  */
 export function createEngineMemory(initial, maxima = MEMORY_MAXIMA) {
-  let override = null;
-  try { override = Number(globalThis.localStorage?.getItem('stykanimate.engine.memory')) || null; } catch { /* storage unavailable */ }
-  const candidates = override ? [Math.min(32768, Math.max(256, Math.round(override * 16)))] : maxima;
   let failure;
-  for (const maximum of candidates) {
+  for (const maximum of maxima) {
     try { return Object.assign(new WebAssembly.Memory({initial, maximum, shared: true}), {maximumBytes: maximum * 65536}); }
     catch (error) { failure = error; }
   }

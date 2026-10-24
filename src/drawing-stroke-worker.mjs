@@ -1,10 +1,10 @@
 import {errorMessageData} from './localized-error.mjs';
 import {StrokeEngine} from './drawing-stroke-engine.mjs';
-import {StrokeEngine as EngineStrokes,drawingEngineEnabled,loadDrawingEngine} from './engine/engine-drawing.mjs';
+import {StrokeEngine as EngineStrokes,loadDrawingEngine} from './engine/engine-drawing.mjs';
 
 // The drawing raster engine (Rust) paints when this worker has loaded it; the
 // JavaScript engine otherwise. Messages wait for that choice in their order.
-const ready=loadDrawingEngine({enabled:drawingEngineEnabled(self.location)}).then(rust=>rust?new EngineStrokes():new StrokeEngine());
+const ready=loadDrawingEngine().then(rust=>rust?new EngineStrokes():new StrokeEngine());
 let queue=Promise.resolve();
 
 self.onmessage=({data})=>{queue=queue.then(()=>ready).then(engine=>handle(engine,data)).catch(error=>self.postMessage({kind:'error',stroke:data.stroke,message:error.message, ...errorMessageData(error)}));};
