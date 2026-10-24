@@ -31,16 +31,19 @@ const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
 const VIEW_CALLS = new Set(['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'selectConnected', 'selectMarquee',
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']);
 
-/** Gestures whose live state the interface reads from the editor itself (motion-path
- * trails, figure-handle and rig sessions, camera drags, frame drafts): the editor runs them
- * until those reads are engine queries (phase 2). Pose drags, property edits and effect-clip
- * edits run in the session, which the editor shows as its own (`gesture`, `edits`). */
-const EDITOR_GESTURES = new Set(['beginMotionPathEdit', 'updateMotionPathEdit', 'commitMotionPathEdit', 'cancelMotionPathEdit', 'setMotionPathFalloff',
+/** Gestures whose live state the interface reads from the editor itself (figure-handle and rig
+ * sessions, camera drags, frame drafts): the editor runs them until those reads are engine
+ * queries (phase 2). Pose drags, motion-path edits, property edits and effect-clip edits run in
+ * the session, which the editor shows as its own (`gesture`, `motion`, `edits`). */
+const EDITOR_GESTURES = new Set([
   'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
   'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'beginSegmentValueEdit', 'beginHandleEditDrag', 'editHandlePosition',
   'commitHandleEditDrag', 'beginFrameDraft', 'beginFrameDraftPreview', 'endFrameDraftPreview', 'commitFrameDraft', 'discardFrameDraft', 'updateDraftFrame',
   'addDraftFrame', 'editFrameDraftTimeline', 'enableFrameDrafts', 'disableFrameDrafts', 'beginDuplicateDrag', 'finishDuplicateDrag', 'beginTween', 'updateTween',
   'cancelAuthoredPoseDrag', 'commitAuthoredPoseDrag', 'movieclipBatch', 'movieclipTimelineEdit']);
+
+/** The calls that make up a motion-path edit: the editor replays them when it takes the edit over. */
+const MOTION_PATH_CALLS = new Set(['beginMotionPathEdit', 'updateMotionPathEdit', 'setMotionPathFalloff']);
 
 /** The calls that end an edit, and the editor's field that holds it: with none open they change
  * nothing and answer false, which the owner knows without asking the session. */
@@ -85,6 +88,8 @@ const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segm
 export function installEngineOwner(editor, {start, methods = ownedMethods(editor), verify = false, draws = null} = {}) {
   const report = {calls: 0, native: 0, fallback: 0, external: 0, synced: 0, refused: {}, verified: 0};
   let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [], handing = false;
+  /** The calls (as JSON) of the session's motion-path edit, from the one that began it. */
+  let motionCalls = null;
   /** JavaScript commands of the session's external entries, by identity. */
   const entries = new Map();
   /** Commands the editor recorded during the call it is running for the owner. */
@@ -301,6 +306,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (state && (state.tick !== editor.tick || state.frameIndex !== editor.frameIndex)) {
       editor.tick = state.tick; editor.frameIndex = state.frameIndex; editor._invalidate({viewOnly: true});
     }
+    if (answer.motionPathError) throw new Error(`The engine could not show the motion-path edit: ${answer.motionPathError}`);
     if (Object.hasOwn(answer, 'drag')) gesture(answer);
     if (!handing) edits(answer);
     if (state) {
@@ -355,9 +361,15 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   const gesture = answer => {
     const drag = answer.drag;
     if (!drag) {
-      if (editor._drag?.engine) { editor._drag = null; editor._authoredPoseEdit = null; editor._invalidate(); }
+      if (editor._drag?.engine) {
+        // A motion-path edit changed no frame on show: the document's patch invalidated what changed.
+        const motion = Boolean(editor._drag.motionPath);
+        editor._drag = null; editor._authoredPoseEdit = null; motionCalls = null;
+        if (!motion) editor._invalidate();
+      }
       return;
     }
+    if (answer.motionPath) { motion(answer); return; }
     if (!editor._drag?.engine) {
       const source = editor.evaluatedFrame;
       editor._authoredPoseEdit = answer.draft ? {frame: {...source, objects: source.objects.slice()}, source, owned: new Set(), tick: editor.tick, engine: true} : null;
@@ -385,6 +397,50 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     editor._drag.changed = Boolean(drag.changed);
     editor._invalidate();
   };
+  /** The session's motion-path edit, as the editor shows its own: `_drag` with what the interface
+   * reads of it (the trails sample `report` over `range`; the stage draws the `display` pose; the arc's
+   * overlay and the pinned-origin modifier read the falloff, its writes and the pinned figures of the
+   * grabbed frame). The answer that opens it carries the fixed part; every answer says how it stands,
+   * and `report` (the operations that turn the document into the virtual report the gesture shows)
+   * when a pointer move changed it. */
+  const motion = answer => {
+    const live = answer.motionPath;
+    // The gesture this one replaces was committed by the call; its draft is gone.
+    if (editor._authoredPoseEdit?.engine) editor._authoredPoseEdit = null;
+    let drag = editor._drag?.engine && editor._drag.motionPath ? editor._drag : null;
+    if (live.target) drag = editor._drag = motionDrag(answer.drag.label, live);
+    if (!drag) throw new Error('The engine holds a motion-path edit the editor does not show.');
+    drag.moved = live.moved; drag.range = live.range;
+    live.movedSubs?.forEach((moved, index) => { drag.subs[index].moved = moved; });
+    if (live.report) drag.ops = live.report;
+  };
+  /** The editor's session of a motion-path edit, from the call that opened it. `report` and `display`
+   * are built when read, from the document as it is then: the document with the operations the session
+   * told, and the playhead's pose under it (nothing while the trail is as the document has it). */
+  const motionDrag = (label, live) => {
+    const drag = {motionPath: true, engine: true, label, scope: 'motion-path', documentToken: editor._documentToken, target: live.target, tick: live.tick, baseline: [], ops: [], moved: false, range: live.range};
+    if (live.falloff) Object.assign(drag, {falloff: live.falloff, writes: live.writes, subs: live.subs.map(({tick, kind}) => ({tick, kind, moved: false})), grab: {baseline: live.baseline}});
+    else drag.baseline = live.baseline;
+    let built = null, shown = null;
+    Object.defineProperties(drag, {
+      report: {get() {
+        if (!this.ops.length) return editor.report;
+        if (built?.document !== editor.report || built.ops !== this.ops) {
+          const report = {...editor.report};
+          applyDocumentPatch(report, this.ops);
+          built = {document: editor.report, ops: this.ops, report};
+        }
+        return built.report;
+      }},
+      display: {get() {
+        if (!this.ops.length) return null;
+        const report = this.report;
+        if (shown?.report !== report || shown.tick !== editor.tick || shown.range !== this.range) shown = {report, tick: editor.tick, range: this.range, display: editor._motionPathDisplay(this)};
+        return shown.display;
+      }},
+    });
+    return drag;
+  };
   /** The session's effect-clip and property edits, as the editor shows its own (`_vfxClipEdit`,
    * `_animationEdit`, and the frame a layer sheet's edit previews, `_sheetPropertyPreview`).
    * A mirror begins with the call that opens the edit (`mirrorEdit`); every answer says how the
@@ -403,6 +459,20 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       editor._geometry = null;
     }
   };
+  /** A call the editor runs while the session holds a motion-path edit (or the session refuses a call of
+   * it): the editor's code ends or amends the gesture as its own, so it replays the calls that made it,
+   * which gives its session what the session had (a move the session rejected is not among them: it
+   * changed nothing the edit shows or publishes). The session forgets the gesture; the document is
+   * unchanged by it until it ends. */
+  const takeMotion = () => {
+    const calls = motionCalls ?? [];
+    motionCalls = null;
+    handing = true;
+    try { send('@dropGesture', []); } finally { handing = false; }
+    editor._drag = null;
+    depth++;
+    try { for (const [name, payload] of calls) originals.get(name).apply(editor, JSON.parse(payload)); } finally { depth--; }
+  };
   /** The edit a `begin` call opened in the session, as the editor's own would be. */
   const mirrorEdit = (name, answer) => {
     if (name === 'beginVfxClipEdit') { editor._vfxClipEdit = {engine: true, before: editor.report._styk.vfxClips}; return; }
@@ -417,6 +487,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   /** A call the editor runs while the session holds an edit belongs to that edit (the editor's
    * code ends or amends it): the edit becomes the editor's own, as it would have begun it. */
   const handOver = () => {
+    if (editor._drag?.engine && editor._drag.motionPath) takeMotion();
     const animation = editor._animationEdit?.engine ? editor._animationEdit : null, vfx = editor._vfxClipEdit?.engine ? editor._vfxClipEdit : null;
     if (!animation && !vfx) return;
     handing = true;
@@ -572,6 +643,12 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     const live = ensure();
     if (!live) return original.apply(editor, args);
     if (ENDS_EDIT[name] && !editor[ENDS_EDIT[name]]) { report.calls++; report.native++; return false; }
+    // A pointer that is not finite is rejected by the editor's own check, before it touches the gesture
+    // (the mirror carries the document token that check follows): the session keeps its edit as it was.
+    if (name === 'updateMotionPathEdit' && editor._drag?.engine && editor._drag.motionPath && !(Number.isFinite(args[0]?.x) && Number.isFinite(args[0]?.y))) {
+      report.errors = (report.errors ?? 0) + 1;
+      return original.apply(editor, args);
+    }
     const flushed = performance.now();
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
@@ -599,10 +676,12 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     spare = [];
     for (const pair of Array.isArray(answer.drawsLeft) ? answer.drawsLeft : []) if (spare.filter(([kind]) => kind === pair[0]).length < 4) spare.push(pair);
     report.trace?.push(`${name} -> ${answer.status} ${answer.reason ?? answer.error ?? ''} rev ${answer.revision} drag ${JSON.stringify(answer.drag)} draft ${JSON.stringify(answer.draft?.map(f => f.unique_id))} state ${JSON.stringify(answer.state).slice(0, 140)}`);
+    // A pointer move the session rejected leaves its edit open, as the editor's does.
+    const rejected = answer.status === 'error' && name === 'updateMotionPathEdit' && Boolean(answer.motionPath && editor._drag?.engine && editor._drag.motionPath);
     // An error the session raised without changing anything: the editor raises it itself,
     // with its message and the values it draws on the way, as the editor alone would.
     // (Not pastes: the clipboard a native copy filled is the session's.)
-    if (answer.status === 'error' && !answer.patch?.length && !answer.drag === !editor._drag?.engine && !/paste/i.test(name)) {
+    if (answer.status === 'error' && !rejected && !answer.patch?.length && !answer.drag === !editor._drag?.engine && !/paste/i.test(name)) {
       report.errors = (report.errors ?? 0) + 1;
       return fallback(name, original, args);
     }
@@ -625,6 +704,10 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
+    if (answer.status === 'ok' && MOTION_PATH_CALLS.has(name)) {
+      if (name === 'beginMotionPathEdit') motionCalls = answer.motionPath ? [[name, payload]] : null;
+      else motionCalls?.push([name, payload]);
+    }
     if (shown && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, shown); editor._geometry = null; editor._incremental = null; }
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
@@ -646,6 +729,9 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (editor._vfxClipEdit) editor.cancelVfxClipEdit();
     if (editor._animationEdit) editor.cancelAnimationEdit();
     if (!redo && editor._drag) editor.cancelDrag();
+    // The editor's redo leaves an open motion-path edit open (the session refuses to redo
+    // under one): the edit becomes the editor's own first, as a call it runs would make it.
+    if (redo && editor._drag?.engine && editor._drag.motionPath) takeMotion();
     flush();
     const historyView = JSON.stringify({...view(), patch: true});
     report.capture?.push({name: redo ? 'redo' : 'undo', args: '[]', view: historyView});

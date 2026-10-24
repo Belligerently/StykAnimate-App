@@ -1801,3 +1801,67 @@ fn movieclip_rename_marker_keeps_zero_history_noops_and_literal_quiet_admission(
         assert_eq!(requested.editor.report_json(), ordinary.editor.report_json());
     }
 }
+
+/// What a session tells the owner of its open motion-path edit while a recorded tape runs:
+/// the fixed part once, how it stands after every call, the virtual report when a move changed
+/// it, and nothing once it has ended.
+#[test]
+fn motion_path_answers_tell_the_owner_how_the_edit_stands() {
+    let (mut begun, mut moves, mut reshaped, mut ended, mut errors) = (0, 0, 0, 0, 0);
+    for name in ["motion-path-sheet", "motion-path-falloff-sheet", "motion-path-camera-sheet"] {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+        let reference = parse(&std::fs::read_to_string(file).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+        let mut open = false;
+        for step in &steps[1..] {
+            let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+            let method = call[0].as_str().unwrap().trim_start_matches('@');
+            let mut view = session.editor.state_value().as_obj().unwrap().clone();
+            view.set("autoKey", Value::Bool(session.editor.auto_key));
+            view.set("patch", Value::Bool(true));
+            view.set("changesOnly", Value::Bool(true));
+            let label = format!("{name} step {} ({method})", step.get("step").unwrap());
+            let answer = session.call_values(method, &Value::array(call[1..].to_vec()), &Value::object(view));
+            // A recorded error leaves the edit as it was; the owner hands it to the editor.
+            let recorded_error = step.get("error").is_some_and(|error| !error.is_null());
+            assert_eq!(answer.get("status").and_then(Value::as_str), Some(if recorded_error { "error" } else { "ok" }), "{label}");
+            errors += usize::from(recorded_error);
+            let live = answer.get("motionPath").unwrap();
+            assert_eq!(live.is_null(), answer.get("drag").unwrap().is_null(), "{label}: the edit is the gesture");
+            if live.is_null() {
+                ended += usize::from(open);
+                open = false;
+                continue;
+            }
+            let moved = live.get("moved").unwrap().truthy();
+            let range = live.get("range").unwrap().numbers().unwrap();
+            assert!(range[0] < range[1], "{label}: a window of ticks");
+            if method == "beginMotionPathEdit" || method == "setMotionPathFalloff" && live.get("target").is_some() {
+                begun += 1;
+                assert!(live.get("target").unwrap().is_object() && live.get("tick").is_some() && live.get("baseline").unwrap().array_len().is_some(), "{label}: the fixed part");
+                // Nothing has been moved yet (or the replay moved it): the virtual report is the document, or the changes.
+                assert!(live.get("report").unwrap().array_len().is_some(), "{label}: a report to begin with");
+                if live.get("falloff").is_some() {
+                    let subs = live.get("subs").unwrap().array_len().unwrap();
+                    assert!(subs > 1 && live.get("writes").unwrap().array_len().unwrap() > 1 && live.get("movedSubs").unwrap().array_len() == Some(subs), "{label}: a falloff's writes");
+                }
+                open = true;
+            } else {
+                assert!(live.get("target").is_none() && live.get("baseline").is_none(), "{label}: the fixed part is told once");
+            }
+            if method == "updateMotionPathEdit" {
+                moves += 1;
+                // A move that changed the pose tells the changes to the virtual report, as paths from the root.
+                if let Some(report) = live.get("report") {
+                    reshaped += 1;
+                    assert!(moved && report.array_len().unwrap() > 0, "{label}: changes");
+                    for op in report.elements().unwrap().iter() {
+                        assert!(["_styk", "keyframes", "figure_types"].contains(&op.get("p").unwrap().item(0).unwrap().as_str().unwrap()), "{label}: {}", json(&op));
+                    }
+                }
+            }
+        }
+    }
+    assert!(begun >= 20 && moves >= 40 && reshaped >= 30 && ended >= 20 && errors >= 1, "begun {begun}, moves {moves}, reshaped {reshaped}, ended {ended}, errors {errors}");
+}

@@ -612,6 +612,8 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     drop(command_scope);
     let _answer_scope = crate::prof::scope("call::answer");
     let topology_changed = topology_requested && matches!(&result, Ok(Value::Bool(true)));
+    // The owner runs a refused call in the editor and does not adopt its answer.
+    let adopted = !matches!(&result, Err(EditError::Unported(_)));
     let unique_result = unique_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     let rename_result = rename_original.as_ref().and_then(|_| result.as_ref().ok()).cloned();
     let layer_changed = layer_requested && result.as_ref().is_ok_and(Value::truthy);
@@ -820,6 +822,11 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         // The effect-clip and property edits the session holds, which the editor shows as its own.
         answer.push(("vfxEdit", Value::Bool(editor.vfx_edit.is_some())));
         answer.push(("animationEdit", editor.animation_edit_view(method == "beginAnimationEdit")));
+        // The motion-path edit it holds, which the editor shows as its own (`_drag`).
+        match editor.motion_path_view(adopted) {
+            Ok(view) => answer.push(("motionPath", view)),
+            Err(error) => answer.push(("motionPathError", Value::str(&format!("{error:?}")))),
+        }
         // The timeline's chosen layer, which history restores with the selection.
         answer.push(("sheetSelection", editor.sheet_selection.as_ref().map_or(Value::Null, |chosen| response_value(vec![("id", Value::str(&chosen.id)), ("contents", Value::Bool(chosen.contents))]))));
     }

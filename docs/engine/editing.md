@@ -1001,12 +1001,31 @@ the default until then).
   (figures, order and fields that differ from the frame the edit began on) laid over the
   edit's frame, as `_sheetPropertyPreview`. Ending an edit that is not open answers false
   without asking the session.
+- **Motion-path edits.** `beginMotionPathEdit`…`setMotionPathFalloff` run in the session. Every
+  answer carries `motionPath` (`null`, or how the open edit stands: whether it has moved and the
+  ticks its trail changes, `range`, and a falloff's writes that moved). The call that opens it adds
+  what stays fixed (the target, the tick, the falloff and its writes, and the pinned figures of
+  the grabbed frame), and a pointer move that changed the trail adds `report`: the operations
+  that turn the document into the report the gesture shows (a sheet plan's changed tracks and
+  pose sources; the posed native frames). The owner shows them as the editor's own `_drag`
+  (marked `engine`, with `motionPath`, `target`, `falloff`, `range`, and `report` and
+  `display` built when read: the document with those operations, and the playhead's pose under
+  it, which the stage draws), so the trails (`motionPathReport()`), the arc
+  (`motionPathFalloff()`), the stage and the pinned-origin modifier read what they read from the
+  editor's session. Ending the gesture is the session's too (`commitDrag`,
+  `cancelDrag` and a seek end it). A pointer move that is rejected leaves the edit open, as in the
+  editor: a pointer that is not finite raises the editor's own error (its check, which the mirror
+  carries the document token for) before the session is asked, and any other error the session raises
+  there is raised from its message key. The owner keeps the calls that made the edit; when a call of
+  it is refused, or the editor runs another call, the edit becomes the editor's own: the session
+  forgets it (`@dropGesture`, the document is unchanged by it until it ends) and the editor replays
+  those calls, which gives its session what the session had.
 - **Refusals.** A call the session refuses (`Unported`), a gesture whose live state the
-  interface reads from the editor (motion paths, figure handles, rigs, camera drags, frame
-  drafts) and an error the session raised without changing anything run in the editor on the
-  read view. If the session holds a property or effect-clip edit then, the edit becomes the
-  editor's own first (`@dropEdits`: the session forgets it, the mirrored record loses
-  `engine`), so the editor's code ends or amends it as it would have its own. What they recorded becomes
+  interface reads from the editor (figure handles, rigs, camera drags, frame drafts) and an
+  error the session raised without changing anything run in the editor on the read view. If the
+  session holds a property or effect-clip edit then, the edit becomes the editor's own first
+  (`@dropEdits`: the session forgets it, the mirrored record loses `engine`), so the editor's
+  code ends or amends it as it would have its own. What they recorded becomes
   session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and

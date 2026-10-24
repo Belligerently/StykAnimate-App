@@ -200,6 +200,10 @@ pub(crate) struct Session {
     moved: bool,
     /// The last pointer and its options (`lastPoint`, `lastOptions`).
     last: Option<(Value, Value)>,
+    /// What the owner has not been told yet (`motion_path_view`): that the gesture began, and
+    /// that its virtual report (`session.report`) was refreshed by a pointer move.
+    fresh: bool,
+    refreshed: bool,
 }
 
 /// `Math.round`.
@@ -373,8 +377,24 @@ impl Editor {
     /// The future actor must publish its result with the same gesture/revision guard.
     pub fn motion_display_frame_worker(&self) -> Result<Option<Value>, EditError> {
         let Some(session) = self.drag.as_ref().and_then(|drag| drag.motion_path.as_ref()).filter(|session| session.moved) else { return Ok(None) };
+        let range = self.display_range(session);
+        if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
+        let report = self.motion_virtual_report(session)?;
+        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+        let prepared = Prepared::new(Arc::new(doc));
+        let records = match &session.draft {
+            Some(draft) => styk_eval::records::Records::new_native_draft(&report, &prepared, draft.channels())?,
+            None => styk_eval::records::Records::new(&report, &prepared)?,
+        };
+        Ok(Some(records.evaluated(self.tick)?))
+    }
+
+    /// The ticks the gesture's virtual report changes (`session.range`) once it has moved: a
+    /// falloff's frames between the keys around its writes, the keys a channel gesture wrote and
+    /// their neighbours, the rows around a stored pose, or the spans of a layer sheet's writes.
+    fn display_range(&self, session: &Session) -> [f64; 2] {
         let total = total_ticks(&rows(&self.report));
-        let range = if session.falloff.is_some() {
+        if session.falloff.is_some() {
             let low = session.posed.iter().map(|posed| posed.tick).fold(f64::INFINITY, f64::min);
             let high = session.posed.iter().map(|posed| posed.tick).fold(f64::NEG_INFINITY, f64::max);
             [session.keys.iter().copied().filter(|tick| *tick < low).fold(0.0, f64::max),
@@ -397,16 +417,79 @@ impl Editor {
         } else {
             session.posed[0].writes.iter().fold([session.tick, session.tick + 1.0], |range, (_, entry)|
                 [range[0].min(entry.write_tick), range[1].max(entry.next_tick)])
-        };
-        if self.tick < range[0] || self.tick >= range[1] { return Ok(None); }
-        let report = if let Some(plan) = &session.plan { plan.virtual_report(&self.report)? } else { self.native_motion_report(session, false)? };
-        let doc = self.eval.borrow_mut().loader.document(&report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
-        let prepared = Prepared::new(Arc::new(doc));
-        let records = match &session.draft {
-            Some(draft) => styk_eval::records::Records::new_native_draft(&report, &prepared, draft.channels())?,
-            None => styk_eval::records::Records::new(&report, &prepared)?,
-        };
-        Ok(Some(records.evaluated(self.tick)?))
+        }
+    }
+
+    /// The document as the gesture shows it while it is open (`session.report`): the sheet plan
+    /// or the posed native frames laid over it.
+    fn motion_virtual_report(&self, session: &Session) -> Result<Value, EditError> {
+        if let Some(plan) = &session.plan { plan.virtual_report(&self.report) } else { self.native_motion_report(session, false) }
+    }
+
+    /// The open motion-path edit as the owner mirrors it on the editor (`editor._drag`, which the
+    /// interface reads for its trails and overlays): after every call whether it has moved, the
+    /// ticks it changes (`range`) and a falloff's writes that moved (`movedSubs`); the call that
+    /// opens it adds what stays fixed (`target`, `tick`, the `falloff`, its writes and `subs`, the
+    /// pinned figures of the grabbed frame's `baseline`); a pointer move that changed the virtual
+    /// report adds `report`, the operations that turn the document into it. `null` when no edit is
+    /// open. `consume` marks what it carries as told.
+    pub fn motion_path_view(&mut self, consume: bool) -> Result<Value, EditError> {
+        let Some(session) = self.drag.as_ref().and_then(|drag| drag.motion_path.as_deref()) else { return Ok(Value::Null) };
+        let mut out = Obj::new();
+        out.set("moved", Value::Bool(session.moved));
+        let range = if !session.moved && (session.falloff.is_some() || matches!(session.mode, Mode::Sheet | Mode::Channels)) { [session.tick, session.tick + 1.0] } else { self.display_range(session) };
+        out.set("range", Value::array(range.into_iter().map(Value::Num).collect()));
+        if session.falloff.is_some() {
+            out.set("movedSubs", Value::array(session.posed.iter().map(|posed| Value::Bool(posed.moved)).collect()));
+        }
+        if session.fresh {
+            let mut target = Obj::new();
+            target.set("kind", Value::str(if session.target.camera { "camera" } else { "node" }));
+            if !session.target.camera {
+                if let Some(uid) = session.target.uid { target.set("uid", Value::Num(uid)); }
+                if let Some(handle) = session.target.handle { target.set("handleId", Value::Num(handle)); }
+                if let Some(joint) = session.target.joint { target.set("joint", Value::Num(joint)); }
+            }
+            out.set("target", Value::object(target));
+            out.set("tick", Value::Num(session.tick));
+            if let Some(falloff) = &session.falloff {
+                let mut value = Obj::new();
+                value.set("radius", Value::Num(falloff.radius));
+                value.set("shape", Value::str(falloff.shape));
+                out.set("falloff", Value::object(value));
+                out.set("writes", Value::array(session.planned.iter().map(|write| {
+                    let mut value = Obj::new();
+                    value.set("tick", Value::Num(write.tick));
+                    value.set("weight", Value::Num(write.weight));
+                    value.set("kind", Value::str(write.kind.name()));
+                    Value::object(value)
+                }).collect()));
+                out.set("subs", Value::array(session.posed.iter().map(|posed| {
+                    let mut value = Obj::new();
+                    value.set("tick", Value::Num(posed.tick));
+                    value.set("kind", Value::str(posed.kind.name()));
+                    Value::object(value)
+                }).collect()));
+            }
+            // The figures with pinned limbs among the grabbed frame's baseline: the interface asks
+            // whether any is pinned.
+            let pinned = session.posed.first().map(|posed| posed.baseline.iter().filter(|object| has_pinned(object)).map(|object| {
+                let mut value = Obj::new();
+                value.set("unique_id", object.get("unique_id").cloned().unwrap_or(Value::Null));
+                value.set("_stykIK", object.get("_stykIK").cloned().unwrap_or(Value::Null));
+                Value::object(value)
+            }).collect()).unwrap_or_default();
+            out.set("baseline", Value::array(pinned));
+        }
+        if session.fresh || session.refreshed {
+            let ops = if session.refreshed { crate::patch::diff(&self.report, &self.motion_virtual_report(session)?) } else { Value::array(Vec::new()) };
+            out.set("report", ops);
+        }
+        if consume && let Some(session) = self.drag.as_mut().and_then(|drag| drag.motion_path.as_deref_mut()) {
+            session.fresh = false;
+            session.refreshed = false;
+        }
+        Ok(Value::object(out))
     }
 
     /// A native gesture projects its same posed records over the canonical COW
@@ -753,6 +836,8 @@ impl Editor {
             keys: Vec::new(),
             moved: false,
             last: None,
+            fresh: true,
+            refreshed: false,
         };
         if falloff_mode {
             if !self.begin_falloff(&mut session)? {
@@ -1015,6 +1100,7 @@ impl Editor {
         }
         let changed = changed_uids(posed, None);
         if session.mode == Mode::Channels { self.write_channels(session, 0, &changed)?; }
+        session.refreshed = true;
         self.emit("edit", vec![("live", Value::Bool(true)), ("motionPath", Value::Bool(true)), ("changedUids", uid_array(&changed))]);
         Ok(true)
     }
@@ -1053,6 +1139,7 @@ impl Editor {
                     session.posed[index].written = true;
                 }
             }
+            session.refreshed = true;
         }
         let mut changed: Vec<u32> = Vec::new();
         for posed in session.posed.iter().filter(|p| p.moved) {
