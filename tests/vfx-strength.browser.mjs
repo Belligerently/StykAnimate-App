@@ -13,7 +13,7 @@ try{
   const {drawExportScene,drawExportSceneTiled}=await import('/src/export-frame-core.mjs');
   const {VfxGPU}=await import('/src/vfx-gpu.mjs');
   const {VfxWebGPU}=await import('/src/vfx-webgpu.mjs');
-  const {ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs');
+  const {pageExporter}=await import('/tests/support/page-export.mjs');
   const {createRenderer}=await import('/src/renderer.mjs');
   const pixels=canvas=>{const c=new OffscreenCanvas(canvas.width,canvas.height),ctx=c.getContext('2d');ctx.drawImage(canvas,0,0);return ctx.getImageData(0,0,c.width,c.height).data;};
   const diff=(a,b)=>{let max=0,sum=0;for(let i=0;i<a.length;i++){const d=Math.abs(a[i]-b[i]);max=Math.max(max,d);sum+=d;}return {max,mean:sum/a.length};};
@@ -52,7 +52,7 @@ try{
    canvas.getContext('2d',{willReadFrequently:true});tile.getContext('2d',{willReadFrequently:true});
    drawExportScene(canvas.getContext('2d'),doc,frame,geometry,{});await drawExportSceneTiled(tile.getContext('2d'),doc,frame,geometry,{preload:async()=>{}},96);
    const reference=pixels(canvas),tilePixels=pixels(tile),tiled=diff(reference,tilePixels);check(scenario==='scene-turbulence'?tiled.max<=8&&tiled.mean<.01:tiled.max<=3,`${scenario} tiled ${JSON.stringify(tiled)}`);
-   const exporter=new ExportFrameRenderer({width:480,height:300});await exporter.load(doc);const exported=diff(reference,pixels(await exporter.renderTick(8)));const override=diff(reference,pixels(await exporter.renderFrame(frame)));check(override.max<=3,`${scenario} frame override ${JSON.stringify(override)}`);exporter.dispose();check(exported.max<=3,`${scenario} export worker ${JSON.stringify(exported)}`);
+   const exporter=pageExporter({width:480,height:300});await exporter.load(doc);const exported=diff(reference,pixels(await exporter.renderTick(8)));const override=diff(reference,pixels(await exporter.renderFrame(frame)));check(override.max<=3,`${scenario} frame override ${JSON.stringify(override)}`);exporter.dispose();check(exported.max<=3,`${scenario} export worker ${JSON.stringify(exported)}`);
    const worker=new Worker('/src/playback-worker.mjs',{type:'module'});
    const packet=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Playback worker timed out')),15000);worker.onerror=event=>{clearTimeout(timer);reject(new Error(event.message));};worker.onmessage=({data})=>{if(data.type==='loaded')worker.postMessage({type:'prepare',revision:1,ticks:[8]});if(data.type==='packet'){clearTimeout(timer);resolve(data.packet);}if(data.type==='error'||data.type==='load-error'){clearTimeout(timer);reject(new Error(data.message));}};worker.postMessage({type:'load',report:doc,revision:1,scale:1,quality:1,baseURL:location.origin});});worker.terminate();
    const renderer=await createRenderer(document.createElement('canvas'));renderer.resize(480,300,1);

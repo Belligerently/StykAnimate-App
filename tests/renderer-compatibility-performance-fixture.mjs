@@ -3,7 +3,6 @@ import {defaultFigure,createObject,createFrame} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {createDrawingFigure} from '../src/drawing-model.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
-import {drawCameraMonitor} from '../src/camera-monitor.mjs';
 
 const check=(condition,message,details)=>{if(!condition)throw Object.assign(Error(message),{details});};
 function pixels(canvas,width=canvas.width,height=canvas.height){return canvas.getContext('2d').getImageData(0,0,width,height).data;}
@@ -147,21 +146,5 @@ export async function compatibilityEditorChecks({onProgress=()=>{}}={}){
     verify(retained.every(canvas=>canvas.width===1&&canvas.height===1),'Ending a retained layer lifetime releases its pixel surfaces');
   }finally{live.destroy();full.destroy();owner.dispose();}
 
-  const simpleFrame=createFrame([createObject(figure,1,190,230)]),simple={...mixed,figure_types:[figure],keyframes:[simpleFrame]};
-  const prepared=await renderer(),monitor=document.createElement('canvas');monitor.style.cssText='width:320px;height:240px';document.body.append(monitor);
-  try{
-    onProgress({phase:'prepared monitor paint'});
-    prepared.resize(640,480,1);prepared.render({report:simple,frame:simpleFrame,view:{scale:1},cameraEnabled:true,vfxEnabled:false});
-    const bitmap=await createImageBitmap(prepared.canvas),key=prepared.prepareFrame({softwareFrames:true,key:'1:0',cameraEnabled:true,hiddenKey:'hidden-2',uids:Uint32Array.of(1),compatibility:[{bitmap}]},{report:simple});bitmap.close();
-    const entry=prepared.prepared.get(key),expected=document.createElement('canvas');
-    const result=drawCameraMonitor(monitor,{report:simple,frame:simpleFrame,geometry:{get drawables(){throw Error('Prepared camera monitor evaluated figures.');}},
-      prepared:{renderer:prepared,key,hiddenKey:'hidden-2'}});
-    verify(result,'Compatibility camera monitor presents an admitted frame without evaluating figures');
-    expected.width=monitor.width;expected.height=monitor.height;expected.getContext('2d').drawImage(entry.canvas,0,0,monitor.width,monitor.height);
-    const difference=compare(pixels(monitor),pixels(expected));verify(difference.max===0,'Prepared compatibility monitor borrows the exact completed frame pixels',difference);
-    verify(prepared.renderPreparedInto(key,{report:simple,hiddenKey:'changed',target:{context:monitor.getContext('2d')}})===false,'Prepared compatibility monitor rejects changed visibility');
-    verify(prepared.renderPreparedInto(key,{report:simple,hiddenKey:'hidden-2',cameraEnabled:false,target:{context:monitor.getContext('2d')}})===false,'Prepared compatibility monitor rejects a different camera mode');
-    rows.push({name:'prepared-software-monitor',difference});
-  }finally{prepared.destroy();monitor.remove();}
   return {checks,rows};
 }

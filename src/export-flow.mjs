@@ -21,8 +21,7 @@ import {localizedMarkup} from './localization-bindings.mjs';
  * dialog of its own when the export was not started from it.
  *
  * DOM-free at import. ctx (from app.mjs): {editor, state, actions, desktop,
- * importer, telemetry, audioEngine, exportJobs, playback,
- * editablePreparation, fail, status, toast, persistentFailure,
+ * telemetry, audioEngine, exportJobs, playback, editablePreparation, fail, status, toast, persistentFailure,
  * finishCurrentEdit, pause, interruptRecovery, runDocumentExport,
  * writeNativeBlob, currentFrame, nameOf, simpleFrameCount}; optionally
  * overlays (the overlay stack), localization() and commitSettings(patch),
@@ -52,7 +51,7 @@ import { icon } from "./icons.mjs";
 
 export function createExportFlow(ctx) {
   const {
-    editor, state, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
+    editor, state, actions, desktop, telemetry, audioEngine, exportJobs, playback, editablePreparation,
     fail, status, toast, persistentFailure, finishCurrentEdit, pause, interruptRecovery,
     runDocumentExport, writeNativeBlob, currentFrame, nameOf, simpleFrameCount,
   } = ctx;
@@ -233,13 +232,11 @@ export function createExportFlow(ctx) {
     measurement.onProgress = value => progressUI.update(value);
     measurement.releaseRenderer = () => frameRenderer?.dispose();
     try {
-      // The engine draws the frames of documents it draws (src/engine/engine-export.mjs);
-      // SVG stays vector output, from the JavaScript renderer.
+      // The engine draws the frames (src/engine/engine-export.mjs); an SVG is the engine's vector output.
       frameRenderer = createExportFrameRenderer({
         width: options.width,
         height: options.height,
         smoothing: options.smoothing,
-        baseURL: importer.baseURL,
         signal: controller.signal,
         onFrame: ({stage, tick}) => stage === 'rendering' ? progressUI.frameStarted(tick) : progressUI.frameRendered(),
         getRevision: () =>
@@ -444,7 +441,7 @@ export function createExportFlow(ctx) {
     return {
       render(tick, canvas, { signal } = {}) {
         if (!editor.totalTicks || signal?.aborted) return Promise.resolve(false);
-        renderer ??= createThumbnailRenderer(editor, { baseURL: importer.baseURL, onError: () => {} }, { stage: () => state.renderer, playback: () => playback });
+        renderer ??= createThumbnailRenderer(editor, { stage: () => state.renderer, playback: () => playback });
         const rows = editor.timeline, index = Math.max(0, rows.findLastIndex((row) => row.start <= tick));
         return renderer.renderThumbnail(index, canvas, { tick, storedFrames: false, signal });
       },

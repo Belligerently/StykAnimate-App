@@ -6,7 +6,7 @@ page.on('pageerror',e=>errors.push(e.message));
 try{
   await page.goto(process.env.STYK_URL??'http://127.0.0.1:47851');await page.waitForFunction(()=>window.styk?.ready);
   const result=await page.evaluate(async()=>{
-    const {createRenderer}=await import('/src/renderer.mjs'),{compilePlaybackPacket}=await import('/src/playback-worker.mjs'),{rigExampleDocument,RIG_EXAMPLES}=await import('/src/rig-examples.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs'),{exportSVG}=await import('/src/svg-export.mjs');
+    const {createRenderer}=await import('/src/renderer.mjs'),{compilePlaybackPacket}=await import('/src/playback-worker.mjs'),{rigExampleDocument,RIG_EXAMPLES}=await import('/src/rig-examples.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs'),{pageExporter}=await import('/tests/support/page-export.mjs');
     const canvas=document.createElement('canvas');document.body.append(canvas);const renderer=await createRenderer(canvas);renderer.resize(640,460,1);const results=[];
     const raster=document.createElement('canvas');raster.width=640;raster.height=460;const ctx=raster.getContext('2d',{willReadFrequently:true});
     const pixels=async src=>{const img=new Image();img.src=src;await img.decode();ctx.clearRect(0,0,640,460);ctx.drawImage(img,0,0);return ctx.getImageData(0,0,640,460).data;};
@@ -27,7 +27,7 @@ try{
       if(fig.segments[r.control-1]._stykRig?.connector){o.len_flag=1;o.lengths=fig.segments.map(s=>s.length);o.lengths[r.control-1]=.7;}else o.angles[r.control-1]+=.9;
       const geometry=buildGeometry(report,frame),view={x:0,y:0,scale:1};renderer.useReport(report);renderer.render({report,frame,geometry,view});const edit=await read();
       const packet=await compilePlaybackPacket(report,0,{revision:i+1});const key=renderer.prepareFrame(packet,{report,view});if(!renderer.renderPrepared(key,{report,view}))throw new Error('Prepared rig frame missing');const playback=await read();
-      const svg=await exportSVG({report,frame,geometry,width:640,height:460}),url=URL.createObjectURL(svg);let exported;try{exported=await pixels(url);}finally{URL.revokeObjectURL(url);}
+      const vector=pageExporter({width:640,height:460},{vector:true});let exported;try{await vector.load(report);const svg=await vector.renderSVGTick(0),url=URL.createObjectURL(svg);try{exported=await pixels(url);}finally{URL.revokeObjectURL(url);}}finally{vector.dispose();}
       for(const c of packet.compatibility??[])c.bitmap?.close();
       results.push({rig:r.id,playback:diff(edit,playback),svg:diff(edit,exported)});
     }return {backend:renderer.stats.backend,results};}finally{renderer.destroy?.();canvas.remove();}

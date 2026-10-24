@@ -14,7 +14,7 @@ try{
  await page.goto(process.env.STYK_TEST_URL||'http://127.0.0.1:47832');await page.waitForFunction(()=>window.styk?.ready,null,{timeout:60000});
  const report=await page.evaluate(async()=>{
   const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{initializeLayerSheet}=await import('/src/editor-layer-sheet.mjs');
-  const {compilePlaybackPacket}=await import('/src/playback-worker.mjs'),{createRenderer}=await import('/src/renderer.mjs'),{ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs');
+  const {compilePlaybackPacket}=await import('/src/playback-worker.mjs'),{createRenderer}=await import('/src/renderer.mjs'),{pageExporter}=await import('/tests/support/page-export.mjs');
   const e=styk.editor,doc=emptyDocument(),fig=doc.figure_types[0];doc.canvas_width=640;doc.canvas_height=460;
   doc.keyframes=[0,1,2,3].map(i=>{const f=createFrame([createObject(fig,1,150+i*25,300),createObject(fig,2,470,300)],20);f._stykBackgroundColor=0xff14121c;return f;});
   e.load(doc);initializeLayerSheet(e.report);e._invalidate({timing:true});
@@ -26,7 +26,7 @@ try{
   const size={width:640,height:460},view={x:0,y:0,scale:1};
   const gpu=await createRenderer(document.createElement('canvas')),soft=await createRenderer(document.createElement('canvas'),{forceCanvas2D:true});
   gpu.resize(size.width,size.height,1);soft.resize(size.width,size.height,1);
-  const exporter=new ExportFrameRenderer(size);await exporter.load(e.report);
+  const exporter=pageExporter(size);await exporter.load(e.report);
   const pixels=canvas=>{const o=new OffscreenCanvas(size.width,size.height),c=o.getContext('2d');c.drawImage(canvas,0,0,size.width,size.height);return c.getImageData(0,0,size.width,size.height).data;};
   const diff=(a,b)=>{let n=0;for(let i=0;i<a.length;i++)n+=Math.abs(a[i]-b[i]);return n/a.length;};
   const png=async(canvas,name)=>{const o=new OffscreenCanvas(size.width,size.height);o.getContext('2d').drawImage(canvas,0,0,size.width,size.height);const blob=await o.convertToBlob({type:'image/png'});window.__shots??={};window.__shots[name]=[...new Uint8Array(await blob.arrayBuffer())];};
@@ -47,7 +47,7 @@ try{
     for(const item of [...packet.compatibility,...software.compatibility])item.bitmap?.close();
    }
    // SVG has no vector form for particles: the frame is embedded as an image.
-   e.seek(30);const {exportSVG}=await import('/src/svg-export.mjs'),svg=await (await exportSVG({report:e.report,frame:e.evaluatedFrame,geometry:e.geometry,width:320,height:230})).text();
+   e.seek(30);const vector=pageExporter({width:320,height:230},{vector:true});await vector.load(e.report);const svg=await (await vector.renderSVGTick(30)).text();vector.dispose();
    rows.push({tick:'svg',svgEmbedded:svg.includes('embedded image')?1:0});
    // Export is independent of the order in which frames are rendered.
    const first=pixels(await exporter.renderTick(30));await exporter.renderTick(47);await exporter.renderTick(2);

@@ -15,7 +15,6 @@ try {
     const {ensureLayerState} = await import('/src/layers.mjs');
     const {buildGeometry} = await import('/src/pivot/geometry.mjs');
     const {compilePlaybackPacket} = await import('/src/playback-worker.mjs');
-    const {exportSVG} = await import('/src/svg-export.mjs');
     const {drawExportScene} = await import('/src/export-frame-core.mjs');
     const {createCameraMotion, frameWithCameraTime} = await import('/src/camera-motion.mjs');
     const check = (value, message) => {if (!value) throw new Error(message);};
@@ -65,7 +64,6 @@ try {
           canvas.render(options);inspect(canvas.canvas,'Canvas');
           const exported=document.createElement('canvas');exported.width=160;exported.height=120;
           drawExportScene(exported.getContext('2d'),report,frame,geometry,resources);inspect(exported,'raster export');
-          const svg=new Image();svg.src=URL.createObjectURL(new Blob([await exportSVG({...options,resources})],{type:'image/svg+xml'}));await svg.decode();inspect(svg,'SVG');URL.revokeObjectURL(svg.src);
           for(const softwareFrames of [false,true]){
             const packet=await compilePlaybackPacket(report,0,{revision:1,softwareFrames,scale:1,resources:{...resources,preload:async()=>{}}});
             const renderer=softwareFrames?canvas:gpu;renderer.prepareFrame(packet,{report});

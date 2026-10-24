@@ -108,7 +108,7 @@ try{
   // Export at 2x resolution must resolve source detail: compare a full-quality
   // export frame against a direct 2x render of the same geometry.
   const sharpness=await page.evaluate(async()=>{
-    const {ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs');
+    const {pageExporter}=await import('/tests/support/page-export.mjs');
     const {createRenderer}=await import('/src/renderer.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs');
     const e=styk.editor,d=styk.drawing,W=e.report.canvas_width,H=e.report.canvas_height;
     // Render only the drawing in both paths: the default document's figure
@@ -118,7 +118,7 @@ try{
     // transparent instead.
     const target=e.drawingTarget(),uid=target.object.unique_id,keep=target.object.figure_type_id;
     const filtered={...e.report,figure_types:e.report.figure_types.map(f=>f.figure_type_id===keep?f:{...f,segments:f.segments.map(s=>({...s,transparency:255}))})};
-    const exporter=new ExportFrameRenderer({width:W*2,height:H*2,smoothing:'edges',getRevision:()=>e.revision});
+    const exporter=pageExporter({width:W*2,height:H*2,smoothing:'edges',getRevision:()=>e.revision});
     try{
       await exporter.load(filtered);await exporter.renderTick(e.tick);
       const exported=exporter.context.getImageData(0,0,exporter.canvas.width,exporter.canvas.height);

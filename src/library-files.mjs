@@ -1,4 +1,4 @@
-import {restoreMessageError, messageError} from './localized-error.mjs';
+import {messageError} from './localized-error.mjs';
 
 import {nativeFigureDocument} from './native-figure.mjs';
 import {engineLibraryPoster} from './engine/engine-previews.mjs';
@@ -11,27 +11,14 @@ const dataURL = blob => new Promise((resolve, reject) => {
   reader.onload = () => resolve(reader.result); reader.readAsDataURL(blob);
 });
 /**
- * The PNG preview (a data URL) a library asset keeps. With the asset's saved bytes (`file`, a Blob or the
- * export making it, and their `extension` when the file has no name) the engine draws it where it can
- * (src/engine/engine-previews.mjs); otherwise, and for files the engine does not draw, the JavaScript worker
- * draws `report` (started at once when the engine cannot, so it overlaps the export).
+ * The PNG preview (a data URL) a library asset keeps, drawn by the engine from the asset's saved bytes
+ * (`file`, a Blob or the export making it, and its `extension` when the file has no name;
+ * src/engine/engine-previews.mjs). Fails when the engine cannot draw the file.
  */
-export async function libraryPreview(report, {file, extension} = {}) {
-  const poster = file ? await engineLibraryPoster(file, extension) : null;
-  return poster ? dataURL(poster) : javascriptPreview(report);
-}
-function javascriptPreview(report) {
-  return new Promise((resolve,reject) => {
-    const worker = new Worker(new URL('./library-preview-worker.mjs', import.meta.url), {type:'module'});
-    const finish = (error, result) => { clearTimeout(timer); worker.terminate(); error ? reject(error) : resolve(result); };
-    const timer = setTimeout(() => finish(messageError(new Error(''), "errors.libraryFiles.theLibraryPreviewTimedOut", {})), 60000);
-    worker.onerror = event => finish(new Error(event.message));
-    worker.onmessage = async ({data}) => {
-      if (data.error) return finish(restoreMessageError(new Error(data.error), data));
-      dataURL(data.blob).then(url => finish(null, url), finish);
-    };
-    worker.postMessage({report, baseURL: location.href});
-  });
+export async function libraryPreview(file, extension) {
+  const poster = await engineLibraryPoster(file, extension);
+  if (!poster) throw messageError(new Error(''), "userLibrary.previewUnavailableForThisFile", {});
+  return dataURL(poster);
 }
 /** The PNG a saved asset keeps as its preview (at most 320 px), made from any image the browser can show. */
 export async function pngThumbnail(url, size = 320) {

@@ -9,7 +9,8 @@
  * no GPU device, the CPU rasterizer draws the same tiles here (`ExportRenderer.create_cpu`,
  * each tile drawn when asked for, nothing drawn ahead). The document comes from the engine
  * (the revision the export started from); the pose the editor shows comes as document
- * chunks, like the JavaScript worker's.
+ * chunks. An SVG export (`vector`) takes no tiles: the engine writes the prepared frame as
+ * vector artwork (`ExportRenderer.svg`, styk-export `svg`) and the worker hands it over as a Blob.
  *
  * A browser hands a read-back over only when its GPU process gets to it, which can take
  * far longer than drawing (about 100 ms a frame while the page repaints, measured in
@@ -101,8 +102,10 @@ async function start(message) {
     renderer = null;
     throw Object.assign(new Error(`The engine cannot draw this export here: ${error?.message ?? error}`), {code: 'engine_unavailable'});
   }
-  canvas ??= new OffscreenCanvas(message.width, message.height);
-  context = exportContext(canvas);
+  if (!message.vector) {
+    canvas ??= new OffscreenCanvas(message.width, message.height);
+    context = exportContext(canvas);
+  }
   layout();
   return {engine: {...JSON.parse(renderer.stats()), backend: renderer.backend(), gpuRefusal: noDevice, warmed, modulesMs: loadedAt, startAt: began, deviceMs: joined - began, createMs: performance.now() - joined}};
 }
@@ -150,14 +153,25 @@ async function discardAhead() {
   ahead.clear();
 }
 
+/** The prepared frame of a vector export, as an SVG Blob (the engine writes the file). */
+async function svg(message, pose, last, started) {
+  await discardAhead();
+  if (pose) renderer.prepare_pose(JSON.stringify(pose, (key, value) => STRIP.has(key) ? undefined : value));
+  else for (let seen = Atomics.load(progress, 0); !renderer.prepare(message.tick, last); seen = Atomics.load(progress, 0)) { await whenProgress(seen); check(); }
+  const text = renderer.svg(`StykAnimate frame ${(message.tick ?? 0) + 1}`);
+  renderer.check();
+  return {svg: new Blob([text], {type: 'image/svg+xml'}),
+    stats: {...JSON.parse(renderer.stats()), workerMs: performance.now() - started, smoothing: options.smoothing, renderWidth: options.width, renderHeight: options.height, renderer: 'engine'}};
+}
+
 async function render(message) {
-  if (message.svg) throw new Error('The engine draws pixels, not SVG.');
   const started = performance.now();
   const pose = message.override ? frameDocument?.keyframes?.[0] : null;
   if (message.override && !pose) throw new Error('The current export frame was not transferred.');
   // Every picture is in before the first frame: an export never shows a frame without one.
   for (let seen = Atomics.load(progress, 0); renderer.upload_images() > 0; seen = Atomics.load(progress, 0)) { await whenProgress(seen); check(); }
   const count = renderer.tiles(), last = Math.max(options.last ?? message.tick ?? 0, message.tick ?? 0);
+  if (message.svg) return svg(message, pose, last, started);
   let drawn = pose ? null : ahead.get(message.tick) ?? null;
   if (drawn) ahead.delete(message.tick);
   else {

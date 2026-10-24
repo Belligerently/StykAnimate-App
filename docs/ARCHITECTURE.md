@@ -99,14 +99,15 @@ An oversized prepared packet is retried with lower raster detail. The editable r
 
 The virtualized timeline draws visible exposures and labels, with a separate playhead. Scrubbing uses cooperative editable geometry and renderer preparation to preserve selection handles and onion skins; frame-local changes can update the playback worker mirror without retransmitting every keyframe. The editor schedules rendering when state changes or playback runs, with no permanent idle rendering loop. See [renderer details and benchmarks](renderer.md).
 
-## Thumbnail worker synchronization
+## Pictures outside the stage
 
-For documents the Rust engine draws, frame thumbnails, library previews and the camera
-monitor come from the engine's GPU renderer instead (`src/engine/engine-thumbnails.mjs`,
-`src/engine/engine-previews.mjs`; [engine rendering](engine/rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
-no document copy goes to a thumbnail worker. What follows describes the JavaScript worker,
-which still draws in-between previews, documents the engine does not draw and devices
-without a WebGPU canvas the page can read.
+Frame thumbnails, library previews, in-between previews, the camera monitor, the effects catalogue's
+stills, the asset library's figure thumbnails, the background dialog's preview and the rig test's
+pictures are all drawn by the Rust engine, never by JavaScript renderer code
+(`src/engine/engine-thumbnails.mjs`, `src/engine/engine-previews.mjs`,
+`src/engine/engine-pictures.mjs`; [engine rendering](engine/rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
+the stage's device or the preview worker draws them from the document the engine holds, or from a
+small document the interface builds for one picture, and no document copy goes to a thumbnail worker.
 
 Image-only preview workers use `image-resources.mjs` for encoded sources, crop
 selection, decoded variants, byte accounting and disposal. Playback extends
@@ -116,23 +117,8 @@ or create rendering caches. Diagnostics retain one completed image job, not a
 history of requests. `tests/image-resources.browser.mjs` verifies decoding with
 the geometry module unavailable, exact pixels, reuse, cancellation and residency.
 
-`thumbnail-renderer.mjs` and playback share the retained-source comparison and
-validated patch contract in `playback-patch.mjs`. Unchanged historical poses and
-figure definitions remain in the thumbnail worker; edits send source additions,
-replacements and deletions with changed native frames and render metadata.
-Definition edits explicitly dirty source poses because legacy commands can repair
-them in place. Legacy background tables still accompany thumbnail patches.
-
-Transfers are acknowledged in chunks of at most 64 KiB with a 2 ms construction
-target. The worker validates the complete patch before publishing it. The main
-thread updates its reference mirror only after the matching revision's ACK;
-uncertain source IDs survive cancellation, including an edit undone while its
-worker commit is awaiting acknowledgement. Pauses resume staged chunks, while
-document edits discard stale staging. Replacement documents, native frame topology
-changes, worker failures and idle disposal use the full snapshot fallback.
 The existing eight-request bound and filmstrip bitmap cache remain the owners of
-queued work and displayed previews. Source mirrors clear when their worker dies.
-See `tests/thumbnail-patch.test.mjs` and `tests/thumbnail-source-patches.browser.mjs`.
+queued thumbnails and displayed previews.
 
 ## Saving, recovery and exports
 
@@ -146,7 +132,7 @@ See [Audio architecture and verification](AUDIO.md) for timing, codecs and limit
 
 The worker returns a Blob. `native-files.mjs` writes or reads it through acknowledged 256 KiB IPC chunks, without whole-file ArrayBuffer/base64 conversion. Desktop main stages output and atomically replaces the destination only after completion. Cancellation preserves the previous file. Recovery uses the fixed desktop profile; browser recovery uses IndexedDB. See [document export contract](document-exports.md).
 
-`ExportFrameRenderer` receives bounded document chunks and evaluates/rasterizes export frames in a worker. Current-frame images, sequences and videos use this shared path, including No smoothing, Smooth edges and supersampled Smooth sprites. For documents the engine draws, `src/engine/engine-export.mjs` gives the export the engine's renderer instead: the same interface, with a worker that joins the engine's shared memory and draws with its own GPU device, frames the stage would show ([engine rendering: exports](engine/rendering.md#exports)). SVG retains paths and embedded raster assets. Animation image compression, GIF quantization and ZIP assembly run in an encoding worker with one source frame in flight. Document replacement or cancellation stops the rendering job.
+`src/engine/engine-export.mjs` gives every export the engine's renderer: a worker that joins the engine's shared memory and draws with its own GPU device (or the CPU rasterizer where it gets none), frames the stage would show, with the request, progress, revision, timeout and retry logic around it ([engine rendering: exports](engine/rendering.md#exports)). Current-frame images, sequences and videos use this shared path, including No smoothing, Smooth edges and supersampled Smooth sprites. SVG is the engine's too: the frame's draw list written as vector paths with embedded raster assets, or one embedded picture of the frame where it has no vector form (`styk-export` `svg`). Animation image compression, GIF quantization and ZIP assembly run in an encoding worker with one source frame in flight. Document replacement or cancellation stops the rendering job.
 
 Desktop video streams PNG frames in acknowledged chunks to the bundled FFmpeg encoder. VP9 WebM preserves transparency; MP4/AVI/WMV use Pivot's black matte. The browser has opaque WebCodecs encoders with exact timestamps and local muxers: VP8/VP9 in WebM, and H.264 in MP4 (`mp4-muxer.mjs`) where the browser can encode it. Windows AVI can instead stream BGR24 to isolated 32-bit/64-bit helpers using genuine installed VFW compressors and their configuration dialogs. Capability probing describes the actual provider, codecs, alpha behavior and limits; no hosted encoder is required. See [export formats](EXPORT-FORMATS.md), [image exports](image-exports.md) and [installed Windows codecs](WINDOWS-CODECS.md).
 

@@ -7,7 +7,6 @@ import {ArtworkRegistry} from '../src/render-artwork.mjs';
 import {buildGeometry,buildGeometryAsync,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
 import {movieclipAsset} from '../src/movieclips.mjs';
 import {movieclipCacheStats} from '../src/movieclip-geometry.mjs';
-import {ThumbnailRenderer} from '../src/thumbnail-renderer.mjs';
 
 function clipFixture(){
   const editor=new Editor();editor.select(1);
@@ -66,45 +65,16 @@ test('nested clip preparation yields inside a single outer object and cancels wi
   assert.ok(yields>10,'Nested drawing work needs checkpoints even with one outer clip.');
   assert.deepEqual(actual.drawables,buildGeometry(report,frame).drawables);
 });
-test('sheet pose edits and history preserve definition revisions and produce thumbnail patches',()=>{
+test('sheet pose edits and history preserve definition revisions',()=>{
   const report=emptyDocument();report.keyframes=[0,10].map(x=>createFrame([createObject(report.figure_types[0],1,x,100)],10));
   const editor=new Editor({demo:false,layerTimeline:true}).load(report),events=[];
   editor.addEventListener('change',e=>{if(['edit','history'].includes(e.detail.kind))events.push(e.detail);});
-  const thumbnails=new ThumbnailRenderer(editor);thumbnails.loadedVersion=thumbnails.version;thumbnails.fullSnapshot=false;
-  try{
-    const revision=editor.definitionRevision,before=editor.serialize();editor.select(1);editor.moveSelection(12,-4);
-    assert.equal(editor.definitionRevision,revision);assert.equal(thumbnails.fullSnapshot,false);
-    assert.ok(events.at(-1).layerSheet);assert.ok(events.at(-1).sourceIds.length);assert.deepEqual(events.at(-1).frameIndices,[]);
-    editor.undo();assert.deepEqual(editor.serialize(),before);assert.equal(editor.definitionRevision,revision);
-    editor.redo();assert.equal(editor.definitionRevision,revision);assert.equal(thumbnails.fullSnapshot,false);
-    const definition=structuredClone(editor.report.figure_types[0]);definition.segments[0].thickness+=5;
-    editor.replaceFigureDefinition(definition.figure_type_id,definition);
-    assert.ok(editor.definitionRevision>revision);assert.ok(thumbnails.definitionsChanged||thumbnails.fullSnapshot);
-  }finally{thumbnails.destroy();}
-});
-
-for(const interrupt of ['pause','edit','failure'])test(`thumbnail snapshots survive ${interrupt} at an ACK boundary without stale content`,async()=>{
-  const editor=new Editor({demo:false});editor.report.opaque='keep every byte'.repeat(20000);
-  const thumbnails=new ThumbnailRenderer(editor),controller=new AbortController();let received,headers=0,chunks=0,interrupted=false;
-  thumbnails._request=async(operation,{chunk})=>{
-    if(operation!=='snapshot-chunk')return;
-    if(chunk.header)headers++;
-    received=applyDocumentChunk(received,structuredClone(chunk));chunks++;
-    if(chunks===2&&!interrupted){
-      interrupted=true;
-      if(interrupt==='failure')throw new Error('Worker failed');
-      controller.abort();
-    }
-  };
-  try{
-    await assert.rejects(thumbnails._snapshot(thumbnails.version,controller.signal),interrupt==='failure'?/Worker failed/:{name:'AbortError'});
-    if(interrupt==='edit'){
-      editor.report.opaque='the edited value';thumbnails.invalidate({kind:'edit',frameIndices:[0]});
-    }
-    await thumbnails._snapshot(thumbnails.version,new AbortController().signal);
-    const {_stykSource,...expected}=editor.report;
-    assert.deepEqual(received,expected);
-    assert.equal(headers,interrupt==='pause'?1:2);
-    assert.equal(thumbnails.loadedVersion,thumbnails.version);assert.equal(thumbnails.snapshot,null);
-  }finally{thumbnails.destroy();}
+  const revision=editor.definitionRevision,before=editor.serialize();editor.select(1);editor.moveSelection(12,-4);
+  assert.equal(editor.definitionRevision,revision);
+  assert.ok(events.at(-1).layerSheet);assert.ok(events.at(-1).sourceIds.length);assert.deepEqual(events.at(-1).frameIndices,[]);
+  editor.undo();assert.deepEqual(editor.serialize(),before);assert.equal(editor.definitionRevision,revision);
+  editor.redo();assert.equal(editor.definitionRevision,revision);
+  const definition=structuredClone(editor.report.figure_types[0]);definition.segments[0].thickness+=5;
+  editor.replaceFigureDefinition(definition.figure_type_id,definition);
+  assert.ok(editor.definitionRevision>revision);
 });

@@ -16,7 +16,7 @@ try{
   const {cameraMatrix}=await import('/src/renderer-geometry.mjs');
   const {releaseGeometryResources}=await import('/src/pivot/geometry.mjs');
   const {VfxGPU,releaseVfxGPU}=await import('/src/vfx-gpu.mjs');
-  const {ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs');
+  const {pageExporter}=await import('/tests/support/page-export.mjs');
   const {createRenderer}=await import('/src/renderer.mjs');
   const effect=(type,params={})=>{const fx=createVfx(type,type);Object.assign(fx.params,params);return fx;};
   const shock=()=>effect('shockwave',{radius:95,thickness:90,strength:128});
@@ -89,14 +89,14 @@ try{
    drawExportScene(full.getContext('2d'),report,frame,geometry,resources);await drawExportSceneTiled(tiled.getContext('2d'),report,frame,geometry,resources,67);
    const fullDiff=diff(pixels(full),pixels(expected)),tileDiff=diff(pixels(tiled),pixels(expected));
    if(fullDiff.max>3||tileDiff.max>3)throw new Error(`Background sampling ${JSON.stringify({index,fullDiff,tileDiff})}`);
-   const worker=new ExportFrameRenderer({width:320,height:240});try{await worker.load(report);const workerDiff=diff(pixels(await worker.renderTick(0)),pixels(expected));if(workerDiff.max>3)throw new Error(`Background worker ${JSON.stringify({index,workerDiff})}`);rows.push({background:index,fullDiff,tileDiff,workerDiff});}finally{worker.dispose();}
+   const worker=pageExporter({width:320,height:240});try{await worker.load(report);const workerDiff=diff(pixels(await worker.renderTick(0)),pixels(expected));if(workerDiff.max>3)throw new Error(`Background worker ${JSON.stringify({index,workerDiff})}`);rows.push({background:index,fullDiff,tileDiff,workerDiff});}finally{worker.dispose();}
    releaseGeometryResources(full.getContext('2d'));releaseGeometryResources(tiled.getContext('2d'));
   }
   // Actual worker consumers: bitmap frames, alpha-preserving PNG sequences,
   // native-video PNG input (MP4/AVI), SVG fallback and 2x sprite sampling.
   for(const transparent of [false,true])for(const smoothing of ['edges','sprites','none']){
    const {report,frame}=fixture({x:43,y:-31,scale:.8,angle_rad:.37},transparent);frame._stykVfx={figure:[shock()]};
-   const geometry=exportFrameGeometry(report,frame),expected=reference(report,frame,geometry),exporter=new ExportFrameRenderer({width:320,height:240,smoothing});
+   const geometry=exportFrameGeometry(report,frame),expected=reference(report,frame,geometry),exporter=pageExporter({width:320,height:240,smoothing});
    try{await exporter.load(report);const output=copy(await exporter.renderTick(0)),native=await exporter.renderNativeTick(0,{preserveAlpha:transparent});
     const bitmap=await createImageBitmap(native.blob),nativeCanvas=copy(bitmap);bitmap.close();
     const bitmapDiff=diff(pixels(output),pixels(expected)),nativeDiff=diff(pixels(output),pixels(nativeCanvas));
@@ -107,17 +107,16 @@ try{
     }
     rows.push({worker:true,transparent,smoothing,...(smoothing==='sprites'?{supersampling:true}:{bitmapDiff}),nativeDiff});
     if(!transparent&&smoothing==='edges')images.native=Array.from(new Uint8Array(await native.blob.arrayBuffer()));
-    const svg=await exporter.renderSVGTick(0);if(!(await svg.text()).includes('data:image/png'))throw new Error('Missing SVG effect raster');
+    const vector=pageExporter({width:320,height:240},{vector:true});try{await vector.load(report);if(!(await (await vector.renderSVGTick(0)).text()).includes('data:image/png'))throw new Error('Missing SVG effect raster');}finally{vector.dispose();}
    }finally{exporter.dispose();}
   }
   for(const forceCanvas2D of [true,false])for(const compatibility of [false,true]){
    const {report,frame}=fixture();frame._stykVfx={figure:[shock()]};
    if(compatibility)for(const obj of frame.objects)obj._stykVfx={figure:[effect('tint',{mix:.5})]};
    const geometry=exportFrameGeometry(report,frame),expected=reference(report,frame,geometry);
-   const {ThumbnailRenderer}=await import('/src/thumbnail-renderer.mjs'),{Editor}=await import('/src/editor.mjs');
    const thumbnail=document.createElement('canvas');thumbnail.width=320;thumbnail.height=240;
-   const thumbnails=new ThumbnailRenderer(new Editor({demo:false}).load(report));
-   try{if(!await thumbnails.renderThumbnail(0,thumbnail))throw new Error('Thumbnail did not render');const difference=diff(pixels(thumbnail),pixels(expected));if(difference.mean>.1)throw new Error(`Thumbnail sampling ${JSON.stringify(difference)}`);rows.push({thumbnail:true,compatibility,difference});}finally{thumbnails.destroy();}
+   window.styk.editor.load(structuredClone(report));
+   {if(!await window.styk.thumbnails.renderThumbnail(0,thumbnail))throw new Error('Thumbnail did not render');const difference=diff(pixels(thumbnail),pixels(expected));if(difference.mean>.1)throw new Error(`Thumbnail sampling ${JSON.stringify(difference)}`);rows.push({thumbnail:true,compatibility,difference});}
    const renderer=await createRenderer(document.createElement('canvas'),{forceCanvas2D});renderer.resize(320,240,1);
    try{const options={report,frame,geometry,view:{x:0,y:0,scale:1}};renderer.render(options);const live=pixels(renderer.canvas),difference=diff(live,pixels(expected));
     if(difference.mean>.5)throw new Error(`Preview sampling ${JSON.stringify({forceCanvas2D,difference})}`);
@@ -143,7 +142,7 @@ try{
    fig.image_assets=[{asset_index:0,data_url:sprite.src,mime_type:'image/png',width:512,height:384,display_width:960,display_height:720,anchor_start:{x:0,y:0},anchor_length:960,anchor_angle_rad:0}];
    report.keyframes=[createFrame([createObject(fig,1,-320,-240)],4)];const pose=report.keyframes[0];pose._stykVfx={figure:[shock()]};
    const geometry=exportFrameGeometry(report,pose),resource={url:a=>a.data_url,image:()=>sprite},expected=reference(report,pose,geometry,320,240,false,resource);
-   const exporter=new ExportFrameRenderer({width:320,height:240});
+   const exporter=pageExporter({width:320,height:240});
    try{await exporter.load(report);const difference=diff(pixels(await exporter.renderTick(0)),pixels(expected));if(difference.mean>.2)throw new Error(`Sprite export crop ${JSON.stringify(difference)}`);rows.push({spriteExport:true,difference});}finally{exporter.dispose();}
    const {compilePlaybackPacket,PlaybackResources}=await import('/src/playback-worker.mjs');
    for(const forceCanvas2D of [false,true]){

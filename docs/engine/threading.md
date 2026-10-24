@@ -50,7 +50,7 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   (what it held then stays allocated in the shared memory). A worker that gets no GPU
   device draws the export with the CPU rasterizer (`ExportRenderer::create_cpu`,
   styk-raster), each tile when asked for. Pages that are not cross-origin isolated
-  export with the JavaScript renderer.
+  cannot export.
 - The preview worker (`src/engine/engine-preview-worker.mjs`, one per page,
   `engine-previews.mjs`; see [rendering.md](rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
   joins the shared memory like the export worker and keeps its event loop for a GPU

@@ -10,7 +10,6 @@ import {ArtworkRegistry} from '../src/render-artwork.mjs';
 import {compileVectorObject,compileVectorObjectSteps} from '../src/renderer-geometry.mjs';
 import {PlaybackCache} from '../src/playback.mjs';
 import {buildChannelTimelineTracks} from './helpers/legacy-timeline-projection.mjs';
-import {ThumbnailRenderer} from '../src/thumbnail-renderer.mjs';
 
 function fixture(frames=12,parts=8) {
   const report=emptyDocument(),figure=report.figure_types[0];
@@ -115,13 +114,11 @@ test('playback document transfer yields to an active gesture and resumes every w
   cache.setInteractionActive(false);await Promise.all(tasks);assert.equal(completed,2);
 });
 
-test('Simple pose undo identifies its changed native frame and retains thumbnail patches',()=>{
+test('Simple pose undo identifies its changed native frame',()=>{
   const e=new Editor({demo:false}).load(fixture().report);e.enableFrameDrafts({mode:'update'});e.select(1);
-  const thumbnails=new ThumbnailRenderer(e);thumbnails.fullSnapshot=false;thumbnails.loadedVersion=1;
   const events=[];e.addEventListener('change',event=>{if(event.detail.kind==='history')events.push(event.detail);});
   e.beginDrag();e.moveSelection(10,2);e.commitDrag();e.undo();
-  assert.deepEqual(events.at(-1).frameIndices,[0]);assert.equal(thumbnails.fullSnapshot,false);
-  assert.deepEqual([...thumbnails.changedFrames],[0]);thumbnails.destroy();
+  assert.deepEqual(events.at(-1).frameIndices,[0]);
 });
 
 

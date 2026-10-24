@@ -17,9 +17,9 @@ try{
   await page.locator('[data-workspace-mode="draw"]').click();
   await page.evaluate(async()=>{
     const {emptyDocument}=await import('/src/demo.mjs'),{PreviewImages}=await import('/src/preview-images.mjs'),{EMPTY_PNG}=await import('/src/drawing-model.mjs');
-    const {PlaybackCache}=await import('/src/playback.mjs'),{ThumbnailRenderer}=await import('/src/thumbnail-renderer.mjs');
+    const {PlaybackCache}=await import('/src/playback.mjs'),{EngineThumbnails}=await import('/src/engine/engine-thumbnails.mjs');
     const probe=window.probe={carriers:0,renders:0,overlays:0,paused:{}};
-    for(const [Class,method,key] of [[PlaybackCache,'setInteractionActive','playback'],[ThumbnailRenderer,'setPaused','thumbnails']]){
+    for(const [Class,method,key] of [[PlaybackCache,'setInteractionActive','playback'],[EngineThumbnails,'setPaused','thumbnails']]){
       const original=Class.prototype[method];Class.prototype[method]=function(value){probe.paused[key]=Boolean(value);return original.call(this,value);};
     }
     const image=PreviewImages.prototype.image;PreviewImages.prototype.image=function(url){if(url===EMPTY_PNG)probe.carriers++;return image.call(this,url);};

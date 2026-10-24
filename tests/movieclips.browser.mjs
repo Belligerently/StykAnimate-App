@@ -61,7 +61,7 @@ try{
     const packet=await compilePlaybackPacket(e.report,0);return {shapes:packet.shapes.length,groups:packet.groups.length};
   });check('Movieclips compile through worker renderer',gpu.shapes>0&&gpu.groups>0);
   const pixels=await page.evaluate(async()=>{
-    const {Editor}=await import('/src/editor.mjs'),{buildGeometry,drawGeometry}=await import('/src/pivot/geometry.mjs'),{exportSVG}=await import('/src/svg-export.mjs');
+    const {Editor}=await import('/src/editor.mjs'),{buildGeometry,drawGeometry}=await import('/src/pivot/geometry.mjs');
     const e=new Editor({propertyChannels:true}),source=e.geometry;
     const canvas=()=>{const c=document.createElement('canvas');c.width=960;c.height=540;return c;};
     const base=canvas(),expected=canvas(),actual=canvas();drawGeometry(base.getContext('2d'),source,{});
@@ -69,13 +69,9 @@ try{
     e.select(1);e.createMovieclip({start:0,end:8,uids:[]});e._objectEdit('Fade',o=>{o.field28=128;});drawGeometry(b,e.geometry,{});
     const left=a.getImageData(0,0,960,540).data,right=b.getImageData(0,0,960,540).data;let different=0;
     for(let i=0;i<left.length;i++)if(Math.abs(left[i]-right[i])>1)different++;
-    const blob=await exportSVG({report:e.report,frame:e.evaluatedFrame,geometry:e.geometry,width:960,height:540}),url=URL.createObjectURL(blob),image=new Image();image.src=url;await image.decode();
-    b.clearRect(0,0,960,540);b.drawImage(image,0,0);URL.revokeObjectURL(url);const svg=b.getImageData(0,0,960,540).data;let svgDifferent=0;
-    for(let i=0;i<left.length;i++)if(Math.abs(left[i]-svg[i])>8)svgDifferent++;
-    return {different,svgDifferent};
+    return {different};
   });
   check('Canvas clip group opacity matches flattened reference pixels',pixels.different===0);
-  check('SVG clip raster agrees with Canvas',pixels.svgDifferent<2500);
   await page.evaluate(()=>styk.movieclips.open('empty'));await page.locator('.movieclip-dialog').getByRole('textbox',{name:'Movieclip name'}).fill('New action');
   await page.locator('.movieclip-dialog button[type=submit]').click();await page.waitForFunction(()=>styk.editor._movieclipScopes?.length===1);
   check('New blank movieclip opens its own editor',await page.evaluate(()=>styk.editor.report.figure_types.length===0));

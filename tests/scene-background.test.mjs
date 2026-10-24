@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {drawBackground, sceneBackgroundColor, effectiveCamera, backgroundBounds} from '../src/pivot/background.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
-import {exportSVG} from '../src/svg-export.mjs';
 import {emptyDocument} from '../src/demo.mjs';
 import {compilePlaybackPacket} from '../src/playback-worker.mjs';
 
@@ -26,17 +25,6 @@ test('Scene visibility and Camera visibility use separate fixed-layer semantics'
   report._styk.layers.fixed.scene.visible = true; assert.equal(sceneBackgroundColor(report, frame), 0xffabcdef);
   report._styk.layers.fixed.camera.visible = true; assert.equal(effectiveCamera(report, frame), frame.camera);
   assert.equal(effectiveCamera(report, frame, false), null);
-});
-test('SVG skips superseded image assets and emits authored transparent/colored backgrounds', async () => {
-  const report = emptyDocument(), frame = report.keyframes[0];
-  report.backgrounds = [{background_id: 1, kind: 1, data_url: 'invalid-url'}]; frame.background_id = 1;
-  frame._stykBackgroundColor = 0x80112233;
-  let svg = await (await exportSVG({report, frame})).text();
-  assert.match(svg, /fill="rgb\(17,34,51\)" fill-opacity="0\.5019608"/); assert.doesNotMatch(svg, /<image/);
-  report._styk.layers = {fixed: {scene: {visible: false}, camera: {visible: false}}};
-  frame.camera = {is_default: false, x: 50, y: 10, scale: 2, angle_rad: 1};
-  svg = await (await exportSVG({report, frame})).text();
-  assert.match(svg, /fill="rgb\(0,0,0\)" fill-opacity="0"/); assert.match(svg, /matrix\(1 0 0 1 0 0\)/);
 });
 test('prepared playback packets retain evaluated scene ARGB keys including transparent zero', async () => {
   const report = emptyDocument(); report.keyframes[0].duration_raw = 3;

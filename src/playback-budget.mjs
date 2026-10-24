@@ -34,7 +34,7 @@ export function previewMemoryPlan(deviceMemory = deviceMemoryHint(), workerCount
     editorRasters: Math.min(128 * mib, base / 2), editorOnions: Math.min(64 * mib, base / 8),
     editorSoftwareFilters: Math.min(64 * mib, base / 4),
     editorBackgrounds: Math.min(16 * mib, base / 16),
-    thumbnails: Math.min(24 * mib, base / 8), library: 8 * mib,...playbackReuseMemoryPlan(base)};
+    library: 8 * mib,...playbackReuseMemoryPlan(base)};
   return {...plan, workerImages: workers.images, workerSources: workers.sources, workerRasters: workers.rasters,
     workerVectors: workers.vectors, workerDrawings: workers.drawings, workerTints: workers.tints, workerSoftwareFilters: workers.softwareFilters, workerBackgrounds: workers.backgrounds,
     workerCount: count, workerRetainedBytes: workers.retainedBytes, workerPoolBytes: workers.retainedBytes * count,

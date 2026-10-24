@@ -10,7 +10,7 @@ try{
  browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1100,height:850}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));await page.goto(backend.origin);await page.waitForFunction(()=>window.styk?.ready);
  const pixels=await page.evaluate(async()=>{
-  const [{createRenderer},{emptyDocument,createObject},{buildGeometry},{drawBuilderHighlight},{exportSVG}]=await Promise.all([import('/src/renderer.mjs'),import('/src/demo.mjs'),import('/src/pivot/geometry.mjs'),import('/src/builder-aids.mjs'),import('/src/svg-export.mjs')]);
+  const [{createRenderer},{emptyDocument,createObject},{buildGeometry},{drawBuilderHighlight}]=await Promise.all([import('/src/renderer.mjs'),import('/src/demo.mjs'),import('/src/pivot/geometry.mjs'),import('/src/builder-aids.mjs')]);
   const results=[],check=(v,label)=>{if(!v)throw Error(label);results.push(label);};
   const make=()=>{const c=document.createElement('canvas');c.width=100;c.height=80;return c;},color=(c,x=2,y=2)=>{const copy=make(),ctx=copy.getContext('2d');ctx.drawImage(c,0,0);return [...ctx.getImageData(x,y,1,1).data];};
   const report=emptyDocument();report.canvas_width=100;report.canvas_height=80;const f=report.figure_types[0];
@@ -52,8 +52,7 @@ try{
    check(color(deselected,30,40).join(',')===color(before,30,40).join(','),`${renderer.stats.backend} deselection restores the exact scene`);
    for(const [label,canvas] of [['Before',before],['Selected',selected],['Deselected',deselected]]){const card=document.createElement('div');card.textContent=renderer.stats.backend+' '+label;canvas.style.cssText='display:block;width:300px;height:240px;image-rendering:pixelated';card.append(canvas);gallery.append(card);}
   }
-  const svg=await exportSVG({...options,editorBackgroundColor:0xffa0b1c2}),url=URL.createObjectURL(svg),image=new Image();image.src=url;await image.decode();const exported=make();exported.getContext('2d').drawImage(image,0,0);URL.revokeObjectURL(url);
-  check(color(exported).join(',')==='18,52,86,255','SVG ignores editor-only construction background');check(JSON.stringify(report)===before,'Every aid leaves native document bytes unchanged');
+  check(JSON.stringify(report)===before,'Every aid leaves native document bytes unchanged');
   const incoming=structuredClone(report),incomingFrame=incoming.keyframes[0];
   const prepared=await gpu.prepareInitialScene({report:incoming,frame:incomingFrame,view:options.view,editorBackgroundColor:0xffa0b1c2});
   check(prepared.editorBackgroundColor===0xffa0b1c2,'Initial scene retains requested construction color');

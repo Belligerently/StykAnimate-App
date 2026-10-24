@@ -7,12 +7,12 @@ try{
  const result=await page.evaluate(async()=>{
   const {Editor}=await import('/src/editor.mjs'),{emptyDocument,createFrame,createObject}=await import('/src/demo.mjs');
   const {compilePlaybackPacket}=await import('/src/playback-worker.mjs'),{createRenderer}=await import('/src/renderer.mjs');
-  const {ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs');
+  const {pageExporter}=await import('/tests/support/page-export.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs');
   const {drawExportScene}=await import('/src/export-frame-core.mjs');
   const report=emptyDocument();report.canvas_width=320;report.canvas_height=240;report.keyframes=[0,1,2].map(()=>createFrame([createObject(report.figure_types[0],1,160,165)],10));
   const e=new Editor({demo:false}).load(report),clip=e.addVfxClip({kind:'figure',uid:1},'glow',{start:3,duration:15}),fx=e.getVfxClips()[0].effects[0];
   e.setVfxClipParameter(clip,fx.id,'radius',4,{key:true,tick:3});e.setVfxClipParameter(clip,fx.id,'radius',24,{key:true,tick:13});e.addVfxClip({kind:'scene'},'tint');
-  const renderer=await createRenderer(document.createElement('canvas')),exporter=new ExportFrameRenderer({width:320,height:240});renderer.resize(320,240,1);await exporter.load(e.report);
+  const renderer=await createRenderer(document.createElement('canvas')),exporter=pageExporter({width:320,height:240});renderer.resize(320,240,1);await exporter.load(e.report);
   const pixels=canvas=>{const out=new OffscreenCanvas(320,240),ctx=out.getContext('2d');ctx.drawImage(canvas,0,0);return ctx.getImageData(0,0,320,240).data;};
   const diff=(a,b)=>a.reduce((n,v,i)=>n+Math.abs(v-b[i]),0)/a.length,rows=[];
   try{for(const tick of [0,3,8,13,18,20]){

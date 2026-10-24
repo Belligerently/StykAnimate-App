@@ -43,6 +43,7 @@ import {hasPinnedIK} from './ik.mjs';
 import { OnionControls } from "./onion-controls.mjs";
 import { OnionController } from "./onion-controller.mjs";
 import { createThumbnailRenderer } from "./engine/engine-thumbnails.mjs";
+import { EnginePoses } from "./engine/engine-pictures.mjs";
 import { BackgroundDialog } from "./background-dialog.mjs";
 import { ImportClient } from "./import-client.mjs";
 import { browserCodecHost, codecProfile } from "./codec-web-host.mjs";
@@ -2015,9 +2016,7 @@ function loop(now) {
       syncCameraControls($('inspector'), frame, {activeKey:propertyControls?.activeKey,guides:state.cameraGuides});
       if (!state.editablePreparing) drawCameraMonitor($('inspector').querySelector('[data-camera-monitor]'), {
         onError:error=>telemetry.error(error,'renderer'),onInvalidate:requestRender,onRecovery:(kind,outcome)=>telemetry.performance.recovery(kind,outcome),
-        stage:state.renderer,report:editor.report,frame,geometry:state.playing?null:state.drag?.geometry || keyboardHandleGesture?.geometry || editor.geometry,
-        resources:state.renderer.resources,hiddenUids:effectiveHidden(),
-        prepared:packet?.key!==undefined&&state.renderer?.renderPreparedInto?{renderer:state.renderer,key:packet.key,hiddenKey:packet.hiddenKey||''}:null,
+        stage:state.renderer,report:editor.report,frame,
       });
     }
     const elapsed = performance.now() - start;
@@ -4194,7 +4193,6 @@ function showBackgroundDialog() {
   backgroundDialog ??= new BackgroundDialog({
     dialog: $("dialog"),
     content: $("dialog-content"),
-    resources,
     onError: fail,
   });
   const options = {
@@ -4526,7 +4524,7 @@ overlay.addEventListener(
   }),
 );
 const spatialControls=installSpatialControls({editor,root:$("inspector"),refresh:()=>{queueUI();requestRender();},guard:guarded});
-const rigHost=()=>({editor,showDialog,closeDialog,resources,finish:()=>{pause();finishCurrentEdit();},builderActive:()=>Boolean(builderMode?.active),
+const rigHost=()=>({editor,showDialog,closeDialog,finish:()=>{pause();finishCurrentEdit();},builderActive:()=>Boolean(builderMode?.active),
   addToAnimate:document=>{
     pause();finishCurrentEdit();
     const layer=editor.getLayer(editor.activeLayerId);
@@ -5123,7 +5121,7 @@ const actions = {
 };
 // The export flow and the app's prompts add their commands (src/export-flow.mjs, src/app-dialogs.mjs).
 const exportFlow = createExportFlow({
-  editor, state, actions, desktop, importer, telemetry, audioEngine, exportJobs, playback, editablePreparation,
+  editor, state, actions, desktop, telemetry, audioEngine, exportJobs, playback, editablePreparation,
   fail, status, toast, persistentFailure, finishCurrentEdit, pause, interruptRecovery,
   runDocumentExport, writeNativeBlob, currentFrame, nameOf, simpleFrameCount,
   // The export dialog joins the overlay stack, uses the app's words and remembers its choices in the editor settings.
@@ -6185,6 +6183,8 @@ window.styk = {
   ready: false,
 };
 let thumbnailRenderer, nativeFrameClipboard, sharedClipboard;
+// Poses of the open document drawn through a camera of their own (the parallax monitor).
+const posePictures = new EnginePoses(editor, { stage: () => state.renderer, playback: () => playback });
 async function changeFigureLayer(label, operation, {labelKey} = {}) {
   pause();
   finishKeyboardHandle();
@@ -6509,7 +6509,7 @@ async function init() {
     syncPlayback();
     return playback.planInsertInbetweens(params, { ...options, isCurrent: currentDocument() });
   });
-  cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},getResources:()=>state.renderer?.resources});
+  cameraMotionControls = new CameraMotionControls($('inspector'),editor,{onError:fail,onRender:()=>{queueUI();requestRender();},beforeEdit:()=>{pause();interruptRecovery();propertyControls?.commit();},onPreview:clip=>{pause();editor.seek(clip.start);state.motionPreviewRange={start:clip.start,end:Math.min(editor.totalTicks,clip.start+clip.duration)};play();},posePicture:(pose,options)=>posePictures.picture(pose,options)});
   propertyControls = new PropertyControls($("inspector"), {
     canHandle: (key, input) =>
       (drawingController?.active&&key.startsWith('draw:')) || cameraMotionControls.handlesProperty(input) || Boolean(propertyChannel(key)) || canEditNativeProperty(editor, key),
@@ -6597,7 +6597,6 @@ async function init() {
       setTool("select");
     },
     onError: fail,
-    resources,
   });
   window.styk.assets = assetLibrary;
   // The desktop app keeps the library in its Documents folder; in a browser it lives in that browser's own storage.
@@ -6668,8 +6667,8 @@ async function init() {
       onError: fail,
       onRestored: queueUI,
     });
-  // Frame thumbnails: the engine draws them for documents it draws (src/engine/engine-thumbnails.mjs).
-  thumbnailRenderer = createThumbnailRenderer(editor, { onError: fail }, { stage: () => state.renderer, playback: () => playback });
+  // Frame thumbnails: the engine draws them (src/engine/engine-thumbnails.mjs).
+  thumbnailRenderer = createThumbnailRenderer(editor, { stage: () => state.renderer, playback: () => playback });
   sharedClipboard = new SharedClipboard(editor, desktop);
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;

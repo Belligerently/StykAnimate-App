@@ -102,20 +102,3 @@ for(const failure of ['constructor','error','messageerror','incomplete','timeout
   if(worker)assert.equal(worker.terminated,true);
   assert.equal(module.prewarmAtlas(),loading,'failure does not start workers on every frame');
 });
-
-test('catalogue preview work waits for the material worker',async t=>{
-  let worker,idleCalls=0;
-  globalValue(t,'window',{});
-  globalValue(t,'Worker',class {
-    constructor(){worker=this;}
-    postMessage(){}
-    terminate(){}
-  });
-  globalValue(t,'requestIdleCallback',()=>{idleCalls++;});
-  const {requestEffectPreview}=await import('../src/vfx-preset-preview.mjs');
-  requestEffectPreview('add','aura',()=>{});
-  requestEffectPreview('add','smoke',()=>{});
-  await Promise.resolve();assert.equal(idleCalls,0,'idle callbacks must not race preparation');
-  worker.onmessage({data:{done:true}});
-  await Promise.resolve();assert.equal(idleCalls,1,'queued previews share one scheduled drain');
-});

@@ -77,8 +77,8 @@ try{
   await page.evaluate(()=>styk.editor.undo());await visible(mode+' undo clip edit restores its pixels','red');
   await page.evaluate(()=>styk.editor.redo());await visible(mode+' redo clip edit restores its pixels','blue');
   const exported=await page.evaluate(async()=>{
-   const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs');
-   const exporter=new DocumentExporter(),renderer=new ExportFrameRenderer({width:320,height:240}),report=structuredClone(drawingFixtures.nested);
+   const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{pageExporter}=await import('/tests/support/page-export.mjs');
+   const exporter=new DocumentExporter(),renderer=pageExporter({width:320,height:240}),report=structuredClone(drawingFixtures.nested);
    try{
     await renderer.load(report);const samples=[];
     for(const tick of [0,3,4,6,9,11]){await renderer.renderTick(tick);samples.push([...renderer.context.getImageData(132,112,1,1).data]);}

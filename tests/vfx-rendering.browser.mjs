@@ -5,7 +5,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
  const page=await browser.newPage();await page.goto(process.env.STYK_TEST_URL||'http://127.0.0.1:47832');await page.waitForFunction(()=>window.styk?.ready);
  const result=await page.evaluate(async()=>{
-  const {createRenderer}=await import('/src/renderer.mjs'),{emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{createVfx}=await import('/src/vfx.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs'),{drawExportScene}=await import('/src/export-frame-core.mjs'),{ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs'),{vfxPreviewGeometry,vfxPreviewFrame}=await import('/src/vfx-preview.mjs');
+  const {createRenderer}=await import('/src/renderer.mjs'),{emptyDocument,createFrame,createObject}=await import('/src/demo.mjs'),{createVfx}=await import('/src/vfx.mjs'),{buildGeometry}=await import('/src/pivot/geometry.mjs'),{drawExportScene}=await import('/src/export-frame-core.mjs'),{pageExporter}=await import('/tests/support/page-export.mjs'),{vfxPreviewGeometry,vfxPreviewFrame}=await import('/src/vfx-preview.mjs');
   const pixels=canvas=>{const out=new OffscreenCanvas(canvas.width,canvas.height),c=out.getContext('2d');c.drawImage(canvas,0,0);return c.getImageData(0,0,out.width,out.height).data;};
   const diff=(a,b)=>{let max=0,sum=0;for(let i=0;i<a.length;i++){const d=Math.abs(a[i]-b[i]);max=Math.max(max,d);sum+=d;}return {max,mean:sum/a.length};};
   const coverage=data=>{let count=0;for(let i=3;i<data.length;i+=4)if(data[i]>16)count++;return count;};
@@ -32,7 +32,7 @@ try{
    for(const item of packet.compatibility)item.bitmap?.close();
    const bypassPacket=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Bypass worker timed out')),15000);worker.onmessage=({data})=>{if(data.type==='packet'){clearTimeout(timer);resolve(data.packet);}if(data.type==='error'){clearTimeout(timer);reject(new Error(data.message));}};worker.postMessage({type:'invalidate',revision:2,retainDocument:true,options:{vfxEnabled:false}});worker.postMessage({type:'prepare',revision:2,ticks:[0]});});
    const bypassKey=renderer.prepareFrame(bypassPacket,{report,view:options.view});renderer.renderPrepared(bypassKey,{report,view:options.view});const preparedBypass=diff(pixels(canvas),pixels(unfiltered));if(bypassPacket.frame._stykVfx||preparedBypass.mean>.5)throw new Error(`Prepared bypass differs: ${JSON.stringify({kind,preparedBypass})}`);for(const item of bypassPacket.compatibility)item.bitmap?.close();worker.terminate();
-   const exporter=new ExportFrameRenderer({width:320,height:240});await exporter.load(report);const exported=pixels(await exporter.renderTick(0)),svg=await exporter.renderSVGTick(0);const svgText=await svg.text();exporter.dispose();
+   const exporter=pageExporter({width:320,height:240});await exporter.load(report);const exported=pixels(await exporter.renderTick(0));exporter.dispose();const vector=pageExporter({width:320,height:240},{vector:true});await vector.load(report);const svg=await vector.renderSVGTick(0);const svgText=await svg.text();vector.dispose();
    result.push({kind,backend:renderer.stats.backend,hasScene,live:diff(live,refComp),prepared:diff(prepared,refComp),livePrepared:diff(live,prepared),coverage:{live:coverage(live),prepared:coverage(prepared)},exported:diff(exported,ref),svg:svg.type==='image/svg+xml'&&svgText.includes('data:image/png'),warnings:renderer.stats.warnings});renderer.destroy();
   }
   for(const fallback of [false,true]){

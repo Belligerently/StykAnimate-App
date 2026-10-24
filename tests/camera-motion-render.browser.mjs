@@ -6,8 +6,8 @@ const browser=await chromium.launch({channel:'chrome',headless:true}),page=await
 try{
   await page.goto(`${process.env.STYK_URL||'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result=await page.evaluate(async()=>{
-    const [{Editor},{createRenderer},{defaultFigure,createObject,createFrame,emptyDocument},{buildGeometry,evaluatedFrame},{drawExportScene,drawExportSceneSequential,drawExportSceneTiled},{exportSVG},{compilePlaybackPacket},{PlaybackResources},{drawCameraMonitor},{createVfx}]=await Promise.all([
-      import('/src/editor.mjs'),import('/src/renderer.mjs'),import('/src/demo.mjs'),import('/src/pivot/geometry.mjs'),import('/src/export-frame-core.mjs'),import('/src/svg-export.mjs'),import('/src/playback-worker.mjs'),import('/src/playback-resources.mjs'),import('/src/camera-monitor.mjs'),import('/src/vfx.mjs')]);
+    const [{Editor},{createRenderer},{defaultFigure,createObject,createFrame,emptyDocument},{buildGeometry,evaluatedFrame},{drawExportScene,drawExportSceneSequential,drawExportSceneTiled},{compilePlaybackPacket},{PlaybackResources},{createVfx}]=await Promise.all([
+      import('/src/editor.mjs'),import('/src/renderer.mjs'),import('/src/demo.mjs'),import('/src/pivot/geometry.mjs'),import('/src/export-frame-core.mjs'),import('/src/playback-worker.mjs'),import('/src/playback-resources.mjs'),import('/src/vfx.mjs')]);
     const w=320,h=240,pixels=async canvas=>{const bitmap=await createImageBitmap(canvas),surface=new OffscreenCanvas(w,h),ctx=surface.getContext('2d');ctx.drawImage(bitmap,0,0,w,h);bitmap.close();return ctx.getImageData(0,0,w,h).data;};
     const diff=(a,b)=>{let sum=0,significant=0;for(let i=0;i<a.length;i+=4){let max=0;for(let k=0;k<4;k++){const d=Math.abs(a[i+k]-b[i+k]);sum+=d;max=Math.max(max,d);}if(max>10)significant++;}return {mae:sum/a.length,percent:significant/(w*h)*100};};
     const records=[];
@@ -25,14 +25,12 @@ try{
       const sequential=new OffscreenCanvas(w,h);await drawExportSceneSequential(sequential.getContext('2d'),e.report,frame,geometry,resources);
       records.push({effects,path:'sequential export',...diff(expected,await pixels(sequential))});
       const tiled=new OffscreenCanvas(w,h);await drawExportSceneTiled(tiled.getContext('2d'),e.report,frame,geometry,resources,128);records.push({effects,path:'tiled export',...diff(expected,await pixels(tiled))});
-      const svg=await exportSVG({report:e.report,frame,geometry,resources}),url=URL.createObjectURL(svg),img=new Image();img.src=url;await img.decode();const surface=new OffscreenCanvas(w,h);surface.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(url);records.push({effects,path:'SVG',...diff(expected,await pixels(surface))});
-      const monitor=document.createElement('canvas');monitor.style.cssText=`width:${w}px;height:${h}px`;document.body.append(monitor);drawCameraMonitor(monitor,{report:e.report,frame,geometry,resources,onError:error=>{throw error;}});records.push({effects,path:'monitor',...diff(expected,await pixels(monitor))});monitor.remove();
       for(const fallback of [false,true]){
         const canvas=document.createElement('canvas'),renderer=await createRenderer(canvas,{forceCanvas2D:fallback});renderer.resize(w,h,1);renderer.render({report:e.report,frame,geometry,view:{scale:1},cameraEnabled:true});await renderer.device?.queue.onSubmittedWorkDone();records.push({effects,path:fallback?'Canvas live':'GPU live',...diff(expected,await pixels(canvas))});
         const packet=await compilePlaybackPacket(e.report,0,{resources,softwareFrames:fallback});const key=renderer.prepareFrame(packet,{report:e.report,view:{scale:1}});renderer.renderPrepared(key,{report:e.report,view:{scale:1}});await renderer.device?.queue.onSubmittedWorkDone();records.push({effects,path:fallback?'Canvas prepared':'GPU prepared',...diff(expected,await pixels(canvas))});
         for(const entry of packet.compatibility)entry.bitmap?.close();renderer.destroy();
       }
-      records.slice(-8).forEach(record=>record.movieclip=movieclip);resources.dispose();
+      records.slice(-6).forEach(record=>record.movieclip=movieclip);resources.dispose();
     }
     return records;
   });

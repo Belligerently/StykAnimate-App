@@ -14,12 +14,12 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
 | `styk-edit` | 89 | 1237 KiB | 44 | 41 | 3 | 1 | 0 | 2 % | 66 % | 0 % |
-| `styk-engine` | 24 | 201 KiB | 17 | 6 | 0 | 0 | 1 | 0 % | 65 % | 0 % |
-| `styk-eval` | 81 | 758 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
-| `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
+| `styk-engine` | 24 | 169 KiB | 17 | 2 | 0 | 0 | 5 | 0 % | 59 % | 0 % |
+| `styk-eval` | 81 | 756 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
+| `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 763 KiB | 29 | 5 | 1 | 22 | 2 | 63 % | 8 % | 6 % |
 | `styk-render` | 52 | 708 KiB | 31 | 16 | 5 | 0 | 0 | 9 % | 61 % | 0 % |
-| **Total** | 357 | 4066 KiB | 170 | 128 | 33 | 23 | 3 | 20 % | 50 % | 1 % |
+| **Total** | 357 | 4009 KiB | 170 | 121 | 33 | 23 | 10 | 20 % | 50 % | 1 % |
 
 ## Engine modules
 
@@ -173,11 +173,11 @@ Engine logic: ported to Rust.
 | `src/playback-worker.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy) |
 | `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames; one-shot State/Storage readiness and shared finite progress/coalesced Busy controls, dense cache work outside State; physical lease/final-drop/shutdown work open |
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
-| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS |
-| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: native files open in styk-formats::files; replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
-| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; prepared shown epoch and retained monitor bitmap verified; auxiliary onion/monitor parity, live actual-shown readiness, refused documents and no-thread fallback remain |
+| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | removed | removed; the preview timeline and fitted bounds are styk_engine::thumbnails::library, the matte choice is src/library-matte.mjs |
+| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | removed | removed; the engine's preview worker (src/engine/engine-preview-worker.mjs) draws posters and hover animations |
+| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | removed | removed; src/engine/engine-thumbnails.mjs draws frame thumbnails with the stage or the preview worker |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained |
+| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | removed | removed; the stage and the engine's preview worker draw thumbnails and in-between previews |
 | `src/animation-origin-validation.mjs` | `styk-eval` | partial | Rust: typed origin compiler validates retained support indices, numbers, bindings and capacity against 68 editor refusals; cooperative import/object validation still JS |
 | `src/animation-pose.mjs` | `styk-eval` | partial | Rust: virtual pose tracks, pose sampling/composition and orientation; canonical COW source lookup with verified unique-ID row hints; editing helpers still JS |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
@@ -259,12 +259,12 @@ Engine logic: ported to Rust.
 | `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/export-canvas.mjs` | `styk-export` | js | frame hand-over shared by both export workers |
-| `src/export-crisp.mjs` | `styk-export` | partial | Rust: recorded exportSVG composited-frame policy keeps effects, truthy generator batches and visible mesh/depth artwork smooth with No smoothing; ordinary frames use Edges::Crisp; plain drawing image-sampling parity and exports of gated documents remain open |
-| `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS |
-| `src/export-frame-renderer.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents |
-| `src/export-frame-worker.mjs` | `styk-export` | partial | Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs, on the GPU or with styk-raster without a device); this worker draws documents the engine does not and exports whose engine worker cannot start |
-| `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); JavaScript exports keep these budgets |
+| `src/export-canvas.mjs` | `styk-export` | js | frame hand-over of the engine's export worker |
+| `src/export-crisp.mjs` | `styk-export` | removed | removed with the JavaScript export worker; No smoothing is drawn by the engine (Edges::Crisp, styk-export) |
+| `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of every export (styk-export, src/engine/engine-export.mjs); this module still draws for the JavaScript renderer's callers (renderer-raster-capture, vfx-camera, playback-software-painter, drawing-composite) and goes with them |
+| `src/export-frame-renderer.mjs` | `styk-export` | removed | removed; src/engine/engine-export.mjs owns the request, progress, revision, timeout and retry logic of an export and the output canvas |
+| `src/export-frame-worker.mjs` | `styk-export` | removed | removed; the engine's export worker (src/engine/engine-export-worker.mjs) draws every export, and writes SVG with styk-export svg |
+| `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); the interface keeps the allowance and tile plan it validates a request with |
 | `src/export-sampling.mjs` | `styk-export` | partial | Rust: the sampling limits mirrored in styk_export::settings; the JavaScript worker still reads these |
 | `src/gif-options.mjs` | `styk-export` | js |  |
 | `src/gif-quantize.mjs` | `styk-export` | js |  |
@@ -424,7 +424,7 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `src/frame-clipboard-storage.mjs` |  | stays | file, storage and network services |
 | `src/library-files.mjs` |  | stays | file, storage and network services |
 | `src/native-files.mjs` |  | stays | file, storage and network services |
-| `src/svg-export.mjs` |  | stays | editable vector output kept in JavaScript; the draw list is tessellated (docs/engine/rendering.md) |
+| `src/svg-export.mjs` |  | removed | removed; styk_export::svg writes the frame's draw list as vector SVG (a picture of the frame where it has no vector form) |
 | `src/web-library.mjs` |  | stays | file, storage and network services |
 | `src/web-offline.mjs` |  | stays | file, storage and network services |
 | `src/audio-encode.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |

@@ -2,10 +2,9 @@
  * Frame thumbnails drawn by the engine (docs/engine/rendering.md, Thumbnails and library
  * previews; stage S4 of docs/RUST-ENGINE-PORT.md).
  *
- * `createThumbnailRenderer` returns an object with the JavaScript `ThumbnailRenderer`'s
- * interface (`renderThumbnail`, `invalidate`, `setPaused`, `destroy`, `stats`), so the
- * filmstrip, the export dialog and the in-between dialog do not change. For a document
- * the engine draws, a thumbnail is the tick of the revision the editor is at, from the
+ * `createThumbnailRenderer` returns the object the filmstrip, the export dialog and the
+ * in-between dialog draw thumbnails with (`renderThumbnail`, `invalidate`, `setPaused`,
+ * `destroy`, `stats`). A thumbnail is the tick of the revision the editor is at, from the
  * document the engine already holds: its frame prepared on the engine's workers, drawn by
  * the stage's GPU renderer on the stage's device (`renderThumbnail` in engine-stage.mjs),
  * so it shows exactly what the stage shows. Nothing of the document is copied into a
@@ -13,15 +12,13 @@
  * draw thumbnails (a WebGL2 stage cannot present one device to a second canvas; a WebGPU
  * canvas whose pictures do not reach the page), the engine's preview worker draws them with
  * the CPU rasterizer from the same document (engine-previews.mjs): the same pixels by the
- * app-parity rule.
+ * app-parity rule. In-between samples use the same preview worker and pinned typed
+ * document, with the editor's explicit interval and onion settings.
  *
- * The JavaScript renderer (thumbnail-renderer.mjs) draws what the engine does not, created
- * only when first needed: a failed engine, pages without the engine's worker threads, and
- * thumbnails neither the stage nor the preview worker could draw. In-between samples use the
- * same preview worker and pinned typed document, with the editor's explicit interval and
- * onion settings. A frame is drawn by one or the other, whole.
+ * A thumbnail the engine cannot draw (no worker threads, a frame outside the timeline, a
+ * document the stage refuses, a preview worker that fails) resolves `false` with the reason
+ * in `stats.engine.refusal`: the filmstrip shows no picture for it and asks again later.
  */
-import {ThumbnailRenderer} from '../thumbnail-renderer.mjs';
 import {layerAppearance, thumbnailVisualChange} from '../thumbnail-validity.mjs';
 import {drawingBarrier} from '../drawing-resources.mjs';
 import {engineDocument} from './engine-document.mjs';
@@ -35,28 +32,21 @@ const NOT_YET = 'the stage is not ready yet';
 /**
  * A thumbnail renderer for `editor`. `stage()` and `playback()` return the app's stage
  * renderer (engine-stage.mjs) and playback adapter (engine-playback.mjs) once they exist;
- * without them every thumbnail is the JavaScript renderer's. `options` are
- * `ThumbnailRenderer`'s.
+ * until then thumbnails are not drawn.
  */
-export function createThumbnailRenderer(editor, options = {}, {stage = () => null, playback = () => null} = {}) {
-  return new EngineThumbnails(editor, options, {stage, playback});
+export function createThumbnailRenderer(editor, {stage = () => null, playback = () => null} = {}) {
+  return new EngineThumbnails(editor, {stage, playback});
 }
 
 export class EngineThumbnails {
-  /**
-   * `javascript(editor, options)` makes the JavaScript renderer, `previews()` resolves the
-   * engine's preview worker or null (tests give stand-ins).
-   */
-  constructor(editor, options = {}, {stage, playback, javascript = (target, settings) => new ThumbnailRenderer(target, settings), previews = enginePreviews}) {
+  /** `previews()` resolves the engine's preview worker or null (tests give stand-ins). */
+  constructor(editor, {stage, playback, previews = enginePreviews}) {
     this.editor = editor;
-    this.options = options;
     this.stage = stage;
     this.playback = playback;
-    this.makeJavaScript = javascript;
     this.previews = previews;
     /** Why the preview worker cannot draw thumbnails, once found; null while it may. */
     this.cpuRefusal = null;
-    this.javascript = null;
     this.version = 1;
     this.layerAppearance = layerAppearance(editor.report._styk?.layers);
     this.chain = Promise.resolve();
@@ -64,21 +54,15 @@ export class EngineThumbnails {
     this.paused = false;
     this.disposed = false;
     this.currentAbort = null;
-    /** Why the last thumbnail was the JavaScript renderer's, by revision. */
+    /** Why the last thumbnail was not drawn by the engine. */
     this.refusal = null;
     this.engineStats = {renders: 0, cpu: 0, inbetweens: 0, refused: 0, stale: 0, lastRenderMs: 0};
     this.events = new AbortController();
     editor.addEventListener('change', event => this.invalidate(event.detail || {}), {signal: this.events.signal});
   }
 
-  /** The JavaScript renderer, created when a thumbnail first needs it. */
-  _javascript() {
-    return this.javascript ??= this.makeJavaScript(this.editor, this.options);
-  }
-
   get stats() {
-    const legacy = this.javascript?.stats;
-    return {...legacy, backend: this.javascript ? 'Engine and worker thumbnails' : 'Engine thumbnails', engine: {...this.engineStats, refusal: this.refusal}};
+    return {backend: 'Engine thumbnails', engine: {...this.engineStats, refusal: this.refusal}};
   }
 
   invalidate(detail = {}) {
@@ -91,7 +75,6 @@ export class EngineThumbnails {
   }
 
   setPaused(paused) {
-    this.javascript?.setPaused(paused);
     if (this.paused === Boolean(paused)) return;
     this.paused = Boolean(paused);
     if (this.paused) this.currentAbort?.abort();
@@ -158,7 +141,7 @@ export class EngineThumbnails {
     if (this.disposed || this.paused || signal?.aborted) return Promise.resolve(false);
     const route = this._route(inbetween);
     if (route === NOT_YET) return Promise.resolve(false);
-    if (route) return this._javascript().renderThumbnail(index, canvas, options);
+    if (route) return Promise.resolve(this._refuse(route));
     // A caller outside the virtual filmstrip still cannot queue an unbounded backlog.
     if (this.queued >= 8) return Promise.resolve(false);
     this.queued++;
@@ -178,7 +161,7 @@ export class EngineThumbnails {
     try {
       const editor = this.editor, report = editor.report, revision = editor.revision;
       const tick = options.tick ?? editor.timeline?.[index]?.start;
-      if (!Number.isInteger(tick) || !report.keyframes?.[index]) return this._fallback(index, canvas, options, 'a frame outside the timeline');
+      if (!Number.isInteger(tick) || !report.keyframes?.[index]) return this._refuse('a frame outside the timeline');
       // Published drawing strokes are what thumbnails show (as the JavaScript worker waits for them).
       await drawingBarrier(report, {signal: controller.signal});
       check();
@@ -188,7 +171,7 @@ export class EngineThumbnails {
       check();
       // An edit landed meanwhile: the engine follows it, and the caller asks again.
       if (editor.revision !== revision || editor.report !== report) return false;
-      if (reason) return this._fallback(index, canvas, options, reason);
+      if (reason) return this._refuse(reason);
       const started = performance.now(), request = {revision, tick, ...(options.inbetween ? {index, inbetween: options.inbetween} : {}), width: canvas.width, height: canvas.height};
       const stageless = () => options.inbetween || engineCpuForced() || this.stage().engineSide?.thumbnails === false;
       let result = stageless() ? 'refused' : await this.stage().renderThumbnail(request, canvas, {signal: controller.signal});
@@ -197,7 +180,7 @@ export class EngineThumbnails {
       if (result === 'stale') { this.engineStats.stale++; return false; }
       if (result !== 'drawn') {
         this.engineStats.refused++;
-        return this._fallback(index, canvas, options, stageless() ? `the stage cannot draw thumbnails on this device (${this.cpuRefusal ?? 'the preview worker did not draw it'})` : 'the stage did not draw the thumbnail');
+        return this._refuse(stageless() ? `the stage cannot draw thumbnails on this device (${this.cpuRefusal ?? 'the preview worker did not draw it'})` : 'the stage did not draw the thumbnail');
       }
       if (controller.signal.aborted || version !== this.version || this.paused) return false;
       this.refusal = null;
@@ -205,27 +188,22 @@ export class EngineThumbnails {
       return true;
     } catch (error) {
       if (error?.name === 'AbortError') return false;
-      // The engine failed on this thumbnail: the JavaScript renderer draws it.
-      if (!this.disposed) return this._fallback(index, canvas, options, String(error?.message ?? error));
-      return false;
+      return this.disposed ? false : this._refuse(String(error?.message ?? error));
     } finally {
       signal?.removeEventListener('abort', abort);
       if (this.currentAbort === controller) this.currentAbort = null;
     }
   }
 
-  /** The JavaScript renderer draws this thumbnail. */
-  _fallback(index, canvas, options, reason) {
+  /** The thumbnail is not drawn: the caller asks again later. */
+  _refuse(reason) {
     this.refusal = reason;
-    if (this.disposed || this.paused || options.signal?.aborted) return false;
-    return this._javascript().renderThumbnail(index, canvas, options);
+    return false;
   }
 
   destroy() {
     this.disposed = true;
     this.events.abort();
     this.currentAbort?.abort();
-    this.javascript?.destroy();
-    this.javascript = null;
   }
 }

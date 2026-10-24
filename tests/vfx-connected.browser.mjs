@@ -10,7 +10,7 @@ try{
   const {emptyDocument,createObject,createFrame}=await import('/src/demo.mjs'),{buildGeometry,drawGeometry}=await import('/src/pivot/geometry.mjs'),
    {createVfx}=await import('/src/vfx.mjs'),{withVfx}=await import('/src/vfx-canvas.mjs'),{objectBounds}=await import('/src/renderer-geometry.mjs'),
    {createRenderer}=await import('/src/renderer.mjs'),{drawExportScene,drawExportSceneTiled}=await import('/src/export-frame-core.mjs'),
-   {compilePlaybackPacket}=await import('/src/playback-worker.mjs'),{ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs');
+   {compilePlaybackPacket}=await import('/src/playback-worker.mjs'),{pageExporter}=await import('/tests/support/page-export.mjs');
   const report=emptyDocument();report.canvas_width=320;report.canvas_height=300;
   const fig=report.figure_types[0],root=createObject(fig,1,160,235),child=createObject(fig,2,160,235);
   child.join={target_object_slot:0,target_unique_id:1,target_handle_id:1};
@@ -39,25 +39,22 @@ try{
   const direct=difference(pixels(exported),expected);
   const tiled=new OffscreenCanvas(320,300);await drawExportSceneTiled(tiled.getContext('2d'),report,frame,geometry,{preload:async()=>{}},128);
   const tile=difference(pixels(tiled),expected);
-  const exporter=new ExportFrameRenderer({width:320,height:300});await exporter.load(report);const worker=difference(pixels(await exporter.renderTick(0)),expected);
-  const svg=await exporter.renderSVGTick(0);exporter.dispose();
+  const exporter=pageExporter({width:320,height:300});await exporter.load(report);const worker=difference(pixels(await exporter.renderTick(0)),expected);exporter.dispose();
+  const vector=pageExporter({width:320,height:300},{vector:true});await vector.load(report);const svg=await vector.renderSVGTick(0);vector.dispose();
   // Exercise the real inspector control, clipboard, undo and native tween.
   const e=window.styk.editor;e.load(report);e.select(1);window.styk.vfx.setVisible(true);window.styk.vfx.scope='figure';window.styk.vfx.sync();
-  const {ThumbnailRenderer}=await import('/src/thumbnail-renderer.mjs'),{drawCameraMonitor}=await import('/src/camera-monitor.mjs');
-  const thumb=document.createElement('canvas');thumb.width=320;thumb.height=300;const thumbnails=new ThumbnailRenderer(e);let thumbnail;
-  try{if(!await thumbnails.renderThumbnail(0,thumb))throw new Error('Thumbnail did not render');thumbnail=difference(pixels(thumb),expected);}finally{thumbnails.destroy();}
-  const monitor=document.createElement('canvas');monitor.style.cssText='position:fixed;left:0;top:0;width:320px;height:300px';document.body.append(monitor);
-  if(!drawCameraMonitor(monitor,{report,frame,geometry,resources:{}}))throw new Error('Camera monitor did not render');const camera=difference(pixels(monitor),expected);monitor.remove();
+  const thumb=document.createElement('canvas');thumb.width=320;thumb.height=300;
+  if(!await window.styk.thumbnails.renderThumbnail(0,thumb))throw new Error('Thumbnail did not render');const thumbnail=difference(pixels(thumb),expected);
   const {DocumentExporter}=await import('/src/document-export.mjs'),{ImportClient}=await import('/src/import-client.mjs'),{Editor}=await import('/src/editor.mjs');
   const saver=new DocumentExporter(),importer=new ImportClient();let roundtrip;
   try{const blob=await saver.export(e.report,{format:'styk',name:'Connected effects'}),imported=await importer.importFile(new File([blob],'connected.styk')),reopened=new Editor({demo:false}).load(imported.document);roundtrip={scope:reopened.animationValue({kind:'figure',uid:1},'vfxScope'),effects:reopened.vfxEffects({kind:'figure',uid:1}).length,joined:Boolean(reopened.evaluatedFrame.objects[1].join)};}finally{saver.dispose();importer.dispose();}
-  return {rows,direct,tile,worker,roundtrip,thumbnail,camera,svg:(await svg.text()).includes('data:image/png')};
+  return {rows,direct,tile,worker,roundtrip,thumbnail,svg:(await svg.text()).includes('data:image/png')};
  });
  console.log(JSON.stringify(result,null,2));
  for(const row of result.rows){assert.ok(row.live.mean<.6,JSON.stringify(row));assert.ok(row.prepared.mean<.6,JSON.stringify(row));assert.ok(row.hidden.mean>.1);assert.ok(row.bypass.mean>.1);}
  assert.ok(result.direct.mean<.1,JSON.stringify(result.direct));assert.ok(result.tile.mean<.1,JSON.stringify(result.tile));assert.ok(result.worker.mean<.6,JSON.stringify(result.worker));assert.ok(result.svg);
  assert.deepEqual(result.roundtrip,{scope:1,effects:2,joined:true});
- assert.ok(result.thumbnail.mean<.1,JSON.stringify(result.thumbnail));assert.ok(result.camera.mean<.1,JSON.stringify(result.camera));
+ assert.ok(result.thumbnail.mean<.1,JSON.stringify(result.thumbnail));
  await page.getByRole('tab',{name:'VFX',exact:true}).click();
  const scope=page.getByLabel('Effect target',{exact:true});await scope.selectOption('figure');assert.equal(await page.evaluate(()=>styk.editor.animationValue({kind:'figure',uid:1},'vfxScope')),0);await scope.selectOption('connected');assert.equal(await page.evaluate(()=>styk.editor.animationValue({kind:'figure',uid:1},'vfxScope')),1);
  await page.mouse.move(100,60);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));

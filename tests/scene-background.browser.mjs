@@ -14,9 +14,10 @@ try {
   await page.goto(`${process.env.STYK_URL || 'http://127.0.0.1:47831'}/tests/fixtures/blank.html`);
   const result = await page.evaluate(async () => {
     const [{createRenderer}, {emptyDocument, createObject}, {buildGeometry, drawGeometry}, {drawBackground, backgroundBounds},
-      {cameraMatrix}, {exportSVG}, {compilePlaybackPacket}] = await Promise.all([
+      {cameraMatrix}, {compilePlaybackPacket}] = await Promise.all([
+
       import('/src/renderer.mjs'), import('/src/demo.mjs'), import('/src/pivot/geometry.mjs'), import('/src/pivot/background.mjs'),
-      import('/src/renderer-geometry.mjs'), import('/src/svg-export.mjs'), import('/src/playback-worker.mjs'),
+      import('/src/renderer-geometry.mjs'), import('/src/playback-worker.mjs'),
     ]);
     const assert = (value, message) => { if (!value) throw new Error(message); };
     document.body.innerHTML = '<h1>Scene colors and camera visibility</h1><main></main>';
@@ -69,25 +70,24 @@ try {
       const expected = await bytes(reference);
       gpu.render(options); await gpu.device.queue.onSubmittedWorkDone(); const nativeGPU = await bytes(gpuCanvas);
       fallback.render(options); const nativeFallback = await bytes(fallbackCanvas);
-      const svg = await imageCanvas(await exportSVG(options)), svgBytes = await bytes(svg);
       const packet = await compilePlaybackPacket(report, 0, {revision: index + 1});
       assert(packet.frame._stykBackgroundColor === frame._stykBackgroundColor, 'Prepared packet lost authored background color.');
       await gpu.prepareBackgrounds(report, packet.frame);
       const key = gpu.prepareFrame(packet, {report, view: options.view});
       assert(key && gpu.renderPrepared(key, {report, view: options.view}), 'Prepared frame failed to render.');
       await gpu.device.queue.onSubmittedWorkDone(); const prepared = await bytes(gpuCanvas);
-      const scores = {gpu: measure(nativeGPU, expected), prepared: measure(prepared, expected), fallback: measure(nativeFallback, expected), svg: measure(svgBytes, expected)};
+      const scores = {gpu: measure(nativeGPU, expected), prepared: measure(prepared, expected), fallback: measure(nativeFallback, expected)};
       for (const [backend, score] of Object.entries(scores)) assert(score.mae < 2.5, `${scenario.name}/${backend} pixel mismatch ${JSON.stringify(score)}`);
-      for (const [backend, pixels] of [['gpu', nativeGPU], ['prepared', prepared], ['fallback', nativeFallback], ['svg', svgBytes]])
+      for (const [backend, pixels] of [['gpu', nativeGPU], ['prepared', prepared], ['fallback', nativeFallback]])
         for (let channel = 0; channel < 4; channel++) assert(Math.abs(pixels[channel] - expected[channel]) <= 2, `${scenario.name}/${backend} corner color or alpha mismatch.`);
       if (scenario.camera === false) assert(cameraMatrix(options).every((value, i) => value === [1, 0, 0, 1, 0, 0][i]), 'Hidden camera still transforms the viewport.');
       results.push({name: scenario.name, scores, corner: [...expected.slice(0, 4)]});
-      addImage(`${scenario.name} / GPU`, gpuCanvas); addImage(`${scenario.name} / SVG`, svg);
+      addImage(`${scenario.name} / GPU`, gpuCanvas);
       gpu.preparedFrames.clear();
     }
     assert(!gpu.stats.warnings.length, gpu.stats.warnings.join('\n'));
     const adapter = gpu.stats.adapter; gpu.destroy(); fallback.destroy();
-    return {adapter, cases: results, checks: results.length * 5};
+    return {adapter, cases: results, checks: results.length * 4};
   });
   if (errors.length || requests.length) throw new Error(JSON.stringify({errors, unexpectedBackgroundRequests: requests}));
   await page.screenshot({path: path.join(output, 'pixels.png'), fullPage: true});
