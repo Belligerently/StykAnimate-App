@@ -64,6 +64,11 @@ fn point(value: &Value) -> [f64; 2] {
     [value.item(0).unwrap().as_f64().unwrap(), value.item(1).unwrap().as_f64().unwrap()]
 }
 
+/// The numbers of a row of a group's `segs`.
+fn row(shape: &Value) -> Vec<f64> {
+    shape.elements().unwrap().iter().map(|value| value.as_f64().unwrap_or(f64::NAN)).collect()
+}
+
 #[test]
 fn a_full_read_holds_every_segment_and_joint_of_each_figure_in_the_frame() {
     for name in ["gestures-sheet", "rig-sheet", "startup-sheet"] {
@@ -77,24 +82,28 @@ fn a_full_read_holds_every_segment_and_joint_of_each_figure_in_the_frame() {
             let g = group(&read, slot);
             let figure_type = record.get("objects").unwrap().item(slot).unwrap().get("figure_type_id").and_then(Value::as_f64).unwrap();
             let definition = session.report().get("figure_types").unwrap().elements().unwrap().iter().find(|f| f.get("figure_type_id").and_then(Value::as_f64) == Some(figure_type)).unwrap();
-            let ids: Vec<f64> = definition.get("segments").unwrap().elements().unwrap().iter().map(|s| s.get("segment_id").and_then(Value::as_f64).unwrap()).collect();
-            let segments = g.get("segments").unwrap().elements().unwrap();
-            assert_eq!(segments.len(), ids.len(), "{name} slot {slot}: a shape for every segment, drawn or not");
-            let joints = g.get("joints").unwrap().elements().unwrap();
-            assert_eq!(joints.iter().map(|j| j.item(0).unwrap().as_f64().unwrap()).collect::<Vec<_>>(), ids, "{name} slot {slot}: a joint for every segment");
-            for (i, shape) in segments.iter().enumerate() {
-                assert_eq!(shape.get("index").and_then(Value::as_f64), Some(i as f64));
-                let (end, joint) = (point(shape.get("end").unwrap()), joints.get(i).unwrap());
-                if shape.get("connector").is_none() {
-                    assert_eq!([end[0], end[1]], [joint.item(1).unwrap().as_f64().unwrap(), joint.item(2).unwrap().as_f64().unwrap()], "{name} slot {slot} segment {i}: the endpoint is the joint");
+            let segments = definition.get("segments").unwrap().elements().unwrap();
+            let ids: Vec<f64> = segments.iter().map(|s| s.get("segment_id").and_then(Value::as_f64).unwrap()).collect();
+            let ends: Vec<f64> = g.get("ends").unwrap().elements().unwrap().iter().map(|value| value.as_f64().unwrap_or(f64::NAN)).collect();
+            assert_eq!(ends.len(), 2 * ids.len(), "{name} slot {slot}: a joint for every segment");
+            let rows = g.get("segs").unwrap().elements().unwrap();
+            assert_eq!(rows.len(), ids.len(), "{name} slot {slot}: a row for every segment, drawn or not");
+            let joint = |index: usize| [ends[2 * index], ends[2 * index + 1]];
+            for (i, shape) in rows.iter().enumerate() {
+                let row = row(&shape);
+                assert_eq!(row[0], i as f64, "the segment's place in the figure");
+                let flags = row[11] as u32;
+                // A segment is drawn to its joint and starts where its parent ends (or at the root), unless the row says otherwise.
+                let mut at = 12;
+                let parent = segments.get(i).unwrap().get("parent_id").and_then(Value::as_f64).unwrap();
+                let origin = if parent == 0.0 { point(g.get("root").unwrap()) } else { joint(ids.iter().position(|id| *id == parent).unwrap()) };
+                let start = if flags & 1 != 0 { at += 2; [row[at - 2], row[at - 1]] } else { origin };
+                let end = if flags & 2 != 0 { at += 2; [row[at - 2], row[at - 1]] } else { joint(i) };
+                if flags & 8 == 0 {
+                    assert_eq!(flags & 2, 0, "{name} slot {slot} segment {i}: only a connector is drawn to somewhere but its joint");
                 }
-                // A segment starts at the end of the one it hangs from (or at the root).
-                let parent = definition.get("segments").unwrap().item(i).unwrap().get("parent_id").and_then(Value::as_f64).unwrap();
-                let origin = if parent == 0.0 { point(g.get("root").unwrap()) } else {
-                    let at = ids.iter().position(|id| *id == parent).unwrap();
-                    point(&Value::array(vec![joints.get(at).unwrap().item(1).unwrap(), joints.get(at).unwrap().item(2).unwrap()]))
-                };
-                assert_eq!(point(shape.get("start").unwrap()), origin, "{name} slot {slot} segment {i}: where it starts");
+                assert!(start[0].is_finite() && end[0].is_finite() && row[3].is_finite(), "{name} slot {slot} segment {i}: finite");
+                assert_eq!(flags & 4 != 0, shape.elements().unwrap().iter().any(|value| value.is_array()), "{name} slot {slot} segment {i}: a curve is its own array");
             }
         }
         assert_eq!(read.get("warnings").and_then(Value::array_len), Some(0), "{name}");

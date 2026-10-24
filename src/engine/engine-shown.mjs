@@ -55,6 +55,9 @@ function spatialFrame(raw) {
   return frame;
 }
 
+/** The `flags` of a segment row (styk_eval::geometry::interface). */
+const START = 1, END = 2, POINTS = 4, CONNECTOR = 8, SPATIAL = 16;
+
 /** A group the session sent, as the interface reads it. */
 function hydrate(raw, slot, frame, report, defs) {
   const obj = frame.objects[slot];
@@ -62,29 +65,35 @@ function hydrate(raw, slot, frame, report, defs) {
   if (!obj || !fig) return null;
   const root = point(raw.root);
   const joints = new Map([[0, root]]);
-  for (const [id, x, y] of raw.joints) joints.set(id, {x, y});
+  const {ends} = raw;
+  for (let i = 0; i < fig.segments.length && 2 * i < ends.length; i++) if (ends[2 * i] !== null) joints.set(Number(fig.segments[i].segment_id), {x: ends[2 * i], y: ends[2 * i + 1]});
   if (isMovieclip(fig)) {
     // A movieclip instance is its handle: forty units from the root along its angle (what it draws is the engine's).
-    const [shape] = raw.segments, end = joints.get(Number(fig.segments[0].segment_id));
-    const handle = {seg: fig.segments[0], obj, fig, slot, index: 0, start: root, end, points: [root, end], angle: real(shape.angle), length: real(shape.length),
+    const [row] = raw.segs, end = joints.get(Number(fig.segments[0].segment_id));
+    const handle = {seg: fig.segments[0], obj, fig, slot, index: 0, start: root, end, points: [root, end], angle: real(row[1]), length: real(row[3]),
       bend: 0, thickness: 0, opacity: 1, alpha: 1, rgb: [0, 0, 0]};
     const group = {slot, obj, fig, root, joints, segments: [handle], polys: [], drawables: []};
     if (raw.bounds) group.bounds = {minX: raw.bounds[0], minY: raw.bounds[1], maxX: raw.bounds[2], maxY: raw.bounds[3]};
     if (raw.drawn) group.drawn = true;
     return group;
   }
-  const segments = raw.segments.map(shape => {
-    const seg = fig.segments[shape.index], start = point(shape.start), end = point(shape.end);
-    const points = shape.points ? pointList(shape.points) : [start, end];
-    if (shape.points) points[points.length - 1] = end;
+  const segments = raw.segs.map(row => {
+    const index = row[0], flags = row[11], seg = fig.segments[index];
+    let at = 12;
+    // A segment starts where its parent ends, unless it says otherwise.
+    const start = flags & START ? {x: row[at++], y: row[at++]} : joints.get(Number(seg.parent_id)) ?? root;
+    const joint = joints.get(Number(seg.segment_id));
+    const end = flags & END ? {x: row[at++], y: row[at++]} : joint;
+    const points = flags & POINTS ? pointList(row[at++]) : [start, end];
+    if (flags & POINTS) points[points.length - 1] = end;
     const result = {
       type: seg.segment_type === 'circle' || seg.segment_type === 'image' || seg.segment_type === 'text' ? seg.segment_type : 'line',
-      seg, obj, fig, asset: assetOf(fig, seg, obj), version: report.version, slot, index: shape.index, start, end, points,
-      angle: real(shape.angle), bend: shape.bend ?? 0, length: real(shape.length), z: Number(shape.z ?? seg.z_order ?? shape.index + 1),
-      thickness: shape.thickness ?? 0, rgb: shape.rgb ?? [0, 0, 0], alpha: shape.alpha ?? 1, opacity: shape.opacity ?? 1, static: isStatic(seg),
+      seg, obj, fig, asset: assetOf(fig, seg, obj), version: report.version, slot, index, start, end, points,
+      angle: real(row[1]), bend: row[2] ?? 0, length: real(row[3]), z: Number(row[5] ?? seg.z_order ?? index + 1),
+      thickness: row[4] ?? 0, rgb: [row[6], row[7], row[8]], alpha: row[9] ?? 1, opacity: row[10] ?? 1, static: isStatic(seg),
     };
-    if (shape.connector) { result.handle = joints.get(Number(seg.segment_id)); result.connector = true; }
-    if (shape.spatialFrame) result.spatialFrame = spatialFrame(shape.spatialFrame);
+    if (flags & CONNECTOR) { result.handle = joint; result.connector = true; }
+    if (flags & SPATIAL) result.spatialFrame = spatialFrame(row[at++]);
     return result;
   });
   const polys = raw.polys.map(shape => {

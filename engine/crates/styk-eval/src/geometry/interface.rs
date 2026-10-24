@@ -98,51 +98,73 @@ fn spatial_frame(out: &mut Vec<u8>, frame: &SpatialFrame) {
     out.push(b'}');
 }
 
-/// One segment of an object: `index` is its place in the figure.
+/// The `flags` of a segment row.
+const START: u32 = 1;
+const END: u32 = 2;
+const POINTS: u32 = 4;
+const CONNECTOR: u32 = 8;
+const SPATIAL: u32 = 16;
+
+fn same(a: [f64; 2], b: [f64; 2]) -> bool {
+    a[0].to_bits() == b[0].to_bits() && a[1].to_bits() == b[1].to_bits()
+}
+
+/// One segment of an object as a row (no keys, nothing the reader can work out): its `index` in the figure, `angle`, `bend`,
+/// `length`, `thickness`, `z`, `r`, `g`, `b`, `alpha`, `opacity` and `flags`, then in this order what the flags say follows: where it
+/// starts when that is not where its parent ends (`START`: x, y), where it is drawn to when that is not its joint (`END`: x, y;
+/// a connector's joint is its slider), its curve (`POINTS`: an array `[x0, y0, …]`) and the 3D frame of a bone (`SPATIAL`: an object).
 fn segment(out: &mut Vec<u8>, scene: &Scene, slot: usize, fig: &Figure, item: &Item) {
     let object = &scene.objects[slot];
     let index = item.index as usize;
-    out.extend_from_slice(b"{\"index\":");
-    num(out, index as f64);
-    key(out, "start");
-    point(out, item.start);
-    key(out, "end");
-    point(out, item.end);
-    key(out, "angle");
-    num(out, item.angle);
-    key(out, "bend");
-    num(out, item.bend);
-    key(out, "length");
-    num(out, item.length);
-    key(out, "thickness");
-    num(out, item.thickness);
-    key(out, "z");
-    num(out, item.z);
-    key(out, "rgb");
-    rgb(out, item.rgb);
-    key(out, "alpha");
-    num(out, item.alpha);
-    key(out, "opacity");
-    num(out, item.opacity);
+    let parent = fig.plan.parent.get(index).copied().filter(|&parent| parent != u32::MAX).map(|parent| object.ends[parent as usize]).filter(|end| !end[0].is_nan());
+    let origin = parent.unwrap_or(object.root);
+    let connector = object.rig.as_ref().and_then(|rig| rig.get(index)).is_some_and(|joint| joint.connector);
     let points = scene.points_of(item);
+    let frame = object.spatial.as_ref().and_then(|spatial| spatial.frames.get(index)).and_then(Option::as_ref);
+    let mut flags = 0;
+    if !same(item.start, origin) {
+        flags |= START;
+    }
+    if !same(item.end, object.ends[index]) {
+        flags |= END;
+    }
     if !points.is_empty() {
-        key(out, "points");
+        flags |= POINTS;
+    }
+    if connector {
+        flags |= CONNECTOR;
+    }
+    if frame.is_some() {
+        flags |= SPATIAL;
+    }
+    out.push(b'[');
+    for (n, value) in [index as f64, item.angle, item.bend, item.length, item.thickness, item.z, item.rgb[0] as f64, item.rgb[1] as f64, item.rgb[2] as f64, item.alpha, item.opacity, flags as f64].into_iter().enumerate() {
+        if n > 0 {
+            out.push(b',');
+        }
+        num(out, value);
+    }
+    if flags & START != 0 {
+        out.push(b',');
+        num(out, item.start[0]);
+        out.push(b',');
+        num(out, item.start[1]);
+    }
+    if flags & END != 0 {
+        out.push(b',');
+        num(out, item.end[0]);
+        out.push(b',');
+        num(out, item.end[1]);
+    }
+    if flags & POINTS != 0 {
+        out.push(b',');
         flat(out, points);
     }
-    if let Some(joint) = object.rig.as_ref().and_then(|rig| rig.get(index)) {
-        if joint.connector {
-            key(out, "handle");
-            point(out, object.ends[index]);
-            key(out, "connector");
-            out.extend_from_slice(b"true");
-        }
-    }
-    if let Some(frame) = object.spatial.as_ref().and_then(|spatial| spatial.frames.get(index)).and_then(Option::as_ref) {
-        key(out, "spatialFrame");
+    if let Some(frame) = frame {
+        out.push(b',');
         spatial_frame(out, frame);
     }
-    let _ = fig;
-    out.push(b'}');
+    out.push(b']');
 }
 
 fn poly(out: &mut Vec<u8>, scene: &Scene, item: &Item) {
@@ -169,8 +191,11 @@ fn poly(out: &mut Vec<u8>, scene: &Scene, item: &Item) {
 }
 
 /// The groups of `slots` of a scene built by [`super::build_shapes`], each as JSON text (`null` for
-/// an object the scene could not resolve). `bounds` is [`crate::drawlist::app_bounds`] of the scene,
-/// by slot.
+/// an object the scene could not resolve): `root` `[x, y]`, `ends` (the joint of each segment of the figure, `[x0, y0, x1, y1, …]`,
+/// `null` where it was not built), `segs` (a row per segment built, see [`segment`]), `polys`, and as they apply `solved`, `drawn`
+/// and `bounds`. A dense frame is megabytes of text, so a row names nothing and holds nothing the reader works out (where a
+/// segment starts and ends are the joints of its parent and of itself unless it says otherwise). `bounds` is
+/// [`crate::drawlist::app_bounds`] of the scene, by slot.
 pub fn write_groups(scene: &Scene, slots: &[usize], bounds: &[Option<[f64; 4]>]) -> Vec<String> {
     let mut by_slot: HashMap<u32, Vec<&Item>> = HashMap::new();
     let wanted: std::collections::HashSet<u32> = slots.iter().map(|&slot| slot as u32).collect();
@@ -188,40 +213,27 @@ pub fn write_groups(scene: &Scene, slots: &[usize], bounds: &[Option<[f64; 4]>])
         let mut out: Vec<u8> = Vec::with_capacity(256 + items.len() * 220);
         out.extend_from_slice(b"{\"root\":");
         point(&mut out, object.root);
-        key(&mut out, "joints");
+        // Where each segment's joint is, by place in the figure (`null`: the segment was not built).
+        key(&mut out, "ends");
         out.push(b'[');
-        let mut first = true;
         for (i, end) in object.ends.iter().enumerate() {
-            let Some(seg) = fig.segments.get(i) else { break };
-            if end[0].is_nan() {
-                continue;
-            }
-            if !first {
+            if i > 0 {
                 out.push(b',');
             }
-            first = false;
-            out.extend_from_slice(format!("[{},", seg.id).as_bytes());
             num(&mut out, end[0]);
             out.push(b',');
             num(&mut out, end[1]);
-            out.push(b']');
         }
         out.push(b']');
-        key(&mut out, "segments");
+        key(&mut out, "segs");
         out.push(b'[');
         if fig.movieclip.is_some() {
             // A movieclip instance is its handle: forty units from the root along its angle.
-            let end = object.ends.first().copied().unwrap_or(object.root);
-            out.extend_from_slice(b"{\"index\":0");
-            key(&mut out, "start");
-            point(&mut out, object.starts.first().copied().unwrap_or(object.root));
-            key(&mut out, "end");
-            point(&mut out, end);
-            key(&mut out, "angle");
+            out.extend_from_slice(b"[0,");
             num(&mut out, object.angles.first().copied().unwrap_or(0.0));
-            key(&mut out, "length");
+            out.extend_from_slice(b",0,");
             num(&mut out, object.lengths.first().copied().unwrap_or(0.0));
-            out.push(b'}');
+            out.extend_from_slice(b",0,0,0,0,0,1,1,0]");
         } else {
             let mut shapes: Vec<&Item> = items.iter().copied().filter(|item| !matches!(item.kind, ItemKind::Poly | ItemKind::Mesh)).collect();
             shapes.sort_by_key(|item| item.index);
