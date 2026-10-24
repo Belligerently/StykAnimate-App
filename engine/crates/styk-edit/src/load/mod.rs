@@ -24,6 +24,7 @@ mod legacy;
 mod movieclip;
 mod object;
 mod scene;
+mod sheet;
 
 use styk_doc::{Obj, Value};
 
@@ -48,6 +49,8 @@ pub struct Prepared {
     pub figure_names: Vec<(f64, FigureName)>,
     /// The poses of each figure on the native timeline (`tracks`).
     pub tracks: Vec<Track>,
+    /// Whether the document stored a frame draft (`_styk.simpleFrameDraft`) when it was opened.
+    pub saved_draft: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -117,7 +120,18 @@ pub fn prepare_editor_load(document: Value) -> Result<Prepared, EditError> {
     let mut report = or(get(Some(&document), "document"), or(get(Some(&document), "report"), Some(&document))).cloned().unwrap_or(Value::Null);
     movieclip::graph(&report)?;
     let indexes = prepare(&mut report)?;
-    Ok(Prepared { report, ..indexes })
+    let saved_draft = truthy(path(Some(&report), &["_styk", "simpleFrameDraft"]));
+    Ok(Prepared { report, saved_draft, ..indexes })
+}
+
+/// What the app's editor does to a document it opens: [`prepare_editor_load`], then, when the editor has a
+/// layer timeline, the layer sheet it gives every document (`initializeLayerSheet`).
+pub fn prepare_for_editor(document: Value, layer_timeline: bool) -> Result<Prepared, EditError> {
+    let mut prepared = prepare_editor_load(document)?;
+    if layer_timeline {
+        sheet::initialize(&mut prepared.report)?;
+    }
+    Ok(prepared)
 }
 
 /// A value at `steps` of `root`, mutably: object keys and array slots.
@@ -381,5 +395,6 @@ fn index(report: &mut Value, sources: Vec<Value>, mut next_frame_identity: f64) 
         layer_groups: groups,
         figure_names: names,
         tracks,
+        saved_draft: false,
     })
 }

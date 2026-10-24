@@ -13,7 +13,7 @@
 //!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
 //!                                         on a document, called directly and through an edit
 //!                                         session's JSON (as the app calls it)
-//!   styk load <file> [--input out.json] [--output out.json] [--indexes out.json]
+//!   styk load <file> [--layer-timeline] [--input out.json] [--output out.json] [--indexes out.json]
 //!                                         the editor's load normalization (engine/tools/load-private.mjs compares it)
 //!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
 //!                                         (engine/tools/records-reference.mjs wrote the folder)

@@ -1,7 +1,8 @@
-//! `styk load <file> [--input out.json] [--output out.json] [--indexes out.json]`: decode a document
+//! `styk load <file> [--layer-timeline] [--input out.json] [--output out.json] [--indexes out.json]`: decode a document
 //! and run the editor's load normalization on it (`styk_edit::load`), as the editor's `prepareEditorLoad`
 //! does. `--input` writes the decoded document as JSON (what the editor's load receives), `--output` the
-//! normalized report and `--indexes` the indexes the editor builds from it; `engine/tools/load-private.mjs`
+//! normalized report and `--indexes` the indexes the editor builds from it; `--layer-timeline` gives the
+//! document the layer sheet the app's editor gives it when it publishes it; `engine/tools/load-private.mjs`
 //! compares them with the JavaScript's on private documents. Prints one JSON line with the timings and the
 //! SHA-256 of the output. Exit code 1 when the load is refused (the line says with which message key).
 
@@ -33,7 +34,7 @@ pub fn load(path: &str, rest: &[String]) -> i32 {
             std::fs::write(&out, json::to_string(&document)).map_err(|e| format!("{out}: {e}"))?;
         }
         let started = Instant::now();
-        let prepared = match styk_edit::load::prepare_editor_load(document) {
+        let prepared = match styk_edit::load::prepare_for_editor(document, rest.iter().any(|a| a == "--layer-timeline")) {
             Ok(prepared) => prepared,
             Err(error) => return Ok((format!("{{\"file\":{path:?},\"decodeMs\":{decode_ms:.1},\"loadMs\":{:.1},\"refused\":{:?}}}", ms(started), error.to_string()), false)),
         };
