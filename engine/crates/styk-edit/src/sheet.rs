@@ -145,9 +145,17 @@ pub(crate) struct Plan {
     pub(crate) next_frame: u64,
     /// Figure definitions the command adds (`assets.figure_types.added`).
     pub(crate) definitions: Vec<Value>,
+    /// The document's figure definitions, which a drawing layer's one-cel check reads.
+    pub(crate) figures: Value,
 }
 
 impl Plan {
+    /// Whether the figure definition `type_id` (the document's or one the command adds) is a drawing cel.
+    fn is_drawing(&self, type_id: Option<f64>) -> bool {
+        let Some(type_id) = type_id else { return false };
+        items(Some(&self.figures)).iter().chain(self.definitions.iter()).find(|figure| num(figure, "figure_type_id") == Some(type_id)).is_some_and(|figure| figure.path(&["_styk", "drawing"]).is_some_and(Value::truthy))
+    }
+
     /// The same sheet state used by publication and virtual motion previews.
     fn state(&self, check: &mut impl FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
         check()?;
@@ -330,8 +338,12 @@ impl Plan {
         }
         let layers = Some(&self.layers);
         let owned = |uid: Option<f64>| uid.is_some_and(|u| layer_of(layers, u as u32) == id);
+        // A drawing layer holds at most one figure per key, and it is a drawing cel.
         if layers.and_then(|l| l.path(&["byId", id, "drawing", "version"])).and_then(Value::as_f64) == Some(1.0) {
-            return Err(EditError::Unported("poses on a drawing layer".into()));
+            let mine: Vec<Value> = objects_of(frame).into_iter().filter(|o| owned(num(o, "unique_id"))).collect();
+            if mine.len() > 1 || mine.iter().any(|o| !self.is_drawing(num(o, "figure_type_id"))) {
+                return Err(EditError::Invalid("errors.editorLayerSheet.drawingLayersAcceptOneDrawingCelAtA".into()));
+            }
         }
         let empty = options.blank || (!fixed(id) && !objects_of(frame).iter().any(|o| owned(num(o, "unique_id"))) && !continuations(frame).iter().any(|step| owned(num(step, "uid"))));
         let value = if empty {
@@ -702,19 +714,13 @@ impl Editor {
         self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection, None, None)
     }
 
-    /// [`Editor::commit_sheet_range_with`] for figures a command inserted (`payload.objects`;
-    /// `paste` for a paste): movieclips alone inside a layer's span become replacements of
-    /// their own, and a pasted movieclip is keyed at the playhead rather than on a held key.
-    pub(crate) fn commit_sheet_insertion(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState, payload: &[Value], paste: bool) -> Result<bool, EditError> {
-        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection, Some((payload, paste)), None)
-    }
-
     /// `_commitSheetRange(plans, payload, label, selection)`: each planned frame `(tick, frame,
     /// changed)` keyed on the layers owning its changed figures (a held cell at its key unless
     /// auto key is on), the figures in `inserted` first assigned to their layer (`hints` first),
     /// `definitions` added with it. Unlike a gesture's commit, nothing else of a frame is
     /// compared: the operation names what it changed. `payload`: the figures an insertion
-    /// added and whether it pastes them (see [`Editor::commit_sheet_insertion`]). `deletion`:
+    /// added and whether it pastes them: movieclips alone inside a layer's span become replacements of
+    /// their own, and a pasted movieclip is keyed at the playhead rather than on a held key. `deletion`:
     /// the figures a deletion removes and each plan's frame before it; where a movieclip
     /// instance is among them, they leave as replacements by nothing.
     #[allow(clippy::too_many_arguments)]
@@ -939,6 +945,7 @@ impl Editor {
             layers,
             next_frame: self.next_frame_identity,
             definitions: Vec::new(),
+            figures: self.report.get("figure_types").cloned().unwrap_or(Value::Null),
         })
     }
 
@@ -948,7 +955,7 @@ impl Editor {
         self.publish_geometry(plan, label, selection, retained, false)
     }
 
-    fn publish_geometry(&mut self, plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, retain_geometry: bool) -> Result<bool, EditError> {
+    pub(crate) fn publish_geometry(&mut self, plan: Plan, label: &str, selection: crate::select::SelectionState, retained: Option<Value>, retain_geometry: bool) -> Result<bool, EditError> {
         self.publish_checked(plan, label, selection, retained, retain_geometry, &mut || Ok(()))
     }
 

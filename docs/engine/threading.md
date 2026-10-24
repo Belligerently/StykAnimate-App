@@ -146,14 +146,14 @@ in `styk-wasm` (`plan_layers`, `plan_inbetweens`; a job's errors are told apart 
 engine does not make yet, an ordinary error carrying the editor's message key for a refusal)
 and `src/engine/engine-planning.mjs`.
 
-The app routes both jobs through `createStagePlayback` (`planLayerMigration`,
-`planInsertInbetweens`): it checks that the engine holds the editor's revision, then plans on
-the engine's workers. A host without worker threads (D7), a document the engine refused and a
-plan answered `EngineUnported` (an in-between on a layer sheet, or of authored poses with
-camera-motion or effect clips) are planned on the interface thread instead, in slices of a few
-milliseconds, by the editor's own planners (`planOnInterface`), which stay the oracle the
-engine's plans are recorded against (`engine/tests/layer-migration`,
-`layer-sheet-migration`, `inbetween`).
+The app routes the in-between job through `createStagePlayback` (`planInsertInbetweens`): it checks that the
+engine holds the editor's revision, then plans on the engine's workers. A host without worker threads (D7), a
+document the engine refused and a plan answered `EngineUnported` (an in-between on a layer sheet, or of authored
+poses with camera-motion or effect clips) are planned on the interface thread instead, in slices of a few
+milliseconds, by the editor's own planner (`planOnInterface`), the oracle the engine's plans are recorded against
+(`engine/tests/inbetween`). Nothing in the interface opens the in-between dialog any more, so this is the only
+caller. The layer-move job (`plan_layers`) has none: the session plans and publishes a layer move itself
+(`styk-edit/src/layer_membership.rs`, docs/LAYER-MIGRATION.md).
 
 Mobile pin compatibility: `Engine::stage` now returns a checked result,
 `PlanError::Unported` carries an owned `String`, and `FrameData::tick` changes from `u32`

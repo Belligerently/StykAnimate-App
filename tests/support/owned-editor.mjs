@@ -3,13 +3,19 @@ import assert from 'node:assert/strict';
 import {Editor} from '../../src/editor.mjs';
 import {installEngineOwner} from '../../src/engine/engine-owner.mjs';
 
-/** `verify`: the session's document is compared with the editor's after every call.
+/** The editor on `document` with the engine owning it (the engine must be registered: `tests/support/register-engine.mjs`).
+ * `verify`: the session's document is compared with the editor's after every call.
  * `recorded`: the identities a call draws come from the test (`setDraws`), else from the editor's own random ones. */
-export async function ownedEditor(options, document, {verify = true, recorded = true} = {}) {
+export function ownedEditorSync(options, document, {verify = true, recorded = true} = {}) {
   const editor = new Editor(options).load(structuredClone(document));
   let pool = [];
   const owner = installEngineOwner(editor, {verify, draws: recorded ? () => pool : null});
   // The session exists from the moment the document opens: the app starts it as it loads the document.
   assert.ok(owner.ready(), 'the document has its session');
   return {editor, owner, setDraws: draws => { pool = draws; }};
+}
+
+/** [`ownedEditorSync`] for tests that wait for it. */
+export async function ownedEditor(options, document, settings) {
+  return ownedEditorSync(options, document, settings);
 }

@@ -142,7 +142,7 @@ impl Editor {
     }
 
     /// `finishGesture(editor)`: an open property edit or gesture is committed first.
-    fn finish_gesture(&mut self) -> Result<(), EditError> {
+    pub(crate) fn finish_gesture(&mut self) -> Result<(), EditError> {
         if self.property_edit.is_some() {
             self.commit_animation_edit()?;
         }

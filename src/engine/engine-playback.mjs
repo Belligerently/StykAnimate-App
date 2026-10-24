@@ -7,7 +7,7 @@
  * overlay, and a key the stage recognises. A packet is available (`get`) once the engine has the frame ready.
  */
 import {messageError} from '../localized-error.mjs';
-import {planEngineLayerMigration, planEngineInbetweens, planOnInterface, isUnported} from './engine-planning.mjs';
+import {planEngineInbetweens, planOnInterface, isUnported} from './engine-planning.mjs';
 import {holdsRevision} from './engine-open.mjs';
 
 /** Keys of engine packets: the stage renderer draws these with the engine. */
@@ -213,8 +213,7 @@ export function createStagePlayback({stage, maxTickets}) {
         flushControls();
       }
     },
-    // The editor's background planning jobs: on the engine's workers for the document it holds.
-    planLayerMigration(request, options) { return planning('layers', request, options); },
+    // The editor's background planning job: on the engine's workers for the document it holds.
     planInsertInbetweens(request, options) { return planning('inbetweens', request, options); },
     dispose() {
       pendingHidden = pendingEffects = pendingRequest = null;
@@ -230,15 +229,14 @@ export function createStagePlayback({stage, maxTickets}) {
   const planning = async (kind, request, options = {}) => {
     const document = report;
     if (!document) {
-      const label = kind === 'layers' ? ['errors.playbackPlanning.layerMigrationLabel', 'layer migration'] : ['errors.playbackPlanning.inbetweenInsertionLabel', 'insert inbetween'];
-      throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value: {messageKey: label[0], diagnosticValue: label[1]}});
+      throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value: {messageKey: 'errors.playbackPlanning.inbetweenInsertionLabel', diagnosticValue: 'insert inbetween'}});
     }
     const planned = report, plannedRevision = revision;
     // The engine plans the document its session holds; a revision it does not hold leaves the plan to the interface.
     if (report === planned && revision === plannedRevision && held()) {
       const isCurrent = () => report === planned && revision === plannedRevision && (options.isCurrent?.() ?? true);
       try {
-        return await (kind === 'layers' ? planEngineLayerMigration : planEngineInbetweens)(side().engine, plannedRevision, request, {...options, isCurrent});
+        return await planEngineInbetweens(side().engine, plannedRevision, request, {...options, isCurrent});
       } catch (error) {
         if (!isUnported(error)) throw error;
       }

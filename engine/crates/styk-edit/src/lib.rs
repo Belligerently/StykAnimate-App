@@ -15,8 +15,10 @@
 mod audio;
 mod authored;
 mod builder;
+mod drawing_structure;
 mod duplicate_drag;
 mod bounds;
+mod camera_bake;
 mod camera_commands;
 mod camera_motion;
 mod figure_clipboard;
@@ -30,6 +32,7 @@ mod handle_edit;
 mod history;
 mod ik;
 mod ik_settings;
+mod layer_membership;
 mod layers;
 pub mod inbetween_planning;
 pub mod load;
@@ -286,6 +289,9 @@ pub struct Editor {
     pub(crate) draws: std::collections::VecDeque<(String, Value)>,
     /// The draws are a pool taken by kind, not the editor's recorded sequence (D19).
     pub(crate) draw_pool: bool,
+    /// Drawing cels a call copied, `(old cel, new cel)`: the pixels of the old one belong to the new one too, which the
+    /// interface (it holds the pixels) is told with the call's answer.
+    pub(crate) drawing_forks: Vec<(String, String)>,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -407,6 +413,7 @@ impl Editor {
             vfx_clip_clipboard: None,
             draws: Default::default(),
             draw_pool: false,
+            drawing_forks: Vec::new(),
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -903,6 +910,15 @@ impl Editor {
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
             "importSceneBackground" => self.import_scene_background(&arg(0), &arg(1)),
             "renameSceneBackground" => self.rename_scene_background(&arg(0), &arg(1)).map(Value::Bool),
+            "assignFiguresToLayer" => self.assign_figures_to_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteLayer" => self.delete_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "createDrawingLayer" => self.create_drawing_layer(&arg(0)),
+            "addDrawingFrame" => self.add_drawing_frame(&arg(0), &arg(1)),
+            "nextDrawing" => self.next_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "extendDrawing" => self.extend_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "drawingKey" => self.drawing_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "autoKeyDrawing" => self.auto_key_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "bakeCameraMotion" => self.bake_camera_motion(&arg(0)).map(Value::Bool),
             "setSpatialCamera" => self.set_spatial_camera(&arg(0)).map(Value::Bool),
             "setSpatialProportions" => self.set_spatial_proportions(&arg(0)).map(Value::Bool),
             "resetSpatialProportions" => self.reset_spatial_proportions().map(Value::Bool),

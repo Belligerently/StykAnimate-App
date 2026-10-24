@@ -9,7 +9,7 @@ import {Editor} from '../src/editor.mjs';
 import {applyDocumentChunk} from '../src/document-transport.mjs';
 import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
 import {openingSession} from '../src/engine/engine-owner.mjs';
-import {planEngineInbetweens, planEngineLayerMigration, isUnported} from '../src/engine/engine-planning.mjs';
+import {planEngineInbetweens, isUnported} from '../src/engine/engine-planning.mjs';
 
 const skip = engineBuilt ? false : 'the engine is not built (npm run engine:build)';
 const nativeJson = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' ? undefined : item);
@@ -101,14 +101,10 @@ for (const name of inbetweens) test(`the adapter plans the in-between fixture th
   assert.equal(nativeJson(await run), nativeJson(reference.payload.plan));
   assert.ok(progress.length >= 1);
 });
-test('the adapter reads a plan the engine does not make as unported, and a layer move as the editor words it', {skip}, async () => {
+test('the adapter reads a plan the engine does not make as unported, and a stale document as aborted', {skip}, async () => {
   const sheet = read('layer-sheet-migration/combined'), options = {layerTimeline: true, propertyChannels: false};
   const {engine, revision} = await engineHolding(sheet, options);
   assert.ok(isUnported(await failure(() => planEngineInbetweens(driven(engine), revision, {ratio: .5, indices: [1], nextFrameIdentity: 99}))));
-  assert.equal(nativeJson(await planEngineLayerMigration(driven(engine), revision, sheet.request)), nativeJson(sheet.payload.plan));
-  const missing = read('layer-sheet-migration/missing-layer'), held = await engineHolding(missing, options);
-  const error = await failure(() => planEngineLayerMigration(driven(held.engine), held.revision, missing.request));
-  assert.equal(error.messageKey, missing.failure.messageKey);
   const stale = await failure(() => planEngineInbetweens(driven(engine), revision + 1, {ratio: .5, indices: [1], nextFrameIdentity: 99}));
   assert.equal(stale.name, 'AbortError'); assert.match(stale.message, /animation changed/);
 });

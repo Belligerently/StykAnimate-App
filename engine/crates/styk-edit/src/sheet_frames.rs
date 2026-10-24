@@ -71,14 +71,14 @@ pub(crate) fn shift_clip_time(frame: &Value, delta: f64) -> Value {
 }
 
 impl Editor {
-    fn list(&self, ids: &Value) -> Vec<String> {
+    pub(crate) fn list(&self, ids: &Value) -> Vec<String> {
         match ids.elements() {
             Some(ids) => ids.iter().filter_map(|id| id.as_str().map(str::to_string)).collect(),
             None => vec![self.active_layer()],
         }
     }
 
-    fn tick_or_playhead(&self, tick: &Value) -> f64 {
+    pub(crate) fn tick_or_playhead(&self, tick: &Value) -> f64 {
         if tick.is_null() { self.tick } else { tick.as_f64().unwrap_or(f64::NAN) }
     }
 
@@ -379,7 +379,7 @@ impl Editor {
     }
 
     /// `sheetSpan(id, tick)`: the exposure around `tick`, as `{start, end}`.
-    fn sheet_span(&self, id: &str, tick: f64) -> (f64, f64) {
+    pub(crate) fn sheet_span(&self, id: &str, tick: f64) -> (f64, f64) {
         let track = self.report.path(&["_styk", "layerSheet", "tracks", id]);
         let keys = items(track.and_then(|t| t.get("keys")));
         let at = key_at(&keys, tick);

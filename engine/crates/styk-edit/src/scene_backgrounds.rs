@@ -4,7 +4,17 @@
 
 use styk_doc::{Obj, Value};
 
+use crate::history::{Command, CommandKind, Direction};
 use crate::{EditError, Editor};
+
+/// What a `scene` history entry changed in the background table.
+#[derive(Clone, Debug)]
+pub enum Change {
+    /// A background taken in at its index.
+    Added(Value),
+    /// Fields of the entry at its index, before (absent ones as none) and after.
+    Fields { before: Vec<(String, Option<Value>)>, after: Vec<(String, Value)> },
+}
 
 fn invalid(key: &str) -> EditError {
     EditError::Invalid(key.into())
@@ -76,9 +86,7 @@ impl Editor {
         }
         let chosen = Value::object(chosen);
         self.movieclip_batch("Import scene background", move |editor| {
-            let mut table: Vec<Value> = editor.report.get("backgrounds").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-            table.push(imported.clone());
-            editor.set_background_table(table, "Import background asset")?;
+            editor.add_background(imported.clone(), "Import background asset")?;
             editor.set_scene_background(&Value::Num(id), Some(&chosen))?;
             Ok(editor.report.get("backgrounds").and_then(Value::elements).and_then(|e| e.iter().find(|asset| asset.get("background_id").and_then(Value::as_f64) == Some(id))).unwrap_or(Value::Null))
         })
@@ -104,17 +112,77 @@ impl Editor {
         if self.drag.is_some() {
             self.commit_drag()?;
         }
-        let mut renamed = backgrounds;
-        let mut asset = renamed[index].as_obj().cloned().unwrap_or_default();
+        let previous = backgrounds[index].get("name").cloned();
+        let mut asset = backgrounds[index].as_obj().cloned().unwrap_or_default();
         asset.set("name", Value::str(&name));
-        renamed[index] = Value::object(asset);
-        self.set_background_table(renamed, "Rename background")?;
+        self.table_mut()?[index] = Value::object(asset);
+        let change = Change::Fields { before: vec![("name".to_string(), previous)], after: vec![("name".to_string(), Value::str(&name))] };
+        self.record_scene(index, change, "Rename background")?;
         Ok(true)
     }
 
-    /// The background table replaced, as one history entry that touches no frame.
-    fn set_background_table(&mut self, table: Vec<Value>, label: &str) -> Result<bool, EditError> {
-        self.set_fields(label, vec![("backgrounds", Value::array(table))], false)
+    /// The background table (`report.backgrounds ??= []`).
+    fn table_mut(&mut self) -> Result<&mut Vec<Value>, EditError> {
+        let report = self.report.make_obj().ok_or_else(|| EditError::Unported("a document that is not an object".into()))?;
+        if !report.get("backgrounds").is_some_and(|table| !table.is_null()) {
+            report.set("backgrounds", Value::array(Vec::new()));
+        }
+        report.get_mut("backgrounds").and_then(Value::make_arr).ok_or_else(|| EditError::Unported("a background table that is not a list".into()))
+    }
+
+    /// A background added at the end of the table, as one history entry that touches no frame.
+    fn add_background(&mut self, asset: Value, label: &str) -> Result<(), EditError> {
+        let index = self.table_mut()?.len();
+        self.table_mut()?.push(asset.clone());
+        self.record_scene(index, Change::Added(asset), label)
+    }
+
+    fn record_scene(&mut self, index: usize, change: Change, label: &str) -> Result<(), EditError> {
+        let selection = self.selection_state();
+        self.record(Command { kind: CommandKind::Scene { index, change }, label: label.into(), before_selection: selection.clone(), after_selection: selection, before_revision: 0, after_revision: 0, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false })?;
+        self.emit("edit", vec![("label", Value::str(label)), ("scene", Value::Bool(true))]);
+        Ok(())
+    }
+
+    /// `_applyCommand` for a `scene` entry (`_applySceneSnapshot`).
+    pub(crate) fn apply_scene_command(&mut self, command: &Command, direction: Direction) -> Result<(), EditError> {
+        let CommandKind::Scene { index, change } = &command.kind else { return Ok(()) };
+        let table = self.table_mut()?;
+        match (change, direction) {
+            (Change::Added(asset), Direction::After) => {
+                if *index < table.len() { table[*index] = asset.clone() } else { table.insert((*index).min(table.len()), asset.clone()) }
+            }
+            (Change::Added(_), Direction::Before) => {
+                if *index < table.len() {
+                    table.remove(*index);
+                }
+            }
+            (Change::Fields { before, after }, direction) => {
+                if let Some(mut asset) = table.get(*index).and_then(Value::as_obj).cloned() {
+                    match direction {
+                        Direction::Before => {
+                            for (key, value) in before {
+                                match value {
+                                    Some(value) => asset.set(key, value.clone()),
+                                    None => {
+                                        asset.remove(key);
+                                    }
+                                }
+                            }
+                        }
+                        Direction::After => {
+                            for (key, value) in after {
+                                asset.set(key, value.clone());
+                            }
+                        }
+                    }
+                    table[*index] = Value::object(asset);
+                }
+            }
+        }
+        self.revision = if direction == Direction::Before { command.before_revision } else { command.after_revision };
+        self.emit("history", vec![("label", Value::str(&command.label)), ("scene", Value::Bool(true))]);
+        Ok(())
     }
 }
 
