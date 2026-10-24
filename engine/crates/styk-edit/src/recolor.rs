@@ -22,7 +22,7 @@ pub(crate) fn to_uint32(x: f64) -> u32 {
 }
 
 /// `x | 0`.
-fn to_int32(x: f64) -> i32 {
+pub(crate) fn to_int32(x: f64) -> i32 {
     to_uint32(x) as i32
 }
 
@@ -116,13 +116,13 @@ pub(crate) fn uses_segment_colors(version: f64, figure: &Value, object: &Value) 
 }
 
 /// `color(raw).rgb`: a native colour (`0xAABBGGRR`) as bytes.
-fn native_rgb(raw: f64) -> [f64; 3] {
+pub(crate) fn native_rgb(raw: f64) -> [f64; 3] {
     let n = to_uint32(raw);
     [(n & 255) as f64, (n >> 8 & 255) as f64, (n >> 16 & 255) as f64]
 }
 
 /// `mixColor(base, raw)`: the override blended over a colour by its alpha.
-fn mix_color(base: [f64; 3], raw: f64) -> [f64; 3] {
+pub(crate) fn mix_color(base: [f64; 3], raw: f64) -> [f64; 3] {
     let k = (to_uint32(raw) >> 24) as f64;
     if k == 0.0 {
         return base;

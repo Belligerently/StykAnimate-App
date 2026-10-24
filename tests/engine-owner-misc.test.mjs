@@ -1,4 +1,4 @@
-// Calls the engine session used to refuse and the editor ran (docs/engine/editing.md): each runs in the session now,
+// Calls the engine session used to refuse or had no command for, which the editor ran (docs/engine/editing.md): each runs in the session now,
 // on an editor the engine owns and on a plain one, over a repository document that reaches the case. The documents,
 // history labels and undo and redo agree step by step, and nothing is refused or run in the editor.
 import '../engine/tools/v8-pin.mjs';
@@ -262,5 +262,55 @@ test('what cannot be disconnected is refused with the editor\'s message', {skip:
     note('the part is a whole figure now', [editor.canDisconnectSegment(), attempt(() => editor.disconnectSegment())]);
     editor.select(1); editor.select(1, jointOf(editor, 'Head')); editor.setLayerLocked(editor.layerForUid(1), true);
     note('locked layer', attempt(() => editor.disconnectSegment()));
+  });
+});
+
+/** A document of two joined figures (a curved bone, a fill with an opacity, a scaled and tinted child), as a file holds one: every figure in its keyframe. */
+function joinedFiguresDocument({outside = false} = {}) {
+  const editor = new Editor({demo: false});
+  editor.addFigure(); editor.markSaved();
+  const root = editor.selectedUid;
+  editor.select(root, 2); editor.updateSegment({bend_rad: 0.5});
+  editor.addPolygon([0, 7, 9], {color: '#e24491', opacity: 0.5});
+  const child = editor.duplicateFigure().unique_id; editor.updateObject({scale: 0.6, color_override_raw: 0x80224466});
+  editor.joinTo(root, 4); editor.select(root);
+  let parent = null;
+  if (outside) {
+    // The group hangs from a figure outside it.
+    parent = editor.duplicateFigure().unique_id;
+    editor.select(root); editor.joinTo(parent, 0);
+  }
+  return {document: editor.serialize(), root, child, parent};
+}
+
+test('combining joined figures makes one figure that draws as they did, and undoes, like the editor does', {skip: !engineBuilt}, async () => {
+  for (const outside of [false, true]) {
+    const {document, root} = joinedFiguresDocument({outside});
+    const {plain} = await bothWays(document, sheet, async (editor, note) => {
+      editor.select(root); note('before');
+      const combined = editor.combineJoinedFigure(root, {name: 'Merged rig'});
+      note('combined', [combined.unique_id, combined.join, editor.figure.name, editor.figure.segments.length, editor.figure.polyfills.length, editor.undoLabel,
+        editor.evaluatedFrame.objects.map(object => [object.unique_id, object.figure_type_id, object.join?.target_unique_id])]);
+      assert.equal(editor.undoLabel, 'Combine joined figures');
+      assert.equal(editor.figure.name, 'Merged rig');
+      assert.equal(editor.figure.segments.length, 20);
+      await unwind(editor, note, 1);
+    });
+    assert.notEqual(plain.steps.find(step => step.label === 'combined').document, plain.steps[0].document, 'the combine changed the document');
+  }
+});
+
+test('what cannot be combined is refused with the editor\'s message', {skip: !engineBuilt}, async () => {
+  const {document, root, child} = joinedFiguresDocument();
+  await bothWays(document, sheet, async (editor, note) => {
+    note('an unknown figure', attempt(() => editor.combineJoinedFigure(child + 100)));
+    editor.select(root); editor.updateObject({field28: 40});
+    note('translucent', attempt(() => editor.combineJoinedFigure(root)));
+    editor.updateObject({field28: 0});
+    editor.setLayerLocked(editor.layerForUid(root), true);
+    note('locked', attempt(() => editor.combineJoinedFigure(root)));
+    editor.setLayerLocked(editor.layerForUid(root), false);
+    editor.select(child); editor.unjoinFigure(); editor.select(root);
+    note('nothing joined', attempt(() => editor.combineJoinedFigure(root)));
   });
 });

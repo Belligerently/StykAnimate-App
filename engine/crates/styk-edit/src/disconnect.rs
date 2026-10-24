@@ -66,6 +66,27 @@ impl Change {
     }
 }
 
+/// What the command splits off and where: the selected figure, its segment and the branch below it, and the poses that show it.
+struct Cut {
+    /// The figure's definition, the selected segment and the identity of the instance.
+    figure: Value,
+    segment: Value,
+    id: u32,
+    /// The handle the segment hangs from, the handles of its branch and their indices in the definition.
+    base: f64,
+    part: HashSet<u64>,
+    indices: Vec<usize>,
+    /// Which fills move with the part, and whether the part paints behind the rest.
+    moves: Vec<bool>,
+    behind: bool,
+    /// Whether another instance shares the definition, which is then forked first.
+    shared: bool,
+    /// Every pose (keyframe or pose source) that shows the instance.
+    locations: Vec<Place>,
+    /// The name of the new figure: the segment's own, else the figure's with "part".
+    name: Option<String>,
+}
+
 /// `trimPose(object, keep)`: the pose vectors of the segments kept.
 fn trim_pose(object: &mut Value, keep: &[usize]) {
     let Some(record) = object.make_obj() else { return };
@@ -228,12 +249,14 @@ impl Editor {
             frame_at(&self.report, place).is_some_and(|frame| objects_of(frame).iter().any(|o| num(o, "figure_type_id") == Some(type_id) && uid(o) != Some(id)))
         });
         let name = segment.get("name").filter(|n| n.truthy()).and_then(Value::as_str).map(str::to_string);
-        self.movieclip_batch("Disconnect segment", |editor| editor.disconnect_in_batch(&figure, segment_count, &segment, id, base, behind, shared, &locations, &part, &moves, &indices, name))
+        let cut = Cut { figure, segment, id, base, part, indices, moves, behind, shared, locations, name };
+        self.movieclip_batch("Disconnect segment", |editor| editor.disconnect_in_batch(&cut))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn disconnect_in_batch(&mut self, figure: &Value, _segment_count: usize, segment: &Value, id: u32, base: f64, behind: bool, shared: bool, locations: &[Place], part: &HashSet<u64>, moves: &[bool], indices: &[usize], name: Option<String>) -> Result<Value, EditError> {
+    fn disconnect_in_batch(&mut self, cut: &Cut) -> Result<Value, EditError> {
         const LABEL: &str = "Disconnect segment";
+        let Cut { figure, segment, id, base, part, indices, moves, behind, shared, locations, name } = cut;
+        let (id, base, behind, shared) = (*id, *base, *behind, *shared);
         if self.next_uid > 0x7fff_fffe {
             return Err(invalid("errors.editorLayerSheet.objectIdentityCapacityReached"));
         }
@@ -253,7 +276,7 @@ impl Editor {
         let mut piece = figure.as_obj().cloned().unwrap_or_default();
         piece.set("figure_type_id", Value::Num(next_type));
         let title = match name {
-            Some(name) => name,
+            Some(name) => name.clone(),
             None => {
                 let figure_name = figure.get("name").filter(|n| n.truthy()).and_then(Value::as_str).unwrap_or("Figure");
                 format!("{figure_name} part")

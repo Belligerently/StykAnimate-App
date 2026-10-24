@@ -22,6 +22,7 @@ mod bounds;
 mod camera_bake;
 mod camera_commands;
 mod camera_motion;
+mod combine;
 mod camera_views;
 mod figure_clipboard;
 mod figure_transform;
@@ -1115,6 +1116,7 @@ impl Editor {
             "deleteSelection" | "deleteFigure" => self.delete_selection().map(Value::Bool),
             "duplicateFigure" => self.duplicate_figure(),
             "disconnectSegment" => self.disconnect_segment(),
+            "combineJoinedFigure" => self.combine_joined_figure(args.first(), args.get(1)),
             "undo" => self.undo().map(Value::Bool),
             "redo" => self.redo().map(Value::Bool),
             other => Err(EditError::Unported(other.to_string())),
