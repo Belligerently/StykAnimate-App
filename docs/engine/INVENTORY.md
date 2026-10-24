@@ -18,8 +18,8 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-eval` | 83 | 763 KiB | 26 | 47 | 9 | 0 | 1 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 42 % | 0 % |
 | `styk-formats` | 59 | 760 KiB | 28 | 5 | 1 | 22 | 3 | 63 % | 8 % | 6 % |
-| `styk-render` | 51 | 330 KiB | 16 | 9 | 3 | 0 | 23 | 8 % | 54 % | 0 % |
-| **Total** | 358 | 3561 KiB | 149 | 120 | 31 | 23 | 35 | 22 % | 48 % | 1 % |
+| `styk-render` | 51 | 327 KiB | 15 | 9 | 3 | 0 | 24 | 8 % | 55 % | 0 % |
+| **Total** | 358 | 3558 KiB | 148 | 120 | 31 | 23 | 36 | 22 % | 48 % | 1 % |
 
 ## Engine modules
 
@@ -338,7 +338,7 @@ Engine logic: ported to Rust.
 | `src/canvas-color-sample.mjs` | `styk-render` | js |  |
 | `src/canvas-raster-refinement.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/editable-scene-preparation.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
-| `src/even-odd-fill.mjs` | `styk-render` | js |  |
+| `src/even-odd-fill.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine triangulates its fills |
 | `src/gpu-startup.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/gpu-timing.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/onion-surface-cache.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
