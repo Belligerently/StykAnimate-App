@@ -18,8 +18,9 @@ async function fixture(count=3, prefix=17, layerTimeline=true) {
   const meta={version:1,sourceOffset:100,byteLength:buffer.byteLength-prefix};
   const document={...emptyDocument(),figure_types:[],keyframes:[]};
   await materializeNativeFrames({document,nativeFrames:meta},buffer,prefix);
-  const snapshot=nativePlaybackSnapshot(document,buffer,prefix,meta);
+  // The engine opens the document: the report the editor holds is not the object that was given to it.
   const editor=new Editor({demo:false,propertyChannels:true,layerTimeline});editor.load(document);
+  const snapshot=nativePlaybackSnapshot(editor.report,buffer,prefix,meta);
   return {editor,report:editor.report,snapshot,buffer,meta,prefix};
 }
 

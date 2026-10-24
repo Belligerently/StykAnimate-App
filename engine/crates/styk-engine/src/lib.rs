@@ -23,17 +23,18 @@
 #[cfg(test)]
 mod allocation;
 pub mod anchors;
+pub mod document;
 pub mod edit;
 pub mod export;
 mod frames;
 mod images;
-pub mod mirror;
 pub mod planning;
-pub mod session;
 mod publication;
 pub use publication::PublicationRetirement;
+mod store;
 mod sync;
 pub mod thumbnails;
+pub use store::Committed;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -102,8 +103,7 @@ pub struct Generation {
 }
 
 impl Generation {
-    /// Ticks that can be evaluated: none while a mirrored document has its figure
-    /// definitions but not yet its frames.
+    /// Ticks that can be evaluated: none for a document without keyframes.
     pub fn playable_ticks(&self) -> u32 {
         if self.prepared.doc.keyframes.is_empty() { 0 } else { self.prepared.total_ticks }
     }
@@ -139,18 +139,14 @@ struct State {
 
 struct Inner {
     state: Shared<State>,
-    /// Changes staged for the next commit.
-    staged: Shared<mirror::transfer::Staged>,
-    record_slots: Arc<std::sync::atomic::AtomicUsize>,
-    record_budget: Arc<mirror::transfer::Budget>,
-    mirror: std::sync::Mutex<mirror::Mirror>,
+    /// The document in front (store.rs).
+    store: std::sync::Mutex<store::Store>,
     clock: Clock,
     next_generation: AtomicU64,
     stopping: AtomicBool,
     progress: std::sync::atomic::AtomicU32,
     notifier: Option<Notifier>,
     planning: Shared<Option<Arc<planning::Core>>>,
-    session: Shared<Option<Arc<session::Core>>>,
 }
 
 /// The engine. Cheap to clone; every clone is the same engine.
@@ -175,17 +171,13 @@ impl Engine {
                     tasks: Default::default(),
                     retained_tasks: Default::default(),
                 }),
-                staged: Shared::new(Default::default()),
-                record_slots: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-                record_budget: Arc::new(Default::default()),
-                mirror: Default::default(),
+                store: Default::default(),
                 clock,
                 next_generation: AtomicU64::new(1),
                 stopping: AtomicBool::new(false),
                 progress: std::sync::atomic::AtomicU32::new(0),
                 notifier,
                 planning: Shared::new(None),
-                session: Shared::new(None),
             }),
         }
     }
@@ -224,13 +216,10 @@ impl Engine {
     /// Makes `generation` the open document and queues the decoding of its images
     /// that the previous revision did not already have. Returns its id.
     pub(crate) fn publish(&self, generation: Generation) -> u64 {
-        self.publish_record(generation, None).expect("an unguarded publication cannot be refused")
-    }
-
-    pub(crate) fn publish_record(&self, generation: Generation, guard: Option<(mirror::RecordGuard, Arc<AtomicBool>)>) -> Option<u64> {
-        let (id, retirement, ()) = self.publish_with(generation, guard, &mut Some(|| ()))?;
+        let (id, retirement) = self.install_generation(generation);
+        // What the replaced generation held is dropped on a worker, never on the interface thread.
         if retirement.needs_worker() { self.spawn_retained(move |_| drop(retirement)); }
-        Some(id)
+        id
     }
 
     /// Runs `task` in the background: on a worker inside [`Engine::work`], or on the
@@ -277,9 +266,13 @@ impl Engine {
 
     /// Asks every worker to return from [`Engine::work`].
     pub fn stop(&self) {
-        session::cancel_current(self);
         planning::cancel_current(self);
-        self.stop_record_batches();
+        {
+            let mut state = self.inner.state.lock();
+            // Workers return once the flag is set, so a decode being prepared must not be installed after it.
+            state.images.cancel_preparation();
+            self.inner.stopping.store(true, Ordering::SeqCst);
+        }
         self.inner.state.notify_all();
     }
 
@@ -289,7 +282,6 @@ impl Engine {
         loop {
             if self.inner.stopping.load(Ordering::SeqCst) {
                 // Cancellation retains cleanup until a worker runs it.
-                if session::service_current(self) { continue; }
                 let task = detach_task(&mut self.inner.state.lock().retained_tasks);
                 if let Some(mut node) = task { node.pop_front().expect("detached task")(self); self.notify_progress(); continue; }
                 return;
@@ -303,9 +295,7 @@ impl Engine {
     /// Runs one unit of background work on the calling thread, if there is any.
     /// A host without worker threads calls this between its own tasks.
     pub fn step(&self) -> bool {
-        session::expire_current(self);
         planning::expire_current(self);
-        if session::service_current(self) { return true; }
         let job = {
             let mut state = self.inner.state.lock();
             if let Some(task) = detach_task(&mut state.retained_tasks) {

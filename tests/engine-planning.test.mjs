@@ -167,16 +167,18 @@ test('a retired in-between job reads as the editor words it, and an engine that 
 });
 
 function routedPlayback({threaded = true, plan = null, refuse = null} = {}) {
-  let current = null; const calls = [];
+  let published = 0; const calls = [];
   const engine = {threaded, workers: 1, progressSeen: () => 0, whenProgress: async () => {}, pump() {}, handle: {
-    try_set_hidden: () => 1, try_set_effects: () => 1, generation: () => 1,
+    try_set_hidden: () => 1, try_set_effects: () => 1, generation: () => 1, try_document_identity: () => [1, 1, published],
     plan_inbetweens(revision, request) { calls.push({revision, request: JSON.parse(request)}); if (refuse) throw refuse; return plan(); },
     plan_layers(revision, request) { calls.push({revision, request: JSON.parse(request)}); if (refuse) throw refuse; return plan(); }}};
-  const side = {engine, eligibility: {check: () => null}, drawingUnpublished: () => false,
-    mirror: {stats: {}, async syncFrames(report, revision) { current = {report, revision}; }, framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
+  const side = {engine, eligibility: {check: () => null}, drawingUnpublished: () => false};
   // The JavaScript playback cache is not asked: it has no planning of its own.
   const legacy = {report: null, load(next) { legacy.report = next; return legacy; }, dispose() {}, invalidate() {}, setVfxEnabled() {}};
-  return {playback: createStagePlayback(legacy, {stage: () => ({engineSide: side})}), calls, legacy};
+  const playback = createStagePlayback(legacy, {stage: () => ({engineSide: side})}), load = playback.load;
+  // The engine's session has published the revision the playback is loaded at.
+  playback.load = (next, options) => { published = options?.revision ?? published; return load(next, options); };
+  return {playback, calls, legacy};
 }
 const planJob = payload => () => {
   const chunks = documentChunks(payload, {maxBytes: 64 * 1024, maxRecords: 128, timeBudgetMs: 2}); let sequence = 0, awaiting;

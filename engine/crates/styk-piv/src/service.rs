@@ -271,6 +271,14 @@ impl Codec {
                 let kind = if result.starts_with(wire::MAGIC) { wire::CONTENT_TYPE } else { JSON };
                 Ok(Response { status: 200, headers: vec![header("Content-Type", kind)], body: result })
             }
+            ("POST", "/api/source/keep") => {
+                let name = query_value(&query, "filename", "imported.piv");
+                if body.len() > self.limit(&name) {
+                    return Err(too_large());
+                }
+                let kept = self.store.keep_upload(ctx, body, &name, header_value("x-styk-source-owner"))?;
+                Ok(json_response(200, &kept))
+            }
             ("POST", "/api/export") => {
                 let started = self.store.clock.as_ref().map_or(0.0, |clock| clock());
                 if body.len() > self.limits.max_document {

@@ -1,46 +1,27 @@
-//! What the planning tests share: a mirrored engine holding a recorded document, and the
+//! What the planning tests share: an engine holding a recorded document, and the
 //! editor's own way to apply a transport packet to the report being received.
 #![allow(dead_code)]
 use styk_doc::{Value, json};
-use styk_engine::{
-    Budgets, Engine,
-    mirror::{Change, Record, Table},
-};
+use styk_engine::document::{OpenOptions, OpenSource};
+use styk_engine::{Budgets, Engine};
 
 pub fn clock() -> f64 {
     0.0
 }
 
-/// An engine whose acknowledged mirror holds `tree` at revision 1, as the app's mirror sync
-/// leaves it.
+/// An engine that holds `tree` at revision 1, as the app's session leaves it once the document is open.
 pub fn engine_with(tree: &Value) -> Engine {
     let engine = Engine::new(clock, Budgets::for_device(None));
-    let mut properties = tree.as_obj().unwrap().clone();
-    for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-        properties.remove(table.key());
-    }
-    engine.stage(0, Change::Reset).unwrap();
+    let text = json::to_string(tree);
+    let opened = engine.open_document(OpenSource::Json { bytes: text.as_bytes(), name: "planning" }, OpenOptions::default(), &|| false).unwrap();
+    engine.activate(&opened.typed, &opened.tree, 1).unwrap();
     engine
-        .stage(0, Change::Properties(json::to_string(&Value::object(properties)).into_bytes()))
-        .unwrap();
-    for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-        let values = tree.get(table.key()).unwrap().elements().unwrap();
-        engine.stage(0, Change::Layout(table, vec![-1; values.len()])).unwrap();
-        for (i, value) in values.iter().enumerate() {
-            engine
-                .stage(
-                    0,
-                    Change::Set(
-                        table,
-                        i as u32,
-                        Record { skeleton: json::to_string(&value).into_bytes(), arrays: vec![], payloads: vec![] },
-                    ),
-                )
-                .unwrap();
-        }
-    }
-    engine.commit(1, 0).unwrap();
-    engine
+}
+
+/// The same document published again at `revision`: a newer revision of the engine's document.
+pub fn republish(engine: &Engine, revision: u64) {
+    let lineage = engine.generation().unwrap().lineage;
+    engine.publish_tree(lineage, engine.stored().unwrap().1, revision).unwrap().unwrap();
 }
 
 fn parent_mut<'a>(value: &'a mut Value, path: &[Value]) -> &'a mut Value {

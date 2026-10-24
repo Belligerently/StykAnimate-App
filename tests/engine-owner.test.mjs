@@ -10,7 +10,7 @@ import {withDraws} from '../src/editor-draws.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {sampleMotionPath} from '../src/motion-path.mjs';
-import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
+import {engineBuilt} from './support/engine-node.mjs';
 import {isAppMarker, recordedBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
 
 const folder = new URL('../engine/tests/edit/', import.meta.url);
@@ -46,22 +46,11 @@ const decode = value => Array.isArray(value) ? value.map(decode) : value === nul
   : isAppMarker(value) ? recordedBounds(value) : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
   : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
 
-/** An editor the engine owns, its session started on the editor's document as it is. */
-export async function ownedEditor(options, document, {verify = true, mirrored = false} = {}) {
-  const {engine, mirror} = await nodeEngine();
+/** An editor the engine owns: its document opened on the engine, which also holds the session that edits it. */
+export async function ownedEditor(options, document, {verify = true} = {}) {
   const editor = new Editor(options).load(structuredClone(document));
   let pool = [];
-  const stateOf = e => JSON.stringify({tick: e.tick, frameIndex: e.frameIndex, selectedUid: e.selectedUid ?? null,
-    selectedUids: [...e.selectedUids], selectedJoint: e.selectedJoint ?? -1, activeLayerId: e.activeLayerId, autoKey: Boolean(e.autoKey),
-    layerRevision: e.layerRevision, nextFrameIdentity: e._nextFrameIdentity, nextUid: e._nextUid,
-    propertyChannels: Boolean(e.propertyChannels), layerTimeline: Boolean(e.layerTimeline)});
-  // As in the app: the session starts on the mirrored document (the stage's), once it is current.
-  if (mirrored) { mirror.reset(); await mirror.syncFrames(editor.report, editor.revision, {allFigures: true, allFrames: true, allSources: true}); }
-  const owner = installEngineOwner(editor, {
-    verify, draws: () => pool,
-    start: e => mirrored ? (mirror.framesCurrent(e.report, e.revision) ? engine.handle.edit_session(stateOf(e)) : null)
-      : engine.editSession(json(e.report), stateOf(e), e.revision),
-  });
+  const owner = installEngineOwner(editor, {verify, draws: () => pool});
   return {editor, owner, setDraws: draws => { pool = draws; }};
 }
 
@@ -76,17 +65,16 @@ const same = (actual, wanted, message) => {
 };
 const scenarios = readdirSync(folder).filter(name => name.endsWith('.scenario.json') && (!process.env.OWNER_TAPE || name.startsWith(`${process.env.OWNER_TAPE}.`))).sort();
 // Legacy Pivot poses carry an empty `runtime_segments` cache (styk-piv's legacy decoder):
-// the same tapes with it on every pose, started from the mirror, the cache compared too.
+// the same tapes with it on every pose, the cache compared too.
 const withCache = document => {
   const copy = structuredClone(document);
   for (const frame of [...copy.keyframes ?? [], ...Object.values(copy._styk?.frameSources ?? {})]) for (const object of frame.objects ?? []) object.runtime_segments ??= [];
   return copy;
 };
 const full = value => JSON.stringify(value, (key, item) => key === '_movieclipSample' ? undefined : item);
-// As in the app: started from the mirror; with Pivot's cache on every pose (it changes
-// nothing for the editor where poses lack it).
-const variants = [{mirrored: false}, {mirrored: true, legacy: true}];
-for (const {mirrored, legacy} of variants) test(`the engine owning the document matches the editor alone on every recorded tape${mirrored ? ', started from the mirror' : ''}${legacy ? ', with legacy pose caches' : ''}`, {skip: !engineBuilt}, async () => {
+// With Pivot's cache on every pose (it changes nothing for the editor where poses lack it).
+const variants = [{legacy: false}, {legacy: true}];
+for (const {legacy} of variants) test(`the engine owning the document matches the editor alone on every recorded tape${legacy ? ', with legacy pose caches' : ''}`, {skip: !engineBuilt}, async () => {
   const json = legacy ? full : plainJson;
   let tapes = 0, steps = 0, native = 0, fallback = 0;
   const editorCalls = {}, refusedCalls = {};
@@ -99,7 +87,7 @@ for (const {mirrored, legacy} of variants) test(`the engine owning the document 
     const options = {demo: false, ...scenario.editor};
     let expected;
     try { expected = new Editor(options).load(structuredClone(document)); } catch { continue; }
-    const {editor: owned, owner, setDraws} = await ownedEditor(options, document, {mirrored});
+    const {editor: owned, owner, setDraws} = await ownedEditor(options, document);
     for (const editor of [expected, owned]) editor.autoKey = Boolean(scenario.editor?.autoKey);
     let drawn = 0;
     const source = kind => { drawn++; return kind === 'uuid' ? `d0d0d0d0-0000-4000-8000-${String(drawn).padStart(12, '0')}` : kind === 'seed' ? Math.imul(drawn, 0x9e3779b1) >>> 0 : (Math.imul(drawn, 0x9e3779b1) >>> 0) / 2 ** 32; };

@@ -48,7 +48,8 @@ import {editorHandleCommandMethods} from './editor-handle-commands.mjs';
 import {editorInbetweenMethods} from './editor-inbetween.mjs';
 import {editorFrameDraftMethods, validateSimpleFrameDraft, installFrameDraftPreflights} from './editor-frame-draft.mjs';
 import {repairTopologyStyles, topologyAnimationPatch, reverseGradientEndpoints} from './editor-style-topology.mjs';
-import {prepareEditorLoad, prepareEditorLoadAsync} from './editor-load.mjs';
+import {prepareEditorLoad} from './editor-load.mjs';
+import {prepareLoad, prepareLoadNow} from './engine/engine-open.mjs';
 import {editorInbetweenAsyncMethods} from './editor-inbetween-async.mjs';
 import {editorOriginMutationMethods,originGeometryChanged} from './editor-origin-mutations.mjs';
 import {invalidateAnimationOriginLayout,animationOriginOffset,animationRotation,reflectAnimationOriginOffset} from './animation-origin.mjs';
@@ -58,7 +59,7 @@ import {applySparseClipboardFrames} from './editor-clipboard-sparse.mjs';
 import {animationHistoryBytes} from './animation-history.mjs';
 import {editorIKMethods} from './editor-ik.mjs';
 import {editorMovieclipMethods, applyMovieclipCommand} from './editor-movieclips.mjs';
-import {editorLayerSheetMethods, initializeLayerSheet, applyLayerSheetCommand} from './editor-layer-sheet.mjs';
+import {editorLayerSheetMethods, applyLayerSheetCommand} from './editor-layer-sheet.mjs';
 import {validateLayerSheet} from './layer-sheet.mjs';
 import {isMovieclip, invalidateMovieclipTypes,movieclipSourceFrames,snapshotFigureDefinition} from './movieclips.mjs';
 import {hasPinnedIK, translateIKTargets, remapIKFollowers, ikChain} from './ik.mjs';
@@ -480,7 +481,7 @@ export class Editor extends EventTarget {
   }
   load(document, name, options = {}) {
     this._loadRequestId = (this._loadRequestId ?? 0) + 1;
-    return this._publishLoadedReport(prepareEditorLoad(document), name, options);
+    return this._publishLoadedReport(prepareLoadNow(document, {layerTimeline: this.layerTimeline}), name, options);
   }
   async loadAsync(document, name, options = {}) {
     const report = document?.document ?? document?.report ?? document;
@@ -497,7 +498,7 @@ export class Editor extends EventTarget {
           draftRevision!==this.frameDraftRevision || draftEnabled!==this._frameDraftEnabled)
         throw messageError(new DOMException('', 'AbortError'), "errors.editor.theDocumentChangedWhileImporting", {});
     };
-    const prepared = await prepareEditorLoadAsync(document,{...options,checkCurrent});
+    const prepared = await prepareLoad(document,{...options,layerTimeline:this.layerTimeline,checkCurrent});
     checkCurrent();
     if(options.prepareScene){
       const started=performance.now(),initial=initialLoadState(prepared.report,options,draftEnabled),row=initial.timeline[initial.frameIndex];
@@ -523,7 +524,8 @@ export class Editor extends EventTarget {
     this._vfxClipEdit=null;this._selectedVfxClip=null;this._selectedVfxKey=null;
     this._movieclipScopes=[];
     this._sheetSelection=null;this._sheetPropertyPreview=null;
-    if(this.layerTimeline)initializeLayerSheet(report);
+    // The engine opened the document: its layer sheet is in it, and the session that edits it is started from the opening.
+    this._opening?.dispose();this._opening=prepared.opening??null;
     this.report = report; this.name = name?.replace(/\.(piv|stk|styk)$/i, '') || report._styk?.name || 'Untitled animation';
     this._documentToken = {};
     this.frameIndex = index; this.tick = 0; this.selectedUid = report.keyframes[index].objects[0]?.unique_id ?? null; this.selectedJoint = -1;

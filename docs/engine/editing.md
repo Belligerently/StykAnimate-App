@@ -7,8 +7,9 @@ changing the interface or breaking the app at any commit. The plan is
 
 ## Where it starts
 
-The editor owns the document as JavaScript objects and runs every command; the
-engine mirrors it ([document.md](document.md), [D12](decisions/0012-document-mirror.md)).
+The editor owned the document as JavaScript objects and ran every command; the engine
+mirrored it ([D12](decisions/0012-document-mirror.md), superseded: the engine opens the document and
+the session publishes it, [document.md](document.md)).
 Commands mutate records copy-on-write, record history entries (records before
 and after), and emit change events the interface listens to.
 
@@ -248,11 +249,8 @@ then publishes the document; restoration must preserve that ordering.
 
 `Session::prepare_worker_history` and `prepare_worker_call_values` operate on the same
 worker-owned editor. `PreparedPublication::guard_worker_checked` validates the original
-report, selection, counters and history before exchanging heads. Engine publication
-pairs that exchange with the acknowledged mirror generation. Its opaque
-`EditPublicationAdmission` retains canonical roots and their shared byte charge through
-terminal ACK, cancellation or refusal. This is a prerequisite for the durable actor;
-it does not make the current interface-thread Session a worker actor.
+report, selection, counters and history before exchanging heads. Nothing in the engine calls it any
+more (see the removed worker-hosted Session below).
 
 Recorded origin sheet motion paths use `Editor::motion_display_frame_worker` for the
 editor's transient display read while the canonical shown-frame owner remains unchanged.
@@ -299,131 +297,20 @@ Evaluation also adds `MovieclipSource`, `Document::movieclip_source` and
 `Frame`/`Keyframe::retained_vfx_tick`. These portable fields keep cropped source clocks
 and inherited effect evaluation intact; downstream struct literals need the new fields.
 
-### Quiet actor and exclusive live capability (2026-10-04)
+### The worker-hosted Session (removed)
 
-The Engine's existing Core can own one moved Session. Quiet requests prepare on workers,
-stream bounded packets, and wait for packet and readiness acknowledgements. Final
-publication exchanges the canonical Engine and editor heads under the same State and
-cancellation guard. Committed quiet and live requests retain displaced roots and their
-admission charge until terminal ACK, including cancellation after publication. Close
-retires them on the owning worker.
-Fresh bootstrap preserves loaded revision/serial/saved counters; attaching
-an existing Session preserves its history and exact warm checkpoint. Unsupported warm,
-clipboard, live, metadata and absent-field states refuse before transfer or mutation.
-
-`prepareFreshEditWorker` and `projectWorker` are explicit asynchronous host primitives,
-with no app call-site or document-class activation. Project controls admit at most three
-existing scalar fields from the original Fields/history owner. They keep the old host
-root behind a dependent-query barrier, then accept the actual committed identity before
-exchanging scalar slots. Busy reads preserve that root. The same finite progress wait
-retries lock contention without fabricating progress or resubmitting a command. Every
-Ready attempt checks cancellation and view ownership; cancellation after an actual
-commit cannot roll back or replay it. Postcommit host failure retires the worker owner.
-
-Separately, consuming `Session::into_worker` produces the portable exclusive
-`WorkerSession` capability. Its private identity and operation epoch guard prepared live
-operations using the same editor, publication, history, source and SceneBudget owners.
-The actual editor's working document and shown frame remain separate. Ten ordinary
-native/sheet lifecycle tapes compare all 115 calls, complete returns, state, events,
-display, exported history fields/weights and runtime flags. Eight recorded native
-`propertyChannels:true` tapes now also match all 93 calls through the same exclusive
-worker and Core owner; their original options are preserved. Five asynchronous
-preflight tapes remain evidence for a future protocol, not admitted live calls. This
-capability is coupled to Core's portable `Handle::submit_live` for the twelve recorded
-methods. It remains outside browser ready/shown tickets and app writer transfer.
-
-Core moves the same Session into its WorkerSession capability during initialization,
-attachment and detachment. Working-only operations exchange the editor/display heads
-without publishing a stored Mirror root or rebuilding its Loader. Actual history
-revision changes publish the stored root even when the committed JSON is identical.
-Each ready display and displaced display uses the same SceneBudget reservation.
-Quiet undo/redo after a live gesture uses that same display owner. Ready is a raw/typed
-Frame and Scene here; no encoded DrawList or actual Stage presentation is certified.
-After terminal ACK, the current ready display remains alive and its raw record stays
-charged to the SAME receiver reservation. Admission counts current, canonical,
-prepared and response raw heads as one shared union before cloning. It grows only the
-positive delta, then shrinks to the actual current raw head after worker disposal of
-all detached aliases. `Arc::get_mut` supplies the hard uniqueness barrier including
-Weak aliases. New preparation returns Busy before Session mutation while an alias
-survives; existing drop-first retirement wakes only the original Core, including idle
-request-zero recovery, without polling or another queue. Close/no-ready releases the
-charge after the physical ready drop. The receiver cap remains 1 GiB, separate from
-128 MiB editing/materialization. This covers receiver/current-ready raw storage;
-Editor history/clipboards, typed/encoded ownership, physical union and leases remain open.
-
-`WorkerSession::prepare_worker_history` is the additive portable history entry point;
-`Handle::submit_live` adds portable Core submission. Existing browser bindings do not
-activate it. Preserve complete return values, events, history and displayed frames from
-the recorded oracle rather than substituting the editor's working document for display.
-
-The private native property projector adopts the original scalar curve through the
-existing marker/source, Draft, Records, typed channel sampler and Animation/history
-owners. Recorded automatic easing, rotation winding and source ordering are preserved.
-The recorded worker-only lifecycle now dispatches through the existing checked native
-owner, AuthoredDrag and guarded publication; legacy calls and wider native combinations
-remain refused. Cold baseline/presence/typed preparation
-between cancellation checks is not certified as bounded dense work.
-The additive `Records::pose_source_frame(id, native_index)` lookup preserves retained
-source precedence. A row hint requires verified unique native frame identities; raw or
-unvalidated records must use `None` for first-match semantics.
-
-The Session's single response builder borrows the existing worker check callback only
-for worker preparation. Original host cancellation/Invalid/Unported errors escape that
-preparation even if a later callback succeeds; recorded editor Invalid stays canonical
-JSON. Legacy calls keep the same serializer and dispatcher. Complete original returns,
-actual displayed records, exported history and source/cancel lifecycle are compared.
-
-Portable offline tool addition: `replay::replay_session_live_worker(&Value, &Value)`
-consumes one fresh Session and checks its actual initial document/state/history/display/
-runtime before the first call, then every prepared and guarded step. Counters must be
-lossless nonnegative whole JavaScript integers; counts also fit platform `usize` before
-casts. `styk edit-replay --live-worker <session> <returns> [pairs...]` exits nonzero for
-any refusal, mismatch or invalid pair. Its original recordings are separate immutable
-inputs; foreign warm history is not fabricated. This adds a portable replay API for the
-mobile pin and worker command support; browser capability/class gates are unchanged.
-
-`mirror::{WorkerPublication, WorkerEditPublication}` provide an opaque scoped worker
-candidate. Preparation retains the same Mirror guard, CommitMarker and Loader, and
-exposes borrowed access to the exact prebuilt Generation/Assets before the existing
-final State exchange. `prepare_record_publication_worker` and
-`prepare_edit_publication_worker` use that owner; existing commit methods delegate to
-it. Commit consumes it once and returns worker retirements; cancellation, stop, stale
-generation or disposal preserve the old heads and leave callbacks uncalled. Working
-displays borrow the current generation; actual history revision changes still publish
-when stored JSON is identical. This adds portable APIs for the mobile pin, with no
-ACK-spanning guard, Core ready-storage change or browser adoption.
-
-The additive opt-in `prepare_edit_typed_publication_worker` pairs the actual Editor
-WorkerFrame Scene with candidate Assets using `GuardedPublication::typed_cache_worker`.
-Its opaque `GuardedTypedCache` borrows the same guarded after-Cache report, Loader and
-Prepared; it cannot be supplied from another host or independently compiled Scene.
-The raw layerSheet must be an object, the actual Prepared must have a typed sheet and
-the existing checked layer planner must admit its descriptors. Malformed or missing
-sheets refuse atomically. All typed heads and the SceneBudget lineage must match;
-image namespace and imported glyph identity are preserved, including working-only
-operations whose guarded after report differs from the acknowledged stored root.
-The displaced typed Loader is retired on the worker through the existing publication
-retirement. These three additive APIs are platform neutral for the mobile pin.
-
-Recorded namespace and glyph operations compare the complete editor observations;
-native/nested figure import and background import remain explicit refusals. The ordinary
-independent-loader publication API and Core route are unchanged. Actual encoded
-Ready/Shown adoption still needs this opt-in capability connected to the existing worker
-owner; pairing is not Stage, release or whole-document D7 certification.
-
-Portable mobile pin additions: `RevisionCounters`, `Session::{start_worker_prepared,
-revision,history_checkpoint_worker,into_worker}`, `WorkerSession`, `WorkerPrepared`,
-`WorkerFrame`, `PreparedPublication::{revision,project_fields_response_worker}`,
-`RetainedScene`, `RetainedScene::scene`, `SceneBudget::retain_worker`; the Engine
-`session` module's `Stamp`, `Epochs`, `Phase`, `Error`, `Success`, `Packet`, `Poll`,
-`FreshHistory`, `Handle` and Engine attach/detach/fresh-session methods. Browser
-`EditWorker` and typed Busy bindings remain in `styk-wasm`. Exclusive app writer
-transfer, bounded live transport, cold query ordering, actual ready/shown/resource ACK
-and complete disposal remain required before class adoption or deletion.
+An earlier route moved one Session onto the engine's worker (the "quiet actor": bounded packets,
+acknowledgements, a paired publication of the engine's and the editor's heads). D19 superseded it: the
+Session lives on the interface thread and publishes the document it changes itself
+([document.md](document.md#opening-a-document)). The engine's side of that route (its `session` module,
+the staged-record transfer, the guarded publications) and the interface's (`engine-session-worker.mjs`,
+`engine-project-worker.mjs`) are deleted. `styk-edit` still has the worker-side entry points they called
+(`Session::start_worker_prepared`, `into_worker`, `PreparedPublication`, `styk edit-replay --live-worker`)
+with their tests, and nothing in the engine or the app calls them.
 
 ## Status of phase 1
 
-`engine/crates/styk-edit` holds an `Editor` over the report as the mirror receives it, with
+`engine/crates/styk-edit` holds an `Editor` over the document the engine holds, with
 the playhead, the selection, the gesture in progress and a history of its own (for the
 harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 <reference.json>…` and `cargo test -p styk-edit` replay every recording in
@@ -582,10 +469,6 @@ document difference the harness can see):
 - **`runtime_segments`** of legacy Pivot poses are read by the range operations (lengths and
   bends materialized before a transform, and by geometry): the facade keeps those calls in the
   editor for documents whose keyframes carry them.
-- **`runtime_segments`** are not in the engine's copy (the mirror strips them). The
-  editor's history snapshots keep them, so on a native timeline a gesture that moves a
-  figure with `runtime_segments` and puts it back is a change in JavaScript and none in
-  the engine. On a layer sheet a commit compares poses without them, as the engine does.
 - **The history byte budget** (`historyBytes`) is not ported; the engine's history trims
   by count (80 entries) only. Phase 1 keeps the app's history in JavaScript.
 - **Validation**: a published sheet is checked as `validateLayerSheetChanges` checks it
@@ -1079,27 +962,27 @@ the default until then).
 - **History.** Undo/redo are the session's. The editor's stacks mirror the session's
   (`depths`): its own commands for external entries, placeholders for native ones, so code
   that reads or amends the entry on top keeps working.
-- **Start.** In the app the session starts on the stage's mirrored document (it reuses the
-  stage's prepared views); `@shape` then brings key order and what the mirror leaves out
-  (audio) to the read view exactly. History the editor recorded before the session started
-  is taken over with `@externalStacks`. Sessions of documents open in other tabs are kept.
+- **Start.** The session starts when the document opens, on the tree and typed views the engine
+  opened it with (`OpenedDocument.start_session`), the same tree the editor's read view was built
+  from, so there is no history to take over and nothing to bring to the read view. It becomes the
+  engine's document when the editor publishes it (`EditSession.activate`); the engine publishes each
+  change it makes ([document.md](document.md#opening-a-document)). Sessions of documents open in other
+  tabs are kept.
 - **Legacy pose caches.** Pivot imports carry `runtime_segments` on every pose; the range
   operations materialize lengths and bends from it before dropping it, as the editor does.
 
 Checks: `tests/engine-owner.test.mjs` replays every recorded tape (325) on the editor alone
-and on an owned editor, from the exact document and from the mirror (there with the legacy
-pose cache on every pose), comparing document,
+and on an owned editor, with and without the legacy
+pose cache on every pose, comparing document,
 selection, history and the frame on show after every step and after undoing everything,
 with the session's document compared to the read view after every call.
-`node scripts/engine-app-tape.mjs --owner <tape…>` does the same in the running app, and
-`node scripts/engine-owner-cost.mjs <file>` measures the editing cost rule.
+`node scripts/engine-app-tape.mjs --owner <tape…>` does the same in the running app.
 Known differences: the frame on show may lack the derived `object_count` the editor's
 caches sometimes keep, and the internal `layerRevision` cache key can differ by one around
 source pruning; neither is visible.
 
 Still to come: the frame on show, handles and picking as engine queries (phase 2), the
-remaining refusals ported, the stage committing the session's tree instead of the mirror,
-and opening and saving through `styk-formats` and `styk-piv` directly.
+remaining refusals ported, and saving through `styk-formats` and `styk-piv` directly.
 
 ## Invariants
 

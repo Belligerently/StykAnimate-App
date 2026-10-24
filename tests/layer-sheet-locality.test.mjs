@@ -59,6 +59,8 @@ test('materializing a retained key twice reuses its owned copy and source',()=>{
 
 test('local publication skips unchanged key validation while explicit validation still traverses it',()=>{
   const editor=fixture(),key=editor.report._styk.layerSheet.tracks['layer-2'].keys.at(-1),easing=key.interpolation;
+  // The engine validated the document as it opened it: the editor's own checks have not seen it yet.
+  validateLayerSheet(editor.report);
   let reads=0;Object.defineProperty(key,'interpolation',{enumerable:true,configurable:true,get(){reads++;return easing;}});
   editor.sheetInsertKey(['layer-1'],5);
   assert.equal(reads,0,'An unrelated far-away key must not be revalidated by a local command.');

@@ -1177,6 +1177,7 @@ dependencies = [
  "styk-edit",
  "styk-eval",
  "styk-formats",
+ "styk-piv",
  "thiserror",
 ]
 

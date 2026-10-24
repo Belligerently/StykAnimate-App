@@ -81,8 +81,9 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   (`whenProgress(seen, timeoutMs)`): both waitAsync and polling use the
   requested timeout (default and ceiling 250 ms; cache/project retries
   use 16 ms). An idle lock can release without publishing progress. A timeout
-  rechecks readiness without changing the counter. The mirror's commit only tries the
-  mirror's lock (`Engine::try_commit`, [document.md](document.md)).
+  rechecks readiness without changing the counter. Publishing the document (`Engine::activate`,
+  `publish_tree`, [document.md](document.md)) takes the document's lock only for pointer exchanges;
+  a worker that reads the document (a planner, an edit session starting) tries it once.
 - No rayon in WebAssembly: `styk_eval::par::map` is sequential there;
   parallelism is whole frames on workers.
 - Library code has no clock, file or thread of its own: the host injects a
@@ -130,55 +131,10 @@ images methods, `frame_ready_at`, `frame_metadata`, `generation_for_frame_epoch`
 header owner; no document returns zero identity, while contention returns Busy.
 Existing integer and explicit worker preparation APIs remain available.
 
-The quiet Session actor described in [editing.md](editing.md#quiet-actor-and-exclusive-live-capability-2026-10-04)
-uses bounded UI controls and worker-owned preparation/retirement. Its deferred registry
-and final cancellation/expiry checks share existing task and State owners. The guarded
-quiet payload charge stays with the worker until terminal ACK, including cancellation
-after publication. Portable Core live submission now uses the same exclusive Session,
-display and final State guard. Current ready remains alive after terminal ACK and keeps
-its SAME raw receiver charge. Detached raw aliases keep the full union reserved until
-worker physical disposal; the original-Core drop-first wake then rescopes current-only.
-Hard uniqueness defers preparation without self-polling. Close/no-ready drops physical
-ready before releasing the charge. Actual typed/encoded physical union, renderer release
-and shutdown still need their owning protocol; the receiver remains 1 GiB.
-This scoped foundation does not certify live Stage preparation, all renderer last-owner
-drops, global stop or no-thread pumping.
-
-The scoped `mirror::WorkerPublication` candidate holds the existing blocking Mirror
-guard only on its worker. It is consumed or disposed before an ACK; no candidate guard
-is placed in State, a UI handle, Core ready storage or a browser binding. Exact prebuilt
-Generation/Assets borrowing enables subsequent worker encoding without first exposing
-the new head. Final authorization and head exchange use the original State owner.
-The opt-in guarded typed capability now pairs the recorded actual WorkerFrame glyph
-Scene and image namespace with the same after-Cache Loader/Assets. The ordinary route
-and Core/Stage adoption are unchanged. The displaced Loader joins existing worker
-retirement. This prerequisite does not certify UI last-owner release, upload preparation,
-presentation or shutdown.
-
-The portable `styk_eval::drawlist::{retained_bytes_checked, RetainedBytesError}` helper
-observes the encoded payload on workers. It includes all seven buffer capacities,
-Arc layout padding, shared effect/paint payloads and unique glyph triangle slices;
-opaque effects and overflowing sizes refuse explicitly. The original Scene saturating
-accounting and logical eviction policy are unchanged. This helper has no runtime
-admission or readiness caller and is not a complete physical-memory bound. Frame,
-derived Figure, Prepared/Generation/Assets, mutable caches, scratch allocations and
-renderer ownership remain separate accounting and disposal obligations. See the
-owning [drawlist contract](../../engine/crates/styk-eval/src/drawlist/README.md).
-
-Private `eval::retained` observation additionally covers the explicitly visited Frame,
-derived Figure, style and typed effect children. Strong source Document/glyph owners seed
-one transient allocation identity set; the same checked DrawList/Resolved visitors count
-covered additional allocations. Actual System allocation IDs, sizes and thread IDs
-provide independent test evidence. Map layouts, mutable caches and unvisited source
-branches remain explicit gaps; cancellation or overflow provides no usable charge.
-There is no runtime caller, public descriptor, reservation, new budget or lease. Full
-Prepared/Generation/Assets union, scratch, renderer last-owner and shutdown still need
-owning proofs. See [the observation contract](../../engine/crates/styk-eval/src/eval/retained/README.md).
-
 `Engine::plan_layers(revision, LayerRequest)` and `Engine::plan_inbetweens(revision,
 InbetweenRequest)` use the existing worker task lane and return `LayerJob`: the editor's
 background planning jobs (a layer move; inserted in-betweens, `styk-edit/src/inbetween_planning.rs`),
-read-only against the acknowledged mirror. Polling gives bounded chunks and progress (the
+read-only against the document the engine holds. Polling gives bounded chunks and progress (the
 latest report only), ACK admits the next chunk, and cancellation, expiry or generation
 replacement retires the original job on workers. Native and sheet layer kernels and the
 in-between kernel share this protocol, and one job runs at a time (a second request cancels
@@ -191,7 +147,7 @@ engine does not make yet, an ordinary error carrying the editor's message key fo
 and `src/engine/engine-planning.mjs`.
 
 The app routes both jobs through `createStagePlayback` (`planLayerMigration`,
-`planInsertInbetweens`): it waits for the mirror to hold the editor's document, then plans on
+`planInsertInbetweens`): it checks that the engine holds the editor's revision, then plans on
 the engine's workers. A host without worker threads (D7), a document the engine refused and a
 plan answered `EngineUnported` (an in-between on a layer sheet, or of authored poses with
 camera-motion or effect clips) are planned on the interface thread instead, in slices of a few
@@ -233,14 +189,13 @@ bytes, are unchanged; the memory ends at most one step larger than the document 
 that are committed but untouched (opening tdd2 uriel nemesis: engine memory 1,071 to 1,183 MiB). The drawing module keeps the standard allocator: its memory
 grows in few, large steps.
 
-Measure it by opening a large Pivot file in Node (the codec import, and the mirror's commit in
-`EngineMirror.stats.lastCommitMs`) with and without the allocator, comparing CPU time as well as
+Measure it by opening a large Pivot file in Node (`engine-open.mjs`: the engine's open job and the
+read view) with and without the allocator, comparing CPU time as well as
 wall time: the cost of a grow rises with the machine's load.
 
 ## Testing
 
-`cargo test -p styk-engine` (scheduler, mirror, definitions-only commits, a commit
-the interface thread finds busy, export frames prepared ahead, thumbnail frames never
+`cargo test -p styk-engine` (scheduler, opening and publishing documents, export frames prepared ahead, thumbnail frames never
 evaluated by the thread asking); `node --test tests/engine-export.test.mjs` (the export
 worker's start, release and fallbacks); `node --test tests/engine-previews.test.mjs`
 (the preview worker's queue, cancellation, failure and idle release);

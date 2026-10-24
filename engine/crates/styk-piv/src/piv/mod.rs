@@ -43,6 +43,20 @@ pub(crate) fn unpack_source(source: &[u8]) -> PyResult<(Cow<'_, [u8]>, bool)> {
     }
 }
 
+/// The version byte of a project file's payload, read without inflating the rest of it.
+pub(crate) fn payload_version(source: &[u8]) -> PyResult<u8> {
+    if source.is_empty() {
+        return Err(piv("Empty project"));
+    }
+    let first = if (1..=5).contains(&source[0]) {
+        source[0]
+    } else {
+        let inflated = inflate(source, 1).map_err(|message| piv(format!("Invalid zlib project: {message}")))?;
+        *inflated.data.first().ok_or_else(|| piv("Truncated compressed project"))?
+    };
+    if (2..=5).contains(&first) { Ok(first) } else { Err(piv(format!("Unsupported Pivot version {first}"))) }
+}
+
 /// A decoded project file.
 pub(crate) struct Decoded<'a> {
     /// The report `piv_codec.decode_piv_bytes` returned (without the scalar-editor

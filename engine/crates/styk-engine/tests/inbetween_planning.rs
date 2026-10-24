@@ -1,11 +1,11 @@
 //! In-between planning on the engine's workers: the editor's plan over the existing bounded
 //! packet lane, a refusal in the editor's words, and cancellation or a newer document retiring
-//! the job without touching the mirror.
+//! the job without touching the document.
 use styk_doc::{Value, json};
 use styk_engine::{Engine, planning::InbetweenRequest, planning::PlanError};
 
 mod common;
-use common::{apply, engine_with};
+use common::{apply, engine_with, republish};
 
 struct Fixture {
     reference: Value,
@@ -23,7 +23,7 @@ fn load(name: &str) -> Fixture {
         next_frame_identity: request.get("nextFrameIdentity").unwrap().as_f64().unwrap() as u64,
     };
     let engine = engine_with(&tree);
-    // Whatever the commit of a document with channels leaves for the workers runs first.
+    // Whatever the publication of a document with channels leaves for the workers runs first.
     while engine.step() {}
     Fixture { engine, reference, request }
 }
@@ -42,7 +42,7 @@ fn the_worker_sends_the_editors_plan_in_acknowledged_packets() {
         let Fixture { reference, engine, request } = load(&name);
         let Some(expected) = reference.get("payload") else { continue };
         planned += 1;
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let generation = engine.generation().unwrap().id;
         let job = engine.plan_inbetweens(1, request).unwrap();
         assert!(job.poll().chunk.is_none(), "{name} must only enqueue on the caller");
@@ -68,7 +68,7 @@ fn the_worker_sends_the_editors_plan_in_acknowledged_packets() {
             assert!(packets < 10_000);
         }
         assert_eq!(json::to_string(&actual), json::to_string(expected), "{name}");
-        assert!(before.same_node(&engine.mirrored().unwrap().1), "planning only reads {name}");
+        assert!(before.same_node(&engine.stored().unwrap().1), "planning only reads {name}");
         assert_eq!(engine.generation().unwrap().id, generation);
         assert!(!engine.step(), "nothing is left queued for {name}");
         // Sampling, and for authored documents the animation, was reported on the way.
@@ -84,11 +84,11 @@ fn a_refusal_arrives_with_the_editors_message_key() {
     for name in names() {
         let Fixture { reference, engine, request } = load(&name);
         let Some(key) = reference.path(&["failure", "messageKey"]).and_then(Value::as_str) else { continue };
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let job = engine.plan_inbetweens(1, request).unwrap();
         engine.step();
         assert_eq!(job.poll().error, Some(PlanError::Invalid(key.to_string())), "{name}");
-        assert!(before.same_node(&engine.mirrored().unwrap().1));
+        assert!(before.same_node(&engine.stored().unwrap().1));
         assert!(!engine.step(), "{name}: nothing is left queued after the refusal");
     }
 }
@@ -98,7 +98,7 @@ fn cancellation_and_a_newer_document_retire_the_job() {
     for state in ["queued", "awaiting-ack"] {
         for change in ["cancel", "stale"] {
             let Fixture { engine, request, .. } = load("authored-independent");
-            let before = engine.mirrored().unwrap().1;
+            let before = engine.stored().unwrap().1;
             let job = engine.plan_inbetweens(1, request).unwrap();
             if state == "awaiting-ack" {
                 engine.step();
@@ -107,12 +107,12 @@ fn cancellation_and_a_newer_document_retire_the_job() {
             if change == "cancel" {
                 job.cancel()
             } else {
-                engine.commit(2, 0).unwrap();
+                republish(&engine, 2);
             }
             engine.step();
             let expected = if change == "cancel" { PlanError::Cancelled } else { PlanError::Stale };
             assert_eq!(job.poll().error, Some(expected), "{state} {change}");
-            assert!(before.same_node(&engine.mirrored().unwrap().1) || change == "stale");
+            assert!(before.same_node(&engine.stored().unwrap().1) || change == "stale");
             while engine.step() {}
         }
     }

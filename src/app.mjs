@@ -32,8 +32,9 @@ import { Editor } from "./editor.mjs";
 import { createRenderer as createScriptRenderer,worldToScreen,screenToWorld } from "./renderer.mjs";
 import { createStageRenderer } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
-import { installEditShadow, engineEditMode } from "./engine/engine-edit-shadow.mjs";
-import { installEngineOwner, engineOwnerMode, appSessionStart } from "./engine/engine-owner.mjs";
+import { installEngineOwner } from "./engine/engine-owner.mjs";
+import { loadEngine } from "./engine/engine.mjs";
+import { useEngine } from "./engine/engine-open.mjs";
 import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
@@ -197,6 +198,8 @@ const $ = (id) => document.getElementById(id),
           "'": "&#39;",
         })[c],
     );
+// The engine opens every document (src/engine/engine-open.mjs): it loads before the first one.
+useEngine(await loadEngine());
 const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: true }).newDocument(),
   desktop = window.stykDesktop,
   importer = new ImportClient(),
@@ -603,12 +606,8 @@ function syncShell() {
 }
 // The stage: the engine draws the documents it can, the JavaScript renderer the others (docs/RUST-ENGINE-PORT.md).
 const createRenderer = (surface, options) => createStageRenderer(surface, options, createScriptRenderer);
-// Ported editor calls run in the engine for the document classes it edits by default, or
-// for every document, or are compared with the editor's (docs/engine/editing.md).
-const engineEditing = engineEditMode();
-// D19: the engine owns the document (opt-in while it is verified in the app).
-if (engineEditing !== 'off' && engineOwnerMode()) globalThis.__stykEngineOwner = installEngineOwner(editor, {start: appSessionStart(() => state.renderer?.engineSide ?? null)});
-else if (engineEditing !== 'off') installEditShadow(editor, () => state.renderer?.engineSide ?? null, {mode: engineEditing});
+// D19: the engine owns the document; the editor's calls run in its session.
+globalThis.__stykEngineOwner = installEngineOwner(editor);
 const playback = createStagePlayback(new PlaybackCache({
   gpuIsolation: true,
   diagnostics:telemetry.performance,
@@ -3441,7 +3440,7 @@ async function acceptImport(
   try {
   let report = result.document ?? result.report ?? result;
   if (report.format === "stykanimate") report = report.document;
-  const savedDraft = Boolean(report._styk?.simpleFrameDraft);
+  const savedDraft = result.savedDraft ?? Boolean(report._styk?.simpleFrameDraft);
   const kind =
     result.kind ||
     ((name || result.filename || "").toLowerCase().endsWith(".stk")
@@ -3841,12 +3840,13 @@ async function importMediaFile(
 }
 async function chooseSticknodesFile(file,isCurrent=()=>true) {
   const onProgress=p=>{if(isCurrent())status(`${p.phase || interfaceText("app.importing2")}…`,false,true);};
-  let result=await importer.importFile(file,{onProgress,project:/\.piv$/i.test(file.name)});
+  const open={layerTimeline:editor.layerTimeline};
+  let result=await importer.importFile(file,{onProgress,open,project:/\.piv$/i.test(file.name)});
   if(!isCurrent()){void importer.releaseSource(result);return null;}
   if(result.kind==='sticknodes-archive'){
     const index=await dialogs.chooseSticknodesEntry(result.entries);
     if(index===null||!isCurrent())return null;
-    result=await importer.importFile(file,{entryIndex:index,onProgress});
+    result=await importer.importFile(file,{entryIndex:index,onProgress,open});
   }
   if(!isCurrent()){void importer.releaseSource(result);return null;}
   return result;
@@ -3952,7 +3952,7 @@ async function acceptNativeFileTracked(result) {
 async function openSample(path) {
   pause();
   status({messageKey: "app.decodingPivotFile", messageParams: {}}, false, true);
-  try { await acceptImport(await importer.openSample(path,{project:/\.piv$/i.test(path)})); } catch (error) { throw persistentFailure(error); }
+  try { await acceptImport(await importer.openSample(path,{open:{layerTimeline:editor.layerTimeline},project:/\.piv$/i.test(path)})); } catch (error) { throw persistentFailure(error); }
 }
 function saveNative({ saveAs = false } = {}) {
   if (!manualSave.active) finishCurrentEdit();
@@ -5817,8 +5817,6 @@ editor.addEventListener("change", (e) => {
   if ((['toggle-selection', 'duplicate-pending'].includes(state.drag?.kind) || state.drag?.kind === 'tweener' && state.drag.press) &&
       ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
   if(['edit','history','document','preview','frame-draft'].includes(kind))playback.discardNativeSnapshot();
-  // The engine's copy of the document follows the records each change names.
-  if (kind !== 'seek' && kind !== 'selection' && kind !== 'saved') state.renderer?.documentChanged?.(kind === 'history' && !e.detail?.frameIndices && !e.detail?.figureIndices ? {structural: true, definition: true} : e.detail);
   const joining = state.figureJoin;
   if (joining && (joining.token !== editor._documentToken || joining.uid !== editor.selectedUid ||
       joining.frameIndex !== editor.frameIndex || joining.tick !== editor.tick ||
@@ -6099,7 +6097,7 @@ function showRecovery(record, records = [record]) {
         if (!copy || copy.savedAt !== chosen.savedAt || copy.token !== chosen.token) throw messageError(new Error(''), "errors.app.theRecoveryCopyChangedReopenStykanimateToSee", {});
       }
       const name = chosen.name || copy.name;
-      const restored = await importer.importNative(new File([copy.blob], `${name}.styk`));
+      const restored = await importer.importNative(new File([copy.blob], `${name}.styk`), {open: {layerTimeline: editor.layerTimeline}});
       // The restored project adopts the copy it came from: its next recovery write replaces it, saving removes it.
       if (!await acceptImport(restored, name, {recoveryId: chosen.native ? chosen.id : undefined})) return;
       editor.dirty = true;
@@ -6669,7 +6667,7 @@ async function init() {
       onRestored: queueUI,
     });
   // Frame thumbnails: the engine draws them for documents it draws (src/engine/engine-thumbnails.mjs).
-  thumbnailRenderer = createThumbnailRenderer(editor, { onError: fail }, { stage: () => state.renderer, playback: () => playback });
+  thumbnailRenderer = createThumbnailRenderer(editor, { onError: fail }, { stage: () => state.renderer });
   sharedClipboard = new SharedClipboard(editor, desktop);
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;

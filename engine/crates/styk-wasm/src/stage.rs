@@ -186,7 +186,7 @@ impl Stage {
     /// even when a worker publishes between a JavaScript readiness read and draw.
     #[allow(clippy::too_many_arguments)]
     pub fn render_ticket(&mut self, generation: f64, epoch: f64, tick: f64, zoom: f64, pan_x: f64, pan_y: f64, camera: bool, clip_to_artboard: bool) -> Result<bool, JsError> {
-        let (Ok(generation), Ok(epoch)) = (crate::engine::record_counter(generation), crate::engine::record_counter(epoch)) else { return Ok(false); };
+        let (Some(generation), Some(epoch)) = (crate::engine::counter(generation), crate::engine::counter(epoch)) else { return Ok(false); };
         let Some(snapshot) = self.engine.prepared_frame(tick, Some((generation, epoch))) else { return Ok(false) };
         self.present_prepared(&snapshot, zoom, [pan_x, pan_y], camera, clip_to_artboard)
     }

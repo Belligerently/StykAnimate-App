@@ -374,10 +374,12 @@ export function liftDocument(document, options = {}) {
   return drainLift(liftDocumentSteps(document, {preBlobs: options.preBlobs, maxBytes: options.maxBytes}));
 }
 
-/** The elements a numeric-array marker names, as a typed view of its section. */
+/** The elements a numeric-array marker names, as a typed view of its section. A section holds the bytes
+ * from `base` on when only part of it is at hand (the engine hands a document over in pieces). */
 function arrayView(match, sections) {
-  const type = match[1], section = sections[+match[2]]?.bytes, offset = +match[3], count = +match[4], width = TYPE_BYTES[type];
-  if (!section || ![offset, count].every(Number.isSafeInteger) || offset % width || offset > section.byteLength || count > Math.floor((section.byteLength - offset) / width))
+  const type = match[1], held = sections[+match[2]], section = held?.bytes, base = held?.base ?? 0, width = TYPE_BYTES[type];
+  const offset = +match[3] - base, count = +match[4];
+  if (!section || ![offset, count].every(Number.isSafeInteger) || offset < 0 || (offset + base) % width || offset > section.byteLength || count > Math.floor((section.byteLength - offset) / width))
     throw messageError(new Error(''), "errors.nativeContainer.theStykanimateFileIsDamagedInvalidArraySection", {});
   const absolute = section.byteOffset + offset;
   // A section can begin at an unaligned offset of its buffer; typed views cannot.
@@ -386,9 +388,10 @@ function arrayView(match, sections) {
 }
 
 /** The raw bytes a payload marker names. */
-function payloadBytes(section, offset, count) {
-  const bytes = section?.bytes;
-  if (!bytes || ![offset, count].every(Number.isSafeInteger) || offset > bytes.byteLength || count > bytes.byteLength - offset)
+function payloadBytes(held, offset, count) {
+  const bytes = held?.bytes;
+  offset -= held?.base ?? 0;
+  if (!bytes || ![offset, count].every(Number.isSafeInteger) || offset < 0 || offset > bytes.byteLength || count > bytes.byteLength - offset)
     throw messageError(new Error(''), "errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadSection", {});
   return bytes.subarray(offset, offset + count);
 }
@@ -431,9 +434,10 @@ function liftedJSONBytes(skeleton, sections) {
  * payloads), as `liftDocument` returns them. Markers with identical text give the *same*
  * array instance, so shared pose and key sequences keep their identity through a save and
  * an open. The Rust container reader has already admitted the file (native-file-codec.mjs), so
- * nothing is measured here. */
-export function restoreLifted(document, sections) {
-  const shared = new Map();
+ * nothing is measured here. `shared` remembers what the markers named: a document restored piece by piece
+ * (src/engine/engine-open.mjs) passes the same one to every piece, and a section may then hold only the
+ * bytes from its `base` on. */
+export function restoreLifted(document, sections, shared = new Map()) {
   const resolve = value => {
     let match = MARKER_ARRAY.exec(value);
     if (match) {
@@ -447,10 +451,21 @@ export function restoreLifted(document, sections) {
       return array;
     }
     if ((match = MARKER_B64.exec(value)) || (match = MARKER_DATA.exec(value))) {
-      const encoded = bytesToBase64(payloadBytes(sections[+match[1]], +match[2], +match[3]));
-      return match[0][2] === 'S' ? encoded : match[4] + encoded;
+      let text = shared.get(value);
+      if (text === undefined) {
+        const encoded = bytesToBase64(payloadBytes(sections[+match[1]], +match[2], +match[3]));
+        text = match[0][2] === 'S' ? encoded : match[4] + encoded;
+        shared.set(value, text);
+      }
+      return text;
     }
     if (value.startsWith('S2E:')) return value.slice(4);
+    if (value.startsWith('S2R:')) {
+      // A pose key sequence several channels share, restored by the piece that first held it.
+      const sequence = shared.get(value);
+      if (!sequence) throw messageError(new Error(''), "errors.nativeContainer.theStykanimateFileIsDamagedMalformedSectionMarker", {});
+      return sequence;
+    }
     if (value.startsWith('S2B:') || value.startsWith('S2S:') || value.startsWith('S2D:'))
       throw messageError(new Error(''), "errors.nativeContainer.theStykanimateFileIsDamagedMalformedSectionMarker", {});
     return value;

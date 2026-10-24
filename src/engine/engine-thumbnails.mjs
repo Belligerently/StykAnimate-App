@@ -33,13 +33,13 @@ const abortError = () => new DOMException('The thumbnail was superseded.', 'Abor
 const NOT_YET = 'the stage is not ready yet';
 
 /**
- * A thumbnail renderer for `editor`. `stage()` and `playback()` return the app's stage
- * renderer (engine-stage.mjs) and playback adapter (engine-playback.mjs) once they exist;
- * without them every thumbnail is the JavaScript renderer's. `options` are
+ * A thumbnail renderer for `editor`. `stage()` returns the app's stage
+ * renderer (engine-stage.mjs) once it exists; without it
+ * every thumbnail is the JavaScript renderer's. `options` are
  * `ThumbnailRenderer`'s.
  */
-export function createThumbnailRenderer(editor, options = {}, {stage = () => null, playback = () => null} = {}) {
-  return new EngineThumbnails(editor, options, {stage, playback});
+export function createThumbnailRenderer(editor, options = {}, {stage = () => null} = {}) {
+  return new EngineThumbnails(editor, options, {stage});
 }
 
 export class EngineThumbnails {
@@ -47,11 +47,10 @@ export class EngineThumbnails {
    * `javascript(editor, options)` makes the JavaScript renderer, `previews()` resolves the
    * engine's preview worker or null (tests give stand-ins).
    */
-  constructor(editor, options = {}, {stage, playback, javascript = (target, settings) => new ThumbnailRenderer(target, settings), previews = enginePreviews}) {
+  constructor(editor, options = {}, {stage, javascript = (target, settings) => new ThumbnailRenderer(target, settings), previews = enginePreviews}) {
     this.editor = editor;
     this.options = options;
     this.stage = stage;
-    this.playback = playback;
     this.makeJavaScript = javascript;
     this.previews = previews;
     /** Why the preview worker cannot draw thumbnails, once found; null while it may. */
@@ -102,9 +101,9 @@ export class EngineThumbnails {
    * worker threads, or neither the stage nor the preview worker can draw on this device.
    */
   _route(inbetween) {
-    const stage = this.stage(), playback = this.playback();
+    const stage = this.stage();
     if (!stage) return NOT_YET;
-    if (!stage?.engineSide?.engine?.threaded || typeof stage.renderThumbnail !== 'function' || typeof playback?.exportDocument !== 'function') return 'no engine with worker threads';
+    if (!stage?.engineSide?.engine?.threaded || typeof stage.renderThumbnail !== 'function') return 'no engine with worker threads';
     if (inbetween && this.cpuRefusal) return `the preview worker cannot sample in-betweens (${this.cpuRefusal})`;
     // A stage that cannot present to a second canvas (WebGL2) never will; the preview worker then draws them on the CPU.
     if (stage.engineSide.thumbnails === false && this.cpuRefusal) return `the stage cannot draw thumbnails on this device (${this.cpuRefusal})`;
@@ -184,7 +183,7 @@ export class EngineThumbnails {
       check();
       // A stage that cannot draw thumbnails needs the preview worker: known before the engine is brought to the revision.
       if (options.inbetween || engineCpuForced() || this.stage()?.engineSide?.thumbnails === false) await this._cpuReady();
-      const reason = this._route(options.inbetween) ?? await engineDocument({stage: this.stage(), playback: this.playback(), report, revision, check});
+      const reason = this._route(options.inbetween) ?? await engineDocument({stage: this.stage(), report, revision, check});
       check();
       // An edit landed meanwhile: the engine follows it, and the caller asks again.
       if (editor.revision !== revision || editor.report !== report) return false;

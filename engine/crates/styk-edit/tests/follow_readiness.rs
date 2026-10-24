@@ -10,7 +10,9 @@ fn session() -> (styk_edit::session::Session, Arc<styk_eval::eval::Prepared>) {
     let doc = loader.document(&report, "readiness").unwrap();
     let prepared = Arc::new(styk_eval::eval::Prepared::new(Arc::new(doc)));
     let state = "{\"tick\":6,\"frameIndex\":1,\"selectedUid\":1,\"selectedUids\":[1],\"selectedJoint\":-1,\"layerTimeline\":true,\"propertyChannels\":true}";
-    (styk_edit::session::Session::start_prepared(report, state, loader, prepared.clone()).unwrap(), prepared)
+    // A session whose document is prepared by workers (the app's session converts on its own thread).
+    let counters = styk_edit::session::RevisionCounters { revision: 1, serial: 1, saved: 1 };
+    (styk_edit::session::Session::start_worker_prepared(report, state, loader, prepared.clone(), counters).unwrap(), prepared)
 }
 #[test]
 fn mirror_session_refuses_cold_follow_and_reads_worker_warmed_path() {

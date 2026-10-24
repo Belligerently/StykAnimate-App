@@ -22,14 +22,12 @@ async function measure(file, engine) {
     const frame = () => new Promise(r => requestAnimationFrame(r));
     for (let i = 0; i < 30; i++) await frame();
     const side = styk.state.renderer.engineSide;
-    // Let the mirror commit the frames (playback preparation path syncs them).
-    if (side) { for (let i = 0; i < 200 && side.mirror.framesRevision !== styk.editor.revision; i++) { styk.state.renderer; await new Promise(r => setTimeout(r, 50)); } }
     await new Promise(r => setTimeout(r, 2000));
     globalThis.gc?.();
     const engineModule = side ? await import('/src/engine/engine.mjs') : null;
     return {engine: Boolean(styk.state.renderer.engineActive), refusal: styk.state.renderer.engineStats?.refusal ?? null,
       wasmMiB: side ? +(side.engine.memoryBytes / 1048576).toFixed(1) : 0,
-      heapMiB: +(performance.memory.usedJSHeapSize / 1048576).toFixed(1), framesSynced: side ? side.mirror.framesRevision === styk.editor.revision : null};
+      heapMiB: +(performance.memory.usedJSHeapSize / 1048576).toFixed(1)};
   });
   const metrics = await app.evaluate(({app}) => app.getAppMetrics().map(m => ({type: m.type, ws: m.memory.workingSetSize, priv: m.memory.privateBytes ?? null})));
   const total = metrics.reduce((sum, m) => sum + m.ws, 0) / 1024;

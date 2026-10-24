@@ -81,15 +81,14 @@ export function engineExportEnabled() {
 /**
  * The export frame renderer for an export: the engine's when the app's stage has the
  * engine running with worker threads and the export is not vector output, else the
- * JavaScript one. `stage` is the app's stage renderer (engine-stage.mjs), `playback` its
- * playback adapter (engine-playback.mjs), `revision` the editor's revision, `range` the
- * first and last tick the export draws.
+ * JavaScript one. `stage` is the app's stage renderer (engine-stage.mjs), `revision` the
+ * editor's revision, `range` the first and last tick the export draws.
  */
-export function createExportFrameRenderer(options, {stage, playback, revision, range, vector = false} = {}) {
+export function createExportFrameRenderer(options, {stage, revision, range, vector = false} = {}) {
   const side = stage?.engineSide;
-  if (vector || !engineExportEnabled() || !side?.engine?.threaded || typeof stage.prepareExport !== 'function' || typeof playback?.exportDocument !== 'function')
+  if (vector || !engineExportEnabled() || !side?.engine?.threaded || typeof stage.prepareExport !== 'function')
     return new ExportFrameRenderer(options);
-  return new EngineExportFrames(options, {stage, playback, revision, range});
+  return new EngineExportFrames(options, {stage, revision, range});
 }
 
 export class EngineExportFrames extends ExportFrameRenderer {
@@ -131,8 +130,8 @@ export class EngineExportFrames extends ExportFrameRenderer {
 
   /** Why the engine cannot draw `report` for this export, or null once it holds it (engine-document.mjs). */
   _engineDocument(report) {
-    const {stage, playback, revision} = this.engine;
-    return engineDocument({stage, playback, report, revision, check: () => this._check()});
+    const {stage, revision} = this.engine;
+    return engineDocument({stage, report, revision, check: () => this._check()});
   }
 
   /** The JavaScript renderer takes the export; nothing was drawn yet. */

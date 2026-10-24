@@ -5,15 +5,15 @@ import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 function fixture(){const report=emptyDocument();report.keyframes=[0,1,2].map(i=>createFrame([createObject(report.figure_types[0],i+1,100+i*30,200)],4));return report;}
 test('asynchronous scene preparation keeps old document live and publishes exact frame/geometry before listeners',async()=>{
-  const editor=new Editor({demo:false}),previous=editor.report,report=fixture();let scene,events=0;
+  const editor=new Editor({demo:false}),previous=editor.report,report=fixture();let scene,incoming,events=0;
   editor.addEventListener('change',event=>{if(event.detail.kind==='document'){
-    events++;assert.equal(editor.report,report);assert.equal(editor.frameIndex,2);assert.equal(editor.tick,8);
+    events++;assert.equal(editor.report,incoming);assert.equal(editor.frameIndex,2);assert.equal(editor.tick,8);
     assert.equal(editor.evaluatedFrame,scene.frame);assert.equal(editor.geometry,scene.geometry);
   }});
   await editor.loadAsync(report,'Prepared',{initialFrameIndex:'last',prepareScene:async context=>{
     assert.equal(editor.report,previous);assert.equal(context.frameIndex,2);assert.equal(context.tick,8);
     context.checkCurrent();await Promise.resolve();context.checkCurrent();assert.equal(events,0);
-    scene={frame:context.frame,geometry:buildGeometry(context.report,context.frame)};return scene;
+    incoming=context.report;scene={frame:context.frame,geometry:buildGeometry(context.report,context.frame)};return scene;
   }});
   assert.equal(events,1);assert.equal(editor.selectedUid,3);assert(Number.isFinite(editor.lastLoadTimings.sceneMs));
   const geometry=editor.geometry;editor.enableFrameDrafts({restoreSaved:false});editor.beginFrameDraft({mode:'add'});

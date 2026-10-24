@@ -5,7 +5,7 @@ use styk_engine::planning::{LayerRequest, PlanError, TRANSFER_BYTES, native_laye
 use styk_eval::eval::Prepared;
 
 mod common;
-use common::{apply, clock, engine_with};
+use common::{apply, clock, engine_with, republish};
 
 fn load(name: &str) -> (Value, Value, Prepared, LayerRequest) {
     let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -202,7 +202,7 @@ fn sheet_fixture(name: &str) -> (Value, styk_engine::Engine, LayerRequest) {
     (reference, engine, request)
 }
 #[test]
-fn mirrored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
+fn stored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
     for name in [
         "shared",
         "vacant",
@@ -219,7 +219,7 @@ fn mirrored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
         "view-changed",
     ] {
         let (reference, engine, request) = sheet_fixture(name);
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let generation = engine.generation().unwrap().id;
         let job = engine.plan_layers(1, request).unwrap();
         assert!(
@@ -274,7 +274,7 @@ fn mirrored_sheet_kernel_uses_the_existing_bounded_worker_lane() {
             assert!(progress.is_none())
         }
         assert!(
-            before.same_node(&engine.mirrored().unwrap().1),
+            before.same_node(&engine.stored().unwrap().1),
             "read-only {name}"
         );
         assert_eq!(engine.generation().unwrap().id, generation);
@@ -293,7 +293,7 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
         "small-budget",
     ] {
         let (reference, engine, request) = sheet_fixture(name);
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let job = engine.plan_layers(1, request).unwrap();
         engine.step();
         assert_eq!(
@@ -305,12 +305,12 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
                 .unwrap(),
             "{name}"
         );
-        assert!(before.same_node(&engine.mirrored().unwrap().1));
+        assert!(before.same_node(&engine.stored().unwrap().1));
     }
     for state in ["queued", "awaiting-ack"] {
         for change in ["cancel", "stale"] {
             let (_, engine, request) = sheet_fixture("dense");
-            let before = engine.mirrored().unwrap().1;
+            let before = engine.stored().unwrap().1;
             let previous = std::sync::Arc::downgrade(&engine.generation().unwrap());
             let job = engine.plan_layers(1, request).unwrap();
             if state == "awaiting-ack" {
@@ -320,7 +320,7 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
             if change == "cancel" {
                 job.cancel()
             } else {
-                engine.commit(2, 0).unwrap();
+                republish(&engine, 2);
             }
             engine.step();
             assert_eq!(
@@ -331,7 +331,7 @@ fn sheet_worker_refusals_cancel_and_generation_changes_preserve_canonical_owner(
                     PlanError::Stale
                 })
             );
-            assert!(before.same_node(&engine.mirrored().unwrap().1));
+            assert!(before.same_node(&engine.stored().unwrap().1));
             if change == "stale" {
                 assert!(previous.upgrade().is_some(), "the displaced generation remains owned until worker retirement");
                 assert!(engine.step(), "the separate generation retirement must run on its worker");

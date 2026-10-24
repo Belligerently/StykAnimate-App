@@ -7,7 +7,9 @@
 //!   page, shared with the worker threads by address.
 //! - [`stage::Stage`]: the GPU surface of one canvas, and the other views its device draws
 //!   (`views`: the camera monitor, frame thumbnails). Interface thread only.
-//! - [`edit::EditSession`]: the editor's calls run on the mirrored document. Interface thread only.
+//! - [`open::OpenedDocument`]: a document opened on the engine's workers, read back in bounded pieces.
+//! - [`edit::EditSession`]: the editor's calls run on the open document, which the engine publishes as it
+//!   changes. Interface thread only.
 //! - [`export::ExportRenderer`]: export frames, drawn in a worker with a GPU device of its own,
 //!   or by the CPU rasterizer where it has none.
 //! - [`preview::Previews`]: library previews (the worker's GPU device, else the CPU) and the
@@ -20,9 +22,9 @@ pub mod edit;
 pub mod engine;
 pub mod export;
 pub mod math;
+pub mod open;
 pub mod planning;
 pub mod preview;
-pub mod session_worker;
 pub mod stage;
 pub mod views;
 

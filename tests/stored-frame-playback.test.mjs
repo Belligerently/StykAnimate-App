@@ -8,8 +8,8 @@ import {compilePlaybackPacket} from '../src/playback-worker.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 
 function fixture() {
-  const report=emptyDocument(); report.keyframes=[100,200,300].map(x=>createFrame([createObject(report.figure_types[0],1,x,250)],5));
-  new Editor({demo:false}).load(report);
+  const source=emptyDocument(); source.keyframes=[100,200,300].map(x=>createFrame([createObject(source.figure_types[0],1,x,250)],5));
+  const report=new Editor({demo:false}).load(source).report;
   const baseline=structuredClone(report.keyframes[1]);
   report.keyframes[1].objects[0].root_x=777;
   report._styk.simpleFrameDraft={version:1,mode:'add',index:1,frameId:baseline._styk.frameId,baseline};

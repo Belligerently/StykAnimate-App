@@ -10,7 +10,7 @@ async function until(condition, ms = 2000) {
 }
 
 function playbackSide({maxFrames} = {}) {
-  let current = null, generation = 7, epoch = 2;
+  let generation = 7, epoch = 2, revision = 1;
   let readinessReads = 0;
   const requests = [], ready = new Map(), legacyCalls = [];
   const handle = {
@@ -22,16 +22,16 @@ function playbackSide({maxFrames} = {}) {
     frame_ticket_ready: (gen, resourceEpoch, tick) => { readinessReads++; return gen === generation && resourceEpoch === epoch && ready.has(tick); },
     frame_meta: tick => ready.has(tick) ? JSON.stringify({...ready.get(tick), generation, epoch}) : undefined,
     generation: () => generation,
+    // The revision the engine's session last published.
+    try_document_identity: () => [generation, 1, revision],
     set_hidden() {}, total_ticks: () => 9,
     try_set_hidden() { return 1; }, try_set_effects() { return 1; },
   };
-  const side = {engine: {handle, pump() {}}, drawingUnpublished: () => false,
-    mirror: {stats: {}, async syncFrames(report, revision) { current = {report, revision}; },
-      framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
+  const side = {engine: {handle, pump() {}}, drawingUnpublished: () => false};
   const legacy = {report: null, maxFrames, load(...args) { legacyCalls.push(args); }, dispose() {}, invalidate() {}, setVfxEnabled() {}};
   return {playback: createStagePlayback(legacy, {stage: () => ({engineSide: side})}), ready, requests, legacyCalls,
     reads: () => readinessReads,
-    nextGeneration() { generation++; }, nextEpoch() { epoch++; }, handle, engine: side.engine};
+    nextGeneration() { generation++; }, nextEpoch() { epoch++; }, publish(next) { revision = next; }, handle, engine: side.engine};
 }
 
 test('fractional range requests retain Float64 samples and distinct ready packet metadata', async () => {
@@ -135,7 +135,7 @@ test('invalid samples never create tickets or replace valid current request prio
 });
 
 test('invalidation cancels fractional requests and a replacement revision drops old generation packets', async () => {
-  const {playback, ready, requests, nextGeneration} = playbackSide();
+  const {playback, ready, requests, nextGeneration, publish} = playbackSide();
   playback.load({}, {revision: 1});
   await playback.prepareRange([3.5]);
   ready.set(3.5, {tick: 3.5});
@@ -145,7 +145,8 @@ test('invalidation cancels fractional requests and a replacement revision drops 
   assert.ok(requests.at(-1).samples instanceof Float64Array);
   assert.equal(requests.at(-1).samples.length, 0);
   playback.updateDocument({revision: 2});
-  assert.equal(playback.get(3.5), null, 'metadata stays unavailable until mirror revision is current');
+  assert.equal(playback.get(3.5), null, 'metadata stays unavailable until the engine publishes the revision');
+  publish(2);
   nextGeneration();
   await playback.prepareRange([3.5]);
   const current = playback.get(3.5);

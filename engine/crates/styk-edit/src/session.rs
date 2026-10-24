@@ -347,6 +347,7 @@ impl Session {
         }
         let mut session = Self::start_prepared(report, state, loader, prepared)?;
         session.editor.set_revision_counters(counters.revision, counters.serial, counters.saved);
+        session.editor.worker_prepared_only = true;
         Ok(session)
     }
 
@@ -361,7 +362,7 @@ impl Session {
         editor.set_view(number(&state, "tick").unwrap_or(0.0), number(&state, "frameIndex").unwrap_or(0.0) as usize, selection_of(&state));
         // A metadata restore may inspect stable handles of the figure on show:
         // the interface session must use the mirror's already prepared owner.
-        if let Some((loader, prepared)) = prepared { editor.adopt_prepared(loader, prepared); editor.worker_prepared_only = true; }
+        if let Some((loader, prepared)) = prepared { editor.adopt_prepared(loader, prepared); }
         editor.set_selection_metadata(&state).map_err(|error| format!("{error:?}"))?;
         let counter = |key: &str| number(&state, key).unwrap_or(0.0) as u64;
         editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"), counter("nextUid"));

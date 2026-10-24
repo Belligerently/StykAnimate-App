@@ -8,20 +8,21 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {applyDocumentChunk} from '../src/document-transport.mjs';
 import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
+import {openingSession} from '../src/engine/engine-owner.mjs';
 import {planEngineInbetweens, planEngineLayerMigration, isUnported} from '../src/engine/engine-planning.mjs';
 
 const skip = engineBuilt ? false : 'the engine is not built (npm run engine:build)';
 const nativeJson = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' ? undefined : item);
 const read = path => JSON.parse(readFileSync(new URL(`../engine/tests/${path}.json`, import.meta.url), 'utf8'));
 
-/** The engine holding `reference`'s document, as the app's mirror leaves it at `revision`. */
-async function mirrored(reference, options, revision = 5) {
-  const {engine, mirror} = await nodeEngine();
+/** The engine holding `reference`'s document, as the app's session leaves it at `revision`. */
+async function engineHolding(reference, options, revision = 5) {
+  const {engine} = await nodeEngine();
   const editor = new Editor({demo: false, ...options}).load(JSON.parse(reference.document));
-  mirror.reset();
-  await mirror.syncFrames(editor.report, revision, {allFigures: true, allFrames: true, allSources: true});
-  assert.ok(mirror.framesCurrent(editor.report, revision), 'the engine holds the document');
-  return {engine, revision};
+  const session = openingSession(editor);
+  session.activate(revision);
+  assert.equal(engine.handle.revision(), revision, 'the engine holds the document');
+  return {engine, revision, session};
 }
 /** Runs a job to its end: every packet acknowledged, progress kept. */
 async function drive(engine, job) {
@@ -43,7 +44,7 @@ const failure = async action => { try { await action(); } catch (error) { return
 
 const inbetweens = readdirSync(new URL('../engine/tests/inbetween/', import.meta.url)).map(file => file.replace(/\.json$/, '')).sort();
 for (const name of inbetweens) test(`the engine module plans the in-between fixture: ${name}`, {skip}, async () => {
-  const reference = read(`inbetween/${name}`), {engine, revision} = await mirrored(reference);
+  const reference = read(`inbetween/${name}`), {engine, revision} = await engineHolding(reference);
   const start = () => engine.handle.plan_inbetweens(revision, JSON.stringify(reference.request));
   if (reference.failure) {
     const error = await failure(async () => { const job = start(); await drive(engine, job); });
@@ -62,7 +63,7 @@ for (const name of inbetweens) test(`the engine module plans the in-between fixt
 });
 
 test('the engine module refuses what it does not plan by name, and a stale revision as aborted', {skip}, async () => {
-  const sheet = read('layer-sheet-migration/combined'), {engine, revision} = await mirrored(sheet, {layerTimeline: true, propertyChannels: false});
+  const sheet = read('layer-sheet-migration/combined'), {engine, revision} = await engineHolding(sheet, {layerTimeline: true, propertyChannels: false});
   const unported = await failure(async () => { await drive(engine, engine.handle.plan_inbetweens(revision, JSON.stringify({ratio: .5, indices: [1], nextFrameIdentity: 99}))); });
   assert.equal(unported.name, 'EngineUnported'); assert.match(unported.message, /layer sheet/);
   const stale = await failure(async () => engine.handle.plan_inbetweens(revision + 1, JSON.stringify({ratio: .5, indices: [1], nextFrameIdentity: 99})));
@@ -72,17 +73,17 @@ test('the engine module refuses what it does not plan by name, and a stale revis
 });
 
 for (const name of ['native-only', 'independent', 'joined-scalars', 'delete-default', 'dense-single-figure']) test(`the engine module plans the layer move: ${name}`, {skip}, async () => {
-  const reference = read(`layer-migration/${name}`), {engine, revision} = await mirrored(reference);
+  const reference = read(`layer-migration/${name}`), {engine, revision} = await engineHolding(reference);
   const {payload, progress} = await drive(engine, engine.handle.plan_layers(revision, JSON.stringify(reference.request)));
   assert.equal(nativeJson(payload), nativeJson(reference.payload));
   for (const step of progress) assert.deepEqual(Object.keys(step).sort(), ['completed', 'objectPoses', 'phase', 'segmentValues', 'sourceFrames', 'total']);
 });
 test('the engine module plans a layer move on a layer sheet and words a refusal by its key', {skip}, async () => {
   const combined = read('layer-sheet-migration/combined'), options = {layerTimeline: true, propertyChannels: false};
-  const {engine, revision} = await mirrored(combined, options);
+  const {engine, revision} = await engineHolding(combined, options);
   const {payload} = await drive(engine, engine.handle.plan_layers(revision, JSON.stringify(combined.request)));
   assert.equal(nativeJson(payload), nativeJson(combined.payload));
-  const missing = read('layer-sheet-migration/missing-layer'), held = await mirrored(missing, options);
+  const missing = read('layer-sheet-migration/missing-layer'), held = await engineHolding(missing, options);
   const error = await failure(async () => { await drive(held.engine, held.engine.handle.plan_layers(held.revision, JSON.stringify(missing.request))); });
   assert.equal(error.message, missing.failure.messageKey);
 });
@@ -90,7 +91,7 @@ test('the engine module plans a layer move on a layer sheet and words a refusal 
 // The adapter the app runs, over the real module: the engine's own pump (whenProgress) stands in for the worker threads.
 const driven = engine => ({...engine, threaded: true, workers: 1});
 for (const name of inbetweens) test(`the adapter plans the in-between fixture through the engine module: ${name}`, {skip}, async () => {
-  const reference = read(`inbetween/${name}`), {engine, revision} = await mirrored(reference), progress = [];
+  const reference = read(`inbetween/${name}`), {engine, revision} = await engineHolding(reference), progress = [];
   const run = planEngineInbetweens(driven(engine), revision, reference.request, {onProgress: step => progress.push(step)});
   if (reference.failure) {
     const error = await failure(() => run);
@@ -102,10 +103,10 @@ for (const name of inbetweens) test(`the adapter plans the in-between fixture th
 });
 test('the adapter reads a plan the engine does not make as unported, and a layer move as the editor words it', {skip}, async () => {
   const sheet = read('layer-sheet-migration/combined'), options = {layerTimeline: true, propertyChannels: false};
-  const {engine, revision} = await mirrored(sheet, options);
+  const {engine, revision} = await engineHolding(sheet, options);
   assert.ok(isUnported(await failure(() => planEngineInbetweens(driven(engine), revision, {ratio: .5, indices: [1], nextFrameIdentity: 99}))));
   assert.equal(nativeJson(await planEngineLayerMigration(driven(engine), revision, sheet.request)), nativeJson(sheet.payload.plan));
-  const missing = read('layer-sheet-migration/missing-layer'), held = await mirrored(missing, options);
+  const missing = read('layer-sheet-migration/missing-layer'), held = await engineHolding(missing, options);
   const error = await failure(() => planEngineLayerMigration(driven(held.engine), held.revision, missing.request));
   assert.equal(error.messageKey, missing.failure.messageKey);
   const stale = await failure(() => planEngineInbetweens(driven(engine), revision + 1, {ratio: .5, indices: [1], nextFrameIdentity: 99}));

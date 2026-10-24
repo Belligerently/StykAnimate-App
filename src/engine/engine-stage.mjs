@@ -12,8 +12,8 @@
  * only the objects whose geometry the editor rebuilt since the last frame.
  */
 import {loadEngine} from './engine.mjs';
-import {EngineMirror} from './engine-mirror.mjs';
 import {ENGINE_KEY, engineTicket} from './engine-playback.mjs';
+import {holdsRevision} from './engine-open.mjs';
 import {drawingResourcesFor} from '../drawing-resources.mjs';
 import {EngineCameraMonitor} from './engine-previews.mjs';
 
@@ -39,13 +39,12 @@ async function engineSide(canvas) {
   surface.style.visibility = 'hidden';
   canvas.before(surface);
   const stage = await engine.createStage(surface);
-  return shared = {engine, stage, surface, mirror: new EngineMirror(engine),
+  return shared = {engine, stage, surface,
     /** Geometry groups the engine last received, by slot: an unchanged group is not sent again. */
-    groups: [], frameReport: null, count: -1, definitions: null, failed: null, dirty: null, lastRefusal: null,
+    groups: [], frameReport: null, count: -1, failed: null, lastRefusal: null,
     /** Onion skin poses the engine holds, by the editor's sampled frame. */
     ghosts: new WeakMap(), nextGhost: 1, frameSent: false,
-    /** The drawing tiles each figure was last sent with: publication replaces them in place. */
-    tiles: new WeakMap(), drawingUnpublished,
+    drawingUnpublished,
     /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
     pictureWait: 0,
     stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, fallbacks: 0, pictureRedraws: 0}};
@@ -61,13 +60,6 @@ function drawingUnpublished(report) {
   if (!resources) return false;
   for (const entry of resources.entries.values()) if (!entry.transient && (entry.store || entry.deferred?.length) && entry.published?.revision !== entry.revision) return true;
   return false;
-}
-
-/** The published tiles of a figure's drawings, its own and its movieclip's. */
-function drawingTiles(figure, out = []) {
-  if (figure._styk?.drawing) out.push(figure.image_assets?.[0]?.styk_tiles ?? null);
-  for (const nested of figure._styk?.movieclip?.document?.figure_types ?? []) drawingTiles(nested, out);
-  return out;
 }
 
 /**
@@ -113,67 +105,6 @@ export function waitForPictures(side, seen, redraw) {
   wait();
 }
 
-/** Cancels only this stage's asynchronous camera prerequisite. */
-export function cancelCameraFrames(side) {
-  const sync = side.cameraFrames;
-  if (!sync) return;
-  side.cameraFrames = null;
-  sync.controller.abort(new DOMException('The camera preparation was superseded.', 'AbortError'));
-}
-
-/** Keep at most one dirty identity per live record while the camera is off. */
-export function recordCameraChange(side, detail) {
-  const report = side.frameReport;
-  if (!report) return;
-  const dirty = side.cameraDirty ??= {frameIndices: new Set(), figureIndices: new Set(), sourceIds: new Set(), allFrames: false, allFigures: false, allSources: false};
-  // A long edit session stays bounded even when old records are removed without
-  // individual dirty names. A full resend uses the mirror's asynchronous owner.
-  const include = (items, identities, all, present) => {
-    if (dirty[all]) return;
-    let visited = 0;
-    for (const identity of items ?? []) {
-      if (++visited > 256) { identities.clear(); dirty[all] = true; break; }
-      if (present(identity)) identities.add(identity); else identities.delete(identity);
-      if (identities.size >= 256) { identities.clear(); dirty[all] = true; break; }
-    }
-  };
-  include(detail.frameIndices, dirty.frameIndices, 'allFrames', index => index >= 0 && index < (report.keyframes?.length ?? 0));
-  include(detail.figureIndices, dirty.figureIndices, 'allFigures', index => index >= 0 && index < (report.figure_types?.length ?? 0));
-  const sources = report._styk?.frameSources ?? {};
-  include(detail.sourceIds, dirty.sourceIds, 'allSources', id => Object.hasOwn(sources, id));
-  // A removed source does not need an explicit resend; syncFrames removes it.
-  dirty.allFigures ||= Boolean(detail.definition && !detail.figureIndices?.length);
-  if (detail.structural) {
-    dirty.frameIndices.clear(); dirty.sourceIds.clear();
-    dirty.allFrames = true; dirty.allSources = true;
-  }
-}
-
-/**
- * An edit pose can arrive before playback has mirrored its stored target poses.
- * Coalesce one asynchronous frame sync through the existing mirror, then let
- * render_edit request worker frame tickets on that complete Prepared owner.
- */
-export function ensureCameraFrames(side, {report, revision = 0}, redraw) {
-  if (side.mirror.framesCurrent(report, revision)) return false;
-  const old = side.cameraFrames;
-  if (old?.report === report && old.revision === revision) return true;
-  cancelCameraFrames(side);
-  const sync = {report, revision, controller: new AbortController()};
-  side.cameraFrames = sync;
-  const dirty = side.cameraDirty;
-  sync.promise = Promise.resolve().then(() => side.mirror.syncFrames(report, revision, dirty ?? {}, {signal: sync.controller.signal})).then(() => {
-    if (side.cameraFrames !== sync || sync.controller.signal.aborted || !side.mirror.framesCurrent(report, revision)) return;
-    if (side.cameraDirty === dirty) side.cameraDirty = null;
-    redraw();
-  }).catch(error => {
-    if (side.cameraFrames !== sync || sync.controller.signal.aborted || error?.name === 'AbortError') return;
-    side.failed = `the engine refused the camera document (${error.message})`;
-    redraw();
-  }).finally(() => { if (side.cameraFrames === sync) side.cameraFrames = null; });
-  return true;
-}
-
 /**
  * Wraps the renderer `create(canvas, options)` builds.
  * @param {HTMLCanvasElement} canvas the scene canvas
@@ -209,36 +140,16 @@ export async function createStageRenderer(canvas, options, create) {
     return null;
   };
 
-  /** Figures whose drawings were published in place since the engine got them become dirty. */
-  const republished = report => {
-    const changed = [];
-    report.figure_types?.forEach((figure, index) => {
-      if (!figure._styk?.drawing && !figure._styk?.movieclip) return;
-      const tiles = drawingTiles(figure), known = side.tiles.get(figure);
-      side.tiles.set(figure, tiles);
-      if (known && (known.length !== tiles.length || known.some((value, i) => value !== tiles[i]))) changed.push(index);
-    });
-    if (!changed.length) return;
-    side.dirty ??= {frameIndices: [], figureIndices: [], sourceIds: [], structural: false, definition: false};
-    side.dirty.figureIndices.push(...changed);
-    side.definitions = null;
-  };
-
-  /** Figure definitions, backgrounds and properties: what an edit frame is drawn with. */
-  const syncDefinitions = request => {
-    republished(request.report);
-    const key = `${request.revision}:${request.artworkRevision}`;
-    if (side.mirror.report === request.report && side.definitions === key) return;
-    // Figures edited in place keep their objects; the editor's change events said which.
-    const dirty = side.dirty;
-    side.dirty = null;
-    const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
-      {figureIndices: dirty?.figureIndices ?? [], allFigures: Boolean(dirty?.definition && !dirty.figureIndices?.length)});
-    side.definitions = key;
-    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.tiles = new WeakMap(); side.frameReport = request.report; }
-    const unsupported = JSON.parse(side.engine.handle.unsupported());
-    if (unsupported.length) throw new Error(`the engine does not draw ${unsupported.join(', ')} yet`);
-    return result;
+  /**
+   * Why the engine cannot draw the document at `revision`, or null: it holds another revision (the session
+   * has not published it yet) or does not draw a feature the document uses.
+   */
+  const unavailable = revision => {
+    if (!holdsRevision(side.engine, revision)) return 'the engine does not hold this revision of the document';
+    const generation = side.engine.handle.generation();
+    if (side.unsupportedFor?.generation !== generation) side.unsupportedFor = {generation, features: JSON.parse(side.engine.handle.unsupported())};
+    const {features} = side.unsupportedFor;
+    return features.length ? `the engine does not draw ${features.join(', ')} yet` : null;
   };
 
   /**
@@ -290,10 +201,11 @@ export async function createStageRenderer(canvas, options, create) {
   const awaitPictures = seen => waitForPictures(side, seen, () => options.onInvalidate?.());
 
   const drawEdit = request => {
-    if (side.cameraFrames && (side.cameraFrames.report !== request.report || side.cameraFrames.revision !== (request.revision ?? 0))) cancelCameraFrames(side);
-    if (side.frameReport !== request.report || side.mirror.framesCurrent(request.report, request.revision ?? 0)) side.cameraDirty = null;
     const started = performance.now(), seen = side.engine.progressSeen();
-    syncDefinitions(request);
+    const missing = unavailable(request.revision ?? 0);
+    if (missing) throw new Error(missing);
+    // A pose of another document starts the engine's edit scene over.
+    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
     const {frame, geometry} = request, objects = frame.objects ?? [];
     const json = frameJSON(frame, geometry, side);
     // An unchanged frame is not parsed again; the first frame and every changed one are.
@@ -317,10 +229,10 @@ export async function createStageRenderer(canvas, options, create) {
     // Generated effects whose trails are still being sampled refine on the next frame, as
     // the JavaScript renderer's incomplete batches do (6 ms of sampling a frame).
     if (side.stage.refining()) queueMicrotask(() => options.onInvalidate?.());
+    // The pose is shown through a follow camera whose path a worker is still warming: draw again when it is done.
     const pendingCamera = side.stage.camera_pending?.() === true;
     side.stats.cameraPending = pendingCamera;
-    if (pendingCamera) ensureCameraFrames(side, request, () => options.onInvalidate?.());
-    else cancelCameraFrames(side);
+    if (pendingCamera) side.engine.whenProgress(seen).then(() => options.onInvalidate?.());
     if (drawn || pendingCamera) awaitPictures(seen);
     // The previous actual scene stays visible while the shared follow path warms.
     // Keeping ownership also prevents JavaScript preparation on this cold path.
@@ -330,7 +242,7 @@ export async function createStageRenderer(canvas, options, create) {
   const renderer = {
     /** Which renderer drew the last frame, for tests and reports. */
     get engineActive() { return engineShown; },
-    get engineStats() { return {...side.stats, mirror: {...side.mirror.stats}, refusal: side.lastRefusal ?? null, backend: side.stage.backend()}; },
+    get engineStats() { return {...side.stats, refusal: side.lastRefusal ?? null, backend: side.stage.backend()}; },
     get canvas() { return engineShown ? side.surface : canvas; },
     render(request) {
       const reason = refusal(request);
@@ -342,7 +254,6 @@ export async function createStageRenderer(canvas, options, create) {
           // The engine could not take this frame: the JavaScript renderer draws it, and the gate says why.
           side.stats.fallbacks++;
           side.lastRefusal = String(error?.message ?? error);
-          side.definitions = null;
         }
       }
       const result = legacy.render(request);
@@ -392,31 +303,9 @@ export async function createStageRenderer(canvas, options, create) {
       const w = Math.max(1, Math.round(width * dpr)), h = Math.max(1, Math.round(height * dpr));
       if (side.surface.width !== w || side.surface.height !== h) { side.surface.width = w; side.surface.height = h; side.stage.resize(w, h); }
     },
-    /**
-     * The editor changed the document: which records it edited in place
-     * (`{frameIndices, figureIndices, sourceIds, structural, definition}`), merged until the next frame.
-     */
-    documentChanged(detail = {}) {
-      cancelCameraFrames(side);
-      recordCameraChange(side, detail);
-      const dirty = side.dirty ??= {frameIndices: [], figureIndices: [], sourceIds: [], structural: false, definition: false};
-      dirty.frameIndices.push(...detail.frameIndices ?? []);
-      dirty.figureIndices.push(...detail.figureIndices ?? []);
-      dirty.sourceIds.push(...detail.sourceIds ?? []);
-      dirty.structural ||= Boolean(detail.structural);
-      dirty.definition ||= Boolean(detail.definition);
-    },
-    /**
-     * For an export (engine-export.mjs): why the engine cannot draw `report`, or null once
-     * its properties, figure definitions and backgrounds are current, edits in place and
-     * published drawings included (its frames come through the playback adapter first).
-     * Throws `engine_busy` while a background commit runs: the caller tries again.
-     */
+    /** For an export (engine-export.mjs): why the engine cannot draw `report` at `revision`, or null. */
     prepareExport(report, revision) {
-      const reason = refusal({report, revision, geometry: true});
-      if (reason) return reason;
-      try { syncDefinitions({report, revision, artworkRevision: 'export'}); return null; }
-      catch (error) { side.definitions = null; if (error?.code === 'engine_busy') throw error; return String(error?.message ?? error); }
+      return refusal({report, revision, geometry: true}) ?? unavailable(revision);
     },
     /**
      * The camera monitor (camera-monitor.mjs): the frame the engine drew last, seen through the
@@ -495,7 +384,7 @@ export async function createStageRenderer(canvas, options, create) {
     },
     /** The engine side of the stage, for the playback adapter and tests. */
     get engineSide() { return side; },
-    destroy() { cancelCameraFrames(side); side.pictureWait++; side.workerMonitor?.destroy(); side.workerMonitor = null; show(false); legacy.destroy(); },
+    destroy() { side.pictureWait++; side.workerMonitor?.destroy(); side.workerMonitor = null; show(false); legacy.destroy(); },
   };
   // Everything else is the JavaScript renderer's, bound to it.
   return new Proxy(renderer, {

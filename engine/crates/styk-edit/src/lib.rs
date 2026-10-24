@@ -678,8 +678,6 @@ impl Editor {
             "@dropGesture" => return self.drop_gesture(),
             "@gestureState" => return self.gesture_state(),
             "@dropEdits" => return self.drop_edits(args),
-            "@shape" => return self.document_shape(),
-            "@externalStacks" => return self.external_stacks(args),
             "undo" | "redo" if let Some(id) = self.external_on_top(method == "redo") => {
                 return Err(EditError::Unported(format!("{}{id}", external::EXTERNAL_ENTRY)));
             }
