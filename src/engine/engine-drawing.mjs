@@ -9,9 +9,7 @@
  * use: the stroke worker's `StrokeEngine`, the brush model's `BrushStroke`, the history
  * codec. `src/engine/engine-drawing-worker.mjs` answers the pixel worker's operations.
  *
- * Strangler gate (docs/RUST-ENGINE-PORT.md, S6): `?drawingEngine=off` (or `?engine=off`,
- * or the stored `stykanimate.drawingEngine` / `stykanimate.engine` setting) keeps the
- * JavaScript raster engine, which stays the oracle; so does a module that fails to load.
+ * A module that fails to load leaves the JavaScript raster engine in charge.
  */
 import {messageError} from '../localized-error.mjs';
 import {BrushStroke as JavaScriptBrushStroke, pressureMap} from '../drawing-brush.mjs';
@@ -20,26 +18,7 @@ import {BrushStroke as JavaScriptBrushStroke, pressureMap} from '../drawing-brus
 const API_VERSION = 1;
 const DAB = 11;
 
-/** Whether the drawing raster engine runs in Rust: `location` is the page's or, in a
- * worker, the worker script's URL (the page appends `?engine=off` when it is off). */
-export function drawingEngineEnabled(location = globalThis.location) {
-  try {
-    const query = new URLSearchParams(location?.search ?? '');
-    for (const name of ['drawingEngine', 'engine']) { const value = query.get(name); if (value) return value !== 'off'; }
-    const stored = globalThis.localStorage?.getItem('stykanimate.drawingEngine') ?? globalThis.localStorage?.getItem('stykanimate.engine');
-    return stored !== 'off';
-  } catch { return true; }
-}
-
-/** A drawing worker's script URL, carrying the page's gate decision. */
-export function drawingWorkerURL(url) {
-  if (drawingEngineEnabled()) return url;
-  const next = new URL(url);
-  next.searchParams.set('engine', 'off');
-  return next;
-}
-
-let loading = null, glue = null, failure = null;
+let loading = null, glue = null;
 
 async function load() {
   const module = new URL('./pkg/styk_drawing.js', import.meta.url);
@@ -53,21 +32,15 @@ async function load() {
   return bindings;
 }
 
-/** Loads the module once per thread. Resolves to its bindings, or null when the gate is
- * off or the module cannot load (the JavaScript raster engine then answers). */
-export function loadDrawingEngine({enabled = drawingEngineEnabled()} = {}) {
-  if (!enabled) return Promise.resolve(null);
+/** Loads the module once per thread. Resolves to its bindings, or null when the module
+ * cannot load (the JavaScript raster engine then answers). */
+export function loadDrawingEngine() {
   return loading ??= load().then(bindings => (glue = bindings), error => {
-    failure = error;
     console.warn?.(`The drawing engine is unavailable; drawing uses the JavaScript engine (${error?.message ?? error}).`);
     return null;
   });
 }
 
-/** The loaded bindings, or null (not loaded, off, or failed). */
-export function drawingEngine() { return glue; }
-/** Why the module did not load, if it failed. */
-export function drawingEngineFailure() { return failure; }
 /** Bytes of linear memory the module holds in this thread (it grows, it never shrinks). */
 export function drawingEngineMemory() { return glue ? glue.memoryBytes() : 0; }
 

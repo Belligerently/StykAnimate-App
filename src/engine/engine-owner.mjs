@@ -1014,16 +1014,6 @@ function retainedSources(commands) {
   return [...ids];
 }
 
-/** `?engineOwner=on|off` (or `localStorage['stykanimate.engine.owner']`): whether the engine
- * owns the open document (D19) instead of shadowing the editor's calls. */
-export function engineOwnerMode() {
-  try {
-    const value = new URLSearchParams(globalThis.location?.search ?? '').get('engineOwner');
-    if (value) return value === 'on';
-    return globalThis.localStorage?.getItem('stykanimate.engine.owner') === 'on';
-  } catch { return false; }
-}
-
 /**
  * The session of the document the editor just opened: started from the opening the engine made it with, on
  * the tree the editor's read view was built from, so nothing is converted again. Null when the document

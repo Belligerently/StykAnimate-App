@@ -3,7 +3,6 @@ import {restoreMessageError, messageError} from './localized-error.mjs';
 /** File I/O boundary: bytes transfer to a worker; JSON parsing stays off the UI. */
 import { applyDocumentChunk } from './document-transport.mjs';
 import {materializeNativeFrames} from './import-wire.mjs';
-import {nativePlaybackSnapshot} from './playback-native.mjs';
 import {attachRead, openBytes, openJson} from './engine/engine-open.mjs';
 import {codecJob} from './codec-job.mjs';
 import {codecRequest} from './codec-request.mjs';
@@ -60,11 +59,8 @@ export class ImportClient {
       request.materializing=true;
       const {buffer,offset}=message.nativeFrames;
       const result=message.complete?{...message.result,document:request.document}:message.result;
-      const nativeMeta=result.nativeFrames;
       materializeNativeFrames(result,buffer,offset,{isCancelled:()=>this.pending.get(message.id)!==request}).then(result=>{
         if(this.pending.get(message.id)!==request) return;
-        const snapshot=nativePlaybackSnapshot(result.document,buffer,offset,nativeMeta,result.timings.native_pose_bytes_estimate);
-        if(snapshot)result.playbackFrames=snapshot;
         this.pending.delete(message.id);clearTimeout(request.timer);this._complete(request,result);
       },error=>{
         if(this.pending.get(message.id)!==request) return;

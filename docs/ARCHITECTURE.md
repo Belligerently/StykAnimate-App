@@ -10,14 +10,13 @@ in [engine/](engine/README.md)). The target: the engine owns the document and
 everything between a file and pixels; JavaScript is the interface. Today the
 engine opens every document and holds it, its edit session runs the commands it
 has ported (the editor runs the rest on its read view and writes the result back),
-and it draws every document it supports.
+and it draws every frame: no other renderer exists.
 
 ```mermaid
 flowchart LR
   subgraph UI["Interface thread (JavaScript)"]
     Editor["Editor: document, commands, history"]
-    Stage["engine-stage.mjs (one renderer interface)"]
-    Legacy["JavaScript renderer (documents the engine cannot draw yet)"]
+    Stage["engine-stage.mjs (the scene canvas)"]
     Overlay["Overlay: handles, guides"]
   end
   subgraph Engine["Engine (Rust, WebAssembly + shared memory)"]
@@ -30,16 +29,15 @@ flowchart LR
   Session -- "changed records, by revision" --> Store
   Editor -- "pose on screen (changed objects only)" --> Stage
   Stage -- "edit frames, ghosts" --> GPU
-  Stage --> Legacy
   Store --> Eval --> Workers --> GPU
-  GPU -- "#scene-engine canvas" --> UI
+  GPU -- "#scene canvas" --> UI
 ```
 
-- File → pixels for a supported document: the engine decodes the file on a
-  worker (`styk-piv`, `styk-formats`), normalizes it as the editor's load does and
-  holds it; the editor receives a read view of it, in slices; edit frames are
-  drawn from the pose on screen; playback frames are evaluated and encoded on the
-  engine's workers and presented by tick (`engine/document.md`).
+- File → pixels: the engine decodes the file on a worker (`styk-piv`,
+  `styk-formats`), normalizes it as the editor's load does and holds it; the
+  editor receives a read view of it, in slices; edit frames are drawn from the
+  pose on screen; playback frames are evaluated and encoded on the engine's
+  workers and presented by tick (`engine/document.md`).
 - Boundary: commands go in; small results come out (frame metadata, statistics,
   the patch a command made to the read view). The whole document crosses once,
   when it opens.
@@ -69,8 +67,6 @@ Build Figure presentation lives in `builder-mode.mjs`, `builder-outliner.mjs`, a
 
 Evaluated native segment records also supply the ordered drawable list. Geometry consumers treat these shared records as immutable. Opacity-only frame changes retain exact joints and rebind appearance metadata; renderers can retain opaque group artwork and apply the fade after compositing. Worker packets traverse object groups without flattening the scene. These are derived caches, independent of saved poses and history.
 
-Prepared playback distinguishes worker readiness from GPU readiness. A bounded startup window uploads one packet per animation frame and waits for its GPU queue before advancing. Expensive preparation may increase the window from one tenth to one quarter of a second of animation, capped by the existing core-dependent queue and actual cache residency. Later rendering retains normal cache eviction and exact tick order. Cancelled startup cannot publish a stale queue completion.
-
 Figure insertion, clipboard paste and decoded library drops share the range command planner. Validation and identity allocation finish before publication; undo retains inserted definitions and affected poses rather than the destination library. Published movieclip documents are immutable: clipboard/history copy the figure shell and retain that captured animation. Entering a clip clones its document; committing nested edits publishes a replacement. Imported external documents receive their own copy. Canvas pose commits retain the exact gesture preview when membership and playback settings are unchanged.
 
 Movieclip presence clocks on ordinary layer sheets use a temporary projection containing only instance identities, playback descriptors and continuation records. The existing sheet sampler handles blank spans, remapped native time and frame replacements; the clock never interpolates unrelated joints or builds artwork. The derived index is reused across seeks and invalidated with document edits. Legacy authored channels and inherited movieclip sources retain the general evaluator. `tests/movieclip-membership.test.mjs` compares projected membership with that evaluator and traps reads of unrelated pose arrays.
@@ -90,26 +86,37 @@ The import worker reads the codec's responses and parses them. `document-transpo
 
 The codec's source/document cache has 24 entries and a 384 MiB budget on the desktop (160 MiB in the web build). Source imports are limited to 128 MiB (96 MiB on the web); decoded/native documents to 256 MiB (128 MiB). A native document is retained once because it already contains original source bytes. These are cache/input limits, not a promise that total application working set stays under those values. See [the codec's request contract](../backend/README.md).
 
-## WebGPU and prepared playback
+## The stage and playback
 
-`renderer.mjs` compiles root-local line, circle and polygon records into GPU storage buffers. WGSL performs primitive coverage, color gradients, transforms and clipping. Object translation/opacity/visibility are separate records. Cached compatibility textures preserve complex Pivot compositing at the object boundary, including glyph paths, sprites, outlines and isolated opacity. Supported opaque native outlines stay as vectors at high zoom, retaining compiled geometry across viewport changes and submitting only visible ranges. Other high-zoom artwork is cropped on its original pixel grid before device and memory limits apply, preserving detail without allocating complete magnified figures. `raster-view.mjs` supplies the shared editor/worker crop policy; existing raster caches retain its variants and own their lifetimes. The complete scene is not flattened into one texture.
+`src/engine/engine-stage.mjs` is the engine's drawing of the scene canvas: edit frames (the
+pose on screen, onion skins, the Draw view's turn and mirror), prepared playback frames by ticket,
+the quality ladder's resolution and edge sampling, device loss and recovery. A frame the engine
+cannot draw yet leaves the previous picture and is drawn again when it can be; a frame it refuses
+is reported once and the document's next revision is tried afresh. If the engine or its graphics
+device cannot start, the app shows a localized error. See
+[Engine: rendering](engine/rendering.md#in-the-app) and
+[threading](engine/threading.md).
 
-`playback-worker.mjs` evaluates exact native ticks, compiles typed primitive packets, and rasterizes compatibility objects with OffscreenCanvas. `playback.mjs` and `prepared-frames.mjs` hold bounded CPU and GPU packet LRUs. Their hardware-based retention targets and related pixel-cache allocations are defined in `playback-budget.mjs`; an individual worker packet uses a smaller allowance to leave upload headroom. Each GPU packet uploads once; cached playback binds retained buffers and submits without main-thread scene evaluation or tessellation. Document revisions and resource/device changes invalidate the relevant caches; retained scene geometry is rebuilt for any figure definition a patch replaces, and decoded drawing stores only serve their own revision, so incremental mirror updates never render superseded tiles or bounds. Missing packets hold the transport for preparation rather than silently skipping native output ticks. A crashed playback worker pool is replaced on its next use and reloads the document; one document revision allows two consecutive restarts without a delivered packet, so a scene that reliably crashes the worker reports its error instead of restarting in a loop. Background assets and the editor renderer have separate lifetimes.
+`src/engine/engine-playback.mjs` is the transport's side of the engine: the document goes to the
+engine once, ticks are requested from its worker threads, and a packet is a ticket for a frame the
+engine has ready. `playback-budget.mjs` still defines the retention targets of the pixel caches the
+interface keeps. The virtualized timeline draws visible exposures and labels, with a separate
+playhead; the editor schedules rendering when state changes or playback runs, with no permanent idle
+rendering loop. Advanced ruler scrubbing coalesces newer pointer positions to the latest requested
+tick; the ruler displays the pending pointer target, release forces the exact final seek, and
+inspector refreshes and thumbnail work wait until scrubbing finishes. See
+[Adaptive preview memory](ADAPTIVE-PREVIEW.md) for source-image copies, cancellation, cache
+allocations and remaining browser/format limits.
 
-Compatibility textures are cropped to the camera-visible stage with a sampling guard, preserving their original pixel grid and individual figure identities. Raster resolution is rounded once, after applying the native camera to the physical viewport scale. Zoom changes update worker view options without retransmitting an unchanged document. Advanced ruler scrubbing keeps one editable preparation in flight through canvas submission and coalesces newer pointer positions to the latest requested tick. The ruler displays the pending pointer target; the editor retains the tick of the scene being prepared. Release forces the exact final seek. Inspector refreshes and thumbnail work wait until scrubbing finishes.
+## Pictures outside the stage
 
-An oversized prepared packet is retried with lower raster detail. The editable renderer also plans its active texture set before allocation; original geometry, handles and image assets remain intact. See [Adaptive preview memory](ADAPTIVE-PREVIEW.md) for source-image copies, cancellation, cache allocations, full-quality export, validation and remaining browser/format limits. A scene that cannot fit even its minimal records or decode through the available runtime can still fail; sampled corpus success does not establish coverage of every frame in a large imported project.
-
-The virtualized timeline draws visible exposures and labels, with a separate playhead. Scrubbing uses cooperative editable geometry and renderer preparation to preserve selection handles and onion skins; frame-local changes can update the playback worker mirror without retransmitting every keyframe. The editor schedules rendering when state changes or playback runs, with no permanent idle rendering loop. See [renderer details and benchmarks](renderer.md).
-
-## Thumbnail worker synchronization
-
-For documents the Rust engine draws, frame thumbnails, library previews and the camera
-monitor come from the engine's GPU renderer instead (`src/engine/engine-thumbnails.mjs`,
-`src/engine/engine-previews.mjs`; [engine rendering](engine/rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
-no document copy goes to a thumbnail worker. What follows describes the JavaScript worker,
-which still draws in-between previews, documents the engine does not draw and devices
-without a WebGPU canvas the page can read.
+Frame thumbnails, library previews, in-between previews, the camera monitor, the effects catalogue's
+stills, the asset library's figure thumbnails, the background dialog's preview and the rig test's
+pictures are all drawn by the Rust engine, never by JavaScript renderer code
+(`src/engine/engine-thumbnails.mjs`, `src/engine/engine-previews.mjs`,
+`src/engine/engine-pictures.mjs`; [engine rendering](engine/rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
+the stage's device or the preview worker draws them from the document the engine holds, or from a
+small document the interface builds for one picture, and no document copy goes to a thumbnail worker.
 
 Image-only preview workers use `image-resources.mjs` for encoded sources, crop
 selection, decoded variants, byte accounting and disposal. Playback extends
@@ -119,23 +126,8 @@ or create rendering caches. Diagnostics retain one completed image job, not a
 history of requests. `tests/image-resources.browser.mjs` verifies decoding with
 the geometry module unavailable, exact pixels, reuse, cancellation and residency.
 
-`thumbnail-renderer.mjs` and playback share the retained-source comparison and
-validated patch contract in `playback-patch.mjs`. Unchanged historical poses and
-figure definitions remain in the thumbnail worker; edits send source additions,
-replacements and deletions with changed native frames and render metadata.
-Definition edits explicitly dirty source poses because legacy commands can repair
-them in place. Legacy background tables still accompany thumbnail patches.
-
-Transfers are acknowledged in chunks of at most 64 KiB with a 2 ms construction
-target. The worker validates the complete patch before publishing it. The main
-thread updates its reference mirror only after the matching revision's ACK;
-uncertain source IDs survive cancellation, including an edit undone while its
-worker commit is awaiting acknowledgement. Pauses resume staged chunks, while
-document edits discard stale staging. Replacement documents, native frame topology
-changes, worker failures and idle disposal use the full snapshot fallback.
 The existing eight-request bound and filmstrip bitmap cache remain the owners of
-queued work and displayed previews. Source mirrors clear when their worker dies.
-See `tests/thumbnail-patch.test.mjs` and `tests/thumbnail-source-patches.browser.mjs`.
+queued thumbnails and displayed previews.
 
 ## Saving, recovery and exports
 
@@ -149,7 +141,7 @@ See [Audio architecture and verification](AUDIO.md) for timing, codecs and limit
 
 The worker returns a Blob. `native-files.mjs` writes or reads it through acknowledged 256 KiB IPC chunks, without whole-file ArrayBuffer/base64 conversion. Desktop main stages output and atomically replaces the destination only after completion. Cancellation preserves the previous file. Recovery uses the fixed desktop profile; browser recovery uses IndexedDB. See [document export contract](document-exports.md).
 
-`ExportFrameRenderer` receives bounded document chunks and evaluates/rasterizes export frames in a worker. Current-frame images, sequences and videos use this shared path, including No smoothing, Smooth edges and supersampled Smooth sprites. For documents the engine draws, `src/engine/engine-export.mjs` gives the export the engine's renderer instead: the same interface, with a worker that joins the engine's shared memory and draws with its own GPU device, frames the stage would show ([engine rendering: exports](engine/rendering.md#exports)). SVG retains paths and embedded raster assets. Animation image compression, GIF quantization and ZIP assembly run in an encoding worker with one source frame in flight. Document replacement or cancellation stops the rendering job.
+`src/engine/engine-export.mjs` gives every export the engine's renderer: a worker that joins the engine's shared memory and draws with its own GPU device (or the CPU rasterizer where it gets none), frames the stage would show, with the request, progress, revision, timeout and retry logic around it ([engine rendering: exports](engine/rendering.md#exports)). Current-frame images, sequences and videos use this shared path, including No smoothing, Smooth edges and supersampled Smooth sprites. SVG is the engine's too: the frame's draw list written as vector paths with embedded raster assets, or one embedded picture of the frame where it has no vector form (`styk-export` `svg`). Animation image compression, GIF quantization and ZIP assembly run in an encoding worker with one source frame in flight. Document replacement or cancellation stops the rendering job.
 
 Desktop video streams PNG frames in acknowledged chunks to the bundled FFmpeg encoder. VP9 WebM preserves transparency; MP4/AVI/WMV use Pivot's black matte. The browser has opaque WebCodecs encoders with exact timestamps and local muxers: VP8/VP9 in WebM, and H.264 in MP4 (`mp4-muxer.mjs`) where the browser can encode it. Windows AVI can instead stream BGR24 to isolated 32-bit/64-bit helpers using genuine installed VFW compressors and their configuration dialogs. Capability probing describes the actual provider, codecs, alpha behavior and limits; no hosted encoder is required. See [export formats](EXPORT-FORMATS.md), [image exports](image-exports.md) and [installed Windows codecs](WINDOWS-CODECS.md).
 
@@ -225,13 +217,9 @@ See `tests/canvas-guides.browser.mjs` for UI verification.
 
 | Concern | Command | Report |
 | --- | --- | --- |
-| Prepared UI playback/drag | `node tests/renderer-ui-performance.mjs --fps=60` | `artifacts/renderer-ui-performance-60fps.json` |
-| Native imported-rig edits | `node tests/renderer-edit-profile.mjs "path/to/project.piv"` | `artifacts/renderer-edit-profile/report.json` |
-| Whole-app edit/autosave scheduling | `node tests/edit-freeze-profile.mjs "path/to/project.piv"` | `artifacts/edit-freeze-<project>/report.json` |
 | Source-bearing save/restart/export | `node tests/document-export-browser.mjs "path/to/project.piv"` | `artifacts/document-export-browser*.json` |
 | Exact native file streaming | `npm run test:streams:desktop` | `artifacts/native-streams-smoke.json` |
 | Workspace process restart | `npm run test:preferences:desktop` | `artifacts/desktop-preferences-smoke.json` |
-| Sampled prepared raster corpus | `node tests/renderer-corpus.mjs --prepared` | `artifacts/renderer-corpus-prepared/summary.json` |
 | Editor UI screenshots and pixel diffs | `node scripts/ui-snapshots.mjs --url <server> --label <name> [--compare <label>]` | `artifacts/ui-redesign/snapshots/<name>/` |
 
 The UI tests use the local development server; profile scripts accept `STYK_URL`. Artifacts name the fixture, phase, timing scope, and observed limitations. Long-task absence, total job duration, CPU submission, GPU completion, and display latency are separate measurements.

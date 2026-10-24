@@ -19,8 +19,8 @@ export function exportContext(canvas) {
 /**
  * Hands a finished export frame from its worker's canvas to the interface: an
  * ImageBitmap for canvas consumers, or a lossless PNG for native video, APNG and
- * PNG sequences. Shared by the JavaScript export worker (export-frame-worker.mjs)
- * and the engine's (engine/engine-export-worker.mjs).
+ * PNG sequences. Used by the engine's export worker
+ * (engine/engine-export-worker.mjs).
  *
  * `native` frames are composited over black in place unless `preserveAlpha`: no
  * second full-size canvas or renderer-thread bitmap round trip is needed for opaque

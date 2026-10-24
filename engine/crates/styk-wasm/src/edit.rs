@@ -7,7 +7,6 @@ use styk_engine::Engine;
 use styk_engine::document::OpenedDocument;
 use wasm_bindgen::prelude::*;
 
-use crate::engine::EngineHandle;
 use crate::js_error;
 
 /// What a session publishes into: the engine, and the document it was started from (its typed views and
@@ -71,18 +70,6 @@ impl EditSession {
             Ok(None) => publisher.published = None,
             Err(error) => publisher.error = Some(error.to_string()),
         }
-    }
-}
-
-#[wasm_bindgen]
-impl EngineHandle {
-    /// Starts an edit session on the document the engine holds with the editor's `state` (JSON: options,
-    /// view and counters). `undefined` while the document is busy or none is open: this never waits.
-    pub fn edit_session(&self, state: &str) -> Result<Option<EditSession>, JsError> {
-        // The engine's typed views of this revision: the session converts nothing to start.
-        let Some((revision, tree, loader, prepared)) = self.engine.stored_for_editing() else { return Ok(None) };
-        let session = styk_edit::session::Session::start_prepared(tree, state, loader, prepared).map_err(js_error)?;
-        Ok(Some(EditSession { session: Some(session), revision: revision as f64, publisher: None }))
     }
 }
 

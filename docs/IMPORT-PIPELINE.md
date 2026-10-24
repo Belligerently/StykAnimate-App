@@ -24,21 +24,10 @@ Correctness evidence includes every field and JSON property order in all 23 orig
 
 The source-stable one-process diagnostic in `artifacts/matched-app-interaction-cpp-async-clean-v1/report.json` measured cold import to first GPU completion callback at 2016.8 ms and warm import at 1699.1 ms on the tested Windows machine. A later readiness audit found that this first submission preceded the background texture: these values describe an incomplete first submission, not a complete visible imported scene. It opened the last stored key directly and passed both sets of 23 subsequent pose/pixel checks. The initial viewport was vertically offset by 13 pixels from the native benchmark, while the later pose trials used the exact matched transform. Remaining first-render tasks lasted 67/52 ms. These diagnostic results must not be compared directly with native Pivot's different Present-return endpoint or used as complete-scene import latency.
 
-Initial scene preparation now runs before the editor publishes the new document. The model's `prepareScene` hook builds exact initial-frame geometry cooperatively, decodes the background and images used by that frame into a private cache, and prepares GPU buffers and textures without changing the live canvas. The previous document remains usable until preparation succeeds. The document listener then adopts the exact geometry, images, fitted view and GPU resources together. The first normal render uses those retained resources; it does not rebuild the scene or display a frame with missing media. Aborted, superseded or failed preparation releases only the incoming resources. See [renderer.md](renderer.md) for ownership and scheduling limits.
-
-`tests/renderer-initial-scene.browser.mjs` exercises the actual app with a native final stored frame containing an image background, foreground sprite, translucent figure and nonidentity saved camera. All nine checks pass: the first render has complete media, neutral editing coordinates, zero primitive uploads or compilation, and pixels identical to independent fresh rendering and the former upload method. A failed subsequent image decode preserves the prior report, GPU buffers and exact canvas. This small fixture establishes behavior, not large-scene timing; screenshots and machine-readable evidence are in `artifacts/renderer-initial-scene/`.
-
 The subsequent source-stable actual Electron Akane diagnostic measured 2224.2 ms cold and 1640.9 ms warm from file change to the first complete-scene GPU callback. Both first submissions already had decoded media and the required texture-backed background. Initial rendering took 0.6/0.5 ms of CPU wall time with no primitive uploads; scene staging uploaded 1,746,816 bytes in three calls. There were no import main-thread long tasks of 50 ms or more. Retained batch pixels matched the old 615-upload path exactly, and both sets of 23 pointer mutations matched the independent renderer and all 15,697 native pose nodes within 0.000031 world units. This is one diagnostic pair on one Windows machine, with a correctness upload comparison before the gestures. It is not the final three-process timing run, a physical input/display measurement, or a direct speedup comparison with native Present return. Full phase timings, stable runtime hashes, screenshots and qualifications are in `artifacts/matched-app-interaction-atomic-diagnostic-v1/SUMMARY.md` and `report.json`.
 
-A successful nonempty native-v5 import can also hand its validated frame bytes to
-initial playback mirroring. `playback-native.mjs` owns this one-use transport
-representation separately from the editable document. The source response must
-fit 64 MiB and one quarter of the actual playback-cache allowance. Report,
-revision and draft ownership are checked before adoption; pending bytes are
-released on editing, replacement or disposal. Each worker receives acknowledged
-1 MiB frame-table slices and the usual document metadata/identities, reconstructs
-with the same native parser, and publishes only its current incoming generation.
-Cancellation cannot publish a partial mirror. Edited projects, legacy/container
-imports, zero-frame working-pose normalization and rejected admission keep the
-ordinary lossless document transport. Source bytes are released after this first
-mirror and never become saved document/history fields.
+Opening a project does not use this transport. The engine reads the file (or the document's JSON) on its own workers,
+normalizes it as the editor's load does and keeps it; the editor receives a read view of it in slices
+([engine/document.md](engine/document.md#opening-a-document)). The codec keeps the original of a Pivot file only to save it again
+(`/api/source/keep`; the web build embeds it in the document). The transport above serves the imports that are not
+opened as projects, such as a figure taken from a library file.

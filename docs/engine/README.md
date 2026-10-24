@@ -20,7 +20,7 @@ is [`../RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md); decisions are in
 | [drawing.md](drawing.md) | the drawing raster engine: brushes, strokes, fill, selections, transforms, tile and undo codecs (S6) |
 
 Commands: `npm run engine:build`, `npm run engine:test` (seconds once built),
-`npm run engine:parity` (`-- --corpus`, `-- --app`), `npm run engine:bench`
+`npm run engine:parity` (`-- --corpus`), `npm run engine:bench`
 (one benchmark run; `scripts/engine-bench-matrix.sh` for rounds) and
 `npm run engine:bench:summary <label>`.
 

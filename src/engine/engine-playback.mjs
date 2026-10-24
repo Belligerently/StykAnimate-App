@@ -1,14 +1,10 @@
 /**
- * Playback preparation for the app: the engine's, except while the engine has failed or
- * a drawing stroke waits for publication, when the JavaScript playback cache's
- * (docs/RUST-ENGINE-PORT.md, S3).
+ * Playback preparation for the app: the engine's alone (docs/engine/threading.md).
  *
- * `createStagePlayback` wraps the JavaScript `PlaybackCache` and keeps its
- * interface, so the app's transport does not change. While the engine prepares
- * playback, it prepares the frames of the document its session holds (nothing is
- * copied into playback workers), ticks are requested from the engine's worker
- * threads, and a "packet" is only a ticket: the tick, the frame's camera and
- * backgrounds for the overlay, and a key the stage renderer recognises.
+ * `createStagePlayback` is the app's transport interface to the engine. The engine holds the document its
+ * edit session publishes (nothing is copied into playback workers), ticks are requested from the engine's
+ * worker threads, and a "packet" is only a ticket: the tick, the frame's camera and backgrounds for the
+ * overlay, and a key the stage recognises. A packet is available (`get`) once the engine has the frame ready.
  */
 import {messageError} from '../localized-error.mjs';
 import {planEngineLayerMigration, planEngineInbetweens, planOnInterface, isUnported} from './engine-planning.mjs';
@@ -33,16 +29,14 @@ const MAX_ENGINE_TICKETS = 120;
 const sample = tick => Number.isFinite(tick) && tick >= 0;
 
 /**
- * @param {object} legacy the JavaScript PlaybackCache
- * @param {{stage(): object|null}} options `stage()` returns the stage renderer once it exists
+ * @param {{stage(): object|null, maxTickets?: number}} options `stage()` returns the stage once it exists;
+ *   `maxTickets` lowers the number of tickets kept (120 at most)
  */
-export function createStagePlayback(legacy, {stage}) {
+export function createStagePlayback({stage, maxTickets}) {
   const side = () => stage()?.engineSide ?? null;
-  /** Whether the engine prepares playback for the loaded document. */
-  let engineMode = false;
   let report = null, revision = -1, hiddenKey = null;
   const packets = new Map();
-  const configured = Number(legacy.maxFrames);
+  const configured = Number(maxTickets);
   const ticketLimit = Number.isFinite(configured) ? Math.max(1, Math.min(MAX_ENGINE_TICKETS, Math.floor(configured))) : MAX_ENGINE_TICKETS;
   let requested = [], packetGeneration = null;
   // Latest admission requests only. Busy never certifies the old native view.
@@ -112,13 +106,6 @@ export function createStagePlayback(legacy, {stage}) {
     packets.set(tick, packet);
   };
 
-  const eligible = candidate => {
-    const engine = side();
-    if (!engine) return false;
-    // The stage renderer asks whether its prepared frames come from the engine.
-    engine.playbackEngine ??= () => engineMode;
-    return !engine.failed && !engine.drawingUnpublished(candidate);
-  };
   const setHidden = options => {
     if (options?.hiddenKey === undefined || (!pendingHidden && options.hiddenKey === hiddenKey)) return;
     pendingHidden = {key: options.hiddenKey, uids: new Uint32Array(options.hiddenUids ?? []), order: ++controlOrder};
@@ -132,11 +119,12 @@ export function createStagePlayback(legacy, {stage}) {
     pendingRequest = null;
     dropPackets();
   };
-  const held = () => engineMode && holdsRevision(side().engine, revision);
+  /** Whether the engine holds the editor's revision: its session publishes every change as it makes it. */
+  const held = () => side() !== null && holdsRevision(side().engine, revision);
   const ready = () => !controlsPending() && held();
   const packetFor = tick => {
     flushControls();
-    if (!sample(tick) || !ready()) return null;
+    if (!side() || !sample(tick) || !ready()) return null;
     tick = tick === 0 ? 0 : tick;
     const handle = side().engine.handle;
     prunePackets(handle);
@@ -158,97 +146,80 @@ export function createStagePlayback(legacy, {stage}) {
   };
 
   const playback = {
-    get engineMode() { return engineMode; },
-    get report() { return engineMode ? report : legacy.report; },
-    get documentRevision() { return engineMode ? revision : legacy.documentRevision; },
-    set documentRevision(value) { if (engineMode) revision = value; else legacy.documentRevision = value; },
-    get cache() { return engineMode ? packets : legacy.cache; },
+    get report() { return report; },
+    get documentRevision() { return revision; },
+    set documentRevision(value) { revision = value; },
+    get cache() { return packets; },
     get stats() {
-      if (!engineMode) return legacy.stats;
-      const frames = JSON.parse(side().engine.handle.stats());
+      const engine = side();
+      if (!engine) return Object.assign(stats, {preparedFrames: 0, compileMs: 0, lastCompileMs: 0, pendingFrames: 0, bytes: 0, readyFrames: 0, hits: 0, misses: 0});
+      const frames = JSON.parse(engine.engine.handle.stats());
       return Object.assign(stats, {preparedFrames: frames.prepared, compileMs: frames.totalMs, lastCompileMs: frames.prepared ? frames.totalMs / frames.prepared : 0,
         pendingFrames: 0, bytes: frames.cachedBytes, readyFrames: frames.cached, hits: 0, misses: 0, engine: frames});
     },
+    /** Brings the engine to `next` at `options.revision`; the app loads the document again once the stage exists if it did not yet. */
     load(next, options = {}) {
       next = next?.document ?? next?.report ?? next;
-      if (!eligible(next)) {
-        engineMode = false; report = null; dropPackets();
-        return legacy.load(next, options);
-      }
       // The engine holds the document already; no worker gets a copy of it.
-      if (!engineMode && legacy.report) legacy.invalidate();
-      engineMode = true; report = next; revision = options.revision;
+      report = next; revision = options.revision;
       setHidden(options);
       changed();
       return playback;
     },
     updateDocument(patch = {}) {
-      const nextRevision = patch.revision ?? revision;
-      if (!engineMode) return legacy.updateDocument(patch);
-      if (!eligible(report)) { engineMode = false; dropPackets(); return legacy.load(report, patch); }
-      revision = nextRevision;
+      revision = patch.revision ?? revision;
       setHidden(patch);
       changed();
       return playback;
     },
     updateView(options = {}) {
-      if (!engineMode) return legacy.updateView(options);
       // The engine's frames do not depend on the view or the camera mode; only on what is hidden.
       setHidden(options);
       return playback;
     },
-    invalidate(options) {
-      if (!engineMode) return legacy.invalidate(options);
+    invalidate() {
       pendingRequest = {playhead: 0, samples: new Float64Array(0), order: ++controlOrder};
       flushControls();
       dropPackets();
       return playback;
     },
-    async prepareRange(ticks, options) {
-      if (!engineMode) return legacy.prepareRange(ticks, options);
+    async prepareRange(ticks) {
       // A busy earlier admission stays cold, but cannot suppress newer demand.
       if (!held() || !ticks.length || !sample(ticks[0])) return;
       const engine = side().engine;
-      if (sample(ticks[0])) {
-        requested = [];
-        for (let index = 0; index < Math.min(ticks.length, ticketLimit); index++) {
-          const tick = ticks[index];
-          if (sample(tick) && !requested.includes(tick)) requested.push(tick === 0 ? 0 : tick);
-        }
+      requested = [];
+      for (let index = 0; index < Math.min(ticks.length, ticketLimit); index++) {
+        const tick = ticks[index];
+        if (sample(tick) && !requested.includes(tick)) requested.push(tick === 0 ? 0 : tick);
       }
       prunePackets(engine.handle);
       pendingRequest = {playhead: ticks[0], samples: new Float64Array(ticks), order: ++controlOrder};
       flushControls();
     },
-    get(tick) { return engineMode ? packetFor(tick) : legacy.get(tick); },
-    has(tick) { return engineMode ? packetFor(tick) !== null : legacy.has(tick); },
+    get(tick) { return packetFor(tick); },
+    has(tick) { return packetFor(tick) !== null; },
     bufferedAhead(tick, count, end) {
-      if (!engineMode) return legacy.bufferedAhead(tick, count, end);
+      if (!side()) return false;
       const total = side().engine.handle.total_ticks(), last = Math.min(tick + count, end ?? total, total);
       if (total === 0) return false; // No document or a busy scalar header is cold.
       for (let next = tick; next < last; next++) if (packetFor(next) === null) return false;
       return packetFor(tick) !== null;
     },
-    setInteractionActive(active) { return legacy.setInteractionActive(active); },
     setVfxEnabled(enabled) {
       // The engine's prepared frames are kept with or without effects, as the editor's preview shows them.
-      const engine = side();
-      if (engine) {
+      if (side()) {
         pendingEffects = {enabled: enabled !== false, order: ++controlOrder};
-        if (engineMode) dropPackets();
+        dropPackets();
         flushControls();
       }
-      return legacy.setVfxEnabled(enabled);
     },
-    stageNativeSnapshot(...args) { return engineMode ? false : legacy.stageNativeSnapshot(...args); },
-    discardNativeSnapshot() { return legacy.discardNativeSnapshot(); },
     // The editor's background planning jobs: on the engine's workers for the document it holds.
     planLayerMigration(request, options) { return planning('layers', request, options); },
     planInsertInbetweens(request, options) { return planning('inbetweens', request, options); },
     dispose() {
       pendingHidden = pendingEffects = pendingRequest = null;
       controlLifetime++; retryScheduled = false;
-      dropPackets(); return legacy.dispose();
+      dropPackets();
     },
   };
   /**
@@ -257,35 +228,22 @@ export function createStagePlayback(legacy, {stage}) {
    * is planned on the interface in slices, by the editor's own planners.
    */
   const planning = async (kind, request, options = {}) => {
-    const document = engineMode ? report : legacy.report;
+    const document = report;
     if (!document) {
       const label = kind === 'layers' ? ['errors.playbackPlanning.layerMigrationLabel', 'layer migration'] : ['errors.playbackPlanning.inbetweenInsertionLabel', 'insert inbetween'];
       throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value: {messageKey: label[0], diagnosticValue: label[1]}});
     }
-    if (engineMode) {
-      const planned = report, plannedRevision = revision;
-      // The engine plans the document its session holds; a revision it does not hold leaves the plan to the interface.
-      if (engineMode && report === planned && revision === plannedRevision && held()) {
-        const isCurrent = () => engineMode && report === planned && revision === plannedRevision && (options.isCurrent?.() ?? true);
-        try {
-          return await (kind === 'layers' ? planEngineLayerMigration : planEngineInbetweens)(side().engine, plannedRevision, request, {...options, isCurrent});
-        } catch (error) {
-          if (!isUnported(error)) throw error;
-        }
+    const planned = report, plannedRevision = revision;
+    // The engine plans the document its session holds; a revision it does not hold leaves the plan to the interface.
+    if (report === planned && revision === plannedRevision && held()) {
+      const isCurrent = () => report === planned && revision === plannedRevision && (options.isCurrent?.() ?? true);
+      try {
+        return await (kind === 'layers' ? planEngineLayerMigration : planEngineInbetweens)(side().engine, plannedRevision, request, {...options, isCurrent});
+      } catch (error) {
+        if (!isUnported(error)) throw error;
       }
     }
     return planOnInterface(kind, document, request, options);
   };
-  return new Proxy(playback, {
-    get(target, property) {
-      if (property in target) return Reflect.get(target, property);
-      const value = legacy[property];
-      return typeof value === 'function' ? value.bind(legacy) : value;
-    },
-    set(target, property, value) {
-      if (property in target) target[property] = value; else legacy[property] = value;
-      return true;
-    },
-    has: (target, property) => property in target || property in legacy,
-  });
+  return playback;
 }

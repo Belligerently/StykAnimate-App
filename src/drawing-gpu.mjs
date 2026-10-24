@@ -1,6 +1,6 @@
 import {messageError} from './localized-error.mjs';
 import {TILE,TILE_BYTES,tileKey} from './drawing-tiles.mjs';
-import {hasDrawableVfx} from './vfx-canvas.mjs';
+import {hasDrawableVfx} from './vfx-drawable.mjs';
 import {compactTile} from './drawing-pixels.mjs';
 import {smudgeStride} from './drawing-brush.mjs';
 import {ATLAS_BYTES,TIP_SIZE,GRAIN_SIZE,brushAtlas,ensureTexture,tipBase} from './drawing-brush-textures.mjs';

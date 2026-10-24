@@ -4,7 +4,8 @@ import {appBoundsMarker, captureEditBounds, markAppBounds, MAX_BOUNDS_SAMPLES} f
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {appBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
-import {installEditShadow} from '../src/engine/engine-edit-shadow.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
+import {engineBuilt} from './support/engine-node.mjs';
 const editor = {tick: 3, frameIndex: 0, selectedUids: new Set([7, 2])};
 const entry = {obj: {unique_id: 7}};
 test('bounds bridge records existing requests once, preserves callback receiver and frame range properties', () => {
@@ -67,24 +68,22 @@ test('unsupported nested option data leaves getters, toJSON and the original cal
   assert.equal(invoked, 0);
 });
 
-test('the editing facade keeps callback commands in the editor and sends only their completed measurements', () => {
+/** The editor owned by the real engine, as the app has it: the session its open started edits the document. */
+const owned = editor => installEngineOwner(editor);
+test('the engine measures the app\'s bounds callback itself; any other callback runs in the editor', {skip: !engineBuilt}, async () => {
   const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/measured-bounds.document.json', import.meta.url), 'utf8'));
-  const owner = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(document);
-  owner.selectMany([1, 3]);
-  const order = [], queries = appBounds();
-  let received;
-  const initialRevision = owner.revision;
-  const session = {revision: () => initialRevision, free() {}, call(name, args) {
-    order.push('engine'); received = {name, args: JSON.parse(args)};
-    return JSON.stringify({status: 'unported', reason: 'inspection completed'});
-  }};
-  const side = {mirror: {framesCurrent: () => true}, engine: {handle: {edit_session: () => session}}};
-  const report = installEditShadow(owner, () => side, {mode: 'own'});
-  const boundsOf = entry => { order.push(entry.obj.unique_id); return queries(entry); };
-  assert.deepEqual(owner.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf}), {changedFrames: 2, changedTicks: [0, 6], insertedUids: []});
-  assert.deepEqual(order, [1, 3, 1, 3, 'engine']);
-  assert.equal(received.name, 'alignFiguresInFrames');
-  assert.deepEqual(received.args[3].boundsOf['@measuredBounds'].samples.map(row => row.uid), [1, 3, 1, 3]);
-  assert.equal(report.owned, 0); assert.equal(report.calls, 1);
-  assert.equal(report.failedOwned, 0); assert.equal(report.failedOwnedMs, 0);
+  const outcomes = [];
+  for (const app of [false, true]) {
+    const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));
+    editor.selectMany([1, 3]);
+    const owner = owned(editor), order = [], queries = appBounds();
+    const boundsOf = entry => { order.push(entry.obj.unique_id); return queries(entry); };
+    const result = editor.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf: app ? markAppBounds(boundsOf) : boundsOf});
+    assert.deepEqual(result, {changedFrames: 2, changedTicks: [0, 6], insertedUids: []});
+    if (app) { assert.deepEqual(order, [], 'the engine did not call back'); assert.equal(owner.native, 1); assert.equal(owner.fallback, 0); }
+    else { assert.deepEqual(order, [1, 3, 1, 3], 'the editor measured the figures'); assert.equal(owner.native, 0); assert.equal(owner.fallback, 1); }
+    outcomes.push(JSON.stringify(editor.report));
+    owner.release();
+  }
+  assert.equal(outcomes[0], outcomes[1], 'the engine moved the figures as the editor does');
 });

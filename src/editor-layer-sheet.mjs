@@ -172,8 +172,7 @@ function publish(editor,plan,label,{selection=editor._selectionState(),assets,se
   editor._layerChanged({reindex:plan.layers!==beforeLayers});editor._emit('edit',{label,structural:true,timing:true,layerSheet:true,
     definition:Boolean(assets?.figure_types),frameIndices:[],sourceIds:plan.sources.map(source=>source.id)});return true;
 }
-/** Publishes a layer sheet the engine computed for a call it ran in the editor's place
- * (src/engine/engine-edit-shadow.mjs, `?engineEdit=on`): the same bookkeeping, events
+/** Publishes a layer sheet the engine's planner computed (src/engine/engine-planning.mjs): the same bookkeeping, events
  * and history as a plan made here. `sheet.tracks` holds the tracks the call replaced and
  * `trackOrder` names every track; the others stay the editor's own objects. Every source
  * it names is new and its edited imported endpoints are already materialized. */

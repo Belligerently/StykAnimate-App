@@ -1,8 +1,8 @@
 /** Figure-bounds callbacks of the alignment and camera-centering commands (docs/engine/editing.md).
  * The app's own callback (`boundsOf` in src/app.mjs) is registered here with `markAppBounds`
  * and reaches the engine as `{"@boundsCallback": "app"}`: the engine measures the figures
- * itself (styk-edit `bounds.rs`). Any other callback is the editor's: its completed measurements
- * are retained as bounded data for a shadow to replay (no geometry is built here).
+ * itself (styk-edit `bounds.rs`). Any other callback is the editor's: `captureEditBounds` retains its
+ * completed measurements as bounded data for the recorders to replay (no geometry is built here).
  */
 const optionIndex = {centerCamera: 2, alignSelection: 2, alignFiguresInFrames: 3};
 export const MAX_BOUNDS_SAMPLES = 8192;

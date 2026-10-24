@@ -1,7 +1,7 @@
 //! Effect layers in draw lists: which groups get a raster of their own, how
 //! they nest, and the rectangles they are filtered on (docs/engine/vfx.md,
 //! Rendering). The effects themselves are checked against the editor in
-//! `tests/vfx.rs`; pixels are compared in the app (scripts/engine-app-parity.mjs).
+//! `tests/vfx.rs`; pixels were compared in the app (D13).
 
 use std::path::{Path, PathBuf};
 

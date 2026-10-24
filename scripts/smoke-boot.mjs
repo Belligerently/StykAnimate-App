@@ -8,8 +8,8 @@
 // exposed, the codec answers (and, packaged, is the frozen build with its native
 // scanner), video export offers what the platform's encoder supports, updates and
 // telemetry are in their expected state, and there were no page errors. On Linux
-// without a display, run it under xvfb-run; without a GPU it reports the Canvas 2D
-// compatibility renderer instead of WebGPU, and both are accepted.
+// without a display, run it under xvfb-run; without a GPU it reports WebGL2
+// instead of WebGPU, and both are accepted.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -49,7 +49,7 @@ try {
   expect('The window opens on the editor', /StykAnimate/.test(facts.title), facts.title);
   expect('The desktop bridge is present and Node is not exposed to the page', facts.desktop && !facts.nodeExposed);
   expect('The bridge reports this platform', facts.platform === process.platform, facts.platform);
-  expect('The renderer started', ['WebGPU', 'Canvas 2D fallback'].includes(facts.renderer), facts.renderer);
+  expect('The renderer started', ['WebGPU', 'WebGL2'].includes(facts.renderer), facts.renderer);
   expect('The codec answers', facts.health?.ok === true, `${facts.health?.jsonEncoder}, scanner ${facts.health?.nativeFrameScanner}`);
   expect('The codec runs its WebAssembly module with the desktop limits', facts.health?.jsonEncoder === 'rust' && facts.health?.maxImportBytes === 128 * 1024 * 1024);
   if (packaged) {

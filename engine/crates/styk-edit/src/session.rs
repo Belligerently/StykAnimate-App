@@ -4,8 +4,8 @@
 //! editor state the document does not carry, runs the editor's calls by name, and
 //! answers with everything the JavaScript editor would show for the same call: the
 //! returned value, the playhead and selection, the change events, the gesture's draft,
-//! and the parts of the document a command published. `src/engine/engine-edit-shadow.mjs`
-//! compares that with what the JavaScript editor did (docs/engine/editing.md).
+//! and the parts of the document a command published. `src/engine/engine-owner.mjs`
+//! applies it to the JavaScript editor (docs/engine/editing.md).
 
 use std::collections::HashSet;
 use std::sync::Arc;

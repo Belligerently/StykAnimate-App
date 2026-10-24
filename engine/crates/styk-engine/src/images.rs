@@ -36,6 +36,11 @@ impl Uploaded {
         self.places.clear();
     }
 
+    /// How many pictures the atlas holds.
+    pub fn len(&self) -> usize {
+        self.places.len()
+    }
+
     /// `image` was written into the atlas `assets` lays out.
     pub fn record(&mut self, assets: &Assets, image: &DecodedImage) {
         let entry: Option<&AtlasEntry> = if image.drawing { assets.drawing.get(image.index as usize) } else { assets.atlas.get(image.index as usize) };

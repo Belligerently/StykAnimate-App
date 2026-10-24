@@ -33,7 +33,7 @@ try{
  const stable=()=>page.evaluate(()=>{const e=styk.editor,b=window.polygonBaseline;return e._undo.length===b.undo&&e._redo.length===b.redo&&JSON.stringify(e.report)===b.report&&e.revision===b.revision;});
  const handles=()=>page.evaluate(()=>styk.state.polygon?.handles??null);
  const click=async(id,ctrl=false)=>{
-  const p=await page.evaluate(async id=>{const {worldToScreen}=await import('/src/renderer.mjs');const e=styk.editor,g=e.geometry.objects.get(e.selectedSlot),r=document.querySelector('#viewport').getBoundingClientRect(),p=worldToScreen(g.joints.get(id),{report:e.report,frame:e.frame,view:styk.state.view});return{x:r.x+p.x,y:r.y+p.y};},id);
+  const p=await page.evaluate(async id=>{const {worldToScreen}=await import('/src/renderer-geometry.mjs');const e=styk.editor,g=e.geometry.objects.get(e.selectedSlot),r=document.querySelector('#viewport').getBoundingClientRect(),p=worldToScreen(g.joints.get(id),{report:e.report,frame:e.frame,view:styk.state.view});return{x:r.x+p.x,y:r.y+p.y};},id);
   if(ctrl)await page.keyboard.down('Control');try{await page.mouse.click(p.x,p.y);}finally{if(ctrl)await page.keyboard.up('Control');}
  };
  const start=()=>page.locator('[data-tool="polygon"]').click();
@@ -50,9 +50,9 @@ try{
  await page.keyboard.press('Control+y');await page.keyboard.press('Control+Shift+z');
  check('both redo shortcuts restore the grouped draft',JSON.stringify(await handles())==='[0,1,2,3]'&&await stable());
  await page.waitForFunction(()=>window.polygonPaths.some(p=>p.length>10));
- const preview=await page.evaluate(async()=>{const {polygonPreviewPoints}=await import('/src/polygon-preview.mjs'),{worldToScreen}=await import('/src/renderer.mjs');const e=styk.editor,g=e.geometry.objects.get(e.selectedSlot);const expected=polygonPreviewPoints(g,styk.state.polygon.handles).map(p=>worldToScreen(p,{report:e.report,frame:e.frame,view:styk.state.view}));const exact=window.polygonPaths.find(p=>JSON.stringify(p)===JSON.stringify(expected));window.curvedDraftPath=polygonPreviewPoints(g,styk.state.polygon.handles);return{exact:Boolean(exact),count:expected.length};});
+ const preview=await page.evaluate(async()=>{const {polygonPreviewPoints}=await import('/src/polygon-preview.mjs'),{worldToScreen}=await import('/src/renderer-geometry.mjs');const e=styk.editor,g=e.geometry.objects.get(e.selectedSlot);const expected=polygonPreviewPoints(g,styk.state.polygon.handles).map(p=>worldToScreen(p,{report:e.report,frame:e.frame,view:styk.state.view}));const exact=window.polygonPaths.find(p=>JSON.stringify(p)===JSON.stringify(expected));window.curvedDraftPath=polygonPreviewPoints(g,styk.state.polygon.handles);return{exact:Boolean(exact),count:expected.length};});
  check('actual overlay follows every evaluated bent edge sample',preview.exact&&preview.count>10);
- const markerPixels=await page.evaluate(async()=>{const {worldToScreen}=await import('/src/renderer.mjs');const e=styk.editor,g=e.geometry.objects.get(e.selectedSlot),canvas=document.querySelector('#overlay'),ctx=canvas.getContext('2d'),ratio=canvas.width/canvas.clientWidth;return[0,1].map(id=>{const p=worldToScreen(g.joints.get(id),{report:e.report,frame:e.frame,view:styk.state.view});return [...ctx.getImageData(Math.round(p.x*ratio),Math.round(p.y*ratio),1,1).data];});});
+ const markerPixels=await page.evaluate(async()=>{const {worldToScreen}=await import('/src/renderer-geometry.mjs');const e=styk.editor,g=e.geometry.objects.get(e.selectedSlot),canvas=document.querySelector('#overlay'),ctx=canvas.getContext('2d'),ratio=canvas.width/canvas.clientWidth;return[0,1].map(id=>{const p=worldToScreen(g.joints.get(id),{report:e.report,frame:e.frame,view:styk.state.view});return [...ctx.getImageData(Math.round(p.x*ratio),Math.round(p.y*ratio),1,1).data];});});
  check('construction uses a black start dot and Pivot-red selected joints',markerPixels[0].slice(0,3).every(n=>n===0)&&markerPixels[1][0]===255&&markerPixels[1][1]===0&&markerPixels[1][2]===0&&markerPixels.every(p=>p[3]===255));
  await page.screenshot({path:path.join(output,'curved-draft.png')});
  await click(0);

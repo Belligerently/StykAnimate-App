@@ -45,7 +45,8 @@ export function invalidateEvaluationCaches(report, {retainGeometry = false} = {}
 }
 import {interpolateVfx, vfxStack, activeVfx} from '../vfx.mjs';
 
-import {withVfx,segmentVfx,releaseVfxSurface,hasDrawableVfx,configureVfxSoftwareResources} from '../vfx-canvas.mjs';
+import {withVfx,releaseVfxSurface,configureVfxSoftwareResources} from '../vfx-canvas.mjs';
+import {segmentVfx,hasDrawableVfx} from '../vfx-drawable.mjs';
 import {objectBounds} from '../renderer-geometry.mjs';
 export const TAU = Math.PI * 2;
 export const lerp = (a, b, t) => Number(a) + (Number(b) - Number(a)) * t;

@@ -3,7 +3,6 @@
 //
 //   npm run engine:parity                # the repository tier: needs nothing outside the checkout
 //   npm run engine:parity -- --corpus    # also the private corpus (~/Downloads), where present
-//   npm run engine:parity -- --app       # also the app with and without the engine (Chromium)
 //
 // Repository tier: the Rust fixture suites (IK, evaluation, effects, 3D, property channels, draw lists, the Pivot
 // codec's recorded answers, command replays, the drawing raster engine), the container reader and writer (the app's open and save path against the Rust store)
@@ -11,8 +10,7 @@
 // that changes means the editor's behaviour changed).
 // Corpus tier: geometry of every tick of the benchmark files and of the catalogue's 3D scenes against the editor
 // (engine/tools/reference.mjs + styk compare) and the Pivot codec replay when a recording
-// exists. App tier: scripts/engine-app-parity.mjs on the start-up document and the IK
-// fixtures. Exit code 1 when any check fails.
+// exists. Exit code 1 when any check fails.
 import {spawnSync} from 'node:child_process';
 import {existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
@@ -163,18 +161,6 @@ if (args.has('--corpus')) {
   }
   const recording = path.join(root, 'engine/target/piv-parity');
   if (existsSync(recording)) run('Pivot codec replay', ...cargo('run', '--release', '-p', 'styk-piv', '--bin', 'styk-piv', '--', 'replay', recording), {quiet: true});
-}
-
-if (args.has('--app')) {
-  run('app: start-up document', process.execPath, ['scripts/engine-app-parity.mjs', '--label', 'parity-startup', '--onion', '--play', '--require-engine'], {quiet: true});
-  for (const fixture of ['startup-pinned', 'joined-stretch'])
-    run(`app: IK fixture ${fixture}`, process.execPath, ['scripts/engine-app-parity.mjs', '--file', `engine/crates/styk-eval/tests/fixtures/ik/${fixture}.json`, '--label', `parity-${fixture}`, '--require-engine'], {quiet: true});
-}
-
-if (args.has('--app')) {
-  // Ported editor calls in the real app, in shadow of the JavaScript editor (docs/engine/editing.md).
-  for (const document of ['joined-chain', 'sheet-layers', 'sheet-movieclip-loose'])
-    run(`app: shadow editing ${document}`, process.execPath, ['scripts/engine-edit-shadow.mjs', '--file', `engine/tests/edit/${document}.document.json`], {quiet: true});
 }
 
 console.log('\nEngine parity');

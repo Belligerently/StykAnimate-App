@@ -15,6 +15,9 @@ struct View {
     background_bounds: vec4<f32>, // world x, y, width, height
     paint_quad0: vec4<f32>, // transformed fill rectangle corners 0, 1
     paint_quad1: vec4<f32>, // transformed fill rectangle corners 2, 3
+    orient_quad0: vec4<f32>, // the artboard's corners on a rotated or mirrored view: (0,0), (1,0)
+    orient_quad1: vec4<f32>, // then (1,1), (0,1)
+    orient_flags: vec4<f32>, // x: the artboard is that quad; y: the frame pass clips to it
 };
 
 struct Prim {
@@ -487,6 +490,9 @@ fn vs_main(in: VsIn) -> VsOut {
         // The artboard on screen; a group's whole layer (the camera image's background).
         if (g == 0u) {
             var s = mix(view.artboard.xy, view.artboard.zw, c);
+            if (view.orient_flags.x > 0.5) {
+                s = mix(mix(view.orient_quad0.xy, view.orient_quad0.zw, c.x), mix(view.orient_quad1.zw, view.orient_quad1.xy, c.x), c.y);
+            }
             if (view.inv_t.z > 0.5) {
                 if (kind == K_BG_IMAGE || view.inv_t.w > 0.5) {
                     // One full-sample paint with independent coverage and clip
@@ -940,8 +946,26 @@ fn canvas_image_bounds(p: Prim) -> vec4<f32> {
     return vec4<f32>(low / density, max(vec2<f32>(1.0), ceil((b.xy + b.zw) * density) - low) / density);
 }
 
+// Whether a screen position is inside the artboard of a rotated or mirrored view.
+fn inside_orient_artboard(p: vec2<f32>) -> bool {
+    let a = view.orient_quad0.xy;
+    let b = view.orient_quad0.zw;
+    let c = view.orient_quad1.xy;
+    let d = view.orient_quad1.zw;
+    let e0 = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    let e1 = (c.x - b.x) * (p.y - b.y) - (c.y - b.y) * (p.x - b.x);
+    let e2 = (d.x - c.x) * (p.y - c.y) - (d.y - c.y) * (p.x - c.x);
+    let e3 = (a.x - d.x) * (p.y - d.y) - (a.y - d.y) * (p.x - d.x);
+    return (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0 && e3 >= 0.0) || (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0 && e3 <= 0.0);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    // The scene of a rotated view stays on the artboard (backgrounds are the artboard's quad already).
+    if (view.orient_flags.y > 0.5 && in.head.y == 0u) {
+        let drawn = in.head.x & 255u;
+        if (drawn != K_FILL_VIEW && drawn != K_BG_IMAGE && !inside_orient_artboard(in.pos.xy)) { discard; }
+    }
     let src = shade_primitive(in);
     if (view.inv_t.z < 0.5 || in.head.y != 0u) { return src; }
     let kind = in.head.x & 255u;

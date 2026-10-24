@@ -51,12 +51,6 @@ impl EngineHandle {
         self.engine.generation_identity_now().map(|identity| identity.map(|value| value as f64).to_vec())
     }
 
-    /// Features of the open document the engine does not draw yet, as a JSON array.
-    pub fn unsupported(&self) -> String {
-        let features = self.engine.generation().map(|generation| generation.prepared.doc.unsupported.clone()).unwrap_or_default();
-        format!("[{}]", features.iter().map(|feature| format!("{feature:?}")).collect::<Vec<_>>().join(","))
-    }
-
     /// The interface revision of the open document, or -1 when there is none.
     pub fn revision(&self) -> f64 {
         self.engine.try_generation_header().ok().flatten().map_or(-1.0, |header| header.revision as f64)
