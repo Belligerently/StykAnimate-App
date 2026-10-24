@@ -19,18 +19,19 @@ function owned(editor) {
   };
   return {owner: installEngineOwner(editor, {start}), states, views};
 }
-test('a call made with optional selection open is refused and keeps the selection', {skip: !engineBuilt}, async () => {
+test('a call made with optional selection open runs in the editor and keeps the selection', {skip: !engineBuilt}, async () => {
   const editor = new Editor({demo: false}).load(structuredClone(input));editor.select(1, -1);
   const polygon = {uid: 1, index: 0, typeId: editor.figure.figure_type_id, future: {values: [7, 3]}};
   editor._restoreSelection({...editor._selectionState(), polygonSelection: polygon});
   const {owner, views} = owned(editor);
-  const refused = () => assert.throws(() => editor.locateCamera(), error => error.messageKey === 'errors.engineOwner.notSupported');
-  refused();assert.deepEqual(editor._selectionState().polygonSelection, polygon);
+  const alone = new Editor({demo: false}).load(structuredClone(input));alone.select(1, -1);
+  alone._restoreSelection({...alone._selectionState(), polygonSelection: polygon});
+  const expected = alone.locateCamera();
+  assert.deepEqual(editor.locateCamera(), expected, 'the editor runs it, as it would alone');assert.deepEqual(editor._selectionState().polygonSelection, polygon);
   assert.deepEqual(metadata(views[0]), {polygonSelection: polygon}, 'the view carries the selection metadata');
-  assert.equal(owner.native, 0, 'optional selection readiness stays closed');assert.equal(owner.fallback, 0, 'a refusal never runs in the editor');
+  assert.equal(owner.native, 0, 'optional selection readiness stays closed');assert.equal(owner.fallback, 1, 'the refused call ran in the editor');
   assert.deepEqual(owner.refused, {'locateCamera: locateCamera with optional selection metadata': 1});
-  refused();assert.deepEqual(editor._selectionState().polygonSelection, polygon);
-  assert.equal(editor.canUndo, false);
+  assert.equal(JSON.stringify(editor.report), JSON.stringify(alone.report), 'the same document as the editor alone');
   owner.release();
 });
 test('ordinary views omit optional selection fields', {skip: !engineBuilt}, async () => {

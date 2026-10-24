@@ -247,7 +247,7 @@ test('movieclipBatch groups what its operation does into one entry and undoes al
   assert.equal(owner.fallback, 0);
 });
 
-test('working frames: the interface can end them and ask for a preview; the engine does not start one', {skip: !engineBuilt}, async () => {
+test('working frames: the interface can end them and ask for a preview; the editor starts one the engine refuses', {skip: !engineBuilt}, async () => {
   const {editor, owner} = await owned('rig-drag-sheet');
   const events = [];
   editor.addEventListener('change', event => events.push(event.detail.kind));
@@ -255,11 +255,13 @@ test('working frames: the interface can end them and ask for a preview; the engi
   assert.ok(events.includes('frame-draft'), 'the timeline hears that working frames ended');
   assert.equal(editor.endFrameDraftPreview(), false);
   assert.equal(editor.beginFrameDraftPreview(), false);
-  assert.throws(() => editor.enableFrameDrafts(), error => error.messageKey === 'errors.engineOwner.notSupported');
-  assert.throws(() => editor.beginFrameDraft({mode: 'add'}), error => error.messageKey === 'errors.engineOwner.notSupported');
-  assert.equal(owner.fallback, 0, 'a refusal never runs in the editor');
+  editor.enableFrameDrafts();
+  assert.equal(editor._frameDraftEnabled, true, 'the editor runs the refused call');
   assert.ok(owner.refused['enableFrameDrafts: working frames are not edited by the engine'] >= 1);
-  assert.equal(editor.canUndo, false);
+  const fallbacks = owner.fallback;
+  editor.disableFrameDrafts();
+  assert.equal(owner.fallback, fallbacks + 1, 'while working frames are on, their calls stay with the editor');
+  assert.equal(editor._frameDraftEnabled, false);
 });
 
 test('an open gesture is committed by disableFrameDrafts, as the timeline mounting would end it', {skip: !engineBuilt}, async () => {

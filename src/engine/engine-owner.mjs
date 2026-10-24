@@ -6,10 +6,11 @@
  * this module applies copy-on-write to `editor.report`, which the interface keeps reading
  * as a read view, then the session's selection, counters and change events.
  *
- * A call the session refuses raises a localized error: the editor never runs it in the session's
- * place. What still runs in the editor is what the session has no command for at all (answered
- * `unported` with the method's own name: `report.editor` counts them) and the editing of a
- * movieclip's own document (`editor._movieclipScopes`). Those calls are written back into the
+ * What still runs in the editor: a call the session has no command for (answered `unported` with
+ * the method's own name), a call it refuses for this document or selection (`report.refused`; the
+ * gaps still to port are listed in docs/engine/editing.md), a gesture the editor began after such a
+ * refusal, and the editing of a movieclip's own document (`editor._movieclipScopes`); `report.editor`
+ * counts them. Only commands that exist in the session alone raise a refusal. Those calls are written back into the
  * session as records, with a history entry the session keeps in its place and asks the editor to
  * apply on undo and redo (`external.rs`). Edits other modules make in place (gizmo previews)
  * reach the session before its next call.
@@ -759,6 +760,11 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
     if (PIXEL_CALLS.has(name)) return runInEditor(name, original, args);
+    // A gesture or edit the editor runs (the session refused to begin it) stays with the editor to its end.
+    if ((editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine) || (editor._vfxClipEdit && !editor._vfxClipEdit.engine)
+        || editor._frameDraftEnabled) {
+      return runInEditor(name, original, args);
+    }
     const payload = sessionPayload(args);
     if (payload === null) throw refuse(name, 'arguments that are not plain data');
     report.calls++;
@@ -782,8 +788,12 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     for (const pair of Array.isArray(answer.drawsLeft) ? answer.drawsLeft : []) if (spare.filter(([kind]) => kind === pair[0]).length < 4) spare.push(pair);
     report.trace?.push(`${name} -> ${answer.status} ${answer.reason ?? answer.error ?? ''} rev ${answer.revision} drag ${JSON.stringify(answer.drag)} draft ${JSON.stringify(answer.draft?.map(f => f.unique_id))} state ${JSON.stringify(answer.state).slice(0, 140)}`);
     if (answer.status === 'unported') {
-      // The session answers a call it has no command for with the call's own name: the editor runs it.
-      if (answer.reason === name) return runInEditor(name, original, args);
+      // A call the session has no command for (answered with the call's own name), or one it refuses for this document
+      // or selection: the editor runs its own command and the session takes what it changed, as an entry of its history
+      // (counted in report.refused and report.editor). Only the commands that exist in the session alone are refused.
+      const key = `${name}: ${answer.reason}`;
+      if (answer.reason !== name) report.refused[key] = (report.refused[key] ?? 0) + 1;
+      if (!sessionOnly.has(name)) return runInEditor(name, original, args);
       throw refuse(name, answer.reason);
     }
     // A committed gesture's frame stays on show, as the session keeps it (`retained`),
@@ -871,6 +881,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   };
 
   // --- installation ---------------------------------------------------------------------
+  /** Commands only the session has (no JavaScript body to run when it refuses). */
+  const sessionOnly = new Set();
   for (const name of ['seek', 'undo', 'redo', 'markSaved', '_record', '_pruneFrameSources']) originals.set(name, editor[name]);
   // The owner's methods live on a layer between the editor and its class: document
   // sessions (tabs) move the editor's own properties with each document, never these.
@@ -880,6 +892,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   const layer = Object.create(Object.getPrototypeOf(editor));
   Object.setPrototypeOf(editor, layer);
   for (const name of new Set(methods)) {
+    if (!editor[name] && SESSION_COMMANDS.includes(name)) sessionOnly.add(name);
     const original = editor[name] ?? (SESSION_COMMANDS.includes(name) ? withoutSession(name) : undefined);
     if (typeof original !== 'function' || VIEW_CALLS.has(name) || name === 'undo' || name === 'redo') continue;
     originals.set(name, original);

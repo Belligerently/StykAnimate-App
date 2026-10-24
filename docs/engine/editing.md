@@ -700,6 +700,63 @@ message for an error whose values the engine does not name yet is the generic on
 Still to come: the frame on show, handles and picking as engine queries (phase 2), the commands that still run in
 the editor ported (and their history entries with them), and saving through `styk-formats` and `styk-piv` directly.
 
+### Refusals the editor still runs (2026-10-25)
+
+A call the session refuses for a document or a selection runs in the editor (`runInEditor`), which records
+it; the owner writes it back as a session history entry (`external.rs`), so the user's edit works and undoes
+exactly. An audit of every refusal in `styk-edit` found 409 sites: 146 guard input the interface never
+sends, 214 cannot be reached from the app, and these can (each runs in the editor until it is ported;
+`report.refused` counts them). The fallback goes when this table is empty.
+
+| Refusal | Calls | Port effort |
+| --- | --- | --- |
+| Smart Stretch on a connector | enableSmartStretch(true) (rig-stretch-enabled switch, and rig-auto-branch 'Include new parts' which calls enab | small |
+| a 3D figure with perspective (_stykSpatial.camera.strength | poseJoint (canvas drag of a bone that is not an enabled IK end) | medium |
+| {method} with animation origins | ~194 owned methods the session has but that are not on the recorded list, e.g. addPaletteColor(s)/removePalett | large |
+| {method} of an origin branch | mirrorSelection, mirrorFigure (joint >= 0, one figure) | small |
+| {method} posing a bone in perspective around IK | poseJoint | medium |
+| <method name> | combineJoinedFigure, disconnectSegment | large |
+| an unrecorded animation-origin rig with IK controllers | poseJoint, rotateJoint, bendJoint, beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cance | medium |
+| an unrecorded saved-origin channel figure-handle gesture without a 2D rig | beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag | medium |
+| an unrecorded origin pose-choice selection or saved channels | setPoseChoice | small |
+| an unrecorded projected or IK origin pose choice | setPoseChoice | medium |
+| an unrecorded origin pose-choice mesh, drawing or movieclip | setPoseChoice | small |
+| an unrecorded origin pose-choice rig relationship | setPoseChoice | medium |
+| an unrecorded animation-origin rig behavior patch | setRigBehavior | small |
+| an unrecorded animation-origin constraint with IK controllers | setAngleLock, setSecondaryAngleReference, setRigBehavior | small |
+| an unrecorded origin property target or property | beginAnimationEdit, addAnimationKey, addAnimationKeys (previewAnimationEdit/commit/cancel pass) | medium |
+| an absent origin property target at the edited tick | addAnimationKey, addAnimationKeys | small |
+| origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition | poseJoint, rotateJoint, bendJoint, beginHandleEditDrag, editHandlePosition, commitHandleEditDrag, cancelHandle | medium |
+| an unrecorded animation-origin range with IK controllers | joinTo, unjoinFigure, joinFigure, rotateFiguresInFrames, mirrorFiguresInFrames, scaleFiguresInFrames, resetPos | medium |
+| an unrecorded camera motion-path edit on an origin document | beginMotionPathEdit (then update/commit) | small |
+| a motion-path edit of rigged or 3D figures | beginMotionPathEdit (check_figures), also per falloff write | large |
+| duplicating figures with effect clips | duplicateFiguresInFrames, duplicateInFrames | small |
+| adding a movieclip | addFigureInFrames | small |
+| forwards styk_eval::records::Error::Unported from evaluated frames | anything that evaluates a frame; the paint case through animation_value / beginAnimationEdit / property keying | medium |
+| materialize_error forwards styk_eval::materialize Unported | breakApartMovieclip (also the worker-only bakeMovieclip) | large |
+| capturing drawing layers into a movieclip | createMovieclip | medium |
+| break apart with legacy sheet timing | breakApartMovieclip | small |
+| movieclip playback across every frame of a clip on the document's clock | setMovieclipPlayback with {allFrames:true} (restartMovieclip / removeMovieclipRestart go through it) | small |
+| topology edits of a figure with pose choices or a 3D mesh (_styk.poseChoices, _styk.spatialMesh, or a segment  | same topology_edit callers as :459, including the Rig-tool commit | medium |
+| topology edits of figures joined with IK (joined component with >=2 members containing the edited type and a _ | same topology_edit callers as :459 (any frame or pose source of the document that holds such an assembly) | medium |
+| topology edits of handles saved property channels animate (layerSheet.legacyAnimation channels of kind segment | topology edits that remove, replace or restyle handles: deleteSegment, deleteSingleSegment, unsplitSegment, sp | medium |
+| drawing into a figure with rig relationships (any segment has _stykRig | addSegment, addSegments (figure selected) | medium |
+| handles that are not a list (options.handleIds is not an array | deleteSegment | small |
+| deleting joints of a 3D mesh (pre-check, figure has _styk.spatialMesh | deleteSingleSegment, unsplitSegment | medium |
+| duplicating a 3D joint (segment _stykRig.spatial truthy | duplicateSegment, duplicateSegmentBranch | small |
+| sprite attachment to rig-derived runtime geometry (any segment of the figure has _stykRig | addSpriteSegment | small |
+| sprite attachment retaining derived runtime pose (a pose's runtime_segments differ from the definition without | addSpriteSegment | small |
+| a polygon surface (patch.surface is not null | updatePolygon | small |
+| handle edit on a movieclip (figure _styk.movieclip | beginHandleEditDrag (also beginSegmentValueEdit and setSegmentValues with editMode) | medium |
+| duplicating a movieclip instance | duplicateFigure | small |
+| adding a movieclip (library definition has _styk.movieclip, layer sheet | addFigure | small |
+| importing a movieclip (any imported definition has _styk.movieclip | importFigure | medium |
+| importing figures with animation origins or drawings (_styk.animationOrigin or _styk.drawing | importFigure | large |
+| clipboard.unported | pasteSelection, duplicateSelection, pasteFiguresInFrames | medium |
+| clipboard.unported when moving or copying frames to other layers ('pasting drawing keys', 'pasting drawings',  | sheetTransferFrames | medium |
+| clipboard.unported when pasting frames ('pasting drawing keys', 'pasting drawings', 'pasting movieclip parts' | sheetPasteFrames | medium |
+| {method} with optional selection metadata (a polygon is selected, or >1 segment is selected, or a branch is se | every other call, including removePolygon, updatePolygon, addPolygon, deleteSegment, updateBuilderSegmentStyle | large |
+
 ## Invariants
 
 - No commit leaves a command half-ported: a facade method calls the engine only
