@@ -363,6 +363,7 @@ impl Editor {
                 let options = arg(2);
                 self.apply_figure_range(Request::Add { type_id: arg(0), x: options.get("x").cloned().unwrap_or(Value::Null), y: options.get("y").cloned().unwrap_or(Value::Null) }, range_args(args, 1))
             }
+            "pasteFiguresInFrames" => self.paste_figures_in_frames(range_args(args, 0), &arg(1)),
             "duplicateFiguresInFrames" | "duplicateInFrames" => self.apply_figure_range(Request::Duplicate { offset: arg(1).get("offset").cloned().unwrap_or(Value::Null) }, range_args(args, 0)),
             "deleteFiguresInFrames" => self.apply_figure_range(Request::Delete, range_args(args, 0)),
             "updateFiguresInFrames" => self.apply_figure_range(Request::Appearance(arg(0)), range_args(args, 1)),
@@ -403,6 +404,36 @@ impl Editor {
             _ => return None,
         };
         Some(result)
+    }
+
+    /// `pasteFiguresInFrames(indices, {offset, pasteMode, pasteDepth})`: what the figure clipboard holds, pasted into
+    /// every chosen frame; one history entry and nothing if the clipboard is empty.
+    fn paste_figures_in_frames(&mut self, options: Options, given: &Value) -> Result<Value, EditError> {
+        if self.drag.is_some() {
+            self.commit_drag()?;
+        }
+        if self.property_edit.is_some() {
+            self.commit_animation_edit()?;
+        }
+        let (authored, targets) = self.range_targets(&options)?;
+        if targets.is_empty() {
+            return Ok(outcome(&[], &[]));
+        }
+        let Some(clipboard) = self.figure_clipboard.clone() else { return Ok(outcome(&[], &[])) };
+        if !authored {
+            return Err(EditError::Unported("figures pasted across frames on a native timeline".into()));
+        }
+        let ticks: Vec<f64> = targets.iter().map(|t| t.tick).collect();
+        let frames: Vec<(f64, Value)> = targets.into_iter().map(|t| (t.tick, t.frame)).collect();
+        let mut paste = Obj::new();
+        paste.set("pasteMode", given.get("pasteMode").filter(|m| !m.is_null()).cloned().unwrap_or_else(|| Value::str("default")));
+        if let Some(depth) = given.get("pasteDepth") {
+            paste.set("pasteDepth", depth.clone());
+        }
+        let offset = given.get("offset").filter(|o| !o.is_null()).cloned();
+        let label = options.label.clone().unwrap_or_else(|| "Paste figures across frames".to_string());
+        let inserted = self.paste_figures_across(&clipboard, &Value::object(paste), offset.as_ref(), 0.0, None, &label, Some(&frames))?;
+        Ok(outcome(&ticks, &inserted))
     }
 
     /// `applyFigureRange(operation, options)`.

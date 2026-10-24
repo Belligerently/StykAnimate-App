@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {pasteInFrames} from './support/figure-range.mjs';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
@@ -21,7 +22,7 @@ test(`${mode} ${range?'range':'single'} paste at ${pasteDepth} depth preserves j
   if(mode==='authored')e.adoptNativePoseTrack({kind:'layer',id:'layer-1'});
   e.selectConnected(1);e.copySelection();
   const before=e.serialize(),count=e._undo.length,clipboard=structuredClone(e._selectionClipboard.objects);
-  const ids=range?e.pasteFiguresInFrames([0,1],{pasteDepth,offset:0}).insertedUids:e.pasteSelection({pasteDepth,offset:0}).map(o=>o.unique_id);
+  const ids=range?pasteInFrames(e, [0,1],{pasteDepth,offset:0}).insertedUids:e.pasteSelection({pasteDepth,offset:0}).map(o=>o.unique_id);
   assert.equal(ids.length,2);assert.equal(e._undo.length,count+1);
   for(const tick of range?[0,5]:[0]){
     e.seek(tick);const objects=e.evaluatedFrame.objects,copies=ids.map(uid=>objects.find(o=>o.unique_id===uid));

@@ -156,7 +156,7 @@ fn hypot(values: &[f64]) -> f64 {
 }
 
 /// `validateSpatialPose(object, figure)` (src/spatial-projection.mjs).
-fn spatial_pose(object: &Value, figure: &Value) -> Result<(), EditError> {
+pub(crate) fn spatial_pose(object: &Value, figure: &Value) -> Result<(), EditError> {
     let state = object.get("_stykSpatial");
     if missing(state) {
         return Ok(());

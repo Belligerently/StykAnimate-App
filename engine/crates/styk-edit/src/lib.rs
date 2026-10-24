@@ -15,8 +15,10 @@
 mod audio;
 mod authored;
 mod builder;
+mod drawing_structure;
 mod duplicate_drag;
 mod bounds;
+mod camera_bake;
 mod camera_commands;
 mod camera_motion;
 mod camera_views;
@@ -32,6 +34,7 @@ mod handle_edit;
 mod history;
 mod ik;
 mod ik_settings;
+mod layer_membership;
 mod layers;
 pub mod inbetween_planning;
 pub mod load;
@@ -61,6 +64,7 @@ mod record;
 pub mod replay;
 mod rig_behavior;
 mod rig_drag;
+mod scene_backgrounds;
 mod select;
 pub mod session;
 mod sheet;
@@ -68,6 +72,7 @@ mod sheet_clipboard;
 mod sheet_frames;
 mod spatial;
 mod spatial_ik;
+mod spatial_shape;
 mod timeline;
 mod topology;
 mod trails;
@@ -289,6 +294,9 @@ pub struct Editor {
     pub(crate) draws: std::collections::VecDeque<(String, Value)>,
     /// The draws are a pool taken by kind, not the editor's recorded sequence (D19).
     pub(crate) draw_pool: bool,
+    /// Drawing cels a call copied, `(old cel, new cel)`: the pixels of the old one belong to the new one too, which the
+    /// interface (it holds the pixels) is told with the call's answer.
+    pub(crate) drawing_forks: Vec<(String, String)>,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -418,6 +426,7 @@ impl Editor {
             vfx_clip_clipboard: None,
             draws: Default::default(),
             draw_pool: false,
+            drawing_forks: Vec::new(),
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -917,6 +926,20 @@ impl Editor {
             "slideConnector" => self.slide_selected_connector(number(0), number(1)).map(Value::Bool),
             "setSpatialPose" => self.set_spatial_pose(&arg(0), &arg(1)).map(Value::Bool),
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
+            "importSceneBackground" => self.import_scene_background(&arg(0), &arg(1)),
+            "renameSceneBackground" => self.rename_scene_background(&arg(0), &arg(1)).map(Value::Bool),
+            "assignFiguresToLayer" => self.assign_figures_to_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "deleteLayer" => self.delete_layer(&arg(0), &arg(1)).map(Value::Bool),
+            "createDrawingLayer" => self.create_drawing_layer(&arg(0)),
+            "addDrawingFrame" => self.add_drawing_frame(&arg(0), &arg(1)),
+            "nextDrawing" => self.next_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "extendDrawing" => self.extend_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "drawingKey" => self.drawing_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
+            "autoKeyDrawing" => self.auto_key_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "bakeCameraMotion" => self.bake_camera_motion(&arg(0)).map(Value::Bool),
+            "setSpatialCamera" => self.set_spatial_camera(&arg(0)).map(Value::Bool),
+            "setSpatialProportions" => self.set_spatial_proportions(&arg(0)).map(Value::Bool),
+            "resetSpatialProportions" => self.reset_spatial_proportions().map(Value::Bool),
             "setAudioTrack" => self.set_audio_track(&arg(0), &arg(1)).map(Value::Bool),
             "deleteAudioTrack" => self.delete_audio_track(&arg(0)).map(Value::Bool),
             "addAudioTrack" => self.add_audio_track(args.first()),
@@ -952,7 +975,10 @@ impl Editor {
             "updateSegment" => self.update_segment(&arg(0)).map(Value::Bool),
             "updateObject" => self.update_object(&arg(0)).map(Value::Bool),
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
-            "addMovieclipToNextKeyframes" if !self.sheet() => self.extend_native_movieclip(number(0)),
+            "addMovieclipToNextKeyframes" if self.sheet() => self.inline_timeline(|editor, worker| editor.extend_sheet_movieclip(number(0), worker)),
+            "addMovieclipToNextKeyframes" => self.extend_native_movieclip(number(0)),
+            "setFrameDuration" if self.sheet() => self.sheet_set_duration(number(0), &Value::Null, &Value::Null).map(Value::Bool),
+            "setFrameDuration" => Err(EditError::Unported("setFrameDuration on a native timeline".into())),
             "addFigure" => self.add_figure((!args.is_empty()).then(|| arg(0)).as_ref()),
             "renameLayer" => self.rename_layer_publication(&arg(0), &arg(1), publication).map(Value::Bool),
             "setLayerColor" => self.set_layer_color(&arg(0), &arg(1), publication).map(Value::Bool),

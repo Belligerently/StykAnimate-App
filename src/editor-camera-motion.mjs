@@ -1,19 +1,10 @@
 import {messageError} from './localized-error.mjs';
 import {editorDraws} from './editor-draws.mjs';
-import {prepareCameraBake} from './camera-motion-bake-client.mjs';
 import {createCameraMotion,validateCameraMotion} from './camera-motion.mjs';
 import {FOLLOW_FRAME_LIMIT} from './camera-follow.mjs';
 import {validateParallax} from './layer-parallax.mjs';
 
 const empty=Object.freeze({version:1,clips:Object.freeze([])});
-function muteRange(clip,start,end){
-  if(!clip.enabled||end<=clip.start||start>=clip.start+clip.duration)return clip;
-  const ranges=[];
-  for(const range of [...(clip.mutedRanges??[]),{start:Math.max(start,clip.start),end:Math.min(end,clip.start+clip.duration)}].sort((a,b)=>a.start-b.start)){
-    const last=ranges.at(-1);if(last&&range.start<=last.end)last.end=Math.max(last.end,range.end);else ranges.push({...range});
-  }
-  return {...clip,enabled:!(ranges.length===1&&ranges[0].start<=clip.start&&ranges[0].end>=clip.start+clip.duration),mutedRanges:ranges};
-}
 const shiftedRanges=(clip,start,duration=clip.duration)=>clip.mutedRanges?{mutedRanges:clip.mutedRanges.map(r=>({start:r.start+start-clip.start,end:Math.min(start+duration,r.end+start-clip.start)})).filter(r=>r.end>r.start)}:{};
 function unlocked(editor){if(editor.getLayer('camera')?.locked)throw messageError(new Error(''), "errors.editorCameraMotion.unlockCameraBeforeEditingMotion", {});}
 function publish(editor,next,label){
@@ -59,20 +50,5 @@ export const editorCameraMotionMethods={
     if(p.linked){if(patch.y!==undefined&&patch.x===undefined)p.x=p.y;else p.y=p.x;}validateParallax(p);
     return this._layerEdit('Edit layer parallax',[[['byId',id,'parallax'],p]]);
   },
-  async bakeCameraMotion({start=0,end=this.totalTicks,signal}={}){
-    unlocked(this);if(!this.getCameraMotions().some(c=>c.enabled))return false;
-    if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>this.totalTicks||end-start>100000)throw messageError(new Error(''), "errors.editorCameraMotion.bakeAValidRangeOfAtMost100", {});
-    const revision=this.revision,token=this._documentToken;
-    const controller=new AbortController(),cancel=event=>{if(['edit','history','document','preview'].includes(event.detail?.kind))controller.abort();};
-    this.addEventListener('change',cancel);let frames;
-    try{frames=await prepareCameraBake(this.report,{start,end,signal:signal?AbortSignal.any([signal,controller.signal]):controller.signal});}
-    finally{this.removeEventListener('change',cancel);}
-    if(this.revision!==revision||this._documentToken!==token||this._drag||this._animationEdit)throw messageError(new Error(''), "errors.editorCameraMotion.theAnimationChangedWhileBakingTryAgain", {});
-    return this.movieclipBatch('Bake camera motion',()=>{
-      this._sheetBakeCameraFrames(frames);
-      const clips=this.getCameraMotions().map(c=>muteRange(c,start,end));
-      publish(this,{version:1,clips},'Disable baked camera motion');return true;
-    });
-
-  },
+  // Baking the motion into camera keys is a command of the engine session (`bakeCameraMotion`).
 };

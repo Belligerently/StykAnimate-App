@@ -714,7 +714,7 @@ impl Editor {
 
     /// `setSceneBackground(id, {indices})` on a layer sheet: the background chosen and the
     /// colour handed back to it.
-    fn set_scene_background(&mut self, id: &Value, options: Option<&Value>) -> Result<Value, EditError> {
+    pub(crate) fn set_scene_background(&mut self, id: &Value, options: Option<&Value>) -> Result<Value, EditError> {
         let exists = |id: f64| items(self.report.get("backgrounds")).iter().any(|bg| num(bg, "background_id") == Some(id));
         let Some(id) = integer(id).filter(|v| *v >= 0.0 && (*v == 0.0 || exists(*v))) else { return Err(invalid("errors.editorScene.chooseAnExistingBackground")) };
         let scene = scene_target();

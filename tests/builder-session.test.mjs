@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
+import {plainEditorWithDrawings} from './support/owned-editor.mjs';
 import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
@@ -24,10 +25,9 @@ const objectsOf = (editor, typeId, frame = editor.frame) => frame.objects.filter
 
 test('entering Build from a drawing or fixed track chooses an editable figure layer', () => {
   for (const source of ['drawing', 'scene', 'camera']) {
-    const editor = new Editor({demo: false, layerTimeline: true});
-    const figureLayer = editor.activeLayerId;
-    if (source === 'drawing') editor.createDrawingLayer();
-    else editor.selectSheetLayer(source);
+    const options = {demo: false, layerTimeline: true}, figureLayer = 'layer-1';
+    const editor = source === 'drawing' ? plainEditorWithDrawings(options).editor : new Editor(options);
+    if (source !== 'drawing') editor.selectSheetLayer(source);
     editor.select(null);
     const revision = editor.revision;
     const session = new BuilderSession(editor).begin();
@@ -45,11 +45,10 @@ test('entering Build from a drawing or fixed track chooses an editable figure la
 });
 
 test('Build creates a figure layer when all existing figure layers are locked or hidden', () => {
-  const editor = new Editor({demo: false, layerTimeline: true});
-  const locked = editor.activeLayerId;
-  editor.setLayerLocked(locked, true);
+  const {editor} = plainEditorWithDrawings({demo: false, layerTimeline: true});
+  editor.setLayerLocked('layer-1', true);
   const hidden = editor.createLayer('Hidden'); editor.setLayerVisible(hidden.id, false);
-  editor.createDrawingLayer(); editor.select(null);
+  editor.select(null);
   const session = new BuilderSession(editor).begin();
   const target = editor.getLayer(editor.activeLayerId);
   assert.equal(isDrawingLayer(target), false);
@@ -58,7 +57,7 @@ test('Build creates a figure layer when all existing figure layers are locked or
   assert.equal(editor.layerForUid(editor.selectedUid), target.id);
   session.resolve('discard');
   assert.equal(editor.getLayer(target.id), null, 'discard also removes the automatically created layer');
-  assert.equal(editor.getLayer(locked).locked, true);
+  assert.equal(editor.getLayer('layer-1').locked, true);
   assert.equal(editor.getLayer(hidden.id).visible, false);
 });
 

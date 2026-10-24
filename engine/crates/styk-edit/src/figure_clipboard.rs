@@ -387,14 +387,21 @@ impl Editor {
     /// `applyFigureRange({kind: 'paste', …}, {atPlayhead: true})` on a layer sheet:
     /// `insertionPlan`, `insert` and `_commitSheetRange`. Returns the pasted identities.
     fn paste_figures(&mut self, clipboard: &FigureClipboard, options: &Value, offset: Option<&Value>, default_offset: f64, position: Option<[f64; 2]>, label: &str) -> Result<Vec<u32>, EditError> {
-        // Pasted figures keep their timeline effects in the same undo step.
-        if !clipboard.vfx_clips.is_empty() && self.batch.is_none() {
-            return self.movieclip_batch(label, |editor| editor.paste_figures_in(clipboard, options, offset, default_offset, position, label));
-        }
-        self.paste_figures_in(clipboard, options, offset, default_offset, position, label)
+        self.paste_figures_across(clipboard, options, offset, default_offset, position, label, None)
     }
 
-    fn paste_figures_in(&mut self, clipboard: &FigureClipboard, options: &Value, offset: Option<&Value>, default_offset: f64, position: Option<[f64; 2]>, label: &str) -> Result<Vec<u32>, EditError> {
+    /// [`Editor::paste_figures`] into the frames of a range (`(tick, frame)` each), or the frame on show.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn paste_figures_across(&mut self, clipboard: &FigureClipboard, options: &Value, offset: Option<&Value>, default_offset: f64, position: Option<[f64; 2]>, label: &str, targets: Option<&[(f64, Value)]>) -> Result<Vec<u32>, EditError> {
+        // Pasted figures keep their timeline effects in the same undo step.
+        if !clipboard.vfx_clips.is_empty() && self.batch.is_none() {
+            return self.movieclip_batch(label, |editor| editor.paste_figures_in(clipboard, options, offset, default_offset, position, label, targets));
+        }
+        self.paste_figures_in(clipboard, options, offset, default_offset, position, label, targets)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn paste_figures_in(&mut self, clipboard: &FigureClipboard, options: &Value, offset: Option<&Value>, default_offset: f64, position: Option<[f64; 2]>, label: &str, targets: Option<&[(f64, Value)]>) -> Result<Vec<u32>, EditError> {
         if !self.sheet() {
             return Err(EditError::Unported("pasting figures on a native timeline".into()));
         }
@@ -437,9 +444,21 @@ impl Editor {
             .filter(|o| !new_identities && !clipboard.foreign && copied_type(o).is_some_and(|f| !independent(f)) && definitions_now.iter().any(|f| f.get("figure_type_id") == o.get("figure_type_id") && is_movieclip(f)))
             .filter_map(uid)
             .collect();
-        let mut occupied: Vec<u32> = objects_of(&self.shown_frame()?).iter().filter_map(uid).filter(|u| linked.contains(u)).collect();
+        let targets: Vec<(f64, Value)> = match targets {
+            Some(targets) => targets.to_vec(),
+            None => vec![(self.tick, self.shown_frame()?)],
+        };
+        let mut occupied: Vec<u32> = Vec::new();
+        for (_, frame) in &targets {
+            occupied.extend(objects_of(frame).iter().filter_map(uid).filter(|u| linked.contains(u) && !occupied.contains(u)).collect::<Vec<_>>());
+        }
         if occupied.len() < linked.len() {
-            occupied.extend(objects_of(&self.evaluated(self.tick, false)?).iter().filter_map(uid).filter(|u| linked.contains(u) && !occupied.contains(u)).collect::<Vec<_>>());
+            for (tick, _) in &targets {
+                occupied.extend(objects_of(&self.evaluated(*tick, false)?).iter().filter_map(uid).filter(|u| linked.contains(u) && !occupied.contains(u)).collect::<Vec<_>>());
+                if occupied.len() == linked.len() {
+                    break;
+                }
+            }
         }
         let retained: Vec<u32> = linked.iter().copied().filter(|u| !occupied.contains(u)).collect();
         // Every other figure takes a new identity.
@@ -577,32 +596,38 @@ impl Editor {
             }
         }
         let order: Vec<u32> = clipboard.order.iter().filter_map(|u| renamed(*u)).collect();
-        let shown = self.shown_frame()?;
-        if depth == "front" {
-            let mut depths: HashMap<String, f64> = HashMap::new();
-            for object in objects_of(&shown) {
-                let layer = uid(&object).map(|u| self.layer_of(u)).unwrap_or_default();
-                let z = num(&object, "_stykZIndex").unwrap_or(0.0);
-                let entry = depths.entry(layer).or_insert(-1_000_000.0);
-                *entry = entry.max(z);
-            }
-            let active = self.active_layer();
-            let destination = if self.report.path(&["_styk", "layers", "byId", &active]).is_some() { active } else { self.report.path(&["_styk", "layers", "defaultLayerId"]).and_then(Value::as_str).unwrap_or("").to_string() };
-            for object in objects.iter_mut() {
-                let layer = uid(&Value::object(object.clone())).and_then(|u| hints.get(&u).cloned()).unwrap_or_else(|| destination.clone());
-                object.set("_stykZIndex", Value::Num((depths.get(&layer).copied().unwrap_or(0.0) + 1.0).min(1_000_000.0)));
-            }
-        }
-        let pasted: Vec<Value> = objects.into_iter().map(Value::object).collect();
-        let mut frame = insert(&shown, &pasted, &order)?;
-        // Copies of a figure with an animation origin find their pivot again where they now stand.
-        self.synchronize_origin_frame_with(&mut frame, &objects_of(&shown), true, &added)?;
+        let pasted: Vec<Value> = objects.iter().cloned().map(Value::object).collect();
         let inserted: Vec<u32> = pasted.iter().filter_map(uid).collect();
+        let mut entries: Vec<(f64, Value, Vec<u32>)> = Vec::new();
+        for (tick, target) in &targets {
+            // In front of the layers' figures of this frame, or at the depth they were copied at.
+            let mut here = objects.clone();
+            if depth == "front" {
+                let mut depths: HashMap<String, f64> = HashMap::new();
+                for object in objects_of(target) {
+                    let layer = uid(&object).map(|u| self.layer_of(u)).unwrap_or_default();
+                    let z = num(&object, "_stykZIndex").unwrap_or(0.0);
+                    let entry = depths.entry(layer).or_insert(-1_000_000.0);
+                    *entry = entry.max(z);
+                }
+                let active = self.active_layer();
+                let destination = if self.report.path(&["_styk", "layers", "byId", &active]).is_some() { active } else { self.report.path(&["_styk", "layers", "defaultLayerId"]).and_then(Value::as_str).unwrap_or("").to_string() };
+                for object in here.iter_mut() {
+                    let layer = uid(&Value::object(object.clone())).and_then(|u| hints.get(&u).cloned()).unwrap_or_else(|| destination.clone());
+                    object.set("_stykZIndex", Value::Num((depths.get(&layer).copied().unwrap_or(0.0) + 1.0).min(1_000_000.0)));
+                }
+            }
+            let at: Vec<Value> = here.into_iter().map(Value::object).collect();
+            let mut frame = insert(target, &at, &order)?;
+            // Copies of a figure with an animation origin find their pivot again where they now stand.
+            self.synchronize_origin_frame_with(&mut frame, &objects_of(target), true, &added)?;
+            entries.push((*tick, frame, inserted.clone()));
+        }
         // Published, the pasted figures are selected and the identities taken; refused, neither.
         let (selection, previous, previous_next) = (self.selection_state(), self.selection.clone(), self.next_uid);
         self.selection = crate::Selection { uid: order.last().copied(), uids: order.clone(), joint: -1 };
         self.next_uid = next_uid;
-        if let Err(error) = self.commit_sheet_insertion(&frame, &inserted, &order, &hints, added, label, selection, &pasted, true) {
+        if let Err(error) = self.commit_sheet_range(&entries, &order, &hints, added, label, selection, Some((&pasted, true)), None) {
             self.selection = previous;
             self.next_uid = previous_next;
             return Err(error);

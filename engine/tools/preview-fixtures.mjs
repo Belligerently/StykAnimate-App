@@ -2,7 +2,7 @@
 // In-between previews built by the editor, sampled by its read-only preview oracle.
 import {mkdirSync} from 'node:fs';
 import path from 'node:path';
-import {here, repo, repoUrl, documentOf, limb, open, whole, nextKey, writeProject, writeReference} from './fixture-kit.mjs';
+import {here, repo, repoUrl, documentOf, limb, open, whole, nextKey, writeProject, writeReference, setDuration} from './fixture-kit.mjs';
 const {createVfx} = await import(`${repoUrl}/src/vfx.mjs`);
 
 function native() {
@@ -11,7 +11,7 @@ function native() {
   for (const [dx, turn] of [[75, .8], [-30, -.5], [95, 1.1]]) {
     nextKey(editor, 6); whole(editor).moveSelection(dx, 15); editor.rotateSelection(turn);
   }
-  editor.setFrameDuration(1);
+  setDuration(editor, 1);
   return editor;
 }
 const samples = [[0, .5], [1, 0], [1, .37], [1, 1], [2, .25], [2, .5], [3, .8]];
@@ -37,7 +37,7 @@ const fixtures = {
       nextKey(e, 6);
       for (const uid of [1, 2, 3]) { whole(e, uid).moveSelection(dx * uid / 3, 10); e.rotateSelection(turn * uid); }
     }
-    e.setFrameDuration(1);
+    setDuration(e, 1);
     return {document: e.serialize()};
   },
   'scene-camera': () => {

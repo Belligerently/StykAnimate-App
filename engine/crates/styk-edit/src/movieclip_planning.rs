@@ -108,6 +108,18 @@ impl TimelineWorker<'_> {
     }
 }
 
+impl Editor {
+    /// The context of a timeline call the session runs on the interface: nothing cancels it, nothing waits on
+    /// its progress and its sources are bounded by the document, not by a budget.
+    pub(crate) fn inline_timeline<T>(&mut self, run: impl FnOnce(&mut Editor, &mut TimelineWorker<'_>) -> T) -> T {
+        fn clock() -> f64 { 0.0 }
+        let mut check = || Ok(());
+        let mut progress = |_: Progress| {};
+        let mut worker = TimelineWorker { max_source_bytes: usize::MAX, check: &mut check, progress: &mut progress, clock };
+        run(self, &mut worker)
+    }
+}
+
 #[derive(Clone, Copy)]
 enum TimelineCall { Bake, AddFigure, Playback, Restart, RemoveRestart, BreakApart, Extend, Place, Split }
 impl TimelineCall {

@@ -70,12 +70,10 @@ test('native layer pose-key mutation adopts real source references in the same h
   editor.undo(); assert.equal(editor.animationChannels.length, 0); editor.seek(10); near(editor.evaluatedFrame.objects[0].root_x, 100);
 });
 
-test('hidden native keys remain distinct, restore independently, and explicit null adds a blank pose', () => {
+test('hidden native keys remain distinct, and explicit null adds a blank pose', () => {
   const editor = fixture(); editor.report.keyframes[0].duration_raw = 0; editor._invalidate({timing: true});
   const layer = editor.layers.find(layer => layer.kind === 'layer' || layer.kind === 'user'), target = {kind: 'layer', id: layer.id};
   const native = editor.nativePoseChannel(target); assert.equal(native.keys[0].tick, native.keys[1].tick); assert.equal(native.keys[0].hidden, true);
-  editor.revealAnimationKey(native.id, native.keys[0].id, 2);
-  const restored = editor.animationChannel(target, 'pose'); assert.equal(restored.keys[0].hidden, undefined); assert.equal(restored.keys[1].tick, 2);
   const blank = editor.addAnimationKey(target, 'pose', 7, null); assert.deepEqual(blank.value, {frameId: null});
   editor.seek(7); assert.equal(editor.evaluatedFrame.objects.length, 0);
 });

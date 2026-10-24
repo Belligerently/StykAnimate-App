@@ -11,7 +11,7 @@ All methods return `{changedFrames, changedTicks, insertedUids}`. `indices` is a
 | Method | Behavior |
 | --- | --- |
 | `addFigureInFrames(typeId, indices, {x, y, ...options})` | Adds one stable fresh UID in every target. |
-| `pasteFiguresInFrames(indices, {offset = 0, ...options})` | Pastes the figure clipboard, merges necessary definitions once, retains internal joins, and uses stable fresh UIDs throughout the range. |
+| `pasteFiguresInFrames(indices, {offset = 0, ...options})` | A command of the engine session on layer-sheet documents (`styk-edit/src/figure_clipboard.rs`). Pastes the figure clipboard, merges necessary definitions once, retains internal joins, and uses stable fresh UIDs throughout the range. |
 | `duplicateInFrames(indices, {offset = 24, ...options})` | Duplicates each target frame's own selected poses with a consistent fresh UID map, preserves internal joins and source layers, and leaves the clipboard untouched. `duplicateFiguresInFrames` is an alias. |
 | `deleteFiguresInFrames(indices, options)` | Deletes matching UIDs; surviving attached figures detach at their visible world positions. |
 | `updateFiguresInFrames(patch, indices, options)` | Sets `color_override_raw`, `field28` (native transparency byte), or `opacity` (0–1). |

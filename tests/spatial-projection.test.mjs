@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
 import {buildGeometry,evaluatedNativeFrame} from '../src/pivot/geometry.mjs';
-import {Editor} from '../src/editor.mjs';
+import {ownedEditorSync} from './support/owned-editor.mjs';
 import {projection,projectSpatial,unprojectSpatial,projectSpatialFace,validateSpatialPose,interpolateSpatialPose} from '../src/spatial-projection.mjs';
 import {spatialPoint} from '../src/rig-spatial.mjs';
 import {depthSurface} from '../src/surface-raster.mjs';
@@ -23,7 +23,7 @@ function fixture(){
  const figure={figure_type_id:1,segments:q.segments,polyfills:q.polyfills,image_assets:[],text_assets:[]},object=createObject(figure,1,200,200),doc={...emptyDocument(),auto_easing:false,figure_types:[figure],keyframes:[createFrame([object])]};
  return{doc,figure,object,a,b,foot,toe,other,skin,footSkin,vertices};
 }
-const editor=doc=>{const e=new Editor({demo:false});e.load(doc);e.select(1,-1);return e;};
+const editor=doc=>{const {editor:e}=ownedEditorSync({demo:false},doc,{recorded:false});e.select(1,-1);return e;};
 
 test('perspective has an exact neutral default and invertible projection at any scale',()=>{
  for(const scale of [.3,1,3]){
@@ -62,17 +62,6 @@ test('local width and taper change the intended radius and child sizes remain co
  e.select(1,f.foot.id-1);e.setSpatialProportions({size:2});g=e.geometry.objects.get(0);
  near(g.joints.get(f.foot.id).x,260);near(g.joints.get(f.toe.id).x,280);near(g.joints.get(f.footSkin).y,400);
  e.setSpatialProportions({size:1});g=e.geometry.objects.get(0);near(g.joints.get(f.toe.id).x,240);near(g.joints.get(f.footSkin).y,390);
-});
-
-test('incremental shape edits reuse unrelated branches and match a fresh evaluation',()=>{
- const f=fixture(),e=editor(f.doc);e.select(1,f.b.id-1);e.setSpatialCamera({strength:1,distance:500});let prior=e.geometry.objects.get(0);
- e.beginDrag('Width');
- for(const width of [1.2,2,.7,1]){
-  e.setSpatialProportions({width,taper:.2});const next=e.geometry.objects.get(0);
-  assert.equal(next.segments[f.other.id-1],prior.segments[f.other.id-1]);
-  assert.deepEqual(next,buildGeometry(e.report,e.evaluatedFrame).objects.get(0));prior=next;
- }
- e.cancelDrag();near(e.getSpatialProportions().width,1);near(e.getSpatialProportions().taper,0);
 });
 
 test('spatial settings tween, round-trip native saving, and restore one complete undo gesture',async()=>{

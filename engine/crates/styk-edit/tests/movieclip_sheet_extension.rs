@@ -237,3 +237,27 @@ fn extension_rejection_preserves_live_editor() {
         e.call("cancelDrag", &[]).unwrap();
     }
 }
+
+/// The session's own call (the app's path) gives what the editor recorded, with no worker around it.
+#[test]
+fn the_session_extends_a_movieclip_on_a_sheet_as_the_editor_did() {
+    let folder =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/movieclip-sheet-extension");
+    for name in [
+        "extend-imported",
+        "extend-presence",
+        "extend-authored",
+        "extend-layer2",
+        "extend-noop",
+        "extend-locked",
+        "extend-live-errors",
+        "extend-continuations",
+    ] {
+        let reference =
+            json::parse(&std::fs::read(folder.join(format!("{name}.reference.json"))).unwrap())
+                .unwrap();
+        let outcome = styk_edit::replay::replay(&reference).unwrap();
+        assert!(outcome.passed(), "{name}: {:#?}", outcome.mismatches);
+        assert_eq!((outcome.matched, &outcome.unported), (outcome.steps, &None), "{name}");
+    }
+}

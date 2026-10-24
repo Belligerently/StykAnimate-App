@@ -157,7 +157,7 @@ test('camera fields and planning operation names retain scalar diagnostics while
  assert.throws(()=>editor.setCameraValues({x:NaN}),error=>{failures.push(error);return error.message==='Camera x must be finite.';});
  assert.throws(()=>editor.alignCameraToView({x:0,y:0,scale:1,width:NaN,height:540}),error=>{failures.push(error);return error.message==='Canvas width must be finite.';});
  const planner=createStagePlayback({report:null},{stage:()=>null});
- for(const [operation,original]of [['planLayerMigration','layer migration'],['planInsertInbetweens','insert inbetween']])
+ for(const [operation,original]of [['planInsertInbetweens','insert inbetween']])
   await assert.rejects(planner[operation]({}),error=>{failures.push(error);return error.message===`Load a document before ${original} planning.`;});
  interfaceLocalization.setPseudo('long');
  try{

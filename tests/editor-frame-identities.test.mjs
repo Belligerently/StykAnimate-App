@@ -128,7 +128,7 @@ test('frame lookups track history replacements and source reordering instead of 
   const editor = fixture(), id = editor.getFrameId(), before = editor.frame;
   editor.updateObject({root_x: 222}); editor.undo();
   assert.equal(editor.getFrameById(id), editor.report.keyframes[0]);
-  editor.setFrameDuration(6); editor.undo();
+  editor.setFramesDuration([editor.frameIndex], 6); editor.undo();
   assert.notEqual(editor.getFrameById(id), before); assert.equal(editor.getFrameById(id), editor.report.keyframes[0]);
   editor.moveFrame(0, 3); assert.equal(editor.frameIndexForId(id), 3);
   editor.undo(); assert.equal(editor.frameIndexForId(id), 0);

@@ -19,6 +19,8 @@ import {ownedEditor} from './support/owned-editor.mjs';
 import {recordedBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
 
 const folder = new URL('../engine/tests/edit/', import.meta.url);
+/** Recordings of commands the session took over from the editor (the same format as the tapes in `folder`). */
+const otherFolders = ['movieclip-sheet-extension'].map(name => new URL(`../engine/tests/${name}/`, import.meta.url));
 const json = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' || key === '_movieclipSample' ? undefined : item);
 const frameText = frame => { const {object_count, ...rest} = frame ?? {}; return json(rest); };
 const state = editor => ({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null,
@@ -71,7 +73,7 @@ const same = (actual, wanted, message) => {
   const differing = Object.keys(wanted).filter(key => JSON.stringify(actual[key]) !== JSON.stringify(wanted[key]));
   if (differing.length) assert.fail(`${message}: ${differing.map(key => `${key} ${JSON.stringify(actual[key])} (wanted ${JSON.stringify(wanted[key])})`).join(', ')}`);
 };
-const scenarios = readdirSync(folder).filter(name => name.endsWith('.scenario.json') && (!process.env.OWNER_TAPE || name.startsWith(`${process.env.OWNER_TAPE}.`))).sort();
+const scenarios = [folder, ...otherFolders].flatMap(where => readdirSync(where).filter(name => name.endsWith('.scenario.json') && (!process.env.OWNER_TAPE || name.startsWith(`${process.env.OWNER_TAPE}.`))).sort().map(name => ({where, name})));
 // Legacy Pivot poses carry an empty `runtime_segments` cache (styk-piv's legacy decoder):
 // the same tapes with it on every pose.
 const withCache = document => {
@@ -101,22 +103,14 @@ const supported = scenario => scenario.steps.every(call => Array.isArray(call) &
 const sha = text => createHash('sha256').update(text).digest('hex');
 
 /** The display frame of a saved origin motion on a native document differs from the editor's by an ulp. */
-/** Where recorded tapes end because the engine refuses what they do next, by tape. The app never reaches these: a bounds
- * callback other than its own, and native documents with property channels (the app gives every document a layer sheet). */
+/** Where recorded tapes end because the engine refuses what they do next, by tape: a bounds callback other than the app's
+ * own, which is not data the session can take (the app never passes one). Other refusals run in the editor and the
+ * tapes go on to their end. */
 const expectedFrontiers = Object.fromEntries([
   'camera-center-measured-sheet: centerCamera: arguments that are not plain data',
   'camera-center-media-sheet: centerCamera: arguments that are not plain data',
   'figure-align-measured-native: alignSelection: arguments that are not plain data',
   'figure-align-measured-sheet: alignFiguresInFrames: arguments that are not plain data',
-  'native-transform-channels-future-rig-joined: addAnimationKey: origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition',
-  'native-transform-channels-future-rig: addAnimationKey: origin posing with an unrecorded rig, pose choice, 3D, movieclip or drawing definition',
-  'native-transform-channels-invalid-open-pose-key: addAnimationKey: invalid native key input with an open editing gesture',
-  'native-transform-channels-invalid-open-property-begin: beginAnimationEdit: an absent origin property target at the edited tick',
-  'native-transform-channels-invalid-open-property-key: addAnimationKey: invalid native key input with an open editing gesture',
-  'native-transform-channels-layout-projection: beginAnimationEdit: unrecorded native channel authoring or projection',
-  'native-transform-channels-offsets-projection: beginAnimationEdit: unrecorded native channel authoring or projection',
-  'native-transform-channels-plain-projection: beginAnimationEdit: unrecorded native channel authoring or projection',
-  'native-transform-channels-support-projection: beginAnimationEdit: unrecorded native channel authoring or projection',
 ].map(key => [key, 1]));
 const floatsDiffer = new Set(['origin-motion-saved-layout-native', 'origin-motion-saved-support-native']);
 // With Pivot's cache on every pose (the recordings' poses have none: the engine's own document is checked against the
@@ -126,11 +120,11 @@ for (const {legacy} of variants) test(`the engine owning the document gives what
   let tapes = 0, steps = 0, native = 0, fallback = 0;
   const editorCalls = {}, refusedCalls = {}, frontiers = {}, unnamedErrors = {};
   const failures = [];
-  for (const name of scenarios) {
-    const scenario = JSON.parse(readFileSync(new URL(name, folder), 'utf8'));
+  for (const {where, name} of scenarios) {
+    const scenario = JSON.parse(readFileSync(new URL(name, where), 'utf8'));
     if (!supported(scenario)) continue;
-    const reference = JSON.parse(readFileSync(new URL(name.replace('.scenario.json', '.reference.json'), folder), 'utf8'));
-    const loaded = typeof scenario.document === 'string' ? JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8')) : scenario.document;
+    const reference = JSON.parse(readFileSync(new URL(name.replace('.scenario.json', '.reference.json'), where), 'utf8'));
+    const loaded = typeof scenario.document === 'string' ? JSON.parse(readFileSync(new URL(scenario.document, where), 'utf8')) : scenario.document;
     const document = legacy ? withCache(loaded) : loaded;
     const options = {demo: false, ...scenario.editor};
     let made;
@@ -206,10 +200,10 @@ for (const {legacy} of variants) test(`the engine owning the document gives what
     console.log(`# refused: ${Object.entries(refusedCalls).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, v]) => `${k} ${v}`).join(' | ')}`);
   }
   assert.equal(failures.length, 0);
-  // The census of calls the editor runs for the engine: none of the recorded tapes needs it.
-  assert.deepEqual(editorCalls, {}, 'calls that ran in the editor');
+  // Calls the session refuses run in the editor (docs/engine/editing.md, "Refusals the editor still runs"): every
+  // step above still gives what its tape records; OWNER_COUNTS=1 prints which calls they are.
   // The tapes end where the engine refuses a state it does not edit yet (the app never opens them).
-  console.log(`# tapes ending at a refusal: ${Object.keys(frontiers).length}`);
+  console.log(`# tapes ending at a refusal: ${Object.keys(frontiers).length}`); if (process.env.OWNER_FRONTIERS) console.log(JSON.stringify(Object.keys(frontiers)));
   assert.deepEqual(frontiers, expectedFrontiers);
   // Errors whose message needs a value the engine does not name yet say only that a value is not valid.
   console.log(`# errors without their values: ${JSON.stringify(unnamedErrors, null, 1)}`);

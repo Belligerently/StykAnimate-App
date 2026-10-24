@@ -3,7 +3,7 @@
 // are replay-only reads/restores of _selectionState/_restoreSelection.
 import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
-import {open, nextKey, prune, documentOf, limb} from './fixture-kit.mjs';
+import {open, nextKey, prune, documentOf, limb, setDuration} from './fixture-kit.mjs';
 const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
 const mirror = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value) + '\n';
 const base = JSON.parse(readFileSync(`${out}/builder.document.json`, 'utf8'));
@@ -22,7 +22,7 @@ for (const kind of ['plain', 'layout', 'support', 'saved-layout', 'saved-support
     seed.select(1, seed.figure.segments.findIndex(segment => segment.segment_id === 11));seed.deleteSingleSegment();
     seed.addPolygon([0, 22, 33]);seed.addPolygon([0, 33, 77]);
   }
-  nextKey(seed, 6);seed.select(1);seed.moveSelection(16.125, -8.25);seed.setFrameDuration(6);seed.seek(0);
+  nextKey(seed, 6);seed.select(1);seed.moveSelection(16.125, -8.25);setDuration(seed, 6);seed.seek(0);
   if (kind.startsWith('saved-')) {
     seed = open(seed.report, {propertyChannels: true});
     seed.addAnimationKeys([{target: {kind: 'figure', uid: 1}, property: 'x', tick: 0, value: 300.25}, {target: {kind: 'figure', uid: 1}, property: 'x', tick: 8, value: 340.5}]);

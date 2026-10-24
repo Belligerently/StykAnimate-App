@@ -4,7 +4,6 @@ import {inheritedKeyEasing} from './keyframe-easing.mjs';
 import {animationChannels, sampleAnimationChannel, validateAnimationDocument, validateAnimationValue} from './animation-channels.mjs';
 import {samplePoseTrack} from './animation-pose.mjs';
 import {tweenBackground} from './pivot/background.mjs';
-import {validateScene} from './pivot/model.mjs';
 import {createFrame} from './demo.mjs';
 import {evaluatedFrame} from './pivot/geometry.mjs';
 
@@ -55,11 +54,6 @@ function nextBackgroundId(report) {
   let id = 0; for (const asset of report.backgrounds ?? []) id = Math.max(id, asset.background_id);
   if (!Number.isSafeInteger(id + 1)) throw messageError(new Error(''), "errors.editorScene.backgroundIdentityCapacityExceeded", {});
   return id + 1;
-}
-
-function validateBackground(report, background) {
-  if (!background || ![0, 1, 2, 3, 4].includes(background.kind)) throw messageError(new Error(''), "errors.editorScene.expectedADecodedImageColorOrGradientBackground", {});
-  validateScene({...report, figure_types: [], backgrounds: [background], keyframes: [createFrame([])]});
 }
 
 function draft(editor) {
@@ -221,31 +215,5 @@ export const editorSceneMethods = {
     const state = draft(this); assignBackground(this, state, id, selected);
     return commit(this, state, 'Set scene background');
   },
-
-  importSceneBackground(background, {indices = [this.frameIndex]} = {}) {
-    editable(this); const selected = this._frameIndices(indices); if (!selected.length) return null;
-    const source = background?.background ?? background;
-    const imported = {...clone(source), background_id: nextBackgroundId(this.report)}; imported.name ||= 'Background';
-    validateBackground(this.report, imported);
-    if(this.report._styk?.layerSheet)return this.movieclipBatch('Import scene background',()=>{
-      const state=draft(this);state.asset(imported);commit(this,state,'Import background asset');
-      this.setSceneBackground(imported.background_id,{indices});return this.report.backgrounds.find(asset=>asset.background_id===imported.background_id);
-    });
-    const state = draft(this); state.asset(imported); assignBackground(this, state, imported.background_id, selected);
-    commit(this, state, 'Import scene background');
-    return this.report.backgrounds.find(asset => asset.background_id === imported.background_id);
-  },
-
-  renameSceneBackground(id, name) {
-    const index = this.report.backgrounds?.findIndex(background => background.background_id === id) ?? -1;
-    if (index < 0) throw messageError(new Error(''), "errors.editorScene.chooseAnExistingBackground", {});
-    if (typeof name !== 'string' || !name.trim() || name.trim().length > 160) throw messageError(new Error(''), "errors.editorScene.backgroundNamesMustContain1160Characters", {});
-    name = name.trim(); const background = this.report.backgrounds[index];
-    if (background.name === name) return false;
-    if (this._animationEdit) this.commitAnimationEdit(); if (this._drag) this.commitDrag();
-    const state = draft(this);
-    state.before.assets.push({index, fields: {name: {exists: own(background, 'name'), value: background.name}}});
-    state.after.assets.push({index, fields: {name: {exists: true, value: name}}}); state.touched = 1;
-    commit(this, state, 'Rename background'); return true;
-  },
+  // Importing a background and naming one are commands of the engine session (`importSceneBackground`, `renameSceneBackground`).
 };

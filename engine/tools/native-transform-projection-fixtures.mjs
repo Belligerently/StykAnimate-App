@@ -2,7 +2,7 @@
 // Only materialization/sampling of the existing nativePropertyChannel owner.
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
-import {open} from './fixture-kit.mjs';
+import {open, setDuration} from './fixture-kit.mjs';
 import {sampleAnimationChannel} from '../../src/animation-channels.mjs';
 const folder=new URL('../tests/edit/',import.meta.url);
 const json=value=>JSON.stringify(value,(key,item)=>key==='runtime_segments'?undefined:item);
@@ -24,9 +24,9 @@ const seed=kind=>JSON.parse(readFileSync(new URL(`native-transform-channels-${ki
 for(const kind of ['plain','layout','offsets','support'])record(`native-transform-channels-${kind}-projection`,open(seed(kind),{propertyChannels:true}));
 for(const kind of ['plain','layout','offsets','support'])for(const mode of ['auto','mixed-easing']){
   const builder=open(seed(kind),{});
-  builder.selectFrame(builder.report.keyframes.length-1);builder.setFrameDuration(6);builder.duplicateFrame();
+  builder.selectFrame(builder.report.keyframes.length-1);setDuration(builder, 6);builder.duplicateFrame();
   builder.selectFrame(builder.report.keyframes.length-1);builder.select(1,-1);
-  builder.rotateSelection(5.83);builder.moveSelection(32.125,-14.75);builder.scaleSelected(1.2);builder.setFrameDuration(6);
+  builder.rotateSelection(5.83);builder.moveSelection(32.125,-14.75);builder.scaleSelected(1.2);setDuration(builder, 6);
   if(mode==='mixed-easing'){
     builder.setFramesEasing([0],{interpolation:'bezier',bezier:[.12,.75,.8,.3]});builder.setFramesEasing([1],{interpolation:'hold'});
   }
@@ -43,7 +43,7 @@ for(const kind of ['plain','layout','offsets','support']){
 }
 const reference=JSON.parse(readFileSync(new URL('move-native.reference.json',folder)));
 const builder=open(JSON.parse(reference.steps[0].document),{propertyChannels:true});
-builder.setFrameDuration(12);builder.addAnimationKeys([{target:{kind:'figure',uid:1},property:'x',tick:0,value:300},
+setDuration(builder, 12);builder.addAnimationKeys([{target:{kind:'figure',uid:1},property:'x',tick:0,value:300},
   {target:{kind:'figure',uid:1},property:'x',tick:6,value:340}]);builder.createLayer('Destination');
 const editor=open(JSON.parse(json(builder.report)),{propertyChannels:true});
 editor.select(1,-1);editor.beginDrag('Worker gesture');editor.moveSelection(7.125,-3.25);editor.moveSelection(2.5,1.75);editor.commitDrag();

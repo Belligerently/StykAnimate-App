@@ -16,6 +16,7 @@ import {objectBounds} from '../src/renderer-geometry.mjs';
 import {createImageFigure} from '../src/media-authoring.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {createFrame,createObject} from '../src/demo.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 
 // The pixel worker (drawing-worker.mjs) answered in this thread by the drawing raster engine; the
 // browser tests exercise the real worker. OffscreenCanvas ops (preview, thumbnail) are not answered.
@@ -28,8 +29,17 @@ function workerStub(){
 }
 function fixture(){
   const e=new Editor({demo:false,layerTimeline:true});e.report.canvas_width=64;e.report.canvas_height=64;
-  const resources=new DrawingResources(e.report,{worker:workerStub()});e.createDrawingLayer();return {e,resources};
+  const resources=new DrawingResources(e.report,{worker:workerStub()});
+  // The structure of a drawing layer (its cels, exposures and auto key) is the engine session's.
+  installEngineOwner(e);e.createDrawingLayer();return {e,resources};
 }
+/** An editor the engine does not own, for what stays the editor's own to do (its history budget, the clipboard, capturing
+ * drawings into a movieclip): `build` makes the layers and cels on an owned editor, and the document moves to this one. */
+function plainEditor(build=()=>{}){
+  const {e:owned,resources}=fixture();build(owned);resources.dispose();
+  return new Editor({demo:false,layerTimeline:true}).load(structuredClone(owned.report));
+}
+function plainFixture(build){const e=plainEditor(build);return {e,resources:new DrawingResources(e.report,{worker:workerStub()})};}
 async function stroke(e,x=40,y=40){
   const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),surface=await e.drawingResources.surface(target.figure);
   const brush=new DrawingStroke(surface.store,{size:8,pressureSize:false});brush.sample({x,y});
@@ -291,7 +301,7 @@ test('the stroke ends exactly on the final input at any stabilization',()=>{
   }
 });
 test('undo and redo retain a shared history byte budget',async()=>{
-  const {e,resources}=fixture();try{await stroke(e);const bytes=e.historySize;e.undo();assert.equal(e.historySize,bytes);e.redo();assert.equal(e.historySize,bytes);e.undo();const redo=e._redo.reduce((n,c)=>n+c.bytes,0);e.renameLayer(e.activeLayerId,'Ink');assert.equal(e.historySize,bytes-redo+e._undo.at(-1).bytes);}finally{resources.dispose();}
+  const {e,resources}=plainFixture();try{await stroke(e);const bytes=e.historySize;e.undo();assert.equal(e.historySize,bytes);e.redo();assert.equal(e.historySize,bytes);e.undo();const redo=e._redo.reduce((n,c)=>n+c.bytes,0);e.renameLayer(e.activeLayerId,'Ink');assert.equal(e.historySize,bytes-redo+e._undo.at(-1).bytes);}finally{resources.dispose();}
 });
 test('painting an existing cel does not publish structural timeline changes',async()=>{
   const {e,resources}=fixture();try{await stroke(e);const events=[];e.addEventListener('change',event=>events.push(event.detail));await stroke(e,80);
@@ -309,9 +319,9 @@ test('malformed and duplicate drawing metadata is rejected',async()=>{
   const {e,resources}=fixture();try{const {target}=await stroke(e);validateDrawings(e.report);const copy=structuredClone(target.figure);e.report.figure_types.push(copy);assert.throws(()=>validateDrawings(e.report),/unique/);e.report.figure_types.pop();drawingMetadata(e.report.figure_types.at(-1)).bounds={x:0,y:0,width:0,height:1};assert.throws(()=>validateDrawings(e.report),/metadata/);}finally{resources.dispose();}
 });
 test('clipboard captures pending pixels once and remains independent of later source edits',async()=>{
-  const {e,resources}=fixture();try{
+  const {e,resources}=plainFixture(o=>o.createDrawingLayer('Pasted'));const layer=e.getLayer('layer-3');e.selectSheetLayer('layer-2');try{
     await stroke(e);e.sheetCopyFrames([e.activeLayerId],0,0);const source=e.drawingTarget(),original=storePixels(resources.entry(source.figure).store);
-    await stroke(e,80);const layer=e.createDrawingLayer('Pasted');e.sheetPasteFrames([layer.id],0);const pasted=await resources.surface(e.drawingTarget().figure);
+    await stroke(e,80);e.sheetPasteFrames([layer.id],0);e.selectSheetLayer(layer.id);const pasted=await resources.surface(e.drawingTarget().figure);
     assert.deepEqual(storePixels(pasted.store),original);assert.notEqual(e.drawingTarget().figure._styk.drawing.celId,source.figure._styk.drawing.celId);
     await stroke(e,100);assert.notDeepEqual(storePixels(resources.entry(source.figure).store),storePixels(pasted.store));
   }finally{resources.dispose();}
@@ -342,10 +352,10 @@ test('out-of-order encode results never replace newer committed tiles',async()=>
   }finally{resources.dispose();}
 });
 test('whole-scene paste matches drawing tracks by kind and pads extra drawing layers',async()=>{
-  const {pasteSheetClipboard}=await import('../src/shared-clipboard.mjs');const {e,resources}=fixture(),other=new Editor({demo:false,layerTimeline:true});
+  const {pasteSheetClipboard}=await import('../src/shared-clipboard.mjs');const {e,resources}=plainFixture(),other=plainEditor(o=>o.createDrawingLayer('Existing ink'));
   try{
     e.sheetCopyFrames(['scene','camera',e.activeLayerId,'layer-1'],0,0);
-    const existing=other.createDrawingLayer('Existing ink'),surplus=other.createDrawingLayer('Spare ink');
+    const [existing,surplus]=other.layers.filter(l=>l.drawing);
     other._sheetClipboard={...structuredClone(e._sheetClipboard),document:null};
     const before=other.serialize();pasteSheetClipboard(other,[],0,{wholeScene:true,insert:true});
     assert.ok(other.getLayer(existing.id).drawing);assert.ok(other.getLayer(surplus.id).drawing);assert.equal(other.layers.filter(l=>l.drawing).length,2);
@@ -611,7 +621,7 @@ test('a stroke over the remaining tile budget evicts clean stores instead of thr
   const e=new Editor({demo:false,layerTimeline:true});e.report.canvas_width=64;e.report.canvas_height=64;
   const resources=new DrawingResources(e.report,{worker:workerStub(),tileBytes:4*TILE_BYTES});
   try{
-    e.createDrawingLayer();
+    installEngineOwner(e);e.createDrawingLayer();
     const t1=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s1=await resources.surface(t1.figure);
     const b1=new DrawingStroke(s1.store,{size:8,pressureSize:false});b1.sample({x:40,y:40});e.commitDrawingPixels(t1,b1.finish());
     await resources.flush();
@@ -751,7 +761,7 @@ test('publication re-encodes only changed tiles and resends PNGs the worker cach
 });
 
 test('an edit larger than the remaining history evicts older commands; oversized edits still apply with exact undo',async()=>{
-  const {e,resources}=fixture();try{
+  const {e,resources}=plainFixture();try{
     await stroke(e);const firstBytes=e._undo.at(-1).bytes;
     const dab=x=>{const t=e.drawingTarget(),surface=resources.entry(t.figure);const b=new DrawingStroke(surface.store,{size:8,pressureSize:false});b.sample({x,y:40});e.commitDrawingPixels(t,b.finish());return e._undo.at(-1).bytes;};
     const strokeBytes=dab(100);dab(200);
@@ -931,8 +941,8 @@ test('a closing stroke commits to its original exposure after a view-only seek',
 });
 
 test('a movieclip of drawings gets its own figure layer, drawing keys and cels',async()=>{
-  const {e,resources}=fixture();try{
-    const layer=e.activeLayerId;await stroke(e,20,20);e.drawingKey([layer],1,{blank:true});e.seek(1);await stroke(e,44,44);await resources.flush();
+  const {e,resources}=plainFixture(o=>o.drawingKey(undefined,1,{blank:true}));try{
+    const layer=e.activeLayerId;await stroke(e,20,20);e.seek(1);await stroke(e,44,44);await resources.flush();
     const parentCels=new Set(e.report.figure_types.map(f=>drawingMetadata(f)?.celId).filter(Boolean)),shownOn=(id,tick)=>{e.seek(tick);return e.evaluatedFrame.objects.filter(o=>e.layerForUid(o.unique_id)===id).length;};
     e.seek(0);const clip=e.createMovieclip({name:'Ink',start:0,end:2,uids:[]});
     // Inside the clip the drawings are ordinary drawing keys with their own cels.

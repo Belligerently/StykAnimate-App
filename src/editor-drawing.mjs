@@ -1,7 +1,7 @@
 import {messageError} from './localized-error.mjs';
 import {drawingMetadata,isDrawingLayer,createDrawingFigure,copyDrawingFigure,migrateDrawingFigure,EMPTY_PNG} from './drawing-model.mjs';
 import {drawingSheetPlan,drawingSheetPublish} from './editor-layer-sheet.mjs';
-import {sheetKeyAt,MAX_SHEET_TICKS} from './layer-sheet.mjs';
+import {sheetKeyAt} from './layer-sheet.mjs';
 import {createFrame,createObject} from './demo.mjs';
 import {pixelChangeBytes} from './drawing-pixels.mjs';
 import {nextUidAfter} from './object-identity.mjs';
@@ -21,19 +21,10 @@ export function applyDrawingCommand(editor,command,direction,prepared) {
   editor._emit('history',{label:command.label,definition:true,drawing:true,figureIndices:[editor.report.figure_types.indexOf(figure)]});return true;
 }
 export const editorDrawingMethods={
+  // The structure of a drawing layer (a new layer, a new or copied cel, a longer exposure, an auto key) is the engine
+  // session's: `createDrawingLayer`, `addDrawingFrame`, `drawingKey`, `nextDrawing`, `extendDrawing`, `autoKeyDrawing`.
   /** A cel's encoded tiles were attached to its definition in place: a derived publication, not an edit. The engine owner writes the definition into its session. */
   _drawingPublished(figure) {},
-  addDrawingFrame(id=this.activeLayerId,tick=this.tick) {
-    assertDrawingTargets(this,[id]);
-    const track=this.report._styk.layerSheet.tracks[id],onKey=track.keys.some(key=>key.tick===tick);
-    if(onKey&&tick<track.end)return this.nextDrawing([id],{blank:true,length:1,tick});
-    return this.drawingKey([id],tick,{blank:true});
-  },
-  createDrawingLayer(name='Drawing') {
-    return this.movieclipBatch('New drawing layer',()=>{
-      const layer=this.createLayer(name,{drawing:true});this.drawingKey([layer.id],0,{blank:true});return this.getLayer(layer.id);
-    });
-  },
   drawingTarget(id=this.activeLayerId,tick=this.tick) {
     assertDrawingTargets(this,[id]);const track=this.report._styk.layerSheet.tracks[id],{key,next}=sheetKeyAt(track,tick);
     if(!key||tick>=track.end)throw messageError(new Error(''), "errors.editorDrawing.insertABlankDrawingOrCopyDrawingHere", {});
@@ -41,45 +32,6 @@ export const editorDrawingMethods={
     const object=frame?.objects.find(o=>this.layerForUid(o.unique_id)===id),figure=object&&this.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id);
     if(figure&&!drawingMetadata(figure))throw messageError(new Error(''), "errors.editorDrawing.convertThisImageToADrawingBeforePainting", {});
     return {id,key,end:next?.tick??track.end,object,figure};
-  },
-  /** Auto key: painting on a held drawing first copies it to the playhead. */
-  autoKeyDrawing(id=this.activeLayerId,tick=this.tick) {
-    if(!this.autoKey)return false;let target;try{target=this.drawingTarget(id,tick);}catch{return false;}
-    return target.key.tick!==tick&&Boolean(this.drawingKey([id],tick));
-  },
-  drawingKey(ids=[this.activeLayerId],tick=this.tick,{blank=false}={}) {
-    assertDrawingTargets(this,ids);const plan=drawingSheetPlan(this,ids),added=[],forks=[];let type=this.report.figure_types.reduce((n,f)=>Math.max(n,f.figure_type_id+1),1),changed=false;
-    for(const id of ids){const track=plan.get(id),{key}=sheetKeyAt(track,tick);if(!blank&&key?.tick===tick)continue;
-      const sourceKey=sheetKeyAt(track,Math.min(tick,track.end-1)).key,source=sourceKey?.value?.frameId?this.getFrameById(sourceKey.value.frameId):null;
-      const frame=source?structuredClone(source):createFrame();
-      if(!blank)for(const object of frame.objects){const old=this.report.figure_types.find(f=>f.figure_type_id===object.figure_type_id),copy=copyDrawingFigure(old,type++);object.figure_type_id=copy.figure_type_id;added.push(copy);forks.push([old,copy]);}
-      plan.definitions=[...this.report.figure_types,...added];
-      if(!track.keys.length&&tick>0)plan.write(id,0,createFrame(),{blank:true,easing:{interpolation:'constant'}});
-      plan.write(id,tick,frame,{blank,easing:{interpolation:'constant'},extend:true});changed=true;
-    }
-    if(!changed)return false;
-    if(forks.length){this.drawingResources.checkForks(forks.map(([old])=>old));}
-    const result=drawingSheetPublish(this,plan,blank?'Blank drawing':'Copy drawing',{assets:added.length?{figure_types:{added}}:undefined});
-    for(const [old,copy] of forks)this.drawingResources.fork(old,copy);return result;
-  },
-  nextDrawing(ids=[this.activeLayerId],{blank=true,length=1,tick=this.tick}={}) {
-    assertDrawingTargets(this,ids);if(!Number.isInteger(length)||length<1||length>65535)throw messageError(new Error(''), "errors.editorDrawing.chooseAnExposureLengthOf165535", {});
-    const spans=ids.map(id=>({id,...this.sheetSpan(id,tick)}));
-    for(const {id,end} of spans)if(Math.max(end,this.report._styk.layerSheet.tracks[id].end)+length>MAX_SHEET_TICKS)throw messageError(new Error(''), "errors.editorDrawing.thisExposureExceedsTheTimelineLimit", {});
-    return this.movieclipBatch(blank?'Next blank drawing':'Next copied drawing',()=>{
-      for(const {id,end} of spans){
-        // Split before shifting: copying at an existing next key must use the
-        // preceding cel, not the next exposure's content.
-        this.sheetInsertFrames([id],end,length);this.drawingKey([id],end,{blank});
-      }
-      this.seek(spans[0].end);return true;
-    });
-  },
-  extendDrawing(ids=[this.activeLayerId],count=1) {
-    assertDrawingTargets(this,ids);if(!Number.isInteger(count)||count<1||count>65535)throw messageError(new Error(''), "errors.editorDrawing.chooseAPositiveExposureExtension", {});
-    const spans=ids.map(id=>({id,...this.drawingTarget(id)}));
-    for(const {id} of spans)if(this.report._styk.layerSheet.tracks[id].end+count>MAX_SHEET_TICKS)throw messageError(new Error(''), "errors.editorDrawing.thisExposureExceedsTheTimelineLimit", {});
-    return this.movieclipBatch('Extend drawing exposure',()=>{for(const {id,end} of spans)this.sheetInsertFrames([id],end,count);return true;});
   },
   prepareDrawingCel({pixelsPerUnit=1,world={x:0,y:0}}={}) {
     const target=this.drawingTarget();if(target.figure)return target;

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {pasteInFrames} from './support/figure-range.mjs';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
@@ -74,7 +75,7 @@ test('single and range paste remap changed handles and detach a copied join whos
     e.report.keyframes=[createFrame([])];e.load(e.report);
     // Retain same-document semantics for the copied definition snapshot.
     e._selectionClipboard.documentToken=e._documentToken;
-    if(range)e.pasteFiguresInFrames([0],{pasteMode:'instance'});else e.pasteSelection({pasteMode:'instance'});
+    if(range)pasteInFrames(e, [0],{pasteMode:'instance'});else e.pasteSelection({pasteMode:'instance'});
     for(const object of e.selectedObjects){assert.equal(object.join,null);assert.equal(object.angles.length,figure.segments.length);}
     validateScene(e.report);
   }
@@ -146,7 +147,7 @@ for(const mode of ['native','authored','sheet'])test(`${mode}: default figure pa
 
 test('range paste allocates one independent definition per copied type for the whole range',()=>{
   const e=fixture('native',{parts:1});e.copySelection();const original=e.object.figure_type_id;
-  const before=e.serialize();e.pasteFiguresInFrames([1,2,3]);const after=e.serialize();
+  const before=e.serialize();pasteInFrames(e, [1,2,3]);const after=e.serialize();
   const uid=e.selectedUid,types=[1,2,3].map(i=>e.report.keyframes[i].objects.find(o=>o.unique_id===uid).figure_type_id);
   assert.equal(new Set(types).size,1);assert.notEqual(types[0],original);
   assert.equal(e.report.figure_types.length,2);e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.deepEqual(e.serialize(),after);

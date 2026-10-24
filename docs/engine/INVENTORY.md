@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 169 KiB | 11 | 7 | 8 | 0 | 10 | 23 % | 23 % | 0 % |
-| `styk-edit` | 90 | 1252 KiB | 40 | 42 | 6 | 1 | 1 | 5 % | 68 % | 2 % |
+| `styk-edit` | 90 | 1230 KiB | 38 | 44 | 6 | 1 | 1 | 5 % | 69 % | 2 % |
 | `styk-engine` | 24 | 40 KiB | 11 | 0 | 0 | 0 | 13 | 3 % | 0 % | 3 % |
-| `styk-eval` | 80 | 696 KiB | 23 | 46 | 9 | 0 | 2 | 17 % | 72 % | 0 % |
+| `styk-eval` | 80 | 688 KiB | 20 | 46 | 9 | 0 | 5 | 17 % | 72 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
-| **Total** | 356 | 3253 KiB | 134 | 113 | 27 | 23 | 59 | 22 % | 50 % | 2 % |
+| **Total** | 356 | 3222 KiB | 129 | 115 | 27 | 23 | 62 | 23 % | 50 % | 2 % |
 
 ## Engine modules
 
@@ -91,7 +91,7 @@ Engine logic: ported to Rust.
 | `src/editor-colors.mjs` | `styk-edit` | partial | Rust: the project palette (addPaletteColor, addPaletteColors, removePaletteColor, movePaletteColor, applyPaletteCommand: styk-edit/src/palette.rs) and recolouring figures (editFigureColors, setFigureColor, replaceFigureColor, resetFigureColors: styk-edit/src/recolor.rs); figurePalette for the inspector still JS |
 | `src/editor-combine.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-disconnect.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-drawing.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-drawing.mjs` | `styk-edit` | partial | Rust: the structure of a drawing layer (createDrawingLayer, drawingKey, nextDrawing, addDrawingFrame, extendDrawing, autoKeyDrawing: styk-edit/src/drawing_structure.rs); the pixel commands (commitDrawingPixels, resampleDrawing, prepareDrawingCel) and the drawing history stay in the editor with the drawing store |
 | `src/editor-draws.mjs` | `styk-edit` | partial | Rust: Editor::set_draws, draw_uuid, draw_seed and draw_random take what the editor drew for a call (D18); drawing the values stays in JavaScript until the engine owns the document |
 | `src/editor-duplicate-drag.mjs` | `styk-edit` | ported | Rust: beginDuplicateDrag, finishDuplicateDrag and their commit and cancel through commitDrag/cancelDrag (styk-edit/src/duplicate_drag.rs; engine-run in the app since 2026-10-24); the JavaScript module still ships for editing inside a movieclip |
 | `src/editor-figure-transform.mjs` | `styk-edit` | ported | beginFigureHandleDrag, transformFigureHandle, commitFigureHandleDrag, cancelFigureHandleDrag, createFigureHandleTransform, figureHandleTransform (styk-edit/src/figure_transform.rs); recorded native/sheet animation-origin handle transforms preserve retained support; complex origin definitions still gated |
@@ -118,10 +118,10 @@ Engine logic: ported to Rust.
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-rig-constraints.mjs` | `styk-edit` | partial | Rust: slideConnector, setConnectorPosition (styk-edit/src/pose.rs); setRigBehavior, enableSmartStretch, bindStretchParts, setAngleLock, setSecondaryAngleReference with the rig's validation (styk-edit/src/rig_behavior.rs); addConnector, addWeightedJoint (styk-edit/src/topology.rs); Smart Stretch on a connector still JS |
 | `src/editor-rig.mjs` | `styk-edit` | partial | Rust: rig/bend gestures including recorded animation-origin 2D stretch/follow/world-angle/connector families and 13 angle-lock definition tapes/2158 steps; figure/parent angle posing and unrecorded complex origin/app facade combinations remain guarded |
-| `src/editor-scene.mjs` | `styk-edit` | partial | Rust: setSceneColor and setSceneBackground on a layer sheet (styk-edit/src/property_edit.rs); native-timeline scene edits, background imports and the rest still JS |
+| `src/editor-scene.mjs` | `styk-edit` | partial | Rust: setSceneColor and setSceneBackground on a layer sheet (styk-edit/src/property_edit.rs); importSceneBackground and renameSceneBackground (styk-edit/src/scene_backgrounds.rs); native-timeline scene edits still JS |
 | `src/editor-selection.mjs` | `styk-edit` | partial | Rust: selection order and recorded optional metadata, central snapshot/restore, raw guard and history preservation; ordinary selection adoption compares scalar/ordered metadata without serializing unchanged state; new-ID facade exchange stays bounded, broader helper/query adoption pending |
 | `src/editor-sessions.mjs` | `styk-edit` | js | commands and history |
-| `src/editor-spatial-shape.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-spatial-shape.mjs` | `styk-edit` | partial | Rust: setSpatialCamera, setSpatialProportions, resetSpatialProportions (styk-edit/src/spatial_shape.rs); the reads getSpatialCamera and getSpatialProportions stay |
 | `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: getSpatialPose, setSpatialPose (wholeFigure with 3D targets), getSpatialMotion, setSpatialMotion, resetSpatialPose, poseSpatialJoint (flat, arc, mechanisms, planted knees), twistSpatialJoint (swivel, foot or hand turn), _releaseSpatialChain, _plantSpatialFollower (styk-edit/src/spatial.rs); getSpatialIKPole, setSpatialIKPole, setSpatialIKTarget, poseSpatialIKDepth, _flatSpatialIKPole (spatial_ik.rs); setPoseChoice (pose_choice.rs), setSpatialFeetPinned (ik_settings.rs); joined 3D IK targets still JS |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | partial | Rust: sprite insertion PNG validation, sparse aliases/placement/style/order and native/sheet history, recorded exactly; origins and facade admission remain gated |
 | `src/editor-style-topology.mjs` | `styk-edit` | partial | Rust: style overlays, Stick Nodes shapes and effect owners following the handles of a topology edit (styk-edit/src/topology.rs); channels a changed handle animates and reversed gradients (setOrigin) still JS |
@@ -202,9 +202,9 @@ Engine logic: ported to Rust.
 | `src/pose-snapshot.mjs` | `styk-eval` | partial | Rust: snapshotPoseFrame, poseObjectSignature (styk-eval records, styk-edit); snapshotPoseObject still JS |
 | `src/structural-equality.mjs` | `styk-eval` | js |  |
 | `src/camera-bake-authored.mjs` | `styk-eval::camera` | js |  |
-| `src/camera-motion-bake-client.mjs` | `styk-eval::camera` | js |  |
-| `src/camera-motion-bake-worker.mjs` | `styk-eval::camera` | js |  |
-| `src/camera-motion-bake.mjs` | `styk-eval::camera` | js |  |
+| `src/camera-motion-bake-client.mjs` | `styk-eval::camera` | removed | deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs) |
+| `src/camera-motion-bake-worker.mjs` | `styk-eval::camera` | removed | deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs) |
+| `src/camera-motion-bake.mjs` | `styk-eval::camera` | removed | deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs) |
 | `src/camera-motion.mjs` | `styk-eval::camera` | partial | Rust: presets, cameraTravelAt, cameraAtTime incl. edit frames and follow clips; creation and validation still JS |
 | `src/animation-channels.mjs` | `styk-eval::channels` | partial | Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); composeAnimationChannels and animationPropertyValue on records (styk_eval::records); animationChannelId, normalizeAnimationTarget and validateAnimationValue for property edits (styk-edit/src/property_edit.rs); document validation and native-timeline authoring still JS |
 | `src/animation-properties.mjs` | `styk-eval::channels` | partial | Rust: property vocabulary, discrete and colour properties; validation and names still JS |

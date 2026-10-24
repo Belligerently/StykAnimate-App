@@ -2,7 +2,7 @@
 // Transport phases are tested separately; these traces preserve command outcomes.
 import {createHash} from 'node:crypto';
 import {readFileSync, mkdirSync, writeFileSync} from 'node:fs';
-import {open} from './fixture-kit.mjs';
+import {open, setDuration} from './fixture-kit.mjs';
 
 const folder = new URL('../tests/session-live/', import.meta.url);
 mkdirSync(folder, {recursive: true});
@@ -25,7 +25,7 @@ function seed(mode) {
     : mode === 'native-channels' ? {propertyChannels: true} : {};
   const initial = open(JSON.parse(reference.steps[0].document), options);
   if (mode === 'native-channels') {
-    initial.setFrameDuration(12);
+    setDuration(initial, 12);
     initial.addAnimationKeys([{target: {kind: 'figure', uid: 1}, property: 'x', tick: 0, value: 300},
       {target: {kind: 'figure', uid: 1}, property: 'x', tick: 6, value: 340}]);
   }

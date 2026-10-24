@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Editor} from '../src/editor.mjs';
+import {plainEditorWithDrawings} from './support/owned-editor.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
 import {DrawingHistory} from '../src/drawing-history.mjs';
 import {drawingMetadata,createDrawingFigure} from '../src/drawing-model.mjs';
@@ -22,8 +22,8 @@ function workerFixture(){
   },dispose(){}};
 }
 async function fixture(options={}){
-  const editor=new Editor({demo:false,layerTimeline:true}),worker=workerFixture(),owner=new DrawingResources(editor.report,{worker,history:false,...options});owner.busy=true;owner.flush=async()=>{};
-  editor.createDrawingLayer();const target=editor.prepareDrawingCel(),surface=await owner.surface(target.figure);
+  const {editor}=plainEditorWithDrawings({demo:false,layerTimeline:true}),worker=workerFixture(),owner=new DrawingResources(editor.report,{worker,history:false,...options});owner.busy=true;owner.flush=async()=>{};
+  const target=editor.prepareDrawingCel(),surface=await owner.surface(target.figure);
   return{editor,worker,owner,target,surface};
 }
 const changes=(color=[127,5,249,1])=>Array.from({length:130},(_,tx)=>({tx,ty:-1,before:null,after:new Uint8ClampedArray(color)}));
