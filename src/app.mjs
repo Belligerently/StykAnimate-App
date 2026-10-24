@@ -34,8 +34,7 @@ import { createStageRenderer } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
 import { engineDocument } from "./engine/engine-document.mjs";
 import { engineComposite } from "./engine/engine-composite.mjs";
-import { installEditShadow, engineEditMode } from "./engine/engine-edit-shadow.mjs";
-import { installEngineOwner, engineOwnerMode, appSessionStart } from "./engine/engine-owner.mjs";
+import { installEngineOwner, appSessionStart } from "./engine/engine-owner.mjs";
 import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
@@ -605,12 +604,8 @@ function syncShell() {
 }
 // The stage: the engine draws the documents it can, the JavaScript renderer the others (docs/RUST-ENGINE-PORT.md).
 const createRenderer = (surface, options) => createStageRenderer(surface, options, createScriptRenderer);
-// Ported editor calls run in the engine for the document classes it edits by default, or
-// for every document, or are compared with the editor's (docs/engine/editing.md).
-const engineEditing = engineEditMode();
-// D19: the engine owns the document (opt-in while it is verified in the app).
-if (engineEditing !== 'off' && engineOwnerMode()) globalThis.__stykEngineOwner = installEngineOwner(editor, {start: appSessionStart(() => state.renderer?.engineSide ?? null)});
-else if (engineEditing !== 'off') installEditShadow(editor, () => state.renderer?.engineSide ?? null, {mode: engineEditing});
+// D19: the engine owns the document (docs/engine/editing.md).
+installEngineOwner(editor, {start: appSessionStart(() => state.renderer?.engineSide ?? null)});
 const playback = createStagePlayback(new PlaybackCache({
   gpuIsolation: true,
   diagnostics:telemetry.performance,

@@ -4,7 +4,7 @@
 //! segments 1 and 2 have custom paints (linear, radial) and segment 4 a
 //! secondary colour. The editor's onion skins (`onion-skin.mjs`) replace each
 //! drawable's colour with the tint and drop its secondary colour, but a custom
-//! paint keeps its own colours; `scripts/engine-app-parity.mjs` compares the
+//! paint keeps its own colours; the app-parity rule (D13) compared the
 //! pixels with the editor's renderer.
 
 use std::path::Path;

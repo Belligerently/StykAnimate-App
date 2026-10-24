@@ -26,7 +26,7 @@
 //!
 //! A step fails when a pixel differs by more than 32 levels together with all eight
 //! neighbours (`solid`), or when the mean difference, not counting differences of two levels
-//! or less, exceeds 0.25 (scripts/engine-app-parity.mjs; the limits are fixed). Alpha counts
+//! or less, exceeds 0.25 (D13; the limits are fixed). Alpha counts
 //! as a channel. The CPU time is the median of `--repeat` rasterizations (one by default), by
 //! one CPU renderer per file and edge mode kept across its frames, as the app keeps one.
 //! `--out` keeps both pictures and a difference picture of every failing step; `--json`
@@ -150,7 +150,7 @@ fn gpu() -> Result<Gpu, String> {
     Ok(Gpu { device, queue, name })
 }
 
-/// Up to `count` frame starts spread over the timeline, as scripts/engine-preview-parity.mjs picks them.
+/// Up to `count` frame starts spread over the timeline, as the app's previews pick them.
 fn frame_starts(doc: &styk_eval::doc::Document, ticks: u32, count: usize) -> Vec<u32> {
     let mut starts = Vec::new();
     let mut at = 0u32;

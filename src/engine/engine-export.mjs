@@ -23,7 +23,6 @@ import {ExportFrameRenderer} from '../export-frame-renderer.mjs';
 import {drawingBarrier} from '../drawing-resources.mjs';
 import {EXPORT_MAX_PIXELS} from '../export-sampling.mjs';
 import {engineDocument} from './engine-document.mjs';
-import {engineCpuForced} from './engine.mjs';
 
 /** Rendered pixels a side of an export tile at most (styk-export `TILE_SIDE`). */
 export const ENGINE_TILE_SIDE = 2048;
@@ -54,11 +53,11 @@ let warm = null;
  */
 export function prewarmExportRenderer({stage} = {}) {
   const engine = stage?.engineSide?.engine;
-  if (warm || !engine?.threaded || !engineExportEnabled() || typeof Worker !== 'function') return;
+  if (warm || !engine?.threaded || typeof Worker !== 'function') return;
   const worker = new Worker(new URL('./engine-export-worker.mjs', import.meta.url), {type: 'module', name: WORKER_NAME});
   const entry = warm = {worker, timer: setTimeout(() => { if (warm === entry) { warm = null; release(worker); } }, WARM_MS)};
   worker.addEventListener('message', ({data}) => { if (data?.warmed === false && warm === entry) { warm = null; clearTimeout(entry.timer); release(worker); } });
-  worker.postMessage({operation: 'warm', ...engine.join, cpu: engineCpuForced()});
+  worker.postMessage({operation: 'warm', ...engine.join});
 }
 
 /** The warmed worker, for an export that uses the engine. */
@@ -67,15 +66,6 @@ function takeWarm() {
   warm = null;
   if (entry) clearTimeout(entry.timer);
   return entry?.worker ?? null;
-}
-
-/** `?engineExport=off` (or the stored setting) keeps the JavaScript export renderer, for comparisons. */
-export function engineExportEnabled() {
-  try {
-    const query = new URLSearchParams(globalThis.location?.search ?? '').get('engineExport');
-    if (query) return query !== 'off';
-    return globalThis.localStorage?.getItem('stykanimate.engine.export') !== 'off';
-  } catch { return true; }
 }
 
 /**
@@ -87,7 +77,7 @@ export function engineExportEnabled() {
  */
 export function createExportFrameRenderer(options, {stage, playback, revision, range, vector = false} = {}) {
   const side = stage?.engineSide;
-  if (vector || !engineExportEnabled() || !side?.engine?.threaded || typeof stage.prepareExport !== 'function' || typeof playback?.exportDocument !== 'function')
+  if (vector || !side?.engine?.threaded || typeof stage.prepareExport !== 'function' || typeof playback?.exportDocument !== 'function')
     return new ExportFrameRenderer(options);
   return new EngineExportFrames(options, {stage, playback, revision, range});
 }
@@ -124,7 +114,7 @@ export class EngineExportFrames extends ExportFrameRenderer {
     const engine = this.engine.stage.engineSide.engine;
     return {
       ...engine.join, address: engine.handle.address(), revision: this.engine.revision,
-      width: this.width, height: this.height, smoothing: this.smoothing, maxPixels: EXPORT_MAX_PIXELS, tileSize, cpu: engineCpuForced(),
+      width: this.width, height: this.height, smoothing: this.smoothing, maxPixels: EXPORT_MAX_PIXELS, tileSize,
       last: this.engine.range?.[1] ?? null,
     };
   }

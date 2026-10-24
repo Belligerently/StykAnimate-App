@@ -11,7 +11,7 @@ import {createMovieclipMaterializer} from './movieclip-materialize.mjs';
 import {animationChannelId,validateAnimationDocument,sampleAnimationChannel} from './animation-channels.mjs';
 import {snapshotPoseFrame} from './pose-snapshot.mjs';
 import {presencePlayback,usesPresence,continuations,setContinuations,presenceElapsed} from './movieclip-presence.mjs';
-import {initializeLayerSheet,adoptLayerSheet} from './editor-layer-sheet.mjs';
+import {initializeLayerSheet} from './editor-layer-sheet.mjs';
 
 const clone=value=>structuredClone(value);
 const allocateType=editor=>editor.report.figure_types.reduce((id,f)=>Math.max(id,f.figure_type_id+1),1);
@@ -336,11 +336,6 @@ export const editorMovieclipMethods={
     if(name===this.figure.name)return;
     return publishDefinition(this,{...this.figure,name},this.report.figure_types.indexOf(this.figure),'Rename movieclip');
   },
-  /** Adopt only the Native name; keep the current definition's shallow children. */
-  _adoptMovieclipRename({figure,index,name}){
-    if(name===figure.name)return;
-    return publishDefinition(this,{...figure,name},index,'Rename movieclip');
-  },
   setMovieclipDrawing(uid,group,view){
     const object=this.selectionFrame.objects.find(o=>o.unique_id===uid),figure=this.report.figure_types.find(f=>f.figure_type_id===object?.figure_type_id),drawing=movieclipAsset(figure)?.drawingSets?.[group]?.views?.[view];
     if(!drawing||!Number.isInteger(group)||!Number.isInteger(view))throw messageError(new Error(''), "errors.editorMovieclips.chooseAnExistingDrawing", {});
@@ -427,16 +422,6 @@ export const editorMovieclipMethods={
       this.placeMovieclip({end:tick});
       publishChannels(this,[second,...channels],'Split movieclip');
       this.seek(tick);this.select(uid);return this.object;
-    });
-  },
-  /** Adopt the command-scoped Native result through the original two-child
-   * batch owner. Keep the selected definition's shallow child identities. */
-  _adoptMovieclipUnique({figure,publication,tick,uid,selection}){
-    return this.movieclipBatch('Make movieclip unique',()=>{
-      this._identity(); // The original allocates before the definition event.
-      publishDefinition(this,figure);
-      adoptLayerSheet(this,publication,'Make movieclip unique',{selection});
-      this.seek(tick);this.select(uid);return figure;
     });
   },
   makeMovieclipUnique(){

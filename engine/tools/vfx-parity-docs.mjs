@@ -1,13 +1,11 @@
 #!/usr/bin/env node
-// Builds small projects with the real editor to compare how the engine and the
-// JavaScript renderer draw effects (scripts/engine-app-parity.mjs, rule D13).
+// Builds small projects with the real editor to check how the engine draws effects (rule D13).
 // Each covers some filter types with non-default parameters, or one kind of
 // target: figures, nodes, connected groups, translucent figures, movieclips,
 // clips with fades and strength, the scene (camera image), and drawing cels
 // under effects (which the editor paints into the effect raster with Canvas 2D).
 //
 //   node engine/tools/vfx-parity-docs.mjs [--out tmp/vfx-parity] [--list]
-//   node scripts/engine-app-parity.mjs --target electron --file tmp/vfx-parity/<name>.json --ticks <ticks> [--zoom 2]
 //
 // The ticks worth comparing for each document are printed and written to
 // <out>/ticks.json. Documents are plain JSON, opened as the editor opens a project.
