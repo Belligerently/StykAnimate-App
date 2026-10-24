@@ -34,3 +34,38 @@ for (const name of documents) for (const options of [{layerTimeline: true, prope
     } finally { owner.release(); }
   });
 }
+
+// The editor keeps its own history within a byte limit and retires older entries when a heavy one lands; the
+// movieclip edit (the whole clip's document) is such an entry in a large project. The session must still get it,
+// or its history and the editor's part ways: undo then took back the movieclip itself, and redo gave back the
+// clip as it was made, without the edit and without the frame identities entering it assigned (the gate found
+// this on a large project).
+for (const name of documents) {
+  test(`${name}: a movieclip edit heavier than the history limit is undone and redone exactly`, {skip: !engineBuilt}, async () => {
+    const document = JSON.parse(readFileSync(new URL(`../engine/tests/edit/${name}.document.json`, import.meta.url), 'utf8'));
+    const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true, historyBytes: 1024}).load(structuredClone(document));
+    const owner = installEngineOwner(editor);
+    try {
+      editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
+      const clip = editor.createMovieclip({start: editor.tick, end: editor.tick + 6});
+      const clipFrames = () => editor.report.figure_types.find(figure => figure.figure_type_id === clip.figure_type_id)._styk.movieclip.document.keyframes;
+      const made = text(editor), identities = clipFrames().filter(frame => frame._styk?.frameId).length;
+      editor.enterMovieclip(clip.figure_type_id);
+      editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
+      editor.moveSelection(25, 10);
+      editor.leaveMovieclip();
+      const after = text(editor);
+      assert.notEqual(after, made, 'the edit changed the document');
+      assert.equal(clipFrames().filter(frame => frame._styk?.frameId).length, clipFrames().length, 'entering the clip gave its frames identities');
+      assert.equal(editor.undoLabel, 'Edit movieclip');
+      assert.deepEqual(owner.depths(), [editor._undo.length, editor._redo.length], 'the editor\'s history follows the session\'s');
+      await editor.undo();
+      assert.equal(text(editor), made, 'undoing the edit gives the movieclip as it was made');
+      assert.equal(clipFrames().filter(frame => frame._styk?.frameId).length, identities);
+      await editor.redo();
+      assert.equal(text(editor), after, 'redoing the edit gives the clip with its edit and its frame identities');
+      assert.equal(editor.undoLabel, 'Edit movieclip');
+      assert.deepEqual(Object.keys(owner.refused ?? {}), [], 'nothing was refused');
+    } finally { owner.release(); }
+  });
+}

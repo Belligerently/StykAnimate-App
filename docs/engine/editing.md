@@ -649,7 +649,9 @@ it on the editor, for every document.
   the changed records are written back. A session gesture or edit still open when such a call is made is committed first.
   Edits other modules make in place (the camera-motion and parallax previews, the inspector's native property
   tokens) or through `editor._record` are written back the same way before the next call, and editing the inside of a
-  movieclip (`enterMovieclip`) is the editor's alone until it is left.
+  movieclip (`enterMovieclip`) is the editor's alone until it is left. An entry the editor records is always written
+  back, even when the editor's own byte limit retired older entries as it landed (a movieclip's whole document in a
+  large project outweighs it): the session retires by its own weights and the editor's stacks follow it.
 - **History.** Undo/redo are the session's. Undo ends a gesture that is open first; redo does too for a motion-path edit,
   a rig edit or a camera drag (the session does not redo under them) and leaves any other gesture open under the entry
   it applies, as the editor does. The editor's stacks

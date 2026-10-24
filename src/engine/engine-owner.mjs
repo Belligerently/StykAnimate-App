@@ -813,10 +813,11 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // A command recorded as the editor comes back to a document (leaving a movieclip) belongs to that document's session.
     if (!editor._movieclipScopes?.length && depth === 0 && !applying && document !== editor.report) ensure();
     if (!session || document !== editor.report || editor._movieclipScopes?.length) return originals.get('_record').call(this, command);
-    const length = this._undo.length;
     originals.get('_record').call(this, command);
-    // Pushed (not folded into a batch still open): the session gets an entry for it.
-    const recorded = this._undo.at(-1) === command && this._undo.length >= Math.min(length + 1, this.historyLimit) ? [command] : [];
+    // Pushed (not folded into a batch still open): the session gets an entry for it. The editor's own trimming
+    // may have retired older entries meanwhile (an entry heavier than the byte limit leaves only itself): the
+    // session retires by its own weights, and the stacks follow it afterwards.
+    const recorded = this._undo.at(-1) === command ? [command] : [];
     pending = true;
     if (captured) captured.push(...recorded);
     else if (recorded.length) writeBack(recorded);
@@ -869,7 +870,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (detail?.kind === 'document') {
       report.log?.push(`document ${JSON.stringify(detail).slice(0, 120)} name ${editor.name} at ${Math.round(performance.now())}`);
       // The session exists from the moment the document opens (or comes back from a tab). A movieclip's own
-      // document, entered for editing, has none: its calls run in the editor and come back as one edit on leaving.
+      // document gets one as it loads (the stage draws the session's document), but its calls then run in the
+      // editor (`_movieclipScopes`) and come back as one edit on leaving.
       if (!applying && depth === 0 && !editor._movieclipScopes?.length) ensure();
     }
     if (!session || document !== editor.report || depth > 0 || applying || !['edit', 'history', 'document'].includes(detail?.kind)) return;
