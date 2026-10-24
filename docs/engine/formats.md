@@ -14,8 +14,8 @@ oracle for Pivot files.
   number arrays and payloads) into a `styk_doc::Value`. `decode_parts` returns
   the skeleton and sections without lifting them back.
 - `container::lift` / `lift_within` split a document into skeleton and
-  sections the way `liftDocument` does (the mirror and saves use the same
-  layout); `parse_lifted` reads one lifted record (the mirror's unit).
+  sections the way `liftDocument` does (saves use the same layout);
+  `parse_lifted` reads a lifted record back (the tests of `files` check what a skeleton and its sections stand for with it).
 - `container::encode_v2` writes version 2 (zstd level 3, [D5](decisions/0005-zstd-from-c.md));
   `encode_v1` writes version 1.
 - `native::normalize_decoded`, `validate_figure` and `verify_embedded_source`
@@ -42,7 +42,7 @@ The import, library-preview and document-export workers open and save native fil
 `styk_formats::files`, bound in the codec module (`engine/crates/styk-codec-wasm/src/native.rs`,
 `src/native-file-codec.mjs`). Each worker loads the module itself, so a library preview never waits for a
 Pivot import in the codec worker. What crosses is the *lifted form*: a JSON skeleton and the byte
-sections its markers name (`src/document-lift.mjs`, the form the engine mirror stages records in).
+sections its markers name (`src/document-lift.mjs`, the form a save lifts the editor's document in).
 
 - `files::open(bytes, kind, rules)` reads a container and returns the skeleton and sections. A project
   whose document the rules leave as it is (nearly every one) is checked by `container::check`, which

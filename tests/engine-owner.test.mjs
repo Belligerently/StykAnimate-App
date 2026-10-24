@@ -927,3 +927,19 @@ test("an edit made outside the session's calls reaches the engine once the code 
   assert.ok(holdsRevision(registeredEngine(), editor.revision), "and then it is the engine's");
   owner.release();
 });
+
+test("a definition attached in place (a drawing's encoded tiles) reaches the session once the code that made it has finished", {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
+  const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
+  const figure = editor.report.figure_types[0], revision = editor.revision;
+  figure.name = 'Encoded in place';
+  // A derived publication is no edit: the revision stays, the session's copy is brought up to date.
+  editor._drawingPublished(figure);
+  assert.ok(!owner.session().report_json().includes('Encoded in place'), 'not before the code that made it is done');
+  await Promise.resolve();
+  assert.ok(owner.session().report_json().includes('Encoded in place'), "and then it is the session's");
+  assert.equal(editor.revision, revision);
+  assert.ok(holdsRevision(registeredEngine(), revision), 'at the revision the engine held');
+  assert.equal(editor.canUndo, false, 'and it is no history entry');
+  owner.release();
+});

@@ -450,7 +450,7 @@ document difference the harness can see):
   (measured with the driver's branch step: without this, owned editing deleted the whole
   figure).
 - **Records the editor changes in place** (a topology edit rewrites the figure and every
-  pose of it, drawing edits name their figures): the mirror sees changes by identity, so the
+  pose of it, drawing edits name their figures): the owner sees changes by identity, so the
   facade notes what the change events name (a definition edit: every figure; one that
   changes structure outside a sheet publication: every figure, keyframe and pose source)
   and resends it before the next session starts (measured: after deleting a branch in the
