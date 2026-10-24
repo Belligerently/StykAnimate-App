@@ -44,7 +44,7 @@ async function open(behaviour = {}, options = {}) {
     onStatus: message => events.statuses.push(message), ...options}, async () => engine);
   const syncs = [];
   renderer.engineSide.mirror = {report: null, stats: {}, framesCurrent: () => true,
-    syncDefinitions(report, revision) { syncs.push([report, revision]); if (behaviour.sync) behaviour.sync(); this.report = report; return '{}'; }};
+    syncDefinitions(report, revision, options) { syncs.push([report, revision, options]); if (behaviour.sync) behaviour.sync(); this.report = report; return '{}'; }};
   return {renderer, stage, canvas, events, syncs, progress, engine};
 }
 
@@ -132,11 +132,26 @@ test('a commit running in the engine delays the frame without refusing it', asyn
   renderer.destroy();
 });
 
-test('the new-cel preview of a drawing is not a document the engine holds', async () => {
-  const {renderer, stage, syncs} = await open();
-  assert.equal(renderer.render(request({drawingPreview: true})), false);
-  assert.equal(syncs.length, 0);
-  assert.equal(stage.calls.length, 0);
+test('the new-cel preview of a drawing is drawn from its draft while the mirror stays the document of the editor', async () => {
+  const {renderer, stage, syncs, events} = await open();
+  const draft = {figure_types: [{}]}, editor = {figure_types: []};
+  // The draft holds the cel the first stroke is about to create; the editor's report does not.
+  assert.equal(renderer.render(request({report: draft, documentReport: editor})), true);
+  assert.equal(syncs.length, 1);
+  assert.equal(syncs[0][0], draft, 'the definitions are the draft definitions');
+  assert.equal(syncs[0][2].document, editor, 'and the mirror stays the document of the editor');
+  assert.equal(events.errors.length, 0);
+  assert.ok(stage.calls.some(([name]) => name === 'render_edit'), 'the preview is a frame the engine draws, never one it refuses');
+  renderer.destroy();
+});
+
+test('live drawing cels are synced before an edited frame and told once it was drawn', async () => {
+  const order = [];
+  const {renderer} = await open({render_edit() { order.push('render'); return order.filter(name => name === 'render').length > 1; }});
+  renderer.engineSide.live = {sync() { order.push('sync'); }, presented() { order.push('presented'); }};
+  assert.equal(renderer.render(request()), false);
+  assert.equal(renderer.render(request()), true);
+  assert.deepEqual(order, ['sync', 'render', 'sync', 'render', 'presented'], 'a frame the engine did not draw presents nothing');
   renderer.destroy();
 });
 

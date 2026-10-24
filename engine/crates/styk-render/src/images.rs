@@ -43,12 +43,52 @@ impl Renderer {
 
     /// Allocates the sprite atlas for a document (pages from its asset layout).
     pub fn prepare_sprites(&mut self, assets: &Assets) {
-        let pages = assets.pages.max(1);
-        let size = if assets.pages == 0 { [1, 1] } else { [PAGE, PAGE] };
-        let (texture, view) = array_texture(&self.device, "styk sprites", size, pages, false);
+        self.prepare_sprites_live(assets, 0);
+    }
+
+    /// Allocates the sprite atlas for a document, with `live` more pages after its own for the
+    /// drawing cels held live ([`styk_eval::live`]).
+    pub fn prepare_sprites_live(&mut self, assets: &Assets, live: u32) {
+        let pages = assets.pages + live;
+        let size = if pages == 0 { [1, 1] } else { [PAGE, PAGE] };
+        let (texture, view) = array_texture(&self.device, "styk sprites", size, pages.max(1), false);
         self.sprites = texture;
         self.sprite_view = view;
         self.rebind_sprites();
+    }
+
+    /// Makes room for `live` pages after the document's own, keeping every texel written
+    /// (the pages are copied on the GPU): the document's pictures are not decoded again.
+    pub fn grow_sprites(&mut self, assets: &Assets, live: u32) {
+        let wanted = (assets.pages + live).max(2);
+        let have = self.sprites.depth_or_array_layers();
+        if wanted <= have && self.sprites.width() == PAGE {
+            return;
+        }
+        let old = self.sprites.clone();
+        self.prepare_sprites_live(assets, live);
+        if old.width() == PAGE {
+            let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("styk sprites grow") });
+            encoder.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo { texture: &old, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyTextureInfo { texture: &self.sprites, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::Extent3d { width: PAGE, height: PAGE, depth_or_array_layers: have },
+            );
+            self.queue.submit([encoder.finish()]);
+        }
+    }
+
+    /// Writes live drawing slots, `base` being the layer of the first live page.
+    pub fn upload_live(&mut self, base: u32, uploads: &[styk_eval::live::Upload]) {
+        for upload in uploads {
+            let (x, y) = upload.origin();
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo { texture: &self.sprites, mip_level: 0, origin: wgpu::Origin3d { x, y, z: base + upload.page }, aspect: wgpu::TextureAspect::All },
+                &upload.rgba,
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(styk_eval::live::CELL * 4), rows_per_image: Some(styk_eval::live::CELL) },
+                wgpu::Extent3d { width: styk_eval::live::CELL, height: styk_eval::live::CELL, depth_or_array_layers: 1 },
+            );
+        }
     }
 
     /// Samples `other`'s sprite atlas: the same texture, not a copy. A second renderer on

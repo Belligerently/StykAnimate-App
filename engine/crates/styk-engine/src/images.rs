@@ -36,6 +36,11 @@ impl Uploaded {
         self.places.clear();
     }
 
+    /// A live drawing slot was written at the corner `(x, y)` of page `layer`.
+    pub fn mark(&mut self, layer: u32, x: u32, y: u32) {
+        self.places.insert(place(layer, x, y));
+    }
+
     /// How many pictures the atlas holds.
     pub fn len(&self) -> usize {
         self.places.len()

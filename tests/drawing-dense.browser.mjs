@@ -40,9 +40,8 @@ try{
     const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:0,y:0}});await d.owner.surface(target.figure);d.owner.busy=true;
     const tiles=[];for(let ty=0;ty<34;ty++)for(let tx=0;tx<60;tx++)tiles.push({tx,ty,before:null,after:new Uint8ClampedArray([tx*4,ty*7,120,255])});e.commitDrawingPixels(target,tiles);styk.fit();
   });
-  // WebGPU draws resident tiles; the Canvas path waits for its worker preview.
-  await page.waitForFunction(()=>{const gpu=styk.state.renderer.drawingGpu,previews=styk.drawing.owner.previews;return gpu?gpu.frame>0&&!gpu.incomplete&&gpu.stats.slots>0:previews.cache.size>0&&!previews.active;});
-  await page.waitForFunction(()=>styk.state.renderer.stats.drawingGpuBytes>0);
+  // The engine's stage draws the cel once its pictures are decoded and uploaded.
+  await page.waitForFunction(()=>!styk.state.dirtyRender&&styk.state.renderer.engineSide.stage.pictures_pending()===0);
   await page.screenshot({path:out+'/dense-workspace.png'});
   assert.deepEqual(errors,[]);
   await writeFile(out+'/result.json',JSON.stringify({result,errors,browser:await browser.version()},null,2));console.log(JSON.stringify(result,null,2));

@@ -15,6 +15,8 @@ import {loadEngine} from './engine.mjs';
 import {EngineMirror} from './engine-mirror.mjs';
 import {engineTicket} from './engine-playback.mjs';
 import {failEngine, engineRefusal} from './engine-failure.mjs';
+import {drawingResourcesFor} from '../drawing-resources.mjs';
+import {LiveCels} from './engine-live-cels.mjs';
 import {EngineCameraMonitor} from './engine-previews.mjs';
 import {viewportBackingSize} from '../preview-quality.mjs';
 import {messageError} from '../localized-error.mjs';
@@ -30,6 +32,8 @@ const perStage = () => ({
   ghosts: new WeakMap(), nextGhost: 1,
   /** The drawing tiles each figure was last sent with: publication replaces them in place. */
   tiles: new WeakMap(),
+  /** The drawing cels the engine holds live: strokes drawn before they are published. */
+  live: null,
   /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
   pictureWait: 0,
   cameraFrames: null, cameraDirty: null,
@@ -40,7 +44,7 @@ const perStage = () => ({
 async function engineSide(load) {
   if (shared) return shared;
   const engine = await load();
-  return shared = {engine, mirror: new EngineMirror(engine), stage: null, frameReport: null, definitions: null, failed: null, failure: null, dirty: null, lastRefusal: null,
+  return shared = {engine, mirror: new EngineMirror(engine), stage: null, frameReport: null, definitions: null, definitionsOf: null, failed: null, failure: null, dirty: null, lastRefusal: null,
     stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, pictureRedraws: 0, retries: 0}, ...perStage()};
 }
 
@@ -185,7 +189,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   try { stage = await side.engine.createStage(canvas); }
   catch (error) { throw messageError(error, 'errors.engineStage.theDrawingEngineCouldNotStart', {reason: error?.message ?? error}); }
   // The engine keeps the document; a stage on a new device starts from empty poses and tiles.
-  Object.assign(side, perStage(), {stage, failed: null, failure: null, dirty: null});
+  Object.assign(side, perStage(), {stage, live: new LiveCels(stage), failed: null, failure: null, dirty: null});
   /** The stage's pixels per CSS pixel (the last `resize`), and a frame the stage has drawn. */
   let deviceRatio = 1, engineShown = false, destroyed = false, lost = '', retrying = false, redrawQueued = false, preparedError = null;
   const warnings = [];
@@ -244,15 +248,19 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
 
   /** Figure definitions, backgrounds and properties: what an edit frame is drawn with. */
   const syncDefinitions = request => {
+    // A first stroke on a blank exposure is drawn from a draft of the editor's report that holds
+    // the cel it is about to create (`documentReport`); the mirror stays the editor's.
+    const document = request.documentReport ?? request.report;
     republished(request.report);
     const key = `${request.revision}:${request.artworkRevision}`;
-    if (side.mirror.report === request.report && side.definitions === key) return;
+    if (side.mirror.report === document && side.definitionsOf === request.report && side.definitions === key) return;
     // Figures edited in place keep their objects; the editor's change events said which.
     const dirty = side.dirty;
     side.dirty = null;
     const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
-      {figureIndices: dirty?.figureIndices ?? [], allFigures: Boolean(dirty?.definition && !dirty.figureIndices?.length)});
+      {figureIndices: dirty?.figureIndices ?? [], allFigures: Boolean(dirty?.definition && !dirty.figureIndices?.length), document});
     side.definitions = key;
+    side.definitionsOf = request.report;
     if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.tiles = new WeakMap(); side.frameReport = request.report; }
     return result;
   };
@@ -313,6 +321,9 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     if (side.frameReport !== request.report || side.mirror.framesCurrent(request.report, request.revision ?? 0)) side.cameraDirty = null;
     const started = performance.now(), seen = side.engine.progressSeen();
     syncDefinitions(request);
+    // Strokes, fills and floating selections not yet published are drawn from the tiles held live.
+    side.live.invalidate = invalidate;
+    side.live.sync(drawingResourcesFor(request.documentReport ?? request.report));
     const {frame, geometry} = request, objects = frame.objects ?? [];
     const json = frameJSON(frame, geometry, side);
     // An unchanged frame is not parsed again; the first frame and every changed one are.
@@ -334,6 +345,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     const drawn = stage.render_edit((view.scale ?? 1) * deviceRatio, (view.x ?? 0) * deviceRatio, (view.y ?? 0) * deviceRatio, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
       Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
+    if (drawn) side.live.presented();
     Object.assign(side.stats, {frames: side.stats.frames + (drawn ? 1 : 0), lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
     // Generated effects whose trails are still being sampled refine on the next frame
     // (6 ms of sampling a frame).
@@ -379,8 +391,6 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
       if (destroyed) return false;
       pollDevice();
       if (lost) return false;
-      // The new-cel preview of a drawing is a document the engine does not hold.
-      if (request.drawingPreview) return false;
       const revision = request.revision ?? 0;
       if (engineRefusal(side, request.report, revision)) return false;
       try {

@@ -142,6 +142,30 @@ async function thumbnail({address, revision, tick, width, height}) {
   }
 }
 
+/**
+ * The artwork of `tick` of the open document on transparency, drawn on the CPU through `matrix`
+ * (scene units to pixels): `width × height` pixels from `(x, y)`, for the drawing workspace's fill
+ * and magic wand (engine-composite.mjs). Waits for the frame's pictures like a thumbnail does.
+ */
+async function composite({id, address, revision, tick, x, y, width, height, matrix}) {
+  previews.adopt_engine(address);
+  const started = performance.now();
+  try {
+    for (;;) {
+      if (releasing || cancelled.has(id)) throw new DOMException('The sample was superseded.', 'AbortError');
+      if (performance.now() - started > THUMBNAIL_WAIT_MS) return {refused: 'timeout'};
+      const seen = Atomics.load(progress, 0), status = previews.composite(revision, tick, x, y, width, height, Float64Array.from(matrix));
+      if (status === 2) return {refused: 'stale'};
+      if (status === 0) {
+        const pixels = new Uint8ClampedArray(width * height * 4);
+        previews.picture(pixels);
+        return {pixels: pixels.buffer, width, height};
+      }
+      await whenProgress(seen);
+    }
+  } finally { previews.forget_picture(); }
+}
+
 /** An explicit native interval, with preview onion settings, sampled only here. */
 async function inbetween({id, address, revision, index, ratio, mode, count, opacity, ahead, width, height}) {
   previews.adopt_engine(address);
@@ -207,7 +231,7 @@ async function operate(message) {
   if (message.operation === 'start') return start(message);
   if (!previews) {
     if (message.operation === 'monitor' && wasm) Previews.forget_monitor(message.address);
-    if (['thumbnail', 'inbetween', 'pose'].includes(message.operation) && wasm) Previews.forget_engine(message.address);
+    if (['thumbnail', 'inbetween', 'pose', 'composite'].includes(message.operation) && wasm) Previews.forget_engine(message.address);
     throw new Error('The preview worker has not started.');
   }
   if (['library-begin', 'library-frame', 'library-close'].includes(message.operation) && message.session !== session) return {refused: 'stale', message: 'another library preview is open'};
@@ -218,6 +242,7 @@ async function operate(message) {
     case 'library-frame': return frame(message);
     case 'library-close': session = null; previews.library_close(); return {};
     case 'thumbnail': return thumbnail(message);
+    case 'composite': return composite(message);
     case 'inbetween': return inbetween(message);
     case 'sketch': return sketch(message);
     case 'pose': return pose(message);
@@ -249,7 +274,7 @@ self.addEventListener('message', ({data: message}) => {
   const run = running.then(() => {
     if (releasing) {
       // A thumbnail's engine address is consumed even when it is not drawn.
-      if (['thumbnail', 'inbetween', 'pose'].includes(message.operation) && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
+      if (['thumbnail', 'inbetween', 'pose', 'composite'].includes(message.operation) && wasm) try { Previews.forget_engine(message.address); } catch { /* the module is gone */ }
       if (message.operation === 'monitor' && wasm) try { Previews.forget_monitor(message.address); } catch { /* the module is gone */ }
       throw new DOMException('The preview worker was released.', 'AbortError');
     }
@@ -258,7 +283,7 @@ self.addEventListener('message', ({data: message}) => {
   running = run.catch(() => {});
   run.then(result => {
     cancelled.delete(message.id);
-    const transfer = result?.bitmap ? [result.bitmap] : [];
+    const transfer = result?.bitmap ? [result.bitmap] : result?.pixels ? [result.pixels] : [];
     self.postMessage({id: message.id, ok: true, ...result}, transfer);
   }, error => {
     cancelled.delete(message.id);

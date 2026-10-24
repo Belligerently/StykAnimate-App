@@ -1,6 +1,6 @@
 //! Drawing cels (v2): a sparse blob of 64×64 PNG tiles in the cel's pixel space
-//! (`drawing-tile-codec.mjs`), drawn the way the editor's GPU drawing display
-//! does (`src/drawing-gpu.mjs`, docs/DRAWING-GPU.md):
+//! (`drawing-tile-codec.mjs`), drawn the way the editor's JavaScript drawing display drew them
+//! (docs/engine/drawing.md):
 //!
 //! * reduced levels 1–8 are exact integer box reductions of the level below
 //!   (`downTile` in `drawing-raster.mjs`);
@@ -23,7 +23,7 @@ use crate::doc::DrawingTiles;
 pub const TILE: u32 = 64;
 /// Neighbour texels on each side of a drawn tile (the radius of Mitchell filtering).
 pub const BORDER: u32 = 2;
-const TILE_BYTES: usize = (TILE * TILE * 4) as usize;
+pub const TILE_BYTES: usize = (TILE * TILE * 4) as usize;
 /// Display levels 0..=MAX_LEVEL.
 pub const MAX_LEVEL: u32 = 8;
 
@@ -75,7 +75,7 @@ pub fn level_tiles(tiles: &[(i32, i32, Arc<[u8]>)]) -> Vec<Vec<(i32, i32)>> {
 /// `downTile`: one level-`n + 1` tile from the four level-`n` tiles below it.
 /// Each output texel is the alpha-weighted mean of a 2×2 block, rounded half up,
 /// with the block's mean alpha. `None` when none of the four exists.
-fn down_tile(below: &HashMap<(i32, i32), Vec<u8>>, tx: i32, ty: i32) -> Option<Vec<u8>> {
+pub(crate) fn down_tile(below: &HashMap<(i32, i32), Vec<u8>>, tx: i32, ty: i32) -> Option<Vec<u8>> {
     let subs = [below.get(&(2 * tx, 2 * ty)), below.get(&(2 * tx + 1, 2 * ty)), below.get(&(2 * tx, 2 * ty + 1)), below.get(&(2 * tx + 1, 2 * ty + 1))];
     if subs.iter().all(Option::is_none) {
         return None;
@@ -108,7 +108,7 @@ fn down_tile(below: &HashMap<(i32, i32), Vec<u8>>, tx: i32, ty: i32) -> Option<V
 
 /// One drawn tile's slot contents: `(TILE + 2 * BORDER)²` straight-alpha RGBA
 /// texels, its own in the middle and its eight neighbours' edges around them.
-fn bordered(level: &HashMap<(i32, i32), Vec<u8>>, tx: i32, ty: i32) -> Vec<u8> {
+pub(crate) fn bordered(level: &HashMap<(i32, i32), Vec<u8>>, tx: i32, ty: i32) -> Vec<u8> {
     let t = TILE as i32;
     let border = BORDER as i32;
     let side = (t + 2 * border) as usize;

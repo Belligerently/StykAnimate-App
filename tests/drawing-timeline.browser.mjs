@@ -39,7 +39,7 @@ try{
   await page.locator('[data-draw-action="new"]').first().click();
   const built=await page.evaluate(async()=>{
     styk.drawing.settings.resolution=1;
-    const e=styk.editor,d=styk.drawing,{DrawingStroke}=await import('/src/drawing-pixels.mjs'),id=e.drawingTarget().id;
+    const e=styk.editor,d=styk.drawing,{DrawingStroke}=await import('/tests/support/sketch-stroke.mjs'),id=e.drawingTarget().id;
     for(let i=1;i<60;i++)e.nextDrawing([id],{blank:true,length:1});
     for(let i=0;i<60;i++){e.seek(i);const target=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),surface=await d.owner.surface(target.figure);
       const s=new DrawingStroke(surface.store,{size:8,pressureSize:false});s.sample({x:10+(i%8)*8,y:10+i});e.commitDrawingPixels(target,s.finish());}
@@ -77,7 +77,7 @@ try{
   // Thumbnails: the pump waits out busy work and a big cel rasterizes from a
   // mip level, not the source tiles.
   const thumb=await page.evaluate(async()=>{
-    const e=styk.editor,owner=styk.drawing.owner,{DrawingStroke}=await import('/src/drawing-pixels.mjs');
+    const e=styk.editor,owner=styk.drawing.owner,{DrawingStroke}=await import('/tests/support/sketch-stroke.mjs');
     e.seek(30);const target=e.drawingTarget(),surface=await owner.surface(target.figure);
     const s=new DrawingStroke(surface.store,{size:16,pressureSize:false});
     for(let x=0;x<=600;x+=40)s.sample({x,y:10});
