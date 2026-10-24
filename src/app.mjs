@@ -322,7 +322,6 @@ const state = {
   previewGovernor: { index: 0 },
   loopRange: null,
   buffering: false,
-  backgroundPending: null,
   rangeIndices: [],
   applyRange: false,
   scrubbing: false,

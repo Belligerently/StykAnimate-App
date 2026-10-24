@@ -462,6 +462,11 @@ cannot draw is a condition of the frame, never another renderer:
 - **An engine that cannot start** (no shared memory, no graphics device) is a localized error
   (`errors.engineStage.theDrawingEngineCouldNotStart`) in the renderer panel.
 
+Checked in Electron on WebGPU (2026-10-24): the start document, the `auras` generator fixture and a large
+private Pivot file (735 ticks): still, scrub, play, the Draw view turned 30° and mirrored, onion skins and the camera
+preview, every frame drawn by the engine (`engineStats.refusal` null); `Stage::lose_device` was reported at the next
+poll and the app was drawing again on a new stage within 1.5 s, with the picture restored.
+
 Two conditions of a document the gate used to count:
 
 - **Movieclips nested deeper than 16 levels.** Nothing in the engine limits the depth but the

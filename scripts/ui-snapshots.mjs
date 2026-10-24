@@ -213,7 +213,7 @@ async function capture(planned) {
     await context.addInitScript(settings => {
       localStorage.setItem('stykanimate.editor.settings.v1', JSON.stringify(settings));
       localStorage.setItem('stykanimate.theme.v1', settings.theme);
-    }, {theme, timelineMode: timeline, rendererMode: 'canvas', locale: 'en', uiScale: 100});
+    }, {theme, timelineMode: timeline, locale: 'en', uiScale: 100});
     const page = await context.newPage();
     page.on('pageerror', error => report.errors.push(`${name}: ${error.message}`));
     try {
