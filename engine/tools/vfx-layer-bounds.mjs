@@ -13,7 +13,7 @@ const {activeVfx, vfxStack} = await import(`${repoUrl}/src/vfx.mjs`);
 const {buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
 const {connectedVfxGeometry} = await import(`${repoUrl}/src/vfx-connected.mjs`);
 const {objectBounds} = await import(`${repoUrl}/src/renderer-geometry.mjs`);
-const {drawableVfxPadding, hasDrawableVfx} = await import(`${repoUrl}/src/vfx-canvas.mjs`);
+const {drawableVfxPadding, hasDrawableVfx} = await import(`${repoUrl}/src/vfx-drawable.mjs`);
 
 const [file, tick = '0'] = process.argv.slice(2);
 const kind = /\.(styk|stkz|stykmov)$/i.exec(file)?.[1].toLowerCase();

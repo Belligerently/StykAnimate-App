@@ -7,7 +7,6 @@ StykAnimate is licensed under the GNU GPL, version 3 or later (see [LICENSE](LIC
 | Component | Use | License | License text |
 | --- | --- | --- | --- |
 | [resvg](https://github.com/RazrFalcon/resvg) (WebAssembly build) | Rendering SVG to images | MPL-2.0 | [vendor/resvg/LICENSE](vendor/resvg/LICENSE), [NOTICE](vendor/resvg/NOTICE.md) |
-| [earcut](https://github.com/mapbox/earcut) | Polygon triangulation | ISC | [vendor/earcut.LICENSE](vendor/earcut.LICENSE) |
 | [opentype.js](https://github.com/opentypejs/opentype.js) | Font outlines for text | MIT | [vendor/text/opentype.LICENSE](vendor/text/opentype.LICENSE) |
 | [Noto Sans](https://fonts.google.com/noto) | Default text font | SIL OFL 1.1 | [vendor/text/OFL.txt](vendor/text/OFL.txt) |
 | [Zstandard](https://github.com/facebook/zstd) (compiled into the engine's WebAssembly modules through the [zstd](https://github.com/gyscos/zstd-rs) crate, MIT) | Compressed project sections | BSD-3-Clause | [engine/licenses/zstd.LICENSE](engine/licenses/zstd.LICENSE) |

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {drawBackground, sceneBackgroundColor, effectiveCamera, backgroundBounds} from '../src/pivot/background.mjs';
 import {cameraMatrix} from '../src/renderer-geometry.mjs';
 import {emptyDocument} from '../src/demo.mjs';
-import {compilePlaybackPacket} from '../src/playback-worker.mjs';
 
 test('Canvas scene color replaces the native background/crossfade, retaining ARGB alpha and numeric zero', () => {
   const report = emptyDocument(), frame = report.keyframes[0], calls = [];
@@ -25,11 +24,4 @@ test('Scene visibility and Camera visibility use separate fixed-layer semantics'
   report._styk.layers.fixed.scene.visible = true; assert.equal(sceneBackgroundColor(report, frame), 0xffabcdef);
   report._styk.layers.fixed.camera.visible = true; assert.equal(effectiveCamera(report, frame), frame.camera);
   assert.equal(effectiveCamera(report, frame, false), null);
-});
-test('prepared playback packets retain evaluated scene ARGB keys including transparent zero', async () => {
-  const report = emptyDocument(); report.keyframes[0].duration_raw = 3;
-  report._styk.animation = {version: 1, channels: [{id: 'scene::color', target: {kind: 'scene'}, property: 'color', keys: [
-    {id: 'a', tick: 0, value: 0xff224466, interpolation: 'hold'}, {id: 'b', tick: 2, value: 0, interpolation: 'hold'}]}]};
-  const first = await compilePlaybackPacket(report, 0), last = await compilePlaybackPacket(report, 2);
-  assert.equal(first.frame._stykBackgroundColor, 0xff224466); assert.equal(last.frame._stykBackgroundColor, 0);
 });

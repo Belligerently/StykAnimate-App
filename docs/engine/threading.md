@@ -197,8 +197,7 @@ plan answered `EngineUnported` (an in-between on a layer sheet, or of authored p
 camera-motion or effect clips) are planned on the interface thread instead, in slices of a few
 milliseconds, by the editor's own planners (`planOnInterface`), which stay the oracle the
 engine's plans are recorded against (`engine/tests/layer-migration`,
-`layer-sheet-migration`, `inbetween`). Neither job touches the JavaScript playback cache or
-its workers.
+`layer-sheet-migration`, `inbetween`).
 
 Mobile pin compatibility: `Engine::stage` now returns a checked result,
 `PlanError::Unported` carries an owned `String`, and `FrameData::tick` changes from `u32`

@@ -28,6 +28,9 @@ use styk_eval::view::{apply, camera_transform, compose, invert};
 
 pub type Affine = [f64; 6];
 
+/// The upright view: nothing moves.
+pub const IDENTITY: Affine = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
 /// The pixel grid used by eligible filtered drawing entries. Ordinary GPU
 /// presentation and prepared playback retain the world raster grid. Direct
 /// Canvas presentation paints one current drawing on its destination grid.
@@ -47,6 +50,9 @@ pub struct View {
     /// Workspace zoom and pan in screen pixels, before any scene camera.
     pub zoom: f64,
     pub pan: [f64; 2],
+    /// The workspace view's rotation and mirroring on screen ([`crate::Renderer::set_orientation`]):
+    /// the identity for an upright view. `matrix` already includes it.
+    pub orient: Affine,
     /// Vertical over horizontal pixels per scene unit of the camera view (`ViewParams::stretch`).
     pub stretch: f64,
     /// The view shows the scene through its camera (playback), not the neutral workspace.
@@ -201,7 +207,7 @@ pub fn camera_plan(stack: &[Arc<Effect>], canvas: [u32; 2], camera: Option<Camer
     let reach = styk_eval::vfx::padding(stack, scale, width.max(height));
     let pad = if reach != 0.0 { reach + 2.0 } else { 0.0 };
     let space = camera_transform(camera.as_ref(), canvas, scale, [pad, pad]);
-    let screen: Affine = if view.camera_view {
+    let screen: Affine = compose(view.orient, if view.camera_view {
         [view.zoom, 0.0, 0.0, view.zoom * view.stretch, view.pan[0], view.pan[1]]
     } else {
         // `cameraSceneAffine`: the artboard placed where the camera looks, in the workspace.
@@ -211,7 +217,7 @@ pub fn camera_plan(stack: &[Arc<Effect>], canvas: [u32; 2], camera: Option<Camer
         let (x, y) = (cx + c.x - a * cx + b * cy, cy + c.y - b * cx - a * cy);
         let z = view.zoom;
         [a * z, b * z, -b * z, a * z, view.pan[0] + x * z, view.pan[1] + y * z]
-    };
+    });
     // The shown part of the image maps onto the artboard, a little stretched where
     // the image's whole-pixel size rounds the two axes differently, as the editor's quad does.
     let to_report: Affine = [cw / width, 0.0, 0.0, ch / height, -pad * cw / width, -pad * ch / height];
@@ -423,7 +429,7 @@ mod tests {
     }
 
     fn view() -> View {
-        View { matrix: [1.25, 0.0, 0.0, 1.25, 10.0, 20.0], size: [1000, 800], zoom: 1.25, pan: [10.0, 20.0], stretch: 1.0, camera_view: false, camera_limit: 2048.0, max_texture: 8192 }
+        View { matrix: [1.25, 0.0, 0.0, 1.25, 10.0, 20.0], size: [1000, 800], zoom: 1.25, pan: [10.0, 20.0], orient: IDENTITY, stretch: 1.0, camera_view: false, camera_limit: 2048.0, max_texture: 8192 }
     }
 
     #[test]

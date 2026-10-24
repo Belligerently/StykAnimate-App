@@ -245,12 +245,6 @@ impl EngineHandle {
         }
     }
 
-    /// Features of the open document the engine does not draw yet, as a JSON array.
-    pub fn unsupported(&self) -> String {
-        let features = self.engine.generation().map(|generation| generation.prepared.doc.unsupported.clone()).unwrap_or_default();
-        format!("[{}]", features.iter().map(|feature| format!("{feature:?}")).collect::<Vec<_>>().join(","))
-    }
-
     /// The outcome of the oldest finished commit as JSON (`{revision, generation, …}`
     /// or `{revision, error}`), once; `undefined` when none is waiting.
     pub fn take_committed(&self) -> Option<String> {

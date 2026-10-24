@@ -77,6 +77,19 @@ pub fn background_bounds(doc: &Document, camera: Option<&Camera>, camera_enabled
     }
 }
 
+/// Where the screen's pixels go when the workspace view is turned by `rotation` radians about
+/// `centre` and then mirrored horizontally about it (`cameraMatrix` in renderer-geometry.mjs: the
+/// Draw view rotates and flips about the artboard's centre, after the scene camera). `None` for the
+/// upright view.
+pub fn orientation(rotation: f64, flip: bool, centre: [f64; 2]) -> Option<[f64; 6]> {
+    if rotation == 0.0 && !flip {
+        return None;
+    }
+    let (sin, cos) = rotation.sin_cos();
+    let turned = [cos, sin, -sin, cos, centre[0] - (cos * centre[0] - sin * centre[1]), centre[1] - (sin * centre[0] + cos * centre[1])];
+    Some(if flip { compose([-1.0, 0.0, 0.0, 1.0, 2.0 * centre[0], 0.0], turned) } else { turned })
+}
+
 /// Inverse of an affine matrix.
 pub fn invert(m: [f64; 6]) -> [f64; 6] {
     let [a, b, c, d, e, f] = m;
@@ -99,4 +112,37 @@ pub fn compose(a: [f64; 6], b: [f64; 6]) -> [f64; 6] {
         a[0] * b[4] + a[2] * b[5] + a[4],
         a[1] * b[4] + a[3] * b[5] + a[5],
     ]
+}
+
+#[cfg(test)]
+mod orientation_tests {
+    use super::{apply, orientation};
+
+    #[test]
+    fn an_upright_view_has_no_orientation() {
+        assert_eq!(orientation(0.0, false, [320.0, 240.0]), None);
+    }
+
+    #[test]
+    fn a_turn_keeps_the_centre_and_takes_the_right_edge_down() {
+        let turn = orientation(std::f64::consts::FRAC_PI_2, false, [320.0, 240.0]).unwrap();
+        let centre = apply(turn, [320.0, 240.0]);
+        assert!((centre[0] - 320.0).abs() < 1e-9 && (centre[1] - 240.0).abs() < 1e-9);
+        // y points down on screen: a positive turn takes +x to +y, as the editor's matrix does.
+        let right = apply(turn, [420.0, 240.0]);
+        assert!((right[0] - 320.0).abs() < 1e-9 && (right[1] - 340.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_mirror_swaps_left_and_right_about_the_centre_after_the_turn() {
+        let mirror = orientation(0.0, true, [320.0, 240.0]).unwrap();
+        let left = apply(mirror, [220.0, 100.0]);
+        assert!((left[0] - 420.0).abs() < 1e-9 && (left[1] - 100.0).abs() < 1e-9);
+        // Turned first (+x to +y, -y to +x), then mirrored about the centre (+x to -x).
+        let both = orientation(std::f64::consts::FRAC_PI_2, true, [320.0, 240.0]).unwrap();
+        let right = apply(both, [420.0, 240.0]);
+        assert!((right[0] - 320.0).abs() < 1e-9 && (right[1] - 340.0).abs() < 1e-9);
+        let up = apply(both, [320.0, 140.0]);
+        assert!((up[0] - 220.0).abs() < 1e-9 && (up[1] - 240.0).abs() < 1e-9);
+    }
 }

@@ -55,26 +55,6 @@ export function playbackWorkerMemoryPlan(frameBytes = playbackMemoryBudget()) {
   return {...plan, retainedBytes: Object.values(plan).reduce((sum, bytes) => sum + bytes, 0)};
 }
 
-/** Admission target for the worker pool, including its private document copies.
- * This leaves the majority of RAM for the editor, GPU caches and other apps.
- * It is an estimate-based policy, never a hard cap on process/driver memory. */
-export function playbackWorkerAdmissionBudget(deviceMemory = deviceMemoryHint()) {
-  return Number.isFinite(deviceMemory) && deviceMemory > 0 ? deviceMemory * 1073741824 / 3 : 1024 * 1024 * 1024;
-}
-
-export function playbackWorkerAdmission({maxWorkers, maxBytes, frameBytes, documentBytes = 0, nativeBytes = 0}) {
-  const retained = playbackWorkerMemoryPlan(frameBytes).retainedBytes;
-  // Reserve one preparing/unacknowledged packet and derived geometry per lane.
-  // Live geometry can exceed this reserve; do not describe it as measured bytes.
-  const packetReserve = frameBytes * .8, geometryReserve = frameBytes / 4;
-  const perWorkerEstimate = documentBytes + nativeBytes + retained + packetReserve + geometryReserve;
-  const workers = Math.max(1, Math.min(maxWorkers, Math.floor(maxBytes / Math.max(1, perWorkerEstimate))));
-  return {maxWorkers, workers, budgetBytes: Number.isFinite(maxBytes) ? maxBytes : null,
-    documentBytesEstimate: documentBytes, nativeBytes, retainedTarget: retained, packetReserve, geometryReserve,
-    perWorkerEstimate, poolEstimate: perWorkerEstimate * workers, reduced: workers < maxWorkers,
-    minimumExceedsTarget: perWorkerEstimate > maxBytes};
-}
-
 /** Parallel packet-preparation workers. Every worker mirrors the document and
  * owns private image/raster/vector caches, so the count follows real RAM when
  * the hint is honest; the browser's capped 8 GB tier keeps the safe default.

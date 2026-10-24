@@ -9,7 +9,6 @@ import {createObject,createFrame} from '../src/demo.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {nativeFigureDocument} from '../src/native-figure.mjs';
-import {requiresCompatibilityTexture} from '../src/renderer-geometry.mjs';
 
 // Saved placement-based documents remain readable with their original clocks.
 // Legacy authoring is exercised only to construct those compatibility fixtures.
@@ -124,11 +123,6 @@ test('portable movieclip imports restart and shared editing recovery retains the
   const parent=editor.report;editor.enterMovieclip(f.figure_type_id);editor.select(1);editor.moveSelection(7,0);
   const recovered=editor.movieclipProjectReport();assert.equal(recovered.keyframes.length,parent.keyframes.length);assert.equal(recovered.figure_types.at(-1)._styk.movieclip.document,editor.report);
   const reopened=new Editor();reopened.load(structuredClone(recovered));assert.equal(reopened.totalTicks,timeline(parent).at(-1).start+timeline(parent).at(-1).count);
-});
-
-test('a faded movieclip is drawn from a texture of its own',()=>{
-  const editor=new Editor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:0,end:8});editor._objectEdit('Fade movieclip',o=>{o.field28=128;});
-  assert.equal(requiresCompatibilityTexture(editor.geometry.drawables),true);
 });
 
 test('nested conversion preserves the enclosing clip and shared edits update all instances',()=>{

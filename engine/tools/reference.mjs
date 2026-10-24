@@ -190,7 +190,7 @@ function imageCorners(d) {
   return [corner(0, 0), corner(w, 0), corner(0, h), corner(w, h)];
 }
 
-/** What the scene camera does to a frame when it is shown (src/renderer.mjs, src/playback-worker.mjs). */
+/** What the scene camera does to a frame when it is shown (the engine's styk_eval::view::camera_matrix). */
 async function shotDumper() {
   const {cameraAtTime} = await import(`${repoUrl}/src/camera-motion.mjs`);
   const {parallaxResolver} = await import(`${repoUrl}/src/layer-parallax.mjs`);
@@ -203,7 +203,7 @@ async function shotDumper() {
 
 /**
  * What the editor resolves for effects at one tick, as the renderers hand it to
- * the effect executors (src/renderer.mjs, src/playback-worker.mjs):
+ * the effect executors:
  *
  * - `scene`: `activeVfx(vfxStack(frame))`, the camera's stack;
  * - `objects`: per slot with anything to draw, the stack of the object's own

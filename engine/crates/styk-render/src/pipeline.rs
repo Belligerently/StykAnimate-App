@@ -12,7 +12,25 @@ impl Renderer {
     pub fn set_edges(&mut self, edges: Edges) {
         if self.edges() == edges { return; }
         self.crisp = edges == Edges::Crisp;
-        self.samples = if self.crisp { 1 } else { SAMPLES };
+        self.use_samples(if self.crisp { 1 } else { SAMPLES });
+    }
+
+    /// Lowers the samples per pixel of smooth edges to one (`multisampled` false) or restores
+    /// [`SAMPLES`]: the quality ladder of the editor's preview under load, which trades the edges
+    /// of polygons and images for fill rate (analytic shapes stay covered by distance). The
+    /// resident list, images, glyphs and effect caches stay. Crisp edges are always one sample.
+    pub fn set_multisampled(&mut self, multisampled: bool) {
+        if self.crisp { return; }
+        self.use_samples(if multisampled { SAMPLES } else { 1 });
+    }
+
+    /// Whether smooth edges are drawn with [`SAMPLES`] samples a pixel.
+    pub fn multisampled(&self) -> bool { self.samples > 1 }
+
+    /// Changes the sample count: the sample-dependent pipelines and targets are rebuilt.
+    fn use_samples(&mut self, samples: u32) {
+        if self.samples == samples { return; }
+        self.samples = samples;
         self.pipeline = prim_pipeline(&self.device, &self.prim_layout, &self.prim_shader, None, false, self.samples);
         self.pipeline_add = None;
         self.depth_pipelines = None;
@@ -147,6 +165,7 @@ impl Renderer {
             crisp: edges == Edges::Crisp,
             drawing_grid: crate::DrawingGrid::World,
             paint_context: crate::paint::PaintContext::Native,
+            orientation: None,
             root_gpu_source: false,
             device,
             queue,

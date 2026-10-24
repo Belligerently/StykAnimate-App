@@ -1,5 +1,5 @@
 /** Serial, reproducible audit driver; does not replace production implementations.
- * node scripts/benchmark-codebase-sweep.mjs [label] [kernels|desktop|all|evidence]
+ * node scripts/benchmark-codebase-sweep.mjs [label] [kernels|evidence]
  * Detailed output stays local; the audit's reviewed evidence summary is committed.
  */
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import {performanceSourceHashes} from './performance-source-hashes.mjs';
 
 const label = process.argv[2] ?? 'codebase-sweep', mode = process.argv[3] ?? 'kernels';
 assert.match(label, /^[a-zA-Z0-9_-]+$/);
-assert.ok(['kernels', 'desktop', 'all', 'evidence'].includes(mode));
+assert.ok(['kernels', 'evidence'].includes(mode));
 if (mode === 'evidence') {
   // Collect this audit's fixed recorded runs; never substitute newly generated
   // samples into the report silently. A later audit should use its own dates.
@@ -25,7 +25,7 @@ if (mode === 'evidence') {
     measurements: {}};
   for (const name of ['benchmark-codebase-sweep.mjs', 'benchmark-codec-topology-sweep.py',
     'benchmark-drawing-filter-sweep.mjs', 'benchmark-layer-sheet-sweep.mjs',
-    'benchmark-localization-sweep.mjs', 'performance-sweep-browser-fixture.mjs'])
+    'benchmark-localization-sweep.mjs'])
     evidence.benchmarkSources[`scripts/${name}`] = createHash('sha256').update(await readFile(`scripts/${name}`)).digest('hex');
   for (const name of ['animation-modes', 'animation-locality', 'builder', 'node-selection',
     'rig-constraints', 'movieclips', 'telemetry', 'connected-transactions', 'drawing-filters'])
@@ -102,7 +102,7 @@ async function run(name, args, env = {}) {
   await writeFile(path.join(output, `manifest-${mode}.json`), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report.rows.at(-1)));
 }
-if (mode !== 'desktop') {
+{
   const jobs = [
     ['animation-modes', ['--expose-gc', 'scripts/benchmark-animation-modes.mjs', label]],
     ['animation-locality', ['--expose-gc', 'scripts/benchmark-animation-locality.mjs', '.', path.join(output, 'animation-locality.json')]],
@@ -129,26 +129,6 @@ if (mode !== 'desktop') {
   })) {
     if (report.rows.find(row => row.name === name)?.exitCode === 0)
       await writeFile(path.join(output, `${name}.json`), await readFile(source));
-  }
-}
-if (mode !== 'kernels') {
-  const {emptyDocument, createObject, createFrame} = await import('../src/demo.mjs');
-  const {buildContainerV2} = await import('../tests/support/native-files.mjs');
-  for (const count of [30, 300]) {
-    const document = emptyDocument(), figure = document.figure_types[0];
-    document.fps = 60;
-    document.keyframes = Array.from({length: 120}, (_, tick) => createFrame(Array.from({length: count}, (_, slot) =>
-      createObject(figure, slot + 1, 20 + (slot % 30) * 20 + tick % 10, 40 + Math.floor(slot / 30) * 35,
-        {scale: .25})), 1));
-    const fixture = path.join(output, `synthetic-${count}.styk`);
-    const bytes = await buildContainerV2(document, 'styk');
-    await writeFile(fixture, bytes);
-    report.fixtures ??= [];
-    report.fixtures.push({figures: count, frames: 120, bytes: bytes.byteLength,
-      sha256: createHash('sha256').update(bytes).digest('hex')});
-    await run(`desktop-${count}`, ['scripts/benchmark-performance-desktop.mjs', fixture, `${label}-${count}`, '3'],
-      {STYK_BENCH_PLAYBACK: '1', STYK_BENCH_PLAYBACK_FRAMES: '120', STYK_BENCH_EDITING: '0',
-        STYK_BENCH_EXPORT: '1', STYK_BENCH_EXPORT_FORMATS: 'styk'});
   }
 }
 const after = await performanceSourceHashes();

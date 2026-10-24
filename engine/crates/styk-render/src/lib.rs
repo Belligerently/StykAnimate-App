@@ -170,6 +170,8 @@ pub struct Renderer {
     pub(crate) crisp: bool,
     pub(crate) drawing_grid: DrawingGrid,
     pub(crate) paint_context: paint::PaintContext,
+    /// The workspace view's rotation and mirroring, applied after the scene camera ([`Renderer::set_orientation`]).
+    pub(crate) orientation: Option<effects::plan::Affine>,
     /// Set only by completed effect execution plus actual parent consumption.
     pub(crate) root_gpu_source: bool,
     pub stats: Stats,
@@ -180,6 +182,13 @@ impl Renderer {
     /// Selects the portable pixel-grid policy for eligible filtered drawings.
     /// The current draw list, decoded images and raster caches stay shared.
     pub fn set_drawing_grid(&mut self, grid: DrawingGrid) { self.drawing_grid = grid; }
+
+    /// Rotates and mirrors the workspace view: `orientation` maps the neutral view's screen pixels
+    /// to the shown ones (the editor rotates the Draw view about the artboard's centre and mirrors
+    /// it, `cameraMatrix` in renderer-geometry.mjs). `ViewParams::matrix` must already include it;
+    /// the renderer places what is bound to the artboard (the background, the camera image of scene
+    /// effects, the artboard clip) by it. `None`, the default, is the upright view. Stays until set again.
+    pub fn set_orientation(&mut self, orientation: Option<effects::plan::Affine>) { self.orientation = orientation; }
 
     /// Explicit root painter policy. Child targets remain Native; their
     /// completed composite receives the root clip exactly once.

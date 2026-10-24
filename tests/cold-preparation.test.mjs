@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {createFrame,createObject,emptyDocument} from '../src/demo.mjs';
 import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
-import {ArtworkRegistry} from '../src/render-artwork.mjs';
 import {buildGeometry,buildGeometryAsync,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
 import {movieclipAsset} from '../src/movieclips.mjs';
 import {movieclipCacheStats} from '../src/movieclip-geometry.mjs';
@@ -39,20 +38,6 @@ test('figure transport rejects cyclic and out-of-order aliases without accepting
   for(const figureReference of [['figure_types',3],['opaque'],['__proto__','figure_types',0]])
     assert.throws(()=>applyDocumentChunk(report,{operations:[{path:['figure_types',0],figureReference}]}),/reference/i);
   assert.deepEqual(report.figure_types,[]);
-});
-test('sampled clip artwork excludes unused timeline data but includes every child definition and instance style',async()=>{
-  const {editor,figure}=clipFixture(),report={...editor.report,figure_types:[figure],keyframes:[createFrame([createObject(figure,900,0,0)])]};
-  const geometry=buildGeometry(report,report.keyframes[0]).objects.get(0),registry=new ArtworkRegistry();registry.begin(1);
-  const original=registry.get(geometry,geometry.drawables),key=await registry.contentKey(original);
-  const otherFigure=structuredClone(figure);movieclipAsset(otherFigure).document.opaque='unused timeline payload'.repeat(10000);
-  const other={...geometry,fig:otherFigure};
-  assert.equal(registry.get(other,other.drawables),original);
-  assert.ok(original.definition.text.length<10000,'The clip timeline must not enter its drawing definition.');
-  const child=geometry.drawables[0].fig;child.futureOutlineStyle={width:7,color:123};registry.begin(2);
-  const updated=registry.get(geometry,geometry.drawables);
-  assert.notEqual(await registry.contentKey(updated),key,'A child style change must invalidate even retained geometry.');
-  const moved={...geometry,obj:{...geometry.obj,field28:128}};
-  assert.notEqual(registry.get(moved,moved.drawables),updated);
 });
 test('nested clip preparation yields inside a single outer object and cancels without publishing a partial cache',async()=>{
   const {figure}=clipFixture(),asset=movieclipAsset(figure),child=asset.document.figure_types[0];
