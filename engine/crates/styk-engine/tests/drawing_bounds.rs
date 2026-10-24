@@ -5,7 +5,7 @@ use std::sync::{Arc, Barrier, OnceLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use styk_doc::{json, Value};
-use styk_engine::mirror::{Change, Record, Table};
+use styk_engine::document::{OpenOptions, OpenSource};
 use styk_engine::{Budgets, Engine};
 
 fn fixture(stale: bool) -> Value {
@@ -61,25 +61,17 @@ fn matching_bounds_and_repeat_decodes_keep_the_prepared_frame() {
     assert!(Arc::ptr_eq(&frame, &engine.frame(0).unwrap()), "atlas recovery does not change resolved bounds");
 }
 
-fn record(value: &Value) -> Record {
-    Record { skeleton: json::to_string(value).into_bytes(), arrays: Vec::new(), payloads: Vec::new() }
-}
-
 #[test]
 fn an_earlier_revisions_decode_corrects_a_reused_cel_in_the_current_revision() {
     let value = fixture(true);
     let engine = Engine::new(|| 0.0, Budgets::for_device(None));
-    engine.stage(0, Change::Reset).unwrap();
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":960,"canvas_height":540,"fps":24}"#.to_vec())).unwrap();
-    for (table, key) in [(Table::Figures, "figure_types"), (Table::Keyframes, "keyframes"), (Table::Backgrounds, "backgrounds")] {
-        let rows = value.get(key).unwrap().as_arr().unwrap();
-        engine.stage(0, Change::Layout(table, vec![-1; rows.len()])).unwrap();
-        for (i, row) in rows.iter().enumerate() { engine.stage(0, Change::Set(table, i as u32, record(row))).unwrap(); }
-    }
-    engine.commit(1, 0).unwrap();
+    let text = json::to_string(&value);
+    let opened = engine.open_document(OpenSource::Json { bytes: text.as_bytes(), name: "drawing bounds" }, OpenOptions::default(), &|| false).unwrap();
+    engine.activate(&opened.typed, &opened.tree, 1).unwrap();
     let previous = cel(&engine);
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":960,"canvas_height":540,"fps":25}"#.to_vec())).unwrap();
-    engine.commit(2, 0).unwrap();
+    let mut next = opened.tree.clone();
+    next.make_obj().unwrap().set("fps", Value::Num(25.0));
+    engine.publish_tree(opened.lineage(), next, 2).unwrap().expect("the document is the engine's");
     assert!(Arc::ptr_eq(&previous, &cel(&engine)), "unchanged typed records share drawing resources");
     let before = engine.frame_now(0).unwrap();
     while previous.decoded_bounds.get().is_none() {

@@ -69,7 +69,8 @@ test('malformed, non-segment and missing figure scopes reject before replacing a
   const editor=new Editor({demo:false}).load(fixture()), original=editor.report;
   const missing=setChannels(fixture(),[channel({...globalTarget,figureTypeId:3},'opacity',[])]);
   assert.throws(()=>validateAnimationDocument(missing),/missing figure definition 3/);
-  assert.throws(()=>editor.load(missing),/missing figure definition 3/); assert.equal(editor.report,original);
+  // The engine refuses the document with the editor's message key (its parameters are not carried).
+  assert.throws(()=>editor.load(missing),error=>error.messageKey==='errors.animationChannels.animationSegmentScopeReferencesMissingFigureDefinition'); assert.equal(editor.report,original);
 });
 
 test('native poses sharing a UID use independent continuous primary and gradient scope curves', () => {

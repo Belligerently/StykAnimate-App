@@ -90,13 +90,13 @@ function sessionPayload(args) {
 const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segmentIds', 'branch'].filter(key => Object.hasOwn(state, key)).map(key => [key, state[key]]));
 
 /**
- * @param {object} editor the app's Editor, with an empty history (just loaded)
- * @param {{start(editor): object|null, methods: Iterable<string>, verify?: boolean, draws?(): Array}} options
- *   `start` opens a session on the editor's document as it is (EditSession), `methods` names
- *   the calls to route to it, `verify` compares the session's document after every call
- *   (tests), `draws` supplies the random values a call may take (D18).
+ * @param {object} editor the app's Editor
+ * @param {{start?(editor): object|null, methods: Iterable<string>, verify?: boolean, draws?(): Array}} options
+ *   `start` gives the session that edits the document the editor just opened (by default the one the
+ *   engine opened it with: `openingSession`), `methods` names the calls to route to it, `verify` compares
+ *   the session's document after every call (tests), `draws` supplies the random values a call may take (D18).
  */
-export function installEngineOwner(editor, {start, methods = ownedMethods(editor), verify = false, draws = null} = {}) {
+export function installEngineOwner(editor, {start = openingSession, methods = ownedMethods(editor), verify = false, draws = null} = {}) {
   const report = {calls: 0, native: 0, fallback: 0, external: 0, synced: 0, refused: {}, verified: 0};
   let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [];
   /** How many `movieclipBatch` operations the owner is running: the session records them as one entry. */
@@ -549,8 +549,6 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     report.log?.push(`park ${Boolean(session)}`);
     if (!session) return;
     parked.set(document, {session, entries: new Map(entries), depths, history, known, snapshot, nextEntry});
-    // Bounded: the oldest parked document gives its session up (it becomes the editor's again).
-    while (parked.size > 8) { const [key, value] = parked.entries().next().value; value.session.free(); parked.delete(key); }
     session = null; document = null;
   };
   const call = (method, args) => {
@@ -558,6 +556,8 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (answer.status !== 'ok') throw new Error(`${method}: ${answer.error ?? answer.reason}`);
     return answer;
   };
+  /** Makes the session's document the engine's: the stage draws it, playback and exports read it. */
+  const activate = () => session.activate(editor.revision);
   const ensure = () => {
     if (session && document === editor.report) return session;
     report.log?.push(`ensure: session ${Boolean(session)} same ${document === editor.report} name ${editor.name}`);
@@ -568,39 +568,21 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       ({session} = resumed); document = editor.report;
       entries.clear(); for (const [id, commands] of resumed.entries) entries.set(id, commands);
       ({depths, history, known, snapshot, nextEntry} = resumed);
+      activate();
       return session;
     }
-    // The editor's history from before the session: its own commands, which it applies itself.
-    const stacks = [editor._undo, editor._redo];
-    if (stacks.some(stack => stack.some(command => command.kind === 'engine'))) return null;
-    const started = start(editor);
+    let started = null;
+    try { started = start(editor); } catch (error) { report.broken = String(error.message ?? error); }
     report.log?.push(`start ${Boolean(started)}`);
     if (!started) return null;
     session = started; document = editor.report;
-    entries.clear(); depths = [stacks[0].length, stacks[1].length];
+    entries.clear(); depths = [0, 0];
     take();
     try {
       call('@historyLimits', [editor.historyLimit, editor.historyBytes]);
       call('@revisions', [editor._revision, editor._revisionSerial, editor._savedRevision]);
-      // A session started from the mirror: the same records, maybe in another key order
-      // and without what the mirror leaves out (audio). Bring it to the read view.
-      const [rootKeys, stykKeys] = call('@shape', []).result, root = editor.report, ops = [];
-      const rebuild = (path, object, keys) => {
-        const held = new Set(keys), names = Object.keys(object ?? {});
-        if (JSON.stringify(keys) !== JSON.stringify(names) || names.some(name => !held.has(name))) ops.push({p: path, o: names.map(name => held.has(name) ? [name] : [name, object[name]])});
-      };
-      rebuild([], root, rootKeys);
-      if (root._styk && rootKeys.includes('_styk')) rebuild(['_styk'], root._styk, stykKeys);
-      if (ops.length) call('@sync', [ops, [], false, counters()]);
-      if (stacks[0].length || stacks[1].length) {
-        const described = stack => stack.map(command => {
-          const id = nextEntry++; entries.set(id, [command]);
-          return [command.label ?? '', id, retainedSources([command]), command.bytes ?? 0];
-        });
-        call('@externalStacks', [described(stacks[0]), described(stacks[1])]);
-      }
-      history = {canUndo: stacks[0].length > 0, canRedo: stacks[1].length > 0, undoLabel: stacks[0].at(-1)?.label ?? '', redoLabel: stacks[1].at(-1)?.label ?? '',
-        dirty: editor._revision !== editor._savedRevision};
+      history = {canUndo: false, canRedo: false, undoLabel: '', redoLabel: '', dirty: editor._revision !== editor._savedRevision};
+      activate();
       check();
     } catch (error) {
       session.free(); session = null; document = null; entries.clear();
@@ -828,6 +810,8 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   // The editor's own commands record into the session's history, through the entry
   // their call writes back; their bookkeeping (revision, weight) still runs here.
   layer._record = function owned(command) {
+    // A command recorded as the editor comes back to a document (leaving a movieclip) belongs to that document's session.
+    if (!editor._movieclipScopes?.length && depth === 0 && !applying && document !== editor.report) ensure();
     if (!session || document !== editor.report || editor._movieclipScopes?.length) return originals.get('_record').call(this, command);
     const length = this._undo.length;
     originals.get('_record').call(this, command);
@@ -836,6 +820,15 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     pending = true;
     if (captured) captured.push(...recorded);
     else if (recorded.length) writeBack(recorded);
+  };
+  // A drawing's encoded tiles attached to its definition in place (derived publication, no edit event): the session's copy gets them.
+  layer._drawingPublished = function owned(figure) {
+    if (!session || document !== editor.report) return;
+    const index = editor.report.figure_types.indexOf(figure);
+    if (index < 0) return;
+    pending = true;
+    (hints ??= freshHints()).figures.add(index);
+    settle();
   };
   // Pose sources only history keeps alive are collected by the session, which holds history.
   layer._pruneFrameSources = function owned(...args) {
@@ -849,11 +842,36 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   }
   Object.defineProperty(layer, 'dirty', {configurable: true,
     get() { return session && document === editor.report && history ? history.dirty || Boolean(this._drag?.changed || this._animationEdit?.changed) : dirty.get.call(this); },
-    set(value) { dirty.set.call(this, value); }});
+    set(value) {
+      dirty.set.call(this, value);
+      // The next read of `dirty` is the session's: it has the new revision at once.
+      if (value && idle()) flush();
+    }});
+  /**
+   * The engine draws, plays and exports what its session holds, at the editor's revision. An edit made outside
+   * the session's calls (a document marked as changed, a definition published after leaving a movieclip) reaches
+   * it once the code that made it has finished, unless a gesture is open: that one ends in a call.
+   */
+  let settling = false;
+  const idle = () => session && document === editor.report && depth === 0 && !applying && !editor._drag && !editor._animationEdit && !editor._authoredPoseEdit && !editor._vfxClipEdit;
+  const settle = () => {
+    if (settling) return;
+    settling = true;
+    queueMicrotask(() => {
+      settling = false;
+      if (!idle()) return;
+      try { flush(); } catch (error) { report.broken = String(error?.message ?? error); }
+    });
+  };
   // Edits other modules make in place, or announce without a command.
   editor.addEventListener('change', event => {
     const detail = event.detail;
-    if (detail?.kind === 'document') report.log?.push(`document ${JSON.stringify(detail).slice(0, 120)} name ${editor.name} at ${Math.round(performance.now())}`);
+    if (detail?.kind === 'document') {
+      report.log?.push(`document ${JSON.stringify(detail).slice(0, 120)} name ${editor.name} at ${Math.round(performance.now())}`);
+      // The session exists from the moment the document opens (or comes back from a tab). A movieclip's own
+      // document, entered for editing, has none: its calls run in the editor and come back as one edit on leaving.
+      if (!applying && depth === 0 && !editor._movieclipScopes?.length) ensure();
+    }
     if (!session || document !== editor.report || depth > 0 || applying || !['edit', 'history', 'document'].includes(detail?.kind)) return;
     if (detail.kind === 'document') return;
     pending = true;
@@ -863,6 +881,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     for (const id of detail.sourceIds ?? []) hints.sources.add(id);
     if (detail.definition && !detail.figureIndices?.length) hints.allFigures = true;
     if (detail.label === 'Project metadata') hints.touched = true;
+    settle();
   });
   // A call the editor runs names what it changed in place in its events.
   layer._emit = function owned(kind, detail = {}) {
@@ -1002,23 +1021,17 @@ function retainedSources(commands) {
 }
 
 /**
- * The app's session start: on the stage's mirrored document, once its frames are current
- * (the session reuses the stage's prepared views). Until then the editor runs the calls,
- * and the session takes its history when it starts.
- * @param {() => object|null} engineSide the stage's engine side
+ * The session of the document the editor just opened: started from the opening the engine made it with, on
+ * the tree the editor's read view was built from, so nothing is converted again. Null when the document
+ * has no opening (its session was started already).
  */
-export function appSessionStart(engineSide) {
-  let syncing = null;
-  return editor => {
-    const side = engineSide();
-    if (!side || side.failed) return null;
-    if (!side.mirror.framesCurrent(editor.report, editor.revision)) {
-      syncing ??= side.mirror.syncFrames(editor.report, editor.revision).catch(() => {}).finally(() => { syncing = null; });
-      return null;
-    }
-    return side.engine.handle.edit_session(JSON.stringify({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null,
-      selectedUids: [...editor.selectedUids], selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey),
-      layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid,
-      propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)})) ?? null;
-  };
+export function openingSession(editor) {
+  const opening = editor._opening;
+  if (!opening) return null;
+  const session = opening.startSession({tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid ?? null,
+    selectedUids: [...editor.selectedUids], selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey),
+    layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid,
+    propertyChannels: Boolean(editor.propertyChannels), layerTimeline: Boolean(editor.layerTimeline)});
+  editor._opening = null;
+  return session;
 }

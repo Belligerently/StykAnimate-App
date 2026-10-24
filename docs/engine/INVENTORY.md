@@ -12,14 +12,14 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | Rust owner | Modules | Source at start | js | partial | ported | verified | removed | Covered by Rust | Partly covered | Deleted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
-| `styk-drawing` | 36 | 168 KiB | 11 | 7 | 8 | 0 | 10 | 23 % | 24 % | 0 % |
-| `styk-edit` | 89 | 1236 KiB | 41 | 41 | 6 | 1 | 0 | 3 % | 68 % | 0 % |
+| `styk-drawing` | 36 | 169 KiB | 11 | 7 | 8 | 0 | 10 | 23 % | 23 % | 0 % |
+| `styk-edit` | 89 | 1234 KiB | 40 | 42 | 6 | 1 | 0 | 3 % | 69 % | 0 % |
 | `styk-engine` | 24 | 40 KiB | 12 | 0 | 0 | 0 | 12 | 0 % | 0 % | 0 % |
 | `styk-eval` | 83 | 761 KiB | 26 | 47 | 9 | 0 | 1 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
-| `styk-formats` | 59 | 760 KiB | 28 | 5 | 1 | 22 | 3 | 63 % | 8 % | 6 % |
+| `styk-formats` | 59 | 768 KiB | 27 | 6 | 1 | 22 | 3 | 62 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 13 | 8 | 3 | 0 | 27 | 12 % | 50 % | 0 % |
-| **Total** | 358 | 3294 KiB | 140 | 112 | 27 | 23 | 56 | 21 % | 49 % | 1 % |
+| **Total** | 358 | 3301 KiB | 138 | 114 | 27 | 23 | 56 | 21 % | 49 % | 1 % |
 
 ## Engine modules
 
@@ -109,7 +109,7 @@ Engine logic: ported to Rust.
 | `src/editor-layer-migration.mjs` | `styk-edit` | partial | Rust: recorded native conversion/planning and sheet command migration; preserves source identities, counters and history; the app's background layer-move planning runs it on the engine's workers (styk-engine planning, routed by src/engine/engine-planning.mjs), this module stays the interface fallback and the oracle; app adoption of the publication pending |
 | `src/editor-layer-sheet.mjs` | `styk-edit` | partial | Rust: authored pose/range/key/frame/clipboard/channel publications and recorded movieclip/timing operations; same checked SheetPlan owner, worker history/publication; unrecorded combinations and canonical app adoption pending; existing owned app publication bypasses only its no-op endpoint scan; actual full figures parity remains exact, cost/default gate still open; completed full B4 parity/count/accounting exact on committed3e, cost fails all3; same-layers incremental membership source verified147/147 composed JS/check, exact UID/order/history/GC/cancel; shipping ac4ddf verified; actual ordinary app exact31owned15compared/core24pose2move3commit/strictstate-history-fullundo; B6 same-call IK tuple reuse verified201Rust/565recorded steps; shippingffedaa2273a9; completed B6 full parity/count/accounting exact on committed 05f137ac/ffedaa2273a9, all three cost FAIL at 242.460/215.525, 141.795/127.235, 169.585/142.555 ms with complete failed attempts; matching final checkpoint/default admission remain open; completed full B5 exact parity/count/accounting on b4cc/ac4ddf, all three cost FAIL with loaded checkpoint overlap; figures default remains closed; B7 selected shape angle and packed rotation verified207Rust/32CLI1519/56JS/check, shippinge95371c6c75e10,234,289B,3670fixtureJSON unchanged; completed B7 full parity/count/accounting exact on b748119b/e95371c6c75e, all three cost FAIL234.390/224.850,135.060/133.930,153.110/147.280ms including failed4.375/.190/0; full measured rows15to18, four ordinary rows unchanged; B8 completed full cost is recorded below; matching final checkpoint/default admission still open; no gate/API/schema/math change; B8 owning tests383/36CLI1668/70JS/check pass, shipping8d47d635183e10,238,324B; known rig/static fallback cleanup is included once; B8 cost fix/checkpoint/default gate next; completed B8 full parity/count/accounting exact on c0048287/8d47d635183e, all three cost FAIL 220.885/191.290,141.865/121.675,167.985/144.420ms including failed0/.185/0; full measured rows18to21 preserve18old/fivebatch/fourordinary; figures/default and matching final checkpoint remain closed/pending; completed B9 full parity/count/accounting exact on75bb37f8/b9cf70669501, startupFAIL237.455/229.515 rigPASS136.735/141.250 joinedFAIL156.620/138.235ms includesfailed0/.200/0; full measured rows21to24 preserve21old/sixbatch/fourordinary; overall figures gate closed, matching final checkpoint/default admission pending, no causal speed claim; completed B10 full parity/count/accounting exact on69bbe7ab/61537fd7901f, all3 costFAIL240.255/214.480,138.295/130.040,162.835/142.495ms includesfailed0/.240/0; full measured rows24to27 preserve24old/sevenbatch/fourordinary; figures closed, matching final checkpoint/default admission pending, no causal speed claim |
 | `src/editor-layers.mjs` | `styk-edit` | partial | Rust: _layerEdit and its history entries, renameLayer, setLayerColor, setLayerVisible, setLayerLocked, reorderLayers, moveLayerTo, createLayer (styk-edit/src/layers.rs); deleteLayer, assignFiguresToLayer, layer membership and focus still JS; the app adopts the eight metadata commands on layer sheets (2026-10-11) |
-| `src/editor-load.mjs` | `styk-edit` | js | commands and history |
+| `src/editor-load.mjs` | `styk-edit` | partial | Rust: every opened document is normalized and indexed by styk_edit::load (src/engine/engine-open.mjs); this module stays for the clipboard paste upgrade and the JavaScript importFigure of a movieclip until those commands are ported |
 | `src/editor-motion-path.mjs` | `styk-edit` | partial | Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins plus five native remote-time and two saved native families; canonical row/source/history owners and separate authoritative/transient reads; scalar-only/projection motion, complex rigs/3D and live trail adoption pending |
 | `src/editor-movieclips.mjs` | `styk-edit` | partial | Rust: recorded native/sheet create, unique, split, break, insert, playback/restart, extension and awaited worker Bake; 37 default-budget Bake families/234 calls with full canonical history records; concurrent stale Bake, unrecorded IK/draft combinations and other app adoption pending; ordinary sheet Unique now adopts the shallow copied definition and sheet through the original batch/history/source-cleanup owners; 233 Rust / five recordings 79 exact calls / 266 JS and Main check pass; two warmed default UI copies preserve integer/fractional phase, twelve paired boundaries and full undo; 22.030/19.740 ms is matched-command diagnostic only, other command contexts remain guarded and the module stays partial; ordinary sheet Rename adopts in the app (2026-10-11) |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | partial | Rust: recorded whole/topology/joint/handle/saved-channel/range/join/2D-rig edits plus angle-lock definitions and single-selected spatial choices preserve retained support; 37 additional replays/4882 steps and 37 derived groups/357 ticks; recorded native TRUE projector and authored live lifecycle now match Worker/Core/strict replay; unrecorded complex definitions and class ownership stay guarded |
@@ -277,7 +277,7 @@ Engine logic: ported to Rust.
 | `src/audio-pcm.mjs` | `styk-export::audio` | js | audio model and offline mix |
 | `backend/native_format.py` | `styk-formats::container` | verified | the app opens and saves containers through styk-formats in the codec module (src/native-file-codec.mjs), as the codec service does for native documents; kept only as the development test oracle (not shipped) |
 | `src/base64.mjs` | `styk-formats::container` | ported | Rust: styk-doc JSON base64 |
-| `src/document-lift.mjs` | `styk-formats::container` | partial | Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical); the JavaScript lift stays while the editor holds the document as objects: an array's identity decides what is stored once (mirror records, saves) |
+| `src/document-lift.mjs` | `styk-formats::container` | partial | Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical), and container::ViewLifter hands a document to the editor in pieces; the JavaScript lift stays for saves while the editor holds the document as objects: an array's identity decides what is stored once |
 | `src/native-container.mjs` | `styk-formats::container` | removed | read and wrote the containers in JavaScript; the workers open and save through styk-formats::files in the codec module (src/native-file-codec.mjs), and the lifting the mirror and saves need is src/document-lift.mjs (46226 bytes) |
 | `src/pose-sequence-storage.mjs` | `styk-formats::container` | js |  |
 | `src/pose-sequences.mjs` | `styk-formats::container` | js |  |
@@ -321,8 +321,8 @@ Engine logic: ported to Rust.
 | `src/codec-web-worker.mjs` | `styk-formats::service` | js | import/export transport: the worker running the Rust codec module (styk-codec-wasm) |
 | `src/document-normalize.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/document-transport.mjs` | `styk-formats::service` | js | import/export transport |
-| `src/import-client.mjs` | `styk-formats::service` | js | import/export transport |
-| `src/import-worker.mjs` | `styk-formats::service` | partial | Rust: native containers open in styk-formats::files (src/native-file-codec.mjs); Pivot and Stick Nodes files, source embedding and the transport to the interface are still JS |
+| `src/import-client.mjs` | `styk-formats::service` | partial | Rust: project files (.piv, .styk, JSON) open on the engine (src/engine/engine-open.mjs, styk_engine::document); figure files and the library still import to the document they hold, through the worker |
+| `src/import-worker.mjs` | `styk-formats::service` | partial | Rust: native containers open in styk-formats::files (src/native-file-codec.mjs); Pivot originals are kept by the codec for saving (keep); Stick Nodes files and the transport of figure imports are still JS |
 | `src/sticknodes/adapter.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/sticknodes/decoder/archive.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/sticknodes/decoder/binary.mjs` | `styk-formats::sticknodes` | js |  |
@@ -428,6 +428,7 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `src/svg-export.mjs` |  | removed | removed; styk_export::svg writes the frame's draw list as vector SVG (a picture of the frame where it has no vector form) |
 | `src/web-library.mjs` |  | stays | file, storage and network services |
 | `src/web-offline.mjs` |  | stays | file, storage and network services |
+| `src/yield-task.mjs` |  | stays | gives the browser its turn between slices of work (scheduler.yield, else a message) |
 | `src/audio-encode.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |
 | `src/export-capabilities.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |
 | `src/export-sink.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |

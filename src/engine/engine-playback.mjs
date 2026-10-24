@@ -1,13 +1,14 @@
 /**
  * Playback preparation for the app: the engine's alone (docs/engine/threading.md).
  *
- * `createStagePlayback` is the app's transport interface to the engine. The document goes to the
- * engine through the mirror, ticks are requested from the engine's worker threads, and a
- * "packet" is only a ticket: the tick, the frame's camera and backgrounds for the overlay, and
- * a key the stage recognises. A packet is available (`get`) once the engine has the frame ready.
+ * `createStagePlayback` is the app's transport interface to the engine. The engine holds the document its
+ * edit session publishes (nothing is copied into playback workers), ticks are requested from the engine's
+ * worker threads, and a "packet" is only a ticket: the tick, the frame's camera and backgrounds for the
+ * overlay, and a key the stage recognises. A packet is available (`get`) once the engine has the frame ready.
  */
 import {messageError} from '../localized-error.mjs';
 import {planEngineLayerMigration, planEngineInbetweens, planOnInterface, isUnported} from './engine-planning.mjs';
+import {holdsRevision} from './engine-open.mjs';
 
 /** Keys of engine packets: the stage renderer draws these with the engine. */
 export const ENGINE_KEY = 'engine:';
@@ -33,7 +34,7 @@ const sample = tick => Number.isFinite(tick) && tick >= 0;
  */
 export function createStagePlayback({stage, maxTickets}) {
   const side = () => stage()?.engineSide ?? null;
-  let report = null, revision = -1, hiddenKey = null, syncing = null, syncError = null;
+  let report = null, revision = -1, hiddenKey = null;
   const packets = new Map();
   const configured = Number(maxTickets);
   const ticketLimit = Number.isFinite(configured) ? Math.max(1, Math.min(MAX_ENGINE_TICKETS, Math.floor(configured))) : MAX_ENGINE_TICKETS;
@@ -111,22 +112,16 @@ export function createStagePlayback({stage, maxTickets}) {
     dropPackets();
     flushControls();
   };
-  const sync = dirty => {
-    const engine = side(), target = report, targetRevision = revision;
+  /** The document changed: tickets and demand for the one before it are void. */
+  const changed = () => {
     // Publication clears native demand; an unaccepted request for its previous
     // document must not be retried after that publication either.
     pendingRequest = null;
-    syncError = null; dropPackets();
-    // Without a stage there is no engine to take the document yet: the app loads it again once there is.
-    if (!engine) return syncing = null;
-    const run = engine.mirror.syncFrames(target, targetRevision, dirty).catch(error => {
-      if (error?.name !== 'AbortError') syncError = error;
-    }).finally(() => { if (syncing === run) syncing = null; });
-    syncing = run;
-    return run;
+    dropPackets();
   };
-  const mirrored = () => side() !== null && !syncing && !syncError && side().mirror.framesCurrent(report, revision);
-  const ready = () => !controlsPending() && mirrored();
+  /** Whether the engine holds the editor's revision: its session publishes every change as it makes it. */
+  const held = () => side() !== null && holdsRevision(side().engine, revision);
+  const ready = () => !controlsPending() && held();
   const packetFor = tick => {
     flushControls();
     if (!side() || !sample(tick) || !ready()) return null;
@@ -160,22 +155,21 @@ export function createStagePlayback({stage, maxTickets}) {
       if (!engine) return Object.assign(stats, {preparedFrames: 0, compileMs: 0, lastCompileMs: 0, pendingFrames: 0, bytes: 0, readyFrames: 0, hits: 0, misses: 0});
       const frames = JSON.parse(engine.engine.handle.stats());
       return Object.assign(stats, {preparedFrames: frames.prepared, compileMs: frames.totalMs, lastCompileMs: frames.prepared ? frames.totalMs / frames.prepared : 0,
-        pendingFrames: 0, bytes: frames.cachedBytes, readyFrames: frames.cached, hits: 0, misses: 0, engine: frames, mirror: {...engine.mirror.stats}});
+        pendingFrames: 0, bytes: frames.cachedBytes, readyFrames: frames.cached, hits: 0, misses: 0, engine: frames});
     },
     /** Brings the engine to `next` at `options.revision`; the app loads the document again once the stage exists if it did not yet. */
     load(next, options = {}) {
       next = next?.document ?? next?.report ?? next;
-      // The document goes to the engine once; no worker gets a copy of it.
+      // The engine holds the document already; no worker gets a copy of it.
       report = next; revision = options.revision;
       setHidden(options);
-      sync({});
+      changed();
       return playback;
     },
     updateDocument(patch = {}) {
       revision = patch.revision ?? revision;
       setHidden(patch);
-      sync({frameIndices: patch.frameIndices, sourceIds: patch.sourceIds, figureIndices: patch.figureIndices,
-        allFigures: Boolean(patch.definition && !patch.figureIndices?.length)});
+      changed();
       return playback;
     },
     updateView(options = {}) {
@@ -190,10 +184,8 @@ export function createStagePlayback({stage, maxTickets}) {
       return playback;
     },
     async prepareRange(ticks) {
-      if (syncing) await syncing;
-      if (syncError) throw syncError;
       // A busy earlier admission stays cold, but cannot suppress newer demand.
-      if (!mirrored() || !ticks.length || !sample(ticks[0])) return;
+      if (!held() || !ticks.length || !sample(ticks[0])) return;
       const engine = side().engine;
       requested = [];
       for (let index = 0; index < Math.min(ticks.length, ticketLimit); index++) {
@@ -203,20 +195,6 @@ export function createStagePlayback({stage, maxTickets}) {
       prunePackets(engine.handle);
       pendingRequest = {playhead: ticks[0], samples: new Float64Array(ticks), order: ++controlOrder};
       flushControls();
-    },
-    /**
-     * For an export (engine-export.mjs): brings the engine's document to `report` at
-     * `revision` through the same synchronisation playback uses, which the app keeps
-     * current with every edit afterwards. Resolves `true` once the engine holds it,
-     * `false` when there is no engine to hold it.
-     */
-    async exportDocument(next, nextRevision) {
-      if (!side()) return false;
-      if (report !== next) playback.load(next, {revision: nextRevision});
-      else if (revision !== nextRevision || (!syncing && !side().mirror.framesCurrent(report, revision))) playback.updateDocument({revision: nextRevision});
-      while (syncing) await syncing;
-      if (syncError) throw syncError;
-      return side().mirror.framesCurrent(next, nextRevision);
     },
     get(tick) { return packetFor(tick); },
     has(tick) { return packetFor(tick) !== null; },
@@ -256,10 +234,8 @@ export function createStagePlayback({stage, maxTickets}) {
       throw messageError(new Error(''), "errors.playbackPlanning.loadADocumentBeforePlanning", {value: {messageKey: label[0], diagnosticValue: label[1]}});
     }
     const planned = report, plannedRevision = revision;
-    // The engine plans what it has acknowledged: wait for the mirror to catch up.
-    while (syncing) await syncing;
-    // A mirror the engine refused (syncError) leaves the plan to the interface, as an unplanned one does.
-    if (report === planned && revision === plannedRevision && mirrored()) {
+    // The engine plans the document its session holds; a revision it does not hold leaves the plan to the interface.
+    if (report === planned && revision === plannedRevision && held()) {
       const isCurrent = () => report === planned && revision === plannedRevision && (options.isCurrent?.() ?? true);
       try {
         return await (kind === 'layers' ? planEngineLayerMigration : planEngineInbetweens)(side().engine, plannedRevision, request, {...options, isCurrent});

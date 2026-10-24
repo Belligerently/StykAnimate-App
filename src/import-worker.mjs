@@ -42,8 +42,44 @@ function errorMessage(error, stage) {
     ...diagnosticDetails(error,stage,stage === 'prepare' ? 'snapshot_failed' : 'decode_failed')};
 }
 
+/** The error a codec answer that is not a success stands for. */
+function codecFailure(response, result) {
+  const error = restoreMessageError(result?.error?.message || result?.error || result?.message ? new Error(result?.error?.message || result?.error || result?.message) : messageError(new Error(''), 'errors.importWorker.importFailed', {status:response.status}), result?.error && typeof result.error === 'object' ? result.error : result);
+  error.code = result?.code;
+  error.status = response.status;
+  error.telemetryCode = response.status >= 500 ? 'backend_unavailable' : 'backend_rejected'; error.telemetryStage = 'request';
+  return error;
+}
+
+/** Keeps the original of a Pivot project in the codec, leased to the owner, for saving the document the engine read from it. */
+async function keepSource(message, signal) {
+  if (!(message.bytes instanceof ArrayBuffer)) throw messageError(new Error(''), "errors.importWorker.theImporterDidNotReceiveTheCompleteFile", {});
+  const headers = {'Content-Type': 'application/octet-stream', 'X-Styk-Job-Id': message.jobId, 'X-Styk-Source-Owner': message.sourceOwner};
+  const response = await codecRequest(message, `/api/source/keep?filename=${encodeURIComponent(message.filename)}`, {method: 'POST', headers, body: message.bytes, signal}).catch(error => {
+    error.telemetryCode = 'backend_unavailable'; error.telemetryStage = 'request'; throw error;
+  });
+  let result;
+  try { result = JSON.parse(await response.text()); }
+  catch {
+    const error = messageError(new Error(''), 'errors.importWorker.serviceFailed', {status:response.status});
+    error.status = response.status; error.telemetryCode = 'backend_unavailable'; error.telemetryStage = 'request';
+    throw error;
+  }
+  if (!response.ok || result?.ok === false) throw codecFailure(response, result);
+  if (!message.embedSource) return result;
+  // The web build keeps no lease in the codec, which a page that is not cross-origin isolated restarts on
+  // cancellation: the project carries its original, which the page has, with the codec's description of it.
+  const sourceHeaders = {'X-Styk-Job-Id': message.jobId};
+  const record = await codecRequest(message, `/api/source?id=${encodeURIComponent(result.sourceId)}`, {headers: sourceHeaders, signal});
+  if (!record.ok) throw Object.assign(messageError(new Error(''), 'errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord', {}), {status: record.status});
+  const source = decodeSourceRecord(await record.arrayBuffer());
+  await codecRequest(message, '/api/source/release', {method: 'POST', headers: {...sourceHeaders, 'Content-Type': 'application/json'}, body: JSON.stringify({ownerId: result.sourceOwner}), signal});
+  return {ok: true, sourceId: null, filename: result.filename, kind: result.kind, version: result.version, sourceDescription: source.metadata};
+}
+
 async function importRequest(message, signal) {
   const started = performance.now();
+  if(message.operation==='keep')return keepSource(message, signal);
   if(message.operation==='import' && /\.(nodes|nodemc|stknds|zip)$/i.test(message.filename??'')){
     if(!(message.bytes instanceof ArrayBuffer))throw messageError(new Error(''), "errors.importWorker.theImporterDidNotReceiveTheCompleteFile", {});
     const {importStickNodes}=await import('./sticknodes/adapter.mjs');
@@ -95,13 +131,7 @@ async function importRequest(message, signal) {
     error.telemetryCode = response.ok ? 'decode_failed' : response.status >= 500 ? 'backend_unavailable' : 'backend_rejected'; error.telemetryStage = response.ok ? 'decode' : 'request';
     throw error;
   }
-  if (!response.ok || result?.ok === false) {
-    const error = restoreMessageError(result?.error?.message || result?.error || result?.message ? new Error(result?.error?.message || result?.error || result?.message) : messageError(new Error(''), 'errors.importWorker.importFailed', {status:response.status}), result?.error && typeof result.error === 'object' ? result.error : result);
-    error.code = result?.code;
-    error.status = response.status;
-    error.telemetryCode = response.status >= 500 ? 'backend_unavailable' : 'backend_rejected'; error.telemetryStage = 'request';
-    throw error;
-  }
+  if (!response.ok || result?.ok === false) throw codecFailure(response, result);
   if (!result || typeof result !== 'object' || !result.document) throw messageError(new Error(''), "errors.importWorker.theFileServiceReturnedNoEditableDocument", {});
   // Native source bytes are embedded in the document, including JSON aliases
   // and the service fallback for unavailable container codecs.
@@ -148,7 +178,7 @@ self.addEventListener('message', event => {
   let stage = 'decode';
   importRequest(message, controller.signal).then(async result => {
     stage = 'prepare';
-    if (!controller.signal.aborted) await embedBrowserSource(result,message,controller.signal);
+    if (!controller.signal.aborted && message.operation === 'import') await embedBrowserSource(result,message,controller.signal);
     if (!controller.signal.aborted) await sendResult(message.id, result, controller.signal);
   }).catch(error => {
     if (!controller.signal.aborted) self.postMessage({id: message.id, ok: false, error: errorMessage(error, stage)});

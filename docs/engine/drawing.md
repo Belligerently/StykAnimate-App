@@ -83,8 +83,10 @@ tiles that changed and the stage draws those instead (`engine/engine-live-cels.m
   pixels are the worker's.
 * A first stroke on a blank exposure draws a cel the document does not hold yet. The frame is
   drawn from a draft of the editor's report with the cel added (`documentReport` of the render
-  request, `EngineMirror.syncDefinitions({document})`): the mirror stays the editor's report, so
-  the draft costs one record, and the next sync with the report itself takes it out again.
+  request): the stage hands the engine the figures and layer assignments the draft adds
+  (`EngineHandle.set_draft`) and the engine draws its document with them until the next publication
+  of the document, or the first frame without a draft (`clear_draft`). The stored tree, the typed views
+  and what the session and the planners read never include a draft (`Engine::publish_draft`).
 * Wet ink (`drawing-wet-ink.mjs`) retires on `entry.presentedStamp`, which the stage sets to the
   stamp of the pixels the frame it drew carried (`LiveCels.presented`).
 

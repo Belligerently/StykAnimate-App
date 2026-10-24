@@ -51,21 +51,20 @@ const answer = (overrides = {}) => (message, worker, bitmap) => {
   return {id: message.id, ok: true, ...(message.operation === 'render' ? {bitmap: bitmap()} : {}), ...(message.operation === 'start' ? {engine: {backend: 'test', tiles: 1}} : {})};
 };
 
-/** The app's stage renderer and playback adapter, as the export sees them. */
-function app({refusal = null, current = true, threaded = true, busy = 0} = {}) {
+/** The app's stage renderer, as the export sees it; `behind` exports find the engine one revision short that many times. */
+function app({refusal = null, threaded = true, behind = 0} = {}) {
   const calls = [];
+  let waits = behind;
   const stage = {
-    engineSide: {engine: {threaded, handle: {address: () => 4096}, join: {module: 'module', memory: 'memory', stack: 65536, progress: 64},
-      whenProgress: async () => { calls.push(['progress']); }}},
+    engineSide: {engine: {threaded, handle: {address: () => 4096}, join: {module: 'module', memory: 'memory', stack: 65536, progress: 64}}},
     prepareExport: (report, revision) => {
       calls.push(['definitions', revision]);
-      // A background commit is running: the interface thread is told to come back (D7).
-      if (busy-- > 0) throw Object.assign(new Error('The engine is committing the document.'), {code: 'engine_busy'});
+      // The engine's session has not published this revision yet: the export waits for it.
+      if (waits-- > 0) return 'the engine does not hold this revision of the document';
       return refusal;
     },
   };
-  const playback = {exportDocument: async (report, revision) => { calls.push(['frames', revision]); return current; }};
-  return {stage, playback, calls};
+  return {stage, calls};
 }
 
 const report = () => ({figure_types: [], keyframes: [{duration_raw: 1, objects: []}]});
@@ -73,27 +72,27 @@ const exporter = (options = {}, context = {}) => createExportFrameRenderer({widt
 
 test('exports need the engine with worker threads', t => {
   environment(t, answer());
-  const {stage, playback} = app();
+  const {stage} = app();
   const options = {width: 32, height: 32};
   for (const vector of [false, true]) {
-    const renderer = createExportFrameRenderer(options, {stage, playback, revision: 3, range: [0, 9], vector});
-    assert.ok(renderer instanceof EngineExportFrames, vector ? 'SVG is the engine\'s too' : 'pixels');
+    const renderer = createExportFrameRenderer(options, {stage, revision: 3, range: [0, 9], vector});
+    assert.ok(renderer instanceof EngineExportFrames, vector ? "SVG is the engine's too" : 'pixels');
     renderer.dispose();
   }
   for (const [why, context] of [
-    ['no engine', {stage: {}, playback, revision: 3}],
-    ['no stage', {stage: undefined, playback}],
+    ['no engine', {stage: {}, revision: 3}],
+    ['no stage', {stage: undefined}],
     ['no worker threads (not cross-origin isolated)', {...app({threaded: false}), revision: 3}],
   ]) assert.throws(() => createExportFrameRenderer(options, context), {code: 'engine_unavailable', cause: 'no engine with worker threads'}, why);
 });
 
 test('the engine draws a document it holds: its worker starts with the export settings', async t => {
   const {workers} = environment(t, answer({render: (message, worker, bitmap) => ({ok: true, bitmap: bitmap(640, 360)})}));
-  const {stage, playback, calls} = app();
-  const renderer = createExportFrameRenderer({width: 640, height: 360, smoothing: 'sprites'}, {stage, playback, revision: 7, range: [5, 20]});
-  assert.equal(workers.length, 0, 'no worker before the document is the engine\'s');
+  const {stage, calls} = app();
+  const renderer = createExportFrameRenderer({width: 640, height: 360, smoothing: 'sprites'}, {stage, revision: 7, range: [5, 20]});
+  assert.equal(workers.length, 0, 'no worker before the engine holds the document');
   await renderer.load(report());
-  assert.deepEqual(calls, [['frames', 7], ['definitions', 7]], 'frames through the playback adapter, then what only the stage knows, at the export revision');
+  assert.deepEqual(calls, [['definitions', 7]], 'the stage answers for the export revision');
   assert.equal(workers.length, 1);
   const start = workers[0].messages[0];
   assert.equal(start.operation, 'start');
@@ -127,12 +126,12 @@ test('an SVG export asks the engine for vector artwork, which needs no GPU devic
   renderer.dispose();
 });
 
-test('the export waits for a background commit', async t => {
+test('the export waits for the engine to publish its revision', async t => {
   const {workers} = environment(t, answer());
-  const {stage, playback, calls} = app({busy: 2});
-  const renderer = createExportFrameRenderer({width: 32, height: 32}, {stage, playback, revision: 2});
+  const {stage, calls} = app({behind: 2});
+  const renderer = createExportFrameRenderer({width: 32, height: 32}, {stage, revision: 2});
   await renderer.load(report());
-  assert.deepEqual(calls.map(call => call[0]), ['frames', 'definitions', 'progress', 'definitions', 'progress', 'definitions']);
+  assert.deepEqual(calls.map(call => call[0]), ['definitions', 'definitions', 'definitions']);
   assert.equal(renderer.stats.renderer, 'engine');
   assert.equal(workers.length, 1);
   renderer.dispose();
@@ -304,13 +303,13 @@ test('worker failures keep their actionable error and release the export', async
 
 test('the export dialog warms a worker that the export then takes', async t => {
   const {workers} = environment(t, answer());
-  const {stage, playback} = app();
+  const {stage} = app();
   prewarmExportRenderer({stage});
   prewarmExportRenderer({stage});
   assert.equal(workers.length, 1, 'one warm worker at a time');
   assert.equal(workers[0].messages[0].operation, 'warm');
   assert.equal(workers[0].messages[0].module, 'module', 'it joins the engine');
-  const renderer = createExportFrameRenderer({width: 32, height: 32}, {stage, playback, revision: 4});
+  const renderer = createExportFrameRenderer({width: 32, height: 32}, {stage, revision: 4});
   await renderer.load(report());
   assert.equal(workers.length, 1, 'the export takes the warm worker instead of starting one');
   assert.deepEqual(workers[0].messages.map(message => message.operation), ['warm', 'start']);

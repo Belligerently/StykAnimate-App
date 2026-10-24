@@ -1,45 +1,111 @@
 //! Editing calls as JavaScript sees them (docs/engine/editing.md).
 
+use std::sync::Arc;
+
+use styk_doc::Value;
+use styk_engine::Engine;
+use styk_engine::document::OpenedDocument;
 use wasm_bindgen::prelude::*;
 
-use crate::engine::EngineHandle;
 use crate::js_error;
 
-/// The editor's calls run on the document the engine mirrors. Lives on the interface
-/// thread; a call is plain computation on the session's own copy-on-write document
-/// and takes no lock.
-#[wasm_bindgen]
-pub struct EditSession {
-    session: styk_edit::session::Session,
-    revision: f64,
+/// What a session publishes into: the engine, and the document it was started from (its typed views and
+/// lineage), with the tree last published.
+struct Publisher {
+    engine: Engine,
+    opened: Arc<OpenedDocument>,
+    /// The tree and the revision last published.
+    published: Option<(Value, u64)>,
+    /// Why the last publication failed, until the next one succeeds.
+    error: Option<String>,
 }
 
+/// The editor's calls run on the open document. Lives on the interface thread; a call is plain
+/// computation on the session's own copy-on-write document and takes no lock. Once the session is the
+/// engine's document ([`EditSession::activate`]) each call that changed the document publishes the new tree
+/// at the session's revision, converting only the records that changed.
 #[wasm_bindgen]
-impl EngineHandle {
-    /// Starts an edit session on the mirrored document with the editor's `state`
-    /// (JSON: options, view and counters). `undefined` while the mirror is committing
-    /// or empty: this never waits.
-    pub fn edit_session(&self, state: &str) -> Result<Option<EditSession>, JsError> {
-        // The mirror's typed views of this revision: the session converts nothing to start.
-        let Some((revision, tree, loader, prepared)) = self.engine.mirrored_for_editing() else { return Ok(None) };
-        let session = styk_edit::session::Session::start_prepared(tree, state, loader, prepared).map_err(js_error)?;
-        Ok(Some(EditSession { session, revision: revision as f64 }))
+pub struct EditSession {
+    /// Taken out only when the session is closed ([`Drop`]).
+    session: Option<styk_edit::session::Session>,
+    revision: f64,
+    publisher: Option<Publisher>,
+}
+
+/// A closed session's document and history can be hundreds of megabytes: they are dropped on an engine
+/// worker, never on the interface thread (D7).
+impl Drop for EditSession {
+    fn drop(&mut self) {
+        let Some(publisher) = self.publisher.take() else { return };
+        let engine = publisher.engine.clone();
+        let session = self.session.take();
+        engine.spawn(move |_| drop((session, publisher)));
+    }
+}
+
+impl EditSession {
+    /// A session that publishes into `engine` the document `opened` was made from.
+    pub(crate) fn publishing(session: styk_edit::session::Session, engine: Engine, opened: Arc<OpenedDocument>) -> EditSession {
+        EditSession { session: Some(session), revision: 0.0, publisher: Some(Publisher { engine, opened, published: None, error: None }) }
+    }
+
+    fn session(&self) -> &styk_edit::session::Session {
+        self.session.as_ref().expect("a session is open until it is dropped")
+    }
+
+    /// Publishes the session's tree when a call changed it or moved its revision (a document marked as
+    /// changed keeps its tree) and this session is the engine's document.
+    fn publish(&mut self) {
+        let Some(publisher) = &mut self.publisher else { return };
+        let Some((published, at)) = &publisher.published else { return };
+        let session = self.session.as_ref().expect("a session is open until it is dropped");
+        let report = session.report();
+        let revision = session.revision();
+        if report.same_node(published) && revision == *at {
+            return;
+        }
+        match publisher.engine.publish_tree(publisher.opened.lineage(), report.clone(), revision) {
+            Ok(Some(_)) => {
+                publisher.published = Some((report.clone(), revision));
+                publisher.error = None;
+            }
+            // Another document is in front: this one is published when it comes back (`activate`).
+            Ok(None) => publisher.published = None,
+            Err(error) => publisher.error = Some(error.to_string()),
+        }
     }
 }
 
 #[wasm_bindgen]
 impl EditSession {
-    /// Starts a session on `document` (its JSON, exactly as the editor holds it) instead
-    /// of the mirrored one: the session converts what it evaluates itself (D19).
+    /// Starts a session on `document` (its JSON, exactly as the editor holds it): the session converts what
+    /// it evaluates itself (D19). It publishes nothing.
     pub fn from_document(document: &str, state: &str, revision: f64) -> Result<EditSession, JsError> {
         let tree = styk_doc::json::parse(document.as_bytes()).map_err(js_error)?;
         let session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
-        Ok(EditSession { session, revision })
+        Ok(EditSession { session: Some(session), revision, publisher: None })
+    }
+
+    /// Makes the session's document the engine's document at `revision` (the editor's revision counter),
+    /// as it is now: the stage draws it, playback and exports read it, and every call that changes it
+    /// publishes the change. Answers `{generation, revision, ms}` as JSON.
+    pub fn activate(&mut self, revision: f64) -> Result<String, JsError> {
+        let tree = self.session().report().clone();
+        let Some(publisher) = &mut self.publisher else { return Err(js_error("this session has no document to publish")) };
+        let done = publisher.engine.activate(&publisher.opened.typed, &tree, revision as u64).map_err(|error| js_error(error.to_json()))?;
+        publisher.published = Some((tree, revision as u64));
+        publisher.error = None;
+        Ok(format!("{{\"generation\":{},\"revision\":{},\"ms\":{:.3}}}", done.generation, done.revision, done.ms))
+    }
+
+    /// Why the engine could not follow the last change of the document, or `undefined`.
+    pub fn publish_error(&self) -> Option<String> {
+        self.publisher.as_ref().and_then(|publisher| publisher.error.clone())
     }
 
     /// The session's document as JSON (tests and recovery; never on an interactive path).
     pub fn report_json(&self) -> String {
-        styk_doc::json::to_string(self.session.report())
+        styk_doc::json::to_string(self.session().report())
     }
 
     /// The interface revision of the document the session started from.
@@ -48,11 +114,11 @@ impl EditSession {
     }
 
     pub fn can_undo(&self) -> bool {
-        self.session.can_undo()
+        self.session().can_undo()
     }
 
     pub fn can_redo(&self) -> bool {
-        self.session.can_redo()
+        self.session().can_redo()
     }
 
     /// Runs one editor call: its JavaScript name, its arguments as a JSON array and
@@ -61,6 +127,8 @@ impl EditSession {
     /// in the view, unchanged COW figures and sheet fields are omitted (the app's owned
     /// adoption path); default responses stay complete for shadow comparison.
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
-        self.session.call(method, args, view)
+        let answer = self.session.as_mut().expect("a session is open until it is dropped").call(method, args, view);
+        self.publish();
+        answer
     }
 }

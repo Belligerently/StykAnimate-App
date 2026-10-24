@@ -221,7 +221,7 @@ with the frame and draws them.
   travelled camera.
 - **Edit frames** carry their time on the camera-motion clips (`_cameraMotionTick`); in
   the camera preview the stage draws them through `cameraAtTime` worked out against the
-  committed generation (a follow path reflects an edit once the mirror commits it).
+  published generation (a follow path reflects an edit once the session publishes it).
 
 ## Retained movieclip sources
 

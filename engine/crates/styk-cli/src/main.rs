@@ -13,6 +13,9 @@
 //!   styk edit-bench <report.json> <uid> <tick> [--joint N]   what a gesture costs in styk-edit
 //!                                         on a document, called directly and through an edit
 //!                                         session's JSON (as the app calls it)
+//!   styk load <file> [--layer-timeline] [--input out.json] [--output out.json] [--indexes out.json]
+//!                                         the editor's load normalization (engine/tools/load-private.mjs compares it)
+//!   styk open <file> [--layer-timeline]   the app's open: decode, load normalization and typed views, timed
 //!   styk records <folder> [--write]       the evaluated frame as records against the JS editor's
 //!                                         (engine/tools/records-reference.mjs wrote the folder)
 //!   styk export <file> <tick|a-b> <out>   export frames as the app's engine exports them, timed
@@ -29,6 +32,7 @@ use styk_eval::geometry::build;
 
 mod container;
 mod export;
+mod load;
 mod raster_parity;
 
 fn main() {
@@ -36,6 +40,8 @@ fn main() {
     let code = match args.first().map(String::as_str) {
         Some("container") if args.len() >= 3 && args[1] == "roundtrip" => container::roundtrip(&args[2], &args[3..]),
         Some("container") if args.len() >= 4 && args[1] == "json" => container::json(&args[2], &args[3]),
+        Some("load") if args.len() >= 2 => load::load(&args[1], &args[2..]),
+        Some("open") if args.len() >= 2 => load::open(&args[1], &args[2..]),
         Some("describe") if args.len() >= 3 => match load(&args[1]) {
             Ok((prepared, _)) => {
                 print!("{}", styk_eval::describe_tick(&prepared, args[2].parse().unwrap_or(0)));

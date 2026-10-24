@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {waitForPictures, ensureCameraFrames, cancelCameraFrames, recordCameraChange} from '../src/engine/engine-stage.mjs';
+import {waitForPictures} from '../src/engine/engine-stage.mjs';
 
 /** A stage side whose last frame lacks pictures as `pending` says, and an engine whose progress counter the test advances. */
 function side(pending) {
@@ -83,119 +83,6 @@ test('another frame drawn meanwhile takes over the wait', async () => {
   assert.equal(first, 0, 'the superseded wait does not draw');
   assert.equal(second, 0, 'the frame drawn last had its pictures');
 });
-
-function cameraSide() {
-  const calls = [];
-  let current = null;
-  const s = {mirror: {
-    framesCurrent: (report, revision) => current?.report === report && current.revision === revision,
-    syncFrames(report, revision, dirty, {signal}) {
-      let resolve;
-      const promise = new Promise(done => { resolve = done; });
-      calls.push({report, revision, dirty, signal, finish() { current = {report, revision}; resolve(); }});
-      return promise;
-    },
-  }};
-  return {side: s, calls, current(report, revision) { current = {report, revision}; }};
-}
-
-test('a definitions-only followed pose coalesces one asynchronous sync on the existing mirror', async () => {
-  const {side: s, calls} = cameraSide(), report = {}, dirty = {frameIndices: [3]};
-  s.cameraDirty = dirty;
-  let redraws = 0;
-  assert.equal(ensureCameraFrames(s, {report, revision: 4}, () => redraws++), true);
-  assert.equal(calls.length, 0, 'no frame lifting occurs inside render_edit');
-  ensureCameraFrames(s, {report, revision: 4}, () => redraws++);
-  await settle();
-  assert.equal(calls.length, 1, 'the cold pose reuses one sync');
-  assert.equal(calls[0].dirty, dirty);
-  calls[0].finish();
-  await settle();
-  assert.equal(redraws, 1);
-  assert.equal(s.cameraFrames, null);
-  assert.equal(s.cameraDirty, null);
-  assert.equal(ensureCameraFrames(s, {report, revision: 4}, () => redraws++), false);
-});
-
-test('a new report or revision cancels the cold camera sync and discards its late redraw', async () => {
-  const {side: s, calls} = cameraSide(), report = {};
-  let old = 0, latest = 0;
-  ensureCameraFrames(s, {report, revision: 1}, () => old++);
-  await settle();
-  ensureCameraFrames(s, {report, revision: 2}, () => latest++);
-  await settle();
-  assert.equal(calls[0].signal.aborted, true);
-  calls[0].finish();
-  await settle();
-  assert.equal(old, 0);
-  assert.equal(s.cameraFrames.revision, 2, 'the stale finally keeps the newest owner');
-  calls[1].finish();
-  await settle();
-  assert.equal(latest, 1);
-});
-
-test('disposing a pending camera prerequisite prevents late work from redrawing the stage', async () => {
-  const {side: s, calls} = cameraSide();
-  let redraws = 0;
-  ensureCameraFrames(s, {report: {}, revision: 1}, () => redraws++);
-  await settle();
-  cancelCameraFrames(s);
-  assert.equal(calls[0].signal.aborted, true);
-  calls[0].finish();
-  await settle();
-  assert.equal(redraws, 0);
-  assert.equal(s.cameraFrames, null);
-});
-
-test('camera dirty identities stay bounded by live records while the preview is off', () => {
-  const s = {frameReport: {keyframes: [{}], figure_types: [{}], _styk: {frameSources: {one: {}}}}};
-  for (let i = 0; i < 100_000; i++) recordCameraChange(s, {frameIndices: [0, 100], figureIndices: [0, 100], sourceIds: ['one', `removed-${i}`]});
-  assert.deepEqual([...s.cameraDirty.frameIndices], [0]);
-  assert.deepEqual([...s.cameraDirty.figureIndices], [0]);
-  assert.deepEqual([...s.cameraDirty.sourceIds], ['one']);
-  delete s.frameReport._styk.frameSources.one;
-  recordCameraChange(s, {sourceIds: ['one']});
-  assert.equal(s.cameraDirty.sourceIds.size, 0, 'removed sources leave no retained identity');
-});
-
-test('a large dirty identity stream conservatively resends through the existing mirror with bounded state', () => {
-  const s = {frameReport: {keyframes: Array(1024).fill({}), figure_types: Array(1024).fill({}), _styk: {frameSources: Object.fromEntries(Array.from({length: 1024}, (_, i) => [`source-${i}`, {}]))}}};
-  for (let i = 0; i < 100_000; i++) recordCameraChange(s, {frameIndices: [i % 1024], figureIndices: [i % 1024], sourceIds: [`source-${i % 1024}`]});
-  assert.equal(s.cameraDirty.allFrames, true);
-  assert.equal(s.cameraDirty.allFigures, true);
-  assert.equal(s.cameraDirty.allSources, true);
-  assert.equal(s.cameraDirty.frameIndices.size + s.cameraDirty.figureIndices.size + s.cameraDirty.sourceIds.size, 0);
-});
-
-test('a canceled camera revision keeps the newest dirty records until their own mirror ACK', async () => {
-  const {side: s, calls} = cameraSide(), report = {keyframes: [{}, {}], figure_types: [], _styk: {frameSources: {latest: {}}}};
-  s.frameReport = report;
-  recordCameraChange(s, {frameIndices: [0]});
-  ensureCameraFrames(s, {report, revision: 1}, () => {});
-  await settle();
-  cancelCameraFrames(s);
-  recordCameraChange(s, {frameIndices: [1], sourceIds: ['latest']});
-  ensureCameraFrames(s, {report, revision: 2}, () => {});
-  await settle();
-  calls[0].finish();
-  await settle();
-  assert.deepEqual([...s.cameraDirty.frameIndices], [0, 1]);
-  assert.deepEqual([...calls[1].dirty.sourceIds], ['latest']);
-  calls[1].finish();
-  await settle();
-  assert.equal(s.cameraDirty, null);
-});
-
-test('one dense dirty event is conservatively bounded even when every identity repeats', () => {
-  let visited = 0;
-  const items = {*[Symbol.iterator]() { for (let i = 0; i < 100_000; i++) { visited++; yield 0; } }};
-  const s = {frameReport: {keyframes: [{}]}};
-  recordCameraChange(s, {frameIndices: items});
-  assert.equal(s.cameraDirty.allFrames, true);
-  assert.equal(s.cameraDirty.frameIndices.size, 0);
-  assert.equal(visited, 257, 'the rest is covered by a worker-side full resend, not a dense UI walk');
-});
-
 
 test('actual nonthreaded monitor presentation records success before a threaded route switch',()=>{
   const source=readFileSync(new URL('../src/engine/engine-stage.mjs',import.meta.url),'utf8');

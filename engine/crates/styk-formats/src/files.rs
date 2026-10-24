@@ -115,6 +115,16 @@ pub fn open(bytes: &[u8], kind: Kind, rules: Rules) -> Result<Opened, FileError>
     Ok(Opened { version: decoded.version, materialized_bytes, skeleton: lifted.skeleton, markers: true, sections: vec![lifted.arrays, lifted.payloads] })
 }
 
+/// Reads a project file into the document store: the container, the document rules and the embedded
+/// source's fingerprint, as [`open`] applies them for a project (`Rules::PROJECT`), but as a tree the
+/// caller keeps rather than as the interface's lifted form.
+pub fn open_document(bytes: &[u8], kind: Kind) -> Result<styk_doc::Value, FileError> {
+    let decoded = container::decode(bytes, kind)?;
+    let document = native::normalize_decoded(decoded.document, kind)?;
+    native::verify_embedded_source(&document)?;
+    Ok(document)
+}
+
 /// Whether the rules leave a checked document exactly as it is stored, verifying what they verify.
 /// `false` sends it down the path that builds the document.
 fn keeps_document(checked: &container::Checked, kind: Kind, rules: Rules) -> Result<bool, FileError> {

@@ -84,12 +84,17 @@ struct Lifter<'a> {
     out: Vec<u8>,
     arrays: Vec<u8>,
     payloads: Vec<u8>,
+    /// Bytes of each section already handed out ([`ViewLifter`]); markers name absolute offsets.
+    arrays_base: usize,
+    payloads_base: usize,
     /// Arrays already stored, by identity: an array shared by several records is stored once.
     seen_arrays: HashMap<*const Nums, (String, usize)>,
     /// Payloads already stored, by content.
     seen_payloads: HashMap<Arc<[u8]>, (usize, usize)>,
     /// Payloads the caller reserved at the start of the payload section, by identity.
     reserved: HashMap<*const u8, (usize, usize)>,
+    /// Set when lifting for the interface ([`ViewLifter`]): the pose key sequences several channels share.
+    sequences: Option<Sequences>,
     max_bytes: usize,
     /// JSON bytes whose size is known exactly (strings, punctuation, payload text).
     known_json: usize,
@@ -100,7 +105,43 @@ struct Lifter<'a> {
     _documents: std::marker::PhantomData<&'a Value>,
 }
 
+/// The key sequences of pose channels that the document shares between channels (`internPoseSequences`), by the
+/// address of the array. The interface keeps one array for every channel that names the same sequence.
+#[derive(Default)]
+struct Sequences {
+    ids: HashMap<*const Vec<Value>, u32>,
+    /// Sequences first met in the piece being lifted: their number and their JSON.
+    defined: Vec<(u32, Vec<u8>)>,
+}
+
 impl Lifter<'_> {
+    /// A pose channel's `keys`: the first channel to hold a sequence has it written out aside, every channel names it
+    /// with a marker (`S2R:<number>`) that the interface resolves to the same array.
+    fn sequence(&mut self, value: &Value) -> Result<(), ContainerError> {
+        let Value::Arr(items) = value else { unreachable!("only arrays are sequences") };
+        let pointer = Arc::as_ptr(items);
+        let sequences = self.sequences.as_mut().expect("a view lifter");
+        let (id, fresh) = match sequences.ids.get(&pointer) {
+            Some(id) => (*id, false),
+            None => {
+                let id = sequences.ids.len() as u32;
+                sequences.ids.insert(pointer, id);
+                (id, true)
+            }
+        };
+        if fresh {
+            let outer = std::mem::take(&mut self.out);
+            let lifted = self.value(value, "");
+            let inner = std::mem::replace(&mut self.out, outer);
+            lifted?;
+            self.sequences.as_mut().expect("a view lifter").defined.push((id, inner));
+        }
+        let marker = format!("S2R:{id}");
+        self.admit(json::string_bytes(&marker))?;
+        json::write_string(&marker, &mut self.out);
+        Ok(())
+    }
+
     fn admit(&mut self, length: usize) -> Result<(), ContainerError> {
         if length > (self.max_bytes * 4).saturating_sub(self.known_json) {
             return Err(too_large("its JSON exceeds the materialization limit"));
@@ -144,7 +185,7 @@ impl Lifter<'_> {
             return Err(too_large("its payloads exceed the section limit"));
         }
         self.admit_payload(prefix, encoded)?;
-        let range = (self.payloads.len(), bytes.len());
+        let range = (self.payloads_base + self.payloads.len(), bytes.len());
         self.payloads.extend_from_slice(bytes);
         self.seen_payloads.insert(bytes.clone(), range);
         self.check_allocation()?;
@@ -170,7 +211,7 @@ impl Lifter<'_> {
             }
         }
         self.admit(json::string_bytes(text))?;
-        if text.starts_with("S2") && text.len() >= 4 && matches!(text.as_bytes()[2], b'B' | b'S' | b'E' | b'D') && text.as_bytes()[3] == b':' {
+        if text.starts_with("S2") && text.len() >= 4 && (matches!(text.as_bytes()[2], b'B' | b'S' | b'E' | b'D') || (self.sequences.is_some() && text.as_bytes()[2] == b'R')) && text.as_bytes()[3] == b':' {
             let mut escaped = String::with_capacity(text.len() + 4);
             escaped.push_str("S2E:");
             escaped.push_str(text);
@@ -209,11 +250,11 @@ impl Lifter<'_> {
         let upper = 2 + (count - 1) + count * MAX_JSON_NUMBER_BYTES;
         self.admit_estimate(upper);
         let width = type_width(name);
-        let offset = self.arrays.len().next_multiple_of(width);
+        let offset = (self.arrays_base + self.arrays.len()).next_multiple_of(width);
         if count > self.max_bytes.saturating_sub(offset) / width {
             return Err(too_large("its numeric arrays exceed the section limit"));
         }
-        self.arrays.resize(offset, 0);
+        self.arrays.resize(offset - self.arrays_base, 0);
         match name {
             "u8" => self.arrays.extend(numbers.iter().map(|v| v as u8)),
             "u16" => numbers.iter().for_each(|v| self.arrays.extend_from_slice(&(v as u16).to_le_bytes())),
@@ -305,7 +346,11 @@ impl Lifter<'_> {
                     self.admit(json::string_bytes(name) + 1)?;
                     json::write_string(name, &mut self.out);
                     self.out.push(b':');
-                    self.value(item, name)?;
+                    if self.sequences.is_some() && &**name == "keys" && matches!(item, Value::Arr(_)) && object.get("property").and_then(Value::as_str) == Some("pose") {
+                        self.sequence(item)?;
+                    } else {
+                        self.value(item, name)?;
+                    }
                 }
                 self.out.push(b'}');
             }
@@ -331,9 +376,12 @@ pub fn lift_within(document: &Value, reserved: &[Arc<[u8]>], max_bytes: usize) -
         out: Vec::new(),
         arrays: Vec::new(),
         payloads: Vec::new(),
+        arrays_base: 0,
+        payloads_base: 0,
         seen_arrays: HashMap::new(),
         seen_payloads: HashMap::new(),
         reserved: HashMap::new(),
+        sequences: None,
         max_bytes,
         known_json: 0,
         upper_json: 0,
@@ -360,6 +408,85 @@ pub fn lift_within(document: &Value, reserved: &[Arc<[u8]>], max_bytes: usize) -
         }
     }
     Ok(Lifted { skeleton: lifter.out, arrays: lifter.arrays, payloads: lifter.payloads, reserved_offsets })
+}
+
+/// One piece of a document lifted for the interface: the skeleton of the value, and the bytes the
+/// sections gained while lifting it. Markers name absolute offsets in the sections of every piece so far;
+/// `arrays_base` and `payloads_base` say where this piece's bytes start in them.
+pub struct ViewPart {
+    pub skeleton: Vec<u8>,
+    /// The pose key sequences first met in this piece, as JSON: `[{"id":0,"v":[…]},…]` (empty for none). The skeleton
+    /// names a sequence `S2R:<id>` wherever a channel holds it.
+    pub sequences: Vec<u8>,
+    pub arrays: Vec<u8>,
+    pub arrays_base: usize,
+    pub payloads: Vec<u8>,
+    pub payloads_base: usize,
+}
+
+/// Lifts a document one value at a time, as [`lift`] would lift it whole: an array or an image that
+/// several values share is written once, by the first value that holds it, and every later value names it
+/// with the same marker. The interface restores each piece as it arrives and keeps what the markers named,
+/// so a document too large to hand over at once reaches it in bounded pieces with its sharing intact.
+///
+/// The values lifted must stay alive as long as the lifter does (arrays are told apart by their address).
+pub struct ViewLifter(Lifter<'static>);
+
+impl Default for ViewLifter {
+    fn default() -> Self {
+        ViewLifter(Lifter {
+            out: Vec::new(),
+            arrays: Vec::new(),
+            payloads: Vec::new(),
+            arrays_base: 0,
+            payloads_base: 0,
+            seen_arrays: HashMap::new(),
+            seen_payloads: HashMap::new(),
+            reserved: HashMap::new(),
+            sequences: Some(Sequences::default()),
+            // Nothing here is a file: the interface decides how much of the document it takes.
+            max_bytes: usize::MAX / 8,
+            known_json: 0,
+            upper_json: 0,
+            allocation: 0,
+            _documents: std::marker::PhantomData,
+        })
+    }
+}
+
+impl ViewLifter {
+    pub fn new() -> ViewLifter {
+        ViewLifter::default()
+    }
+
+    /// The piece for `value`, held under `key` in its parent (the field names decide which strings move out as payloads).
+    pub fn part(&mut self, value: &Value, key: &str) -> Result<ViewPart, ContainerError> {
+        let lifter = &mut self.0;
+        lifter.out.clear();
+        lifter.value(value, key)?;
+        let defined = std::mem::take(&mut lifter.sequences.as_mut().expect("a view lifter").defined);
+        let mut sequences = Vec::new();
+        for (id, text) in defined {
+            sequences.extend_from_slice(if sequences.is_empty() { b"[" } else { b"," });
+            sequences.extend_from_slice(format!("{{\"id\":{id},\"v\":").as_bytes());
+            sequences.extend_from_slice(&text);
+            sequences.push(b'}');
+        }
+        if !sequences.is_empty() {
+            sequences.push(b']');
+        }
+        let part = ViewPart {
+            skeleton: std::mem::take(&mut lifter.out),
+            sequences,
+            arrays_base: lifter.arrays_base,
+            arrays: std::mem::take(&mut lifter.arrays),
+            payloads_base: lifter.payloads_base,
+            payloads: std::mem::take(&mut lifter.payloads),
+        };
+        lifter.arrays_base += part.arrays.len();
+        lifter.payloads_base += part.payloads.len();
+        Ok(part)
+    }
 }
 
 /// Assembles a version 2 container, compressing with zstd at level 3.

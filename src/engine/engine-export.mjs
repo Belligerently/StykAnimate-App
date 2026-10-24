@@ -73,15 +73,14 @@ function takeWarm() {
 
 /**
  * The export frame renderer for an export. `stage` is the app's stage renderer
- * (engine-stage.mjs), `playback` its playback adapter (engine-playback.mjs), `revision` the
- * editor's revision, `range` the first and last tick the export draws, `vector` an SVG export.
+ * (engine-stage.mjs), `revision` the editor's revision, `range` the first and last tick the export draws, `vector` an SVG export.
  * Fails where the engine has no worker threads (a page that is not cross-origin isolated).
  */
-export function createExportFrameRenderer(options, {stage, playback, revision, range, vector = false} = {}) {
+export function createExportFrameRenderer(options, {stage, revision, range, vector = false} = {}) {
   const side = stage?.engineSide;
-  if (!side?.engine?.threaded || typeof stage.prepareExport !== 'function' || typeof playback?.exportDocument !== 'function')
+  if (!side?.engine?.threaded || typeof stage.prepareExport !== 'function')
     throw unavailable('no engine with worker threads');
-  return new EngineExportFrames(options, {stage, playback, revision, range, vector});
+  return new EngineExportFrames(options, {stage, revision, range, vector});
 }
 
 /** An export the engine cannot draw, and why. */
@@ -232,8 +231,8 @@ export class EngineExportFrames {
     try {
       this.revision = this.getRevision?.();
       const began = performance.now();
-      const {stage, playback, revision} = this.engine;
-      const reason = await engineDocument({stage, playback, report, revision, check: () => this._check()});
+      const {stage, revision} = this.engine;
+      const reason = await engineDocument({stage, report, revision, check: () => this._check()});
       this._check();
       if (reason) throw unavailable(reason);
       this.tileSize = ENGINE_TILE_SIDE;

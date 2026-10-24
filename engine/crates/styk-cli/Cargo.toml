@@ -15,6 +15,7 @@ styk-eval = { path = "../styk-eval" }
 styk-doc = { path = "../styk-doc" }
 styk-edit = { path = "../styk-edit" }
 styk-formats = { path = "../styk-formats" }
+styk-piv = { path = "../styk-piv" }
 rayon = "1"
 styk-render = { path = "../styk-render" }
 styk-raster = { path = "../styk-raster" }

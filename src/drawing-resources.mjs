@@ -54,11 +54,11 @@ const PUBLICATION_BATCH_BYTES=1024*1024;
  * the per-tile PNG blob on image_assets[0].styk_tiles plus a bounds-sized
  * preview PNG on data_url keep legacy asset consumers working. */
 export class DrawingResources {
-  constructor(report,{tileBytes=defaultTileBudget(),levelBytes=Math.round(tileBytes/3),scratchBytes=64*1024*1024,hardBytes,onChange=()=>{},onError=()=>{},worker,strokeWorker,history}={}) {
+  constructor(report,{tileBytes=defaultTileBudget(),levelBytes=Math.round(tileBytes/3),scratchBytes=64*1024*1024,hardBytes,onChange=()=>{},onPublished=()=>{},onError=()=>{},worker,strokeWorker,history}={}) {
     // tileBudget is the retention target; hardBudget is the only point a
     // required working set is refused (at least 768 MiB). Between them, required dirty/pinned
     // tiles stay resident while publication frees them in the background.
-    Object.assign(this,{report,tileBudget:tileBytes,hardBudget:hardBytes??tileBytes*4,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onError,entries:new Map(),transients:new Set(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker(),decodes:0,lastEncode:null,injectedWorker:Boolean(worker)});owners.set(report,this);
+    Object.assign(this,{report,tileBudget:tileBytes,hardBudget:hardBytes??tileBytes*4,levelBudget:levelBytes,scratchBudget:scratchBytes,onChange,onPublished,onError,entries:new Map(),transients:new Set(),worker:worker??new DrawingWorker(),decodeWorker:worker??new DrawingWorker(),strokeWorker:strokeWorker??new StrokeWorker(),generation:1,surfaceVersion:0,decodeQueue:[],thumbnailQueue:new Map(),thumbnailCache:new Map(),thumbnailWorker:worker??new DrawingWorker(),decodes:0,lastEncode:null,injectedWorker:Boolean(worker)});owners.set(report,this);
     this.pixelMemory=new DrawingTileMemory();
     if(typeof Worker!=='undefined')this.previews=new DrawingPreviewCache(new DrawingWorker(),{budgetBytes:scratchBytes,onReady:()=>this.onChange(),onError,reserve:bytes=>this.scratchReserved(null,bytes),hold:(job,bytes)=>this.hold(job,bytes,job.entry)});
     this.history=history===false?null:history??(typeof Worker!=='undefined'&&typeof indexedDB!=='undefined'?new DrawingHistory({reserve:bytes=>this.reserve(bytes),hold:bytes=>this.hold(this.history,bytes),onWarning:error=>this.onError(error)}):null);
@@ -89,11 +89,13 @@ export class DrawingResources {
   restorePublication(entry,figure){
     const published=entry.published,d=drawingMetadata(figure);
     if(entry.external||d?.version!==2||published?.revision!==entry.revision)return;
-    const asset=figure.image_assets[0];
+    const asset=figure.image_assets[0],bounds=Object.hasOwn(published,'bounds')?published.bounds:d.bounds;
+    if(asset.styk_tiles===(published.url||undefined)&&asset.data_url===EMPTY_PNG&&asset.width===1&&asset.height===1&&asset.display_width===1&&asset.display_height===1&&d.revision===entry.revision&&JSON.stringify(d.bounds??null)===JSON.stringify(bounds??null))return;
     if(published.url)asset.styk_tiles=published.url;else delete asset.styk_tiles;
     asset.data_url=EMPTY_PNG;asset.width=asset.height=asset.display_width=asset.display_height=1;
-    d.revision=entry.revision;
-    const bounds=Object.hasOwn(published,'bounds')?published.bounds:d.bounds;d.bounds=bounds?{...bounds}:null;
+    d.revision=entry.revision;d.bounds=bounds?{...bounds}:null;
+    // The definition changed in place: whoever holds a copy of the document (the engine's session) is told.
+    this.onPublished(figure);
   }
   /** Resident tile bytes dedupe by pixel buffer: copy-on-write forks share
    * tiles, so shared tiles count once, not once per entry. */

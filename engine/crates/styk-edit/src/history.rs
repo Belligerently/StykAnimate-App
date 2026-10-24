@@ -467,15 +467,6 @@ impl Editor {
         self.record_weight(command, Some(Weight { bytes, children: Vec::new(), topology: None }), None)
     }
 
-    /// The editor's own history entries as the session's stacks (D19, before any command).
-    pub(crate) fn install_external_stacks(&mut self, undo: Vec<(Command, f64)>, redo: Vec<(Command, f64)>) {
-        let entry = |(command, bytes): (Command, f64)| Entry { command, weight: Weight { bytes, children: Vec::new(), topology: None } };
-        let (undo, redo): (Vec<Entry>, Vec<Entry>) = (undo.into_iter().map(entry).collect(), redo.into_iter().map(entry).collect());
-        self.history_size = undo.iter().chain(&redo).map(|entry| entry.weight.bytes).sum();
-        self.undo = Arc::new(undo);
-        self.redo = Arc::new(redo);
-    }
-
     /// An external entry was applied by the JavaScript editor: it moves to the other
     /// stack, and the revision is the one it restores.
     pub(crate) fn move_history_entry(&mut self, redo: bool) {

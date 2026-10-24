@@ -12,7 +12,7 @@
  * only the objects whose geometry the editor rebuilt since the last frame.
  */
 import {loadEngine} from './engine.mjs';
-import {EngineMirror} from './engine-mirror.mjs';
+import {holdsRevision} from './engine-open.mjs';
 import {engineTicket} from './engine-playback.mjs';
 import {failEngine, engineRefusal} from './engine-failure.mjs';
 import {drawingResourcesFor} from '../drawing-resources.mjs';
@@ -30,13 +30,12 @@ const perStage = () => ({
   groups: [], count: -1, fields: null, frameSent: false,
   /** Onion skin poses the engine holds, by the editor's sampled frame. */
   ghosts: new WeakMap(), nextGhost: 1,
-  /** The drawing tiles each figure was last sent with: publication replaces them in place. */
-  tiles: new WeakMap(),
   /** The drawing cels the engine holds live: strokes drawn before they are published. */
   live: null,
   /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
   pictureWait: 0,
-  cameraFrames: null, cameraDirty: null,
+  /** Frames in a row the engine did not yet hold the editor's revision for. */
+  waiting: 0,
   monitor: undefined, monitorCanvas: null, workerMonitor: null,
   thumbnails: undefined, thumbnailCanvas: null,
 });
@@ -44,15 +43,10 @@ const perStage = () => ({
 async function engineSide(load) {
   if (shared) return shared;
   const engine = await load();
-  return shared = {engine, mirror: new EngineMirror(engine), stage: null, frameReport: null, definitions: null, definitionsOf: null, failed: null, failure: null, dirty: null, lastRefusal: null,
+  return shared = {engine, stage: null, frameReport: null, failed: null, failure: null, lastRefusal: null,
+    /** The drawing cel a first stroke is about to create that the engine holds in its document (`draft`): outlives a stage. */
+    draft: null,
     stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, pictureRedraws: 0, retries: 0}, ...perStage()};
-}
-
-/** The published tiles of a figure's drawings, its own and its movieclip's. */
-function drawingTiles(figure, out = []) {
-  if (figure._styk?.drawing) out.push(figure.image_assets?.[0]?.styk_tiles ?? null);
-  for (const nested of figure._styk?.movieclip?.document?.figure_types ?? []) drawingTiles(nested, out);
-  return out;
 }
 
 /**
@@ -100,67 +94,6 @@ export function waitForPictures(side, seen, redraw) {
   wait();
 }
 
-/** Cancels only this stage's asynchronous camera prerequisite. */
-export function cancelCameraFrames(side) {
-  const sync = side.cameraFrames;
-  if (!sync) return;
-  side.cameraFrames = null;
-  sync.controller.abort(new DOMException('The camera preparation was superseded.', 'AbortError'));
-}
-
-/** Keep at most one dirty identity per live record while the camera is off. */
-export function recordCameraChange(side, detail) {
-  const report = side.frameReport;
-  if (!report) return;
-  const dirty = side.cameraDirty ??= {frameIndices: new Set(), figureIndices: new Set(), sourceIds: new Set(), allFrames: false, allFigures: false, allSources: false};
-  // A long edit session stays bounded even when old records are removed without
-  // individual dirty names. A full resend uses the mirror's asynchronous owner.
-  const include = (items, identities, all, present) => {
-    if (dirty[all]) return;
-    let visited = 0;
-    for (const identity of items ?? []) {
-      if (++visited > 256) { identities.clear(); dirty[all] = true; break; }
-      if (present(identity)) identities.add(identity); else identities.delete(identity);
-      if (identities.size >= 256) { identities.clear(); dirty[all] = true; break; }
-    }
-  };
-  include(detail.frameIndices, dirty.frameIndices, 'allFrames', index => index >= 0 && index < (report.keyframes?.length ?? 0));
-  include(detail.figureIndices, dirty.figureIndices, 'allFigures', index => index >= 0 && index < (report.figure_types?.length ?? 0));
-  const sources = report._styk?.frameSources ?? {};
-  include(detail.sourceIds, dirty.sourceIds, 'allSources', id => Object.hasOwn(sources, id));
-  // A removed source does not need an explicit resend; syncFrames removes it.
-  dirty.allFigures ||= Boolean(detail.definition && !detail.figureIndices?.length);
-  if (detail.structural) {
-    dirty.frameIndices.clear(); dirty.sourceIds.clear();
-    dirty.allFrames = true; dirty.allSources = true;
-  }
-}
-
-/**
- * An edit pose can arrive before playback has mirrored its stored target poses.
- * Coalesce one asynchronous frame sync through the existing mirror, then let
- * render_edit request worker frame tickets on that complete Prepared owner.
- */
-export function ensureCameraFrames(side, {report, revision = 0}, redraw) {
-  if (side.mirror.framesCurrent(report, revision)) return false;
-  const old = side.cameraFrames;
-  if (old?.report === report && old.revision === revision) return true;
-  cancelCameraFrames(side);
-  const sync = {report, revision, controller: new AbortController()};
-  side.cameraFrames = sync;
-  const dirty = side.cameraDirty;
-  sync.promise = Promise.resolve().then(() => side.mirror.syncFrames(report, revision, dirty ?? {}, {signal: sync.controller.signal})).then(() => {
-    if (side.cameraFrames !== sync || sync.controller.signal.aborted || !side.mirror.framesCurrent(report, revision)) return;
-    if (side.cameraDirty === dirty) side.cameraDirty = null;
-    redraw();
-  }).catch(error => {
-    if (side.cameraFrames !== sync || sync.controller.signal.aborted || error?.name === 'AbortError') return;
-    failEngine(side, `the engine refused the camera document (${error.message})`, report, revision);
-    redraw();
-  }).finally(() => { if (side.cameraFrames === sync) side.cameraFrames = null; });
-  return true;
-}
-
 /**
  * What the status line and telemetry call the graphics adapter: the browser's own description of it
  * (vendor, architecture, device) where WebGPU exists, else the name the engine got from the backend.
@@ -188,8 +121,8 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   let stage;
   try { stage = await side.engine.createStage(canvas); }
   catch (error) { throw messageError(error, 'errors.engineStage.theDrawingEngineCouldNotStart', {reason: error?.message ?? error}); }
-  // The engine keeps the document; a stage on a new device starts from empty poses and tiles.
-  Object.assign(side, perStage(), {stage, live: new LiveCels(stage), failed: null, failure: null, dirty: null});
+  // The engine keeps the document; a stage on a new device starts from empty poses.
+  Object.assign(side, perStage(), {stage, live: new LiveCels(stage), failed: null, failure: null});
   /** The stage's pixels per CSS pixel (the last `resize`), and a frame the stage has drawn. */
   let deviceRatio = 1, engineShown = false, destroyed = false, lost = '', retrying = false, redrawQueued = false, preparedError = null;
   const warnings = [];
@@ -221,7 +154,6 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   poller.unref?.();
   /** The poses the engine received are in doubt after an error: the next frame sends them all again. */
   const resend = () => {
-    side.definitions = null;
     side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap();
   };
   /** The engine refused this document; reported once, retried with the next revision. */
@@ -229,40 +161,6 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     failEngine(side, String(error?.message ?? error), report, revision);
     resend();
     options.onError?.(error);
-  };
-
-  /** Figures whose drawings were published in place since the engine got them become dirty. */
-  const republished = report => {
-    const changed = [];
-    report.figure_types?.forEach((figure, index) => {
-      if (!figure._styk?.drawing && !figure._styk?.movieclip) return;
-      const tiles = drawingTiles(figure), known = side.tiles.get(figure);
-      side.tiles.set(figure, tiles);
-      if (known && (known.length !== tiles.length || known.some((value, i) => value !== tiles[i]))) changed.push(index);
-    });
-    if (!changed.length) return;
-    side.dirty ??= {frameIndices: [], figureIndices: [], sourceIds: [], structural: false, definition: false};
-    side.dirty.figureIndices.push(...changed);
-    side.definitions = null;
-  };
-
-  /** Figure definitions, backgrounds and properties: what an edit frame is drawn with. */
-  const syncDefinitions = request => {
-    // A first stroke on a blank exposure is drawn from a draft of the editor's report that holds
-    // the cel it is about to create (`documentReport`); the mirror stays the editor's.
-    const document = request.documentReport ?? request.report;
-    republished(request.report);
-    const key = `${request.revision}:${request.artworkRevision}`;
-    if (side.mirror.report === document && side.definitionsOf === request.report && side.definitions === key) return;
-    // Figures edited in place keep their objects; the editor's change events said which.
-    const dirty = side.dirty;
-    side.dirty = null;
-    const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
-      {figureIndices: dirty?.figureIndices ?? [], allFigures: Boolean(dirty?.definition && !dirty.figureIndices?.length), document});
-    side.definitions = key;
-    side.definitionsOf = request.report;
-    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.tiles = new WeakMap(); side.frameReport = request.report; }
-    return result;
   };
 
   /**
@@ -316,11 +214,45 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   /** The workspace view's turn and mirror (the Draw view), applied to the frame about to be drawn. */
   const orient = view => stage.set_view_orientation(Number.isFinite(view.rotation) ? view.rotation : 0, Boolean(view.flip));
 
+  /**
+   * The engine's session publishes every change at the editor's revision, so a frame needs nothing sent but its pose.
+   * A revision it has not published yet is waited for (`engine_busy`: drawn when the engine has made progress); one it
+   * does not publish at all is a refusal.
+   */
+  const holds = revision => {
+    if (holdsRevision(side.engine, revision)) { side.waiting = 0; return; }
+    const error = new Error('the engine does not hold this revision of the document');
+    if (++side.waiting > 120) { side.waiting = 0; throw error; }
+    throw Object.assign(error, {code: 'engine_busy'});
+  };
+
+  /**
+   * A first stroke on a blank exposure draws a cel the document does not hold yet: the frame is drawn from a draft of
+   * the editor's report that holds it (`documentReport` of the request is the report itself). The engine draws its
+   * document with the draft's figures added until the next publication, which has the cel for real, or until a frame
+   * is drawn without a draft. A publication meanwhile (the engine's document moved) takes the draft out: it is held
+   * again here before the frame is drawn.
+   */
+  const draft = request => {
+    const document = request.documentReport ?? request.report, handle = side.engine.handle;
+    if (request.report === document) {
+      if (side.draft) { side.draft = null; handle.clear_draft(); }
+      return;
+    }
+    if (side.draft?.report === request.report && handle.draft_held(side.draft.token)) return;
+    const added = (request.report.figure_types ?? []).slice((document.figure_types ?? []).length), before = document._styk?.layers?.assignments ?? {};
+    const assignments = Object.fromEntries(Object.entries(request.report._styk?.layers?.assignments ?? {}).filter(([uid, layer]) => before[uid] !== layer));
+    const token = (side.draft?.token ?? 0) + 1;
+    handle.set_draft(token, JSON.stringify(added), JSON.stringify(assignments));
+    side.draft = {report: request.report, token};
+  };
+
   const drawEdit = request => {
-    if (side.cameraFrames && (side.cameraFrames.report !== request.report || side.cameraFrames.revision !== (request.revision ?? 0))) cancelCameraFrames(side);
-    if (side.frameReport !== request.report || side.mirror.framesCurrent(request.report, request.revision ?? 0)) side.cameraDirty = null;
     const started = performance.now(), seen = side.engine.progressSeen();
-    syncDefinitions(request);
+    holds(request.revision ?? 0);
+    draft(request);
+    // A pose of another document starts the engine's edit scene over.
+    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
     // Strokes, fills and floating selections not yet published are drawn from the tiles held live.
     side.live.invalidate = invalidate;
     side.live.sync(drawingResourcesFor(request.documentReport ?? request.report));
@@ -352,8 +284,8 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     if (stage.refining()) queueMicrotask(invalidate);
     const pendingCamera = stage.camera_pending?.() === true;
     side.stats.cameraPending = pendingCamera;
-    if (pendingCamera) ensureCameraFrames(side, request, invalidate);
-    else cancelCameraFrames(side);
+    // The pose is shown through a follow camera whose path a worker is still warming: drawn again when it is done.
+    if (pendingCamera) side.engine.whenProgress(seen).then(() => { if (!destroyed) invalidate(); });
     if (drawn || pendingCamera) awaitPictures(seen);
     // A surface that was being resized takes the frame on the next animation frame.
     else if (stage.surface_pending()) redrawSoon();
@@ -385,7 +317,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     /** Set by the frame loop when this frame's stages are measured; `telemetryStages` then holds them. */
     measureFrame: false,
     telemetryStages: null,
-    get engineStats() { return {...side.stats, mirror: {...side.mirror.stats}, refusal: side.failed ?? null, backend: stage.backend()}; },
+    get engineStats() { return {...side.stats, refusal: side.failed ?? null, backend: stage.backend()}; },
     /** Draws an edited frame. False when it is not drawn (the previous picture stays and it is tried again when it can be). */
     render(request) {
       if (destroyed) return false;
@@ -437,31 +369,9 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
       deviceRatio = backing.dpr;
       if (canvas.width !== backing.pw || canvas.height !== backing.ph) { canvas.width = backing.pw; canvas.height = backing.ph; stage.resize(backing.pw, backing.ph); }
     },
-    /**
-     * The editor changed the document: which records it edited in place
-     * (`{frameIndices, figureIndices, sourceIds, structural, definition}`), merged until the next frame.
-     */
-    documentChanged(detail = {}) {
-      cancelCameraFrames(side);
-      recordCameraChange(side, detail);
-      const dirty = side.dirty ??= {frameIndices: [], figureIndices: [], sourceIds: [], structural: false, definition: false};
-      dirty.frameIndices.push(...detail.frameIndices ?? []);
-      dirty.figureIndices.push(...detail.figureIndices ?? []);
-      dirty.sourceIds.push(...detail.sourceIds ?? []);
-      dirty.structural ||= Boolean(detail.structural);
-      dirty.definition ||= Boolean(detail.definition);
-    },
-    /**
-     * For an export (engine-export.mjs): why the engine cannot draw `report`, or null once
-     * its properties, figure definitions and backgrounds are current, edits in place and
-     * published drawings included (its frames come through the playback adapter first).
-     * Throws `engine_busy` while a background commit runs: the caller tries again.
-     */
+    /** For an export (engine-export.mjs): why the engine cannot draw `report` at `revision`, or null. */
     prepareExport(report, revision) {
-      const refused = engineRefusal(side, report, revision);
-      if (refused) return refused;
-      try { syncDefinitions({report, revision, artworkRevision: 'export'}); return null; }
-      catch (error) { side.definitions = null; if (error?.code === 'engine_busy') throw error; return String(error?.message ?? error); }
+      return engineRefusal(side, report, revision) ?? (holdsRevision(side.engine, revision) ? null : 'the engine does not hold this revision of the document');
     },
     /**
      * The camera monitor (camera-monitor.mjs): the frame the engine drew last, seen through the
@@ -544,7 +454,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
       if (destroyed) return;
       destroyed = true; engineShown = false;
       clearInterval(poller);
-      cancelCameraFrames(side); side.pictureWait++;
+      side.pictureWait++;
       side.workerMonitor?.destroy(); side.workerMonitor = null;
       if (side.stage === stage) { side.stage = null; stage.free(); }
     },

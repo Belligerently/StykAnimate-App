@@ -76,6 +76,24 @@ thread_local! {
     static CHECKED: RefCell<Vec<Weak<Obj>>> = const { RefCell::new(Vec::new()) };
 }
 
+/// The load's check of one recording (`validateAudioAssetSteps`).
+pub(crate) fn check_asset(asset: &Value) -> Result<(), EditError> {
+    validate_asset(asset).map(|_| ()).map_err(load_error)
+}
+
+/// The load's check of the audio state (`validateAudioState`).
+pub(crate) fn check_state(state: &Value) -> Result<(), EditError> {
+    validate_state(state).map_err(load_error)
+}
+
+/// A malformed document the JavaScript throws a `TypeError` on, which the commands leave to the editor.
+fn load_error(error: EditError) -> EditError {
+    match error {
+        EditError::Unported(_) => EditError::Invalid(crate::load::TYPE_ERROR.into()),
+        other => other,
+    }
+}
+
 /// `validateAudioAsset(asset)`; returns its size.
 fn validate_asset(asset: &Value) -> Result<f64, EditError> {
     let Value::Obj(object) = asset else { return Err(invalid("invalidAudioAsset")) };

@@ -16,7 +16,7 @@ function editor({frames = 3} = {}) {
   return target;
 }
 
-/** The app's stage and playback adapter; `draw` answers the stage's thumbnail requests. */
+/** The app's stage; `draw` answers the stage's thumbnail requests. */
 function app({draw = () => 'drawn', thumbnails, threaded = true, refusal = null} = {}) {
   const calls = [];
   const stage = {
@@ -24,8 +24,7 @@ function app({draw = () => 'drawn', thumbnails, threaded = true, refusal = null}
     prepareExport: (report, revision) => { calls.push(['definitions', revision]); return refusal; },
     renderThumbnail: async (request, canvas) => { calls.push(['thumbnail', request]); return draw(request, canvas); },
   };
-  const playback = {exportDocument: async (report, revision) => { calls.push(['frames', revision]); return true; }};
-  return {stage, playback, calls};
+  return {stage, calls};
 }
 
 /** A 2D canvas as thumbnails draw on it: what was drawn on it is recorded. */
@@ -46,11 +45,11 @@ function previewWorker(answer = message => ({bitmap: {closed: false, close() { t
 }
 
 test('a document the engine draws gets its thumbnails from the stage', async () => {
-  const {stage, playback, calls} = app(), target = editor();
-  const thumbnails = new EngineThumbnails(target, {stage: () => stage, playback: () => playback});
+  const {stage, calls} = app(), target = editor();
+  const thumbnails = new EngineThumbnails(target, {stage: () => stage});
   assert.equal(await thumbnails.renderThumbnail(1, canvas(), {tick: 10}), true);
   assert.deepEqual(calls.find(call => call[0] === 'thumbnail')[1], {revision: 4, tick: 10, width: 320, height: 192});
-  assert.deepEqual(calls.slice(0, 2), [['frames', 4], ['definitions', 4]], 'the engine is brought to the revision first');
+  assert.deepEqual(calls.slice(0, 1), [['definitions', 4]], 'the engine is asked for the revision first');
   // Without a tick the frame's start is drawn.
   assert.equal(await thumbnails.renderThumbnail(2, canvas()), true);
   assert.equal(calls.filter(call => call[0] === 'thumbnail').at(-1)[1].tick, 20);
@@ -60,20 +59,20 @@ test('a document the engine draws gets its thumbnails from the stage', async () 
 test('in-between previews without a worker, refused documents and devices without a second canvas are not drawn', async () => {
   const target = editor();
   // An in-between preview samples a pose that is not in the document.
-  const {stage, playback, calls} = app();
-  const thumbnails = new EngineThumbnails(target, {stage: () => stage, playback: () => playback, previews: async () => null});
+  const {stage, calls} = app();
+  const thumbnails = new EngineThumbnails(target, {stage: () => stage, previews: async () => null});
   assert.equal(await thumbnails.renderThumbnail(0, canvas(), {inbetween: {ratio: .5}}), false);
-  assert.equal(calls.length, 0, 'without a worker no document is mirrored');
+  assert.equal(calls.length, 0, 'without a worker nothing is asked of the engine');
   assert.equal(thumbnails.stats.engine.refusal, 'the preview worker cannot sample in-betweens (no preview worker)');
   // The engine refuses the document (its stroke waits for publication).
   const refused = app({refusal: 'unpublished drawing strokes'});
-  const second = new EngineThumbnails(target, {stage: () => refused.stage, playback: () => refused.playback});
+  const second = new EngineThumbnails(target, {stage: () => refused.stage});
   assert.equal(await second.renderThumbnail(0, canvas()), false);
   assert.equal(second.stats.engine.refusal, 'unpublished drawing strokes');
   // WebGL2 and no preview worker either: the stage could not give thumbnails a canvas; later
   // requests are refused without asking the stage again.
   const gl = app({draw: () => 'refused'});
-  const third = new EngineThumbnails(target, {stage: () => gl.stage, playback: () => gl.playback, previews: async () => null});
+  const third = new EngineThumbnails(target, {stage: () => gl.stage, previews: async () => null});
   assert.equal(await third.renderThumbnail(0, canvas()), false);
   gl.stage.engineSide.thumbnails = false;
   const before = gl.calls.length;
@@ -82,24 +81,24 @@ test('in-between previews without a worker, refused documents and devices withou
   assert.match(third.stats.engine.refusal, /no preview worker/);
   // No engine with worker threads.
   const plain = app({threaded: false});
-  const fourth = new EngineThumbnails(target, {stage: () => plain.stage, playback: () => plain.playback});
+  const fourth = new EngineThumbnails(target, {stage: () => plain.stage});
   assert.equal(await fourth.renderThumbnail(0, canvas()), false);
   assert.equal(plain.calls.length, 0);
   assert.equal(fourth.stats.engine.refusal, 'no engine with worker threads');
   // A frame outside the timeline.
-  const fifth = new EngineThumbnails(target, {stage: () => stage, playback: () => playback});
+  const fifth = new EngineThumbnails(target, {stage: () => stage});
   assert.equal(await fifth.renderThumbnail(9, canvas()), false);
   assert.equal(fifth.stats.engine.refusal, 'a frame outside the timeline');
 });
 
 test('in-between thumbnails sample an explicit interval in the existing engine worker without copying the document', async () => {
-  const {stage, playback, calls} = app(), target = editor();
+  const {stage, calls} = app(), target = editor();
   const worker = previewWorker();
-  const thumbnails = new EngineThumbnails(target, {stage: () => stage, playback: () => playback, previews: async () => worker.worker});
+  const thumbnails = new EngineThumbnails(target, {stage: () => stage, previews: async () => worker.worker});
   const inbetween = {ratio: .37, onionMode: 'settings', onionCount: 3, onionOpacity: .18, onionAhead: false};
   const picture = canvas();
   assert.equal(await thumbnails.renderThumbnail(1, picture, {inbetween}), true);
-  assert.deepEqual(calls, [['frames', 4], ['definitions', 4]]);
+  assert.deepEqual(calls, [['definitions', 4]]);
   assert.deepEqual({...worker.requests[0], address: undefined}, {operation: 'inbetween', address: undefined, revision: 4, index: 1, ratio: .37, mode: 1, count: 3, opacity: .18, ahead: false, width: 320, height: 192});
   assert.equal(picture.drawn[0].closed, true);
   assert.equal(thumbnails.stats.engine.inbetweens, 1);
@@ -108,12 +107,12 @@ test('in-between thumbnails sample an explicit interval in the existing engine w
 test('thumbnails the stage cannot draw are drawn by the preview worker on the CPU, from the engine\'s document', async () => {
   const target = editor();
   // A WebGL2 stage: it refuses thumbnails and says it never will.
-  const {stage, playback, calls} = app({draw: () => { stage.engineSide.thumbnails = false; return 'refused'; }});
+  const {stage, calls} = app({draw: () => { stage.engineSide.thumbnails = false; return 'refused'; }});
   const cpu = previewWorker();
-  const thumbnails = new EngineThumbnails(target, {stage: () => stage, playback: () => playback, previews: async () => cpu.worker});
+  const thumbnails = new EngineThumbnails(target, {stage: () => stage, previews: async () => cpu.worker});
   const card = canvas();
   assert.equal(await thumbnails.renderThumbnail(1, card, {tick: 10}), true);
-  assert.deepEqual(calls.slice(0, 2), [['frames', 4], ['definitions', 4]], 'the engine is brought to the revision first');
+  assert.deepEqual(calls.slice(0, 1), [['definitions', 4]], 'the engine is asked for the revision first');
   assert.equal(cpu.requests.length, 1);
   assert.deepEqual({...cpu.requests[0], address: undefined}, {operation: 'thumbnail', address: undefined, revision: 4, tick: 10, width: 320, height: 192});
   assert.equal(typeof cpu.requests[0].address, 'number', 'an engine address, made when the request is sent');
@@ -128,17 +127,17 @@ test('thumbnails the stage cannot draw are drawn by the preview worker on the CP
   assert.equal(thumbnails.stats.engine.cpu, 2);
   // Another revision in the engine: not drawn, asked again later.
   const stale = previewWorker(() => ({refused: 'stale'}));
-  const later = new EngineThumbnails(target, {stage: () => stage, playback: () => playback, previews: async () => stale.worker});
+  const later = new EngineThumbnails(target, {stage: () => stage, previews: async () => stale.worker});
   assert.equal(await later.renderThumbnail(0, canvas()), false);
   assert.equal(later.stats.engine.stale, 1);
   // A frame the worker could not draw is not drawn.
   const timeout = previewWorker(() => ({refused: 'timeout', message: 'the frame was not prepared in time'}));
-  const slow = new EngineThumbnails(target, {stage: () => stage, playback: () => playback, previews: async () => timeout.worker});
+  const slow = new EngineThumbnails(target, {stage: () => stage, previews: async () => timeout.worker});
   assert.equal(await slow.renderThumbnail(0, canvas()), false);
   assert.equal(slow.stats.engine.refused, 1);
   // A cancelled thumbnail is not drawn and makes no address.
   const never = previewWorker();
-  const cancelled = new EngineThumbnails(target, {stage: () => stage, playback: () => playback, previews: async () => never.worker});
+  const cancelled = new EngineThumbnails(target, {stage: () => stage, previews: async () => never.worker});
   const controller = new AbortController();
   controller.abort();
   assert.equal(await cancelled.renderThumbnail(0, canvas(), {signal: controller.signal}), false);
@@ -148,8 +147,8 @@ test('thumbnails the stage cannot draw are drawn by the preview worker on the CP
 test('a thumbnail waits for the stage, and one superseded by an edit is not drawn', async () => {
   const target = editor();
   let current = null;
-  const {stage, playback} = app({draw: () => 'stale'});
-  const thumbnails = new EngineThumbnails(target, {stage: () => current, playback: () => playback});
+  const {stage} = app({draw: () => 'stale'});
+  const thumbnails = new EngineThumbnails(target, {stage: () => current});
   // The app is still creating its stage: the filmstrip asks again later.
   assert.equal(await thumbnails.renderThumbnail(0, canvas()), false);
   current = stage;
@@ -158,13 +157,13 @@ test('a thumbnail waits for the stage, and one superseded by an edit is not draw
   assert.equal(thumbnails.stats.engine.stale, 1);
   // An edit while the engine catches up: the thumbnail is dropped.
   const slow = app({draw: () => 'drawn'});
-  slow.playback.exportDocument = async () => { target.revision++; target.dispatchEvent(Object.assign(new Event('change'), {detail: {kind: 'edit'}})); return true; };
-  const edited = new EngineThumbnails(target, {stage: () => slow.stage, playback: () => slow.playback});
+  slow.stage.prepareExport = () => { target.revision++; target.dispatchEvent(Object.assign(new Event('change'), {detail: {kind: 'edit'}})); return null; };
+  const edited = new EngineThumbnails(target, {stage: () => slow.stage});
   assert.equal(await edited.renderThumbnail(0, canvas()), false);
   assert.equal(slow.calls.filter(call => call[0] === 'thumbnail').length, 0);
   // Paused (playback, a gesture) and destroyed renderers draw nothing.
-  const {stage: idle, playback: idlePlayback} = app();
-  const paused = new EngineThumbnails(target, {stage: () => idle, playback: () => idlePlayback});
+  const {stage: idle} = app();
+  const paused = new EngineThumbnails(target, {stage: () => idle});
   paused.setPaused(true);
   assert.equal(await paused.renderThumbnail(0, canvas()), false);
   paused.destroy();

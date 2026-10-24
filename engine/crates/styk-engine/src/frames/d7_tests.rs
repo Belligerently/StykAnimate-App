@@ -11,17 +11,8 @@ fn dense(generation: u64, tick: f64) -> FrameData {
 }
 
 fn seeded() -> Engine {
-    use crate::mirror::{Change, Record, Table};
     let engine = engine();
-    engine.stage(0, Change::Reset).unwrap();
-    engine.stage(0, Change::Properties(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20}"#.to_vec())).unwrap();
-    engine.stage(0, Change::Layout(Table::Figures, vec![])).unwrap();
-    engine.stage(0, Change::Layout(Table::Backgrounds, vec![])).unwrap();
-    engine.stage(0, Change::Layout(Table::Keyframes, vec![-1, -1])).unwrap();
-    for (index, skeleton) in [br#"{"duration_raw":2,"objects":[]}"#.as_slice(), br#"{"duration_raw":1,"objects":[]}"#.as_slice()].into_iter().enumerate() {
-        engine.stage(0, Change::Set(Table::Keyframes, index as u32, Record { skeleton: skeleton.to_vec(), arrays: vec![], payloads: vec![] })).unwrap();
-    }
-    engine.commit(0, 0).unwrap();
+    engine.open(br#"{"version":5,"canvas_width":320,"canvas_height":200,"fps":20,"figure_types":[],"backgrounds":[],"keyframes":[{"duration_raw":2,"objects":[]},{"duration_raw":1,"objects":[]}]}"#, "json", "d7").unwrap();
     let work = { let state = engine.inner.state.lock(); state.frames.work(state.current.clone()) };
     work.prepare_now(&engine, Sample::new(0.5).unwrap()).unwrap();
     let (generation, hidden, effects, epoch) = {

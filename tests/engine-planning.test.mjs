@@ -170,14 +170,16 @@ test('a retired in-between job reads as the editor words it, and an engine that 
 });
 
 function routedPlayback({threaded = true, plan = null, refuse = null} = {}) {
-  let current = null; const calls = [];
+  let published = 0; const calls = [];
   const engine = {threaded, workers: 1, progressSeen: () => 0, whenProgress: async () => {}, pump() {}, handle: {
-    try_set_hidden: () => 1, try_set_effects: () => 1, generation: () => 1,
+    try_set_hidden: () => 1, try_set_effects: () => 1, generation: () => 1, try_document_identity: () => [1, 1, published],
     plan_inbetweens(revision, request) { calls.push({revision, request: JSON.parse(request)}); if (refuse) throw refuse; return plan(); },
     plan_layers(revision, request) { calls.push({revision, request: JSON.parse(request)}); if (refuse) throw refuse; return plan(); }}};
-  const side = {engine,
-    mirror: {stats: {}, async syncFrames(report, revision) { current = {report, revision}; }, framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
-  return {playback: createStagePlayback({stage: () => ({engineSide: side})}), calls};
+  const side = {engine};
+  const playback = createStagePlayback({stage: () => ({engineSide: side})}), load = playback.load;
+  // The engine's session has published the revision the playback is loaded at.
+  playback.load = (next, options) => { published = options?.revision ?? published; return load(next, options); };
+  return {playback, calls};
 }
 const planJob = payload => () => {
   const chunks = documentChunks(payload, {maxBytes: 64 * 1024, maxRecords: 128, timeBudgetMs: 2}); let sequence = 0, awaiting;

@@ -9,6 +9,7 @@ import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {withDraws} from '../src/editor-draws.mjs';
+import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
 import {cameraAtTime} from '../src/camera-motion.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {sampleMotionPath} from '../src/motion-path.mjs';
@@ -72,7 +73,7 @@ const same = (actual, wanted, message) => {
 };
 const scenarios = readdirSync(folder).filter(name => name.endsWith('.scenario.json') && (!process.env.OWNER_TAPE || name.startsWith(`${process.env.OWNER_TAPE}.`))).sort();
 // Legacy Pivot poses carry an empty `runtime_segments` cache (styk-piv's legacy decoder):
-// the same tapes with it on every pose, started from the mirror.
+// the same tapes with it on every pose.
 const withCache = document => {
   const copy = structuredClone(document);
   for (const frame of [...copy.keyframes ?? [], ...Object.values(copy._styk?.frameSources ?? {})]) for (const object of frame.objects ?? []) object.runtime_segments ??= [];
@@ -118,10 +119,10 @@ const expectedFrontiers = Object.fromEntries([
   'native-transform-channels-support-projection: beginAnimationEdit: unrecorded native channel authoring or projection',
 ].map(key => [key, 1]));
 const floatsDiffer = new Set(['origin-motion-saved-layout-native', 'origin-motion-saved-support-native']);
-// From the document as it is, as the app starts it (from the mirror), and from the mirror with Pivot's cache on
-// every pose (the recordings' poses have none: the engine's own document is checked against the read view there).
-const variants = [{mirrored: false}, {mirrored: true}, {mirrored: true, legacy: true}];
-for (const {mirrored, legacy} of variants) test(`the engine owning the document gives what every recorded tape records${mirrored ? ', started from the mirror' : ''}${legacy ? ', with legacy pose caches' : ''}`, {skip: !engineBuilt}, async () => {
+// With Pivot's cache on every pose (the recordings' poses have none: the engine's own document is checked against the
+// read view there).
+const variants = [{legacy: false}, {legacy: true}];
+for (const {legacy} of variants) test(`the engine owning the document gives what every recorded tape records${legacy ? ', with legacy pose caches' : ''}`, {skip: !engineBuilt}, async () => {
   let tapes = 0, steps = 0, native = 0, fallback = 0;
   const editorCalls = {}, refusedCalls = {}, frontiers = {}, unnamedErrors = {};
   const failures = [];
@@ -133,7 +134,7 @@ for (const {mirrored, legacy} of variants) test(`the engine owning the document 
     const document = legacy ? withCache(loaded) : loaded;
     const options = {demo: false, ...scenario.editor};
     let made;
-    try { made = await ownedEditor(options, document, {mirrored}); } catch { continue; }
+    try { made = await ownedEditor(options, document); } catch { continue; }
     const {editor: owned, owner, setDraws} = made;
     owned.autoKey = Boolean(scenario.editor?.autoKey);
     const events = [];
@@ -171,6 +172,8 @@ for (const {mirrored, legacy} of variants) test(`the engine owning the document 
         assert.equal(ownedError, wantedError, `${label(index + 1)} ${call[0]}: error`);
         if (wanted.error && !legacy && !unnamed.length && ownedMessage !== wanted.error.message) assert.fail(`${label(index + 1)} ${call[0]}: the error says "${ownedMessage}", the recording "${wanted.error.message}"`);
         check(index + 1, call, wanted);
+        // The stage, playback and exports draw what the engine holds: it holds the editor's revision after every call.
+        assert.ok(holdsRevision(registeredEngine(), owned.revision), `${label(index + 1)} ${call[0]}: the engine holds revision ${owned.revision}`);
         steps++;
         if (legacy) continue;
         sameText(eventText(events), eventText(wanted.events), `${label(index + 1)} ${call[0]}: change events`);
@@ -184,6 +187,7 @@ for (const {mirrored, legacy} of variants) test(`the engine owning the document 
       assert.equal(owned.canUndo, false, `${label('undo all')}: the engine's history is as long`);
       while (owned.canRedo && guard--) owned.redo();
       assert.equal(owned.canRedo, false, `${label('redo all')}: the engine's history is as long`);
+      assert.ok(holdsRevision(registeredEngine(), owned.revision), `${label('redo all')}: the engine holds revision ${owned.revision}`);
       tapes++;
     } catch (error) {
       if (process.env.OWNER_TAPE) console.log(error.stack, JSON.stringify(owner.refused));
@@ -722,4 +726,47 @@ test('redo under an open camera drag or rig edit ends the gesture first, as undo
   assert.deepEqual(rig.both('redo'), [true, true]);
   assert.equal(rig.owned._drag, null, 'the gesture ended');
   rig.agree('redo');
+});
+
+test('a document marked as changed is the engine\'s at its new revision', {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
+  const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
+  assert.ok(owner.ready());
+  assert.ok(holdsRevision(registeredEngine(), editor.revision), 'the open document is the engine\'s');
+  const opened = editor.revision;
+  editor.dirty = true;
+  assert.notEqual(editor.revision, opened);
+  assert.equal(editor.dirty, true);
+  assert.ok(holdsRevision(registeredEngine(), editor.revision), 'and so is the revision that marks it changed');
+  owner.release();
+});
+
+test("an edit made outside the session's calls reaches the engine once the code that made it has finished", {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
+  const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
+  const opened = editor.revision;
+  // A module that moves the revision and announces the change without a command.
+  editor._revision = ++editor._revisionSerial;
+  editor._emit('edit', {label: 'Project metadata'});
+  assert.notEqual(editor.revision, opened);
+  assert.equal(holdsRevision(registeredEngine(), editor.revision), false, 'not before the code that made the edit is done');
+  await Promise.resolve();
+  assert.ok(holdsRevision(registeredEngine(), editor.revision), "and then it is the engine's");
+  owner.release();
+});
+
+test("a definition attached in place (a drawing's encoded tiles) reaches the session once the code that made it has finished", {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
+  const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
+  const figure = editor.report.figure_types[0], revision = editor.revision;
+  figure.name = 'Encoded in place';
+  // A derived publication is no edit: the revision stays, the session's copy is brought up to date.
+  editor._drawingPublished(figure);
+  assert.ok(!owner.session().report_json().includes('Encoded in place'), 'not before the code that made it is done');
+  await Promise.resolve();
+  assert.ok(owner.session().report_json().includes('Encoded in place'), "and then it is the session's");
+  assert.equal(editor.revision, revision);
+  assert.ok(holdsRevision(registeredEngine(), revision), 'at the revision the engine held');
+  assert.equal(editor.canUndo, false, 'and it is no history entry');
+  owner.release();
 });

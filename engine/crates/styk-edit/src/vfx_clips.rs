@@ -59,7 +59,7 @@ fn object_is(a: Option<&Value>, b: Option<&Value>) -> bool {
 
 /// `vfxDescriptor(property)` for `vfx1:type:id:param`: the effect type, its identity and
 /// the parameter's kind and range (`enabled` is a switch).
-struct Descriptor {
+pub(crate) struct Descriptor {
     kind: Kind,
     /// The effect's type as the property names it.
     type_name: String,
@@ -71,7 +71,7 @@ struct Descriptor {
     max: f64,
 }
 
-fn descriptor(property: &str) -> Option<Descriptor> {
+pub(crate) fn descriptor(property: &str) -> Option<Descriptor> {
     let parts: Vec<&str> = property.split(':').collect();
     if parts.len() != 4 || parts[0] != "vfx1" {
         return None;
@@ -100,7 +100,7 @@ fn property_of(kind: &str, id: &str, param: &str) -> Result<(String, Descriptor)
 
 /// `validateVfxValue(property, value)` for a parameter: a number in its range (whole for
 /// colours and discrete parameters), or a paint through the shared editor validator.
-fn check_value(found: &Descriptor, value: Option<&Value>) -> Result<(), EditError> {
+pub(crate) fn check_value(found: &Descriptor, value: Option<&Value>) -> Result<(), EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= found.min && *n <= found.max && (!(found.color || found.discrete) || n.fract() == 0.0) => Ok(()),
         Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if found.color => crate::recolor::normalize_paint(paint).map(|_| ()),
@@ -164,7 +164,7 @@ fn owner_key(target: &Value) -> String {
 
 /// `validateVfxClips({version: 1, clips}, {immutable: true})`, clips in `known` (already
 /// checked) checked only for what involves other clips.
-fn check_clips(clips: &[Value], known: &[Value]) -> Result<(), EditError> {
+pub(crate) fn check_clips(clips: &[Value], known: &[Value]) -> Result<(), EditError> {
     if clips.len() > CLIP_LIMIT {
         return Err(invalid("errors.vfxClips.invalidEffectsTimeline"));
     }

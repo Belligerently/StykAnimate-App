@@ -32,6 +32,7 @@ mod ik;
 mod ik_settings;
 mod layers;
 pub mod inbetween_planning;
+pub mod load;
 pub mod layer_planning;
 pub mod movieclip_planning;
 mod history_weight;
@@ -751,8 +752,6 @@ impl Editor {
             "@historyLimits" => return self.configure_history(args),
             "@markSaved" => return self.mark_saved(),
             "@revisions" => return self.set_revisions(args),
-            "@shape" => return self.document_shape(),
-            "@externalStacks" => return self.external_stacks(args),
             // A grouped edit (`movieclipBatch`) is bookkeeping around the edits it holds: no document gate applies.
             "beginBatch" => return self.begin_batch(args.first().and_then(Value::as_str).unwrap_or("")).map(|_| Value::Null),
             "endBatch" => return self.end_batch().map(|_| Value::Null),

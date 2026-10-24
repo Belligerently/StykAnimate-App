@@ -104,10 +104,10 @@ impl Store {
     }
 
     pub(crate) fn preparation_active(&self) -> bool { self.preparing.is_some() }
+    pub(crate) fn cancel_preparation(&mut self) { self.preparing = None; }
     pub(crate) fn start_preparation(&mut self, scope: DecodeScope) {
         if scope.current(self) && self.redecode_pending { self.preparing = Some(scope); }
     }
-    pub(crate) fn cancel_preparation(&mut self) { self.preparing = None; }
 
     /// A later revision of the same document added `count` images.
     pub fn grow(&mut self, count: usize) {

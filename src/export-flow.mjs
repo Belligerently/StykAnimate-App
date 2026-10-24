@@ -240,7 +240,7 @@ export function createExportFlow(ctx) {
           editor.report === source
             ? `${editor.revision}:${editor.frameDraftRevision}`
             : "replaced",
-      }, {stage: state.renderer, playback, revision: editor.revision, range: [start, start + frames - 1], vector: format === 'svg'});
+      }, {stage: state.renderer, revision: editor.revision, range: [start, start + frames - 1], vector: format === 'svg'});
       await frameRenderer.load(report);
       measurement.stage = 'encode';
       const saved = await render(
@@ -438,7 +438,7 @@ export function createExportFlow(ctx) {
     return {
       render(tick, canvas, { signal } = {}) {
         if (!editor.totalTicks || signal?.aborted) return Promise.resolve(false);
-        renderer ??= createThumbnailRenderer(editor, { stage: () => state.renderer, playback: () => playback });
+        renderer ??= createThumbnailRenderer(editor, { stage: () => state.renderer });
         const rows = editor.timeline, index = Math.max(0, rows.findLastIndex((row) => row.start <= tick));
         return renderer.renderThumbnail(index, canvas, { tick, storedFrames: false, signal });
       },

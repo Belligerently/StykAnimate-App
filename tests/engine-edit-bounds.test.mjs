@@ -4,8 +4,8 @@ import {appBoundsMarker, captureEditBounds, markAppBounds, MAX_BOUNDS_SAMPLES} f
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {appBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
-import {installEngineOwner, appSessionStart} from '../src/engine/engine-owner.mjs';
-import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
+import {engineBuilt} from './support/engine-node.mjs';
 const editor = {tick: 3, frameIndex: 0, selectedUids: new Set([7, 2])};
 const entry = {obj: {unique_id: 7}};
 test('bounds bridge records existing requests once, preserves callback receiver and frame range properties', () => {
@@ -68,20 +68,15 @@ test('unsupported nested option data leaves getters, toJSON and the original cal
   assert.equal(invoked, 0);
 });
 
-/** The editor owned by the real engine, started as the app starts it (from the mirror). */
-async function owned(editor) {
-  const {engine, mirror} = await nodeEngine();
-  mirror.reset();
-  await mirror.syncFrames(editor.report, editor.revision, {allFigures: true, allFrames: true, allSources: true});
-  return installEngineOwner(editor, {start: appSessionStart(() => ({failed: false, mirror, engine}))});
-}
+/** The editor owned by the real engine, as the app has it: the session its open started edits the document. */
+const owned = editor => installEngineOwner(editor);
 test('the engine measures the app\'s bounds callback itself; any other callback is refused', {skip: !engineBuilt}, async () => {
   const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/measured-bounds.document.json', import.meta.url), 'utf8'));
   const outcomes = [];
   for (const app of [false, true]) {
     const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));
     editor.selectMany([1, 3]);
-    const owner = await owned(editor), order = [], queries = appBounds();
+    const owner = owned(editor), order = [], queries = appBounds();
     const boundsOf = entry => { order.push(entry.obj.unique_id); return queries(entry); };
     if (!app) {
       // A function that is not the app's marker is not data for the session: refused, never run in the editor.

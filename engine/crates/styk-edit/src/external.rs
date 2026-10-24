@@ -17,8 +17,7 @@
 //!   entry <id>")` and change nothing; the editor applies it, then calls
 //!   `@externalDone(id, redo, ops)`, which applies `ops` and moves the entry;
 //! - `@historyLimits(count, bytes)` sizes history as the editor does; `@revisions(revision,
-//!   serial, saved)` continues the editor's numbering; `@markSaved()`; `@shape()`;
-//!   `@externalStacks(undo, redo)` takes the editor's history from before the session.
+//!   serial, saved)` continues the editor's numbering; `@markSaved()`.
 
 use std::collections::HashSet;
 
@@ -129,42 +128,6 @@ impl Editor {
     pub(crate) fn set_revisions(&mut self, args: &[Value]) -> Result<Value, EditError> {
         let number = |at: usize| args.get(at).and_then(Value::as_f64).filter(|value| value.is_finite() && *value >= 0.0).map(|value| value as u64).ok_or_else(|| invalid("revisionsNeedNumbers"));
         self.set_revision_counters(number(0)?, number(1)?, number(2)?);
-        Ok(Value::Bool(true))
-    }
-
-    /// `@shape()`: the keys of the document and of its `_styk`, in order, so the editor
-    /// can bring a session started from the mirror to its read view exactly.
-    pub(crate) fn document_shape(&self) -> Result<Value, EditError> {
-        let keys = |value: Option<&Value>| Value::array(value.and_then(Value::as_obj).map(|object| object.keys().map(|key| Value::Str(key.clone())).collect()).unwrap_or_default());
-        Ok(Value::array(vec![keys(Some(&self.report)), keys(self.report.get("_styk"))]))
-    }
-
-    /// `@externalStacks(undo, redo)`: the editor's history from before the session, as its
-    /// entries, each `[label, id, retainedSources, bytes]`, oldest first.
-    pub(crate) fn external_stacks(&mut self, args: &[Value]) -> Result<Value, EditError> {
-        if !self.undo.is_empty() || !self.redo.is_empty() { return Err(invalid("externalStacksNeedAnEmptyHistory")); }
-        let selection = self.selection_state();
-        let mut revision = self.revision;
-        let mut stacks = Vec::new();
-        for side in [args.first(), args.get(1)] {
-            let mut entries = Vec::new();
-            for entry in side.and_then(Value::elements).map(|items| items.iter().collect::<Vec<_>>()).unwrap_or_default() {
-                let label = entry.item(0).and_then(|label| label.as_str().map(str::to_string)).unwrap_or_default();
-                let id = entry.item(1).and_then(|id| id.as_f64()).ok_or_else(|| invalid("externalEntryNeedsAnIdentity"))? as u64;
-                let bytes = entry.item(3).and_then(|bytes| bytes.as_f64()).filter(|bytes| bytes.is_finite() && *bytes >= 0.0).unwrap_or(0.0);
-                let command = Command {
-                    kind: CommandKind::External { id, retained: strings(entry.item(2).as_ref()) },
-                    label, before_selection: selection.clone(), after_selection: selection.clone(),
-                    before_revision: revision, after_revision: revision, layer_changes: Vec::new(), captured_source_bytes: 0, layers: false,
-                };
-                revision = revision.max(1);
-                entries.push((command, bytes));
-            }
-            stacks.push(entries);
-        }
-        let redo = stacks.pop().unwrap_or_default();
-        let undo = stacks.pop().unwrap_or_default();
-        self.install_external_stacks(undo, redo);
         Ok(Value::Bool(true))
     }
 

@@ -1,4 +1,4 @@
-//! Read-only background layer planning against the acknowledged COW mirror.
+//! Read-only background layer planning against the document the engine holds.
 //! Publication remains an editor command: a plan never changes the engine document.
 
 use std::collections::{HashMap, HashSet};
@@ -921,7 +921,7 @@ pub struct InbetweenRequest {
     pub next_frame_identity: u64,
 }
 
-/// A planner's work on the worker: the mirrored document in, the payload out.
+/// A planner's work on the worker: the engine's document in, the payload out.
 type Kernel = Box<
     dyn FnOnce(&Engine, &Core, &Value, &styk_eval::load::Loader, &Prepared) -> Result<Value, PlanError>
         + Send
@@ -929,7 +929,7 @@ type Kernel = Box<
 >;
 
 impl Engine {
-    /// Queue read-only native or sheet planning against the acknowledged mirror.
+    /// Queue read-only native or sheet planning against the document the engine holds.
     /// The host must run engine workers; never call `step` on a browser UI for it.
     /// A newer job cancels the previous one, bounding mailbox and task ownership.
     pub fn plan_layers(&self, revision: u64, request: LayerRequest) -> Result<LayerJob, PlanError> {
@@ -1092,7 +1092,7 @@ impl Engine {
             let result = (|| {
                 core.check(engine)?;
                 let (revision, tree, loader, prepared) =
-                    engine.mirrored_for_editing().ok_or(PlanError::Stale)?;
+                    engine.stored_for_editing().ok_or(PlanError::Stale)?;
                 if revision != core.revision {
                     return Err(PlanError::Stale);
                 }
@@ -1130,10 +1130,8 @@ fn edit_error(error: styk_edit::EditError) -> PlanError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        Budgets,
-        mirror::{Change, Record, Table},
-    };
+    use crate::Budgets;
+    use crate::document::{OpenOptions, OpenSource};
     fn clock() -> f64 {
         0.0
     }
@@ -1152,34 +1150,9 @@ mod tests {
         )
         .unwrap();
         let engine = Engine::new(clock, Budgets::for_device(None));
-        let mut properties = tree.as_obj().unwrap().clone();
-        for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-            properties.remove(table.key());
-        }
-        engine.stage(0, Change::Reset).unwrap();
-        engine.stage(
-            0,
-            Change::Properties(styk_doc::json::to_string(&Value::object(properties)).into_bytes()),
-        ).unwrap();
-        for table in [Table::Figures, Table::Keyframes, Table::Backgrounds] {
-            let values = tree.get(table.key()).unwrap().elements().unwrap();
-            engine.stage(0, Change::Layout(table, vec![-1; values.len()])).unwrap();
-            for (i, value) in values.iter().enumerate() {
-                engine.stage(
-                    0,
-                    Change::Set(
-                        table,
-                        i as u32,
-                        Record {
-                            skeleton: styk_doc::json::to_string(&value).into_bytes(),
-                            arrays: Vec::new(),
-                            payloads: Vec::new(),
-                        },
-                    ),
-                ).unwrap();
-            }
-        }
-        engine.commit(1, 0).unwrap();
+        let text = styk_doc::json::to_string(&tree);
+        let opened = engine.open_document(OpenSource::Json { bytes: text.as_bytes(), name: "layer planning" }, OpenOptions::default(), &|| false).unwrap();
+        engine.activate(&opened.typed, &opened.tree, 1).unwrap();
         let request = LayerRequest {
             uids: vec![1],
             target_layer: "layer-2".into(),
@@ -1189,28 +1162,14 @@ mod tests {
         };
         (engine, request)
     }
+    /// The document the engine holds, published again at `revision`: a new generation of the same lineage.
+    fn republish(engine: &Engine, revision: u64) -> Result<Option<crate::Committed>, crate::document::OpenError> {
+        let lineage = engine.generation().unwrap().lineage;
+        engine.publish_tree(lineage, engine.stored().unwrap().1, revision)
+    }
     fn replacement(engine: &Engine, revision: u64) -> crate::Generation {
         let previous = engine.generation().unwrap();
         crate::Generation { id: 0, lineage: previous.lineage, revision, prepared: previous.prepared.clone(), assets: previous.assets.clone(), open_ms: 0.0, anchors: None }
-    }
-
-    #[test]
-    fn refused_publication_preserves_the_current_planner_and_ack_cursor() {
-        let (engine, request) = fixture();
-        let job = engine.plan_layers(1, request).unwrap();
-        engine.step();
-        let packet = job.poll().chunk.unwrap();
-        let core = job.core.upgrade().unwrap();
-        let previous = engine.generation().unwrap();
-        let guard = crate::mirror::RecordGuard { generation: previous.id, lineage: previous.lineage, revision: previous.revision, nonce: 71 };
-        let mut exchange = Some(|| panic!("refused publication must not exchange heads"));
-        assert!(engine.publish_with(replacement(&engine, 2), Some((guard, Arc::new(AtomicBool::new(true)))), &mut exchange).is_none());
-        assert!(exchange.is_some());
-        assert_eq!(core.cancelled.load(Ordering::Acquire), 0);
-        assert_eq!(core.check(&engine), Ok(()));
-        assert!(job.ack(packet.sequence).unwrap());
-        engine.step();
-        assert!(job.poll().chunk.is_some(), "the accepted current cursor remains usable");
     }
 
     #[test]
@@ -1223,14 +1182,14 @@ mod tests {
         let worker = engine.clone();
         let wait = barriers.clone();
         let thread = std::thread::spawn(move || crate::allocation::with_pause(pointer, 2, wait, || {
-            crate::allocation::watch(pointer, || worker.publish_with(generation, None, &mut Some(|| ())))
+            crate::allocation::watch(pointer, || worker.install_generation(generation))
         }));
         barriers[0].wait();
         let job = engine.plan_layers(1, request).unwrap();
         let core = job.core.upgrade().unwrap();
         barriers[1].wait();
         let (result, counts) = thread.join().unwrap();
-        assert!(result.is_some());
+        assert_ne!(result.0, 0);
         assert_eq!((counts.allocations, counts.deallocations), (0, 0), "{counts:?}");
         assert_eq!(core.cancelled.load(Ordering::Acquire), 2);
         assert_eq!(core.check(&engine), Err(PlanError::Stale));
@@ -1250,14 +1209,14 @@ mod tests {
         let worker = engine.clone();
         let wait = barriers.clone();
         let thread = std::thread::spawn(move || crate::allocation::with_pause(pointer, 1, wait, || {
-            worker.commit(2, 0)
+            republish(&worker, 2)
         }));
         barriers[0].wait();
         let job = engine.plan_layers(2, request).unwrap();
         let core = job.core.upgrade().unwrap();
         barriers[1].wait();
         assert!(thread.join().unwrap().is_ok());
-        assert_eq!(engine.mirrored().unwrap().0, 2, "the actual canonical commit updates both owners");
+        assert_eq!(engine.stored().unwrap().0, 2, "the publication updates both owners");
         assert_eq!(core.cancelled.load(Ordering::Acquire), 0);
         assert_eq!(core.check(&engine), Ok(()));
         engine.step();
@@ -1268,7 +1227,7 @@ mod tests {
     #[test]
     fn planning_is_queued_and_acknowledgements_bound_the_cursor() {
         let (engine, request) = fixture();
-        let before = styk_doc::json::to_string(&engine.mirrored().unwrap().1);
+        let before = styk_doc::json::to_string(&engine.stored().unwrap().1);
         let job = engine.plan_layers(1, request.clone()).unwrap();
         assert!(job.poll().chunk.is_none());
         assert_eq!(engine.inner.state.lock().retained_tasks.len(), 1);
@@ -1304,14 +1263,14 @@ mod tests {
         assert_eq!(job.poll().error, Some(PlanError::Cancelled));
         assert!(engine.inner.planning.lock().is_none());
         assert_eq!(
-            styk_doc::json::to_string(&engine.mirrored().unwrap().1),
+            styk_doc::json::to_string(&engine.stored().unwrap().1),
             before
         );
     }
     #[test]
     fn a_job_delivers_one_delta_packet_per_ack_without_publishing() {
         let (engine, request) = fixture();
-        let before = engine.mirrored().unwrap().1;
+        let before = engine.stored().unwrap().1;
         let id = engine.generation().unwrap().id;
         let job = engine.plan_layers(1, request).unwrap();
         let mut received = 0;
@@ -1349,7 +1308,7 @@ mod tests {
             engine.generation().unwrap().prepared.total_ticks
         );
         assert_eq!(engine.generation().unwrap().id, id);
-        assert!(before.same_node(&engine.mirrored().unwrap().1));
+        assert!(before.same_node(&engine.stored().unwrap().1));
         assert!(engine.inner.planning.lock().is_none());
     }
     #[test]
@@ -1361,7 +1320,7 @@ mod tests {
         let old_head = Arc::downgrade(&old);
         let old_planner = job.core.clone();
         drop(old);
-        engine.commit(2, 0).unwrap();
+        republish(&engine, 2).unwrap();
         assert_eq!(engine.inner.state.lock().retained_tasks.len(), 2, "one planner plus one displaced-head retirement");
         assert!(old_head.upgrade().is_some(), "publication retains the old head until its worker disposal");
         assert!(old_planner.upgrade().is_some());
@@ -1407,15 +1366,9 @@ mod tests {
             job.poll();
             match operation {
                 "publish" => {
-                    engine.stage(0, Change::Reset).unwrap();
-                    engine.stage(
-                        0,
-                        Change::Properties(
-                            br#"{"version":5,"canvas_width":1,"canvas_height":1,"fps":24}"#
-                                .to_vec(),
-                        ),
-                    ).unwrap();
-                    engine.commit(2, 0).unwrap();
+                    let other = br#"{"version":5,"canvas_width":1,"canvas_height":1,"fps":24,"figure_types":[],"backgrounds":[],"keyframes":[]}"#;
+                    let opened = engine.open_document(OpenSource::Json { bytes: other, name: "other" }, OpenOptions::default(), &|| false).unwrap();
+                    engine.activate(&opened.typed, &opened.tree, 2).unwrap();
                 }
                 "stop" => engine.stop(),
                 "timeout" => {

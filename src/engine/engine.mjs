@@ -135,15 +135,6 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
     createStage: canvas => Stage.create(canvas, handle),
     /** An edit session on the document `json` exactly as the editor holds it (D19). */
     editSession: (json, state, revision) => EditSession.from_document(json, state, revision),
-    /** Opens a file in the background and resolves with its description. */
-    async open(bytes, extension, name) {
-      handle.open(bytes, extension, name);
-      for (;;) {
-        const seen = progressSeen(), opened = handle.take_opened();
-        if (opened !== undefined) return JSON.parse(opened);
-        await whenProgress(seen);
-      }
-    },
     destroy() {
       handle.stop();
       for (const worker of pool) worker.terminate();

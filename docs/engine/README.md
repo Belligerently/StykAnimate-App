@@ -7,7 +7,7 @@ is [`../RUST-ENGINE-PORT.md`](../RUST-ENGINE-PORT.md); decisions are in
 
 | Page | Subsystem |
 | --- | --- |
-| [document.md](document.md) | the document store, typed views, the mirror |
+| [document.md](document.md) | the document store, typed views, opening and publishing a document |
 | [formats.md](formats.md) | native containers, opening files |
 | [formats-piv.md](formats-piv.md) | the Pivot codec and its service |
 | [evaluation.md](evaluation.md) | timelines, layer sheets, movieclips, geometry, draw-list encoding |

@@ -7,7 +7,7 @@ import {Editor} from '../src/editor.mjs';
 import {DrawingResources} from '../src/drawing-resources.mjs';
 import {DrawingHistory} from '../src/drawing-history.mjs';
 import {TILE_BYTES} from '../src/drawing-tiles.mjs';
-import {installEngineOwner, appSessionStart} from '../src/engine/engine-owner.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
 
 /** A drawing history whose spill files live in memory. */
@@ -28,19 +28,16 @@ const memoryDisk = () => {
 };
 
 test('a stroke\'s pixels never become JSON for the session', {skip: !engineBuilt}, async () => {
+  await nodeEngine();
   const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true});
   const history = new DrawingHistory({disk: memoryDisk(), hotBytes: 0, minRecordBytes: 1});
   const resources = new DrawingResources(editor.report, {history, worker: {request: async () => ({}), dispose() {}}});
   resources.busy = true;
-  let owner;
+  const owner = installEngineOwner(editor);
   try {
     editor.createDrawingLayer();
     const target = editor.prepareDrawingCel();
     await resources.surface(target.figure);
-    const {engine, mirror} = await nodeEngine();
-    mirror.reset();
-    await mirror.syncFrames(editor.report, editor.revision, {allFigures: true, allFrames: true, allSources: true});
-    owner = installEngineOwner(editor, {start: appSessionStart(() => ({failed: false, mirror, engine}))});
     let serialized = 0;
     const tiles = Object.assign([{tx: 0, ty: 0, before: null, after: new Uint8ClampedArray(TILE_BYTES).fill(7)}], {toJSON() { serialized++; return []; }});
     editor.commitDrawingPixels(target, tiles, 'Brush stroke');
@@ -48,7 +45,7 @@ test('a stroke\'s pixels never become JSON for the session', {skip: !engineBuilt
     assert.equal(editor.undoLabel, 'Brush stroke');
     assert.equal(owner.editor?.commitDrawingPixels, 1, 'the editor applied the stroke');
   } finally {
-    owner?.release();
+    owner.release();
     resources.dispose();
     await history.dispose();
   }

@@ -1,6 +1,10 @@
 # D12: A mirror of the document in the engine until the engine owns it
 
-Status: accepted. Recorded in [`docs/RUST-ENGINE-PORT.md`](../../RUST-ENGINE-PORT.md) section 4.
+Status: superseded by [D19](0019-engine-owns-the-document.md). The mirror is gone: the engine opens a document
+itself (decode, normalize, convert), its edit session publishes every change it makes, and nothing is lifted
+from JavaScript ([document.md](../document.md#opening-a-document)). What follows is the decision as it was.
+
+Was: accepted. Recorded in [`docs/RUST-ENGINE-PORT.md`](../../RUST-ENGINE-PORT.md) section 4.
 
 ## Context
 

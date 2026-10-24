@@ -37,7 +37,8 @@ away once the engine owns the document (phase 3).
   recorded replays.
 - The JavaScript command implementations and evaluation are deleted as their callers move to
   the engine; the read view, its patch applier and the interface's projections remain.
-- The mirror's job shrinks to giving the stage the session's document; it disappears when the
-  stage commits the session's tree directly.
+- The mirror's job shrinks to giving the stage the session's document; it disappeared when the
+  engine began to open documents itself and its session published each change it makes
+  (cut 2, 2026-10-24; [document.md](../document.md#opening-a-document)).
 - Values the editor draws at random (D18) are handed to the session as a pool per call; it
   takes what it needs in order.

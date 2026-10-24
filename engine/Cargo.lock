@@ -1108,6 +1108,7 @@ dependencies = [
  "styk-eval",
  "styk-export",
  "styk-formats",
+ "styk-piv",
  "styk-raster",
  "styk-render",
 ]
@@ -1160,6 +1161,7 @@ dependencies = [
 name = "styk-edit"
 version = "0.1.0"
 dependencies = [
+ "sha2",
  "styk-doc",
  "styk-eval",
  "styk-math",
@@ -1175,6 +1177,7 @@ dependencies = [
  "styk-edit",
  "styk-eval",
  "styk-formats",
+ "styk-piv",
  "thiserror",
 ]
 

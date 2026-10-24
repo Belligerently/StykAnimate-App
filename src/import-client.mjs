@@ -3,9 +3,15 @@ import {restoreMessageError, messageError} from './localized-error.mjs';
 /** File I/O boundary: bytes transfer to a worker; JSON parsing stays off the UI. */
 import { applyDocumentChunk } from './document-transport.mjs';
 import {materializeNativeFrames} from './import-wire.mjs';
+import {attachRead, openBytes, openJson} from './engine/engine-open.mjs';
 import {codecJob} from './codec-job.mjs';
 import {codecRequest} from './codec-request.mjs';
 import {browserCodecHost, codecProfile} from './codec-web-host.mjs';
+/** The SHA-256 of `bytes` as lower-case hexadecimal. */
+async function sha256(bytes){
+  const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+  return [...digest].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
 export class ImportClient {
   /** `baseURL` is the page origin workers resolve resources against. The Pivot codec runs in a
    * worker of this page (`codecHost`). With `embedSource` (the web build) a Pivot import carries
@@ -22,6 +28,8 @@ export class ImportClient {
     this.timeoutMs = timeoutMs;
     this.sequence = 0;
     this.cancelGeneration = 0;
+    /** The documents being opened on the engine, which `cancelPending` stops. */
+    this.opening = new Set();
     this.pending = new Map();
     this.sourceOwners = new Map();
     this.activeSourceOwner = null;
@@ -208,7 +216,14 @@ export class ImportClient {
     });
   }
 
-  async importFile(file,{entryIndex,onProgress,project=false}={}) {
+  /**
+   * Imports a file. With `open` (`{layerTimeline}`: the editor the document opens in) a project file is opened
+   * on the engine (src/engine/engine-open.mjs): the result's `document` is the editor's read view of the
+   * normalized document, which `editor.loadAsync` adopts as it is, and a Pivot file's original is kept in the
+   * codec for saving it. Figure files and imports that are not opened as projects give the document the
+   * file holds.
+   */
+  async importFile(file,{entryIndex,onProgress,project=false,open=null}={}) {
     if (this.disposed) throw messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {});
     if (!file || typeof file.arrayBuffer !== 'function' || typeof file.name !== 'string') {
       throw messageError(new TypeError(''), "errors.importClient.chooseAStykanimatePivotOrStickNodesFile", {});
@@ -218,12 +233,80 @@ export class ImportClient {
     if (Number(file.size) > limit) throw Object.assign(messageError(new Error(''), "errors.importClient.theFileExceedsTheMibImportLimit", {value: limit / 1024 / 1024}), { telemetryCode: 'file_too_large', telemetryStage: 'prepare' });
     const generation=this.cancelGeneration,bytes = await file.arrayBuffer();
     if(generation!==this.cancelGeneration)throw messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {});
-    // Transfer ownership rather than structured-cloning a second upload buffer.
-    return this._request('import', {filename: file.name, bytes,entryIndex}, [bytes],onProgress,project);
+    return this._import(file.name,bytes,{entryIndex,onProgress,project,open});
+  }
+
+  /** The import of a file's bytes: opened on the engine as a project, or decoded to the document it holds. */
+  async _import(filename,bytes,{entryIndex,onProgress,project,open}) {
+    if (!open) return this._request('import', {filename, bytes,entryIndex}, [bytes],onProgress,project);
+    if (/\.(piv|styk|json)$/i.test(filename)) return this._openProject(filename,bytes,{onProgress,project,open});
+    // Stick Nodes files decode in the worker; the document they give is opened like any other.
+    const result = await this._request('import', {filename, bytes,entryIndex}, [bytes],onProgress,project);
+    return result?.document && !/^(stk|stkz|stykmov)$/.test(result.kind) ? this._adopt(result,filename,open) : result;
+  }
+
+  /** Opens `bytes` as a project on the engine, keeping a Pivot file's original in the codec for saving. */
+  async _openProject(filename,bytes,{onProgress,project,open}) {
+    const started=performance.now(),controller=new AbortController(),{signal}=controller;
+    this.opening.add(controller);
+    let kept=null,opening=null;
+    try {
+      // The codec keeps a copy of the original; the engine reads the bytes it is given.
+      const original=project&&/\.piv$/i.test(filename)?bytes.slice(0):null;
+      opening=await openBytes(bytes,filename,{layerTimeline:open.layerTimeline,signal});
+      const decoded=performance.now();
+      if(original){
+        kept=await this._keep(filename,original,signal);
+        if(kept.sourceDescription){
+          // The web build embeds the original in the document: it is the file the engine read, as the codec fingerprinted it.
+          if(await sha256(bytes)!==kept.sourceDescription.sha256)throw messageError(new Error(''), "errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch", {});
+          opening.attachSource(kept.sourceDescription,bytes);
+          kept=null;
+        }
+      }
+      const read=await opening.read({signal,onProgress});
+      return this._opened(read,opening,filename,{sourceId:kept?.sourceId??null,sourceOwner:kept?.sourceOwner,sourceBytes:bytes.byteLength,started,decoded});
+    } catch (error) {
+      opening?.dispose();
+      if(kept)void this.releaseSource(kept);
+      throw error;
+    } finally { this.opening.delete(controller); }
+  }
+
+  /** A document the worker decoded, opened as a project on the engine. */
+  async _adopt(result,filename,open) {
+    const started=performance.now(),controller=new AbortController(),{signal}=controller;
+    this.opening.add(controller);
+    let opening=null;
+    try {
+      opening=await openJson(result.document,filename,{layerTimeline:open.layerTimeline,signal});
+      const decoded=performance.now(),read=await opening.read({signal});
+      const opened=this._opened(read,opening,filename,{sourceId:result.sourceId??null,sourceOwner:result.sourceOwner,sourceBytes:0,started,decoded});
+      return {...result,...opened,timings:{...result.timings,...opened.timings,decode_ms:(result.timings?.decode_ms??0)+opened.timings.decode_ms}};
+    } catch (error) { opening?.dispose(); throw error; }
+    finally { this.opening.delete(controller); }
+  }
+
+  /** The import result of an opening whose read view is built. */
+  _opened(read,opening,filename,{sourceId,sourceOwner,sourceBytes,started,decoded}) {
+    const now=performance.now();
+    attachRead(read.report,read);
+    return {ok:true,sourceId,...(sourceOwner?{sourceOwner}:{}),filename,kind:opening.kind,version:opening.version,savedDraft:opening.savedDraft,document:read.report,
+      timings:{decode_ms:+(decoded-started).toFixed(3),cache_hit:false,total_ms:+(now-started).toFixed(3),source_bytes:sourceBytes,
+        read_ms:+(now-decoded).toFixed(3),transport:'engine-open'}};
+  }
+
+  /** Keeps the original of a Pivot project in the codec, leased to a new owner (src/import-worker.mjs, `keep`). */
+  _keep(filename,bytes,signal) {
+    const kept=this._request('keep',{filename,bytes},[bytes],undefined,true);
+    // An open that was stopped lets the codec finish, then lets go of what it kept.
+    signal.addEventListener('abort',()=>kept.then(result=>this.releaseSource(result),()=>{}),{once:true});
+    return kept;
   }
 
   cancelPending() {
     this.cancelGeneration++;
+    for(const controller of this.opening)controller.abort();
     for(const [id,request] of this.pending){clearTimeout(request.timer);this._cancelRequest(request);this.worker.postMessage({operation:'cancel',id});request.reject(messageError(new DOMException('', 'AbortError'), "errors.importClient.importSuperseded", {}));}
     this.pending.clear();
   }
@@ -236,7 +319,7 @@ export class ImportClient {
   }
 
   /** A file of the desktop sample list: the desktop reads it, and its bytes are an ordinary import under its own name. */
-  async openSample(path,{project=false}={}) {
+  async openSample(path,{project=false,open=null}={}) {
     if (this.disposed) throw messageError(new Error(''), "errors.importClient.theFileImporterHasBeenDisposed", {});
     if (typeof path !== 'string' || !path) throw messageError(new Error(''), "errors.importClient.chooseAProjectFromTheLibrary", {});
     const generation=this.cancelGeneration,sample=await this.readSample(path);
@@ -248,7 +331,7 @@ export class ImportClient {
       throw Object.assign(error,{code:sample?.code,status,telemetryCode:status>=500?'backend_unavailable':'backend_rejected',telemetryStage:'request'});
     }
     const view=sample.bytes,bytes=view.byteOffset===0&&view.byteLength===view.buffer.byteLength?view.buffer:view.slice().buffer;
-    return this._request('import', {filename: sample.name, bytes}, [bytes],undefined,project);
+    return this._import(sample.name,bytes,{project,open});
   }
 
   dispose() {

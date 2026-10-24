@@ -32,9 +32,11 @@ import { Editor } from "./editor.mjs";
 import { worldToScreen, screenToWorld, objectBounds } from "./renderer-geometry.mjs";
 import { createStage } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
+import { installEngineOwner } from "./engine/engine-owner.mjs";
+import { loadEngine } from "./engine/engine.mjs";
+import { useEngine } from "./engine/engine-open.mjs";
 import { engineDocument } from "./engine/engine-document.mjs";
 import { engineComposite } from "./engine/engine-composite.mjs";
-import { installEngineOwner, appSessionStart } from "./engine/engine-owner.mjs";
 import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
@@ -194,6 +196,8 @@ const $ = (id) => document.getElementById(id),
           "'": "&#39;",
         })[c],
     );
+// The engine opens every document (src/engine/engine-open.mjs): it loads before the first one.
+useEngine(await loadEngine());
 const editor = new Editor({ demo: false, propertyChannels: true, layerTimeline: true }).newDocument(),
   desktop = window.stykDesktop,
   importer = new ImportClient(),
@@ -563,9 +567,9 @@ function syncShell() {
 }
 // The stage: the engine draws every frame of the scene canvas (docs/engine/rendering.md).
 const createRenderer = (surface, options) => createStage(surface, options);
-// D19: the engine owns the document (docs/engine/editing.md).
-installEngineOwner(editor, {start: appSessionStart(() => state.renderer?.engineSide ?? null)});
-// Playback is the engine's: the document goes to it once, and a tick is a ticket for a frame it has ready.
+// D19: the engine owns the document; the editor's calls run in the session its open started (docs/engine/editing.md).
+installEngineOwner(editor);
+// Playback is the engine's: it holds the document already, and a tick is a ticket for a frame it has ready.
 const playback = createStagePlayback({stage: () => state.renderer});
 // Who is hidden is part of each prepared frame, so the engine's frames observe the same
 // inputs effectiveHidden() reads on the UI thread.
@@ -3160,7 +3164,7 @@ async function acceptImport(
   try {
   let report = result.document ?? result.report ?? result;
   if (report.format === "stykanimate") report = report.document;
-  const savedDraft = Boolean(report._styk?.simpleFrameDraft);
+  const savedDraft = result.savedDraft ?? Boolean(report._styk?.simpleFrameDraft);
   const kind =
     result.kind ||
     ((name || result.filename || "").toLowerCase().endsWith(".stk")
@@ -3521,12 +3525,13 @@ async function importMediaFile(
 }
 async function chooseSticknodesFile(file,isCurrent=()=>true) {
   const onProgress=p=>{if(isCurrent())status(`${p.phase || interfaceText("app.importing2")}…`,false,true);};
-  let result=await importer.importFile(file,{onProgress,project:/\.piv$/i.test(file.name)});
+  const open={layerTimeline:editor.layerTimeline};
+  let result=await importer.importFile(file,{onProgress,open,project:/\.piv$/i.test(file.name)});
   if(!isCurrent()){void importer.releaseSource(result);return null;}
   if(result.kind==='sticknodes-archive'){
     const index=await dialogs.chooseSticknodesEntry(result.entries);
     if(index===null||!isCurrent())return null;
-    result=await importer.importFile(file,{entryIndex:index,onProgress});
+    result=await importer.importFile(file,{entryIndex:index,onProgress,open});
   }
   if(!isCurrent()){void importer.releaseSource(result);return null;}
   return result;
@@ -3632,7 +3637,7 @@ async function acceptNativeFileTracked(result) {
 async function openSample(path) {
   pause();
   status({messageKey: "app.decodingPivotFile", messageParams: {}}, false, true);
-  try { await acceptImport(await importer.openSample(path,{project:/\.piv$/i.test(path)})); } catch (error) { throw persistentFailure(error); }
+  try { await acceptImport(await importer.openSample(path,{open:{layerTimeline:editor.layerTimeline},project:/\.piv$/i.test(path)})); } catch (error) { throw persistentFailure(error); }
 }
 function saveNative({ saveAs = false } = {}) {
   if (!manualSave.active) finishCurrentEdit();
@@ -5493,8 +5498,6 @@ editor.addEventListener("change", (e) => {
   }
   if ((['toggle-selection', 'duplicate-pending'].includes(state.drag?.kind) || state.drag?.kind === 'tweener' && state.drag.press) &&
       ['document', 'seek', 'history', 'selection', 'edit'].includes(kind)) cancelDrag();
-  // The engine's copy of the document follows the records each change names.
-  if (kind !== 'seek' && kind !== 'selection' && kind !== 'saved') state.renderer?.documentChanged(kind === 'history' && !e.detail?.frameIndices && !e.detail?.figureIndices ? {structural: true, definition: true} : e.detail);
   const joining = state.figureJoin;
   if (joining && (joining.token !== editor._documentToken || joining.uid !== editor.selectedUid ||
       joining.frameIndex !== editor.frameIndex || joining.tick !== editor.tick ||
@@ -5744,7 +5747,7 @@ function showRecovery(record, records = [record]) {
         if (!copy || copy.savedAt !== chosen.savedAt || copy.token !== chosen.token) throw messageError(new Error(''), "errors.app.theRecoveryCopyChangedReopenStykanimateToSee", {});
       }
       const name = chosen.name || copy.name;
-      const restored = await importer.importNative(new File([copy.blob], `${name}.styk`));
+      const restored = await importer.importNative(new File([copy.blob], `${name}.styk`), {open: {layerTimeline: editor.layerTimeline}});
       // The restored project adopts the copy it came from: its next recovery write replaces it, saving removes it.
       if (!await acceptImport(restored, name, {recoveryId: chosen.native ? chosen.id : undefined})) return;
       editor.dirty = true;
@@ -5830,7 +5833,7 @@ window.styk = {
 };
 let thumbnailRenderer, nativeFrameClipboard, sharedClipboard;
 // Poses of the open document drawn through a camera of their own (the parallax monitor).
-const posePictures = new EnginePoses(editor, { stage: () => state.renderer, playback: () => playback });
+const posePictures = new EnginePoses(editor, { stage: () => state.renderer });
 async function changeFigureLayer(label, operation, {labelKey} = {}) {
   pause();
   finishKeyboardHandle();
@@ -6288,7 +6291,7 @@ async function init() {
   actions['chain-cancel'] = () => construction.cancel();
   actions['toggle-builder-snap'] = () => construction.toggleSnap();
   window.styk.builder = builderMode;
-  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:()=>{if(!state.playing&&!state.previewing)syncBackgroundInteraction(Boolean(viewGestureActive()));requestRender();},onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},artwork:({bounds,matrix,signal})=>engineComposite({document:(report,revision,check)=>engineDocument({stage:state.renderer,playback,report,revision,check}),engine:()=>state.renderer?.engineSide?.engine,current:()=>({report:editor.report,revision:editor.revision,tick:editor.tick}),bounds,matrix,signal}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
+  drawingController=new DrawingController({editor,state,overlay,viewport,onRender:()=>{if(!state.playing&&!state.previewing)syncBackgroundInteraction(Boolean(viewGestureActive()));requestRender();},onOverlayRender:requestOverlayRender,onView:placeArtboard,onUI:queueUI,onError:fail,onStatus:toast,beforeEdit:()=>{finishCurrentEdit();interruptRecovery();},artwork:({bounds,matrix,signal})=>engineComposite({document:(report,revision,check)=>engineDocument({stage:state.renderer,report,revision,check}),engine:()=>state.renderer?.engineSide?.engine,current:()=>({report:editor.report,revision:editor.revision,tick:editor.tick}),bounds,matrix,signal}),sampleColor:(x,y,signal)=>sampleCanvasColor(x,y,signal),getTimeline:()=>timelineUI,getClipboard:()=>sharedClipboard,
     // A finger draws in the touch interface (Settings › Draw with a finger); elsewhere it pans, as before.
     // Automatic draws with a finger only in the touch interface; Always also does on a desktop layout.
     fingerDrawing:()=>{const mode=state.settings.fingerDraw;return mode==='auto'&&!touchMode?.active?'never':mode;}});
@@ -6313,7 +6316,7 @@ async function init() {
       onRestored: queueUI,
     });
   // Frame thumbnails: the engine draws them (src/engine/engine-thumbnails.mjs).
-  thumbnailRenderer = createThumbnailRenderer(editor, { stage: () => state.renderer, playback: () => playback });
+  thumbnailRenderer = createThumbnailRenderer(editor, { stage: () => state.renderer });
   sharedClipboard = new SharedClipboard(editor, desktop);
   window.styk.clipboard = sharedClipboard;
   window.styk.thumbnails = thumbnailRenderer;

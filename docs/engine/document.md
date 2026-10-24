@@ -26,50 +26,54 @@ is [D2](decisions/0002-lossless-document-store.md).
   resolves style overlays once per base figure; an edit that replaces one
   keyframe converts one keyframe.
 
-## While the editor owns the document (S1–S4)
+## Opening a document
 
-Commands run in JavaScript. The engine keeps a mirror
-([D12](decisions/0012-document-mirror.md)): `src/engine/engine-mirror.mjs`
-lifts the changed records (`liftDocument`: skeleton JSON plus number arrays and
-payloads as binary sections), stages them per batch
-(`EngineHandle.stage_reset/stage_properties/stage_layout/stage_record/stage_source`)
-and commits by revision (`commit`, `commit_now`). `styk_engine::mirror` builds
-the next tree, converts only changed records and publishes a new generation, or
-changes nothing if any staged change is invalid. The cost: the document exists
-twice (plan section 6 measures it) until the engine owns it (S5). The mirror leaves
-out the audio (`_styk.audio`, whose recordings can reach 96 MiB): nothing the engine
-draws reads it, and holding the recordings twice is not worth the audio commands
-`styk-edit` has ported; it joins the engine's document when the engine saves (S5).
+Every way a document arrives goes through one entry (`styk_engine::document`, bound by
+`styk-wasm/src/open.rs`, used through `src/engine/engine-open.mjs`): a file's bytes (Pivot `.piv`
+through `styk-piv`, `.styk` through `styk-formats`) or a document as JSON (a new document, the startup
+document, a tutorial's, a recovery copy, a Stick Nodes import the importer worker decoded).
+`Engine::open_document` runs on an engine worker (`EngineHandle.open_document`, a job the interface
+polls on the progress counter and cancels with `cancel_open`) or, for a small document the editor needs
+at once, on the calling thread (`open_document_now`). It decodes, normalizes the document as the editor's
+load always did (`styk_edit::load::prepare_for_editor`: the validation and migration of
+`prepareEditorLoad`, then the layer sheet an editor with a layer timeline gives every document) and
+converts it into the typed views (`styk_eval::load::Loader`, the image atlas). The result, an
+`OpenedDocument`, holds the normalized tree, the indexes the editor adopts (next identities, figures per
+layer, tracks) and the typed views; nothing is published yet. A failure is an `OpenError`: a message
+key with its parameters where the editor has one (`errors.nativeContainer.*`, the load's keys), the
+codec's own message and status for a Pivot file it cannot read, `cancelled` for a stopped job. Nothing in
+the load panics on a damaged document: `styk-edit/tests/load_robust.rs` loads every edit fixture with
+each value replaced by values of the wrong kind or removed.
 
-Only one commit runs at a time. `commit_now` runs on the interface thread, which
-may not wait ([D7](decisions/0007-interface-thread-never-blocks.md)): while a
-background commit of the frames holds the mirror it answers `{busy: true}` and
-leaves the batch staged (`Engine::try_commit`), and `syncDefinitions` throws
-`engine_busy` without forgetting what it sent; the next `commit_now` commits it.
-The stage then draws that frame with the JavaScript renderer, as for any refusal;
-a frame sync (`syncFrames`) and an export wait for the background commit
-instead. (Before, the interface thread waited on the lock, which a browser
-refuses: the batch was lost and the mirror silently out of step.)
+The editor's read view is built from the opened tree once, in pieces
+(`OpenedDocument.part`, `Opening.read` in `engine-open.mjs`): the document without the contents of
+its tables, then each figure, keyframe, background, retained pose source and audio recording, lifted as a
+file lifts them (`container::ViewLifter`: arrays and images the tree shares are written once and named by
+the same marker, so the read view shares them and a save lifts the same bytes) and restored by
+`restoreLifted`. The interface thread restores in slices of 4 ms. The Pivot original of a project
+stays with the codec for saving (`/api/source/keep`, leased to the project); the web build embeds it in
+the document instead (`OpenedDocument.attach_source`).
 
-## Canonical worker publication prerequisites (S5)
+The session that edits the document starts from the same tree and typed views
+(`OpenedDocument.start_session`; nothing is converted again) and is the document's from the moment the
+editor publishes it. `EditSession.activate(revision)` makes its document the engine's
+(`Engine::activate`): the stage draws it, playback and exports read it. Every call that changes the
+document publishes the new tree at the session's revision (`Engine::publish_tree`): copy-on-write
+sharing means only the records the call replaced are converted again. Revisions are unique across the
+documents of one editor, so `holdsRevision` (the document identity the engine reports) says whether the
+engine holds a given document at a given state; the stage never brings the engine up to date itself.
+A document in a background tab keeps its session; coming to the front activates it again.
 
-The checked worker boundary stages the same before/after COW roots that the editor's
-prepared publication owns. `Engine::stage_edit_publication_worker` returns an opaque
-`EditPublicationAdmission`; `commit_edit_publication_worker` validates that admission,
-the original revision and roots, then exchanges the mirror generation and editor heads
-in one guarded publication. The common record-transfer protocol retains displaced roots
-and all related charges until terminal ACK. Cancellation and stale publication dispose
-their retained owners on workers.
+Edits the editor makes outside the session's calls reach the session too, once the code that made them
+has finished (`settle` in `engine-owner.mjs`, at the editor's revision): a document marked as changed
+(a new revision with the tree untouched, published without converting anything), a definition published
+after leaving a movieclip, and the encoded tiles of a drawing attached to its definition in place (a
+derived publication, `DrawingResources.onPublished`; the revision does not move). A frame the stage
+draws of a cel that only a gesture's draft holds goes through `EngineHandle.set_draft`
+([drawing.md](drawing.md#live-cels)).
 
-`styk_doc::retained_bytes_checked` counts each shared allocation once, including reserved
-capacity and packed numeric arrays, with bounded cancellation checks. Root and ordinary
-record admissions share the existing byte and slot budgets. Only a genuinely empty
-default mirror has no canonical root to retire; an empty-keyframe document still has an
-owned root. Cleanup targets the exact displaced generation, so an older publication
-cannot cancel record packets or planning work installed for a newer generation.
-
-These portable APIs support the pending canonical Session actor. The current JavaScript
-editor and mirror remain in charge until the app handoff and class cost gates pass.
+`Engine::open` (bytes and an extension, no normalization) remains for the command-line tools and the
+Rust tests that open recorded documents as they are.
 
 ## Invariants
 

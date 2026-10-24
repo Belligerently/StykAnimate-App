@@ -34,7 +34,7 @@ const {withDraws} = await import(`${repoUrl}/src/editor-draws.mjs`);
 const {cameraAtTime} = await import(`${repoUrl}/src/camera-motion.mjs`);
 
 const sha = text => createHash('sha256').update(text).digest('hex');
-/** The report as the mirror sends it (src/engine/engine-mirror.mjs strips the same caches). */
+/** The report without the derived pose caches, as the engine's document holds it. */
 const reportJSON = editor => JSON.stringify(editor.report, (key, value) => key === 'runtime_segments' ? undefined : value);
 /** Event details as plain data: numbers, strings, booleans, arrays and objects of them. */
 const plain = (value, depth = 4) => {

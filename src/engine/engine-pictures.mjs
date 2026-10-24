@@ -51,11 +51,10 @@ export async function engineDocumentPicture(report, {tick = 0, width, height, pl
 
 /** Poses of the editor's open document, drawn by the preview worker from the document the engine holds. */
 export class EnginePoses {
-  /** `stage()` and `playback()` return the app's stage renderer and playback adapter once they exist. */
-  constructor(editor, {stage = () => null, playback = () => null, previews = enginePreviews} = {}) {
+  /** `stage()` returns the app's stage renderer once it exists. */
+  constructor(editor, {stage = () => null, previews = enginePreviews} = {}) {
     this.editor = editor;
     this.stage = stage;
-    this.playback = playback;
     this.previews = previews;
   }
 
@@ -66,12 +65,12 @@ export class EnginePoses {
    * @returns {Promise<ImageBitmap|null>}
    */
   async picture(pose, {width, height, placement: placed, signal}) {
-    const stage = this.stage(), playback = this.playback(), {editor} = this;
-    if (!stage?.engineSide?.engine?.threaded || typeof playback?.exportDocument !== 'function') return null;
+    const stage = this.stage(), {editor} = this;
+    if (!stage?.engineSide?.engine?.threaded) return null;
     const previews = await this.previews();
     if (!previews?.usable || signal?.aborted) return null;
     const report = editor.report, revision = editor.revision;
-    if (await engineDocument({stage, playback, report, revision, check: () => signal?.throwIfAborted()})) return null;
+    if (await engineDocument({stage, report, revision, check: () => signal?.throwIfAborted()})) return null;
     if (editor.report !== report || editor.revision !== revision) return null;
     const engine = stage.engineSide.engine, json = JSON.stringify(pose);
     try {

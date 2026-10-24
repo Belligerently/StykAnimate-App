@@ -498,8 +498,8 @@ Two conditions of a document the gate used to count:
   where there is no sheet).
 - **An animation with no keys**, as Pivot permits one (`empty-animation`). The editor holds it as
   one empty working pose (and a draft marking it, which the sheet deletes), so the engine receives
-  one key. A mirror holding no keys (its definitions before its frames arrive) has no playable
-  ticks (`Generation::playable_ticks`) and no artwork.
+  one key. A document holding no keys has no playable ticks (`Generation::playable_ticks`) and no
+  artwork.
 
 App parity (D13 limits unchanged) on these documents with onion skins and after playback, in a
 1,440×900 window, 2026-10-24: the web build (headless Chromium) and Electron on WebGPU, each
@@ -798,10 +798,10 @@ worker, else WebGL2 on an `OffscreenCanvas`) and runs `ExportRenderer` (`styk-wa
 of an export is evaluated, drawn or read back on the interface thread (D7). `EngineExportFrames` owns what
 an export needs around it: one request at a time with a timeout each, progress, revision checks (an edit during
 the export cancels it), the retry ladder and the output canvas, so the export dialog and the encoders see
-one object. Before the worker starts, the document is
-brought to the export's revision through the playback adapter's synchronisation
-(`exportDocument`, the one playback uses and the app keeps current with every edit) and then
-what only the stage knows (figures edited in place, drawings just published: `prepareExport`).
+one object. Before the worker starts, the export waits for the engine to hold the export's revision
+(`engineDocument` in `engine-document.mjs`: the editor's session publishes every change at its
+revision, so this answers at once unless an edit is still on its way) and then asks what only the stage
+knows (drawings just published: `prepareExport`).
 Starting the worker (its modules, joining the engine, the GPU device and the renderer's
 pipelines) took 400–500 ms in Electron, so the export dialog starts one when it opens
 (`prewarmExportRenderer`, `ExportDevice`); the export takes it, and a worker no export takes
