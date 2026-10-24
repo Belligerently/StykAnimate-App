@@ -1,7 +1,7 @@
-//! The engine's `Math` (styk-math: Node's V8 results, D16) for verification harnesses:
-//! `scripts/engine-edit-shadow.mjs --exact-math` puts these in place of the browser's
-//! `Math` functions, so the JavaScript editor computes what Node computes and its results
-//! can be compared with the engine's exactly. The app never calls them.
+//! The engine's `Math` (styk-math: Node's V8 results, D16) for verification harnesses,
+//! which put these in place of the browser's `Math` functions so the JavaScript editor computes
+//! what Node computes and its results can be compared with the engine's exactly. The app never
+//! calls them.
 
 use wasm_bindgen::prelude::*;
 

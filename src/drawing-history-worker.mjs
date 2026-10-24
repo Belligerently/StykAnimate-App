@@ -1,9 +1,9 @@
 import {errorMessageData, messageError} from './localized-error.mjs';
 
 import {DrawingHistoryDatabase} from './drawing-history-database.mjs';
-import {historyCodec,drawingEngineEnabled,loadDrawingEngine} from './engine/engine-drawing.mjs';
+import {historyCodec,loadDrawingEngine} from './engine/engine-drawing.mjs';
 // Undo chunks are encoded by the drawing raster engine (Rust) when it loads.
-const codec=loadDrawingEngine({enabled:drawingEngineEnabled(self.location)}).then(rust=>rust?historyCodec:undefined);
+const codec=loadDrawingEngine().then(rust=>rust?historyCodec:undefined);
 let disk,queue=Promise.resolve();
 // IDB commits and compression must finish in message order, including close.
 self.onmessage=({data})=>{queue=queue.then(async()=>{

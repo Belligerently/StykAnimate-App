@@ -184,7 +184,7 @@ the GPU test is skipped where no adapter exists. Engine GPU against engine CPU
 320×192 (1,244 of 1,244), 512×288 (1,242) and the canvas size (1,231), the failures solid
 pixels where near-coplanar faces meet ([rendering.md](rendering.md#measured)).
 
-**In the app** (`scripts/engine-app-parity.mjs`, rule D13): see [Measured](#measured).
+**In the app** (measured against the editor's renderers while they could be compared, rule D13): see [Measured](#measured).
 
 ## Differences from the JavaScript, on purpose or known
 
@@ -304,6 +304,5 @@ cargo test -p styk-render -p styk-raster --test depth
 cargo build --release -p styk-cli
 node tools/reference.mjs <file.styk> /tmp/ref.json --every 1 && target/release/styk compare <file.styk> /tmp/ref.json
 target/release/styk render <file> <tick> gpu.png && target/release/styk raster <file> <tick> cpu.png && target/release/styk diff gpu.png cpu.png diff.png
-node scripts/engine-app-parity.mjs --target electron --renderer gpu --file <file> --require-engine
 npm run engine:parity -- --corpus             # adds the catalogue's 3D scenes, every tick
 ```

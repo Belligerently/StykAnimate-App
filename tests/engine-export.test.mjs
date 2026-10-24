@@ -82,16 +82,6 @@ test('exports get the engine renderer only where the engine runs with workers, n
   engine.dispose();
 });
 
-test('the engine renderer can be switched off for comparisons', t => {
-  environment(t, answer());
-  const stored = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', {value: {getItem: key => key === 'stykanimate.engine.export' ? 'off' : null}, configurable: true});
-  t.after(() => { if (stored) Object.defineProperty(globalThis, 'localStorage', stored); else delete globalThis.localStorage; });
-  const renderer = createExportFrameRenderer({width: 32, height: 32}, {...app(), revision: 1});
-  assert.ok(!(renderer instanceof EngineExportFrames));
-  renderer.dispose();
-});
-
 test('the engine draws a document it holds: its worker starts with the export settings', async t => {
   const {workers} = environment(t, (message, worker, bitmap) => answer({render: () => ({ok: true, bitmap: bitmap(640, 360)})})(message, worker, bitmap));
   const {stage, playback, calls} = app();
