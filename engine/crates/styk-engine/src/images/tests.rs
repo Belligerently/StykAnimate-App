@@ -128,7 +128,7 @@ fn a_new_redecode_epoch_refuses_an_actual_inflight_cel_result() {
     let generation = engine.generation().unwrap();
     let cel = *generation.assets.cels.keys().next().unwrap();
     let count = generation.assets.cels.len();
-    let (barriers, thread) = pause_worker(&engine, 2, move |worker| worker.decode_cel(&generation, cel));
+    let (barriers, thread) = pause_worker(&engine, 2, move |worker| worker.decode_picture(&generation, Picture::Cel(cel)));
     engine.redecode_images();
     barriers[1].wait(); thread.join().unwrap();
     assert_eq!(engine.images_backlog(), (count, 0), "a superseded worker cannot mark the new epoch decoded or restore old ready pixels");
@@ -225,4 +225,75 @@ fn worker_unwind_releases_its_actual_preparation_and_allows_a_retry() {
     while engine.step() {}
     assert_eq!(engine.images_backlog().0, 0);
     assert!(engine.images_backlog().1 > 0);
+}
+
+/// The drawing fixture opened by an engine whose pictures may wait for the renderer only up to `picture_bytes`,
+/// with its cel queued for decoding twice (two pictures).
+fn bounded(picture_bytes: usize) -> Engine {
+    let engine = Engine::new(clock, Budgets { picture_bytes, ..Budgets::for_device(None) });
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../styk-eval/tests/fixtures/drawlist/drawing-cel.json");
+    engine.open(&std::fs::read(file).unwrap(), "json", "picture budget").unwrap();
+    let generation = engine.generation().unwrap();
+    let cel = *generation.assets.cels.keys().next().unwrap();
+    let mut state = engine.inner.state.lock();
+    state.tasks.push_back(crate::OrdinaryTask::Decode(generation, Picture::Cel(cel)));
+    state.images.grow(1);
+    drop(state);
+    engine
+}
+
+#[test]
+fn pictures_beyond_the_budget_wait_until_the_renderer_takes_some() {
+    let unbounded = bounded(usize::MAX);
+    while unbounded.step() {}
+    let total = unbounded.take_images(usize::MAX).len();
+    assert!(total > 2, "the tiles of a cel, twice");
+
+    let engine = bounded(1);
+    assert_eq!(engine.images_backlog(), (2, 0), "two pictures are to be decoded");
+    while engine.step() {}
+    let (decoding, decoded) = engine.images_backlog();
+    let first = decoded;
+    assert_eq!((decoding, first > 0), (1, true), "the second picture waits for the first to be taken");
+    assert_eq!(engine.inner.state.lock().images.parked.len(), 1);
+    assert_eq!(engine.inner.state.lock().tasks.len(), 0);
+    let mut taken = engine.take_images(usize::MAX).len();
+    assert_eq!(taken, first);
+    assert_eq!(engine.inner.state.lock().images.parked.len(), 0, "taking the first makes room: the second is queued again");
+    assert_eq!(engine.inner.state.lock().tasks.len(), 1);
+    while engine.step() {}
+    taken += engine.take_images(usize::MAX).len();
+    assert_eq!(taken, total, "every picture arrives, a slice at a time");
+    assert_eq!(engine.images_backlog(), (0, 0));
+    assert_eq!(engine.inner.state.lock().images.ready_bytes, 0);
+}
+
+#[test]
+fn a_picture_waits_in_the_store_and_is_dropped_with_it_when_the_document_is_replaced() {
+    let engine = bounded(1);
+    while engine.step() {}
+    let parked = engine.generation().unwrap();
+    assert_eq!(engine.inner.state.lock().images.parked.len(), 1);
+    let before = Arc::strong_count(&parked);
+    engine.open(br#"{"version":5,"canvas_width":20,"canvas_height":20,"fps":12,"figure_types":[],"keyframes":[{"duration_raw":1,"objects":[]}],"backgrounds":[]}"#, "json", "replacement").unwrap();
+    while engine.step() {}
+    assert_eq!(engine.inner.state.lock().images.parked.len(), 0);
+    assert!(Arc::strong_count(&parked) < before, "the parked task no longer holds the replaced document");
+    assert_eq!(engine.images_backlog(), (0, 0));
+}
+
+#[test]
+fn a_picture_the_memory_cannot_hold_is_not_decoded_and_the_engine_goes_on() {
+    let engine = bounded(usize::MAX);
+    assert_eq!(engine.pictures_refused(), 0);
+    // Decoding reserves what it works with; with 1 MiB of memory a cel of hundreds of tiles does not fit.
+    styk_alloc::with_limit(1 << 20, || while engine.step() {});
+    assert_eq!(engine.pictures_refused(), 2, "both pictures were refused");
+    assert_eq!(engine.images_backlog(), (0, 0), "a refused picture ends the waiting like one that cannot be decoded");
+    assert_eq!(engine.inner.state.lock().images.ready_bytes, 0);
+    assert_eq!(engine.inner.state.lock().images.inflight_bytes, 0);
+    // The document is still the engine's, and a later decode (after a redecode) finds the memory.
+    engine.redecode_images();
+    while engine.step() {}
+    assert!(engine.images_backlog().1 > 0, "the pictures are decoded once the memory is there");
 }

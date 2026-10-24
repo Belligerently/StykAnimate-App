@@ -70,6 +70,20 @@ impl EngineHandle {
         Ok(id)
     }
 
+    /// Whether the engine has the memory to open a file of `file_bytes` bytes ([`styk_engine::document::admit_open`]).
+    /// Checked by the interface before it copies a file in. The error is an open error.
+    pub fn admit_open(&self, file_bytes: f64) -> Result<(), JsError> {
+        let bytes = crate::engine::counter(file_bytes).map_or(usize::MAX, |bytes| bytes as usize);
+        styk_engine::document::admit_open(bytes).map_err(|error| js_error(error.to_json()))
+    }
+
+    /// Whether the engine has the memory to take `bytes` bytes in, as the Pivot original kept with a document is
+    /// ([`OpenedDocument::attach_source`]). The error is an open error.
+    pub fn admit_copy(&self, bytes: f64) -> Result<(), JsError> {
+        let bytes = crate::engine::counter(bytes).map_or(usize::MAX, |bytes| bytes as usize);
+        styk_engine::document::admit_copy(bytes).map_err(|error| js_error(error.to_json()))
+    }
+
     /// Asks a job to stop at its next checkpoint; its outcome is still taken (as a cancellation).
     pub fn cancel_open(&self, job: u32) {
         if let Some(job) = self.jobs.table.lock().unwrap_or_else(|e| e.into_inner()).get(&job) {

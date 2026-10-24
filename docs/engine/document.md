@@ -41,7 +41,8 @@ converts it into the typed views (`styk_eval::load::Loader`, the image atlas). T
 `OpenedDocument`, holds the normalized tree, the indexes the editor adopts (next identities, figures per
 layer, tracks) and the typed views; nothing is published yet. A failure is an `OpenError`: a message
 key with its parameters where the editor has one (`errors.nativeContainer.*`, the load's keys), the
-codec's own message and status for a Pivot file it cannot read, `cancelled` for a stopped job. Nothing in
+codec's own message and status for a Pivot file it cannot read, `cancelled` for a stopped job, and
+`errors.engine.outOfMemory` when the memory cannot hold the open ([memory.md](memory.md)). Nothing in
 the load panics on a damaged document: `styk-edit/tests/load_robust.rs` loads every edit fixture with
 each value replaced by values of the wrong kind or removed.
 

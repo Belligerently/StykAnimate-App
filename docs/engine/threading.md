@@ -14,12 +14,14 @@ How the engine runs in the app (`engine/crates/styk-engine`,
 - Frame scheduler (`frames.rs`): the interface admits ticks with
   `try_request_samples`; workers evaluate and encode them (`FrameData`: draw
   list, camera, background). `Budgets::for_device` supplies the existing logical
-  eviction target (48–384 MiB by `navigator.deviceMemory`); the protected playhead
+  eviction target (48–384 MiB by `navigator.deviceMemory`, and at most an eighth of the memory:
+  [memory.md](memory.md)); the protected playhead
   and separately retained payloads prevent treating it as a physical memory cap.
   Try hidden/effects setters advance the epoch; playback retries only its latest
   pending controls while Busy keeps it cold.
 - Images: decoded on workers (`take_images` hands them to the renderer a few
-  megabytes per frame); drawing cels decode one task each. The stage remembers which
+  megabytes per frame, and only a budget of them is decoded ahead of it: [memory.md](memory.md));
+  drawing cels decode one task each. The stage remembers which
   atlas places it uploaded (`Uploaded`); a frame drawn while some picture it shows is
   still on its way is drawn again once it can be shown (`Stage::pictures_pending`:
   on the next frame for pictures decoded and waiting, else after the progress counter

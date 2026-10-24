@@ -9,6 +9,22 @@ use wasm_bindgen::prelude::*;
 
 use crate::js_error;
 
+/// The memory one editing call may need beyond what the document holds: the records it replaces, its history entry
+/// and the conversion of what it changed for the engine (a pose, a movieclip: 2 MiB on the largest documents
+/// measured). A call starts only when the memory can hold this much, so that a document the engine holds cannot be
+/// edited into running it out of memory.
+const CALL_WORKING_BYTES: usize = 64 << 20;
+
+/// The same for an undo or a redo, which builds the records of the entry anew (380 MiB beyond the 230 MiB of the
+/// document at the peak of undoing a movieclip edit of a 40 MiB Pivot file). A session asks for the most any of its
+/// calls has taken, once it knows it.
+const HISTORY_WORKING_BYTES: usize = 256 << 20;
+
+/// The answer to a call the engine refuses for want of memory, in the shape of an error the session raised.
+fn out_of_memory_answer() -> String {
+    format!("{{\"status\":\"error\",\"error\":\"{}\"}}", styk_engine::document::OUT_OF_MEMORY)
+}
+
 /// What a session publishes into: the engine, and the document it was started from (its typed views and
 /// lineage), with the tree last published.
 struct Publisher {
@@ -30,6 +46,9 @@ pub struct EditSession {
     session: Option<styk_edit::session::Session>,
     revision: f64,
     publisher: Option<Publisher>,
+    /// The most memory one call of this session has taken beyond what it held when it began (and a quarter more): of
+    /// an edit, and of an undo or a redo.
+    working: [usize; 2],
 }
 
 /// A closed session's document and history can be hundreds of megabytes: they are dropped on an engine
@@ -46,7 +65,7 @@ impl Drop for EditSession {
 impl EditSession {
     /// A session that publishes into `engine` the document `opened` was made from.
     pub(crate) fn publishing(session: styk_edit::session::Session, engine: Engine, opened: Arc<OpenedDocument>) -> EditSession {
-        EditSession { session: Some(session), revision: 0.0, publisher: Some(Publisher { engine, opened, published: None, error: None }) }
+        EditSession { session: Some(session), revision: 0.0, publisher: Some(Publisher { engine, opened, published: None, error: None }), working: [0; 2] }
     }
 
     fn session(&self) -> &styk_edit::session::Session {
@@ -83,13 +102,14 @@ impl EditSession {
     pub fn from_document(document: &str, state: &str, revision: f64) -> Result<EditSession, JsError> {
         let tree = styk_doc::json::parse(document.as_bytes()).map_err(js_error)?;
         let session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
-        Ok(EditSession { session: Some(session), revision, publisher: None })
+        Ok(EditSession { session: Some(session), revision, publisher: None, working: [0; 2] })
     }
 
     /// Makes the session's document the engine's document at `revision` (the editor's revision counter),
     /// as it is now: the stage draws it, playback and exports read it, and every call that changes it
     /// publishes the change. Answers `{generation, revision, ms}` as JSON.
     pub fn activate(&mut self, revision: f64) -> Result<String, JsError> {
+        let _working = styk_alloc::reserve(CALL_WORKING_BYTES.max(self.working[0])).map_err(|error| js_error(styk_engine::document::OpenError::out_of_memory(error).to_json()))?;
         let tree = self.session().report().clone();
         let Some(publisher) = &mut self.publisher else { return Err(js_error("this session has no document to publish")) };
         let done = publisher.engine.activate(&publisher.opened.typed, &tree, revision as u64).map_err(|error| js_error(error.to_json()))?;
@@ -127,8 +147,15 @@ impl EditSession {
     /// in the view, unchanged COW figures and sheet fields are omitted (the app's owned
     /// adoption path); default responses stay complete for shadow comparison.
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
+        let (kind, base) = if matches!(method, "undo" | "redo") { (1, HISTORY_WORKING_BYTES) } else { (0, CALL_WORKING_BYTES) };
+        let Ok(_working) = styk_alloc::reserve(base.max(self.working[kind])) else { return out_of_memory_answer() };
+        styk_alloc::reset_peak();
+        let began = styk_alloc::live_bytes();
         let answer = self.session.as_mut().expect("a session is open until it is dropped").call(method, args, view);
         self.publish();
+        // What this call took (and whatever the workers took meanwhile) is what the next may need.
+        let took = styk_alloc::peak_bytes().saturating_sub(began);
+        self.working[kind] = self.working[kind].max((took + took / 4).min(styk_alloc::ceiling() / 2));
         answer
     }
 }

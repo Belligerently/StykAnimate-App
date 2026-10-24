@@ -1172,6 +1172,7 @@ dependencies = [
 name = "styk-engine"
 version = "0.1.0"
 dependencies = [
+ "styk-alloc",
  "styk-doc",
  "styk-draw",
  "styk-edit",
@@ -1191,6 +1192,7 @@ dependencies = [
  "lyon_path",
  "lyon_tessellation",
  "rayon",
+ "styk-alloc",
  "styk-doc",
  "styk-draw",
  "styk-drawing",
@@ -1248,6 +1250,7 @@ name = "styk-raster"
 version = "0.1.0"
 dependencies = [
  "pollster",
+ "styk-alloc",
  "styk-draw",
  "styk-eval",
  "styk-render",

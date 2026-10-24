@@ -47,7 +47,7 @@ pub use images::{DecodedImage, Uploaded};
 use sync::Shared;
 
 type Task = Box<dyn FnOnce(&Engine) + Send>;
-enum OrdinaryTask { Run(Task), Redecode(images::DecodeScope) }
+enum OrdinaryTask { Run(Task), Redecode(images::DecodeScope), Decode(Arc<Generation>, images::Picture) }
 type TaskQueue = std::collections::LinkedList<OrdinaryTask>;
 
 /// Detach the first existing node without allocating or freeing it. The worker
@@ -68,9 +68,14 @@ pub type Notifier = fn(&std::sync::atomic::AtomicU32);
 
 /// Memory the frame cache may hold, by device class. Draw lists are small (tens
 /// to hundreds of KiB), so even the smallest budget holds seconds of animation.
+/// Decoded pictures wait for the renderer under a budget of their own, a share of the
+/// memory the module may use.
 #[derive(Clone, Copy, Debug)]
 pub struct Budgets {
     pub frame_cache_bytes: usize,
+    /// Pixels decoded and not yet taken by the renderer, at most (a picture is decoded only while
+    /// the pictures waiting and being decoded are fewer than this). See [`Budgets::PICTURE_SHARE`].
+    pub picture_bytes: usize,
 }
 
 impl Budgets {
@@ -82,8 +87,15 @@ impl Budgets {
             Some(_) => 384 << 20,
             None => 192 << 20,
         };
-        Budgets { frame_cache_bytes }
+        let ceiling = styk_alloc::ceiling();
+        Budgets { frame_cache_bytes: frame_cache_bytes.min(ceiling / Budgets::FRAME_CACHE_SHARE), picture_bytes: ceiling / Budgets::PICTURE_SHARE }
     }
+
+    /// Pictures waiting for the renderer may take a thirtieth of the memory the module may use (64 MiB of a
+    /// 2 GiB memory), and the frame cache an eighth (240 MiB), whatever the device claims to have. Where the
+    /// module has no limit (native tools, tests) neither is a bound in practice.
+    pub const PICTURE_SHARE: usize = 30;
+    pub const FRAME_CACHE_SHARE: usize = 8;
 }
 
 /// One open document, immutable. A new one replaces it on every change.
@@ -144,6 +156,10 @@ struct Inner {
     clock: Clock,
     next_generation: AtomicU64,
     stopping: AtomicBool,
+    /// [`Budgets::picture_bytes`].
+    picture_bytes: usize,
+    /// Pictures not decoded because the module was too low on memory ([`Engine::pictures_refused`]).
+    pictures_refused: std::sync::atomic::AtomicUsize,
     progress: std::sync::atomic::AtomicU32,
     notifier: Option<Notifier>,
     planning: Shared<Option<Arc<planning::Core>>>,
@@ -175,6 +191,8 @@ impl Engine {
                 clock,
                 next_generation: AtomicU64::new(1),
                 stopping: AtomicBool::new(false),
+                picture_bytes: budgets.picture_bytes,
+                pictures_refused: Default::default(),
                 progress: std::sync::atomic::AtomicU32::new(0),
                 notifier,
                 planning: Shared::new(None),
@@ -305,7 +323,7 @@ impl Engine {
                 // image barrier defers evaluation; no ordinary task is reordered.
                 if state.frames.maintenance_due() { Job::Frames(state.frames.work(state.current.clone())) }
                 else { return false; }
-            } else if let Some(task) = detach_task(&mut state.tasks) {
+            } else if let Some(task) = next_task(&mut state, self.inner.picture_bytes) {
                 if let Some(OrdinaryTask::Redecode(scope)) = task.front()
                     && !self.inner.stopping.load(Ordering::SeqCst) { state.images.start_preparation(*scope); }
                 Job::Task(task)
@@ -318,11 +336,27 @@ impl Engine {
             Job::Task(mut node) => match node.pop_front().expect("detached task") {
                 OrdinaryTask::Run(task) => task(self),
                 OrdinaryTask::Redecode(scope) => self.prepare_redecode(scope),
+                OrdinaryTask::Decode(generation, picture) => self.decode_picture(&generation, picture),
             },
             Job::Frames(work) => { if !work.step(self) { return false; } }
         }
         self.notify_progress();
         true
+    }
+}
+
+/// The next ordinary task. A picture to decode while the pictures waiting for the renderer are at their budget is
+/// parked (its node moves to the store, nothing is allocated) until the renderer takes some ([`Engine::take_images`]).
+fn next_task(state: &mut State, picture_bytes: usize) -> Option<TaskQueue> {
+    loop {
+        let mut task = detach_task(&mut state.tasks)?;
+        if let Some(OrdinaryTask::Decode(generation, picture)) = task.front()
+            && !state.images.admit_decode(picture_bytes, images::estimate(generation, *picture))
+        {
+            state.images.park(&mut task);
+            continue;
+        }
+        return Some(task);
     }
 }
 

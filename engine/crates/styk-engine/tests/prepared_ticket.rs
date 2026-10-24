@@ -72,7 +72,7 @@ fn cold_and_invalid_ticket_reads_do_not_prepare_or_change_native_state() {
 
 #[test]
 fn explicit_worker_wait_keeps_the_produced_snapshot_when_a_tiny_cache_evicts_it() {
-    let engine = Engine::new(|| 0.0, Budgets { frame_cache_bytes: 0 });
+    let engine = Engine::new(|| 0.0, Budgets { frame_cache_bytes: 0, ..Budgets::for_device(None) });
     engine.open(DOCUMENT, "json", "zero-budget").unwrap();
     engine.request_samples(0.0, &[]);
     let produced = engine.prepared_frame_now_at(3.5).unwrap();

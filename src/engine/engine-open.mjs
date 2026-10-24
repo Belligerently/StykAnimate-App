@@ -35,7 +35,7 @@ function openFailure(error) {
   const failure = restoreMessageError(new Error(data.message), data);
   if (data.code) failure.code = data.code;
   if (data.status) failure.status = data.status;
-  failure.telemetryCode = data.status >= 500 ? 'backend_unavailable' : data.status ? 'backend_rejected' : 'decode_failed';
+  failure.telemetryCode = data.code === 'out_of_memory' ? 'out_of_memory' : data.status >= 500 ? 'backend_unavailable' : data.status ? 'backend_rejected' : 'decode_failed';
   failure.telemetryStage = data.stage === 'prepare' ? 'prepare' : 'decode';
   return failure;
 }
@@ -65,8 +65,10 @@ export class Opening {
   /** Gives the document the Pivot file it was read from, as a saved native document carries its source (`_stykSource`). */
   attachSource(description, bytes) {
     if (!this.handle) throw new Error('This opening has been released.');
-    try { this.handle.attach_source(JSON.stringify(description), bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)); }
-    catch (error) { throw openFailure(error); }
+    try {
+      this.engine.handle.admit_copy(bytes.byteLength);
+      this.handle.attach_source(JSON.stringify(description), bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+    } catch (error) { throw openFailure(error); }
   }
 
   /** Builds the report one piece at a time; every piece after the first is a step the caller may pause at. */
@@ -181,12 +183,19 @@ async function finish(engine, job, signal) {
 
 const bytesOf = value => value instanceof Uint8Array ? value : new Uint8Array(value);
 
+/** Whether the engine has the memory to take a file of `size` bytes in and open it: the open error, else null. */
+function memoryRefusal(engine, size) {
+  try { engine.handle.admit_open(size); return null; } catch (error) { return openFailure(error); }
+}
+
 /**
  * Opens a file on the engine's workers. Resolves with the opening, or rejects with the error the open raised
  * (an AbortError when `signal` aborted it). The bytes are copied into the engine; the caller keeps its own.
  */
 export function openBytes(bytes, filename, {engine, layerTimeline, signal} = {}) {
   engine = engineOf(engine);
+  const refusal = memoryRefusal(engine, bytes.byteLength);
+  if (refusal) return Promise.reject(refusal);
   const job = engine.handle.open_document(bytesOf(bytes), filename, 'file', optionsText({layerTimeline}));
   return finish(engine, job, signal);
 }
@@ -196,7 +205,9 @@ const jsonBytes = document => encoder.encode(typeof document === 'string' ? docu
 /** Opens a document given as JSON text or as an object, on the engine's workers. */
 export function openJson(document, name, {engine, layerTimeline, signal} = {}) {
   engine = engineOf(engine);
-  const job = engine.handle.open_document(jsonBytes(document), name ?? 'Untitled animation', 'json', optionsText({layerTimeline}));
+  const text = jsonBytes(document), refusal = memoryRefusal(engine, text.byteLength);
+  if (refusal) return Promise.reject(refusal);
+  const job = engine.handle.open_document(text, name ?? 'Untitled animation', 'json', optionsText({layerTimeline}));
   return finish(engine, job, signal);
 }
 
