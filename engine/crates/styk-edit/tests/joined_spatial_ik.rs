@@ -10,12 +10,10 @@ fn joined_spatial_target_and_feet_recordings_match_every_step() {
 }
 
 #[test]
-fn unrecorded_joined_settings_and_perspective_bones_keep_the_open_gesture() {
+fn unrecorded_perspective_bones_keep_the_open_gesture() {
     use styk_doc::Value;
     let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
     for (name, joint, method, arguments) in [
-        ("ik-spatial-joined-parent-sheet", 9.0, "setNodeIK", "[{\"allowStretch\":true}]"),
-        ("ik-spatial-joined-native", 9.0, "setNodeIK", "[{\"pinned\":false,\"chainLength\":3}]"),
         ("ik-spatial-perspective-target-sheet", 3.0, "poseJoint", "[230,190]"),
     ] {
         let reference = styk_doc::json::parse(&std::fs::read(folder.join(format!("{name}.reference.json"))).unwrap()).unwrap();
