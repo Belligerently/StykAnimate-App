@@ -4,7 +4,8 @@
 //! (`editor.timeline`) and the geometry of a frame (`editor.geometry`), each as JSON text.
 //!
 //! Geometry is sent as the groups that changed since the interface's last read: a group is rebuilt
-//! when its figure's pose (or a figure joined to it) is another record, and every group when a figure
+//! when its figure's pose (or a figure joined to it) is another record (another node with other values: a
+//! frame evaluated at another tick makes new records of the poses it holds), and every group when a figure
 //! definition is another. The interface names the read it holds (`since`).
 
 use std::sync::Arc;
@@ -135,7 +136,7 @@ impl Editor {
         // Selecting another layer is a new document node but the same figures: their groups stay.
         let definitions: Vec<usize> = std::iter::once(prepared.doc.version as usize).chain(prepared.doc.figures.iter().map(|figure| Arc::as_ptr(figure) as usize)).collect();
         let reuse = since.is_some() && since == Some(cache.token) && cache.definitions == definitions && cache.objects.len() == objects.len() && count == objects.len();
-        let mut dirty: Vec<bool> = if reuse { objects.iter().zip(&cache.objects).map(|(now, before)| !now.same_node(before)).collect() } else { vec![true; count] };
+        let mut dirty: Vec<bool> = if reuse { objects.iter().zip(&cache.objects).map(|(now, before)| !(now.same_node(before) || now == before)).collect() } else { vec![true; count] };
         if reuse && dirty.iter().any(|dirty| *dirty) {
             // A figure's pose moves the figures joined to it (and an assembly's inverse kinematics reaches across them).
             let mut root: Vec<usize> = (0..count).collect();
