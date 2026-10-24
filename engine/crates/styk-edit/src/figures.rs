@@ -348,7 +348,7 @@ impl Editor {
             if let Some(value) = given(field)
                 && !value.as_f64().is_some_and(f64::is_finite)
             {
-                return Err(EditError::Invalid(crate::transform::NOT_FINITE.into()));
+                return Err(crate::transform::not_finite(field));
             }
         }
         if given("scale").and_then(|v| v.as_f64()).is_some_and(|scale| scale < 0.0) {
@@ -423,7 +423,7 @@ impl Editor {
         let mut pose: Vec<(&str, f64)> = Vec::new();
         for field in ["angle_rad", "length", "bend_rad"] {
             if let Some(value) = given(field) {
-                let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(EditError::Invalid(crate::transform::NOT_FINITE.into())) };
+                let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(crate::transform::not_finite(field)) };
                 pose.push((field, value));
             }
         }
@@ -475,7 +475,7 @@ impl Editor {
             return Err(EditError::Invalid("errors.editor.useTheFigureBuilderToChangeJointHierarchy".into()));
         }
         if let Some((_, thickness)) = style.iter().find(|(k, _)| k == "thickness") {
-            let Some(thickness) = thickness.as_f64().filter(|t| t.is_finite()) else { return Err(EditError::Invalid(crate::transform::NOT_FINITE.into())) };
+            let Some(thickness) = thickness.as_f64().filter(|t| t.is_finite()) else { return Err(crate::transform::not_finite("Thickness")) };
             if thickness < 0.0 {
                 return Err(EditError::Invalid("errors.editor.thicknessCannotBeNegative".into()));
             }

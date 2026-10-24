@@ -234,7 +234,7 @@ fn timed_sheet_commands_match_every_editor_step() {
                     }
                 }
                 (Err(EditError::Invalid(key)), Some(error)) => assert_eq!(
-                    Some(key.as_str()),
+                    Some(styk_edit::error_key(key.as_str())),
                     error.get("key").and_then(Value::as_str),
                     "{context}"
                 ),

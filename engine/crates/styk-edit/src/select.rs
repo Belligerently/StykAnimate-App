@@ -279,7 +279,7 @@ impl Editor {
     pub(crate) fn seek_checked(&mut self, tick: f64, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<Value, EditError> {
         check()?;
         if !tick.is_finite() {
-            return Err(EditError::Invalid("errors.editorCamera.mustBeFinite".into()));
+            return Err(crate::transform::not_finite("Timeline tick"));
         }
         if self.drag.is_some() {
             self.commit_drag_checked(check)?;

@@ -51,6 +51,11 @@ pub(crate) fn camera_values(camera: Option<&Value>) -> Value {
     Value::object(out)
 }
 
+/// `finite(camera[key], {Camera <key>})` failed.
+pub(crate) fn camera_not_finite(key: &str) -> EditError {
+    crate::invalid_with(FINITE, vec![("label", crate::label(&format!("Camera {key}")))])
+}
+
 fn field(camera: &Value, key: &str) -> f64 {
     camera.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN)
 }
@@ -59,12 +64,12 @@ fn field(camera: &Value, key: &str) -> f64 {
 fn checked(camera: &Value) -> Result<Value, EditError> {
     for key in FIELDS {
         if !camera.get(key).and_then(Value::as_f64).is_some_and(f64::is_finite) {
-            return Err(EditError::Invalid(FINITE.into()));
+            return Err(camera_not_finite(key));
         }
     }
     for key in ["x", "y", "scale"] {
         if !(field(camera, key) as f32).is_finite() {
-            return Err(EditError::Invalid("errors.editorCamera.cameraExceedsTheNativeRange".into()));
+            return Err(crate::invalid_with("errors.editorCamera.cameraExceedsTheNativeRange", vec![("field", Value::str(key))]));
         }
     }
     let scale = field(camera, "scale");
@@ -87,9 +92,9 @@ fn checked_patch(patch: &Value) -> Result<Vec<(String, f64)>, EditError> {
     let mut out = Vec::new();
     for (key, value) in object.iter() {
         if !FIELDS.contains(&key.as_ref()) {
-            return Err(EditError::Invalid("errors.editorCamera.unknownCameraValue".into()));
+            return Err(crate::invalid_with("errors.editorCamera.unknownCameraValue", vec![("key", Value::str(key))]));
         }
-        let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(EditError::Invalid(FINITE.into())) };
+        let Some(value) = value.as_f64().filter(|v| v.is_finite()) else { return Err(camera_not_finite(key)) };
         out.push((key.to_string(), value));
     }
     Ok(out)
@@ -307,7 +312,13 @@ impl Editor {
         self.camera_sheet("alignCameraToView")?;
         let mut values = [0.0; 5];
         for (slot, key) in values.iter_mut().zip(["x", "y", "scale", "width", "height"]) {
-            *slot = view.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| EditError::Invalid(FINITE.into()))?;
+            *slot = view.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| {
+                let mut label = Obj::new();
+                label.set("messageKey", Value::str("errors.editorCamera.canvasValueLabel"));
+                label.set("messageParams", Value::object(std::iter::once((std::sync::Arc::from("field"), Value::str(key))).collect()));
+                label.set("diagnosticValue", Value::str(&format!("Canvas {key}")));
+                crate::invalid_with(FINITE, vec![("label", Value::object(label))])
+            })?;
         }
         let [x, y, scale, width, height] = values;
         if scale <= 0.0 || width <= 0.0 || height <= 0.0 {
@@ -538,6 +549,8 @@ impl Editor {
             camera: Some(CameraDrag { indices: selected, current: baseline.clone(), baseline, entries: Vec::new(), preview: None }),
             rig: None,
             motion_path: None,
+            duplicate: None,
+            tweener: None,
         });
         self.retained = None;
         Ok(true)

@@ -41,7 +41,6 @@ pub struct WorkerSession {
     session: Session,
     identity: Arc<()>,
     epoch: u64,
-    prepared_only: bool,
 }
 
 fn runtime(editor: &Editor) -> Value {
@@ -71,12 +70,8 @@ fn display_worker(
 impl Session {
     /// Consumes the SAME Session on its owning worker. No direct mutable session
     /// access remains until explicit worker detach returns that owner.
-    pub fn into_worker(mut self) -> WorkerSession {
-        let prepared_only = self.editor.worker_prepared_only;
-        // Only this consuming worker capability may rebuild its cold revision.
-        // Detach restores the legacy UI readiness restriction below.
-        self.editor.worker_prepared_only = false;
-        WorkerSession { session: self, identity: Arc::new(()), epoch: 0, prepared_only }
+    pub fn into_worker(self) -> WorkerSession {
+        WorkerSession { session: self, identity: Arc::new(()), epoch: 0 }
     }
 }
 impl WorkerSession {
@@ -104,8 +99,7 @@ impl WorkerSession {
     }
     /// Worker detach moves the original owner, preserving every live baseline,
     /// history entry, counter and source. The host must retain its actor guards.
-    pub fn into_session(mut self) -> Session {
-        self.session.editor.worker_prepared_only = self.prepared_only;
+    pub fn into_session(self) -> Session {
         self.session
     }
 

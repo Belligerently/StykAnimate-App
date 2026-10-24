@@ -15,6 +15,7 @@
 mod audio;
 mod authored;
 mod builder;
+mod duplicate_drag;
 mod bounds;
 mod camera_commands;
 mod camera_motion;
@@ -23,6 +24,7 @@ mod figure_transform;
 mod external;
 mod figures;
 mod frame;
+mod frame_draft;
 mod handle_commands;
 mod handle_edit;
 mod history;
@@ -65,6 +67,7 @@ mod spatial_ik;
 mod timeline;
 mod topology;
 mod transform;
+mod tweener;
 mod vfx_clips;
 mod vfx_stack;
 
@@ -86,6 +89,52 @@ pub enum EditError {
     Unported(String),
     #[error("{0}")]
     Invalid(String),
+}
+
+/// Separates an `Invalid` error's message key from the values its message names (JSON).
+const PARAMS: char = '\u{1f}';
+
+/// An `Invalid` error whose message names values (`messageError(error, key, params)`): a text param is
+/// shown as it is, `{"@label": text}` is a field label the interface translates, `{"@motionParameter": {key, label}}`
+/// a camera-motion parameter and `{"@vfxParameter": {type, param}}` an effect's,`{"@message": key}` a message of the interface.
+pub(crate) fn invalid_with(key: &str, params: Vec<(&str, Value)>) -> EditError {
+    let params: Obj = params.into_iter().map(|(name, value)| (Arc::from(name), value)).collect();
+    EditError::Invalid(format!("{key}{PARAMS}{}", styk_doc::json::to_string(&Value::object(params))))
+}
+
+/// A number the message shows as the editor does: finite ones as numbers, the infinite as text.
+fn shown(value: f64) -> Value {
+    if value.is_finite() { Value::Num(value) } else { Value::str(if value > 0.0 { "Infinity" } else { "-Infinity" }) }
+}
+
+/// A value outside `[min, max]`: `{label} must be … between {low} and {high}`, the placeholders named `low` and `high`.
+pub(crate) fn out_of_range(key: &str, name: &str, (low, high): (&str, &str), (min, max): (f64, f64)) -> EditError {
+    invalid_with(key, vec![("label", label(name)), (low, shown(min)), (high, shown(max))])
+}
+
+/// A message the interface shows by its key (`{messageKey, diagnosticValue}`).
+pub(crate) fn message(key: &str) -> Value {
+    let mut reference = Obj::new();
+    reference.set("@message", Value::str(key));
+    Value::object(reference)
+}
+
+/// A field label the interface translates (`validationLabel(text)`).
+pub(crate) fn label(text: &str) -> Value {
+    let mut label = Obj::new();
+    label.set("@label", Value::str(text));
+    Value::object(label)
+}
+
+/// The message key of an `Invalid` error.
+pub fn error_key(text: &str) -> &str {
+    text.split(PARAMS).next().unwrap_or(text)
+}
+
+/// The values the message of an `Invalid` error names, if it names any.
+pub fn error_params(text: &str) -> Option<Value> {
+    let (_, params) = text.split_once(PARAMS)?;
+    styk_doc::json::parse(params.as_bytes()).ok()
 }
 
 /// The editor's construction options (`new Editor({propertyChannels, layerTimeline})`)
@@ -137,6 +186,10 @@ pub(crate) struct Drag {
     pub rig: Option<rig_drag::RigDrag>,
     /// A motion-path edit (`_drag.motionPath`: the session is the gesture).
     pub motion_path: Option<Box<motion_path::Session>>,
+    /// An Alt-drag duplication (`_drag.duplicate`): the copies held back from history until it ends.
+    pub duplicate: Option<duplicate_drag::Duplicate>,
+    /// The tweener's plan (`_drag.tweener`).
+    pub tweener: Option<tweener::Tweener>,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -151,6 +204,9 @@ pub(crate) struct Authored {
     pub transaction: bool,
     /// Appended definitions of an authored transaction (`beforeFigures`).
     pub definitions_start: Option<usize>,
+    /// A tween keys the playhead (`keyAtPlayhead`) on these layers (`keyAtPlayheadLayers`), even where nothing else changed.
+    pub key_at_playhead: bool,
+    pub key_at_playhead_layers: Vec<String>,
 }
 
 pub struct Editor {
@@ -208,6 +264,11 @@ pub struct Editor {
     pub(crate) segment_values_clipboard: Option<String>,
     /// `editor._cameraClipboard`: the last copied camera.
     pub(crate) camera_clipboard: Option<Value>,
+    /// `editor.audioRipple` (the app sets it) and `_audioRippling`: frame edits of every layer move the audio.
+    pub(crate) audio_ripple: bool,
+    pub(crate) audio_rippling: bool,
+    /// `editor._audioClipboard`: the last copied audio clip and its recording.
+    pub(crate) audio_clipboard: Option<(Value, Value)>,
     /// `editor._cameraMotionClipboard`: the last copied camera motion clip.
     pub(crate) camera_motion_clipboard: Option<Value>,
     /// `editor._vfxClipClipboard` and `_vfxClipClipboardValues`: the last copied effect clip
@@ -232,8 +293,6 @@ pub struct Editor {
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
     pub(crate) eval: RefCell<frame::Cache>,
-    /// Mirror sessions use worker-published follow paths and never rebuild their projections.
-    pub(crate) worker_prepared_only: bool,
     /// The last document checked for unported features, and the answer.
     gate: RefCell<Option<(Value, Option<&'static str>)>>,
 }
@@ -281,6 +340,7 @@ struct Snapshot {
     figure_clipboard: Option<figure_clipboard::FigureClipboard>,
     segment_values_clipboard: Option<String>,
     camera_clipboard: Option<Value>,
+    audio_clipboard: Option<(Value, Value)>,
     camera_motion_clipboard: Option<Value>,
     vfx_clip_clipboard: Option<(Value, Option<Value>)>,
     vfx_edit: Option<Option<Value>>,
@@ -331,6 +391,9 @@ impl Editor {
             figure_clipboard: None,
             segment_values_clipboard: None,
             camera_clipboard: None,
+            audio_clipboard: None,
+            audio_ripple: false,
+            audio_rippling: false,
             camera_motion_clipboard: None,
             vfx_clip_clipboard: None,
             draws: Default::default(),
@@ -343,7 +406,6 @@ impl Editor {
             native_token_serial: 0,
             events: Vec::new(),
             eval: RefCell::default(),
-            worker_prepared_only: false,
             gate: RefCell::new(None),
         }
     }
@@ -623,6 +685,7 @@ impl Editor {
             figure_clipboard: self.figure_clipboard.clone(),
             segment_values_clipboard: self.segment_values_clipboard.clone(),
             camera_clipboard: self.camera_clipboard.clone(),
+            audio_clipboard: self.audio_clipboard.clone(),
             camera_motion_clipboard: self.camera_motion_clipboard.clone(),
             vfx_clip_clipboard: self.vfx_clip_clipboard.clone(),
             vfx_edit: self.vfx_edit.clone(),
@@ -649,7 +712,7 @@ impl Editor {
             redo, history_size, uid_counts, generated_sources,
             pending_source_layer_changes, pending_source_bytes, new_layer_hints,
             layer_event_pending, sheet_clipboard, figure_clipboard,
-            segment_values_clipboard, camera_clipboard, camera_motion_clipboard,
+            segment_values_clipboard, camera_clipboard, audio_clipboard, camera_motion_clipboard,
             vfx_clip_clipboard, vfx_edit, batch, sheet_selection, property_edit,
             native_token, native_token_serial);
         for (actual, captured) in [
@@ -674,11 +737,12 @@ impl Editor {
             "@historyLimits" => return self.configure_history(args),
             "@markSaved" => return self.mark_saved(),
             "@revisions" => return self.set_revisions(args),
-            "@dropGesture" => return self.drop_gesture(),
-            "@gestureState" => return self.gesture_state(),
-            "@dropEdits" => return self.drop_edits(args),
             "@shape" => return self.document_shape(),
             "@externalStacks" => return self.external_stacks(args),
+            // A grouped edit (`movieclipBatch`) is bookkeeping around the edits it holds: no document gate applies.
+            "beginBatch" => return self.begin_batch(args.first().and_then(Value::as_str).unwrap_or("")).map(|_| Value::Null),
+            "endBatch" => return self.end_batch().map(|_| Value::Null),
+            "abortBatch" => return self.abort_batch().map(|_| Value::Null),
             "undo" | "redo" if let Some(id) = self.external_on_top(method == "redo") => {
                 return Err(EditError::Unported(format!("{}{id}", external::EXTERNAL_ENTRY)));
             }
@@ -767,6 +831,15 @@ impl Editor {
             }
             "commitDrag" => self.commit_drag_checked(check).map(Value::Bool),
             "cancelDrag" => self.cancel_drag().map(Value::Bool),
+            "disableFrameDrafts" => self.disable_frame_drafts(),
+            // A working frame cannot be open here (the interface never opens one on a layer sheet).
+            "beginFrameDraftPreview" | "endFrameDraftPreview" => Ok(Value::Bool(false)),
+            "enableFrameDrafts" | "beginFrameDraft" | "commitFrameDraft" | "discardFrameDraft" | "updateDraftFrame" | "addDraftFrame" | "editFrameDraftTimeline" | "editStoredFrames" =>
+                Err(EditError::Unported("working frames are not edited by the engine".into())),
+            "beginTween" => self.begin_tween(),
+            "updateTween" => self.update_tween(&arg(0), args.get(1)).map(Value::Bool),
+            "beginDuplicateDrag" => self.begin_duplicate_drag(&arg(0)).map(Value::Bool),
+            "finishDuplicateDrag" => self.finish_duplicate_drag(arg(0).truthy()).map(Value::Bool),
             "beginHandleEditDrag" => self.begin_handle_edit_drag(&arg(0)).map(Value::Bool),
             "editHandlePosition" => self.edit_handle_position(number(0), number(1), &arg(2)).map(Value::Bool),
             "commitHandleEditDrag" => self.finish_handle_edit_drag(true).map(Value::Bool),
@@ -814,6 +887,14 @@ impl Editor {
             "setSpatialIKTarget" => self.set_spatial_ik_target(&arg(0)).map(Value::Bool),
             "setAudioTrack" => self.set_audio_track(&arg(0), &arg(1)).map(Value::Bool),
             "deleteAudioTrack" => self.delete_audio_track(&arg(0)).map(Value::Bool),
+            "addAudioTrack" => self.add_audio_track(args.first()),
+            "importAudio" => self.import_audio(&arg(0), args.get(1)),
+            "splitAudioClip" => self.split_audio_clip(&arg(0), args.get(1)),
+            "duplicateAudioClip" => self.duplicate_audio_clip(&arg(0)),
+            "copyAudioClip" => self.copy_audio_clip(&arg(0)).map(Value::Bool),
+            "cutAudioClip" => self.cut_audio_clip(&arg(0)).map(Value::Bool),
+            "pasteAudioClip" => self.paste_audio_clip(&arg(0), args.get(1)),
+            "rippleAudio" => self.ripple_audio(number(0), number(1), number(2)).map(Value::Bool),
             "setAudioClip" => self.set_audio_clip(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "deleteAudioClip" => self.delete_audio_clip(&arg(0)).map(Value::Bool),
             "addPaletteColor" => self.add_palette_color(&arg(0)).map(Value::Bool),
@@ -867,9 +948,6 @@ impl Editor {
                 Ok(Value::Null)
             }
             "setActiveLayer" => self.set_active_layer_command(&arg(0)).map(Value::Bool),
-            "beginBatch" => self.begin_batch(arg(0).as_str().unwrap_or("")).map(|_| Value::Null),
-            "endBatch" => self.end_batch().map(|_| Value::Null),
-            "abortBatch" => self.abort_batch().map(|_| Value::Null),
             // A replay step: `movieclipBatch(label, () => steps)`, returning the last step's result.
             "@batch" => {
                 let steps: Vec<Value> = arg(1).elements().map(|e| e.iter().collect()).unwrap_or_default();

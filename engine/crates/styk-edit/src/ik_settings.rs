@@ -156,7 +156,7 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorIk.unknownIkSetting".into()));
         }
         let chain_length = next.get("chainLength").and_then(Value::as_f64).filter(|n| n.fract() == 0.0 && *n >= 1.0 && *n <= max as f64);
-        let Some(chain_length) = chain_length else { return Err(EditError::Invalid("errors.editorIk.chainLengthMustBeBetween1And".into())) };
+        let Some(chain_length) = chain_length else { return Err(crate::invalid_with("errors.editorIk.chainLengthMustBeBetween1And", vec![("maxLength", Value::Num(max as f64))])) };
         let boolean = |key: &str| matches!(next.get(key), Some(Value::Bool(_)));
         let side = next.get("bendDirection").and_then(Value::as_f64);
         if !boolean("enabled") || !boolean("pinned") || !boolean("allowStretch") || !matches!(side, Some(s) if s == -1.0 || s == 0.0 || s == 1.0) {
@@ -287,7 +287,7 @@ impl Editor {
         let (settings, _) = self.ik_settings(&at, figure);
         let spec = spec_of(&settings);
         let max = assembly.chain(at.slot, at.handle, MAX_CHAIN).len();
-        if spec.chain_length == 0 || spec.chain_length as usize > max { return Err(EditError::Invalid("errors.editorIk.chainLengthMustBeBetween1And".into())); }
+        if spec.chain_length == 0 || spec.chain_length as usize > max { return Err(crate::invalid_with("errors.editorIk.chainLengthMustBeBetween1And", vec![("maxLength", Value::Num(max as f64))])); }
         let id = assembly.id(at.slot, at.handle).ok_or_else(|| unported("without a handle"))?;
         let chain = assembly.chain(at.slot, at.handle, spec.chain_length);
         for (&other, controller) in &assembly.controllers.controllers {

@@ -52,10 +52,25 @@ and after), and emit change events the interface listens to.
 ### Camera and builder prerequisites (2026-10-04)
 
 The camera owner includes V8-exact logarithms and the native editor follows cached travel.
-`Prepared::travel_ready` reads worker preparation only; `Pose::shot` retains the source
-key for that view. A browser edit session refuses a cold follow tick or a changed report
-instead of preparing the path on the interface thread. Native read/bake replays match;
-canonical worker session publication remains required before app bake adoption.
+`Prepared::travel_ready` reads worker preparation only (the stage presents with it and never shapes a
+path on the interface thread); `Pose::shot` retains the source key for that view. An edit session shapes
+the follow path of each revision it makes itself, as far as the frame it shows needs (see "Follow documents
+in the session" below). Native read/bake replays match; canonical worker session publication remains
+required before app bake adoption.
+
+#### Follow documents in the session (2026-10-24)
+
+A session started from the mirror's typed views (as the app starts one) edits a follow-camera document through
+every revision it makes, as a session started from the document does; it never refuses for want of a worker's
+preparation. `Follow` shapes a path nobody has started through the clip frame asked for and no further
+(`Clip::path`); a path that exists grows a chunk of 256 frames at a time, so a playing clip extends it rarely.
+Cost: each revision starts a cold path, so a call whose frame the follow clips shape costs about 13 µs per clip
+frame up to the playhead, on the interface thread: measured natively (dev profile, `nudgeHandle` on the
+recorded follow document with its clips and sheet lengthened) 0.4 ms at tick 6, 28 ms at tick 1994 and 280 ms
+at tick 19994. Sharing the prefix of a path across revisions that leave the followed figures alone is the
+way to bring that down (not done). Tests: `tests/follow_sessions.rs` (a mirror-started session and a
+document-started one answer every call alike), `styk_eval::follow` (a cold path is shaped through the frame
+asked, then grows in chunks).
 
 Figure bounds (`alignSelection`, `alignFiguresInFrames`, `centerCamera`): the app's own
 callback (`boundsOf` in `src/app.mjs`, registered with `markAppBounds` in
@@ -82,8 +97,8 @@ The joined pinned motion-path oracle correction is exercised in the app through 
 commit and history (one adopted + 11 exact calls). Measured bounds compare eight calls;
 new-figure identity-capacity refusal compares two and preserves the whole project.
 Electron follow pictures pass all nine stored/preview/onion captures (mean 0.0553–0.0884,
-zero solid pixels). The strict follow app check still refuses cold paths and baking at
-new revisions; it does not certify adoption until worker publication is connected.
+zero solid pixels). The strict follow app check (2026-10-04) refused cold paths and baking at
+new revisions; sessions no longer refuse them (2026-10-24, above), and baking still waits for worker publication.
 Forty-five admitted recordings match all 1,290 steps; four guard recordings confirm refusal.
 The 41 derived evaluated groups / 362 ticks are included. Public portable additions are
 `styk_math::log`, `Prepared::travel_ready`, `Pose::shot` and `CommandKind::FigureSplice`;
@@ -593,9 +608,12 @@ document difference the harness can see):
   counter), with the editor's errors; movieclip replacement records, the million-key
   limits, `validateObjectChanges` and `validateLayerState` are not ported.
 - **Audio ripple** (`editor.audioRipple`): inserting or removing frames on every track
-  also shifts audio in the editor; the facade runs those in JavaScript while it is on.
+  also shifts audio. Ported with the audio commands (`audio.rs`; see Phase 3).
 
 ## Shadow editing in the app
+
+The shadow and the per-class switches described in this section and the next no longer exist: the engine
+owner (Phase 3) is the only editing path. They are kept as the record of how each class was verified.
 
 With `?engineShadow=on` (or `localStorage['stykanimate.engine.shadowEdit'] = 'on'`) every
 ported call the app makes also runs in the engine: `EngineHandle.edit_session` starts
@@ -1026,13 +1044,8 @@ the default until then).
   it, which the stage draws), so the trails (`motionPathReport()`), the arc
   (`motionPathFalloff()`), the stage and the pinned-origin modifier read what they read from the
   editor's session. Ending the gesture is the session's too (`commitDrag`,
-  `cancelDrag` and a seek end it). A pointer move that is rejected leaves the edit open, as in the
-  editor: a pointer that is not finite raises the editor's own error (its check, which the mirror
-  carries the document token for) before the session is asked, and any other error the session raises
-  there is raised from its message key. The owner keeps the calls that made the edit; when a call of
-  it is refused, or the editor runs another call, the edit becomes the editor's own: the session
-  forgets it (`@dropGesture`, the document is unchanged by it until it ends) and the editor replays
-  those calls, which gives its session what the session had.
+  `cancelDrag` and a seek end it). A pointer move that is rejected (a pointer that is not finite,
+  a stretch the editor refuses) raises the error and leaves the edit open, as in the editor.
 - **Figure-handle, Handle Edit Mode and segment-value gestures.** `beginFigureHandleDrag`…`cancelFigureHandleDrag`,
   `beginHandleEditDrag`…`cancelHandleEditDrag`, `beginSegmentValueEdit` and `setSegmentValues` run in the
   session, as drags the owner already mirrors (`gesture`: the draft, `_drag` with the figures it took).
@@ -1043,41 +1056,56 @@ the default until then).
   them as `_drag.figureHandle`, `_drag.handleEdit` and `_drag.segmentValueOptions`: the stage's pivot marker reads
   `figureHandle.transform.origin`, and the segment-values dialog keeps the gesture it began (`_drag` stays one
   object) and reads the segment's values from the draft. Ctrl and Shift come with each move and are not
-  gesture state. The part only the editor's own code reads (the figures that move; the arcs a handle edit
-  solves with their lengths and bends) is not sent: when a call the editor runs belongs to such a gesture (the
-  session refused it, or raised an error the editor raises itself) the gesture becomes the editor's own first
-  (`takeHandles`): the owner asks the session for it (`@gestureState`), the session forgets the gesture
-  (`@dropGesture`, the document it changed is the read view's) and the mirrored `_drag` loses `engine`, so the
-  editor carries it on from the same figures, arcs and turns and ends it with its own commit.
+  gesture state.
 - **Rig edits and camera drags.** `beginRigDrag`…`cancelRigDrag` and `beginCameraDrag`…`cancelCameraDrag`
   run in the session. A rig edit is a pose gesture to the interface: it reads the `_drag` the owner
   mirrors (`gesture`: the figures it took, the draft on a layer sheet, the keyframe itself on a native
   timeline), and the answer's `drag` says `rig: true`. A camera drag takes no figure (`camera: true`);
   the frame it shows is the frame it began on with the camera it moves, so a pointer move answers only
   that camera (`cameraPreview`, not the frame) and the owner lays it over the frame on show as
-  `_sheetPropertyPreview`. The editor runs both by state the session does not share (the rig's geometry
-  and snapshot, the camera's keys), so the owner keeps their calls (a pointer move replaces the one before
-  it, a keyboard nudge adds to the moves) and, when a call of the gesture is refused or the editor runs
-  another call, the gesture becomes the editor's own: the session forgets it (`@dropGesture`), a pose it
-  previewed in the document of a native timeline goes back as it was, and the editor replays the calls. A
-  joint position that is not finite, or any call the session answers with an error that leaves the gesture
-  open, is rejected by the editor's own check before it touches the gesture: the editor raises it and the
-  gesture stays the session's. A camera drag on a native timeline is the editor's from the start (the session refuses
-  to begin it).
-- **Refusals.** A call the session refuses (`Unported`), a gesture whose live state the
-  interface reads from the editor (frame drafts) and an
-  error the session raised without changing anything run in the editor on the read view. If the
-  session holds a property or effect-clip edit then, the edit becomes the editor's own first
-  (`@dropEdits`: the session forgets it, the mirrored record loses `engine`), so the editor's
-  code ends or amends it as it would have its own; a figure-handle, Handle Edit Mode or segment-value
-  gesture, a motion-path edit likewise (above). What they recorded becomes
-  session history entries of kind `External` (`external.rs`): the session keeps their place,
+  `_sheetPropertyPreview`. A joint position that is not finite, or any call the session answers with an
+  error that leaves the gesture open, raises the error and the gesture stays open.
+- **Duplicate drag and the tweener.** `beginDuplicateDrag` duplicates the selected figures whole and
+  begins a translation gesture on the copies (`styk-edit/src/duplicate_drag.rs`): the copies are recorded
+  into the gesture, not into history; `commitDrag` (or `finishDuplicateDrag(true)`) records them and the
+  move as one `movieclip-batch` entry labelled `Duplicate figures`, `cancelDrag` undoes the copies and
+  records nothing. `beginTween` plans a pose gesture between the keys either side of the playhead
+  (`tweener.rs`: a two-pose document per blend, sampled with the evaluator's native interval) and
+  `updateTween(amount, mode)` poses the draft from it; the gesture keys the playhead on the layers it posed
+  when it ends (`Authored.key_at_playhead`), even where nothing changed. Both show on the editor as an
+  ordinary mirrored pose gesture.
+- **Grouped edits.** `movieclipBatch(label, operation)` is the owner's: it asks the session to begin a
+  batch (`beginBatch`), runs `operation` (whose calls the session runs one by one into the batch), and ends
+  it (`endBatch`: one history entry) or, if `operation` throws, aborts it (`abortBatch`: what it did is
+  undone, the error raised). The batch calls are not gated by the document's features.
+- **Working frames.** The interface never starts one on a layer sheet. `disableFrameDrafts` (the
+  timeline mounting in Advanced mode) commits what is open and converts a draft a file was saved with when
+  it is an Update (`frame_draft.rs`); `beginFrameDraftPreview` and `endFrameDraftPreview` answer false.
+  Starting, adding, updating and discarding a working frame, the editor's low-level API for native timelines, is
+  refused.
+- **Audio.** Adding tracks, importing, splitting, duplicating, copying, cutting and pasting clips take
+  their identities from the draws (a call that makes more than the pool holds is asked again with more) and
+  `rippleAudio` cuts through clips; the `audioRipple` option travels with the view, and frame inserts and
+  removals of every layer then ripple the audio inside one entry. The interface asks only whether an
+  audio clip was copied (`editor._audioClipboard`), which the owner marks.
+- **Errors.** A session error carries its message key and, when the message names values (`Unlock {name}
+  before editing it`, `{label} must be finite`), their JSON (`errorParams`; `invalid_with` in Rust: a text,
+  `{"@label": text}` for a field label, `{"@motionParameter": …}`, `{"@vfxParameter": …}`). The owner raises
+  the editor's own error from them. A message that needs a value the engine does not name yet says that a value is
+  not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
+  not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
+- **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
+  name) runs in the JavaScript editor on the read view (the drawing commits, the layer and background commands, the
+  bakes, inbetweens, the frame clipboard, disconnecting and combining figures, 3D rig values); `report.editor` counts
+  them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and
-  the changed records are written back. Edits other modules make in place or through
-  `editor._record` are written back the same way before the next call.
-- **History.** Undo/redo are the session's. The editor's stacks mirror the session's
-  (`depths`): its own commands for external entries, placeholders for native ones, so code
+  the changed records are written back. A session gesture or edit still open when such a call is made is committed first.
+  Edits other modules make in place (the camera-motion and parallax previews, the inspector's native property
+  tokens) or through `editor._record` are written back the same way before the next call, and editing the inside of a
+  movieclip (`enterMovieclip`) is the editor's alone until it is left.
+- **History.** Undo/redo are the session's. Redo, like undo, ends a gesture that is open first. The editor's stacks
+  mirror the session's (`depths`): its own commands for external entries, placeholders for native ones, so code
   that reads or amends the entry on top keeps working.
 - **Start.** In the app the session starts on the stage's mirrored document (it reuses the
   stage's prepared views); `@shape` then brings key order and what the mirror leaves out
@@ -1086,20 +1114,28 @@ the default until then).
 - **Legacy pose caches.** Pivot imports carry `runtime_segments` on every pose; the range
   operations materialize lengths and bends from it before dropping it, as the editor does.
 
-Checks: `tests/engine-owner.test.mjs` replays every recorded tape (325) on the editor alone
-and on an owned editor, from the exact document and from the mirror (there with the legacy
-pose cache on every pose), comparing document,
-selection, history and the frame on show after every step and after undoing everything,
-with the session's document compared to the read view after every call.
+Checks: `tests/engine-owner.test.mjs` replays every recorded tape (503 of the 507 that the editor ran
+on its own views; the four with `@native` token steps are left out) on an owned editor against
+`engine/tests/edit/*.reference.json`, from the exact document and from the mirror (and from the mirror with the
+legacy pose cache on every pose, where only the session's document is compared with the read view): the
+document, selection, history labels and flags, counters, change events (without the playhead fields and the
+flags that are off), the message of every error and the probes the tapes take of the editor's own views (the
+frame on show, the motion-path display, the selection state) after every step, with the session's document
+compared to the read view after every call. Thirteen tapes end where the engine refuses what the editor did next
+(`expectedFrontiers`: a bounds callback other than the app's, native documents with property channels); none needs
+the editor to run a call. `tests/engine-owner-gestures.test.mjs` states what the interface reads of the duplicate
+drag, the tweener, grouped edits, working frames, audio and the calls that run in the editor.
 `node scripts/engine-app-tape.mjs --owner <tape…>` does the same in the running app, and
 `node scripts/engine-owner-cost.mjs <file>` measures the editing cost rule.
 Known differences: the frame on show may lack the derived `object_count` the editor's
-caches sometimes keep, and the internal `layerRevision` cache key can differ by one around
-source pruning; neither is visible.
+caches sometimes keep, the internal `layerRevision` cache key can differ by one around
+source pruning, and the display frame of a saved origin motion on a native document differs from the editor's
+by an ulp; none is visible. A redo under an open gesture ends the gesture first (the editor left it open). A
+message for an error whose values the engine does not name yet is the generic one.
 
-Still to come: the frame on show, handles and picking as engine queries (phase 2), the
-remaining refusals ported, the stage committing the session's tree instead of the mirror,
-and opening and saving through `styk-formats` and `styk-piv` directly.
+Still to come: the frame on show, handles and picking as engine queries (phase 2), the commands that still run in
+the editor ported (and their history entries with them), the stage committing the session's tree instead of the
+mirror, and opening and saving through `styk-formats` and `styk-piv` directly.
 
 ## Invariants
 

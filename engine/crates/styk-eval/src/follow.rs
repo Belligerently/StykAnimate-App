@@ -24,8 +24,8 @@ use std::sync::Arc;
 use crate::doc::{Camera, CameraMotionClip, Document, Join, Keyframe};
 use crate::eval::Prepared;
 
-/// Clip frames shaped past the one asked for, so a playing clip extends its path
-/// a few times rather than on every frame.
+/// Clip frames shaped past the one asked for once a path has been started, so a playing clip
+/// extends its path a few times rather than on every frame.
 const CHUNK: usize = 256;
 
 /// The follow clips of a document and the projection their figures are sampled in.
@@ -276,7 +276,10 @@ impl Clip {
         (self.params.look_ahead + 0.5).floor().max(0.0) as usize
     }
 
-    /// The path through clip frame `upto` at least.
+    /// The path through clip frame `upto` at least. A path nobody has started is shaped through
+    /// that frame and no further, which is all a session needs for the revision it has just made
+    /// (it works the path out itself, on the interface thread); a path that exists grows a chunk
+    /// at a time, so a playing clip extends it rarely.
     fn path(&self, upto: usize, canvas: [f64; 2]) -> Arc<Path> {
         let known = self.path.get();
         if known.frames.len() > upto {
@@ -284,7 +287,8 @@ impl Clip {
         }
         let mut next = (*known).clone();
         drop(known);
-        let goal = (upto + 1).max(next.frames.len() + CHUNK).min(self.duration.max(0.0) as usize);
+        let ahead = if next.frames.is_empty() { 0 } else { CHUNK };
+        let goal = (upto + 1).max(next.frames.len() + ahead).min(self.duration.max(0.0) as usize);
         self.extend(&mut next, goal, canvas);
         let next = Arc::new(next);
         self.path.offer(next.clone(), |new, old| new.frames.len() > old.frames.len());
@@ -549,6 +553,22 @@ impl<T> Latest<T> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_cold_path_is_shaped_through_the_frame_asked_and_then_grows_in_chunks() {
+        let tree = styk_doc::json::parse(&std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/eval/follow-figures.json")).unwrap()).unwrap();
+        let mut doc = crate::from_value(&tree, "bounded").unwrap();
+        for clip in doc.camera_motion.iter_mut().filter(|clip| clip.kind == "follow") { clip.duration = 100_000.0; }
+        let follow = super::Follow::new(&doc).unwrap();
+        let shaped = |follow: &super::Follow| follow.clips.iter().map(|clip| clip.path.get().frames.len()).collect::<Vec<_>>();
+        assert!(shaped(&follow).iter().all(|&frames| frames == 0));
+        // The clips start at tick 2: tick 5 is clip frame 3, which reads frames 3 and 4.
+        follow.travel(None, 5.0);
+        assert!(shaped(&follow).iter().all(|&frames| frames == 5), "a cold path went past the frame asked: {:?}", shaped(&follow));
+        // A path that exists grows a chunk at a time.
+        follow.travel(None, 9.0);
+        assert!(shaped(&follow).iter().all(|&frames| frames == 5 + super::CHUNK), "{:?}", shaped(&follow));
+    }
+
     #[test]
     fn cold_late_dense_queries_do_not_publish_samples_or_shapes() {
         let mut tree = styk_doc::json::parse(&std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/eval/follow-figures.json")).unwrap()).unwrap();

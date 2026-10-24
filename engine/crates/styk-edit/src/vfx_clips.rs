@@ -61,6 +61,8 @@ fn object_is(a: Option<&Value>, b: Option<&Value>) -> bool {
 /// the parameter's kind and range (`enabled` is a switch).
 struct Descriptor {
     kind: Kind,
+    /// The effect's type as the property names it.
+    type_name: String,
     id: String,
     param: String,
     color: bool,
@@ -86,7 +88,7 @@ fn descriptor(property: &str) -> Option<Descriptor> {
         let spec = kind.specs()[kind.param(param)?];
         (spec.kind == ParamKind::Color, spec.kind.discrete(), spec.min, spec.max)
     };
-    Some(Descriptor { kind, id: id.to_string(), param: param.to_string(), color, discrete, min, max })
+    Some(Descriptor { kind, type_name: parts[1].to_string(), id: id.to_string(), param: param.to_string(), color, discrete, min, max })
 }
 
 /// `vfxProperty(type, id, param)`.
@@ -102,8 +104,18 @@ fn check_value(found: &Descriptor, value: Option<&Value>) -> Result<(), EditErro
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= found.min && *n <= found.max && (!(found.color || found.discrete) || n.fract() == 0.0) => Ok(()),
         Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if found.color => crate::recolor::normalize_paint(paint).map(|_| ()),
-        _ => Err(invalid("errors.cameraMotion.mustBeBetweenAnd")),
+        _ => Err(vfx_range_error(&found.type_name, &found.param, found.min, found.max)),
     }
+}
+
+/// A value outside an effect parameter's range: the parameter is named as the interface names it.
+pub(crate) fn vfx_range_error(type_name: &str, param: &str, min: f64, max: f64) -> EditError {
+    let mut parameter = Obj::new();
+    parameter.set("type", Value::str(type_name));
+    parameter.set("param", Value::str(param));
+    let mut reference = Obj::new();
+    reference.set("@vfxParameter", Value::object(parameter));
+    crate::invalid_with("errors.cameraMotion.mustBeBetweenAnd", vec![("label", Value::object(reference)), ("min", Value::Num(min)), ("max", Value::Num(max))])
 }
 
 /// `validateVfxStack(stack)`, effects in `known` (already checked) skipped.
@@ -269,7 +281,7 @@ fn check_clip(clip: &Value, old: Option<&Value>) -> Result<(), EditError> {
                 Some(mode) => mode.as_str().map(|m| if m == "hold" { "constant" } else { m }).unwrap_or("").to_string(),
             };
             if found.discrete && mode != "constant" {
-                return Err(invalid("errors.keyframeEasing.useConstantEasing"));
+                return Err(crate::invalid_with("errors.keyframeEasing.useConstantEasing", vec![("value", crate::message("keyframeEasing.backgroundIdentities"))]));
             }
         }
     }
@@ -322,6 +334,7 @@ impl Editor {
     /// `unlocked(editor, target)`: the layer of the clip's target must not be locked.
     fn vfx_unlocked(&self, target: Option<&Value>) -> Result<(), EditError> {
         let layers = self.report.path(&["_styk", "layers"]);
+        let mut owner = "scene".to_string();
         let locked = match target.and_then(|t| t.get("kind")).and_then(Value::as_str) {
             Some("scene") => layers.and_then(|l| l.path(&["fixed", "scene", "locked"])).is_some_and(Value::truthy),
             _ => {
@@ -330,11 +343,13 @@ impl Editor {
                     Some(uid) => self.layer_of(uid as u32),
                     None => return Err(EditError::Unported("an effect clip without a figure".into())),
                 };
-                layers.and_then(|l| l.path(&["byId", &layer, "locked"])).is_some_and(Value::truthy)
+                let locked = layers.and_then(|l| l.path(&["byId", &layer, "locked"])).is_some_and(Value::truthy);
+                owner = layer;
+                locked
             }
         };
         if locked {
-            return Err(invalid("errors.editorVfxClips.unlockBeforeEditingEffects"));
+            return Err(crate::invalid_with("errors.editorVfxClips.unlockBeforeEditingEffects", vec![("name", Value::str(&crate::layers::layer_title(layers, &owner)))]));
         }
         Ok(())
     }

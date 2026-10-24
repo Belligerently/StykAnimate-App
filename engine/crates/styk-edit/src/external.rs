@@ -1,7 +1,7 @@
 //! What the JavaScript editor changed itself, while the session owns the document (D19).
 //!
-//! A call the session refuses runs in the JavaScript editor on its read view. Its changed
-//! records come back as patch operations (`crate::patch`), with a history entry the
+//! A call the session has no command for runs in the JavaScript editor on its read view. Its
+//! changed records come back as patch operations (`crate::patch`), with a history entry the
 //! JavaScript editor undoes and redoes itself: the session keeps the entry's place, label,
 //! weight and the pose sources it keeps alive, and asks the editor to apply it.
 //!
@@ -17,8 +17,8 @@
 //!   entry <id>")` and change nothing; the editor applies it, then calls
 //!   `@externalDone(id, redo, ops)`, which applies `ops` and moves the entry;
 //! - `@historyLimits(count, bytes)` sizes history as the editor does; `@revisions(revision,
-//!   serial, saved)` continues the editor's numbering; `@markSaved()`; `@dropGesture()`;
-//!   `@gestureState()`; `@dropEdits(animation, vfx)`; `@shape()`; `@externalStacks(undo, redo)` takes the editor's history from before the session.
+//!   serial, saved)` continues the editor's numbering; `@markSaved()`; `@shape()`;
+//!   `@externalStacks(undo, redo)` takes the editor's history from before the session.
 
 use std::collections::HashSet;
 
@@ -168,14 +168,6 @@ impl Editor {
         Ok(Value::Bool(true))
     }
 
-    /// `@dropGesture()`: the editor ended the session's gesture itself (the session refused
-    /// to): forget it without changing the document, which the editor's records bring.
-    pub(crate) fn drop_gesture(&mut self) -> Result<Value, EditError> {
-        self.drag = None;
-        self.authored = None;
-        Ok(Value::Bool(true))
-    }
-
     /// What the interface reads of the figure-handle, Handle Edit Mode and segment-value gesture in
     /// progress (`_drag.figureHandle`, `_drag.handleEdit`, `_drag.segmentValueOptions`), told with
     /// every answer; `null` when none is open.
@@ -189,28 +181,6 @@ impl Editor {
         if let Some(edit) = &drag.handle_edit { out.set("handleEdit", edit.live()); }
         if let Some(options) = &drag.segment_value_options { out.set("segmentValueOptions", options.clone()); }
         Value::object(out)
-    }
-
-    /// `@gestureState()`: the rest of the figure-handle or Handle Edit Mode gesture the editor needs
-    /// to carry it on when it takes it over (the figures that move and the arcs it solves).
-    pub(crate) fn gesture_state(&self) -> Result<Value, EditError> {
-        let mut out = Obj::new();
-        if let Some(edit) = self.drag.as_ref().and_then(|drag| drag.figure_handle.as_ref()) { out.set("figureHandle", edit.targets()); }
-        if let Some(edit) = self.drag.as_ref().and_then(|drag| drag.handle_edit.as_ref()) { out.set("handleEdit", edit.states()); }
-        Ok(Value::object(out))
-    }
-
-    /// `@dropEdits(animation, vfx)`: the editor took the property edit and the effect-clip edit
-    /// over (a call it runs belongs to them): forgets the ones asked for without changing the
-    /// document, which already shows their previews.
-    pub(crate) fn drop_edits(&mut self, args: &[Value]) -> Result<Value, EditError> {
-        if args.first().is_some_and(Value::truthy) {
-            self.property_edit = None;
-        }
-        if args.get(1).is_some_and(Value::truthy) {
-            self.vfx_edit = None;
-        }
-        Ok(Value::Bool(true))
     }
 
     pub(crate) fn mark_saved(&mut self) -> Result<Value, EditError> {

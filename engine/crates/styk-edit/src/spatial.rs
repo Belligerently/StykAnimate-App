@@ -1019,7 +1019,7 @@ mod same_call_context_tests {
             let (mut editor, _) = recorded_editor("ik-unpinned-sheet");
             let slot = editor.object().unwrap().unwrap().0;
             let source = editor.shown_frame().unwrap();
-            editor.authored = Some(Authored { frame: source.clone(), source, tick: editor.tick, transaction: false, definitions_start: None });
+            editor.authored = Some(Authored { frame: source.clone(), source, tick: editor.tick, transaction: false, definitions_start: None, key_at_playhead: false, key_at_playhead_layers: Vec::new() });
             let mut evaluation = None;
             assert!(editor.spatial_context_at_with(slot, Some(&mut evaluation)).unwrap().is_some());
             assert!(evaluation.is_some(), "{case}: seed a real prior tuple");

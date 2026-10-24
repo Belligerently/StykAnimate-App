@@ -613,8 +613,8 @@ pub(crate) fn validate_recolor(operation: &Value) -> Result<Recolor, EditError> 
     let mut style = Style::default();
     if mode == Mode::Style {
         let patch = operation.get("patch").and_then(Value::as_obj).cloned().unwrap_or_default();
-        if patch.keys().any(|k| !["color", "paint", "gradient", "opacity", "thickness"].contains(&&**k)) {
-            return Err(invalid("errors.figureColors.unsupportedColorStyle"));
+        if let Some(key) = patch.keys().find(|k| !["color", "paint", "gradient", "opacity", "thickness"].contains(&&***k)) {
+            return Err(crate::invalid_with("errors.figureColors.unsupportedColorStyle", vec![("key", Value::str(key))]));
         }
         if let Some(color) = patch.get("color") {
             style.color = Some(rgb(color)?);

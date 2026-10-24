@@ -15,11 +15,8 @@ fn invalid(key: &str) -> EditError {
 }
 
 /// `finite(value, label, minimum, maximum)`.
-fn finite(value: Option<&Value>, minimum: f64, maximum: f64) -> Result<f64, EditError> {
-    match value {
-        Some(Value::Num(n)) if n.is_finite() && *n >= minimum && *n <= maximum => Ok(*n),
-        _ => Err(invalid("errors.editorBuilder.mustBeAFiniteNumberBetweenAnd")),
-    }
+fn finite(value: Option<&Value>, label: &str, minimum: f64, maximum: f64) -> Result<f64, EditError> {
+    crate::builder::builder_finite(value, label, minimum, maximum)
 }
 
 /// `rgb(value)`: `#rrggbb` or three bytes.
@@ -117,12 +114,12 @@ fn patch_polygon(figure: &Value, polygon: &mut Obj, patch: &Obj) -> Result<(), E
         polygon.set("color_rgb", rgb(patch.get("color"))?);
     }
     if patch.contains("opacity") {
-        let alpha = js_round(255.0 * (1.0 - finite(patch.get("opacity"), 0.0, 1.0)?));
+        let alpha = js_round(255.0 * (1.0 - finite(patch.get("opacity"), "Opacity", 0.0, 1.0)?));
         polygon.set("alpha_raw", Value::Num(alpha));
         polygon.set("color_alpha", Value::Num(1.0 - alpha / 255.0));
     }
     if patch.contains("zOrder") {
-        let order = finite(patch.get("zOrder"), f64::NEG_INFINITY, f64::INFINITY)?;
+        let order = finite(patch.get("zOrder"), "Polygon order", f64::NEG_INFINITY, f64::INFINITY)?;
         polygon.set("z_order", Value::Num(order));
         polygon.set("z_order_runtime_raw", Value::Num(order - 1.0));
     }
@@ -163,7 +160,7 @@ impl Editor {
             if let Some(order) = polygon.get("z_order").and_then(Value::as_f64)
                 && !((order as f32) as f64).is_finite()
             {
-                return Err(invalid("errors.model.exceedsTheNativeFloat32Range"));
+                return Err(crate::invalid_with("errors.model.exceedsTheNativeFloat32Range", vec![("label", crate::label("Polygon drawing order"))]));
             }
         }
         let after = Value::object(figure.clone());
@@ -243,8 +240,8 @@ impl Editor {
             Value::Null => &empty,
             other => other.as_obj().ok_or_else(|| EditError::Unported("a polygon change that is not an object".into()))?,
         };
-        if patch.keys().any(|key| !["handleIds", "color", "opacity", "zOrder", "surface"].contains(&&**key)) {
-            return Err(invalid("errors.editorBuilder.polygonPropertyIsNotEditable"));
+        if let Some(key) = patch.keys().find(|key| !["handleIds", "color", "opacity", "zOrder", "surface"].contains(&&***key)) {
+            return Err(crate::invalid_with("errors.editorBuilder.polygonPropertyIsNotEditable", vec![("key", Value::str(key))]));
         }
         let style_only = patch.keys().all(|key| ["color", "opacity"].contains(&&**key));
         if style_only && patch.contains("color") {

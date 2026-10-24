@@ -157,6 +157,9 @@ test('a retired in-between job reads as the editor words it, and an engine that 
   await assert.rejects(planEngineInbetweens(engineOf(() => { controller.abort(); throw retired; }), 1, request, {signal: controller.signal}), error => error.name === 'AbortError' && /cancelled/.test(error.message));
   await assert.rejects(planEngineInbetweens(engineOf(() => { throw Object.assign(new Error('a layer sheet is not ported'), {name: 'EngineUnported'}); }), 1, request), isUnported);
   await assert.rejects(planEngineInbetweens({...engineOf(() => undefined), threaded: false}, 1, request), isUnported);
+  // A refusal that names a value carries it after the key; the editor's error holds both.
+  await assert.rejects(planEngineInbetweens(engineOf(() => { throw new Error('errors.editorLayerSheet.unlockBeforeEditingIt\u001f{"name":"Destination"}'); }), 1, request),
+    error => error.messageKey === 'errors.editorLayerSheet.unlockBeforeEditingIt' && error.messageParams.name === 'Destination' && error.message === 'Unlock Destination before editing it.');
   await assert.rejects(planEngineInbetweens(engineOf(() => undefined), 1, {...request, ratio: 2}), error => error.messageKey === 'errors.editorInbetweenAsync.chooseAnInterpolationRatioFromZeroToOne');
   await assert.rejects(planEngineInbetweens(engineOf(() => undefined), 1, {...request, indices: [-1]}), /Invalid inbetween planning request/);
   // The worker that still disposes the previous job answers busy: the job starts once it has.

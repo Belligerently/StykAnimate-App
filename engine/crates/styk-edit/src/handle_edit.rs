@@ -61,33 +61,6 @@ impl HandleEdit {
         value.set("bend", Value::Bool(self.bend));
         Value::object(value)
     }
-
-    /// The figures that move and the arcs the gesture solves, as the editor needs them to carry the
-    /// gesture on (`_drag.handleEdit.states`).
-    pub(crate) fn states(&self) -> Value {
-        Value::array(self.states.iter().map(|state| {
-            let mut value = Obj::new();
-            value.set("slot", Value::Num(state.slot as f64));
-            value.set("vertex", Value::Num(state.vertex));
-            value.set("indices", Value::nums(&state.indices.iter().map(|&index| index as f64).collect::<Vec<_>>()));
-            value.set("incident", Value::array(state.incident.iter().map(|shape| {
-                let mut value = Obj::new();
-                value.set("index", Value::Num(shape.index as f64));
-                value.set("id", Value::Num(shape.segment_id));
-                value.set("angle", Value::Num(shape.angle));
-                value.set("bend", Value::Num(shape.bend));
-                value.set("start", Value::nums(&shape.start));
-                value.set("end", Value::nums(&shape.end));
-                value.set("line", Value::Bool(shape.line));
-                Value::object(value)
-            }).collect()));
-            value.set("lengths", Value::nums(&state.lengths));
-            value.set("bends", Value::nums(&state.bends));
-            value.set("drawn", Value::nums(&state.drawn));
-            value.set("moved", Value::Bool(state.moved));
-            Value::object(value)
-        }).collect())
-    }
 }
 
 /// `handleEditSegmentPose(shape, start, end, scale, {bend, movingEnd})`: the angle, length

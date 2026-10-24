@@ -272,18 +272,18 @@ pub(crate) fn branch(figure: &Value, selected: usize, whole: bool, polygons: boo
 }
 
 /// `finite(value, label, min, max)` of src/editor-builder-branch.mjs.
-fn branch_finite(value: Option<&Value>, min: f64, max: f64) -> Result<f64, EditError> {
+pub(crate) fn branch_finite(value: Option<&Value>, label: &str, min: f64, max: f64) -> Result<f64, EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(*n),
-        _ => Err(invalid("errors.editorBuilderBranch.mustBeAFiniteNumberBetweenAnd")),
+        _ => Err(crate::out_of_range("errors.editorBuilderBranch.mustBeAFiniteNumberBetweenAnd", label, ("min", "max"), (min, max))),
     }
 }
 
 /// `finite(value, label, min, max)` of src/editor-builder.mjs.
-fn builder_finite(value: Option<&Value>, min: f64, max: f64) -> Result<f64, EditError> {
+pub(crate) fn builder_finite(value: Option<&Value>, label: &str, min: f64, max: f64) -> Result<f64, EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max => Ok(*n),
-        _ => Err(invalid("errors.editorBuilder.mustBeAFiniteNumberBetweenAnd")),
+        _ => Err(crate::out_of_range("errors.editorBuilder.mustBeAFiniteNumberBetweenAnd", label, ("minimum", "maximum"), (min, max))),
     }
 }
 
@@ -328,7 +328,7 @@ struct Values {
 fn style_patch(figure: &Value, selected: usize, patch: &Obj, targets: &Branch) -> Result<(Vec<Entry>, Values), EditError> {
     for key in patch.keys() {
         if !["color", "opacity", "thickness", "static", "gradient", "paint"].contains(&&**key) {
-            return Err(invalid("errors.editorBuilderBranch.branchStyleIsNotEditableUseTheCaps"));
+            return Err(crate::invalid_with("errors.editorBuilderBranch.branchStyleIsNotEditableUseTheCaps", vec![("key", Value::str(key))]));
         }
     }
     let mut values = Values { has_color: patch.contains("color"), has_opacity: patch.contains("opacity"), has_gradient: patch.contains("gradient"), ..Values::default() };
@@ -359,10 +359,10 @@ fn style_patch(figure: &Value, selected: usize, patch: &Obj, targets: &Branch) -
         values.color = Some(rgb(color.as_ref())?);
     }
     if values.has_opacity {
-        values.alpha = Some(js_round(255.0 * (1.0 - branch_finite(opacity.as_ref(), 0.0, 1.0)?)));
+        values.alpha = Some(js_round(255.0 * (1.0 - branch_finite(opacity.as_ref(), "Opacity", 0.0, 1.0)?)));
     }
     if patch.contains("thickness") {
-        values.thickness = Some(branch_finite(patch.get("thickness"), 0.0, 1e6)?);
+        values.thickness = Some(branch_finite(patch.get("thickness"), "Thickness", 0.0, 1e6)?);
     }
     if patch.contains("static") {
         match patch.get("static") {
@@ -383,7 +383,7 @@ fn style_patch(figure: &Value, selected: usize, patch: &Obj, targets: &Branch) -
                 let color = fields.get("color").filter(|v| !v.is_null()).cloned().or(fallback).unwrap_or_else(|| Value::str("#ffffff"));
                 values.gradient_color = Some(rgb(Some(&color))?);
                 if fields.contains("opacity") {
-                    values.gradient_alpha = Some(js_round(255.0 * (1.0 - branch_finite(fields.get("opacity"), 0.0, 1.0)?)));
+                    values.gradient_alpha = Some(js_round(255.0 * (1.0 - branch_finite(fields.get("opacity"), "Opacity", 0.0, 1.0)?)));
                 }
             }
         }
@@ -789,7 +789,7 @@ impl Editor {
     /// `changeBranchThickness(delta)`: increment every descendant in source order,
     /// clamped to Pivot's numeric-action range and rounded as `Math.fround`.
     fn change_branch_thickness(&mut self, delta: Option<&Value>) -> Result<Value, EditError> {
-        let delta = branch_finite(delta, f64::NEG_INFINITY, f64::INFINITY)?;
+        let delta = branch_finite(delta, "Thickness change", f64::NEG_INFINITY, f64::INFINITY)?;
         let Some(selected) = self.builder_selection()? else { return Ok(Value::Bool(false)) };
         let segments = segments_of(&selected.figure);
         let indices = branch(&selected.figure, selected.joint, true, false).indices;
@@ -959,7 +959,7 @@ impl Editor {
                     }
                 };
                 if fields.contains("outlineWidth") {
-                    let width = builder_finite(fields.get("outlineWidth"), 0.0, 1e6)?;
+                    let width = builder_finite(fields.get("outlineWidth"), "Outline width", 0.0, 1e6)?;
                     style.set("outline_thickness", Value::Num(width));
                     style.set("u28", Value::Num((width as f32).to_bits() as f64));
                 }
@@ -967,7 +967,7 @@ impl Editor {
                     style.set("rgb", rgb_array(rgb(fields.get("outlineColor"))?));
                 }
                 if fields.contains("outlineOpacity") {
-                    style.set("u30", Value::Num(js_round(255.0 * (1.0 - builder_finite(fields.get("outlineOpacity"), 0.0, 1.0)?))));
+                    style.set("u30", Value::Num(js_round(255.0 * (1.0 - builder_finite(fields.get("outlineOpacity"), "Opacity", 0.0, 1.0)?))));
                 }
                 decode.set("global_style", Value::object(style));
                 figure.set("segment_decode", Value::object(decode));
@@ -1216,7 +1216,7 @@ impl Editor {
             if !in_range {
                 let uid = object.get("unique_id").cloned().unwrap_or(Value::Null);
                 self.emit("edit", vec![("label", Value::str("Cancel branch opacity")), ("live", Value::Bool(false)), ("changedUids", Value::array(vec![uid]))]);
-                return Err(invalid("errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom"));
+                return Err(crate::invalid_with("errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom", vec![("length", Value::Num(entries.len() as f64))]));
             }
             let next = reorder(&entries, &targets, None, value - current)?;
             return self.key_builder_order(&figure, &object, &entries, &next).map(Value::Bool);
@@ -1225,7 +1225,7 @@ impl Editor {
             if self.drag.is_some() {
                 self.commit_drag()?;
             }
-            return Err(invalid("errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom"));
+            return Err(crate::invalid_with("errors.editorBuilderStyle.drawOrderMustBeAWholePositionFrom", vec![("length", Value::Num(entries.len() as f64))]));
         }
         let next = reorder(&entries, &targets, None, value - current)?;
         self.write_builder_order(&label, &figure, &object, &entries, &next).map(Value::Bool)

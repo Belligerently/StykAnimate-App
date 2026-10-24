@@ -361,7 +361,7 @@ impl Session {
         editor.set_view(number(&state, "tick").unwrap_or(0.0), number(&state, "frameIndex").unwrap_or(0.0) as usize, selection_of(&state));
         // A metadata restore may inspect stable handles of the figure on show:
         // the interface session must use the mirror's already prepared owner.
-        if let Some((loader, prepared)) = prepared { editor.adopt_prepared(loader, prepared); editor.worker_prepared_only = true; }
+        if let Some((loader, prepared)) = prepared { editor.adopt_prepared(loader, prepared); }
         editor.set_selection_metadata(&state).map_err(|error| format!("{error:?}"))?;
         let counter = |key: &str| number(&state, key).unwrap_or(0.0) as u64;
         editor.set_counters(counter("layerRevision"), counter("nextFrameIdentity"), counter("nextUid"));
@@ -551,6 +551,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             return Ok(response_value(answer));
         }
         editor.set_auto_key(flag(view, "autoKey"));
+        editor.audio_ripple = flag(view, "audioRipple");
         // Selecting changes the active layer without a new revision of the document.
         if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
             editor.set_active_layer_id(active);
@@ -639,9 +640,12 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
             answer.push(("status", Value::str("unported")));
             answer.push(("reason", Value::str(&what)));
         }
-        Err(EditError::Invalid(key)) => {
+        Err(EditError::Invalid(text)) => {
             answer.push(("status", Value::str("error")));
-            answer.push(("error", Value::str(&key)));
+            answer.push(("error", Value::str(crate::error_key(&text))));
+            if let Some(params) = crate::error_params(&text) {
+                answer.push(("errorParams", params));
+            }
         }
     }
     answer.push(("state", editor.state_value()));

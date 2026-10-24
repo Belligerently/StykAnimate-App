@@ -76,7 +76,7 @@ pub(crate) fn checked_plan(report: &Value, ids: &[String], identity: u64) -> Res
             .path(&[if crate::sheet::fixed(id) { "fixed" } else { "byId" }, id])
             .ok_or_else(|| invalid("errors.editorLayerSheet.theSelectedLayerNoLongerExists"))?;
         if layer.get("locked").is_some_and(Value::truthy) {
-            return Err(invalid("errors.editorLayerSheet.unlockBeforeEditingIt"));
+            return Err(crate::invalid_with("errors.editorLayerSheet.unlockBeforeEditingIt", vec![("name", Value::str(&crate::layers::layer_title(Some(&layers), id)))]));
         }
     }
     let before = report

@@ -28,7 +28,7 @@ impl Editor {
         let connected = resolve_join_selection(&objects, &self.selection.uids, true)?;
         let slots = if translation { connected } else { resolve_join_selection(&objects, &self.selection.uids, false)? };
         let slots = Editor::ik_pose_slots(&objects, slots);
-        self.authored = Some(Authored { frame: source.clone(), source, tick: self.tick, transaction: false, definitions_start: None });
+        self.authored = Some(Authored { frame: source.clone(), source, tick: self.tick, transaction: false, definitions_start: None, key_at_playhead: false, key_at_playhead_layers: Vec::new() });
         self.drag = Some(Drag {
             label: label.to_string(),
             translation,
@@ -49,6 +49,8 @@ impl Editor {
             camera: None,
             rig: None,
             motion_path: None,
+            duplicate: None,
+            tweener: None,
             authored: true,
         });
         Ok(true)
@@ -69,7 +71,7 @@ impl Editor {
         let after: Vec<Value> = objects_of(&edit.frame).into_iter().filter(|o| uid(o).is_some_and(|u| ids.contains(&u))).collect();
         // A gesture compares the figures it took; a command's draft, the whole frame.
         let unchanged = if edit.transaction { same(std::slice::from_ref(&edit.source), std::slice::from_ref(&edit.frame)) } else { same(&drag.before, &after) };
-        if unchanged {
+        if unchanged && edit.key_at_playhead_layers.is_empty() {
             self.drag = None;
             self.authored = None;
             self.retained = None;
@@ -350,7 +352,7 @@ impl Editor {
         }
         let source = self.shown_frame()?;
         let definitions_start = self.report.get("figure_types").and_then(Value::array_len).unwrap_or(0);
-        self.authored = Some(Authored { frame: source.clone(), source: source.clone(), tick: self.tick, transaction: true, definitions_start: Some(definitions_start) });
+        self.authored = Some(Authored { frame: source.clone(), source: source.clone(), tick: self.tick, transaction: true, definitions_start: Some(definitions_start), key_at_playhead: false, key_at_playhead_layers: Vec::new() });
         self.drag = Some(Drag {
             label: label.to_string(),
             translation: false,
@@ -371,6 +373,8 @@ impl Editor {
             camera: None,
             rig: None,
             motion_path: None,
+            duplicate: None,
+            tweener: None,
             authored: true,
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());
