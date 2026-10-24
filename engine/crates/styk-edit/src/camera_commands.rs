@@ -551,6 +551,7 @@ impl Editor {
             motion_path: None,
             duplicate: None,
             tweener: None,
+            serial: self.next_drag_serial(),
         });
         self.retained = None;
         Ok(true)

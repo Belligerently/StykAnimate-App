@@ -58,6 +58,72 @@ test('cancelling a duplicate drag takes the copies away and leaves history alone
   assert.equal(owner.fallback, 0);
 });
 
+const rootOf = (editor, uid) => { const object = editor.evaluatedFrame.objects.find(item => item.unique_id === uid); return [object.root_x, object.root_y]; };
+const near = (actual, wanted, message) => assert.ok(actual.every((value, i) => Math.abs(value - wanted[i]) < 1e-9), `${message}: ${actual} against ${wanted}`);
+
+test('a duplicate drag begun over another commits the first and shows the figures it moved', {skip: !engineBuilt}, async () => {
+  // The chain 1-2-3 is duplicated whole; the copies of 2 and 3 hang from the copy of 1.
+  const {editor, owner} = await owned('add-figure-layers-sheet');
+  const known = new Set(editor.evaluatedFrame.objects.map(object => object.unique_id));
+  editor.select(1, -1);
+  assert.equal(editor.beginDuplicateDrag(), true);
+  const first = editor._drag.serial;
+  const child = editor.evaluatedFrame.objects.find(object => !known.has(object.unique_id) && object.join).unique_id;
+  const [x, y] = rootOf(editor, child);
+  editor.moveSelection(35, 12, {fromStart: true});
+  assert.equal(editor.beginDuplicateDrag(), true);
+  assert.notEqual(editor._drag.serial, first, 'the second is a gesture of its own');
+  assert.equal(editor._undo.length, 1, 'the first copies and their move are one entry');
+  assert.equal(editor.undoLabel, 'Duplicate figures');
+  near(rootOf(editor, child), [x + 35, y + 12], 'the copy that hangs from the moved one is where the first gesture left it');
+  assert.equal(editor.commitDrag(), true);
+  assert.equal(editor._undo.length, 2);
+  editor.undo();
+  near(rootOf(editor, child), [x + 35, y + 12], 'one undo takes the second copies only');
+  assert.equal(owner.fallback, 0);
+});
+
+test('redo under an open duplicate drag leaves the gesture open under the entry it applies', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await owned('add-figure-layers-sheet');
+  editor.select(1, -1);
+  editor.moveSelection(2, 1);
+  editor.undo();
+  assert.equal(editor.beginDuplicateDrag(), true);
+  editor.moveSelection(30, 10);
+  assert.equal(editor.redo(), true);
+  assert.ok(editor._drag?.engine && editor._drag.label === 'Duplicate figures', 'the gesture is still open');
+  assert.equal(editor.commitDrag(), true);
+  assert.equal(editor._drag, null);
+  assert.equal(editor.undoLabel, 'Duplicate figures');
+  assert.equal(editor._undo.length, 2, 'the redone move and the duplicate are two entries');
+  assert.equal(owner.fallback, 0);
+});
+
+test('a duplicate drag copies the effect clips of the figures with new identities, in the same entry', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await owned('vfx-clip-add-sheet');
+  const clips = () => editor.getVfxClips();
+  const before = clips();
+  editor.select(1, -1);
+  assert.equal(editor.beginDuplicateDrag(), true);
+  const copy = Math.max(...editor.evaluatedFrame.objects.map(object => object.unique_id));
+  assert.notEqual(copy, 1);
+  const copied = clips().filter(clip => clip.target.uid === copy);
+  assert.equal(copied.length, before.filter(clip => clip.target.uid === 1).length, 'every clip of the figure has a copy');
+  assert.ok(copied.length > 0);
+  for (const clip of copied) {
+    assert.ok(!before.some(old => old.id === clip.id), 'a new clip identity');
+    assert.ok(clip.effects.every(effect => !before.some(old => old.effects.some(item => item.id === effect.id))), 'new effect identities');
+  }
+  assert.equal(editor.commitDrag(), true);
+  assert.equal(editor.undoLabel, 'Duplicate figures');
+  assert.equal(editor._undo.length, 1);
+  editor.undo();
+  assert.deepEqual(clips().map(clip => clip.id), before.map(clip => clip.id), 'one undo took the figure and its effects');
+  editor.redo();
+  assert.equal(clips().filter(clip => clip.target.uid === copy).length, copied.length);
+  assert.equal(owner.fallback, 0);
+});
+
 /** The tape's document with a figure keyed in different poses at ticks 4 and 6, the playhead between them. */
 async function tweening() {
   const made = await owned('channels-pose-sheet');
@@ -106,6 +172,56 @@ test('the tweener refuses what the editor refuses and keeps its gesture open for
   assert.equal(editor.cancelDrag(), true);
   editor.seek(0);
   assert.equal(refusal(() => editor.beginTween()), 'errors.editorTweener.placeThePlayheadBetweenTwoKeysOnEvery');
+});
+
+/** A tape's document with its first figure keyed in different poses at ticks 2 and 8, the playhead between them. */
+async function keyed(name) {
+  const made = await owned(name);
+  made.editor.select(made.editor.evaluatedFrame.objects[0].unique_id, -1);
+  for (const [tick, by] of [[2, 0.3], [8, -0.4]]) { made.editor.seek(tick); made.editor.rotateSelection(by); }
+  made.editor.seek(5);
+  return made;
+}
+
+test('the tweener runs on a document with animation origins and keeps the pivot with the pose', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await keyed('origin-pose-layout-sheet');
+  const uid = editor.selectedUid;
+  assert.deepEqual(editor.beginTween(), {groups: [{previous: 2, next: 8}], figures: 1});
+  assert.equal(editor.updateTween(0.5, 'breakdown'), true);
+  assert.equal(editor.updateTween(0.25, 'push'), true);
+  assert.equal(editor.commitDrag(), true);
+  assert.equal(editor.undoLabel, 'Tween pose');
+  const pivot = editor.evaluatedFrame.objects.find(object => object.unique_id === uid)._stykAnimationOrigin;
+  assert.ok(Number.isFinite(pivot.x) && Number.isFinite(pivot.y), 'the figure still has its pivot');
+  assert.ok(editor.report._styk.layerSheet.tracks['layer-1'].keys.some(key => key.tick === 5), 'the playhead is keyed');
+  editor.undo();
+  assert.ok(!editor.report._styk.layerSheet.tracks['layer-1'].keys.some(key => key.tick === 5));
+  // A playhead outside the keys raises the tweener's own message, as on any document.
+  editor.seek(0);
+  assert.throws(() => editor.beginTween(), error => error.messageKey === 'errors.editorTweener.placeThePlayheadBetweenTwoKeysOnEvery');
+  assert.equal(owner.fallback, 0);
+});
+
+test('the tweener pushes a 3D figure past the pose it began with', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await owned('recolor-mesh-sheet');
+  editor.select(1, -1);
+  // The perspective is 0.2 at frame 2 and 0.6 at frame 6, so 0.5 between them at frame 5, where it is 0.65.
+  for (const [tick, strength] of [[2, 0.2], [6, 0.6], [5, 0.65]]) { editor.seek(tick); editor.setSpatialCamera({strength}); }
+  const shown = () => editor.evaluatedFrame.objects.find(object => object.unique_id === 1);
+  const [x, y] = [shown().root_x, shown().root_y], distance = shown()._stykSpatial.camera.distance;
+  editor.beginTween();
+  assert.equal(editor.updateTween(1, 'relax'), true);
+  assert.ok(Math.abs(shown()._stykSpatial.camera.strength - 0.5) < 1e-9, "relaxed, the perspective is the breakdown's");
+  assert.equal(editor.updateTween(1, 'push'), true);
+  // Pushed, it is the breakdown reflected around the pose it began with: 2 * 0.65 - 0.5.
+  const camera = shown()._stykSpatial.camera;
+  assert.ok(Math.abs(camera.strength - 0.8) < 1e-9, `strength ${camera.strength}`);
+  assert.equal(camera.distance, distance);
+  assert.equal(editor.updateTween(0, 'push'), true);
+  near([shown().root_x, shown().root_y], [x, y], 'amount 0 is the pose it began with');
+  assert.ok(Math.abs(shown()._stykSpatial.camera.strength - 0.65) < 1e-9);
+  assert.equal(editor.cancelDrag(), true);
+  assert.deepEqual(owner.editor, {setSpatialCamera: 3}, 'only the perspective settings ran in the editor, the tween in the session');
 });
 
 test('movieclipBatch groups what its operation does into one entry and undoes all of it when it fails', {skip: !engineBuilt}, async () => {

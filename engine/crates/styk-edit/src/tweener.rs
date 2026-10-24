@@ -395,10 +395,52 @@ impl Editor {
     }
 }
 
+/// `interpolateSpatialPose(a, b, t)` on figure records (src/spatial-projection.mjs): the perspective and part
+/// proportions of `a` moved toward those of `b`, within their limits. The camera is always there.
+fn interpolate_spatial_pose(a: &Value, b: &Value, t: f64) -> Value {
+    // `Math.max(min, Math.min(max, a + (b - a) * t))`: NaN stays NaN.
+    let lerp = |a: f64, b: f64, min: f64, max: f64| {
+        let v = a + (b - a) * t;
+        let v = if v.is_nan() { v } else { v.min(max) };
+        if v.is_nan() { v } else { v.max(min) }
+    };
+    // `spatialCamera`: the defaults (the centre is the figure's root), over the pose's own camera.
+    let camera = |object: &Value| {
+        let own = object.path(&["_stykSpatial", "camera"]);
+        let field = |key: &str, default: f64| own.as_ref().and_then(|camera| camera.get(key)).and_then(Value::as_f64).unwrap_or(default);
+        [field("strength", 0.0), field("distance", 600.0), field("centerX", object.get("root_x").and_then(Value::as_f64).unwrap_or(0.0)), field("centerY", object.get("root_y").and_then(Value::as_f64).unwrap_or(0.0))]
+    };
+    let (ca, cb) = (camera(a), camera(b));
+    let shapes = |object: &Value| object.path(&["_stykSpatial", "shape"]).and_then(Value::as_obj).cloned().unwrap_or_default();
+    let (sa, sb) = (shapes(a), shapes(b));
+    let part = |shapes: &Obj, id: &str, key: &str, default: f64| shapes.get(id).and_then(|shape| shape.get(key)).and_then(Value::as_f64).unwrap_or(default);
+    let mut shape = Obj::new();
+    for id in sa.keys().chain(sb.keys()) {
+        if shape.get(id).is_some() {
+            continue;
+        }
+        let mut moved = Obj::new();
+        moved.set("width", Value::Num(lerp(part(&sa, id, "width", 1.0), part(&sb, id, "width", 1.0), 0.1, 5.0)));
+        moved.set("taper", Value::Num(lerp(part(&sa, id, "taper", 0.0), part(&sb, id, "taper", 0.0), -0.9, 3.0)));
+        shape.set(id, Value::object(moved));
+    }
+    let mut moved = Obj::new();
+    moved.set("strength", Value::Num(lerp(ca[0], cb[0], 0.0, 1.0)));
+    moved.set("distance", Value::Num(lerp(ca[1], cb[1], 10.0, 100000.0)));
+    moved.set("centerX", Value::Num(lerp(ca[2], cb[2], -1e7, 1e7)));
+    moved.set("centerY", Value::Num(lerp(ca[3], cb[3], -1e7, 1e7)));
+    let mut pose = Obj::new();
+    pose.set("camera", Value::object(moved));
+    if !shape.is_empty() {
+        pose.set("shape", Value::object(shape));
+    }
+    Value::object(pose)
+}
+
 /// Push: reflects the relaxed displacement around the pose the gesture began with.
 fn push(object: &mut Obj, start: &Value, value: &Value, definitions: &[Value]) -> Result<(), EditError> {
     if start.get("_stykSpatial").is_some_and(Value::truthy) || value.get("_stykSpatial").is_some_and(Value::truthy) {
-        return Err(EditError::Unported("pushing 3D figures with the tweener".into()));
+        object.set("_stykSpatial", interpolate_spatial_pose(start, value, -1.0));
     }
     for field in ["root_x", "root_y", "scale"] {
         object.set(field, Value::Num(2.0 * number(start.get(field)) - number(value.get(field))));
@@ -573,6 +615,24 @@ mod tests {
         editor.call("beginTween", &[]).unwrap();
         assert_eq!(editor.call("commitDrag", &[]).unwrap(), Value::Bool(true));
         assert!(keys(&editor).contains(&5.0), "pressing A while tweening keys the pose it began with: {:?}", keys(&editor));
+    }
+
+    #[test]
+    fn the_perspective_and_proportions_of_a_pose_move_toward_another_within_their_limits() {
+        // Expected values are what src/spatial-projection.mjs `interpolateSpatialPose` answers for these two poses.
+        let a = parse(r#"{"root_x":100,"root_y":50,"_stykSpatial":{"camera":{"strength":0.2,"distance":500},"shape":{"3":{"width":2,"taper":0.5},"7":{"width":0.5,"taper":-0.5}}}}"#);
+        let b = parse(r#"{"root_x":200,"root_y":150,"_stykSpatial":{"camera":{"strength":0.6,"distance":700,"centerX":300},"shape":{"7":{"width":4},"9":{"taper":1}}}}"#);
+        let text = |t: f64| styk_doc::json::to_string(&interpolate_spatial_pose(&a, &b, t));
+        assert_eq!(text(-1.0), r#"{"camera":{"strength":0,"distance":300,"centerX":-100,"centerY":-50},"shape":{"3":{"width":3,"taper":1},"7":{"width":0.1,"taper":-0.9},"9":{"width":1,"taper":-0.9}}}"#);
+        assert_eq!(text(0.25), r#"{"camera":{"strength":0.3,"distance":550,"centerX":150,"centerY":75},"shape":{"3":{"width":1.75,"taper":0.375},"7":{"width":1.375,"taper":-0.375},"9":{"width":1,"taper":0.25}}}"#);
+        assert_eq!(text(1.0), r#"{"camera":{"strength":0.6,"distance":700,"centerX":300,"centerY":150},"shape":{"3":{"width":1,"taper":0},"7":{"width":4,"taper":0},"9":{"width":1,"taper":1}}}"#);
+        // A pose with no perspective of its own starts from the defaults, centred on its root.
+        let none = parse(r#"{"root_x":5,"root_y":6}"#);
+        assert_eq!(styk_doc::json::to_string(&interpolate_spatial_pose(&none, &b, -1.0)), r#"{"camera":{"strength":0,"distance":500,"centerX":-290,"centerY":-138},"shape":{"7":{"width":0.1,"taper":0},"9":{"width":1,"taper":-0.9}}}"#);
+        // Far past the limits everything stops at them.
+        let wide = parse(r#"{"root_x":0,"root_y":0,"_stykSpatial":{"camera":{"strength":1,"distance":100000}}}"#);
+        let other = parse(r#"{"root_x":10000000,"root_y":0,"_stykSpatial":{"camera":{"strength":0.5,"distance":10}}}"#);
+        assert_eq!(styk_doc::json::to_string(&interpolate_spatial_pose(&wide, &other, -3.0)), r#"{"camera":{"strength":1,"distance":100000,"centerX":-10000000,"centerY":0}}"#);
     }
 
     #[test]

@@ -21,6 +21,15 @@ fn call(session: &mut Session, method: &str, args: &str) -> Value {
     answer
 }
 
+/// A call handed identities to draw, as the editor hands them to the session with its view (the first figure selected).
+fn call_with_draws(session: &mut Session, method: &str, args: &str) -> Value {
+    let uuids: Vec<String> = (1..=16).map(|i| format!("[\"uuid\",\"00000000-0000-4000-8000-{i:012}\"]")).collect();
+    let view = format!("{{\"tick\":0,\"frameIndex\":0,\"selectedUid\":1,\"selectedUids\":[1],\"selectedJoint\":-1,\"draws\":[{}],\"drawPool\":true}}", uuids.join(","));
+    let answer = json(&session.call(method, args, &view));
+    assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{method} {args}: {answer:?}");
+    answer
+}
+
 /// How many figures the first key of the first figure layer shows: its pose source, else the stored keyframe.
 fn figures(session: &Session) -> usize {
     let report = session.report();
@@ -81,4 +90,69 @@ fn nothing_selected_duplicates_nothing() {
     call(&mut session, "select", "[null]");
     assert_eq!(call(&mut session, "beginDuplicateDrag", "[]").get("result"), Some(&Value::Bool(false)));
     assert!(!session.can_undo());
+}
+
+fn serial(answer: &Value) -> f64 { answer.get("drag").and_then(|drag| drag.get("serial")).and_then(Value::as_f64).expect("an open gesture") }
+
+#[test]
+fn a_duplicate_begun_over_another_commits_it_and_opens_a_gesture_of_its_own() {
+    let mut session = session("rig-drag-sheet");
+    let before = figures(&session);
+    let first = call(&mut session, "beginDuplicateDrag", "[]");
+    call(&mut session, "moveSelection", "[40,20]");
+    let second = call(&mut session, "beginDuplicateDrag", "[]");
+    assert_eq!(second.get("result"), Some(&Value::Bool(true)));
+    assert_ne!(serial(&second), serial(&first), "the interface tells the gestures apart");
+    assert_eq!(figures(&session), before + 2, "the copies of the first are kept, the second has its own");
+    assert_eq!(state(&second, "undoLabel").as_str(), Some("Duplicate figures"), "the first copy and its move are one entry");
+    assert_eq!(call(&mut session, "commitDrag", "[]").get("result"), Some(&Value::Bool(true)));
+    call(&mut session, "undo", "[]");
+    assert_eq!(figures(&session), before + 1);
+    call(&mut session, "undo", "[]");
+    assert_eq!(figures(&session), before);
+    assert!(!session.can_undo());
+}
+
+#[test]
+fn every_gesture_the_editor_opens_has_a_number_of_its_own() {
+    let mut session = session("rig-drag-sheet");
+    call(&mut session, "select", "[1,-1]");
+    let first = call(&mut session, "beginDrag", "[\"Pose figure\"]");
+    call(&mut session, "commitDrag", "[]");
+    let second = call(&mut session, "beginDrag", "[\"Pose figure\"]");
+    assert!(serial(&second) > serial(&first));
+}
+
+#[test]
+fn the_copies_take_the_effect_clips_of_their_figures_and_one_undo_takes_them_away_together() {
+    let mut session = session("vfx-clip-add-sheet");
+    let clips = |session: &Session| -> Vec<Value> {
+        session.report().path(&["_styk", "vfxClips", "clips"]).and_then(Value::elements).map(|clips| clips.iter().collect()).unwrap_or_default()
+    };
+    let target = |clip: &Value| clip.path(&["target", "uid"]).and_then(Value::as_f64);
+    let before = clips(&session);
+    let own = before.iter().filter(|clip| target(clip) == Some(1.0)).count();
+    assert!(own > 0, "the tape's figure has effect clips");
+    let begun = call_with_draws(&mut session, "beginDuplicateDrag", "[]");
+    assert_eq!(begun.get("result"), Some(&Value::Bool(true)));
+    let copy = begun.get("drag").and_then(|drag| drag.get("before")).and_then(|ids| ids.item(0)).and_then(|id| id.as_f64()).unwrap();
+    let after = clips(&session);
+    let copied: Vec<&Value> = after.iter().filter(|clip| target(clip) == Some(copy)).collect();
+    assert_eq!(copied.len(), own, "every clip of the figure has a copy");
+    for clip in &copied {
+        let id = clip.get("id").and_then(Value::as_str).unwrap();
+        assert!(!before.iter().any(|old| old.get("id").and_then(Value::as_str) == Some(id)), "a new clip identity");
+        let effects: Vec<Value> = clip.get("effects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
+        for effect in effects {
+            let effect = effect.get("id").and_then(Value::as_str).unwrap().to_string();
+            assert!(!before.iter().any(|old| old.get("effects").and_then(Value::elements).is_some_and(|e| e.iter().any(|item| item.get("id").and_then(Value::as_str) == Some(effect.as_str())))), "a new effect identity");
+        }
+    }
+    assert_eq!(call(&mut session, "commitDrag", "[]").get("result"), Some(&Value::Bool(true)));
+    let undone = call(&mut session, "undo", "[]");
+    assert_eq!(clips(&session).len(), before.len(), "the figure and its effects went together");
+    assert!(!session.can_undo(), "they were one entry");
+    assert_eq!(undone.get("state").and_then(|state| state.get("redoLabel")).and_then(Value::as_str), Some("Duplicate figures"));
+    call(&mut session, "redo", "[]");
+    assert_eq!(clips(&session).len(), before.len() + own);
 }

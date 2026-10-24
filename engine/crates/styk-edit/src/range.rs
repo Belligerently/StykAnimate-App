@@ -810,7 +810,7 @@ impl Editor {
         if movieclip && !movieclip_insertion {
             return Err(EditError::Unported("adding a movieclip".into()));
         }
-        let mut object = crate::figures::create_object(figure, identity, x, y);
+        let mut object = crate::figures::with_origin_pivot(figure, crate::figures::create_object(figure, identity, x, y));
         if movieclip {
             let mut playback = Obj::new();
             if self.sheet() {

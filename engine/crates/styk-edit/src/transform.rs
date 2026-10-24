@@ -71,6 +71,7 @@ impl Editor {
             motion_path: None,
             duplicate: None,
             tweener: None,
+            serial: self.next_drag_serial(),
             authored: false,
         });
         Ok(true)

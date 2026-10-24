@@ -89,7 +89,9 @@ engine's bounds with the editor's bit for bit. Joined spatial IK, branch thickne
 animation origins), native-property tokens, sprite insertion (also with animation origins) and
 drawing a new figure (also into a native timeline's saved channels, which key the layer's pose)
 have recorded native/sheet coverage. `CommandKind::FigureSplice` preserves library insertion and
-native-frame undo/redo.
+native-frame undo/redo. Adding and deleting figures are admitted on documents with animation origins too (an added
+figure gets its pivot as `createObject` gives it); no tape records them (they were compared with the editor, undone and redone,
+on every origin document when they were admitted).
 
 The joined pinned motion-path oracle correction is exercised in the app through cancel,
 commit and history (one adopted + 11 exact calls). Measured bounds compare eight calls;
@@ -471,7 +473,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Effect clips added, copied and pasted (`styk-edit/src/vfx_clips.rs`): `addVfxClip` (for the whole animation unless timed; a generated effect at the playhead's frame for its usual length, `GENERATOR_DURATIONS`), `copyVfxClip` (its effects sampled at the playhead: numbers and `0xRRGGBB` colours between keys, along the earlier key's easing), `pasteVfxClip` (with its keys, or with the values copied and no keys; a timed clip at the given start), `duplicateVfxClip` (after itself) and `addVfxGroupEffect`; identities and generated effects' seeds are the editor's (D18). Built-in and saved presets, attached scopes and paint colours sampled between keys also match the remaining-effect recordings below | yes | vfx-clip-add-sheet |
 | Batches (`movieclipBatch`, as the timeline runs several commands as one entry): `beginBatch`, `endBatch`, `abortBatch` (and `@batch` in recordings) record the entries made in between as one `movieclip-batch` entry with the revision before the batch, send the batch's own change event, collect pose sources after it and undo the entries of a failed batch; undo and redo replay the entries in order and restore the batch's selection. In the app the facade opens and closes the session's batch around the editor's, compares the closing event and state, starts no session inside a batch and ends the session if the batch fails or brings its own starting selection | yes | batch-sheet |
 | The timeline's layer selection: `selectSheetLayer` (the layer active and, with its contents, its figures on show selected, the first not joined to another the main one), seeks following it, `keepSelectionOnSeek`, any other selection dropping it, history restoring it; `setActiveLayer` | yes | sheet-selection-sheet |
-| The figure clipboard (`styk-edit/src/figure_clipboard.rs`): `copySelection` (snapshots of the selected figures, joined ones where geometry draws them, joins kept only inside the copy, their definitions, layers and drawing order), `cutSelection` (pasted back in place), `pasteSelection` at the playhead (`insertionPlan`: new identities, a copy of each definition in the default and unique modes or the definition itself as an instance, offsets growing with each paste, front depth, joins and IK followers renamed, IK targets moved, node effects moved to the new definition; `insert`; `_commitSheetRange` keying the pasted figures' layers, with the new definitions added by the sheet's publication and removed by its undo), `duplicateSelection` (instances with new identities on their own layers, the clipboard kept). Movieclip instances: their definitions shared unless pasted as unique, a copy of one on show carrying on from where it was copied (`movieclipSamples`), an instance pasted where it is not on show keeping its identity (`linked`, `retained`), others playing on the presence clock from their start; movieclips alone are inserted as frame replacements of their own (`replaceAt`), and a pasted movieclip keys the playhead rather than a held cell. A session pastes only what it copied: the facade asks the engine only when the editor's clipboard is the object the session's copy made | yes, without drawings, figures with effect clips, branch selections and clipboards from another document or format version | figure-clipboard-sheet, figure-clipboard-ik-sheet, figure-clipboard-vfx-sheet, figure-clipboard-clip-sheet |
+| The figure clipboard (`styk-edit/src/figure_clipboard.rs`): `copySelection` (snapshots of the selected figures, joined ones where geometry draws them, joins kept only inside the copy, their definitions, layers and drawing order), `cutSelection` (pasted back in place), `pasteSelection` at the playhead (`insertionPlan`: new identities, a copy of each definition in the default and unique modes or the definition itself as an instance, offsets growing with each paste, front depth, joins and IK followers renamed, IK targets moved, node effects moved to the new definition; `insert`; `_commitSheetRange` keying the pasted figures' layers, with the new definitions added by the sheet's publication and removed by its undo), `duplicateSelection` (instances with new identities on their own layers, the clipboard kept). Movieclip instances: their definitions shared unless pasted as unique, a copy of one on show carrying on from where it was copied (`movieclipSamples`), an instance pasted where it is not on show keeping its identity (`linked`, `retained`), others playing on the presence clock from their start; movieclips alone are inserted as frame replacements of their own (`replaceAt`), and a pasted movieclip keys the playhead rather than a held cell. Figures with effect clips paste them too: the clips follow the copies with new clip and effect identities (draws), timed clips keep their distance from the frame they were copied at (trimmed where that takes them before the first frame), and the paste is one entry (a batch, unless one is open); copies of figures with an animation origin find their pivot again where they stand. A session pastes only what it copied: the facade asks the engine only when the editor's clipboard is the object the session's copy made | yes, without drawings, branch selections and clipboards from another document or format version | figure-clipboard-sheet, figure-clipboard-ik-sheet, figure-clipboard-vfx-sheet, figure-clipboard-clip-sheet |
 | Project settings (`styk-edit/src/project.rs`): `setFPS` (with the frame delay format 4 stores), `setCanvasSize`, `updateProject`, one `fields` history entry each (`_fields`, nothing recorded when unchanged); compared in both editors, not adopted | yes | project-settings-sheet, project-settings-format4-sheet |
 | `importFigure(document, {position})`: a file's first frame (or a single definition) pasted as new figures with new definitions, centred on its unjoined roots at the position (the canvas's centre by default), joins named by slot in the file kept, the first figure selected; owned with the large figure class, adoption carrying the new definitions | yes, without movieclips, drawings and animation origins | import-figure-sheet |
 | `setLayerParallax(id, patch)`: a figure layer's response to camera travel (linked axes following the one given, the reference the camera on show unless set), validated as `validateParallax`, one `layers` history entry | yes | layer-parallax-sheet, layer-parallax-camera-sheet |
@@ -725,8 +727,16 @@ it on the editor, for every document.
   records nothing. `beginTween` plans a pose gesture between the keys either side of the playhead
   (`tweener.rs`: a two-pose document per blend, sampled with the evaluator's native interval) and
   `updateTween(amount, mode)` poses the draft from it; the gesture keys the playhead on the layers it posed
-  when it ends (`Authored.key_at_playhead`), even where nothing changed. Both show on the editor as an
-  ordinary mirrored pose gesture.
+  when it ends (`Authored.key_at_playhead`), even where nothing changed; `push` reflects the perspective and
+  proportions of a 3D figure around the pose it began with as it does its root and angles. Both show on the editor as an
+  ordinary mirrored pose gesture, and both run on documents with animation origins (`origin::gesture_call`): a
+  tweened figure keeps its pivot with its pose and a copy finds its pivot again where it stands (the figures must have
+  an origin the typed owner decodes).
+- **One gesture after another.** Every gesture the session opens has a `serial` (`drag.serial`, which the owner keeps
+  on `_drag`). A call that ends one gesture and begins the next (`beginDuplicateDrag` over a duplicate drag,
+  `beginRigDrag` over a move) answers `draftBase`: the new draft as its difference from the draft on show, because
+  figures the gestures did not take (joined ones the commit moved) changed with the first. The owner builds the new
+  `_drag` and draft from it instead of carrying the old ones on.
 - **Grouped edits.** `movieclipBatch(label, operation)` is the owner's: it asks the session to begin a
   batch (`beginBatch`), runs `operation` (whose calls the session runs one by one into the batch), and ends
   it (`endBatch`: one history entry) or, if `operation` throws, aborts it (`abortBatch`: what it did is
@@ -757,7 +767,9 @@ it on the editor, for every document.
   Edits other modules make in place (the camera-motion and parallax previews, the inspector's native property
   tokens) or through `editor._record` are written back the same way before the next call, and editing the inside of a
   movieclip (`enterMovieclip`) is the editor's alone until it is left.
-- **History.** Undo/redo are the session's. Redo, like undo, ends a gesture that is open first. The editor's stacks
+- **History.** Undo/redo are the session's. Undo ends a gesture that is open first; redo does too for a motion-path edit,
+  a rig edit or a camera drag (the session does not redo under them) and leaves any other gesture open under the entry
+  it applies, as the editor does. The editor's stacks
   mirror the session's (`depths`): its own commands for external entries, placeholders for native ones, so code
   that reads or amends the entry on top keeps working.
 - **Start.** In the app the session starts on the stage's mirrored document (it reuses the
@@ -781,7 +793,7 @@ drag, the tweener, grouped edits, working frames, audio and the calls that run i
 Known differences: the frame on show may lack the derived `object_count` the editor's
 caches sometimes keep, the internal `layerRevision` cache key can differ by one around
 source pruning, and the display frame of a saved origin motion on a native document differs from the editor's
-by an ulp; none is visible. A redo under an open gesture ends the gesture first (the editor left it open). A
+by an ulp; none is visible. A redo under an open motion-path edit, rig edit or camera drag ends the gesture first (the editor left it open). A
 message for an error whose values the engine does not name yet is the generic one.
 
 Still to come: the frame on show, handles and picking as engine queries (phase 2), the commands that still run in

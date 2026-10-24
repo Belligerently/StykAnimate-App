@@ -368,10 +368,13 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     while (editor._redo.length < redo) editor._redo.unshift(placeholder(''));
     depths = [undo, redo];
   };
+  /** Whether the gesture the session holds is a rig edit or a camera drag (the editor's `_drag` does not say). */
+  let rigOrCamera = false;
   /** The session's gesture in progress, as the editor shows it: its draft on show and
    * `_drag` with the figures it took as they were. */
   const gesture = answer => {
     const drag = answer.drag;
+    rigOrCamera = Boolean(drag?.rig || drag?.camera);
     if (!drag) {
       if (editor._drag?.engine) {
         // A motion-path edit changed no frame on show: the document's patch invalidated what changed.
@@ -383,11 +386,20 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       return;
     }
     if (answer.motionPath) { motion(answer); return; }
+    // A call can end one gesture and begin the next (a duplicate drag opened over another, a rig edit over a move): the new one
+    // starts from the draft the session composed, else from the frame the document now shows.
+    let base = null;
+    if (editor._drag?.engine && editor._drag.serial !== drag.serial) {
+      const previous = editor._authoredPoseEdit;
+      editor._drag = null; editor._authoredPoseEdit = null;
+      if (answer.draftBase && previous) base = previewFrame(answer.draftBase, previous.frame);
+      else editor._invalidate();
+    }
     if (!editor._drag?.engine) {
-      const source = editor.evaluatedFrame;
+      const source = base ?? editor.evaluatedFrame;
       editor._authoredPoseEdit = answer.draft ? {frame: {...source, objects: source.objects.slice()}, source, owned: new Set(), tick: editor.tick, engine: true} : null;
       const taken = new Set(drag.before);
-      editor._drag = {engine: true, label: drag.label, scope: drag.translation ? 'translation' : 'selection', authored: Boolean(answer.draft), index: editor.frameIndex,
+      editor._drag = {engine: true, serial: drag.serial, label: drag.label, scope: drag.translation ? 'translation' : 'selection', authored: Boolean(answer.draft), index: editor.frameIndex,
         before: source.objects.filter(object => taken.has(object.unique_id)).map(object => structuredClone(object)), beforeSelection: editor._selectionState(), changed: false};
     }
     editor._drag.label = drag.label; editor._drag.scope = drag.translation ? 'translation' : 'selection';
@@ -749,8 +761,9 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     // As the editor's undo and redo begin.
     if (editor._vfxClipEdit) editor.cancelVfxClipEdit();
     if (editor._animationEdit) editor.cancelAnimationEdit();
-    // The editor's redo leaves a gesture open under it; the session ends it, as undo does.
-    if (editor._drag) editor.cancelDrag();
+    // Undo ends a gesture first. Redo leaves a pose gesture open under the entry it applies, as the editor's does; the session
+    // does not redo under a motion-path edit, a rig edit or a camera drag, which end first as undo ends them.
+    if (editor._drag && (!redo || editor._drag.motionPath || rigOrCamera)) editor.cancelDrag();
     flush();
     const historyView = JSON.stringify({...view(), patch: true});
     report.capture?.push({name: redo ? 'redo' : 'undo', args: '[]', view: historyView});

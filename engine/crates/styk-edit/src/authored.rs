@@ -51,6 +51,7 @@ impl Editor {
             motion_path: None,
             duplicate: None,
             tweener: None,
+            serial: self.next_drag_serial(),
             authored: true,
         });
         Ok(true)
@@ -375,6 +376,7 @@ impl Editor {
             motion_path: None,
             duplicate: None,
             tweener: None,
+            serial: self.next_drag_serial(),
             authored: true,
         });
         let result = mutate(self).and_then(|()| self.commit_authored_drag());

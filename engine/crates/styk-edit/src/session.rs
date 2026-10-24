@@ -492,6 +492,7 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     let before = editor.report().clone();
     let retained = editor.retained_frame();
     let draft = editor.authored.as_ref().map(|edit| edit.frame.clone());
+    let gesture_before = editor.drag.as_ref().map(|drag| drag.serial);
     let project_requested = view.get("projectFieldsPublication") == Some(&Value::Bool(true))
         && matches!(method, "setFPS" | "setCanvasSize" | "updateProject")
         && editor.sheet() && editor.drag.is_none() && draft.is_none()
@@ -850,6 +851,11 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         }
     } else { editor.draft_figures() };
     answer.push(("draft", figures.map_or(Value::Null, Value::array)));
+    // A call that ended a gesture and began another: the new draft as its difference from the old one on show,
+    // since figures the gestures did not take (joined ones the commit moved) changed with the first.
+    if changes_only && let (Some(edit), Some(drag), Some(old), Some(previous)) = (&editor.authored, &editor.drag, gesture_before, draft.as_ref()) && drag.serial != old {
+        answer.push(("draftBase", frame_delta(&edit.frame, previous)));
+    }
     answer.push(("drag", editor.drag_value()));
     Ok(response_value(answer))
 }

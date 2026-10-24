@@ -190,6 +190,8 @@ pub(crate) struct Drag {
     pub duplicate: Option<duplicate_drag::Duplicate>,
     /// The tweener's plan (`_drag.tweener`).
     pub tweener: Option<tweener::Tweener>,
+    /// Which gesture this is: every gesture the editor opens has its own (the interface tells one from the next).
+    pub serial: u64,
 }
 
 /// The draft of a gesture on a layer sheet (`editor._authoredPoseEdit`).
@@ -217,6 +219,8 @@ pub struct Editor {
     pub(crate) selection: Selection,
     pub(crate) selection_metadata: select::SelectionMetadata,
     pub(crate) drag: Option<Drag>,
+    /// The serial of the last gesture opened (`Drag::serial`); it only grows.
+    pub(crate) drag_serial: u64,
     pub(crate) authored: Option<Authored>,
     /// The draft of the last committed gesture, which the editor goes on showing as
     /// the evaluated frame until a seek, an edit or history invalidates it
@@ -349,6 +353,7 @@ struct Snapshot {
     property_edit: Option<property_edit::Edit>,
     native_token: Option<builder::native::Token>,
     native_token_serial: u64,
+    drag_serial: u64,
 }
 
 impl Editor {
@@ -365,6 +370,7 @@ impl Editor {
             selection: Selection::default(),
             selection_metadata: select::SelectionMetadata::default(),
             drag: None,
+            drag_serial: 0,
             authored: None,
             retained: None,
             undo: Arc::new(Vec::new()),
@@ -551,6 +557,12 @@ impl Editor {
         Value::object(object)
     }
 
+    /// The serial of the next gesture the editor opens (`Drag::serial`).
+    pub(crate) fn next_drag_serial(&mut self) -> u64 {
+        self.drag_serial += 1;
+        self.drag_serial
+    }
+
     /// The figures the gesture in progress took, as they are in its draft (without
     /// the clip sample times evaluation adds); `None` outside a gesture on a sheet.
     /// The gesture in progress as a facade needs it: the identities of the figures it
@@ -564,6 +576,7 @@ impl Editor {
         value.set("translation", Value::Bool(drag.translation));
         value.set("label", Value::str(&drag.label));
         value.set("changed", Value::Bool(drag.changed));
+        value.set("serial", Value::Num(drag.serial as f64));
         if drag.rig.is_some() {
             value.set("rig", Value::Bool(true));
         }
@@ -694,6 +707,7 @@ impl Editor {
             property_edit: self.property_edit.clone(),
             native_token: self.native_token.clone(),
             native_token_serial: self.native_token_serial,
+            drag_serial: self.drag_serial,
         }
     }
 
@@ -714,7 +728,7 @@ impl Editor {
             layer_event_pending, sheet_clipboard, figure_clipboard,
             segment_values_clipboard, camera_clipboard, audio_clipboard, camera_motion_clipboard,
             vfx_clip_clipboard, vfx_edit, batch, sheet_selection, property_edit,
-            native_token, native_token_serial);
+            native_token, native_token_serial, drag_serial);
         for (actual, captured) in [
             &mut self.revision, &mut self.saved_revision,
             &mut self.revision_serial, &mut self.layer_revision,
@@ -778,6 +792,7 @@ impl Editor {
             if origin::constraint_call(method) { self.origin_constraint_gate(method, args)?; }
             if origin::rig_pose_call(method) { self.origin_rig_pose_gate(method, reason == "with animation origins and property channels")?; }
             else if origin::posing_call(method) { self.origin_pose_gate()?; }
+            if origin::gesture_call(method) { self.origin_gesture_gate(method)?; }
             if origin::rig_tool_call(method) { self.origin_rig_gate()?; }
             if origin::property_call(method) { self.origin_property_gate(method, args)?; }
         }

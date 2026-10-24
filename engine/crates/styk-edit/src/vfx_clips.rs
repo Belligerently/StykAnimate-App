@@ -1040,6 +1040,71 @@ impl Editor {
         Ok(Value::str(&id))
     }
 
+    /// `_pasteFigureVfxClips(clips, uidMap, typeMap, shift)`: the effect clips of copied figures on the
+    /// pasted ones, with new clip and effect identities; a timed clip moves by `shift` frames, trimmed
+    /// where that takes it before the first frame. A figure that kept its identity gets none.
+    pub(crate) fn paste_figure_vfx_clips(&mut self, clips: &[Value], uid_map: &[(u32, u32)], type_map: &[(f64, f64)], shift: f64) -> Result<bool, EditError> {
+        let mut added = Vec::new();
+        for source in clips {
+            let old = source.path(&["target", "uid"]).and_then(Value::as_f64);
+            let Some(uid) = old.and_then(|old| uid_map.iter().find(|(from, _)| *from as f64 == old)).map(|(_, to)| *to) else { continue };
+            if Some(uid as f64) == old {
+                continue;
+            }
+            let effects = list(source.get("effects"));
+            let mut ids: Vec<(Option<Value>, String)> = Vec::new();
+            for effect in &effects {
+                ids.push((effect.get("id").cloned(), self.draw_uuid()?));
+            }
+            let fresh = |old: Option<&Value>| ids.iter().rev().find(|(k, _)| object_is(k.as_ref(), old)).map(|(_, id)| id.clone());
+            let mut target = source.get("target").and_then(Value::as_obj).cloned().unwrap_or_default();
+            target.set("uid", Value::Num(uid as f64));
+            if let Some(figure_type) = target.get("figureTypeId").and_then(Value::as_f64) {
+                if let Some((_, to)) = type_map.iter().find(|(from, _)| *from == figure_type) {
+                    target.set("figureTypeId", Value::Num(*to));
+                }
+            }
+            let mut keys = Obj::new();
+            for (property, channel) in source.get("keys").and_then(Value::as_obj).cloned().unwrap_or_default().iter() {
+                let found = descriptor(property).ok_or_else(|| EditError::Unported("effect keys of an unknown parameter".into()))?;
+                let id = fresh(Some(&Value::str(&found.id))).ok_or_else(|| EditError::Unported("effect keys of an effect the clip does not hold".into()))?;
+                keys.set(&property_of(found.kind.name(), &id, &found.param)?.0, channel.clone());
+            }
+            let id = self.draw_uuid()?;
+            let mut renamed = Vec::new();
+            for effect in &effects {
+                let id = fresh(effect.get("id")).ok_or_else(|| EditError::Unported("a copied effect without its identity".into()))?;
+                renamed.push(with(effect, "id", Value::str(&id)));
+            }
+            let mut clip = source.as_obj().cloned().unwrap_or_default();
+            clip.set("id", Value::str(&id));
+            clip.set("target", Value::object(target));
+            clip.set("effects", Value::array(renamed));
+            clip.set("keys", Value::object(keys));
+            if !matches!(clip.get("duration"), Some(Value::Null)) {
+                let number = |key: &str| clip.get(key).and_then(Value::as_f64).unwrap_or(f64::NAN);
+                let start = number("start") + shift;
+                let cut = js_max(0.0, -start);
+                let duration = number("duration");
+                if cut >= duration || start + duration > 10_000_000.0 {
+                    continue;
+                }
+                let (offset, fade_in) = (number("offset") + cut, js_max(0.0, number("fadeIn") - cut));
+                clip.set("start", Value::Num(start + cut));
+                clip.set("offset", Value::Num(offset));
+                clip.set("duration", Value::Num(duration - cut));
+                clip.set("fadeIn", Value::Num(fade_in));
+            }
+            added.push(Value::object(clip));
+        }
+        if added.is_empty() {
+            return Ok(false);
+        }
+        let mut clips = self.vfx_clips();
+        clips.extend(added);
+        self.publish_vfx(clips, "Paste figure effects")
+    }
+
     /// `duplicateVfxClip(id)`: copied, then pasted on the same target after the clip.
     pub(crate) fn duplicate_vfx_clip(&mut self, id: &Value) -> Result<Value, EditError> {
         self.copy_vfx_clip(id)?;

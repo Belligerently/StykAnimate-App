@@ -878,6 +878,7 @@ impl Editor {
             motion_path: Some(Box::new(session)),
             duplicate: None,
             tweener: None,
+            serial: self.next_drag_serial(),
         });
         Ok(true)
     }
