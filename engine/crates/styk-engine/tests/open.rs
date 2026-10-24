@@ -196,4 +196,7 @@ fn the_interface_asks_before_it_copies_a_file_in() {
     assert_eq!(refused.key.as_deref(), Some("errors.engine.outOfMemory"));
     // A file that is larger than the address space the module could ever have is refused without a block being made.
     assert_eq!(admit_open(usize::MAX / 2).unwrap_err().code.as_deref(), Some("out_of_memory"));
+    // Keeping the Pivot original with the document takes the file in once more.
+    assert!(styk_engine::document::admit_copy(1 << 20).is_ok());
+    assert!(styk_alloc::with_limit(64 << 20, || styk_engine::document::admit_copy(61 << 20)).is_err());
 }

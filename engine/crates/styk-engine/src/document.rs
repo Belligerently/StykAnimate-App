@@ -90,8 +90,19 @@ const OPEN_MINIMUM_BYTES: usize = 96 << 20;
 /// cannot be refused.
 pub fn admit_open(file_bytes: usize) -> Result<(), OpenError> {
     styk_alloc::admit(file_bytes.saturating_add(open_estimate(file_bytes))).map_err(OpenError::out_of_memory)?;
+    block(file_bytes)
+}
+
+/// Whether the engine has the memory to take `bytes` bytes in (a file kept with its document): one block.
+pub fn admit_copy(bytes: usize) -> Result<(), OpenError> {
+    styk_alloc::admit(bytes).map_err(OpenError::out_of_memory)?;
+    block(bytes)
+}
+
+/// Tries one block of `bytes` bytes: a memory with room left only in pieces has none.
+fn block(bytes: usize) -> Result<(), OpenError> {
     let mut copy: Vec<u8> = Vec::new();
-    copy.try_reserve_exact(file_bytes).map_err(|_| OpenError::out_of_memory(styk_alloc::OutOfMemory { requested: file_bytes, available: styk_alloc::headroom() }))
+    copy.try_reserve_exact(bytes).map_err(|_| OpenError::out_of_memory(styk_alloc::OutOfMemory { requested: bytes, available: styk_alloc::headroom() }))
 }
 
 /// What opening a document of `file_bytes` bytes may take, for the reservation that precedes the open.

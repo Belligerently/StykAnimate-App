@@ -65,8 +65,10 @@ export class Opening {
   /** Gives the document the Pivot file it was read from, as a saved native document carries its source (`_stykSource`). */
   attachSource(description, bytes) {
     if (!this.handle) throw new Error('This opening has been released.');
-    try { this.handle.attach_source(JSON.stringify(description), bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)); }
-    catch (error) { throw openFailure(error); }
+    try {
+      this.engine.handle.admit_copy(bytes.byteLength);
+      this.handle.attach_source(JSON.stringify(description), bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+    } catch (error) { throw openFailure(error); }
   }
 
   /** Builds the report one piece at a time; every piece after the first is a step the caller may pause at. */
