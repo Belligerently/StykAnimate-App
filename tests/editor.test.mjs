@@ -98,8 +98,8 @@ test('poseJoint reaches pointer, preserves length and stretches only when reques
 });
 
 test('timeline edits preserve native terminal-frame and hidden-keyframe semantics', () => {
-  const editor = blank(); editor.setFrameDuration(4); assert.equal(editor.totalTicks, 1);
-  editor.duplicateFrame(); assert.equal(editor.totalTicks, 5); editor.setFrameDuration(0); assert.equal(editor.totalTicks, 4);
+  const editor = blank(); editor.setFramesDuration([editor.frameIndex], 4); assert.equal(editor.totalTicks, 1);
+  editor.duplicateFrame(); assert.equal(editor.totalTicks, 5); editor.setFramesDuration([editor.frameIndex], 0); assert.equal(editor.totalTicks, 4);
   editor.seek(2); assert.equal(editor.frameIndex, 0); near(editor.tick, 2);
   editor.selectFrame(1); assert.equal(editor.frameIndex, 1); assert.equal(editor.tick, 4);
   editor.deleteFrame(); assert.equal(editor.report.keyframes.length, 1);
@@ -143,7 +143,7 @@ test('history is bounded and failed edits restore the current frame', () => {
   assert.throws(() => editor.transaction('Fail', frame => { frame.objects = []; throw new Error('abort'); }), /abort/);
   assert.deepEqual(editor.frame, before);
   assert.throws(() => editor.updateObject({root_x: Infinity}), /finite/);
-  assert.throws(() => editor.setFrameDuration(-1), /duration/);
+  assert.throws(() => editor.setFramesDuration([editor.frameIndex], -1), /duration/);
   assert.throws(() => editor.setFPS(0), /FPS/);
 });
 
@@ -225,17 +225,6 @@ test('clipboard pose remaps native handles when a shared definition topology cha
   const editor = blank(); editor.copyFigure(); editor.select(editor.selectedUid, 2); editor.deleteSegment();
   const pasted = editor.pasteFigure({pasteMode: 'instance'}); assert.equal(pasted.angles.length, 8);
   assert.doesNotThrow(() => validateScene(editor.serialize()));
-});
-
-test('background import clones embedded media and restores both table and current frame on undo', () => {
-  const editor = new Editor(), before = editor.serialize();
-  const source = {background_id: 9, name: 'Backdrop', kind: 0, data_url: 'data:image/png;base64,aGVsbG8=', image_base64: 'aGVsbG8='};
-  const added = editor.importBackground(source); assert.equal(added.background_id, 1); assert.equal(editor.frame.background_id, 1);
-  assert.equal(editor.report.keyframes[1].background_id, 0); assert.equal(source.background_id, 9);
-  assert.equal(added.image_base64, source.image_base64); editor.undo(); assert.deepEqual(editor.serialize(), before);
-  editor.redo(); assert.equal(editor.frame.background_id, 1); assert.equal(editor.report.backgrounds[0].data_url, source.data_url);
-  const snapshot = editor.serialize(); assert.throws(() => editor.importBackground({kind: 3, color_a: NaN}), /Background/);
-  assert.deepEqual(editor.serialize(), snapshot);
 });
 
 test('multi-selection toggle/add and command undo keep the primary UID and selected set synchronized', () => {

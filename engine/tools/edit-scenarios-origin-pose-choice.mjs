@@ -2,7 +2,7 @@
 import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
-import {open, documentOf, createObject, createFrame} from './fixture-kit.mjs';
+import {open, documentOf, createObject, createFrame, setDuration} from './fixture-kit.mjs';
 import {snapshotPoseFrame} from '../../src/pose-snapshot.mjs';
 import {animationRotation} from '../../src/animation-origin.mjs';
 const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
@@ -28,7 +28,7 @@ function make(kind, origin, joined) {
   if (kind !== 'presets') for (const segment of editor.figure.segments) if (choices.has(segment.segment_id)) segment._stykPoseChoice = choices.get(segment.segment_id);
   if (kind !== 'visibility') editor.figure._styk.poseChoices = structuredClone(presets);
   if (joined) {editor.select(1, -1);editor.joinTo(2, 11);editor.select(3, -1);editor.joinTo(1, 4);}
-  editor.select(1, -1);editor.setFrameDuration(8);editor.duplicateFrame();editor.selectFrame(1);editor.select(1, -1);
+  editor.select(1, -1);setDuration(editor, 8);editor.duplicateFrame();editor.selectFrame(1);editor.select(1, -1);
   if (kind !== 'visibility') editor.setPoseChoice('Expression', 2);
   if (kind !== 'presets') editor.setPoseChoice('Eyes', 7);
   editor.selectFrame(0);

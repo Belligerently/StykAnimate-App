@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
+import {Editor} from '../src/editor.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 
 const folder = new URL('../engine/tests/edit/', import.meta.url);
 /** An owned editor on the first document of a recorded tape. */
@@ -221,7 +223,7 @@ test('the tweener pushes a 3D figure past the pose it began with', {skip: !engin
   near([shown().root_x, shown().root_y], [x, y], 'amount 0 is the pose it began with');
   assert.ok(Math.abs(shown()._stykSpatial.camera.strength - 0.65) < 1e-9);
   assert.equal(editor.cancelDrag(), true);
-  assert.deepEqual(owner.editor, {setSpatialCamera: 3}, 'only the perspective settings ran in the editor, the tween in the session');
+  assert.equal(owner.fallback, 0, 'no call ran in the editor: the perspective settings and the tween ran in the session');
 });
 
 test('movieclipBatch groups what its operation does into one entry and undoes all of it when it fails', {skip: !engineBuilt}, async () => {
@@ -311,19 +313,23 @@ test('the audio follows frames inserted on every layer when the ripple option is
 
 
 test('a call the session has no command for runs in the editor and is written back as one history entry', {skip: !engineBuilt}, async () => {
-  const {editor, owner} = await owned('add-figure-layers-sheet');
-  const layers = () => [...editor.report._styk.layers.order];
-  const before = layers();
-  assert.ok(before.length > 1);
-  assert.equal(await editor.deleteLayerAsync(before[0]), true);
-  assert.deepEqual(layers(), before.slice(1));
-  assert.deepEqual(owner.editor, {deleteLayerAsync: 1}, 'the census names what ran in the editor');
-  assert.equal(editor.undoLabel, 'Delete layer');
+  // The session has a command for every call the editor makes now; a method of the test's own stands in for one it lacks.
+  const scenario = JSON.parse(readFileSync(new URL('add-figure-layers-sheet.scenario.json', folder), 'utf8'));
+  class Probe extends Editor { renameLayerTheEditorsWay(id, name) { return this.renameLayer(id, name); } }
+  const editor = new Probe({demo: false, ...scenario.editor}).load(JSON.parse(readFileSync(new URL(scenario.document, folder), 'utf8')));
+  const owner = installEngineOwner(editor, {verify: true});
+  assert.ok(owner.ready());
+  const name = () => editor.getLayer('layer-1').name;
+  const before = name();
+  assert.equal(editor.renameLayerTheEditorsWay('layer-1', 'Renamed'), true);
+  assert.equal(name(), 'Renamed');
+  assert.deepEqual(owner.editor, {renameLayerTheEditorsWay: 1}, 'the census names what ran in the editor');
+  assert.equal(editor.undoLabel, 'Rename layer');
   // The session keeps the entry: undo and redo go through it, and a call the session runs follows.
   editor.undo();
-  assert.deepEqual(layers(), before);
+  assert.equal(name(), before);
   editor.redo();
-  assert.deepEqual(layers(), before.slice(1));
+  assert.equal(name(), 'Renamed');
   editor.undo();
   editor.select(1, -1);
   editor.moveSelection(5, 5);

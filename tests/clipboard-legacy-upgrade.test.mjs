@@ -40,7 +40,7 @@ test('native legacy hold conversion preserves every output pose, colors and exis
 
 test('paste upgrades the destination in one undo, preserving old ticks and inserted modern motion',()=>{
   const e=editor(),before=clone(e.report),identities=[e._nextFrameIdentity,e._nextUid],history=e._undo.length,token=e._documentToken;
-  assert.equal(e.insertClipboardFrames(1),2);assert.equal(e._undo.length,history+1);assert.equal(e._documentToken,token);
+  assert.equal(e.pasteFrames(1),2);assert.equal(e._undo.length,history+1);assert.equal(e._documentToken,token);
   assert.equal(e.report.version,5);assert.deepEqual(e.report.nativeUnknown,before.nativeUnknown);
   assert.deepEqual(e.report.keyframes.map(frame=>frame.duration_raw),[3,1,3,1,0,2,1]);
   for(let tick=0;tick<4;tick++)assert.deepEqual(shapes(tickGeometry(e.report,tick)),shapes(tickGeometry(before,tick)));
@@ -63,7 +63,7 @@ test('failed upgrade preflight preserves the document, pending gesture, history 
 test('authored channels and retained sources remain editable and motion matches before and after insertion',()=>{
   const e=editor();e.addAnimationKeys([{target:{kind:'figure',uid:4},property:'x',tick:0,value:11},{target:{kind:'figure',uid:4},property:'x',tick:6,value:71}]);
   const before=clone(e.report),oldKeys=e.report._styk.animation.channels[0].keys.map(key=>key.id);
-  e.insertClipboardFrames(1);
+  e.pasteFrames(1);
   assert.ok(oldKeys.every(id=>e.report._styk.animation.channels.some(channel=>channel.keys.some(key=>key.id===id))));
   for(let tick=0;tick<4;tick++)assert.deepEqual(shapes(tickGeometry(e.report,tick)),shapes(tickGeometry(before,tick)),String(tick));
   for(let tick=4;tick<7;tick++)assert.deepEqual(shapes(tickGeometry(e.report,tick+4)),shapes(tickGeometry(before,tick)),String(tick));

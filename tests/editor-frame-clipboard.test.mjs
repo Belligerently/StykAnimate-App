@@ -41,7 +41,7 @@ test('cross-document sparse copy preserves referenced media, joins, order, durat
   assert.equal(editor.copyFrames([2, 0, 0]), 2); const clipboard = editor._frameClipboard;
   editor.load(destinationDocument()); assert.equal(editor._frameClipboard, clipboard); assert.equal(editor.clipboardFrameCount, 2);
   const before = clone(editor.report), oldFrame = editor.frame, history = editor._undo.length;
-  assert.equal(editor.insertClipboardFrames(0), 2); validate(editor);
+  assert.equal(editor.pasteFrames(0), 2); validate(editor);
   assert.equal(editor._undo.length, history + 1); assert.equal(editor.report.keyframes[2], oldFrame);
   const frame = editor.report.keyframes[0], parent = frame.objects[0], child = frame.objects[1];
   assert.ok(![3, 12].includes(parent.unique_id)); assert.ok(![3, 12].includes(child.unique_id));

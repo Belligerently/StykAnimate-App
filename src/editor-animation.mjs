@@ -363,16 +363,6 @@ export const editorAnimationMethods = {
       return draft.changed;
     });
   },
-  revealAnimationKey(channelId, keyId, duration = 1) {
-    if (!Number.isInteger(duration) || duration < 1) throw messageError(new Error(''), "errors.editorAnimation.aRestoredPoseNeedsAtLeastOneFrame", {});
-    return mutateAnimation(this, 'Restore hidden pose key', draft => {
-      const channel = draft.channel(channelId), index = channel?.keys.findIndex(key => key.id === keyId);
-      if (!channel || index < 0 || !channel.keys[index].hidden) return false;
-      const tick = channel.keys[index].tick; delete channel.keys[index].hidden;
-      for (let i = index + 1; i < channel.keys.length; i++) channel.keys[i].tick = checkTick(channel.keys[i].tick + duration);
-      checkCollisions(channel.keys); sortKeys(channel.keys); draft.changed = true; return tick;
-    });
-  },
   scaleAnimationKeys(selection, factor, anchorTick) {
     if (!Number.isFinite(factor) || factor <= 0) throw messageError(new Error(''), "errors.editorAnimation.timingScaleMustBeGreaterThanZero", {});
     checkTick(anchorTick);

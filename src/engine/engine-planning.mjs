@@ -11,14 +11,10 @@
  */
 import {applyDocumentChunk} from '../document-transport.mjs';
 import {messageError, restoreMessageError} from '../localized-error.mjs';
-import {planLayerMembershipMigrationSteps, migrationPlanPayload} from '../editor-layer-migration.mjs';
 import {planInsertInbetweenSteps} from '../editor-inbetween.mjs';
 import {inbetweenPlanWire} from '../editor-inbetween-async.mjs';
 
 const KINDS = Object.freeze({
-  layers: Object.freeze({what: 'Layer migration', noun: 'layer planning', method: 'plan_layers', nullable: true,
-    cancelled: () => new DOMException('Layer migration was cancelled.', 'AbortError'),
-    stale: () => new Error('The document changed while layer migration was prepared.')}),
   inbetweens: Object.freeze({what: 'Inbetween insertion', noun: 'inbetween planning', method: 'plan_inbetweens', nullable: false,
     cancelled: () => new DOMException('Inbetween insertion cancelled.', 'AbortError'),
     stale: () => new DOMException('The animation changed while inbetweens were prepared.', 'AbortError')}),
@@ -116,23 +112,6 @@ async function plan(kind, engine, revision, request, {signal, onProgress, isCurr
 }
 
 /**
- * Layer-move plan from the acknowledged engine mirror: `{uids, targetLayerId, nextFrameIdentity,
- * deletedLayerId?}`, answered as the editor's migration wire (`migrationPlanPayload(...).plan`).
- */
-export async function planEngineLayerMigration(engine, revision, request, options) {
-  available('layers', engine);
-  // This contains IDs only. The engine already owns the acknowledged document.
-  const {uids, targetLayerId, nextFrameIdentity, deletedLayerId} = request;
-  if (!Array.isArray(uids) || uids.length > 10_000 || uids.some(uid => !Number.isInteger(uid) || uid < 1 || uid > 0xffffffff) ||
-      typeof targetLayerId !== 'string' || targetLayerId.length > 128 ||
-      deletedLayerId !== undefined && (typeof deletedLayerId !== 'string' || deletedLayerId.length > 128) ||
-      !Number.isSafeInteger(nextFrameIdentity) || nextFrameIdentity < 1)
-    throw new Error('Invalid layer planning ID request.');
-  const params = {uids, targetLayerId, nextFrameIdentity, ...(deletedLayerId === undefined ? {} : {deletedLayerId})};
-  return plan('layers', engine, revision, params, options);
-}
-
-/**
  * In-between plan from the acknowledged engine mirror: `{ratio, indices, nextFrameIdentity}`
  * (the editor's ordered, distinct source keys), answered as the editor's in-between wire
  * (`inbetweenPlanWire`).
@@ -156,16 +135,14 @@ export async function planEngineInbetweens(engine, revision, request, options) {
 export async function planOnInterface(kind, report, request, {signal, onProgress, isCurrent = () => true} = {}) {
   const {cancelled, stale} = KINDS[kind];
   const editor = {report, _nextFrameIdentity: request.nextFrameIdentity};
-  const steps = kind === 'layers'
-    ? planLayerMembershipMigrationSteps(editor, request.uids, request.targetLayerId, {deletedLayerId: request.deletedLayerId, worker: true})
-    : planInsertInbetweenSteps(editor, request.ratio, request.indices);
+  const steps = planInsertInbetweenSteps(editor, request.ratio, request.indices);
   try {
     let sliceStart = performance.now();
     for (;;) {
       if (signal?.aborted) throw cancelled();
       if (!isCurrent()) throw stale();
       const step = steps.next();
-      if (step.done) return kind === 'layers' ? migrationPlanPayload(step.value).plan : inbetweenPlanWire(step.value);
+      if (step.done) return inbetweenPlanWire(step.value);
       onProgress?.(step.value);
       if (performance.now() - sliceStart >= 4) { await pause(); sliceStart = performance.now(); }
     }

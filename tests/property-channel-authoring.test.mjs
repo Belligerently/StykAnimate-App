@@ -120,9 +120,9 @@ test('camera gestures and Scene edits have property keys without Pose sources', 
   assert.equal(clean.report._styk.animation,undefined);
 });
 
-test('Scene import, color release, undo and redo retain scalar channel ownership', () => {
+test('Scene background, color release, undo and redo retain scalar channel ownership', () => {
   const e=fixture();e.setSceneColor(0xffff0000);
-  const asset=e.importSceneBackground({kind:2,color:0xff00ff00});
+  const asset={background_id:1,kind:2,color:0xff00ff00,name:'Green'};e.report.backgrounds=[...(e.report.backgrounds??[]),asset];e.setSceneBackground(asset.background_id);
   assert.equal(e.evaluatedFrame.background_id,asset.background_id);
   assert.equal(e.evaluatedFrame._stykBackgroundColor,undefined);
   assert.ok(!properties(e).includes('pose'));

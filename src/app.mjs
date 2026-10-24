@@ -3526,7 +3526,7 @@ async function importMediaFile(
       return false;
     finishCurrentEdit();
     if (editor.report !== destination) return false;
-    if (background) editor.importBackground(media);
+    if (background) editor.importSceneBackground(media);
     else editor.importFigure(media);
     notify(interfaceText("app.imported2", {name: file.name}), "app.imported2", {name: file.name});
     return true;
@@ -6160,13 +6160,9 @@ async function init() {
   });
   installShellCommands(actions, { shell, keyboard: shellKeyboard, layout: layoutPopover });
   timelineHost.attach(shell);
-  // The editor's background planning jobs run on the engine's workers against the document
-  // synced for them; the editor still checks its own document again before it publishes a plan.
+  // The editor's background planning job runs on the engine's workers against the document
+  // synced for it; the editor still checks its own document again before it publishes a plan.
   const currentDocument = () => { const report = editor.report, revision = editor.revision; return () => editor.report === report && editor.revision === revision; };
-  editor.setLayerMigrationPlanner((params, options) => {
-    syncPlayback();
-    return playback.planLayerMigration(params, { ...options, isCurrent: currentDocument() });
-  });
   editor.setInbetweenPlanner((params, options) => {
     syncPlayback();
     return playback.planInsertInbetweens(params, { ...options, isCurrent: currentDocument() });

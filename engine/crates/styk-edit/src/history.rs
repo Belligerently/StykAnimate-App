@@ -84,6 +84,8 @@ pub enum CommandKind {
     /// The effect clips before (none when there were none) and after, and the sheet when
     /// the clips lengthened it (`kind: 'vfx-clips'`).
     VfxClips { before: Option<Value>, after: Value, sheet: Option<(Value, Value)> },
+    /// A background added to the table or fields of one of its entries changed (`kind: 'scene'`, `scene_backgrounds.rs`).
+    Scene { index: usize, change: crate::scene_backgrounds::Change },
     /// Fields of the document before (absent ones as none) and after (`kind: 'fields'`).
     Fields { before: Vec<(String, Option<Value>)>, after: Vec<(String, Value)>, timing: bool },
     /// A movieclip definition before (none when it was added) and after (none when removed)
@@ -362,7 +364,7 @@ impl Editor {
         fn summary(command: &Command, weight: &Weight, kinds: bool, children: bool) -> Value {
             let mut value = styk_doc::Obj::new();
             if kinds { value.set("kind", Value::str(match &command.kind {
-                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::External { .. } => "external",
+                CommandKind::Ranges { .. } => "ranges", CommandKind::Frame { .. } => "frame", CommandKind::Animation { .. } => "animation", CommandKind::Objects { .. } => "objects", CommandKind::LayerSheet { .. } => "layer-sheet", CommandKind::Layers { .. } => "layers", CommandKind::Figure { .. } => "figure", CommandKind::FigureSplice { .. } => "figure-splice", CommandKind::CameraMotion { .. } => "camera-motion", CommandKind::Palette { .. } => "palette", CommandKind::Scene { .. } => "scene", CommandKind::Audio { .. } => "audio", CommandKind::VfxClips { .. } => "vfx-clips", CommandKind::Fields { .. } => "fields", CommandKind::MovieclipDefinition { .. } => "movieclip-definition", CommandKind::MovieclipPoses { .. } => "movieclip-poses", CommandKind::Batch { .. } => "movieclip-batch", CommandKind::FigureRange { .. } => "figure-range", CommandKind::NativeProperties { .. } => "native-properties", CommandKind::Topology { .. } => "topology", CommandKind::External { .. } => "external",
             })); }
             value.set("label", Value::str(&command.label)); value.set("bytes", Value::Num(weight.bytes));
             if children && let CommandKind::Batch { commands } = &command.kind { value.set("children", Value::array(commands.iter().zip(&weight.children).map(|(command, weight)| summary(command,weight,kinds,children)).collect())); }
@@ -526,6 +528,7 @@ impl Editor {
             CommandKind::Layers { .. } => self.apply_layers_command(command, direction)?,
             CommandKind::CameraMotion { .. } => self.apply_camera_command(command, direction)?,
             CommandKind::Palette { .. } => self.apply_palette_command(command, direction)?,
+            CommandKind::Scene { .. } => self.apply_scene_command(command, direction)?,
             CommandKind::Audio { .. } => self.apply_audio_command(command, direction)?,
             CommandKind::VfxClips { .. } => self.apply_vfx_command(command, direction)?,
             CommandKind::Fields { .. } => self.apply_fields_command(command, direction)?,

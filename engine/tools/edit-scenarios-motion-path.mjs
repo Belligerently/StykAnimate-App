@@ -6,7 +6,7 @@
 // movieclip, the camera; refusals and history. Run by engine/tools/edit-scenarios.mjs.
 import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
-import {documentOf, limb, open, nextKey, prune} from './fixture-kit.mjs';
+import {documentOf, limb, open, nextKey, prune, setDuration} from './fixture-kit.mjs';
 import {falloffWeight, MOTION_PATH_FALLOFF_SHAPES} from '../../src/motion-path-falloff.mjs';
 
 const out = fileURLToPath(new URL('../tests/edit', import.meta.url));
@@ -45,7 +45,7 @@ const commit = ['commitMotionPathEdit'], cancel = ['cancelMotionPathEdit'], fall
   for (const [dx, dy, turn] of [[30, 10, .2], [25, -15, -.3], [-20, 20, .25], [15, 5, -.2], [10, -10, .15]]) {
     nextKey(e, 4); e.select(1, -1); e.moveSelection(dx, dy); e.select(1, 1); e.rotateJoint(turn); e.select(3, -1); e.moveSelection(-dx, dy);
   }
-  e.setFrameDuration(4);
+  setDuration(e, 4);
   const layered = open(JSON.parse(JSON.stringify(prune(e.report), (key, value) => key === 'runtime_segments' ? undefined : value)), app);
   layered.sheetSetEasing(['layer-1'], 8, 8, {interpolation: 'constant'});
   layered.seek(0); layered.select(1);

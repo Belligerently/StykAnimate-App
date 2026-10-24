@@ -32,6 +32,21 @@ use self::js::*;
 use crate::EditError;
 
 pub use self::js::TYPE_ERROR;
+pub(crate) use self::object::spatial_pose;
+pub(crate) use self::scene::projected_drawing;
+
+/// `validateScene({...report, figure_types: [], backgrounds: [background], keyframes: [createFrame([])]})`: whether
+/// `background` is a scene asset the document may hold.
+pub(crate) fn validate_background(report: &Value, background: &Value) -> Result<(), EditError> {
+    if !matches!(background.get("kind").and_then(Value::as_f64), Some(0.0 | 1.0 | 2.0 | 3.0 | 4.0)) {
+        return fail("errors.editorScene.expectedADecodedImageColorOrGradientBackground");
+    }
+    let mut source = report.as_obj().cloned().unwrap_or_default();
+    source.set("figure_types", Value::array(Vec::new()));
+    source.set("backgrounds", Value::array(vec![background.clone()]));
+    source.set("keyframes", Value::array(vec![crate::sheet::create_frame(&[])]));
+    scene::validate_scene(&Value::object(source), None)
+}
 
 /// What `prepareEditorLoad` returns: the normalized report and the indexes the editor adopts.
 #[derive(Clone, Debug)]

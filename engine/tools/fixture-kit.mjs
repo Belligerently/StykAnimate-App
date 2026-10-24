@@ -35,9 +35,22 @@ export const joint = (editor, id, uid = editor.selectedUid ?? 1) => {
   editor.select(uid, index); return editor;
 };
 export const whole = (editor, uid = 1) => { editor.select(uid, -1); return editor; };
+/** The length of the keyframe on show (the exposure under the playhead on a layer sheet). */
+export function setDuration(editor, ticks) {
+  return editor.report._styk?.layerSheet ? editor.sheetSetDuration(ticks) : editor.setFramesDuration([editor.frameIndex], ticks);
+}
+/** A background in the table (with the next id) shown from the playhead, as importing one leaves a native document. */
+export function importBackground(editor, source) {
+  const asset = {...structuredClone(source), background_id: Math.max(0, ...(editor.report.backgrounds ?? []).map(background => background.background_id)) + 1};
+  asset.name ||= 'Background';
+  (editor.report.backgrounds ??= []).push(asset);
+  editor.setSceneBackground(asset.background_id);
+  return asset;
+}
 /** A second native keyframe after the current one; the editor moves onto it. */
 export function nextKey(editor, ticks) {
-  editor.setFrameDuration(ticks); editor.duplicateFrame();
+  setDuration(editor, ticks);
+  editor.duplicateFrame();
   editor.selectFrame(editor.report.keyframes.length - 1);
   return editor;
 }

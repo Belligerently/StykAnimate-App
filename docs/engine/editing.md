@@ -387,6 +387,13 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | Origin joints and handles (`styk-edit/src/origin.rs`, `pose.rs`, `figure_transform.rs`): pose, rotate and bend joints, Handle Edit Mode and whole-figure handle turns/scales synchronize retained ghosts once, preserving captured metadata, cancellation, fractional views and native/sheet history. Complex rig, pose-choice, mesh, drawing, movieclip and unrecorded IK branches refuse atomically. | yes, recorded calls only; class remains unowned | origin-pose-layout/offsets/support-native/sheet/autokey-sheet, origin-pose-support-free/pinned-native/sheet |
 | Saved origin channels (`styk-edit/src/property_edit.rs`): begin/preview/commit/cancel animation edits and single/batch x/y/scale/rotation keys match both stored documents and the shown frame after every call. Admission inspects the actual target tick and attachment ancestors, including future definitions; absent post-exposure keys are admitted only for an already recorded ordinary target. Malformed joins and future rig targets refuse before changing live state. | yes, recorded calls only; class remains unowned | origin-channels-layout/offsets/support-sheet/autokey-sheet, origin-channels-saved-layout/support-sheet/autokey-sheet, origin-channels-future-sheet |
 | Set Origin and recorded origin topology (`styk-edit/src/origin_topology.rs`): rerooting preserves the original animation basis, joined children, local offsets and reversed gradients; split/delete/add/reorder/duplicate/definition replacement remap and compact retained ghosts across all poses. The typed origin compiler validates support before committing a live gesture; malformed descriptors refuse atomically. `setOrigin` is shadowed through the topology facade, with no topology adoption or class flip. | yes, recorded calls only, without saved origin channels and other topology limits above | origin-reroot-new/layout/offsets/support-native/sheet; origin-topology-layout/offsets/support-native/sheet |
+| 3D rig values (`styk-edit/src/spatial_shape.rs`): `setSpatialCamera` (perspective strength, distance and centre), `setSpatialProportions` (size carries the bones below it; length, width, taper), `resetSpatialProportions`; validated as `validateSpatialPose` does, a bone's chain released as `_releaseSpatialChain` does | yes | `tests/spatial_shape.rs` states the results (the editor's JavaScript is not the oracle any more) |
+| Scene backgrounds (`styk-edit/src/scene_backgrounds.rs`): `importSceneBackground` (the asset in the table, the chosen frames showing it: one batch), `renameSceneBackground`; a `scene` history entry holds the one asset or its fields, never the table | yes (layer sheets) | `tests/engine-owner-commands.test.mjs` |
+| `setFrameDuration` (the exposure under the playhead: `sheetSetDuration`), `addMovieclipToNextKeyframes` on a layer sheet (`extend_sheet_movieclip` with an inline worker context) | yes | movieclip-sheet-extension (the owner tapes and `movieclip_sheet_extension.rs` replay its eight recordings through the session's own call), `session_commands.rs` |
+| Layer membership (`styk-edit/src/layer_membership.rs`): `assignFiguresToLayer`, `deleteLayer` plan with `layer_planning::sheet_layer_plan` and publish in one call (`deleteLayer` into a chosen layer is refused) | yes (layer sheets) | layer-sheet-migration (`tests/layer_sheet_commands.rs`) |
+| Drawing structure (`styk-edit/src/drawing_structure.rs`): `createDrawingLayer`, `addDrawingFrame`, `nextDrawing`, `extendDrawing`, `drawingKey`, `autoKeyDrawing`; a drawing layer's one-cel rule is the sheet writer's (`Plan::write`). A copied cel is a definition of its own with a draw identity (`cel-<uuid>`); the answer names the cels it copied (`drawingForks`) so that the owner gives the copy the pixels of the cel it copies. A key (`sheetInsertKey`) or a frame after the playhead (`sheetDuplicateFrameAfter`) on a drawing layer is a cel (`drawingKey`, `nextDrawing`) | yes (layer sheets) | `session_commands.rs` |
+| `bakeCameraMotion` (`styk-edit/src/camera_bake.rs`): the motion sampled with `camera_at_time` / `camera_travel_at`, held keys on the camera track, the clips muted over the range; sampled in the call itself (the editor's worker and its cancellation are gone) | yes (layer sheets) | `session_commands.rs` |
+| `pasteFiguresInFrames`: the figure clipboard into every chosen frame (the playhead paste's planner over several frames, `commit_sheet_range`) | yes (layer sheets) | `session_commands.rs` |
 | `undo`, `redo` of what those record | yes | all of the above |
 | everything else | no: `Unported` | |
 
@@ -449,10 +456,10 @@ document difference the harness can see):
   whether a command adds one more layer revision (a figure appears or disappears
   altogether). The engine counts them from the document when first needed; the editor's
   set of figures *ever seen* can be larger after figures were deleted and collected.
-- **Layer focus locks** are runtime state of the JavaScript editor: a focus lock refuses
-  edits on the other layers. The facade starts no engine session while one is on, and
-  changing the focus ends the current session (measured with the driver's focus step:
-  without this, owned editing inserted a key the editor refuses on a locked layer).
+- **Layer focus** (view-only or with locks) is runtime state of the JavaScript editor; the session knows none of it. The owner
+  adds the layers a call creates to the focus the editor holds (a layer Draw makes can be drawn on under Focus and lock). A
+  focus lock is not enforced for a session call: a key inserted or a cel added on a layer the lock holds is not refused
+  (a limitation, for every command the session runs).
 - **Frame ranges**: on a layer sheet the app passes a timeline range as an array carrying the
   chosen ticks (`rangeFrames()`, `sheetTicks`), which JSON drops; the facade sends such arrays
   as `{"@array": [...], "sheetTicks": [...]}`, and recorded steps may spell them the same way
@@ -649,9 +656,8 @@ it on the editor, for every document.
   not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
   not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
 - **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
-  name) runs in the JavaScript editor on the read view (the drawing commits, the layer and background commands, the
-  bakes, inbetweens, the frame clipboard, disconnecting and combining figures, 3D rig values); `report.editor` counts
-  them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
+  name) runs in the JavaScript editor on the read view (the drawing pixel commits, inbetweens, the frame clipboard,
+  disconnecting and combining figures); `report.editor` counts them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and
   the changed records are written back. A session gesture or edit still open when such a call is made is committed first.

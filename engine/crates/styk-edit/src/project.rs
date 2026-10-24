@@ -29,7 +29,7 @@ impl Editor {
     }
 
     /// `_fields(label, patch, {timing})`: the document's fields set, unless they already are.
-    fn set_fields(&mut self, label: &str, patch: Vec<(&str, Value)>, timing: bool) -> Result<bool, EditError> {
+    pub(crate) fn set_fields(&mut self, label: &str, patch: Vec<(&str, Value)>, timing: bool) -> Result<bool, EditError> {
         let before: Vec<(String, Option<Value>)> = patch.iter().map(|(key, _)| (key.to_string(), self.report.get(key).cloned())).collect();
         // `same(before, patch)`: equal as JSON, a missing field left out.
         let json = |pairs: &mut dyn Iterator<Item = (String, Option<Value>)>| {

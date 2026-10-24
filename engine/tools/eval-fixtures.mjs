@@ -121,26 +121,6 @@ const fixtures = {
     e.seek(0);
     return {document: e.serialize(), ticks: [0, 3, 8, 11, 16, 20], camera: true};
   },
-  /** A camera shake baked into camera keys: each key keeps the shake apart
-   * (`_parallaxMotionOffset`), which parallax layers do not follow; between the keys
-   * left after clearing some (one linear span, one Auto run), the offsets tween with
-   * the camera. */
-  'parallax-baked-motion': async () => {
-    const e = open(documentOf([limb(), limb()], i => [220 + i * 160, 160]), {layerTimeline: true});
-    e.sheetSetDuration(20);
-    const back = e.createLayer('Back');
-    e.assignFiguresToLayer([2], back.id);
-    e.seek(10); e.setCameraValues({x: 50, y: 10});
-    e.seek(0); e.setLayerParallax(back.id, {enabled: true, x: 0.4});
-    const shake = e.addCameraMotion('shake', {start: 2, duration: 14});
-    e.setCameraMotion(shake, {params: {moveX: 30, moveY: 20, frequency: 3}});
-    await e.bakeCameraMotion({start: 0, end: 20});
-    e.sheetClearKeys(['camera'], 4, 7); e.sheetClearKeys(['camera'], 12, 14);
-    // Baked keys hold; a linear span, and an Auto run whose curve reads the keys around it.
-    e.sheetSetEasing(['camera'], 3, 3, {interpolation: 'linear'}); e.sheetSetEasing(['camera'], 10, 15, {interpolation: 'auto'});
-    e.seek(0);
-    return {document: e.serialize(), ticks: [0, 3, 5, 6, 9, 13, 15, 17], camera: true};
-  },
   /** A follow clip on two weighted figures (dead zone, look-ahead, smoothing, framing
    * zoom, an offset, fades), over a parallax layer whose figure hangs from one of them
    * and a shake on top: travel moves the layer, the shake only the shot. */

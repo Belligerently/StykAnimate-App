@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
+import {plainEditorWithDrawings} from './support/owned-editor.mjs';
 import english from '../src/locales/en.mjs';
 import inspectorStrings from '../src/locales/en-inspector.mjs';
 import {lintCss} from '../scripts/check-css.mjs';
@@ -28,8 +29,7 @@ const assertBudget = (descriptor, options = {}) => assert.deepEqual(inspectorBud
 // The inspector's own contexts are tested against today's markup in tests/inspector-descriptors.test.mjs.
 
 test('drawing layer inspector: name, visibility, lock and parallax keep their hooks', () => {
-  const editor = new Editor({layerTimeline: true, propertyChannels: true});
-  const layer = editor.createDrawingLayer();
+  const {editor, layers: [layer]} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
   const descriptor = layerInspector(editor), today = legacyInspectorView({editor, context: 'layer'}), kit = kitHTML(descriptor);
   assertParity(today, kit, {id: 'inspector-layer-name'}, ['value', 'aria-label', 'maxlength', 'data-layer-id']);
   for (const id of ['inspector-layer-visible', 'inspector-layer-locked']) assertParity(today, kit, {id}, ['type', 'checked', 'data-layer-id']);
@@ -49,8 +49,7 @@ test('drawing layer inspector: name, visibility, lock and parallax keep their ho
 });
 
 test('drawing brush inspector: preview, recent colours, Blend and Lock alpha keep their hooks', () => {
-  const editor = new Editor({layerTimeline: true, propertyChannels: true});
-  editor.createDrawingLayer();
+  const {editor} = plainEditorWithDrawings({layerTimeline: true, propertyChannels: true});
   const settings = {color: '#223344', color2: '#ffffff', blend: 'multiply', alphaLock: true, preset: 'ink', hardness: 0.5, roundness: 1, angle: 0, spacingRatio: 0.08,
     taperIn: 0, taperOut: 0, stabilizerMode: 'average', tip: 'round', angleMode: 'fixed', grain: 'noise', texture: 0, grainScale: 1, pressureSize: true,
     pressureOpacity: false, pressureFlow: false, sizeCurve: 1, opacityCurve: 1, sizeJitter: 0, opacityJitter: 0, angleJitter: 0, scatter: 0, mirrorY: false,

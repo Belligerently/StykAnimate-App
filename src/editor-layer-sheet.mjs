@@ -400,21 +400,6 @@ export const editorLayerSheetMethods={
   _sheetPoseDraftPublish(draft, label, selection) {
     return publish(this, draft.plan, label, {selection});
   },
-  sheetExtendMovieclip(count){
-    const uid=this.selectedUid,id=this.layerForUid(uid),plan=planner(this,[id]);
-    const track=plan.get(id),keys=track.keys.filter(key=>!key.patchOnly&&key.tick>this.tick&&key.tick<track.end).slice(0,count);
-    const source=ownedFrame(this.report,this.selectionFrame,[uid]);
-    const orderIndex=frameOrder(this.selectionFrame).filter(value=>this.layerForUid(value)===id).indexOf(uid);
-    let added=0;
-    for(const key of keys){
-      if(at(this.report,key.tick).objects.some(object=>object.unique_id===uid))continue;
-      // Only existing boundaries: preserve the original pose and easing.
-      const index=track.keys.indexOf(key),end=track.keys[index+1]?.tick??track.end;
-      replaceAt(this,plan,id,key.tick,uid,source,{orderIndex},end);added++;
-    }
-    if(added)publish(this,plan,'Add movieclip to next keyframes');
-    return added;
-  },
   sheetReplaceMovieclipFrames(frames,uid,children,label,options={}){
     const id=this.layerForUid(uid),plan=planner(this,[id]);
     for(const child of children)plan.layers.assignments[child]=id;
@@ -851,12 +836,6 @@ export const editorLayerSheetMethods={
   /** Explicit property/pose authoring. An edit inside a tween writes a boundary
    * at the entry's tick; editing a held cell edits its preceding key. Canvas
    * pose edits keep the same held-cell rule in the draft path. */
-  _sheetBakeCameraFrames(frames){
-    const plan=planner(this,['camera']);
-    for(const {tick,camera,restore} of frames){const easing=restore?(sheetKeyAt(plan.before.tracks.camera,tick).key??{interpolation:'constant'}):{interpolation:'constant'};
-      const key=plan.write('camera',tick,{objects:[],camera,duration_raw:1},{easing});if(easing.interpolation!=='bezier')delete key.bezier;}
-    publish(this,plan,'Bake camera motion',{retainGeometry:true});
-  },
   _sheetPropertyEntries(entries,label='Edit layer pose'){
     const byTick=new Map();for(const entry of entries){const tick=checkedTick(entry.tick??this.tick),list=byTick.get(tick)??[];list.push(entry);byTick.set(tick,list);}
     const ids=[...new Set(entries.map(e=>fixed(e.target.kind)?e.target.kind:e.target.kind==='layer'?e.target.id:this.layerForUid(e.target.uid)))],plan=planner(this,ids),result=[];

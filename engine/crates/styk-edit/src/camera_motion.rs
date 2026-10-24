@@ -170,13 +170,13 @@ fn shifted_ranges(clip: &Value, start: f64, duration: f64) -> Option<Value> {
 }
 
 impl Editor {
-    fn camera_clips(&self) -> Vec<Value> {
+    pub(crate) fn camera_clips(&self) -> Vec<Value> {
         self.report.path(&["_styk", "cameraMotion", "clips"]).and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default()
     }
 
     /// `publish(editor, next, label)`: the new table, one history entry, the sheet lengthened
     /// to the last clip.
-    fn publish_camera(&mut self, clips: Vec<Value>, label: &str) -> Result<bool, EditError> {
+    pub(crate) fn publish_camera(&mut self, clips: Vec<Value>, label: &str) -> Result<bool, EditError> {
         if self.report.path(&["_styk", "layers", "fixed", "camera", "locked"]).is_some_and(Value::truthy) {
             return Err(invalid("errors.editorCameraMotion.unlockCameraBeforeEditingMotion"));
         }

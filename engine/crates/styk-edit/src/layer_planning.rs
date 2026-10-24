@@ -126,6 +126,7 @@ pub(crate) fn checked_plan(report: &Value, ids: &[String], identity: u64) -> Res
         layers,
         next_frame: identity,
         definitions: Vec::new(),
+        figures: report.get("figure_types").cloned().unwrap_or(Value::Null),
     })
 }
 fn track_signature(track: &Value) -> Value {

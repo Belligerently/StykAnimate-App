@@ -134,11 +134,9 @@ test('removing frames beyond a short layer does not shorten existing content',()
   const e=fixture();e.sheetRemoveFrames(['layer-2'],30,35);assert.equal(e.report._styk.layerSheet.tracks['layer-2'].end,21);
 });
 
-test('scene colors and imported backgrounds use fixed scene poses and undo',()=>{
+test('scene colors use fixed scene poses and undo',()=>{
   const e=fixture(),before=e.serialize();e.setBackgroundColor(0xff336699);assert.equal(e.evaluatedFrame._stykBackgroundColor,0xff336699);
-  e.undo();assert.deepEqual(e.serialize(),before);
-  e.importBackground({kind:2,color:0xff234567,name:'Color'});const id=e.evaluatedFrame.background_id;assert.ok(e.report.backgrounds.some(b=>b.background_id===id));
-  e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.equal(e.evaluatedFrame.background_id,id);
+  e.undo();assert.deepEqual(e.serialize(),before);e.redo();assert.equal(e.evaluatedFrame._stykBackgroundColor,0xff336699);
 });
 
 test('moving and copying clip keys retain their playback clock at the destination',()=>{
@@ -153,7 +151,7 @@ test('camera and scene previews publish no legacy channels and undo exactly',asy
   e.commitCameraDrag();assert.equal(e.evaluatedFrame.camera.x,25);e.undo();assert.deepEqual(e.serialize(),before);
   e.beginCameraDrag();e.updateCameraDrag({x:50});e.cancelCameraDrag();assert.deepEqual(e.serialize(),before);
   e.setSceneColor(0xffaabbcc);assert.equal(e.evaluatedFrame._stykBackgroundColor,0xffaabbcc);assert.equal(e.animationChannels.length,0);e.undo();
-  e.importSceneBackground({kind:2,color:0xff0000ff,name:'Blue'});assert.ok(e.evaluatedFrame.background_id);assert.equal(e.animationChannels.length,0);e.undo();assert.deepEqual(e.serialize(),before);
+  assert.deepEqual(e.serialize(),before);
 });
 
 test('exposure property preview is non-mutating and commits only its selected layer',async()=>{

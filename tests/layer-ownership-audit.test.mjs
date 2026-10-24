@@ -100,18 +100,10 @@ test('timeline paste rejects duplicate destination rows atomically',()=>{
   assert.throws(()=>e.sheetPasteFrames([target,target],5),/distinct|unique/i);assert.deepEqual(e.serialize(),before);
 });
 
-for(const rejected of ['cancel','change','budget'])test(`background layer migration is atomic on ${rejected}`,async()=>{
-  const {e,second}=fixture(),controller=new AbortController(),before=e.serialize(),undo=e._undo.length;
-  let progress=0;
-  const options=rejected==='budget'?{maxSourceBytes:1}:{signal:controller.signal,onProgress(){progress++;if(rejected==='cancel')controller.abort();else e.renameLayer(second,'Changed while preparing');}};
-  await assert.rejects(e.assignFiguresToLayerAsync([7],second,options),rejected==='cancel'?{name:'AbortError'}:rejected==='budget'?/memory budget/:/changed/);
-  if(rejected==='change')e.undo();else assert.equal(e._undo.length,undo);
-  assert.deepEqual(e.serialize(),before);if(rejected!=='budget')assert.ok(progress>0);
-});
-test('background layer migration preserves the animation and supports history',async()=>{
-  const {e,second}=fixture(),before=e.serialize(),original=samples(e,[1,2,7]);let progress=0;
-  await e.assignFiguresToLayerAsync([7],second,{onProgress(){progress++;}});
-  assert.ok(progress>0);assert.deepEqual(samples(e,[1,2,7]),original);history(e,before);
+test('moving figures to a layer in the background preserves the animation and supports history',async()=>{
+  const {e,second}=fixture(),before=e.serialize(),original=samples(e,[1,2,7]);
+  await e.assignFiguresToLayerAsync([7],second);
+  assert.deepEqual(samples(e,[1,2,7]),original);history(e,before);
 });
 
 for(const operation of ['add','paste','range'])test(`${operation} beyond a populated short layer leaves its expired content absent`,()=>{
@@ -147,12 +139,6 @@ test('deleting layers preserves remaining movieclip patches and continuation pha
   const {e,second}=fixture();e.seek(4);e.select(7);e.breakApartMovieclip();
   const kept=e.getLayerFigureUids('layer-1'),original=samples(e,kept),before=e.serialize();e.deleteLayer(second);
   assert.deepEqual(samples(e,kept),original);history(e,before);
-});
-
-for(const mode of ['cancel','budget'])test(`background deletion rejects ${mode} without changing layer ownership or history`,async()=>{
-  const {e,second,target}=fixture();e.reorderLayers(['layer-1',second,target]);const before=e.serialize(),undo=e._undo.length,controller=new AbortController();
-  await assert.rejects(e.deleteLayerAsync('layer-1',mode==='budget'?{maxSourceBytes:1}:{signal:controller.signal,onProgress(){controller.abort();}}),mode==='cancel'?{name:'AbortError'}:/memory budget/);
-  assert.deepEqual(e.serialize(),before);assert.equal(e._undo.length,undo);
 });
 
 for(const operation of ['range','group-paste','import','move','delete'])test(`locked layers reject ${operation} atomically`,()=>{

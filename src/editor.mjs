@@ -1658,11 +1658,6 @@ export class Editor extends EventTarget {
     this._record({kind: 'fields', label, before, after: clone(patch), beforeSelection: selection, afterSelection: selection, structural: false, timing});
     this._emit('edit', {label, timing, projectFields: Object.keys(patch)}); return true;
   }
-  setFrameDuration(ticks) {
-    if(this.report._styk?.layerSheet)return this.sheetSetDuration(ticks);
-    if (!Number.isInteger(ticks) || ticks < 0 || ticks > 65535) throw messageError(new Error(''), "errors.editorRanges.keyframeDurationMustBe065535Frames", {});
-    return Boolean(this.setFramesDuration([this.frameIndex], ticks));
-  }
   setCanvasSize(width, height) {
     if (![width, height].every(n => Number.isInteger(n) && n >= 1 && n <= 100000)) throw messageError(new Error(''), "errors.editor.canvasDimensionsMustBe1100000Pixels", {});
     return this._fields('Resize canvas', {canvas_width: width, canvas_height: height});
@@ -1695,24 +1690,6 @@ export class Editor extends EventTarget {
     this._record({kind: 'project', label: 'Background color', index: this.frameIndex, before, after,
       beforeSelection, afterSelection: this._selectionState(), structural: false, timing: false});
     this._invalidate(); this._emit('edit', {label: 'Background color'}); return true;
-  }
-  importBackground(background) {
-    if(this.report._styk?.layerSheet&&!this._authoredPoseEdit){let result;this.transaction('Import background',()=>{result=this.importBackground(background);});return result;}
-    const source = background?.background ?? background;
-    if (!source || ![0, 1, 2, 3, 4].includes(source.kind)) throw messageError(new Error(''), "errors.editor.expectedADecodedImageColorOrGradientBackground", {});
-    if (this._drag && !this._authoredPoseEdit?.transaction) this.commitDrag();
-    const imported = clone(source);
-    imported.background_id = Math.max(0, ...(this.report.backgrounds ?? []).map(bg => bg.background_id)) + 1;
-    imported.name ||= 'Background';
-    const backgrounds = [...(this.report.backgrounds ?? []), imported], frame = clone(this.frame);
-    Object.assign(frame, {background_id: imported.background_id, background_id_b: 0, background_mix: 0});
-    validateScene({...this.report, backgrounds, keyframes: [frame]});
-    const before = {fields: {backgrounds: clone(this.report.backgrounds ?? [])}, frame: clone(this.frame)}, beforeSelection = this._selectionState();
-    this.report.backgrounds = backgrounds; this.report.keyframes[this.frameIndex] = frame;
-    this._record({kind: 'project', label: 'Import background', index: this.frameIndex, before,
-      after: {fields: {backgrounds: clone(backgrounds)}, frame: clone(frame)}, beforeSelection,
-      afterSelection: this._selectionState(), structural: false, timing: false});
-    this._invalidate(); this._emit('edit', {label: 'Import background'}); return imported;
   }
   importFigure(document, {position} = {}) {
     if (position && (!Number.isFinite(position.x) || !Number.isFinite(position.y))) throw messageError(new Error(''), "errors.editorRangeCommands.chooseAValidCanvasPosition", {});

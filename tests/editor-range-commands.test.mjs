@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {pasteInFrames} from './support/figure-range.mjs';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
@@ -25,7 +26,7 @@ test('paste in place preserves coordinates and undo without advancing the normal
     const pasted = editor.pasteSelection();
     assert.deepEqual(pasted.map(o => [o.root_x, o.root_y]), positions.map(([x, y]) => [x + offset, y + offset]));
   }
-  const result = editor.pasteFiguresInFrames([0, 2], {offset: 0});
+  const result = pasteInFrames(editor, [0, 2], {offset: 0});
   for (const index of [0, 2]) assert.deepEqual(editor.report.keyframes[index].objects
     .filter(o => result.insertedUids.includes(o.unique_id)).map(o => [o.root_x, o.root_y]), positions);
 });
@@ -50,7 +51,7 @@ test('add uses one fresh UID across selected frames and active layer membership 
 test('paste remaps clipboard definitions once and internal joins by fresh UID consistently across frames', () => {
   const source = fixture(); source.select(2); source.joinTo(1, 1); source.selectMany([1, 2]); source.copySelection();
   const editor = fixture(); editor._selectionClipboard = source._selectionClipboard;
-  const before = clone(editor.report), types = before.figure_types.length, result = editor.pasteFiguresInFrames([0, 1]);
+  const before = clone(editor.report), types = before.figure_types.length, result = pasteInFrames(editor, [0, 1]);
   assert.equal(result.insertedUids.length, 2); assert.equal(editor.report.figure_types.length, types + 1);
   for (const i of [0, 1]) {
     const frame = editor.report.keyframes[i], joined = frame.objects.find(object => object.unique_id === result.insertedUids[1]);

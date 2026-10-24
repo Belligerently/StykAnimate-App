@@ -428,6 +428,17 @@ fn command_projection_checked(
                     * 160.0
             }) + 256.0
         }
+        CommandKind::Scene { change, .. } => {
+            256.0
+                + match change {
+                    crate::scene_backgrounds::Change::Added(asset) => bytes(asset, check)?,
+                    crate::scene_backgrounds::Change::Fields { before, after } => {
+                        let side = |fields: Vec<(&String, &Value)>| fields.into_iter().map(|(key, value)| Value::array(vec![Value::str(key), value.clone()])).collect::<Vec<_>>();
+                        bytes(&Value::array(side(before.iter().filter_map(|(key, value)| value.as_ref().map(|value| (key, value))).collect())), check)?
+                            + bytes(&Value::array(side(after.iter().map(|(key, value)| (key, value)).collect())), check)?
+                    }
+                }
+        }
         CommandKind::Palette { before, after } => {
             256.0
                 + 16.0
@@ -704,7 +715,7 @@ fn command_projection_checked(
             CommandKind::Ranges { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "afterSelection"],
             // These existing owners retain exact weight support. Full enumerable
             // observation needs their own recorded optional construction fields.
-            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::External { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
+            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::External { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
         };
         let mut fields = Obj::new();
         for key in order.iter().chain(["layerChanges", "layers", "beforeRevision", "afterRevision"].iter()) {

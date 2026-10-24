@@ -31,6 +31,7 @@ import english from '../locales/en.mjs';
 import {invalidateFrameIndex} from '../frame-ids.mjs';
 import {invalidateMovieclipTypes} from '../movieclips.mjs';
 import {layerIdForUid} from '../layers.mjs';
+import {drawingMetadata} from '../drawing-model.mjs';
 import {appBoundsMarker} from './engine-edit-bounds.mjs';
 import {createShown} from './engine-shown.mjs';
 
@@ -57,6 +58,14 @@ const PIXEL_CALLS = new Set(['commitDrawingPixels', 'resampleDrawing']);
  * nothing and answer false, which the owner knows without asking the session. */
 const ENDS_EDIT = {commitVfxClipEdit: '_vfxClipEdit', cancelVfxClipEdit: '_vfxClipEdit', commitAnimationEdit: '_animationEdit', cancelAnimationEdit: '_animationEdit'};
 
+/** The commands only the session has: the editor keeps no body for them. The owner makes them calls of the editor
+ * all the same; where no session runs the document they fail. */
+const SESSION_COMMANDS = Object.freeze([
+  'setSpatialCamera', 'setSpatialProportions', 'resetSpatialProportions',
+  'createDrawingLayer', 'addDrawingFrame', 'drawingKey', 'nextDrawing', 'extendDrawing', 'autoKeyDrawing',
+  'importSceneBackground', 'renameSceneBackground', 'bakeCameraMotion', 'setFrameDuration', 'pasteFiguresInFrames',
+]);
+
 /** Calls that read the document or the editor's state, open or close documents, or
  * configure the editor: never routed. */
 const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEvent', 'animationChannel', 'animationValue', 'canDisconnectSegment',
@@ -67,8 +76,8 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
   'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
-  'setFrameClipboardWorker', 'setInbetweenPlanner', 'setLayerMigrationPlanner', 'enterMovieclip', 'leaveMovieclip',
-  'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'undo', 'redo', 'constructor']);
+  'setFrameClipboardWorker', 'restoreFrameClipboard', 'restoreFrameClipboardAsync', 'setInbetweenPlanner', 'enterMovieclip', 'leaveMovieclip',
+  'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'touch', 'sheetEditTimes', 'deleteLayerAsync', 'assignFiguresToLayerAsync', 'undo', 'redo', 'constructor']);
 
 /** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
  * shows of the frame on show, from the engine's own evaluation. The editor answers them itself (from the frame and geometry
@@ -77,9 +86,9 @@ const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget',
 /** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
 const UNPORTED = 'unported: ';
 
-/** The editor's public methods the owner routes: everything but queries and view calls. */
+/** The editor's public methods the owner routes: everything but queries and view calls, and the commands only the session has. */
 export function ownedMethods(editor) {
-  const names = new Set();
+  const names = new Set(SESSION_COMMANDS);
   for (let prototype = Object.getPrototypeOf(editor); prototype && prototype !== Object.prototype; prototype = Object.getPrototypeOf(prototype)) {
     for (const name of Object.getOwnPropertyNames(prototype)) {
       const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
@@ -359,9 +368,11 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (patch && answer.patch?.length) {
       applying = true;
       try {
-        const before = posesBefore();
+        const before = posesBefore(), layers = new Set(Object.keys(editor.report._styk?.layers?.byId ?? {}));
         applyDocumentPatch(editor.report, answer.patch);
         refresh(answer.patch, before);
+        // A layer a call creates joins the layer focus the editor holds (the session knows no focus), as the editor's own creations do.
+        editor._includeCreatedLayersInFocus(Object.keys(editor.report._styk?.layers?.byId ?? {}).filter(id => !layers.has(id)));
         editor._invalidate({timing: true});
       } finally { applying = false; }
     }
@@ -603,7 +614,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (name === 'sheetAppendFrame') return editor.evaluatedFrame;
     if (name === 'beginAnimationEdit') return editor._animationEdit;
     if (name === 'beginVfxClipEdit') return undefined;
-    if (name === 'createLayer' && answer.result?.id) return editor.getLayer(answer.result.id);
+    if ((name === 'createLayer' || name === 'createDrawingLayer') && answer.result?.id) return editor.getLayer(answer.result.id);
     return answer.result;
   };
 
@@ -726,6 +737,14 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     } finally { writing = false; }
     if (lastDepths) { depths = [editor._undo.length, editor._redo.length]; mirror({depths: lastDepths, state: null, revision: editor._revision}); lastDepths = null; }
   };
+  /** The cels a call copied take the pixels of the cels they copy: the interface holds the pixels, not the session. */
+  const forkDrawings = forks => {
+    const cels = new Map(editor.report.figure_types.filter(drawingMetadata).map(figure => [drawingMetadata(figure).celId, figure]));
+    for (const [from, to] of forks) {
+      const old = cels.get(from), copy = cels.get(to);
+      if (old && copy) editor.drawingResources.fork(old, copy);
+    }
+  };
   /** A call the session refuses: counted, and raised as the error the interface shows. */
   const refuse = (name, reason) => {
     const key = `${name}: ${reason}`;
@@ -773,6 +792,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     const drafted = answer.retained ? (editor._authoredPoseEdit?.frame ?? baseFrame()) : null;
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
+    if (answer.drawingForks?.length) forkDrawings(answer.drawingForks);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
     if (answer.status === 'ok' && (name === 'copyAudioClip' || name === 'cutAudioClip')) editor._audioClipboard = AUDIO_COPIED;
     if (drafted && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, drafted); editor._geometry = null; editor._incremental = null; }
@@ -860,7 +880,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   const layer = Object.create(Object.getPrototypeOf(editor));
   Object.setPrototypeOf(editor, layer);
   for (const name of new Set(methods)) {
-    const original = editor[name];
+    const original = editor[name] ?? (SESSION_COMMANDS.includes(name) ? withoutSession(name) : undefined);
     if (typeof original !== 'function' || VIEW_CALLS.has(name) || name === 'undo' || name === 'redo') continue;
     originals.set(name, original);
     layer[name] = function owned(...args) {
@@ -1088,6 +1108,11 @@ function unsupported(name, reason) {
   const error = messageError(new Error(''), 'errors.engineOwner.notSupported', {});
   error.reason = `${name}: ${reason}`;
   return error;
+}
+
+/** What a session-only command runs where there is no session for the document. */
+function withoutSession(name) {
+  return function () { throw unsupported(name, 'no engine session runs this document'); };
 }
 
 function findGetter(object, name) {
