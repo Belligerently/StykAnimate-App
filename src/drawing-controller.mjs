@@ -17,7 +17,7 @@ import {createBrushStroke,loadDrawingEngine,paintStroke} from './engine/engine-d
 import {drawingMetadata,migrateDrawingFigure,isDrawingLayer,drawingPixelMatrix,inversePoint,transformPoint,DRAWING_MAX_PIXELS,FILL_SOURCE_MAX_PIXELS} from './drawing-model.mjs';
 import {TILE,tileKey,parseTileKey,TileStore} from './drawing-tiles.mjs';
 import {drawingBarrier,drawingResourcesFor} from './drawing-resources.mjs';
-import {drawingCelPrefetch,drawingCelDistances} from './onion-skin.mjs';
+import {drawingCelPrefetch,drawingCelDistances} from './drawing-cel-prefetch.mjs';
 import {buildGeometry} from './pivot/geometry.mjs';
 import {applyLayerOrder} from './layers.mjs';
 import {createFrame} from './demo.mjs';

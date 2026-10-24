@@ -217,16 +217,14 @@ trailing release/change event.
 interprets legacy Before/After values as fixed distances (including their saved
 spacing), independent of document/key spacing, and persists the explicit pair
 on the first range/sampling edit.
-Colors and other settings retain their values. The renderer and views share the
-same range calculation; the geometry cache retains the active sample range or
-its 24-entry warm budget, whichever is larger, and shrinks when the range
-contracts. Eviction occurs after evaluating a batch so a large active range
-cannot evict its own samples during opacity adjustment.
+Colors and other settings retain their values. The views and the request that asks
+the engine for the skins (`OnionController.request`) share the same range calculation;
+the engine plans the skins ([onion-skin.md](onion-skin.md)) and keeps their evaluated poses
+while the document is the same, drawing the nearest forty-eight at most.
 
 Verification: `node tests/onion-timeline-range.browser.mjs`,
 `node tests/onion-controls.desktop.mjs`, and the `onion-controller`,
-`onion-timeline-range`, `onion-skin`, `onion-layer-sheet`, and `onion-performance`
-unit tests. Desktop coverage includes native 75%, 100%, 150%, and 200% UI scaling.
+`onion-timeline-range`, and `onion-skins` unit tests. Desktop coverage includes native 75%, 100%, 150%, and 200% UI scaling.
 
 Audio tracks share the timeline's existing scroll area. Opening audio or adding
 tracks preserves the user's timeline height; resizing remains a manual action.

@@ -31,8 +31,6 @@ let shared = null;
 const perStage = () => ({
   /** Geometry groups the engine last received, by slot: an unchanged group is not sent again. */
   groups: [], count: -1, fields: null, frameSent: false,
-  /** Onion skin poses the engine holds, by the editor's sampled frame. */
-  ghosts: new WeakMap(), nextGhost: 1,
   /** The drawing cels the engine holds live: strokes drawn before they are published. */
   live: null,
   /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
@@ -180,7 +178,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
   poller.unref?.();
   /** The poses the engine received are in doubt after an error: the next frame sends them all again. */
   const resend = () => {
-    side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap();
+    side.groups = []; side.count = -1; side.fields = null; side.frameSent = false;
   };
   /** The engine refused this document; reported once, retried with the next revision. */
   const refuse = (error, report, revision) => {
@@ -211,28 +209,6 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     known.fields = fields;
     side.stats.objectsSent += sent;
     return `${fields.slice(0, -1)}${Object.keys(header).length ? ',' : ''}"objects":[${items.join(',')}]}`;
-  };
-
-  /** Sends the onion skins that changed and describes all of them for this frame. */
-  const onionList = request => {
-    const list = [];
-    for (const onion of request.onionFrames ?? []) {
-      let known = side.ghosts.get(onion.frame);
-      if (!known || !stage.has_ghost(known.id)) side.ghosts.set(onion.frame, known = {id: known?.id ?? side.nextGhost++, groups: [], count: -1});
-      const json = frameJSON(onion.frame, onion.geometry, known);
-      if (json !== null) stage.edit_ghost(known.id, json);
-      // The skin shows the objects its geometry lists (scope, hidden figures and layers are already applied to it).
-      const shown = new Set(), ordered = onion.geometry.orderedObjects ?? [...onion.geometry.objects.values()];
-      let tint = -1;
-      for (const group of ordered) {
-        shown.add(group.slot);
-        if (tint < 0) { const rgb = group.drawables?.find(item => item.onionTint)?.onionTint; if (rgb) tint = rgb[0] << 16 | rgb[1] << 8 | rgb[2]; }
-      }
-      const hidden = [];
-      for (let slot = 0; slot < (onion.frame.objects?.length ?? 0); slot++) if (!shown.has(slot)) hidden.push(slot);
-      list.push(known.id, onion.opacity ?? .14, tint, onion.showOnTop ? 1 : 0, onion.beforeUid ?? -1, hidden.length, ...hidden);
-    }
-    return list;
   };
 
   const awaitPictures = seen => { waitForPictures(side, seen, invalidate); uploadRemainingPictures(side); };
@@ -278,7 +254,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     holds(request.revision ?? 0);
     draft(request);
     // A pose of another document starts the engine's edit scene over.
-    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.frameReport = request.report; }
+    if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.frameReport = request.report; }
     // Strokes, fills and floating selections not yet published are drawn from the tiles held live.
     side.live.invalidate = invalidate;
     side.live.sync(drawingResourcesFor(request.documentReport ?? request.report));
@@ -292,7 +268,9 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
       // An unchanged frame is not parsed again; the first frame and every changed one are.
       if (json !== null) { stage.edit_frame(json); side.frameSent = true; }
     }
-    const onions = onionList(request);
+    // The onion skins are the session's: it plans them from its document and the settings, and the stage keeps their poses.
+    if (request.onions) stage.set_onions(request.onions.session, request.onions.view, request.onions.request);
+    else stage.clear_onions();
     const sendMs = performance.now() - started;
     const hidden = [], translations = [];
     objects.forEach((object, slot) => {
@@ -308,7 +286,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     orient(view);
     const drawn = stage.render_edit((view.scale ?? 1) * deviceRatio, (view.x ?? 0) * deviceRatio, (view.y ?? 0) * deviceRatio, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
-      Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
+      Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1);
     if (drawn) side.live.presented();
     Object.assign(side.stats, {frames: side.stats.frames + (drawn ? 1 : 0), lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
     // Generated effects whose trails are still being sampled refine on the next frame

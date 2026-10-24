@@ -12,7 +12,7 @@ import {withDraws} from '../src/editor-draws.mjs';
 import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
 import {cameraAtTime} from '../src/camera-motion.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
-import {sampleMotionPath} from '../src/motion-path.mjs';
+import {MotionTrails} from '../src/motion-path.mjs';
 import {snapshotPoseFrame} from '../src/pose-snapshot.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
 import {ownedEditor} from './support/owned-editor.mjs';
@@ -315,12 +315,15 @@ const staged = editor => {
   return {frame: frameText(display?.frame ?? editor.evaluatedFrame),
     figures: json([...geometry.objects].sort((a, b) => a[0] - b[0]).map(([slot, item]) => [slot, item.root, item.joints]))};
 };
-/** The owned editor shows what the editor alone does of the open motion-path edit, and samples the same trail. */
+/** The owned editor shows what the editor alone does of the open motion-path edit, and the engine samples its trail. */
 const sameLive = (owned, alone, label) => {
   sameText(motionState(owned, json), motionState(alone, json), `${label}: the edit as the interface reads it`);
   assert.deepEqual(staged(owned), staged(alone), `${label}: the pose the stage draws`);
   const target = owned._drag?.target;
-  if (target) sameText(json(sampleMotionPath(owned.motionPathReport(), owned, target)), json(sampleMotionPath(alone.motionPathReport(), alone, target)), `${label}: trail`);
+  if (target) {
+    const [trail] = new MotionTrails(owned, {budgetMs: Infinity}).read([target]);
+    assert.ok(trail.complete && [...trail.points.values()].every(sample => sample.missing || (Number.isFinite(sample.x) && Number.isFinite(sample.y))), `${label}: the engine samples the trail`);
+  }
 };
 
 test('a motion-path edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async () => {
@@ -331,7 +334,7 @@ test('a motion-path edit runs in the session and shows on the editor as its own'
   assert.equal(owned.motionPathReport(), owned.report, 'nothing has moved the trail yet');
   assert.equal(owned._drag.display, null, 'the stage draws the pose the document has');
   sameLive(owned, alone, 'begin');
-  const start = sampleMotionPath(owned.motionPathReport(), owned, head).points.find(point => point.tick === 8);
+  const start = new MotionTrails(owned, {budgetMs: Infinity}).read([head])[0].points.get(8);
   const session = owner.session(), ask = session.call.bind(session), answers = [];
   session.call = (...parts) => { const reply = ask(...parts); answers.push(JSON.parse(reply)); return reply; };
   both('updateMotionPathEdit', {x: 330, y: 300});
