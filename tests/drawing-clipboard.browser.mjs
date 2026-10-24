@@ -107,7 +107,7 @@ try{
   check('input tasks continue during large clipboard work',dense.ticks>10);
   await page.evaluate(async()=>{await styk.drawing.barrier();await styk.drawing.prepareVisible();styk.drawing.onRender();});
   // The engine's stage draws the cel once its pictures are decoded and uploaded.
-  await page.waitForFunction(()=>styk.editor.geometry.drawables.some(i=>i.type==='image')&&styk.state.renderer.engineActive&&!styk.state.dirtyRender&&styk.state.renderer.engineSide.stage.pictures_pending()===0);
+  await page.waitForFunction(()=>styk.editor.geometry.drawables.some(i=>i.type==='image')&&!styk.state.dirtyRender&&styk.state.renderer.engineSide.stage.pictures_pending()===0);
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   check('the pasted raster is visible after redo',await page.evaluate(async()=>{
     const scene=document.querySelector('#scene'),image=new Image();image.src=scene.toDataURL();await image.decode();

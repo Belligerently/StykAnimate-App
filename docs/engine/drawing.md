@@ -145,8 +145,10 @@ memory back, and that every error key the crate can raise is in the English cata
 other drawing tests run the controller, the resources and the history against the engine's
 operations in Node. `scripts/smoke-drawing.mjs` (`npm run test:drawing:desktop`) paints in the
 Electron app with two brushes, erases, fills sampling all layers, selects with the wand, moves
-and applies the selection, undoes and redoes each step, saves, restarts and reopens the file,
-and checks that the stage drew every step from live cels without refusing a frame.
+and applies the selection, undoes and redoes each step, paints, erases and undoes again on a turned and
+mirrored view (comparing what the stage shows), saves, restarts and reopens the file, and checks that
+the stage drew every step from live cels without refusing a frame. `STYK_SMOKE_SHOTS=<folder>` keeps a
+screenshot of each step.
 
 The live cels' slots are tested against the published decode of the same tiles
 (`engine/crates/styk-eval/src/live/tests.rs`) and their quads against the published cel's

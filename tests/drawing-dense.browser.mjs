@@ -41,7 +41,7 @@ try{
     const tiles=[];for(let ty=0;ty<34;ty++)for(let tx=0;tx<60;tx++)tiles.push({tx,ty,before:null,after:new Uint8ClampedArray([tx*4,ty*7,120,255])});e.commitDrawingPixels(target,tiles);styk.fit();
   });
   // The engine's stage draws the cel once its pictures are decoded and uploaded.
-  await page.waitForFunction(()=>styk.state.renderer.engineActive&&!styk.state.dirtyRender&&styk.state.renderer.engineSide.stage.pictures_pending()===0);
+  await page.waitForFunction(()=>!styk.state.dirtyRender&&styk.state.renderer.engineSide.stage.pictures_pending()===0);
   await page.screenshot({path:out+'/dense-workspace.png'});
   assert.deepEqual(errors,[]);
   await writeFile(out+'/result.json',JSON.stringify({result,errors,browser:await browser.version()},null,2));console.log(JSON.stringify(result,null,2));

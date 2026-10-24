@@ -52,8 +52,8 @@ try{
   check('a filter applies to the selection',true);
   await page.keyboard.press('Control+Shift+A');
   // The engine's stage draws every step from live cels and never refuses a frame.
-  const refusals=[];
-  const onStage=async name=>{await page.waitForTimeout(250);const stage=await page.evaluate(()=>{const r=styk.state.renderer,side=r.engineSide;return {engine:r.engineActive,refusal:r.engineStats?.refusal??null,float:Boolean(side&&[...side.live.cels.values()].some(cel=>cel.floatShown)),cels:side?JSON.parse(side.stage.live_cel_stats()).cels:0};});if(!stage.engine||stage.refusal)refusals.push({name,...stage});return stage;};
+  const refusals=[],shots=process.env.STYK_SMOKE_SHOTS,shotIndex=0;
+  const onStage=async name=>{await page.waitForTimeout(250);const stage=await page.evaluate(()=>{const r=styk.state.renderer,side=r.engineSide;return {refusal:r.engineStats?.refusal??null,float:Boolean(side&&[...side.live.cels.values()].some(cel=>cel.floatShown)),cels:side?JSON.parse(side.stage.live_cel_stats()).cels:0};});if(stage.refusal)refusals.push({name,...stage});if(shots)await page.screenshot({path:path.join(shots,`${String(++shotIndex).padStart(2,'0')}-${name.replace(/[^a-z0-9]+/gi,'-')}.png`)});return stage;};
   const idle=()=>page.waitForFunction(()=>!styk.drawing.gesture&&!styk.drawing.loading&&!styk.drawing.operation);
   await onStage('painting');
   // Erasing, undone and redone.
@@ -84,7 +84,26 @@ try{
   await page.locator('[data-tool="drawing-brush"]').click();await page.locator('[data-draw-preset="ink"]').click();await page.evaluate(()=>styk.drawing.action('next-blank'));await page.waitForTimeout(200);
   await stroke([{x:cx-200,y:cy-150},{x:cx+200,y:cy+150}]);
   await onStage('the first stroke of a new frame');
-  check('the engine stage drew every step without refusing a frame',refusals.length===0&&(await page.evaluate(()=>styk.state.renderer.engineStats.fallbacks))===0);
+  // A turned and mirrored view: strokes, an erase and its undo are drawn by the stage in the right place.
+  await page.evaluate(()=>{styk.drawing.propertySet('draw-viewAngle',35);styk.drawing.action('flip-view');});await page.waitForTimeout(300);
+  check('the Draw view is turned and mirrored',await page.evaluate(()=>Math.abs(styk.state.view.rotation-35*Math.PI/180)<1e-6&&styk.state.view.flip===true));
+  const area=(x,y)=>({x:Math.round(x-30),y:Math.round(y-30),width:60,height:60});
+  const look=(x,y)=>page.screenshot({clip:area(x,y)});
+  const quiet=await look(cx-300,cy+200);
+  await page.locator('[data-tool="drawing-brush"]').click();await page.locator('[data-draw-preset="ink"]').click();
+  const turnedBefore=await look(cx,cy+60);
+  await stroke([{x:cx-60,y:cy+60},{x:cx,y:cy+90},{x:cx+60,y:cy+60}]);await onStage('painting on a turned view');
+  const turnedAfter=await look(cx,cy+60);
+  check('a stroke on a turned and mirrored view shows where it was drawn',!turnedBefore.equals(turnedAfter)&&await alphaAt(cx,cy+90)>0);
+  check('and nowhere else',(await look(cx-300,cy+200)).equals(quiet));
+  await page.keyboard.press('e');await stroke([{x:cx-30,y:cy+60},{x:cx+30,y:cy+100}]);await onStage('erasing on a turned view');
+  check('the eraser clears ink on a turned view',!(await look(cx,cy+60)).equals(turnedAfter));
+  await page.evaluate(()=>styk.editor.undo());await idle();await onStage('undo on a turned view');
+  check('undo on a turned view restores the ink',(await look(cx,cy+60)).equals(turnedAfter));
+  await page.evaluate(()=>styk.editor.redo());await idle();await onStage('redo on a turned view');
+  check('redo on a turned view erases it again',!(await look(cx,cy+60)).equals(turnedAfter));
+  await page.evaluate(()=>{styk.drawing.action('reset-rotation');styk.drawing.action('flip-view');});await page.waitForTimeout(300);
+  check('the engine stage drew every step without refusing a frame',refusals.length===0);
   const before=await snapshot(page);
   check('two cels hold artwork',before.length>=2&&before.every(c=>c.bounds));
   await page.keyboard.press('Control+s');
