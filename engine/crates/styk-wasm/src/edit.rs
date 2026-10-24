@@ -70,8 +70,16 @@ impl EditSession {
         record
     }
 
+    /// The onion skins the stage draws (`Session::onions`).
+    pub(crate) fn onions(&mut self, view: &str, request: &str) -> Result<Arc<styk_edit::OnionSet>, JsError> {
+        let set = self.session.as_mut().expect("a session is open until it is dropped").onions(view, request).map_err(js_error);
+        self.publish();
+        set
+    }
+
     /// A session that publishes into `engine` the document `opened` was made from.
-    pub(crate) fn publishing(session: styk_edit::session::Session, engine: Engine, opened: Arc<OpenedDocument>) -> EditSession {
+    pub(crate) fn publishing(mut session: styk_edit::session::Session, engine: Engine, opened: Arc<OpenedDocument>) -> EditSession {
+        session.set_clock(crate::clock);
         EditSession { session: Some(session), revision: 0.0, publisher: Some(Publisher { engine, opened, published: None, error: None }), working: [0; 2] }
     }
 
@@ -108,7 +116,8 @@ impl EditSession {
     /// it evaluates itself (D19). It publishes nothing.
     pub fn from_document(document: &str, state: &str, revision: f64) -> Result<EditSession, JsError> {
         let tree = styk_doc::json::parse(document.as_bytes()).map_err(js_error)?;
-        let session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
+        let mut session = styk_edit::session::Session::start(tree, state).map_err(js_error)?;
+        session.set_clock(crate::clock);
         Ok(EditSession { session: Some(session), revision, publisher: None, working: [0; 2] })
     }
 

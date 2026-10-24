@@ -10,7 +10,7 @@ page.on('pageerror', error => errors.push(error.message));
 page.setDefaultTimeout(15000);
 const toolbar = action => page.locator(`.canvas-toolbar [data-action="${action}"]`);
 async function ghosts(expected, name) {
-  await page.waitForFunction(expected => JSON.stringify(styk.state.renderer.last?.onionFrames.map(s => s.frame.objects.map(o => o.root_x))) === JSON.stringify(expected), expected);
+  await page.waitForFunction(expected => JSON.stringify((styk.onionSkins()?.ghosts ?? []).map(ghost => ghost.roots.filter((_, at) => at % 3 === 1))) === JSON.stringify(expected), expected);
   checks.push(name);
 }
 const renderedOrder = () => page.evaluate(() => styk.editor.geometry.objects.get(0).drawables.filter(d => d.seg).map(d => d.seg.segment_id));
@@ -101,7 +101,7 @@ try {
 } catch (error) {
   console.error({checks, errors, state: await page.evaluate(() => ({tick: styk.editor.tick,
     keys: styk.editor.layerFrameKeys('layer-1').map(k => k.tick),
-    ghosts: styk.state.renderer.last?.onionFrames.map(s => s.frame.objects.map(o => o.root_x))}))});
+    ghosts: (styk.onionSkins()?.ghosts ?? []).map(ghost => ghost.roots.filter((_, at) => at % 3 === 1))}))});
   await page.screenshot({path: `${output}/failure.png`});
   throw error;
 } finally { await browser.close(); }

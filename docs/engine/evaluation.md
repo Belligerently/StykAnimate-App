@@ -355,3 +355,39 @@ selection is the editor's to tell with a call, and the frame does not depend on 
 The editor evaluates the frame itself where the engine does not hold its document: while it runs a call of its own (the
 commands the session has none for run in JavaScript and are written back afterwards) and while it edits a movieclip in
 place (its commands run in the editor, with no call to tell a read apart from one made mid-command).
+
+## The interface's views
+
+The frames around the one on show are sampled by the session too; no JavaScript evaluates a tick other than the
+playhead's. `src/engine/engine-shown.mjs` asks `EditSession.query` (`Session::query`), at the playhead, for:
+
+- **Motion-path trails** (`trails`, `styk-edit/src/trails.rs`): `{targets, range, maxPoints, budgetMs, held}` answers, per
+  target (the camera, or a joint of a figure), the planned ticks (`plan_ticks`: the ends of the animation or of the window
+  `range` ticks either side of the playhead, the playhead, an even share of the target's keys, an even stride through the
+  rest, at most `maxPoints`) and the points sampled so far, `tick, x, y, flags, bodyX, bodyY` (flags: keyed, missing, has a
+  body). A sample is the document evaluated at the tick (`Records::evaluated_with`), converted to a typed frame, and
+  the geometry of the figures joined together with the target (`build_only`): one evaluation serves every target that needs
+  the tick. A read samples until the budget has passed (the host's clock; at least one sample) and says whether the trail is
+  `complete`. Trails are kept per target and replanned when the document, the window or the playhead moves; a changed document
+  keeps the old points on show until they are sampled again. While a motion-path edit has moved, the trails are sampled from
+  the document as the edit shows it (`Editor::motion_live`, stamped by the gesture and its pointer moves), the ticks it changes
+  first, and from the document again when it ends. Each trail has a version, unique among all trails; a reader that holds
+  the version is sent no points. `ghost` is the pose of the component at a trail point (`{rx, ry, lines, circles}`).
+- **Onion skins** (`styk-edit/src/onion_skins.rs`): the stage asks the session directly (`Stage::set_onions(session, view,
+  request)`), not the interface. The request is the settings, the counts the range reaches, the figures the interface
+  hides and the selected ones. Candidates are the rows' poses or ticks either side of the playhead, or on a layer sheet each
+  layer's neighbouring keys (a drawing layer's drawings, never the one on screen), far to near, at most `MAX_GHOSTS`.
+  Each ghost is the document evaluated at its tick (the committed pose, never a gesture's draft) with the slots that are
+  not drawn (scope, hidden figures and layers, the layer it samples), its opacity and tint. The set is kept while the
+  document, the playhead and the request are the same; the stage keeps a pose per tick (`EditScene::update_ghost`) and
+  builds its geometry when it is first drawn. The `onions` query answers the plan as JSON without the poses.
+- **The camera** (`styk-edit/src/camera_views.rs`): `shot` is the camera the frame on show is seen through at the playhead
+  (`Editor::camera_at_time`: follow travel, then the presets' impulse); `frameCamera` the authored camera of the document at a
+  tick; `cameraSamples` what one clip alone does to the shot at each tick (`x, y, rotation, zoom`), the clip being given, so
+  the inspector's graph plots an edit that is not stored yet (a follow clip's path is shaped against the document's figures
+  and kept while the clip and the document are the same); `framing` the offset that keeps followed figures where they stand
+  in the frame on show (`styk_eval::follow::framing_offset`).
+
+The same fixtures judge them: the evaluation fixtures (`tests/fixtures/eval/follow-*`, the camera records) for the
+camera, and `styk-edit/src/views_tests.rs` and `tests/onion-skins.test.mjs`, `tests/motion-trails.test.mjs`,
+`tests/camera-motion-graph.test.mjs` for what the views plan, sample and send.

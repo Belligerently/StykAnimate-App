@@ -33,7 +33,7 @@ Inspect these contracts and their current callers before editing. Proposed new m
 | Sprite representation | `src/media-authoring.mjs`, especially `createImageFigure` |
 | Image decoding | `src/media-image-worker.mjs` |
 | Rendering and ordering | `src/engine/engine-stage.mjs`, `src/scene-order.mjs`, `docs/engine/rendering.md` |
-| Onion skin | `src/onion-controller.mjs`, `src/onion-skin.mjs`, `src/onion-range.mjs` |
+| Onion skin | `src/onion-controller.mjs`, `src/onion-range.mjs`, `src/drawing-cel-prefetch.mjs`, the engine's `onion_skins.rs` |
 | Worker synchronization | `src/playback-patch.mjs` |
 | Memory and prepared playback | `src/playback-budget.mjs`, `src/playback-resources.mjs`, `docs/ADAPTIVE-PREVIEW.md` |
 | Persistence and recovery | `src/document-export.mjs`, `src/document-export-worker.mjs`, `src/browser-recovery.mjs`, `docs/document-exports.md`, `docs/native-file-format.md` |
