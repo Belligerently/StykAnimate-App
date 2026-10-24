@@ -33,6 +33,7 @@ import {invalidateFrameIndex} from '../frame-ids.mjs';
 import {invalidateMovieclipTypes} from '../movieclips.mjs';
 import {layerIdForUid} from '../layers.mjs';
 import {drawingMetadata} from '../drawing-model.mjs';
+import {drawingResourcesFor} from '../drawing-resources.mjs';
 import {appBoundsMarker} from './engine-edit-bounds.mjs';
 import {createShown} from './engine-shown.mjs';
 
@@ -760,6 +761,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     flush();
     if (report.ms) report.ms.flush += performance.now() - flushed;
     if (PIXEL_CALLS.has(name)) return runInEditor(name, original, args);
+    // A clip takes the pixels its drawings' definitions carry: strokes not yet published would be left out of it.
+    if (name === 'createMovieclip' && drawingResourcesFor(editor.report)?.stats.unpublished) throw messageError(new Error(''), 'errors.editorMovieclips.finishDrawingPublicationBeforeCreatingAMovieclip', {});
     // A gesture or edit the editor runs (the session refused to begin it) stays with the editor to its end.
     if ((editor._drag && !editor._drag.engine) || (editor._animationEdit && !editor._animationEdit.engine) || (editor._vfxClipEdit && !editor._vfxClipEdit.engine)
         || editor._frameDraftEnabled) {

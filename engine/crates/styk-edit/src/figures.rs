@@ -244,9 +244,7 @@ impl Editor {
         }
         let Some((_, object)) = self.object()? else { return Ok(Value::Null) };
         let figures: Vec<Value> = self.report.get("figure_types").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
-        if figures.iter().find(|f| num(f, "figure_type_id") == num(&object, "figure_type_id")).is_some_and(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy)) {
-            return Err(EditError::Unported("duplicating a movieclip instance".into()));
-        }
+        let clip = figures.iter().find(|f| num(f, "figure_type_id") == num(&object, "figure_type_id")).is_some_and(|f| f.path(&["_styk", "movieclip"]).is_some_and(Value::truthy));
         if self.next_uid > 0x7fff_fffe {
             return Err(EditError::Invalid("errors.editorLayerSheet.objectIdentityCapacityReached".into()));
         }
@@ -256,6 +254,11 @@ impl Editor {
         let mut copy = object.as_obj().cloned().unwrap_or_default();
         copy.set("unique_id", Value::Num(identity as f64));
         copy.remove("_stykMovieclipPart");
+        // A copy of a movieclip instance plays on the presence clock from its start, in the original's mode and speed.
+        if clip && self.sheet() {
+            let setting = |key: &str| object.path(&["_stykMovieclip", key]).filter(|v| !v.is_null()).cloned();
+            copy.set("_stykMovieclip", crate::movieclip_commands::presence_of(setting("mode"), setting("speed")));
+        }
         if let Some(original) = original {
             let layer = self.layer_of(original);
             self.new_layer_hints.insert(identity as u32, layer);
@@ -299,11 +302,9 @@ impl Editor {
         };
         let figure = figures.iter().find(|f| f.get("figure_type_id").is_some_and(|id| *id == wanted && !wanted.is_null())).cloned();
         let Some(figure) = figure else { return Err(EditError::Invalid("errors.editor.chooseAFigureFromTheLibrary".into())) };
-        if figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy) {
-            if !self.sheet() {
-                return self.insert_native_movieclip(&figure);
-            }
-            return Err(EditError::Unported("adding a movieclip".into()));
+        let clip = figure.path(&["_styk", "movieclip"]).is_some_and(Value::truthy);
+        if clip && !self.sheet() {
+            return self.insert_native_movieclip(&figure);
         }
         if !self.sheet() {
             return Err(EditError::Unported("adding a figure on a native timeline".into()));
@@ -319,7 +320,11 @@ impl Editor {
             return Err(EditError::Invalid("errors.editorRangeCommands.figurePositionMustBeFinite".into()));
         }
         let identity = self.next_uid;
-        let object = with_origin_pivot(&figure, create_object(&figure, identity as u32, x, y));
+        let mut object = with_origin_pivot(&figure, create_object(&figure, identity as u32, x, y));
+        // A movieclip plays on the presence clock from the frame it is added at.
+        if let (true, Some(record)) = (clip, object.make_obj()) {
+            record.set("_stykMovieclip", crate::movieclip_commands::presence_of(None, None));
+        }
         // `insert(frame, payload)`: the frame on show with the figure added, slots following
         // unique ids, drawn in front.
         let shown = self.shown_frame()?;
@@ -329,7 +334,7 @@ impl Editor {
         if objects.len() >= 65535 {
             return Err(EditError::Invalid("errors.editorRangeCommands.aNativeKeyframeSupportsAtMost65535".into()));
         }
-        objects.push(object);
+        objects.push(object.clone());
         let count = objects.len();
         frame.set("objects", Value::array(objects));
         ids.push(identity as f64);
@@ -344,7 +349,10 @@ impl Editor {
         self.next_uid += 1;
         let mut frame = Value::object(frame);
         self.synchronize_origin_frame(&mut frame, &objects_of(&shown), true)?;
-        if let Err(error) = self.commit_sheet_range_with(&frame, &[identity as u32], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection) {
+        // A movieclip added inside a layer's span is a replacement of its own, not a new pose of its neighbours.
+        let payload = std::slice::from_ref(&object);
+        let committed = self.commit_sheet_range(&[(self.tick, frame, vec![identity as u32])], &[identity as u32], &std::collections::HashMap::new(), Vec::new(), "Add figure", selection, clip.then_some((payload, false)), None);
+        if let Err(error) = committed {
             self.selection = previous;
             self.next_uid = identity;
             return Err(error);

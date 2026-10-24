@@ -707,13 +707,6 @@ impl Editor {
         self.publish_geometry(plan, &label, selection, retain.then_some(after), retain)
     }
 
-    /// `_commitSheetRange(plans, payload, label, selection)` for one frame at the playhead:
-    /// `frame` keyed on the layers of the figures in `changed`, the figures in `inserted`
-    /// assigned to theirs (`hints` first), `definitions` added with it.
-    pub(crate) fn commit_sheet_range_with(&mut self, frame: &Value, changed: &[u32], inserted: &[u32], hints: &std::collections::HashMap<u32, String>, definitions: Vec<Value>, label: &str, selection: crate::select::SelectionState) -> Result<bool, EditError> {
-        self.commit_sheet_range(&[(self.tick, frame.clone(), changed.to_vec())], inserted, hints, definitions, label, selection, None, None)
-    }
-
     /// `_commitSheetRange(plans, payload, label, selection)`: each planned frame `(tick, frame,
     /// changed)` keyed on the layers owning its changed figures (a held cell at its key unless
     /// auto key is on), the figures in `inserted` first assigned to their layer (`hints` first),

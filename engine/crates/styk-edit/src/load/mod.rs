@@ -34,6 +34,17 @@ use crate::EditError;
 pub use self::js::TYPE_ERROR;
 pub(crate) use self::object::spatial_pose;
 pub(crate) use self::scene::projected_drawing;
+pub(crate) use self::sheet::initialize as initialize_layer_sheet;
+
+/// `validateScene({...report, figure_types: definitions, backgrounds: [], keyframes: [a frame without figures]})`: whether the
+/// definitions a paste adds are ones the document may hold.
+pub(crate) fn validate_definitions(report: &Value, definitions: &[Value]) -> Result<(), EditError> {
+    let mut source = report.as_obj().cloned().unwrap_or_default();
+    source.set("figure_types", Value::array(definitions.to_vec()));
+    source.set("backgrounds", Value::array(Vec::new()));
+    source.set("keyframes", Value::array(vec![crate::sheet::create_frame(&[])]));
+    scene::validate_scene(&Value::object(source), None)
+}
 
 /// `validateScene({...report, figure_types: [], backgrounds: [background], keyframes: [createFrame([])]})`: whether
 /// `background` is a scene asset the document may hold.
