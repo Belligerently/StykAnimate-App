@@ -333,7 +333,7 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   segment, every segment as built (drawn or not: start, end, angle, bend, length, thickness, z, colour, opacity, curve
   points, a connector's handle, a 3D bone's `spatialFrame`) and every polygon (culled ones flagged, depth values of
   depth-tested faces), what inverse kinematics solved, and the figure's bounds as `boundsOf` measures them
-  (`drawlist::app_bounds`). `write_groups` writes them as JSON; `engine-shown.mjs` makes them the groups the canvas, the
+  (`drawlist::app_bounds`). `write_groups` writes them as JSON (a segment is a row of numbers that leaves out what the reader works out: where it starts is where its parent ends, where it ends is its joint); `engine-shown.mjs` makes them the groups the canvas, the
   handles and the pickers read (`{objects: Map<slot, group|null>, orderedObjects, drawables, token, changedSlots,
   warnings}`; a group `{slot, obj, fig, root, joints, segments, polys, bounds, solvedAngles, solvedLengths}`, `drawables`
   built when read, with Stick Nodes shapes expanded).
