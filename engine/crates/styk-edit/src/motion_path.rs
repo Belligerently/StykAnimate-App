@@ -25,7 +25,7 @@ use styk_eval::eval::{Frame, Prepared};
 use styk_eval::geometry::Scene;
 use styk_eval::ik::joined::Assembly;
 use styk_eval::ik::{self, Controller, Skeleton, Table};
-use styk_math::{atan2, cos, hypot, shortest, sin};
+use styk_math::{atan2, cos, hypot, pow, shortest, sin};
 
 use crate::frame::objects_of;
 use crate::ik::{angle_table, assign, bake_object, controllers, displayed_angle, has_pinned, joined_table, reference_value, same_bend, set_controller, solve_frame, translate_targets};
@@ -227,69 +227,6 @@ fn normalize_falloff(value: Option<&Value>) -> Result<Option<Falloff>, EditError
     Ok(Some(Falloff { radius: radius.min(FALLOFF_MAX), shape }))
 }
 
-/// `x ** 3` as V8 computes it on the falloff's inputs: the C library's `pow` (glibc), which is
-/// the correctly rounded cube except for these values of `x` (every one the falloff reaches
-/// within the largest radius, found with `engine/tools/edit-scenarios-motion-path.mjs`; the
-/// `falloff_weights` test checks every weight against V8's).
-const CUBES: [(u64, u64); 15] = [
-    (0x3fbb05b05b05b058, 0x3f5344e8f5f09682),
-    (0x3fc2612612612614, 0x3f6840b158800809),
-    (0x3fc9416f5ab0ca0c, 0x3f7f7696a2f278a9),
-    (0x3fd055b0bc84d1f2, 0x3f91067c97c2fb3b),
-    (0x3fd88fe9dc0588fe, 0x3facf12c83a60801),
-    (0x3fd9416f5ab0ca0c, 0x3faf7696a2f278a9),
-    (0x3fdcd6e9e06522c4, 0x3fb76c93e5f08551),
-    (0x3fdfdaee9fdaeea0, 0x3fbf914c7e7b09c6),
-    (0x3fe3896e7bf53897, 0x3fcd20fb69fd42c2),
-    (0x3fe79890cede6243, 0x3fd9a8c0c8b7d7d9),
-    (0x3fe863a1e717863a, 0x3fdc55bde5fab7bd),
-    (0x3fe927206b519b64, 0x3fdf14a9ee84df8e),
-    (0x3fe9416f5ab0ca0c, 0x3fdf7696a2f278a9),
-    (0x3fe9f7047dc11f70, 0x3fe1183c09b1671f),
-    (0x3fecd6e9e06522c4, 0x3fe76c93e5f08551),
-];
-
-fn cube(x: f64) -> f64 {
-    match CUBES.iter().find(|(input, _)| *input == x.to_bits()) {
-        Some((_, output)) => f64::from_bits(*output),
-        None => rounded_cube(x),
-    }
-}
-
-/// `x³` rounded to nearest, ties to even, for a positive normal `x` whose cube is normal.
-fn rounded_cube(x: f64) -> f64 {
-    let bits = x.to_bits();
-    let exponent = ((bits >> 52) & 0x7ff) as i64;
-    if exponent == 0 || exponent == 0x7ff || x <= 0.0 {
-        return x * x * x;
-    }
-    let m = (bits & ((1u64 << 52) - 1)) | (1u64 << 52);
-    // x = m · 2^e; m³ = high · 2^64 + low, exactly.
-    let e = exponent - 1075;
-    let square = u128::from(m) * u128::from(m);
-    let low = u128::from(square as u64) * u128::from(m);
-    let high = (square >> 64) * u128::from(m) + (low >> 64);
-    let low = low as u64;
-    let length = 64 + (128 - high.leading_zeros()) as i64;
-    let shift = (length - 53 - 64) as u32;
-    let mut q = (high >> shift) as u64;
-    let remainder = high & ((1u128 << shift) - 1);
-    let half = 1u128 << (shift - 1);
-    if remainder > half || (remainder == half && (low > 0 || q & 1 == 1)) {
-        q += 1;
-    }
-    let mut power = 3 * e + i64::from(shift) + 64;
-    if q == 1 << 53 {
-        q >>= 1;
-        power += 1;
-    }
-    let biased = power + 52 + 1023;
-    if !(1..0x7ff).contains(&biased) {
-        return x * x * x;
-    }
-    f64::from_bits(((biased as u64) << 52) | (q - (1 << 52)))
-}
-
 /// `falloffWeight(distance, radius, shape)`: 1 at the grabbed frame, 0 beyond `radius`, and
 /// strictly positive inside it for every shape.
 fn falloff_weight(distance: f64, radius: f64, shape: &str) -> f64 {
@@ -304,7 +241,7 @@ fn falloff_weight(distance: f64, radius: f64, shape: &str) -> f64 {
     let u = distance / (radius + 1.0);
     match shape {
         "linear" => 1.0 - u,
-        "sharp" => cube(1.0 - u),
+        "sharp" => pow(1.0 - u, 3.0),
         "flat" => 1.0,
         _ => 0.5 + 0.5 * cos(std::f64::consts::PI * u),
     }
@@ -2007,15 +1944,6 @@ mod tests {
         }
         assert_eq!(recorded.get("count").and_then(Value::as_f64), Some(f64::from(count)));
         assert_eq!(recorded.get("digest").and_then(Value::as_str), Some(format!("{digest:016x}").as_str()));
-    }
-
-    #[test]
-    fn rounded_cubes() {
-        for x in [0.5, 0.75, 1.0 - 1.0 / 3.0, 0.1, 0.999] {
-            let exact = rounded_cube(x);
-            assert!((exact - x * x * x).abs() <= f64::EPSILON * exact, "{x}");
-        }
-        assert_eq!(rounded_cube(0.5), 0.125);
     }
 }
 

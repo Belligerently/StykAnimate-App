@@ -5,10 +5,10 @@
 //! (`node engine/tools/generator-fixtures.mjs` regenerates them): the batch
 //! (layer records, birth table, draws) and every live particle, beam and arc.
 //! The engine must pack the same batch, bit for bit in single precision, and
-//! evaluate the same particles: the same instances alive, every value equal
-//! except sizes, which go through `Math.pow` (fdlibm's here, the platform's in
-//! Node: within 1e-12 relative). `atlas.json` holds a hash of every material
-//! row and level, which the engine must generate byte for byte.
+//! evaluate the same particles: the same instances alive, every value equal,
+//! bit for bit (sizes go through `Math.pow`, V8's own in both: D16). `atlas.json`
+//! holds a hash of every material row and level, which the engine must generate
+//! byte for byte.
 
 use std::path::{Path, PathBuf};
 
@@ -101,10 +101,6 @@ fn compare(expected: &Value, batch: &Batch) -> Vec<String> {
     problems
 }
 
-fn close(a: f64, b: f64, relative: f64) -> bool {
-    a == b || (a - b).abs() <= relative * a.abs().max(b.abs())
-}
-
 /// Live particles, beams, arcs and ramp colours of the engine's batch against the editor's.
 fn compare_particles(frame: &Value, batch: &Batch) -> (usize, Vec<String>) {
     let mut problems = Vec::new();
@@ -128,14 +124,11 @@ fn compare_particles(frame: &Value, batch: &Batch) -> (usize, Vec<String>) {
             problems.push(format!("particle of draw {d} instance {i} (editor: draw {} instance {})", row[0], row[1]));
             break;
         }
-        let exact = [(row[2], p.x, "x"), (row[3], p.y, "y"), (row[4], p.vx, "vx"), (row[5], p.vy, "vy"), (row[7], p.alpha, "alpha"), (row[8], p.color, "colour"), (row[9], p.rotation, "rotation"), (row[10], p.variant as f64, "variant"), (row[11], p.n, "n")];
+        let exact = [(row[2], p.x, "x"), (row[3], p.y, "y"), (row[4], p.vx, "vx"), (row[5], p.vy, "vy"), (row[6], p.size, "size"), (row[7], p.alpha, "alpha"), (row[8], p.color, "colour"), (row[9], p.rotation, "rotation"), (row[10], p.variant as f64, "variant"), (row[11], p.n, "n")];
         for (theirs, mine, what) in exact {
             if theirs.to_bits() != mine.to_bits() && problems.len() < 40 {
                 problems.push(format!("draw {d} particle {i}: {what} {mine} (editor {theirs})"));
             }
-        }
-        if !close(row[6], p.size, 1e-12) && problems.len() < 40 {
-            problems.push(format!("draw {d} particle {i}: size {} (editor {})", p.size, row[6]));
         }
     }
     for row in rows(frame, "beams") {

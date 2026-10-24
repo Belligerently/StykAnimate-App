@@ -1,6 +1,6 @@
 //! JavaScript's number semantics where the drawing engine's results depend on them:
 //! `Math.round`, the conversions typed arrays apply on store (`Uint8ClampedArray`,
-//! `Float32Array`, `Uint8Array`), `ToUint32`, `Math.imul`, and `**`.
+//! `Float32Array`, `Uint8Array`), `ToUint32` and `Math.imul`.
 //!
 //! The JavaScript raster engine is the oracle (docs/RUST-ENGINE-PORT.md, S6): every
 //! pixel it writes goes through one of these conversions, so the port must apply the
@@ -100,37 +100,6 @@ pub fn clamp(n: f64, a: f64, b: f64) -> f64 {
 #[inline]
 pub fn clamp01(n: f64) -> f64 {
     clamp(n, 0.0, 1.0)
-}
-
-/// `x ** y`. V8 computes the exponents the drawing engine uses at its defaults exactly
-/// (`x ** 1`, `x ** 2` as `x * x`, `x ** 0.5` as a square root, `2 ** k`), and so does
-/// every `pow`; other exponents (a custom pressure-size or opacity curve) go to the
-/// platform's `pow`, which is what Node uses: glibc natively on Linux, Rust's `libm`
-/// port in WebAssembly, where a last-bit difference is possible
-/// (docs/engine/decisions/0017-drawing-raster-engine.md).
-#[inline]
-pub fn pow(x: f64, y: f64) -> f64 {
-    if y == 1.0 {
-        return x;
-    }
-    if y == 2.0 {
-        return x * x;
-    }
-    if y == 0.5 && x >= 0.0 && x.is_finite() {
-        return x.sqrt();
-    }
-    if y == 0.0 {
-        return 1.0;
-    }
-    // `--features libm-pow` measures natively what WebAssembly computes (the `libm` crate's pow).
-    #[cfg(feature = "libm-pow")]
-    {
-        libm::pow(x, y)
-    }
-    #[cfg(not(feature = "libm-pow"))]
-    {
-        x.powf(y)
-    }
 }
 
 /// `Math.log2(x)` (fdlibm's, as V8 and the `libm` crate have it).

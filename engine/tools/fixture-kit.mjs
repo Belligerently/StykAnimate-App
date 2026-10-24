@@ -1,6 +1,7 @@
 // What the engine's fixture generators share: the real JavaScript editor, small
 // documents to start from, and the dump of what the editor evaluates
 // (tools/reference.mjs). Used by ik-fixtures.mjs, eval-fixtures.mjs and vfx-fixtures.mjs.
+import './v8-pin.mjs';
 import {execFileSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath, pathToFileURL} from 'node:url';

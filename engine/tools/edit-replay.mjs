@@ -16,6 +16,7 @@
 // calls, spelled out for readability). The document recorded is the editor's in-memory
 // report as the engine's mirror receives it (`JSON.stringify(editor.report)` without the
 // `runtime_segments` caches): phase 1 ports start from the loaded report, not the file.
+import './v8-pin.mjs';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync} from 'node:fs';

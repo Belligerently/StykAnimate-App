@@ -1,4 +1,5 @@
 // The existing JavaScript validator is the oracle for malformed retained support.
+import './v8-pin.mjs';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {validateOriginSupport} from '../../src/animation-origin-validation.mjs';
 const document = JSON.parse(readFileSync(new URL('../tests/edit/origin-reroot-support-native.document.json', import.meta.url), 'utf8'));

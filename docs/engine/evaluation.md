@@ -294,7 +294,7 @@ the reason.
   (`Channel::sample_at`): a key's own value as saved (a paint or stack exactly as written),
   an interpolated one as the typed curve works it out; geometry (a joined figure's position,
   a figure that comes loose) from the typed view of the record. The Bézier easings' `t ** 3`
-  is the platform's `pow`, as Node's (a channel value differed in its last bit with `t * t * t`).
+  is `styk_math::pow`, V8's own (D16; a channel value differed in its last bit with `t * t * t`).
 - Pivot's own easing unwraps each angle along the whole run of tweened keys before the
   interval. The drawing path unwraps from the previous key only (constant time, the same
   picture); records follow the editor's chain (`evaluate_native_exact`), or a stored

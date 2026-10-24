@@ -9,6 +9,7 @@
 // `runtime_segments` caches) and <out>/records.json: {ticks: [{tick, sha256, bytes, json?}]}
 // (`json` with --full, or always for documents under 2 MiB). The editor is configured as in
 // src/app.mjs, so every document has a layer sheet. `styk records <out>` compares.
+import './v8-pin.mjs';
 import {createHash} from 'node:crypto';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';

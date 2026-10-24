@@ -2,6 +2,8 @@
 // interfaces: every pixel-worker request, the stroke worker's protocol, the brush model and
 // the undo codec answer exactly as the JavaScript engine does. The crate's own parity suite
 // (engine/crates/styk-drawing/tests/parity.rs) checks the kernels; this checks the facades.
+// Node 24's Math.pow is the platform's; the engine's is V8's own (D16), so the comparison pins Node to it.
+import '../engine/tools/v8-pin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync, readdirSync} from 'node:fs';
@@ -133,7 +135,7 @@ test('the stroke worker protocol paints the same batches and undo records', () =
 });
 
 test('the brush model gives the controller the same dab shapes, tails and pen curve', () => {
-  for (const settings of [{size: 16, taperIn: 30, taperOut: 70, seed: 5}, {size: 9, stabilization: .6, stabilizerMode: 'string', pressureCurve: [.1, .5, .4, .95], seed: 6}, {size: 40, scatter: 1.5, sizeJitter: .5, angleJitter: 1, roundness: .4, angleMode: 'tilt', tip: 'bristle', seed: 7}]) {
+  for (const settings of [{size: 16, taperIn: 30, taperOut: 70, seed: 5}, {size: 9, stabilization: .6, stabilizerMode: 'string', pressureCurve: [.1, .5, .4, .95], seed: 6}, {size: 40, scatter: 1.5, sizeJitter: .5, angleJitter: 1, roundness: .4, angleMode: 'tilt', tip: 'bristle', seed: 7}, {size: 20, sizeCurve: 1.7, opacityCurve: .6, pressureOpacity: true, seed: 8}]) {
     const brush = normalizeBrush(settings), rust = [], javascript = [];
     const a = new RustBrushStroke(brush, shape => rust.push(shape), {seed: brush.seed + 7919}), b = new BrushStroke(brush, shape => javascript.push(shape), {seed: brush.seed + 7919});
     const tails = [[], []];

@@ -21,8 +21,8 @@ const to = (x, y, options) => ['updateMotionPathEdit', {x, y}, ...(options ? [op
 const commit = ['commitMotionPathEdit'], cancel = ['cancelMotionPathEdit'], falloffView = ['motionPathFalloff'];
 
 // Every weight a falloff can give (each shape, radius and distance), as the digest of their
-// bits: styk-edit's `falloff_weights` test computes the same (the sharp shape's cube is the C
-// library's `pow`, not the correctly rounded cube, for a few inputs).
+// bits: styk-edit's `falloff_weights` test computes the same (the sharp shape's cube is V8's
+// own `pow`, which engine/tools/v8-pin.mjs selects, not the correctly rounded cube).
 {
   const view = new DataView(new ArrayBuffer(8));
   let digest = 0xcbf29ce484222325n, count = 0;

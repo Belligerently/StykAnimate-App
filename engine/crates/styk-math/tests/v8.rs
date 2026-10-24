@@ -63,3 +63,13 @@ fn arc_sine_and_arc_cosine() {
     // The platform's do not agree with V8 here either.
     assert!(cases.chunks_exact(3).any(|c| !same(c[0].asin(), c[1]) || !same(c[0].acos(), c[2])));
 }
+
+#[test]
+fn power() {
+    let cases = read("pow.bin");
+    let wrong: Vec<String> = cases.chunks_exact(3).filter(|c| !same(styk_math::pow(c[0], c[1]), c[2])).map(|c| format!("pow({:e}, {:e}) = {:e} (V8 {:e})", c[0], c[1], styk_math::pow(c[0], c[1]), c[2])).collect();
+    assert!(cases.len() / 3 > 80_000 && wrong.is_empty(), "{} of {} differ: {:#?}", wrong.len(), cases.len() / 3, &wrong[..wrong.len().min(10)]);
+    // Neither the platform's pow nor the libm crate's (fdlibm 5.3 as FreeBSD and musl have it) is V8's own.
+    assert!(cases.chunks_exact(3).any(|c| !same(c[0].powf(c[1]), c[2])));
+    assert!(cases.chunks_exact(3).any(|c| !same(libm::pow(c[0], c[1]), c[2])));
+}

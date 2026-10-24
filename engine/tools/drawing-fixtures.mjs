@@ -12,6 +12,7 @@
 // Outputs are SHA-256 prefixes (16 hex digits) of exact bytes: tiles, dab shapes as
 // little-endian doubles, PNGs. Inputs are exact (numbers as JSON writes them, tiles as
 // deflated base64). Regeneration is byte-stable: every input is generated from fixed seeds.
+import './v8-pin.mjs';
 import {pathToFileURL} from 'node:url';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';

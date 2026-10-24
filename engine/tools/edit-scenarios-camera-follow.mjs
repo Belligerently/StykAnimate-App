@@ -1,5 +1,6 @@
 // The camera used by editing: authored camera, follow travel, then preset impulses.
 // Record with the actual editor before porting, including edits invalidating the shared path.
+import './v8-pin.mjs';
 import {fileURLToPath} from 'node:url';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {createCameraMotion} from '../../src/camera-motion.mjs';

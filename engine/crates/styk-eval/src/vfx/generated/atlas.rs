@@ -5,11 +5,9 @@
 //! shading value premultiplied by coverage, with three box-reduced levels.
 //!
 //! Rows are generated on first use and must be the editor's bytes: every value
-//! is computed as the editor computes it, in `f64` with V8's trigonometry and
-//! exponential, and stored in single precision where the editor stores a
-//! `Float32Array` (`Math.pow` is fdlibm's: a last-bit difference there cannot
-//! survive the rounding to bytes in practice; `tests/generators.rs` compares
-//! the bytes of every row).
+//! is computed as the editor computes it, in `f64` with V8's trigonometry,
+//! exponential and power, and stored in single precision where the editor stores a
+//! `Float32Array` (`tests/generators.rs` compares the bytes of every row).
 //!
 //! Generation never waits for another thread: a row being generated elsewhere
 //! is generated again and the first result kept (D7).
@@ -90,7 +88,7 @@ fn exp(x: f64) -> f64 {
 }
 
 fn pow(x: f64, y: f64) -> f64 {
-    libm::pow(x, y)
+    styk_math::pow(x, y)
 }
 
 fn sign(x: f64) -> f64 {

@@ -54,16 +54,15 @@ The JavaScript modules remain the oracle.
 The port follows the JavaScript operation for operation: `Math.round` and the
 `Uint8ClampedArray` store conversion, single-precision coverage, grain and soft-falloff
 tables where the JavaScript uses `Float32Array`, `Map` insertion order for tiles, undo
-records and plans, V8's `sin`, `cos`, `atan2` and `hypot` (`styk-math`, D16) in the brush
-model, textures and selections. Published tiles are byte-identical: `zlib.rs` writes the
-same deflate stream as `zlib-sync.mjs`, `png.rs` the same PNG. One known gap: `x ** y`
-for exponents other than 1, 2 and 0.5 (custom pressure-size and opacity curves) is the
-platform's `pow`, which in WebAssembly is the `libm` crate's; browsers already differ
-from each other there (D16). Measured natively with that `pow`
-(`cargo test -p styk-drawing --features libm-pow --test parity`): in the one fixture with
-such curves (size curve 1.7, opacity curve 0.6) the 607 dab shapes differ in their last
-digits and every pixel, batch and undo record is still identical; every other fixture is
-unaffected (all presets use exponent 1).
+records and plans, V8's `sin`, `cos`, `atan2`, `hypot` and `pow` (`styk-math`, D16) in the
+brush model, textures and selections. Published tiles are byte-identical: `zlib.rs` writes
+the same deflate stream as `zlib-sync.mjs`, `png.rs` the same PNG. `x ** y` for custom
+pressure-size and opacity curves is V8's own `pow`, and the fixtures are recorded with Node
+pinned to it (`engine/tools/v8-pin.mjs`): Node 24's default is the platform's, which gave
+different dab shapes on Windows (MSVC) and Linux (glibc) in the one fixture with such
+curves (size curve 1.7, opacity curve 0.6). A browser's `**` is the platform's, so a dab
+there can differ in its last digits; the exponents 1, 2 and 0.5 are `x`, `x * x` and a
+square root in every engine.
 
 ## Parity
 

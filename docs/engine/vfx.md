@@ -76,7 +76,7 @@ Invariants:
 
 Differences, on purpose or known:
 
-- `Math.pow` (sizes over life, trail fades, some material shapes) is fdlibm's (`libm::pow`). Node's is the platform's (glibc on Linux) with exact squares and square roots: a last-bit difference, which cannot change a stored record (single precision) or a material byte in practice; particle sizes are compared within 1e-12 relative.
+- `Math.pow` (sizes over life, trail fades, some material shapes) is `styk_math::pow`, V8's own (D16), and the fixtures are recorded with Node pinned to it (`engine/tools/v8-pin.mjs`); a browser's is the platform's, which can differ in the last bit and cannot change a stored record (single precision) or a material byte in practice. Particle sizes are compared bit for bit.
 - A styled instance's nested generators are read from its base figure's movieclip (the same clip document).
 
 ## Invariants
@@ -314,7 +314,7 @@ cd engine && cargo test -p styk-eval --test generators
 target/debug/styk generators <file> <tick>…       # a frame's draws, live particles and what they cost
 ```
 
-`tests/generators.rs` loads every fixture (auras, beams, explosions, smoke and particles in every style and look, clip tails, painter-order placement with a connected group, a movieclip carrying generators instanced turned, scaled, mirrored and translucent) and, at every recorded tick, requires the editor's batch bit for bit (records and table in single precision, draws) and the same live particles with every value equal (sizes within 1e-12 relative, `Math.pow`), the same beams, arc hashes and ramp colours; each fixture stops matching without its effect clips, and those with trails without earlier-tick anchors. `atlas.json` holds a hash of every material row and level, which the engine generates byte for byte.
+`tests/generators.rs` loads every fixture (auras, beams, explosions, smoke and particles in every style and look, clip tails, painter-order placement with a connected group, a movieclip carrying generators instanced turned, scaled, mirrored and translucent) and, at every recorded tick, requires the editor's batch bit for bit (records and table in single precision, draws) and the same live particles with every value equal (sizes included, through V8's own `Math.pow`), the same beams, arc hashes and ramp colours; each fixture stops matching without its effect clips, and those with trails without earlier-tick anchors. `atlas.json` holds a hash of every material row and level, which the engine generates byte for byte.
 
 Measured when this landed: `TDD2 URIEL NEMESIS 3.styk` (40 clips), all 232 ticks: 602 stacks and 337 effects compared, no difference (nor in its geometry). The Impact FX pack (`AssetReleases/Impact-FX`: the fight scene, 240 ticks, and the 28 movieclip files) keeps its effects, all particles, inside 8 distinct movieclip documents; opened alone, each compares 18 ticks and 16 generated effects with no difference. Their geometry differs where they use 3D poses and surfaces, which the engine did not evaluate then.
 

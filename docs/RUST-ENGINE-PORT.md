@@ -257,8 +257,9 @@ The tools and scripts run on Windows as well as Linux, from a folder whose path 
 a space: a file URL becomes a path with `fileURLToPath` (never `.pathname`; `tests/windows-paths.test.mjs`
 guards it), an absolute path given to `import()` goes through `pathToFileURL`, the Rust CLI is
 `styk.exe`, and the Python codec oracle runs through `engine/tools/decode-piv.mjs` (the interpreter
-`scripts/run-python.mjs` picks) instead of a shell script. Generators that use `Math.pow` regenerate
-differently on Windows (the platform's `pow`, not V8's fdlibm) until the oracle's `pow` is pinned.
+`scripts/run-python.mjs` picks) instead of a shell script. The tools that run the editor import
+`engine/tools/v8-pin.mjs` first, so `Math.pow` is V8's own on every platform (Node 24's default is the
+platform's; D16).
 
 Corpus: every file in `~/Downloads`, `~/Downloads/pivs`, `~/Downloads/WafflesPack` (127 files,
 with its `.stk` folders), the repository fixtures and asset packs. `Jay on a new app.styk`
@@ -286,7 +287,7 @@ Each gets an ADR under `docs/engine/decisions/` when it lands.
 | D13 | App-level pixel parity (`scripts/engine-app-parity.mjs`) fails a step when any pixel differs by more than 32 levels together with all eight neighbours, or the mean difference exceeds 0.25 levels. | The two renderers cover edge pixels by different rules: differences one or two pixels thick along outlines are expected, a moved, missing or recoloured shape differs over an area. The threshold is fixed; it is not tuned to pass. | done |
 | D14 | The page creates the engine's shared memory with the largest maximum the browser reserves (2 GiB, else 1 GiB, else 512 MiB; override `stykanimate.engine.memory`), and budgets caches to it. | Mobile WebKit may refuse a 2 GiB reservation. Desktop Chromium and WebKit accept 2 GiB and grow it; the fallback path is exercised by refusing the larger maxima. Real iOS devices are unverified. | done |
 | D15 | Editing moves to the engine command by command (`docs/engine/editing.md`): a ported facade method runs in `styk-edit` and returns the changed records and event detail, which the JavaScript document and history adopt; unported commands run in JavaScript and reach the engine through the mirror. Every port is checked by the command-replay harness (`engine/tools/edit-replay.mjs`): documents byte for byte, selection, history and events after every step. | The app keeps working at every commit while about 800 editor methods move; the harness turns each port into a mechanical comparison. | in use; revised 2026-10-03: ported commands run in shadow in the app before ownership flips, class by class; the engine edits large figure and 3D documents by default ([ADR](engine/decisions/0015-commands-record-for-record.md)) |
-| D16 | Engine arithmetic whose results are stored in documents uses `styk-math`: fdlibm 5.3 `sin`, `cos`, `atan2` and V8's `hypot`, bit for bit as Node computes them. | The harnesses run the editor in Node and compare bytes; Rust's `f64::sin` differed from it for 2.7 % of two million inputs, `f64::atan2` 17 %. Browsers disagree among themselves too (Chromium 153 differs from Node for 3.9 % of sines and 17 % of `atan2`), so the app already stores last-digit differences per browser: the engine gives one answer everywhere. | in use ([ADR](engine/decisions/0016-v8-exact-math.md)) |
+| D16 | Engine arithmetic whose results are stored in documents uses `styk-math`: fdlibm 5.3 `sin`, `cos`, `atan2`, V8's `hypot` and V8's own `pow`, bit for bit as Node computes them. | The harnesses run the editor in Node and compare bytes; Rust's `f64::sin` differed from it for 2.7 % of two million inputs, `f64::atan2` 17 %. Browsers disagree among themselves too (Chromium 153 differs from Node for 3.9 % of sines and 17 % of `atan2`), so the app already stores last-digit differences per browser: the engine gives one answer everywhere. Node 24's `Math.pow` is the platform's (it differs between Windows and Linux for 0.05 % of inputs), so the recording tools pin it to V8's own with `--no-use-std-math-pow` (`engine/tools/v8-pin.mjs`). | in use ([ADR](engine/decisions/0016-v8-exact-math.md)) |
 | D17 | The drawing raster engine is its own crate, `styk-drawing`, bound as a separate non-threaded WebAssembly module (`styk-drawing-wasm`) that each drawing worker instantiates for itself; JavaScript reaches it through `src/engine/engine-drawing.mjs`. | The drawing workers cancel a job by terminating the worker; a terminated thread of the shared-memory engine module could die holding its allocator or a lock (D7) and block every other thread. Tiles already cross to the workers in bounded transfers, so a module per worker costs no extra copy. | in use ([ADR](engine/decisions/0017-drawing-raster-engine.md)) |
 | D18 | What the editor draws at random (identities, seeds) is drawn through one module (`src/editor-draws.mjs`) and handed to the engine with the call: the replay recorder draws a fixed sequence and records each step's draws; the facade records the editor's draws and sends them with the engine's run; the engine takes them in order and by kind, answering `Unported` when it would draw what it was not handed. | Ports of commands that draw are compared record for record like the others (D15), and recordings stay reproducible. | in use ([ADR](engine/decisions/0018-editor-draws.md)) |
 | D19 | One engine session per document owns the document and history; each answer carries a copy-on-write document patch the editor applies to its read view; refused calls run in JavaScript and are written back. | Per-command adoption code (200–400 lines per family) would be discarded by phase 3; a generic patch makes porting a command just its Rust implementation and replays. | in progress ([ADR](engine/decisions/0019-engine-owns-the-document.md)) |
@@ -436,10 +437,10 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Scene-effect camera images
   wider than 3,968 px are upscaled. Not verified: Windows, macOS, real displays, other GPUs,
   Firefox, Safari, packaged builds.
-- **Drawing raster engine** (`styk-drawing`, D17): custom pressure curves use libm's `pow` in
-  WebAssembly (measured natively: dab shapes differ in their last digits, pixels identical);
-  jobs peak higher in module memory (released above 256 MiB per instance); tile preparation
-  and the per-sample brush model are slower; the GPU brush stays JavaScript. Each completed
+- **Drawing raster engine** (`styk-drawing`, D17): custom pressure curves use `styk_math::pow`,
+  V8's own `pow` on every platform (D16); jobs peak higher in module memory (released above
+  256 MiB per instance); tile preparation and the per-sample brush model are slower; the GPU
+  brush stays JavaScript. Each completed
   publication of a large cel costs the interface thread 0.2–0.7 s while the engine stage syncs
   the new asset (both engines; 2,040-tile cel), now kept out of undo and redo but still paid
   after strokes and fills. Not verified: Windows, macOS, packaged builds, real pens.
@@ -448,8 +449,9 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   animation-origin command families stay with the editor. Owned editing of `channels-figure` took 289.3 ms against the editor's
   116.9 ms (one run, loaded machine): records rebuild channel bindings and convert frames for
   geometry on every evaluation, and scrub previews carry whole frames, so the `channels` class
-  is not owned until large documents are measured. Bézier easing uses `pow`, which in
-  WebAssembly is libm and may differ from a browser's in the last bit (not observed).
+  is not owned until large documents are measured. Bézier easing uses `styk_math::pow`
+  (V8's own), which differs in the last bit from the platform's `pow` that V8 13.6 (Node 24's
+  default) computes for about 8 % of the easing's `t ** 3` inputs.
 - **Previews on WebGL2 and without WebGPU canvases:** thumbnails and library previews are
   drawn by the CPU rasterizer in the engine's preview worker where the stage cannot draw them
   (WebGL2 stages, where one device cannot draw to a second canvas, and WebGPU canvases that
@@ -580,10 +582,11 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Generated effects drawn by the editor's Canvas 2D fallback (tinted sprites, an 8- or
   32-step colour ramp, a 4,000-particle preview budget) differ from its WebGPU renderer, so
   web parity (the engine on WebGL2 against the fallback) cannot pass on them; the engine
-  draws them as on WebGPU devices. `Math.pow` has no V8-exact counterpart (Node uses the
-  platform's); the engine uses `libm::pow` only where a last-bit difference cannot reach a
-  stored value (D16). URIEL 3's explosion targets an object the document does not contain,
-  so neither renderer draws it: an effect with a missing target draws nothing, silently.
+  draws them as on WebGPU devices. `Math.pow` and `**` are `styk_math::pow` everywhere in
+  the engine: V8's own fdlibm-based `pow`, which Node 24 runs only with
+  `--no-use-std-math-pow` (its default is the platform's, which differs between Windows and
+  Linux), so the recording tools pin Node to it (`engine/tools/v8-pin.mjs`, D16). URIEL 3's
+  explosion targets an object the document does not contain, so neither renderer draws it: an effect with a missing target draws nothing, silently.
 - **Some evaluation trigonometry is still the platform's** (D16): tweens, the IK solver,
   rig constraints, 3D quaternions and camera motion use `styk-math` (now with `asin`, `acos`
   and `log1p`), but geometry uses `f64::sin` and `cos`; its points are rounded to single

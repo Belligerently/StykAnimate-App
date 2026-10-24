@@ -32,6 +32,7 @@
 //
 // --native evaluates the document on its native timeline (the editor without layer sheets,
 // as documents with property channels were authored) instead of as the app loads it.
+import './v8-pin.mjs';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
