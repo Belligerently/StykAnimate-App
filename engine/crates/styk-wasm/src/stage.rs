@@ -304,6 +304,16 @@ impl Stage {
         self.edit.update(&generation, json.as_bytes()).map_err(js_error)
     }
 
+    /// Replaces the frame the editor is showing with the one `session` shows at `view` (the call's view): the
+    /// gesture in progress, else the document at the playhead; with `motion`, the motion-path edit's display where
+    /// it shows one. No pose crosses from the interface.
+    pub fn edit_session(&mut self, session: &mut crate::edit::EditSession, view: &str, motion: bool) -> Result<(), JsError> {
+        let generation = self.engine.generation().ok_or_else(|| js_error("no document is open"))?;
+        let record = session.show(view, motion)?;
+        self.edits += 1;
+        self.edit.update_record(&generation, &record).map_err(js_error)
+    }
+
     /// Replaces the pose of onion skin `id` (an id the interface chooses), in the same
     /// form as [`Stage::edit_frame`].
     pub fn edit_ghost(&mut self, id: u32, json: &str) -> Result<(), JsError> {

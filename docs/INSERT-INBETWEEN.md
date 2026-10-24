@@ -32,9 +32,6 @@ The dialog uses a 0.001 ratio step, matching the native 0–1000 ratio control.
 `Editor` installs the methods directly.
 
 ```js
-const preview = editor.previewInbetween(0.375, 4);
-// {frame, ratio, sourceTick, insertionTick, index}
-
 const result = editor.insertInbetweenFrames(0.375, [1, 4, 8]);
 // {insertedFrames, ratio, indices, ticks, frameIds, durations, skippedIndices: []}
 

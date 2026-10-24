@@ -63,6 +63,13 @@ impl Drop for EditSession {
 }
 
 impl EditSession {
+    /// The record of the frame the stage draws ([`styk_edit::session::Session::show`]).
+    pub(crate) fn show(&mut self, view: &str, motion: bool) -> Result<Value, JsError> {
+        let record = self.session.as_mut().expect("a session is open until it is dropped").show(view, motion).map_err(js_error);
+        self.publish();
+        record
+    }
+
     /// A session that publishes into `engine` the document `opened` was made from.
     pub(crate) fn publishing(session: styk_edit::session::Session, engine: Engine, opened: Arc<OpenedDocument>) -> EditSession {
         EditSession { session: Some(session), revision: 0.0, publisher: Some(Publisher { engine, opened, published: None, error: None }), working: [0; 2] }
@@ -139,6 +146,16 @@ impl EditSession {
 
     pub fn can_redo(&self) -> bool {
         self.session().can_redo()
+    }
+
+    /// A read of what the interface shows at `view` (the call's view): `kind` is `frame` (the frame on show),
+    /// `document` (the document's own frame under any gesture), `motion` (the motion-path edit's display, `null`
+    /// where it shows the document), `timeline` or `geometry` (`args`: `{since, motion}`; the groups that changed
+    /// since the read `since`). Answers JSON text; the document does not change.
+    pub fn query(&mut self, kind: &str, args: &str, view: &str) -> Result<String, JsError> {
+        let answer = self.session.as_mut().expect("a session is open until it is dropped").query(kind, args, view).map_err(js_error);
+        self.publish();
+        answer
     }
 
     /// Runs one editor call: its JavaScript name, its arguments as a JSON array and

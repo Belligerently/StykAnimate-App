@@ -313,3 +313,45 @@ the reason.
   in both forms and seven sets of property edits (`entries-*`); `tests/records.rs` requires
   every recorded frame to be produced and identical, and every channel fixture and property
   edit to differ somewhere without its channels.
+
+## The interface's frame
+
+The interface reads the frame on show from the editor's session; no JavaScript evaluates it. The editor's
+getters (`evaluatedFrame`, `geometry`, `timeline`, `totalTicks`) ask `src/engine/engine-shown.mjs`, which asks
+the session (`EditSession.query`, `styk-edit/src/interface.rs`) at the playhead (`tick`, `frameIndex`; the
+selection is the editor's to tell with a call, and the frame does not depend on it):
+
+- `frame` is `Editor::shown_frame()` as JSON: the sheet property preview, the gesture's draft, the frame a commit
+  keeps on show, else the document at the playhead (`Records::evaluated_editor_with`). `document` is the document's
+  own frame under any of them, the base a gesture's draft is composed on. The editor adds the times the effect and
+  camera-motion clips are read at (`_vfxTimelineTick`, `_vfxTimelineScene`, `_cameraMotionTick`: `frameWithVfxTime`,
+  `frameWithCameraTime`), which the interface's gizmos and inspectors read.
+- `motion` is the pose a motion-path edit shows at the playhead while it changes it
+  (`Editor::motion_display_frame_worker`), `null` outside the ticks it changes.
+- `timeline` is the rows (`[[start, count], …]`, `timeline::rows`).
+- `geometry` is `styk_eval::geometry::build_shapes` of the typed frame: per object (slot) its root, one joint per
+  segment, every segment as built (drawn or not: start, end, angle, bend, length, thickness, z, colour, opacity, curve
+  points, a connector's handle, a 3D bone's `spatialFrame`) and every polygon (culled ones flagged, depth values of
+  depth-tested faces), what inverse kinematics solved, and the figure's bounds as `boundsOf` measures them
+  (`drawlist::app_bounds`). `write_groups` writes them as JSON (a segment is a row of numbers that leaves out what the reader works out: where it starts is where its parent ends, where it ends is its joint); `engine-shown.mjs` makes them the groups the canvas, the
+  handles and the pickers read (`{objects: Map<slot, group|null>, orderedObjects, drawables, token, changedSlots,
+  warnings}`; a group `{slot, obj, fig, root, joints, segments, polys, bounds, solvedAngles, solvedLengths}`, `drawables`
+  built when read, with Stick Nodes shapes expanded).
+- A geometry read names the read the interface holds (`since`). The session sends the groups of the figures whose
+  pose record is not the one the held read was built from, and of every figure joined to them (one component: an
+  assembly's inverse kinematics reaches across joins), or all of them when a figure definition changed. The groups held
+  stay as they are, so the descriptors the canvas keeps by their identity stay valid while a gesture moves other figures.
+  Unchanged: the same geometry object comes back.
+- The values the interface shows of the frame (`animationValue`, `vfxEffects`, `segmentAnimationTarget`,
+  `getIKSettings`) are the session's reads too (`Editor::interface_query`, at the editor's whole view): a document the
+  session does not answer them for (one that is not on a layer sheet) is read by the
+  editor from the frame and geometry the engine gave it (`unported: …`). The other queries the owner leaves to the editor
+  (`animationChannel`, `nativePoseChannel`, `sampleVfxClip`, `getSpatialPose`, `resolveTranslationSelection`, …) read
+  records and the engine's frame and geometry; none evaluates a pose at the playhead.
+- The stage draws the same frame inside the engine (`Stage::edit_session`, [rendering.md](rendering.md)): the session's
+  record, with its `tick` (and the camera-motion tick), is read against the open document with the effect clips sampled at
+  the tick, as a prepared frame's are.
+
+The editor evaluates the frame itself where the engine does not hold its document: while it runs a call of its own (the
+commands the session has none for run in JavaScript and are written back afterwards) and while it edits a movieclip in
+place (its commands run in the editor, with no call to tell a read apart from one made mid-command).

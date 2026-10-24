@@ -1320,6 +1320,8 @@ function fitSelection() {
 markAppBounds(boundsOf);
 const boundsCache = new WeakMap();
 function boundsOf(g) {
+  // The engine measured a group of its geometry with it (drawlist::app_bounds).
+  if (g.bounds) return g.bounds;
   let b = boundsCache.get(g);
   if (!b) {
     const items = [
@@ -1728,6 +1730,8 @@ function loop(now) {
         documentReport: editor.report,
         frame,
         geometry,
+        // The engine draws the frame its session shows; the interface's own frames (a drawing's first stroke, a movieclip edited in place) cross as poses.
+        source: drawingPreview ? null : editor._shown?.source(Boolean(editor._drag?.motionPath?.display)) ?? null,
         view: state.view,
         cameraEnabled: state.playing || state.previewing,
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
@@ -2225,11 +2229,21 @@ function finishPolygon() {
   setTool("select");
   status({messageKey: "app.polygonAdded", messageParams: {}});
 }
+// A click on artwork paints the figures with the editor's painter (canvas-artwork-pick.mjs), which reads the drawables of
+// the pose: the engine's groups carry none for a movieclip's contents or a 3D mesh, so the pose is built for the click.
+const artworkScenes = new WeakMap();
+function artworkScene() {
+  const frame = editor.evaluatedFrame;
+  let scene = artworkScenes.get(frame);
+  if (!scene) artworkScenes.set(frame, scene = buildGeometry(editor.report, frame));
+  return scene;
+}
 function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
   const body = () => {
     if (!artwork || builderMode?.active || !['select','pose','tweener'].includes(state.tool) || state.handleEditHeld) return null;
-    const hit = pickCanvasArtwork(geometry, p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale});
+    const painted = pickCanvasArtwork(artworkScene(), p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale});
+    const hit = painted && {...painted, g: geometry.objects.get(painted.g.slot) ?? painted.g};
     return (state.handles && state.tool !== 'tweener' && pickCanvasSegment(geometry, p,
       {handles: canvasHandles(geometry), uid: hit?.uid, scale: state.view.scale})) || hit;
   };

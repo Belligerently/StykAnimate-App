@@ -941,5 +941,4 @@ export const editorMotionPathMethods = {
 
   /** The playhead's pose under the report of a gesture the engine session holds, which the owner mirrors
    * without building it (`display` is read from the mirror when the stage draws). */
-  _motionPathDisplay(session) { return displayOf(this, session); },
 };

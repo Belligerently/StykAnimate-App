@@ -13,7 +13,7 @@ const MAX_TICK = 10000000;
 const checkTick = tick => { if (!Number.isInteger(tick) || tick < 0 || tick > MAX_TICK) throw messageError(new Error(''), "errors.editorAnimation.keyframeTimeMustBeAnIntegerFrom0", {}); return tick; };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const sortKeys = keys => keys.sort((a, b) => a.tick - b.tick || Number(Boolean(b.hidden)) - Number(Boolean(a.hidden)));
-function context(editor) { return {resolveGeometry: (report, frame) => frame === editor._evaluated ? editor.geometry : buildGeometry(report, frame)}; }
+function context(editor) { return {resolveGeometry: (report, frame) => frame === editor.evaluatedFrame ? editor.geometry : buildGeometry(report, frame)}; }
 function currentAnimation(editor) { return editor.report._styk?.animation ?? null; }
 function assignAnimation(editor, animation) {
   const previousPoses=animationChannels(editor.report).filter(channel=>channel.property==='pose');
@@ -258,16 +258,6 @@ export const editorAnimationMethods = {
     target=exactTarget?normalizeAnimationTarget(target):this.resolveAnimationTarget(target,property,tick);
     const visible=animationPropertyValue(this.report,frame,target,property,context(this));
     return exactTarget&&property!=='pose'&&visible!==undefined?(sampleAnimationChannel(findAnimationChannel(this.report,target,property),tick)??visible):visible;
-  },
-  nearestAnimationKey(target, property, direction, tick = this.tick, options={}) {
-    const keys = this.animationChannel(target, property,options)?.keys ?? []; let low = 0, high = keys.length;
-    while (low < high) {
-      const mid = (low + high) >>> 1;
-      if (direction < 0 ? keys[mid].tick < tick : keys[mid].tick <= tick) low = mid + 1; else high = mid;
-    }
-    for (let index = direction < 0 ? low - 1 : low; index >= 0 && index < keys.length; index += direction < 0 ? -1 : 1)
-      if (!keys[index].hidden) return keys[index];
-    return null;
   },
   /** Native descriptors are lazy, so unopened tracks allocate no per-frame keys. */
   nativePoseChannel(target, {nativeOnly = false} = {}) {

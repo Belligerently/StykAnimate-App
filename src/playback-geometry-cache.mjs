@@ -1,6 +1,5 @@
-import {messageError} from './localized-error.mjs';
 import {vfxRenderFrame} from './vfx-clips.mjs';
-import {buildGeometry, buildGeometryAsync} from './pivot/geometry.mjs';
+import {buildGeometry} from './pivot/geometry.mjs';
 import {sameData,sameRecord} from './structural-equality.mjs';
 
 const wireOnly=new Set(['record_offset','record_end','object_slot','join']);
@@ -78,15 +77,6 @@ export class RetainedGeometryCache {
     frame=vfxRenderFrame(report,frame);
     const incremental=this.plan(report,frame,revision);
     return this.publish(report,frame,revision,buildGeometry(report,frame,incremental),incremental);
-  }
-  async getAsync(report,frame,revision,options={}){
-    frame=vfxRenderFrame(report,frame);
-    const baseline=this.geometry, baselineRevision=this.revision, baselineReport=this.report, baselineDirty=this.dirtyVersion;
-    const incremental=this.plan(report,frame,revision);
-    const geometry=await buildGeometryAsync(report,frame,incremental,options);
-    if(this.geometry!==baseline||this.revision!==baselineRevision||this.report!==baselineReport||this.dirtyVersion!==baselineDirty||options.checkCurrent?.()===false)
-      throw messageError(new DOMException('', 'AbortError'), "errors.playbackGeometryCache.geometryPreparationWasSuperseded", {});
-    return this.publish(report,frame,revision,geometry,incremental);
   }
   plan(report,frame,revision){
     if(this.report!==report||this.version!==report.version||this.revision!==revision||!this.geometry||this.geometry.warnings.length)return null;

@@ -419,7 +419,8 @@ build before this work against this one).
 ## In the app
 
 `src/engine/engine-stage.mjs` draws the page's scene canvas (`#scene`) with the
-engine: the edit frame, onion skins and prepared playback frames of every document
+engine: the edit frame (the one the open document's session shows, `Stage::edit_session`: nothing crosses from
+the interface), onion skins and prepared playback frames of every document
 ([D4](decisions/0004-strangler-gate.md), [Every document](#every-document)); no other
 renderer draws a frame. The WebGPU surface is configured with
 premultiplied alpha so the page shows through the pasteboard. Through the scene
@@ -484,8 +485,8 @@ Two conditions of a document the gate used to count:
   from zero, so 17 levels passed it and 18 did not.
 - **Frame drafts.** `_styk.simpleFrameDraft` (the Simple timeline's working frame,
   [SIMPLE-FRAME-DRAFTS.md](../SIMPLE-FRAME-DRAFTS.md)) keeps the stored pose and animation beside
-  the working ones. The stage draws the pose the editor shows, and its onion skins (the stored
-  pose among them), from poses the interface hands it, so a draft reaches the engine only as
+  the working ones. The stage draws the frame the session shows, and its onion skins (the stored
+  pose among them) from poses the interface hands it, so a draft reaches the engine only as
   metadata nothing it evaluates reads; its playback, thumbnails and exports hold the document as
   the editor does. The app gives every document a layer sheet, which deletes the draft of a native
   one (a draft a file brings with its sheet stays in the document, unused until drafts are

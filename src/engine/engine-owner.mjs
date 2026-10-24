@@ -16,6 +16,11 @@
  *
  * Calls that only move the view (selecting, seeking) stay with the editor; the session
  * receives the view with every call.
+ *
+ * The editor's reads of the frame on show (`evaluatedFrame`, `geometry`, `timeline`) and a few of its own
+ * (`SESSION_READS`) are answered by the session too, after the editor's pending edits reach it
+ * (`engine-shown.mjs`, docs/engine/evaluation.md): the editor evaluates for itself only while it runs a
+ * call of its own or edits a movieclip in place.
  */
 import {applyDocumentPatch} from './engine-patch.mjs';
 import {editorDraws, withDraws} from '../editor-draws.mjs';
@@ -27,6 +32,7 @@ import {invalidateFrameIndex} from '../frame-ids.mjs';
 import {invalidateMovieclipTypes} from '../movieclips.mjs';
 import {layerIdForUid} from '../layers.mjs';
 import {appBoundsMarker} from './engine-edit-bounds.mjs';
+import {createShown} from './engine-shown.mjs';
 
 /** The undo/redo answer when the entry to apply is the editor's own (external.rs). */
 const EXTERNAL_ENTRY = 'external history entry ';
@@ -57,12 +63,19 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'drawingTarget', 'figurePalette', 'frameClipboardDocument', 'frameClipboardDocumentView', 'frameIndexForId', 'getCameraMotions',
   'getFrameById', 'getFrameId', 'getIKSettings', 'getLayer', 'getLayerFigureUids', 'getLayerFocus', 'getLayerFolders', 'getLayers', 'getSpatialCamera',
   'getSpatialIKPole', 'getSpatialMotion', 'getSpatialPose', 'getSpatialProportions', 'getVfxClips', 'isFigureFocusLocked', 'isLayerFocusLocked',
-  'joinedFigureIds', 'layerForUid', 'layerFrameKeys', 'motionPathReport', 'movieclipProjectReport', 'nativePoseChannel', 'nativePropertyChannel',
-  'nearestAnimationKey', 'prepareGeometry', 'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
-  'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'previewInbetween', 'sheetSpan', 'transaction',
+  'layerForUid', 'layerFrameKeys', 'motionPathReport', 'movieclipProjectReport', 'nativePoseChannel', 'nativePropertyChannel',
+  'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
+  'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
   'setFrameClipboardWorker', 'setInbetweenPlanner', 'setLayerMigrationPlanner', 'enterMovieclip', 'leaveMovieclip',
   'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'undo', 'redo', 'constructor']);
+
+/** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
+ * shows of the frame on show, from the engine's own evaluation. The editor answers them itself (from the frame and geometry
+ * the engine gave it) while it runs a call of its own, and for a document the session does not answer for. */
+const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings'];
+/** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
+const UNPORTED = 'unported: ';
 
 /** The editor's public methods the owner routes: everything but queries and view calls. */
 export function ownedMethods(editor) {
@@ -95,8 +108,10 @@ const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segm
  *   `start` gives the session that edits the document the editor just opened (by default the one the
  *   engine opened it with: `openingSession`), `methods` names the calls to route to it, `verify` compares
  *   the session's document after every call (tests), `draws` supplies the random values a call may take (D18).
+ *   `detached`: the editor's document is not the engine's (the rig test's own editor beside the open project): its session
+ *   answers the editor's reads and calls but the stage, playback and exports keep the project's.
  */
-export function installEngineOwner(editor, {start = openingSession, methods = ownedMethods(editor), verify = false, draws = null} = {}) {
+export function installEngineOwner(editor, {start = openingSession, methods = ownedMethods(editor), verify = false, draws = null, detached = false} = {}) {
   const report = {calls: 0, native: 0, fallback: 0, external: 0, synced: 0, refused: {}, verified: 0};
   let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [];
   /** How many `movieclipBatch` operations the owner is running: the session records them as one entry. */
@@ -115,6 +130,39 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     selectedJoint: editor.selectedJoint ?? -1, activeLayerId: editor.activeLayerId, autoKey: Boolean(editor.autoKey), audioRipple: Boolean(editor.audioRipple),
     sheetSelection: editor._sheetSelection ? {id: editor._sheetSelection.id, contents: Boolean(editor._sheetSelection.contents)} : null,
     ...selectionMetadata(editor._selectionState())});
+
+  // --- what the interface reads of the frame on show ----------------------------------
+  /** How many answers are being applied: the session is the editor's source of truth meanwhile, so a read neither
+   * writes the editor's records to it nor tells it the editor's view (the selection is applied after the playhead). */
+  let adopting = 0;
+  /** Whether the session answers for the editor's document: not while the editor runs a call of its own (its records
+   * are not the session's until it ends), and not in a movieclip it edits in place, whose commands run in the editor
+   * without a call the owner could mark (cut4-structure moves them into the session). */
+  const reading = () => depth === 0 && !flushing && !editor._movieclipScopes?.length && (document === editor.report || Boolean(ensure()));
+  /** Where the playhead is: the session needs no more to say what the frame on show is (the selection is the editor's to
+   * tell with a call, and asking for it here would read the frame on show). */
+  const playhead = () => JSON.stringify({tick: editor.tick, frameIndex: editor.frameIndex});
+  const shown = createShown({
+    ask(kind, args) {
+      if (!reading()) return null;
+      if (!adopting) flush();
+      if (kind === 'active') return 'true';
+      try { return session.query(kind, JSON.stringify(args), adopting ? 'null' : playhead()); }
+      catch (error) {
+        // What the session does not evaluate yet, the editor does.
+        if (String(error?.message ?? error).startsWith(UNPORTED)) return null;
+        throw error;
+      }
+    },
+    source(motion) {
+      if (!reading()) return null;
+      if (!adopting) flush();
+      return {session, view: playhead(), motion};
+    },
+    report: () => editor.report,
+  });
+  /** The frame a gesture or an edit is composed on: the one on show before it began. */
+  const baseFrame = () => editor._sheetPropertyPreview ?? editor._documentFrame();
 
   // --- the session's document as records -------------------------------------------
   const take = () => {
@@ -220,18 +268,23 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   /** Whether the editor may have changed the document since the session last had it:
    * a call it ran, a command recorded or an edit announced outside the session's calls. */
   let pending = false;
+  /** The editor's records are being written to the session: they are ahead of it, so the editor reads them itself meanwhile. */
+  let flushing = false;
   const flush = ({entry = null} = {}) => {
-    if (!session || applying) return;
+    if (!session || applying || flushing) return;
     // Selecting changes the active layer in place, without an edit event.
     if (!entry && !pending && !hints && JSON.stringify(counters()) === JSON.stringify(known) && editor.report._styk?.layers?.activeId === snapshot?.activeId) return;
     pending = false;
-    const ops = changes();
-    if (entry) {
-      send('@external', [entry.label, entry.id, entry.retained, generated(), entry.bytes, ops, counters(), stillShown()]);
-      report.external++;
-    } else if (ops.length || hints?.touched || JSON.stringify(counters()) !== JSON.stringify(known)) { send('@sync', [ops, generated(), Boolean(hints?.touched), counters(), stillShown()]); report.synced++; }
-    take();
-    check();
+    flushing = true;
+    try {
+      const ops = changes();
+      if (entry) {
+        send('@external', [entry.label, entry.id, entry.retained, generated(), entry.bytes, ops, counters(), stillShown()]);
+        report.external++;
+      } else if (ops.length || hints?.touched || JSON.stringify(counters()) !== JSON.stringify(known)) { send('@sync', [ops, generated(), Boolean(hints?.touched), counters(), stillShown()]); report.synced++; }
+      take();
+      check();
+    } finally { flushing = false; }
   };
   const check = () => {
     if (!verify || !session) return;
@@ -301,7 +354,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     if (touched.has('figure_types') || touched.has('*')) invalidateMovieclipTypes(editor.report);
     editor._layerDescriptors = null; editor._layerUidArrays = new Map(); editor._nativeAnimationChannels = null;
   };
-  const adoptState = (answer, {patch = true} = {}) => {
+  const applyAnswer = (answer, {patch = true} = {}) => {
     const {state} = answer;
     if (patch && answer.patch?.length) {
       applying = true;
@@ -347,6 +400,10 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       editor._revision = answer.revision;
       editor._revisionSerial = Math.max(editor._revisionSerial ?? 0, answer.revision);
     }
+  };
+  const adoptState = (answer, options) => {
+    adopting++;
+    try { applyAnswer(answer, options); } finally { adopting--; }
   };
   /** The editor's history stacks follow the session's: the editor's own commands for the
    * entries it applies, placeholders for the session's entries, so the editor's code that
@@ -396,7 +453,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       else editor._invalidate();
     }
     if (!editor._drag?.engine) {
-      const source = base ?? editor.evaluatedFrame;
+      const source = base ?? baseFrame();
       editor._authoredPoseEdit = answer.draft ? {frame: {...source, objects: source.objects.slice()}, source, owned: new Set(), tick: editor.tick, engine: true} : null;
       const taken = new Set(drag.before);
       editor._drag = {engine: true, serial: drag.serial, label: drag.label, scope: drag.translation ? 'translation' : 'selection', authored: Boolean(answer.draft), index: editor.frameIndex,
@@ -467,7 +524,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     const drag = {motionPath: true, engine: true, label, scope: 'motion-path', documentToken: editor._documentToken, target: live.target, tick: live.tick, baseline: [], ops: [], moved: false, range: live.range};
     if (live.falloff) Object.assign(drag, {falloff: live.falloff, writes: live.writes, subs: live.subs.map(({tick, kind}) => ({tick, kind, moved: false})), grab: {baseline: live.baseline}});
     else drag.baseline = live.baseline;
-    let built = null, shown = null;
+    let built = null, displayed = null;
     Object.defineProperties(drag, {
       report: {get() {
         if (!this.ops.length) return editor.report;
@@ -481,11 +538,19 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       display: {get() {
         if (!this.ops.length) return null;
         const report = this.report;
-        if (shown?.report !== report || shown.tick !== editor.tick || shown.range !== this.range) shown = {report, tick: editor.tick, range: this.range, display: editor._motionPathDisplay(this)};
-        return shown.display;
+        if (displayed?.report !== report || displayed.tick !== editor.tick || displayed.range !== this.range) displayed = {report, tick: editor.tick, range: this.range, display: motionDisplay()};
+        return displayed.display;
       }},
     });
     return drag;
+  };
+  /** The pose the session shows at the playhead while the motion-path edit changes it, with the geometry of that pose
+   * (read when something needs it), or null outside the ticks it changes. */
+  const motionDisplay = () => {
+    const frame = editor._timed(shown.motionFrame());
+    if (!frame) return null;
+    let geometry;
+    return {frame, get geometry() { return geometry ??= shown.geometry(frame, {motion: true}); }};
   };
   /** The session's effect-clip and property edits, as the editor shows its own (`_vfxClipEdit`,
    * `_animationEdit`, and the frame a layer sheet's edit previews, `_sheetPropertyPreview`).
@@ -507,7 +572,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // A camera drag shows the frame it began on with the camera it moves.
     if (answer.cameraPreview !== undefined && editor._drag?.engine) {
       const drag = editor._drag;
-      drag.cameraBase ??= editor.evaluatedFrame;
+      drag.cameraBase ??= baseFrame();
       editor._sheetPropertyPreview = {...drag.cameraBase, camera: answer.cameraPreview};
       editor._geometry = null;
     }
@@ -520,7 +585,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // The edit it replaces ended with the call, and its preview with it.
     if (editor._animationEdit?.engine && editor._sheetPropertyPreview) { editor._sheetPropertyPreview = null; editor._invalidate(); }
     const {target, property, exactTarget, tick, initialValue, changed} = opened, edit = {engine: true, target, property, exactTarget, tick, initialValue, selection: editor._selectionState(), changed};
-    editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: editor.evaluatedFrame})
+    editor._animationEdit = opened.sheet ? Object.assign(edit, {sheet: true, value: opened.value, frame: baseFrame()})
       : Object.assign(edit, {before: editor.report._styk?.animation ?? null, beforeChannel: editor.animationChannel(target, property, {exactTarget})});
   };
   /** The session's change events, for the interface: they describe what the session already has. */
@@ -557,11 +622,13 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     return answer;
   };
   /** Makes the session's document the engine's: the stage draws it, playback and exports read it. */
-  const activate = () => session.activate(editor.revision);
+  const activate = () => detached ? undefined : session.activate(editor.revision);
   const ensure = () => {
     if (session && document === editor.report) return session;
     report.log?.push(`ensure: session ${Boolean(session)} same ${document === editor.report} name ${editor.name}`);
     park();
+    // The groups the interface holds are another session's.
+    shown.release();
     const resumed = parked.get(editor.report);
     if (resumed) {
       parked.delete(editor.report);
@@ -578,6 +645,8 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     session = started; document = editor.report;
     entries.clear(); depths = [0, 0];
     take();
+    // The session starts from the editor's counters: a read of the frame on show writes nothing to it.
+    known = counters();
     try {
       call('@historyLimits', [editor.historyLimit, editor.historyBytes]);
       call('@revisions', [editor._revision, editor._revisionSerial, editor._savedRevision]);
@@ -701,12 +770,12 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // A committed gesture's frame stays on show, as the session keeps it (`retained`),
     // until the session lets it go.
     mark = performance.now();
-    const shown = answer.retained ? (editor._authoredPoseEdit?.frame ?? editor.evaluatedFrame) : null;
+    const drafted = answer.retained ? (editor._authoredPoseEdit?.frame ?? baseFrame()) : null;
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
     if (answer.status === 'ok' && (name === 'copyAudioClip' || name === 'cutAudioClip')) editor._audioClipboard = AUDIO_COPIED;
-    if (shown && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, shown); editor._geometry = null; editor._incremental = null; }
+    if (drafted && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, drafted); editor._geometry = null; editor._incremental = null; }
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
     if (answer.patch?.length) take();
@@ -798,6 +867,23 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       // A call made by a call the editor runs belongs to it.
       if (depth > 0 || editor._movieclipScopes?.length) return original.apply(this, args);
       return name === 'movieclipBatch' ? batchCall(original, args) : callSession(name, original, args);
+    };
+  }
+  // The reads the session answers.
+  for (const name of SESSION_READS) {
+    const original = editor[name];
+    if (typeof original !== 'function') continue;
+    layer[name] = function read(...args) {
+      if (!reading()) return original.apply(this, args);
+      if (!adopting) flush();
+      let text;
+      try { text = session.query(name, JSON.stringify(args), adopting ? 'null' : JSON.stringify(view())); }
+      catch (error) {
+        const message = String(error?.message ?? error);
+        if (message.startsWith(UNPORTED)) return original.apply(this, args);
+        throw failure(message);
+      }
+      return JSON.parse(text).v;
     };
   }
   layer.undo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('undo').apply(this, args) : historyCall(false, args); };
@@ -911,7 +997,9 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   /** Whether the session holds the open document (starting it if it can). */
   report.ready = () => Boolean(ensure());
   report.session = () => session;
-  report.release = () => { session?.free(); session = null; document = null; for (const value of parked.values()) value.session.free(); parked.clear(); };
+  report.release = () => { session?.free(); session = null; document = null; for (const value of parked.values()) value.session.free(); parked.clear(); shown.release(); editor._shown = null; };
+  // The editor reads the frame on show, its geometry and its timeline from the session.
+  editor._shown = shown;
   return report;
 }
 

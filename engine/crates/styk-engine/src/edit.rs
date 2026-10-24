@@ -43,6 +43,9 @@ struct Pose {
     vfx_tick: Option<f64>,
     /// Its generated effects, built when first drawn (again while incomplete).
     generators: Option<Arc<Batch>>,
+    /// The record it was made from, when the pose came as a record ([`EditScene::update_record`]): the next one is
+    /// read as its difference.
+    record: Option<Value>,
 }
 
 #[cfg(test)]
@@ -83,7 +86,7 @@ struct Times {
 
 impl Pose {
     fn new(frame: Frame, used: u64, times: Times) -> Pose {
-        Pose { frame: Arc::new(frame), scene: None, used, motion_tick: times.motion, shot: None, vfx_tick: times.vfx, generators: None }
+        Pose { frame: Arc::new(frame), scene: None, used, motion_tick: times.motion, shot: None, vfx_tick: times.vfx, generators: None, record: None }
     }
 
     /// What the scene camera does to this pose, worked out once per document generation
@@ -170,6 +173,19 @@ fn no_clock() -> f64 {
     0.0
 }
 
+/// `record` with `null` for each figure that is the node `last` holds: the form that asks the loader to keep the
+/// figure it has. `None` when the two do not have the same figures to compare.
+fn unchanged(record: &Value, last: &Value, held: usize) -> Option<Value> {
+    let now = record.get("objects")?.as_arr()?;
+    let before = last.get("objects")?.as_arr()?;
+    if now.len() != before.len() || now.len() != held || !now.iter().all(Value::is_object) || !now.iter().zip(before).any(|(item, old)| item.same_node(old)) {
+        return None;
+    }
+    let mut value = record.as_obj()?.clone();
+    value.set("objects", Value::array(now.iter().zip(before).map(|(item, old)| if item.same_node(old) { Value::Null } else { item.clone() }).collect()));
+    Some(Value::object(value))
+}
+
 fn flags(slots: &[u32], count: usize) -> Vec<bool> {
     let mut hidden = vec![false; count];
     for &slot in slots {
@@ -212,13 +228,19 @@ impl EditScene {
     /// into it (clips included), never sampled again here: see `docs/engine/vfx.md`.
     fn parse(&mut self, generation: &Generation, text: &[u8], previous: Option<&Frame>) -> Result<(Frame, Times), String> {
         let value: Value = styk_doc::json::parse(text).map_err(|e| e.to_string())?;
+        self.convert(generation, &value, previous, false)
+    }
+
+    /// [`EditScene::parse`] of a pose already read. A pose the interface composed holds its effect clips already; one
+    /// the engine's session made (`sampled`) has them sampled here at its `tick`, as a prepared frame's are.
+    fn convert(&mut self, generation: &Generation, value: &Value, previous: Option<&Frame>, sampled: bool) -> Result<(Frame, Times), String> {
         let times = Times { vfx: value.get("_vfxTimelineTick").and_then(Value::as_f64), motion: value.get("_cameraMotionTick").and_then(Value::as_f64) };
         let loader = self.loader.as_mut().expect("follow() ran");
         let doc = &generation.prepared.doc;
-        let mut frame = loader.edit_frame(&value, previous, doc).map_err(|e| e.to_string())?;
+        let mut frame = loader.edit_frame(value, previous, doc).map_err(|e| e.to_string())?;
         let fields = frame.pose_vfx.is_some() || frame.objects.iter().any(|o| o.vfx.is_some() || o.vfx_connected.is_some());
         if fields || generation.prepared.has_vfx {
-            frame.vfx = styk_eval::vfx::frame::composed(doc, &frame);
+            frame.vfx = if sampled { styk_eval::vfx::frame::evaluate(doc, &frame) } else { styk_eval::vfx::frame::composed(doc, &frame) };
         }
         Ok((frame, times))
     }
@@ -230,6 +252,28 @@ impl EditScene {
         let previous = self.current.take();
         let (frame, times) = self.parse(generation, text, previous.as_ref().map(|pose| pose.frame.as_ref()))?;
         self.current = Some(Pose::new(frame, self.draws, times));
+        Ok(())
+    }
+
+    /// Replaces the frame with a record the engine's own session made (the frame on show, with its `tick`): the figures
+    /// whose records are the ones the last frame was made from are not read again.
+    pub fn update_record(&mut self, generation: &Generation, record: &Value) -> Result<(), String> {
+        // Figures made against other definitions are read again.
+        let same = self.lineage == generation.lineage && self.generation == generation.id;
+        self.follow(generation);
+        let previous = self.current.take();
+        let changed;
+        let source = match previous.as_ref().filter(|_| same).and_then(|pose| pose.record.as_ref().map(|last| (pose, last))) {
+            Some((pose, last)) => match unchanged(record, last, pose.frame.objects.len()) {
+                Some(delta) => { changed = delta; &changed }
+                None => record,
+            },
+            None => record,
+        };
+        let (frame, times) = self.convert(generation, source, previous.as_ref().map(|pose| pose.frame.as_ref()), true)?;
+        let mut pose = Pose::new(frame, self.draws, times);
+        pose.record = Some(record.clone());
+        self.current = Some(pose);
         Ok(())
     }
 

@@ -541,11 +541,13 @@ the editor must import it before anything else, and so must a child process it s
 
 ## Phase 2: queries from the engine
 
-Handle positions, picking, snapping, bounds, motion paths and inspector values
-come from the engine (it already builds the edit frame's geometry,
-`styk_engine::edit::EditScene`), so the interface no longer needs JavaScript
-geometry. Then the JavaScript evaluation, geometry, IK, rig, movieclip and
-effect-model modules have no callers and are deleted.
+The frame on show, its geometry and the timeline come from the engine's session
+(`EditSession.query`, [evaluation.md](evaluation.md#the-interfaces-frame)), and the stage draws
+the session's frame itself (`Stage::edit_session`). Handle positions, picking, snapping and
+motion paths still read those groups in JavaScript (`canvas-interactions.mjs`, the pickers);
+the engine's own queries for them (`styk_eval::picking`) are not wired in yet. When they are, the
+JavaScript evaluation, geometry, IK, rig, movieclip and effect-model modules have no callers and
+are deleted.
 
 ## Phase 3: the engine owns the document
 
@@ -560,6 +562,12 @@ it on the editor, for every document.
   copy-on-write (`src/engine/engine-patch.mjs`), refreshes what the editor derives from the
   records (layer index, frame index, caches), sets selection and counters, mirrors the
   gesture into `_drag`/`_authoredPoseEdit` and re-emits the events.
+- **Reads.** The editor's getters for the frame on show (`evaluatedFrame`, `geometry`, `timeline`, `totalTicks`)
+  and its reads `animationValue`, `vfxEffects`, `segmentAnimationTarget` and `getIKSettings` ask the session
+  (`src/engine/engine-shown.mjs`; the owner flushes the editor's pending edits first and gives the playhead, or the
+  whole view for the named reads). They are the editor's own while it runs a call of its own and while it edits a
+  movieclip in place, and for a document the session answers `unported: …` for. A detached owner (the rig test's own
+  editor) has a session that leaves the project the engine's document.
 - **Property and effect-clip edits.** `beginAnimationEdit`…`cancelAnimationEdit` and
   `beginVfxClipEdit`…`cancelVfxClipEdit` run in the session. Every answer carries `vfxEdit`
   (whether an effect-clip edit is open) and `animationEdit` (`null`, or the open edit's

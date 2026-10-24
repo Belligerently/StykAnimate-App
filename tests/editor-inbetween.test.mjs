@@ -160,12 +160,9 @@ test('late authored timeline overflow rejects before IDs, sources, channels or h
   assert.deepEqual(editor.report, before); assert.equal(editor._nextFrameIdentity, identity); assert.equal(editor.canUndo, false);
 });
 
-test('first-key insertion copies its pose and exposure; preview never reserves IDs or records history', () => {
+test('first-key insertion copies its pose and exposure and reserves no IDs when it inserts nothing', () => {
   const editor = fixture(), before = clone(editor.report), identity = editor._nextFrameIdentity;
   assert.equal(editor.insertInbetweenFrames(.5, []).insertedFrames, 0);
-  assert.deepEqual(pose(editor.report, editor.previewInbetween(.5, 0).frame), pose(editor.report, editor.report.keyframes[0]));
-  const preview = editor.previewInbetween(.5, 1), expected = pose(editor.report, evaluatedFrame(editor.report, 0, .5));
-  assert.deepEqual(pose(editor.report, preview.frame), expected); assert.equal(preview.sourceTick, 3); assert.equal(preview.insertionTick, 6);
   assert.deepEqual(editor.report, before); assert.equal(editor._nextFrameIdentity, identity); assert.equal(editor.canUndo, false);
   assert.equal(planInsertInbetweens(editor, .5, [1]).entries.length, 1);
   assert.equal(editor.insertInbetweenFrames(.5, [0]).insertedFrames, 1);

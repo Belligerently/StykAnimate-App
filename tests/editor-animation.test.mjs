@@ -57,8 +57,6 @@ test('camera/scene and extended-duration keys evaluate through the common editor
   assert.equal(editor.totalTicks, 41); editor.seek(30);
   near(editor.evaluatedFrame.camera.x, 60); assert.equal(editor.evaluatedFrame._stykBackgroundColor, 0xffbfbfbf);
   assert.equal(editor.report.keyframes.length, 3);
-  assert.equal(editor.nearestAnimationKey({kind: 'camera'}, 'x', 1).tick, 40);
-  assert.equal(editor.nearestAnimationKey({kind: 'camera'}, 'x', -1).tick, 0);
 });
 
 test('native layer pose-key mutation adopts real source references in the same history operation', () => {

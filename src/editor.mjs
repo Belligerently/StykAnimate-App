@@ -7,11 +7,12 @@ import {UserActionError} from './user-action-error.mjs';
 import {editorRigConstraintMethods} from './editor-rig-constraints.mjs';
 import {editorColorMethods, applyPaletteCommand} from './editor-colors.mjs';
 import {editorVfxClipMethods} from './editor-vfx-clips.mjs';
-import {invalidateVfxRenderFrame, figureVfxClips} from './vfx-clips.mjs';
+import {invalidateVfxRenderFrame, figureVfxClips, frameWithVfxTime} from './vfx-clips.mjs';
+import {frameWithCameraTime} from './camera-motion.mjs';
 import {editorCameraMotionMethods} from './editor-camera-motion.mjs';
 import {authoredRigTarget,hasRigConstraints} from './rig-constraints.mjs';
 import {editorTweenerMethods} from './editor-tweener.mjs';
-import {buildGeometry, buildGeometryAsync, evaluatedFrame, timeline, shortest, isStatic, invalidateEvaluationCaches} from './pivot/geometry.mjs';
+import {buildGeometry, evaluatedFrame, timeline, shortest, isStatic, invalidateEvaluationCaches} from './pivot/geometry.mjs';
 import {validateScene, validateObjectChanges, syncDerived} from './pivot/model.mjs';
 import {normalizeFrame, frameOrder, setOrder, deleteObject, moveLayer as reorderLayer, rotationEdits, resolveJoinSelection} from './pivot/structure.mjs';
 import {createDemo, emptyDocument, createObject, createFrame, defaultFigure} from './demo.mjs';
@@ -151,17 +152,31 @@ export class Editor extends EventTarget {
     let report = index >= 0 && duration !== this.report.keyframes[index]?.duration_raw
       ? {...this.report, keyframes:this.report.keyframes.map((frame, i) => i === index ? {...frame, duration_raw:duration} : frame)} : this.report;
     if (animation !== report._styk?.animation) report = {...report, _styk: {...report._styk, animation}};
-    return this._timeline = timeline(report);
+    // The engine's rows where it holds this document and no draft changes them.
+    return this._timeline = (report === this.report ? this._shown?.timeline() : null) ?? timeline(report);
   }
   get totalTicks() { const last = this.timeline.at(-1); return last ? last.start + last.count : 0; }
   get evaluatedFrame() {
     if(this._sheetPropertyPreview)return this._sheetPropertyPreview;
     if (this._authoredPoseEdit) return this._authoredPoseEdit.frame;
+    return this._evaluated ??= this._timed(this._shown?.frame()) ?? this._evaluateHere();
+  }
+  /** The document's frame at the playhead, under any gesture the engine holds: the frame a draft is composed on. */
+  _documentFrame() { return this._evaluated ??= this._timed(this._shown?.documentFrame()) ?? this._evaluateHere(); }
+  /** A frame the engine evaluated at the playhead with the times the effect and camera-motion clips are read at. */
+  _timed(frame) { return frame && frameWithCameraTime(this.report, frameWithVfxTime(this.report, frame, this.tick), this.tick); }
+  /** The frame on show evaluated here: where the engine does not hold the document (a movieclip being edited in place, a
+   * call the editor is running). */
+  _evaluateHere() {
     const entry = this.timeline[this.frameIndex];
     const t = entry?.count > 1 ? (this.tick - entry.start) / entry.count : 0;
-    return this._evaluated ??= evaluatedFrame(this.report, this.frameIndex, clamp(t, 0, 1), this.tick);
+    return evaluatedFrame(this.report, this.frameIndex, clamp(t, 0, 1), this.tick);
   }
   get geometry() {
+    if (!this._geometry) {
+      const engine = this._shown?.geometry(this.evaluatedFrame);
+      if (engine) { this._incremental = null; return this._geometry = engine; }
+    }
     const retained=this._seekGeometry??=new RetainedGeometryCache();
     if(this._retainGeometryRevision){retained.retainRevision(this.revision);this._retainGeometryRevision=false;}
     if (!this._geometry) {
@@ -173,22 +188,6 @@ export class Editor extends EventTarget {
     return this._geometry;
   }
   get canUndo() { return this._undo.length > 0; }
-  /** Prepare the exact current pose cooperatively; publishing stale geometry is
-   * forbidden even if an input handler synchronously materializes it meanwhile. */
-  async prepareGeometry(options={}) {
-    if(this._geometry)return this.geometry;
-    const report=this.report,revision=this.revision,tick=this.tick,frame=this.evaluatedFrame,incremental=this._incremental,evaluated=this._evaluated,authored=this._authoredPoseEdit;
-    const checkCurrent=()=>!this._geometry&&this.report===report&&this.revision===revision&&this.tick===tick&&
-      this._evaluated===evaluated&&this._authoredPoseEdit===authored&&this._incremental===incremental&&options.checkCurrent?.()!==false;
-    const retained=this._seekGeometry??=new RetainedGeometryCache();
-    if(this._retainGeometryRevision){retained.retainRevision(this.revision);this._retainGeometryRevision=false;}
-    const settings={...options,checkCurrent};
-    const geometry=incremental?await buildGeometryAsync(report,frame,incremental,settings):await retained.getAsync(report,frame,revision,settings);
-    if(!checkCurrent())throw messageError(new DOMException('', 'AbortError'), "errors.editor.editableGeometryWasSuperseded", {});
-    this._geometry=geometry;this._incremental=null;
-    if(retained.geometry!==geometry)retained.adopt(report,frame,revision,geometry);
-    return geometry;
-  }
   get canRedo() { return this._redo.length > 0; }
   get undoLabel() { return this._undo.at(-1)?.label ?? ''; }
   get redoLabel() { return this._redo.at(-1)?.label ?? ''; }

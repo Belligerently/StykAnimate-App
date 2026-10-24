@@ -224,6 +224,31 @@ impl Editor {
         Ok((figure, prepared, frame, scene))
     }
 
+    /// `getIKSettings()`: the selected node's controller over the defaults, and the longest chain it can have
+    /// (`maxLength`: across the assembly for joined figures).
+    pub(crate) fn get_ik_settings(&self) -> Result<Value, EditError> {
+        let Some(at) = self.controller_at()? else {
+            let mut settings = Obj::new();
+            for (key, value) in [("enabled", Value::Bool(false)), ("pinned", Value::Bool(false)), ("allowStretch", Value::Bool(false)), ("bendDirection", Value::Num(0.0)), ("chainLength", Value::Num(0.0)), ("maxLength", Value::Num(0.0))] {
+                settings.set(key, value);
+            }
+            return Ok(Value::object(settings));
+        };
+        let (prepared, frame) = self.evaluate_frame()?;
+        let joined = frame.objects.iter().any(|object| object.join.is_some());
+        let max = match joined.then(|| crate::ik::assembly_of(&prepared, &frame, at.slot)).flatten() {
+            Some(assembly) => assembly.chain(at.slot, at.handle, MAX_CHAIN).len() as u32,
+            None => {
+                let object = frame.objects.get(at.slot).ok_or_else(|| EditError::Unported("the settings of a controller on a figure the engine does not draw".into()))?;
+                let figure = object.figure_override.clone().or_else(|| prepared.doc.figure(object.figure).cloned()).ok_or_else(|| EditError::Unported("the settings of a controller on a figure without a definition".into()))?;
+                Skeleton { segments: &figure.segments, plan: &figure.plan, polygons: &figure.polyfills, sources: None }.chain(at.handle, MAX_CHAIN).len() as u32
+            }
+        };
+        let mut settings = settings_with(&at, max);
+        settings.set("maxLength", Value::Num(max as f64));
+        Ok(Value::object(settings))
+    }
+
     /// `setNodeIK(patch)`.
     pub(crate) fn set_node_ik(&mut self, patch: &Value) -> Result<bool, EditError> {
         let entries: Vec<(String, Value)> = patch.as_obj().map(|o| o.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()).unwrap_or_default();

@@ -14,8 +14,11 @@ use styk_doc::{Obj, Value};
 
 use crate::{EditError, Editor, Options, Selection};
 
+/// The start of the message of a read the session does not answer for this document.
+pub const UNPORTED: &str = "unported: ";
+
 pub struct Session {
-    editor: Editor,
+    pub(crate) editor: Editor,
 }
 
 mod worker;
@@ -422,6 +425,51 @@ impl Session {
         styk_doc::json::to_string(&answer)
     }
 
+    /// A read of what the interface shows, at `view` (its playhead: `tick` and `frameIndex`): `kind` is `frame`, `document`, `motion`,
+    /// `timeline` or `geometry` (`args`: `{since, motion}`); or the name of one of the editor's reads the session answers
+    /// (`Editor::interface_query`, at the whole view: `{"v": value}`, or `{}` where the editor answers `undefined`). The answer is
+    /// JSON text; the document does not change. An error that starts with [`UNPORTED`] is a document the session does not answer for.
+    pub fn query(&mut self, kind: &str, args: &str, view: &str) -> Result<String, String> {
+        let (args, view) = (styk_doc::json::parse(args.as_bytes()).map_err(|error| error.to_string())?, styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?);
+        let shown = match kind {
+            "timeline" | "geometry" | "frame" | "document" | "motion" => {
+                apply_playhead(&mut self.editor, &view);
+                match kind {
+                    "timeline" => Ok(self.editor.interface_timeline()),
+                    "geometry" => self.editor.interface_geometry(&args),
+                    other => self.editor.interface_frame(other),
+                }
+            }
+            // The editor's own reads: the view is its whole state (the selection too).
+            name => {
+                apply_view(&mut self.editor, &view).map_err(|error| format!("{error:?}"))?;
+                match self.editor.interface_query(name, &args) {
+                    Some(answer) => answer.map(|value| match value {
+                        Some(value) => format!("{{\"v\":{}}}", styk_doc::json::to_string(&value)),
+                        None => "{}".to_string(),
+                    }),
+                    None => Err(EditError::Invalid(format!("the session answers no read '{name}'"))),
+                }
+            }
+        };
+        shown.map_err(|error| match error {
+            EditError::Invalid(message) => message,
+            // What the session does not evaluate yet: the editor reads it itself.
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
+        })
+    }
+
+    /// The frame the stage draws, at `view` (its playhead): the gesture in progress, else the document at the playhead; with `motion`,
+    /// the motion-path edit's display where one is shown. The record is the editor's own (no text is made).
+    pub fn show(&mut self, view: &str, motion: bool) -> Result<Value, String> {
+        let view = styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?;
+        apply_playhead(&mut self.editor, &view);
+        self.editor.interface_record(motion).map_err(|error| match error {
+            EditError::Invalid(message) => message,
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
+        })
+    }
+
     /// The same command and response owner over already decoded COW values.
     /// This worker-only boundary avoids whole-answer JSON serialization: its
     /// returned value stays worker-owned until the common bounded packet ACK.
@@ -486,6 +534,42 @@ impl Session {
     }
 }
 
+/// Puts the editor's playhead, selection and settings where the interface has them (the view of a
+/// call, or of a read of what the interface shows).
+fn apply_view(editor: &mut Editor, view: &Value) -> Result<(), EditError> {
+    if !view.is_object() {
+        return Ok(());
+    }
+    if !view_unchanged(editor, view) {
+        let (tick, frame_index) = (number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize);
+        // The editor seeked without the session (D19): the frame it kept on show is gone, as after `seek`.
+        if tick.to_bits() != editor.tick.to_bits() || frame_index != editor.frame_index { editor.retained = None; }
+        editor.set_view(tick, frame_index, selection_of(view));
+    }
+    editor.sync_selection_metadata(view)?;
+    editor.set_auto_key(flag(view, "autoKey"));
+    editor.audio_ripple = flag(view, "audioRipple");
+    // Selecting changes the active layer without a new revision of the document.
+    if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
+        editor.set_active_layer_id(active);
+    }
+    editor.set_sheet_selection(sheet_selection_of(view));
+    Ok(())
+}
+
+/// Puts the editor's playhead where the interface has it, leaving the selection and settings as the session last had
+/// them: what the frame on show and its geometry are does not depend on them, so a read of those needs no more.
+fn apply_playhead(editor: &mut Editor, view: &Value) {
+    let (Some(tick), Some(frame_index)) = (number(view, "tick"), number(view, "frameIndex")) else { return };
+    let frame_index = frame_index as usize;
+    if tick.to_bits() != editor.tick.to_bits() || frame_index != editor.frame_index {
+        // The editor seeked without the session (D19): the frame it kept on show is gone, as after `seek`.
+        editor.retained = None;
+        let selection = editor.selection.clone();
+        editor.set_view(tick, frame_index, selection);
+    }
+}
+
 /// Shared by legacy JSON calls and canonical worker transactions.
 fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, worker_preparation: bool, check: Option<&mut dyn FnMut() -> Result<(), EditError>>) -> Result<Value, EditError> {
     let prelude_scope = crate::prof::scope("call::prelude");
@@ -539,25 +623,10 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
     if changes_only {
         answer.push(("changesOnly", Value::Bool(true)));
     }
-    if view.is_object() {
-        if !view_unchanged(editor, view) {
-            let (tick, frame_index) = (number(view, "tick").unwrap_or(0.0), number(view, "frameIndex").unwrap_or(0.0) as usize);
-            // The editor seeked without the session (D19): the frame it kept on show is gone, as after `seek`.
-            if tick.to_bits() != editor.tick.to_bits() || frame_index != editor.frame_index { editor.retained = None; }
-            editor.set_view(tick, frame_index, selection_of(view));
-        }
-        if let Err(error) = editor.sync_selection_metadata(view) {
-            answer.push(("status", Value::str("unported")));
-            answer.push(("reason", Value::str(&format!("{error:?}"))));
-            return Ok(response_value(answer));
-        }
-        editor.set_auto_key(flag(view, "autoKey"));
-        editor.audio_ripple = flag(view, "audioRipple");
-        // Selecting changes the active layer without a new revision of the document.
-        if let Some(active) = view.get("activeLayerId").and_then(Value::as_str) {
-            editor.set_active_layer_id(active);
-        }
-        editor.set_sheet_selection(sheet_selection_of(view));
+    if let Err(error) = apply_view(editor, view) {
+        answer.push(("status", Value::str("unported")));
+        answer.push(("reason", Value::str(&format!("{error:?}"))));
+        return Ok(response_value(answer));
     }
     // Capture through the existing selected-definition reader after view sync.
     // Failure only omits the opt-in marker; dispatch keeps its original errors.

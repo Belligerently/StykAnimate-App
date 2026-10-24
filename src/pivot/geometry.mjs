@@ -981,45 +981,6 @@ function publishedGeometry(objects,orderedObjects,previousToken,changedSlots,war
     get drawables() { return drawables ??= orderedObjects.flatMap(g => g.drawables); }, warnings };
 }
 
-const yieldGeometryTask = globalThis.scheduler?.yield ? () => globalThis.scheduler.yield() : () => new Promise(resolve => {
-  const channel = new MessageChannel();
-  channel.port1.onmessage = () => {channel.port1.close(); channel.port2.close(); resolve();};
-  channel.port2.postMessage(null);
-});
-
-/** Prepare unpublished geometry with cancellation checkpoints inside figures.
- * sliceMs is a scheduling target; individual native primitives stay exact. */
-export async function buildGeometryAsync(report, frame, incremental = null,
-  {sliceMs = 4, signal, checkCurrent, yieldControl = yieldGeometryTask, onProgress, onTiming} = {}) {
-  if (!Number.isFinite(sliceMs) || sliceMs < 0) throw messageError(new Error(''), "errors.geometry.chooseANonnegativeGeometryPreparationSliceDuration", {});
-  const check = () => {
-    if (signal?.aborted || checkCurrent?.() === false)
-      throw messageError(new DOMException('', 'AbortError'), "errors.geometry.geometryPreparationWasCancelledOrSuperseded", {});
-  };
-  check();
-  const iterator = buildGeometrySteps(report, frame, incremental), started = performance.now();
-  let sliceStarted = null, cpuMs = 0, maxTaskMs = 0, slices = 0, yields = 0, steps = 0, completed = false;
-  const finishSlice = () => {
-    if (sliceStarted === null) return;
-    const elapsed = performance.now() - sliceStarted;
-    cpuMs += elapsed; maxTaskMs = Math.max(maxTaskMs, elapsed); slices++; sliceStarted = null;
-  };
-  try {
-    for (;;) {
-      check(); sliceStarted = performance.now(); let progress;
-      do {
-        check(); const step = iterator.next(); steps++;
-        if (step.done) {check(); completed = true; return step.value;}
-        progress = step.value;
-      } while (performance.now() - sliceStarted < sliceMs);
-      onProgress?.(progress); check(); finishSlice(); yields++;
-      await yieldControl();
-    }
-  } finally {
-    finishSlice(); iterator.return();
-    onTiming?.({elapsedMs: performance.now() - started, cpuMs, maxTaskMs, slices, yields, steps, completed});
-  }
-}
 function objectColor(base, obj) {
   if (obj.color_transition) {
     const c = obj.color_transition,

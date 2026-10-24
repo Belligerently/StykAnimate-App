@@ -3,9 +3,7 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {createFrame,createObject,emptyDocument} from '../src/demo.mjs';
 import {documentChunks,applyDocumentChunk} from '../src/document-transport.mjs';
-import {buildGeometry,buildGeometryAsync,evaluatedFrame,timeline} from '../src/pivot/geometry.mjs';
 import {movieclipAsset} from '../src/movieclips.mjs';
-import {movieclipCacheStats} from '../src/movieclip-geometry.mjs';
 
 function clipFixture(){
   const editor=new Editor();editor.select(1);
@@ -38,17 +36,6 @@ test('figure transport rejects cyclic and out-of-order aliases without accepting
   for(const figureReference of [['figure_types',3],['opaque'],['__proto__','figure_types',0]])
     assert.throws(()=>applyDocumentChunk(report,{operations:[{path:['figure_types',0],figureReference}]}),/reference/i);
   assert.deepEqual(report.figure_types,[]);
-});
-test('nested clip preparation yields inside a single outer object and cancels without publishing a partial cache',async()=>{
-  const {figure}=clipFixture(),asset=movieclipAsset(figure),child=asset.document.figure_types[0];
-  asset.document.keyframes=[createFrame(Array.from({length:80},(_,i)=>createObject(child,i+1,i*5,100)),20)];
-  const report={...emptyDocument(),figure_types:[figure],keyframes:[createFrame([createObject(figure,900,0,0)],20)]};
-  const rows=timeline(report),frame=evaluatedFrame(report,0,0,rows[0].start),controller=new AbortController();let yields=0;
-  await assert.rejects(buildGeometryAsync(report,frame,null,{sliceMs:0,signal:controller.signal,yieldControl:async()=>{yields++;controller.abort();}}),{name:'AbortError'});
-  assert.ok(yields>0);assert.equal(movieclipCacheStats(figure).frames,0);
-  yields=0;const actual=await buildGeometryAsync(report,frame,null,{sliceMs:0,yieldControl:async()=>{yields++;}});
-  assert.ok(yields>10,'Nested drawing work needs checkpoints even with one outer clip.');
-  assert.deepEqual(actual.drawables,buildGeometry(report,frame).drawables);
 });
 test('sheet pose edits and history preserve definition revisions',()=>{
   const report=emptyDocument();report.keyframes=[0,10].map(x=>createFrame([createObject(report.figure_types[0],1,x,100)],10));

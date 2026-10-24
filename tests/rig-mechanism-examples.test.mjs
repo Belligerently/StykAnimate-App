@@ -4,7 +4,7 @@ import {Editor} from '../src/editor.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {MECHANISM_RIG_EXAMPLES} from '../src/rig-mechanism-examples.mjs';
 import {rigAssetControls,rigAssetControlChange,rigAssetControlValues} from './helpers/example-controls.mjs';
-import {buildGeometry,buildGeometryAsync} from '../src/pivot/geometry.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-4,`${a} != ${b}`),wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
 const scene=e=>e.geometry.objects.get(0),shape=(e,id)=>scene(e).segments.find(s=>s.seg.segment_id===id);
@@ -43,7 +43,7 @@ for(const example of MECHANISM_RIG_EXAMPLES)test(`${example.name}: named control
   e.beginDrag('Pose asset');for(const c of controls)change(e,c.key,c.max);e.commitDrag();assert.equal(e._undo.length,1);assert.equal(e.selectedJoint,selection);
   const posed=e.serialize(),expected=poses(e.geometry);e.undo();assert.deepEqual(e.serialize(),initial);e.redo();assert.deepEqual(e.serialize(),posed);
   for(const c of controls)near(rigAssetControlValues(e)[c.key],c.max);
-  for(const kind of ['styk','stkz']){const d=(await decodeDocument(await buildContainerV2(posed,kind),kind)).document;assert.equal(d.figure_types[0]._styk.rigExample.controls,undefined);assert.deepEqual(poses(buildGeometry(d,d.keyframes[0])),expected);assert.deepEqual(poses(await buildGeometryAsync(d,d.keyframes[0])),expected);}
+  for(const kind of ['styk','stkz']){const d=(await decodeDocument(await buildContainerV2(posed,kind),kind)).document;assert.equal(d.figure_types[0]._styk.rigExample.controls,undefined);assert.deepEqual(poses(buildGeometry(d,d.keyframes[0])),expected);}
   for(const c of controls){assert.throws(()=>change(e,c.key,NaN));assert.throws(()=>change(e,c.key,c.max+1));}assert.deepEqual(e.serialize(),posed);
   e.rotateFigure(.4);for(const c of controls){near(rigAssetControlValues(e)[c.key],c.max);change(e,c.key,c.min);near(rigAssetControlValues(e)[c.key],c.min);}
 });

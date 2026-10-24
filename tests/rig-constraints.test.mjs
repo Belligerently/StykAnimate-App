@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {RIG_EXAMPLES,rigExampleDocument} from '../src/rig-examples.mjs';
 import {rigConstraintPlan} from '../src/rig-constraints.mjs';
-import {buildGeometry,buildGeometryAsync,evaluatedFrame} from '../src/pivot/geometry.mjs';
+import {buildGeometry,evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {getPivotHandles} from '../src/canvas-interactions.mjs';
 import {nativeFigureDocument} from '../src/native-figure.mjs';
@@ -135,13 +135,6 @@ test('deep dependency chains compile and evaluate without recursive stack growth
   const o=doc.keyframes[0].objects[0];o.angles=fig.segments.map(s=>s.angle_rad);rigConstraintPlan(fig);
   const scene=buildGeometry(doc,doc.keyframes[0]);assert.equal(scene.objects.get(0).segments.length,count);assert.ok(Number.isFinite(scene.objects.get(0).joints.get(count).x));
 });
-test('cold rig compilation is cancellable and cannot publish a partial dependency plan',async()=>{
-  const doc=rigExampleDocument('sliding-carriage'),fig=doc.figure_types[0],template=fig.segments[0];
-  fig.segments=Array.from({length:2000},(_,i)=>({...template,segment_id:i+1,parent_id:0,_stykRig:{stretch:{restLength:120,min:0,max:2,width:'keep'}}}));
-  doc.keyframes[0].objects[0].angles=fig.segments.map(s=>s.angle_rad);const abort=new AbortController();let stages=0;
-  await assert.rejects(buildGeometryAsync(doc,doc.keyframes[0],null,{sliceMs:0,signal:abort.signal,onProgress:p=>{if(p.phase==='rig'){stages++;abort.abort();}},yieldControl:async()=>{}}),{name:'AbortError'});
-  assert.equal(stages,1);assert.equal(buildGeometry(doc,doc.keyframes[0]).objects.get(0).segments.length,2000);
-});
 test('polygon edges terminate at a curved connector’s sliding joint',()=>{
   const e=editorFor('sliding-carriage');select(e,3);e.updateSegment({bend_rad:1});e.addPolygon([1,3,4]);
   const scene=g(e),far=scene.joints.get(2),middle=scene.joints.get(3),points=scene.polys[0].points;
@@ -226,6 +219,5 @@ for(const rig of RIG_EXAMPLES)test(`${rig.name}: native project and reusable fig
   assert.deepEqual(poseSignature(buildGeometry(decoded,decoded.keyframes[0])),baseline);
   const reusable=nativeFigureDocument(report,{figureUid:1});const file=await buildContainerV2(reusable,'stkz'),saved=(await decodeDocument(file,'stkz')).document;
   assert.deepEqual(poseSignature(buildGeometry(saved,saved.keyframes[0])),baseline);
-  const asyncScene=await buildGeometryAsync(report,report.keyframes[0]);assert.deepEqual(poseSignature(asyncScene),baseline);
-});
+  });
 
