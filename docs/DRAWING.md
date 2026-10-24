@@ -593,7 +593,7 @@ rig conversion or vector tracing.
 
 ## Evidence and limits
 
-Run `node --test tests/drawing.test.mjs`, `node tests/drawing.browser.mjs` and
+Run `node --test tests/drawing.test.mjs` and
 `node scripts/benchmark-drawing.mjs` with the local app at port 47839 (or set
 `STYK_URL`). See [verification report](../artifacts/drawing/VERIFICATION.md).
 `tests/drawing-gpu.browser.mjs` checks GPU/CPU brush parity, exact reduced
@@ -613,7 +613,6 @@ and saving) against a running local app.
 painting and fills, the magic wand, symmetry, straight lines, colour picking,
 brush resizing, view flipping and alpha lock through real input,
 `tests/drawing-stroke.browser.mjs` covers the worker stroke pipeline,
-`tests/drawing-render.browser.mjs` covers visible-tile rendering and seams,
 `tests/drawing-save.browser.mjs` covers save/reload/recovery fidelity and
 `tests/drawing-timeline.browser.mjs` covers cache bounding and the
 drawing-free-document overhead contract.
