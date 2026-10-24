@@ -65,22 +65,11 @@ impl Uploaded {
     }
 }
 
-/// One picture to decode: an image of the document, or a drawing cel (every display level of it).
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Picture {
-    Image(usize),
-    Cel(usize),
-}
+pub(crate) use styk_eval::assets::Picture;
 
-/// The pixels decoding `picture` of `generation` produces, as far as is known without decoding it: its atlas places.
+/// The pixels decoding `picture` produces, as far as is known without decoding it.
 pub(crate) fn estimate(generation: &Generation, picture: Picture) -> usize {
-    match picture {
-        Picture::Image(index) => generation.assets.atlas.get(index).filter(|entry| entry.valid).map_or(0, |entry| (entry.w as usize + 2) * (entry.h as usize + 2) * 4),
-        Picture::Cel(cel) => {
-            let side = (styk_eval::drawing::TILE + 2 * styk_eval::drawing::BORDER) as usize;
-            generation.assets.cels.get(&cel).map_or(0, |(tiles, _)| tiles.levels.iter().map(Vec::len).sum::<usize>() * side * side * 4)
-        }
-    }
+    generation.assets.picture_bytes(picture)
 }
 
 #[derive(Default)]
@@ -170,21 +159,22 @@ impl Engine {
     /// allocate in pieces nothing can refuse, so a picture is decoded only when the memory can hold its work; one it
     /// cannot hold is not shown (like one that cannot be decoded) and the engine goes on ([`Engine::pictures_refused`]).
     pub(crate) fn decode_pixels(&self, generation: &Generation, picture: Picture) -> Vec<DecodedImage> {
-        let refused = || { self.inner.pictures_refused.fetch_add(1, std::sync::atomic::Ordering::Relaxed); Vec::new() };
-        match picture {
-            Picture::Image(index) => match styk_alloc::reserve(styk_eval::assets::decode_image_working_bytes(&generation.assets, index)) {
-                Ok(_working) => styk_eval::assets::decode_image(&generation.prepared.doc, &generation.assets, index).into_iter().collect(),
-                Err(_) => refused(),
-            },
-            Picture::Cel(cel) => {
-                let Some((tiles, _)) = generation.assets.cels.get(&cel) else { return Vec::new() };
-                let Ok(_working) = styk_alloc::reserve(3 * estimate(generation, picture)) else { return refused() };
-                let before = tiles.artwork_bounds();
-                let decoded = styk_eval::assets::decode_cel(&generation.assets, tiles);
-                if tiles.artwork_bounds() != before {
-                    self.drawing_bounds_changed(generation, tiles);
+        let before = match picture {
+            Picture::Cel(cel) => generation.assets.cels.get(&cel).map(|(tiles, _)| (tiles.clone(), tiles.artwork_bounds())),
+            Picture::Image(_) => None,
+        };
+        match styk_eval::assets::decode_picture(&generation.prepared.doc, &generation.assets, picture) {
+            Ok(decoded) => {
+                if let Some((tiles, bounds)) = before
+                    && tiles.artwork_bounds() != bounds
+                {
+                    self.drawing_bounds_changed(generation, &tiles);
                 }
                 decoded
+            }
+            Err(_) => {
+                self.inner.pictures_refused.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Vec::new()
             }
         }
     }

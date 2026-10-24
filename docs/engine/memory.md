@@ -44,6 +44,13 @@ Three things filled the memory of a large document, each without a bound:
   idle (`Stage::upload_pictures`, `uploadRemainingPictures` in `engine-stage.mjs`: 8 MiB every 16 ms
   after 50 ms without a frame, ending when another frame is drawn). tdd2 opens with 61 MiB queued at
   most, all pictures uploaded within two seconds, and 183 MiB live afterwards (before: 942, heap 1,576).
+- **Pictures the CPU holds** (`styk_raster::Images`: the preview worker's thumbnails, poses and camera monitor, and
+  the CPU export): the pixels kept are under a sixteenth of the memory (128 MiB of 2 GiB); beyond it the least
+  recently used are dropped, and `Images::ensure` decodes again, from the document's encoded pictures
+  (`styk_eval::assets::decode_picture`, reserving its working memory), whatever the frame about to be drawn samples
+  and the cache lacks. A frame is never short of a picture because of the budget: what it samples is kept while it
+  is drawn. The preview worker's GPU device keeps the pictures it was given (`Gpu.uploaded`), so it asks the
+  CPU only for the ones the device lacks; before, both kept every picture of the document.
 - **The frame cache** stays under an eighth of the memory (240 MiB of 2 GiB), whatever
   `navigator.deviceMemory` says.
 - **Typed views** (`styk_eval::load::Loader`) are held by a weak reference to the record they were made from
@@ -71,13 +78,25 @@ when the memory cannot give it; reservations count against every other request.
 | --- | --- | --- |
 | Opening a file or text (`Engine::open_document`) | 16 bytes per byte, at least 96 MiB (measured peaks: 7 to 14 bytes per byte for documents of 4 to 41 MiB) | the open error `errors.engine.outOfMemory` (`code` `out_of_memory`); the interface asks first (`admit_open`), because copying a file into the module cannot be refused |
 | Decoding a picture or a drawing cel | the decoded size twice and the bordered size twice (`decode_image_working_bytes`); three times the cel | the picture is not shown, like one that cannot be decoded (`picturesRefused` in `engine.memory()`) |
+| Decoding a picture again for a frame (`Images::ensure`) | as above | the frame is not drawn (a thumbnail or pose is refused, a CPU export stops with the message) |
 | An editing call, and activating a session | 64 MiB | the answer `{status: 'error', error: 'errors.engine.outOfMemory'}`; the document is unchanged |
 
 `engine.memory()` (`EngineHandle.memory`) reports the linear memory, the bytes handed out and their peak
 since `reset_memory_peak`, the reserved bytes, the ceiling, the pictures waiting and the frame cache.
 
+## Left
+
+- A parked tab keeps the typed views it was opened with (`Publisher.opened`), so a document edited far from its
+  opened state holds both: up to 150 MiB more for a 40 MiB Pivot file. Giving them up needs the session to
+  keep the last published views instead.
+- Undo and redo rebuild records the opened tree shares, and the tree after an undo of a movieclip edit of tdd2
+  takes 62 MiB more than the opened one (unpacked pose arrays).
+- The history accounts an entry by the size of the records it replaces (100 MiB for one movieclip edit of
+  testingupload.styk, 3 MiB of memory), so the byte limit retires older entries sooner than the memory needs.
+
 ## Tests
 
 `cargo test -p styk-alloc -p styk-engine -p styk-eval` (the picture budget in `images/tests.rs` and
 `export.rs`, the refusals in `tests/open.rs`, the loader in `tests/incremental.rs`), and
-`tests/engine-memory.test.mjs`, `tests/engine-stage.test.mjs`.
+`tests/engine-memory.test.mjs`, `tests/engine-stage.test.mjs`; the bounded pictures of the CPU rasterizer in
+`styk-raster/tests/image_budget.rs`.

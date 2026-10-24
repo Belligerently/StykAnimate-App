@@ -41,11 +41,12 @@ mod glyphs;
 mod shade;
 mod target;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use styk_draw::DrawList;
-use styk_eval::assets::{Assets, DecodedImage, PAGE};
+use styk_draw::{DrawList, F_DRAWING, K_BG_IMAGE, K_IMAGE, NO_PAINT};
+use styk_eval::assets::{Assets, DecodedImage, PAGE, Picture};
+use styk_eval::doc::Document;
 
 pub use frame::Stats;
 pub use styk_render::{DrawingGrid, Edges, ViewParams};
@@ -53,35 +54,81 @@ pub use styk_render::paint::PaintContext;
 
 use shade::Texture;
 
+/// An atlas place by the key the rasterizer samples it with: its page and corner.
+type Key = (u32, u32, u32);
+
+/// A picture the rasterizer samples: a sprite or a background (`false`), or a drawing cel tile (`true`), by its place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Place(bool, Key);
+
+/// A decoded picture and when it was last asked for.
+struct Held {
+    image: Arc<DecodedImage>,
+    used: u64,
+}
+
 /// Decoded pixels of a document's images, keyed by their atlas place (the draw list
 /// addresses images by atlas rectangle, as the GPU samples them). The decoded images are
 /// shared, not copied.
-#[derive(Default)]
+///
+/// The pixels held are bounded: beyond the budget (a sixteenth of the memory the module may use,
+/// [`Images::MEMORY_SHARE`]) the least recently used are dropped, and [`Images::ensure`] decodes
+/// again, from the document's encoded pictures, what a frame needs and is not held. A frame is never
+/// drawn short of a picture because of the budget: what it samples is kept while it is drawn.
 pub struct Images {
     /// Premultiplied sprites with their one-texel gutter repeating their edges.
-    sprites: HashMap<(u32, u32, u32), Arc<DecodedImage>>,
+    sprites: HashMap<Key, Held>,
     /// Drawing cel tiles: straight alpha, with a two-texel border of neighbouring texels.
-    tiles: HashMap<(u32, u32, u32), Arc<DecodedImage>>,
+    tiles: HashMap<Key, Held>,
+    budget: usize,
+    bytes: usize,
+    clock: u64,
+    /// Pictures that could not be decoded (a damaged file): not tried again while the atlas is the one they were
+    /// tried against (its size: a later revision may place more).
+    failed: HashSet<Place>,
+    failed_in: (usize, usize),
+}
+
+impl Default for Images {
+    fn default() -> Images {
+        Images::with_budget(styk_alloc::ceiling() / Images::MEMORY_SHARE)
+    }
 }
 
 impl Images {
+    /// The decoded pixels kept may take a sixteenth of the memory the module may use (128 MiB of 2 GiB).
+    pub const MEMORY_SHARE: usize = 16;
+
+    /// Pictures that hold at most `budget` bytes of pixels beyond what a frame being drawn samples.
+    pub fn with_budget(budget: usize) -> Images {
+        Images { sprites: HashMap::new(), tiles: HashMap::new(), budget, bytes: 0, clock: 0, failed: HashSet::new(), failed_in: (0, 0) }
+    }
+
     /// Adds a decoded image (`styk_eval::assets::decode_image` / `decode_cel`), copied.
     pub fn add(&mut self, assets: &Assets, image: &DecodedImage) {
         self.add_shared(assets, Arc::new(DecodedImage { index: image.index, drawing: image.drawing, width: image.width, height: image.height, rgba: image.rgba.clone() }));
     }
 
-    /// Adds a decoded image the engine already holds.
+    /// Adds a decoded image the engine already holds. Over the budget, the least recently used are dropped.
     pub fn add_shared(&mut self, assets: &Assets, image: Arc<DecodedImage>) {
+        self.insert(assets, image);
+        self.trim(&HashSet::new());
+    }
+
+    fn insert(&mut self, assets: &Assets, image: Arc<DecodedImage>) {
         let entry = if image.drawing { assets.drawing.get(image.index as usize) } else { assets.atlas.get(image.index as usize) };
         let Some(e) = entry.filter(|e| e.valid) else { return };
         if image.rgba.len() < image.width as usize * image.height as usize * 4 || image.width == 0 || image.height == 0 {
             return;
         }
         let key = (e.layer, e.x, e.y);
-        if image.drawing {
-            self.tiles.insert(key, image);
-        } else {
-            self.sprites.insert(key, image);
+        self.clock += 1;
+        let held = Held { used: self.clock, image };
+        let len = held.image.rgba.len();
+        let replaced = if held.image.drawing { self.tiles.insert(key, held) } else { self.sprites.insert(key, held) };
+        self.bytes += len;
+        if let Some(old) = replaced {
+            self.bytes -= old.image.rgba.len();
         }
     }
 
@@ -95,13 +142,116 @@ impl Images {
 
     /// Bytes of the pixels held.
     pub fn bytes(&self) -> usize {
-        self.sprites.values().chain(self.tiles.values()).map(|i| i.rgba.len()).sum()
+        self.bytes
     }
 
     /// Shared decoded pixels, for an auxiliary GPU view using the same image owner.
     /// Iteration borrows the pixels; rebuilding an atlas does not make a second cache.
     pub fn decoded(&self) -> impl Iterator<Item = &DecodedImage> {
-        self.sprites.values().chain(self.tiles.values()).map(Arc::as_ref)
+        self.sprites.values().chain(self.tiles.values()).map(|held| held.image.as_ref())
+    }
+
+    /// The decoded picture at `place`, if it is held.
+    pub fn get(&self, place: Place) -> Option<&Arc<DecodedImage>> {
+        let held = if place.0 { self.tiles.get(&place.1) } else { self.sprites.get(&place.1) };
+        held.map(|held| &held.image)
+    }
+
+    /// The places a list samples: its images, backgrounds and drawing cel tiles, and the parent tile a drawing
+    /// cel blends in inside a layer the editor paints with Canvas 2D.
+    pub fn places(list: &DrawList) -> HashSet<Place> {
+        let mut places = HashSet::new();
+        for p in &list.prims {
+            match p.kind & 255 {
+                K_IMAGE => {
+                    let drawing = p.kind & F_DRAWING != 0;
+                    places.insert(Place(drawing, atlas_key(p.b[2], p.c)));
+                    if drawing && p.paint != NO_PAINT
+                        && let Some(row) = list.paints.get(p.paint as usize)
+                    {
+                        places.insert(Place(true, (row[0] as u32, row[1] as u32, row[2] as u32)));
+                    }
+                }
+                K_BG_IMAGE => {
+                    places.insert(Place(false, atlas_key(p.a[2], p.c)));
+                }
+                _ => {}
+            }
+        }
+        places
+    }
+
+    /// Makes the pictures `list` samples available: the ones not held (dropped to stay in the budget, or never
+    /// taken) are decoded from `doc`, and the least recently used of the others are dropped to stay in it. An error
+    /// says the memory cannot hold a picture: the frame would be drawn without it.
+    pub fn ensure(&mut self, list: &DrawList, doc: &Document, assets: &Assets) -> Result<(), styk_alloc::OutOfMemory> {
+        let places = Images::places(list);
+        if self.failed_in != (assets.atlas.len(), assets.drawing.len()) {
+            self.failed.clear();
+            self.failed_in = (assets.atlas.len(), assets.drawing.len());
+        }
+        self.clock += 1;
+        let clock = self.clock;
+        let mut missing = Vec::new();
+        for &place in &places {
+            let held = if place.0 { self.tiles.get_mut(&place.1) } else { self.sprites.get_mut(&place.1) };
+            match held {
+                Some(held) => held.used = clock,
+                None if !self.failed.contains(&place) => missing.push(place),
+                None => {}
+            }
+        }
+        if !missing.is_empty() {
+            let sources = sources(assets);
+            let mut pictures: Vec<Picture> = Vec::new();
+            for place in &missing {
+                match sources.get(place) {
+                    Some(picture) if !pictures.iter().any(|known| same(*known, *picture)) => pictures.push(*picture),
+                    _ => {}
+                }
+            }
+            for picture in pictures {
+                for image in styk_eval::assets::decode_picture(doc, assets, picture)? {
+                    self.insert(assets, Arc::new(image));
+                }
+            }
+            // A picture still not held cannot be decoded: it is not tried again.
+            for place in missing {
+                let held = if place.0 { self.tiles.contains_key(&place.1) } else { self.sprites.contains_key(&place.1) };
+                if !held {
+                    self.failed.insert(place);
+                }
+            }
+        }
+        self.trim(&places);
+        Ok(())
+    }
+
+    /// Drops the least recently used pictures outside `keep` until the pixels held are under three quarters of the
+    /// budget, when they are over it.
+    fn trim(&mut self, keep: &HashSet<Place>) {
+        if self.bytes <= self.budget {
+            return;
+        }
+        let target = self.budget - self.budget / 4;
+        let mut order: Vec<(u64, Place, usize)> = Vec::new();
+        for (drawing, map) in [(false, &self.sprites), (true, &self.tiles)] {
+            for (key, held) in map {
+                let place = Place(drawing, *key);
+                if !keep.contains(&place) {
+                    order.push((held.used, place, held.image.rgba.len()));
+                }
+            }
+        }
+        order.sort_unstable_by_key(|(used, ..)| *used);
+        for (_, place, len) in order {
+            if self.bytes <= target {
+                break;
+            }
+            if if place.0 { self.tiles.remove(&place.1) } else { self.sprites.remove(&place.1) }.is_some() {
+                self.bytes -= len;
+            }
+        }
     }
 
     fn texture(image: &DecodedImage, straight: bool) -> Texture<'_> {
@@ -109,12 +259,40 @@ impl Images {
     }
 
     pub(crate) fn sprite(&self, key: (u32, u32, u32)) -> Option<Texture<'_>> {
-        self.sprites.get(&key).map(|image| Images::texture(image, false))
+        self.sprites.get(&key).map(|held| Images::texture(&held.image, false))
     }
 
     pub(crate) fn tile(&self, key: (u32, u32, u32)) -> Option<Texture<'_>> {
-        self.tiles.get(&key).map(|image| Images::texture(image, true))
+        self.tiles.get(&key).map(|held| Images::texture(&held.image, true))
     }
+}
+
+/// Whether two pictures are the same one.
+fn same(a: Picture, b: Picture) -> bool {
+    match (a, b) {
+        (Picture::Image(a), Picture::Image(b)) | (Picture::Cel(a), Picture::Cel(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// The picture that decodes into each atlas place `assets` lays out: a sprite for an image, every tile of a drawing
+/// cel for the cel.
+fn sources(assets: &Assets) -> HashMap<Place, Picture> {
+    let mut sources = HashMap::new();
+    for (index, entry) in assets.atlas.iter().enumerate().filter(|(_, entry)| entry.valid) {
+        sources.insert(Place(false, (entry.layer, entry.x, entry.y)), Picture::Image(index));
+    }
+    for (cel, (tiles, starts)) in &assets.cels {
+        for (level, drawn) in tiles.levels.iter().enumerate() {
+            let Some(&first) = starts.get(level) else { continue };
+            for slot in first as usize..first as usize + drawn.len() {
+                if let Some(entry) = assets.drawing.get(slot).filter(|entry| entry.valid) {
+                    sources.insert(Place(true, (entry.layer, entry.x, entry.y)), Picture::Cel(*cel));
+                }
+            }
+        }
+    }
+    sources
 }
 
 /// The atlas place a primitive's uv rectangle starts at.

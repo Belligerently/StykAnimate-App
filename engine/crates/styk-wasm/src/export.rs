@@ -172,7 +172,9 @@ impl ExportRenderer {
     pub fn create_cpu(address: usize, revision: f64, width: u32, height: u32, smoothing: String, max_pixels: f64, tile: u32) -> Result<ExportRenderer, JsError> {
         let (settings, frames) = pinned(address, revision, width, height, &smoothing, max_pixels)?;
         frames.decode_images();
-        let backend = Backend::Cpu(CpuExport::new(settings, tile));
+        let mut cpu = CpuExport::new(settings, tile);
+        cpu.use_assets(frames.generation().assets.clone());
+        let backend = Backend::Cpu(cpu);
         Ok(ExportRenderer { frames, backend, backend_name: "CPU · styk-raster".into(), edit: EditScene::default(), current: None, frames_drawn: 0, last_evaluate_ms: 0.0 })
     }
 
@@ -305,7 +307,7 @@ impl ExportRenderer {
                 Ok(promise)
             }
             Backend::Cpu(cpu) => {
-                cpu.draw(&generation.prepared.doc, &list, camera.as_ref(), index as usize, slot as usize);
+                cpu.draw(&generation.prepared.doc, &list, camera.as_ref(), index as usize, slot as usize).map_err(js_error)?;
                 Ok(js_sys::Promise::resolve(&JsValue::UNDEFINED))
             }
         }

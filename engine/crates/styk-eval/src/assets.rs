@@ -426,6 +426,45 @@ pub fn decode_cel(assets: &Assets, cel: &Arc<DrawingTiles>) -> Vec<DecodedImage>
         .collect()
 }
 
+/// One picture to decode: an image of the document, or a drawing cel (every display level of it).
+#[derive(Clone, Copy, Debug)]
+pub enum Picture {
+    /// An index into `Document::images`.
+    Image(usize),
+    /// A drawing cel, by its key in [`Assets::cels`].
+    Cel(usize),
+}
+
+impl Assets {
+    /// The pixels decoding `picture` produces, as far as is known without decoding it: its atlas places.
+    pub fn picture_bytes(&self, picture: Picture) -> usize {
+        match picture {
+            Picture::Image(index) => self.atlas.get(index).filter(|entry| entry.valid).map_or(0, |entry| (entry.w as usize + 2) * (entry.h as usize + 2) * 4),
+            Picture::Cel(cel) => {
+                let side = (crate::drawing::TILE + 2 * crate::drawing::BORDER) as usize;
+                self.cels.get(&cel).map_or(0, |(tiles, _)| tiles.levels.iter().map(Vec::len).sum::<usize>() * side * side * 4)
+            }
+        }
+    }
+}
+
+/// Decodes `picture` of `doc` (an image, or every display level of a drawing cel) for the atlas `assets` laid out.
+/// The decoders allocate in pieces nothing can refuse, so a picture is decoded only when the memory can hold its
+/// work; an error says it cannot (see `styk_alloc::reserve`).
+pub fn decode_picture(doc: &Document, assets: &Assets, picture: Picture) -> Result<Vec<DecodedImage>, styk_alloc::OutOfMemory> {
+    match picture {
+        Picture::Image(index) => {
+            let _working = styk_alloc::reserve(decode_image_working_bytes(assets, index))?;
+            Ok(decode_image(doc, assets, index).into_iter().collect())
+        }
+        Picture::Cel(cel) => {
+            let Some((tiles, _)) = assets.cels.get(&cel) else { return Ok(Vec::new()) };
+            let _working = styk_alloc::reserve(3 * assets.picture_bytes(picture))?;
+            Ok(decode_cel(assets, tiles))
+        }
+    }
+}
+
 /// The most memory [`decode_image`] holds at once: the picture decoded at its own size (twice: the decoder keeps
 /// its own copy), then resized and bordered at the size of its atlas place (twice). Zero for an image without one.
 pub fn decode_image_working_bytes(assets: &Assets, index: usize) -> usize {

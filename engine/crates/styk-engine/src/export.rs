@@ -35,6 +35,15 @@ enum Todo {
     Cel(usize),
 }
 
+impl Todo {
+    fn picture(self) -> crate::images::Picture {
+        match self {
+            Todo::Image(index) => crate::images::Picture::Image(index),
+            Todo::Cel(cel) => crate::images::Picture::Cel(cel),
+        }
+    }
+}
+
 #[derive(Default)]
 struct State {
     epoch: u64,
@@ -92,7 +101,7 @@ fn start_decoders(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Sha
             let bytes = held.image_bytes + held.decoding_bytes;
             if bytes >= budget && bytes > 0 { break }
             let todo = held.todo.pop_front().expect("checked above");
-            let estimate = crate::images::estimate(generation, match todo { Todo::Image(index) => crate::images::Picture::Image(index), Todo::Cel(cel) => crate::images::Picture::Cel(cel) });
+            let estimate = crate::images::estimate(generation, todo.picture());
             held.decoding += 1;
             held.decoding_bytes += estimate;
             jobs.push((todo, estimate));
@@ -105,7 +114,7 @@ fn start_decoders(engine: &Engine, generation: &Arc<Generation>, state: &Arc<Sha
             if ended.load(Ordering::Relaxed) {
                 return;
             }
-            let decoded = engine.decode_pixels(&generation, match todo { Todo::Image(index) => crate::images::Picture::Image(index), Todo::Cel(cel) => crate::images::Picture::Cel(cel) });
+            let decoded = engine.decode_pixels(&generation, todo.picture());
             pictures_ready(engine, &generation, &state, &ended, epoch, estimate, decoded);
         });
     }
