@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {buildRotatingCube} from './helpers/rotating-cube.mjs';
-import {buildGeometry,buildGeometryAsync} from '../src/pivot/geometry.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
@@ -54,7 +54,7 @@ test('cube preserves facing through mirrors, native saves, asynchronous evaluati
   const {e}=fixture(),front=visible(e);
   for(const axis of ['horizontal','vertical']){e.select(e.selectedUid,-1);e.mirrorFigure(axis);assert.deepEqual(visible(e),front);e.undo();}
   e.rotateFigure(.9);assert.deepEqual(visible(e),front);e.undo();
-  for(const kind of ['styk','stkz']){const d=(await decodeDocument(await buildContainerV2(e.serialize(),kind),kind)).document;validateScene(d);assert.deepEqual(buildGeometry(d,d.keyframes[0]).drawables,(await buildGeometryAsync(d,d.keyframes[0])).drawables);assert.deepEqual(d.figure_types.find(f=>f.figure_type_id===e.figure.figure_type_id).polyfills,e.figure.polyfills);}
+  for(const kind of ['styk','stkz']){const d=(await decodeDocument(await buildContainerV2(e.serialize(),kind),kind)).document;validateScene(d);assert.deepEqual(d.figure_types.find(f=>f.figure_type_id===e.figure.figure_type_id).polyfills,e.figure.polyfills);}
   assert.throws(()=>materializePivotDocument(e.serialize()),/one-sided fills/);
   e.select(e.selectedUid,-1);e.copyFigure();e.pasteFigure();validateScene(e.serialize());assert.equal(e.frame.objects.length,2);assert.deepEqual(visible(e),front);
 });

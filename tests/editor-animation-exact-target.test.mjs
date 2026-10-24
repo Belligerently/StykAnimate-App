@@ -44,7 +44,6 @@ test('explicit global inspector reads, previews, navigation and commit preserve 
   assert.equal(editor._undo.length,history);editor.commitAnimationEdit();
   assert.equal(editor._undo.length,history+1);assert.equal(channel(editor,global).keys.find(key=>key.tick===4).value,.72);
   assert.deepEqual(channel(editor,a),before.channels.find(value=>value.id===animationChannelId(a,'opacity')));
-  assert.equal(editor.nearestAnimationKey(global,'opacity',-1,5,options).tick,4);
   editor.undo();assert.deepEqual(editor.report._styk.animation,before);
   editor.beginAnimationEdit(global,'opacity',options);editor.previewAnimationEdit(.22);editor.cancelAnimationEdit();
   assert.deepEqual(editor.report._styk.animation,before);

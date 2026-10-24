@@ -42,7 +42,7 @@ impl Cache {
         Some((&self.loader, self.prepared.as_ref()?))
     }
 
-    fn edit_frame(&mut self, record: &Value, prepared: &Arc<Prepared>) -> Result<styk_eval::eval::Frame, styk_eval::Error> {
+    pub(crate) fn edit_frame(&mut self, record: &Value, prepared: &Arc<Prepared>) -> Result<styk_eval::eval::Frame, styk_eval::Error> {
         let _scope = crate::prof::scope("frame::edit_frame");
         let previous = self.latest_typed.as_ref().filter(|pair| Arc::ptr_eq(&pair.prepared, prepared)).cloned();
         if let Some(pair) = &previous {
@@ -163,6 +163,12 @@ impl Editor {
             (None, Some(frame)) => Ok(frame.clone()),
             (None, None) => self.evaluated_mode(self.tick, true, true),
         }
+    }
+
+    /// The document at the playhead, with no gesture's draft, preview or retained frame over it:
+    /// the frame a gesture is composed on.
+    pub(crate) fn document_frame(&self) -> Result<Value, EditError> {
+        self.evaluated_mode(self.tick, true, true)
     }
 
     /// `editor.selectionFrame.objects`: what selection reads. On a layer sheet the

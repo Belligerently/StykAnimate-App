@@ -28,8 +28,6 @@ function joinedGroup(editor, uid) {
 }
 
 export const editorCombineMethods = {
-  joinedFigureIds(uid = this.selectedUid) { return [...joinedGroup(this, uid).ids]; },
-
   /** Collapse a connected subtree into one native figure in the active keyframe. */
   combineJoinedFigure(uid = this.selectedUid, {name, authored = false} = {}) {
     if(joinedGroup(this,uid).slots.some(slot=>hasSpatialRig(this.report.figure_types.find(f=>f.figure_type_id===this.frame.objects[slot].figure_type_id))))

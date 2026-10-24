@@ -1,0 +1,109 @@
+// The frame on show, its geometry and the timeline come from the engine's session (docs/engine/evaluation.md,
+// "The interface's frame"): the groups the canvas reads, kept by identity while a gesture moves other figures.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {Editor} from '../src/editor.mjs';
+import {installEngineOwner} from '../src/engine/engine-owner.mjs';
+import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
+import {engineBuilt} from './support/engine-node.mjs';
+import {ownedEditor} from './support/owned-editor.mjs';
+
+const folder = new URL('../engine/crates/styk-eval/tests/fixtures/channels/', import.meta.url);
+const read = name => JSON.parse(readFileSync(new URL(name, folder), 'utf8'));
+const options = {demo: false, layerTimeline: true, propertyChannels: true};
+
+/** Figures 1 and 2, 3 hanging from 2, and 4 alone, on a layer sheet. */
+const poses = () => ownedEditor(options, read('channels-pose.sheet.json'));
+
+test('the frame, geometry and timeline are the session\'s', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await poses();
+  try {
+    assert.ok(editor._shown.active, 'the engine answers for the open document');
+    editor.seek(11);
+    const frame = editor.evaluatedFrame, geometry = editor.geometry;
+    assert.equal(frame.objects.length, 4);
+    assert.deepEqual([...geometry.objects.keys()], [0, 1, 2, 3]);
+    for (const [slot, group] of geometry.objects) {
+      const figure = editor.report.figure_types.find(type => type.figure_type_id === frame.objects[slot].figure_type_id);
+      assert.equal(group.obj, frame.objects[slot], 'a group is of the object of its slot');
+      assert.equal(group.segments.length, figure.segments.length, 'a shape for every segment, drawn or not');
+      assert.deepEqual([...group.joints.keys()], [0, ...figure.segments.map(segment => segment.segment_id)], 'the root, then a joint for each segment');
+      assert.equal(group.joints.get(0), group.root);
+      group.segments.forEach((shape, index) => {
+        assert.equal(shape.index, index);
+        assert.equal(shape.seg, figure.segments[index]);
+        assert.deepEqual(group.joints.get(shape.seg.segment_id), shape.end, 'a segment ends where its joint is');
+        assert.ok(Number.isFinite(shape.start.x) && Number.isFinite(shape.length));
+      });
+    }
+    assert.equal(geometry.orderedObjects.every(group => group.drawables.length > 0), true, 'the objects in painter order have artwork');
+    assert.equal(editor.timeline.at(-1).start + editor.timeline.at(-1).count, editor.totalTicks);
+    assert.ok(editor.totalTicks > 11);
+    // The same geometry is read again as it was held.
+    assert.equal(editor.geometry, geometry);
+    editor._invalidate();
+    assert.equal(editor.geometry, geometry, 'nothing changed: the groups held are the answer');
+  } finally { owner.release(); }
+});
+
+test('a gesture rebuilds the groups of the figures it moves and keeps the others', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await poses();
+  try {
+    editor.seek(11);
+    const slotOf = uid => editor.evaluatedFrame.objects.findIndex(object => object.unique_id === uid);
+    const before = editor.geometry, alone = slotOf(4);
+    editor.select(4, -1);
+    editor.beginTranslationDrag();
+    editor.moveSelection(12, 0, {fromStart: true});
+    const during = editor.geometry;
+    assert.notEqual(during, before);
+    assert.equal(during.objects.get(alone).root.x, before.objects.get(alone).root.x + 12, 'the moved figure is where the gesture put it');
+    for (const [slot, group] of before.objects) if (slot !== alone) assert.equal(during.objects.get(slot), group, `the group of slot ${slot} is the one already held`);
+    assert.deepEqual([...during.changedSlots], [alone]);
+    editor.cancelDrag();
+    assert.equal(editor.geometry.objects.get(alone).root.x, before.objects.get(alone).root.x, 'cancelled: the figure is back');
+    // Moving the figure another hangs from moves both.
+    editor.select(3, -1);
+    const joined = [1, 2].map(uid => slotOf(uid)), held = editor.geometry;
+    editor.beginTranslationDrag();
+    editor.moveSelection(5, 5, {fromStart: true});
+    const moved = editor.geometry;
+    for (const slot of joined) assert.notEqual(moved.objects.get(slot), held.objects.get(slot), `slot ${slot} moves with what it hangs from`);
+    editor.cancelDrag();
+  } finally { owner.release(); }
+});
+
+test('a document the editor edits itself is evaluated here: no session answers while it runs a call', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await poses();
+  try {
+    assert.ok(editor._shown.geometry(editor.evaluatedFrame), 'the session answers');
+    editor._movieclipScopes = [{}];
+    assert.equal(editor._shown.geometry(editor.evaluatedFrame), null, 'a movieclip edited in place is the editor\'s');
+    assert.equal(editor._shown.frame(), null);
+    assert.equal(editor._shown.source(false), null);
+    editor._movieclipScopes = [];
+  } finally { owner.release(); }
+});
+
+test('a detached editor has a session of its own and leaves the open project the engine\'s document', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await poses();
+  const engine = registeredEngine();
+  try {
+    assert.ok(holdsRevision(engine, editor.revision), 'the project is the engine\'s document');
+    const test = new Editor({demo: false, layerTimeline: true}), tester = installEngineOwner(test, {detached: true});
+    try {
+      test.load(read('channels-pose.sheet.json'));
+      assert.ok(tester.ready(), 'the test editor has its own session');
+      const object = test.evaluatedFrame.objects[0], figure = test.report.figure_types.find(type => type.figure_type_id === object.figure_type_id);
+      test.select(object.unique_id, figure.segments.length - 1);
+      const joint = test.geometry.objects.get(0).segments[figure.segments.length - 1], end = {...joint.end};
+      assert.equal(test.beginDrag('Test pose'), true);
+      assert.equal(test.poseJoint(end.x + 40, end.y + 40, {snap: false}), true);
+      assert.notDeepEqual(test.geometry.objects.get(0).segments[figure.segments.length - 1].end, end, 'posing moves the joint the test shows');
+      test.commitDrag();
+      assert.ok(holdsRevision(engine, editor.revision), 'the project is still the engine\'s document');
+      assert.equal(editor._shown.source(false)?.session, owner.session(), 'and the stage draws from its session');
+    } finally { tester.release(); }
+  } finally { owner.release(); }
+});

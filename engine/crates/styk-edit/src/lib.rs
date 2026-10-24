@@ -25,6 +25,7 @@ mod external;
 mod figures;
 mod frame;
 mod frame_draft;
+mod interface;
 mod handle_commands;
 mod handle_edit;
 mod history;
@@ -298,6 +299,8 @@ pub struct Editor {
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
     pub(crate) eval: RefCell<frame::Cache>,
+    /// What the interface was last told of the geometry of the frame on show (and of the motion-path display).
+    pub(crate) shown: RefCell<[interface::Cache; 2]>,
     /// The last document checked for unported features, and the answer.
     gate: RefCell<Option<(Value, Option<&'static str>)>>,
 }
@@ -413,6 +416,7 @@ impl Editor {
             native_token_serial: 0,
             events: Vec::new(),
             eval: RefCell::default(),
+            shown: RefCell::default(),
             gate: RefCell::new(None),
         }
     }
@@ -1157,3 +1161,6 @@ mod native_motion_history_tests;
 
 #[cfg(test)]
 mod native_projection_tests;
+
+#[cfg(test)]
+mod interface_tests;

@@ -219,10 +219,6 @@ export function sampleInbetweenPreview(report, ratio = 0.5, index = 0) {
 }
 
 export const editorInbetweenMethods = {
-  /** Read-only preview shares the insertion sampler and transition checks. */
-  previewInbetween(ratio = 0.5, index = this.frameIndex) {
-    return sampleInbetweenPreview(this.report, ratio, index);
-  },
   insertInbetweenFrames(ratio = 0.5, indices = [this.frameIndex]) {
     // Finish an existing gesture before sampling its committed document state.
     checkRatio(ratio); this._frameIndices(indices);

@@ -23,7 +23,7 @@ function standInStage(behaviour = {}) {
     max_texture: () => 4096,
     refining: () => false, camera_pending: () => false, pictures_pending: () => 0, surface_pending: () => behaviour.pending?.() ?? false,
     has_ghost: () => false,
-    ...Object.fromEntries(['resize', 'set_effects', 'set_canvas_drawing', 'set_view_orientation', 'set_multisampled', 'edit_frame', 'edit_ghost', 'lose_device', 'free']
+    ...Object.fromEntries(['resize', 'set_effects', 'set_canvas_drawing', 'set_view_orientation', 'set_multisampled', 'edit_frame', 'edit_session', 'edit_ghost', 'lose_device', 'free']
       .map(name => [name, record(name)])),
     render_edit: (...args) => { calls.push(['render_edit', ...args]); return behaviour.render_edit ? behaviour.render_edit(...args) : true; },
     render_ticket: (...args) => { calls.push(['render_ticket', ...args]); return behaviour.render_ticket ? behaviour.render_ticket(...args) : true; },
@@ -59,6 +59,27 @@ test('an edited frame is drawn by the engine, with or without editor geometry', 
   const call = stage.calls.find(([name]) => name === 'render_edit');
   assert.ok(call, 'the engine drew the frame');
   assert.equal(renderer.engineSide.stats.frames, 1);
+  renderer.destroy();
+});
+
+test("the frame on show is the session's: no pose crosses, and the poses sent later are sent whole", async () => {
+  const {renderer, stage} = await open();
+  const object = {unique_id: 1, root_x: 0};
+  const posed = {objects: [object], camera: null}, source = {session: {name: 'session'}, view: '{"tick":3,"frameIndex":0}', motion: false};
+  assert.equal(renderer.render(request({frame: posed, source})), true);
+  assert.deepEqual(stage.calls.filter(([name]) => name === 'edit_session' || name === 'edit_frame').map(([name, ...args]) => [name, ...args]), [['edit_session', source.session, source.view, false]]);
+  // The frame of a gesture the interface composes (a drawing's first stroke) crosses as poses: whole the first time, then what changed.
+  const geometry = {objects: new Map([[0, {obj: object}]])};
+  stage.calls.length = 0;
+  renderer.render(request({frame: posed, geometry}));
+  renderer.render(request({frame: posed, geometry}));
+  const sent = stage.calls.filter(([name]) => name === 'edit_session' || name === 'edit_frame');
+  assert.deepEqual(sent.map(([name]) => name), ['edit_frame'], "the poses the engine held were the session's: sent whole, once");
+  assert.equal(JSON.parse(sent[0][1]).objects[0].unique_id, 1);
+  // The motion-path edit's display is asked for by the interface.
+  stage.calls.length = 0;
+  renderer.render(request({frame: posed, source: {...source, motion: true}}));
+  assert.equal(stage.calls.find(([name]) => name === 'edit_session')[3], true);
   renderer.destroy();
 });
 

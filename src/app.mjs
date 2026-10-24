@@ -1728,6 +1728,8 @@ function loop(now) {
         documentReport: editor.report,
         frame,
         geometry,
+        // The engine draws the frame its session shows; the interface's own frames (a drawing's first stroke, a movieclip edited in place) cross as poses.
+        source: drawingPreview ? null : editor._shown?.source(Boolean(editor._drag?.motionPath?.display)) ?? null,
         view: state.view,
         cameraEnabled: state.playing || state.previewing,
         editorBackgroundColor: builderBackgroundColor(state.settings, state),
