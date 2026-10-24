@@ -93,10 +93,10 @@ let pendingFiles = process.argv.slice(app.isPackaged ? 1 : 2).filter((arg) => /\
 // Vulkan WebGPU opt-in to reach the GPU; see gpu-switches.cjs.
 applyGpuSwitches(app.commandLine);
 
-// Development only: STYK_BACKGROUND_WINDOW=1 (scripts and agents driving the app) opens the
+// STYK_BACKGROUND_WINDOW=1 (scripts and agents driving the app, packaged smoke tests too) opens the
 // window off-screen, out of the taskbar and without taking focus, and keeps it drawing there
 // (Windows would otherwise count an off-screen window as occluded and stop its frames).
-const backgroundWindow = !app.isPackaged && process.env.STYK_BACKGROUND_WINDOW === '1';
+const backgroundWindow = process.env.STYK_BACKGROUND_WINDOW === '1';
 if (backgroundWindow) app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
 app.setName('StykAnimate');
