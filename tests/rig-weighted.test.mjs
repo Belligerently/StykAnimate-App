@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {rigExampleDocument} from '../src/rig-examples.mjs';
 import {rigConstraintPlan,rigIKAllowed,remapRigReferences} from '../src/rig-constraints.mjs';
-import {buildGeometryAsync} from '../src/pivot/geometry.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
 import {rigSections,rigControlChange} from '../src/rig-controls.mjs';
 import {renderInspector} from '../src/inspector-kit.mjs';
@@ -40,8 +40,8 @@ test('in-place weight edits invalidate plans, reference remapping and native rou
  assert.deepEqual(copy._stykRig.weighted,{origin:11,anchors:[{joint:12,weight:-.2},{joint:13,weight:.5}]});
  for(const kind of ['styk','stkz']){
   const d=(await decodeDocument(await buildContainerV2(e.serialize(),kind),kind)).document;
-  const asyncGeometry=await buildGeometryAsync(d,d.keyframes[0]);
-  const p=asyncGeometry.objects.get(0).joints.get(s.segment_id),q=e.geometry.objects.get(0).joints.get(s.segment_id);near(p.x,q.x);near(p.y,q.y);
+  const rebuilt=buildGeometry(d,d.keyframes[0]);
+  const p=rebuilt.objects.get(0).joints.get(s.segment_id),q=e.geometry.objects.get(0).joints.get(s.segment_id);near(p.x,q.x);near(p.y,q.y);
  }
 });
 test('weighted vertices carry equivalent depth guides through movement, remapping, editing and saving',async()=>{

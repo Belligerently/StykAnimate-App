@@ -342,6 +342,12 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   assembly's inverse kinematics reaches across joins), or all of them when a figure definition changed. The groups held
   stay as they are, so the descriptors the canvas keeps by their identity stay valid while a gesture moves other figures.
   Unchanged: the same geometry object comes back.
+- The values the interface shows of the frame (`animationValue`, `vfxEffects`, `segmentAnimationTarget`,
+  `getIKSettings`) are the session's reads too (`Editor::interface_query`, at the editor's whole view): a document the
+  session does not answer them for (one that is not on a layer sheet, a controller of joined figures) is read by the
+  editor from the frame and geometry the engine gave it (`unported: …`). The other queries the owner leaves to the editor
+  (`animationChannel`, `nativePoseChannel`, `sampleVfxClip`, `getSpatialPose`, `resolveTranslationSelection`, …) read
+  records and the engine's frame and geometry; none evaluates a pose at the playhead.
 - The stage draws the same frame inside the engine (`Stage::edit_session`, [rendering.md](rendering.md)): the session's
   record, with its `tick` (and the camera-motion tick), is read against the open document with the effect clips sampled at
   the tick, as a prepared frame's are.

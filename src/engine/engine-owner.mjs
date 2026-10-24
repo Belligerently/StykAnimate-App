@@ -65,6 +65,13 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'setFrameClipboardWorker', 'setInbetweenPlanner', 'setLayerMigrationPlanner', 'enterMovieclip', 'leaveMovieclip',
   'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'undo', 'redo', 'constructor']);
 
+/** The editor's reads the session answers where it holds the document (`Editor::interface_query`): the values the interface
+ * shows of the frame on show, from the engine's own evaluation. The editor answers them itself (from the frame and geometry
+ * the engine gave it) while it runs a call of its own, and for a document the session does not answer for. */
+const SESSION_READS = ['animationValue', 'vfxEffects', 'segmentAnimationTarget', 'getIKSettings'];
+/** What the session's error says when it does not answer for a document (`styk_edit::session::UNPORTED`). */
+const UNPORTED = 'unported: ';
+
 /** The editor's public methods the owner routes: everything but queries and view calls. */
 export function ownedMethods(editor) {
   const names = new Set();
@@ -844,6 +851,23 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       // A call made by a call the editor runs belongs to it.
       if (depth > 0 || editor._movieclipScopes?.length) return original.apply(this, args);
       return name === 'movieclipBatch' ? batchCall(original, args) : callSession(name, original, args);
+    };
+  }
+  // The reads the session answers.
+  for (const name of SESSION_READS) {
+    const original = editor[name];
+    if (typeof original !== 'function') continue;
+    layer[name] = function read(...args) {
+      if (!reading()) return original.apply(this, args);
+      if (!adopting) flush();
+      let text;
+      try { text = session.query(name, JSON.stringify(args), adopting ? 'null' : JSON.stringify(view())); }
+      catch (error) {
+        const message = String(error?.message ?? error);
+        if (message.startsWith(UNPORTED)) return original.apply(this, args);
+        throw failure(message);
+      }
+      return JSON.parse(text).v;
     };
   }
   layer.undo = function owned(...args) { return depth > 0 || editor._movieclipScopes?.length ? originals.get('undo').apply(this, args) : historyCall(false, args); };

@@ -6,7 +6,7 @@ src/animation-origin-validation.mjs	engine	styk-eval	partial	Rust: typed origin 
 src/animation-origin.mjs	engine	styk-eval::origin	partial	Rust: layout origins, offsets, corrected roots, in-between tweens, the rotation figure_angle uses (styk_eval::origin); evaluated records and scalar property previews byte-exact; most origin editing still JS
 src/animation-pose.mjs	engine	styk-eval	partial	Rust: virtual pose tracks, pose sampling/composition and orientation; canonical COW source lookup with verified unique-ID row hints; editing helpers still JS
 src/animation-properties.mjs	engine	styk-eval::channels	partial	Rust: property vocabulary, discrete and colour properties; validation and names still JS
-src/animation-property-state.mjs	engine	styk-eval	js	
+src/animation-property-state.mjs	engine	styk-eval	removed	deleted: nothing read the inspector provenance of a native timeline property key any more
 src/animation-style.mjs	engine	styk-eval::channels	partial	Rust: style overlays and style channels (setAnimationStyle, applicability); resolveInstanceFigure's segment and polygon overlays, styleColor and meshPaletteColor for recolouring (styk-edit/src/recolor.rs); validation still JS
 src/app-dialogs.mjs	ui	-	stays	
 src/app.mjs	ui	-	stays	

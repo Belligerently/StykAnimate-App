@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {buildGeometry,buildGeometryAsync} from '../src/pivot/geometry.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {figurePalette,validateRecolor} from '../src/figure-colors.mjs';
 import {resolveInstanceFigure,validateAnimationStyle} from '../src/animation-style.mjs';
 import {buildContainerV2,decodeDocument} from './support/native-files.mjs';
@@ -34,7 +34,7 @@ for(const options of [{layerTimeline:true},{layerTimeline:false,propertyChannels
   const saved=e.serialize(),decoded=await decodeDocument(await buildContainerV2(saved,'styk'),'styk');
   const loaded=new Editor({demo:false,...options}).load(decoded.document);loaded.select(1);
   assert.deepEqual(colors(loaded),colors(e));
-  assert.deepEqual((await buildGeometryAsync(e.report,e.evaluatedFrame)).objects.get(0).spatialMesh.colors,colors(e));
+  assert.deepEqual(buildGeometry(e.report,e.evaluatedFrame).objects.get(0).spatialMesh.colors,colors(e));
   e.undo();assert.deepEqual(colors(e),[[210,145,100],[60,130,190]]);
   // Authored pose tracks retain their source snapshots for redo, as ordinary
   // joint edits do. Undo restores the authored keyframes and definitions.

@@ -193,3 +193,67 @@ fn the_timeline_is_one_start_and_count_per_row() {
     }
     assert!(session.query("elsewhere", "{}", &view).is_err());
 }
+
+/// What the session answers to a read of the editor's own, as `{"v": value}` text (or `{}`).
+fn read(session: &mut Session, name: &str, args: &str) -> Value {
+    let view = view(session);
+    parse(&session.query(name, args, &view).unwrap_or_else(|error| panic!("{name}: {error}")))
+}
+
+#[test]
+fn the_values_the_interface_shows_are_read_from_the_frame_on_show() {
+    let (mut session, _) = tape("channels-pose-sheet");
+    call(&mut session, "seek", "[11]");
+    let shown = session.editor.shown_frame().unwrap();
+    let figure = |uid: u32| shown.get("objects").unwrap().elements().unwrap().iter().find(|o| o.get("unique_id").and_then(Value::as_f64) == Some(uid as f64)).unwrap();
+    // A property at the playhead is the frame's own value, at another tick the document's there.
+    let x = read(&mut session, "animationValue", r#"[{"kind":"figure","uid":4},"x"]"#);
+    assert_eq!(x.get("v").and_then(Value::as_f64), figure(4).get("root_x").and_then(Value::as_f64));
+    let camera = read(&mut session, "animationValue", r#"[{"kind":"camera"},"x"]"#);
+    assert_eq!(camera.get("v").and_then(Value::as_f64), shown.get("camera").and_then(|c| c.get("x")).and_then(Value::as_f64));
+    let later = read(&mut session, "animationValue", r#"[{"kind":"figure","uid":4},"x",13]"#);
+    assert!(later.get("v").and_then(Value::as_f64).is_some(), "the document at another tick has its own value");
+    // A figure that is not there has no value: the editor answers undefined.
+    assert_eq!(json(&read(&mut session, "animationValue", r#"[{"kind":"figure","uid":999},"x"]"#)), "{}");
+    // A tick the document does not have is refused with the editor's message.
+    let at = view(&session);
+    assert_eq!(session.query("animationValue", r#"[{"kind":"figure","uid":4},"x",-1]"#, &at).unwrap_err(), "errors.editorAnimation.keyframeTimeMustBeAnIntegerFrom0");
+    // The target of a segment's property is its figure, handle and nothing more on a layer sheet.
+    assert_eq!(json(&read(&mut session, "segmentAnimationTarget", r#"[4,2,"x"]"#)), r#"{"v":{"kind":"segment","uid":4,"handleId":2}}"#);
+    // No effect yet: an empty stack; one added shows in its target's.
+    call(&mut session, "select", "[4,-1]");
+    assert_eq!(json(&read(&mut session, "vfxEffects", r#"[{"kind":"figure","uid":4}]"#)), r#"{"v":[]}"#);
+    // The identity the effect takes is one the editor drew and hands over with the call.
+    let mut drawn = parse(&view(&session));
+    drawn.make_obj().unwrap().set("draws", parse(r#"[["uuid","8a3c2f10-5c3b-4d4e-9d0a-6b2f1e7c9a11"],["seed",7],["random",0.5]]"#));
+    drawn.make_obj().unwrap().set("drawPool", Value::Bool(true));
+    let answer = parse(&session.call("addVfx", r#"[[{"kind":"figure","uid":4}],"glow"]"#, &json(&drawn)));
+    assert_eq!(answer.get("status").and_then(Value::as_str), Some("ok"), "{}", json(&answer));
+    let stack = read(&mut session, "vfxEffects", r#"[{"kind":"figure","uid":4}]"#);
+    assert_eq!(stack.get("v").unwrap().elements().unwrap().len(), 1);
+    assert_eq!(stack.get("v").unwrap().item(0).unwrap().get("type").and_then(Value::as_str), Some("glow"));
+    let at = view(&session);
+    assert!(session.query("elsewhere", "[]", &at).unwrap_err().contains("answers no read"));
+}
+
+#[test]
+fn the_settings_of_a_controller_are_the_defaults_over_what_the_node_has() {
+    let (mut session, _) = tape("channels-pose-sheet");
+    call(&mut session, "seek", "[11]");
+    // Nothing selected below the figure: no node, no chain.
+    call(&mut session, "select", "[4,-1]");
+    let none = read(&mut session, "getIKSettings", "[]");
+    assert_eq!(json(none.get("v").unwrap()), r#"{"enabled":false,"pinned":false,"allowStretch":false,"bendDirection":0,"chainLength":0,"maxLength":0}"#);
+    // A node of an unjoined figure: a chain of two where there are two bones, and the longest it can have.
+    call(&mut session, "select", "[4,0]");
+    let node = read(&mut session, "getIKSettings", "[]");
+    let node = node.get("v").unwrap();
+    assert_eq!(node.get("enabled"), Some(&Value::Bool(false)));
+    let longest = node.get("maxLength").and_then(Value::as_f64).unwrap();
+    assert!(longest >= 1.0);
+    assert_eq!(node.get("chainLength").and_then(Value::as_f64), Some(longest.min(2.0)));
+    // A node of a figure with others joined to it: the controllers act across the assembly, which the editor answers.
+    call(&mut session, "select", "[2,0]");
+    let at = view(&session);
+    assert!(session.query("getIKSettings", "[]", &at).unwrap_err().starts_with(crate::session::UNPORTED));
+}

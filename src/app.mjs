@@ -1320,6 +1320,8 @@ function fitSelection() {
 markAppBounds(boundsOf);
 const boundsCache = new WeakMap();
 function boundsOf(g) {
+  // The engine measured a group of its geometry with it (drawlist::app_bounds).
+  if (g.bounds) return g.bounds;
   let b = boundsCache.get(g);
   if (!b) {
     const items = [

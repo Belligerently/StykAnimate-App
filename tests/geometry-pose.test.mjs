@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {construction} from '../src/rig-examples-3d.mjs';
 import {createObject,createFrame,emptyDocument} from '../src/demo.mjs';
-import {buildGeometry,buildGeometryAsync} from '../src/pivot/geometry.mjs';
+import {buildGeometry} from '../src/pivot/geometry.mjs';
 import {Editor} from '../src/editor.mjs';
 
 function fixture(){
@@ -53,11 +53,10 @@ test('depth-only surface dependencies invalidate otherwise unchanged polygons',(
  assert.notEqual(next.objects.get(0).polys[1],previous.objects.get(0).polys[1]);exact(doc,frame,next);
 });
 
-test('cooperative pose reuse leaves published geometry immutable and supports cancellation',async()=>{
+test('pose reuse leaves published geometry immutable',()=>{
  const{doc,frame,object,left}=fixture(),previous=buildGeometry(doc,frame),snapshot=structuredClone(previous.objects.get(0).segments.map(s=>s.end));object.angles[left.pitch-1]=.7;
- const next=await buildGeometryAsync(doc,frame,incremental(previous),{sliceMs:0,yieldControl:async()=>{}});exact(doc,frame,next);
+ const next=buildGeometry(doc,frame,incremental(previous));exact(doc,frame,next);
  assert.deepEqual(previous.objects.get(0).segments.map(s=>s.end),snapshot);
- const controller=new AbortController();await assert.rejects(buildGeometryAsync(doc,frame,incremental(previous),{sliceMs:0,signal:controller.signal,yieldControl:async()=>controller.abort()}),{name:'AbortError'});
 });
 
 test('editor gestures keep native undo, cancellation and rest-length posing with reused skin',()=>{

@@ -14,6 +14,9 @@ use styk_doc::{Obj, Value};
 
 use crate::{EditError, Editor, Options, Selection};
 
+/// The start of the message of a read the session does not answer for this document.
+pub const UNPORTED: &str = "unported: ";
+
 pub struct Session {
     pub(crate) editor: Editor,
 }
@@ -423,17 +426,36 @@ impl Session {
     }
 
     /// A read of what the interface shows, at `view` (its playhead: `tick` and `frameIndex`): `kind` is `frame`, `document`, `motion`,
-    /// `timeline` or `geometry` (`args`: `{since, motion}`). The answer is JSON text; the document does not change.
+    /// `timeline` or `geometry` (`args`: `{since, motion}`); or the name of one of the editor's reads the session answers
+    /// (`Editor::interface_query`, at the whole view: `{"v": value}`, or `{}` where the editor answers `undefined`). The answer is
+    /// JSON text; the document does not change. An error that starts with [`UNPORTED`] is a document the session does not answer for.
     pub fn query(&mut self, kind: &str, args: &str, view: &str) -> Result<String, String> {
         let (args, view) = (styk_doc::json::parse(args.as_bytes()).map_err(|error| error.to_string())?, styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?);
-        apply_playhead(&mut self.editor, &view);
         let shown = match kind {
-            "timeline" => Ok(self.editor.interface_timeline()),
-            "geometry" => self.editor.interface_geometry(&args),
-            other => self.editor.interface_frame(other),
+            "timeline" | "geometry" | "frame" | "document" | "motion" => {
+                apply_playhead(&mut self.editor, &view);
+                match kind {
+                    "timeline" => Ok(self.editor.interface_timeline()),
+                    "geometry" => self.editor.interface_geometry(&args),
+                    other => self.editor.interface_frame(other),
+                }
+            }
+            // The editor's own reads: the view is its whole state (the selection too).
+            name => {
+                apply_view(&mut self.editor, &view).map_err(|error| format!("{error:?}"))?;
+                match self.editor.interface_query(name, &args) {
+                    Some(answer) => answer.map(|value| match value {
+                        Some(value) => format!("{{\"v\":{}}}", styk_doc::json::to_string(&value)),
+                        None => "{}".to_string(),
+                    }),
+                    None => Err(EditError::Invalid(format!("the session answers no read '{name}'"))),
+                }
+            }
         };
         shown.map_err(|error| match error {
-            EditError::Invalid(message) | EditError::Unported(message) => message,
+            EditError::Invalid(message) => message,
+            // What the session does not evaluate yet: the editor reads it itself.
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
         })
     }
 
@@ -443,7 +465,8 @@ impl Session {
         let view = styk_doc::json::parse(view.as_bytes()).map_err(|error| error.to_string())?;
         apply_playhead(&mut self.editor, &view);
         self.editor.interface_record(motion).map_err(|error| match error {
-            EditError::Invalid(message) | EditError::Unported(message) => message,
+            EditError::Invalid(message) => message,
+            EditError::Unported(message) => format!("{UNPORTED}{message}"),
         })
     }
 

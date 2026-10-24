@@ -59,6 +59,33 @@ impl Editor {
         Ok(Value::object(shown))
     }
 
+    /// The reads of the editor's own the interface makes by name (`animationValue`, `vfxEffects`, `segmentAnimationTarget`,
+    /// `getIKSettings`), answered where the session holds the document: `None` for a name it does not answer, else the
+    /// value (`None` inside for what the editor answers `undefined`). A document that is not on a layer sheet has property
+    /// channels of its own that these do not read yet: `Unported`.
+    pub(crate) fn interface_query(&self, name: &str, args: &Value) -> Option<Result<Option<Value>, EditError>> {
+        let arg = |index: usize| args.item(index).filter(|value| !value.is_null());
+        Some(match name {
+            "getIKSettings" => self.get_ik_settings().map(Some),
+            "animationValue" | "vfxEffects" | "segmentAnimationTarget" if !self.sheet() => {
+                Err(EditError::Unported("property values of a document without a layer sheet".into()))
+            }
+            "animationValue" => (|| {
+                let property = arg(1).and_then(|property| property.as_str().map(str::to_string)).ok_or_else(|| EditError::Invalid("errors.animationChannels.chooseASupportedAnimationProperty".into()))?;
+                self.animation_value(&arg(0).unwrap_or(Value::Null), &property, &arg(2).unwrap_or(Value::Num(self.tick)))
+            })(),
+            "vfxEffects" => self.vfx_effects(&arg(0).unwrap_or(Value::Null)).map(|effects| Some(Value::array(effects))),
+            "segmentAnimationTarget" => {
+                let mut target = styk_doc::Obj::new();
+                target.set("kind", Value::str("segment"));
+                target.set("uid", arg(0).unwrap_or(Value::Null));
+                target.set("handleId", arg(1).unwrap_or(Value::Null));
+                crate::property_edit::normalize_target(&Value::object(target)).map(Some)
+            }
+            _ => return None,
+        })
+    }
+
     /// `editor.timeline` as `[[start, count], …]`, one pair per row.
     pub(crate) fn interface_timeline(&self) -> String {
         let rows = crate::timeline::rows(&self.report);

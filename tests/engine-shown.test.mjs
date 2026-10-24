@@ -107,3 +107,40 @@ test('a detached editor has a session of its own and leaves the open project the
     } finally { tester.release(); }
   } finally { owner.release(); }
 });
+
+/** Counts the reads the owner makes of the session by name. */
+function spy(session) {
+  const ask = session.query.bind(session), asked = [];
+  session.query = (kind, ...rest) => { asked.push(kind); return ask(kind, ...rest); };
+  return asked;
+}
+
+test('the values the interface shows are the session\'s reads', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await poses();
+  try {
+    editor.seek(11);
+    const asked = spy(owner.session());
+    const object = editor.evaluatedFrame.objects.find(candidate => candidate.unique_id === 4);
+    assert.equal(editor.animationValue({kind: 'figure', uid: 4}, 'x'), object.root_x);
+    assert.equal(editor.animationValue({kind: 'figure', uid: 999}, 'x'), undefined, 'a figure that is not there has no value');
+    assert.deepEqual(editor.segmentAnimationTarget(4, 2, 'x'), {kind: 'segment', uid: 4, handleId: 2});
+    assert.deepEqual(editor.vfxEffects({kind: 'figure', uid: 4}), []);
+    editor.select(4, 0);
+    assert.equal(editor.getIKSettings().enabled, false);
+    assert.ok(editor.getIKSettings().maxLength >= 1);
+    assert.deepEqual(asked.filter(kind => !['frame', 'document', 'geometry', 'timeline', 'motion'].includes(kind)),
+      ['animationValue', 'animationValue', 'segmentAnimationTarget', 'vfxEffects', 'getIKSettings', 'getIKSettings']);
+    assert.throws(() => editor.animationValue({kind: 'figure', uid: 4}, 'x', -1), /keyframeTimeMustBeAnIntegerFrom0|integer from 0/i);
+  } finally { owner.release(); }
+});
+
+test('a document the session does not answer property values for is read by the editor', {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('../engine/tests/edit/startup.document.json', import.meta.url), 'utf8'));
+  const {editor, owner} = await ownedEditor({demo: false}, document);
+  try {
+    const asked = spy(owner.session());
+    const object = editor.evaluatedFrame.objects[0];
+    assert.equal(editor.animationValue({kind: 'figure', uid: object.unique_id}, 'x'), object.root_x);
+    assert.ok(asked.includes('animationValue'), 'the session was asked and did not answer');
+  } finally { owner.release(); }
+});

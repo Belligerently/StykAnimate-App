@@ -45,8 +45,6 @@ for the complete property list and compatibility behavior.
 
 - `animation-properties.mjs` defines channel names, supported targets and
   discrete properties, shared by validation, sampling, easing and the timeline.
-- `animation-property-state.mjs` derives inspector provenance without persisting
-  synthetic scalar keys. It uses binary key lookup and weakly cached key facts.
 - Z-index channels target stable figure UIDs. Composition writes `_stykZIndex`
   on an evaluated object using copy-on-write, retaining its geometry vectors.
   Captured poses/clipboard objects retain this small override.

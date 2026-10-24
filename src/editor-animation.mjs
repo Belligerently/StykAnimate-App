@@ -13,7 +13,7 @@ const MAX_TICK = 10000000;
 const checkTick = tick => { if (!Number.isInteger(tick) || tick < 0 || tick > MAX_TICK) throw messageError(new Error(''), "errors.editorAnimation.keyframeTimeMustBeAnIntegerFrom0", {}); return tick; };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const sortKeys = keys => keys.sort((a, b) => a.tick - b.tick || Number(Boolean(b.hidden)) - Number(Boolean(a.hidden)));
-function context(editor) { return {resolveGeometry: (report, frame) => frame === editor._evaluated ? editor.geometry : buildGeometry(report, frame)}; }
+function context(editor) { return {resolveGeometry: (report, frame) => frame === editor.evaluatedFrame ? editor.geometry : buildGeometry(report, frame)}; }
 function currentAnimation(editor) { return editor.report._styk?.animation ?? null; }
 function assignAnimation(editor, animation) {
   const previousPoses=animationChannels(editor.report).filter(channel=>channel.property==='pose');

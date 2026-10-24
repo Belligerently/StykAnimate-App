@@ -5,7 +5,6 @@ import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
 import {evaluatedFrame, timeline} from '../src/pivot/geometry.mjs';
 import {materializePivotDocument} from '../src/pivot-export-materialize.mjs';
-import {animationPropertyState} from '../src/animation-property-state.mjs';
 
 const target = {kind: 'figure', uid: 1};
 function fixture() {
@@ -108,38 +107,3 @@ test('pose edits only key scalar channels whose evaluated values actually change
   e.undo(); assert.equal(e.animationChannel(target, 'x').keys.length, 1);
 });
 
-test('provenance distinguishes pose keys, interpolation, scalar overrides and shared style values', () => {
-  const e = fixture(), state = property => animationPropertyState(e, target, property);
-  assert.equal(state('x').poseKeyed, true); assert.equal(state('x').keyed, false);
-  assert.equal(state('outlineOpacity').source, 'shared');
-  e.seek(5); assert.equal(state('x').poseKeyed, false); assert.equal(state('x').poseAnimated, true);
-  assert.equal(state('x').previousKey.tick, 0); assert.equal(state('x').nextKey.tick, 10);
-  e.addAnimationKey(target, 'x', 10, 400);
-  assert.equal(state('x').source, 'pose'); assert.equal(state('x').nextKey.tick, 10);
-  e.seek(10); assert.equal(state('x').keyed, true); assert.equal(state('x').poseKeyed, false);
-  e.seek(15); assert.equal(state('x').source, 'property'); assert.equal(state('x').nextKey, null);
-});
-
-test('provenance follows independent pose retiming, passthrough and scalar key deletion', () => {
-  const e = fixture(), pose = e.nativePoseChannel(target);
-  e.moveAnimationKeys([{channelId: pose.id, keyIds: [pose.keys[1].id]}], 2);
-  e.seek(12); assert.equal(animationPropertyState(e, target, 'x').poseKeyed, true);
-  const key = e.addAnimationKey(target, 'x', 5, 50), channel = e.animationChannel(target, 'x');
-  e.deleteAnimationKeys([{channelId: channel.id, keyIds: [key.id]}]);
-  assert.equal(animationPropertyState(e, target, 'x').source, 'pose');
-  const report = structuredClone(e.serialize());
-  report._styk.animation.channels.find(c => c.property === 'x').keys = [{id: 'pass', tick: 12, value: 50, interpolation: 'linear', passthrough: true}];
-  e.load(report); e.seek(12);
-  const state = animationPropertyState(e, target, 'x');
-  assert.equal(state.keyed, false); assert.equal(state.poseKeyed, true);
-});
-
-test('long masked pose intervals use bounded key reads during repeated inspector updates', () => {
-  let reads = 0;
-  const keys = Array.from({length: 50000}, (_, tick) => ({tick, value: {frameId: 'pose'}, get hidden() { reads++; return false; }}));
-  const scalar = {keys: [{tick: 0, value: 1}, {tick: 49999, value: 2}], property: 'x'};
-  const editor = {tick: 100, animationChannel: () => scalar, nativePoseChannel: () => ({keys})};
-  animationPropertyState(editor, target, 'x'); reads = 0;
-  for (let tick = 100; tick < 200; tick++) { editor.tick = tick; animationPropertyState(editor, target, 'x'); }
-  assert.ok(reads < 500, `Masked poses were scanned ${reads} times`);
-});
