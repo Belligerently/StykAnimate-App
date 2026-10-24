@@ -381,6 +381,17 @@ Two states the current interface no longer has are skipped on both sides (`polyg
 
 ## 6. Open problems
 
+- **Owner gesture mirror reuses `_drag` when a begin replaces an open gesture** (2026-10-24,
+  low): `gesture()` keeps the mirrored engine `_drag` object when a `begin*` call commits the
+  open gesture and starts another in the same call, so the figure-handle pivot marker and a
+  later takeover read the old gesture's uid, origin and `before`. Documents and history stay
+  exact; the app's pointer handlers cancel an open drag before beginning one. Fix with the
+  owner default: a begin that returns a drag while an engine drag is mirrored makes a new one.
+- **Stand-in coverage after the asset packs left** (2026-10-24): five of 30 deliberate
+  breakages went unnoticed by the repository documents that replaced the asset packs in the
+  engine tests (effect alpha and softness in the CPU/GPU comparison, an entry margin and a
+  tile shift in export tiles, a zoom level in smooth sprites); no solid-text lone-glyph,
+  captions-in-effects or beam case in `gpu_parity`.
 - **Owned editing classes:** large figures, 3D, figures, movieclips and channels are open. The current user cost rule, matching committed checkpoints and actual default core/full-undo proof pass. Exact behavior and D13 are unchanged; no causal speed claim.
 - **Channels scope:** the original full paired cost passes at 369.790/352.875 ms, 4.793% and 0.048887 ms excess per full call. Matching c4c580de checkpoint and actual cold default adoption pass; final gate checks cover the two JavaScript files separately. Native/source/origin exclusions and APIs remain unchanged.
 
