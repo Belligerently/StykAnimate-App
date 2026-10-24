@@ -822,6 +822,8 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         // The effect-clip and property edits the session holds, which the editor shows as its own.
         answer.push(("vfxEdit", Value::Bool(editor.vfx_edit.is_some())));
         answer.push(("animationEdit", editor.animation_edit_view(method == "beginAnimationEdit")));
+        // The figure-handle, handle-edit and segment-value gesture it holds (`_drag.figureHandle` and the others).
+        answer.push(("handleGesture", editor.handle_gesture_view()));
         // The motion-path edit it holds, which the editor shows as its own (`_drag`).
         match editor.motion_path_view(adopted) {
             Ok(view) => answer.push(("motionPath", view)),

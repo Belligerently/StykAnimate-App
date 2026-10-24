@@ -3,7 +3,7 @@
 //! dragged figure's origin (`beginFigureHandleDrag`, `transformFigureHandle`,
 //! `commitFigureHandleDrag`, `cancelFigureHandleDrag`).
 
-use styk_doc::Value;
+use styk_doc::{Obj, Value};
 
 use crate::record::{num, uid};
 use crate::{EditError, Editor};
@@ -29,6 +29,27 @@ pub(crate) struct FigureHandle {
     transform: Transform,
     /// The figures that move, by slot, with their snapshots.
     targets: Vec<(usize, Value)>,
+}
+
+impl FigureHandle {
+    /// What the interface reads of the gesture (`_drag.figureHandle`): the figure it turns about
+    /// its origin, the toolbar's locks it began with, and where the turns stand.
+    pub(crate) fn live(&self) -> Value {
+        let mut value = Obj::new();
+        value.set("uid", self.uid.map_or(Value::Null, |uid| Value::Num(uid as f64)));
+        value.set("rotate", Value::Bool(self.rotate));
+        value.set("scale", Value::Bool(self.scale));
+        value.set("origin", Value::nums(&self.transform.origin));
+        value.set("distance", Value::Num(self.transform.distance));
+        value.set("lastAngle", Value::Num(self.transform.last_angle));
+        value.set("rotation", Value::Num(self.transform.rotation));
+        Value::object(value)
+    }
+
+    /// The slots of the figures that move, which the editor needs to carry on the gesture.
+    pub(crate) fn targets(&self) -> Value {
+        Value::array(self.targets.iter().map(|(slot, _)| Value::Num(*slot as f64)).collect())
+    }
 }
 
 fn coordinates(x: f64, y: f64) -> Result<(), EditError> {

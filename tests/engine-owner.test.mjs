@@ -30,6 +30,15 @@ const motionState = (editor, text) => {
     pinned: (drag.grab?.baseline ?? drag.baseline).some(hasPinnedIK), arc: arc && {...arc, changed: [...arc.changed]},
     report: own ? 'the document' : drag.report, reported: editor.motionPathReport() === drag.report});
 };
+/** What the interface reads of an open figure-handle, Handle Edit Mode or segment-value gesture (the stage's
+ * pivot marker reads the transform, the editor's own code the rest), as text; `null` with none open. */
+const handleState = (editor, text) => {
+  const drag = editor._drag;
+  if (!drag || drag.motionPath) return 'null';
+  const {figureHandle: figure, handleEdit: edit, segmentValueOptions: options} = drag;
+  return text({figureHandle: figure && {uid: figure.uid, rotate: figure.rotate, scale: figure.scale, transform: figure.transform},
+    handleEdit: edit && {uid: edit.uid, index: edit.index, point: edit.point, bend: edit.bend}, segmentValueOptions: options});
+};
 const decode = value => Array.isArray(value) ? value.map(decode) : value === null || typeof value !== 'object' ? value
   : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
   : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
@@ -105,6 +114,7 @@ for (const {mirrored, legacy} of variants) test(`the engine owning the document 
         sameText(json(owned.report), json(expected.report), `${label(index + 1)} ${method}: document`);
         same(state(owned), state(expected), `${label(index + 1)} ${method}: state`);
         sameText(motionState(owned, json), motionState(expected, json), `${label(index + 1)} ${method}: motion-path edit`);
+        sameText(handleState(owned, json), handleState(expected, json), `${label(index + 1)} ${method}: handle gesture`);
         // `object_count` is derived (the number of objects); whether the frame on show has it
         // depends on which of the editor's evaluation caches built that frame.
         sameText(frameText(owned.evaluatedFrame), frameText(expected.evaluatedFrame), `${label(index + 1)} ${method}: frame on show`);
@@ -433,4 +443,228 @@ test('redo under an open motion-path edit redoes and leaves the edit open, as th
   both('commitMotionPathEdit');
   agree('commit after redo');
   while (alone.canUndo) { both('undo'); agree('undo'); }
+});
+
+// Figure-handle, Handle Edit Mode and segment-value gestures run in the session; the editor shows them as its own.
+const HANDLE_CALLS = ['beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'cancelFigureHandleDrag', 'beginHandleEditDrag', 'editHandlePosition',
+  'commitHandleEditDrag', 'cancelHandleEditDrag', 'beginSegmentValueEdit', 'setSegmentValues', 'pasteSegmentValues'];
+const ranHere = owner => HANDLE_CALLS.filter(name => owner.editor?.[name]);
+/** The gesture as the interface reads it, and what the segment-values dialog and the stage show beside it. */
+const sameHandles = (owned, alone, label) => {
+  sameText(handleState(owned, json), handleState(alone, json), `${label}: the gesture as the interface reads it`);
+  if (alone.figure?.segments[alone.selectedJoint]) for (const options of [{}, {relative: true}]) {
+    sameText(json(owned.segmentValues(options)), json(alone.segmentValues(options)), `${label}: segment values ${JSON.stringify(options)}`);
+  }
+  sameText(frameText(owned.evaluatedFrame), frameText(alone.evaluatedFrame), `${label}: frame on show`);
+};
+/** The pointer for an angle about the pivot of a figure-handle gesture, at a multiple of the distance it began at. */
+const around = (editor, angle, factor = 1) => {
+  const {origin, distance} = editor._drag.figureHandle.transform;
+  return [origin.x + distance * factor * Math.cos(angle), origin.y + distance * factor * Math.sin(angle)];
+};
+/** Makes the session refuse the next call of `refused`; the returned function lets it answer again. */
+const refusing = (owner, refused) => {
+  const session = owner.session(), ask = session.call.bind(session);
+  session.call = (name, ...rest) => name === refused ? JSON.stringify({status: 'unported', reason: 'a refusal made for the test'}) : ask(name, ...rest);
+  return () => { session.call = ask; };
+};
+
+test('a figure-handle gesture runs in the session and shows its turns to the stage', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('figure-transform-sheet');
+  both('seek', 3);
+  both('select', 1, 2);
+  both('beginFigureHandleDrag');
+  assert.ok(owned._drag?.engine && owned._drag.figureHandle, 'the session\'s gesture is on the editor');
+  assert.equal(owned._drag.figureHandle.transform.rotation, 0);
+  sameHandles(owned, alone, 'begin');
+  const drag = owned._drag, start = owned._drag.figureHandle.transform.lastAngle;
+  // Round the pivot past half a turn and back: the turns are summed, not wrapped.
+  for (const [turn, factor] of [[0.9, 1.2], [1.9, 0.8], [2.9, 1], [3.9, 1.3], [4.9, 0.7], [5.9, 1], [3.1, 1], [0.2, 1.5]]) {
+    both('transformFigureHandle', ...around(owned, start + turn, factor));
+    sameHandles(owned, alone, `turn ${turn}`);
+  }
+  assert.ok(Math.abs(owned._drag.figureHandle.transform.rotation) < 1, 'the turns came back to where they began');
+  assert.equal(owned._drag, drag, 'the gesture is one object while it lasts');
+  // The locks: Ctrl keeps the scale, Shift the rotation, the toolbar's options come with the call.
+  both('transformFigureHandle', ...around(owned, start + 1, 1.4), {ctrlKey: true});
+  both('transformFigureHandle', ...around(owned, start + 2, 0.6), {shiftKey: true});
+  both('transformFigureHandle', ...around(owned, start + 2.5, 1.1), {rotate: false});
+  sameHandles(owned, alone, 'locks');
+  both('commitFigureHandleDrag');
+  assert.equal(owned._drag, null);
+  sameHandles(owned, alone, 'commit');
+  agree('commit');
+  both('beginFigureHandleDrag');
+  both('transformFigureHandle', ...around(owned, start + 0.7, 1.2));
+  both('cancelFigureHandleDrag');
+  assert.equal(owned._drag, null);
+  agree('cancel');
+  // One move outside a gesture begins and commits its own.
+  both('transformFigureHandle', 410, 260);
+  assert.equal(owned._drag, null);
+  agree('a single move');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+  assert.deepEqual(ranHere(owner), [], 'no figure-handle call ran in the editor');
+});
+
+test('a Handle Edit Mode gesture runs in the session and shows the handle on the editor', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('handle-edit-sheet');
+  both('seek', 3);
+  both('select', 1, 1);
+  both('beginHandleEditDrag', {bend: true});
+  assert.ok(owned._drag?.engine && owned._drag.handleEdit, 'the session\'s gesture is on the editor');
+  assert.equal(owned._drag.handleEdit.bend, true);
+  sameHandles(owned, alone, 'begin');
+  const drag = owned._drag, {x, y} = owned._drag.handleEdit.point;
+  for (const point of [[280, 240], [285, 250, {bend: false}], [x, y], [300, 260], [x + 1e-12, y]]) {
+    both('editHandlePosition', ...point);
+    sameHandles(owned, alone, `to ${point}`);
+  }
+  assert.equal(owned._drag, drag);
+  both('commitHandleEditDrag');
+  assert.equal(owned._drag, null);
+  agree('commit');
+  both('select', 3, 0);
+  both('beginHandleEditDrag');
+  both('editHandlePosition', 400, 330);
+  both('cancelHandleEditDrag');
+  assert.equal(owned._drag, null);
+  agree('cancel');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+  assert.deepEqual(ranHere(owner), [], 'no handle-edit call ran in the editor');
+});
+
+test('a segment-value gesture runs in the session and keeps its options and its dialog\'s gesture', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('handle-commands-sheet');
+  both('seek', 6);
+  both('select', 2, 1);
+  for (const options of [{editMode: true, relative: true}, {isolate: true}, {}]) {
+    both('beginSegmentValueEdit', options);
+    const drag = owned._drag;
+    assert.ok(drag?.engine && drag.segmentValueOptions, 'the session\'s gesture is on the editor');
+    assert.deepEqual(drag.segmentValueOptions, options);
+    assert.equal(Boolean(drag.handleEdit), Boolean(options.editMode));
+    sameHandles(owned, alone, `begin ${JSON.stringify(options)}`);
+    for (const [values, more] of [[{angle: 30, length: 60}, options], [{bend: 15}, options], [{angle: -20}, {}]]) {
+      both('setSegmentValues', values, more);
+      assert.equal(owned._drag, drag, 'the dialog\'s gesture stays the same object');
+      sameHandles(owned, alone, `${JSON.stringify(values)}`);
+    }
+    both(options.isolate ? 'cancelDrag' : 'commitDrag');
+    assert.equal(owned._drag, null);
+    agree('end');
+  }
+  // Pasting begins and commits its own.
+  both('pasteSegmentValues', '12,5:3:70');
+  both('pasteSegmentValues', '1:2:3');
+  agree('paste');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+  assert.deepEqual(ranHere(owner), [], 'no segment-value call ran in the editor');
+});
+
+test('a seek or an undo ends a figure-handle or handle-edit gesture, and a changed selection cancels it, as the editor alone does', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('figure-transform-sheet');
+  both('seek', 3);
+  both('select', 1, 2);
+  both('beginFigureHandleDrag');
+  both('transformFigureHandle', ...around(owned, owned._drag.figureHandle.transform.lastAngle + 0.8, 1.3));
+  both('seek', 5);
+  assert.equal(owned._drag, null);
+  agree('seek');
+  both('select', 1, 1);
+  both('beginHandleEditDrag');
+  both('editHandlePosition', 300, 250);
+  both('select', 2, 1);
+  // The editor raises that the handle changed and cancels the gesture; the session's error is the editor's.
+  const raised = editor => { try { editor.editHandlePosition(310, 255); } catch (error) { return error.messageKey; } };
+  const [fromOwned, fromAlone] = [raised(owned), raised(alone)];
+  assert.equal(fromAlone, 'errors.editorHandleEdit.theSelectedHandleChangedDuringItsGesture');
+  assert.equal(fromOwned, fromAlone);
+  assert.equal(owned._drag, null);
+  agree('selection changed');
+  both('select', 1, 1);
+  both('beginHandleEditDrag');
+  both('editHandlePosition', 305, 255);
+  assert.deepEqual(both('undo'), [true, true]);
+  assert.equal(owned._drag, null);
+  agree('undo');
+  while (alone.canUndo) { both('undo'); agree('undo all'); }
+  assert.deepEqual(ranHere(owner), []);
+});
+
+/** The solved arcs of a Handle Edit Mode gesture, as the editor's code reads them to carry it on. */
+const arcs = editor => editor._drag.handleEdit.states.map(state => ({slot: state.slot, vertex: state.vertex, indices: state.indices, moved: state.moved,
+  lengths: state.lengths, bends: state.bends, drawn: state.g.segments.map(shape => shape.bend), before: state.before,
+  incident: state.incident.map(shape => ({index: shape.index, id: shape.seg.segment_id, line: [0, 6].includes(shape.seg.primitive_code ?? (shape.seg.flags ?? 0) & 255),
+    angle: shape.angle, bend: shape.bend, start: shape.start, end: shape.end}))}));
+
+test('a figure-handle call the session refuses is taken over by the editor with the gesture\'s state', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('figure-transform-sheet');
+  both('seek', 3);
+  both('select', 1, 2);
+  both('beginFigureHandleDrag');
+  const start = owned._drag.figureHandle.transform.lastAngle;
+  both('transformFigureHandle', ...around(owned, start + 2.4, 1.2));
+  both('transformFigureHandle', ...around(owned, start + 4.1, 0.9));
+  const restore = refusing(owner, 'transformFigureHandle');
+  both('transformFigureHandle', ...around(owned, start + 5.3, 1.1));
+  restore();
+  assert.equal(owner.refused['transformFigureHandle: a refusal made for the test'], 1);
+  assert.ok(owned._drag.figureHandle && !owned._drag.engine, 'the editor holds the gesture now');
+  sameHandles(owned, alone, 'taken over');
+  assert.equal(json(owned._drag.figureHandle.targets), json(alone._drag.figureHandle.targets), 'the figures that move');
+  assert.ok(Math.abs(alone._drag.figureHandle.transform.rotation) > Math.PI, 'past half a turn, which the editor carried on');
+  both('transformFigureHandle', ...around(owned, start + 6, 1));
+  both('transformFigureHandle', ...around(owned, start + 6.5, 1.4), {shiftKey: true});
+  sameHandles(owned, alone, 'move');
+  both('commitFigureHandleDrag');
+  agree('commit');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+});
+
+test('a handle-edit call the session refuses is taken over by the editor with the gesture\'s state', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('handle-edit-sheet');
+  both('seek', 3);
+  both('select', 1, 1);
+  both('beginHandleEditDrag', {bend: true});
+  const {x, y} = owned._drag.handleEdit.point;
+  both('editHandlePosition', 280, 240);
+  both('editHandlePosition', 285, 250, {bend: false});
+  const restore = refusing(owner, 'editHandlePosition');
+  both('editHandlePosition', 290, 262);
+  restore();
+  assert.equal(owner.refused['editHandlePosition: a refusal made for the test'], 1);
+  assert.ok(owned._drag.handleEdit && !owned._drag.engine, 'the editor holds the gesture now');
+  sameHandles(owned, alone, 'taken over');
+  sameText(json(arcs(owned)), json(arcs(alone)), 'the arcs the gesture solves');
+  both('editHandlePosition', x, y);
+  sameText(json(arcs(owned)), json(arcs(alone)), 'back at the start');
+  both('editHandlePosition', 300, 270, {bend: true});
+  sameHandles(owned, alone, 'move');
+  sameText(json(arcs(owned)), json(arcs(alone)), 'moved again');
+  both('commitHandleEditDrag');
+  agree('commit');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+});
+
+test('a segment-value call the session refuses is taken over by the editor with the gesture\'s state', {skip: !engineBuilt}, async () => {
+  for (const options of [{editMode: true}, {isolate: true}]) {
+    const {owned, alone, owner, both, agree} = await pair('handle-commands-sheet');
+    both('seek', 6);
+    both('select', 2, 1);
+    both('beginSegmentValueEdit', options);
+    both('setSegmentValues', {angle: 30, length: 60});
+    const restore = refusing(owner, 'setSegmentValues');
+    both('setSegmentValues', {bend: 15});
+    restore();
+    assert.equal(owner.refused['setSegmentValues: a refusal made for the test'], 1);
+    assert.ok(owned._drag.segmentValueOptions && !owned._drag.engine, 'the editor holds the gesture now');
+    sameHandles(owned, alone, `taken over ${JSON.stringify(options)}`);
+    if (options.editMode) sameText(json(arcs(owned)), json(arcs(alone)), 'the arcs the gesture solves');
+    both('setSegmentValues', {angle: -10, length: 45});
+    sameHandles(owned, alone, 'next value');
+    both('commitDrag');
+    agree('commit');
+    while (alone.canUndo) { both('undo'); agree('undo'); }
+  }
 });

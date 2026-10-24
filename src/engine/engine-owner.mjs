@@ -31,14 +31,15 @@ const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
 const VIEW_CALLS = new Set(['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'selectConnected', 'selectMarquee',
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']);
 
-/** Gestures whose live state the interface reads from the editor itself (figure-handle and rig
- * sessions, camera drags, frame drafts): the editor runs them until those reads are engine
- * queries (phase 2). Pose drags, motion-path edits, property edits and effect-clip edits run in
- * the session, which the editor shows as its own (`gesture`, `motion`, `edits`). */
+/** Gestures whose live state the interface reads from the editor itself (rig sessions, camera
+ * drags, frame drafts): the editor runs them until those reads are engine queries (phase 2).
+ * Pose drags, figure-handle, Handle Edit Mode and segment-value gestures, motion-path edits,
+ * property edits and effect-clip edits run in the session, which the editor shows as its own
+ * (`gesture`, `handles`, `motion`, `edits`). */
 const EDITOR_GESTURES = new Set([
-  'beginFigureHandleDrag', 'transformFigureHandle', 'commitFigureHandleDrag', 'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
-  'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag', 'beginSegmentValueEdit', 'beginHandleEditDrag', 'editHandlePosition',
-  'commitHandleEditDrag', 'beginFrameDraft', 'beginFrameDraftPreview', 'endFrameDraftPreview', 'commitFrameDraft', 'discardFrameDraft', 'updateDraftFrame',
+  'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
+  'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag',
+  'beginFrameDraft', 'beginFrameDraftPreview', 'endFrameDraftPreview', 'commitFrameDraft', 'discardFrameDraft', 'updateDraftFrame',
   'addDraftFrame', 'editFrameDraftTimeline', 'enableFrameDrafts', 'disableFrameDrafts', 'beginDuplicateDrag', 'finishDuplicateDrag', 'beginTween', 'updateTween',
   'cancelAuthoredPoseDrag', 'commitAuthoredPoseDrag', 'movieclipBatch', 'movieclipTimelineEdit']);
 
@@ -308,6 +309,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     }
     if (answer.motionPathError) throw new Error(`The engine could not show the motion-path edit: ${answer.motionPathError}`);
     if (Object.hasOwn(answer, 'drag')) gesture(answer);
+    if (Object.hasOwn(answer, 'handleGesture')) handles(answer);
     if (!handing) edits(answer);
     if (state) {
       history = {canUndo: state.canUndo, canRedo: state.canRedo, undoLabel: state.undoLabel, redoLabel: state.redoLabel, dirty: state.dirty};
@@ -397,6 +399,29 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     editor._drag.changed = Boolean(drag.changed);
     editor._invalidate();
   };
+  /** The session's figure-handle, Handle Edit Mode and segment-value gesture, as the editor shows its own
+   * (`_drag.figureHandle`, `_drag.handleEdit`, `_drag.segmentValueOptions`). The stage's pivot marker reads the
+   * transform's origin; every answer says where the turns stand, the rest is told once. The editor's own
+   * code reads the rest (the figures that move, the arcs the gesture solves) only when it takes the gesture
+   * over, which asks the session for it (`takeHandles`). */
+  const handles = answer => {
+    const drag = editor._drag?.engine && !editor._drag.motionPath ? editor._drag : null;
+    if (!drag) return;
+    const {figureHandle, handleEdit, segmentValueOptions} = answer.handleGesture ?? {};
+    if (!figureHandle) delete drag.figureHandle;
+    else if (drag.figureHandle) Object.assign(drag.figureHandle.transform, {lastAngle: figureHandle.lastAngle, rotation: figureHandle.rotation});
+    else {
+      const {uid, rotate, scale, origin, distance, lastAngle, rotation} = figureHandle;
+      drag.figureHandle = {uid, rotate, scale, transform: {origin: {x: origin[0], y: origin[1]}, distance, lastAngle, rotation}};
+    }
+    if (!handleEdit) delete drag.handleEdit;
+    else if (!drag.handleEdit) {
+      const {uid, index, point, bend} = handleEdit;
+      drag.handleEdit = {uid, index, point: {x: point[0], y: point[1]}, bend};
+    }
+    if (!segmentValueOptions) delete drag.segmentValueOptions;
+    else drag.segmentValueOptions ??= {...segmentValueOptions};
+  };
   /** The session's motion-path edit, as the editor shows its own: `_drag` with what the interface
    * reads of it (the trails sample `report` over `range`; the stage draws the `display` pose; the arc's
    * overlay and the pinned-origin modifier read the falloff, its writes and the pinned figures of the
@@ -473,6 +498,28 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     depth++;
     try { for (const [name, payload] of calls) originals.get(name).apply(editor, JSON.parse(payload)); } finally { depth--; }
   };
+  /** A call the editor runs while the session holds a figure-handle, Handle Edit Mode or segment-value
+   * gesture (the session refused it, or raised an error the editor raises itself): the gesture becomes
+   * the editor's own, as it would have begun it. The session forgets it (`@dropGesture`; the document
+   * it changed is the read view's) and tells what the editor's code needs to carry it on, which only the
+   * session holds: the figures that move and the arcs it solves. */
+  const takeHandles = () => {
+    const drag = editor._drag, held = call('@gestureState', []).result;
+    delete drag.engine;
+    if (editor._authoredPoseEdit?.engine) delete editor._authoredPoseEdit.engine;
+    handing = true;
+    try { send('@dropGesture', []); } finally { handing = false; }
+    const snapshots = new Map(drag.before.map(object => [object.unique_id, object]));
+    const snapshot = slot => snapshots.get(editor.frame.objects[slot].unique_id);
+    if (drag.figureHandle) drag.figureHandle.targets = held.figureHandle.map(slot => ({slot, before: snapshot(slot)}));
+    if (drag.handleEdit) {
+      drag.handleEdit = {uid: drag.handleEdit.uid, index: drag.handleEdit.index, point: drag.handleEdit.point, states: held.handleEdit.map(state => ({
+        slot: state.slot, vertex: state.vertex, g: {segments: state.drawn.map(bend => ({bend}))}, before: snapshot(state.slot), indices: state.indices,
+        incident: state.incident.map(shape => ({index: shape.index, seg: {segment_id: shape.id, primitive_code: shape.line ? 0 : 1}, angle: shape.angle, bend: shape.bend,
+          start: {x: shape.start[0], y: shape.start[1]}, end: {x: shape.end[0], y: shape.end[1]}})),
+        lengths: state.lengths, bends: state.bends, moved: state.moved})), bend: drag.handleEdit.bend};
+    }
+  };
   /** The edit a `begin` call opened in the session, as the editor's own would be. */
   const mirrorEdit = (name, answer) => {
     if (name === 'beginVfxClipEdit') { editor._vfxClipEdit = {engine: true, before: editor.report._styk.vfxClips}; return; }
@@ -488,6 +535,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
    * code ends or amends it): the edit becomes the editor's own, as it would have begun it. */
   const handOver = () => {
     if (editor._drag?.engine && editor._drag.motionPath) takeMotion();
+    else if (editor._drag?.engine && (editor._drag.figureHandle || editor._drag.handleEdit || editor._drag.segmentValueOptions)) takeHandles();
     const animation = editor._animationEdit?.engine ? editor._animationEdit : null, vfx = editor._vfxClipEdit?.engine ? editor._vfxClipEdit : null;
     if (!animation && !vfx) return;
     handing = true;

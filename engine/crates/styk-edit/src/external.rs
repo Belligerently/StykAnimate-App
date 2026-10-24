@@ -18,11 +18,11 @@
 //!   `@externalDone(id, redo, ops)`, which applies `ops` and moves the entry;
 //! - `@historyLimits(count, bytes)` sizes history as the editor does; `@revisions(revision,
 //!   serial, saved)` continues the editor's numbering; `@markSaved()`; `@dropGesture()`;
-//!   `@dropEdits(animation, vfx)`; `@shape()`; `@externalStacks(undo, redo)` takes the editor's history from before the session.
+//!   `@gestureState()`; `@dropEdits(animation, vfx)`; `@shape()`; `@externalStacks(undo, redo)` takes the editor's history from before the session.
 
 use std::collections::HashSet;
 
-use styk_doc::Value;
+use styk_doc::{Obj, Value};
 
 use crate::history::{Command, CommandKind};
 use crate::{EditError, Editor};
@@ -174,6 +174,30 @@ impl Editor {
         self.drag = None;
         self.authored = None;
         Ok(Value::Bool(true))
+    }
+
+    /// What the interface reads of the figure-handle, Handle Edit Mode and segment-value gesture in
+    /// progress (`_drag.figureHandle`, `_drag.handleEdit`, `_drag.segmentValueOptions`), told with
+    /// every answer; `null` when none is open.
+    pub fn handle_gesture_view(&self) -> Value {
+        let Some(drag) = &self.drag else { return Value::Null };
+        if drag.figure_handle.is_none() && drag.handle_edit.is_none() && drag.segment_value_options.is_none() {
+            return Value::Null;
+        }
+        let mut out = Obj::new();
+        if let Some(edit) = &drag.figure_handle { out.set("figureHandle", edit.live()); }
+        if let Some(edit) = &drag.handle_edit { out.set("handleEdit", edit.live()); }
+        if let Some(options) = &drag.segment_value_options { out.set("segmentValueOptions", options.clone()); }
+        Value::object(out)
+    }
+
+    /// `@gestureState()`: the rest of the figure-handle or Handle Edit Mode gesture the editor needs
+    /// to carry it on when it takes it over (the figures that move and the arcs it solves).
+    pub(crate) fn gesture_state(&self) -> Result<Value, EditError> {
+        let mut out = Obj::new();
+        if let Some(edit) = self.drag.as_ref().and_then(|drag| drag.figure_handle.as_ref()) { out.set("figureHandle", edit.targets()); }
+        if let Some(edit) = self.drag.as_ref().and_then(|drag| drag.handle_edit.as_ref()) { out.set("handleEdit", edit.states()); }
+        Ok(Value::object(out))
     }
 
     /// `@dropEdits(animation, vfx)`: the editor took the property edit and the effect-clip edit

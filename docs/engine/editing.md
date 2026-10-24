@@ -1020,12 +1020,29 @@ the default until then).
   it is refused, or the editor runs another call, the edit becomes the editor's own: the session
   forgets it (`@dropGesture`, the document is unchanged by it until it ends) and the editor replays
   those calls, which gives its session what the session had.
+- **Figure-handle, Handle Edit Mode and segment-value gestures.** `beginFigureHandleDrag`…`cancelFigureHandleDrag`,
+  `beginHandleEditDrag`…`cancelHandleEditDrag`, `beginSegmentValueEdit` and `setSegmentValues` run in the
+  session, as drags the owner already mirrors (`gesture`: the draft, `_drag` with the figures it took).
+  Every answer of an open one carries `handleGesture` (`null` between gestures): `figureHandle` (the figure,
+  the toolbar's `rotate` and `scale` it began with, the pivot `origin`, the `distance` the scale is measured
+  from, and where the turns stand: `lastAngle` and `rotation`, summed across half turns), `handleEdit` (the figure
+  and handle being edited, where it began, whether a bend is edited) and `segmentValueOptions`. The owner shows
+  them as `_drag.figureHandle`, `_drag.handleEdit` and `_drag.segmentValueOptions`: the stage's pivot marker reads
+  `figureHandle.transform.origin`, and the segment-values dialog keeps the gesture it began (`_drag` stays one
+  object) and reads the segment's values from the draft. Ctrl and Shift come with each move and are not
+  gesture state. The part only the editor's own code reads (the figures that move; the arcs a handle edit
+  solves with their lengths and bends) is not sent: when a call the editor runs belongs to such a gesture (the
+  session refused it, or raised an error the editor raises itself) the gesture becomes the editor's own first
+  (`takeHandles`): the owner asks the session for it (`@gestureState`), the session forgets the gesture
+  (`@dropGesture`, the document it changed is the read view's) and the mirrored `_drag` loses `engine`, so the
+  editor carries it on from the same figures, arcs and turns and ends it with its own commit.
 - **Refusals.** A call the session refuses (`Unported`), a gesture whose live state the
-  interface reads from the editor (figure handles, rigs, camera drags, frame drafts) and an
+  interface reads from the editor (rigs, camera drags, frame drafts) and an
   error the session raised without changing anything run in the editor on the read view. If the
   session holds a property or effect-clip edit then, the edit becomes the editor's own first
   (`@dropEdits`: the session forgets it, the mirrored record loses `engine`), so the editor's
-  code ends or amends it as it would have its own. What they recorded becomes
+  code ends or amends it as it would have its own; a figure-handle, Handle Edit Mode or segment-value
+  gesture, a motion-path edit likewise (above). What they recorded becomes
   session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
   history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and

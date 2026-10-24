@@ -666,6 +666,7 @@ impl Editor {
             "@markSaved" => return self.mark_saved(),
             "@revisions" => return self.set_revisions(args),
             "@dropGesture" => return self.drop_gesture(),
+            "@gestureState" => return self.gesture_state(),
             "@dropEdits" => return self.drop_edits(args),
             "@shape" => return self.document_shape(),
             "@externalStacks" => return self.external_stacks(args),
