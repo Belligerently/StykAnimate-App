@@ -228,6 +228,23 @@ impl ExportRenderer {
         Ok(())
     }
 
+    /// The prepared frame as SVG: vector artwork where the frame has a vector form, else one
+    /// picture of it (styk-export `svg`). An SVG export is created with `create_cpu`; the picture
+    /// is drawn by the CPU rasterizer once every picture of the document is in.
+    pub fn svg(&mut self, title: &str) -> Result<String, JsError> {
+        let generation = self.frames.generation().clone();
+        let (list, camera) = self.current.clone().ok_or_else(|| js_error("prepare a frame before exporting it"))?;
+        let settings = *self.settings();
+        let size = [settings.width, settings.height];
+        let frame = styk_export::svg::Frame { doc: &generation.prepared.doc, assets: &generation.assets, list: &list, camera: camera.as_ref(), size, title };
+        if let Some(text) = styk_export::svg::vector(&frame) {
+            return Ok(text);
+        }
+        let Backend::Cpu(cpu) = &mut self.backend else { return Err(js_error("an SVG export is drawn by the CPU rasterizer")) };
+        let pixels = cpu.frame(&generation.prepared.doc, &list, camera.as_ref(), false).map_err(js_error)?;
+        styk_export::svg::picture(size, title, &pixels).map_err(js_error)
+    }
+
     fn tile_list(&self) -> &[styk_export::Tile] {
         match &self.backend {
             Backend::Gpu { gpu, .. } => gpu.tiles(),

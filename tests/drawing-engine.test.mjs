@@ -10,7 +10,7 @@ import {readFileSync, readdirSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import english from '../src/locales/en.mjs';
-import {loadDrawingEngine, StrokeEngine as EngineStrokes, RustBrushStroke, encodeHistoryChunk as engineEncode, decodeHistoryChunk as engineDecode, drawingEngineEnabled, drawingEngineMemory, releaseDrawingEngineMemory, drawingEngineGeneration} from '../src/engine/engine-drawing.mjs';
+import {loadDrawingEngine, StrokeEngine as EngineStrokes, RustBrushStroke, encodeHistoryChunk as engineEncode, decodeHistoryChunk as engineDecode, drawingEngineMemory, releaseDrawingEngineMemory, drawingEngineGeneration} from '../src/engine/engine-drawing.mjs';
 import {drawingEngineOperation} from '../src/engine/engine-drawing-worker.mjs';
 import {drawingWorkerOperation} from '../src/drawing-worker-operations.mjs';
 import {materializeDrawingTiles} from '../src/drawing-preparation.mjs';
@@ -23,7 +23,7 @@ import {encodeRGBAPNG, drawingPNGDataURL} from '../src/drawing-png.mjs';
 import {lassoMask, ellipsePoints} from '../src/drawing-pixels.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const engine = await loadDrawingEngine({enabled: true});
+const engine = await loadDrawingEngine();
 
 /** Soft and hard discs, a uniform tile, empty space between, negative coordinates. */
 function artwork(seed = 3) {
@@ -56,11 +56,8 @@ const same = async (name, data) => {
   return rust;
 };
 
-test('the drawing engine module loads in Node and the gate reads the page', () => {
+test('the drawing engine module loads in Node', () => {
   assert.ok(engine, 'src/engine/pkg/styk_drawing.js is built (npm run engine:build)');
-  assert.equal(drawingEngineEnabled({search: '?engine=off'}), false);
-  assert.equal(drawingEngineEnabled({search: '?engine=off&drawingEngine=on'}), true);
-  assert.equal(drawingEngineEnabled({search: '?drawingEngine=off'}), false);
 });
 
 test('every pixel-worker request answers as the JavaScript worker does', async () => {

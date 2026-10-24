@@ -137,8 +137,7 @@ fn edit_live_replay(files: &[String]) -> i32 {
     i32::from(failed)
 }
 
-/// Replays an edit session the app's shadow facade captured (`?engineEditCapture=on`,
-/// `scripts/engine-edit-shadow.mjs --capture <folder>`): the document and editor state the
+/// Replays a captured edit session: the document and editor state the
 /// session started from, then every call with the arguments and view the facade sent,
 /// printing each answer's status (and why, for one the engine did not run).
 fn edit_session(file: &str) -> i32 {

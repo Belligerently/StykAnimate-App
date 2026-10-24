@@ -261,7 +261,7 @@ else's request is lost.
 | | Web |
 | --- | --- |
 | Editing, animating, drawing, timeline, undo, IK, effects | Same code as the desktop app |
-| Rendering | WebGPU, or the Canvas 2D compatibility renderer |
+| Rendering | WebGPU, or WebGL2 |
 | `.styk` / `.stkz` / `.stykmov` save and open | Yes (a download on save, the file dialog on open) |
 | Pivot `.piv` / `.stk` import and export | Yes, the WebAssembly codec; an unchanged import re-exports byte for byte |
 | Stick Nodes import | Yes |

@@ -190,8 +190,8 @@ or video to preserve their appearance, or choose a solid text fill for Pivot.
 
 ## Drawing publication
 
-Pass the live report, as above: `DocumentExporter` and `ExportFrameRenderer`
-await its drawing publication barrier before transport. PNG publication is
+Pass the live report, as above: `DocumentExporter` and the engine's export renderer
+(`EngineExportFrames`) await its drawing publication barrier before transport. PNG publication is
 derived state and does not advance the edit revision. App save/play finishes
 active drawing edits; recovery includes committed strokes. Clipboard, library,
 playback and thumbnail snapshots use the same barrier. Movieclip scopes flush
@@ -202,8 +202,8 @@ and existing atomic writes retain the prior file. See [DRAWING.md](DRAWING.md).
 
 `.piv`, `.stk` and SVG exports cannot carry the sparse tile store, so each v2
 drawing cel materializes as an ordinary PNG sprite covering its tile bounds
-(the engine's draw lists hold cels as tiles of one display level, which is one
-reason SVG stays with the JavaScript exporter: [engine rendering](engine/rendering.md#exports)).
+(the engine's draw lists hold cels as tiles of one display level, so an SVG of a frame with a
+drawing is one embedded picture of the frame: [engine rendering](engine/rendering.md#exports)).
 Rasterization uses source resolution up to a 16 Mpx cap; beyond that the
 largest mip level that fits is used and the export stats record the
 downsampled count. Anchors are rewritten into flattened-pixel coordinates so

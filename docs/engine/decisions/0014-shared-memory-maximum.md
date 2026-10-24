@@ -17,8 +17,7 @@ The page creates the memory itself (`createEngineMemory` in
 declares for the memory it imports, read from the module's import section
 (`declaredMemoryPages` in `src/engine/engine-memory.mjs`): that size grows with
 the module's static data, and a smaller memory does not link, which leaves the
-page on the JavaScript renderer with only a console warning. `localStorage['stykanimate.engine.memory']`
-(MiB) forces a maximum for testing. A memory of 1 GiB or less budgets the
+page on the JavaScript renderer with only a console warning. A memory of 1 GiB or less budgets the
 frame cache like a 2 GiB device (48 MiB). If no maximum can be reserved the
 engine does not start and the JavaScript renderer draws, as without the engine
 build.

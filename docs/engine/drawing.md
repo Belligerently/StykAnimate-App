@@ -41,13 +41,11 @@ renderer's device), which moves when the engine draws the workspace (S3 item 6);
 all layers" capture (`drawing-composite*.mjs`, the renderer); Pivot flattening for export
 (`drawing-flatten.mjs`, the export path); the brush previews in Properties.
 
-## The gate
+## The fallback
 
-`?drawingEngine=off` or `?engine=off` (or the stored `stykanimate.drawingEngine` /
-`stykanimate.engine` set to `off`) keeps the JavaScript raster engine; the page appends
-`?engine=off` to the drawing workers' URLs (`drawingWorkerURL`). A module that cannot load
-(an unbuilt checkout) leaves the JavaScript engine in charge, with one console warning.
-The JavaScript modules remain the oracle.
+A module that cannot load (an unbuilt checkout) leaves the JavaScript raster engine in
+charge, with one console warning. The JavaScript modules remain the oracle for
+`tests/drawing-engine.test.mjs` until they are deleted.
 
 ## Exactness
 
@@ -87,12 +85,6 @@ protocol, the brush model and the undo codec through both engines' facades in No
 requires identical replies, and that every error key the crate can raise is in the
 English catalogue.
 
-`tests/drawing-engine.desktop.mjs` (Electron, under `xvfb-run -a`) draws, fills and saves
-the same strokes with each engine, requires identical cels and published blobs, opens each
-engine's file in the other and repeats an edit there with identical pixels and history.
-`tests/drawing-engine.browser.mjs` (development server) checks the same in a browser with
-thumbnails and previews, and reports the workers' memory.
-
 ## Measurements
 
 Measured on the shared development machine (load average 7–18 during the runs; engines
@@ -123,9 +115,9 @@ commit 57.3/52.2, 65.7/52.6, 59.5/52.9, 79.3/79.4, 47.9/57.2 ms. Worker memory a
 strokes and a fill (`measureUserAgentSpecificMemory`): pixel worker 32.9 MiB (JavaScript
 21.5), stroke worker 7.6 (3.6), history worker 6.7 (2.9).
 
-`scripts/benchmark-drawing-engine-app.mjs` (browser, dense 2,040-tile cel at 2×, large soft
-strokes whose undo records are on the disk tier; undo and redo through the app's commands, or
-the editor's with `--editor`; load average recorded per run). Before the fix below, undo and
+The app benchmark (browser, dense 2,040-tile cel at 2×, large soft
+strokes whose undo records are on the disk tier; undo and redo through the app's commands; load average
+recorded per run). Before the fix below, undo and
 redo back to back took Rust 1,011 and 1,226 ms (688–2,243) against JavaScript 760 and 520
 (223–2,235), 4 interleaved rounds, load 14–24. Every undo or redo starts a publication of its
 revision (the playback cache's barrier); it ran during the next undo or redo, and when it

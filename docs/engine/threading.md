@@ -50,7 +50,7 @@ How the engine runs in the app (`engine/crates/styk-engine`,
   (what it held then stays allocated in the shared memory). A worker that gets no GPU
   device draws the export with the CPU rasterizer (`ExportRenderer::create_cpu`,
   styk-raster), each tile when asked for. Pages that are not cross-origin isolated
-  export with the JavaScript renderer.
+  cannot export.
 - The preview worker (`src/engine/engine-preview-worker.mjs`, one per page,
   `engine-previews.mjs`; see [rendering.md](rendering.md#thumbnails-library-previews-and-the-camera-monitor)):
   joins the shared memory like the export worker and keeps its event loop for a GPU
@@ -197,8 +197,7 @@ plan answered `EngineUnported` (an in-between on a layer sheet, or of authored p
 camera-motion or effect clips) are planned on the interface thread instead, in slices of a few
 milliseconds, by the editor's own planners (`planOnInterface`), which stay the oracle the
 engine's plans are recorded against (`engine/tests/layer-migration`,
-`layer-sheet-migration`, `inbetween`). Neither job touches the JavaScript playback cache or
-its workers.
+`layer-sheet-migration`, `inbetween`).
 
 Mobile pin compatibility: `Engine::stage` now returns a checked result,
 `PlanError::Unported` carries an owned `String`, and `FrameData::tick` changes from `u32`

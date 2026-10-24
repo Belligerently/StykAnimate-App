@@ -23,9 +23,9 @@ try{
   await page.locator('#play-button').click();
   await page.waitForFunction(()=>!styk.state.playing);
   const worked=await page.evaluate(async()=>{
-    const {ExportFrameRenderer}=await import('/src/export-frame-renderer.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),e=styk.editor;
+    const {pageExporter}=await import('/tests/support/page-export.mjs'),{DocumentExporter}=await import('/src/document-export.mjs'),e=styk.editor;
     e.seek(3);e.seek(7);e.seek(0);
-    const renderer=new ExportFrameRenderer({width:e.report.canvas_width,height:e.report.canvas_height,smoothing:'edges',getRevision:()=>e.revision});
+    const renderer=pageExporter({width:e.report.canvas_width,height:e.report.canvas_height,smoothing:'edges',getRevision:()=>e.revision});
     let rendered=false;
     try{await renderer.load(e.report);await renderer.renderTick(0);rendered=renderer.canvas.width>0;}finally{renderer.dispose();}
     const blob=await new DocumentExporter().export(e.report,{format:'styk',getRevision:()=>e.revision});

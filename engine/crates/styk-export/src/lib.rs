@@ -14,6 +14,7 @@
 //! - [`gpu`]: the renderer driven tile by tile, with read-back.
 //! - [`cpu`]: the same tiles drawn by the CPU rasterizer (styk-raster), for a worker
 //!   without a GPU device.
+//! - [`svg`]: the frame's draw list written as vector SVG (the export that is not pixels).
 //!
 //! Encoders (PNG, GIF, APNG, ZIP, WebCodecs, FFmpeg) stay platform services of the
 //! interface; see `docs/engine/rendering.md` (Exports) and `docs/export-sampling.md`.
@@ -22,6 +23,7 @@ pub mod cpu;
 pub mod gpu;
 pub mod pixels;
 pub mod settings;
+pub mod svg;
 pub mod tiles;
 pub mod view;
 

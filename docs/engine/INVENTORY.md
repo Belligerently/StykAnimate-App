@@ -12,14 +12,14 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | Rust owner | Modules | Source at start | js | partial | ported | verified | removed | Covered by Rust | Partly covered | Deleted |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
-| `styk-drawing` | 36 | 274 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
-| `styk-edit` | 89 | 1237 KiB | 41 | 41 | 6 | 1 | 0 | 3 % | 68 % | 0 % |
-| `styk-engine` | 24 | 201 KiB | 17 | 6 | 0 | 0 | 1 | 0 % | 65 % | 0 % |
-| `styk-eval` | 81 | 758 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
-| `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
-| `styk-formats` | 59 | 763 KiB | 29 | 5 | 1 | 22 | 2 | 63 % | 8 % | 6 % |
-| `styk-render` | 52 | 708 KiB | 31 | 16 | 5 | 0 | 0 | 9 % | 61 % | 0 % |
-| **Total** | 357 | 4066 KiB | 167 | 128 | 36 | 23 | 3 | 20 % | 51 % | 1 % |
+| `styk-drawing` | 36 | 273 KiB | 14 | 7 | 15 | 0 | 0 | 47 % | 16 % | 0 % |
+| `styk-edit` | 89 | 1236 KiB | 41 | 41 | 6 | 1 | 0 | 3 % | 68 % | 0 % |
+| `styk-engine` | 24 | 40 KiB | 12 | 0 | 0 | 0 | 12 | 0 % | 0 % | 0 % |
+| `styk-eval` | 83 | 761 KiB | 26 | 47 | 9 | 0 | 1 | 16 % | 68 % | 0 % |
+| `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
+| `styk-formats` | 59 | 760 KiB | 28 | 5 | 1 | 22 | 3 | 63 % | 8 % | 6 % |
+| `styk-render` | 51 | 327 KiB | 15 | 9 | 3 | 0 | 24 | 8 % | 55 % | 0 % |
+| **Total** | 358 | 3501 KiB | 145 | 113 | 34 | 23 | 43 | 23 % | 48 % | 1 % |
 
 ## Engine modules
 
@@ -29,22 +29,22 @@ Engine logic: ported to Rust.
 | --- | --- | --- | --- |
 | `src/pivot/model.mjs` | `styk-doc` | js | validation and structure |
 | `src/pivot/structure.mjs` | `styk-doc` | partial | Rust: resolveJoinSelection, rotationEdits (styk-edit); validation and the rest still JS |
-| `src/drawing-brush-textures.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-brush.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-clipboard.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-brush-textures.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-brush.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-clipboard.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-composite-transport.mjs` | `styk-drawing` | js |  |
 | `src/drawing-composite-worker.mjs` | `styk-drawing` | js |  |
 | `src/drawing-composite.mjs` | `styk-drawing` | js |  |
-| `src/drawing-fill.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-fill.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-flatten.mjs` | `styk-drawing` | js |  |
-| `src/drawing-history-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-history-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-history-database.mjs` | `styk-drawing` | js |  |
 | `src/drawing-history-worker.mjs` | `styk-drawing` | partial | Rust: the history worker encodes undo chunks with styk-drawing; the worker shell is JS |
 | `src/drawing-history.mjs` | `styk-drawing` | js |  |
-| `src/drawing-lasso.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-lasso.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-model.mjs` | `styk-drawing` | js |  |
-| `src/drawing-pixels.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-png.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-pixels.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-png.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-preparation.mjs` | `styk-drawing` | partial | Rust: tile preparation (styk-drawing); its orchestration still JS |
 | `src/drawing-preview-cache.mjs` | `styk-drawing` | js |  |
 | `src/drawing-provider.mjs` | `styk-drawing` | js |  |
@@ -52,18 +52,18 @@ Engine logic: ported to Rust.
 | `src/drawing-render-dependencies.mjs` | `styk-drawing` | js |  |
 | `src/drawing-resources.mjs` | `styk-drawing` | js |  |
 | `src/drawing-selection.mjs` | `styk-drawing` | partial | Rust: the selection matrix and moving selected pixels (styk-drawing); selection state still JS |
-| `src/drawing-smoother.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-stroke-engine.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-stroke-region.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-smoother.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-stroke-engine.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-stroke-region.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-stroke-worker.mjs` | `styk-drawing` | partial | Rust: the stroke worker hands its strokes to styk-drawing; the worker shell is JS |
-| `src/drawing-tile-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-tile-codec.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-tile-memory.mjs` | `styk-drawing` | js |  |
 | `src/drawing-tiles.mjs` | `styk-drawing` | partial | Rust: the tile store of worker jobs (styk-drawing); the interface thread's store still JS |
-| `src/drawing-transform.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-transform.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-wet-ink.mjs` | `styk-drawing` | js |  |
 | `src/drawing-worker-client.mjs` | `styk-drawing` | js |  |
-| `src/drawing-worker-operations.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
-| `src/drawing-worker-preview.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays as the oracle behind ?drawingEngine=off |
+| `src/drawing-worker-operations.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
+| `src/drawing-worker-preview.mjs` | `styk-drawing` | ported | styk-drawing (src/engine/engine-drawing.mjs); JS stays only as the fallback when the module cannot load |
 | `src/drawing-worker.mjs` | `styk-drawing` | partial | Rust: the pixel worker hands its operations to styk-drawing; the worker shell is JS |
 | `src/animation-history.mjs` | `styk-edit` | partial | Rust: recorded UTF-16 history weights and warm checkpoints; same exclusive Session coupled to portable quiet/live Core with terminal-ACK retirement; actual browser shown/release and persistent current charge pending; private undo/redo heads share until recorded writes, five alias plus191 owning controls pass; exact limits/prune/rollback/ACK owner retained, no public API change |
 | `src/builder-appearance.mjs` | `styk-edit` | partial | Rust: pasting runs updateBuilderSegmentStyle (styk-edit/src/builder.rs); copying reads the figure on show (a view) |
@@ -154,7 +154,7 @@ Engine logic: ported to Rust.
 | `src/text-authoring.mjs` | `styk-edit` | js |  |
 | `src/text-font-compat.mjs` | `styk-edit` | js |  |
 | `src/topology-history.mjs` | `styk-edit` | partial | Rust: topology entries' snapshots of the definition and the poses they touch, undo and redo (styk-edit/src/topology.rs); the history byte budget still JS |
-| `src/playback-bitmap-pool.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
+| `src/playback-bitmap-pool.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-budget.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-cadence.mjs` | `styk-engine::playback` | js | scheduling, budgets |
 | `src/playback-geometry-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
@@ -163,21 +163,21 @@ Engine logic: ported to Rust.
 | `src/playback-planning.mjs` | `styk-engine::playback` | removed | deleted: the layer-move and in-between planning jobs run on the engine's workers (styk-engine planning), the interface fallback in src/engine/engine-planning.mjs |
 | `src/playback-raster-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-resources.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
-| `src/playback-retention.mjs` | `styk-engine::playback` | js | scheduling, budgets |
-| `src/playback-software-painter.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
-| `src/playback-software-size.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
+| `src/playback-retention.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/playback-software-painter.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/playback-software-size.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-tween-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
-| `src/playback-upload.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
+| `src/playback-upload.mjs` | `styk-engine::playback` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/playback-vector-cache.mjs` | `styk-engine::playback` | js | worker preparation, packet caches |
 | `src/playback-window.mjs` | `styk-engine::playback` | js | scheduling, budgets |
-| `src/playback-worker.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: frame preparation for supported documents (no per-worker document copy) |
-| `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames; one-shot State/Storage readiness and shared finite progress/coalesced Busy controls, dense cache work outside State; physical lease/final-drop/shutdown work open |
+| `src/playback-worker.mjs` | `styk-engine::playback` | removed | deleted: the engine prepares frames on its worker threads (styk-engine frames) |
+| `src/playback.mjs` | `styk-engine::playback` | removed | deleted: the engine prepares playback on its worker threads and the app reads its tickets (src/engine/engine-playback.mjs) |
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
-| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS |
-| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: native files open in styk-formats::files; replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
-| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; prepared shown epoch and retained monitor bitmap verified; auxiliary onion/monitor parity, live actual-shown readiness, refused documents and no-thread fallback remain |
+| `src/library-preview-core.mjs` | `styk-engine::thumbnails` | removed | removed; the preview timeline and fitted bounds are styk_engine::thumbnails::library, the matte choice is src/library-matte.mjs |
+| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | removed | removed; the engine's preview worker (src/engine/engine-preview-worker.mjs) draws posters and hover animations |
+| `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | removed | removed; src/engine/engine-thumbnails.mjs draws frame thumbnails with the stage or the preview worker |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
-| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained |
+| `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | removed | removed; the stage and the engine's preview worker draw thumbnails and in-between previews |
 | `src/animation-origin-validation.mjs` | `styk-eval` | partial | Rust: typed origin compiler validates retained support indices, numbers, bindings and capacity against 68 editor refusals; cooperative import/object validation still JS |
 | `src/animation-pose.mjs` | `styk-eval` | partial | Rust: virtual pose tracks, pose sampling/composition and orientation; canonical COW source lookup with verified unique-ID row hints; editing helpers still JS |
 | `src/animation-property-state.mjs` | `styk-eval` | js |  |
@@ -247,10 +247,11 @@ Engine logic: ported to Rust.
 | `src/spatial-projection.mjs` | `styk-eval::spatial` | partial | Rust: perspective projection with near-plane clipping (styk_eval::spatial); unprojection for editing still JS |
 | `src/vfx-clips.mjs` | `styk-eval::vfx` | partial | Rust: clip sampling, keys, fades, composition and strict edit validation including paints/attached scopes; remaining JS model callers preserved |
 | `src/vfx-connected.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS |
+| `src/vfx-drawable.mjs` | `styk-eval::vfx` | js | what effects a drawn item carries and how far they spread (hasDrawableVfx, drawableVfxPadding); the editor bounds read it |
 | `src/vfx-key-channels.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
 | `src/vfx-paint.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::paint |
 | `src/vfx-presets.mjs` | `styk-eval::vfx` | partial | Rust: byte-verifiable 13-preset catalogue and recorded stack/group commands; existing JS UI/oracle catalogue callers remain |
-| `src/vfx-preview.mjs` | `styk-eval::vfx` | js | effect model, clips, sampling |
+| `src/vfx-preview.mjs` | `styk-eval::vfx` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/vfx-registry.mjs` | `styk-eval::vfx` | ported | effect model, clips, sampling. Rust: vfx::registry (every type, parameters, scene and generator flags) |
 | `src/vfx-user-presets.mjs` | `styk-eval::vfx` | partial | Rust: recorded clipFromPreset timing, remapped effects/keys and D18 identities; UI preset storage/normalization remains JS |
 | `src/vfx.mjs` | `styk-eval::vfx` | partial | effect model, clips, sampling. Rust: validation, resolution, active/neutral, interpolation, padding (vfx::parse, vfx::mod); property channels still JS; B13 coherent edit-frame conversion reuses unchanged warning-free effect tables, retaining original diagnostics and identity/lineage fallbacks; verified400Rust/27CLI925/82JS/check; existing portable Loader API, stored fields/math/schema unchanged; fresh figures cost/checkpoint/default gate pending |
@@ -259,12 +260,13 @@ Engine logic: ported to Rust.
 | `src/vfx-generator-layers.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-styles.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generators.mjs` | `styk-eval::vfx::generated` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/export-canvas.mjs` | `styk-export` | js | frame hand-over shared by both export workers |
-| `src/export-crisp.mjs` | `styk-export` | partial | Rust: recorded exportSVG composited-frame policy keeps effects, truthy generator batches and visible mesh/depth artwork smooth with No smoothing; ordinary frames use Edges::Crisp; plain drawing image-sampling parity and exports of gated documents remain open |
-| `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (styk-export, src/engine/engine-export.mjs); SVG and other documents JS |
-| `src/export-frame-renderer.mjs` | `styk-export` | partial | Rust: frames of documents the engine draws (src/engine/engine-export.mjs builds on its request, progress and retry logic); the JavaScript worker for other documents |
-| `src/export-frame-worker.mjs` | `styk-export` | partial | Rust: none (the engine's export worker is src/engine/engine-export-worker.mjs, on the GPU or with styk-raster without a device); this worker draws documents the engine does not and exports whose engine worker cannot start |
-| `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); JavaScript exports keep these budgets |
+| `src/renderer-geometry.mjs` | `styk-eval::view` | partial | the interface's view math only: cameraMatrix, worldToScreen, screenToWorld and objectBounds. Rust: styk_eval::view (camera_matrix, orientation) and drawlist::artwork_bounds; the editing cut replaces picking and bounds with engine queries |
+| `src/export-canvas.mjs` | `styk-export` | js | frame hand-over of the engine's export worker |
+| `src/export-crisp.mjs` | `styk-export` | removed | removed with the JavaScript export worker; No smoothing is drawn by the engine (Edges::Crisp, styk-export) |
+| `src/export-frame-core.mjs` | `styk-export` | partial | Rust: frames of every export (styk-export, src/engine/engine-export.mjs); this module still draws for the JavaScript renderer's callers (renderer-raster-capture, vfx-camera, playback-software-painter, drawing-composite) and goes with them |
+| `src/export-frame-renderer.mjs` | `styk-export` | removed | removed; src/engine/engine-export.mjs owns the request, progress, revision, timeout and retry logic of an export and the output canvas |
+| `src/export-frame-worker.mjs` | `styk-export` | removed | removed; the engine's export worker (src/engine/engine-export-worker.mjs) draws every export, and writes SVG with styk-export svg |
+| `src/export-memory.mjs` | `styk-export` | partial | Rust: engine exports bounded by 2,048-px tiles and read-back slots (styk-export); the interface keeps the allowance and tile plan it validates a request with |
 | `src/export-sampling.mjs` | `styk-export` | partial | Rust: the sampling limits mirrored in styk_export::settings; the JavaScript worker still reads these |
 | `src/gif-options.mjs` | `styk-export` | js |  |
 | `src/gif-quantize.mjs` | `styk-export` | js |  |
@@ -299,7 +301,7 @@ Engine logic: ported to Rust.
 | `codecs/work_control.py` | `styk-formats::piv` | verified | the app runs styk-piv (cooperative cancellation: ctx.rs, polled through a shared flag); kept only as the development test oracle (not shipped) |
 | `native/piv-frame-scan.cpp` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)); kept only as the development test oracle (not shipped) |
 | `src/import-wire.mjs` | `styk-formats::piv` | js | native frame table materialization |
-| `src/playback-native.mjs` | `styk-formats::piv` | js | native frame table materialization |
+| `src/playback-native.mjs` | `styk-formats::piv` | removed | deleted: the engine opens files into its own store; no playback worker takes a frame table |
 | `src/document-export-worker.mjs` | `styk-formats::save` | partial | Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); the JS lifts the document, prepares portable figures and Pivot saves |
 | `src/document-export.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
 | `src/native-figure.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
@@ -334,47 +336,46 @@ Engine logic: ported to Rust.
 | `src/sticknodes/validation.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/canvas-artwork-pick.mjs` | `styk-render` | js |  |
 | `src/canvas-color-sample.mjs` | `styk-render` | js |  |
-| `src/canvas-raster-refinement.mjs` | `styk-render` | js |  |
-| `src/editable-scene-preparation.mjs` | `styk-render` | js |  |
-| `src/even-odd-fill.mjs` | `styk-render` | js |  |
-| `src/gpu-startup.mjs` | `styk-render` | js |  |
-| `src/gpu-timing.mjs` | `styk-render` | js |  |
-| `src/onion-surface-cache.mjs` | `styk-render` | js |  |
+| `src/canvas-raster-refinement.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/editable-scene-preparation.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/even-odd-fill.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine triangulates its fills |
+| `src/gpu-startup.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/gpu-timing.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/onion-surface-cache.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/parallax-draw.mjs` | `styk-render` | js |  |
-| `src/prepared-frames.mjs` | `styk-render` | partial | Rust: prepared frames for supported documents |
+| `src/prepared-frames.mjs` | `styk-render` | removed | deleted: the engine uploads and draws its own prepared frames (styk-render) |
 | `src/raster-surfaces.mjs` | `styk-render` | js |  |
-| `src/raster-view.mjs` | `styk-render` | js |  |
-| `src/render-artwork.mjs` | `styk-render` | js |  |
+| `src/raster-view.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/render-artwork.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-camera-scene.mjs` | `styk-render` | js |  |
-| `src/renderer-canvas-plan.mjs` | `styk-render` | js |  |
-| `src/renderer-geometry.mjs` | `styk-render` | partial | Rust: draw lists for supported documents |
-| `src/renderer-glyphs.mjs` | `styk-render` | partial | Rust: glyph mask layout (styk_draw::GlyphMask::layout), fill and shared mask cache (styk-render glyphs.rs) for lone glyphs; the playback worker's mask crops and culling (cropGlyphTexture, glyphVisible) are not ported (the engine shares whole masks) |
-| `src/renderer-handles.mjs` | `styk-render` | js |  |
-| `src/renderer-mesh-raster.mjs` | `styk-render` | ported | Rust: objects with 3D faces drawn from rasters at the editor density (styk-render frame.rs); still used by the JavaScript renderer |
-| `src/renderer-onion-composite.mjs` | `styk-render` | partial | Rust: onion composites for supported documents |
-| `src/renderer-opacity.mjs` | `styk-render` | js |  |
+| `src/renderer-canvas-plan.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer-glyphs.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer-handles.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer-mesh-raster.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer-onion-composite.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer-opacity.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-preview-drawing-resources.mjs` | `styk-render` | js |  |
 | `src/renderer-preview-drawings.mjs` | `styk-render` | js |  |
-| `src/renderer-raster-cache.mjs` | `styk-render` | js |  |
+| `src/renderer-raster-cache.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/renderer-raster-capture.mjs` | `styk-render` | js |  |
-| `src/renderer-upload.mjs` | `styk-render` | js |  |
-| `src/renderer-vector-raster.mjs` | `styk-render` | js |  |
-| `src/renderer-vfx-vector.mjs` | `styk-render` | partial | Rust: effect layers in the draw list (styk_eval::vfx::layers, drawlist); the JavaScript renderer still uses it |
-| `src/renderer.mjs` | `styk-render` | partial | Rust: edit/onion/playback/fractional views, exact prepared shown tickets and recorded ordinary solid-background monitor clip/paint/source presentation; scoped prebuilt generation/assets and guarded typed glyph/image pairing remain opt-in prerequisites; ordinary-loader/Core pairing, SceneFX monitor, auxiliary onion/plain drawing crisp, no-thread and last-owner/physical D7 remain |
+| `src/renderer-upload.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer-vector-raster.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer-vfx-vector.mjs` | `styk-render` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/renderer.mjs` | `styk-render` | removed | deleted: the engine stage draws every frame of the editing canvas (src/engine/engine-stage.mjs, styk-wasm Stage) |
 | `src/scene-order.mjs` | `styk-render` | partial | Rust: composeSceneGroups for onion skins; other scene grouping still JS |
-| `src/scene-preparation.mjs` | `styk-render` | js |  |
+| `src/scene-preparation.mjs` | `styk-render` | js | the images a frame and its backgrounds name (frameImageDrawables, backgroundImageAssets); the camera monitor still reads them |
 | `src/surface-raster.mjs` | `styk-render` | ported | Rust: depth-tested face runs on the GPU (prim.wgsl) and in styk-raster; still used by the JavaScript renderer |
 | `src/drawing-gpu.mjs` | `styk-render::drawing` | partial | Rust: committed cel display, exact box levels/tile seams and explicit destination-grid software single-drawing effect sampling (styk-eval::drawing, styk-render, styk-raster); live strokes/GPU brush, auxiliary onion/monitor and crisp gaps remain |
 | `src/vfx-generator-atlas-worker.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-atlas.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
 | `src/vfx-generator-canvas.mjs` | `styk-render::generators` | partial | Rust: styk-raster draws particles and beams on the CPU; the Canvas 2D renderer still uses it |
-| `src/vfx-generator-gpu.mjs` | `styk-render::generators` | ported | deleted with the JavaScript renderer (S3 item 8) |
-| `src/content-hash.mjs` | `styk-render::images` | js | image decoding and variants |
+| `src/vfx-generator-gpu.mjs` | `styk-render::generators` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
+| `src/content-hash.mjs` | `styk-render::images` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/image-resources.mjs` | `styk-render::images` | partial | image decoding and variants. Rust: decoding and atlas upload for supported documents |
 | `src/preview-image-worker.mjs` | `styk-render::images` | js | image decoding and variants |
 | `src/preview-image.mjs` | `styk-render::images` | js | image decoding and variants |
 | `src/preview-images.mjs` | `styk-render::images` | js | image decoding and variants |
-| `src/vfx-camera-gpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
+| `src/vfx-camera-gpu.mjs` | `styk-render::vfx` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/vfx-camera.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
 | `src/vfx-canvas.mjs` | `styk-render::vfx` | partial | Rust: ordinary solid-background camera-monitor filtered-source execution/consumption and CPU/GPU result presentation through the existing worker, CanvasForeground and completed root-source receipt; SceneFX, tiled fallbacks, unadmitted sources and broader Canvas surface/cache lifetimes remain JS |
 | `src/vfx-cpu.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
@@ -382,7 +383,7 @@ Engine logic: ported to Rust.
 | `src/vfx-scene.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: scene stack over the camera image (effects); Canvas 2D path still JS |
 | `src/vfx-shaders.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: the filter shaders (effects/passes.wgsl); generated effects still JS |
 | `src/vfx-surface.mjs` | `styk-render::vfx` | js | effect executors and surfaces |
-| `src/vfx-viewport.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: layer density, crops and resolution caps per view (effects/plan.rs) |
+| `src/vfx-viewport.mjs` | `styk-render::vfx` | removed | deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame |
 | `src/vfx-webgpu.mjs` | `styk-render::vfx` | partial | effect executors and surfaces. Rust: every filter pass (styk-render effects/executor.rs, passes.wgsl) on WebGPU, native and WebGL2; still the oracle and the renderer of gated documents |
 
 ## Platform services
@@ -424,7 +425,7 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `src/frame-clipboard-storage.mjs` |  | stays | file, storage and network services |
 | `src/library-files.mjs` |  | stays | file, storage and network services |
 | `src/native-files.mjs` |  | stays | file, storage and network services |
-| `src/svg-export.mjs` |  | stays | editable vector output kept in JavaScript; the draw list is tessellated (docs/engine/rendering.md) |
+| `src/svg-export.mjs` |  | removed | removed; styk_export::svg writes the frame's draw list as vector SVG (a picture of the frame where it has no vector form) |
 | `src/web-library.mjs` |  | stays | file, storage and network services |
 | `src/web-offline.mjs` |  | stays | file, storage and network services |
 | `src/audio-encode.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |

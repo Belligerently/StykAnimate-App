@@ -175,11 +175,9 @@ function routedPlayback({threaded = true, plan = null, refuse = null} = {}) {
     try_set_hidden: () => 1, try_set_effects: () => 1, generation: () => 1,
     plan_inbetweens(revision, request) { calls.push({revision, request: JSON.parse(request)}); if (refuse) throw refuse; return plan(); },
     plan_layers(revision, request) { calls.push({revision, request: JSON.parse(request)}); if (refuse) throw refuse; return plan(); }}};
-  const side = {engine, eligibility: {check: () => null}, drawingUnpublished: () => false,
+  const side = {engine,
     mirror: {stats: {}, async syncFrames(report, revision) { current = {report, revision}; }, framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
-  // The JavaScript playback cache is not asked: it has no planning of its own.
-  const legacy = {report: null, load(next) { legacy.report = next; return legacy; }, dispose() {}, invalidate() {}, setVfxEnabled() {}};
-  return {playback: createStagePlayback(legacy, {stage: () => ({engineSide: side})}), calls, legacy};
+  return {playback: createStagePlayback({stage: () => ({engineSide: side})}), calls};
 }
 const planJob = payload => () => {
   const chunks = documentChunks(payload, {maxBytes: 64 * 1024, maxRecords: 128, timeBudgetMs: 2}); let sequence = 0, awaiting;
@@ -187,10 +185,9 @@ const planJob = payload => () => {
     ack() { awaiting = undefined; return true; }, cancel() {}, free() {}};
 };
 
-test('the stage playback plans on the engine for the document it holds, and not in the JavaScript playback cache', async () => {
+test('the stage playback plans on the engine for the document it holds', async () => {
   const reference = inbetween('authored-independent'), editor = loaded(reference);
-  const {playback, calls, legacy} = routedPlayback({plan: planJob(reference.payload)});
-  assert.equal(legacy.planLayerMigration, undefined); assert.equal(legacy.planInsertInbetweens, undefined);
+  const {playback, calls} = routedPlayback({plan: planJob(reference.payload)});
   playback.load(editor.report, {revision: 7});
   const wire = await playback.planInsertInbetweens(reference.request, {isCurrent: () => true});
   assert.equal(nativeJson(wire), nativeJson(reference.payload.plan));

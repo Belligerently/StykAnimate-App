@@ -86,8 +86,18 @@ pub fn fitted(bounds: [f64; 4], size: u32) -> Framing {
     Framing { matrix: [scale, 0.0, 0.0, scale, pan[0], pan[1]], artboard: [0.0, 0.0, s, s], zoom: scale, pan }
 }
 
+/// `bounds` (x, y, width, height) fitted into a `width × height` picture with `margin` pixels
+/// around it (at least one world unit is fitted), centred: the framing of a figure's thumbnail.
+pub fn fit(bounds: [f64; 4], width: u32, height: u32, margin: f64) -> Framing {
+    let (w, h) = (width as f64, height as f64);
+    let scale = ((w - 2.0 * margin) / bounds[2].max(1.0)).min((h - 2.0 * margin) / bounds[3].max(1.0)).max(1e-6);
+    let (cx, cy) = (bounds[0] + bounds[2] / 2.0, bounds[1] + bounds[3] / 2.0);
+    let pan = [w / 2.0 - scale * cx, h / 2.0 - scale * cy];
+    Framing { matrix: [scale, 0.0, 0.0, scale, pan[0], pan[1]], artboard: [0.0, 0.0, w, h], zoom: scale, pan }
+}
+
 /// The rectangle a frame's artwork covers when it covers nothing (`{0, 0, 1, 1}`).
-const NOWHERE: [f64; 4] = [0.0, 0.0, 1.0, 1.0];
+pub const NOWHERE: [f64; 4] = [0.0, 0.0, 1.0, 1.0];
 
 impl LibraryPreview {
     /// Opens a library file (`stkz`, `stykmov`, or any document the engine reads).
@@ -108,6 +118,11 @@ impl LibraryPreview {
         Ok(LibraryPreview { prepared, assets, anchors, lineage, fps, duration, bounds: None })
     }
 
+    /// The file's document.
+    pub fn doc(&self) -> &styk_eval::doc::Document {
+        &self.prepared.doc
+    }
+
     /// Where the file's pictures are laid out.
     pub fn assets(&self) -> &Arc<Assets> {
         &self.assets
@@ -126,6 +141,12 @@ impl LibraryPreview {
     /// The file at `tick` (wrapped into the preview's duration), with the clock that
     /// bounds nothing: every earlier anchor of generated effects is evaluated.
     pub fn sample(&self, tick: f64, clock: Clock) -> Sample {
+        self.sample_on(tick, clock, Some(0))
+    }
+
+    /// [`LibraryPreview::sample`] on `background` (ARGB) instead of transparency, or on the
+    /// document's own backgrounds with `None`.
+    pub fn sample_on(&self, tick: f64, clock: Clock, background: Option<u32>) -> Sample {
         let tick = ((tick % self.duration) + self.duration) % self.duration;
         let prepared = &self.prepared;
         let doc = &prepared.doc;
@@ -135,8 +156,8 @@ impl LibraryPreview {
             let sampler = anchors.sampler(clock, f64::INFINITY);
             styk_eval::vfx::generated::build(prepared, &frame, &scene, Some(tick), Some(&sampler), 1.0)
         });
-        // Every layer shown, no background: the artwork alone, on transparency.
-        let overrides = Overrides { background: Some(0), generators: batch.as_ref(), ..Default::default() };
+        // Every layer shown; by default no background: the artwork alone, on transparency.
+        let overrides = Overrides { background, generators: batch.as_ref(), ..Default::default() };
         let list = Arc::new(encode_with(doc, &self.assets, &scene, &overrides));
         // `objectBounds` of the artwork (with its effects' reach), joined with what the
         // generated effects cover.

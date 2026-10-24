@@ -75,7 +75,7 @@ try {
   const info = JSON.parse(await readFile(path.join(first, 'build-info.json'), 'utf8'));
   check('The worker stores the whole editor and the Pivot codec under this build\'s version', stored.version === info.offline);
   check('One cache holds this version', JSON.stringify(await page.evaluate(() => caches.keys())) === JSON.stringify([`styk-app-${info.offline}`]));
-  check('Storing it did not change what the app shows', await page.evaluate(() => ['WebGPU', 'Canvas 2D fallback'].includes(window.styk.state.renderer.stats.backend)));
+  check('Storing it did not change what the app shows', await page.evaluate(() => ['WebGPU', 'WebGL2'].includes(window.styk.state.renderer.stats.backend)));
 
   // --- 2. No network: the server is gone.
   await server.close();
@@ -85,7 +85,7 @@ try {
   page.on('requestfailed', (request) => failed.push(new URL(request.url()).pathname));
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => window.styk?.ready === true, undefined, { timeout: 60000 });
-  check('The app starts with no network', await page.evaluate(() => !navigator.onLine && ['WebGPU', 'Canvas 2D fallback'].includes(window.styk.state.renderer.stats.backend)));
+  check('The app starts with no network', await page.evaluate(() => !navigator.onLine && ['WebGPU', 'WebGL2'].includes(window.styk.state.renderer.stats.backend)));
   check('Every request was answered from the cache', failed.length === 0 && workerRequests.length === 0);
 
   const download = async (action, name) => {

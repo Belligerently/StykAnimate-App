@@ -2,36 +2,44 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
-import {installEditShadow} from '../src/engine/engine-edit-shadow.mjs';
+import {installEngineOwner, appSessionStart} from '../src/engine/engine-owner.mjs';
+import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
 const input = JSON.parse(readFileSync(new URL('../engine/tests/edit/selection-metadata-plain-native.document.json', import.meta.url), 'utf8'));
 const metadata = state => Object.fromEntries(['polygonSelection', 'segmentIds', 'branch'].filter(key => Object.hasOwn(state, key)).map(key => [key, state[key]]));
-function shadow(editor, replies) {
+/** The editor owned by the real engine, started as the app starts it (from the mirror). It records the state each
+ * session starts with and the view each call carries. */
+async function owned(editor) {
+  const {engine, mirror} = await nodeEngine();
+  mirror.reset();
+  await mirror.syncFrames(editor.report, editor.revision, {allFigures: true, allFrames: true, allSources: true});
   const states = [], views = [];
-  const side = {failed: false, mirror: {framesCurrent: () => true}, engine: {handle: {edit_session(text) {
-    states.push(JSON.parse(text));return {revision: () => editor.revision, free() {}, can_undo: () => true, can_redo: () => true,
-      call(name, args, view) {views.push(JSON.parse(view));return JSON.stringify(replies(name, args, view));}};
+  const side = {failed: false, mirror, engine: {handle: {edit_session(text) {
+    states.push(JSON.parse(text));
+    const session = engine.handle.edit_session(text);
+    return new Proxy(session, {get: (target, name) => name === 'call'
+      ? (method, args, view) => { views.push(JSON.parse(view)); return target.call(method, args, view); }
+      : typeof target[name] === 'function' ? target[name].bind(target) : target[name]});
   }}}};
-  return {report: installEditShadow(editor, () => side, {mode: 'own'}), states, views};
+  return {owner: installEngineOwner(editor, {start: appSessionStart(() => side)}), states, views};
 }
-function stateOf(editor, optional = {}) {
-  return {tick: editor.tick, frameIndex: editor.frameIndex, selectedUid: editor.selectedUid, selectedUids: [...editor.selectedUids], selectedJoint: editor.selectedJoint,
-    layerRevision: editor.layerRevision, nextFrameIdentity: editor._nextFrameIdentity, nextUid: editor._nextUid, ...optional};
-}
-test('adoption restores metadata-only selection changes through the existing owner', () => {
+test('a call made with optional selection open runs in the editor and keeps the selection', {skip: !engineBuilt}, async () => {
   const editor = new Editor({demo: false}).load(structuredClone(input));editor.select(1, -1);
   const polygon = {uid: 1, index: 0, typeId: editor.figure.figure_type_id, future: {values: [7, 3]}};
-  let optional = {polygonSelection: polygon};
-  const {report} = shadow(editor, () => ({status: 'ok', result: false, state: stateOf(editor, optional), events: [], draft: null, drag: null}));
-  editor.locateCamera();assert.deepEqual(editor._selectionState().polygonSelection, polygon);assert.equal(report.owned, 1);
-  optional = {};editor.locateCamera();assert.equal(report.owned, 1, 'optional selection readiness remains closed');
-  assert.deepEqual(editor._selectionState().polygonSelection, polygon);
-  assert.equal(editor.canUndo, false);assert.equal(report.mismatches.length, 0);
+  editor._restoreSelection({...editor._selectionState(), polygonSelection: polygon});
+  const {owner, views} = await owned(editor);
+  editor.locateCamera();assert.deepEqual(editor._selectionState().polygonSelection, polygon);
+  assert.deepEqual(metadata(views[0]), {polygonSelection: polygon}, 'the view carries the selection metadata');
+  assert.equal(owner.native, 0, 'optional selection readiness stays closed');assert.equal(owner.fallback, 1);
+  assert.deepEqual(owner.refused, {'locateCamera: locateCamera with optional selection metadata': 1});
+  editor.locateCamera();assert.deepEqual(editor._selectionState().polygonSelection, polygon);
+  assert.equal(editor.canUndo, false);
+  owner.release();
 });
-test('ordinary views omit optional fields and optional selection readiness stays closed', () => {
+test('ordinary views omit optional selection fields', {skip: !engineBuilt}, async () => {
   const editor = new Editor({demo: false}).load(structuredClone(input));editor.select(1, -1);
-  const polygon = {uid: 1, index: 0, typeId: editor.figure.figure_type_id, future: {values: [7, 3]}};
-  const {states, views} = shadow(editor, () => ({status: 'ok', result: false, state: stateOf(editor), events: [], draft: null, drag: null}));
+  const {owner, states, views} = await owned(editor);
   editor.locateCamera();assert.deepEqual(metadata(states[0]), {});assert.deepEqual(metadata(views[0]), {});
-  editor._restoreSelection({...editor._selectionState(), polygonSelection: polygon});editor.locateCamera();assert.equal(views.length, 1);
   assert.equal(Object.hasOwn(states[0], 'segmentIds'), false);assert.equal(Object.hasOwn(states[0], 'branch'), false);
+  assert.deepEqual(editor._selectionState().polygonSelection ?? null, null);
+  owner.release();
 });

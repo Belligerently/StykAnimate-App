@@ -982,16 +982,6 @@ function retainedSources(commands) {
   return [...ids];
 }
 
-/** `?engineOwner=on|off` (or `localStorage['stykanimate.engine.owner']`): whether the engine
- * owns the open document (D19) instead of shadowing the editor's calls. */
-export function engineOwnerMode() {
-  try {
-    const value = new URLSearchParams(globalThis.location?.search ?? '').get('engineOwner');
-    if (value) return value === 'on';
-    return globalThis.localStorage?.getItem('stykanimate.engine.owner') === 'on';
-  } catch { return false; }
-}
-
 /**
  * The app's session start: on the stage's mirrored document, once its frames are current
  * (the session reuses the stage's prepared views). Until then the editor runs the calls,

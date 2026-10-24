@@ -4,7 +4,7 @@
  * Reading and writing the container (header and section checks, checksums, zstd, the
  * document rules, the size limits) is `styk-formats`, compiled into the codec module
  * (engine/crates/styk-codec-wasm, built into src/engine/pkg/ by scripts/engine-build.mjs).
- * The import, library-preview and document-export workers each load the module and call it
+ * The import and document-export workers each load the module and call it
  * here, off the interface thread; docs/engine/formats.md describes the split.
  *
  * What crosses is the lifted form (document-lift.mjs): a JSON skeleton and the byte sections

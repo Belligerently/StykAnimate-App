@@ -3,7 +3,7 @@
 //! `tests/fixtures/drawlist/outlined-text.json` holds one glyph of a Pivot text
 //! figure (from `finisher tdd2.piv`) with three figure outlines: 1.5 wide at
 //! scale 1, 4 wide at scale 2.5, and 8 wide at half opacity at scale 4, all red.
-//! `scripts/engine-app-parity.mjs` compares the pixels with the editor's renderers.
+//! The app-parity rule (D13) compared the pixels with the editor's renderers.
 
 use std::path::Path;
 use std::sync::Arc;
