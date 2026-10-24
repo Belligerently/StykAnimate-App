@@ -70,6 +70,25 @@ impl std::error::Error for OpenError {}
 /// The key of the message shown for a document the load cannot make sense of.
 const UNREADABLE: &str = "errors.importWorker.unreadableProject";
 
+/// The key of the message shown when the engine is too low on memory for the work asked of it: the engine
+/// refuses the work and goes on with what it holds ([`styk_alloc`]).
+pub const OUT_OF_MEMORY: &str = "errors.engine.outOfMemory";
+
+/// What opening a document takes beyond its file, per byte of the file or text, at most: the decoded document, its
+/// typed views and what the reader holds on the way. Measured at the peak of opening (2026-10-24, the private
+/// documents): a Pivot file of 4 to 41 MB took 6.7 to 14.2 bytes, a .styk of 35 MB 11.4. Opening reserves this
+/// much before it starts.
+pub const OPEN_BYTES_PER_BYTE: usize = 16;
+
+/// The least an open reserves: small files of vector drawings take dozens of times their size (a 1 MB .styk
+/// took 60 MB), so 96 MiB.
+const OPEN_MINIMUM_BYTES: usize = 96 << 20;
+
+/// What opening a document of `file_bytes` bytes may take, for the reservation that precedes the open.
+pub fn open_estimate(file_bytes: usize) -> usize {
+    file_bytes.saturating_mul(OPEN_BYTES_PER_BYTE).max(OPEN_MINIMUM_BYTES)
+}
+
 impl OpenError {
     fn decode(message: impl Into<String>) -> OpenError {
         OpenError { message: message.into(), key: None, params: Vec::new(), code: None, status: None, stage: OpenStage::Decode }
@@ -77,6 +96,11 @@ impl OpenError {
 
     fn unreadable() -> OpenError {
         OpenError { key: Some(UNREADABLE.into()), ..OpenError::decode("The project is not readable.") }
+    }
+
+    /// The engine has too little memory left for the work: it is refused, with the memory unchanged.
+    pub fn out_of_memory(error: styk_alloc::OutOfMemory) -> OpenError {
+        OpenError { key: Some(OUT_OF_MEMORY.into()), code: Some("out_of_memory".into()), ..OpenError::decode(error.to_string()) }
     }
 
     fn from_codec(error: styk_piv::CodecError) -> OpenError {
@@ -154,6 +178,9 @@ impl Engine {
     /// on the calling thread, for as long as the document takes; `cancel` is polled where the Pivot reader
     /// checks (between frames).
     pub fn open_document(&self, source: OpenSource<'_>, options: OpenOptions, cancel: &dyn Fn() -> bool) -> Result<OpenedDocument, OpenError> {
+        // The open allocates in pieces nothing can refuse: it starts only when the memory can hold all of it.
+        let (OpenSource::File { bytes, .. } | OpenSource::Json { bytes, .. }) = &source;
+        let _memory = styk_alloc::reserve(open_estimate(bytes.len())).map_err(OpenError::out_of_memory)?;
         let (document, kind, version, name) = match source {
             OpenSource::File { bytes, name } => {
                 let extension = extension(name).to_ascii_lowercase();

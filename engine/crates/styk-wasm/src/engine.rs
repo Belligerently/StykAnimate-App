@@ -21,9 +21,13 @@ pub(crate) fn counter(value: f64) -> Option<u64> {
 
 #[wasm_bindgen]
 impl EngineHandle {
-    /// `device_memory_gib` is `navigator.deviceMemory` where the browser has it.
+    /// `device_memory_gib` is `navigator.deviceMemory` where the browser has it; `memory_maximum_bytes` the
+    /// maximum of the memory the page gave the module (D14), which the allocator keeps a reserve of.
     #[wasm_bindgen(constructor)]
-    pub fn new(device_memory_gib: Option<f64>) -> EngineHandle {
+    pub fn new(device_memory_gib: Option<f64>, memory_maximum_bytes: Option<f64>) -> EngineHandle {
+        if let Some(bytes) = memory_maximum_bytes.filter(|bytes| bytes.is_finite() && *bytes > 0.0) {
+            styk_alloc::set_limit(bytes as usize);
+        }
         EngineHandle { engine: Engine::with_notifier(clock, Budgets::for_device(device_memory_gib), Some(notify_progress)), jobs: Default::default() }
     }
 
@@ -182,6 +186,33 @@ impl EngineHandle {
             s.cached_bytes,
             images.unwrap_or_default()
         )
+    }
+
+    /// Where the module's memory is, as JSON: `heapBytes` (the linear memory), `liveBytes` (handed out by the
+    /// allocator), `peakBytes` (the most at once since the last [`EngineHandle::reset_memory_peak`]),
+    /// `reservedBytes` (set aside by work in progress), `ceilingBytes` (what requests may reach before they are
+    /// refused), and what the engine holds of it: `imagesReadyBytes` (decoded pictures waiting for the
+    /// renderer), `frameCacheBytes`, and `picturesRefused` (pictures not decoded for want of memory).
+    pub fn memory(&self) -> String {
+        #[cfg(target_arch = "wasm32")]
+        let heap = std::arch::wasm32::memory_size::<0>() * styk_alloc::PAGE_BYTES;
+        #[cfg(not(target_arch = "wasm32"))]
+        let heap = 0;
+        format!(
+            "{{\"heapBytes\":{heap},\"liveBytes\":{},\"peakBytes\":{},\"reservedBytes\":{},\"ceilingBytes\":{},\"picturesRefused\":{},\"imagesReadyBytes\":{},\"frameCacheBytes\":{}}}",
+            styk_alloc::live_bytes(),
+            styk_alloc::peak_bytes(),
+            styk_alloc::reserved_bytes(),
+            styk_alloc::ceiling(),
+            self.engine.pictures_refused(),
+            self.engine.try_images_ready_bytes().map_or(-1, |bytes| bytes as i64),
+            self.engine.try_frame_stats().map_or(-1, |stats| stats.cached_bytes as i64)
+        )
+    }
+
+    /// Starts measuring the most memory handed out at once from what is handed out now.
+    pub fn reset_memory_peak(&self) {
+        styk_alloc::reset_peak();
     }
 
     /// Asks every worker to leave [`worker_run`].

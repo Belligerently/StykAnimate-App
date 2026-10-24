@@ -42,13 +42,10 @@ impl Prepared {
         let cels: Vec<usize> = generation.assets.cels.keys().copied().filter(|cel| !previous.as_ref().is_some_and(|old| old.assets.cels.contains_key(cel))).collect();
         let mut tasks = TaskQueue::new();
         for index in known..count {
-            let generation = generation.clone();
-            tasks.push_back(crate::OrdinaryTask::Run(Box::new(move |engine: &Engine| engine.decode_image(&generation, index))));
+            tasks.push_back(crate::OrdinaryTask::Decode(generation.clone(), images::Picture::Image(index)));
         }
         for cel in &cels {
-            let generation = generation.clone();
-            let cel = *cel;
-            tasks.push_back(crate::OrdinaryTask::Run(Box::new(move |engine: &Engine| engine.decode_cel(&generation, cel))));
+            tasks.push_back(crate::OrdinaryTask::Decode(generation.clone(), images::Picture::Cel(*cel)));
         }
         if generation.anchors.is_some() {
             for row in 0..styk_eval::vfx::generated::atlas::ROWS {

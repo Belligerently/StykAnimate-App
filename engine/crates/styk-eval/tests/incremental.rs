@@ -63,3 +63,50 @@ fn views_of_dropped_revisions_are_released() {
     loader.document(&fresh, "p").unwrap();
     assert_eq!(loader.converted, Converted { figures: 2, keyframes: 3 });
 }
+
+/// `project()` with a background picture whose payload is `data_url` (a string made anew each time it is asked for).
+fn project_with_picture(data_url: &str) -> Value {
+    let mut document = project();
+    let text = format!(r#"[{{"background_id":1,"kind":0,"data_url":"{data_url}"}}]"#);
+    document.make_obj().unwrap().set("backgrounds", json::parse(text.as_bytes()).unwrap());
+    document
+}
+
+const PICTURE: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=";
+
+#[test]
+fn a_picture_whose_payload_is_made_anew_is_the_picture_the_loader_has() {
+    let mut loader = Loader::new();
+    for _ in 0..3 {
+        // Each pass is a document whose picture is a payload of its own (an undo that rebuilds the record).
+        let document = project_with_picture(PICTURE);
+        let converted = loader.document(&document, "p").unwrap();
+        assert_eq!(converted.images.len(), 1, "the picture is in the table once");
+        assert_eq!(loader.images.len(), 1);
+        drop(document);
+        loader.release_unused();
+    }
+    let other = project_with_picture(&PICTURE.replace("AAAAC0lEQVR4", "AAAAC0lEQVR5"));
+    loader.document(&other, "p").unwrap();
+    assert_eq!(loader.images.len(), 2, "another picture is another entry");
+}
+
+#[test]
+fn views_of_a_dropped_revision_are_released_whoever_else_caches_them() {
+    // The editor's session and the engine each convert the document with a loader of their own.
+    let mut session = Loader::new();
+    let original = project();
+    session.document(&original, "p").unwrap();
+    let mut engine = session.clone();
+    let mut edited = original.clone();
+    move_object(&mut edited, 0, 1, 42.0);
+    session.document(&edited, "p").unwrap();
+    engine.document(&edited, "p").unwrap();
+    drop(original);
+    session.release_unused();
+    engine.release_unused();
+    let (session, engine) = (session.cached_records(), engine.cached_records());
+    assert_eq!(session, engine);
+    assert_eq!(session[0], 2, "the two figures of the live revision");
+    assert_eq!(session[1], 3, "its three keyframes: the replaced one went with the dropped revision");
+}

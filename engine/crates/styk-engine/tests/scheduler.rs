@@ -98,7 +98,7 @@ fn a_frame_can_be_prepared_on_the_calling_thread_without_workers() {
 
 #[test]
 fn the_cache_stays_within_its_budget_and_keeps_the_playhead() {
-    let engine = Engine::new(clock, styk_engine::Budgets { frame_cache_bytes: 3000 });
+    let engine = Engine::new(clock, styk_engine::Budgets { frame_cache_bytes: 3000, ..styk_engine::Budgets::for_device(None) });
     engine.open(&project(), "styk", "walk").unwrap();
     for tick in 0..21 {
         engine.request(tick, &[tick]);

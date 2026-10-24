@@ -161,3 +161,29 @@ fn a_draft_is_drawn_with_the_document_until_the_document_is_published_again() {
     assert!(!engine.draft_held(3));
     assert_eq!(engine.generation().unwrap().prepared.doc.figures.len(), held);
 }
+
+#[test]
+fn an_open_the_memory_cannot_hold_is_refused_with_the_message_the_interface_shows() {
+    let engine = engine();
+    let text = std::fs::read(repo("engine/tests/edit/startup.document.json")).unwrap();
+    // The engine's memory is 96 MiB here, less its reserve: no open (which reserves at least 96 MiB) fits.
+    let refused = styk_alloc::with_limit(96 << 20, || engine.open_document(OpenSource::Json { bytes: &text, name: "Untitled" }, APP, &|| false));
+    let error = refused.err().expect("the open is refused");
+    assert_eq!(error.key.as_deref(), Some("errors.engine.outOfMemory"));
+    assert_eq!(error.code.as_deref(), Some("out_of_memory"));
+    let json = json::parse(error.to_json().as_bytes()).unwrap();
+    assert_eq!(json.get("messageKey").and_then(Value::as_str), Some("errors.engine.outOfMemory"));
+    assert_eq!(json.get("code").and_then(Value::as_str), Some("out_of_memory"));
+    assert!(engine.generation().is_none(), "a refused open changes nothing");
+    // The same open, once the memory is there, goes through: the engine is as it was.
+    assert!(engine.open_document(OpenSource::Json { bytes: &text, name: "Untitled" }, APP, &|| false).is_ok());
+}
+
+#[test]
+fn a_large_file_asks_for_more_memory_than_a_small_one() {
+    use styk_engine::document::{OPEN_BYTES_PER_BYTE, open_estimate};
+    assert_eq!(open_estimate(0), open_estimate(1000), "a small file still takes the least an open takes");
+    assert!(open_estimate(1000) >= 96 << 20);
+    assert_eq!(open_estimate(40 << 20), (40 << 20) * OPEN_BYTES_PER_BYTE, "a 40 MiB file");
+    assert_eq!(open_estimate(usize::MAX), usize::MAX, "no overflow");
+}

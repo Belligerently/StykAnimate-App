@@ -94,6 +94,29 @@ export function waitForPictures(side, seen, redraw) {
   wait();
 }
 
+/** How long a stage that draws nothing waits before it takes in the document's remaining pictures. */
+const IDLE_UPLOAD_MS = 50;
+/** The pause between two slices of pictures taken in while idle. */
+const UPLOAD_SLICE_MS = 16;
+
+/**
+ * A frame was just drawn: the document's other pictures (the frame shown does not need them) are decoded and
+ * uploaded a slice at a time while the stage is idle (`Stage::upload_pictures`), so the engine never holds the
+ * decoded pixels of a whole document and decodes the next ones as these go (D7: slices, no waiting). Drawing
+ * another frame ends the loop (the frame takes its slice itself); `schedule(callback, ms)` is the timer.
+ */
+export function uploadRemainingPictures(side, schedule = setTimeout) {
+  const token = side.pictureWait, stage = side.stage;
+  if (typeof stage?.upload_pictures !== 'function' || stage.pictures_pending()) return;
+  const step = () => {
+    if (token !== side.pictureWait || side.stage !== stage) return;
+    const left = stage.upload_pictures();
+    if (left === 1) schedule(step, UPLOAD_SLICE_MS);
+    else if (left === 2) side.engine.whenProgress(side.engine.progressSeen()).then(step);
+  };
+  schedule(step, IDLE_UPLOAD_MS);
+}
+
 /**
  * What the status line and telemetry call the graphics adapter: the browser's own description of it
  * (vendor, architecture, device) where WebGPU exists, else the name the engine got from the backend.
@@ -209,7 +232,7 @@ export async function createStage(canvas, options = {}, load = loadEngine) {
     return list;
   };
 
-  const awaitPictures = seen => waitForPictures(side, seen, invalidate);
+  const awaitPictures = seen => { waitForPictures(side, seen, invalidate); uploadRemainingPictures(side); };
 
   /** The workspace view's turn and mirror (the Draw view), applied to the frame about to be drawn. */
   const orient = view => stage.set_view_orientation(Number.isFinite(view.rotation) ? view.rotation : 0, Boolean(view.flip));

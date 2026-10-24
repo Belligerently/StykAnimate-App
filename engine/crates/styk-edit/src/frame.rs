@@ -119,6 +119,8 @@ impl Editor {
                 return Err(EditError::Unported("follow projections require this revision's worker-prepared document".into()));
             }
             let document = cache.loader.document(&self.report, "").map_err(|error| EditError::Invalid(error.to_string()))?;
+            // The views of records the document and its history no longer hold go with them.
+            cache.loader.release_unused();
             cache.prepared = Some(Arc::new(Prepared::new(Arc::new(document))));
             cache.report = Some(self.report.clone());
             cache.frames.clear();

@@ -82,7 +82,7 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
   const memory = wasm.memory;
   // Caches are budgeted by device memory; a memory that could reserve 1 GiB or less budgets like a 2 GiB device.
   const budget = reserved.maximumBytes <= 2 ** 30 ? Math.min(deviceMemory ?? 2, 2) : deviceMemory;
-  const handle = new EngineHandle(budget ?? undefined);
+  const handle = new EngineHandle(budget ?? undefined, reserved.maximumBytes);
   // Threads need the memory to be shareable with workers, which a page that is not cross-origin isolated cannot do.
   const threaded = workers > 0 && globalThis.crossOriginIsolated !== false && typeof Worker === 'function';
   const pool = [];
@@ -132,6 +132,8 @@ async function load({workers = defaultWorkerCount(), deviceMemory = globalThis.n
     /** The engine's memory now, and the most it may grow to (chosen by createEngineMemory). */
     get memoryBytes() { return memory.buffer.byteLength; },
     memoryMaximumBytes: reserved.maximumBytes,
+    /** Where the memory is: linear memory, bytes the allocator handed out, and what the engine holds of it. */
+    memory: () => JSON.parse(handle.memory()),
     createStage: canvas => Stage.create(canvas, handle),
     /** An edit session on the document `json` exactly as the editor holds it (D19). */
     editSession: (json, state, revision) => EditSession.from_document(json, state, revision),

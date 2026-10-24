@@ -9,6 +9,16 @@ use wasm_bindgen::prelude::*;
 
 use crate::js_error;
 
+/// The memory one editing call may need beyond what the document holds: the records it replaces, its history entry
+/// and the conversion of what it changed for the engine. A call starts only when the memory can hold this much, so
+/// that a document the engine holds cannot be edited into running it out of memory.
+const CALL_WORKING_BYTES: usize = 64 << 20;
+
+/// The answer to a call the engine refuses for want of memory, in the shape of an error the session raised.
+fn out_of_memory_answer() -> String {
+    format!("{{\"status\":\"error\",\"error\":\"{}\"}}", styk_engine::document::OUT_OF_MEMORY)
+}
+
 /// What a session publishes into: the engine, and the document it was started from (its typed views and
 /// lineage), with the tree last published.
 struct Publisher {
@@ -90,6 +100,7 @@ impl EditSession {
     /// as it is now: the stage draws it, playback and exports read it, and every call that changes it
     /// publishes the change. Answers `{generation, revision, ms}` as JSON.
     pub fn activate(&mut self, revision: f64) -> Result<String, JsError> {
+        let _working = styk_alloc::reserve(CALL_WORKING_BYTES).map_err(|error| js_error(styk_engine::document::OpenError::out_of_memory(error).to_json()))?;
         let tree = self.session().report().clone();
         let Some(publisher) = &mut self.publisher else { return Err(js_error("this session has no document to publish")) };
         let done = publisher.engine.activate(&publisher.opened.typed, &tree, revision as u64).map_err(|error| js_error(error.to_json()))?;
@@ -127,6 +138,7 @@ impl EditSession {
     /// in the view, unchanged COW figures and sheet fields are omitted (the app's owned
     /// adoption path); default responses stay complete for shadow comparison.
     pub fn call(&mut self, method: &str, args: &str, view: &str) -> String {
+        let Ok(_working) = styk_alloc::reserve(CALL_WORKING_BYTES) else { return out_of_memory_answer() };
         let answer = self.session.as_mut().expect("a session is open until it is dropped").call(method, args, view);
         self.publish();
         answer

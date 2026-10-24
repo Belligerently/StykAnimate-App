@@ -426,6 +426,15 @@ pub fn decode_cel(assets: &Assets, cel: &Arc<DrawingTiles>) -> Vec<DecodedImage>
         .collect()
 }
 
+/// The most memory [`decode_image`] holds at once: the picture decoded at its own size (twice: the decoder keeps
+/// its own copy), then resized and bordered at the size of its atlas place (twice). Zero for an image without one.
+pub fn decode_image_working_bytes(assets: &Assets, index: usize) -> usize {
+    let Some(entry) = assets.atlas.get(index).filter(|entry| entry.valid) else { return 0 };
+    let source = entry.source_w as usize * entry.source_h as usize * 4;
+    let stored = (entry.w as usize + 2) * (entry.h as usize + 2) * 4;
+    2 * source + 2 * stored
+}
+
 /// Decodes image `index` of `doc` for the atlas `assets` laid out. `None` when the
 /// image has no place in the atlas or cannot be decoded.
 pub fn decode_image(doc: &Document, assets: &Assets, index: usize) -> Option<DecodedImage> {
@@ -444,7 +453,10 @@ pub fn decode_image(doc: &Document, assets: &Assets, index: usize) -> Option<Dec
     }
     let (w, h) = (entry.w as usize, entry.h as usize);
     let (gw, gh) = (w + 2, h + 2);
-    let mut out = vec![0u8; gw * gh * 4];
+    // The one allocation of the picture's size that is not the decoder's: a failure is a picture that cannot be shown.
+    let mut out = Vec::new();
+    out.try_reserve_exact(gw * gh * 4).ok()?;
+    out.resize(gw * gh * 4, 0u8);
     let source = rgba.as_raw();
     for gy in 0..gh {
         let sy = gy.saturating_sub(1).min(h - 1);
