@@ -6,7 +6,7 @@
 //   npm run engine:parity -- --app       # also the app with and without the engine (Chromium)
 //
 // Repository tier: the Rust fixture suites (IK, evaluation, effects, 3D, property channels, draw lists, the Pivot
-// codec's recorded answers, command replays, the drawing raster engine), the container reader and writer against src/native-container.mjs
+// codec's recorded answers, command replays, the drawing raster engine), the container reader and writer (the app's open and save path against the Rust store)
 // on every native file in the repository, and fixture regeneration (byte-stable: a fixture
 // that changes means the editor's behaviour changed).
 // Corpus tier: geometry of every tick of the benchmark files and of the catalogue's 3D scenes against the editor
@@ -106,7 +106,7 @@ run('typed pairing fixtures regenerate unchanged', process.execPath,
   ['engine/tools/typed-pairing-fixtures.mjs'], {quiet: true,
     check: () => unchanged('engine/tests/typed-pairing')});
 
-// Containers: every native file in the repository, against the JavaScript reader.
+// Containers: every native file in the repository, read and written again by the app's path against the Rust store.
 run('styk CLI build', ...cargo('build', '--release', '-p', 'styk-cli'), {quiet: true});
 // Complete-return recordings identify the admitted live-worker pairs; async
 // preflight tapes have no admitted return recording and remain explicit guards.

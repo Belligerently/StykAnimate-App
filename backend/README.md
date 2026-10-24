@@ -150,11 +150,10 @@ backend restart, byte/SHA256 identity checks, and preservation of fractional edi
 The frontend `ImportClient` in `src/import-client.mjs` sends transferable upload
 buffers to `src/import-worker.mjs`, which sends them to the codec worker over a
 MessagePort (`src/codec-request.mjs`); response reads and JSON parsing run there.
-Native containers (`.styk`/`.stkz`/`.stykmov`) decode locally in that worker —
-`src/native-container.mjs` reads version-1 and version-2 containers and legacy
-JSON, checks all digests, expands binary sections, and verifies the embedded
-source fingerprint — and only fall back to `/api/import` when the local codec
-cannot handle the file. Use `importFile(file)`, `openSample(path)` (desktop: the main process reads the sample),
+Native containers (`.styk`/`.stkz`/`.stykmov`) open locally in that worker —
+the Rust container reader (`src/native-file-codec.mjs`) reads version-1 and version-2 containers and legacy
+JSON, checks all digests, admits the binary sections, and verifies the embedded
+source fingerprint. Use `importFile(file)`, `openSample(path)` (desktop: the main process reads the sample),
 `importNative(file)`, and `dispose()`. All import methods resolve the API
 response above. The worker appends `worker_fetch_ms`, `worker_parse_ms`, and
 `worker_ms` timings. Editable documents return through byte-bounded

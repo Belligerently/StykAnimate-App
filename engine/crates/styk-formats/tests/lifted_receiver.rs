@@ -32,3 +32,11 @@ fn conservative_number_upper_bounds_do_not_refuse_small_decimal_records() {
     assert!(styk_doc::json::to_string(&document).len() < 4096);
     assert!(matches!(parse_lifted_owned_within(b"null".to_vec(), vec![], vec![], MAX_MATERIALIZED_BYTES + 1), Err(ContainerError::MaterializedTooLarge)));
 }
+
+#[test]
+fn repeated_payload_references_are_charged_each_time() {
+    let payload = vec![7u8; 60];
+    // 60 bytes of payload are 80 bytes of base64 for every reference to them.
+    assert!(parse_lifted_owned_within(br#"["S2S:1:0:60"]"#.to_vec(), vec![], payload.clone(), 200).is_ok());
+    assert!(matches!(parse_lifted_owned_within(br#"["S2S:1:0:60","S2S:1:0:60"]"#.to_vec(), vec![], payload, 200), Err(ContainerError::MaterializedTooLarge)));
+}

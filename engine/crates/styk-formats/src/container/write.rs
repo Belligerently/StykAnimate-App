@@ -364,35 +364,51 @@ pub fn lift_within(document: &Value, reserved: &[Arc<[u8]>], max_bytes: usize) -
 
 /// Assembles a version 2 container, compressing with zstd at level 3.
 pub fn encode_v2(lifted: &Lifted, kind: Kind) -> Result<Vec<u8>, ContainerError> {
-    let sections: [(u8, &[u8]); 2] = [(1, &lifted.arrays), (2, &lifted.payloads)];
+    encode_v2_with(&lifted.skeleton, &lifted.arrays, &lifted.payloads, kind, &mut |raw, _| pack_zstd(raw))
+}
+
+/// Assembles a version 2 container from its skeleton text and its two sections
+/// (numeric arrays, payloads). `pack` turns one block, given its bytes and their
+/// SHA-256, into the zstd frame to store: a fresh compression, or a frame the
+/// caller kept from compressing the same bytes before.
+pub fn encode_v2_with(skeleton: &[u8], arrays: &[u8], payloads: &[u8], kind: Kind, pack: &mut dyn FnMut(&[u8], &[u8; 32]) -> Vec<u8>) -> Result<Vec<u8>, ContainerError> {
+    let sections: [(u8, &[u8]); 2] = [(1, arrays), (2, payloads)];
     let raw_sections: usize = sections.iter().map(|(_, bytes)| bytes.len()).sum();
-    if lifted.skeleton.len() > MAX_SKELETON_BYTES || sections.iter().any(|(_, bytes)| bytes.len() > MAX_BYTES) || lifted.skeleton.len() + raw_sections * 3 > MAX_BYTES * 4 {
+    if skeleton.len() > MAX_SKELETON_BYTES || sections.iter().any(|(_, bytes)| bytes.len() > MAX_BYTES) || skeleton.len() + raw_sections * 3 > MAX_BYTES * 4 {
         return Err(too_large("the skeleton or a section exceeds its limit"));
     }
-    let skeleton = pack_zstd(&lifted.skeleton);
-    let packed: Vec<(u8, &[u8], Vec<u8>)> = sections.iter().map(|&(section_kind, raw)| (section_kind, raw, pack_zstd(raw))).collect();
-    let total = HEADER + 4 + skeleton.len() + packed.len() * SECTION + packed.iter().map(|(_, _, stored)| stored.len()).sum::<usize>();
+    let skeleton_digest = sha256(skeleton);
+    let skeleton_stored = pack(skeleton, &skeleton_digest);
+    let packed: Vec<(u8, &[u8], [u8; 32], Vec<u8>)> = sections
+        .iter()
+        .map(|&(section_kind, raw)| {
+            let digest = sha256(raw);
+            let stored = pack(raw, &digest);
+            (section_kind, raw, digest, stored)
+        })
+        .collect();
+    let total = HEADER + 4 + skeleton_stored.len() + packed.len() * SECTION + packed.iter().map(|(_, _, _, stored)| stored.len()).sum::<usize>();
     if total > MAX_BYTES {
         return Err(ContainerError::FileTooLarge { size: total });
     }
     let mut out = Vec::with_capacity(total);
     out.extend_from_slice(kind.magic());
     out.extend_from_slice(&[2, 2, 0, 0]);
-    out.extend_from_slice(&(lifted.skeleton.len() as u64).to_le_bytes());
     out.extend_from_slice(&(skeleton.len() as u64).to_le_bytes());
-    out.extend_from_slice(&sha256(&lifted.skeleton));
+    out.extend_from_slice(&(skeleton_stored.len() as u64).to_le_bytes());
+    out.extend_from_slice(&skeleton_digest);
     out.extend_from_slice(&(packed.len() as u32).to_le_bytes());
-    out.extend_from_slice(&skeleton);
-    for (section_kind, raw, stored) in &packed {
+    out.extend_from_slice(&skeleton_stored);
+    for (section_kind, raw, digest, stored) in &packed {
         let mut record = [0u8; SECTION];
         record[0] = *section_kind;
         record[1] = 2;
         record[8..16].copy_from_slice(&(raw.len() as u64).to_le_bytes());
         record[16..24].copy_from_slice(&(stored.len() as u64).to_le_bytes());
-        record[24..56].copy_from_slice(&sha256(raw));
+        record[24..56].copy_from_slice(digest);
         out.extend_from_slice(&record);
     }
-    for (_, _, stored) in &packed {
+    for (_, _, _, stored) in &packed {
         out.extend_from_slice(stored);
     }
     Ok(out)

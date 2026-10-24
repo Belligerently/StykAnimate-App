@@ -1113,6 +1113,7 @@ name = "styk-codec-wasm"
 version = "0.1.0"
 dependencies = [
  "styk-doc",
+ "styk-formats",
  "styk-piv",
  "wasm-bindgen",
 ]

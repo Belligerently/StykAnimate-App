@@ -133,7 +133,7 @@ if (mode !== 'desktop') {
 }
 if (mode !== 'kernels') {
   const {emptyDocument, createObject, createFrame} = await import('../src/demo.mjs');
-  const {buildContainerV2} = await import('../src/native-container.mjs');
+  const {buildContainerV2} = await import('../tests/support/native-files.mjs');
   for (const count of [30, 300]) {
     const document = emptyDocument(), figure = document.figure_types[0];
     document.fps = 60;

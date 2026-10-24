@@ -11,7 +11,7 @@
 // editor alone (`?engineEdit=off`) against the engine owning (`?engineOwner=on`).
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
-import {decodeDocument} from '../src/native-container.mjs';
+import {decodeDocument} from '../tests/support/native-files.mjs';
 import {Editor} from '../src/editor.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {loadEngine} from '../src/engine/engine.mjs';

@@ -16,7 +16,7 @@ import {decodePiv} from './decode-piv.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url)), repo = path.resolve(here, '../..');
 const repoUrl = pathToFileURL(repo).href;
-const {decodeDocument, normalizeDecodedDocument} = await import(`${repoUrl}/src/native-container.mjs`);
+const {openDocument} = await import(`${repoUrl}/tests/support/native-files.mjs`);
 const {Editor} = await import(`${repoUrl}/src/editor.mjs`);
 const {EngineEligibility} = await import(`${repoUrl}/src/engine/engine-eligibility.mjs`);
 
@@ -42,7 +42,7 @@ async function load(file) {
       return JSON.parse(readFileSync(decoded, 'utf8'));
     } finally { rmSync(decoded, {force: true}); }
   }
-  return normalizeDecodedDocument((await decodeDocument(new Uint8Array(readFileSync(file)), kind)).document, kind);
+  return openDocument(new Uint8Array(readFileSync(file)), kind, {verifySource: false});
 }
 
 const results = [];

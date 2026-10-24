@@ -17,9 +17,9 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | `styk-engine` | 24 | 215 KiB | 18 | 6 | 0 | 0 | 0 | 0 % | 62 % | 0 % |
 | `styk-eval` | 81 | 758 KiB | 26 | 46 | 9 | 0 | 0 | 16 % | 68 % | 0 % |
 | `styk-export` | 14 | 98 KiB | 8 | 6 | 0 | 0 | 0 | 0 % | 41 % | 0 % |
-| `styk-formats` | 58 | 740 KiB | 31 | 2 | 2 | 22 | 1 | 65 % | 2 % | 0 % |
+| `styk-formats` | 59 | 763 KiB | 29 | 5 | 1 | 22 | 2 | 63 % | 8 % | 6 % |
 | `styk-render` | 52 | 708 KiB | 31 | 16 | 5 | 0 | 0 | 9 % | 61 % | 0 % |
-| **Total** | 356 | 4055 KiB | 175 | 123 | 34 | 23 | 1 | 20 % | 49 % | 0 % |
+| **Total** | 357 | 4078 KiB | 173 | 126 | 33 | 23 | 2 | 20 % | 50 % | 1 % |
 
 ## Engine modules
 
@@ -174,7 +174,7 @@ Engine logic: ported to Rust.
 | `src/playback.mjs` | `styk-engine::playback` | partial | worker preparation, packet caches. Rust: thread-pool preparation and bounded generation/epoch/exact-sample tickets for supported documents; stale packets cannot substitute newer same-tick frames; one-shot State/Storage readiness and shared finite progress/coalesced Busy controls, dense cache work outside State; physical lease/final-drop/shutdown work open |
 | `src/preview-quality.mjs` | `styk-engine::playback` | js | quality governor |
 | `src/library-preview-core.mjs` | `styk-engine::thumbnails` | partial | Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS |
-| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
+| `src/library-preview-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: native files open in styk-formats::files; replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS |
 | `src/thumbnail-renderer.mjs` | `styk-engine::thumbnails` | partial | Rust: supported thumbnails and worker fractional previews/monitor on GPU/CPU with bounded tickets and explicit destination drawing grid; prepared shown epoch and retained monitor bitmap verified; auxiliary onion/monitor parity, live actual-shown readiness, refused documents and no-thread fallback remain |
 | `src/thumbnail-validity.mjs` | `styk-engine::thumbnails` | js |  |
 | `src/thumbnail-worker.mjs` | `styk-engine::thumbnails` | partial | Rust: thumbnails of supported documents (styk_wasm::views, styk-raster); explicit destination single-drawing filter grid; some auxiliary onion/monitor parity and refused documents remain; fallback worker retained |
@@ -273,9 +273,10 @@ Engine logic: ported to Rust.
 | `src/image-export.mjs` | `styk-export` | js |  |
 | `src/audio-model.mjs` | `styk-export::audio` | js | audio model and offline mix; validateAudioState also in styk-edit/src/audio.rs for the ported audio commands |
 | `src/audio-pcm.mjs` | `styk-export::audio` | js | audio model and offline mix |
-| `backend/native_format.py` | `styk-formats::container` | verified | the app reads containers in src/native-container.mjs and, as the codec fallback, styk-piv over styk-formats; kept only as the development test oracle (not shipped) |
+| `backend/native_format.py` | `styk-formats::container` | verified | the app opens and saves containers through styk-formats in the codec module (src/native-file-codec.mjs), as the codec service does for native documents; kept only as the development test oracle (not shipped) |
 | `src/base64.mjs` | `styk-formats::container` | ported | Rust: styk-doc JSON base64 |
-| `src/native-container.mjs` | `styk-formats::container` | ported | Rust: reader and writer (v0–v2, lifted records); 461 corpus files decode to the same document, 448 v2 files rewrite byte-identical |
+| `src/document-lift.mjs` | `styk-formats::container` | partial | Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical); the JavaScript lift stays while the editor holds the document as objects: an array's identity decides what is stored once (mirror records, saves) |
+| `src/native-container.mjs` | `styk-formats::container` | removed | read and wrote the containers in JavaScript; the workers open and save through styk-formats::files in the codec module (src/native-file-codec.mjs), and the lifting the mirror and saves need is src/document-lift.mjs (46226 bytes) |
 | `src/pose-sequence-storage.mjs` | `styk-formats::container` | js |  |
 | `src/pose-sequences.mjs` | `styk-formats::container` | js |  |
 | `src/source-record.mjs` | `styk-formats::container` | js |  |
@@ -299,7 +300,7 @@ Engine logic: ported to Rust.
 | `native/piv-frame-scan.cpp` | `styk-formats::piv` | verified | the app runs styk-piv (styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)); kept only as the development test oracle (not shipped) |
 | `src/import-wire.mjs` | `styk-formats::piv` | js | native frame table materialization |
 | `src/playback-native.mjs` | `styk-formats::piv` | js | native frame table materialization |
-| `src/document-export-worker.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
+| `src/document-export-worker.mjs` | `styk-formats::save` | partial | Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); the JS lifts the document, prepares portable figures and Pivot saves |
 | `src/document-export.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
 | `src/native-figure.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
 | `src/pivot-export-materialize.mjs` | `styk-formats::save` | js | save, portable figure/movieclip, Pivot materialization |
@@ -319,7 +320,7 @@ Engine logic: ported to Rust.
 | `src/document-normalize.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/document-transport.mjs` | `styk-formats::service` | js | import/export transport |
 | `src/import-client.mjs` | `styk-formats::service` | js | import/export transport |
-| `src/import-worker.mjs` | `styk-formats::service` | js | import/export transport |
+| `src/import-worker.mjs` | `styk-formats::service` | partial | Rust: native containers open in styk-formats::files (src/native-file-codec.mjs); Pivot and Stick Nodes files, source embedding and the transport to the interface are still JS |
 | `src/sticknodes/adapter.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/sticknodes/decoder/archive.mjs` | `styk-formats::sticknodes` | js |  |
 | `src/sticknodes/decoder/binary.mjs` | `styk-formats::sticknodes` | js |  |
@@ -438,6 +439,8 @@ Browser, Electron or operating-system service: stays in JS (or native), driven b
 | `src/video-export.mjs` | `styk-export` | js | encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine |
 | `src/audio-engine.mjs` | `styk-export::audio` | js | Web Audio preview |
 | `src/audio-worker.mjs` | `styk-export::audio` | js | Web Audio preview |
+| `src/container-cache.mjs` | `styk-formats::files` | stays | bounded cache of compressed blocks that outlives an export worker |
+| `src/native-file-codec.mjs` | `styk-formats::files` | stays | loads the Rust container module in a worker and moves a file to and from the interface's object model |
 | `desktop/backend.cjs` | `styk-formats::service` | removed | started the Python codec sidecar; the desktop runs styk-codec-wasm in the page (6079 bytes) |
 
 ## Interface

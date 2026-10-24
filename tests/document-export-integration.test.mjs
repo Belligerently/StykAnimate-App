@@ -3,7 +3,7 @@ import test from 'node:test';
 import {Worker as NodeWorker} from 'node:worker_threads';
 import {randomBytes, createHash} from 'node:crypto';
 import {DocumentExporter} from '../src/document-export.mjs';
-import {decodeDocument, normalizeDecodedDocument} from '../src/native-container.mjs';
+import {decodeDocument, openDocument} from './support/native-files.mjs';
 import {createDemo} from '../src/demo.mjs';
 import {Editor} from '../src/editor.mjs';
 import {FakeCodecHost} from './support/codec-host.mjs';
@@ -55,11 +55,11 @@ test('a missing original source rejects native save without publishing a blob or
   const report = createDemo(), before = structuredClone(report);
   let published;
   await assert.rejects(async () => { published = await exporter.export(report, {sourceId: 'missing-original'}); },
-    error => error.status === 410 && error.code === 'source_expired');
+    error => error.status === 404 && error.messageKey === 'errors.documentExportWorker.theOriginalSourceIsUnavailable');
   assert.equal(published, undefined);
-  assert.deepEqual(service.calls, {source: 1, export: 1}, 'the authoritative codec export must resolve a missing source route');
+  assert.deepEqual(service.calls, {source: 1, export: 0}, 'the native container is written locally; the codec only supplies the original');
   assert.equal(exporter.lastTimings, null);
-  assert.deepEqual(exporter.compressionCache.snapshot(), []);
+  assert.equal(exporter.compressionCache.size, 0);
   assert.equal(exporter.worker, null);
   assert.deepEqual(report, before, 'a failed save preserves the live editable document');
 });
@@ -133,7 +133,7 @@ test('real portable movieclip worker packs keys, prunes archives, and leaves the
   const figure = editor.report.figure_types.find(figure => figure._styk?.movieclip);
   const before = structuredClone(editor.report);
   const output = await exporter.export(editor.report, {format: 'stykmov', figureTypeId: figure.figure_type_id});
-  const reopened = normalizeDecodedDocument((await decodeDocument(new Uint8Array(await output.arrayBuffer()), 'stykmov')).document, 'stykmov');
+  const reopened = await openDocument(new Uint8Array(await output.arrayBuffer()), 'stykmov', {verifySource: false});
   assert.equal(reopened.figure_types[0]._styk.movieclip.document._stykSource, undefined);
   assert.equal(reopened.figure_types[0]._styk.movieclip.document._styk?.movieclipSource?.document?._stykSource, undefined);
   assert.deepEqual(editor.report, before);

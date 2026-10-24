@@ -27,10 +27,13 @@ A dedicated worker assembles each snapshot, synchronizes existing derived
 aliases, validates the scene, and builds the output. `.styk`/`.stkz`/`.stykmov`
 saves are encoded in the worker as version-2 sectioned containers — large
 numeric arrays and base64 payloads move to binary sections, the original source
-bytes come from the codec's `/api/source` route, and the skeleton compresses with
-zstd — without the document ever being serialized by the codec. `.piv`/`.stk`
-exports go to the Pivot codec, as does a native export when local encoding
-cannot run (no zstd support, missing source). The codec is the Rust one
+bytes come from the codec's `/api/source` route, and the Rust container writer
+(`styk_formats::files` in the codec module, loaded by the worker itself:
+`src/native-file-codec.mjs`) compresses the skeleton and sections with zstd and
+checks that a figure file holds a self-contained figure — without the document ever
+being serialized by the codec. A native save has no service fallback: a missing
+original source fails the save (status 404 or 410), as do documents over the
+capacity limits. `.piv`/`.stk` exports go to the Pivot codec. The codec is the Rust one
 (`engine/crates/styk-piv`) compiled to WebAssembly and running in a worker of the
 editor page (`src/codec-web-worker.mjs`); it answers the same `/api/...` routes the
 former local file service did, over the worker's message ports, with the same
@@ -53,15 +56,17 @@ port. A monotonically increasing request ID rejects delayed messages from older
 requests. No editable graph or completed snapshot remains between saves.
 
 The exporter retains only up to eight immutable compressed blocks, totaling at
-most 64 MiB, and passes them to replacement workers. The same idle deadline and
+most 64 MiB (`src/container-cache.mjs`), and passes them to replacement workers
+by transferring their buffers: they leave the page for the duration of one save and
+come back with its result. The same idle deadline and
 failure/disposal paths clear this pool. Each save still snapshots and validates
 current content, then hashes
 fresh raw section bytes; identical SHA-256, length and codec settings can reuse
 compression. Mutable array identity or editor revision is never a content-cache
 key. Changed poses, media and unknown metadata therefore cannot return stale
-data. Multipart container output feeds `Blob(parts)` directly, avoiding the
-additional contiguous whole-file buffer. The layout, compression settings and
-output bytes are unchanged.
+data. The writer returns the whole container, which becomes the Blob. The layout,
+compression settings and output bytes are those of the JavaScript writer this
+replaced.
 
 An imported layer sheet whose tracks still map exactly to the original native
 times does not require Pivot baking. The materializer checks current track

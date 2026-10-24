@@ -13335,75 +13335,75 @@
   },
   "errors.documentExport.theFileServiceReturnedNoExportedDocument": {
     "locations": [
-      "src/document-export.mjs:194"
+      "src/document-export.mjs:197"
     ],
     "context": "if (!(result.blob instanceof Blob)) throw messageError(new Error(''), \"errors.documentExport.theFileServiceReturnedNoExportedDocument\", {});"
   },
   "errors.documentExportWorker.busy": {
     "locations": [
-      "src/document-export-worker.mjs:62"
+      "src/document-export-worker.mjs:63"
     ],
     "context": "if (running) { self.postMessage({id: message.id, ok: false, error: {message: 'The document export worker is busy.', messageKey:'errors.documentExportWorker.busy"
   },
   "errors.documentExportWorker.pivotCannotPreserveConnectorsSmartStretchOrOne": {
     "locations": [
-      "src/document-export-worker.mjs:93"
+      "src/document-export-worker.mjs:94"
     ],
     "context": "if(documentHasRigConstraints(document)||documentHasSurfaces(document))throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotCannotPr"
   },
   "errors.documentExportWorker.pivotCannotRetainTheseStickNodesShapesSave": {
     "locations": [
-      "src/document-export-worker.mjs:100"
+      "src/document-export-worker.mjs:101"
     ],
     "context": "if(hasSourceShapes(document))throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotCannotRetainTheseStickNodesShapesSave\", {}), {tel"
   },
   "errors.documentExportWorker.pivotFilesCannotPreserveVfxSaveAsStyk": {
     "locations": [
-      "src/document-export-worker.mjs:83"
+      "src/document-export-worker.mjs:84"
     ],
     "context": "if(['piv','stk'].includes(config.format)&&documentHasVfx(document))throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotFilesCannot"
   },
   "errors.documentExportWorker.pivotFilesCannotRepresentTheseGradientFillsSave": {
     "locations": [
-      "src/document-export-worker.mjs:135"
+      "src/document-export-worker.mjs:136"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.pivotFilesCannotRepresentTheseGradientFillsSave\", {}), {telemetryCode: 'unsupported"
   },
   "errors.documentExportWorker.saveMovieclipsAsStykmovUseBreakApartTo": {
     "locations": [
-      "src/document-export-worker.mjs:125"
+      "src/document-export-worker.mjs:126"
     ],
     "context": "throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.saveMovieclipsAsStykmovUseBreakApartTo\", {}), {telemetryCode: 'unsupported_feature'"
   },
   "errors.documentExportWorker.selectAMovieclipToExportAsStykmov": {
     "locations": [
-      "src/document-export-worker.mjs:88"
+      "src/document-export-worker.mjs:89"
     ],
     "context": "if(config.format==='stykmov'&&!isMovieclip(document.figure_types[0]))throw messageError(new Error(''), \"errors.documentExportWorker.selectAMovieclipToExportAsSt"
   },
   "errors.documentExportWorker.theDocumentSnapshotWasNotInitialized": {
     "locations": [
-      "src/document-export-worker.mjs:77"
+      "src/document-export-worker.mjs:78"
     ],
     "context": "if (!document || !config) throw messageError(new Error(''), \"errors.documentExportWorker.theDocumentSnapshotWasNotInitialized\", {});"
   },
   "errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord": {
     "locations": [
       "src/import-client.mjs:93",
-      "src/import-worker.mjs:130",
+      "src/import-worker.mjs:122",
       "src/source-record.mjs:5"
     ],
     "context": "request.reject(messageError(new Error(''), 'errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord', {}));"
   },
   "errors.documentExportWorker.theOriginalSourceIsUnavailable": {
     "locations": [
-      "src/document-export-worker.mjs:32"
+      "src/document-export-worker.mjs:34"
     ],
     "context": "if (!response.ok) throw Object.assign(messageError(new Error(''), \"errors.documentExportWorker.theOriginalSourceIsUnavailable\", {status: response.status}), {sta"
   },
   "errors.documentExportWorker.unknownDocumentExportOperation": {
     "locations": [
-      "src/document-export-worker.mjs:200"
+      "src/document-export-worker.mjs:191"
     ],
     "context": "} else throw messageError(new Error(''), \"errors.documentExportWorker.unknownDocumentExportOperation\", {});"
   },
@@ -18403,19 +18403,19 @@
   "errors.importWorker.importFailed": {
     "locations": [
       "src/import-client.mjs:251",
-      "src/import-worker.mjs:107"
+      "src/import-worker.mjs:99"
     ],
     "context": "const error=sample?.error?new Error(sample.error):messageError(new Error(''), 'errors.importWorker.importFailed', {status});"
   },
   "errors.importWorker.serviceFailed": {
     "locations": [
-      "src/import-worker.mjs:101"
+      "src/import-worker.mjs:93"
     ],
     "context": "const error = messageError(new Error(''), response.ok ? 'errors.importWorker.unreadableProject' : 'errors.importWorker.serviceFailed', {status:response.status})"
   },
   "errors.importWorker.theFileServiceReturnedNoEditableDocument": {
     "locations": [
-      "src/import-worker.mjs:113"
+      "src/import-worker.mjs:105"
     ],
     "context": "if (!result || typeof result !== 'object' || !result.document) throw messageError(new Error(''), \"errors.importWorker.theFileServiceReturnedNoEditableDocument\","
   },
@@ -18434,13 +18434,13 @@
   },
   "errors.importWorker.unknownImportOperation": {
     "locations": [
-      "src/import-worker.mjs:84"
+      "src/import-worker.mjs:76"
     ],
     "context": "} else throw messageError(new Error(''), \"errors.importWorker.unknownImportOperation\", {});"
   },
   "errors.importWorker.unreadableProject": {
     "locations": [
-      "src/import-worker.mjs:101"
+      "src/import-worker.mjs:93"
     ],
     "context": "const error = messageError(new Error(''), response.ok ? 'errors.importWorker.unreadableProject' : 'errors.importWorker.serviceFailed', {status:response.status})"
   },
@@ -19463,176 +19463,35 @@
     ],
     "context": "if (this.frames !== expectedFrames) throw messageError(new Error(''), \"errors.mp4Muxer.videoExportProducedOfFrames\", {frames: this.frames, expectedFrames: expec"
   },
-  "errors.nativeContainer.aFileMustContainReusableFiguresAndOne": {
-    "locations": [
-      "src/native-container.mjs:808"
-    ],
-    "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.aFileMustContainReusableFiguresAndOne\", {kind: kind}), {code: 'invalid_native_figure'});"
-  },
-  "errors.nativeContainer.aStykmovFileMustContainOneMovieclip": {
-    "locations": [
-      "src/native-container.mjs:821"
-    ],
-    "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.aStykmovFileMustContainOneMovieclip\", {}), {code: 'invalid_movieclip'});"
-  },
-  "errors.nativeContainer.corruptedEmbeddedOriginalSource": {
-    "locations": [
-      "src/native-container.mjs:833",
-      "src/native-container.mjs:834"
-    ],
-    "context": "try { bytes = base64ToBytes(encoded); } catch { throw messageError(new Error(''), \"errors.nativeContainer.corruptedEmbeddedOriginalSource\", {}); }"
-  },
   "errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch": {
     "locations": [
-      "src/native-container.mjs:837"
+      "src/import-worker.mjs:127"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch\", {});"
   },
-  "errors.nativeContainer.figureSetJoinsMustStayInsideTheSaved": {
-    "locations": [
-      "src/native-container.mjs:817"
-    ],
-    "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.figureSetJoinsMustStayInsideTheSaved\", {}), {code: 'invalid_native_figure'});"
-  },
-  "errors.nativeContainer.invalidEmbeddedOriginalSource": {
-    "locations": [
-      "src/native-container.mjs:831"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.invalidEmbeddedOriginalSource\", {});"
-  },
-  "errors.nativeContainer.projectDataMustBeAJsonObject": {
-    "locations": [
-      "src/native-container.mjs:849"
-    ],
-    "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.projectDataMustBeAJsonObject\", {}), {code: 'invalid_document'});"
-  },
-  "errors.nativeContainer.theFigureMustBeSelfContained": {
-    "locations": [
-      "src/native-container.mjs:812"
-    ],
-    "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.theFigureMustBeSelfContained\", {kind: kind}), {code: 'invalid_native_figure'});"
-  },
-  "errors.nativeContainer.theNativeDocumentExceedsTheUncompressedSizeLimit": {
-    "locations": [
-      "src/native-container.mjs:181",
-      "src/native-container.mjs:235",
-      "src/native-container.mjs:263",
-      "src/native-container.mjs:268",
-      "src/native-container.mjs:291",
-      "src/native-container.mjs:297"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.theNativeDocumentExceedsTheUncompressedSizeLimit\", {});"
-  },
-  "errors.nativeContainer.theNativeFileExceedsTheCompressedSizeLimit": {
-    "locations": [
-      "src/native-container.mjs:192",
-      "src/native-container.mjs:748"
-    ],
-    "context": "if (bytes.byteLength > MAX_BYTES) throw messageError(new Error(''), \"errors.nativeContainer.theNativeFileExceedsTheCompressedSizeLimit\", {});"
-  },
-  "errors.nativeContainer.theStykanimateDocumentContainsNonFiniteNumbers": {
-    "locations": [
-      "src/native-container.mjs:294"
-    ],
-    "context": "if (!Number.isFinite(item)) throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateDocumentContainsNonFiniteNumbers\", {});"
-  },
   "errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit": {
     "locations": [
-      "src/native-container.mjs:52",
-      "src/native-container.mjs:62",
-      "src/native-container.mjs:721",
-      "src/native-container.mjs:733"
+      "src/document-lift.mjs:474"
     ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit\", {});"
-  },
-  "errors.nativeContainer.theStykanimateFileHasAnUnknownSectionKind": {
-    "locations": [
-      "src/native-container.mjs:223"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileHasAnUnknownSectionKind\", {});"
-  },
-  "errors.nativeContainer.theStykanimateFileIsDamagedChecksumMismatch": {
-    "locations": [
-      "src/native-container.mjs:205",
-      "src/native-container.mjs:238",
-      "src/native-container.mjs:243"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedChecksumMismatch\", {});"
+    "context": "return Object.assign(messageError(new Error(''), \"errors.nativeContainer.theStykanimateDocumentExceedsTheUncompressedSizeLimit\", {}), {code: 'document_too_large"
   },
   "errors.nativeContainer.theStykanimateFileIsDamagedInvalidArraySection": {
     "locations": [
-      "src/native-container.mjs:278"
+      "src/document-lift.mjs:381"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedInvalidArraySection\", {});"
   },
-  "errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadLength": {
-    "locations": [
-      "src/native-container.mjs:153",
-      "src/native-container.mjs:158",
-      "src/native-container.mjs:165"
-    ],
-    "context": "if (bytes.byteLength !== rawLength) throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadLength\", {});"
-  },
   "errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadSection": {
     "locations": [
-      "src/native-container.mjs:307"
+      "src/document-lift.mjs:392"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedInvalidPayloadSection\", {});"
   },
   "errors.nativeContainer.theStykanimateFileIsDamagedMalformedSectionMarker": {
     "locations": [
-      "src/native-container.mjs:321",
-      "src/native-container.mjs:352"
+      "src/document-lift.mjs:455"
     ],
     "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsDamagedMalformedSectionMarker\", {});"
-  },
-  "errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn": {
-    "locations": [
-      "src/native-container.mjs:172",
-      "src/native-container.mjs:209",
-      "src/native-container.mjs:214"
-    ],
-    "context": "if (bytes.byteLength < HEADER) throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn\", {});"
-  },
-  "errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn2": {
-    "locations": [
-      "src/native-container.mjs:229"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsTruncatedOrHasAn2\", {});"
-  },
-  "errors.nativeContainer.theStykanimateFileIsTruncatedOrHasTrailing": {
-    "locations": [
-      "src/native-container.mjs:202",
-      "src/native-container.mjs:233"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileIsTruncatedOrHasTrailing\", {});"
-  },
-  "errors.nativeContainer.theStykanimateFileTypeDoesNotMatchIts": {
-    "locations": [
-      "src/native-container.mjs:175"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.theStykanimateFileTypeDoesNotMatchIts\", {});"
-  },
-  "errors.nativeContainer.thisProjectUsesZstdCompressionThisBuildCannot": {
-    "locations": [
-      "src/native-container.mjs:163"
-    ],
-    "context": "if (!z) throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.thisProjectUsesZstdCompressionThisBuildCannot\", {}), {code: 'codec_unavailable'}"
-  },
-  "errors.nativeContainer.unsupportedStykanimateFileVersionUpdateTheAppTo": {
-    "locations": [
-      "src/native-container.mjs:168",
-      "src/native-container.mjs:178",
-      "src/native-container.mjs:225",
-      "src/native-container.mjs:736"
-    ],
-    "context": "throw messageError(new Error(''), \"errors.nativeContainer.unsupportedStykanimateFileVersionUpdateTheAppTo\", {});"
-  },
-  "errors.nativeContainer.unsupportedStykanimateProjectVersion": {
-    "locations": [
-      "src/native-container.mjs:845"
-    ],
-    "context": "throw Object.assign(messageError(new Error(''), \"errors.nativeContainer.unsupportedStykanimateProjectVersion\", {}), {code: 'invalid_native_version'});"
   },
   "errors.nativeFigure.selectAFigureOrMovieclipToExport": {
     "locations": [

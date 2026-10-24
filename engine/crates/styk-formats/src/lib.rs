@@ -7,9 +7,13 @@
 //! - [`native`]: the document-level rules every reader applies after decoding
 //!   (wrapper unwrap, figure-file shape, embedded source fingerprint).
 //!
+//! - [`files`]: what the interface's file workers ask of a native file: open one
+//!   into the form the interface shares with the store, and save one from it.
+//!
 //! Pivot `.piv`/`.stk` files live in the `styk-piv` crate.
 
 pub mod container;
+pub mod files;
 pub mod native;
 
 pub use container::{ContainerError, Kind};

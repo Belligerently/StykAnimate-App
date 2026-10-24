@@ -8,7 +8,7 @@ page.on('pageerror',error=>errors.push(error.message));
 const check=(name,value)=>{assert.ok(value,name);checks.push(name);console.log('PASS',name);};
 try{
   const baseline=process.env.STYK_PIXEL_CLIPBOARD_BASELINE;
-  if(baseline)for(const name of ['drawing-png','drawing-tile-codec','native-container']){
+  if(baseline)for(const name of ['drawing-png','drawing-tile-codec']){
     const body=execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'});
     await page.context().route(`**/src/${name}.mjs`,route=>route.fulfill({contentType:'text/javascript',body}));
   }

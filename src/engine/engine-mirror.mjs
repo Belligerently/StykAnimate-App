@@ -18,7 +18,7 @@
  * - `syncFrames` (keyframes, pose sources) lifts in slices and commits in the
  *   background: playback is prepared from them.
  */
-import {liftDocument} from '../native-container.mjs';
+import {liftDocument} from '../document-lift.mjs';
 import {playbackProperties} from '../playback-patch.mjs';
 
 const FIGURES = 0, KEYFRAMES = 1, BACKGROUNDS = 2;

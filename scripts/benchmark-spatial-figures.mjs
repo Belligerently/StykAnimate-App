@@ -13,7 +13,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
-import {decodeDocument} from '../src/native-container.mjs';
+import {decodeDocument} from '../tests/support/native-files.mjs';
 
 const [file, label = 'current', throttleArg = '1', copiesArg = '1'] = process.argv.slice(2);
 if (!file) throw new Error('Provide a .styk animation containing a spatial figure.');

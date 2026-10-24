@@ -2,7 +2,7 @@ import {errorMessageData} from './localized-error.mjs';
 import {drawGeometry} from './pivot/geometry.mjs';
 import {objectBounds} from './renderer-geometry.mjs';
 import {PlaybackResources} from './playback-resources.mjs';
-import {decodeDocument, normalizeDecodedDocument} from './native-container.mjs';
+import {nativeFileCodec} from './native-file-codec.mjs';
 import {libraryPreviewTimeline, libraryPreviewMatte, LIBRARY_MATTES} from './library-preview-core.mjs';
 import {drawParallaxGeometry} from './parallax-draw.mjs';
 import {canvasGenerators, canvasGeneratorWalker} from './vfx-generator-frame.mjs';
@@ -46,7 +46,7 @@ self.onmessage = async ({data}) => {
     let report = data.report;
     if (data.file) {
       const kind = data.file.name.toLowerCase().endsWith('.stykmov') ? 'stykmov' : 'stkz';
-      report = normalizeDecodedDocument((await decodeDocument(new Uint8Array(await data.file.arrayBuffer()), kind)).document, kind);
+      report = (await nativeFileCodec.open(new Uint8Array(await data.file.arrayBuffer()), kind, {verifySource: false})).document;
     }
     const scene = libraryPreviewTimeline(report);
     if (data.operation === 'animation') {

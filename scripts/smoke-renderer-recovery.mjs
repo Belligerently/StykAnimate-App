@@ -12,7 +12,7 @@ try{
   const page=await app.firstWindow();await page.waitForFunction(()=>window.styk?.ready);
   const expected=await page.evaluate(async()=>{
     for(const d of document.querySelectorAll('dialog[open]'))d.close();
-    const {buildContainerV2}=await import('/src/native-container.mjs');
+    const {buildContainerV2}=await import('/tests/support/native-files.mjs');
     const bytes=await buildContainerV2(styk.editor.serialize(),'styk');
     const data=btoa(String.fromCharCode(...new Uint8Array(bytes)));
     await stykDesktop.saveRecovery({data,name:'Crash recovery fixture'});

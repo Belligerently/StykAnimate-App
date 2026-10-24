@@ -227,7 +227,7 @@ Each stage leaves the app fully working, with its tests, parity results and docs
 | Stage | Subsystem | Replaces | Gate while both exist |
 | --- | --- | --- | --- |
 | S0 | Plan, inventory, baseline measurements, "before" screenshots, workspace, wasm build | — | — |
-| S1 | Formats: container reader/writer, PIV/STK codec, Stick Nodes | `native-container.mjs`, `zlib-sync.mjs`, vendored zstd, Python codec + Pyodide + PyInstaller sidecar, C++ scanner | Python codec remains a test oracle only |
+| S1 | Formats: container reader/writer, PIV/STK codec, Stick Nodes | `native-container.mjs` and the vendored zstd (both deleted: the workers open and save through `styk-formats::files`), `zlib-sync.mjs` (drawing tiles only now), Python codec + Pyodide + PyInstaller sidecar, C++ scanner | Python codec remains a test oracle only |
 | S2 | Document store + evaluation + geometry (all features: IK, channels, meshes, follow camera, text) | `src/pivot/`, evaluation modules | Rust evaluation checked against JS per primitive |
 | S3 | Renderer (WebGPU, WebGL2, CPU), effects, generators, images; playback on the thread pool | `renderer*.mjs`, `playback*.mjs`, `prepared-frames.mjs`, `vfx-*` executors, Canvas 2D renderer | per document: a scene using a feature the new renderer lacks keeps the old renderer |
 | S4 | Export frames, thumbnails, library previews | `export-frame-*`, `thumbnail-*`, `library-preview-*`, image codecs | per format |
@@ -245,7 +245,7 @@ tolerance the current export tests use.
 | --- | --- |
 | `engine/tools/reference.mjs` + `styk compare` | geometry, primitive by primitive, against the JS editor |
 | `engine/tools/reference-render.mjs` + `styk diff` | pixels against the app's renderer |
-| `engine/tools/container-parity.mjs` | decoded documents (and `styk container roundtrip` the written bytes) against `src/native-container.mjs` |
+| `engine/tools/container-parity.mjs` | the document the app's open path produces against the Rust store's reader (`styk container json`), and the bytes the app's save path writes against the file (`styk container roundtrip` does the same in the store); the JavaScript reader it was checked against is deleted |
 | `engine/tools/ik-fixtures.mjs`, `engine/tools/eval-fixtures.mjs` → `cargo test -p styk-eval` | small projects the editor builds with its own commands, and what it evaluates (IK, movieclip replacements); regeneration is byte-stable |
 | `scripts/engine-app-parity.mjs` | the running app with and without the engine (`?engine=off`): stage pixels per tick, with onion skins and after playback |
 | `styk edit-replay --worker <reference.json>` | recorded worker-only native/sheet commands through the same strict every-step comparator |
@@ -775,7 +775,14 @@ performance claim. Eight native-channel authoring tapes remain unadmitted.
 
 **Containers** (`engine/tools/container-parity.mjs`, `styk container roundtrip`): 461 native
 files decode to the same document as `src/native-container.mjs`; all 448 version 2 files are
-written back byte-identical.
+written back byte-identical. Before that reader and writer were deleted (2026-10-23), the app's
+Rust-backed path (`styk_formats::files` in the codec module, `src/native-file-codec.mjs`) was
+compared with them on 259 repository files and two 16 and 40 MB projects made from private Pivot
+files: the same documents (array sharing included), 261 of 261 saves byte-identical to the
+JavaScript writer, every version 2 file (252 repository files and both projects) byte-identical
+to itself (the embedded original stored first, as the export worker does), and, on 1,760 damaged
+copies, the same files accepted with the same documents and the same files refused. Refusals now carry the localized message
+where the browser's inflate or `JSON.parse` used to raise its own text.
 
 **Pivot codec** (`engine/tools/piv/parity.sh`, replayed by `styk-piv replay` on the final
 binary): 13,369 requests of 679 scenarios answer as the Python codec does: 3,041 imports

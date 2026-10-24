@@ -73,7 +73,7 @@ src/community-library.mjs	platform	-	stays	file, storage and network services
 src/connected-timeline.mjs	engine	styk-eval	js	
 src/content-hash.mjs	engine	styk-render::images	js	image decoding and variants
 src/demo.mjs	engine	styk-edit	js	
-src/document-export-worker.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/document-export-worker.mjs	engine	styk-formats::save	partial	Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); the JS lifts the document, prepares portable figures and Pivot saves
 src/document-export.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/document-normalize.mjs	engine	styk-formats::service	js	import/export transport
 src/document-save.mjs	platform	-	stays	file, storage and network services
@@ -225,7 +225,7 @@ src/image-resources.mjs	engine	styk-render::images	partial	image decoding and va
 src/import-client.mjs	engine	styk-formats::service	js	import/export transport
 src/import-notes-localization.mjs	ui	-	stays	
 src/import-wire.mjs	engine	styk-formats::piv	js	native frame table materialization
-src/import-worker.mjs	engine	styk-formats::service	js	import/export transport
+src/import-worker.mjs	engine	styk-formats::service	partial	Rust: native containers open in styk-formats::files (src/native-file-codec.mjs); Pivot and Stick Nodes files, source embedding and the transport to the interface are still JS
 src/insert-inbetween-dialog.mjs	ui	-	stays	
 src/inspector-bindings.mjs	ui	-	stays	
 src/inspector-dom.mjs	ui	-	stays	
@@ -246,7 +246,7 @@ src/library-files.mjs	platform	-	stays	file, storage and network services
 src/library-hover-preview.mjs	ui	-	stays	
 src/library-matte.mjs	ui	-	stays	
 src/library-preview-core.mjs	engine	styk-engine::thumbnails	partial	Rust: posters, hover frames and fitted bounds (styk_engine::thumbnails::library, styk_wasm::preview); matte choice in src/library-matte.mjs; devices without a readable GPU canvas draw them with styk-raster (D13 parity); unreadable files still JS
-src/library-preview-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS
+src/library-preview-worker.mjs	engine	styk-engine::thumbnails	partial	Rust: native files open in styk-formats::files; replaced by the engine preview worker where it starts (src/engine/engine-preview-worker.mjs); fallback still JS
 src/localization-bindings.mjs	ui	-	stays	
 src/localization.mjs	ui	-	stays	
 src/localized-error.mjs	ui	-	stays	
@@ -267,7 +267,10 @@ src/movieclip-presence.mjs	engine	styk-eval::movieclips	partial	Rust: presence c
 src/movieclip-ui.mjs	ui	-	stays	
 src/movieclips.mjs	engine	styk-eval::movieclips	partial	Rust: movieclipTime and clip sampling; capture and editing still JS
 src/mp4-muxer.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
-src/native-container.mjs	engine	styk-formats::container	ported	Rust: reader and writer (v0–v2, lifted records); 461 corpus files decode to the same document, 448 v2 files rewrite byte-identical
+src/native-container.mjs	engine	styk-formats::container	removed	read and wrote the containers in JavaScript; the workers open and save through styk-formats::files in the codec module (src/native-file-codec.mjs), and the lifting the mirror and saves need is src/document-lift.mjs (46226 bytes)
+src/container-cache.mjs	platform	styk-formats::files	stays	bounded cache of compressed blocks that outlives an export worker
+src/document-lift.mjs	engine	styk-formats::container	partial	Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical); the JavaScript lift stays while the editor holds the document as objects: an array's identity decides what is stored once (mirror records, saves)
+src/native-file-codec.mjs	platform	styk-formats::files	stays	loads the Rust container module in a worker and moves a file to and from the interface's object model
 src/native-figure.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
@@ -556,7 +559,7 @@ backend/browser_service.py	engine	styk-formats::service	verified	the app runs st
 backend/fast_decode.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs); kept only as the development test oracle (not shipped)
 backend/import_wire.py	engine	styk-formats::piv	verified	the app runs styk-piv (wire.rs, STYKPIV1); kept only as the development test oracle (not shipped)
 backend/jobs.py	engine	styk-formats::service	verified	the app runs styk-piv (cancelled requests answer 499) behind the codec worker queue (src/codec-web-shell.mjs); kept only as the development test oracle (not shipped)
-backend/native_format.py	engine	styk-formats::container	verified	the app reads containers in src/native-container.mjs and, as the codec fallback, styk-piv over styk-formats; kept only as the development test oracle (not shipped)
+backend/native_format.py	engine	styk-formats::container	verified	the app opens and saves containers through styk-formats in the codec module (src/native-file-codec.mjs), as the codec service does for native documents; kept only as the development test oracle (not shipped)
 backend/native_scan.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs scan mode); kept only as the development test oracle (not shipped)
 backend/process_metrics.py	engine	styk-formats::service	verified	measured the codec service process; the codec runs in the page now, so the app has nothing to measure; kept only as the development test oracle (not shipped)
 backend/profile_import.py	tool	-	stays	test or profiler of the Python codec, the development oracle

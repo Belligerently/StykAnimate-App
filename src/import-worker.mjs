@@ -4,7 +4,7 @@ import {errorMessageData, messageError, restoreMessageError} from './localized-e
 import { documentChunks } from './document-transport.mjs';
 import {diagnosticDetails} from './telemetry-schema.mjs';
 import {NATIVE_FRAME_CONTENT_TYPE, unpackNativeFrameResponse} from './import-wire.mjs';
-import {decodeDocument, normalizeDecodedDocument, verifyEmbeddedSource} from './native-container.mjs';
+import {nativeFileCodec} from './native-file-codec.mjs';
 import {codecRequest} from './codec-request.mjs';
 import {bytesToBase64} from './base64.mjs';
 import {decodeSourceRecord} from './source-record.mjs';
@@ -58,25 +58,17 @@ async function importRequest(message, signal) {
     if (typeof message.filename !== 'string') throw messageError(new Error(''), "errors.importWorker.theImportedFileNeedsAFilename", {});
     const nativeKind = /\.(styk|stkz|stykmov)$/i.exec(message.filename)?.[1]?.toLowerCase();
     if (nativeKind) {
-      // Native containers decode locally: verify, inflate and materialize in
-      // this worker instead of round-tripping a full JSON document through the
-      // file service. Sections using an unavailable codec still take the
-      // service path; service-side limits apply there.
-      try {
-        const decodeStarted = performance.now();
-        const decoded = await decodeDocument(new Uint8Array(message.bytes), nativeKind);
-        const document = normalizeDecodedDocument(decoded.document, nativeKind);
-        await verifyEmbeddedSource(document);
-        const parsed = performance.now();
-        return {ok: true, sourceId: null, filename: message.filename, kind: nativeKind, version: document.version,
-          document,
-          timings: {decode_ms: +(parsed - decodeStarted).toFixed(3), cache_hit: false,
-            total_ms: +(parsed - started).toFixed(3), source_bytes: message.bytes.byteLength,
-            document_bytes: decoded.materializedBytes, transport: `local-container-v${decoded.version}`,
-            worker_fetch_ms: 0, worker_parse_ms: +(parsed - decodeStarted).toFixed(3), worker_ms: +(parsed - started).toFixed(3)}};
-      } catch (error) {
-        if (error?.code !== 'codec_unavailable') throw error;
-      }
+      // Native containers open in this worker, in Rust (native-file-codec.mjs): verify, inflate and
+      // normalize there instead of round-tripping a full JSON document through the codec worker.
+      const decodeStarted = performance.now();
+      const opened = await nativeFileCodec.open(new Uint8Array(message.bytes), nativeKind);
+      const parsed = performance.now();
+      return {ok: true, sourceId: null, filename: message.filename, kind: nativeKind, version: opened.document.version,
+        document: opened.document,
+        timings: {decode_ms: +(parsed - decodeStarted).toFixed(3), cache_hit: false,
+          total_ms: +(parsed - started).toFixed(3), source_bytes: message.bytes.byteLength,
+          document_bytes: opened.materializedBytes, transport: `local-container-v${opened.version}`,
+          worker_fetch_ms: 0, worker_parse_ms: +(parsed - decodeStarted).toFixed(3), worker_ms: +(parsed - started).toFixed(3)}};
     }
     path = `/api/import?filename=${encodeURIComponent(message.filename)}`;
     headers['Content-Type'] = 'application/octet-stream';
@@ -129,8 +121,11 @@ async function embedBrowserSource(result,message,signal) {
   const response = await codecRequest(message, `/api/source?id=${encodeURIComponent(result.sourceId)}`, {headers,signal});
   if (!response.ok) throw Object.assign(messageError(new Error(''), 'errors.documentExportWorker.theFileServiceReturnedAnInvalidSourceRecord', {}), {status:response.status});
   const source = decodeSourceRecord(await response.arrayBuffer());
+  // The fingerprint the codec recorded must match the bytes that crossed to this worker.
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', source.bytes));
+  if ([...digest].map(byte => byte.toString(16).padStart(2, '0')).join('') !== source.metadata.sha256)
+    throw messageError(new Error(''), "errors.nativeContainer.embeddedOriginalSourceFingerprintDoesNotMatch", {});
   result.document._stykSource = {...source.metadata,source_base64:bytesToBase64(source.bytes)};
-  await verifyEmbeddedSource(result.document);
   result.timings.document_bytes = Number(result.timings.document_bytes || 0) + result.document._stykSource.source_base64.length;
   await codecRequest(message, '/api/source/release', {method:'POST',headers:{...headers,'Content-Type':'application/json'},
     body:JSON.stringify({ownerId:result.sourceOwner}),signal});
