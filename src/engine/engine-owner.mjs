@@ -31,14 +31,12 @@ const TABLES = ['figure_types', 'keyframes', 'backgrounds'];
 const VIEW_CALLS = new Set(['select', 'selectMany', 'selectPolygon', 'toggleSegment', 'selectBranch', 'selectConnected', 'selectMarquee',
   'selectSameDefinition', 'invertSelection', 'seek', 'setActiveLayer', 'selectSheetLayer', 'selectFrame', 'keepSelectionOnSeek']);
 
-/** Gestures whose live state the interface reads from the editor itself (rig sessions, camera
- * drags, frame drafts): the editor runs them until those reads are engine queries (phase 2).
- * Pose drags, figure-handle, Handle Edit Mode and segment-value gestures, motion-path edits,
- * property edits and effect-clip edits run in the session, which the editor shows as its own
- * (`gesture`, `handles`, `motion`, `edits`). */
+/** Gestures whose live state the interface reads from the editor itself (frame drafts): the
+ * editor runs them until those reads are engine queries (phase 2). Pose drags, figure-handle,
+ * Handle Edit Mode and segment-value gestures, rig and camera drags, motion-path edits, property
+ * edits and effect-clip edits run in the session, which the editor shows as its own (`gesture`,
+ * `handles`, `motion`, `edits`). */
 const EDITOR_GESTURES = new Set([
-  'beginRigDrag', 'editRigJoint', 'commitRigDrag', 'cancelRigDrag',
-  'beginCameraDrag', 'updateCameraDrag', 'commitCameraDrag', 'cancelCameraDrag',
   'beginFrameDraft', 'beginFrameDraftPreview', 'endFrameDraftPreview', 'commitFrameDraft', 'discardFrameDraft', 'updateDraftFrame',
   'addDraftFrame', 'editFrameDraftTimeline', 'enableFrameDrafts', 'disableFrameDrafts', 'beginDuplicateDrag', 'finishDuplicateDrag', 'beginTween', 'updateTween',
   'cancelAuthoredPoseDrag', 'commitAuthoredPoseDrag', 'movieclipBatch', 'movieclipTimelineEdit']);
@@ -77,6 +75,9 @@ export function ownedMethods(editor) {
 
 /** A frame range as the app passes it (`rangeFrames()`), which JSON would drop. */
 const frameRanges = (key, value) => Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
+/** The reverse of `frameRanges`, as a `JSON.parse` reviver. */
+const unframeRanges = (key, value) => value && typeof value === 'object' && Object.hasOwn(value, '@array')
+  ? Object.assign(value['@array'], Object.fromEntries(Object.entries(value).filter(([name]) => name !== '@array'))) : value;
 const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segmentIds', 'branch'].filter(key => Object.hasOwn(state, key)).map(key => [key, state[key]]));
 
 /**
@@ -91,6 +92,8 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   let session = null, document = null, depth = 0, history = null, nextEntry = 1, applying = false, spare = [], handing = false;
   /** The calls (as JSON) of the session's motion-path edit, from the one that began it. */
   let motionCalls = null;
+  /** The same for the session's rig or camera drag, which the editor runs by state it builds itself. */
+  let heldCalls = null;
   /** JavaScript commands of the session's external entries, by identity. */
   const entries = new Map();
   /** Commands the editor recorded during the call it is running for the owner. */
@@ -366,7 +369,8 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       if (editor._drag?.engine) {
         // A motion-path edit changed no frame on show: the document's patch invalidated what changed.
         const motion = Boolean(editor._drag.motionPath);
-        editor._drag = null; editor._authoredPoseEdit = null; motionCalls = null;
+        if (editor._drag.cameraBase) editor._sheetPropertyPreview = null;
+        editor._drag = null; editor._authoredPoseEdit = null; motionCalls = null; heldCalls = null;
         if (!motion) editor._invalidate();
       }
       return;
@@ -483,6 +487,13 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       editor._sheetPropertyPreview = previewFrame(answer.previewChanges, editor._animationEdit.frame);
       editor._geometry = null;
     }
+    // A camera drag shows the frame it began on with the camera it moves.
+    if (answer.cameraPreview !== undefined && editor._drag?.engine) {
+      const drag = editor._drag;
+      drag.cameraBase ??= editor.evaluatedFrame;
+      editor._sheetPropertyPreview = {...drag.cameraBase, camera: answer.cameraPreview};
+      editor._geometry = null;
+    }
   };
   /** A call the editor runs while the session holds a motion-path edit (or the session refuses a call of
    * it): the editor's code ends or amends the gesture as its own, so it replays the calls that made it,
@@ -520,6 +531,29 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
         lengths: state.lengths, bends: state.bends, moved: state.moved})), bend: drag.handleEdit.bend};
     }
   };
+  /** Keeps the calls of the session's rig or camera drag while it is open. The editor runs these
+   * gestures by state the session does not share (the rig's geometry and snapshot, the camera's
+   * keys), so taking one over means replaying them. A pointer move sets the state from its own
+   * arguments, so it replaces the move before it; a keyboard nudge (`fromStart` false) adds to it. */
+  const holdCall = (name, payload, answer) => {
+    if (!answer.drag?.rig && !answer.drag?.camera) { heldCalls = null; return; }
+    if (!heldCalls || name === 'beginRigDrag' || name === 'beginCameraDrag') { heldCalls = [[name, payload]]; return; }
+    const moves = name === 'editRigJoint' || name === 'updateCameraDrag' && JSON.parse(payload)[1]?.fromStart !== false;
+    if (moves && heldCalls.at(-1)[0] === name) heldCalls[heldCalls.length - 1] = [name, payload]; else heldCalls.push([name, payload]);
+  };
+  /** A call the editor runs while the session holds a rig or camera drag (or the session refuses a call
+   * of it): the editor's code ends or amends the gesture as its own. The session forgets it; a pose it
+   * previewed in the document goes back as it was, and the editor replays the calls that made the gesture. */
+  const takeHeld = () => {
+    const drag = editor._drag, calls = heldCalls;
+    heldCalls = null;
+    handing = true;
+    try { send('@dropGesture', []); } finally { handing = false; }
+    if (!drag.authored && drag.before.length) editor._replaceObjects(drag.index, drag.before);
+    editor._invalidate();
+    depth++;
+    try { for (const [name, payload] of calls) originals.get(name).apply(editor, JSON.parse(payload, unframeRanges)); } finally { depth--; }
+  };
   /** The edit a `begin` call opened in the session, as the editor's own would be. */
   const mirrorEdit = (name, answer) => {
     if (name === 'beginVfxClipEdit') { editor._vfxClipEdit = {engine: true, before: editor.report._styk.vfxClips}; return; }
@@ -533,9 +567,10 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
   };
   /** A call the editor runs while the session holds an edit belongs to that edit (the editor's
    * code ends or amends it): the edit becomes the editor's own, as it would have begun it. */
-  const handOver = () => {
+  const handOver = ({rigAndCamera = true} = {}) => {
     if (editor._drag?.engine && editor._drag.motionPath) takeMotion();
     else if (editor._drag?.engine && (editor._drag.figureHandle || editor._drag.handleEdit || editor._drag.segmentValueOptions)) takeHandles();
+    else if (rigAndCamera && editor._drag?.engine && heldCalls) takeHeld();
     const animation = editor._animationEdit?.engine ? editor._animationEdit : null, vfx = editor._vfxClipEdit?.engine ? editor._vfxClipEdit : null;
     if (!animation && !vfx) return;
     handing = true;
@@ -646,8 +681,8 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     }).result;
   };
   /** Runs `name` in the JavaScript editor and writes what it changed back. */
-  const fallback = (name, original, args) => {
-    handOver();
+  const fallback = (name, original, args, options) => {
+    handOver(options);
     const outer = captured === null;
     if (outer) captured = [];
     pending = true;
@@ -728,10 +763,11 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     const rejected = answer.status === 'error' && name === 'updateMotionPathEdit' && Boolean(answer.motionPath && editor._drag?.engine && editor._drag.motionPath);
     // An error the session raised without changing anything: the editor raises it itself,
     // with its message and the values it draws on the way, as the editor alone would.
-    // (Not pastes: the clipboard a native copy filled is the session's.)
+    // (Not pastes: the clipboard a native copy filled is the session's.) A rig edit or camera drag
+    // it leaves open stays the session's: the editor's check throws before it touches one.
     if (answer.status === 'error' && !rejected && !answer.patch?.length && !answer.drag === !editor._drag?.engine && !/paste/i.test(name)) {
       report.errors = (report.errors ?? 0) + 1;
-      return fallback(name, original, args);
+      return fallback(name, original, args, {rigAndCamera: false});
     }
     if (answer.status === 'unported') {
       const key = `${name}: ${answer.reason}`;
@@ -751,6 +787,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     const shown = answer.retained ? (editor._authoredPoseEdit?.frame ?? editor.evaluatedFrame) : null;
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
+    if (answer.status === 'ok') holdCall(name, payload, answer);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
     if (answer.status === 'ok' && MOTION_PATH_CALLS.has(name)) {
       if (name === 'beginMotionPathEdit') motionCalls = answer.motionPath ? [[name, payload]] : null;
@@ -777,9 +814,9 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
     if (editor._vfxClipEdit) editor.cancelVfxClipEdit();
     if (editor._animationEdit) editor.cancelAnimationEdit();
     if (!redo && editor._drag) editor.cancelDrag();
-    // The editor's redo leaves an open motion-path edit open (the session refuses to redo
-    // under one): the edit becomes the editor's own first, as a call it runs would make it.
-    if (redo && editor._drag?.engine && editor._drag.motionPath) takeMotion();
+    // The editor's redo leaves an open motion-path edit, rig edit or camera drag open (the session
+    // refuses to redo under some): the gesture becomes the editor's own first, as a call it runs would make it.
+    if (redo && editor._drag?.engine) { if (editor._drag.motionPath) takeMotion(); else if (heldCalls) takeHeld(); }
     flush();
     const historyView = JSON.stringify({...view(), patch: true});
     report.capture?.push({name: redo ? 'redo' : 'undo', args: '[]', view: historyView});

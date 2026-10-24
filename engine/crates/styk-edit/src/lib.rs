@@ -492,6 +492,8 @@ impl Editor {
     /// the clip sample times evaluation adds); `None` outside a gesture on a sheet.
     /// The gesture in progress as a facade needs it: the identities of the figures it
     /// snapshots and whether it moves whole connected figures. `Null` between gestures.
+    /// A rig edit or a camera move says so (`rig`, `camera`): the editor runs those by their
+    /// own state, which the owner rebuilds by replaying the calls that made them.
     pub fn drag_value(&self) -> Value {
         let Some(drag) = &self.drag else { return Value::Null };
         let mut value = Obj::new();
@@ -499,6 +501,12 @@ impl Editor {
         value.set("translation", Value::Bool(drag.translation));
         value.set("label", Value::str(&drag.label));
         value.set("changed", Value::Bool(drag.changed));
+        if drag.rig.is_some() {
+            value.set("rig", Value::Bool(true));
+        }
+        if drag.camera.is_some() {
+            value.set("camera", Value::Bool(true));
+        }
         Value::object(value)
     }
 

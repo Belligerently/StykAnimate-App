@@ -164,6 +164,13 @@ async function pair(name) {
   return {owned, alone, owner, both, agree};
 }
 
+/** The session refuses `name` for the next `times` calls, as it does a state it does not support: the editor runs them. */
+const refuse = (owner, name, times = 1) => {
+  const session = owner.session(), ask = session.call.bind(session);
+  let left = times;
+  session.call = (method, ...rest) => method === name && left-- > 0 ? JSON.stringify({status: 'unported', reason: 'a refusal made for the test'}) : ask(method, ...rest);
+};
+
 test('a property edit runs in the session and shows on the editor as its own', {skip: !engineBuilt}, async () => {
   const {owned, alone, owner, both, agree} = await pair('property-scrub-sheet');
   both('select', 1, -1);
@@ -237,12 +244,13 @@ test('ending an edit that is not open does not ask the session', {skip: !engineB
 });
 
 test('a call the editor runs takes over the edit the session holds', {skip: !engineBuilt}, async () => {
-  const {owned, alone, both, agree} = await pair('motion-path-sheet');
+  const {owned, alone, owner, both, agree} = await pair('motion-path-sheet');
   both('select', 1, -1);
   both('beginAnimationEdit', {kind: 'figure', uid: 1}, 'scale');
   both('previewAnimationEdit', 1.4);
   assert.ok(owned._animationEdit.engine);
-  // Camera drags run in the editor, which ends the property edit before it begins its own.
+  // A camera drag the session refuses runs in the editor, which ends the property edit before it begins its own.
+  refuse(owner, 'beginCameraDrag');
   both('beginCameraDrag');
   assert.equal(owned._animationEdit, null);
   assert.ok(owned._drag?.camera && !owned._drag.engine);
@@ -396,12 +404,13 @@ test('a pointer move that is rejected leaves the motion-path edit open, in the s
 });
 
 test('the editor takes over a motion-path edit after a rejected move as the editor alone would have it', {skip: !engineBuilt}, async () => {
-  const {owned, alone, both, agree} = await pair('motion-path-sheet');
+  const {owned, alone, owner, both, agree} = await pair('motion-path-sheet');
   // Up to the full-circle bend the editor refuses (step 71): the move is rejected and the edit stays open.
   const raised = tapeSteps('motion-path-sheet', 0, 71, owned, alone);
   assert.deepEqual(raised.slice(-1), [71]);
   assert.ok(owned._drag.engine && owned._drag.motionPath, 'the session still holds the edit');
   // A call the editor runs ends it: the partial effects of the rejected move go with the edit.
+  refuse(owner, 'beginCameraDrag');
   both('beginCameraDrag');
   assert.equal(owned._drag?.motionPath, undefined);
   agree('camera drag');
@@ -411,12 +420,13 @@ test('the editor takes over a motion-path edit after a rejected move as the edit
 });
 
 test('a call the editor runs ends the motion-path edit the session holds as the editor would', {skip: !engineBuilt}, async () => {
-  const {owned, alone, both, agree} = await pair('motion-path-sheet');
+  const {owned, alone, owner, both, agree} = await pair('motion-path-sheet');
   both('select', 1, -1);
   both('beginMotionPathEdit', head, 8);
   both('updateMotionPathEdit', {x: 330, y: 300});
   both('updateMotionPathEdit', {x: 340, y: 310}, {stretch: true});
-  // Camera drags run in the editor, which commits an open edit before it begins its own.
+  // A camera drag the session refuses runs in the editor, which commits an open edit before it begins its own.
+  refuse(owner, 'beginCameraDrag');
   both('beginCameraDrag');
   assert.equal(owned._drag?.motionPath, undefined);
   assert.equal(owned.undoLabel, alone.undoLabel);
@@ -667,4 +677,229 @@ test('a segment-value call the session refuses is taken over by the editor with 
     agree('commit');
     while (alone.canUndo) { both('undo'); agree('undo'); }
   }
+});
+
+// Rig edits and camera drags run in the session; the editor shows them as its own, and builds
+// its own when it takes one over.
+/** The frame a camera drag shows, as text. */
+const previewText = editor => editor._sheetPropertyPreview ? frameText(editor._sheetPropertyPreview) : null;
+/** The editor holds the gesture the session refused, as it would have begun it. */
+const editorHolds = (owned, kind) => assert.ok(owned._drag?.[kind] && !owned._drag.engine, `the editor holds the ${kind} gesture`);
+
+for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
+  test(`a rig edit runs in the session and shows on the editor as its own (${name})`, {skip: !engineBuilt}, async () => {
+    const {owned, alone, owner, both, agree} = await pair(name);
+    both('select', 1, 1);
+    both('beginRigDrag', {});
+    assert.ok(owned._drag?.engine && owned.dragging, 'the session\'s gesture is on the editor');
+    assert.equal(Boolean(owned._authoredPoseEdit), Boolean(alone._authoredPoseEdit), 'a draft on a layer sheet, the keyframe itself on a native timeline');
+    assert.equal(owned.dirty, false);
+    agree('begin');
+    both('editRigJoint', 340, 300);
+    both('editRigJoint', 345, 310);
+    assert.equal(owned.dirty, true, 'a preview is unsaved');
+    agree('moves');
+    both('commitRigDrag');
+    assert.equal(owned._drag, null);
+    assert.equal(owned.undoLabel, alone.undoLabel);
+    agree('commit');
+    // A rotation and a stretch, ended by the generic commit.
+    both('select', 1, 0);
+    both('beginRigDrag', {reposition: false});
+    both('editRigJoint', 335, 235);
+    both('editRigJoint', 318, 250, {stretch: true, isolate: true});
+    agree('rotation');
+    both('commitDrag');
+    assert.equal(owned.undoLabel, alone.undoLabel);
+    agree('commit by commitDrag');
+    // The bend of a joint (the editor's bend reads the rig it began), and a cancel.
+    both('select', 1, 4);
+    both('beginRigDrag', {bend: true});
+    both('bendJoint', 255, 262);
+    both('bendJoint', 250, 265, {stretch: true});
+    agree('bend');
+    both('cancelRigDrag');
+    assert.equal(owned._drag, null);
+    agree('cancel');
+    // Coordinates that are not finite are rejected before the edit is touched: it stays open, in the session.
+    both('select', 1, 2);
+    both('beginRigDrag', {});
+    both('editRigJoint', 370, 320);
+    const messages = [owned, alone].map(editor => { try { editor.editRigJoint('x', 0); } catch (error) { return error.messageKey; } return null; });
+    assert.ok(messages[0] && messages[0] === messages[1], `the same error: ${messages}`);
+    assert.ok(owned._drag?.engine, 'the session still holds the edit');
+    agree('error');
+    both('cancelDrag');
+    agree('cancel by cancelDrag');
+    while (alone.canUndo) { both('undo'); agree('undo'); }
+    assert.equal(owner.fallback, 0, 'no call ran in the editor');
+  });
+}
+
+test('a camera drag runs in the session and shows its frame on the editor', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('camera-commands-sheet');
+  both('beginCameraDrag');
+  assert.ok(owned._drag?.engine && owned.dragging, 'the session\'s gesture is on the editor');
+  assert.equal(owned._sheetPropertyPreview, null, 'nothing moved yet');
+  agree('begin');
+  const session = owner.session(), ask = session.call.bind(session), answers = [];
+  session.call = (...parts) => { const text = ask(...parts); answers.push(JSON.parse(text)); return text; };
+  both('updateCameraDrag', {x: 10, y: 5});
+  both('updateCameraDrag', {x: 20, scale: 1.2});
+  session.call = ask;
+  // The session tells the camera, not the frame.
+  assert.equal(answers.length, 2);
+  assert.equal(answers[1].preview, undefined);
+  assert.deepEqual(answers[1].cameraPreview, alone._sheetPropertyPreview.camera);
+  assert.ok(owned._sheetPropertyPreview, 'the preview is the frame on show');
+  assert.equal(previewText(owned), previewText(alone));
+  assert.equal(owned.dirty, alone.dirty);
+  agree('moves');
+  both('updateCameraDrag', {angle_rad: 0.1}, {fromStart: false});
+  assert.equal(previewText(owned), previewText(alone));
+  agree('a nudge');
+  both('commitCameraDrag');
+  assert.equal(owned._drag, null);
+  assert.equal(owned._sheetPropertyPreview, null);
+  agree('commit');
+  both('beginCameraDrag', {indices: [0, 1], label: 'Pan camera'});
+  both('updateCameraDrag', {x: -15});
+  assert.equal(previewText(owned), previewText(alone));
+  both('cancelCameraDrag');
+  assert.equal(owned._sheetPropertyPreview, null);
+  agree('cancel');
+  // A drag that begins itself, and ends with the generic commit.
+  both('updateCameraDrag', {y: 7});
+  assert.ok(owned._drag?.engine);
+  assert.equal(previewText(owned), previewText(alone));
+  both('commitDrag');
+  agree('commit by commitDrag');
+  // A move that fails ends the drag.
+  both('beginCameraDrag');
+  assert.throws(() => owned.updateCameraDrag({bogus: 1}));
+  assert.throws(() => alone.updateCameraDrag({bogus: 1}));
+  assert.equal(owned._drag, null);
+  assert.equal(owned._sheetPropertyPreview, null);
+  agree('error');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+});
+
+test('an open camera drag is ended by the calls that end any gesture', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('camera-commands-sheet');
+  for (const end of [['seek', 3], ['undo'], ['selectFrame', 1], ['setCameraValues', {x: 2}]]) {
+    both('beginCameraDrag');
+    both('updateCameraDrag', {x: 12});
+    both(...end);
+    assert.equal(owned._drag, null);
+    assert.equal(alone._drag, null);
+    assert.equal(owned._sheetPropertyPreview, null, `after ${end[0]}`);
+    agree(end[0]);
+    both('seek', 0);
+  }
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+  assert.equal(owner.fallback, 0, 'no call ran in the editor');
+});
+
+for (const name of ['rig-drag-sheet', 'rig-drag-native']) {
+  test(`a rig edit the session refuses is taken over by the editor (${name})`, {skip: !engineBuilt}, async () => {
+    const {owned, alone, owner, both, agree} = await pair(name);
+    // Refused in the middle of the gesture: the editor replays what the session had.
+    both('select', 1, 1);
+    both('beginRigDrag', {});
+    both('editRigJoint', 340, 300);
+    both('editRigJoint', 345, 310);
+    refuse(owner, 'editRigJoint');
+    both('editRigJoint', 350, 305);
+    editorHolds(owned, 'rig');
+    agree('a step');
+    both('editRigJoint', 352, 306);
+    both('commitRigDrag');
+    assert.equal(owned._drag, null);
+    assert.equal(owned.undoLabel, alone.undoLabel);
+    agree('commit');
+    // Refused at the end: the editor commits the rig edit, not a plain pose.
+    both('select', 1, 0);
+    both('beginRigDrag', {reposition: false});
+    both('editRigJoint', 335, 235);
+    both('editRigJoint', 332, 238, {isolate: true});
+    refuse(owner, 'commitDrag');
+    both('commitDrag');
+    assert.equal(owned._drag, null);
+    assert.equal(owned.undoLabel, alone.undoLabel);
+    agree('commit refused');
+    // A bend and a cancel.
+    both('select', 1, 4);
+    both('beginRigDrag', {bend: true});
+    both('bendJoint', 255, 262);
+    refuse(owner, 'bendJoint');
+    both('bendJoint', 250, 265, {stretch: true});
+    editorHolds(owned, 'rig');
+    agree('bend refused');
+    refuse(owner, 'cancelRigDrag');
+    both('cancelRigDrag');
+    assert.equal(owned._drag, null);
+    agree('cancel refused');
+    while (alone.canUndo) { both('undo'); agree('undo'); }
+    assert.ok(owner.fallback >= 4, 'the refused calls ran in the editor');
+  });
+}
+
+test('a camera drag the session refuses is taken over by the editor', {skip: !engineBuilt}, async () => {
+  const {owned, alone, owner, both, agree} = await pair('camera-commands-sheet');
+  // Refused in the middle: the nudge adds to the moves before it, so they are replayed too.
+  both('beginCameraDrag', {indices: [0, 1], label: 'Pan camera'});
+  both('updateCameraDrag', {x: 10, y: 5});
+  both('updateCameraDrag', {x: 20, scale: 1.2});
+  both('updateCameraDrag', {angle_rad: 0.1}, {fromStart: false});
+  refuse(owner, 'updateCameraDrag');
+  both('updateCameraDrag', {y: 3}, {fromStart: false});
+  editorHolds(owned, 'camera');
+  assert.equal(previewText(owned), previewText(alone));
+  agree('a nudge');
+  both('commitCameraDrag');
+  assert.equal(owned.undoLabel, alone.undoLabel);
+  agree('commit');
+  // Refused at the end.
+  both('beginCameraDrag');
+  both('updateCameraDrag', {x: 10});
+  refuse(owner, 'commitCameraDrag');
+  both('commitCameraDrag');
+  assert.equal(owned._drag, null);
+  assert.equal(owned.undoLabel, alone.undoLabel);
+  agree('commit refused');
+  // A call the session does not run during a camera drag belongs to the editor, which ends the drag first.
+  both('beginCameraDrag');
+  both('updateCameraDrag', {x: 3});
+  both('addFigure');
+  assert.equal(owned._drag, null);
+  assert.equal(owned.undoLabel, alone.undoLabel);
+  agree('another call');
+  while (alone.canUndo) { both('undo'); agree('undo'); }
+});
+
+test('redo under an open camera drag or rig edit redoes and leaves the gesture open, as the editor alone does', {skip: !engineBuilt}, async () => {
+  const camera = await pair('camera-commands-sheet');
+  camera.both('setCameraValues', {x: 40});
+  camera.both('undo');
+  camera.both('beginCameraDrag');
+  camera.both('updateCameraDrag', {x: 12});
+  assert.deepEqual(camera.both('redo'), [true, true]);
+  assert.ok(camera.owned._drag?.camera && camera.alone._drag?.camera, 'the gesture is still open');
+  camera.agree('redo');
+  camera.both('commitCameraDrag');
+  camera.agree('commit after redo');
+  const rig = await pair('rig-drag-sheet');
+  rig.both('select', 1, 1);
+  rig.both('beginRigDrag', {});
+  rig.both('editRigJoint', 340, 300);
+  rig.both('commitRigDrag');
+  rig.both('undo');
+  rig.both('beginRigDrag', {});
+  rig.both('editRigJoint', 345, 310);
+  assert.deepEqual(rig.both('redo'), [true, true]);
+  assert.ok(rig.owned._drag?.rig && rig.alone._drag?.rig, 'the gesture is still open');
+  rig.agree('redo');
+  rig.both('commitRigDrag');
+  rig.agree('commit after redo');
 });

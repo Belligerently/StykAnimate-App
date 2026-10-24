@@ -1931,3 +1931,54 @@ fn handle_gesture_answers_tell_the_owner_where_the_gesture_stands() {
     }
     assert!(figure >= 6 && edit >= 8 && options >= 6 && turned >= 3 && taken >= 14, "figure {figure}, edit {edit}, options {options}, turned {turned}, taken {taken}");
 }
+
+/// What a session tells the owner of its open rig edit or camera drag while a recorded tape runs:
+/// which kind of gesture is open, and a camera drag's preview as the camera alone (the complete
+/// frame only where the answer is not compact).
+#[test]
+fn rig_and_camera_answers_tell_the_owner_which_gesture_is_open() {
+    let (mut rig, mut camera, mut previews, mut closed) = (0, 0, 0, 0);
+    for name in ["rig-drag-sheet", "rig-drag-native", "camera-commands-sheet"] {
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../tests/edit/{name}.reference.json"));
+        let reference = parse(&std::fs::read_to_string(file).unwrap());
+        let steps: Vec<Value> = reference.get("steps").unwrap().elements().unwrap().iter().collect();
+        for compact in [true, false] {
+            let mut session = session_from_recorded_state(&reference, steps[0].get("state").unwrap());
+            for step in &steps[1..] {
+                let call: Vec<Value> = step.get("call").unwrap().elements().unwrap().iter().collect();
+                let method = call[0].as_str().unwrap().trim_start_matches('@');
+                let mut view = session.editor.state_value().as_obj().unwrap().clone();
+                view.set("autoKey", Value::Bool(session.editor.auto_key));
+                view.set("patch", Value::Bool(true));
+                view.set("changesOnly", Value::Bool(compact));
+                let label = format!("{name} step {} ({method}, compact {compact})", step.get("step").unwrap());
+                let answer = session.call_values(method, &Value::array(call[1..].to_vec()), &Value::object(view));
+                let drag = answer.get("drag").unwrap();
+                if drag.is_null() {
+                    closed += usize::from(compact);
+                    assert!(answer.get("cameraPreview").is_none() && answer.get("preview").is_none(), "{label}: no preview once the gesture ended");
+                    continue;
+                }
+                let (is_rig, is_camera) = (drag.get("rig").is_some_and(Value::truthy), drag.get("camera").is_some_and(Value::truthy));
+                // A rig edit is a plain pose gesture to the editor, with the marker; a camera drag takes no figure.
+                assert!(!(is_rig && is_camera), "{label}");
+                if is_camera {
+                    assert!(drag.get("before").unwrap().array_len() == Some(0), "{label}: a camera drag takes no figures");
+                }
+                if compact { rig += usize::from(is_rig); camera += usize::from(is_camera); }
+                if method == "updateCameraDrag" && is_camera {
+                    previews += usize::from(compact);
+                    if compact {
+                        assert!(answer.get("preview").is_none(), "{label}: the camera alone");
+                        assert!(answer.get("cameraPreview").unwrap().get("scale").is_some(), "{label}: a camera");
+                    } else {
+                        assert!(answer.get("cameraPreview").is_none() && answer.get("preview").unwrap().get("objects").is_some(), "{label}: the complete frame");
+                    }
+                } else {
+                    assert!(answer.get("cameraPreview").is_none(), "{label}: only a camera move previews");
+                }
+            }
+        }
+    }
+    assert!(rig >= 20 && camera >= 10 && previews >= 8 && closed >= 20, "rig {rig}, camera {camera}, previews {previews}, closed {closed}");
+}

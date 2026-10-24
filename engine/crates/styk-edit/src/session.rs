@@ -748,6 +748,9 @@ fn call_values(editor: &mut Editor, method: &str, args: &Value, view: &Value, wo
         // The owner holds the frame the edit began on: it takes the difference.
         if changes_only && method == "previewAnimationEdit" && let Some(base) = editor.property_edit_base() {
             answer.push(("previewChanges", frame_delta(&preview, &base)));
+        } else if changes_only && method == "updateCameraDrag" {
+            // A camera drag previews the frame on show with another camera: that is all that differs.
+            answer.push(("cameraPreview", preview.get("camera").cloned().unwrap_or(Value::Null)));
         } else {
             let mut frame = preview.as_obj().cloned().unwrap_or_default();
             let objects: Vec<Value> = frame.get("objects").and_then(Value::elements).map(|e| e.iter().collect()).unwrap_or_default();
