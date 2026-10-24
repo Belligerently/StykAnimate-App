@@ -28,6 +28,11 @@ pub mod views;
 
 use wasm_bindgen::prelude::*;
 
+/// Memory grows ahead in large steps: a host `memory.grow` costs about a millisecond whatever its size (`styk-alloc`).
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOCATOR: styk_alloc::GrowAhead = styk_alloc::GrowAhead;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console, js_name = error)]

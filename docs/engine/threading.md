@@ -195,6 +195,31 @@ imported shared memory (maximum 2 GiB), wasm-bindgen 0.2.129 `--target web`,
 output in `src/engine/pkg/` ([D9](decisions/0009-generated-engine-build-output.md)).
 Never strip the profile ([D10](decisions/0010-keep-wasm-symbols.md)).
 
+## Memory growth
+
+Rust's allocator on `wasm32-unknown-unknown` (dlmalloc) asks the host for more linear memory
+exactly when its free space runs out: one 64 KiB page at a time for the many small records of
+a document. Every `memory.grow` is a host call that commits the pages and replaces the
+memory's buffer, and in Node on Windows a grow of a large memory costs about 1.1 to 1.7 ms
+whatever the step (one page or 2,048 alike; less while the memory is small). Opening a large Pivot file made tens of thousands of them: the codec
+module spent most of its CPU time in `dlmalloc::sys::System::alloc` (the function that calls
+`memory.grow`), and the engine's commit of the same document several times its own work.
+
+`engine/crates/styk-alloc` is the global allocator of the engine module (`styk-wasm`) and the
+codec module (`styk-codec-wasm`): the standard allocator, and whenever it had to grow the
+memory it grows it further in one step (an eighth of the memory, between 16 and 128 MiB) and
+returns the extra pages to the allocator's free space. A step the memory cannot take (the
+shared memory's maximum, [D14](decisions/0014-shared-memory-maximum.md)) is halved until one
+fits. Near the maximum this can refuse a later large request that the standard allocator
+would have met, within one step of the ceiling (not seen on any document). Allocation results, and so documents and
+bytes, are unchanged; the memory ends at most one step larger than the document needs, in pages
+that are committed but untouched (opening tdd2 uriel nemesis: engine memory 1,071 to 1,183 MiB). The drawing module keeps the standard allocator: its memory
+grows in few, large steps.
+
+Measure it by opening a large Pivot file in Node (the codec import, and the mirror's commit in
+`EngineMirror.stats.lastCommitMs`) with and without the allocator, comparing CPU time as well as
+wall time: the cost of a grow rises with the machine's load.
+
 ## Testing
 
 `cargo test -p styk-engine` (scheduler, mirror, definitions-only commits, a commit

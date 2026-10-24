@@ -16,6 +16,11 @@
 use styk_piv::{Codec, Limits};
 use wasm_bindgen::prelude::*;
 
+/// Memory grows ahead in large steps: a host `memory.grow` costs about a millisecond whatever its size (`styk-alloc`).
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOCATOR: styk_alloc::GrowAhead = styk_alloc::GrowAhead;
+
 mod native;
 
 #[wasm_bindgen]

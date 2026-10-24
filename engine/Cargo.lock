@@ -1091,6 +1091,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "styk-alloc"
+version = "0.1.0"
+
+[[package]]
 name = "styk-cli"
 version = "0.1.0"
 dependencies = [
@@ -1112,6 +1116,7 @@ dependencies = [
 name = "styk-codec-wasm"
 version = "0.1.0"
 dependencies = [
+ "styk-alloc",
  "styk-doc",
  "styk-formats",
  "styk-piv",
@@ -1259,6 +1264,7 @@ name = "styk-wasm"
 version = "0.1.0"
 dependencies = [
  "js-sys",
+ "styk-alloc",
  "styk-doc",
  "styk-draw",
  "styk-edit",

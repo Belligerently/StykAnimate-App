@@ -10,6 +10,7 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+styk-alloc = { path = "../styk-alloc" }
 styk-doc = { path = "../styk-doc" }
 styk-formats = { path = "../styk-formats" }
 styk-eval = { path = "../styk-eval" }
