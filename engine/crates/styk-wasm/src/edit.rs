@@ -14,7 +14,8 @@ use crate::js_error;
 struct Publisher {
     engine: Engine,
     opened: Arc<OpenedDocument>,
-    published: Option<Value>,
+    /// The tree and the revision last published.
+    published: Option<(Value, u64)>,
     /// Why the last publication failed, until the next one succeeds.
     error: Option<String>,
 }
@@ -52,18 +53,20 @@ impl EditSession {
         self.session.as_ref().expect("a session is open until it is dropped")
     }
 
-    /// Publishes the session's tree when a call changed it and this session is the engine's document.
+    /// Publishes the session's tree when a call changed it or moved its revision (a document marked as
+    /// changed keeps its tree) and this session is the engine's document.
     fn publish(&mut self) {
         let Some(publisher) = &mut self.publisher else { return };
-        let Some(published) = &publisher.published else { return };
+        let Some((published, at)) = &publisher.published else { return };
         let session = self.session.as_ref().expect("a session is open until it is dropped");
         let report = session.report();
-        if report.same_node(published) {
+        let revision = session.revision();
+        if report.same_node(published) && revision == *at {
             return;
         }
-        match publisher.engine.publish_tree(publisher.opened.lineage(), report.clone(), session.revision()) {
+        match publisher.engine.publish_tree(publisher.opened.lineage(), report.clone(), revision) {
             Ok(Some(_)) => {
-                publisher.published = Some(report.clone());
+                publisher.published = Some((report.clone(), revision));
                 publisher.error = None;
             }
             // Another document is in front: this one is published when it comes back (`activate`).
@@ -90,7 +93,7 @@ impl EditSession {
         let tree = self.session().report().clone();
         let Some(publisher) = &mut self.publisher else { return Err(js_error("this session has no document to publish")) };
         let done = publisher.engine.activate(&publisher.opened.typed, &tree, revision as u64).map_err(|error| js_error(error.to_json()))?;
-        publisher.published = Some(tree);
+        publisher.published = Some((tree, revision as u64));
         publisher.error = None;
         Ok(format!("{{\"generation\":{},\"revision\":{},\"ms\":{:.3}}}", done.generation, done.revision, done.ms))
     }

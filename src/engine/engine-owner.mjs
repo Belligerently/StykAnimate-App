@@ -886,7 +886,27 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   }
   Object.defineProperty(layer, 'dirty', {configurable: true,
     get() { return session && document === editor.report && history ? history.dirty || Boolean(this._drag?.changed || this._animationEdit?.changed) : dirty.get.call(this); },
-    set(value) { dirty.set.call(this, value); }});
+    set(value) {
+      dirty.set.call(this, value);
+      // The next read of `dirty` is the session's: it has the new revision at once.
+      if (value && idle()) flush();
+    }});
+  /**
+   * The engine draws, plays and exports what its session holds, at the editor's revision. An edit made outside
+   * the session's calls (a document marked as changed, a definition published after leaving a movieclip) reaches
+   * it once the code that made it has finished, unless a gesture is open: that one ends in a call.
+   */
+  let settling = false;
+  const idle = () => session && document === editor.report && depth === 0 && !applying && !editor._drag && !editor._animationEdit && !editor._authoredPoseEdit && !editor._vfxClipEdit;
+  const settle = () => {
+    if (settling) return;
+    settling = true;
+    queueMicrotask(() => {
+      settling = false;
+      if (!idle()) return;
+      try { flush(); } catch (error) { report.broken = String(error?.message ?? error); }
+    });
+  };
   // Edits other modules make in place, or announce without a command.
   editor.addEventListener('change', event => {
     const detail = event.detail;
@@ -904,6 +924,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     for (const id of detail.sourceIds ?? []) hints.sources.add(id);
     if (detail.definition && !detail.figureIndices?.length) hints.allFigures = true;
     if (detail.label === 'Project metadata') hints.touched = true;
+    settle();
   });
   // A call the editor runs names what it changed in place in its events.
   layer._emit = function owned(kind, detail = {}) {

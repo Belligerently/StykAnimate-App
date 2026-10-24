@@ -8,6 +8,7 @@ import {readdirSync, readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {withDraws} from '../src/editor-draws.mjs';
 import {installEngineOwner} from '../src/engine/engine-owner.mjs';
+import {holdsRevision, registeredEngine} from '../src/engine/engine-open.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {sampleMotionPath} from '../src/motion-path.mjs';
 import {engineBuilt} from './support/engine-node.mjs';
@@ -51,6 +52,8 @@ export async function ownedEditor(options, document, {verify = true} = {}) {
   const editor = new Editor(options).load(structuredClone(document));
   let pool = [];
   const owner = installEngineOwner(editor, {verify, draws: () => pool});
+  // The session exists from the moment the document opens: the app starts it as it loads the document.
+  assert.ok(owner.ready(), 'the document has its session');
   return {editor, owner, setDraws: draws => { pool = draws; }};
 }
 
@@ -109,6 +112,8 @@ for (const {legacy} of variants) test(`the engine owning the document matches th
         // `object_count` is derived (the number of objects); whether the frame on show has it
         // depends on which of the editor's evaluation caches built that frame.
         sameText(frameText(owned.evaluatedFrame), frameText(expected.evaluatedFrame), `${label(index + 1)} ${method}: frame on show`);
+        // The stage, playback and exports draw what the engine holds: it holds the editor's revision after every call.
+        assert.ok(holdsRevision(registeredEngine(), owned.revision), `${label(index + 1)} ${method}: the engine holds revision ${owned.revision}`);
         steps++;
       }
       let guard = 1000;
@@ -116,6 +121,7 @@ for (const {legacy} of variants) test(`the engine owning the document matches th
       assert.equal(owned.canUndo, false, `${label('undo all')}: the engine's history is as long`);
       sameText(json(owned.report), json(expected.report), `${label('undo all')}: document`);
       same(state(owned), state(expected), `${label('undo all')}: state`);
+      assert.ok(holdsRevision(registeredEngine(), owned.revision), `${label('undo all')}: the engine holds revision ${owned.revision}`);
       tapes++;
     } catch (error) {
       if (process.env.OWNER_TAPE) console.log(error.stack, JSON.stringify(owner.refused));
@@ -893,4 +899,31 @@ test('redo under an open camera drag or rig edit redoes and leaves the gesture o
   rig.agree('redo');
   rig.both('commitRigDrag');
   rig.agree('commit after redo');
+});
+
+test('a document marked as changed is the engine\'s at its new revision', {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
+  const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
+  assert.ok(owner.ready());
+  assert.ok(holdsRevision(registeredEngine(), editor.revision), 'the open document is the engine\'s');
+  const opened = editor.revision;
+  editor.dirty = true;
+  assert.notEqual(editor.revision, opened);
+  assert.equal(editor.dirty, true);
+  assert.ok(holdsRevision(registeredEngine(), editor.revision), 'and so is the revision that marks it changed');
+  owner.release();
+});
+
+test("an edit made outside the session's calls reaches the engine once the code that made it has finished", {skip: !engineBuilt}, async () => {
+  const document = JSON.parse(readFileSync(new URL('startup.document.json', folder), 'utf8'));
+  const {editor, owner} = await ownedEditor({demo: false, layerTimeline: true, propertyChannels: true}, document);
+  const opened = editor.revision;
+  // A module that moves the revision and announces the change without a command.
+  editor._revision = ++editor._revisionSerial;
+  editor._emit('edit', {label: 'Project metadata'});
+  assert.notEqual(editor.revision, opened);
+  assert.equal(holdsRevision(registeredEngine(), editor.revision), false, 'not before the code that made the edit is done');
+  await Promise.resolve();
+  assert.ok(holdsRevision(registeredEngine(), editor.revision), "and then it is the engine's");
+  owner.release();
 });

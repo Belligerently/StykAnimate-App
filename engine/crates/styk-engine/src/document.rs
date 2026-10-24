@@ -215,7 +215,9 @@ impl Engine {
         if store.lineage != lineage || store.prepared.is_none() {
             return Ok(None);
         }
-        self.publish_locked(store, tree, revision, None).map(Some)
+        // A revision that moved with the tree untouched (a document marked as changed) keeps its typed views.
+        let views = if tree.same_node(&store.tree) { store.prepared.clone() } else { None };
+        self.publish_locked(store, tree, revision, views).map(Some)
     }
 
     fn publish_locked(&self, mut store: std::sync::MutexGuard<'_, crate::store::Store>, tree: Value, revision: u64, views: Option<Arc<Prepared>>) -> Result<Committed, OpenError> {

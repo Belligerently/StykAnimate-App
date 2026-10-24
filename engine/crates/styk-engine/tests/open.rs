@@ -98,3 +98,19 @@ fn a_document_that_cannot_open_says_why() {
     let cancelled = engine.open_document(OpenSource::Json { bytes: &json::to_string(&document).into_bytes(), name: "x" }, APP, &|| true).err().expect("cancelled");
     assert_eq!(cancelled.code.as_deref(), Some("cancelled"));
 }
+
+#[test]
+fn a_revision_that_moves_with_the_tree_untouched_is_published_without_converting_anything() {
+    let engine = engine();
+    let text = std::fs::read(repo("engine/tests/edit/startup.document.json")).unwrap();
+    let opened = engine.open_document(OpenSource::Json { bytes: &text, name: "Untitled" }, APP, &|| false).unwrap();
+    engine.activate(&opened.typed, &opened.tree, 1).unwrap();
+    let before = engine.generation().unwrap();
+    // `dirty = true` in the editor: a new revision, the same document.
+    let committed = engine.publish_tree(opened.lineage(), opened.tree.clone(), 2).unwrap().expect("nothing reads the document");
+    let after = engine.generation().unwrap();
+    assert_eq!((before.revision, after.revision), (1, 2));
+    assert_eq!(committed.converted.keyframes, 0);
+    assert!(std::sync::Arc::ptr_eq(&before.prepared, &after.prepared), "the typed views are the same");
+    assert_eq!(engine.stored().unwrap().0, 2);
+}
