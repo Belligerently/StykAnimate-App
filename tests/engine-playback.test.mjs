@@ -25,7 +25,7 @@ function playbackSide({maxFrames} = {}) {
     set_hidden() {}, total_ticks: () => 9,
     try_set_hidden() { return 1; }, try_set_effects() { return 1; },
   };
-  const side = {engine: {handle, pump() {}}, eligibility: {check: () => null}, drawingUnpublished: () => false,
+  const side = {engine: {handle, pump() {}}, drawingUnpublished: () => false,
     mirror: {stats: {}, async syncFrames(report, revision) { current = {report, revision}; },
       framesCurrent: (report, revision) => current?.report === report && current?.revision === revision}};
   const legacy = {report: null, maxFrames, load(...args) { legacyCalls.push(args); }, dispose() {}, invalidate() {}, setVfxEnabled() {}};

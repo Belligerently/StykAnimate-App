@@ -289,7 +289,7 @@ Each gets an ADR under `docs/engine/decisions/` when it lands.
 | D1 | The engine workspace is `engine/` at the repository root, started from `experiments/styk-native` (kept as the measured reference). | One owner per concern; the prototype's numbers stay reproducible. | done |
 | D2 | The document store is a lossless, copy-on-write tree (ordered keys, exact numbers, packed numeric arrays) with typed evaluation views derived per record. | Saves must be byte-identical and unknown fields must survive; the prototype's typed model is read-only and lossy. An edit clones only the records it touches. | done (store, typed views per changed record) |
 | D3 | One WebAssembly module with threads (SharedArrayBuffer, COOP/COEP on the web build, Cloudflare and the Electron host). | One shared document for every worker instead of one copy per worker (today each playback worker holds its own). Synchronous queries from the UI thread. | done (headers on every host; playback of supported documents runs on it) |
-| D4 | Strangler gate per document for the renderer (`src/engine/engine-eligibility.mjs` names the first feature the engine lacks), per command group for editing. | The app must work at every commit. | renderer gate in use |
+| D4 | Strangler gate for the renderer (`src/engine/engine-eligibility.mjs` named the first feature of a document the engine lacked; deleted once the engine drew every document), per command group for editing. | The app must work at every commit. | renderer gate deleted; editing gated per command group |
 | D5 | zstd from the C library (`zstd-sys` 1.5.7) compiled to WebAssembly and natively. | Measured: at level 3 it reproduces the bytes of the vendored zstd build on all 448 version 2 files of the corpus. | done |
 | D6 | One threaded WebAssembly build, on a pinned nightly (`nightly-2026-09-15`, `-Z build-std` with atomics, 2 GiB shared memory). A page that is not cross-origin isolated runs the same module without workers, in slices on the interface thread. | Stable Rust ships no atomics-enabled standard library for `wasm32-unknown-unknown`. One build keeps one bundle. | done |
 | D7 | The interface thread never blocks: shared state is taken with a spinning lock (critical sections are a queue push or a pointer swap), and no rayon in WebAssembly (parallelism there is whole frames on the engine's workers). | `Atomics.wait` throws on a browser's interface thread; rayon parks the calling thread. Found the hard way: the first frame prepared on the interface thread trapped. | done |
@@ -443,17 +443,17 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   still prevent renderer deletion. Hardware-opt-in headless web previously returned an
   empty engine canvas for all nine rig views; no new hardware claim or threshold change.
 
-- **Documents the engine does not draw yet** keep the JavaScript renderer whole (gate D4).
-  `node engine/tools/gate-census.mjs` (2026-10-03, the gate itself on each file loaded as
-  the app loads it): of 382 native documents (the asset catalogue, the private corpus and
-  the repository's fixtures; Pivot figures left out), the engine draws 380; 2 do not load in
-  Node (`svr_uriel.piv` exceeds Node's string limit; the unrepaired Jay file is invalid). The
-  gate still refuses frame drafts (temporary editing state, only ever shown as onion skins)
-  and movieclips nested deeper than 16 levels; property channels are drawn by the engine and
-  edited by it on layer sheets (class `channels`, not owned by default; `_styk.animation` on a
-  native timeline stays with the editor). Electron's WebGPU canvas shows nothing under Xvfb on this
-  machine, so Electron app parity of new features ran the engine on WebGL2 there. A drawing stroke not
-  yet published still makes its frame fall back to the JavaScript renderer.
+- **Every document is drawn by the engine** (the renderer gate, D4, and its census are gone,
+  2026-10-24). Its last two reasons, frame drafts (temporary editing state, only ever shown as
+  onion skins) and movieclips nested deeper than 16 levels, left once the engine drew both,
+  compared with the editor in the app (Electron WebGPU and the web build: 14 runs, 120 steps, every one
+  drawn by the engine, no solid pixel, mean at most 0.049 levels; [rendering.md](engine/rendering.md#every-document)).
+  Property channels are drawn by the engine and edited by it on layer sheets (class `channels`, not
+  owned by default; `_styk.animation` on a native timeline stays with the editor). Electron's WebGPU
+  canvas shows nothing under Xvfb on the Linux machine, so Electron app parity of earlier features ran the
+  engine on WebGL2 there. What still sends a frame to the JavaScript renderer is not the
+  document: a failed engine, a drawing stroke not yet published, a drawing preview, a rotated or
+  mirrored view.
 - **Exports through the engine** (`styk-export`, `src/engine/engine-export.mjs`): an export
   holds a second GPU device and a second copy of the document's pictures for its duration
   (+52–361 MiB GPU memory measured); its first frame waits for every picture (URIEL 3:
@@ -1131,14 +1131,14 @@ effect executors are deleted):
    motion families match, including future target and ancestor guards; scalar-only
    motion, native property projection and unrecorded complex combinations remain gated.
 5. Small gates: rotated and mirrored views (renderer), follow camera, layer parallax, colour
-   transitions, Stick Nodes sprites, frame drafts, retained movieclip sources,
+   transitions, Stick Nodes sprites, retained movieclip sources,
    `runtime_segments` fallbacks; exact fractional prepared playback remains required.
 6. Every other drawing path through the engine: thumbnails, library previews, the camera
    monitor, the drawing workspace (live strokes), export frames (S4).
 7. A CPU rasterizer for exports, thumbnails and devices without WebGPU or WebGL2: done
    (milestone log). Left: the camera monitor on WebGL2 stages.
 8. Delete the JavaScript renderer, raster caches, stand-ins and density buckets, playback
-   workers, effect executors; the eligibility gate disappears.
+   workers, effect executors; the eligibility gate is gone (2026-10-24).
 
 **S1, formats:** done: the Rust codec runs in the app in place of Pyodide and the Python
 sidecar, and the Python codec stays only as the development oracle (milestone log, 10:05).

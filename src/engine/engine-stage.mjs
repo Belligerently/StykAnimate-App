@@ -2,18 +2,17 @@
  * The stage: one renderer object for the app, two renderers behind it while
  * the engine port is in progress (docs/RUST-ENGINE-PORT.md, stage S3).
  *
- * `createStageRenderer` wraps the JavaScript renderer. For a document the
- * engine can draw (engine-eligibility.mjs) the engine draws into its own
- * canvas, stacked exactly where the JavaScript renderer's is, and the other is
- * hidden. Everything the engine does not handle yet is forwarded to the
- * JavaScript renderer, so the app sees one renderer with one interface.
+ * `createStageRenderer` wraps the JavaScript renderer. The engine draws into
+ * its own canvas, stacked exactly where the JavaScript renderer's is, and the
+ * other is hidden; the frames it does not take (below, `refusal`) and everything
+ * it does not handle yet are forwarded to the JavaScript renderer, so the app
+ * sees one renderer with one interface.
  *
  * What crosses to the engine per edited frame is the pose the editor shows:
  * only the objects whose geometry the editor rebuilt since the last frame.
  */
 import {loadEngine} from './engine.mjs';
 import {EngineMirror} from './engine-mirror.mjs';
-import {EngineEligibility} from './engine-eligibility.mjs';
 import {ENGINE_KEY, engineTicket} from './engine-playback.mjs';
 import {drawingResourcesFor} from '../drawing-resources.mjs';
 import {EngineCameraMonitor} from './engine-previews.mjs';
@@ -40,7 +39,7 @@ async function engineSide(canvas) {
   surface.style.visibility = 'hidden';
   canvas.before(surface);
   const stage = await engine.createStage(surface);
-  return shared = {engine, stage, surface, mirror: new EngineMirror(engine), eligibility: new EngineEligibility(),
+  return shared = {engine, stage, surface, mirror: new EngineMirror(engine),
     /** Geometry groups the engine last received, by slot: an unchanged group is not sent again. */
     groups: [], frameReport: null, count: -1, definitions: null, failed: null, dirty: null, lastRefusal: null,
     /** Onion skin poses the engine holds, by the editor's sampled frame. */
@@ -207,13 +206,7 @@ export async function createStageRenderer(canvas, options, create) {
     if (!request.geometry) return 'no evaluated geometry';
     if (request.drawingPreview) return 'a drawing preview';
     if (drawingUnpublished(request.report)) return 'unpublished drawing strokes';
-    const reason = side.eligibility.check(request.report, request.revision ?? -1, side.dirty);
-    if (reason && side.dirty) {
-      // The JavaScript renderer takes over; which figures were edited in place meanwhile is
-      // not tracked, so the engine gets every definition again when it returns.
-      side.dirty = null; side.resendFigures = true; side.definitions = null;
-    }
-    return reason;
+    return null;
   };
 
   /** Figures whose drawings were published in place since the engine got them become dirty. */
@@ -240,8 +233,8 @@ export async function createStageRenderer(canvas, options, create) {
     const dirty = side.dirty;
     side.dirty = null;
     const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
-      {figureIndices: dirty?.figureIndices ?? [], allFigures: side.resendFigures || Boolean(dirty?.definition && !dirty.figureIndices?.length)});
-    side.definitions = key; side.resendFigures = false;
+      {figureIndices: dirty?.figureIndices ?? [], allFigures: Boolean(dirty?.definition && !dirty.figureIndices?.length)});
+    side.definitions = key;
     if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.tiles = new WeakMap(); side.frameReport = request.report; }
     const unsupported = JSON.parse(side.engine.handle.unsupported());
     if (unsupported.length) throw new Error(`the engine does not draw ${unsupported.join(', ')} yet`);

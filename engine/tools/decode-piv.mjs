@@ -1,5 +1,5 @@
 // Decodes a Pivot .piv with the repository's Python codec (the development oracle) into a
-// JSON document for gate-census.mjs, records-reference.mjs and reference.mjs. The interpreter
+// JSON document for records-reference.mjs and reference.mjs. The interpreter
 // is the one scripts/run-python.mjs picks (STYK_PYTHON, the repository's .venv, then PATH), so
 // it runs the same on every platform.
 //

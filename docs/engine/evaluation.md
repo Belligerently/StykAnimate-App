@@ -235,7 +235,8 @@ unrecorded command combinations remain gated independently of rendering.
 
 ## Not evaluated yet
 
-Gated in the app: frame drafts (temporary editing state shown only as onion skins).
+Frame drafts (temporary editing state shown only as onion skins) are not read:
+the interface hands the engine the poses it shows ([rendering.md](rendering.md#every-document)).
 Actual shown/resource readiness and no-thread fallback still need their canonical app
 boundary before JavaScript evaluation is deleted. The work queue in the plan orders them.
 

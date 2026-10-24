@@ -32,6 +32,10 @@
 //
 // --native evaluates the document on its native timeline (the editor without layer sheets,
 // as documents with property channels were authored) instead of as the app loads it.
+//
+// --deep loads a document whose movieclips nest deeper than the editor opens a file
+// (eight levels, `validateMovieclipGraph`). Nested editing builds such documents in a
+// session, where only the clip entered is checked; the evaluation is the same.
 import './v8-pin.mjs';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -47,7 +51,7 @@ const {buildGeometry} = await import(`${repoUrl}/src/pivot/geometry.mjs`);
 
 const [input, output, ...rest] = process.argv.slice(2);
 if (!input || !output) {
-  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native]');
+  console.error('usage: node tools/reference.mjs <file.styk|decoded.json> <out.json> [--ticks a,b] [--every N] [--max N] [--vfx] [--camera] [--images] [--scene] [--style] [--native] [--deep]');
   process.exit(2);
 }
 const option = name => { const i = rest.indexOf(name); return i < 0 ? undefined : rest[i + 1]; };
@@ -67,7 +71,14 @@ if (/\.(styk|stkz|stykmov)$/i.test(input)) {
 // Same editor configuration as src/app.mjs (without layer sheets for --native).
 const started = performance.now();
 const editor = new Editor({demo: false, propertyChannels: true, layerTimeline: !rest.includes('--native')});
-editor.load(document, path.basename(input));
+if (rest.includes('--deep')) {
+  const {prepareEditorLoadSteps} = await import(`${repoUrl}/src/editor-load.mjs`);
+  // A visited set skips the graph check of the root; every nested document is still prepared.
+  const steps = prepareEditorLoadSteps(document, {sliceMs: Infinity, movieclipVisited: new Set()});
+  let step;
+  do step = steps.next(); while (!step.done);
+  editor._publishLoadedReport(step.value, path.basename(input));
+} else editor.load(document, path.basename(input));
 const loadMs = performance.now() - started;
 const total = editor.totalTicks;
 

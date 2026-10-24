@@ -75,7 +75,7 @@ editor and mirror remain in charge until the app handoff and class cost gates pa
 
 - No silent loss: a field the engine does not understand stays in the tree and
   is written back; a feature it does not evaluate is named in
-  `Document::unsupported` and gated in the app (`engine-eligibility.mjs`).
+  `Document::unsupported`, which the stage reads: the frame goes to the JavaScript renderer.
 - Never mutate a published node: build a new path (`Arc::make_mut` on a clone).
 - Number identity: a value read and written unchanged is the same bytes.
 

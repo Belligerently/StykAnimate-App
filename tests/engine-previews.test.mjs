@@ -73,11 +73,11 @@ test('in-between previews without a worker, refused documents and devices withou
   const thumbnails = new EngineThumbnails(target, {}, {stage: () => stage, playback: () => playback, javascript: js.make, previews: async () => null});
   assert.equal(await thumbnails.renderThumbnail(0, canvas(), {inbetween: {ratio: .5}}), true);
   assert.equal(calls.length, 0, 'without a worker no document is mirrored');
-  // The gate refuses the document.
-  const refused = app({refusal: 'a frame draft'});
+  // The engine refuses the document (its stroke waits for publication).
+  const refused = app({refusal: 'unpublished drawing strokes'});
   const second = new EngineThumbnails(target, {}, {stage: () => refused.stage, playback: () => refused.playback, javascript: js.make});
   assert.equal(await second.renderThumbnail(0, canvas()), true);
-  assert.equal(second.stats.engine.refusal, 'a frame draft');
+  assert.equal(second.stats.engine.refusal, 'unpublished drawing strokes');
   // WebGL2 and no preview worker either: the stage could not give thumbnails a canvas; later
   // requests go straight to JavaScript.
   const gl = app({draw: () => 'refused'});

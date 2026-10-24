@@ -10,10 +10,14 @@
 //   node scripts/engine-app-parity.mjs [--file <project>] [--ticks 0,10,20] [--onion] [--play]
 //        [--target web|electron] [--renderer canvas|gpu] [--label <name>] [--url http://127.0.0.1:47831]
 //        [--out <dir>] [--require-engine] [--width 1440 --height 900] [--zoom 1,0.3,4] [--no-effects] [--no-onion] [--preview]
-//        [--electron-arg <switch>]...
+//        [--electron-arg <switch>]... [--deep] [--frame-draft]
 //
 // --preview captures each tick again in the camera preview (Ctrl+Play): the scene seen
 // through its camera, with camera motion and parallax layers, as playback shows it.
+//
+// --deep opens a .json document whose movieclips nest deeper than a file opens (nested editing builds
+// those in a session; the file check allows eight levels). --frame-draft turns the Simple timeline's
+// working frame on after the document opens (`enableFrameDrafts`: a saved draft is restored).
 //
 // Without --file it uses the document the app starts with. The web target runs
 // headless Chromium, where the JavaScript renderer is its Canvas 2D fallback;
@@ -99,7 +103,7 @@ function stageReadiness() {
   // the stability key so a completed decode during a screenshot forces a retry.
   const signature = JSON.stringify([engine, editor.tick, editor.revision, state.view,
     entries.map(entry => [entry.id, entry.stamp, entry.decodes ?? 0, entry.pixelStamp ?? 0])]);
-  return {engine, refusal: renderer.engineStats?.refusal ?? null, tick: editor.tick,
+  return {engine, refusal: renderer.engineStats?.refusal ?? null, backend: engine ? renderer.engineStats?.backend ?? null : null, tick: editor.tick,
     ready: !Object.values(pending).some(Boolean), pending, signature,
     drawings: drawings.size, entries: entries.length,
     decoding: !engine && Boolean(owner?.decoding), decodes: owner?.decodes ?? 0};
@@ -161,7 +165,18 @@ async function capture(browser, origin, engine) {
   if (file?.endsWith('.json')) {
     // A plain JSON document (the engine's test fixtures): loaded as the editor loads an opened project.
     const text = await readFile(path.resolve(file), 'utf8');
-    await page.evaluate(({text, name}) => { styk.editor.load(JSON.parse(text), name); styk.editor.markSaved(); }, {text, name: path.basename(file)});
+    await page.evaluate(async ({text, name, deep}) => {
+      const report = JSON.parse(text);
+      if (deep) {
+        // The editor's own load, without the file's graph check (the check is the only difference).
+        const {prepareEditorLoadSteps} = await import(new URL('src/editor-load.mjs', document.baseURI).href);
+        const steps = prepareEditorLoadSteps(report, {sliceMs: Infinity, movieclipVisited: new Set()});
+        let step;
+        do step = steps.next(); while (!step.done);
+        styk.editor._publishLoadedReport(step.value, name);
+      } else styk.editor.load(report, name);
+      styk.editor.markSaved();
+    }, {text, name: path.basename(file), deep: flag('--deep')});
   } else if (file) {
     const before = await page.evaluate(() => { window.__parityReport = styk.editor.report; return document.title; });
     await page.locator('#file-input').setInputFiles(path.resolve(file));
@@ -169,6 +184,7 @@ async function capture(browser, origin, engine) {
     if (await page.title() === before) throw new Error(`${file} did not open`);
   }
   await dismiss();
+  if (flag('--frame-draft')) await page.evaluate(() => styk.editor.enableFrameDrafts());
   const total = await page.evaluate(async () => {
     styk.editor.select(null); styk.fit();
     for (let i = 0; i < 4; i++) await new Promise(resolve => requestAnimationFrame(resolve));
@@ -193,6 +209,8 @@ async function capture(browser, origin, engine) {
     const deadline = Date.now() + CAPTURE_TIMEOUT_MS;
     let state, picture;
     while (Date.now() < deadline) {
+      // The desktop app's first-run prompt can open after the first dismissal and cover the stage.
+      await dismiss();
       state = await settle(deadline);
       if (Date.now() >= deadline) break;
       if (state.ready) {
@@ -200,7 +218,7 @@ async function capture(browser, origin, engine) {
         const after = await page.evaluate(stageReadiness);
         if (after.ready && after.signature === state.signature) {
           if (picture?.equals(next)) {
-            steps.push({name, picture: next, engine: after.engine, refusal: after.refusal, tick: after.tick});
+            steps.push({name, picture: next, engine: after.engine, refusal: after.refusal, backend: after.backend, tick: after.tick});
             return;
           }
           picture = next;
@@ -331,8 +349,8 @@ try {
     const pass = !result.error && result.solid === 0 && result.mean <= LIMITS.mean;
     if (!pass) failed++;
     if (!step.engine) engineDrew = false;
-    report.steps.push({name: step.name, engine: step.engine, refusal: step.refusal, playedWithEngine: step.playedWithEngine, pass, ...result});
-    console.log(`${pass ? 'ok  ' : 'FAIL'} ${step.name}: engine ${step.engine ? 'drew' : `did not draw (${step.refusal})`}; ${result.error ?? `${result.differing} px differ, ${result.strong} by more than ${LIMITS.threshold}, ${result.solid} solid, max ${result.max}, mean beyond ${LIMITS.quantum} ${result.mean.toFixed(4)} (raw ${result.rawMean.toFixed(4)})`}`);
+    report.steps.push({name: step.name, engine: step.engine, refusal: step.refusal, backend: step.backend, playedWithEngine: step.playedWithEngine, pass, ...result});
+    console.log(`${pass ? 'ok  ' : 'FAIL'} ${step.name}: engine ${step.engine ? `drew${step.backend ? ` (${step.backend})` : ''}` : `did not draw (${step.refusal})`}; ${result.error ?? `${result.differing} px differ, ${result.strong} by more than ${LIMITS.threshold}, ${result.solid} solid, max ${result.max}, mean beyond ${LIMITS.quantum} ${result.mean.toFixed(4)} (raw ${result.rawMean.toFixed(4)})`}`);
   }
   await writeFile(path.join(out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   for (const [name, problems] of Object.entries(report.problems)) if (problems.length) console.log(`${name} errors:\n  ${problems.slice(0, 5).join('\n  ')}`);

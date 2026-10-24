@@ -420,8 +420,8 @@ build before this work against this one).
 
 `src/engine/engine-stage.mjs` puts the engine's canvas (`#scene-engine`)
 where the JavaScript renderer's is and draws the edit frame, onion skins and
-prepared playback frames for documents the engine supports
-([D4](decisions/0004-strangler-gate.md)). The WebGPU surface is configured with
+prepared playback frames of every document ([D4](decisions/0004-strangler-gate.md),
+[Every document](#every-document)). The WebGPU surface is configured with
 premultiplied alpha so the page shows through the pasteboard. Through the scene
 camera (prepared playback frames, and edit frames in the camera preview) the scene is
 seen through `cameraAtTime` (follow clips, camera-motion impulses) and parallax layers
@@ -432,6 +432,56 @@ drawn by the engine; the effects preview switch reaches it through
 by the engine (an edit frame whose trails are still being sampled asks the app for
 another frame, `Stage::refining`); so are 3D meshes, surfaces, poses and drawings a
 spatial bone turns.
+
+### Every document
+
+The engine draws every document the editor holds: no document keeps the JavaScript
+renderer (the eligibility gate, `engine-eligibility.mjs`, is gone). What still sends a
+frame to the JavaScript renderer is a condition of the frame, not of its document: the engine
+has failed (it refused the document or a frame sync; the stage stays with JavaScript for the
+session), a drawing has unpublished strokes, a drawing is being previewed, the view is rotated
+or mirrored, or the editor has no geometry for the frame (`refusal` in `engine-stage.mjs`;
+`eligible` in `engine-playback.mjs` takes the first two for playback, thumbnails and exports).
+The gate's last two reasons went by drawing what they named:
+
+- **Movieclips nested deeper than 16 levels.** Nothing in the engine limits the depth but the
+  store's: it reads 512 levels of JSON, a clip taking five of them, so 100 clips open and 102 are
+  refused (the JavaScript renderer then draws, as it does for any document the engine refuses). A file
+  opens eight levels (`validateMovieclipGraph`), so only nested editing in a session builds
+  deeper documents: `deep-seventeen` and `deep-twenty-four`
+  (`engine/tools/document-fixtures.mjs`: each clip made, placed and entered in turn, the figure
+  at the bottom animated through every level; `reference.mjs --deep` loads them without the file
+  check) match the editor primitive by primitive at five ticks, and changing the pose at the
+  bottom of the chain breaks the comparison (`styk-eval/tests/document.rs`). The gate counted
+  from zero, so 17 levels passed it and 18 did not.
+- **Frame drafts.** `_styk.simpleFrameDraft` (the Simple timeline's working frame,
+  [SIMPLE-FRAME-DRAFTS.md](../SIMPLE-FRAME-DRAFTS.md)) keeps the stored pose and animation beside
+  the working ones. The stage draws the pose the editor shows, and its onion skins (the stored
+  pose among them), from poses the interface hands it, so a draft reaches the engine only as
+  metadata nothing it evaluates reads; its playback, thumbnails and exports hold the document as
+  the editor does. The app gives every document a layer sheet, which deletes the draft of a native
+  one (a draft a file brings with its sheet stays in the document, unused until drafts are
+  enabled); `frame-draft-add` and `frame-draft-update` are native projects saved with a draft,
+  `frame-draft-sheet` a sheet document carrying one, each compared with the editor by
+  `styk-eval/tests/document.rs`. The stored-frame view of the JavaScript playback
+  (`storedFrames`: the Simple timeline of a document *without* a layer sheet, derived by
+  `storedFrameReport`: no Add pose, the stored animation, no keys for an empty draft) is not
+  applied by the engine's playback adapter; the app never asks for it (`syncPlayback` asks only
+  where there is no sheet).
+- **An animation with no keys**, as Pivot permits one (`empty-animation`). The editor holds it as
+  one empty working pose (and a draft marking it, which the sheet deletes), so the engine receives
+  one key. A mirror holding no keys (its definitions before its frames arrive) has no playable
+  ticks (`Generation::playable_ticks`) and no artwork.
+
+App parity (D13 limits unchanged) on these documents with onion skins and after playback, in a
+1,440×900 window, 2026-10-24: the web build (headless Chromium) and Electron on WebGPU, each
+`deep-seventeen`, `deep-twenty-four`, `frame-draft-add`, `frame-draft-update`,
+`frame-draft-sheet` (also with the draft enabled in the app, `--frame-draft`) and
+`empty-animation`: 14 runs and 120 steps, every one drawn by the engine, no solid pixel, mean
+difference at most 0.049 levels (web) and 0.036 (Electron). `node scripts/engine-app-parity.mjs --file <fixture>.json --deep`
+opens documents nested past the file check. The engine's thumbnail and export document sync
+(`engineDocument`) accepted `deep-twenty-four` and `frame-draft-sheet` in the web build, and
+the thumbnail drawn was the engine's.
 
 **Pictures that arrive after the frame.** Pictures and drawing cels decode on the engine's
 workers after a document opens, and the stage uploads them a slice at a time (8 MiB a
@@ -454,7 +504,7 @@ The other places the editor draws frames, for documents the engine draws, use th
 renderer as the stage, so they show what the stage shows. Where no GPU path serves them (a stage
 on WebGL2 for thumbnails, a worker without a GPU device or whose canvas gives no pixels for library
 previews and exports), the CPU rasterizer draws the same pixels in a worker ([CPU](#cpu-styk-raster),
-[The CPU paths](#the-cpu-paths)). Where the engine does not draw (documents the gate refuses, pages
+[The CPU paths](#the-cpu-paths)). Where the engine does not draw (a failed engine, pages
 without the engine's worker threads, devices where the stage gets no GPU device at all), the
 JavaScript paths draw as before.
 
@@ -740,7 +790,7 @@ video frames) come from the engine: the frame the stage would show at that tick,
 scene camera, at the export's size and sampling, without onion skins. The encoders (the PNG,
 GIF, APNG and ZIP writers, WebCodecs, FFmpeg, the audio mix) are unchanged and receive the
 same canvases and PNG frames as before. SVG stays vector output from the JavaScript exporter,
-and so do documents the gate refuses (`engine-eligibility.mjs`).
+and so does an export while the engine has failed.
 
 Composited No smoothing frames preserve the editor's existing `exportSVG` fallback
 policy. Active effect scopes (including its broad owner scan), a truthy generator

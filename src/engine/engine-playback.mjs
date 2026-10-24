@@ -1,10 +1,11 @@
 /**
- * Playback preparation for the app: the engine's for documents it draws, the
- * JavaScript playback cache's for the others (docs/RUST-ENGINE-PORT.md, S3).
+ * Playback preparation for the app: the engine's, except while the engine has failed or
+ * a drawing stroke waits for publication, when the JavaScript playback cache's
+ * (docs/RUST-ENGINE-PORT.md, S3).
  *
  * `createStagePlayback` wraps the JavaScript `PlaybackCache` and keeps its
- * interface, so the app's transport does not change. For a document the engine
- * draws, the document goes to the engine through the mirror instead of being
+ * interface, so the app's transport does not change. While the engine prepares
+ * playback, the document goes to the engine through the mirror instead of being
  * copied into playback workers, ticks are requested from the engine's worker
  * threads, and a "packet" is only a ticket: the tick, the frame's camera and
  * backgrounds for the overlay, and a key the stage renderer recognises.
@@ -108,12 +109,12 @@ export function createStagePlayback(legacy, {stage}) {
     packets.set(tick, packet);
   };
 
-  const eligible = (candidate, candidateRevision) => {
+  const eligible = candidate => {
     const engine = side();
     if (!engine) return false;
     // The stage renderer asks whether its prepared frames come from the engine.
     engine.playbackEngine ??= () => engineMode;
-    return !engine.failed && !engine.drawingUnpublished(candidate) && engine.eligibility.check(candidate, candidateRevision, engine.dirty) === null;
+    return !engine.failed && !engine.drawingUnpublished(candidate);
   };
   const setHidden = options => {
     if (options?.hiddenKey === undefined || (!pendingHidden && options.hiddenKey === hiddenKey)) return;
@@ -172,7 +173,7 @@ export function createStagePlayback(legacy, {stage}) {
     },
     load(next, options = {}) {
       next = next?.document ?? next?.report ?? next;
-      if (!eligible(next, options.revision)) {
+      if (!eligible(next)) {
         engineMode = false; report = null; dropPackets();
         return legacy.load(next, options);
       }
@@ -186,7 +187,7 @@ export function createStagePlayback(legacy, {stage}) {
     updateDocument(patch = {}) {
       const nextRevision = patch.revision ?? revision;
       if (!engineMode) return legacy.updateDocument(patch);
-      if (!eligible(report, nextRevision)) { engineMode = false; dropPackets(); return legacy.load(report, patch); }
+      if (!eligible(report)) { engineMode = false; dropPackets(); return legacy.load(report, patch); }
       revision = nextRevision;
       setHidden(patch);
       sync({frameIndices: patch.frameIndices, sourceIds: patch.sourceIds, figureIndices: patch.figureIndices,
@@ -228,10 +229,10 @@ export function createStagePlayback(legacy, {stage}) {
      * For an export (engine-export.mjs): brings the engine's document to `report` at
      * `revision` through the same synchronisation playback uses, which the app keeps
      * current with every edit afterwards. Resolves `true` once the engine holds it,
-     * `false` when the engine does not draw this document.
+     * `false` when the engine cannot take it (it has failed, or a stroke awaits publication).
      */
     async exportDocument(next, nextRevision) {
-      if (!eligible(next, nextRevision)) return false;
+      if (!eligible(next)) return false;
       if (!engineMode || report !== next) playback.load(next, {revision: nextRevision});
       else if (revision !== nextRevision || (!syncing && !side().mirror.framesCurrent(report, revision))) playback.updateDocument({revision: nextRevision});
       if (!engineMode) return false;

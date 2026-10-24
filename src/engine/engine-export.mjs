@@ -2,10 +2,10 @@
  * Export frames drawn by the engine (docs/engine/rendering.md, Exports; stage S4 of
  * docs/RUST-ENGINE-PORT.md).
  *
- * For a document the engine draws (engine-eligibility.mjs), an export's pixels come
- * from the engine's GPU renderer instead of the JavaScript Canvas 2D export renderer
- * (export-frame-renderer.mjs): the frame the stage would show at that tick, through
- * the scene camera, at the export's size and sampling, without onion skins. Encoders
+ * An export's pixels come from the engine's GPU renderer instead of the JavaScript
+ * Canvas 2D export renderer (export-frame-renderer.mjs): the frame the stage would show
+ * at that tick, through the scene camera, at the export's size and sampling, without
+ * onion skins. Encoders
  * (PNG, GIF, APNG, ZIP, WebCodecs, FFmpeg) do not change: they receive the same
  * canvases and PNG frames from the same interface.
  *
@@ -14,10 +14,10 @@
  * memory and holds a GPU device of its own, or draws on the CPU (styk-raster) where it
  * gets none, so nothing is drawn or read back on the interface thread (D7). Request
  * handling, progress, revision checks, timeouts, the retry ladder and the output canvas are
- * the base class's. A document the engine does not draw, or an engine worker that cannot
- * start the export, uses the JavaScript worker instead, decided before the first frame. SVG stays vector output: `vector` exports always use
- * the JavaScript renderer. `prewarmExportRenderer` starts the worker and its device while
- * the export dialog is open.
+ * the base class's. An engine that has failed, or an engine worker that cannot start the
+ * export, uses the JavaScript worker instead, decided before the first frame. SVG stays
+ * vector output: `vector` exports always use the JavaScript renderer.
+ * `prewarmExportRenderer` starts the worker and its device while the export dialog is open.
  */
 import {ExportFrameRenderer} from '../export-frame-renderer.mjs';
 import {drawingBarrier} from '../drawing-resources.mjs';

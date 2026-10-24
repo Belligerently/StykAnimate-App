@@ -16,11 +16,10 @@
  * app-parity rule.
  *
  * The JavaScript renderer (thumbnail-renderer.mjs) draws what the engine does not, created
- * only when first needed: documents the gate refuses (engine-eligibility.mjs), pages without
- * the engine's worker threads, and thumbnails neither the stage nor the preview worker could
- * draw. In-between samples use the same preview worker and pinned typed document, with the
- * editor's explicit interval and onion settings. A frame is
- * drawn by one or the other, whole.
+ * only when first needed: a failed engine, pages without the engine's worker threads, and
+ * thumbnails neither the stage nor the preview worker could draw. In-between samples use the
+ * same preview worker and pinned typed document, with the editor's explicit interval and
+ * onion settings. A frame is drawn by one or the other, whole.
  */
 import {ThumbnailRenderer} from '../thumbnail-renderer.mjs';
 import {layerAppearance, thumbnailVisualChange} from '../thumbnail-validity.mjs';
