@@ -217,6 +217,7 @@ impl Renderer {
             size,
             zoom: view.zoom,
             pan: view.pan,
+            orient: self.orientation.unwrap_or(plan::IDENTITY),
             stretch: view.stretch,
             camera_view: view.camera_view,
             camera_limit: view.camera_limit,
@@ -330,6 +331,21 @@ impl Renderer {
             v.paint_quad0 = [q[0][0],q[0][1],q[1][0],q[1][1]];
             v.paint_quad1 = [q[2][0],q[2][1],q[3][0],q[3][1]];
         }
+        // A rotated or mirrored workspace view: the artboard is a quad on screen, and the scene
+        // outside it is clipped by the fragments (a scissor rectangle cannot follow it).
+        let artboard = match self.orientation {
+            Some(orientation) => {
+                let a = view.artboard;
+                let corners = [[a[0], a[1]], [a[2], a[1]], [a[2], a[3]], [a[0], a[3]]].map(|p| styk_eval::view::apply(orientation, p).map(|v| v as f32));
+                v.orient_quad0 = [corners[0][0], corners[0][1], corners[1][0], corners[1][1]];
+                v.orient_quad1 = [corners[2][0], corners[2][1], corners[3][0], corners[3][1]];
+                v.orient_flags = [1.0, if view.clip_to_artboard { 1.0 } else { 0.0 }, 0.0, 0.0];
+                let xs = corners.map(|p| p[0] as f64);
+                let ys = corners.map(|p| p[1] as f64);
+                [xs.into_iter().fold(f64::INFINITY, f64::min), ys.into_iter().fold(f64::INFINITY, f64::min), xs.into_iter().fold(f64::NEG_INFINITY, f64::max), ys.into_iter().fold(f64::NEG_INFINITY, f64::max)]
+            }
+            None => view.artboard,
+        };
         let o = passes.len() * UNIFORM_STRIDE as usize;
         uniform_data[o..o + std::mem::size_of::<GpuView>()].copy_from_slice(bytemuck::bytes_of(&v));
         self.queue.write_buffer(&self.uniforms, 0, &uniform_data);
@@ -463,7 +479,7 @@ impl Renderer {
             }
             if until > from {
                 if view.clip_to_artboard {
-                    let a = view.artboard;
+                    let a = artboard;
                     let x0 = a[0].clamp(0.0, size[0] as f64).floor() as u32;
                     let y0 = a[1].clamp(0.0, size[1] as f64).floor() as u32;
                     let x1 = a[2].clamp(0.0, size[0] as f64).ceil() as u32;
