@@ -16,6 +16,11 @@
  *
  * Calls that only move the view (selecting, seeking) stay with the editor; the session
  * receives the view with every call.
+ *
+ * The editor's reads of the frame on show (`evaluatedFrame`, `geometry`, `timeline`) and a few of its own
+ * (`SESSION_READS`) are answered by the session too, after the editor's pending edits reach it
+ * (`engine-shown.mjs`, docs/engine/evaluation.md): the editor evaluates for itself only while it runs a
+ * call of its own or edits a movieclip in place.
  */
 import {applyDocumentPatch} from './engine-patch.mjs';
 import {editorDraws, withDraws} from '../editor-draws.mjs';
@@ -58,9 +63,9 @@ const QUERIES = new Set(['addEventListener', 'removeEventListener', 'dispatchEve
   'drawingTarget', 'figurePalette', 'frameClipboardDocument', 'frameClipboardDocumentView', 'frameIndexForId', 'getCameraMotions',
   'getFrameById', 'getFrameId', 'getIKSettings', 'getLayer', 'getLayerFigureUids', 'getLayerFocus', 'getLayerFolders', 'getLayers', 'getSpatialCamera',
   'getSpatialIKPole', 'getSpatialMotion', 'getSpatialPose', 'getSpatialProportions', 'getVfxClips', 'isFigureFocusLocked', 'isLayerFocusLocked',
-  'joinedFigureIds', 'layerForUid', 'layerFrameKeys', 'motionPathReport', 'movieclipProjectReport', 'nativePoseChannel', 'nativePropertyChannel',
-  'nearestAnimationKey', 'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
-  'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'previewInbetween', 'sheetSpan', 'transaction',
+  'layerForUid', 'layerFrameKeys', 'motionPathReport', 'movieclipProjectReport', 'nativePoseChannel', 'nativePropertyChannel',
+  'resolveAnimationTarget', 'resolveTranslationSelection', 'sampleVfxClip', 'segmentAnimationTarget',
+  'serialize', 'vfxEffects', 'segmentValues', 'motionPathFalloff', 'sheetSpan', 'transaction',
   'load', 'loadAsync', 'newDocument', 'detachDocument', 'discardDocument', 'resumeDocument', 'handOverDocument', 'markSaved',
   'setFrameClipboardWorker', 'setInbetweenPlanner', 'setLayerMigrationPlanner', 'enterMovieclip', 'leaveMovieclip',
   'setLayerFocus', 'clearLayerFocus', 'reconcileLayerFocus', 'prepareDrawingCel', 'undo', 'redo', 'constructor']);
@@ -760,12 +765,12 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
     // A committed gesture's frame stays on show, as the session keeps it (`retained`),
     // until the session lets it go.
     mark = performance.now();
-    const shown = answer.retained ? (editor._authoredPoseEdit?.frame ?? baseFrame()) : null;
+    const drafted = answer.retained ? (editor._authoredPoseEdit?.frame ?? baseFrame()) : null;
     const kept = answer.retainedKept ? editor._evaluated : null;
     adoptState(answer);
     if (answer.status === 'ok' && (name === 'beginVfxClipEdit' || name === 'beginAnimationEdit')) mirrorEdit(name, answer);
     if (answer.status === 'ok' && (name === 'copyAudioClip' || name === 'cutAudioClip')) editor._audioClipboard = AUDIO_COPIED;
-    if (shown && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, shown); editor._geometry = null; editor._incremental = null; }
+    if (drafted && !editor._authoredPoseEdit) { editor._evaluated = retainedShown = retainedFrame(answer, drafted); editor._geometry = null; editor._incremental = null; }
     else if (kept && !editor._authoredPoseEdit && !editor._evaluated) { editor._evaluated = kept; }
     if (!answer.retained && !answer.retainedKept) retainedShown = null;
     if (answer.patch?.length) take();

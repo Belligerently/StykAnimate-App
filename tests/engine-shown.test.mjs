@@ -65,11 +65,12 @@ test('a gesture rebuilds the groups of the figures it moves and keeps the others
     assert.equal(editor.geometry.objects.get(alone).root.x, before.objects.get(alone).root.x, 'cancelled: the figure is back');
     // Moving the figure another hangs from moves both.
     editor.select(3, -1);
-    const joined = [1, 2].map(uid => slotOf(uid)), held = editor.geometry;
+    const joined = [2, 3].map(uid => slotOf(uid)), held = editor.geometry;
     editor.beginTranslationDrag();
     editor.moveSelection(5, 5, {fromStart: true});
     const moved = editor.geometry;
     for (const slot of joined) assert.notEqual(moved.objects.get(slot), held.objects.get(slot), `slot ${slot} moves with what it hangs from`);
+    for (const slot of [1, 4].map(uid => slotOf(uid))) assert.equal(moved.objects.get(slot), held.objects.get(slot), `slot ${slot} is not joined to them`);
     editor.cancelDrag();
   } finally { owner.release(); }
 });
