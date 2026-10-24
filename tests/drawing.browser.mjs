@@ -120,7 +120,7 @@ try{
   const lifecycle=await page.evaluate(async()=>{
     const e=styk.editor,d=styk.drawing;await d.barrier();
     const clip=e.createEmptyMovieclip('Drawing lifecycle');e.enterMovieclip(clip.figure_type_id);e.createDrawingLayer();d.bind();
-    const target=e.prepareDrawingCel(),surface=await d.owner.surface(target.figure),{DrawingStroke}=await import('/src/drawing-pixels.mjs');
+    const target=e.prepareDrawingCel(),surface=await d.owner.surface(target.figure),{DrawingStroke}=await import('/tests/support/sketch-stroke.mjs');
     const stroke=new DrawingStroke(surface.store,{size:10,pressureSize:false});stroke.sample({x:45,y:45});e.commitDrawingPixels(target,stroke.finish());
     let guarded=false;try{e.leaveMovieclip();}catch{guarded=true;}await d.barrier();const owner=d.owner;e.leaveMovieclip();
     const saved=e.report.figure_types.find(f=>f.figure_type_id===clip.figure_type_id)._styk.movieclip.document.figure_types.find(f=>f._styk?.drawing);

@@ -31,7 +31,7 @@ export async function verifyDrawingOnionLayering(){
   try{
     for(const forceCanvas2D of [false,true]){
       const canvas=document.createElement('canvas'),renderer=await createRenderer(canvas,{forceCanvas2D,resources:{drawing:f=>drawingMetadata(f)?owner.presenter(f):null}});
-      await renderer.gpuDrawingReady;renderer.resize(320,200,1);renderer.device?.addEventListener('uncapturederror',event=>gpuErrors.push(event.error.message));
+      renderer.resize(320,200,1);renderer.device?.addEventListener('uncapturederror',event=>gpuErrors.push(event.error.message));
       const paint=()=>({report:e.report,frame:e.evaluatedFrame,geometry:e.geometry,view:{x:0,y:0,scale:1},cameraEnabled:false});
       try{
         renderer.render({...paint(),onionFrames:cache.get(e,settings)});

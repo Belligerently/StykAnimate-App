@@ -402,6 +402,68 @@ impl Previews {
         Ok(READY)
     }
 
+    /// Draws the artwork of `tick` of the open document at `revision` (`ExportFrames::composite`:
+    /// on transparency, without background, effects or camera) for the drawing workspace's fill
+    /// and magic wand, with the CPU rasterizer into the CPU's picture. `matrix` takes world
+    /// units to pixels (`[a, b, c, d, e, f]`, canvas order) and the picture is the `width ×
+    /// height` pixels from `(x, y)`, drawn in tiles of at most 1,024 pixels a side. 0: drawn; 1:
+    /// the frame's pictures are not all decoded yet (wait for the engine's progress, then ask
+    /// again); 2: the engine holds another revision (or no document, or no engine was adopted).
+    #[allow(clippy::too_many_arguments)]
+    pub fn composite(&mut self, revision: f64, tick: u32, x: i32, y: i32, width: u32, height: u32, matrix: &[f64]) -> Result<u32, JsError> {
+        const SIDE: u32 = 1024;
+        const MAX_PIXELS: u64 = 64 << 20;
+        let matrix: [f64; 6] = matrix.try_into().map_err(|_| js_error("a composite transform has six numbers"))?;
+        if !matrix.iter().all(|v| v.is_finite()) || (matrix[0] * matrix[3] - matrix[1] * matrix[2]).abs() < 1e-12 {
+            return Err(js_error("the composite transform is not invertible"));
+        }
+        if width == 0 || height == 0 || width as u64 * height as u64 > MAX_PIXELS {
+            return Err(js_error(format!("A composite is 1 to {MAX_PIXELS} pixels ({width}×{height} asked).")));
+        }
+        let Some(engine) = self.engine.clone() else { return Ok(STALE) };
+        let Some(generation) = engine.generation().filter(|g| g.revision == revision as u64) else { return Ok(STALE) };
+        self.pin(&engine, &generation)?;
+        let pictures = self.thumbnails.as_mut().expect("pinned above");
+        if tick >= pictures.frames.ticks() {
+            return Err(js_error(format!("The document has no tick {tick} ({} ticks).", pictures.frames.ticks())));
+        }
+        let assets = pictures.frames.generation().assets.clone();
+        for image in pictures.frames.take_images(usize::MAX) {
+            pictures.images.add_shared(&assets, image);
+        }
+        if pictures.frames.images_pending() > 0 {
+            return Ok(WAIT);
+        }
+        let list = pictures.frames.composite(tick);
+        self.raster.set_drawing_grid(DrawingGrid::Destination);
+        self.raster.set_paint_context(styk_render::paint::PaintContext::Native);
+        let [a, b, c, d, e, f] = matrix;
+        let mut out = vec![0u8; width as usize * height as usize * 4];
+        for top in (0..height).step_by(SIDE as usize) {
+            for left in (0..width).step_by(SIDE as usize) {
+                let (w, h) = (SIDE.min(width - left), SIDE.min(height - top));
+                let view = ViewParams {
+                    matrix: [a, b, c, d, e - x as f64 - left as f64, f - y as f64 - top as f64],
+                    artboard: [0.0, 0.0, w as f64, h as f64],
+                    clip_to_artboard: false,
+                    clear: [0.0; 4],
+                    zoom: a.hypot(b),
+                    pan: [0.0, 0.0],
+                    stretch: 1.0,
+                    camera_view: false,
+                    camera_limit: styk_render::CAMERA_PREVIEW_LIMIT,
+                };
+                let tile = self.raster.render(&list, &pictures.images, &view, [w, h]).straight();
+                for row in 0..h as usize {
+                    let to = ((top as usize + row) * width as usize + left as usize) * 4;
+                    out[to..to + w as usize * 4].copy_from_slice(&tile[row * w as usize * 4..(row + 1) * w as usize * 4]);
+                }
+            }
+        }
+        self.picture = (width, height, out);
+        Ok(READY)
+    }
+
     /// Copies the last picture the CPU drew into `out` (the RGBA of an `ImageData` of its
     /// size): straight alpha. Fails when there is none of that size.
     pub fn picture(&self, out: &js_sys::Uint8ClampedArray) -> Result<(), JsError> {
@@ -411,6 +473,11 @@ impl Previews {
         }
         out.copy_from(pixels);
         Ok(())
+    }
+
+    /// Lets go of the last picture the CPU drew (a large one is not kept for the next request).
+    pub fn forget_picture(&mut self) {
+        self.picture = (0, 0, Vec::new());
     }
 
     /// The size of the last picture the CPU drew: width, height.

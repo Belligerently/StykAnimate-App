@@ -36,6 +36,11 @@ impl Uploaded {
         self.places.clear();
     }
 
+    /// A live drawing slot was written at the corner `(x, y)` of page `layer`.
+    pub fn mark(&mut self, layer: u32, x: u32, y: u32) {
+        self.places.insert(place(layer, x, y));
+    }
+
     /// `image` was written into the atlas `assets` lays out.
     pub fn record(&mut self, assets: &Assets, image: &DecodedImage) {
         let entry: Option<&AtlasEntry> = if image.drawing { assets.drawing.get(image.index as usize) } else { assets.atlas.get(image.index as usize) };

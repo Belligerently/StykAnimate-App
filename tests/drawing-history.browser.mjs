@@ -84,7 +84,7 @@ try{
     finally{exporter.dispose();}
   });
   check('native save remains self-contained after the disk history session closes',saved);
-  await page.evaluate(()=>styk.fit());await page.waitForFunction(()=>!styk.state.editablePreparing&&!styk.state.dirtyRender&&styk.state.renderer.stats.drawingGpuBytes>0);
+  await page.evaluate(()=>styk.fit());await page.waitForFunction(()=>!styk.state.editablePreparing&&!styk.state.dirtyRender&&styk.state.renderer.engineActive);
   check('the reopened cel appears on the canvas',await page.evaluate(()=>styk.editor.evaluatedFrame.objects.length>0));
   check('no uncaught browser errors',errors.length===0);await page.screenshot({path:out+'/workspace.png'});
   await writeFile(out+'/result.json',JSON.stringify({checks,storage,measured,errors,browser:await browser.version()},null,2));console.log(JSON.stringify(measured,null,2));

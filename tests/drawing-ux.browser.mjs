@@ -120,7 +120,7 @@ try{
   // Budget regressions: a resident-store overflow must evict rebuildable work
   // instead of rejecting the edit, and forked cels share counted tiles.
   const probe=await page.evaluate(async()=>{
-    const {DrawingStroke}=await import('/src/drawing-pixels.mjs');
+    const {DrawingStroke}=await import('/tests/support/sketch-stroke.mjs');
     const e=styk.editor,d=styk.drawing,owner=d.owner,TILE_B=64*64*4,out={};
     const old=owner.tileBudget;owner.tileBudget=4*TILE_B;
     try{

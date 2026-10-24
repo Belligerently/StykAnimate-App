@@ -437,12 +437,10 @@ The camera output monitor contains its own drawing failures, reports diagnostics
 
 ## Live drawing surfaces
 
-On WebGPU, eligible drawing cels are drawn from GPU-resident tiles as
-instanced quads inside the ordered retained layout, with GPU-reduced levels
-and the GPU brush overlay; `src/drawing-gpu.mjs` owns that pool and its
-budget ([DRAWING-GPU.md](DRAWING-GPU.md)). The scratch presenter below serves
-Canvas 2D, onion skins, selection previews, cels with effects and
-`setGpuDrawing(false)`.
+The engine's stage draws drawing cels, strokes included, from tiles it holds
+(see [docs/engine/drawing.md](engine/drawing.md#live-cels)). The scratch presenter
+below serves this renderer's Canvas 2D path, onion skins, selection previews and cels
+with effects.
 
 A drawing resource supplies a visible-tile presenter for the active image
 figure rather than a full-cel surface. Tiles are painted into bounded

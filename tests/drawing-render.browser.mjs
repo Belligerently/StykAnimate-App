@@ -144,7 +144,7 @@ try{
   // Memory and playback need a multi-tick document: 30 distinct copied cels,
   // each stamped with a small stroke on top of the copied band.
   await page.evaluate(async()=>{
-    const e=styk.editor,d=styk.drawing,{DrawingStroke}=await import('/src/drawing-pixels.mjs');
+    const e=styk.editor,d=styk.drawing,{DrawingStroke}=await import('/tests/support/sketch-stroke.mjs');
     const id=e.drawingTarget().id;
     for(let i=1;i<30;i++)e.nextDrawing([id],{blank:false,length:1});
     for(let i=0;i<30;i++){e.seek(i);const target=e.prepareDrawingCel(),surface=await d.owner.surface(target.figure);
@@ -164,9 +164,8 @@ try{
   await page.evaluate(()=>styk.settingsUI.commit({rendererMode:'auto'}));
   // Scrub across the populated frames, then check every budget.
   for(const tick of [0,15,29,0])await page.evaluate(tick=>{styk.editor.seek(tick);kick();},tick),await page.waitForTimeout(80);
-  const memory=await page.evaluate(()=>{const s=styk.editor.drawingResources.stats;return {bytes:s.bytes,levelBytes:s.levelBytes,scratchBytes:s.scratchBytes,gpu:styk.state.renderer.stats.drawingGpuBytes??0};});
+  const memory=await page.evaluate(()=>{const s=styk.editor.drawingResources.stats;return {bytes:s.bytes,levelBytes:s.levelBytes,scratchBytes:s.scratchBytes};});
   check('tile, mip and scratch caches stay inside their budgets',memory.bytes<=192*1024*1024&&memory.levelBytes<=64*1024*1024&&memory.scratchBytes<=64*1024*1024);
-  check('drawing GPU textures stay inside the 96 MiB budget',memory.gpu<=96*1024*1024);
   check('no uncaught browser errors',errors.length===0);
   await writeFile(path.join(output,'render.json'),JSON.stringify({checks,errors,sharpness,memory,playback,browser:await browser.version()},null,2));
 }catch(error){await page.screenshot({path:path.join(output,'failure.png')});await writeFile(path.join(output,'failure.json'),JSON.stringify({message:error.message,errors,checks},null,2));throw error;}

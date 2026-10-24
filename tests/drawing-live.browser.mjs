@@ -9,12 +9,11 @@ page.on('pageerror',error=>errors.push(error.message));const check=(name,value)=
 try{
  // Apply the same disabled HTTP cache policy to comparison revisions.
  await page.context().route('**/*',route=>route.continue());
- if(baseline)for(const name of process.env.STYK_LIVE_MODULES?.split(',')??['drawing-preview-cache','drawing-worker-operations','renderer']){const body=execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'});await page.context().route(`**/src/${name}.mjs`,route=>route.fulfill({contentType:'text/javascript',body}));}
+ if(baseline)for(const name of process.env.STYK_LIVE_MODULES?.split(',')??['drawing-preview-cache','renderer']){const body=execFileSync('git',['show',`${baseline}:src/${name}.mjs`],{encoding:'utf8'});await page.context().route(`**/src/${name}.mjs`,route=>route.fulfill({contentType:'text/javascript',body}));}
  if(software)await page.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:undefined}));
  await page.goto(process.env.STYK_URL||'http://127.0.0.1:47839');await page.waitForFunction(()=>window.styk?.ready);
- // This suite covers the stroke worker and worker-preview presenter, the
- // Canvas path and WebGPU fallback; GPU tiles have their own suite.
- await page.evaluate(()=>styk.state.renderer.setGpuDrawing?.(false));await page.locator('[data-workspace-mode="draw"]').click();
+ // This suite covers the stroke worker and the worker-preview presenter of the Canvas path.
+ await page.locator('[data-workspace-mode="draw"]').click();
  await page.evaluate(async()=>{const {emptyDocument}=await import('/src/demo.mjs');styk.editor.load(emptyDocument());styk.editor.createDrawingLayer();styk.state.settings.autosaveSeconds=0;Object.assign(styk.drawing.settings,{size:8,resolution:2,stabilization:0,color:'#203ed8'});});
  if(previewDelayMs)await page.evaluate(ms=>{const worker=styk.drawing.owner.previews.worker,request=worker.request.bind(worker);worker.request=async(...args)=>{const result=await request(...args);await new Promise(resolve=>setTimeout(resolve,ms));return result;};},previewDelayMs);
  const box=await page.locator('#viewport').boundingBox(),start={x:box.x+100,y:box.y+100};

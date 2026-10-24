@@ -9,37 +9,16 @@
  * use: the stroke worker's `StrokeEngine`, the brush model's `BrushStroke`, the history
  * codec. `src/engine/engine-drawing-worker.mjs` answers the pixel worker's operations.
  *
- * Strangler gate (docs/RUST-ENGINE-PORT.md, S6): `?drawingEngine=off` (or `?engine=off`,
- * or the stored `stykanimate.drawingEngine` / `stykanimate.engine` setting) keeps the
- * JavaScript raster engine, which stays the oracle; so does a module that fails to load.
  */
 import {messageError} from '../localized-error.mjs';
-import {BrushStroke as JavaScriptBrushStroke, pressureMap} from '../drawing-brush.mjs';
+import {normalizeBrush, pressureMap} from '../drawing-brush.mjs';
+import {TILE} from '../drawing-tiles.mjs';
 
 /** The call set this facade was written for (`drawingApiVersion()` in the module). */
 const API_VERSION = 1;
 const DAB = 11;
 
-/** Whether the drawing raster engine runs in Rust: `location` is the page's or, in a
- * worker, the worker script's URL (the page appends `?engine=off` when it is off). */
-export function drawingEngineEnabled(location = globalThis.location) {
-  try {
-    const query = new URLSearchParams(location?.search ?? '');
-    for (const name of ['drawingEngine', 'engine']) { const value = query.get(name); if (value) return value !== 'off'; }
-    const stored = globalThis.localStorage?.getItem('stykanimate.drawingEngine') ?? globalThis.localStorage?.getItem('stykanimate.engine');
-    return stored !== 'off';
-  } catch { return true; }
-}
-
-/** A drawing worker's script URL, carrying the page's gate decision. */
-export function drawingWorkerURL(url) {
-  if (drawingEngineEnabled()) return url;
-  const next = new URL(url);
-  next.searchParams.set('engine', 'off');
-  return next;
-}
-
-let loading = null, glue = null, failure = null;
+let loading = null, glue = null;
 
 async function load() {
   const module = new URL('./pkg/styk_drawing.js', import.meta.url);
@@ -53,21 +32,14 @@ async function load() {
   return bindings;
 }
 
-/** Loads the module once per thread. Resolves to its bindings, or null when the gate is
- * off or the module cannot load (the JavaScript raster engine then answers). */
-export function loadDrawingEngine({enabled = drawingEngineEnabled()} = {}) {
-  if (!enabled) return Promise.resolve(null);
-  return loading ??= load().then(bindings => (glue = bindings), error => {
-    failure = error;
-    console.warn?.(`The drawing engine is unavailable; drawing uses the JavaScript engine (${error?.message ?? error}).`);
-    return null;
-  });
+/** Loads the module once per thread. Resolves to its bindings; rejects when it cannot load
+ * (an unbuilt checkout: `npm run engine:build`), and every later call with it. */
+export function loadDrawingEngine() {
+  return loading ??= load().then(bindings => (glue = bindings));
 }
 
-/** The loaded bindings, or null (not loaded, off, or failed). */
+/** The loaded bindings, or null while the module is loading. */
 export function drawingEngine() { return glue; }
-/** Why the module did not load, if it failed. */
-export function drawingEngineFailure() { return failure; }
 /** Bytes of linear memory the module holds in this thread (it grows, it never shrinks). */
 export function drawingEngineMemory() { return glue ? glue.memoryBytes() : 0; }
 
@@ -239,10 +211,42 @@ export class RustBrushStroke {
   }
 }
 
-/** A brush stroke on the engine when it is loaded in this thread, otherwise the
- * JavaScript brush model (the same shapes: tests/parity in styk-drawing). */
+/** A brush stroke on the engine, which this thread has loaded (`loadDrawingEngine`). */
 export function createBrushStroke(settings, paint, options) {
-  return glue ? new RustBrushStroke(settings, paint, options) : new JavaScriptBrushStroke(settings, paint, options);
+  if (!glue) throw new Error('The drawing engine is not loaded.');
+  return new RustBrushStroke(settings, paint, options);
+}
+
+/**
+ * Rasterizes one stroke into `store` on this thread: the inspector's brush sample and the
+ * preset thumbnails, small strokes drawn while the interface is built, so never through a
+ * worker. `samples` are `{x, y, pressure, time}` in the store's pixels; the store may hold
+ * what the stroke paints over (a smudge's colour bands, an eraser's backdrop). Returns the undo
+ * records (`[{tx, ty, before, after}]`), or null while the module is loading.
+ */
+export function paintStroke(store, settings, samples) {
+  if (!glue) return null;
+  const raw = {workingBytes: 64 << 20, ...settings}, brush = normalizeBrush(raw), dabs = [];
+  const path = new RustBrushStroke(brush, shape => dabs.push(shape), {seed: brush.seed});
+  for (const sample of samples) path.sample(sample);
+  path.finish();
+  const seeds = new Map();
+  for (const dab of dabs) {
+    for (let ty = Math.floor(dab.top / TILE); ty * TILE < dab.bottom; ty++) {
+      for (let tx = Math.floor(dab.left / TILE); tx * TILE < dab.right; tx++) {
+        const key = `${tx},${ty}`;
+        if (!seeds.has(key)) seeds.set(key, {tx, ty, pixels: store.get(tx, ty)?.pixels.slice().buffer ?? null});
+      }
+    }
+  }
+  const strokes = new StrokeEngine();
+  try {
+    strokes.begin(1, raw);
+    strokes.dabs(1, 1, dabs, [...seeds.values()]);
+    const changes = strokes.end(1) ?? [];
+    for (const tile of changes) tile.after ? store.set(tile.tx, tile.ty, tile.after) : store.delete(tile.tx, tile.ty);
+    return changes;
+  } finally { strokes.engine.free(); }
 }
 
 // ---------------------------------------------------------------- undo chunks

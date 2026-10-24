@@ -439,10 +439,12 @@ The engine draws every document the editor holds: no document keeps the JavaScri
 renderer (the eligibility gate, `engine-eligibility.mjs`, is gone). What still sends a
 frame to the JavaScript renderer is a condition of the frame, not of its document: the engine
 has failed (it refused the document or a frame sync; the stage stays with JavaScript for the
-session), a drawing has unpublished strokes, a drawing is being previewed, the view is rotated
-or mirrored, or the editor has no geometry for the frame (`refusal` in `engine-stage.mjs`;
-`eligible` in `engine-playback.mjs` takes the first two for playback, thumbnails and exports).
-The gate's last two reasons went by drawing what they named:
+session), the view is rotated or mirrored, or the editor has no geometry for the frame
+(`refusal` in `engine-stage.mjs`; `eligible` in `engine-playback.mjs` takes the first for
+playback, thumbnails and exports). A drawing with unpublished strokes and a drawing being
+previewed (the first stroke on a blank exposure) no longer send a frame away: the stage draws
+the tiles the interface holds for them ([Live cels](drawing.md#live-cels)). The gate's
+last two reasons went by drawing what they named:
 
 - **Movieclips nested deeper than 16 levels.** Nothing in the engine limits the depth but the
   store's: it reads 512 levels of JSON, a clip taking five of them, so 100 clips open and 102 are

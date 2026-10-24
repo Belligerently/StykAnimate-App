@@ -17,7 +17,7 @@ try{
       const figure=createDrawingFigure(),report=emptyDocument();report.figure_types=[figure];
       const frame=createFrame([createObject(figure,1,0,0)]);report.keyframes=[frame];
       const owner=new DrawingResources(report),surface=await owner.surface(figure);
-      const c=document.createElement('canvas'),r=await createRenderer(c,{forceCanvas2D,resources:{drawing:f=>owner.presenter(f)}});await r.gpuDrawingReady;r.resize(320,240,1);
+      const c=document.createElement('canvas'),r=await createRenderer(c,{forceCanvas2D,resources:{drawing:f=>owner.presenter(f)}});r.resize(320,240,1);
       const geometry=buildGeometry(report,frame),matrix=drawingPixelMatrix(geometry.drawables[0]);
       const view={x:80-matrix[4],y:60-matrix[5],scale:1};
       const options={report,frame,geometry,view,cameraEnabled:false,clipToCanvas:false,vfxEnabled};

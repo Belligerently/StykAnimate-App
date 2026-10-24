@@ -1,7 +1,6 @@
 import {errorMessageData, messageError} from './localized-error.mjs';
 
 import {applyDocumentChunk} from './document-transport.mjs';
-import {captureDrawingComposite} from './drawing-composite.mjs';
 
 let snapshot=null,bytes=0,previewActive=false;
 self.onmessage=async({data})=>{
@@ -48,8 +47,6 @@ self.onmessage=async({data})=>{
       }finally{previewActive=false;}
       return;
     }
-    if(data.kind!=='composite'||!snapshot)throw messageError(new Error(''), "errors.drawingCompositeWorker.missingDrawingCompositeSnapshot", {});
-    const source=await captureDrawingComposite(snapshot,{...data,snapshotBytes:bytes});snapshot=null;
-    self.postMessage({id:data.id,source:source.buffer},[source.buffer]);
+    throw messageError(new Error(''), "errors.drawingCompositeWorker.missingDrawingCompositeSnapshot", {});
   }catch(error){bitmap?.close();snapshot=null;self.postMessage({id:data.id,error:error.message, ...errorMessageData(error),...(typeof error.code==='string'?{code:error.code}:{})});}
 };

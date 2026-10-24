@@ -36,7 +36,6 @@ import { uploadShapeLayoutSteps, SHAPE_UPLOAD_RECORDS } from './renderer-upload.
 import { backgroundImageAssets, frameImageAssets, createSceneImages, consumeSceneSteps } from './scene-preparation.mjs';
 import {drawingMatrix,drawingPixelMatrix,drawingMetadata} from './drawing-model.mjs';
 import {drawingRasterInputs,drawingRasterKey,changedDrawingRaster,sameDrawingRaster,publishedDrawingRasterInputs} from './drawing-render-dependencies.mjs';
-import {DrawingGpu,gpuDrawingEligible} from './drawing-gpu.mjs';
 import {GeneratorGpu} from './vfx-generator-gpu.mjs';
 import {prewarmAtlas} from './vfx-generator-atlas.mjs';
 import {drawGeneratorDraws} from './vfx-generator-canvas.mjs';
@@ -1061,24 +1060,6 @@ class WebGPURenderer {
     this.device.lost.then(info => { if (!this.destroyed) { this.deviceLost = true; this.last = null; this.stats.reason = info.reason; this.stats.message = `Graphics device disconnected: ${info.message || info.reason}. Reinitialize the renderer to continue.`; this.stats.messageKey = 'rendererStatus.deviceDisconnected'; this.stats.messageParams = {detail:info.message || info.reason}; this.stats.backend = 'WebGPU device lost'; this.options.onStatus?.(this.stats); } });
     this.device.addEventListener('uncapturederror', event => { if (this.destroyed || this.deviceLost) return; this.stats.warnings.push(event.error.message); this.options.onStatus?.(this.stats); });
     initVfxDevice(this.device);
-    // Drawing cels display from GPU-resident tiles. Failure keeps the canvas
-    // scratch path, which remains the Canvas 2D and fallback presenter.
-    if (this.options.gpuDrawing !== false) this.enableGpuDrawing();
-  }
-  /** GPU drawing compiles in the background; until it is ready, cels use the
-   * scratch presenter and the stroke worker. `gpuDrawingReady` settles with
-   * whether it became active. */
-  enableGpuDrawing() {
-    if (this.drawingGpu || this.gpuDrawingPending) return this.gpuDrawingReady;
-    const pending = this.gpuDrawingPending = DrawingGpu.create(this);
-    this.gpuDrawingReady = pending.then(gpu => {
-      if (this.gpuDrawingPending !== pending || this.destroyed || this.deviceLost) { gpu.destroy(); return false; }
-      this.gpuDrawingPending = null; this.drawingGpu = gpu; this.lastGeometry = null; this.options.onInvalidate?.(); return true;
-    }, error => {
-      if (this.gpuDrawingPending === pending) this.gpuDrawingPending = null;
-      this.stats.warnings.push(`GPU drawing unavailable: ${error.message}`); return false;
-    });
-    return this.gpuDrawingReady;
   }
   createVectorPipeline(count = this.msaaCount) {
     return this.device.createRenderPipelineAsync({ label: 'StykAnimate vector + asset compositor', layout: this.pipelineLayout,
@@ -1111,7 +1092,6 @@ class WebGPURenderer {
     this.msaa?.destroy(); this.msaa = msaa;
     // The VFX compositor pipeline bakes its own sample count; rebuild lazily.
     this.vfxViewport?.destroy(); this.vfxViewport = null;
-    this.drawingGpu?.compileDisplay(count).then(() => this.options.onInvalidate?.(), () => {});
     this.options.onInvalidate?.();
     return true;
   }
@@ -1239,7 +1219,7 @@ class WebGPURenderer {
     const updates=[],replacement=new Map();
     this.stats.rasterizedObjects=this.stats.compiledObjects=0;
     for(const previous of this.layout){
-      if(!previous.g || previous.drawing || previous.gpuDrawing || !previous.rasterCropped&&!previous.texture)continue;
+      if(!previous.g || previous.drawing || !previous.rasterCropped&&!previous.texture)continue;
       if(!previous.texture&&this.rasterEntryCovered(previous))continue;
       const entry=this.objectEntry(previous.g,previous.rasterItems??previous.g.drawables,previous.opacity,previous.key,previous.transform,scale,previous.isOnion);
       if(entry.count>previous.capacity)return false;
@@ -1488,12 +1468,6 @@ class WebGPURenderer {
     const drawingMeta=sourceItems.length===1&&!isOnion?drawingMetadata(sourceItems[0].fig):null;
     const drawing=drawingMeta&&this.resources.drawing?.(sourceItems[0].fig);
     const drawingState=drawing?{drawing,drawingItems:items,drawingStamp:drawing.stamp,drawingCamera:this.activeCamera,drawingWidth:this.width,drawingHeight:this.height}:{};
-    if(drawing&&this.drawingGpu&&!this.drawingGpu.destroyed&&(drawing.store||drawingMeta.version===2)&&gpuDrawingEligible(drawing,sourceItems[0])){
-      // Tiles are resolved per frame in render(); the retained shape slot stays disabled.
-      const item=sourceItems[0],matrix=drawingPixelMatrix(item),data=prior?.gpuDrawing&&prior.transform===index?prior.data:new Float32Array(shapeRecord({mode:SHAPE.DISABLED,transform:index}));
-      return {...drawingState,key,uid,g,source,opacity,artworkOpacity:artworkView.opacity,isOnion,root:g.root,transform:index,data,count:data.length/SHAPE_FLOATS,texture:null,
-        gpuDrawing:{absolute:matrix,matrix:[matrix[0],matrix[1],matrix[2],matrix[3],matrix[4]-source.root.x,matrix[5]-source.root.y],alpha:drawingAlpha(item)}};
-    }
     if(drawing&&!drawing.store&&drawingMeta.version===2&&!hasDrawableVfx(sourceItems[0])){
       // An evicted v2 store re-decodes via the presenter; keep the last
       // retained texture until then and never fall back to the stale
@@ -1596,7 +1570,7 @@ class WebGPURenderer {
       // entry still presents that texture. A staged layout also shares the data
       // of the layout it will replace; publication copies it on the GPU.
       const reusable = prior ?? this.predecessor?.entries.get(key);
-      if (reusable?.source === source && reusable.transform === index && Boolean(reusable.outlinedVectors)===Boolean(outlined) && !reusable.drawing && !reusable.gpuDrawing && (!reusable.texture || reusable.texture === texture)) data = reusable.data;
+      if (reusable?.source === source && reusable.transform === index && Boolean(reusable.outlinedVectors)===Boolean(outlined) && !reusable.drawing && (!reusable.texture || reusable.texture === texture)) data = reusable.data;
       else { data = compiled.slice(); for (let j = 21; j < data.length; j += SHAPE_FLOATS) data[j] = index; }
     }
     return { key, uid, g, source, opacity, artworkOpacity:artworkView.opacity, isOnion, root: g.root, transform: index, data, count: data.length / SHAPE_FLOATS, texture,
@@ -1913,12 +1887,6 @@ class WebGPURenderer {
         texture.texture.destroy();this.drawingTextures.delete(id);drawingGpuBytes-=texture.bytes;
       }
     }
-    const drawingGpu=this.drawingGpu;
-    if(drawingGpu&&!drawingGpu.destroyed){
-      drawingGpu.beginFrame();
-      for(const entry of this.layout)entry.gpuDraw=entry.gpuDrawing?drawingGpu.prepare(entry.drawing,this.gpuDrawingView(entry,camera)):null;
-      drawingGpuBytes+=drawingGpu.bytes;this.stats.drawingGpu={...drawingGpu.stats};
-    }
     this.stats.drawingGpuBytes=drawingGpuBytes;
     if(this.measureFrame){this.telemetryStages.prepare=performance.now()-measureAt;measureAt=performance.now();}
     const matrix = cameraMatrix(options), zoom = Number(view.scale ?? 1), x = Number(view.x ?? 0), y = Number(view.y ?? 0);
@@ -1960,7 +1928,6 @@ class WebGPURenderer {
     const generatorPlan=generatorBatch&&generatorSchedule(generatorBatch,hiddenUids);
     if(generatorPlan&&!generatorPlan.empty)this.generatorGpu().upload(generatorBatch);
     const encoder = this.device.createCommandEncoder({ label: 'StykAnimate viewport frame' });
-    if(drawingGpu&&!drawingGpu.destroyed)drawingGpu.encode(encoder);
     const timestampWrites=this.gpuTiming?.begin(this.measureFrame);
     this.stats.onionRenderedFrames=this.stats.onionFrameHits=0;
     const hasOnions=this.layout.some(entry=>entry.isOnion);
@@ -1991,8 +1958,7 @@ class WebGPURenderer {
         const dx=this.transformData[offset]-entry.source.root.x,dy=this.transformData[offset+1]-entry.source.root.y;
         if(!this.transformData[offset+3]||bounds.x+dx+bounds.width<view.x||bounds.y+dy+bounds.height<view.y||bounds.x+dx>view.x+view.width||bounds.y+dy>view.y+view.height){flush();continue;}
       }
-      if (entry.gpuDraw) { flush(); drawingGpu.draw(pass, entry.gpuDraw); pass.setPipeline(this.pipeline); pass.setBindGroup(0, this.globalBindGroup); calls++; }
-      else if (entry.texture) { flush(); pass.setBindGroup(1, entry.texture.bindGroup); pass.draw(6, entry.count, 0, entry.offset); calls++; }
+      if (entry.texture) { flush(); pass.setBindGroup(1, entry.texture.bindGroup); pass.draw(6, entry.count, 0, entry.offset); calls++; }
       else { if (begin < 0) begin = entry.offset; count += entry.capacity; }
     }
     flush();
@@ -2022,34 +1988,8 @@ class WebGPURenderer {
     const drawing = this.resources.drawing?.(figure);
     return Boolean(drawing && (drawing.store || meta.version === 2));
   }
-  /** Switch drawing cels between GPU-resident tiles and the canvas scratch
-   * presenter (the Canvas 2D path). Used by diagnostics and fallback tests. */
-  setGpuDrawing(enabled) {
-    if (!enabled) { this.gpuDrawingPending = null; this.drawingGpu?.destroy(); this.drawingGpu = null; this.gpuDrawingReady = Promise.resolve(false); }
-    else if (!this.destroyed && !this.deviceLost) this.enableGpuDrawing();
-    this.lastGeometry = null; this.options.onInvalidate?.();
-    return this.gpuDrawingReady;
-  }
-  /** Visible level-0 pixel rect and display level for a GPU drawing entry,
-   * matching the scratch path's mip choice. */
-  gpuDrawingView(entry,camera,{width=this.width,height=this.height,dpr=this.dpr,translation}={}){
-    const {absolute:m,matrix,alpha}=entry.gpuDrawing,cd=camera[0]*camera[3]-camera[1]*camera[2],md=m[0]*m[3]-m[1]*m[2];
-    let rect=null;
-    if(Math.abs(cd)>1e-12&&Math.abs(md)>1e-12){
-      const toWorld=p=>({x:(camera[3]*(p.x-camera[4])-camera[2]*(p.y-camera[5]))/cd,y:(camera[0]*(p.y-camera[5])-camera[1]*(p.x-camera[4]))/cd});
-      const depth=this.rasterParallax?.(entry.uid),move=this.rasterDrag?.get?.(entry.uid)||this.rasterDrag?.[entry.uid];
-      const shift=translation??{x:(depth?.x||0)+(move?.x||0),y:(depth?.y||0)+(move?.y||0)},mx=m[4]+shift.x,my=m[5]+shift.y;
-      const toPixel=p=>({x:(m[3]*(p.x-mx)-m[2]*(p.y-my))/md,y:(m[0]*(p.y-my)-m[1]*(p.x-mx))/md});
-      const ps=[[0,0],[width,0],[width,height],[0,height]].map(([x,y])=>toPixel(toWorld({x,y})));
-      const x=Math.min(...ps.map(p=>p.x)),y=Math.min(...ps.map(p=>p.y));
-      rect={x,y,width:Math.max(...ps.map(p=>p.x))-x,height:Math.max(...ps.map(p=>p.y))-y};
-    }
-    const deviceScale=Math.max(1e-9,Math.hypot(camera[0],camera[1])*dpr*Math.hypot(m[0],m[1]));
-    return {matrix,alpha,rect,transform:entry.transform,level:Math.max(0,Math.min(8,Math.floor(-Math.log2(deviceScale))))};
-  }
   destroy() {
     this.gpuTiming?.destroy();
-    this.drawingGpu?.destroy();
     for(const texture of this.drawingTextures?.values()??[])texture.texture.destroy();this.drawingTextures?.clear();
     this.vfxViewport?.destroy();
     this.generators?.destroy(); this.generators = null;
@@ -2095,10 +2035,6 @@ async function prepareSceneUpdate(renderer, request) {
     check();
     stage=new WebGPURenderer(renderer.canvas,renderer.device,renderer.context,renderer.format,{...renderer.options,onInvalidate:undefined,onStatus:undefined});
     for(const key of ['pipeline','isolationPipeline','isolationSamples','isolationSinglePipeline','globalLayout','textureLayout','uniform','sampler','nearestSampler','blankBindGroup','resources','rasterCache','vectorCache','compatibilityCache','artworks','artworkAliases','boundsCache'])stage[key]=renderer[key];
-    // Planning records drawing transforms but does not upload or own GPU tiles.
-    // Keep the live tile backend and viewport so held cels never prepare an
-    // empty scratch against an undefined viewport.
-    stage.drawingGpu=renderer.drawingGpu;
     stage.activeReport=report;stage.generation=generation;stage.rasterLease=lease;stage.predecessor=renderer;
     const timings={};let view={...(getView?.()||request.view||{})}, keys;
     for(;;){

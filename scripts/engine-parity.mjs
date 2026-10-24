@@ -56,12 +56,6 @@ for (const [tool, folder] of [
 ]) run(`${tool} regenerate unchanged`, process.execPath, [`engine/tools/${tool}.mjs`], {quiet: true,
   check: () => unchanged(folder)});
 
-// The drawing raster engine's recordings of the JavaScript drawing engine (strokes, fills,
-// selections, transforms, filters, levels, codecs) are byte-stable too; styk-drawing's
-// tests/parity.rs above replays them.
-run('drawing fixtures regenerate unchanged', process.execPath, ['engine/tools/drawing-fixtures.mjs'], {quiet: true,
-  check: () => unchanged('engine/crates/styk-drawing/tests/fixtures')});
-
 // V8's Math results for styk-math are byte-stable unless V8 changes.
 run('math fixtures regenerate unchanged', process.execPath, ['engine/tools/math-fixtures.mjs'], {quiet: true,
   check: () => unchanged('engine/crates/styk-math/tests')});

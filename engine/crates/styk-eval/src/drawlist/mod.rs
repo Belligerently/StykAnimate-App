@@ -22,6 +22,7 @@ use std::sync::Arc;
 use crate::assets::Assets;
 use crate::doc::*;
 use crate::geometry::{object_rgb, Item, ItemKind, Scene};
+use crate::live::LiveView;
 use crate::vfx::layers::{item_extent, rounded, Extent, EMPTY};
 use crate::vfx::{Effect, FrameVfx, ObjectVfx};
 
@@ -141,6 +142,8 @@ fn paint_record(out: &mut Out, p: &Paint, stops: &[(f32, [f32; 4])], start: [f64
 struct Ctx<'a> {
     scene: &'a Scene,
     assets: &'a Assets,
+    /// Drawing cels held live, which replace their published tiles.
+    live: Option<LiveView<'a>>,
     /// An onion skin's colour: every primitive is drawn in it, flat.
     tint: Option<[u8; 3]>,
 }
@@ -371,10 +374,7 @@ impl<'a> Ctx<'a> {
         let tint = if self.tint.is_some() { F_TINT } else { 0 };
         let flags = if a.smooth { F_SMOOTH } else { 0 } | tint;
         // One atlas rectangle drawn over the cel-space rectangle (x, y, w, h); `extra` is the record's last parameter.
-        let quad = |out: &mut Out, kind: u32, paint: u32, e: &crate::assets::AtlasEntry, anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, extra: f64| {
-            let o = place(anchor, x, y);
-            let u = place(anchor, x + w, y);
-            let v = place(anchor, x, y + h);
+        let quad_at = |out: &mut Out, kind: u32, paint: u32, e: &crate::assets::AtlasEntry, o: [f64; 2], u: [f64; 2], v: [f64; 2], extra: f64| {
             let (ux, uy, vx, vy) = (u[0] - o[0], u[1] - o[1], v[0] - o[0], v[1] - o[1]);
             let far = [o[0] + ux + vx, o[1] + uy + vy];
             let xs = [o[0], u[0], v[0], far[0]];
@@ -388,6 +388,39 @@ impl<'a> Ctx<'a> {
             let uv = e.uv();
             out.push(prim(kind, color, paint, [o[0], o[1], ux, uy], [vx, vy, e.layer as f64, extra], [uv[0] as f64, uv[1] as f64, uv[2] as f64, uv[3] as f64]), b);
         };
+        let quad = |out: &mut Out, kind: u32, paint: u32, e: &crate::assets::AtlasEntry, anchor: [f64; 2], x: f64, y: f64, w: f64, h: f64, extra: f64| {
+            quad_at(out, kind, paint, e, place(anchor, x, y), place(anchor, x + w, y), place(anchor, x, y + h), extra);
+        };
+        // A cel the interface holds live is drawn from its own slots, in place of its published
+        // tiles ([`crate::live`]): the same quads, levels and parents, and a floating selection
+        // after it through its transform.
+        if let Some((view, cel, live)) = self.live.zip(a.cel.as_ref()).and_then(|(view, cel)| view.cel(&cel.id).map(|live| (view, cel, live))) {
+            for (layer, matrix) in [(&live.base, None), (&live.float, live.show_float.then_some(live.matrix))] {
+                for level in 0..=crate::drawing::MAX_LEVEL as usize {
+                    let span = (crate::drawing::TILE << level) as f64;
+                    for &(tx, ty) in layer.drawn(level) {
+                        let Some(slot) = layer.slot(level, (tx, ty)) else { continue };
+                        let (px, py) = (tx.div_euclid(2), ty.div_euclid(2));
+                        let paint = match layer.slot(level + 1, (px, py)) {
+                            Some(parent) => {
+                                let p = view.entry(parent);
+                                let row = out.paints.len() as u32;
+                                out.paints.push([p.layer as f32, p.x as f32, p.y as f32, ((tx - 2 * px) + 2 * (ty - 2 * py)) as f32]);
+                                row
+                            }
+                            None => NO_PAINT,
+                        };
+                        let corner = |cx: f64, cy: f64| match matrix {
+                            Some(m) => place(cel.anchor, m[0] * cx + m[2] * cy + m[4], m[1] * cx + m[3] * cy + m[5]),
+                            None => place(cel.anchor, cx, cy),
+                        };
+                        let (x, y) = (tx as f64 * span, ty as f64 * span);
+                        quad_at(out, K_IMAGE | F_DRAWING | tint, paint, &view.entry(slot), corner(x, y), corner(x + span, y), corner(x, y + span), level as f64);
+                    }
+                }
+            }
+            return;
+        }
         if let Some(tiles) = &a.tiles {
             // Every level's tiles; the shader keeps the level the view calls for (`crate::drawing`).
             let Some(starts) = self.assets.cel_levels(tiles) else { return };
@@ -783,6 +816,8 @@ pub struct Overrides<'a> {
     /// The frame's generated effects ([`crate::vfx::generated::build`]), drawn beside
     /// their targets (not in onion skins), unless effects are bypassed.
     pub generators: Option<&'a crate::vfx::generated::Batch>,
+    /// Drawing cels the interface holds live: drawn in place of their published tiles.
+    pub live: Option<LiveView<'a>>,
 }
 
 impl Out {
@@ -971,8 +1006,8 @@ fn node_stack<'s>(fx: &'s ObjectVfx, fig: &Figure, it: &Item) -> Option<&'s [Arc
     fx.segments.iter().find(|(h, _)| *h == handle).map(|(_, stack)| &stack[..]).filter(|s| !s.is_empty())
 }
 
-fn encode_scene(assets: &Assets, scene: &Scene, hidden: &[bool], translations: &[(u32, [f64; 2])], tint: Option<[u8; 3]>, bypass: bool, current_drawing: bool) -> Encoded {
-    let ctx = Ctx { scene, assets, tint };
+fn encode_scene(assets: &Assets, live: Option<LiveView<'_>>, scene: &Scene, hidden: &[bool], translations: &[(u32, [f64; 2])], tint: Option<[u8; 3]>, bypass: bool, current_drawing: bool) -> Encoded {
+    let ctx = Ctx { scene, assets, live, tint };
     let mut runs: Vec<(usize, usize)> = Vec::new();
     let mut of_slot: std::collections::HashMap<u32, (usize, usize)> = std::collections::HashMap::new();
     let mut i = 0;
@@ -1442,14 +1477,14 @@ pub fn encode_preview(doc: &Document, assets: &Assets, scene: &Scene, overrides:
 
 fn encode_layers(doc: &Document, assets: &Assets, scene: &Scene, overrides: &Overrides<'_>, ghosts: &[Ghost<'_>], order: Option<&[Layer]>, preview: bool) -> DrawList {
     let bypass = overrides.bypass_effects;
-    let current = encode_scene(assets, scene, overrides.hidden, overrides.translations, None, bypass, true);
+    let current = encode_scene(assets, overrides.live, scene, overrides.hidden, overrides.translations, None, bypass, true);
     let camera_stack = if bypass { None } else { scene.vfx.as_ref().map(|v| &v.scene).filter(|s| !s.is_empty()) };
     // The software preview's scene-effect path moves its combined ghost/current
     // picture by the current camera's parallax. Ordinary preview ghosts stay still.
     let offsets: std::collections::HashMap<_, _> = if preview && camera_stack.is_some() { overrides.translations.iter().filter_map(|(slot, delta)| scene.objects.get(*slot as usize).map(|object| (object.uid, *delta))).collect() } else { Default::default() };
     let ghost_scenes: Vec<Encoded> = ghosts.iter().map(|ghost| {
         let translations: Vec<_> = if preview && camera_stack.is_some() { ghost.scene.objects.iter().filter_map(|object| offsets.get(&object.uid).map(|delta| (object.slot, *delta))).collect() } else { Vec::new() };
-        encode_scene(assets, ghost.scene, ghost.hidden, &translations, ghost.tint, bypass, preview)
+        encode_scene(assets, overrides.live, ghost.scene, ghost.hidden, &translations, ghost.tint, bypass, preview)
     }).collect();
     // Generated effects: each draw encoded once, placed in the frame and in the camera image.
     let batch = overrides.generators.filter(|_| !bypass);

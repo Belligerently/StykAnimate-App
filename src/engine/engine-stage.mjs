@@ -14,7 +14,8 @@
 import {loadEngine} from './engine.mjs';
 import {EngineMirror} from './engine-mirror.mjs';
 import {ENGINE_KEY, engineTicket} from './engine-playback.mjs';
-import {drawingResourcesFor} from '../drawing-resources.mjs';
+import {drawingResourcesFor, drawingUnpublished} from '../drawing-resources.mjs';
+import {LiveCels} from './engine-live-cels.mjs';
 import {EngineCameraMonitor} from './engine-previews.mjs';
 
 /** The engine side of the stage, shared by every renderer the app creates (it survives a device loss of the other). */
@@ -41,26 +42,16 @@ async function engineSide(canvas) {
   const stage = await engine.createStage(surface);
   return shared = {engine, stage, surface, mirror: new EngineMirror(engine),
     /** Geometry groups the engine last received, by slot: an unchanged group is not sent again. */
-    groups: [], frameReport: null, count: -1, definitions: null, failed: null, dirty: null, lastRefusal: null,
+    groups: [], frameReport: null, count: -1, definitions: null, definitionsOf: null, failed: null, dirty: null, lastRefusal: null,
     /** Onion skin poses the engine holds, by the editor's sampled frame. */
     ghosts: new WeakMap(), nextGhost: 1, frameSent: false,
     /** The drawing tiles each figure was last sent with: publication replaces them in place. */
     tiles: new WeakMap(), drawingUnpublished,
+    /** The drawing cels the engine holds live: strokes drawn before they are published. */
+    live: new LiveCels(stage),
     /** Counts the frames drawn: a wait for pictures ends when another frame is drawn. */
     pictureWait: 0,
     stats: {frames: 0, objectsSent: 0, lastSendMs: 0, lastDrawMs: 0, fallbacks: 0, pictureRedraws: 0}};
-}
-
-/**
- * Whether a drawing of `report` has strokes not yet published into its figure
- * (drawing-resources.mjs owns them until then): the engine draws a drawing from
- * its published tiles, so until publication the JavaScript renderer draws.
- */
-function drawingUnpublished(report) {
-  const resources = drawingResourcesFor(report);
-  if (!resources) return false;
-  for (const entry of resources.entries.values()) if (!entry.transient && (entry.store || entry.deferred?.length) && entry.published?.revision !== entry.revision) return true;
-  return false;
 }
 
 /** The published tiles of a figure's drawings, its own and its movieclip's. */
@@ -204,8 +195,6 @@ export async function createStageRenderer(canvas, options, create) {
     if (side.failed) return side.failed;
     if (request.view?.rotation || request.view?.flip) return 'a rotated or mirrored view';
     if (!request.geometry) return 'no evaluated geometry';
-    if (request.drawingPreview) return 'a drawing preview';
-    if (drawingUnpublished(request.report)) return 'unpublished drawing strokes';
     return null;
   };
 
@@ -226,15 +215,19 @@ export async function createStageRenderer(canvas, options, create) {
 
   /** Figure definitions, backgrounds and properties: what an edit frame is drawn with. */
   const syncDefinitions = request => {
+    // A first stroke on a blank exposure is drawn from a draft of the editor's report that holds
+    // the cel it is about to create (`documentReport`); the mirror stays the editor's.
+    const document = request.documentReport ?? request.report;
     republished(request.report);
     const key = `${request.revision}:${request.artworkRevision}`;
-    if (side.mirror.report === request.report && side.definitions === key) return;
+    if (side.mirror.report === document && side.definitionsOf === request.report && side.definitions === key) return;
     // Figures edited in place keep their objects; the editor's change events said which.
     const dirty = side.dirty;
     side.dirty = null;
     const result = side.mirror.syncDefinitions(request.report, request.revision ?? 0,
-      {figureIndices: dirty?.figureIndices ?? [], allFigures: Boolean(dirty?.definition && !dirty.figureIndices?.length)});
+      {figureIndices: dirty?.figureIndices ?? [], allFigures: Boolean(dirty?.definition && !dirty.figureIndices?.length), document});
     side.definitions = key;
+    side.definitionsOf = request.report;
     if (side.frameReport !== request.report) { side.groups = []; side.count = -1; side.fields = null; side.frameSent = false; side.ghosts = new WeakMap(); side.tiles = new WeakMap(); side.frameReport = request.report; }
     const unsupported = JSON.parse(side.engine.handle.unsupported());
     if (unsupported.length) throw new Error(`the engine does not draw ${unsupported.join(', ')} yet`);
@@ -294,6 +287,9 @@ export async function createStageRenderer(canvas, options, create) {
     if (side.frameReport !== request.report || side.mirror.framesCurrent(request.report, request.revision ?? 0)) side.cameraDirty = null;
     const started = performance.now(), seen = side.engine.progressSeen();
     syncDefinitions(request);
+    // Strokes, fills and floating selections not yet published are drawn from the tiles held live.
+    side.live.invalidate = () => options.onInvalidate?.();
+    side.live.sync(drawingResourcesFor(request.documentReport ?? request.report));
     const {frame, geometry} = request, objects = frame.objects ?? [];
     const json = frameJSON(frame, geometry, side);
     // An unchanged frame is not parsed again; the first frame and every changed one are.
@@ -313,6 +309,7 @@ export async function createStageRenderer(canvas, options, create) {
     const drawn = side.stage.render_edit((view.scale ?? 1) * dpr, (view.x ?? 0) * dpr, (view.y ?? 0) * dpr, request.cameraEnabled !== false,
       request.clipToCanvas !== false, new Uint32Array(hidden), new Float64Array(translations),
       Number.isFinite(request.editorBackgroundColor) ? request.editorBackgroundColor >>> 0 : -1, new Float64Array(onions));
+    if (drawn) side.live.presented();
     Object.assign(side.stats, {frames: side.stats.frames + 1, lastSendMs: sendMs, lastDrawMs: performance.now() - started - sendMs});
     // Generated effects whose trails are still being sampled refine on the next frame, as
     // the JavaScript renderer's incomplete batches do (6 ms of sampling a frame).

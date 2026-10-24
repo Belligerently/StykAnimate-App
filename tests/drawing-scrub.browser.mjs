@@ -54,10 +54,9 @@ try{
   for(const frame of [...drawingFixtures.dense.keyframes,...Object.values(drawingFixtures.dense._styk.frameSources??{})])for(const o of frame.objects)if(o.figure_type_id===f.figure_type_id){o.angles=f.segments.map(s=>s.angle_rad);o.len_flag=0;o.lengths=[];o.bend_flag=0;o.bends=[];}
   e.drawingResources.dispose();
  });
- for(const mode of ['gpu','scratch','canvas']){
+ for(const mode of ['gpu','canvas']){
   await page.evaluate(async mode=>{styk.settingsUI.commit({rendererMode:mode==='canvas'?'canvas':'gpu'});},mode);
   await page.waitForFunction(mode=>styk.state.renderer?.stats.backend===(mode==='canvas'?'Canvas 2D fallback':'WebGPU'),mode);
-  await page.evaluate(async mode=>{if(mode==='scratch')await styk.state.renderer.setGpuDrawing(false);else await styk.state.renderer.gpuDrawingReady;},mode);
   for(const fixture of ['plain','dense','clip','nested','composite']){
    await page.evaluate(name=>{styk.editor.load(structuredClone(drawingFixtures[name]),name);styk.state.handles=false;styk.fit();},fixture);
    for(const tick of [0,3,4,6,9,11,2]){await seek(tick);await visible(mode+' '+fixture+' frame '+tick,tick<4?'red':tick>=6&&tick<10?'blue':null);}

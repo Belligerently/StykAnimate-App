@@ -97,9 +97,9 @@ export class CameraGpuSource {
     for(const entry of r.layout){if(!entry.g||entry.isOnion)continue;const d=depth(entry.uid),i=entry.transform*4;this.depthTransforms[i]+=d.x;this.depthTransforms[i+1]+=d.y;}
     r.device.queue.writeBuffer(r.transformBuffer,0,this.depthTransforms);
   }
-  const encoder=r.device.createCommandEncoder({label:'VFX camera artwork'}),drawingGpu=r.drawingGpu,drawings=new Map(),cameraEntries=new Map();
+  const encoder=r.device.createCommandEncoder({label:'VFX camera artwork'}),cameraEntries=new Map();
   if(!options.preparedFrame)for(const entry of r.layout){
-   if(entry.isOnion||options.hiddenUids?.has(entry.uid)||!entry.drawing||entry.gpuDrawing)continue;
+   if(entry.isOnion||options.hiddenUids?.has(entry.uid)||!entry.drawing)continue;
    // The editor scratch covers its viewport, which can omit artwork sampled
    // by the camera after a drag, rotation or parallax shift. Reuse the bounded
    // artwork owner for an independently sampled camera source.
@@ -112,14 +112,6 @@ export class CameraGpuSource {
     a:[b.x-origin.x,b.y-origin.y,b.x+b.width-origin.x,b.y+b.height-origin.y],gradient:texture.region,
     color:[1,1,1,1],mode:SHAPE.TEXTURE,transform:entry.transform}));
    const cameraEntry={...entry,data,texture,count:1};cameraEntries.set(entry,cameraEntry);restored.push(entry);r.uploadEntry(cameraEntry);
-  }
-  if(!options.preparedFrame&&drawingGpu&&!drawingGpu.destroyed){
-   const transforms=options.cameraEnabled===false?this.depthTransforms:r.transformData;
-   for(const entry of r.layout)if(entry.gpuDrawing&&!entry.isOnion&&!options.hiddenUids?.has(entry.uid)){
-    const at=entry.transform*4,translation={x:transforms[at]-entry.source.root.x,y:transforms[at+1]-entry.source.root.y};
-    drawings.set(entry,drawingGpu.prepare(entry.drawing,r.gpuDrawingView(entry,matrix,{width,height,dpr:1,translation})));
-   }
-   drawingGpu.encode(encoder);
   }
   const pass=encoder.beginRenderPass({colorAttachments:[this.msaa
    ?{view:this.msaa.createView(),resolveTarget:this.target.createView(),clearValue:background.clearValue,loadOp:'clear',storeOp:'discard'}
@@ -144,9 +136,7 @@ export class CameraGpuSource {
    const entry=cameraEntries.get(original)??original;
    if(!entry.g||entry.isOnion){flush();continue;}
    walker?.object(entry.uid);
-   const drawing=drawings.get(entry);
-   if(drawing){flush();drawingGpu.draw(pass,drawing);pass.setPipeline(r.pipeline);pass.setBindGroup(0,r.globalBindGroup);}
-   else if(entry.texture){flush();pass.setBindGroup(1,entry.texture.bindGroup);pass.draw(6,entry.count,0,entry.offset);}
+   if(entry.texture){flush();pass.setBindGroup(1,entry.texture.bindGroup);pass.draw(6,entry.count,0,entry.offset);}
    else {if(count&&begin+count!==entry.offset)flush();if(begin<0)begin=entry.offset;count+=entry.capacity;}
   }
   flush();walker?.end();}

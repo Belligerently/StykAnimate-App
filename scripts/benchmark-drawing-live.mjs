@@ -6,7 +6,7 @@ import os from 'node:os';
 import {createHash} from 'node:crypto';
 
 const run=promisify(execFile),baseline=process.env.STYK_LIVE_BASELINE||'2776f60',output=process.env.STYK_LIVE_BENCHMARK||'artifacts/drawing-preview-progress',runs=[];
-const files=['src/drawing-preview-cache.mjs','src/drawing-worker-operations.mjs','src/renderer.mjs','tests/drawing-live.browser.mjs'];
+const files=['src/drawing-preview-cache.mjs','src/renderer.mjs','tests/drawing-live.browser.mjs'];
 const fingerprint=async()=>Object.fromEntries(await Promise.all(files.map(async file=>[file,createHash('sha256').update((await readFile(file,'utf8')).replaceAll('\r\n','\n')).digest('hex')])));
 const sourceSha256NormalizedLF=await fingerprint();
 await mkdir(output,{recursive:true});

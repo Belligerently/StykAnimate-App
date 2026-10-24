@@ -4,7 +4,7 @@ import {sendDrawingComposite} from '../src/drawing-composite-transport.mjs';
 import {assembleTileBlobBytes,TILE_BLOB_PREFIX} from '../src/drawing-tile-codec.mjs';
 import {DrawingTileProvider} from '../src/drawing-provider.mjs';
 
-test('native drawing preflight retains one restored snapshot until capture and preserves ordinary fill',async()=>{
+test('native drawing preflight retains one restored snapshot until capture',async()=>{
   const previousSelf=globalThis.self,previousCanvas=globalThis.OffscreenCanvas,prepare=DrawingTileProvider.prototype.prepare;
   const messages=[];let prepared=0,allocations=0,bitmaps=0,id=0;
   globalThis.self={postMessage(message){messages.push(message);}};
@@ -39,8 +39,5 @@ test('native drawing preflight retains one restored snapshot until capture and p
     assert.equal(prepared,1);assert.equal(bitmaps,1,'The same restored image/figure references survive preflight.');
     result.bitmap.close();
     await assert.rejects(request('preview-raster',options),/Missing drawing composite snapshot/);
-    await sendDrawingComposite({request},[],{maxBytes:1024*1024});
-    const fill=await request('composite',{bounds:{x:0,y:0,width:1,height:1},matrix:options.matrix,maxBytes:1024*1024});
-    assert.equal(fill.source.byteLength,4,'Existing fill protocol still consumes its original compact snapshot.');
   }finally{DrawingTileProvider.prototype.prepare=prepare;globalThis.self=previousSelf;globalThis.OffscreenCanvas=previousCanvas;}
 });

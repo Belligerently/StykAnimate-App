@@ -39,9 +39,6 @@ try{
  for(const mode of ['gpu','canvas']){
   await page.evaluate(mode=>{const backend=styk.state.renderer.stats.backend;if(mode==='gpu'?!/webgpu/i.test(backend):!/canvas/i.test(backend))styk.settingsUI.commit({rendererMode:mode});},mode);
   await page.waitForFunction(mode=>mode==='gpu'?/webgpu/i.test(styk.state.renderer.stats.backend):/canvas/i.test(styk.state.renderer.stats.backend),mode);
-  // WebGPU normally draws resident tiles; this suite covers its scratch/worker
-  // presenter fallback, which the Canvas path always uses.
-  if(mode==='gpu')await page.evaluate(()=>styk.state.renderer.setGpuDrawing(false));
   const point=await page.evaluate(()=>seedDrawing()),painted=await page.evaluate(()=>probeDrawing());observations.push({mode,phase:'painted',...painted});
   check(`${mode}: seeded artwork is visibly painted`,painted.ink>3000);
   await page.evaluate(()=>{

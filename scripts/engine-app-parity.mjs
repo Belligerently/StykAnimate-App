@@ -97,7 +97,6 @@ function stageReadiness() {
     previewActive: engine ? 0 : Number(Boolean(previewPending(previews?.active))),
     previewQueue: engine ? 0 : [...previews?.queue?.values() ?? []].filter(previewPending).length,
     artwork: !engine && Boolean(renderer.artworkRefining || renderer.refinement?.pending),
-    uploads: !engine && Boolean(renderer.drawingGpu?.incomplete),
   };
   // Decode counters are cumulative, not pending flags. They join stamps in
   // the stability key so a completed decode during a screenshot forces a retry.
