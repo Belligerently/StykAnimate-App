@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 
 use styk_doc::{Obj, Value};
 
-use super::{Error, Records, default_camera, items, num, numbers, paint_record, uid};
+use super::{Error, Records, default_camera, items, num, numbers, paint, paint_record, uid};
 use crate::channels::{Channel, KeyValue, Property, Sampled, Target};
 use crate::eval::{Prepared, Seq};
 use crate::vfx::registry::{ParamKind, ParamValue};
@@ -360,10 +360,10 @@ fn set_style(object: &mut Obj, target: &Target, name: &str, value: &Value) {
 }
 
 /// What `animationStyleValue` reads for a segment's fill style without an override: the
-/// segment's own paint (`segmentPaint`), not read here.
+/// segment's own paint (`segmentPaint`), made only where the value is read.
 enum Style {
     Value(Value),
-    NativePaint,
+    NativePaint(Value),
 }
 
 /// `animationStyleValue(figure, object, target, property)`: `None` where it is undefined.
@@ -413,7 +413,7 @@ fn style_value(figure: Option<&Value>, object: &Value, target: &Target, property
             let paint = own.and_then(|o| present(o.get("paint")));
             match property {
                 Property::ZIndex => field("zIndex").unwrap_or_else(|| Value::Num(number(segment.get("z_order"), index as f64 + 1.0))),
-                Property::Paint => return Some(field("paint").map_or(Style::NativePaint, Style::Value)),
+                Property::Paint => return Some(field("paint").map_or_else(|| Style::NativePaint(segment.clone()), Style::Value)),
                 Property::Opacity => field("opacity")
                     .or_else(|| found(paint.and_then(|p| p.get("stops")).and_then(|s| s.item(0)).as_ref().and_then(|stop| stop.get("opacity"))))
                     .unwrap_or_else(|| match segment.get("transparency") {
@@ -1177,7 +1177,7 @@ impl Records<'_> {
             return match style_value(definition.as_ref(), object, target, property) {
                 None => Ok(None),
                 Some(Style::Value(value)) => Ok(Some(value)),
-                Some(Style::NativePaint) => Err(Error::Unported("a segment's own paint as a property value".into())),
+                Some(Style::NativePaint(segment)) => Ok(Some(paint::segment_paint(&segment)?.value())),
             };
         }
         Ok(match property {

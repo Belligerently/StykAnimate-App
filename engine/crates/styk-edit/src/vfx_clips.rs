@@ -103,7 +103,7 @@ fn property_of(kind: &str, id: &str, param: &str) -> Result<(String, Descriptor)
 pub(crate) fn check_value(found: &Descriptor, value: Option<&Value>) -> Result<(), EditError> {
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= found.min && *n <= found.max && (!(found.color || found.discrete) || n.fract() == 0.0) => Ok(()),
-        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if found.color => crate::recolor::normalize_paint(paint).map(|_| ()),
+        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if found.color => styk_eval::records::paint::normalize_paint(paint).map(|_| ()).map_err(EditError::from),
         _ => Err(vfx_range_error(&found.type_name, &found.param, found.min, found.max)),
     }
 }

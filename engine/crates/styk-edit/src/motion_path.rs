@@ -14,8 +14,10 @@
 //! of a limb with an IK controller (a pinned target moves; a free limb is solved and baked, across
 //! joined figures too), and the camera. Recorded native origin figures reuse the same pose math,
 //! Objects history and shared native row-splice owner. Recorded saved native origin
-//! pose/transform channels use the same private animation draft and Animation history. Native camera,
-//! ordinary native targets, rigged and 3D figures, and keys whose figures a movieclip replacement placed stay `Unported`.
+//! pose/transform channels use the same private animation draft and Animation history. Rigged and 3D figures
+//! are posed as the editor poses them: a rigged joint's turn is measured against the rig's own evaluation of it, and
+//! a free 3D limb is captured with its 3D target and followers before it is solved. Native camera, ordinary native
+//! targets and keys whose figures a movieclip replacement placed stay `Unported`.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -335,13 +337,6 @@ fn keys_next_tick(plan: &mut Plan, id: &str, index: usize) -> f64 {
 /// `isStatic(segment)` on a figure record.
 fn is_static(segment: &Value) -> bool {
     crate::pose::is_static(segment)
-}
-
-/// A segment as geometry draws it (`geometry.objects.get(slot).segments[joint]`).
-struct Shape {
-    start: [f64; 2],
-    angle: f64,
-    bend: f64,
 }
 
 /// `cameraValues(camera)`, then `checkedCamera` of it with `x` and `y` replaced: the camera a
@@ -889,8 +884,8 @@ impl Editor {
         if tick == self.tick { self.shown_frame() } else { self.evaluated(tick, true) }
     }
 
-    /// The figures a motion-path edit poses and those whose pinned limbs it bakes must be
-    /// figures without rig relationships, 3D bones or perspective.
+    /// The figures a motion-path edit poses and those whose pinned limbs it bakes must be ones
+    /// the saved-origin recordings admit.
     fn check_figures(&self, session: &Session, frame: &Value) -> Result<(), EditError> {
         if session.target.camera {
             return Ok(());
@@ -901,17 +896,6 @@ impl Editor {
             let slots = objects.iter().enumerate().filter_map(|(slot, object)|
                 (uid(object).is_some_and(|uid| session.component.contains(&uid)) || has_pinned(object)).then_some(slot)).collect::<Vec<_>>();
             self.origin_motion_gate(&objects, &slots)?;
-        }
-        for object in objects {
-            if !uid(&object).is_some_and(|u| session.component.contains(&u)) && !has_pinned(&object) {
-                continue;
-            }
-            let figure = figures.iter().find(|f| num(f, "figure_type_id") == num(&object, "figure_type_id"));
-            let rigged = figure.and_then(|f| f.get("segments")).and_then(Value::elements).is_some_and(|s| s.iter().any(|segment| truthy(&segment, "_stykRig")));
-            let spatial = truthy(&object, "_stykSpatial") || controllers(&object).iter().any(|(_, c)| truthy(c, "spatialTarget"));
-            if rigged || spatial {
-                return Err(EditError::Unported("a motion-path edit of rigged or 3D figures".into()));
-            }
         }
         Ok(())
     }
@@ -1032,19 +1016,10 @@ impl Editor {
         geometry.joint(figure, handle as u32)
     }
 
-    /// The segment `joint` of the figure in `slot` as geometry draws it.
-    fn posed_shape(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, joint: usize) -> Option<Shape> {
-        let object = frame.objects.get(slot)?;
-        let geometry = scene.objects.iter().find(|g| g.uid == object.uid && g.resolved)?;
-        let figure = object.figure_override.as_deref().or_else(|| prepared.doc.figure(object.figure).map(|f| &**f))?;
-        let segment = figure.segments.get(joint)?;
-        let start = *geometry.starts.get(joint)?;
-        let (_, bend, _) = styk_eval::geometry::segment_pose(object, segment, joint);
-        // A straight Stick Nodes segment with a sagitta is drawn as a curve, which geometry
-        // reports with a bend of 1e-6.
-        let bend = if bend.abs() < 1e-7 && styk_eval::sticknodes::shape_for(segment, object).is_some_and(|s| s.sagitta != 0.0) { 1e-6 } else { bend };
-        let angle = displayed_angle(prepared, frame, scene, &solve_frame(prepared, frame, scene), slot, joint);
-        Some(Shape { start, angle, bend })
+    /// The segment `joint` of the figure in `slot` as geometry draws it (a rigged joint as its rig evaluates it).
+    fn posed_shape(&self, prepared: &Prepared, frame: &Frame, scene: &Scene, slot: usize, joint: usize) -> Result<Option<crate::pose::Shape>, EditError> {
+        let Some(object) = frame.objects.get(slot) else { return Ok(None) };
+        Editor::drawn_shape(prepared, frame, scene, object.uid, joint)
     }
 
     /// `updateMotionPathEdit(point, options)`.
@@ -1379,7 +1354,7 @@ impl Editor {
             }
         }
         let (prepared, frame, scene) = self.posed_scene(&posed.working)?;
-        let Some(shape) = self.posed_shape(&prepared, &frame, &scene, slot, joint) else { return Ok(false) };
+        let Some(shape) = self.posed_shape(&prepared, &frame, &scene, slot, joint)? else { return Ok(false) };
         let angle = atan2(point[1] - shape.start[1], point[0] - shape.start[0]) - shape.bend / 2.0;
         let delta = shortest(angle - shape.angle);
         let stretch = flag("stretch");
@@ -1627,6 +1602,7 @@ impl Editor {
                 }
                 let id = graph.id(slot, handle).ok_or_else(|| unported("of a handle outside the assembly"))?;
                 let (mut followers, mut joined) = (BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, f64>>::new());
+                let (mut spatial, mut joined_spatial) = (BTreeMap::new(), BTreeMap::<u32, BTreeMap<u32, [f64; 4]>>::new());
                 for i in graph.skeleton().follower_indices(id) {
                     let entry = graph.entry(i);
                     let angle = drawn(entry.slot, entry.index) - rotation;
@@ -1634,6 +1610,9 @@ impl Editor {
                         followers.insert(entry.handle, angle);
                     } else {
                         joined.entry(entry.uid).or_default().insert(entry.handle, angle);
+                    }
+                    if let Some(q) = crate::spatial_ik::follower_orientation(geometry_of(entry.slot), entry.index, rotation) {
+                        if entry.slot == slot { spatial.insert(entry.handle, q); } else { joined_spatial.entry(entry.uid).or_default().insert(entry.handle, q); }
                     }
                 }
                 let mut points = Vec::with_capacity(chain.len() + 1);
@@ -1655,6 +1634,8 @@ impl Editor {
                     followers: followers.clone(),
                     joined_followers: Some(joined.clone()),
                     bend_reference: Some(captured.clone()),
+                    spatial_followers: Some(spatial.clone()),
+                    joined_spatial_followers: Some(joined_spatial.clone()),
                     ..controller
                 };
                 // The lengths the frame had when the gesture began, scaled into the skeleton.
@@ -1689,8 +1670,8 @@ impl Editor {
                 }
                 next.set("followers", angle_table(&followers));
                 next.set("joinedFollowers", joined_table(&joined));
-                next.set("spatialFollowers", Value::object(Obj::new()));
-                next.set("joinedSpatialFollowers", Value::object(Obj::new()));
+                next.set("spatialFollowers", crate::spatial_ik::quaternion_table(&spatial));
+                next.set("joinedSpatialFollowers", crate::spatial_ik::joined_quaternion_table(&joined_spatial));
                 next.set("bendReference", reference_value(&bend));
             }
             None => {
@@ -1699,7 +1680,8 @@ impl Editor {
                 if skeleton.index(handle).is_none() {
                     return Ok(false);
                 }
-                let followers: BTreeMap<u32, f64> = skeleton.follower_indices(handle).iter().map(|&i| (figure.segments[i].id, drawn(slot, i) - rotation)).collect();
+                let follower_indices = skeleton.follower_indices(handle);
+                let followers: BTreeMap<u32, f64> = follower_indices.iter().map(|&i| (figure.segments[i].id, drawn(slot, i) - rotation)).collect();
                 let chain = skeleton.chain(handle, controller.chain_length);
                 if chain.is_empty() {
                     return Err(unported("without a chain"));
@@ -1724,12 +1706,17 @@ impl Editor {
                 let points: Vec<[f64; 2]> = std::iter::once(geometry.starts[chain[0]]).chain(chain.iter().map(|&i| geometry.ends[i])).collect();
                 let lengths: Vec<f64> = chain.iter().map(|&i| hypot(geometry.ends[i][0] - geometry.starts[i][0], geometry.ends[i][1] - geometry.starts[i][1])).collect();
                 let captured = ik::bend_reference(&points, &lengths, controller.bend_reference.as_ref());
+                // `captureSpatialIK`: a 3D limb keeps its followers' orientations and its target's depth and bend plane.
+                let context = Editor::spatial_context_of(slot, object.clone(), evaluated.uid, &prepared, &frame, &scene, Some(&solved), None);
+                let spatial = Editor::capture_spatial_from(context.as_ref(), &chain, &follower_indices, rotation, 0.0);
                 let temporary = Controller {
                     pinned: true,
                     target: ik::Target { x: point[0], y: point[1], rotation },
                     followers: followers.clone(),
                     bend_direction,
                     bend_reference: Some(captured.clone()),
+                    spatial_followers: spatial.spatial_followers.clone().or_else(|| controller.spatial_followers.clone()),
+                    spatial_target: spatial.spatial_target.clone().or_else(|| controller.spatial_target.clone()),
                     ..controller
                 };
                 let baseline = baseline_of(slot).unwrap_or_else(|| object.clone());
@@ -1747,7 +1734,9 @@ impl Editor {
                     shape: evaluated.spatial.as_ref().and_then(|s| s.shape.as_ref()),
                 };
                 let table = Table { controllers: BTreeMap::from([(handle, temporary)]) };
-                let solution = ik::solve_object_with(&skeleton, &pose, geometry.root, &table, true).ok_or_else(|| unported("the solver did not reach"))?;
+                // A 3D target is solved without following the target's orientation (as `bake_unpinned`).
+                let follow = table.controllers.get(&handle).is_some_and(|c| c.spatial_target.is_none());
+                let solution = ik::solve_object_with(&skeleton, &pose, geometry.root, &table, follow).ok_or_else(|| unported("the solver did not reach"))?;
                 let bend = solution.results.iter().find(|(h, _)| *h == handle).and_then(|(_, o)| o.bend_reference.clone()).unwrap_or(captured);
                 let lengths = match &solution.lengths {
                     Some(lengths) => Value::nums(lengths),
@@ -1758,6 +1747,8 @@ impl Editor {
                 record.set("len_flag", if solution.lengths.is_some() { Value::Num(1.0) } else { length_flag });
                 record.set("lengths", lengths);
                 next.set("followers", angle_table(&followers));
+                if let Some(q) = &spatial.spatial_followers { next.set("spatialFollowers", crate::spatial_ik::quaternion_table(q)); }
+                if let Some(target) = &spatial.spatial_target { next.set("spatialTarget", crate::spatial_ik::spatial_target_value(target)); }
                 next.set("bendReference", reference_value(&bend));
             }
         }

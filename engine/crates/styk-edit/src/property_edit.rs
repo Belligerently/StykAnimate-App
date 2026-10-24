@@ -158,7 +158,7 @@ pub(crate) fn channel_id(target: &Value, property: &str) -> Result<String, EditE
 }
 
 /// `validateAnimationValue(target, property, value)` of a normalized target; `None` is
-/// `undefined`. Fill styles and effect colours given as paints are not validated here.
+/// `undefined`.
 pub(crate) fn validate_value(target: &Value, property: &str, value: Option<&Value>) -> Result<Value, EditError> {
     channel_id(target, property)?;
     let kind = target.get("kind").and_then(Value::as_str).unwrap_or("");
@@ -166,7 +166,7 @@ pub(crate) fn validate_value(target: &Value, property: &str, value: Option<&Valu
         return validate_vfx_value(property, value);
     }
     if property == "paint" {
-        return Err(EditError::Unported("a fill style value".into()));
+        return Ok(styk_eval::records::paint::normalize_paint(value.unwrap_or(&Value::Null))?.value());
     }
     if property == "pose" {
         return match value {
@@ -251,7 +251,7 @@ pub(crate) fn validate_vfx_value(property: &str, value: Option<&Value>) -> Resul
     };
     match value {
         Some(Value::Num(n)) if n.is_finite() && *n >= min && *n <= max && (!(color || discrete) || n.fract() == 0.0) => Ok(Value::Num(*n)),
-        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if color => crate::recolor::normalize_paint(paint).map(|paint| paint.value()),
+        Some(paint @ (Value::Obj(_) | Value::Arr(_) | Value::Nums(_) | Value::Null)) if color => styk_eval::records::paint::normalize_paint(paint).map(|paint| paint.value()).map_err(EditError::from),
         _ => {
             let mut parts = property.split(':').skip(1);
             let (type_name, _, param) = (parts.next().unwrap_or(""), parts.next(), parts.next().unwrap_or(""));
