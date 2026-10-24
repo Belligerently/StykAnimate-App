@@ -115,6 +115,9 @@ impl Editor {
         let edit = self.authored.as_ref().ok_or_else(|| {
             EditError::Unported("a native authored commit without its draft".into())
         })?;
+        if edit.transaction && self.native_channel_transaction() {
+            return self.commit_native_transaction_checked(check);
+        }
         let drag = self.drag.as_ref().unwrap();
         if edit.transaction || !self.options.property_channels {
             return Err(EditError::Unported(
@@ -241,6 +244,63 @@ impl Editor {
         Ok(changed)
     }
 
+    /// `transaction` goes through the authored draft on a native timeline once it has saved
+    /// channels (`animationChannels.length`), and with property channels commits as keys of the
+    /// layers' poses (`splitPosePropertyChanges`).
+    pub(crate) fn native_channel_transaction(&self) -> bool {
+        !self.sheet()
+            && self.options.property_channels
+            && !self.options.layer_timeline
+            && self.report.path(&["_styk", "animation", "channels"]).and_then(Value::array_len).unwrap_or(0) > 0
+    }
+
+    /// `commitAuthoredPoseDrag` of a command's draft on a native timeline with property channels:
+    /// figures added to the frame on show. The draft's frame is captured as one pose source, and
+    /// each layer holding a new figure (and every layer, once the draw order changed) keys that
+    /// source at the playhead. Any other change to the frame is not recorded.
+    fn commit_native_transaction_checked(&mut self, check: &mut dyn FnMut() -> Result<(), EditError>) -> Result<bool, EditError> {
+        check()?;
+        let (edit, drag) = (self.authored.as_ref().unwrap(), self.drag.as_ref().unwrap());
+        let (source, shown, tick) = (edit.source.clone(), edit.frame.clone(), edit.tick);
+        let (label, selection) = (drag.label.clone(), drag.before_selection.clone());
+        let (before, after) = (objects_of(&source), objects_of(&shown));
+        let unrecorded = || EditError::Unported("a native transaction that does more than add figures".into());
+        // The figures that were there stand as they were, in their slots; the others follow them.
+        if after.len() <= before.len() || !same(&before, &after[..before.len()]) { return Err(unrecorded()); }
+        let fields = |frame: &Value| frame.as_obj().map(|record| record.iter().filter(|(key, _)| !["objects", "object_draw_order", "object_draw_order_unique_ids", "object_count"].contains(&key.as_ref())).map(|(key, value)| (key.to_string(), value.clone())).collect::<Vec<_>>()).unwrap_or_default();
+        if fields(&source) != fields(&shown) { return Err(unrecorded()); }
+        let mut layers: Vec<String> = Vec::new();
+        for object in after[before.len()..].iter().chain(&after) {
+            let layer = self.layer_of(uid(object).ok_or_else(unrecorded)?);
+            if !layers.contains(&layer) { layers.push(layer); }
+        }
+        self.ensure_counts();
+        let mut frame = shown.as_obj().cloned().unwrap_or_default();
+        frame.set("objects", Value::array(after.into_iter().map(|mut object| { object.make_obj().map(|record| record.remove("runtime_segments")); object }).collect()));
+        let (source_id, captured) = self.native_pose_source(&Value::object(frame), None, None)?;
+        let mut draft = crate::property_edit::NativeAnimationDraft::new(self);
+        draft.write_source(source_id.clone(), captured);
+        for layer in layers {
+            check()?;
+            let mut target = Obj::new();
+            target.set("kind", Value::str("layer"));
+            target.set("id", Value::str(&layer));
+            let mut value = Obj::new();
+            value.set("frameId", Value::str(&source_id));
+            let mut entry = Obj::new();
+            entry.set("target", Value::object(target));
+            entry.set("property", Value::str("pose"));
+            entry.set("tick", Value::Num(tick));
+            entry.set("value", Value::object(value));
+            draft.put_checked(self, &Value::object(entry), check)?;
+        }
+        check()?;
+        self.drag = None;
+        self.authored = None;
+        self.retained = None;
+        draft.publish_checked(self, &label, selection, "Add animation keys", check)
+    }
+
     /// Structural joins use the editor's single native-frame transaction. Other
     /// native transaction families remain refused at their existing owner.
     pub(crate) fn join_transaction(&mut self, label: &str, mutate: impl FnOnce(&mut Editor) -> Result<(), EditError>) -> Result<bool, EditError> {
@@ -281,7 +341,7 @@ impl Editor {
         if self.drag.is_some() {
             self.commit_drag()?;
         }
-        if !self.sheet() {
+        if !self.sheet() && !self.native_channel_transaction() {
             if native_join { return self.native_frame_transaction(label, mutate); }
             return Err(EditError::Unported(format!("{label} on a native timeline")));
         }

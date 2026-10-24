@@ -11,6 +11,7 @@ import {installEngineOwner} from '../src/engine/engine-owner.mjs';
 import {hasPinnedIK} from '../src/ik.mjs';
 import {sampleMotionPath} from '../src/motion-path.mjs';
 import {engineBuilt, nodeEngine} from './support/engine-node.mjs';
+import {isAppMarker, recordedBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
 
 const folder = new URL('../engine/tests/edit/', import.meta.url);
 const json = value => JSON.stringify(value, (key, item) => key === 'runtime_segments' || key === '_movieclipSample' ? undefined : item);
@@ -39,8 +40,10 @@ const handleState = (editor, text) => {
   return text({figureHandle: figure && {uid: figure.uid, rotate: figure.rotate, scale: figure.scale, transform: figure.transform},
     handleEdit: edit && {uid: edit.uid, index: edit.index, point: edit.point, bend: edit.bend}, segmentValueOptions: options});
 };
+// The app's bounds callback is the only function the owner is given; other callback markers stay data
+// (the editor refuses data where it needs a function, and so does the engine).
 const decode = value => Array.isArray(value) ? value.map(decode) : value === null || typeof value !== 'object' ? value
-  : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
+  : isAppMarker(value) ? recordedBounds(value) : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
   : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
 
 /** An editor the engine owns, its session started on the editor's document as it is. */

@@ -694,7 +694,7 @@ impl Editor {
             let recorded = match reason {
                 "with animation origins" => origin::recorded_call(method) || select::metadata_recorded_call(method),
                 "with animation origins and property channels" => origin::recorded_channel_call(method) || select::metadata_recorded_call(method),
-                _ => self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method) || projected_native,
+                _ => self.recorded_native_movieclip_call(method, args, reason) || self.recorded_native_transform_call(method) || self.recorded_native_motion_call(method) || projected_native || self.recorded_native_draw_call(method, reason),
             };
             if !recorded {
                 return Err(EditError::Unported(format!("{method} {reason}")));

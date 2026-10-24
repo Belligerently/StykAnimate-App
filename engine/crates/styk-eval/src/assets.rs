@@ -136,7 +136,8 @@ struct Cursor {
     used: bool,
 }
 
-fn dimensions(data: &ImageData) -> Option<(u32, u32)> {
+/// The pixel size of an image from its header, without decoding it.
+pub(crate) fn dimensions(data: &ImageData) -> Option<(u32, u32)> {
     image::ImageReader::new(Cursor2::new(&data.bytes[..])).with_guessed_format().ok()?.into_dimensions().ok()
 }
 

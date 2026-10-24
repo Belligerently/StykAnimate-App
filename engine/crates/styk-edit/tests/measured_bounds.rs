@@ -1,4 +1,7 @@
-//! Bounds callbacks observed in the actual editor command path before porting.
+//! The figure-bounds callbacks of alignment and camera centering, recorded in the actual editor
+//! command path: the app's callback is measured by the engine and must give the editor's result
+//! at every step; measurements a callback already made are replayed (and refused when they do not
+//! fit the call).
 #[test]
 fn measured_bounds_recordings_match_every_step() {
     let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
@@ -11,12 +14,15 @@ fn measured_bounds_recordings_match_every_step() {
 }
 
 #[test]
-fn missing_or_different_measurements_refuse_atomically_with_open_gesture() {
+fn missing_or_different_recorded_measurements_refuse_atomically_with_open_gesture() {
     use styk_doc::Value;
     let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/edit");
     let reference = styk_doc::json::parse(&std::fs::read(folder.join("camera-center-measured-sheet.reference.json")).unwrap()).unwrap();
     let first = reference.get("steps").unwrap().item(0).unwrap();
     let step = reference.get("steps").unwrap().item(2).unwrap();
+    // What a shadowing facade hands over for that call of the app's callback: the measurements it
+    // made, figure by figure, in the order the editor asked for them.
+    let recorded = styk_doc::json::parse(br#"{"@measuredBounds":{"version":1,"method":"centerCamera","input":["both",[0,1]],"options":{"boundsOf":null},"tick":0,"frameIndex":0,"selectedUids":[2,3],"samples":[{"uid":3,"bounds":{"minX":474,"minY":224,"maxX":549,"maxY":383}},{"uid":2,"bounds":{"minX":194,"minY":270,"maxX":269,"maxY":429}},{"uid":3,"bounds":{"minX":439,"minY":264,"maxX":514,"maxY":423}},{"uid":2,"bounds":{"minX":224,"minY":255,"maxX":299,"maxY":414}}]}}"#).unwrap();
     let report = styk_doc::json::parse(first.get("document").unwrap().as_str().unwrap().as_bytes()).unwrap();
     let state = first.get("state").unwrap();
     for variant in ["missing", "uid", "extra", "tick", "input", "options"] {
@@ -28,6 +34,7 @@ fn missing_or_different_measurements_refuse_atomically_with_open_gesture() {
         editor.take_events();
         let before = (editor.report_json(), editor.state());
         let mut args: Vec<Value> = step.get("boundsArgs").unwrap().elements().unwrap().iter().collect();
+        args[2].make_obj().unwrap().set("boundsOf", recorded.clone());
         let data = args[2].make_obj().unwrap().get_mut("boundsOf").unwrap().make_obj().unwrap().get_mut("@measuredBounds").unwrap().make_obj().unwrap();
         match variant {
             "missing" => data.set("samples", Value::array(Vec::new())),

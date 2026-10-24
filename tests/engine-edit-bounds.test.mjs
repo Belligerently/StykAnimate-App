@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {captureEditBounds, MAX_BOUNDS_SAMPLES} from '../src/engine/engine-edit-bounds.mjs';
+import {appBoundsMarker, captureEditBounds, markAppBounds, MAX_BOUNDS_SAMPLES} from '../src/engine/engine-edit-bounds.mjs';
 import {readFileSync} from 'node:fs';
 import {Editor} from '../src/editor.mjs';
 import {appBounds} from '../engine/tools/edit-bounds-callbacks.mjs';
@@ -16,6 +16,17 @@ test('bounds bridge records existing requests once, preserves callback receiver 
   const args = JSON.parse(capture.payload()), data = args[2].boundsOf['@measuredBounds'];
   assert.deepEqual(data.input, ['both', {'@array': [0], sheetTicks: [3, 6]}]);
   assert.deepEqual(data.samples, [{uid: 7, bounds: result}]); assert.deepEqual(data.selectedUids, [7, 2]);
+});
+
+test('an app-registered callback reaches the engine as a marker and is never run for it; any other callback is recorded', () => {
+  const own = markAppBounds(() => { throw new Error('the engine measures the app callback itself'); }), other = () => null;
+  assert.deepEqual(appBoundsMarker(own), {'@boundsCallback': 'app'});
+  assert.equal(appBoundsMarker(other), undefined); assert.equal(appBoundsMarker({'@boundsCallback': 'app'}), undefined); assert.equal(appBoundsMarker(undefined), undefined);
+  const args = ['x', 'start', {boundsOf: own, ticks: [1, 4]}], capture = captureEditBounds('alignSelection', args, editor);
+  assert.equal(capture.args, args);
+  assert.deepEqual(JSON.parse(capture.payload()), ['x', 'start', {boundsOf: {'@boundsCallback': 'app'}, ticks: [1, 4]}]);
+  const recorded = captureEditBounds('alignSelection', ['x', 'start', {boundsOf: other}], editor);
+  assert.notEqual(recorded.args[2].boundsOf, other); assert.ok(JSON.parse(recorded.payload())[2].boundsOf['@measuredBounds']);
 });
 
 test('recorded app bounds depend on hidden construction strokes, anchored media and effect reach', () => {

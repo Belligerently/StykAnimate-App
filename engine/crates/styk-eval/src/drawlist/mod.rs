@@ -898,37 +898,68 @@ pub fn artwork_bounds(assets: &Assets, scene: &Scene) -> Option<[f64; 4]> {
     if scene.items.is_empty() {
         return None;
     }
-    let fx = scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some);
     let mut acc = EMPTY;
+    let fx = has_effects(scene);
     for it in &scene.items {
         let Some(extent) = item_extent(scene, assets, it) else { continue };
-        let mut pad = 0.0;
-        if fx {
-            let scale = it.scale.abs();
-            if let Some(own) = object_fx(scene, it) {
-                if !own.figure.is_empty() {
-                    pad += crate::vfx::padding(&own.figure, scale, 0.0);
-                }
-                if let Some(stack) = node_stack(own, &scene.figures[it.figure as usize], it) {
-                    pad += crate::vfx::padding(stack, scale, 0.0);
-                }
-            }
-            if it.chain != crate::geometry::NO_CHAIN {
-                // Each instance the item is drawn in, outermost first, with its own scale.
-                let (mut above, mut above_slot) = (scene.vfx.as_deref(), it.slot);
-                for &(owner, part) in &scene.chains[it.chain as usize] {
-                    let stack = above.and_then(|f| f.object(above_slot)).map_or(&[][..], |o| &o.figure[..]);
-                    if !stack.is_empty() {
-                        pad += crate::vfx::padding(stack, scene.owner_scales.get(owner as usize).copied().unwrap_or(1.0), 0.0);
-                    }
-                    above = scene.clip_vfx.get(owner as usize).and_then(|v| v.as_deref());
-                    above_slot = part;
-                }
-            }
-        }
-        extent.include(&mut acc, pad);
+        extent.include(&mut acc, if fx { item_padding(scene, it) } else { 0.0 });
     }
     Some(rounded(acc))
+}
+
+/// Whether any effect applies to the scene's figures or its movieclip instances.
+fn has_effects(scene: &Scene) -> bool {
+    scene.vfx.is_some() || scene.clip_vfx.iter().any(Option::is_some)
+}
+
+/// `drawableVfxPadding`: how far the effects on an item reach beyond it. Its object's figure stack
+/// and its node's stack, and the figure stacks of the movieclip instances it is drawn in.
+fn item_padding(scene: &Scene, it: &Item) -> f64 {
+    let mut pad = 0.0;
+    let scale = it.scale.abs();
+    if let Some(own) = object_fx(scene, it) {
+        if !own.figure.is_empty() {
+            pad += crate::vfx::padding(&own.figure, scale, 0.0);
+        }
+        if let Some(stack) = node_stack(own, &scene.figures[it.figure as usize], it) {
+            pad += crate::vfx::padding(stack, scale, 0.0);
+        }
+    }
+    if it.chain != crate::geometry::NO_CHAIN {
+        // Each instance the item is drawn in, outermost first, with its own scale.
+        let (mut above, mut above_slot) = (scene.vfx.as_deref(), it.slot);
+        for &(owner, part) in &scene.chains[it.chain as usize] {
+            let stack = above.and_then(|f| f.object(above_slot)).map_or(&[][..], |o| &o.figure[..]);
+            if !stack.is_empty() {
+                pad += crate::vfx::padding(stack, scene.owner_scales.get(owner as usize).copied().unwrap_or(1.0), 0.0);
+            }
+            above = scene.clip_vfx.get(owner as usize).and_then(|v| v.as_deref());
+            above_slot = part;
+        }
+    }
+    pad
+}
+
+/// The editor app's `boundsOf(geometry)` (src/app.mjs) of every object of a scene built by
+/// [`crate::geometry::build_only_measured`], by slot: `[minX, minY, maxX, maxY]` of
+/// `objectBounds` over what the editor holds of the object (`Scene::measured`) with the reach
+/// of its effects. A movieclip instance measures only its handle, which paints nothing, so
+/// the rectangle of an empty object; `None` for an object the scene did not build.
+pub fn app_bounds(scene: &Scene, images: &impl crate::vfx::layers::ImageSizes) -> Vec<Option<[f64; 4]>> {
+    let mut acc = vec![EMPTY; scene.objects.len()];
+    let fx = has_effects(scene);
+    for it in &scene.measured {
+        let Some(extent) = item_extent(scene, images, it) else { continue };
+        if let Some(acc) = acc.get_mut(it.slot as usize) {
+            extent.include(acc, if fx { item_padding(scene, it) } else { 0.0 });
+        }
+    }
+    scene.objects.iter().zip(acc).map(|(object, acc)| {
+        object.resolved.then(|| {
+            let [x, y, width, height] = rounded(acc);
+            [x, y, x + width, y + height]
+        })
+    }).collect()
 }
 
 /// A node's own stack (`segmentVfx`): segments have node stacks, polygons do not.

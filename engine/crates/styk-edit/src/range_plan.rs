@@ -82,7 +82,7 @@ pub(crate) enum Kind {
     Duplicate { map: Vec<(u32, u32)>, offset: f64 },
     Rotate(f64),
     Center,
-    Align { axis: String, edge: String, bounds: crate::bounds::Shared },
+    Align { axis: String, edge: String, bounds: crate::bounds::Callback },
     Delete,
     Detach,
     Reset,
@@ -113,6 +113,9 @@ impl Joints {
 /// `buildGeometry(report, frame)` for the figures at some slots of a frame record.
 pub(crate) type GeometryOf<'a> = dyn Fn(&Value, &[usize]) -> Result<HashMap<usize, Joints>, EditError> + 'a;
 
+/// The app's `boundsOf` of the figures at some slots of a frame record, by slot.
+pub(crate) type BoundsOf<'a> = dyn Fn(&Value, &[usize]) -> Result<HashMap<usize, [f64; 4]>, EditError> + 'a;
+
 /// Children by parent slot, and the slots parents first.
 pub(crate) type Hierarchy = (HashMap<usize, Vec<usize>>, Vec<usize>);
 
@@ -127,6 +130,8 @@ pub(crate) struct Context<'a> {
     /// `buildGeometry(report, frame)` for the figures at `slots` (sorted), each figure's
     /// joints, or the editor's error when one is unresolved.
     pub geometry: &'a GeometryOf<'a>,
+    /// What the app's bounds callback measures of a frame's figures.
+    pub bounds: &'a BoundsOf<'a>,
     /// The origin owner reflects retained support and local offsets in JS order.
     pub mirror_origin: &'a dyn Fn(&Value, &Value, &mut Obj, bool) -> Result<(), EditError>,
 }
@@ -705,7 +710,14 @@ pub(crate) fn plan(context: &Context, frame: &Value, uids: &[u32], operation: &O
             let groups = crate::bounds::groups(&objects, uids)?;
             if groups.len() < 2 { return Ok(None); }
             let position = if axis == "x" { "root_x" } else { "root_y" };
-            for (root, target, position_at) in crate::bounds::offsets(&objects, &groups, axis, edge, bounds)? {
+            // The range measures every figure; the editor throws on one it has no geometry for.
+            let measured = match bounds {
+                crate::bounds::Callback::App => (context.bounds)(frame, &groups.iter().flat_map(|(_, members)| members.iter().copied()).collect::<Vec<_>>())?,
+                _ => HashMap::new(),
+            };
+            let measure = &mut crate::bounds::measure_with(bounds, &measured);
+            let mut measure = |slot, id| measure(slot, id).and_then(|found| found.ok_or_else(|| EditError::Unported("bounds of a figure without geometry".into())).map(Some));
+            for (root, target, position_at) in crate::bounds::offsets(&objects, &groups, axis, edge, &mut measure)? {
                 let value = native_finite(Some(given(&objects[root], position).unwrap_or(f64::NAN) + target - position_at))?;
                 changes.patch(root, vec![(position, Value::Num(value))], &[]);
             }

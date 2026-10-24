@@ -34,6 +34,7 @@ import { createStageRenderer } from "./engine/engine-stage.mjs";
 import { createStagePlayback } from "./engine/engine-playback.mjs";
 import { installEditShadow, engineEditMode } from "./engine/engine-edit-shadow.mjs";
 import { installEngineOwner, engineOwnerMode, appSessionStart } from "./engine/engine-owner.mjs";
+import { markAppBounds } from "./engine/engine-edit-bounds.mjs";
 import {DrawingController} from './drawing-controller.mjs';
 import { ROW as TIMELINE_ROW, HEADER as TIMELINE_RULER } from "./layer-timeline.mjs";
 import { createTimelineHost } from "./timeline-host.mjs";
@@ -1487,6 +1488,8 @@ function fitSelection() {
   placeArtboard();
   requestRender();
 }
+// The engine measures this callback itself where it owns the document (engine-edit-bounds.mjs).
+markAppBounds(boundsOf);
 const boundsCache = new WeakMap();
 function boundsOf(g) {
   let b = boundsCache.get(g);
@@ -6165,6 +6168,8 @@ window.styk = {
   acceptImport,
   fit,
   drawingResourcesFor,
+  // The figure-bounds callback of alignment and camera centering: tools replay recorded calls through it.
+  boundsOf,
   // The overlay kit: the open overlays and the hotkey gate, the message slot,
   // the command registry and the tooltip.
   ui: { overlays, toasts, commands, palette, tooltips, context: commandContext, stageHead },

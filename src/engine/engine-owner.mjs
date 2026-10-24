@@ -20,6 +20,7 @@ import {messageError} from '../localized-error.mjs';
 import {invalidateFrameIndex} from '../frame-ids.mjs';
 import {invalidateMovieclipTypes} from '../movieclips.mjs';
 import {layerIdForUid} from '../layers.mjs';
+import {appBoundsMarker} from './engine-edit-bounds.mjs';
 
 /** The undo/redo answer when the entry to apply is the editor's own (external.rs). */
 const EXTERNAL_ENTRY = 'external history entry ';
@@ -73,9 +74,11 @@ export function ownedMethods(editor) {
   return names;
 }
 
-/** A frame range as the app passes it (`rangeFrames()`), which JSON would drop. */
-const frameRanges = (key, value) => Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
-/** The reverse of `frameRanges`, as a `JSON.parse` reviver. */
+/** A call's arguments as the session takes them: frame ranges keep their `sheetTicks`, and the app's
+ * figure-bounds callback is the marker the engine measures for itself (engine-edit-bounds.mjs). */
+const sessionArguments = (key, value) => typeof value === 'function' ? appBoundsMarker(value)
+  : Array.isArray(value) && Object.hasOwn(value, 'sheetTicks') ? {'@array': [...value], sheetTicks: value.sheetTicks} : value;
+/** The reverse of the frame ranges `sessionArguments` writes, as a `JSON.parse` reviver. */
 const unframeRanges = (key, value) => value && typeof value === 'object' && Object.hasOwn(value, '@array')
   ? Object.assign(value['@array'], Object.fromEntries(Object.entries(value).filter(([name]) => name !== '@array'))) : value;
 const selectionMetadata = state => Object.fromEntries(['polygonSelection', 'segmentIds', 'branch'].filter(key => Object.hasOwn(state, key)).map(key => [key, state[key]]));
@@ -742,7 +745,7 @@ export function installEngineOwner(editor, {start, methods = ownedMethods(editor
       return fallback(name, original, args);
     }
     let payload;
-    try { payload = JSON.stringify(args, frameRanges); } catch { payload = null; }
+    try { payload = JSON.stringify(args, sessionArguments); } catch { payload = null; }
     if (payload === null || args.some(value => typeof value === 'function')) { report.refused[`${name}: arguments that are not plain data`] = (report.refused[`${name}: arguments that are not plain data`] ?? 0) + 1; report.fallback++; return fallback(name, original, args); }
     report.calls++;
     const timing = report.ms ??= {flush: 0, session: 0, parse: 0, adopt: 0, emit: 0};

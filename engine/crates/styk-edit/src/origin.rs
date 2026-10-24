@@ -11,7 +11,7 @@ pub(crate) fn recorded_call(method: &str) -> bool {
     choice_call(method) || posing_call(method) || constraint_call(method) || rig_tool_call(method) || rig_pose_call(method) || property_call(method) || range_call(method) || motion_call(method) || matches!(method, "select" | "@select" | "selectMany" | "seek" | "@seek" | "beginDrag" | "beginTranslationDrag" |
         "commitDrag" | "cancelDrag" | "moveSelection" | "rotateSelection" | "scaleSelection" | "scaleSelected" |
         "mirrorSelection" | "mirrorFigure" | "rotateFigure" | "centerFigure" | "resetPose" | "setOrigin" | "mirrorSegment" | "mirrorSegmentBranch" | "splitSegment" | "splitSegmentBranch" | "splitBuilderSegments" | "unsplitSegment" |
-        "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
+        "deleteSingleSegment" | "deleteSegment" | "addSegment" | "addSegments" | "addSpriteSegment" | "changeBranchThickness" | "moveBuilderSegment" | "duplicateSegment" | "duplicateSegmentBranch" | "replaceFigureDefinition" | "undo" | "redo")
 }
 
 pub(crate) fn property_call(method: &str) -> bool {

@@ -67,7 +67,7 @@ impl Editor {
                 "drawing a new figure into a Simple frame draft".into(),
             ));
         }
-        if self.sheet() && self.authored.is_none() {
+        if (self.sheet() || self.native_channel_transaction()) && self.authored.is_none() {
             let mut result = Value::Null;
             self.transaction("Draw figure", |editor| {
                 result = editor.add_segments(specs)?;
@@ -76,6 +76,7 @@ impl Editor {
             return Ok(result);
         }
         if !self.sheet()
+            && !self.native_channel_transaction()
             && self
                 .report
                 .path(&["_styk", "animation", "channels"])

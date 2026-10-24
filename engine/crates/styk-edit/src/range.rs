@@ -85,7 +85,7 @@ pub(crate) enum Request {
     Scale { value: Value, relative: bool },
     Rotate { radians: Value, center: Value },
     Center,
-    Align { axis: String, edge: String, bounds: crate::bounds::Shared },
+    Align { axis: String, edge: String, bounds: crate::bounds::Callback },
     Reset,
     /// Recolouring (its label comes with the options).
     Recolor(Box<crate::recolor::Recolor>),
@@ -330,6 +330,7 @@ fn validate(request: &Request, version: f64, canvas: [f64; 2], reference: Option
             if !["x", "y"].contains(&axis.as_str()) || !["start", "center", "end"].contains(&edge.as_str()) {
                 return Err(invalid("errors.rangeFigureOperations.chooseAnAlignmentAxisAndEdge"));
             }
+            crate::bounds::require_function(bounds)?;
             Kind::Align { axis: axis.clone(), edge: edge.clone(), bounds: bounds.clone() }
         }
         Request::Delete => Kind::Delete,
@@ -373,11 +374,13 @@ impl Editor {
             "rotateFiguresInFrames" => self.apply_figure_range(Request::Rotate { radians: arg(0), center: arg(2).get("center").cloned().unwrap_or(Value::Null) }, range_args(args, 1)),
             "centerFiguresInFrames" => self.apply_figure_range(Request::Center, range_args(args, 0)),
             "alignFiguresInFrames" => {
-                let bounds = crate::bounds::Measurements::for_call(self, method, &args[..3.min(args.len())], &arg(3));
-                bounds.and_then(|bounds| {
-                    let request = Request::Align { axis: arg(0).as_str().unwrap_or("").to_string(), edge: arg(1).as_str().unwrap_or("").to_string(), bounds: bounds.clone() };
+                // The editor's default callback is not ported.
+                let callback = crate::bounds::Callback::of(self, method, &args[..3.min(args.len())], &arg(3))
+                    .and_then(|callback| callback.ok_or_else(|| EditError::Unported("figure bounds without a callback".into())));
+                callback.and_then(|callback| {
+                    let request = Request::Align { axis: arg(0).as_str().unwrap_or("").to_string(), edge: arg(1).as_str().unwrap_or("").to_string(), bounds: callback.clone() };
                     let result = self.apply_figure_range(request, range_args(args, 2))?;
-                    bounds.borrow().finish()?;
+                    callback.finish()?;
                     Ok(result)
                 })
             }
@@ -830,7 +833,8 @@ impl Editor {
         let geometry = |record: &Value, slots: &[usize]| self.joints_of(record, slots);
         let version = num(&self.report, "version").unwrap_or(f64::NAN);
         let mirror_origin = |figure: &Value, source: &Value, record: &mut Obj, horizontal| self.mirror_origin_support(figure, source, record, horizontal);
-        let context = crate::range_plan::Context { figures, version, canvas, layer_of: &layer_of, geometry: &geometry, mirror_origin: &mirror_origin };
+        let bounds = |record: &Value, slots: &[usize]| self.app_bounds(record, slots);
+        let context = crate::range_plan::Context { figures, version, canvas, layer_of: &layer_of, geometry: &geometry, bounds: &bounds, mirror_origin: &mirror_origin };
         crate::range_plan::plan(&context, frame, uids, operation)
     }
 

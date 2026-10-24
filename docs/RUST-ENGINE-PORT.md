@@ -496,8 +496,7 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   Thumbnails equal the stage and export frames. In-between previews and the camera-motion
   preview still draw in the JavaScript thumbnail worker (a sampled pose that is not in the
   document).
-- **Range commands, open after the port**: pasting and aligning across frames (the app
-  measures alignment bounds with a function of its own), movieclips among the changed figures,
+- **Range commands, open after the port**: pasting across frames, movieclips among the changed figures,
   duplicating figures with effect clips, adding, duplicating or deleting across native
   keyframes, ordering one figure's segments, and the builder's segment styles stay in the
   editor. Documents whose poses carry `runtime_segments` keep the range calls in the editor.
@@ -541,7 +540,8 @@ Two states the current interface no longer has are skipped on both sides (`polyg
   branch thickness, sprite segments, native property gestures, drawing new figures and
   recorded native/sheet movieclip creation, insertion, extension and awaited Bake.
   Joined pinned motion paths and measured-bounds shadow transport now match in the app;
-  bounds callbacks still run in the editor until the canonical worker query is connected.
+  the app's own bounds callback is measured by the engine itself (`styk-edit/src/bounds.rs`), so
+  alignment and camera centering run in the session without a JavaScript callback.
   Follow UI sessions refuse cold ticks/revisions instead of evaluating them on the interface
   thread; native bake replays do not certify UI admission. Still unported in `styk-edit`:
   unrecorded complex origin definitions and motion-path/pose-choice/spatial combinations

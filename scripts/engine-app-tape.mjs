@@ -79,8 +79,9 @@ async function replay(browser, origin, scenario, document, mode) {
   if (!await settled()) throw new Error(`${mode}: the engine was not ready after loading.`);
   for (const call of scenario.steps) {
     const outcome = await page.evaluate(call => {
+      // The app's own bounds callback is a function in the app (the engine measures it itself).
       const decode = value => Array.isArray(value) ? value.map(decode) : value === null || typeof value !== 'object' ? value
-        : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
+        : value['@boundsCallback'] === 'app' && value.resources === undefined ? styk.boundsOf : Object.hasOwn(value, '@array') ? Object.assign(decode(value['@array']), Object.fromEntries(Object.entries(value).filter(([key]) => key !== '@array')))
         : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, decode(item)]));
       const [method, ...rest] = call, e = styk.editor;
       try {
