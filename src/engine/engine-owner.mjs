@@ -138,7 +138,7 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   /** Whether the session answers for the editor's document: not while the editor runs a call of its own (its records
    * are not the session's until it ends), and not in a movieclip it edits in place, whose commands run in the editor
    * without a call the owner could mark (cut4-structure moves them into the session). */
-  const reading = () => depth === 0 && !editor._movieclipScopes?.length && (document === editor.report || Boolean(ensure()));
+  const reading = () => depth === 0 && !flushing && !editor._movieclipScopes?.length && (document === editor.report || Boolean(ensure()));
   /** Where the playhead is: the session needs no more to say what the frame on show is (the selection is the editor's to
    * tell with a call, and asking for it here would read the frame on show). */
   const playhead = () => JSON.stringify({tick: editor.tick, frameIndex: editor.frameIndex});
@@ -268,18 +268,23 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
   /** Whether the editor may have changed the document since the session last had it:
    * a call it ran, a command recorded or an edit announced outside the session's calls. */
   let pending = false;
+  /** The editor's records are being written to the session: they are ahead of it, so the editor reads them itself meanwhile. */
+  let flushing = false;
   const flush = ({entry = null} = {}) => {
-    if (!session || applying) return;
+    if (!session || applying || flushing) return;
     // Selecting changes the active layer in place, without an edit event.
     if (!entry && !pending && !hints && JSON.stringify(counters()) === JSON.stringify(known) && editor.report._styk?.layers?.activeId === snapshot?.activeId) return;
     pending = false;
-    const ops = changes();
-    if (entry) {
-      send('@external', [entry.label, entry.id, entry.retained, generated(), entry.bytes, ops, counters(), stillShown()]);
-      report.external++;
-    } else if (ops.length || hints?.touched || JSON.stringify(counters()) !== JSON.stringify(known)) { send('@sync', [ops, generated(), Boolean(hints?.touched), counters(), stillShown()]); report.synced++; }
-    take();
-    check();
+    flushing = true;
+    try {
+      const ops = changes();
+      if (entry) {
+        send('@external', [entry.label, entry.id, entry.retained, generated(), entry.bytes, ops, counters(), stillShown()]);
+        report.external++;
+      } else if (ops.length || hints?.touched || JSON.stringify(counters()) !== JSON.stringify(known)) { send('@sync', [ops, generated(), Boolean(hints?.touched), counters(), stillShown()]); report.synced++; }
+      take();
+      check();
+    } finally { flushing = false; }
   };
   const check = () => {
     if (!verify || !session) return;
