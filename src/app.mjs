@@ -2229,11 +2229,21 @@ function finishPolygon() {
   setTool("select");
   status({messageKey: "app.polygonAdded", messageParams: {}});
 }
+// A click on artwork paints the figures with the editor's painter (canvas-artwork-pick.mjs), which reads the drawables of
+// the pose: the engine's groups carry none for a movieclip's contents or a 3D mesh, so the pose is built for the click.
+const artworkScenes = new WeakMap();
+function artworkScene() {
+  const frame = editor.evaluatedFrame;
+  let scene = artworkScenes.get(frame);
+  if (!scene) artworkScenes.set(frame, scene = buildGeometry(editor.report, frame));
+  return scene;
+}
 function pick(p, {preferSelected = false, artwork = false} = {}) {
   const geometry = editor.geometry;
   const body = () => {
     if (!artwork || builderMode?.active || !['select','pose','tweener'].includes(state.tool) || state.handleEditHeld) return null;
-    const hit = pickCanvasArtwork(geometry, p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale});
+    const painted = pickCanvasArtwork(artworkScene(), p, {resources, hiddenUids: effectiveHidden(), lockedUids: {has: isLocked}, scale: state.view.scale});
+    const hit = painted && {...painted, g: geometry.objects.get(painted.g.slot) ?? painted.g};
     return (state.handles && state.tool !== 'tweener' && pickCanvasSegment(geometry, p,
       {handles: canvasHandles(geometry), uid: hit?.uid, scale: state.view.scale})) || hit;
   };

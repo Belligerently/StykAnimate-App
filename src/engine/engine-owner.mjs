@@ -142,7 +142,12 @@ export function installEngineOwner(editor, {start = openingSession, methods = ow
       if (!reading()) return null;
       if (!adopting) flush();
       if (kind === 'active') return 'true';
-      return session.query(kind, JSON.stringify(args), adopting ? 'null' : playhead());
+      try { return session.query(kind, JSON.stringify(args), adopting ? 'null' : playhead()); }
+      catch (error) {
+        // What the session does not evaluate yet, the editor does.
+        if (String(error?.message ?? error).startsWith(UNPORTED)) return null;
+        throw error;
+      }
     },
     source(motion) {
       if (!reading()) return null;

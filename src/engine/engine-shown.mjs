@@ -11,6 +11,7 @@
  */
 import {resolveInstanceFigure} from '../animation-style.mjs';
 import {isStatic} from '../pivot/geometry.mjs';
+import {isMovieclip} from '../movieclips.mjs';
 import {sticknodesDrawables, sticknodesSpriteAsset} from '../sticknodes/geometry.mjs';
 
 const point = ([x, y]) => ({x, y});
@@ -62,6 +63,16 @@ function hydrate(raw, slot, frame, report, defs) {
   const root = point(raw.root);
   const joints = new Map([[0, root]]);
   for (const [id, x, y] of raw.joints) joints.set(id, {x, y});
+  if (isMovieclip(fig)) {
+    // A movieclip instance is its handle: forty units from the root along its angle (what it draws is the engine's).
+    const [shape] = raw.segments, end = joints.get(Number(fig.segments[0].segment_id));
+    const handle = {seg: fig.segments[0], obj, fig, slot, index: 0, start: root, end, points: [root, end], angle: real(shape.angle), length: real(shape.length),
+      bend: 0, thickness: 0, opacity: 1, alpha: 1, rgb: [0, 0, 0]};
+    const group = {slot, obj, fig, root, joints, segments: [handle], polys: [], drawables: []};
+    if (raw.bounds) group.bounds = {minX: raw.bounds[0], minY: raw.bounds[1], maxX: raw.bounds[2], maxY: raw.bounds[3]};
+    if (raw.drawn) group.drawn = true;
+    return group;
+  }
   const segments = raw.segments.map(shape => {
     const seg = fig.segments[shape.index], start = point(shape.start), end = point(shape.end);
     const points = shape.points ? pointList(shape.points) : [start, end];

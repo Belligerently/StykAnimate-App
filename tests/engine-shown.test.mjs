@@ -153,3 +153,22 @@ test('a document the session does not answer property values for is read by the 
     assert.ok(asked.includes('animationValue'), 'the session was asked and did not answer');
   } finally { owner.release(); }
 });
+
+test('what the session says it does not evaluate yet is evaluated by the editor; any other refusal is raised', {skip: !engineBuilt}, async () => {
+  const {editor, owner} = await poses();
+  try {
+    editor.seek(11);
+    const expected = editor._evaluateHere();
+    const session = owner.session(), ask = session.query.bind(session);
+    session.query = () => { throw new Error('unported: geometry with a feature of its own'); };
+    editor._invalidate();
+    assert.deepEqual(editor.evaluatedFrame.objects.map(object => object.root_x), expected.objects.map(object => object.root_x));
+    assert.equal(editor.geometry.objects.size, expected.objects.length);
+    session.query = () => { throw new Error('errors.something.invalid'); };
+    editor._invalidate();
+    assert.throws(() => editor.evaluatedFrame, /errors\.something\.invalid/);
+    session.query = ask;
+    editor._invalidate();
+    assert.equal(editor.evaluatedFrame.objects.length, expected.objects.length);
+  } finally { owner.release(); }
+});
