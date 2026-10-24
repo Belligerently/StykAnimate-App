@@ -8,7 +8,6 @@
  * The facades here keep the interfaces the drawing workers and the controller already
  * use: the stroke worker's `StrokeEngine`, the brush model's `BrushStroke`, the history
  * codec. `src/engine/engine-drawing-worker.mjs` answers the pixel worker's operations.
- *
  */
 import {messageError} from '../localized-error.mjs';
 import {normalizeBrush, pressureMap} from '../drawing-brush.mjs';
@@ -38,15 +37,13 @@ export function loadDrawingEngine() {
   return loading ??= load().then(bindings => (glue = bindings));
 }
 
-/** The loaded bindings, or null while the module is loading. */
-export function drawingEngine() { return glue; }
 /** Bytes of linear memory the module holds in this thread (it grows, it never shrinks). */
 export function drawingEngineMemory() { return glue ? glue.memoryBytes() : 0; }
 
 /** What a drawing worker's instance may keep after a job: its working set (the largest
  * job's) stays allocated until the instance is replaced, and the pixel worker's encoded
  * tile cache (at most 64 MiB) lives in it. */
-export const DRAWING_ENGINE_RETAINED_BYTES = 256 * 1024 * 1024;
+const DRAWING_ENGINE_RETAINED_BYTES = 256 * 1024 * 1024;
 let generation = 0;
 /** Replaces this thread's instance with a fresh one when it holds more than `limit`
  * bytes, releasing the memory; objects of the old instance become invalid (callers drop
