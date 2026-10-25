@@ -49,7 +49,8 @@ export class VfxGizmos {
    const owner=options.frame.objects.find(o=>o.unique_id===target.uid),group=target.kind==='figure'?this.group(options,target.uid):null;
    // A figure that owns a connected group is measured with the figures its effects filter together.
    if(group)items=options.geometry.drawables.filter(item=>group.has(item.obj.unique_id)&&layerVisible(options.report,item.obj.unique_id));
-   const clip=this.clipExtent(options,group?new Set([...group].filter(uid=>layerVisible(options.report,uid))):new Set([target.uid]));
+   // A whole figure's effects cover what a movieclip instance paints; a segment's cover that segment's drawables alone.
+   const clip=target.kind==='figure'?this.clipExtent(options,group?new Set([...group].filter(uid=>layerVisible(options.report,uid))):new Set([target.uid])):null;
    if(!items.length&&!clip)return null;
    bounds=items.length?objectBounds(items,{...options.resources,vfxBounds:false}):clip;
    if(items.length&&clip){const x=Math.min(bounds.x,clip.x),y=Math.min(bounds.y,clip.y);bounds={x,y,width:Math.max(bounds.x+bounds.width,clip.x+clip.width)-x,height:Math.max(bounds.y+bounds.height,clip.y+clip.height)-y};}
