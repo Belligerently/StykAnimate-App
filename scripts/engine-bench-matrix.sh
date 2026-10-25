@@ -7,20 +7,19 @@
 #   scripts/engine-bench-matrix.sh <label> <checkout> <first round> <last round> [config…]
 #
 # <checkout> is the tree whose app is measured (a worktree for a baseline).
-# Configurations: gpu canvas web gpu4 canvas4 touch webkit (all by default).
+# Configurations: gpu web gpu4 touch webkit (all by default).
 # Each run waits until the 1-minute load is below 3 (12 threads here) and records it.
 set -u
 label=$1 root=$2 first=$3 last=$4; shift 4
-configs=("$@"); [ ${#configs[@]} -eq 0 ] && configs=(gpu canvas web gpu4 canvas4 touch webkit)
+configs=("$@"); [ ${#configs[@]} -eq 0 ] && configs=(gpu web gpu4 touch webkit)
 cd "$(dirname "$0")/.."
 unset ELECTRON_RUN_AS_NODE
-export STYK_PYTHON=${STYK_PYTHON:-$PWD/.venv/bin/python}
 files=("$HOME/Downloads/TDD2 URIEL NEMESIS 3.styk" "$HOME/Downloads/Jay on a new app (repaired).styk"
   "$HOME/Downloads/pivs/svr_uriel.piv" "$HOME/Downloads/pivs/tdd2 uriel nemesis.piv")
 flags() {
   case $1 in
-    gpu) ;; canvas) echo --renderer canvas ;; web) echo --target web-chromium ;; gpu4) echo --throttle 4 ;;
-    canvas4) echo --renderer canvas --throttle 4 ;; touch) echo --target web-chromium --touch ;; webkit) echo --target web-webkit ;;
+    gpu) ;; web) echo --target web-chromium ;; gpu4) echo --throttle 4 ;;
+    touch) echo --target web-chromium --touch ;; webkit) echo --target web-webkit ;;
     *) echo "unknown configuration $1" >&2; exit 2 ;;
   esac
 }
