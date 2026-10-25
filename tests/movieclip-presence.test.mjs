@@ -97,12 +97,15 @@ test('breaking one held frame preserves every rendered frame, phase, length and 
   assert.deepEqual(phases(reopen(e)),phases(e));e.undo();assert.equal(phase(e,4),4);e.redo();assert.equal(phase(e,5),5);
 });
 
-test('adjacent, first, last and out-of-order breaks keep child identities and future phases',()=>{
+/** The frames of the layer sheet at these ticks, as the timeline chooses them. */
+const sheetRange=(e,ticks)=>Object.assign([e.frameIndex],{sheetTicks:ticks});
+
+test('adjacent, first, last and out-of-order breaks keep child identities and future phases',async()=>{
   const e=fixture();let children;
   for(const t of [4,0,11,3,5]){e.seek(t);e.select(7);const next=e.breakApartMovieclip();if(children)assert.deepEqual(next,children);children=next;}
   assert.equal(e.totalTicks,12);assert.deepEqual(phases(e),[null,1,2,null,null,null,6,7,0,1,2,null]);
   e.seek(6);e.select(7);const before=Array.from({length:12},(_,t)=>shape(e,t));
-  return e.bakeMovieclip().then(()=>{for(let t=0;t<12;t++)closeShape(shape(e,t),before[t]);assert.ok(phases(e).every(v=>v===null));});
+  await e.bakeMovieclip();for(let t=0;t<12;t++)closeShape(shape(e,t),before[t]);assert.ok(phases(e).every(v=>v===null));
 });
 
 test('deleting all broken children does not undo the consumed playback step',()=>{
@@ -131,7 +134,7 @@ test('cross-project clipboard carries broken frames, definitions and reserved id
 test('Duplicate starts at frame one; colliding single-figure paste retains the copied source phase',()=>{
   const e=fixture();e.seek(5);e.select(7);e.duplicateFigure();const duplicate=e.selectedUid;
   assert.notEqual(duplicate,7);assert.equal(phase(e,5,duplicate),0);assert.equal(phase(e,6,duplicate),1);assert.equal(phase(e,6),6);
-  e.select(7);e.copyFigure();e.pasteFigure();assert.notEqual(e.selectedUid,7);assert.notEqual(e.selectedUid,duplicate);assert.equal(phase(e,5,e.selectedUid),5);assert.equal(phase(e,5),5);
+  e.select(7);e.copySelection();e.pasteSelection();assert.notEqual(e.selectedUid,7);assert.notEqual(e.selectedUid,duplicate);assert.equal(phase(e,5,e.selectedUid),5);assert.equal(phase(e,5),5);
 });
 
 test('hidden layers and opacity do not pause authored membership',()=>{
@@ -283,7 +286,7 @@ test('mixed movieclip paste retains absent identities while remapping collisions
  const e=fixture();e.addFigure(2);const second=e.selectedUid;e.selectMany([7,second]);e.copySelection();
  e.seek(4);e.select(second);e.deleteSelection();e.seek(6);e.select(second);e.deleteSelection();
  const before=e.serialize(),history=e._undo.length;
- const result=e.applyFigureRange({kind:'paste'},{ticks:[4,6]});
+ const result=e.pasteFiguresInFrames(sheetRange(e,[4,6]));
  const fresh=result.insertedUids.find(uid=>uid!==second);assert.notEqual(fresh,7);assert.equal(result.insertedUids.length,2);
  for(const t of [4,6]){const ids=frame(e,t).objects.map(o=>o.unique_id);assert.ok(ids.includes(7)&&ids.includes(second)&&ids.includes(fresh));assert.equal(new Set(ids).size,ids.length);}
  assert.equal(e._undo.length,history+1);e.undo();assert.deepEqual(e.serialize(),before);e.redo();reopen(e);
@@ -298,8 +301,8 @@ test('a hidden completed instance still collides, and paste starts a visible cop
 
 test('range paste reuses one movieclip identity and range delete removes only requested frames',()=>{
   const e=fixture();e.copySelection();e.sheetClearFrames(['layer-1'],0,11);
-  e.applyFigureRange({kind:'paste'},{ticks:[0,2,4]});assert.deepEqual(phases(e,6),[0,1,2,3,4,5]);
-  e.select(7);const before=e.serialize();e.applyFigureRange({kind:'delete'},{ticks:[1,3]});
+  e.pasteFiguresInFrames(sheetRange(e,[0,2,4]));assert.deepEqual(phases(e,6),[0,1,2,3,4,5]);
+  e.select(7);const before=e.serialize();e.deleteFiguresInFrames(sheetRange(e,[1,3]));
   assert.deepEqual(phases(e,6),[0,null,1,null,2,3]);assert.deepEqual(phases(reopen(e),6),[0,null,1,null,2,3]);
   e.undo();assert.deepEqual(e.serialize(),before);
 });

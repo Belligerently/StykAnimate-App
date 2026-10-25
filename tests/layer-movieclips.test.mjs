@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import {Editor as BaseEditor} from '../src/editor.mjs';
 class Editor extends BaseEditor { constructor(options={}) { super({...options,layerTimeline:true}); } }
 import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 /** The editor the engine owns, on a layer sheet like the class above. */
 const layerEditor=(options={},document)=>engineEditor({...options,layerTimeline:true},document);
+/** The editor alone, for the saved placement-based clips: the session edits presence clips only, and the editor's own bodies place and split these. */
+const placementEditor=(options={},document)=>plainEditorFor({...options,layerTimeline:true},document);
 import {movieclipAsset,movieclipTime,playbackSettings,validateMovieclipGraph} from '../src/movieclips.mjs';
 import {movieclipCacheStats} from '../src/movieclip-geometry.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
@@ -17,7 +20,7 @@ import {pivotDocument, figureDocument} from './support/engine-export.mjs';
 // Legacy authoring is exercised only to construct those compatibility fixtures.
 function legacyClip(options){
   const source=new BaseEditor({propertyChannels:true});source.select(1);source.createMovieclip(options);
-  const uid=source.selectedUid,e=layerEditor({propertyChannels:true}, structuredClone(source.report));e.seek(options.start);e.select(uid);return e;
+  const uid=source.selectedUid,e=placementEditor({propertyChannels:true}, structuredClone(source.report));e.seek(options.start);e.select(uid);return e;
 }
 
 const sample=(report,tick)=>{const rows=timeline(report);let i=0;while(i+1<rows.length&&rows[i+1].start<=tick)i++;return buildGeometry(report,evaluatedFrame(report,i,rows[i].count?(tick-rows[i].start)/rows[i].count:0,tick));};

@@ -276,9 +276,9 @@ src/native-figure.mjs	engine	styk-edit	removed	deleted: the document of a figure
 src/native-files.mjs	platform	-	stays	file, storage and network services
 src/native-pose-projection.mjs	engine	styk-eval	js	
 src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
-src/native-property-edit.mjs	engine	styk-edit	partial	Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated, native propertyChannels:true authored-pose commands and app facade/worker adoption pending
+src/native-property-edit.mjs	engine	styk-edit	partial	Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits, pose and camera gestures, branch keys, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself
 src/native-property-projection.mjs	engine	styk-eval	partial	Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded
-src/native-property-ranges.mjs	engine	styk-edit	js	
+src/native-property-ranges.mjs	engine	styk-edit	removed	deleted: a pose at one value across several frames is no command of the session (the inspector's token refuses it); nothing wrote it into the document any more
 src/native-text-authoring.mjs	engine	styk-edit	js	
 src/native-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/native-video-frame-worker.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine

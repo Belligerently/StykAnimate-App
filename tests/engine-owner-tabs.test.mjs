@@ -23,7 +23,7 @@ test('a project opened in a tab beside another shows the engine\'s frame, and so
     assert.ok(first, 'the first project rests in its tab');
     assert.ok(engineGeometry(editor), 'the second project');
     editor.select(editor.evaluatedFrame.objects[0].unique_id, -1); editor.moveSelection(5, 5);
-    assert.equal(owner.editor?.moveSelection ?? 0, 0, 'its edits run in the engine');
+    assert.deepEqual(owner.refused, {}, 'its edits run in the engine');
     editor.handOverDocument(() => {});
     editor.resumeDocument(first);
     assert.ok(engineGeometry(editor), 'the first project again');

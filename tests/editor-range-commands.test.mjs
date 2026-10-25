@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 const clone = value => structuredClone(value), near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
 /** `prepare` changes the document before it opens; `plain`: the editor alone, for what the session cannot be asked. */
 function fixture({prepare = null, plain = false} = {}) {

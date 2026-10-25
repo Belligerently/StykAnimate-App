@@ -87,7 +87,7 @@ test('the engine measures the app\'s bounds callback itself; any other callback 
       const before = JSON.stringify(editor.report);
       assert.throws(() => editor.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf}), error => error.messageKey === 'errors.engineOwner.notSupported');
       assert.deepEqual(order, [], 'nothing measured the figures');
-      assert.equal(owner.native, 0); assert.equal(owner.fallback, 0);
+      assert.equal(owner.native, 0);
       assert.deepEqual(owner.refused, {'alignFiguresInFrames: arguments that are not plain data': 1});
       assert.equal(JSON.stringify(editor.report), before);
       owner.release();
@@ -95,7 +95,7 @@ test('the engine measures the app\'s bounds callback itself; any other callback 
     }
     const result = editor.alignFiguresInFrames('x', 'end', [0, 1], {boundsOf: markAppBounds(boundsOf)});
     assert.deepEqual(result, {changedFrames: 2, changedTicks: [0, 6], insertedUids: []});
-    assert.deepEqual(order, [], 'the engine did not call back'); assert.equal(owner.native, 1); assert.equal(owner.fallback, 0);
+    assert.deepEqual(order, [], 'the engine did not call back'); assert.equal(owner.native, 1); assert.deepEqual(owner.refused, {}, 'the session refused nothing');
     outcomes.push(JSON.stringify(editor.report));
     owner.release();
   }

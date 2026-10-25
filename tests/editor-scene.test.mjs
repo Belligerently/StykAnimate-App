@@ -4,10 +4,10 @@ import {Editor} from '../src/editor.mjs';
 import {sceneValuesAt} from '../src/editor-scene.mjs';
 import {evaluatedFrame} from '../src/pivot/geometry.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 import {pivotDocument} from './support/engine-export.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 const clone = value => structuredClone(value);
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD1kAAAAASUVORK5CYII=';

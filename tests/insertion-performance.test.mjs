@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument,createFrame,createObject,defaultFigure} from '../src/demo.mjs';
 import {movieclipFigure} from '../src/movieclips.mjs';
 import {presencePlayback} from '../src/movieclip-presence.mjs';
 
 for(const layerTimeline of [false,true])test(`imports own only new assets and replay atomically (sheet=${layerTimeline})`,()=>{
   // The session's check of the read view would visit the library the test forbids the import to read.
-  const e=engineEditor({demo:false,layerTimeline},undefined,{verify:false}),unrelated=e.report.figure_types[0];
+  const e=plainEditorFor({demo:false,layerTimeline},undefined,{verify:false}),unrelated=e.report.figure_types[0];
   const frames=e.report.keyframes.slice(),oldClipboard={marker:true};e._selectionClipboard=oldClipboard;
   Object.defineProperty(unrelated,'unrelatedPayload',{enumerable:true,get(){throw new Error('Visited the destination library');}});
   const source=emptyDocument();source.keyframes=[createFrame([createObject(source.figure_types[0],1,50,60)])];
@@ -23,7 +23,7 @@ for(const layerTimeline of [false,true])test(`imports own only new assets and re
 });
 
 test('failed import preserves the document, IDs, clipboard and history',()=>{
-  const e=engineEditor({demo:false,layerTimeline:true}),before=e.serialize(),uid=e._nextUid,history=e.historySize;
+  const e=plainEditorFor({demo:false,layerTimeline:true}),before=e.serialize(),uid=e._nextUid,history=e.historySize;
   const source=emptyDocument();source.keyframes=[createFrame([createObject(source.figure_types[0],1,0,0)])];
   source.keyframes[0].objects[0].scale=-1;
   assert.throws(()=>e.importFigure(source),/Scale/i);

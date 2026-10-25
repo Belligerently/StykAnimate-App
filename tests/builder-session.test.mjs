@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {BuilderSession} from '../src/builder-session.mjs';
 import {emptyDocument, createObject, createFrame, defaultFigure} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
@@ -9,7 +10,7 @@ import {figureDocument} from './support/engine-export.mjs';
 
 /** One scene with two figures: the bound figure has two instances, the other
  * figure is an unjoined neighbor used to prove builder edits stay scoped. */
-function fixture() {
+function fixture({plain = false} = {}) {
   const report = emptyDocument(), walker = report.figure_types[0];
   report.figure_types.push({...defaultFigure(2), name: 'Neighbor', segments: [walker.segments[0]]});
   report.keyframes = [0, 1].map(i => createFrame([
@@ -17,7 +18,7 @@ function fixture() {
     createObject(walker, 2, 640, 160),
     createObject(report.figure_types[1], 3, 480, 320),
   ], 4));
-  return ownedEditorFor({demo: false}, report);
+  return (plain ? plainEditorFor : ownedEditorFor)({demo: false}, report);
 }
 /** An editor the engine owns, on a document with a drawing layer (the active one) the session made. */
 const editorWithDrawing = options => { const editor = ownedEditorFor(options); editor.createDrawingLayer(); return editor; };
@@ -113,7 +114,7 @@ test('discard restores the original definition and object poses', () => {
 });
 
 test('import-new restores the original and adds the edited figure as a new type', () => {
-  const editor = fixture();
+  const editor = fixture({plain: true});
   editor.select(1);
   const originalId = editor.figure.figure_type_id;
   const original = structuredClone(editor.figure);
@@ -145,7 +146,7 @@ for (const mode of ['native', 'simple', 'advanced']) test(`import-new preserves 
     _stykStyle: {segments: {'1': {color: 0x465a28, opacity: .8, thickness: 13}}},
   });
   report.keyframes = [createFrame([pose, createObject(definition, 2, 500, 160)], 4)];
-  const editor = ownedEditorFor({demo: false, propertyChannels: layerTimeline, layerTimeline}, report);
+  const editor = (layerTimeline ? ownedEditorFor : plainEditorFor)({demo: false, propertyChannels: layerTimeline, layerTimeline}, report);
   if (mode === 'simple') editor.enableFrameDrafts();
   editor.select(1);
   if (layerTimeline) editor.updateObject({root_x: 200});

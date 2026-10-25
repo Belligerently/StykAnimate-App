@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {strokeSegments} from '../src/builder-construction.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 function fixture() {
-  const e = ownedEditorFor({demo:false}); e.addFigure(); e.select(e.selectedUid, 2);
+  const e = plainEditorFor({demo:false}); e.addFigure(); e.select(e.selectedUid, 2);
   e.updateSegmentStyle({color:'#e54283', thickness:19});
   return e;
 }
@@ -32,7 +32,7 @@ test('explicit parents win over selection; zero and explicit thickness propagate
 test('per-instance colour and thickness are inherited without shared references', () => {
   const base=fixture(), id=base.figure.segments[2].segment_id, uid=base.selectedUid, document=base.serialize();
   document.keyframes[base.frameIndex].objects.find(o=>o.unique_id===uid)._stykStyle={segments:{[id]:{color:0x123456,thickness:23}}};
-  const e=ownedEditorFor({demo:false}, document); e.select(uid, 2);
+  const e=plainEditorFor({demo:false}, document); e.select(uid, 2);
   const s=e.addSegment();assert.equal(s.thickness,23);assert.deepEqual(s.color_rgb,[18,52,86]);
   s.color_rgb[0]=99;assert.notEqual(e.figure.segments[2].color_rgb[0],99);
 });

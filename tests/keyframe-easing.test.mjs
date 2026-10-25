@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
+
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {easedProgress, cubicBezierProgress, keyEasing} from '../src/keyframe-easing.mjs';
 import {sampleAnimationChannel, validateAnimationDocument} from '../src/animation-channels.mjs';
@@ -18,7 +19,7 @@ function fixture(legacy = false, edit = null) {
     createObject(report.figure_types[0], 1, x, 100), createObject(report.figure_types[0], 2, x + 200, 100),
   ], 10), camera: {is_default: false, x, y: 0, scale: 1 + index, angle_rad: index * .2}}));
   edit?.(report);
-  return engineEditor({demo: false}, report);
+  return plainEditorFor({demo: false}, report);
 }
 const widerLast = report => { report.keyframes[2].objects[0].root_x = 160; };
 function sample(report, tick) {

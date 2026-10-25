@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {composeAnimationChannels, validateAnimationDocument} from '../src/animation-channels.mjs';
 import {evaluatedFrame} from '../src/pivot/geometry.mjs';
@@ -14,7 +14,7 @@ function fixture(edit = null) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [0, 100, 0].map(x => createFrame([1, 2, 3].map(uid => createObject(figure, uid, x, 200)), 10));
   edit?.(report);
-  return engineEditor({demo: false}, report);
+  return plainEditorFor({demo: false}, report);
 }
 function sample(report, tick) {
   const row = timeline(report).findLast(row => row.start <= tick);

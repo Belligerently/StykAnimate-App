@@ -361,4 +361,19 @@ impl Editor {
         }
         if commit { self.commit_drag() } else { self.cancel_drag() }
     }
+
+    /// What the interface reads of the figure-handle, Handle Edit Mode and segment-value gesture in
+    /// progress (`_drag.figureHandle`, `_drag.handleEdit`, `_drag.segmentValueOptions`), told with
+    /// every answer; `null` when none is open.
+    pub fn handle_gesture_view(&self) -> Value {
+        let Some(drag) = &self.drag else { return Value::Null };
+        if drag.figure_handle.is_none() && drag.handle_edit.is_none() && drag.segment_value_options.is_none() {
+            return Value::Null;
+        }
+        let mut out = Obj::new();
+        if let Some(edit) = &drag.figure_handle { out.set("figureHandle", edit.live()); }
+        if let Some(edit) = &drag.handle_edit { out.set("handleEdit", edit.live()); }
+        if let Some(options) = &drag.segment_value_options { out.set("segmentValueOptions", options.clone()); }
+        Value::object(out)
+    }
 }

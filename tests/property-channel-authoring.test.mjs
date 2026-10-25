@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {newOwnedEditor} from './support/owned-editor.mjs';
+import {newPlainEditor} from './support/plain-editor.mjs';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {resolveInstanceFigure} from '../src/animation-style.mjs';
@@ -20,7 +20,7 @@ function fixture(prepare = null) {
   figure.segment_decode = {global_style:{outline_thickness:2,u30:0,rgb:[0,0,0]}};
   report.keyframes = [0,100,200].map(x => createFrame([createObject(figure,1,x,100),createObject(figure,2,x+300,100)],5));
   prepare?.(report);
-  const editor = newOwnedEditor({demo:false,propertyChannels:true}).load(report); editor.select(1); return editor;
+  const editor = newPlainEditor({demo:false,propertyChannels:true}).load(report); editor.select(1); return editor;
 }
 const properties = editor => editor.animationChannels.map(channel => channel.property);
 const numeric = (editor,key,value) => {const token=beginNativePropertyEdit(editor,key);previewNativePropertyEdit(token,value);commitNativePropertyEdit(token);};
@@ -162,7 +162,7 @@ test('Simple Discard and Update carry the same independent property edits across
   e.discardFrameDraft();assert.equal(e.evaluatedFrame.objects[0].field28,0);
   numeric(e,'figure_opacity',25);e.updateDraftFrame();e.disableFrameDrafts();e.selectFrame(1);
   assert.equal(e.evaluatedFrame.objects[0].field28,191);
-  const reopened=newOwnedEditor({demo:false,propertyChannels:true}).load(structuredClone(e.report));reopened.selectFrame(1);
+  const reopened=newPlainEditor({demo:false,propertyChannels:true}).load(structuredClone(e.report));reopened.selectFrame(1);
   assert.equal(reopened.evaluatedFrame.objects[0].field28,191);
 });
 
@@ -177,7 +177,7 @@ test('gradient paint, endpoint keys and polygon style survive reopen', () => {
   assert.deepEqual(resolved.polyfills[0].color_rgb,[0,255,0]);
   const paint=e.animationChannels.find(c=>c.property==='paint');assert.ok(paint);
   e.seek(5);e.updateSegmentStyle({gradient:{color:'#ffff00',opacity:.7}});
-  const reopened=newOwnedEditor({demo:false,propertyChannels:true}).load(e.serialize());reopened.seek(5);reopened.select(1);
+  const reopened=newPlainEditor({demo:false,propertyChannels:true}).load(e.serialize());reopened.seek(5);reopened.select(1);
   resolved=resolveInstanceFigure(reopened.figure,reopened.object);assert.deepEqual(resolved.segments[0].secondary.rgb,[255,255,0]);
   validateAnimationDocument(reopened.report);
 });

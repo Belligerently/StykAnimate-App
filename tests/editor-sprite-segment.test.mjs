@@ -117,7 +117,7 @@ test('sparse existing image IDs are remapped without changing text assets, PNG b
 });
 
 test('retained pose sources and a dirty Simple baseline receive one segment each and undo exactly', () => {
-  const editor = fixture(), sourceId = editor.captureFrameSource(editor.frame);
+  const editor = fixture({plain: true}), sourceId = editor.captureFrameSource(editor.frame);
   editor.enableFrameDrafts(); editor.beginFrameDraft({mode: 'add', index: 2}); editor.select(1, 2);
   editor.updateObject({root_x: 777}); const before = editor.serialize(), history = editor._undo.length;
   editor.addSpriteSegment(sprite());

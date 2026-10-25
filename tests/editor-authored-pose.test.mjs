@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {emptyDocument, createObject, createFrame} from '../src/demo.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 const clone = value => structuredClone(value);
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
 function fixture({owned = true, ...options} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0];
   report.keyframes = [createFrame([createObject(figure, 1, 100, 200)], 10),
     createFrame([createObject(figure, 2, 300, 200)], 10), createFrame([createObject(figure, 1, 200, 200)], 1)];
-  return owned ? ownedEditorFor({demo: false, ...options}, report) : new Editor({demo: false, ...options}).load(report);
+  return owned ? plainEditorFor({demo: false, ...options}, report) : new Editor({demo: false, ...options}).load(report);
 }
 test('composed-only figure selection and canvas movement create one pose key without changing native frames', () => {
   const editor = fixture(); editor.adoptNativePoseTrack({kind: 'layer', id: 'layer-1'});

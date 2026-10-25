@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createFrame, createObject, emptyDocument} from '../src/demo.mjs';
 import {arc} from '../src/pivot/geometry.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
+import {plainScope} from './support/plain-editor.mjs';
 
-const open = ownedScope();
+const open = plainScope();
 
 const near = (a, b, tolerance = 2e-4) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 function isolationFixture() {

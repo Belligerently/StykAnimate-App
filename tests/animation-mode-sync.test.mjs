@@ -6,13 +6,13 @@ import {timeline} from '../src/pivot/read-view.mjs';
 import {storedFrameReport} from '../src/pivot-frame-draft.mjs';
 import {validateAnimationDocument} from '../src/animation-channels.mjs';
 import {beginNativePropertyEdit, previewNativePropertyEdit, commitNativePropertyEdit} from '../src/native-property-edit.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 
 const target = {kind: 'figure', uid: 1};
 function fixture() {
   const report = emptyDocument();
   report.keyframes = [0, 30, 60].map(x => createFrame([createObject(report.figure_types[0], 1, x, 180)], 5));
-  const editor = ownedEditorFor({demo: false}, report);
+  const editor = plainEditorFor({demo: false}, report);
   editor.addAnimationKeys([{target, property: 'x', tick: 0, value: 100}, {target, property: 'x', tick: 10, value: 200}]);
   editor.selectFrame(2); editor.select(1);
   return editor;
@@ -170,7 +170,7 @@ test('STYK reopen restores an authored Add checkpoint in either timeline', async
   const editor = fixture(); editor.enableFrameDrafts({mode: 'add'}); edit(editor, 280);
   const saved = editor.serialize();
   for (const simple of [true, false]) {
-    const restored = ownedEditorFor({demo: false}); await restored.loadAsync(structuredClone(saved));
+    const restored = plainEditorFor({demo: false}); await restored.loadAsync(structuredClone(saved));
     if (simple) {
       restored.enableFrameDrafts(); assert.equal(storedX(restored), 200);
       restored.discardFrameDraft(); assert.equal(restored.evaluatedFrame.objects[0].root_x, 200);

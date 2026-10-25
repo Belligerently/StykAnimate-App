@@ -19,10 +19,10 @@ const refs = ownerReferences(import.meta.url);
 const text = editor => JSON.stringify(editor.report, (key, value) => key.startsWith('_') && key !== '_styk' ? undefined : value);
 const documents = ['startup', 'sheet-layers'];
 
-for (const name of documents) for (const options of [{layerTimeline: true, propertyChannels: true}, {layerTimeline: false, propertyChannels: false}]) {
-  test(`${name} (${options.layerTimeline ? 'layer sheet' : 'native'}): a movieclip edit is undone and redone exactly`, {skip: !engineBuilt}, async () => {
+for (const name of documents) {
+  test(`${name}: a movieclip edit is undone and redone exactly`, {skip: !engineBuilt}, async () => {
     const document = JSON.parse(readFileSync(new URL(`../engine/tests/edit/${name}.document.json`, import.meta.url), 'utf8'));
-    const editor = new Editor({demo: false, ...options}).load(structuredClone(document));
+    const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));
     const owner = installEngineOwner(editor);
     try {
       const uid = editor.evaluatedFrame.objects[0].unique_id, before = text(editor), depth = editor._undo.length;
@@ -38,10 +38,7 @@ for (const name of documents) for (const options of [{layerTimeline: true, prope
       assert.equal(text(editor), before, `undoing the ${entries} entries gives the document before`);
       for (let i = 0; i < entries; i++) await editor.redo();
       assert.equal(text(editor), after, `redoing the ${entries} entries gives the document after`);
-      // A native timeline is not what the app opens: a clip on one is edited by the editor, which the session says.
-      const refused = Object.keys(owner.refused ?? {});
-      if (options.layerTimeline) assert.deepEqual(refused, [], 'nothing was refused');
-      else assert.ok(refused.every(reason => reason.endsWith('inside a movieclip on a native timeline')), refused.join('\n'));
+      assert.deepEqual(owner.refused, {}, 'nothing was refused');
     } finally { owner.release(); }
   });
 }
@@ -86,9 +83,9 @@ for (const name of documents) {
 for (const name of documents) {
   refs.test(`${name}: inside an entered movieclip the history and dirty state are the clip's`, {skip: !engineBuilt}, async take => {
     const document = JSON.parse(readFileSync(new URL(`../engine/tests/edit/${name}.document.json`, import.meta.url), 'utf8'));
-    const run = owned => {
+    const run = () => {
       const editor = new Editor({demo: false, layerTimeline: true, propertyChannels: true}).load(structuredClone(document));
-      const owner = owned ? installEngineOwner(editor) : null;
+      const owner = installEngineOwner(editor);
       try {
         editor.select(editor.evaluatedFrame.objects[0].unique_id, -1);
         const clip = editor.createMovieclip({start: editor.tick, end: editor.tick + 6});
@@ -100,9 +97,9 @@ for (const name of documents) {
         const state = {entered, moved: [editor.undoLabel, editor.canUndo, editor.dirty]};
         editor.leaveMovieclip();
         return state;
-      } finally { owner?.release(); }
+      } finally { owner.release(); }
     };
-    const alone = take('alone', () => run(false)), owned = run(true);
+    const alone = take('alone'), owned = run();
     assert.deepEqual(canonical(owned), alone);
     assert.equal(owned.moved[2], true, 'a move inside the clip leaves the project with unsaved changes');
   });
@@ -200,8 +197,7 @@ test("a movieclip edit is the session's: no entry of the editor's own and no ses
     editor.leaveMovieclip();
     assert.equal(owner.sessions(), 1, 'the clip\'s session is freed');
     assert.deepEqual(owner.depths(), [editor._undo.length, editor._redo.length]);
-    assert.equal(owner.external, 0, 'the clip\'s edit was not written back as an entry of the editor\'s own');
-    assert.equal(owner.fallback, 0, 'nothing ran in the editor');
+    assert.deepEqual(owner.refused, {}, 'the session refused nothing');
   } finally { owner.release(); }
 });
 

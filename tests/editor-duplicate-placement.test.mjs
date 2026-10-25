@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {emptyDocument, createFrame, createObject} from '../src/demo.mjs';
 import {buildGeometry} from '../src/pivot/geometry.mjs';
-import {ownedScope} from './support/owned-scope.mjs';
-const open = ownedScope();
+import {plainScope} from './support/plain-editor.mjs';
+const open = plainScope();
 const clone = structuredClone;
 function fixture({sparse = false} = {}) {
   const report = emptyDocument(), figure = report.figure_types[0], base = figure.segments[0];

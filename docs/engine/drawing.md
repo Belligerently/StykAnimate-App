@@ -58,7 +58,7 @@ weight the interface measured. `src/engine/engine-owner-drawing.mjs` is the inte
   names the record the history is about to make (for the first stroke on a blank exposure or on a v1 cel it writes the
   cel's definition and key into the layer sheet in the same entry; the call carries the cel's figure and object, not
   its pixels), then the tiles apply to the store, the history tracks the record, and the cel's definition (revision,
-  bounds) is written back to the session, all before the call's events reach the interface. A commit the session
+  bounds) is sent to the session (`@publishCel`), all before the call's events reach the interface. A commit the session
   refuses leaves no record; the pixels stay with the caller. A commit whose tiles the store cannot apply after the
   session recorded the entry is taken back (`@retractDrawing`: the entry, with the cel it created, leaves the history
   as the last entry; the redo branch its recording dropped stays dropped) and the record's identity is not used

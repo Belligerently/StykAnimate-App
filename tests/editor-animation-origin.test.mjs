@@ -11,7 +11,7 @@ import {validateScene} from '../src/pivot/model.mjs';
 import {animationOriginOffset,animationRotation} from '../src/animation-origin.mjs';
 import {missingFixture} from './helpers/local-fixtures.mjs';
 import {roundTrip, exportDocument, importBytes, nodeCodec} from './support/codec.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {pivotDocument, keepsStoredFrames} from './support/engine-export.mjs';
 const clone=structuredClone;
 /** `change(report)` writes into the document before it opens; `owned: false` leaves the editor to itself. */
@@ -26,7 +26,7 @@ function fixture({authored=true,easing=false,joined=true,change,owned=true}={}){
     const frame=createFrame([object,child],i===3?1:[7,5,8][i]);frame.camera={is_default:false,x:i*3,y:-i*2,scale:1+i*.1,angle_rad:i*.15};return frame;
   });
   change?.(report);
-  const editor=owned?ownedEditorFor({demo:false}, report):new Editor({demo:false}).load(report);
+  const editor=owned?plainEditorFor({demo:false}, report):new Editor({demo:false}).load(report);
   if(authored)editor.addAnimationKeys([
     ...[['rotation',[-.5,.9,-1.7]],['scale',[.6,1.8,.95]],['x',[83,177,121]],['y',[230,168,249]]].flatMap(([property,values])=>[0,8,20].map((tick,i)=>({target:{kind:'figure',uid:1},property,tick,value:values[i]}))),
     {target:{kind:'camera'},property:'rotation',tick:0,value:.17},{target:{kind:'camera'},property:'rotation',tick:20,value:-.22},

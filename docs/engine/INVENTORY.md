@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 28 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 27 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 93 | 1228 KiB | 28 | 42 | 8 | 1 | 14 | 17 % | 66 % | 11 % |
+| `styk-edit` | 93 | 1205 KiB | 27 | 42 | 8 | 1 | 15 | 17 % | 67 % | 11 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
 | `styk-eval` | 80 | 657 KiB | 17 | 46 | 9 | 0 | 8 | 18 % | 72 % | 1 % |
 | `styk-export` | 14 | 63 KiB | 8 | 2 | 0 | 0 | 4 | 0 % | 10 % | 0 % |
 | `styk-formats` | 56 | 742 KiB | 23 | 7 | 1 | 22 | 3 | 65 % | 11 % | 7 % |
 | `styk-render` | 51 | 95 KiB | 4 | 1 | 2 | 0 | 44 | 48 % | 23 % | 27 % |
-| **Total** | 356 | 3024 KiB | 97 | 106 | 28 | 23 | 102 | 30 % | 48 % | 8 % |
+| **Total** | 356 | 3002 KiB | 96 | 106 | 28 | 23 | 103 | 30 % | 48 % | 8 % |
 
 ## Engine modules
 
@@ -137,8 +137,8 @@ Engine logic: ported to Rust.
 | `src/media-image-worker.mjs` | `styk-edit` | js |  |
 | `src/motion-path-falloff.mjs` | `styk-edit` | ported | motion-path falloff planning. Rust: falloffWeight (the sharp shape cubed as V8 does), planFalloff and normalizeFalloff (styk-edit/src/motion_path.rs), every weight checked against the editor; the app still reads its constants for the overlay |
 | `src/native-figure.mjs` | `styk-edit` | removed | deleted: the document of a figure, a set of figures or a movieclip file is made by the engine (styk-edit/src/export/figure.rs, pose_sequences.rs) on the export worker |
-| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated, native propertyChannels:true authored-pose commands and app facade/worker adoption pending |
-| `src/native-property-ranges.mjs` | `styk-edit` | js |  |
+| `src/native-property-edit.mjs` | `styk-edit` | partial | Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits, pose and camera gestures, branch keys, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself |
+| `src/native-property-ranges.mjs` | `styk-edit` | removed | deleted: a pose at one value across several frames is no command of the session (the inspector's token refuses it); nothing wrote it into the document any more |
 | `src/native-text-authoring.mjs` | `styk-edit` | js |  |
 | `src/onion-skin.mjs` | `styk-edit` | removed | deleted: the session plans the onion skins (styk-edit onion_skins.rs) and the stage draws them; the drawing cels' prefetch moved to src/drawing-cel-prefetch.mjs (19636 bytes) |
 | `src/pivot-export-materialize.mjs` | `styk-edit` | removed | deleted: Pivot animations are baked by the engine (styk-edit/src/export/pivot.rs) on the export worker and encoded by the codec |

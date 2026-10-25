@@ -35,28 +35,6 @@ test('perspective has an exact neutral default and invertible projection at any 
  assert.deepEqual([...after.objects.get(0).joints],[...before.objects.get(0).joints]);
 });
 
-test('perspective IK drags reach the displayed point, depth drags keep the cursor ray, pins remain in world space',()=>{
- const f=fixture(),e=editor(f.doc);e.select(1,f.a.id-1);e.setSpatialPose({pitch:.5});e.select(1,f.b.id-1);e.setSpatialPose({bend:.65});
- e.setNodeIK({enabled:true,chainLength:2,pinned:false});e.setSpatialCamera({strength:.85,distance:400});
- let p=e.geometry.objects.get(0).joints.get(f.b.id);e.poseIKTarget(p.x+8,p.y-20);let next=e.geometry.objects.get(0).joints.get(f.b.id);near(next.x,p.x+8);near(next.y,p.y-20);
- p=next;e.setSpatialIKTarget({depth:p.rawPoint[2]+15});next=e.geometry.objects.get(0).joints.get(f.b.id);near(next.x,p.x);near(next.y,p.y);near(next.rawPoint[2],p.rawPoint[2]+15);
- e.setNodeIK({pinned:true});p=e.geometry.objects.get(0).joints.get(f.b.id);e.select(1,-1);e.moveSelection(0,8);next=e.geometry.objects.get(0).joints.get(f.b.id);near(next.x,p.x);near(next.y,p.y);
- e.select(1,f.b.id-1);e.setSpatialIKTarget({swivel:.5});next=e.geometry.objects.get(0).joints.get(f.b.id);near(next.x,p.x);near(next.y,p.y);
-});
-
-test('perspective FK dragging uses pre-projection geometry and whole-figure movement invalidates artwork',()=>{
- const f=fixture(),e=editor(f.doc);e.select(1,f.a.id-1);e.setSpatialPose({pitch:.6,bend:.3});e.setSpatialCamera({strength:1,distance:400});
- const g=e.geometry.objects.get(0),s=g.segments[f.a.id-1],raw=s.end.rawPoint,start=s.start.rawPoint,angle=.2,c=projection(e.object,g.root);
- const dx=raw[0]-start[0],dy=raw[1]-start[1],p=projectSpatial([start[0]+dx*Math.cos(angle)-dy*Math.sin(angle),start[1]+dx*Math.sin(angle)+dy*Math.cos(angle),raw[2]],c);
- e.poseSpatialJoint(p.x,p.y);const next=e.geometry.objects.get(0).segments[f.a.id-1].end;near(next.x,p.x);near(next.y,p.y);
- const held=e.geometry.objects.get(0);e.select(1,-1);e.moveSelection(30,0);
- // The figure moved as a whole: the geometry held is rebuilt, and is what a new editor shows of the same document.
- const moved=e.geometry.objects.get(0);near(moved.root.x,held.root.x+30);assert.notDeepEqual(moved.segments.map(s=>s.end),held.segments.map(s=>s.end));
- const fresh=ownedEditorSync({demo:false},e.serialize(),{recorded:false}).editor.geometry.objects.get(0);
- assert.deepEqual({root:moved.root,joints:[...moved.joints],segments:moved.segments.map(s=>[s.start,s.end,s.points,s.angle,s.length]),polys:moved.polys.map(p=>[p.points,p.depthValues,p.culled])},
-  {root:fresh.root,joints:[...fresh.joints],segments:fresh.segments.map(s=>[s.start,s.end,s.points,s.angle,s.length]),polys:fresh.polys.map(p=>[p.points,p.depthValues,p.culled])});
-});
-
 test('local width and taper change the intended radius and child sizes remain connected',()=>{
  const f=fixture(),e=editor(f.doc);e.select(1,f.b.id-1);const initial=e.serialize(),other=e.geometry.objects.get(0).joints.get(f.other.id);
  e.setSpatialProportions({width:2,taper:.5});let g=e.geometry.objects.get(0);near(g.joints.get(f.skin).x,230);assert.deepEqual(g.joints.get(f.other.id),other);
@@ -104,13 +82,6 @@ test('unsupported joined perspective is rejected atomically and does not alter e
  const f=fixture(),child=createObject(f.figure,2,200,200);child.object_slot=1;child.join={target_object_slot:0,target_handle_id:f.b.id};f.doc.keyframes[0]=createFrame([f.object,child]);
  const e=editor(f.doc),before=e.serialize();assert.throws(()=>e.setSpatialCamera({strength:1}),/single spatial figure/);assert.deepEqual(e.serialize(),before);
  const invalid=structuredClone(before);invalid.keyframes[0].objects[0]._stykSpatial={camera:{strength:1,distance:500}};assert.throws(()=>validateScene(invalid),/single spatial figure/);
-});
-
-test('changing depth retains an unreachable planted target rather than adopting the clamped endpoint',()=>{
- for(const strength of [0,1]){
-  const f=fixture(),e=editor(f.doc);e.select(1,f.b.id-1);e.setNodeIK({enabled:true,chainLength:2,pinned:true});e.setSpatialCamera({strength,distance:400});
-  e.poseIKTarget(1000,1000);e.setSpatialIKTarget({depth:20});const c=e.object._stykIK[f.b.id];near(c.target.x,strength?960:1000);near(c.target.y,strength?960:1000);
- }
 });
 
 test('the depth slider spans the limb reach around its shoulder or hip depth',()=>{

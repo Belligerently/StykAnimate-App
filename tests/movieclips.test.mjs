@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
-import {engineEditor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 import {movieclipAsset,movieclipTime,playbackSettings,validateMovieclipGraph} from '../src/movieclips.mjs';
 import {movieclipCacheStats} from '../src/movieclip-geometry.mjs';
 import {buildGeometry, evaluatedFrame} from '../src/pivot/geometry.mjs';
@@ -25,7 +25,7 @@ test('movieclip sampling is deterministic at loop, once, hold, offset and FPS bo
   assert.equal(movieclipTime(asset,base,14,48),1);
 });
 test('range conversion preserves all sampled poses and leaves unrelated figures intact',()=>{
-  const editor=engineEditor({propertyChannels:true}),source=structuredClone(editor.report);
+  const editor=plainEditorFor({propertyChannels:true}),source=structuredClone(editor.report);
   editor.select(1);const figure=editor.createMovieclip({start:3,end:24}),uid=editor.selectedUid;
   for(let tick=3;tick<24;tick++){const actual=sample(editor.report,tick),expected=sample(source,tick);close(coordinates(actual,uid),coordinates(expected,1));close(coordinates(actual,3),coordinates(expected,3));}
   assert.equal(movieclipAsset(figure).duration,21);
@@ -33,7 +33,7 @@ test('range conversion preserves all sampled poses and leaves unrelated figures 
   editor.redo();close(coordinates(sample(editor.report,10),uid),coordinates(sample(source,10),1));
 });
 test('many instances share bounded local geometry and keep parent selection identities',()=>{
-  const editor=engineEditor();editor.select(1);const figure=editor.createMovieclip({start:0,end:20,replace:false});
+  const editor=plainEditorFor();editor.select(1);const figure=editor.createMovieclip({start:0,end:20,replace:false});
   const objects=Array.from({length:100},(_,i)=>createObject(figure,100+i,i*10,0,{_stykMovieclip:{start:0}}));
   const report={...editor.report,figure_types:[figure],keyframes:[createFrame(objects,40),createFrame(objects.map(o=>({...o})),1)]};
   const geometry=sample(report,7),stats=movieclipCacheStats(figure);
@@ -43,7 +43,7 @@ test('many instances share bounded local geometry and keep parent selection iden
   assert.ok(movieclipCacheStats(figure).frames<=48);
 });
 test('nested editing restores parent history, saves shared asset and supports cancel',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);const figure=editor.createMovieclip({start:0,end:12});
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);const figure=editor.createMovieclip({start:0,end:12});
   const parent=editor.report,old=movieclipAsset(figure);editor.enterMovieclip(figure.figure_type_id);
   assert.equal(editor.totalTicks,12);editor.select(1);editor.moveSelection(20,0);editor.leaveMovieclip();
   assert.equal(editor.report,parent);assert.notEqual(movieclipAsset(editor.report.figure_types.at(-1)),old);
@@ -51,14 +51,14 @@ test('nested editing restores parent history, saves shared asset and supports ca
   editor.enterMovieclip(figure.figure_type_id);editor.leaveMovieclip({save:false});assert.equal(editor.report,parent);
 });
 test('native document round trip retains source baselines and rejects cyclic clips',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:2,end:19});
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:2,end:19});
   const reopened=new Editor();reopened.load(JSON.parse(JSON.stringify(editor.report)));assert.equal(sample(reopened.report,8).drawables.length,12);
   const figure=reopened.report.figure_types.at(-1);movieclipAsset(figure).document.figure_types.push(figure);
   assert.throws(()=>validateMovieclipGraph(reopened.report),/cycle|nested/);
 });
 
 test('global instance settings and Make unique update retained sources with undo',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:3,end:24});const uid=editor.selectedUid;
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:3,end:24});const uid=editor.selectedUid;
   editor.setMovieclipPlayback({speed:2,offset:2},{allFrames:true});
   for(const tick of [3,4,10,20]){editor.seek(tick);editor.select(uid);assert.equal(editor.object._stykMovieclip.speed,2);assert.equal(editor.object._movieclipSample,(2+(tick-3)*2)%21);}
   const original=editor.figure.figure_type_id;editor.makeMovieclipUnique();const unique=editor.figure.figure_type_id;assert.notEqual(unique,original);
@@ -67,7 +67,7 @@ test('global instance settings and Make unique update retained sources with undo
 });
 
 test('moving and trimming placements retain poses and affect no unrelated object',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:3,end:20});const uid=editor.selectedUid,before=structuredClone(editor.report);
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:3,end:20});const uid=editor.selectedUid,before=structuredClone(editor.report);
   editor.placeMovieclip({start:8,end:25},{move:true});
   for(let tick=8;tick<25;tick++){close(coordinates(sample(editor.report,tick),uid),coordinates(sample(before,tick-5),uid));close(coordinates(sample(editor.report,tick),3),coordinates(sample(before,tick),3));}
   assert.equal(coordinates(sample(editor.report,7),uid).length,0);editor.undo();close(coordinates(sample(editor.report,8),uid),coordinates(sample(before,8),uid));
@@ -75,7 +75,7 @@ test('moving and trimming placements retain poses and affect no unrelated object
 });
 
 test('split plays continuously and preserves scene geometry at the cut',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:0,end:20});const uid=editor.selectedUid;
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:0,end:20});const uid=editor.selectedUid;
   editor.seek(15);editor.moveSelection(90,30);const channel=editor.animationChannel({kind:'figure',uid},'pose');editor.setAnimationKey(channel.id,channel.keys[0].id,{interpolation:'linear'});
   const before=structuredClone(editor.report);
   editor.seek(9);editor.select(uid);editor.splitMovieclip();const second=editor.selectedUid;
@@ -84,7 +84,7 @@ test('split plays continuously and preserves scene geometry at the cut',()=>{
 });
 
 test('Simple static creation stays a working pose and Discard restores the original',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.enableFrameDrafts({mode:'add'});editor.select(1);const before=structuredClone(storedFrameReport(editor.report));
+  const editor=plainEditorFor({propertyChannels:true});editor.enableFrameDrafts({mode:'add'});editor.select(1);const before=structuredClone(storedFrameReport(editor.report));
   editor.createMovieclip();const uid=editor.selectedUid;assert.ok(editor.figure._styk.movieclip);assert.ok(editor.frameDraft.dirty);
   close(coordinates(sample(storedFrameReport(editor.report),0),1),coordinates(sample(before,0),1));
   editor.discardFrameDraft();assert.ok(editor.evaluatedFrame.objects.some(o=>o.unique_id===1));assert.ok(!editor.evaluatedFrame.objects.some(o=>o.unique_id===uid));
@@ -92,7 +92,7 @@ test('Simple static creation stays a working pose and Discard restores the origi
 });
 
 test('legacy materialization matches clip geometry at every output tick',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:2,end:21});const uid=editor.selectedUid;
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:2,end:21});const uid=editor.selectedUid;
   editor._objectEdit('Scale movieclip',object=>{object.scale=1.4;object.angles[0]=.4;});const flat=pivotDocument(editor.report);
   assert.ok(flat.figure_types.every(f=>!f._styk?.movieclip));
   for(let tick=2;tick<21;tick++){
@@ -102,7 +102,7 @@ test('legacy materialization matches clip geometry at every output tick',()=>{
 });
 
 test('Bake animation produces ordinary editable poses and one reversible command',async()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:2,end:17});const uid=editor.selectedUid,before=structuredClone(editor.report),count=editor._undo.length;
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:2,end:17});const uid=editor.selectedUid,before=structuredClone(editor.report),count=editor._undo.length;
   const children=await editor.bakeMovieclip();assert.ok(children.length);assert.equal(editor._undo.length,count+1);
   for(let tick=2;tick<17;tick++){const actual=sample(editor.report,tick);close(coordinates(actual,children[0]),coordinates(sample(before,tick),uid));assert.equal(coordinates(actual,uid).length,0);}
   editor.undo();close(coordinates(sample(editor.report,8),uid),coordinates(sample(before,8),uid));
@@ -110,13 +110,13 @@ test('Bake animation produces ordinary editable poses and one reversible command
 });
 
 test('mirrored movieclips and their legacy export agree',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:0,end:8});const uid=editor.selectedUid,old=sample(editor.report,0),root=editor.geometry.objects.get(editor.selectedSlot).root;
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.createMovieclip({start:0,end:8});const uid=editor.selectedUid,old=sample(editor.report,0),root=editor.geometry.objects.get(editor.selectedSlot).root;
   editor.mirrorFigure();const mirrored=coordinates(sample(editor.report,0),uid),expected=coordinates(old,uid).map(s=>({...s,points:s.points.map(([x,y])=>[2*root.x-x,y])}));close(mirrored,expected);
   const flat=pivotDocument(editor.report);assert.equal(sample(flat,0).drawables.length,old.drawables.length);
 });
 
 test('portable movieclip imports restart and shared editing recovery retains the root project',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);const f=editor.createMovieclip({start:5,end:17});
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);const f=editor.createMovieclip({start:5,end:17});
   const portable=figureDocument(editor.report,{figureUid:editor.selectedUid,tick:5}),other=new Editor();other.seek(10);other.importFigure(portable);
   assert.equal(other.object._stykMovieclip.start,10);assert.equal(other.figure._styk.movieclip.duration,12);
   const parent=editor.report;editor.enterMovieclip(f.figure_type_id);editor.select(1);editor.moveSelection(7,0);
@@ -125,7 +125,7 @@ test('portable movieclip imports restart and shared editing recovery retains the
 });
 
 test('nested conversion preserves the enclosing clip and shared edits update all instances',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);const first=editor.createMovieclip({start:3,end:22}),uid=editor.selectedUid,before=structuredClone(editor.report);
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);const first=editor.createMovieclip({start:3,end:22}),uid=editor.selectedUid,before=structuredClone(editor.report);
   editor.enterMovieclip(first.figure_type_id);editor.select(1);editor.createMovieclip({start:0,end:19});editor.leaveMovieclip();
   for(let tick=3;tick<22;tick++)close(coordinates(sample(editor.report,tick),uid),coordinates(sample(before,tick),uid));
   editor.seek(3);editor.select(uid);const shared=editor.figure;editor.enterMovieclip();const nested=editor.report.figure_types.find(f=>f._styk?.movieclip);editor.enterMovieclip(nested.figure_type_id);editor.select(1);editor.moveSelection(10,0);editor.leaveMovieclip();editor.leaveMovieclip();
@@ -134,7 +134,7 @@ test('nested conversion preserves the enclosing clip and shared edits update all
 });
 
 test('rig topology inside a captured clip repairs retained source poses and is reversible',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);editor.addAnimationKey({kind:'segment',uid:1,handleId:3},'opacity',4,.4);
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);editor.addAnimationKey({kind:'segment',uid:1,handleId:3},'opacity',4,.4);
   editor.createMovieclip({start:0,end:16});const type=editor.figure.figure_type_id;editor.enterMovieclip(type);editor.select(1,2);
   const count=editor.figure.segments.length;editor.splitSegment(.3);assert.equal(editor.figure.segments.length,count+1);
   new Editor().load(JSON.parse(JSON.stringify(editor.report)));
@@ -143,7 +143,7 @@ test('rig topology inside a captured clip repairs retained source poses and is r
 });
 
 test('library insertion keeps playing across native exposures and remains one undo action',()=>{
-  const editor=engineEditor({propertyChannels:true});editor.select(1);const clip=editor.createMovieclip({start:0,end:12,replace:false});
+  const editor=plainEditorFor({propertyChannels:true});editor.select(1);const clip=editor.createMovieclip({start:0,end:12,replace:false});
   editor.seek(6);const count=editor._undo.length;editor.addFigure(clip.figure_type_id);const uid=editor.selectedUid;
   assert.equal(editor._undo.length,count+1);assert.equal(coordinates(sample(editor.report,5),uid).length,0);
   assert.equal(editor.object._stykMovieclip.end,18);
@@ -153,7 +153,7 @@ test('library insertion keeps playing across native exposures and remains one un
 
 test('conversion preserves the complete scene before, inside and after the range',()=>{
   for(const nested of [false,true]){
-    const e=engineEditor({propertyChannels:true});e.select(1);
+    const e=plainEditorFor({propertyChannels:true});e.select(1);
     if(nested){e.createMovieclip({start:0,end:40});e.enterMovieclip();e.select(1);}
     const before=structuredClone(e.report);e.createMovieclip({start:3,end:24});
     for(let t=0;t<40;t++)close(scene(sample(e.report,t)),scene(sample(before,t)));
@@ -161,7 +161,7 @@ test('conversion preserves the complete scene before, inside and after the range
 });
 
 test('restart changes phase at the playhead without changing placement or earlier frames',()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:3,end:24});const uid=e.selectedUid,before=structuredClone(e.report);
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:3,end:24});const uid=e.selectedUid,before=structuredClone(e.report);
   e.seek(10);e.select(uid);e.restartMovieclip();
   assert.equal(e.object._stykMovieclip.start,3);assert.equal(e.object._stykMovieclip.end,24);
   for(let t=0;t<10;t++)close(scene(sample(e.report,t)),scene(sample(before,t)));
@@ -174,7 +174,7 @@ test('restart changes phase at the playhead without changing placement or earlie
 });
 
 test('breaking adjacent frames leaves one clip with gaps and exact ordinary poses',()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:5});const uid=e.selectedUid,before=structuredClone(e.report),undo=e._undo.length;
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:5});const uid=e.selectedUid,before=structuredClone(e.report),undo=e._undo.length;
   const children=[];
   for(const tick of [0,1]){e.seek(tick);e.select(uid);children.push(e.breakApartMovieclip());}
   assert.equal(e._undo.length,undo+2);
@@ -191,7 +191,7 @@ test('breaking adjacent frames leaves one clip with gaps and exact ordinary pose
 });
 
 test('split then move backward preserves the full transform curve and never doubles the cut',()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:24});const uid=e.selectedUid;
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:24});const uid=e.selectedUid;
   e.seek(18);e.moveSelection(110,30);const channel=e.animationChannel({kind:'figure',uid},'pose');e.setAnimationKey(channel.id,channel.keys[0].id,{interpolation:'linear'});
   e.seek(7);e.select(uid);e.restartMovieclip();const before=structuredClone(e.report);
   e.seek(9);e.select(uid);e.splitMovieclip();const second=e.selectedUid;
@@ -203,7 +203,7 @@ test('split then move backward preserves the full transform curve and never doub
 });
 
 test('baking a split clip with frame gaps preserves the entire scene and undo/redo',async()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:2,end:23});const uid=e.selectedUid;
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:2,end:23});const uid=e.selectedUid;
   e.seek(6);e.select(uid);e.breakApartMovieclip();e.seek(9);e.select(uid);e.restartMovieclip();e.seek(12);e.splitMovieclip();
   const before=structuredClone(e.report),second=e.selectedUid;
   await e.bakeMovieclip();
@@ -214,7 +214,7 @@ test('baking a split clip with frame gaps preserves the entire scene and undo/re
 
 test('Simple Add and Update keep frame breaks on the timeline through mode switches and history',()=>{
   for(const mode of ['add','update']){
-    const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:5});const uid=e.selectedUid,before=structuredClone(e.report);
+    const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:5});const uid=e.selectedUid,before=structuredClone(e.report);
     e.enableFrameDrafts({mode});
     for(const t of [0,1]){e.seek(t);e.select(uid);e.breakApartMovieclip();assert.equal(e.frameDraft.dirty,false);}
     e.undo();assert.equal(coordinates(sample(e.report,1),uid).length,10);e.redo();assert.equal(coordinates(sample(e.report,1),uid).length,0);
@@ -224,7 +224,7 @@ test('Simple Add and Update keep frame breaks on the timeline through mode switc
 });
 
 test('loading early clips gives them an explicit end and upgrades restart poses',()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:3,end:24});const uid=e.selectedUid;
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:3,end:24});const uid=e.selectedUid;
   e.seek(10);e.select(uid);e.setMovieclipPlayback({start:10,offset:0});
   const old=structuredClone(e.report);
   for(const frame of [...old.keyframes,...Object.values(old._styk.frameSources)])for(const object of frame.objects)if(object.unique_id===uid)object._stykMovieclip.end=null;
@@ -234,14 +234,14 @@ test('loading early clips gives them an explicit end and upgrades restart poses'
 });
 
 test('trim after a restart then move to zero keeps the visible source phase',()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:30});const uid=e.selectedUid;
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:30});const uid=e.selectedUid;
   e.seek(3);e.restartMovieclip();e.placeMovieclip({start:10,offset:10});const before=structuredClone(e.report);
   e.placeMovieclip({start:0,end:20},{move:true});
   for(let t=0;t<20;t++)close(coordinates(sample(e.report,t),uid),coordinates(sample(before,t+10),uid));
 });
 
 test('one-frame breaks stay sparse in long animations and share children sources',()=>{
-  const e=engineEditor({propertyChannels:true});e._selectIds([1,2,3]);e.createMovieclip({start:0,end:40});const uid=e.selectedUid;
+  const e=plainEditorFor({propertyChannels:true});e._selectIds([1,2,3]);e.createMovieclip({start:0,end:40});const uid=e.selectedUid;
   e.placeMovieclip({end:1000});const definitions=e.report.figure_types.length;e.seek(500);const children=e.breakApartMovieclip();
   assert.equal(children.length,3);assert.equal(e.report.figure_types.length,definitions);
   const channels=children.map(uid=>e.animationChannel({kind:'figure',uid},'pose'));
@@ -251,7 +251,7 @@ test('one-frame breaks stay sparse in long animations and share children sources
 
 test('Simple Add places new clips at the appended frame and keeps their full duration',()=>{
   for(const library of [false,true]){
-    const e=engineEditor({propertyChannels:true});e.select(1);
+    const e=plainEditorFor({propertyChannels:true});e.select(1);
     const asset=library?e.createMovieclip({start:0,end:12,replace:false}):null;
     e.enableFrameDrafts({mode:'add'});
     if(library)e.addFigure(asset.figure_type_id);else e.createMovieclip();
@@ -264,14 +264,14 @@ test('Simple Add places new clips at the appended frame and keeps their full dur
 });
 
 test('a timeline break preserves an unrelated Update draft and survives discarding that pose',()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:5});const uid=e.selectedUid,before=structuredClone(e.report);
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:0,end:5});const uid=e.selectedUid,before=structuredClone(e.report);
   e.enableFrameDrafts({mode:'update'});e.select(3);e.moveSelection(20,0);e.select(uid);e.breakApartMovieclip();
   assert.equal(e.frameDraft.dirty,true);assert.equal(coordinates(sample(e.report,0),uid).length,0);
   e.discardFrameDraft();assert.equal(coordinates(sample(e.report,0),uid).length,0);close(scene(sample(e.report,0)),scene(sample(before,0)));
 });
 
 test('clips outside their placement or Once/hide duration leave no selectable ghost',()=>{
-  const e=engineEditor({propertyChannels:true});e.select(1);e.createMovieclip({start:3,end:8});const uid=e.selectedUid;
+  const e=plainEditorFor({propertyChannels:true});e.select(1);e.createMovieclip({start:3,end:8});const uid=e.selectedUid;
   for(const tick of [0,2,8,30]){e.seek(tick);assert.ok(!e.evaluatedFrame.objects.some(o=>o.unique_id===uid));}
   e.seek(3);e.select(uid);e.placeMovieclip({end:20});e.setMovieclipPlayback({mode:'once'},{allFrames:true});e.seek(8);
   assert.ok(!e.evaluatedFrame.objects.some(o=>o.unique_id===uid));
@@ -281,7 +281,7 @@ test('conversion rejects interleaved stacking later in the range without a parti
   const stacked=new Editor({propertyChannels:true});
   for(const frame of stacked.report.keyframes){frame.object_draw_order=[0,1,2];frame.object_draw_order_unique_ids=frame.objects.map(o=>o.unique_id);}
   stacked.report.keyframes[1].object_draw_order=[0,2,1];stacked.report.keyframes[1].object_draw_order_unique_ids=[1,3,2];
-  const e=engineEditor({propertyChannels:true},stacked.serialize());e._selectIds([1,2]);const count=e._undo.length,definitions=e.report.figure_types.length;
+  const e=plainEditorFor({propertyChannels:true},stacked.serialize());e._selectIds([1,2]);const count=e._undo.length,definitions=e.report.figure_types.length;
   assert.throws(()=>e.createMovieclip({start:0,end:20}),/stacking order/);
   assert.equal(e._undo.length,count);assert.equal(e.report.figure_types.length,definitions);
 });

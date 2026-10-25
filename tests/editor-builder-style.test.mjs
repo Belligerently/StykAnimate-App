@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import {Editor} from '../src/editor.mjs';
 import {editorBuilderMethods} from '../src/editor-builder.mjs';
 import {builderDrawables,builderStyleTargets,reorderBuilderDrawables} from '../src/editor-builder-style.mjs';
-import {beginNativePropertyEdit,previewNativePropertyEdit,commitNativePropertyEdit,cancelNativePropertyEdit,getNativePropertyValue} from '../src/native-property-edit.mjs';
+
 import {defaultFigure,createObject} from '../src/demo.mjs';
 import {validateScene} from '../src/pivot/model.mjs';
 import {roundTrip} from './support/codec.mjs';
-import {ownedEditorFor} from './support/owned-editor.mjs';
+import {plainEditorFor} from './support/plain-editor.mjs';
 Object.assign(Editor.prototype,editorBuilderMethods);
 /** `change(definition)` writes into the figure's definition before the document opens; `plain` leaves the editor to itself. */
 function fixture({change,plain=false}={}){
-  const base=ownedEditorFor({demo:false}),figure=defaultFigure(201);
+  const base=plainEditorFor({demo:false}),figure=defaultFigure(201);
   figure.name='Order fixture';
   figure.segments=figure.segments.slice(0,4).map((segment,index)=>({...segment,segment_id:[11,22,33,44][index],parent_id:[0,11,22,0][index],z_order:[1,3,5,6][index]}));
   figure.segment_count=4;
@@ -21,12 +21,11 @@ function fixture({change,plain=false}={}){
   const uid=base.selectedUid,document=base.serialize(),definition=document.figure_types.find(value=>value.figure_type_id===base.figure.figure_type_id);
   definition.image_assets=[{kind:'image',data_url:'data:image/png;base64,'+'A'.repeat(1024*1024)}];
   change?.(definition);
-  const editor=plain?new Editor({demo:false}).load(document):ownedEditorFor({demo:false},document);
+  const editor=plain?new Editor({demo:false}).load(document):plainEditorFor({demo:false},document);
   editor.select(uid,0);
   return editor;
 }
 const order=editor=>builderDrawables(editor.figure).map(entry=>`${entry.kind==='segment'?'s':'p'}${entry.index}`);
-const command=(editor,key,value,options)=>{const token=beginNativePropertyEdit(editor,key,options);previewNativePropertyEdit(token,value);commitNativePropertyEdit(token);};
 test('native mixed sequence front/back and one-step movement keep both sets stable',()=>{
   const e=fixture(),original=order(e);assert.deepEqual(original,['s0','p0','s1','p1','s2','s3']);
   e.moveBuilderOrder({kind:'polygon',index:0},'up');assert.deepEqual(order(e),['s0','s1','p0','p1','s2','s3']);
@@ -40,37 +39,6 @@ test('native branch includes pivot and descendant-only polygons, not crossing po
   const entries=builderDrawables(e.figure),targets=builderStyleTargets(e.figure,{kind:'segment',index:0},{branch:true});
   const raised=reorderBuilderDrawables(entries,targets,{delta:2});
   assert.deepEqual(raised.map(x=>`${x.kind[0]}${x.index}`),['p1','s3','s0','p0','s1','s2']);
-});
-test('numeric order is one-based, branch delta is relative and boundary-clamped',()=>{
-  const e=fixture();e.select(e.selectedUid,1);
-  assert.equal(getNativePropertyValue(e,'segment_z_order'),3);
-  command(e,'segment_z_order',4,{branch:true});assert.deepEqual(order(e),['s0','p0','p1','s1','s3','s2']);
-  e.undo();assert.deepEqual(order(e),['s0','p0','s1','p1','s2','s3']);
-  const before=structuredClone(e.figure),history=e._undo.length;
-  for(const value of [0,7,2.5,NaN,Infinity]){
-    const token=beginNativePropertyEdit(e,'segment_z_order');assert.throws(()=>previewNativePropertyEdit(token,value));cancelNativePropertyEdit(token);
-  }
-  assert.deepEqual(e.figure,before);assert.equal(e._undo.length,history);
-});
-test('repeated live previews start at the captured order and cancel restores raw metadata',()=>{
-  const e=fixture({change:figure=>{figure.segment_z_raw=[9,7,5,3];figure.poly_z_raw=[8,4];}});
-  const before=structuredClone(e.figure),token=beginNativePropertyEdit(e,'polygon_0_z_order');
-  previewNativePropertyEdit(token,6);assert.equal(order(e).at(-1),'p0');
-  previewNativePropertyEdit(token,1);assert.equal(order(e)[0],'p0');
-  previewNativePropertyEdit(token,2);assert.deepEqual(e.figure,before);
-  cancelNativePropertyEdit(token);assert.deepEqual(e.figure,before);assert.equal(e._undo.length,0);
-});
-test('polygon alpha and ordering history retain source frames/assets and stay small',()=>{
-  // plain editor: the test reads the identity of the document's records and the editor's own history entries (kind, bytes)
-  const e=fixture({plain:true}),frames=e.report.keyframes,frame=e.frame,objects=frame.objects,assets=e.figure.image_assets;
-  e.report._styk.frameSources={source:{...frame,objects:frame.objects.map(o=>({...o}))}};
-  const retained=e.report._styk.frameSources.source;
-  command(e,'polygon_0_opacity',25);assert.equal(e.figure.polyfills[0].alpha_raw,191);
-  e.moveBuilderOrder({kind:'polygon',index:0},'front');
-  assert.equal(e.report.keyframes,frames);assert.equal(e.frame,frame);assert.equal(e.frame.objects,objects);assert.equal(e.report._styk.frameSources.source,retained);assert.equal(e.figure.image_assets,assets);
-  assert.ok(e._undo.every(item=>item.kind==='native-properties'&&item.bytes<10000));
-  e.undo();e.undo();assert.equal(e.figure.polyfills[0].alpha_raw,0);e.redo();assert.equal(e.figure.polyfills[0].alpha_raw,191);
-  assert.equal(e.figure.image_assets,assets);assert.equal(e.report._styk.frameSources.source,retained);
 });
 test('tied authored records stay untouched on no-op and reorder deterministically',()=>{
   const e=fixture({change:figure=>{figure.segments.forEach(s=>s.z_order=1);figure.polyfills.forEach(p=>p.z_order=1);}});

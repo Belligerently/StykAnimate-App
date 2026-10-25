@@ -17,7 +17,7 @@ const refs=ownerReferences(import.meta.url);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<.002,`${a} != ${b}`);
 function fixture(){const e=new Editor({demo:false});e.addFigure();initializeLayerSheet(e.report);e._invalidate({timing:true});return e;}
 /** The same document (built by a plain editor, once: its reference) with the engine owning the editor: baking the camera's motion is a command of the engine session. */
-function ownedFixture(take){return ownedEditorSync({demo:false},JSON.parse(take('fixture',()=>JSON.stringify(fixture().report))),{recorded:false}).editor;}
+function ownedFixture(take){return ownedEditorSync({demo:false},JSON.parse(take('fixture')),{recorded:false}).editor;}
 function at(e,tick){const rows=e.timeline,index=rows.findLastIndex(r=>r.start<=tick),row=rows[Math.max(0,index)];return evaluatedFrame(e.report,Math.max(0,index),row.count?(tick-row.start)/row.count:0,tick);}
 test('motions that never play together share a timeline lane; overlapping ones stack',()=>{
   const clip=(id,start,duration)=>({id,start,duration}),lanes=clips=>packMotionLanes(clips).map(lane=>lane.map(c=>c.id));

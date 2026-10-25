@@ -65,7 +65,7 @@ test('native branch traversal excludes ancestors/siblings and color-only retains
 });
 
 test('explicit alpha and gradient endpoint updates follow native branch rules and collapse only matching RGBA endpoints', () => {
-  const editor = fixture();
+  const editor = fixture({plain: true});
   editor.updateSegmentBranchStyle({gradient: {color: '#123456'}});
   for (const i of [0,2,4,5,6]) assert.deepEqual(editor.figure.segments[i].secondary, {rgb: [18,52,86], a: i * 11});
   assert.deepEqual(editor.figure.polyfills[0].color_rgb, [5,6,7]);
@@ -95,7 +95,7 @@ test('fixed thickness, delta clamping and selected-anchor static/caps/fill are o
 });
 
 test('branch planner is pure, gesture binding is reusable and malformed/no-op edits cannot enter history', () => {
-  const editor = fixture(), original = clone(editor.figure), history = editor._undo.length;
+  const editor = fixture({plain: true}), original = clone(editor.figure), history = editor._undo.length;
   const patch = builderBranchStylePatch(editor.figure, 2, {thickness: 20}); assert.equal(patch.entries.length, 10); assert.deepEqual(editor.figure, original);
   const binding = builderBranchStyleBinding(editor, {thickness: 20}); assert.deepEqual(binding.segmentIndices, [0,2,4,5,6]);
   const preview = clone(original); binding.mutate(preview, {thickness: 10}); binding.mutate(preview, {thickness: 15});
@@ -122,7 +122,7 @@ test('selected-only sparse style combines shape/static/gradient without copying 
 });
 
 test('branch split retains posed endpoints, joined figures, sparse max IDs, polygon closures and combined draw order', () => {
-  const editor = fixture(), before = editor.serialize(), frames = editor._allSourceFrames(), geometries = frames.map(frame => buildGeometry(editor.report, frame));
+  const editor = fixture({plain: true}), before = editor.serialize(), frames = editor._allSourceFrames(), geometries = frames.map(frame => buildGeometry(editor.report, frame));
   const oldOrder = builderDrawables(editor.figure).map(e => [e.kind, e.kind === 'segment' ? e.item.segment_id : e.item.polyfill_id]);
   const oldSelected = editor.selectedJoint, history = editor._undo.length;
   assert.equal(editor.splitSegmentBranch(.4), true); assert.equal(editor._undo.length, history + 1);
@@ -184,7 +184,7 @@ test('native Split keeps tiny-bend second angles and uses a single signed-pi wra
 });
 
 test('branch split after reroot and reference deletion retains support rotation and all posed endpoints', () => {
-  const editor = fixture(); editor.setOrigin(50);
+  const editor = fixture({plain: true}); editor.setOrigin(50);
   const reference = editor.figure._styk.animationOrigin.rotationHandleId;
   editor.select(1,editor.figure.segments.findIndex(s => s.segment_id === reference)); editor.deleteSingleSegment();
   assert.ok(editor.figure._styk.animationOrigin.support);

@@ -28,8 +28,10 @@ mod camera_views;
 mod clipboards;
 mod figure_clipboard;
 mod figure_transform;
-mod external;
 pub mod export;
+mod args;
+mod owner;
+mod preview;
 mod figures;
 mod frame;
 mod frame_draft;
@@ -314,6 +316,8 @@ pub struct Editor {
     pub(crate) property_edit: Option<property_edit::Edit>,
     pub(crate) native_token: Option<builder::native::Token>,
     pub(crate) native_token_serial: u64,
+    /// The document field a live preview set without recording it (`preview.rs`).
+    pub(crate) preview: Option<preview::Preview>,
     /// Change events since the last [`Editor::take_events`], as the editor's `change` details.
     pub(crate) events: Vec<Value>,
     /// Typed views and evaluated frames of the current document.
@@ -382,6 +386,7 @@ struct Snapshot {
     property_edit: Option<property_edit::Edit>,
     native_token: Option<builder::native::Token>,
     native_token_serial: u64,
+    preview: Option<preview::Preview>,
     drag_serial: u64,
 }
 
@@ -441,6 +446,7 @@ impl Editor {
             property_edit: None,
             native_token: None,
             native_token_serial: 0,
+            preview: None,
             events: Vec::new(),
             eval: RefCell::default(),
             shown: RefCell::default(),
@@ -743,6 +749,7 @@ impl Editor {
             property_edit: self.property_edit.clone(),
             native_token: self.native_token.clone(),
             native_token_serial: self.native_token_serial,
+            preview: self.preview.clone(),
             drag_serial: self.drag_serial,
         }
     }
@@ -764,7 +771,7 @@ impl Editor {
             layer_event_pending, sheet_clipboard, figure_clipboard,
             segment_values_clipboard, camera_clipboard, audio_clipboard, camera_motion_clipboard,
             vfx_clip_clipboard, vfx_edit, batch, sheet_selection, property_edit,
-            native_token, native_token_serial, drag_serial);
+            native_token, native_token_serial, preview, drag_serial);
         for (actual, captured) in [
             &mut self.revision, &mut self.saved_revision,
             &mut self.revision_serial, &mut self.layer_revision,
@@ -779,13 +786,12 @@ impl Editor {
     }
 
     fn dispatch_layer_publication(&mut self, method: &str, args: &[Value], worker: bool, check: &mut dyn FnMut() -> Result<(), EditError>, publication: Option<&mut Option<Value>>, duplicate_pastes: Option<&mut Option<Value>>) -> Result<Value, EditError> {
-        // The owner's bookkeeping (D19, external.rs) is not a command: no document gate applies.
+        // The owner's bookkeeping (D19, owner.rs) is not a command: no document gate applies.
         match method {
-            "@external" => return self.record_external(args),
-            "@sync" => return self.sync_records(args),
-            "@externalDone" => return self.external_done(args),
             "@historyLimits" => return self.configure_history(args),
             "@markSaved" => return self.mark_saved(),
+            "@touch" => return self.mark_changed(),
+            "@publishCel" => return self.publish_cel(args),
             "@drawingBytes" => return self.set_pixels_bytes(args),
             "@retractDrawing" => return self.retract_pixels(args),
             "@setClipboard" => return self.set_clipboard(args),
@@ -794,11 +800,9 @@ impl Editor {
             "beginBatch" => return self.begin_batch(args.first().and_then(Value::as_str).unwrap_or("")).map(|_| Value::Null),
             "endBatch" => return self.end_batch().map(|_| Value::Null),
             "abortBatch" => return self.abort_batch().map(|_| Value::Null),
-            "undo" | "redo" if let Some(id) = self.external_on_top(method == "redo") => {
-                return Err(EditError::Unported(format!("{}{id}", external::EXTERNAL_ENTRY)));
-            }
             _ => {}
         }
+        self.end_preview_for(method);
         let projected_native=worker && self.native_projected_call(method,args);
         if worker && self.options.property_channels && !self.sheet() { self.native_projected_gate(method,args,check)?; }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
@@ -981,6 +985,11 @@ impl Editor {
             "updateSelection" => self.update_selection(&arg(0)).map(Value::Bool),
             "addMovieclipToNextKeyframes" if self.sheet() => self.inline_timeline(|editor, worker| editor.extend_sheet_movieclip(number(0), worker)),
             "addMovieclipToNextKeyframes" => self.extend_native_movieclip(number(0)),
+            // Samples the whole clip frame by frame and publishes it as one entry: bounded (5000 frames, 250000 poses), run inline.
+            "previewCameraMotion" => self.preview_camera_motion(&arg(0), &arg(1)).map(Value::Bool),
+            "previewLayerParallax" => self.preview_layer_parallax(&arg(0), &arg(1)).map(Value::Bool),
+            "cancelDocumentPreview" => Ok(Value::Bool(self.cancel_document_preview())),
+            "bakeMovieclip" => self.inline_timeline(|editor, worker| editor.bake_movieclip_worker(worker)),
             "setFrameDuration" if self.sheet() => self.sheet_set_duration(number(0), &Value::Null, &Value::Null).map(Value::Bool),
             "setFrameDuration" => Err(EditError::Unported("setFrameDuration on a native timeline".into())),
             "addFigure" => self.add_figure((!args.is_empty()).then(|| arg(0)).as_ref()),

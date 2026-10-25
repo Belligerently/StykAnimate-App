@@ -455,6 +455,12 @@ impl Editor {
     /// `setLayerParallax(id, patch)` (src/editor-camera-motion.mjs): a figure layer's
     /// response to camera travel, its reference the camera on show unless set.
     pub(crate) fn set_layer_parallax(&mut self, id: &Value, patch: &Value, publication: Option<&mut Option<Value>>) -> Result<bool, EditError> {
+        let (id, parallax) = self.parallax_after(id, patch)?;
+        self.layer_edit_publication("Edit layer parallax", vec![(path(&["byId", &id, "parallax"]), Some(parallax), false)], false, publication)
+    }
+
+    /// The layer and the parallax `patch` makes of its response, validated as `setLayerParallax` does.
+    pub(crate) fn parallax_after(&mut self, id: &Value, patch: &Value) -> Result<(String, Value), EditError> {
         self.ensure_layer_state()?;
         let state = self.layer_state();
         let Some(id) = id.as_str().filter(|id| state.path(&["byId", id]).is_some()).map(str::to_string) else {
@@ -505,7 +511,7 @@ impl Editor {
         if !valid {
             return Err(EditError::Invalid("errors.layerParallax.parallaxNeedsA0400ResponseAndA".into()));
         }
-        self.layer_edit_publication("Edit layer parallax", vec![(path(&["byId", &id, "parallax"]), Some(Value::object(p)), false)], false, publication)
+        Ok((id, Value::object(p)))
     }
 
     /// `setLayerVisible(id, visible)`, `setLayerLocked(id, locked)`.
