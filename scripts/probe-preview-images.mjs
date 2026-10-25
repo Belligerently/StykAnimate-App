@@ -2,7 +2,7 @@
 export async function probePreviewImages(page) {
   await page.evaluate(async () => {
     const {PreviewImages}=await import('/src/preview-images.mjs');
-    const {assetURL}=await import('/src/playback-resources.mjs');
+    const {assetURL}=await import('/src/image-resources.mjs');
     const events=corpusProbe.images=[],identities=new Map(),workers=new WeakSet();
     const id=url=>{if(!identities.has(url))identities.set(url,identities.size+1);return identities.get(url);};
     const describe=item=>{
