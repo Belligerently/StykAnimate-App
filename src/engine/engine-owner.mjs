@@ -604,8 +604,9 @@ export function installEngineOwner(editor, {start = openingSession, verify = fal
   /** The frame the session retained, while the editor still shows it. */
   let retainedShown = null;
   /** `bakeMovieclip()`: the session samples the clip in slices (`bakeMovieclipBegin`, `bakeMovieclipSample`, `bakeMovieclipPublish`,
-   * `movieclip_bake.rs`) and the interface gets the thread back between them, so a long bake never stalls it (D7). Each slice is sized
-   * from how long the last one took. An edit between slices ends the bake, as the session ends its job. */
+   * `movieclip_bake.rs`) and the interface gets the thread back between them (D7), so the sampling of a long clip does not hold it. Each slice is
+   * sized from how long the last one took. Publication is one step (0.2 to 2.6 s on large documents, docs/engine/editing.md). An edit between
+   * slices ends the bake, as the session ends its job. */
   const bakeCall = async () => {
     callSession('bakeMovieclipBegin', []);
     const report = editor.report, revision = editor.revision;

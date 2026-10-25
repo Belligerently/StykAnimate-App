@@ -1,5 +1,5 @@
 // Baking a movieclip under the engine owner (D19): the session samples the clip in slices and the interface thread gets turns of the
-// event loop between them (D7), so a long bake never stalls it; an edit between the slices ends the bake and leaves nothing of it.
+// event loop between them (D7); publication is one step. An edit between the slices ends the bake and leaves nothing of it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
