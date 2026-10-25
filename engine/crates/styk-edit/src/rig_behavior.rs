@@ -555,14 +555,10 @@ impl Editor {
         self.native_properties(label, index, entries)
     }
 
-    /// Every frame a pose of a figure lives in (`_allSourceFrames`): the keyframes and the
-    /// pose sources.
+    /// Every frame a pose of a figure lives in (`_allSourceFrames`): the keyframes, the pose sources and
+    /// those of the sources a movieclip retains.
     pub(crate) fn all_source_frames(&self) -> Vec<Value> {
-        let mut frames = items(self.report.get("keyframes"));
-        if let Some(sources) = self.report.path(&["_styk", "frameSources"]).and_then(Value::as_obj) {
-            frames.extend(sources.values().iter().cloned());
-        }
-        frames
+        crate::topology::places(&self.report).iter().filter_map(|place| crate::topology::frame_at(&self.report, place).cloned()).collect()
     }
 
     /// The rig commands by their JavaScript names; `None` for other calls.

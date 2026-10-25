@@ -8,11 +8,10 @@
  * it can be; a frame it refuses leaves the previous picture too, with the reason reported once
  * (`engine-failure.mjs`), and the document's next revision is tried afresh.
  *
- * The frame on show is the session's: the engine evaluates it and draws it (`Stage::edit_session`), nothing
- * crosses from the interface. Two frames are the interface's own and cross as poses (only the objects whose
- * geometry the editor rebuilt since the last frame): a movieclip being edited in place, whose commands the editor
- * runs until the session edits movieclips, and the first stroke on a blank exposure, whose new cel the session
- * does not hold yet. Onion skins cross as poses as well.
+ * The frame on show is the session's, inside a movieclip too: the engine evaluates it and draws it
+ * (`Stage::edit_session`), nothing crosses from the interface. One frame is the interface's own and crosses as
+ * poses (only the objects whose geometry the editor rebuilt since the last frame): the first stroke on a blank
+ * exposure, whose new cel the session does not hold yet. The onion skins are the session's as well.
  */
 import {loadEngine} from './engine.mjs';
 import {holdsRevision} from './engine-open.mjs';

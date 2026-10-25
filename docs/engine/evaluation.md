@@ -355,8 +355,8 @@ selection is the editor's to tell with a call, and the frame does not depend on 
   the tick, as a prepared frame's are.
 
 The editor evaluates the frame itself where the engine does not hold its document: while it runs a call of its own (the
-commands the session has none for run in JavaScript and are written back afterwards) and while it edits a movieclip in
-place (its commands run in the editor, with no call to tell a read apart from one made mid-command).
+commands the session has none for run in JavaScript and are written back afterwards). A movieclip being edited is a
+document of the engine like any other: it has a session, and the frame, geometry, onion skins and trails are its.
 
 ## The interface's views
 

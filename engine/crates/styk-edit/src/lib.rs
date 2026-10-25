@@ -15,6 +15,7 @@
 mod audio;
 mod authored;
 mod builder;
+mod drawing_pixels;
 mod drawing_structure;
 mod disconnect;
 mod duplicate_drag;
@@ -300,6 +301,9 @@ pub struct Editor {
     /// Drawing cels a call copied, `(old cel, new cel)`: the pixels of the old one belong to the new one too, which the
     /// interface (it holds the pixels) is told with the call's answer.
     pub(crate) drawing_forks: Vec<(String, String)>,
+    /// The call retired a history entry that referred to the interface's drawings (pixel commits, cels): the interface lets go of
+    /// what no entry refers to any more (`drawing_pixels.rs`).
+    pub(crate) drawing_retired: bool,
     /// `editor._vfxClipEdit`: the effect clips before a gizmo edit in progress.
     pub(crate) vfx_edit: Option<Option<Value>>,
     /// `editor._movieclipBatch`: the entries of the batch in progress, recorded as one.
@@ -430,6 +434,7 @@ impl Editor {
             draws: Default::default(),
             draw_pool: false,
             drawing_forks: Vec::new(),
+            drawing_retired: false,
             vfx_edit: None,
             batch: None,
             sheet_selection: None,
@@ -781,6 +786,7 @@ impl Editor {
             "@externalDone" => return self.external_done(args),
             "@historyLimits" => return self.configure_history(args),
             "@markSaved" => return self.mark_saved(),
+            "@drawingBytes" => return self.set_pixels_bytes(args),
             "@setClipboard" => return self.set_clipboard(args),
             "@revisions" => return self.set_revisions(args),
             // A grouped edit (`movieclipBatch`) is bookkeeping around the edits it holds: no document gate applies.
@@ -932,6 +938,8 @@ impl Editor {
             "extendDrawing" => self.extend_drawing(&arg(0), &arg(1)).map(Value::Bool),
             "drawingKey" => self.drawing_key(&arg(0), &arg(1), &arg(2)).map(Value::Bool),
             "autoKeyDrawing" => self.auto_key_drawing(&arg(0), &arg(1)).map(Value::Bool),
+            "commitDrawingPixels" => self.commit_drawing_pixels(&arg(0), &arg(1), &arg(2)),
+            "resampleDrawing" => self.resample_drawing(&arg(0), &arg(1)),
             "bakeCameraMotion" => self.bake_camera_motion(&arg(0)).map(Value::Bool),
             "setSpatialCamera" => self.set_spatial_camera(&arg(0)).map(Value::Bool),
             "setSpatialProportions" => self.set_spatial_proportions(&arg(0)).map(Value::Bool),
@@ -1059,6 +1067,7 @@ impl Editor {
             "splitMovieclip" => self.split_native_movieclip(args.first().map(|v| v.as_f64().unwrap_or(f64::NAN)).unwrap_or(self.tick)),
             "breakApartMovieclip" => self.break_apart_movieclip(),
             "renameMovieclip" => self.rename_movieclip(&arg(0)),
+            "publishMovieclipEdit" => self.publish_movieclip_edit(&arg(0), &arg(1), &arg(2)),
             "restartMovieclip" => self.restart_movieclip(),
             "removeMovieclipRestart" => self.remove_movieclip_restart(),
             "setMovieclipPlayback" => self.set_movieclip_playback(&arg(0), &arg(1)),
@@ -1142,8 +1151,10 @@ impl Editor {
         if styk.and_then(|s| s.path(&["animation", "channels"])).and_then(Value::array_len).unwrap_or(0) > 0 {
             return Some("with property channels");
         }
-        if styk.and_then(|s| s.get("movieclipSource")).is_some() {
-            return Some("inside a movieclip");
+        // The editor authors a movieclip's own document through its layer sheet; on a native timeline it edits the
+        // keyframes of a document that retains a source differently from the session.
+        if sheet.is_none() && styk.and_then(|s| s.get("movieclipSource")).is_some() {
+            return Some("inside a movieclip on a native timeline");
         }
         let figures = list(self.report.get("figure_types"));
         if figures.iter().any(|figure| figure.path(&["_styk", "animationOrigin"]).is_some_and(Value::truthy)) {
@@ -1193,6 +1204,9 @@ fn next_frame_identity(report: &Value) -> u64 {
     let sources = report.path(&["_styk", "frameSources"]).and_then(Value::as_obj).map(|table| table.keys().filter_map(|id| number(Some(id))).collect::<Vec<_>>()).unwrap_or_default();
     keyed.chain(sources).max().map_or(1, |largest| largest + 1)
 }
+
+#[cfg(test)]
+mod drawing_pixels_tests;
 
 #[cfg(test)]
 mod native_motion_history_tests;

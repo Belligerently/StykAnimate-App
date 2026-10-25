@@ -305,7 +305,7 @@ test('undo and redo retain a shared history byte budget',async()=>{
 });
 test('painting an existing cel does not publish structural timeline changes',async()=>{
   const {e,resources}=fixture();try{await stroke(e);const events=[];e.addEventListener('change',event=>events.push(event.detail));await stroke(e,80);
-    assert.equal(e._undo.at(-1).kind,'drawing-pixels');assert.ok(events.some(event=>event.drawing));assert.ok(events.every(event=>!event.structural&&!event.timing));
+    assert.equal(e.undoLabel,'Brush stroke');assert.ok(events.some(event=>event.drawing));assert.ok(events.every(event=>!event.structural&&!event.timing));
     e.undo();e.redo();assert.ok(events.every(event=>!event.structural&&!event.timing));
   }finally{resources.dispose();}
 });
@@ -631,6 +631,8 @@ test('a stroke over the remaining tile budget evicts clean stores instead of thr
     const t2=e.prepareDrawingCel({pixelsPerUnit:1,world:{x:32,y:32}}),s2=await resources.surface(t2.figure);
     // Four touched tiles + the resident cel exceed the 4-tile budget: the
     // clean store must evict rather than rejecting the edit.
+    // The pointer holds the cel it paints on until the commit, as the controller does.
+    s2.pinned=true;
     const b2=new DrawingStroke(s2.store,{size:48,pressureSize:false});
     b2.sample({x:32,y:32});b2.sample({x:230,y:32});
     e.commitDrawingPixels(t2,b2.finish());

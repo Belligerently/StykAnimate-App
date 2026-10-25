@@ -1,7 +1,7 @@
 //! Exact editor history weights, prepared on a worker. No cache or second
 //! document owner: sizes use the retained command's COW records and owner views.
 use crate::history::{Command, CommandKind};
-use crate::topology::{FramePoses, Place, Snapshot};
+use crate::topology::{FramePoses, Snapshot};
 use std::collections::{HashMap, HashSet};
 use styk_doc::{Obj, Value};
 
@@ -65,13 +65,7 @@ fn poses(
     for entry in frames {
         check()?;
         let mut frame = Obj::new();
-        match &entry.place {
-            Place::Keyframe(index) => frame.set("index", Value::Num(*index as f64)),
-            Place::Source(id) => {
-                frame.set("index", Value::Num(-1.0));
-                frame.set("sourceId", Value::str(id));
-            }
-        }
+        entry.place.locate(&mut frame);
         let mut objects = Vec::with_capacity(entry.objects.len());
         for value in &entry.objects {
             check()?;
@@ -648,6 +642,11 @@ fn command_projection_checked(
             metadata.set("kind", Value::str("external"));
             0.0
         }
+        // Measured by the interface, which holds the pixels (drawing_pixels.rs).
+        CommandKind::DrawingPixels { .. } => {
+            metadata.set("kind", Value::str("drawing-pixels"));
+            0.0
+        }
         CommandKind::Topology {
             index: at,
             before,
@@ -738,7 +737,7 @@ fn command_projection_checked(
             CommandKind::Ranges { .. } => &["kind", "label", "changes", "beforeSelection", "structural", "timing", "afterSelection"],
             // These existing owners retain exact weight support. Full enumerable
             // observation needs their own recorded optional construction fields.
-            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::Disconnect { .. } | CommandKind::External { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
+            CommandKind::Figure { .. } | CommandKind::FigureSplice { .. } | CommandKind::CameraMotion { .. } | CommandKind::Palette { .. } | CommandKind::Scene { .. } | CommandKind::Audio { .. } | CommandKind::VfxClips { .. } | CommandKind::Fields { .. } | CommandKind::MovieclipPoses { .. } | CommandKind::FigureRange { .. } | CommandKind::NativeProperties { .. } | CommandKind::Disconnect { .. } | CommandKind::External { .. } | CommandKind::DrawingPixels { .. } => return Err(crate::EditError::Unported("full record observation for this history owner is not recorded".into())),
         };
         let mut fields = Obj::new();
         for key in order.iter().chain(["layerChanges", "layers", "beforeRevision", "afterRevision"].iter()) {

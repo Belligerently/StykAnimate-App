@@ -58,3 +58,35 @@ fn a_pose_keeps_the_lengths_and_bends_only_its_cache_held() {
     retain_runtime_pose(&mut same, &segments);
     assert!(same.get("len_flag").is_none() && same.get("bend_flag").is_none());
 }
+
+#[test]
+fn the_poses_a_movieclip_retains_are_places_of_the_document() {
+    use super::{Place, frame_at, frame_mut, places};
+    let mut report = parse(
+        r#"{"keyframes":[{"id":"a"}],"_styk":{"frameSources":{"s1":{"id":"b"}},"movieclipSource":{"document":{"keyframes":[{"id":"c"},{"id":"d"}],
+            "_styk":{"frameSources":{"s2":{"id":"e"}},"movieclipSource":{"document":{"keyframes":[{"id":"f"}]}}}}}}}"#,
+    );
+    let all = places(&report);
+    let ids: Vec<&str> = all.iter().map(|place| frame_at(&report, place).and_then(|frame| frame.get("id")).and_then(Value::as_str).unwrap()).collect();
+    assert_eq!(ids, ["a", "b", "c", "d", "e", "f"], "the document's frames, then those of each retained source in turn");
+    assert_eq!(all[3], Place::Retained(1, Box::new(Place::Keyframe(1))));
+    assert_eq!(all[4], Place::Retained(1, Box::new(Place::Source("s2".into()))));
+    assert_eq!(all[5], Place::Retained(2, Box::new(Place::Keyframe(0))));
+    assert_eq!(all[4].source_id(), Some("s2"));
+    assert_eq!(all[2].source_id(), None);
+
+    // The way a history entry says where poses are: `sourceDepth` only below the document.
+    let located = |place: &Place| {
+        let mut entry = styk_doc::Obj::new();
+        place.locate(&mut entry);
+        styk_doc::json::to_string(&Value::object(entry))
+    };
+    assert_eq!(located(&all[1]), r#"{"index":-1,"sourceId":"s1"}"#);
+    assert_eq!(located(&all[3]), r#"{"index":1,"sourceDepth":1}"#);
+    assert_eq!(located(&all[4]), r#"{"index":-1,"sourceId":"s2","sourceDepth":1}"#);
+
+    frame_mut(&mut report, &all[5]).unwrap().set("id", Value::str("changed"));
+    assert_eq!(frame_at(&report, &all[5]).and_then(|frame| frame.get("id")).and_then(Value::as_str), Some("changed"));
+    assert_eq!(frame_at(&report, &all[0]).and_then(|frame| frame.get("id")).and_then(Value::as_str), Some("a"));
+    assert!(frame_at(&report, &Place::Retained(3, Box::new(Place::Keyframe(0)))).is_none(), "no source three levels down");
+}

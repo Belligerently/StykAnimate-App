@@ -365,6 +365,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `importFigure(document, {position})`: a file's first frame (or a single definition) pasted as new figures with new definitions, centred on its unjoined roots at the position (the canvas's centre by default), joins named by slot in the file kept, the first figure selected; owned with the large figure class, adoption carrying the new definitions; a file with movieclips has its documents validated and normalized as the editor does one it opens (`prepare_editor_load`), its drawings become cels of the project with new identities (the pixels come with the file, nothing is forked), and the definitions it adds are validated first | yes | import-figure-sheet |
 | `setLayerParallax(id, patch)`: a figure layer's response to camera travel (linked axes following the one given, the reference the camera on show unless set), validated as `validateParallax`, one `layers` history entry | yes | layer-parallax-sheet, layer-parallax-camera-sheet |
 | `renameMovieclip(name)` (`styk-edit/src/movieclips.rs`): the selected movieclip's definition renamed (trimmed, 1 to 120 characters, unchanged names not recorded), one `movieclip-definition` history entry (`publishDefinition`) | yes | movieclip-rename-sheet |
+| `publishMovieclipEdit(typeId, document, duration)` (`styk-edit/src/movieclips.rs`): what `leaveMovieclip` gives the document the clip was entered from: the definition of `typeId` with the clip's edited document and duration (the asset's other fields kept), one `movieclip-definition` entry labelled `Edit movieclip` | yes | `tests/engine-owner-movieclip-scope.test.mjs` (owner against the editor alone), `movieclips.rs` unit tests |
 | `setMovieclipPlayback(patch)` and `setMovieclipDrawing(uid, group, view)` on the frame on show: an instance's mode, speed, offset, placement and restarts (or a drawing set's view, held), checked as `validatePlayback` checks them (presence-clock clips refuse placement), one object edit; across every frame (`{allFrames}`, `restartMovieclip`, `removeMovieclipRestart`), a clip on the presence clock takes the patch on every key of its layer, each written from the frame without its replacements, and in every replacement holding it (`sheetSetMovieclipPlayback`); a clip timed by the document's clock first has its layer sheet expanded to poses (`_prepareSheetMovieclips`, run inline by the session as the timed-sheet worker runs it) and every pose and pose source holding the instance takes the patch (`_editMovieclipPoses`) | yes | movieclip-playback-sheet, movieclip-playback-timed-sheet, clip-playback-all-sheet |
 | `sheetTransferFrames(ids, destinations, start, end, tick, {copy})`: frames dragged to other rows, copied, cleared when moved and pasted in one batch, the clipboard left as it was; moved clips on the presence clock leave continuations on their source rows (`Retain moved movieclip phase`); compared in the app (its answer holds two publications, which the facade does not adopt) | yes | sheet-transfer-sheet, clipboard-presence-clip-sheet |
 | Handle Edit Mode (`styk-edit/src/handle_edit.rs`): `beginHandleEditDrag({label, bend})`, `editHandlePosition(x, y, {bend})` (one edit outside a gesture), `commitHandleEditDrag`, `cancelHandleEditDrag`; the segments meeting the handle keep their arcs (`handleEditSegmentPose`, a bend edit keeping the tangent at the moved end), figures joined at the handle move with it, a gesture back at its start restores what it moved; angles of pinned limbs as solved, stretched lengths kept; rigged figures refused; a movieclip instance moves its single segment and root like any figure | yes | handle-edit-native, handle-edit-sheet, handle-edit-startup-sheet, handle-edit-ik-sheet, handle-edit-chain-sheet, handle-edit-sticknodes-sheet, handle-edit-full-turn-sheet |
@@ -394,6 +395,7 @@ harness; the app's history stays in JavaScript in this phase). `styk edit-replay
 | `setFrameDuration` (the exposure under the playhead: `sheetSetDuration`), `addMovieclipToNextKeyframes` on a layer sheet (`extend_sheet_movieclip` with an inline worker context) | yes | movieclip-sheet-extension (the owner tapes and `movieclip_sheet_extension.rs` replay its eight recordings through the session's own call), `session_commands.rs` |
 | Layer membership (`styk-edit/src/layer_membership.rs`): `assignFiguresToLayer`, `deleteLayer` plan with `layer_planning::sheet_layer_plan` and publish in one call (`deleteLayer` into a chosen layer is refused) | yes (layer sheets) | layer-sheet-migration (`tests/layer_sheet_commands.rs`) |
 | Drawing structure (`styk-edit/src/drawing_structure.rs`): `createDrawingLayer`, `addDrawingFrame`, `nextDrawing`, `extendDrawing`, `drawingKey`, `autoKeyDrawing`; a drawing layer's one-cel rule is the sheet writer's (`Plan::write`). A copied cel is a definition of its own with a draw identity (`cel-<uuid>`); the answer names the cels it copied (`drawingForks`) so that the owner gives the copy the pixels of the cel it copies. A key (`sheetInsertKey`) or a frame after the playhead (`sheetDuplicateFrameAfter`) on a drawing layer is a cel (`drawingKey`, `nextDrawing`) | yes (layer sheets) | `session_commands.rs` |
+| Drawing pixel commits (`styk-edit/src/drawing_pixels.rs`, `src/engine/engine-owner-drawing.mjs`): `commitDrawingPixels` (a stroke, an erase, a fill, a pasted or moved selection; for the first stroke on a blank exposure or on a v1 cel, the cel's definition and key in the same entry) and `resampleDrawing` (a layer sheet entry that adds the cel of the new resolution, answered by its identity). The session never takes tiles: a pixel commit's entry names the cel and the `record` of the drawing store's history that holds the before and after tiles, with the weight the interface measured, and undo/redo change the revision and name the cel in a `history` event with `drawing: true`. The interface applies the tiles around the call (`docs/engine/drawing.md`, "History") | yes (layer sheets) | `drawing_pixels_tests.rs`, `tests/engine-owner-drawing.test.mjs` |
 | `bakeCameraMotion` (`styk-edit/src/camera_bake.rs`): the motion sampled with `camera_at_time` / `camera_travel_at`, held keys on the camera track, the clips muted over the range; sampled in the call itself (the editor's worker and its cancellation are gone) | yes (layer sheets) | `session_commands.rs` |
 | `pasteFiguresInFrames`: the figure clipboard into every chosen frame (the playhead paste's planner over several frames, `commit_sheet_range`) | yes (layer sheets) | `session_commands.rs` |
 | `undo`, `redo` of what those record | yes | all of the above |
@@ -429,7 +431,7 @@ compares the documents, the history labels and undo and redo.
 
 A call answers `Unported`, and changes nothing, on documents with property channels on a
 native timeline (a layer sheet's `legacyAnimation`, which every document opened in the app
-has instead, is edited) or a movieclip source. Also refused: posing a joined 3D IK target and
+has instead, is edited) or a movieclip source on a native timeline (the app opens none). Also refused: posing a joined 3D IK target and
 configuring or turning IK targets across joined figures;
 for poses on a drawing layer; for a replaced figure joined to one
 outside its movieclip frame; and wherever the engine does not evaluate the frame as
@@ -585,8 +587,8 @@ it on the editor, for every document.
 - **Reads.** The editor's getters for the frame on show (`evaluatedFrame`, `geometry`, `timeline`, `totalTicks`)
   and its reads `animationValue`, `vfxEffects`, `segmentAnimationTarget` and `getIKSettings` ask the session
   (`src/engine/engine-shown.mjs`; the owner flushes the editor's pending edits first and gives the playhead, or the
-  whole view for the named reads). They are the editor's own while it runs a call of its own and while it edits a
-  movieclip in place, and for a document the session answers `unported: …` for. A detached owner (the rig test's own
+  whole view for the named reads). They are the editor's own while it runs a call of its own, and for a document the
+  session answers `unported: …` for. A movieclip being edited is a document like any other (**Movieclips**, below). A detached owner (the rig test's own
   editor) has a session that leaves the project the engine's document.
 - **Property and effect-clip edits.** `beginAnimationEdit`…`cancelAnimationEdit` and
   `beginVfxClipEdit`…`cancelVfxClipEdit` run in the session. Every answer carries `vfxEdit`
@@ -652,6 +654,17 @@ it on the editor, for every document.
   batch (`beginBatch`), runs `operation` (whose calls the session runs one by one into the batch), and ends
   it (`endBatch`: one history entry) or, if `operation` throws, aborts it (`abortBatch`: what it did is
   undone, the error raised). The batch calls are not gated by the document's features.
+- **Movieclips.** Entering a movieclip (`enterMovieclip`) loads the clip's own document into the editor, which the engine
+  opens like any other: the clip gets a session of its own and the session of the document it was entered from stays
+  parked with its history. Inside the clip every call, read and undo is the clip session's (its own undo stack and unsaved
+  state; the frame on show, the onion skins, the trails and the stage are the engine's), and a clip entered from a clip is
+  a third session. Leaving it frees the clip's session and the parent's takes the edit as one `Edit movieclip` entry
+  (`publishMovieclipEdit(typeId, document, duration)`: the definition of the clip takes the document edited and its duration,
+  one `movieclip-definition` entry), which undoes and redoes with the parent's other entries; a clip left without saving or
+  unchanged leaves none. The clip's document keeps the source its figures were captured from (`movieclipSource`): the poses
+  of a figure in that source, and the animation it retains, are edited with the figure (`Place::Retained`: a rig edit
+  inside the clip changes them as it changes the clip's own poses, in the same `topology` entry). A clip on a native
+  timeline (tools and tests) is edited by the editor. A project closed ends the sessions it holds, those of its clips too.
 - **Working frames.** The interface never starts one on a layer sheet. `disableFrameDrafts` (the
   timeline mounting in Advanced mode) commits what is open and converts a draft a file was saved with when
   it is an Update (`frame_draft.rs`); `beginFrameDraftPreview` and `endFrameDraftPreview` answer false.
@@ -685,21 +698,22 @@ it on the editor, for every document.
   not valid (`errors.engineOwner.invalidValue`). A call the session refuses (`Unported`: a document it does
   not edit) raises `errors.engineOwner.notSupported` and never runs in the editor.
 - **What still runs in the editor.** A call the session has no command for at all (it answers `unported` with the call's own
-  name) runs in the JavaScript editor on the read view (the drawing pixel commits, inbetweens,
+  name) runs in the JavaScript editor on the read view (inbetweens,
   combining figures with media or a rig); `report.editor` counts them. What it recorded becomes session history entries of kind `External` (`external.rs`): the session keeps their place,
   label, weight and the pose sources they keep alive, and on undo/redo answers `external
-  history entry <id>`; the editor applies its own command (`_drawingHistoryReplay`) and
+  history entry <id>`; the editor applies its own command and
   the changed records are written back. A session gesture or edit still open when such a call is made is committed first.
   Edits other modules make in place (the camera-motion and parallax previews, the inspector's native property
-  tokens) or through `editor._record` are written back the same way before the next call, and editing the inside of a
-  movieclip (`enterMovieclip`) is the editor's alone until it is left. An entry the editor records is always written
+  tokens) or through `editor._record` are written back the same way before the next call. An entry the editor records is always written
   back, even when the editor's own byte limit retired older entries as it landed (a movieclip's whole document in a
   large project outweighs it): the session retires by its own weights and the editor's stacks follow it.
 - **History.** Undo/redo are the session's. Undo ends a gesture that is open first; redo does too for a motion-path edit,
   a rig edit or a camera drag (the session does not redo under them) and leaves any other gesture open under the entry
   it applies, as the editor does. The editor's stacks
   mirror the session's (`depths`): its own commands for external entries, placeholders for native ones, so code
-  that reads or amends the entry on top keeps working.
+  that reads or amends the entry on top keeps working. An entry that names pixel commits (`drawingReplay`) waits for
+  the drawing store before the session's undo or redo runs (loading cold records, preparing large replacements) and
+  applies its tiles with it; a replay that fails or is cancelled changes neither (`docs/engine/drawing.md`, "History").
 - **Start.** The session starts when the document opens, on the tree and typed views the engine
   opened it with (`OpenedDocument.start_session`), the same tree the editor's read view was built
   from, so there is no history to take over and nothing to bring to the read view. It becomes the

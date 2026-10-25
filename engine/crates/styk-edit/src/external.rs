@@ -124,10 +124,12 @@ impl Editor {
         Ok(Value::Bool(true))
     }
 
-    /// `@revisions(revision, serial, saved)`: continue the editor's numbering.
+    /// `@revisions(revision, serial, saved)`: continue the editor's numbering. A `null` revision or saved revision stays as the
+    /// session has it (a session the editor came back to goes on from the editor's serial alone).
     pub(crate) fn set_revisions(&mut self, args: &[Value]) -> Result<Value, EditError> {
         let number = |at: usize| args.get(at).and_then(Value::as_f64).filter(|value| value.is_finite() && *value >= 0.0).map(|value| value as u64).ok_or_else(|| invalid("revisionsNeedNumbers"));
-        self.set_revision_counters(number(0)?, number(1)?, number(2)?);
+        let kept = |at: usize, current: u64| if args.get(at).is_some_and(Value::is_null) { Ok(current) } else { number(at) };
+        self.set_revision_counters(kept(0, self.revision)?, number(1)?, kept(2, self.saved_revision)?);
         Ok(Value::Bool(true))
     }
 

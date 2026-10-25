@@ -67,6 +67,10 @@ export class DrawingResources {
    * debounce and the thumbnail pump wait; clearing busy re-arms both. */
   set busy(value){value=Boolean(value);if(this._busy===value)return;this._busy=value;if(!value){this.schedule();this.pumpThumbnail();}}
   get busy(){return Boolean(this._busy);}
+  /** The history of pixel commits the engine's session refers to by record. Without workers or a database it keeps them in memory. */
+  pixelHistory(){
+    return this.history??=new DrawingHistory({enabled:false,reserve:bytes=>this.reserve(bytes),hold:bytes=>this.hold(this.history,bytes),onWarning:error=>this.onError(error)});
+  }
   entry(figure,{presentation=false}={}) {
     const d=drawingMetadata(figure),asset=figure.image_assets[0],url=d.version===2?asset.styk_tiles:asset.data_url;
     let entry=this.entries.get(d.celId),external=entry?.external;
@@ -304,13 +308,16 @@ export class DrawingResources {
   needsPreparation(command,direction){return needsDrawingPreparation(command,direction);}
   prepareChanges(command,direction,options){return prepareDrawingChanges(this,command,direction,options);}
   adoptPrepared(command,direction,tiles){return adoptDrawingPreparation(this,command,direction,tiles);}
-  apply(figure,changes,direction,prepared,{resident=false}={}) {
-    const e=this.entry(figure);
+  apply(figure,changes,direction,prepared,options) {return this.applyEntry(this.entry(figure),figure,changes,direction,prepared,options);}
+  /** Applies a commit's tiles to a cel's entry. `figure` is the document's definition of the cel, which takes the new revision and
+   * bounds, or null while the document has none (a creation undone: the entry keeps the pixels for its redo). */
+  applyEntry(e,figure,changes,direction,prepared,{resident=false}={}) {
+    const d=figure?drawingMetadata(figure):null;
     if(resident&&e.store){
       let dirty=null;
       for(const c of changes)if(c[direction]==null&&e.store.has(c.tx,c.ty)){e.store.delete(c.tx,c.ty);dirty=e.store.tileBounds??{x:c.tx*TILE,y:c.ty*TILE,width:TILE,height:TILE};}
-      e.decodeError=null;e.revision++;const d=drawingMetadata(figure);d.revision=e.revision;
-      if(d.version===2)d.bounds=e.store.bounds?{...e.store.bounds}:null;
+      e.decodeError=null;e.revision++;if(d)d.revision=e.revision;
+      if(d?.version===2)d.bounds=e.store.bounds?{...e.store.bounds}:null;
       if(dirty)this.present(e,dirty);this.schedule();return;
     }
     const plan=prepared?.plan(changes,direction,e.id),added=plan?0:this.replacementBytes(e,changes,direction);
@@ -324,8 +331,8 @@ export class DrawingResources {
     }
     else e.deferred.push({changes,direction});
     if(plan)prepared.consume(plan);
-    e.revision++;const d=drawingMetadata(figure);d.revision=e.revision;
-    if(d.version===2&&e.store)d.bounds=e.store.bounds?{...e.store.bounds}:null;
+    e.revision++;if(d)d.revision=e.revision;
+    if(d?.version===2&&e.store)d.bounds=e.store.bounds?{...e.store.bounds}:null;
     let dirty=null;for(const c of changes){const rect={x:c.tx*TILE,y:c.ty*TILE,width:TILE,height:TILE};dirty=dirty?{x:Math.min(dirty.x,rect.x),y:Math.min(dirty.y,rect.y),width:Math.max(dirty.x+dirty.width,rect.x+rect.width)-Math.min(dirty.x,rect.x),height:Math.max(dirty.y+dirty.height,rect.y+rect.height)-Math.min(dirty.y,rect.y)}:rect;}
     this.present(e,dirty);this.schedule();
   }
@@ -453,9 +460,11 @@ export class DrawingResources {
     try{await this.encoding;}catch(error){e.failed=error;throw error;}finally{this.hold(reservation,0);this.encoding=null;}
     return this.flush({signal});
   }
-  collectHistory(commands){
-    this.history?.retain(commands);
-    const retained=new Set(),visit=command=>{if(command.celId)retained.add(command.celId);for(const child of command.commands??[])visit(child);const change=command.assets?.figure_types;for(const list of [change?.added,change?.before,change?.after])for(const figure of list??[]){const id=drawingMetadata(figure)?.celId;if(id)retained.add(id);}};
+  /** Lets go of what the history no longer refers to: `commands` are the editor's own entries, `refs` the records and cels the engine's
+   * session refers to with its entries (`{records, cels}`). */
+  collectHistory(commands,refs={}){
+    this.history?.retain(commands,refs.records);
+    const retained=new Set(refs.cels),visit=command=>{if(command.celId)retained.add(command.celId);for(const child of command.commands??[])visit(child);const change=command.assets?.figure_types;for(const list of [change?.added,change?.before,change?.after])for(const figure of list??[]){const id=drawingMetadata(figure)?.celId;if(id)retained.add(id);}};
     for(const command of commands)visit(command);this.collect(retained);
   }
   collect(retained=new Set()) {

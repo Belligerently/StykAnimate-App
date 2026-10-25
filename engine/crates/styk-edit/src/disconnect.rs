@@ -46,13 +46,7 @@ impl Change {
     /// The change as the editor's command lists it, for weighing the entry.
     pub(crate) fn history_value(&self) -> Value {
         let mut change = Obj::new();
-        match &self.place {
-            Place::Keyframe(index) => change.set("index", Value::Num(*index as f64)),
-            Place::Source(id) => {
-                change.set("index", Value::Num(-1.0));
-                change.set("sourceId", Value::str(id));
-            }
-        }
+        self.place.locate(&mut change);
         change.set("part", self.part.clone());
         change.set("beforeOrder", Value::nums(&self.before_order));
         change.set("afterOrder", Value::nums(&self.after_order));

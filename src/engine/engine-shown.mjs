@@ -145,7 +145,7 @@ function hydrate(raw, slot, frame, report, defs) {
 /**
  * @param {{ask(kind: string, args: object): (string|null), source(motion: boolean): (object|null), report(): object}} owner
  *   `ask` reads the session (flushing the editor's pending edits first) and answers JSON text, `null` where the
- *   engine does not hold the document (a movieclip being edited, a call the editor is running); `source` gives
+ *   engine does not hold the document (a call the editor is running); `source` gives
  *   the stage what it draws from.
  */
 export function createShown(owner) {

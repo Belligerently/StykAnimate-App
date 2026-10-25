@@ -269,13 +269,14 @@ test('a trail follows the edits of the same document: retiming, and pose edits',
   } finally { owner.release(); }
 });
 
-test('there is no trail where the engine does not hold the document', {skip: !engineBuilt}, async () => {
+test('a movieclip being edited has trails of its own, and the project\'s are back once it is left', {skip: !engineBuilt}, async () => {
   const {editor, owner, trails} = await open();
   try {
     const clip = editor.createMovieclip({start: 0, end: 6});
     editor.enterMovieclip(clip.figure_type_id);
-    assert.deepEqual(trails.read([rootTarget]), [null], 'a movieclip edited in place is the editor\'s');
-    assert.equal(trails.peek(rootTarget), null);
+    const [inside] = trails.read([rootTarget]);
+    assert.ok(inside?.points.size, 'the clip\'s session samples its trail');
+    assert.equal(trails.peek(rootTarget), inside);
     editor.leaveMovieclip();
     assert.ok(trails.read([rootTarget])[0]);
   } finally { owner.release(); }
