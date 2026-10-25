@@ -13,13 +13,13 @@ the old module is deleted; **stays** not engine logic. Shares are of the engine 
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `styk-doc` | 2 | 29 KiB | 1 | 1 | 0 | 0 | 0 | 0 % | 29 % | 0 % |
 | `styk-drawing` | 36 | 171 KiB | 9 | 7 | 8 | 0 | 12 | 26 % | 23 % | 4 % |
-| `styk-edit` | 90 | 853 KiB | 27 | 26 | 2 | 5 | 30 | 22 % | 55 % | 16 % |
+| `styk-edit` | 90 | 792 KiB | 27 | 24 | 2 | 5 | 32 | 24 % | 52 % | 17 % |
 | `styk-engine` | 24 | 40 KiB | 7 | 0 | 0 | 0 | 17 | 44 % | 0 % | 44 % |
-| `styk-eval` | 80 | 687 KiB | 18 | 46 | 10 | 0 | 6 | 18 % | 72 % | 1 % |
+| `styk-eval` | 80 | 682 KiB | 18 | 45 | 10 | 0 | 7 | 18 % | 72 % | 1 % |
 | `styk-export` | 14 | 75 KiB | 8 | 3 | 0 | 0 | 3 | 0 % | 24 % | 0 % |
 | `styk-formats` | 59 | 767 KiB | 26 | 6 | 1 | 22 | 4 | 63 % | 11 % | 6 % |
 | `styk-render` | 51 | 225 KiB | 8 | 7 | 3 | 0 | 33 | 24 % | 48 % | 12 % |
-| **Total** | 356 | 2846 KiB | 104 | 96 | 24 | 27 | 105 | 32 % | 43 % | 8 % |
+| **Total** | 356 | 2781 KiB | 104 | 93 | 24 | 27 | 108 | 33 % | 42 % | 9 % |
 
 ## Engine modules
 
@@ -113,7 +113,7 @@ Engine logic: ported to Rust.
 | `src/editor-motion-path.mjs` | `styk-edit` | partial | Rust: layer-sheet motion paths, joined pinned followers and recorded origin support/joins plus five native remote-time and two saved native families; canonical row/source/history owners and separate authoritative/transient reads; scalar-only/projection motion, complex rigs/3D and live trail adoption pending |
 | `src/editor-movieclips.mjs` | `styk-edit` | verified | The movieclip commands are the session's (styk-edit/src/movieclips.rs); the module keeps entering and leaving a clip (a document of its own with a session of its own) and the project report with the clips folded in |
 | `src/editor-origin-mutations.mjs` | `styk-edit` | partial | Rust: recorded whole/topology/joint/handle/saved-channel/range/join/2D-rig edits plus angle-lock definitions and single-selected spatial choices preserve retained support; 37 additional replays/4882 steps and 37 derived groups/357 ticks; recorded native TRUE projector and authored live lifecycle now match Worker/Core/strict replay; documents with animation origins run every command in the session (tests/engine-owner-origins.test.mjs); an origin figure with a 3D pose, mesh, movieclip or drawing stays in the editor |
-| `src/editor-origin-support.mjs` | `styk-edit` | partial | Rust: repairOriginSupport, retained graph compaction, ghost pose remapping and construction-edit offsets (styk-edit/src/origin_topology.rs), recorded native/sheet Set Origin and topology |
+| `src/editor-origin-support.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session repairs support handles as it edits (styk-edit) |
 | `src/editor-range-commands.mjs` | `styk-edit` | partial | Rust: native/sheet figure ranges, centering/alignment measuring the app's bounds callback, insertion/replacement including recorded native movieclips and atomic key-capacity refusal; unrecorded effect/IK/draft combinations and facade adoption pending |
 | `src/editor-ranges.mjs` | `styk-edit` | js | commands and history |
 | `src/editor-rig-constraints.mjs` | `styk-edit` | removed | deleted: the rig relationship commands are session commands (styk-edit/src/rig_behavior.rs, pose.rs) |
@@ -124,7 +124,7 @@ Engine logic: ported to Rust.
 | `src/editor-spatial-shape.mjs` | `styk-edit` | removed | deleted: setSpatialCamera and setSpatialProportions are session commands (styk-edit/src/spatial_shape.rs); the two reads moved to editor-spatial.mjs |
 | `src/editor-spatial.mjs` | `styk-edit` | partial | Rust: every spatial command (styk-edit/src/spatial.rs, spatial_ik.rs, spatial_shape.rs, pose_choice.rs). Left in JavaScript: the reads getSpatialCamera, getSpatialProportions, getSpatialPose and getSpatialMotion, and the posing helpers poseJoint, bendJoint and rotateJoint of editor.mjs still call (poseSpatialJoint, twistSpatialJoint, poseSpatialIKDepth, setSpatialPose and what they use) |
 | `src/editor-sprite-segment.mjs` | `styk-edit` | removed | deleted: addSpriteSegment is a session command (styk-edit/src/topology/sprite.rs) |
-| `src/editor-style-topology.mjs` | `styk-edit` | partial | Rust: style overlays, Stick Nodes shapes and effect owners and the imported animation's channels following the handles of a topology edit (styk-edit/src/topology.rs, topology/channels.rs) |
+| `src/editor-style-topology.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the session repairs styles as it edits topology (styk-edit/src/topology.rs) |
 | `src/editor-tweener.mjs` | `styk-edit` | ported | Rust: beginTween and updateTween in every mode (push of 3D figures too), the keys the gesture writes on commit, also on documents with animation origins (styk-edit/src/tweener.rs; engine-run in the app since 2026-10-24); the JavaScript module remains only as the fallback for a call the session refuses |
 | `src/editor-vfx-clips.mjs` | `styk-edit` | removed | Deleted with the editor command bodies: the reads moved to src/editor-vfx.mjs, the commands are the session's (styk-edit/src/vfx_clips.rs) |
 | `src/editor-vfx.mjs` | `styk-edit` | verified | The effect and effect-clip commands are the session's (styk-edit/src/vfx.rs, vfx_clips.rs); the module keeps the reads the interface shows (the stack of a target, the clips, a clip's sample) |
@@ -230,7 +230,7 @@ Engine logic: ported to Rust.
 | `src/ik-joined.mjs` | `styk-eval::rig` | partial | Rust: assemblies, solve and scatter with followers, used by evaluation and editing (ik::joined::Assembly); join validation still JS |
 | `src/ik-rig.mjs` | `styk-eval::rig` | partial | Rust: rig projection, refinement, analytic spatial limb; editing helpers still JS |
 | `src/ik-spatial.mjs` | `styk-eval::rig` | partial | Rust: evaluation; pole and capture helpers for editing still JS |
-| `src/ik-topology.mjs` | `styk-eval::rig` | partial | Rust: controllers and 3D shapes following the handles of one figure (styk-edit/src/topology.rs) and across the figures joined to it (topology/joined_ik.rs) |
+| `src/ik-topology.mjs` | `styk-eval::rig` | removed | Deleted with src/editor-style-topology.mjs, its only caller: the session repairs controllers (styk-edit) |
 | `src/ik.mjs` | `styk-eval::rig` | partial | Rust: evaluation (solveIKPoints, solveObjectIK, followers, attachments, interpolateIK, ikBendReference) and translateIKTargets (styk-edit); remapIKFollowers, validateIK still JS |
 | `src/rig-angle-path.mjs` | `styk-eval::rig` | partial | Rust: angle path sampling (styk_eval::rig); validateAnglePath (styk-edit/src/rig_behavior.rs); authoring still JS |
 | `src/rig-constraints.mjs` | `styk-eval::rig` | partial | Rust: plan and evaluation (styk_eval::rig); the plan's validation with its refusals (styk-edit/src/rig_behavior.rs); authoring helpers still JS |

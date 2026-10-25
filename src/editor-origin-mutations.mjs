@@ -11,10 +11,6 @@ function samePose(a,b){
   if(!sameGhosts(a._stykAnimationOrigin?.ghosts,b._stykAnimationOrigin?.ghosts))return false;
   return vectors.every(field=>a[field]===b[field]||a[field]?.length===b[field]?.length&&a[field]?.every((value,index)=>value===b[field][index]));
 }
-export function originGeometryChanged(before,after){
-  if(before.segments.length!==after.segments.length)return true;
-  return before.segments.some((segment,index)=>['segment_id','parent_id','length','angle_rad','bend_rad'].some(field=>segment[field]!==after.segments[index][field]));
-}
 export const editorOriginMutationMethods={
   _synchronizeAnimationOrigins(frame,before=[],{force=false,includeNew=false,report=this.report}={}){
     const figures=new Map(report.figure_types.filter(figure=>figure._styk?.animationOrigin).map(figure=>[figure.figure_type_id,figure]));
