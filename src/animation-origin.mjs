@@ -3,7 +3,6 @@ import {messageError} from './localized-error.mjs';
  * their original pivot and the native tween retains its original joint basis. */
 import {originSupportLayout, originSupportPose, originSupportOffset, initializeOriginSupport} from './animation-origin-support.mjs';
 const layouts = new WeakMap();
-export function invalidateAnimationOriginLayout(figure){layouts.delete(figure);}
 export function hasAnimationOrigins(report) {
   return report.figure_types?.some(figure => figure._styk?.animationOrigin) ?? false;
 }
@@ -79,28 +78,6 @@ export function synchronizeAnimationOrigin(figure,object,{initialize=false}={}){
   if(initialize&&!object._stykAnimationOrigin?.ghosts)initializeOriginSupport(figure,object);
   const offset=animationOriginOffset(figure,object);
   object._stykAnimationOrigin={...object._stykAnimationOrigin,x:Number(object.root_x)+offset.x,y:Number(object.root_y)+offset.y};return object;
-}
-/** A construction edit may move the vertex that used to define the animation
- * pivot. Retain that animation anchor as a small local offset instead of
- * rewriting its independent position/rotation/scale keys. */
-export function preserveAnimationOrigin(figure,object,previous){
-  if(!figure?._styk?.animationOrigin||!previous)return object;
-  const point=animationOriginPathOffset(figure,object),angle=animationRotation(figure,object),scale=Number(object.scale??1);
-  const x=previous.x-Number(object.root_x)-point.x,y=previous.y-Number(object.root_y)-point.y;
-  const offsetX=scale?(x*Math.cos(angle)+y*Math.sin(angle))/scale:previous.offsetX??0;
-  const offsetY=scale?(-x*Math.sin(angle)+y*Math.cos(angle))/scale:previous.offsetY??0;
-  const origin={...previous,offsetX,offsetY};
-  if(object._stykAnimationOrigin?.ghosts)origin.ghosts=object._stykAnimationOrigin.ghosts;else delete origin.ghosts;
-  object._stykAnimationOrigin=origin;return object;
-}
-/** Call after reflecting live and hidden angles, with the pre-reflection
- * property rotation. XY is synchronized separately from the physical root. */
-export function reflectAnimationOriginOffset(figure,object,axis,previousRotation){
-  const origin=object._stykAnimationOrigin;if(!figure?._styk?.animationOrigin||!origin||(!origin.offsetX&&!origin.offsetY))return object;
-  const x=origin.offsetX??0,y=origin.offsetY??0,c=Math.cos(previousRotation),s=Math.sin(previousRotation);
-  const worldX=(axis==='vertical'?1:-1)*(x*c-y*s),worldY=(axis==='vertical'?-1:1)*(x*s+y*c);
-  const rotation=animationRotation(figure,object),cos=Math.cos(rotation),sin=Math.sin(rotation);
-  object._stykAnimationOrigin={...origin,offsetX:worldX*cos+worldY*sin,offsetY:-worldX*sin+worldY*cos};return object;
 }
 /** Correct native tween roots after interpolating the original pivot XY. */
 export function correctAnimationOrigins(report,frame){

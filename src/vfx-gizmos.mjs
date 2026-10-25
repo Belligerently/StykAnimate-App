@@ -1,7 +1,6 @@
 import {objectBounds,cameraMatrix,worldToScreen} from './renderer-geometry.mjs';
 import {VFX_REGISTRY} from './vfx.mjs';
-import {connectedVfxGeometry} from './vfx-connected.mjs';
-import {vfxRenderFrame} from './vfx-clips.mjs';
+import {layerVisible} from './layers.mjs';
 import {isGeneratorType} from './vfx-registry.mjs';
 import {canvasFont} from './ui/font-loading.mjs';
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -13,6 +12,15 @@ export class VfxGizmos {
   document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(this.drag){event.preventDefault();event.stopImmediatePropagation();this.cancel();}else if(this.editor._vfxAimPick){event.preventDefault();event.stopImmediatePropagation();this.editor._vfxAimPick=null;this.inspector.sync();this.onChange();}},{capture:true,signal:this.abort.signal});
  }
  get active(){return Boolean(this.drag);}
+ /** The uids of the figures that figure `uid`'s connected effects filter together at the frame on show, or null: what the engine says of it, read again when the frame or the document changes. */
+ group(options,uid){
+  const held=this.groupRead,editor=this.editor;
+  if(held?.geometry!==options.geometry||held.uid!==uid||held.revision!==editor.revision||held.tick!==editor.tick){
+   const members=editor._shown?.vfxGroup(uid);
+   this.groupRead={geometry:options.geometry,uid,revision:editor.revision,tick:editor.tick,members:members?new Set(members):null};
+  }
+  return this.groupRead.members;
+ }
  control(){
   if(!this.inspector.visible)return null;
   const selected=this.inspector.selectedEffect();if(!selected||!selected.effect.enabled)return null;
@@ -28,8 +36,9 @@ export class VfxGizmos {
    map=p=>({x:(d*(p.x-e)-c*(p.y-f))/det,y:(-b*(p.x-e)+a*(p.y-f))/det});inverse=p=>({x:a*p.x+c*p.y+e,y:b*p.x+d*p.y+f});
   }else{
    let items=options.geometry.drawables.filter(item=>item.obj.unique_id===target.uid);if(target.kind==='segment')items=items.filter(item=>item.seg?.segment_id===target.handleId&&item.fig?.figure_type_id===target.figureTypeId);
-   const frame=vfxRenderFrame(options.report,options.frame),owner=frame.objects.find(o=>o.unique_id===target.uid);
-   if(target.kind==='figure'&&(selected.includeAttached||owner?._stykVfxScope===1)){const grouped=connectedVfxGeometry(options.geometry,frame,options.report,options.hiddenUids),slot=frame.objects.indexOf(owner);items=grouped.connectedVfxAssemblies?.get(slot)??grouped.objects.get(slot)?.drawables??items;}
+   const owner=options.frame.objects.find(o=>o.unique_id===target.uid),group=target.kind==='figure'?this.group(options,target.uid):null;
+   // A figure that owns a connected group is measured with the figures its effects filter together.
+   if(group)items=options.geometry.drawables.filter(item=>group.has(item.obj.unique_id)&&layerVisible(options.report,item.obj.unique_id));
    if(!items.length)return null;bounds=objectBounds(items,{...options.resources,vfxBounds:false});unit=Math.max(.000001,Math.abs(owner?.scale??1));map=p=>p;inverse=p=>p;
   }
   const [a,b,c,d,e,f]=cameraMatrix(options),det=a*d-b*c;

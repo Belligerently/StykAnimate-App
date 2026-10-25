@@ -6,7 +6,11 @@ import {emptyDocument,createFrame,createObject} from '../src/demo.mjs';
 import {validateLayerSheet} from '../src/layer-sheet.mjs';
 import {createLayerState} from '../src/layers.mjs';
 import {animationChannelId, normalizeAnimationTarget, validateAnimationDocument} from '../src/animation-channels.mjs';
-import {inheritedKeyEasing} from '../src/keyframe-easing.mjs';
+import {keyEasing} from '../src/keyframe-easing.mjs';
+import {isDiscreteAnimationProperty} from '../src/animation-properties.mjs';
+
+/** The curve a new key of a property takes: the nearest earlier key's, or Hold. */
+const inheritedEasing=(keys,property)=>isDiscreteAnimationProperty(property)||!keys.length?keyEasing({interpolation:'hold'}):keyEasing({...keys.at(-1),interpolation:keys.at(-1).interpolation??'linear'});
 
 function frames(){
   const report=emptyDocument(),figure=report.figure_types[0];
@@ -26,7 +30,7 @@ function legacyDocument(channels=[]){
     let nextKeyId=1;
     report._styk.animation={version:1,nextKeyId:1,channels:channels.map(({target,property,keys})=>{
       const normalized=normalizeAnimationTarget(target),stored=[];
-      for(const {tick,value,...easing} of keys)stored.push({id:`key-${nextKeyId++}`,tick,value,...inheritedKeyEasing(stored,tick,{property}),...easing});
+      for(const {tick,value,...easing} of keys)stored.push({id:`key-${nextKeyId++}`,tick,value,...inheritedEasing(stored,property),...easing});
       return {id:animationChannelId(normalized,property),target:normalized,property,keys:stored};
     })};
     report._styk.animation.nextKeyId=nextKeyId;validateAnimationDocument(report);

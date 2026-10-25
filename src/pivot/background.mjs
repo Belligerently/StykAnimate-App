@@ -1,5 +1,4 @@
 import {messageError} from '../localized-error.mjs';
-import {cameraAtTime} from '../camera-motion.mjs';
 import {canvasPaint} from '../paint.mjs';
 import {previewMemoryPlan} from '../playback-budget.mjs';
 // Backgrounds are native ARGB; figure COLORREF colors use a different byte order.
@@ -24,9 +23,10 @@ export function sceneBackgroundColor(report, frame) {
   return frame?._stykBackgroundColor;
 }
 
-/** A hidden Camera track uses the untransformed animation viewport everywhere. */
+/** A hidden Camera track uses the untransformed animation viewport everywhere. The frame's camera is the shot: with the
+ * camera motion the engine works out for its tick (`engine-shown.mjs`, `shot`), which the app puts on the frames it plays. */
 export function effectiveCamera(report, frame, cameraEnabled = true) {
-  return cameraEnabled && report?._styk?.layers?.fixed?.camera?.visible !== false ? cameraAtTime(report,frame) : null;
+  return cameraEnabled && report?._styk?.layers?.fixed?.camera?.visible !== false ? frame?.camera : null;
 }
 
 // Native rendering decides identity from the camera values after loading.

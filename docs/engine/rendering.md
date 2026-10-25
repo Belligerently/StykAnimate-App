@@ -425,7 +425,7 @@ the interface), onion skins (the poses the session plans, `Stage::set_onions`: [
 renderer draws a frame. The WebGPU surface is configured with
 premultiplied alpha so the page shows through the pasteboard. Through the scene
 camera (prepared playback frames, and edit frames in the camera preview) the scene is
-seen through `cameraAtTime` (follow clips, camera-motion impulses) and parallax layers
+seen through the shot (follow clips, camera-motion impulses) and parallax layers
 move: the frame's per-object offsets ([evaluation.md](evaluation.md#the-scene-camera))
 join the drag translations of the draw list. Filter effects are
 drawn by the engine; the effects preview switch reaches it through

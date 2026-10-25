@@ -13,7 +13,6 @@ const cache=new WeakMap();
 // identities; history owns its immutable track records independently.
 const validationIndices=new WeakMap();
 export const MAX_SHEET_TICKS=10000000;
-export function sheetTrack(report,id){return report._styk?.layerSheet?.tracks[id];}
 export function sheetKeyAt(track,tick){
   const keys=track?.keys??[];let low=0,high=keys.length;
   while(low<high){const mid=(low+high)>>>1;if(keys[mid].tick<=tick)low=mid+1;else high=mid;}

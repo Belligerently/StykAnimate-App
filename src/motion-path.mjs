@@ -2,9 +2,6 @@
  * The session samples them from its document (the document as an open trail edit shows it, while a point is dragged); edits write through
  * ordinary editor commands. This module chooses what to show a trail of, holds what the engine sampled and draws it.
  */
-import {sheetTrack} from './layer-sheet.mjs';
-import {layerIdForUid} from './layers.mjs';
-import {animationChannels, findAnimationChannel} from './animation-channels.mjs';
 import {falloffWeight} from './motion-path-falloff.mjs';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -59,29 +56,6 @@ export function motionPathTargets(editor, {camera = false, all = false, joints =
     for (const uid of selected) if (uid !== editor.selectedUid) push(uid, -1);
   }
   return out;
-}
-
-/** Per-target keyed times, which the motion-path edit reads (the engine's trails take theirs from the document). */
-export function keyTicksForTarget(editor, target) {
-  const report = editor.report, sheet = report._styk?.layerSheet, ticks = new Set();
-  if (sheet) {
-    const id = target.kind === 'camera' ? 'camera' : layerIdForUid(report, target.uid);
-    for (const key of sheetTrack(report, id)?.keys ?? []) if (!key.patchOnly && key.tick < sheet.duration) ticks.add(key.tick);
-    return ticks;
-  }
-  const channels = animationChannels(report);
-  if (!channels.length) return null;
-  const figureChannel = target.kind === 'node' ? findAnimationChannel(report, {kind: 'figure', uid: target.uid}, 'pose') : null;
-  const layerId = target.kind === 'node' ? layerIdForUid(report, target.uid) : null;
-  for (const channel of channels) {
-    const t = channel.target;
-    const owns = target.kind === 'camera'
-      ? t.kind === 'camera'
-      : (t.kind === 'figure' && t.uid === target.uid) || (t.kind === 'layer' && t.id === layerId && !figureChannel && channel.property === 'pose');
-    if (!owns) continue;
-    for (const key of channel.keys) if (!key.hidden) ticks.add(key.tick);
-  }
-  return ticks;
 }
 
 /**

@@ -326,6 +326,38 @@ impl Editor {
         list(self.report.path(&["_styk", "vfxClips", "clips"]))
     }
 
+    /// What the effects timeline and its inspector read of effect clips the interface holds (the records of the document, or a
+    /// gesture's preview of one): `{clips, tick}` as `[{tail, active, plays}, …]`, `null` for a record the engine does not read as a clip.
+    /// `tail` is the ticks after a timed clip's end that its particles stay visible (`generatorClipTail`), `active` whether the clip is
+    /// on at `tick` (`vfxClipActiveAt`: enabled, with strength, in range and with an effect keyed on), and `plays` whether the inspector
+    /// lists it there: it is on, or its generated effects are still showing (`generatorClipActiveAt`).
+    pub(crate) fn interface_vfx_clips(&self, args: &Value) -> Result<String, EditError> {
+        let tick = args.get("tick").and_then(Value::as_f64).unwrap_or(self.tick);
+        let clips = list(args.get("clips"));
+        if clips.len() > CLIP_LIMIT {
+            return Err(invalid("errors.vfxClips.invalidEffectsTimeline"));
+        }
+        let views: Vec<Value> = clips
+            .iter()
+            .map(|record| {
+                let mut state = Obj::new();
+                state.set("version", Value::Num(1.0));
+                state.set("clips", Value::array(vec![record.clone()]));
+                let parsed = styk_eval::vfx::parse::clips(Some(&Value::object(state)), &mut Vec::new());
+                let Some(clip) = parsed.as_ref().and_then(|clips| clips.clips.first()) else { return Value::Null };
+                let tail = styk_eval::vfx::generated::clip_tail(clip);
+                let generated = clip.enabled && clip.strength != 0.0 && clip.has_generators() && tick >= clip.start && clip.duration.is_none_or(|duration| tick < clip.start + duration + tail);
+                let mut view = Obj::new();
+                view.set("tail", Value::Num(tail));
+                let active = clip.active_at(tick);
+                view.set("active", Value::Bool(active));
+                view.set("plays", Value::Bool(active || generated));
+                Value::object(view)
+            })
+            .collect();
+        Ok(styk_doc::json::to_string(&Value::array(views)))
+    }
+
     /// `find(editor, id)`.
     fn vfx_clip(&self, id: &Value) -> Result<Value, EditError> {
         self.vfx_clips().into_iter().find(|c| object_is(c.get("id"), Some(id))).ok_or_else(|| invalid("errors.editorVfxClips.selectAnEffectClip"))

@@ -463,3 +463,83 @@ fn a_frame_with_a_figure_the_document_lacks_has_its_geometry_read_against_that_f
     let own = geometry(&mut session, None);
     assert_eq!(own.get("count").and_then(Value::as_f64), Some(objects.len() as f64));
 }
+
+/// An effect clip record, as the timeline holds one.
+fn clip_record(id: &str, effect: &str, start: f64, duration: Option<f64>) -> String {
+    let duration = duration.map_or("null".to_string(), |duration| duration.to_string());
+    format!(
+        r#"{{"id":"{id}","name":"","target":{{"kind":"scene"}},"start":{start},"duration":{duration},"offset":0,"enabled":true,"strength":1,"fadeIn":0,"fadeOut":0,"includeAttached":false,"effects":[{{"version":2,"type":"{effect}","id":"fx-{id}","enabled":true,"params":{{}}}}],"keys":{{}}}}"#
+    )
+}
+
+#[test]
+fn a_generated_clip_plays_after_its_end_while_its_particles_last_and_a_filter_does_not() {
+    let (mut session, _) = tape("vfx-clips-sheet");
+    let (boom, glow) = (clip_record("boom", "explosion", 0.0, Some(10.0)), clip_record("glow", "glow", 0.0, Some(10.0)));
+    let query = |session: &mut Session, clips: &[&str], tick: f64| read(session, "vfxClips", &format!(r#"{{"clips":[{}],"tick":{tick}}}"#, clips.join(",")));
+    // Particles outlive the clip by their longest life; a filter ends with its clip.
+    let views = query(&mut session, &[&boom, &glow], 15.0);
+    let (boom_view, glow_view) = (views.item(0).unwrap(), views.item(1).unwrap());
+    let tail = boom_view.get("tail").and_then(Value::as_f64).unwrap();
+    assert!(tail > 30.0, "an explosion's particles last: {tail}");
+    assert_eq!(boom_view.get("plays"), Some(&Value::Bool(true)));
+    assert_eq!(boom_view.get("active"), Some(&Value::Bool(false)), "the clip itself has ended; only its particles remain");
+    assert_eq!(glow_view.get("tail").and_then(Value::as_f64), Some(0.0));
+    assert_eq!(glow_view.get("plays"), Some(&Value::Bool(false)), "tick 15 is past the filter's end");
+    // Inside the range both play; after the tail the generated one is over; before the start neither.
+    let inside = query(&mut session, &[&boom, &glow], 5.0);
+    assert_eq!((inside.item(0).unwrap().get("active"), inside.item(1).unwrap().get("active")), (Some(&Value::Bool(true)), Some(&Value::Bool(true))));
+    assert_eq!((inside.item(0).unwrap().get("plays"), inside.item(1).unwrap().get("plays")), (Some(&Value::Bool(true)), Some(&Value::Bool(true))));
+    assert_eq!(query(&mut session, &[&boom], 10.0 + tail + 1.0).item(0).unwrap().get("plays"), Some(&Value::Bool(false)));
+    assert_eq!(query(&mut session, &[&boom], 10.0 + tail - 1.0).item(0).unwrap().get("plays"), Some(&Value::Bool(true)));
+    let later = clip_record("later", "explosion", 20.0, Some(10.0));
+    assert_eq!(query(&mut session, &[&later], 5.0).item(0).unwrap().get("plays"), Some(&Value::Bool(false)));
+    // A clip with no end has no tail, and one that is switched off does not play.
+    let always = clip_record("always", "explosion", 0.0, None);
+    let view = query(&mut session, &[&always], 400.0);
+    assert_eq!((view.item(0).unwrap().get("tail").and_then(Value::as_f64), view.item(0).unwrap().get("plays")), (Some(0.0), Some(&Value::Bool(true))));
+    let off = boom.replace(r#""enabled":true,"strength""#, r#""enabled":false,"strength""#);
+    assert_eq!(query(&mut session, &[&off], 5.0).item(0).unwrap().get("plays"), Some(&Value::Bool(false)));
+    // What is not a clip has no view; the playhead is the default tick.
+    assert_eq!(query(&mut session, &["7"], 5.0).item(0), Some(Value::Null));
+    assert_eq!(read(&mut session, "vfxClips", &format!(r#"{{"clips":[{boom}]}}"#)).item(0).unwrap().get("plays"), Some(&Value::Bool(true)));
+}
+
+#[test]
+fn the_stored_clips_play_by_their_range() {
+    let (mut session, _) = tape("vfx-clips-sheet");
+    // The document's own clips: the tint (no end) plays at every tick, the glow only inside its range.
+    let clips = session.editor.report().path(&["_styk", "vfxClips", "clips"]).unwrap().elements().unwrap().iter().map(|clip| json(&clip)).collect::<Vec<_>>();
+    let ids: Vec<String> = session.editor.report().path(&["_styk", "vfxClips", "clips"]).unwrap().elements().unwrap().iter().map(|clip| clip.get("id").and_then(Value::as_str).unwrap().to_string()).collect();
+    let plays = |session: &mut Session, tick: f64| -> Vec<(String, bool)> {
+        let views = read(session, "vfxClips", &format!(r#"{{"clips":[{}],"tick":{tick}}}"#, clips.join(",")));
+        ids.iter().cloned().zip(views.elements().unwrap().iter().map(|view| view.get("plays") == Some(&Value::Bool(true)))).collect()
+    };
+    let at = |plays: &[(String, bool)], id: &str| plays.iter().find(|(name, _)| name == id).unwrap().1;
+    let early = plays(&mut session, 0.0);
+    assert!(at(&early, "clip-tint"), "a clip with no end plays at the start");
+    let late = plays(&mut session, 50.0);
+    assert!(at(&late, "clip-tint"));
+    assert!(!at(&late, "clip-glow"), "the glow ended at tick 8");
+}
+
+#[test]
+fn a_figure_with_connected_effects_owns_the_figures_attached_to_it() {
+    let (mut session, steps) = tape("vfx-scopes-sheet");
+    let group = |session: &mut Session, uid: u32| read(session, "vfxGroup", &format!(r#"{{"uid":{uid}}}"#));
+    // Nothing is connected yet.
+    assert_eq!(group(&mut session, 1), Value::Null);
+    // The tape switches figure 1 to the whole figure and pastes an effect onto it (steps 1 to 8).
+    for step in &steps[1..=8] {
+        run(&mut session, step);
+    }
+    let members = |group: &Value| group.get("members").unwrap().numbers().unwrap();
+    assert_eq!(members(&group(&mut session, 1)), vec![1.0, 2.0, 3.0], "the owner first, then the figures hanging from it");
+    // A figure that does not own a group has none, whatever hangs from it.
+    assert_eq!(group(&mut session, 3), Value::Null);
+    assert_eq!(group(&mut session, 99), Value::Null);
+    // The reads change nothing.
+    let before = json(session.editor.report());
+    group(&mut session, 1);
+    assert_eq!(before, json(session.editor.report()));
+}

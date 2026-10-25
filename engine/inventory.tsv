@@ -1,4 +1,77 @@
 path	kind	owner	status	note
+backend/benchmark.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/benchmark_fast_decode.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/browser_service.py	engine	styk-formats::service	verified	the app runs styk-piv (styk-piv service.rs); kept only as the development test oracle (not shipped)
+backend/fast_decode.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs); kept only as the development test oracle (not shipped)
+backend/import_wire.py	engine	styk-formats::piv	verified	the app runs styk-piv (wire.rs, STYKPIV1); kept only as the development test oracle (not shipped)
+backend/jobs.py	engine	styk-formats::service	verified	the app runs styk-piv (cancelled requests answer 499) behind the codec worker queue (src/codec-web-shell.mjs); kept only as the development test oracle (not shipped)
+backend/native_format.py	engine	styk-formats::container	verified	the app opens and saves containers through styk-formats in the codec module (src/native-file-codec.mjs), as the codec service does for native documents; kept only as the development test oracle (not shipped)
+backend/native_scan.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs scan mode); kept only as the development test oracle (not shipped)
+backend/process_metrics.py	engine	styk-formats::service	verified	measured the codec service process; the codec runs in the page now, so the app has nothing to measure; kept only as the development test oracle (not shipped)
+backend/profile_import.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/profile_native_save.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/server.py	engine	styk-formats::service	verified	the app runs styk-piv (project store, fingerprints, error responses, request parsing, limits: store.rs, digest.rs, service.rs) in the codec worker; no HTTP handler ships; kept only as the development test oracle (not shipped)
+backend/test_browser_roundtrip.mjs	tool	-	stays	browser test of the Python codec service, the development oracle
+backend/test_browser_service.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_document_digest.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_fast_decode.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_import_wire_review.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_jobs.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_legacy_bitmap_keys.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_legacy_upgrade_export.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_library_format.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_native_format.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_native_layout.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_native_scan.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_parent_watch.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_piv_identities.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_piv_media_recovery.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_piv_type_changes.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_server.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_source_lifetime.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+backend/test_stk_topology.py	tool	-	stays	test or profiler of the Python codec, the development oracle
+codecs/codec_bridge.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv bridge.rs); kept only as the development test oracle (not shipped)
+codecs/image_stream.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/image_stream.rs); kept only as the development test oracle (not shipped)
+codecs/piv_asset_writer.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/assets.rs); kept only as the development test oracle (not shipped)
+codecs/piv_codec.py	engine	styk-formats::piv	verified	the app runs styk-piv (piv/v5.rs; replays the Python recording identically, 13,369 requests); kept only as the development test oracle (not shipped)
+codecs/piv_document.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/v5.rs); kept only as the development test oracle (not shipped)
+codecs/piv_full_writer.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/full.rs); kept only as the development test oracle (not shipped)
+codecs/piv_legacy.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy.rs); kept only as the development test oracle (not shipped)
+codecs/piv_legacy_v2.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy_v2.rs); kept only as the development test oracle (not shipped)
+codecs/piv_legacy_v4.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy_v4.rs); kept only as the development test oracle (not shipped)
+codecs/piv_migrate.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/migrate.rs); kept only as the development test oracle (not shipped)
+codecs/piv_side_tables.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/side_tables.rs); kept only as the development test oracle (not shipped)
+codecs/pivot_decoder.py	engine	styk-formats::piv	verified	the app runs styk-piv (legacy layout detection; its v5 guessing decoders are unreachable); kept only as the development test oracle (not shipped)
+codecs/work_control.py	engine	styk-formats::piv	verified	the app runs styk-piv (cooperative cancellation: ctx.rs, polled through a shared flag); kept only as the development test oracle (not shipped)
+desktop/appimage-updater.cjs	platform	-	stays	Electron shell and services
+desktop/audio-service.cjs	platform	-	stays	Electron shell and services
+desktop/backend.cjs	platform	styk-formats::service	removed	started the Python codec sidecar; the desktop runs styk-codec-wasm in the page (6079 bytes)
+desktop/file-streams.cjs	platform	-	stays	Electron shell and services
+desktop/font-service.cjs	platform	-	stays	Electron shell and services
+desktop/gpu-switches.cjs	platform	-	stays	Electron shell and services
+desktop/library-store.cjs	platform	-	stays	Electron shell and services
+desktop/localization.cjs	platform	-	stays	Electron shell and services
+desktop/main.cjs	platform	-	stays	Electron shell and services
+desktop/preferences.cjs	platform	-	stays	Electron shell and services
+desktop/preload.cjs	platform	-	stays	Electron shell and services
+desktop/project-files.cjs	platform	-	stays	Electron shell and services
+desktop/project-library.cjs	platform	-	stays	Electron shell and services
+desktop/public-library.cjs	platform	-	stays	Electron shell and services
+desktop/recent-files.cjs	platform	-	stays	Electron shell and services
+desktop/recovery.cjs	platform	-	stays	Electron shell and services
+desktop/release-history.cjs	platform	-	stays	Electron shell and services
+desktop/release-links.cjs	platform	-	stays	Electron shell and services
+desktop/samples.cjs	platform	-	stays	the desktop sample list and sample bytes, under the Python codec service's samples/open rules
+desktop/shared-clipboard.cjs	platform	-	stays	Electron shell and services
+desktop/support.cjs	platform	-	stays	Electron shell and services
+desktop/telemetry.cjs	platform	-	stays	Electron shell and services
+desktop/updates.cjs	platform	-	stays	Electron shell and services
+desktop/vfw-export-service.cjs	platform	-	stays	Electron shell and services
+desktop/video-export-service.cjs	platform	-	stays	Electron shell and services
+desktop/web-host.cjs	platform	-	stays	Electron shell and services
+desktop/workspace-instance.cjs	platform	-	stays	Electron shell and services
+native/piv-frame-scan.cpp	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)); kept only as the development test oracle (not shipped)
+native/vfw-bridge.cpp	platform	-	stays	Windows VFW encoder bridge (stays native)
 src/animation-channels.mjs	engine	styk-eval::channels	partial	Rust: reading channels, sampleAnimationChannel, composeAnimationChannels, animationEndTick (styk_eval::channels); composeAnimationChannels and animationPropertyValue on records (styk_eval::records); animationChannelId, normalizeAnimationTarget and validateAnimationValue for property edits (styk-edit/src/property_edit.rs); document validation and native-timeline authoring still JS
 src/animation-history.mjs	engine	styk-edit	removed	Deleted with the editor command bodies: the session weighs its history entries (styk-edit)
 src/animation-origin-support.mjs	engine	styk-eval::origin	partial	Rust: support-graph origins/ghost corrections and recorded whole/joint/handle/range/join/2D-rig synchronization; an origin figure with a 3D pose, mesh, movieclip or drawing runs in the editor
@@ -32,7 +105,7 @@ src/builder-outliner.mjs	ui	-	stays
 src/builder-session.mjs	engine	styk-edit	js	
 src/builder-surface-ui.mjs	ui	-	stays	
 src/camera-bake-authored.mjs	engine	styk-eval::camera	removed	deleted: only the editor's applyCameraToFigures body used it; the session bakes the camera (styk-edit camera_bake.rs) (9902 bytes)
-src/camera-follow.mjs	engine	styk-eval::follow	partial	Rust: typed follow sampling and V8-exact logarithm for native edit read/bake; WeakMap geometry/epoch invalidation fixed in JS; a session shapes the path of each revision it makes through the frame on show, incremental resampling across edits still JS; the inspector's framing offset is styk_eval::follow::framing_offset
+src/camera-follow.mjs	engine	styk-eval::follow	removed	Deleted: the engine samples follow (styk_eval::follow, camera views of the session); its validators moved into camera-motion.mjs
 src/camera-monitor.mjs	ui	-	stays	draws through the engine stage/worker; constant-size solid paint with retained foreground; successful paint history follows the actual DOM canvas, preserving resize/undo/source switches; keeps accepted same-view pixels while the shown ticket is cold
 src/camera-motion-bake-client.mjs	engine	styk-eval::camera	removed	deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs)
 src/camera-motion-bake-worker.mjs	engine	styk-eval::camera	removed	deleted: the camera bake is the session command bakeCameraMotion (styk-edit/src/camera_bake.rs)
@@ -59,8 +132,8 @@ src/clipboard-wire.mjs	engine	styk-edit	js
 src/clipboard-worker-client.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its worker pipeline) (11606 bytes)
 src/clipboard-worker-plan.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its worker pipeline) (7402 bytes)
 src/clipboard-worker.mjs	engine	styk-edit	removed	deleted with the native frame clipboard (its worker pipeline) (8566 bytes)
-src/codec-job.mjs	engine	styk-formats::service	js	import/export transport
 src/codec-engine.mjs	engine	styk-formats::service	js	import/export transport: loads the Rust codec module (styk-codec-wasm) and answers one request
+src/codec-job.mjs	engine	styk-formats::service	js	import/export transport
 src/codec-request.mjs	engine	styk-formats::service	js	import/export transport
 src/codec-web-engine.mjs	engine	styk-formats::service	removed	ran the Python codec in Pyodide; the codec worker runs styk-codec-wasm (3300 bytes)
 src/codec-web-host.mjs	engine	styk-formats::service	js	import/export transport: the codec worker, its codec profile and shared cancellation flags
@@ -71,21 +144,23 @@ src/color-picker-magnifier.mjs	ui	-	stays
 src/color-picker.mjs	ui	-	stays	
 src/community-library.mjs	platform	-	stays	file, storage and network services
 src/connected-timeline.mjs	engine	styk-eval	removed	moved to tests/helpers/legacy-connected-timeline.mjs: only the legacy timeline projection of the tests used it (4378 bytes)
+src/container-cache.mjs	platform	styk-formats::files	stays	bounded cache of compressed blocks that outlives an export worker
 src/content-hash.mjs	engine	styk-render::images	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
 src/demo.mjs	engine	styk-edit	js	
 src/document-export-worker.mjs	engine	styk-formats::save	partial	Rust: container writing (checksums, zstd, framing, figure-file validation: styk-formats::files); Pivot and figure files are made by the engine on this worker (styk-edit/src/export, styk_engine::document_export); the JS still prepares the .styk container
 src/document-export.mjs	engine	styk-formats::save	js	save, portable figure/movieclip, Pivot materialization
+src/document-lift.mjs	engine	styk-formats::container	partial	Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical), and container::ViewLifter hands a document to the editor in pieces; the JavaScript lift stays for saves while the editor holds the document as objects: an array's identity decides what is stored once
 src/document-normalize.mjs	engine	styk-formats::service	js	import/export transport
 src/document-save.mjs	platform	-	stays	file, storage and network services
 src/document-transport.mjs	engine	styk-formats::service	js	import/export transport
 src/drawing-brush-labels.mjs	ui	-	stays	
 src/drawing-brush-textures.mjs	engine	styk-drawing	removed	deleted: the brush atlas (tips and grains) is generated by styk-drawing
 src/drawing-brush.mjs	engine	styk-drawing	ported	brush settings, validation and the pen pressure curve; the dab pipeline runs in styk-drawing (src/engine/engine-drawing.mjs)
+src/drawing-cel-prefetch.mjs	ui	-	stays	which drawing cels the decode queue loads ahead and which it keeps (moved out of onion-skin.mjs)
 src/drawing-clipboard.mjs	engine	styk-drawing	ported	pixel clipboard packet validation; encoding and decoding run in styk-drawing
 src/drawing-composite-transport.mjs	engine	styk-drawing	removed	deleted: fills and the magic wand sample the artwork drawn by the engine (src/engine/engine-composite.mjs)
 src/drawing-composite-worker.mjs	engine	styk-drawing	removed	deleted: fills and the magic wand sample the artwork drawn by the engine (src/engine/engine-composite.mjs)
 src/drawing-composite.mjs	engine	styk-drawing	removed	deleted: fills and the magic wand sample the artwork drawn by the engine (src/engine/engine-composite.mjs)
-src/drawing-cel-prefetch.mjs	ui	-	stays	which drawing cels the decode queue loads ahead and which it keeps (moved out of onion-skin.mjs)
 src/drawing-controller.mjs	ui	-	stays	
 src/drawing-fill.mjs	engine	styk-drawing	removed	deleted: fill and wand run in styk-drawing (src/engine/engine-drawing-worker.mjs)
 src/drawing-flatten.mjs	engine	styk-drawing	js	
@@ -269,15 +344,13 @@ src/movieclip-ui.mjs	ui	-	stays
 src/movieclips.mjs	engine	styk-eval::movieclips	partial	Rust: movieclipTime and clip sampling; capture and editing still JS
 src/mp4-muxer.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
 src/native-container.mjs	engine	styk-formats::container	removed	read and wrote the containers in JavaScript; the workers open and save through styk-formats::files in the codec module (src/native-file-codec.mjs), and the lifting the mirror and saves need is src/document-lift.mjs (46226 bytes)
-src/container-cache.mjs	platform	styk-formats::files	stays	bounded cache of compressed blocks that outlives an export worker
-src/document-lift.mjs	engine	styk-formats::container	partial	Rust: container::lift writes the same skeleton and sections from a store document (461 corpus files, byte-identical), and container::ViewLifter hands a document to the editor in pieces; the JavaScript lift stays for saves while the editor holds the document as objects: an array's identity decides what is stored once
-src/native-file-codec.mjs	platform	styk-formats::files	stays	loads the Rust container module in a worker and moves a file to and from the interface's object model
 src/native-figure.mjs	engine	styk-edit	removed	deleted: the document of a figure, a set of figures or a movieclip file is made by the engine (styk-edit/src/export/figure.rs, pose_sequences.rs) on the export worker
+src/native-file-codec.mjs	platform	styk-formats::files	stays	loads the Rust container module in a worker and moves a file to and from the interface's object model
 src/native-files.mjs	platform	-	stays	file, storage and network services
-src/native-pose-projection.mjs	engine	styk-eval	js	
+src/native-pose-projection.mjs	engine	styk-eval	removed	Deleted: nothing builds a native channel in JavaScript any more; the session edits and samples
 src/native-property-curve.mjs	engine	styk-eval::channels	partial	Rust: styk_eval::channels (native_curve, shortest_property_angle); still called by the editor
 src/native-property-edit.mjs	engine	styk-edit	partial	Rust: recorded native property lifecycle and portable exclusive Core live operations; exact scalar projection primitive integrated. The module is the inspector's token over session calls (animation edits of one target or of several, pose and camera gestures, the project's fields, the sheet's duration) and refuses what the session has no command for; it writes nothing into the document itself
-src/native-property-projection.mjs	engine	styk-eval	partial	Rust: private native scalar adoption through same marker, Draft, Records and typed sampler; 204 exact recorded curves/200 missing first writes; authored propertyChannels:true command publication and app adoption remain guarded
+src/native-property-projection.mjs	engine	styk-eval	removed	Deleted: nothing builds a native channel in JavaScript any more; the session edits and samples
 src/native-property-ranges.mjs	engine	styk-edit	removed	deleted: a pose at one value across several frames is the session's setPoseProperty (styk-edit pose_value.rs), planned like the other figure operations across frames
 src/native-text-authoring.mjs	engine	styk-edit	js	
 src/native-video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmpeg, VFW); frames come from the engine
@@ -505,19 +578,20 @@ src/vfx-canvas.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app d
 src/vfx-clip-controls.mjs	ui	-	stays	
 src/vfx-clip-inspector.mjs	ui	-	stays	
 src/vfx-clip-timeline.mjs	ui	-	stays	
+src/vfx-clip-views.mjs	ui	-	stays	The effects timeline's clip tails and playing state, read from the session (vfxClips)
 src/vfx-clips.mjs	engine	styk-eval::vfx	partial	Rust: clip sampling, keys, fades, composition and strict edit validation including paints/attached scopes; remaining JS model callers preserved
 src/vfx-connected.mjs	engine	styk-eval::vfx	partial	effect model, clips, sampling. Rust: connected groups (planning); conflict checks for editing still JS
 src/vfx-cpu.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-drawable.mjs	engine	styk-eval::vfx	js	what effects a drawn item carries and how far they spread (hasDrawableVfx, drawableVfxPadding); the editor bounds read it
-src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
-src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
-src/vfx-generator-atlas.mjs	engine	styk-render::generators	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-anchors.mjs	engine	styk-eval::vfx::generated	removed	Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs)
+src/vfx-generator-atlas-worker.mjs	engine	styk-render::generators	removed	Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs)
+src/vfx-generator-atlas.mjs	engine	styk-render::generators	removed	Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs)
 src/vfx-generator-canvas.mjs	engine	styk-render::generators	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-generator-frame.mjs	engine	styk-eval::vfx::generated	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-generator-gpu.mjs	engine	styk-render::generators	removed	deleted with the JavaScript renderer: the engine stage and playback draw and prepare every frame
-src/vfx-generator-layers.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
-src/vfx-generator-styles.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
-src/vfx-generators.mjs	engine	styk-eval::vfx::generated	ported	deleted with the JavaScript renderer (S3 item 8)
+src/vfx-generator-layers.mjs	engine	styk-eval::vfx::generated	removed	Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs)
+src/vfx-generator-styles.mjs	engine	styk-eval::vfx::generated	removed	Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs)
+src/vfx-generators.mjs	engine	styk-eval::vfx::generated	removed	Deleted: the engine builds generated effects (styk_eval::vfx::generated); the interface reads a clip's tail and whether it plays from the session (vfxClips, src/vfx-clip-views.mjs)
 src/vfx-gizmos.mjs	ui	-	stays	
 src/vfx-gpu.mjs	engine	styk-render::vfx	removed	Deleted: nothing in the app draws with the JavaScript painter any more; a click on artwork asks the engine (styk_export::pick), the stage and exports draw with the engine.
 src/vfx-icons.mjs	ui	-	stays	
@@ -542,79 +616,5 @@ src/video-export.mjs	platform	styk-export	js	encoders and sinks (WebCodecs, FFmp
 src/web-library.mjs	platform	-	stays	file, storage and network services
 src/web-offline.mjs	platform	-	stays	file, storage and network services
 src/web-support.js	ui	-	stays	
-src/zlib-sync.mjs	engine	styk-formats::container	partial	Rust: inflate of drawing tiles (PNG decoder); deflate still JS
-codecs/codec_bridge.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv bridge.rs); kept only as the development test oracle (not shipped)
-codecs/image_stream.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/image_stream.rs); kept only as the development test oracle (not shipped)
-codecs/piv_asset_writer.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/assets.rs); kept only as the development test oracle (not shipped)
-codecs/piv_codec.py	engine	styk-formats::piv	verified	the app runs styk-piv (piv/v5.rs; replays the Python recording identically, 13,369 requests); kept only as the development test oracle (not shipped)
-codecs/piv_document.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/v5.rs); kept only as the development test oracle (not shipped)
-codecs/piv_full_writer.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/full.rs); kept only as the development test oracle (not shipped)
-codecs/piv_legacy.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy.rs); kept only as the development test oracle (not shipped)
-codecs/piv_legacy_v2.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy_v2.rs); kept only as the development test oracle (not shipped)
-codecs/piv_legacy_v4.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/legacy_v4.rs); kept only as the development test oracle (not shipped)
-codecs/piv_migrate.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv write/migrate.rs); kept only as the development test oracle (not shipped)
-codecs/piv_side_tables.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/side_tables.rs); kept only as the development test oracle (not shipped)
-codecs/pivot_decoder.py	engine	styk-formats::piv	verified	the app runs styk-piv (legacy layout detection; its v5 guessing decoders are unreachable); kept only as the development test oracle (not shipped)
-codecs/work_control.py	engine	styk-formats::piv	verified	the app runs styk-piv (cooperative cancellation: ctx.rs, polled through a shared flag); kept only as the development test oracle (not shipped)
-backend/benchmark.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/benchmark_fast_decode.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/browser_service.py	engine	styk-formats::service	verified	the app runs styk-piv (styk-piv service.rs); kept only as the development test oracle (not shipped)
-backend/fast_decode.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs); kept only as the development test oracle (not shipped)
-backend/import_wire.py	engine	styk-formats::piv	verified	the app runs styk-piv (wire.rs, STYKPIV1); kept only as the development test oracle (not shipped)
-backend/jobs.py	engine	styk-formats::service	verified	the app runs styk-piv (cancelled requests answer 499) behind the codec worker queue (src/codec-web-shell.mjs); kept only as the development test oracle (not shipped)
-backend/native_format.py	engine	styk-formats::container	verified	the app opens and saves containers through styk-formats in the codec module (src/native-file-codec.mjs), as the codec service does for native documents; kept only as the development test oracle (not shipped)
-backend/native_scan.py	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs scan mode); kept only as the development test oracle (not shipped)
-backend/process_metrics.py	engine	styk-formats::service	verified	measured the codec service process; the codec runs in the page now, so the app has nothing to measure; kept only as the development test oracle (not shipped)
-backend/profile_import.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/profile_native_save.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/server.py	engine	styk-formats::service	verified	the app runs styk-piv (project store, fingerprints, error responses, request parsing, limits: store.rs, digest.rs, service.rs) in the codec worker; no HTTP handler ships; kept only as the development test oracle (not shipped)
-backend/test_browser_roundtrip.mjs	tool	-	stays	browser test of the Python codec service, the development oracle
-backend/test_browser_service.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_document_digest.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_fast_decode.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_import_wire_review.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_jobs.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_legacy_bitmap_keys.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_legacy_upgrade_export.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_library_format.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_native_format.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_native_layout.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_native_scan.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_parent_watch.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_piv_identities.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_piv_media_recovery.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_piv_type_changes.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_server.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_source_lifetime.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-backend/test_stk_topology.py	tool	-	stays	test or profiler of the Python codec, the development oracle
-native/piv-frame-scan.cpp	engine	styk-formats::piv	verified	the app runs styk-piv (styk-piv piv/frames.rs scan mode (errors worded as the portable scanner)); kept only as the development test oracle (not shipped)
-native/vfw-bridge.cpp	platform	-	stays	Windows VFW encoder bridge (stays native)
-desktop/appimage-updater.cjs	platform	-	stays	Electron shell and services
-desktop/audio-service.cjs	platform	-	stays	Electron shell and services
-desktop/backend.cjs	platform	styk-formats::service	removed	started the Python codec sidecar; the desktop runs styk-codec-wasm in the page (6079 bytes)
-desktop/file-streams.cjs	platform	-	stays	Electron shell and services
-desktop/font-service.cjs	platform	-	stays	Electron shell and services
-desktop/gpu-switches.cjs	platform	-	stays	Electron shell and services
-desktop/library-store.cjs	platform	-	stays	Electron shell and services
-desktop/localization.cjs	platform	-	stays	Electron shell and services
-desktop/main.cjs	platform	-	stays	Electron shell and services
-desktop/preferences.cjs	platform	-	stays	Electron shell and services
-desktop/preload.cjs	platform	-	stays	Electron shell and services
-desktop/project-files.cjs	platform	-	stays	Electron shell and services
-desktop/project-library.cjs	platform	-	stays	Electron shell and services
-desktop/public-library.cjs	platform	-	stays	Electron shell and services
-desktop/recent-files.cjs	platform	-	stays	Electron shell and services
-desktop/recovery.cjs	platform	-	stays	Electron shell and services
-desktop/release-history.cjs	platform	-	stays	Electron shell and services
-desktop/release-links.cjs	platform	-	stays	Electron shell and services
-desktop/shared-clipboard.cjs	platform	-	stays	Electron shell and services
-desktop/support.cjs	platform	-	stays	Electron shell and services
-desktop/telemetry.cjs	platform	-	stays	Electron shell and services
-desktop/updates.cjs	platform	-	stays	Electron shell and services
-desktop/vfw-export-service.cjs	platform	-	stays	Electron shell and services
-desktop/video-export-service.cjs	platform	-	stays	Electron shell and services
-desktop/samples.cjs	platform	-	stays	the desktop sample list and sample bytes, under the Python codec service's samples/open rules
-desktop/web-host.cjs	platform	-	stays	Electron shell and services
-desktop/workspace-instance.cjs	platform	-	stays	Electron shell and services
-
 src/yield-task.mjs	platform	-	stays	gives the browser its turn between slices of work (scheduler.yield, else a message)
+src/zlib-sync.mjs	engine	styk-formats::container	partial	Rust: inflate of drawing tiles (PNG decoder); deflate still JS

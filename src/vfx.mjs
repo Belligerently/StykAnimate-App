@@ -76,7 +76,7 @@ export function interpolateVfx(a,b,t){
 }
 const resolved=new WeakMap();
 export function resolvedVfx(effect){let value=resolved.get(effect);if(!value){value=validateVfxStack([effect])[0];resolved.set(effect,value);resolved.set(value,value);}return value;}
-/** Filters only: generators draw through vfx-generators.mjs, never a filter executor. */
+/** Filters only: generators are built by the engine (styk_eval::vfx::generated), never a filter executor. */
 export function activeVfx(stack){return stack?.length?stack.filter(e=>e.enabled&&!isGeneratorType(e.type)).map(resolvedVfx).filter(e=>!neutralVfx(e)):empty;}
 export function neutralVfx({type,params:p}){return p.effectStrength===0?true:type==='turbulence'?p.amount===0:type==='tint'?p.mix===0:type==='glow'?p.intensity===0&&p.coreMix===0:type==='outline'?(p.width===0||p.opacity===0)&&!p.only:type==='blur'?p.radius===0:type==='shadow'?p.opacity===0:type==='grade'?p.exposure===0&&p.contrast===1&&p.saturation===1&&p.temperature===0&&!p.tint&&!p.shadows&&!p.highlights&&p.gamma===1:type==='pixelate'?p.size<=1&&(p.linked||p.sizeY<=1):type==='noise'||type==='vignette'?p.amount===0:type==='dissolve'?p.progress===0:type==='rgbSplit'?p.amount===0:type==='wave'||type==='shockwave'?p.strength===0:type==='bloom'||type==='lightSweep'?p.intensity===0:type==='crt'?!p.amount&&!p.curvature&&!p.chromatic:false;}
 function blurPadding(radius,sampling=false){

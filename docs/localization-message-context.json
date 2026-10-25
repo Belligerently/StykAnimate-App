@@ -3558,7 +3558,7 @@
       "src/rig-controls.mjs:85",
       "src/rig-test-ui.mjs:45",
       "src/spatial-controls.mjs:78",
-      "src/vfx-inspector.mjs:73"
+      "src/vfx-inspector.mjs:72"
     ],
     "context": "const joints=[{id:0,name:interfaceText('builderSurfaceUi.origin')},...figure.segments.map(s=>({id:s.segment_id,name:s.name||interfaceText('builderSurfaceUi.join"
   },
@@ -7312,7 +7312,7 @@
       "src/ui/command-catalog.mjs:110",
       "src/ui/quick-actions.mjs:92",
       "src/user-library.mjs:129",
-      "src/vfx-clip-inspector.mjs:126"
+      "src/vfx-clip-inspector.mjs:127"
     ],
     "context": "item(t('common.duplicate'), 'duplicate'), item(t('common.delete'), 'delete'),"
   },
@@ -7340,8 +7340,8 @@
       "src/studio-shell.mjs:107",
       "src/ui/command-catalog.mjs:109",
       "src/ui/quick-actions.mjs:92",
-      "src/vfx-clip-inspector.mjs:125",
-      "src/vfx-inspector.mjs:176"
+      "src/vfx-clip-inspector.mjs:126",
+      "src/vfx-inspector.mjs:175"
     ],
     "context": "item(t('common.duplicate'), 'duplicate'), item(t('common.delete'), 'delete'),"
   },
@@ -7386,7 +7386,7 @@
   },
   "common.noResults": {
     "locations": [
-      "src/vfx-inspector.mjs:234"
+      "src/vfx-inspector.mjs:233"
     ],
     "context": "const draw=()=>{const query=popup.querySelector('input').value.toLowerCase(),items=available.filter(item=>(interfaceText(item.nameKey)+' '+interfaceText(item.ca"
   },
@@ -7418,7 +7418,7 @@
   "common.remove": {
     "locations": [
       "src/support-center.mjs:478",
-      "src/vfx-inspector.mjs:177"
+      "src/vfx-inspector.mjs:176"
     ],
     "context": "appendLocalized(attachment, translatedElement(button(interfaceText(\"common.remove\"), () => { if (!this.busy) this.confirmFileDelete(file, attachment); }, 'sc-qu"
   },
@@ -7434,7 +7434,7 @@
       "src/rig-test-ui.mjs:48",
       "src/shell/layout-popover.mjs:110",
       "src/ui/quick-actions.mjs:92",
-      "src/vfx-inspector.mjs:177"
+      "src/vfx-inspector.mjs:176"
     ],
     "context": "</div><div class=\"rig-test-utilities\"><button class=\"button\" id=\"rig-test-fit\">${icon('fit')}${messageHTML(\"rigTestUi.fit\", {})}</button><button class=\"button\" "
   },
@@ -7502,7 +7502,7 @@
   },
   "counts.effects": {
     "locations": [
-      "src/vfx-inspector.mjs:224",
+      "src/vfx-inspector.mjs:223",
       "src/vfx-preset-ui.mjs:26"
     ],
     "context": "return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\">${messageHTML(titleKey,titleParams)}</h3>${elsewhere?'':`<p class=\"ui-empty-text\" data-i18n=\""
@@ -7513,7 +7513,7 @@
       "src/app.mjs:4215",
       "src/asset-library.mjs:213",
       "src/studio-shell.mjs:145",
-      "src/vfx-inspector.mjs:114"
+      "src/vfx-inspector.mjs:113"
     ],
     "context": "localizedText($(\"object-count\"), 'counts.figures', {count: editor.frame.objects.length});"
   },
@@ -11517,7 +11517,7 @@
   },
   "errors.animationOrigin.theAnimationPivotNoLongerBelongsToIts": {
     "locations": [
-      "src/animation-origin.mjs:27"
+      "src/animation-origin.mjs:26"
     ],
     "context": "while(handle!==0){const index=ids.get(handle);if(index===undefined||path.length>=segments.length)throw messageError(new Error(''), \"errors.animationOrigin.theAn"
   },
@@ -12383,13 +12383,13 @@
   },
   "errors.cameraFollow.eachFollowedFigureNeedsAUniqueFigureAnd": {
     "locations": [
-      "src/camera-follow.mjs:30"
+      "src/camera-motion.mjs:15"
     ],
     "context": "throw messageError(new Error(''), \"errors.cameraFollow.eachFollowedFigureNeedsAUniqueFigureAnd\", {});"
   },
   "errors.cameraFollow.follow1Figures": {
     "locations": [
-      "src/camera-follow.mjs:26"
+      "src/camera-motion.mjs:11"
     ],
     "context": "if (!Array.isArray(targets) || !targets.length || targets.length > FOLLOW_TARGET_LIMIT) throw messageError(new Error(''), \"errors.cameraFollow.follow1Figures\", "
   },
@@ -12407,43 +12407,43 @@
   },
   "errors.cameraMotion.aFollowClipCanLastUpToFrames": {
     "locations": [
-      "src/camera-motion.mjs:39"
+      "src/camera-motion.mjs:49"
     ],
     "context": "if(clip.type==='follow'){validateFollowTargets(clip.targets);if(clip.duration>FOLLOW_FRAME_LIMIT)throw messageError(new Error(''), \"errors.cameraMotion.aFollowC"
   },
   "errors.cameraMotion.chooseACameraMotionPreset": {
     "locations": [
-      "src/camera-motion.mjs:25"
+      "src/camera-motion.mjs:35"
     ],
     "context": "if(!Object.hasOwn(CAMERA_MOTION_TYPES,type))throw messageError(new Error(''), \"errors.cameraMotion.chooseACameraMotionPreset\", {});"
   },
   "errors.cameraMotion.invalidBakedCameraRange": {
     "locations": [
-      "src/camera-motion.mjs:37"
+      "src/camera-motion.mjs:47"
     ],
     "context": "if(clip.mutedRanges!==undefined&&(!Array.isArray(clip.mutedRanges)||clip.mutedRanges.length>1024||clip.mutedRanges.some(r=>!Number.isInteger(r.start)||!Number.i"
   },
   "errors.cameraMotion.invalidCameraMotionClip": {
     "locations": [
-      "src/camera-motion.mjs:35"
+      "src/camera-motion.mjs:45"
     ],
     "context": "if(!clip||typeof clip.id!=='string'||!/^[\\w-]{1,80}$/.test(clip.id)||ids.has(clip.id)||!Object.hasOwn(CAMERA_MOTION_TYPES,clip.type)||typeof clip.enabled!=='boo"
   },
   "errors.cameraMotion.invalidCameraMotionParameters": {
     "locations": [
-      "src/camera-motion.mjs:41"
+      "src/camera-motion.mjs:51"
     ],
     "context": "if(!clip.params||Object.keys(clip.params).some(key=>!keys.includes(key)))throw messageError(new Error(''), \"errors.cameraMotion.invalidCameraMotionParameters\", "
   },
   "errors.cameraMotion.invalidCameraMotionTableMaximum256Clips": {
     "locations": [
-      "src/camera-motion.mjs:32"
+      "src/camera-motion.mjs:42"
     ],
     "context": "if(!state||state.version!==1||!Array.isArray(state.clips)||state.clips.length>CAMERA_MOTION_LIMIT)throw messageError(new Error(''), \"errors.cameraMotion.invalid"
   },
   "errors.cameraMotion.mustBeBetweenAnd": {
     "locations": [
-      "src/camera-motion.mjs:44",
+      "src/camera-motion.mjs:54",
       "src/rig-constraints.mjs:17",
       "src/text-authoring.mjs:87",
       "src/vfx.mjs:25"
@@ -12452,7 +12452,7 @@
   },
   "errors.cameraMotion.onlyFollowClipsHaveFollowedFigures": {
     "locations": [
-      "src/camera-motion.mjs:40"
+      "src/camera-motion.mjs:50"
     ],
     "context": "else if(clip.targets!==undefined)throw messageError(new Error(''), \"errors.cameraMotion.onlyFollowClipsHaveFollowedFigures\", {});"
   },
@@ -13792,7 +13792,7 @@
   },
   "errors.editorAnimation.keyframeTimeMustBeAnIntegerFrom0": {
     "locations": [
-      "src/editor-animation.mjs:13"
+      "src/editor-animation.mjs:8"
     ],
     "context": "const checkTick = tick => { if (!Number.isInteger(tick) || tick < 0 || tick > MAX_TICK) throw messageError(new Error(''), \"errors.editorAnimation.keyframeTimeMu"
   },
@@ -14503,49 +14503,49 @@
   },
   "errors.ik.invalidIkAttachmentOrientation": {
     "locations": [
-      "src/ik.mjs:141"
+      "src/ik.mjs:115"
     ],
     "context": "Object.entries(c.attachmentOffsets).some(([id,a]) => !/^[1-9]\\d*$/.test(id) || !Number.isFinite(a)))) throw messageError(new Error(''), \"errors.ik.invalidIkAtta"
   },
   "errors.ik.invalidIkBendReference": {
     "locations": [
-      "src/ik.mjs:153"
+      "src/ik.mjs:127"
     ],
     "context": "throw messageError(new Error(''), \"errors.ik.invalidIkBendReference\", {});"
   },
   "errors.ik.invalidIkController": {
     "locations": [
-      "src/ik.mjs:136"
+      "src/ik.mjs:110"
     ],
     "context": "!['x', 'y'].every(k => Number.isFinite(Math.fround(c.target[k])))) throw messageError(new Error(''), \"errors.ik.invalidIkController\", {});"
   },
   "errors.ik.invalidIkControllerOrientation": {
     "locations": [
-      "src/ik.mjs:139"
+      "src/ik.mjs:113"
     ],
     "context": "throw messageError(new Error(''), \"errors.ik.invalidIkControllerOrientation\", {});"
   },
   "errors.ik.invalidIkControllerTable": {
     "locations": [
-      "src/ik.mjs:129"
+      "src/ik.mjs:103"
     ],
     "context": "throw messageError(new Error(''), \"errors.ik.invalidIkControllerTable\", {});"
   },
   "errors.ik.invalidJoinedIkOrientation": {
     "locations": [
-      "src/ik.mjs:145"
+      "src/ik.mjs:119"
     ],
     "context": "throw messageError(new Error(''), \"errors.ik.invalidJoinedIkOrientation\", {});"
   },
   "errors.ik.invalidSpatialIkOrientation": {
     "locations": [
-      "src/ik.mjs:148"
+      "src/ik.mjs:122"
     ],
     "context": "if(c.spatialFollowers!==undefined&&!quaternionTable(c.spatialFollowers)||c.joinedSpatialFollowers!==undefined&&(!c.joinedSpatialFollowers||typeof c.joinedSpatia"
   },
   "errors.ik.invalidSpatialIkTarget": {
     "locations": [
-      "src/ik.mjs:149"
+      "src/ik.mjs:123"
     ],
     "context": "if(c.spatialTarget!==undefined){const t=c.spatialTarget,unit=v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite)&&Math.abs(Math.hypot(...v)-1)<=1e-5;if("
   },
@@ -15165,13 +15165,13 @@
   },
   "errors.layerParallax.invalidBakedCameraParallaxOffset": {
     "locations": [
-      "src/layer-parallax.mjs:5"
+      "src/layer-parallax.mjs:3"
     ],
     "context": "export function validateCameraParallaxOffset(camera){const p=camera?._parallaxMotionOffset;if(p!==undefined&&(!p||![p.x,p.y].every(Number.isFinite)))throw messa"
   },
   "errors.layerParallax.parallaxNeedsA0400ResponseAndA": {
     "locations": [
-      "src/layer-parallax.mjs:8"
+      "src/layer-parallax.mjs:6"
     ],
     "context": "if(!p||typeof p.enabled!=='boolean'||typeof p.linked!=='boolean'||![p.x,p.y].every(v=>Number.isFinite(v)&&v>=0&&v<=4)||!p.reference||![p.reference.x,p.reference"
   },
@@ -15249,71 +15249,71 @@
   },
   "errors.layerSheet.invalidImportedLayerTiming": {
     "locations": [
-      "src/layer-sheet.mjs:52"
+      "src/layer-sheet.mjs:51"
     ],
     "context": "if(key.sourceTick!==undefined){if(!Number.isFinite(key.sourceTick)||key.sourceTick<0||key.sourceTick>MAX_SHEET_TICKS)throw messageError(new Error(''), \"errors.l"
   },
   "errors.layerSheet.invalidLayerExposureLength": {
     "locations": [
-      "src/layer-sheet.mjs:36",
-      "src/layer-sheet.mjs:68"
+      "src/layer-sheet.mjs:35",
+      "src/layer-sheet.mjs:67"
     ],
     "context": "if(!Number.isInteger(track.end)||track.end<0||track.end>duration)throw messageError(new Error(''), \"errors.layerSheet.invalidLayerExposureLength\", {});"
   },
   "errors.layerSheet.invalidLayerTimeline": {
     "locations": [
-      "src/layer-sheet.mjs:29"
+      "src/layer-sheet.mjs:28"
     ],
     "context": "!Number.isSafeInteger(state.nextId)||state.nextId<1||!state.tracks||Array.isArray(state.tracks))throw messageError(new Error(''), \"errors.layerSheet.invalidLaye"
   },
   "errors.layerSheet.invalidMovieclipFrameBoundary": {
     "locations": [
-      "src/layer-sheet.mjs:43"
+      "src/layer-sheet.mjs:42"
     ],
     "context": "if(key.patchOnly!==undefined&&key.patchOnly!==true)throw messageError(new Error(''), \"errors.layerSheet.invalidMovieclipFrameBoundary\", {});"
   },
   "errors.layerSheet.invalidMovieclipFrameReplacement": {
     "locations": [
-      "src/layer-sheet.mjs:49"
+      "src/layer-sheet.mjs:48"
     ],
     "context": "patch.orderIndex!==undefined&&(!Number.isInteger(patch.orderIndex)||patch.orderIndex<0||patch.orderIndex>65535))throw messageError(new Error(''), \"errors.layerS"
   },
   "errors.layerSheet.invalidMovieclipFrameReplacements": {
     "locations": [
-      "src/layer-sheet.mjs:45"
+      "src/layer-sheet.mjs:44"
     ],
     "context": "if(!Array.isArray(key.movieclipPatches)||key.movieclipPatches.length>65535)throw messageError(new Error(''), \"errors.layerSheet.invalidMovieclipFrameReplacement"
   },
   "errors.layerSheet.layerKeyIdentityCounterIsInvalid": {
     "locations": [
-      "src/layer-sheet.mjs:73"
+      "src/layer-sheet.mjs:72"
     ],
     "context": "if(state.nextId<=largest)throw messageError(new Error(''), \"errors.layerSheet.layerKeyIdentityCounterIsInvalid\", {});"
   },
   "errors.layerSheet.layerKeyReferencesAMissingPose": {
     "locations": [
-      "src/layer-sheet.mjs:53"
+      "src/layer-sheet.mjs:52"
     ],
     "context": "else if(key.value?.frameId!==null&&!sourceFor(key.value?.frameId))throw messageError(new Error(''), \"errors.layerSheet.layerKeyReferencesAMissingPose\", {});"
   },
   "errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered": {
     "locations": [
-      "src/layer-sheet.mjs:41",
-      "src/layer-sheet.mjs:72",
-      "src/layer-sheet.mjs:78"
+      "src/layer-sheet.mjs:40",
+      "src/layer-sheet.mjs:71",
+      "src/layer-sheet.mjs:77"
     ],
     "context": "throw messageError(new Error(''), \"errors.layerSheet.layerKeysNeedUniqueIdentitiesAndDistinctOrdered\", {});"
   },
   "errors.layerSheet.layerTimelineIsMissingAnExposureTrack": {
     "locations": [
-      "src/layer-sheet.mjs:31"
+      "src/layer-sheet.mjs:30"
     ],
     "context": "if([...allowed].some(id=>!Object.hasOwn(state.tracks,id)))throw messageError(new Error(''), \"errors.layerSheet.layerTimelineIsMissingAnExposureTrack\", {});"
   },
   "errors.layerSheet.layerTimelineReferencesAMissingLayer": {
     "locations": [
-      "src/layer-sheet.mjs:35",
-      "src/layer-sheet.mjs:67"
+      "src/layer-sheet.mjs:34",
+      "src/layer-sheet.mjs:66"
     ],
     "context": "if(!allowed.has(id)||!track||!Array.isArray(track.keys))throw messageError(new Error(''), \"errors.layerSheet.layerTimelineReferencesAMissingLayer\", {});"
   },
@@ -16487,152 +16487,152 @@
   },
   "errors.rigConstraints.aConnectorFollowsItsAnchorsApplyStretchTo": {
     "locations": [
-      "src/rig-constraints.mjs:99"
+      "src/rig-constraints.mjs:95"
     ],
     "context": "if(c) throw messageError(new Error(''), \"errors.rigConstraints.aConnectorFollowsItsAnchorsApplyStretchTo\", {});"
   },
   "errors.rigConstraints.anAnglePathJointIsPositionedByIts": {
     "locations": [
-      "src/rig-constraints.mjs:74"
+      "src/rig-constraints.mjs:70"
     ],
     "context": "if(c||d||f||r.response||r.angleLock)throw messageError(new Error(''), \"errors.rigConstraints.anAnglePathJointIsPositionedByIts\", {});"
   },
   "errors.rigConstraints.aSecondAngleReferenceRequiresAParentAngle": {
     "locations": [
-      "src/rig-constraints.mjs:117"
+      "src/rig-constraints.mjs:113"
     ],
     "context": "if(lock.mode!=='parent'||typeof lock.secondary!=='object'||Array.isArray(lock.secondary))throw messageError(new Error(''), \"errors.rigConstraints.aSecondAngleRe"
   },
   "errors.rigConstraints.aWeightedJointFollowsItsAnchorsApplyOther": {
     "locations": [
-      "src/rig-constraints.mjs:70"
+      "src/rig-constraints.mjs:66"
     ],
     "context": "if(c||d||f||r.response||r.angleLock||r.anglePath)throw messageError(new Error(''), \"errors.rigConstraints.aWeightedJointFollowsItsAnchorsApplyOther\", {});"
   },
   "errors.rigConstraints.chooseAnAnglePathJointAsTheDepth": {
     "locations": [
-      "src/rig-constraints.mjs:76"
+      "src/rig-constraints.mjs:72"
     ],
     "context": "if(r.anglePath.source!==undefined&&!segments[ids.get(r.anglePath.source)]._stykRig?.anglePath?.keys)throw messageError(new Error(''), \"errors.rigConstraints.cho"
   },
   "errors.rigConstraints.chooseAValidAngleLock": {
     "locations": [
-      "src/rig-constraints.mjs:110"
+      "src/rig-constraints.mjs:106"
     ],
     "context": "if(!['world','figure','parent'].includes(lock.mode))throw messageError(new Error(''), \"errors.rigConstraints.chooseAValidAngleLock\", {});"
   },
   "errors.rigConstraints.chooseAValidAngleLockSpace": {
     "locations": [
-      "src/rig-constraints.mjs:111"
+      "src/rig-constraints.mjs:107"
     ],
     "context": "if(lock.space!==undefined&&!['rendered','authored'].includes(lock.space))throw messageError(new Error(''), \"errors.rigConstraints.chooseAValidAngleLockSpace\", {"
   },
   "errors.rigConstraints.chooseAValidAttachmentOrientation": {
     "locations": [
-      "src/rig-constraints.mjs:63"
+      "src/rig-constraints.mjs:59"
     ],
     "context": "if(r?.orientation!==undefined&&!['inherit','world'].includes(r.orientation))throw messageError(new Error(''), \"errors.rigConstraints.chooseAValidAttachmentOrien"
   },
   "errors.rigConstraints.chooseAValidConnectorStretchSource": {
     "locations": [
-      "src/rig-constraints.mjs:89"
+      "src/rig-constraints.mjs:85"
     ],
     "context": "if(d.source!==undefined&&(!c||!['span','slide','combined'].includes(d.source)))throw messageError(new Error(''), \"errors.rigConstraints.chooseAValidConnectorStr"
   },
   "errors.rigConstraints.chooseAValidStretchResponse": {
     "locations": [
-      "src/rig-constraints.mjs:104"
+      "src/rig-constraints.mjs:100"
     ],
     "context": "if(!['stretch','rigid','stop'].includes(response.mode??'stretch'))throw messageError(new Error(''), \"errors.rigConstraints.chooseAValidStretchResponse\", {});"
   },
   "errors.rigConstraints.chooseAValidStretchWidthResponse": {
     "locations": [
-      "src/rig-constraints.mjs:87"
+      "src/rig-constraints.mjs:83"
     ],
     "context": "if(!['keep','inverse','scale'].includes(d.width)) throw messageError(new Error(''), \"errors.rigConstraints.chooseAValidStretchWidthResponse\", {});"
   },
   "errors.rigConstraints.chooseStretchOrFollowWithoutDeforming": {
     "locations": [
-      "src/rig-constraints.mjs:96"
+      "src/rig-constraints.mjs:92"
     ],
     "context": "if(!['stretch','rigid'].includes(f.mode)) throw messageError(new Error(''), \"errors.rigConstraints.chooseStretchOrFollowWithoutDeforming\", {});"
   },
   "errors.rigConstraints.chooseTwoDifferentConnectorAnchors": {
     "locations": [
-      "src/rig-constraints.mjs:80"
+      "src/rig-constraints.mjs:76"
     ],
     "context": "if(c.start === c.end) throw messageError(new Error(''), \"errors.rigConstraints.chooseTwoDifferentConnectorAnchors\", {});"
   },
   "errors.rigConstraints.connectorAnglesAreControlledByTheirAnchorsLock": {
     "locations": [
-      "src/rig-constraints.mjs:109"
+      "src/rig-constraints.mjs:105"
     ],
     "context": "if(c)throw messageError(new Error(''), \"errors.rigConstraints.connectorAnglesAreControlledByTheirAnchorsLock\", {});"
   },
   "errors.rigConstraints.expandTheStretchDriverBeforePosingAFully": {
     "locations": [
-      "src/rig-constraints.mjs:274"
+      "src/rig-constraints.mjs:270"
     ],
     "context": "if(Math.abs(space.followScale)<1e-8)throw messageError(new Error(''), \"errors.rigConstraints.expandTheStretchDriverBeforePosingAFully\", {});"
   },
   "errors.rigConstraints.invalidAutomaticStretchBinding": {
     "locations": [
-      "src/rig-constraints.mjs:98"
+      "src/rig-constraints.mjs:94"
     ],
     "context": "if(f.automatic!==undefined&&typeof f.automatic!=='boolean')throw messageError(new Error(''), \"errors.rigConstraints.invalidAutomaticStretchBinding\", {});"
   },
   "errors.rigConstraints.invalidRigBehavior": {
     "locations": [
-      "src/rig-constraints.mjs:62",
+      "src/rig-constraints.mjs:58",
       "src/rig-control-details.mjs:15"
     ],
     "context": "if(r && (typeof r !== 'object' || Array.isArray(r) || Object.keys(r).some(k=>!['connector','stretch','follow','orientation','response','angleLock','anglePath','"
   },
   "errors.rigConstraints.invalidRigResponseOrAngleLock": {
     "locations": [
-      "src/rig-constraints.mjs:102"
+      "src/rig-constraints.mjs:98"
     ],
     "context": "for(const value of [response,lock])if(value!==undefined&&value!==null&&(typeof value!=='object'||Array.isArray(value)))throw messageError(new Error(''), \"errors"
   },
   "errors.rigConstraints.invalidStretchBranchSetting": {
     "locations": [
-      "src/rig-constraints.mjs:88"
+      "src/rig-constraints.mjs:84"
     ],
     "context": "if(d.branch!==undefined&&typeof d.branch!=='boolean')throw messageError(new Error(''), \"errors.rigConstraints.invalidStretchBranchSetting\", {});"
   },
   "errors.rigConstraints.invalidStretchImpulseReset": {
     "locations": [
-      "src/rig-constraints.mjs:106"
+      "src/rig-constraints.mjs:102"
     ],
     "context": "if(response.reset!==undefined&&typeof response.reset!=='boolean')throw messageError(new Error(''), \"errors.rigConstraints.invalidStretchImpulseReset\", {});"
   },
   "errors.rigConstraints.refersToAMissingJointRemoveOrReconnect": {
     "locations": [
-      "src/rig-constraints.mjs:57"
+      "src/rig-constraints.mjs:53"
     ],
     "context": "if (!Number.isInteger(id) || (!ids.has(id) && !(root && id === 0))) throw messageError(new Error(''), \"errors.rigConstraints.refersToAMissingJointRemoveOrReconn"
   },
   "errors.rigConstraints.setANonzeroRestSlidePositionFirst": {
     "locations": [
-      "src/rig-constraints.mjs:91"
+      "src/rig-constraints.mjs:87"
     ],
     "context": "if(d.source&&d.source!=='span'&&d.restPosition===undefined)throw messageError(new Error(''), \"errors.rigConstraints.setANonzeroRestSlidePositionFirst\", {});"
   },
   "errors.rigConstraints.spatialArticulationOwnsItsTransformApplyOtherRelationships": {
     "locations": [
-      "src/rig-constraints.mjs:66"
+      "src/rig-constraints.mjs:62"
     ],
     "context": "if(c||d||f||r.response||r.angleLock||r.anglePath||r.weighted)throw messageError(new Error(''), \"errors.rigConstraints.spatialArticulationOwnsItsTransformApplyOt"
   },
   "errors.rigConstraints.theSelectedStretchDriverIsNotEnabledRemove": {
     "locations": [
-      "src/rig-constraints.mjs:95"
+      "src/rig-constraints.mjs:91"
     ],
     "context": "if(!segments[ids.get(f.driver)]._stykRig?.stretch) throw messageError(new Error(''), \"errors.rigConstraints.theSelectedStretchDriverIsNotEnabledRemove\", {});"
   },
   "errors.rigConstraints.thisRigWouldDependOnItselfChooseAnchors": {
     "locations": [
-      "src/rig-constraints.mjs:129"
+      "src/rig-constraints.mjs:125"
     ],
     "context": "if(order.length!==segments.length) throw messageError(new Error(''), \"errors.rigConstraints.thisRigWouldDependOnItselfChooseAnchors\", {});"
   },
@@ -16662,69 +16662,69 @@
   },
   "errors.rigSpatial.aMechanicalJointNeedsASlideOrHinge": {
     "locations": [
-      "src/rig-spatial.mjs:35",
-      "src/rig-spatial.mjs:40",
-      "src/rig-spatial.mjs:42"
+      "src/rig-spatial.mjs:34",
+      "src/rig-spatial.mjs:39",
+      "src/rig-spatial.mjs:41"
     ],
     "context": "throw messageError(new Error(''), \"errors.rigSpatial.aMechanicalJointNeedsASlideOrHinge\", {});"
   },
   "errors.rigSpatial.anArticulatedJointNeedsARestOriginAnd": {
     "locations": [
-      "src/rig-spatial.mjs:30"
+      "src/rig-spatial.mjs:29"
     ],
     "context": "if(Object.keys(s).some(k=>!['parent','turn','pitch','origin','tip','motion'].includes(k))||!vector(s.origin)||!vector(s.tip))throw messageError(new Error(''), \""
   },
   "errors.rigSpatial.aSkinPointNeedsAPositionAnd1": {
     "locations": [
-      "src/rig-spatial.mjs:24"
+      "src/rig-spatial.mjs:23"
     ],
     "context": "if(Object.keys(s).some(k=>!['point','bindings','viewPoints'].includes(k))||!vector(s.point)||!Array.isArray(s.bindings)||!s.bindings.length||s.bindings.length>4"
   },
   "errors.rigSpatial.aSlidingJointSlidesFromItsOriginToward": {
     "locations": [
-      "src/rig-spatial.mjs:36"
+      "src/rig-spatial.mjs:35"
     ],
     "context": "if(m.type==='slide'&&Math.hypot(...s.tip.map((n,i)=>n-s.origin[i]))<=EPS)throw messageError(new Error(''), \"errors.rigSpatial.aSlidingJointSlidesFromItsOriginTo"
   },
   "errors.rigSpatial.bindSkinToAnArticulatedJoint": {
     "locations": [
-      "src/rig-spatial.mjs:27"
+      "src/rig-spatial.mjs:26"
     ],
     "context": "for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint"
   },
   "errors.rigSpatial.chooseSeparateTurnAndTiltControls": {
     "locations": [
-      "src/rig-spatial.mjs:46"
+      "src/rig-spatial.mjs:45"
     ],
     "context": "if(!s.turn||!s.pitch||s.turn===s.pitch)throw messageError(new Error(''), \"errors.rigSpatial.chooseSeparateTurnAndTiltControls\", {});"
   },
   "errors.rigSpatial.invalidSpatialJoint": {
     "locations": [
-      "src/rig-spatial.mjs:21"
+      "src/rig-spatial.mjs:20"
     ],
     "context": "if(!s||typeof s!=='object'||Array.isArray(s))throw messageError(new Error(''), \"errors.rigSpatial.invalidSpatialJoint\", {});"
   },
   "errors.rigSpatial.mustBeAnArticulatedSpatialJoint": {
     "locations": [
-      "src/rig-spatial.mjs:22"
+      "src/rig-spatial.mjs:21"
     ],
     "context": "const ref=(id,label,bone=false)=>{reference(id,label,true);dependencies.add(id);if(id&&bone&&!spatialBone(segments[ids.get(id)]))throw messageError(new Error(''"
   },
   "errors.rigSpatial.skinWeightsMustAddUpToOne": {
     "locations": [
-      "src/rig-spatial.mjs:28"
+      "src/rig-spatial.mjs:27"
     ],
     "context": "if(Math.abs(sum-1)>1e-6)throw messageError(new Error(''), \"errors.rigSpatial.skinWeightsMustAddUpToOne\", {});"
   },
   "errors.rigSpatial.skinWeightsMustUseDistinctJointsAndPositive": {
     "locations": [
-      "src/rig-spatial.mjs:27"
+      "src/rig-spatial.mjs:26"
     ],
     "context": "for(const b of s.bindings){if(!b||Object.keys(b).some(k=>!['joint','weight'].includes(k))||!Number.isFinite(b.weight)||b.weight<=0||b.weight>1||seen.has(b.joint"
   },
   "errors.rigSpatial.viewCorrectedSkinNeedsFourCardinalOrEight": {
     "locations": [
-      "src/rig-spatial.mjs:25"
+      "src/rig-spatial.mjs:24"
     ],
     "context": "if(s.viewPoints!==undefined&&(!Array.isArray(s.viewPoints)||![4,8].includes(s.viewPoints.length)||Array.from({length:s.viewPoints.length},(_,i)=>i).some(i=>!vec"
   },
@@ -18507,73 +18507,61 @@
   },
   "errors.vfxClips.aTargetSupportsUpTo64SimultaneousEffects": {
     "locations": [
-      "src/vfx-clips.mjs:41"
+      "src/vfx-clips.mjs:39"
     ],
     "context": "for(const list of events.values()){let active=0;list.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);for(const [,change] of list){active+=change;if(active>64)throw messageErr"
   },
   "errors.vfxClips.effectKeysMustBeOrderedAndUnique": {
     "locations": [
-      "src/vfx-clips.mjs:32"
+      "src/vfx-clips.mjs:30"
     ],
     "context": "let previous=-1;for(const k of keys){if(!Number.isInteger(k.tick)||k.tick<0||k.tick<=previous||k.tick>10000000)throw messageError(new Error(''), \"errors.vfxClip"
   },
   "errors.vfxClips.invalidEffectClipIdentity": {
     "locations": [
-      "src/vfx-clips.mjs:23"
+      "src/vfx-clips.mjs:21"
     ],
     "context": "if(!c||typeof c.id!=='string'||!/^[\\w-]{1,80}$/.test(c.id)||ids.has(c.id))throw messageError(new Error(''), \"errors.vfxClips.invalidEffectClipIdentity\", {});ids"
   },
   "errors.vfxClips.invalidEffectClipTarget": {
     "locations": [
-      "src/vfx-clips.mjs:26"
+      "src/vfx-clips.mjs:24"
     ],
     "context": "if(!t||!['figure','segment','scene'].includes(t.kind)||t.kind!=='scene'&&(!Number.isInteger(t.uid)||t.uid<0)||t.kind==='segment'&&(!Number.isInteger(t.handleId)"
   },
   "errors.vfxClips.invalidEffectClipTiming": {
     "locations": [
-      "src/vfx-clips.mjs:27"
+      "src/vfx-clips.mjs:25"
     ],
     "context": "if(typeof c.name!=='string'||c.name.length>120||typeof c.enabled!=='boolean'||typeof c.includeAttached!=='boolean'||![c.start,c.offset,c.fadeIn,c.fadeOut].every"
   },
   "errors.vfxClips.invalidEffectKeyChannel": {
     "locations": [
-      "src/vfx-clips.mjs:31"
+      "src/vfx-clips.mjs:29"
     ],
     "context": "const d=vfxDescriptor(property);if(!d?.id||!c.effects.some(e=>e.id===d.id&&e.type===d.effectType)||!Array.isArray(keys)||keys.length>100000)throw messageError(n"
   },
   "errors.vfxClips.invalidEffectKeys": {
     "locations": [
-      "src/vfx-clips.mjs:29"
+      "src/vfx-clips.mjs:27"
     ],
     "context": "if(!c.keys||typeof c.keys!=='object'||Array.isArray(c.keys)||Object.keys(c.keys).length>512)throw messageError(new Error(''), \"errors.vfxClips.invalidEffectKeys"
   },
   "errors.vfxClips.invalidEffectsTimeline": {
     "locations": [
-      "src/vfx-clips.mjs:20"
+      "src/vfx-clips.mjs:18"
     ],
     "context": "if(!state||state.version!==1||!Array.isArray(state.clips)||state.clips.length>VFX_CLIP_LIMIT)throw messageError(new Error(''), \"errors.vfxClips.invalidEffectsTi"
   },
   "errors.vfxClips.tooManyEffectKeys": {
     "locations": [
-      "src/vfx-clips.mjs:37"
+      "src/vfx-clips.mjs:35"
     ],
     "context": "if(count>1000000)throw messageError(new Error(''), \"errors.vfxClips.tooManyEffectKeys\", {});"
   },
-  "errors.vfxGeneratorAtlas.unknownParticleMaterialRow": {
-    "locations": [
-      "src/vfx-generator-atlas.mjs:228"
-    ],
-    "context": "const paint=PAINTERS[ROW_LIST[row]];if(!paint)throw messageError(new Error(''), \"errors.vfxGeneratorAtlas.unknownParticleMaterialRow\", {row: row});"
-  },
-  "errors.vfxGeneratorLayers.unknownParticleMaterial": {
-    "locations": [
-      "src/vfx-generator-layers.mjs:30"
-    ],
-    "context": "if(spec.material&&!MATERIALS[spec.material])throw messageError(new Error(''), \"errors.vfxGeneratorLayers.unknownParticleMaterial\", {material: spec.material});"
-  },
   "errors.vfxInspector.thatPresetWasDeleted": {
     "locations": [
-      "src/vfx-inspector.mjs:207"
+      "src/vfx-inspector.mjs:206"
     ],
     "context": "const mine=key.startsWith(MINE)&&vfxPresetStore.find(key.slice(MINE.length));if(key.startsWith(MINE)&&!mine)throw messageError(new Error(''), \"errors.vfxInspect"
   },
@@ -31629,7 +31617,7 @@
   },
   "timelineOrganization.chooseLayersToFocus": {
     "locations": [
-      "src/editor-layer-focus.mjs:54"
+      "src/editor-layer-focus.mjs:53"
     ],
     "context": "throw messageError(new Error(''), 'timelineOrganization.chooseLayersToFocus', {});"
   },
@@ -31647,7 +31635,7 @@
   },
   "timelineOrganization.invalidFocusLock": {
     "locations": [
-      "src/editor-layer-focus.mjs:55"
+      "src/editor-layer-focus.mjs:54"
     ],
     "context": "if (typeof lock !== 'boolean') throw messageError(new Error(''), 'timelineOrganization.invalidFocusLock', {});"
   },
@@ -36168,7 +36156,7 @@
   },
   "vfxChannels.aimTarget": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:35"
+      "src/vfx-clip-inspector.mjs:36"
     ],
     "context": "return {messageKey:'vfxChannels.aimTarget',messageParams:{figure:figure?.name||{messageKey:'vfxChannels.figure',messageParams:{id:p.aimUid}},node:p.aimHandle?{m"
   },
@@ -36196,7 +36184,7 @@
   "vfxChannels.enabled": {
     "locations": [
       "src/engine/engine-owner.mjs:848",
-      "src/vfx-clip-inspector.mjs:63",
+      "src/vfx-clip-inspector.mjs:64",
       "src/vfx-localization.mjs:9",
       "src/vfx.mjs:25"
     ],
@@ -36204,7 +36192,7 @@
   },
   "vfxChannels.figure": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:35"
+      "src/vfx-clip-inspector.mjs:36"
     ],
     "context": "return {messageKey:'vfxChannels.aimTarget',messageParams:{figure:figure?.name||{messageKey:'vfxChannels.figure',messageParams:{id:p.aimUid}},node:p.aimHandle?{m"
   },
@@ -36216,7 +36204,7 @@
   },
   "vfxChannels.node": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:35"
+      "src/vfx-clip-inspector.mjs:36"
     ],
     "context": "return {messageKey:'vfxChannels.aimTarget',messageParams:{figure:figure?.name||{messageKey:'vfxChannels.figure',messageParams:{id:p.aimUid}},node:p.aimHandle?{m"
   },
@@ -36234,14 +36222,14 @@
   },
   "vfxChannels.origin": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:35"
+      "src/vfx-clip-inspector.mjs:36"
     ],
     "context": "return {messageKey:'vfxChannels.aimTarget',messageParams:{figure:figure?.name||{messageKey:'vfxChannels.figure',messageParams:{id:p.aimUid}},node:p.aimHandle?{m"
   },
   "vfxChannels.toggleEffect": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:77",
-      "src/vfx-inspector.mjs:129"
+      "src/vfx-clip-inspector.mjs:78",
+      "src/vfx-inspector.mjs:128"
     ],
     "context": "return `<details class=\"vfx-clip-effect${host.selectedClipEffect===effect.id?' is-effect-selected':''}${effect.enabled?'':' is-disabled'}\" role=\"listitem\" data-"
   },
@@ -36283,128 +36271,128 @@
   },
   "vfxClipInspector.add": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:49",
-      "src/vfx-clip-inspector.mjs:63"
+      "src/vfx-clip-inspector.mjs:50",
+      "src/vfx-clip-inspector.mjs:64"
     ],
     "context": "return `<div class=\"vfx-key-field${picked.length===1&&picked[0]===b.property?' is-channel-selected':''}\" data-vfx-binding=\"${esc(key)}\">${field}<button class=\"v"
   },
   "vfxClipInspector.addEffectToGroup": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:122"
+      "src/vfx-clip-inspector.mjs:123"
     ],
     "context": "[{label:interfaceText(\"vfxClipInspector.rename\"), labelKey: \"vfxClipInspector.rename\",symbol:'text',disabled:locked,action:()=>renameClip(host,id)},{label:c.eff"
   },
   "vfxClipInspector.addKey": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:49"
+      "src/vfx-clip-inspector.mjs:50"
     ],
     "context": "return `<div class=\"vfx-key-field${picked.length===1&&picked[0]===b.property?' is-channel-selected':''}\" data-vfx-binding=\"${esc(key)}\">${field}<button class=\"v"
   },
   "vfxClipInspector.addToGroup": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:78"
+      "src/vfx-clip-inspector.mjs:79"
     ],
     "context": "}).join('')}<button type=\"button\" class=\"vfx-group-add\" data-clip-action=\"group-add\" data-tooltip=\"Layer another effect into this group\" ${locked||c.effects.len"
   },
   "vfxClipInspector.aimAt": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:41"
+      "src/vfx-clip-inspector.mjs:42"
     ],
     "context": "return hint+`<div class=\"vfx-row vfx-aim\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.aimAt\">${messageHTML(\"vfxClipInspector.aimAt\", {})}</span><span cl"
   },
   "vfxClipInspector.aimAtAStagePointInstead": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:41"
+      "src/vfx-clip-inspector.mjs:42"
     ],
     "context": "return hint+`<div class=\"vfx-row vfx-aim\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.aimAt\">${messageHTML(\"vfxClipInspector.aimAt\", {})}</span><span cl"
   },
   "vfxClipInspector.clickANodeAFigureOriginOrAny": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:41"
+      "src/vfx-clip-inspector.mjs:42"
     ],
     "context": "return hint+`<div class=\"vfx-row vfx-aim\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.aimAt\">${messageHTML(\"vfxClipInspector.aimAt\", {})}</span><span cl"
   },
   "vfxClipInspector.clickTheStage": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:41"
+      "src/vfx-clip-inspector.mjs:42"
     ],
     "context": "return hint+`<div class=\"vfx-row vfx-aim\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.aimAt\">${messageHTML(\"vfxClipInspector.aimAt\", {})}</span><span cl"
   },
   "vfxClipInspector.combineWithAnotherEffect": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:75"
+      "src/vfx-clip-inspector.mjs:76"
     ],
     "context": "body+=effects.length===1?`<div class=\"vfx-clip-effect vfx-fields\" data-section=\"clip-effect-${effects[0].id}\">${effectFields(host,c,effects[0],locked,picked)}</"
   },
   "vfxClipInspector.combineWithAnotherEffect2": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:122"
+      "src/vfx-clip-inspector.mjs:123"
     ],
     "context": "[{label:interfaceText(\"vfxClipInspector.rename\"), labelKey: \"vfxClipInspector.rename\",symbol:'text',disabled:locked,action:()=>renameClip(host,id)},{label:c.eff"
   },
   "vfxClipInspector.copyAnimation": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:125"
+      "src/vfx-clip-inspector.mjs:126"
     ],
     "context": "[{label:interfaceText(\"vfxClipInspector.copyAnimation\"), labelKey: \"vfxClipInspector.copyAnimation\",symbol:'duplicate',action:run('copy')},{label:interfaceText("
   },
   "vfxClipInspector.delete": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:126"
+      "src/vfx-clip-inspector.mjs:127"
     ],
     "context": "[{label:interfaceText('vfxClipInspector.delete'), labelKey: \"common.delete\",symbol:'trash',danger:true,disabled:locked,action:run('delete')}],"
   },
   "vfxClipInspector.disable": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:77"
+      "src/vfx-clip-inspector.mjs:78"
     ],
     "context": "return `<details class=\"vfx-clip-effect${host.selectedClipEffect===effect.id?' is-effect-selected':''}${effect.enabled?'':' is-disabled'}\" role=\"listitem\" data-"
   },
   "vfxClipInspector.disableClip": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:94"
+      "src/vfx-clip-inspector.mjs:95"
     ],
     "context": "const row=`<div class=\"vfx-clip vfx-item${selected?' is-selected':''}${c.enabled?'':' is-disabled'}\" data-section=\"clip-${c.id}\" data-clip-id=\"${c.id}\"><button "
   },
   "vfxClipInspector.dragToReorderAlt": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:77"
+      "src/vfx-clip-inspector.mjs:78"
     ],
     "context": "return `<details class=\"vfx-clip-effect${host.selectedClipEffect===effect.id?' is-effect-selected':''}${effect.enabled?'':' is-disabled'}\" role=\"listitem\" data-"
   },
   "vfxClipInspector.duration": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:81"
+      "src/vfx-clip-inspector.mjs:82"
     ],
     "context": "body+=`<div class=\"vfx-timing\" data-section=\"clip-timing-${c.id}\"><h4 class=\"vfx-subhead\" data-i18n=\"vfxClipInspector.timing\">${messageHTML(\"vfxClipInspector.ti"
   },
   "vfxClipInspector.easing": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:63"
+      "src/vfx-clip-inspector.mjs:64"
     ],
     "context": "return `<div class=\"vfx-key-navigation\"><button type=\"button\" class=\"vfx-channel-trigger\" data-clip-action=\"channels\" aria-label=\"Visible effect keys\" aria-hasp"
   },
   "vfxClipInspector.effectActions": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:77"
+      "src/vfx-clip-inspector.mjs:78"
     ],
     "context": "return `<details class=\"vfx-clip-effect${host.selectedClipEffect===effect.id?' is-effect-selected':''}${effect.enabled?'':' is-disabled'}\" role=\"listitem\" data-"
   },
   "vfxClipInspector.effectClipActions": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:94"
+      "src/vfx-clip-inspector.mjs:95"
     ],
     "context": "const row=`<div class=\"vfx-clip vfx-item${selected?' is-selected':''}${c.enabled?'':' is-disabled'}\" data-section=\"clip-${c.id}\" data-clip-id=\"${c.id}\"><button "
   },
   "vfxClipInspector.effectDuration": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:81"
+      "src/vfx-clip-inspector.mjs:82"
     ],
     "context": "body+=`<div class=\"vfx-timing\" data-section=\"clip-timing-${c.id}\"><h4 class=\"vfx-subhead\" data-i18n=\"vfxClipInspector.timing\">${messageHTML(\"vfxClipInspector.ti"
   },
   "vfxClipInspector.effectName": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:110"
+      "src/vfx-clip-inspector.mjs:111"
     ],
     "context": "const input=document.createElement('input');input.className='vfx-clip-rename';input.value=clipName(c);input.maxLength=120;localizedAttribute(input, 'aria-label'"
   },
@@ -36416,206 +36404,206 @@
   },
   "vfxClipInspector.effectsIn": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:75"
+      "src/vfx-clip-inspector.mjs:76"
     ],
     "context": "body+=effects.length===1?`<div class=\"vfx-clip-effect vfx-fields\" data-section=\"clip-effect-${effects[0].id}\">${effectFields(host,c,effects[0],locked,picked)}</"
   },
   "vfxClipInspector.effectsInThisGroup": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:75"
+      "src/vfx-clip-inspector.mjs:76"
     ],
     "context": "body+=effects.length===1?`<div class=\"vfx-clip-effect vfx-fields\" data-section=\"clip-effect-${effects[0].id}\">${effectFields(host,c,effects[0],locked,picked)}</"
   },
   "vfxClipInspector.enable": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:77"
+      "src/vfx-clip-inspector.mjs:78"
     ],
     "context": "return `<details class=\"vfx-clip-effect${host.selectedClipEffect===effect.id?' is-effect-selected':''}${effect.enabled?'':' is-disabled'}\" role=\"listitem\" data-"
   },
   "vfxClipInspector.enableClip": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:94"
+      "src/vfx-clip-inspector.mjs:95"
     ],
     "context": "const row=`<div class=\"vfx-clip vfx-item${selected?' is-selected':''}${c.enabled?'':' is-disabled'}\" data-section=\"clip-${c.id}\" data-clip-id=\"${c.id}\"><button "
   },
   "vfxClipInspector.firesFromTheFigureSOriginToFire": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:40"
+      "src/vfx-clip-inspector.mjs:41"
     ],
     "context": "const hint=clip.target.kind==='figure'?`<p class=\"vfx-note\" data-i18n=\"vfxClipInspector.firesFromTheFigureSOriginToFire\">${messageHTML(\"vfxClipInspector.firesFr"
   },
   "vfxClipInspector.frameRange": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:81"
+      "src/vfx-clip-inspector.mjs:82"
     ],
     "context": "body+=`<div class=\"vfx-timing\" data-section=\"clip-timing-${c.id}\"><h4 class=\"vfx-subhead\" data-i18n=\"vfxClipInspector.timing\">${messageHTML(\"vfxClipInspector.ti"
   },
   "vfxClipInspector.key": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:49"
+      "src/vfx-clip-inspector.mjs:50"
     ],
     "context": "return `<div class=\"vfx-key-field${picked.length===1&&picked[0]===b.property?' is-channel-selected':''}\" data-vfx-binding=\"${esc(key)}\">${field}<button class=\"v"
   },
   "vfxClipInspector.layerAnotherEffectIntoThisGroup": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:78"
+      "src/vfx-clip-inspector.mjs:79"
     ],
     "context": "}).join('')}<button type=\"button\" class=\"vfx-group-add\" data-clip-action=\"group-add\" data-tooltip=\"Layer another effect into this group\" ${locked||c.effects.len"
   },
   "vfxClipInspector.layerAnotherEffectWithThisOneAsA": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:75"
+      "src/vfx-clip-inspector.mjs:76"
     ],
     "context": "body+=effects.length===1?`<div class=\"vfx-clip-effect vfx-fields\" data-section=\"clip-effect-${effects[0].id}\">${effectFields(host,c,effects[0],locked,picked)}</"
   },
   "vfxClipInspector.more": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:54"
+      "src/vfx-clip-inspector.mjs:55"
     ],
     "context": "return normal+(advanced?`<details class=\"vfx-advanced\"><summary>${icon('chevron-right')}${messageHTML(\"vfxClipInspector.more\", {})}</summary><div class=\"vfx-fie"
   },
   "vfxClipInspector.moveDown": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:123"
+      "src/vfx-clip-inspector.mjs:124"
     ],
     "context": "[{label:interfaceText(\"vfxClipInspector.moveUp\"), labelKey: \"vfxClipInspector.moveUp\",symbol:'chevron-up',disabled:locked||index<=0,action:run('up')},{label:int"
   },
   "vfxClipInspector.moveUp": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:123"
+      "src/vfx-clip-inspector.mjs:124"
     ],
     "context": "[{label:interfaceText(\"vfxClipInspector.moveUp\"), labelKey: \"vfxClipInspector.moveUp\",symbol:'chevron-up',disabled:locked||index<=0,action:run('up')},{label:int"
   },
   "vfxClipInspector.nextEffectKey": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:63"
+      "src/vfx-clip-inspector.mjs:64"
     ],
     "context": "return `<div class=\"vfx-key-navigation\"><button type=\"button\" class=\"vfx-channel-trigger\" data-clip-action=\"channels\" aria-label=\"Visible effect keys\" aria-hasp"
   },
   "vfxClipInspector.pasteEffectAnimation": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:135"
+      "src/vfx-clip-inspector.mjs:136"
     ],
     "context": "if(operation==='paste')e.movieclipBatch(interfaceText(\"vfxClipInspector.pasteEffectAnimation\"),()=>{for(const target of host.targets())selectClip(host,e.pasteVf"
   },
   "vfxClipInspector.pick": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:41"
+      "src/vfx-clip-inspector.mjs:42"
     ],
     "context": "return hint+`<div class=\"vfx-row vfx-aim\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.aimAt\">${messageHTML(\"vfxClipInspector.aimAt\", {})}</span><span cl"
   },
   "vfxClipInspector.plays": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:81"
+      "src/vfx-clip-inspector.mjs:82"
     ],
     "context": "body+=`<div class=\"vfx-timing\" data-section=\"clip-timing-${c.id}\"><h4 class=\"vfx-subhead\" data-i18n=\"vfxClipInspector.timing\">${messageHTML(\"vfxClipInspector.ti"
   },
   "vfxClipInspector.playsOnFrames": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:93"
+      "src/vfx-clip-inspector.mjs:94"
     ],
     "context": "const locked=lockedClip(e,c),selected=c.id===host.selectedClip,range=c.duration===null?'':`<span class=\"vfx-row-meta\" data-tooltip=\"Plays on frames ${c.start+1}"
   },
   "vfxClipInspector.pointOnStage": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:39"
+      "src/vfx-clip-inspector.mjs:40"
     ],
     "context": "const e=host.editor,p=effect.params,picking=e._vfxAimPick?.clip===clip.id&&e._vfxAimPick.effect===effect.id,aim=p.aimUid?aimLabel(e,p):{messageKey:\"vfxClipInspe"
   },
   "vfxClipInspector.previousEffectKey": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:63"
+      "src/vfx-clip-inspector.mjs:64"
     ],
     "context": "return `<div class=\"vfx-key-navigation\"><button type=\"button\" class=\"vfx-channel-trigger\" data-clip-action=\"channels\" aria-label=\"Visible effect keys\" aria-hasp"
   },
   "vfxClipInspector.remove": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:49",
-      "src/vfx-clip-inspector.mjs:63"
+      "src/vfx-clip-inspector.mjs:50",
+      "src/vfx-clip-inspector.mjs:64"
     ],
     "context": "return `<div class=\"vfx-key-field${picked.length===1&&picked[0]===b.property?' is-channel-selected':''}\" data-vfx-binding=\"${esc(key)}\">${field}<button class=\"v"
   },
   "vfxClipInspector.removeKey": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:49"
+      "src/vfx-clip-inspector.mjs:50"
     ],
     "context": "return `<div class=\"vfx-key-field${picked.length===1&&picked[0]===b.property?' is-channel-selected':''}\" data-vfx-binding=\"${esc(key)}\">${field}<button class=\"v"
   },
   "vfxClipInspector.rename": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:122"
+      "src/vfx-clip-inspector.mjs:123"
     ],
     "context": "[{label:interfaceText(\"vfxClipInspector.rename\"), labelKey: \"vfxClipInspector.rename\",symbol:'text',disabled:locked,action:()=>renameClip(host,id)},{label:c.eff"
   },
   "vfxClipInspector.reorder": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:77"
+      "src/vfx-clip-inspector.mjs:78"
     ],
     "context": "return `<details class=\"vfx-clip-effect${host.selectedClipEffect===effect.id?' is-effect-selected':''}${effect.enabled?'':' is-disabled'}\" role=\"listitem\" data-"
   },
   "vfxClipInspector.sameSettingsNewRandomPattern": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:52"
+      "src/vfx-clip-inspector.mjs:53"
     ],
     "context": "const shuffle=isGeneratorType(effect.type)?`<div class=\"vfx-row vfx-variation\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.variation\">${messageHTML(\"vfx"
   },
   "vfxClipInspector.saveAsPreset": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:83"
+      "src/vfx-clip-inspector.mjs:84"
     ],
     "context": "body+=`<div class=\"vfx-detail-foot\"><button type=\"button\" class=\"ui-button vfx-save-preset\" data-size=\"sm\" data-variant=\"ghost\" data-clip-action=\"save-preset\" d"
   },
   "vfxClipInspector.saveAsPreset2": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:124"
+      "src/vfx-clip-inspector.mjs:125"
     ],
     "context": "[{label:interfaceText(\"vfxClipInspector.saveAsPreset2\"), labelKey: \"vfxClipInspector.saveAsPreset2\",symbol:'library',action:()=>{host.commit();void savePresetFr"
   },
   "vfxClipInspector.selectedValueKey": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:63"
+      "src/vfx-clip-inspector.mjs:64"
     ],
     "context": "return `<div class=\"vfx-key-navigation\"><button type=\"button\" class=\"vfx-channel-trigger\" data-clip-action=\"channels\" aria-label=\"Visible effect keys\" aria-hasp"
   },
   "vfxClipInspector.settings": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:102"
+      "src/vfx-clip-inspector.mjs:103"
     ],
     "context": "return `<section class=\"vfx-detail\" data-section=\"vfx-detail-${c.id}\" data-clip-id=\"${c.id}\" aria-label=\"${esc(clipName(c))} settings\" ${messageAttributes(\"vfxC"
   },
   "vfxClipInspector.shuffle": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:52"
+      "src/vfx-clip-inspector.mjs:53"
     ],
     "context": "const shuffle=isGeneratorType(effect.type)?`<div class=\"vfx-row vfx-variation\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.variation\">${messageHTML(\"vfx"
   },
   "vfxClipInspector.start": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:81"
+      "src/vfx-clip-inspector.mjs:82"
     ],
     "context": "body+=`<div class=\"vfx-timing\" data-section=\"clip-timing-${c.id}\"><h4 class=\"vfx-subhead\" data-i18n=\"vfxClipInspector.timing\">${messageHTML(\"vfxClipInspector.ti"
   },
   "vfxClipInspector.timing": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:81"
+      "src/vfx-clip-inspector.mjs:82"
     ],
     "context": "body+=`<div class=\"vfx-timing\" data-section=\"clip-timing-${c.id}\"><h4 class=\"vfx-subhead\" data-i18n=\"vfxClipInspector.timing\">${messageHTML(\"vfxClipInspector.ti"
   },
   "vfxClipInspector.variation": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:52"
+      "src/vfx-clip-inspector.mjs:53"
     ],
     "context": "const shuffle=isGeneratorType(effect.type)?`<div class=\"vfx-row vfx-variation\"><span class=\"vfx-label\" data-i18n=\"vfxClipInspector.variation\">${messageHTML(\"vfx"
   },
   "vfxClipInspector.visibleEffectKeys": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:63"
+      "src/vfx-clip-inspector.mjs:64"
     ],
     "context": "return `<div class=\"vfx-key-navigation\"><button type=\"button\" class=\"vfx-channel-trigger\" data-clip-action=\"channels\" aria-label=\"Visible effect keys\" aria-hasp"
   },
   "vfxClipInspector.wholeAnimation": {
     "locations": [
-      "src/vfx-clip-inspector.mjs:81"
+      "src/vfx-clip-inspector.mjs:82"
     ],
     "context": "body+=`<div class=\"vfx-timing\" data-section=\"clip-timing-${c.id}\"><h4 class=\"vfx-subhead\" data-i18n=\"vfxClipInspector.timing\">${messageHTML(\"vfxClipInspector.ti"
   },
@@ -36654,128 +36642,128 @@
   },
   "vfxInspector.actions": {
     "locations": [
-      "src/vfx-inspector.mjs:129"
+      "src/vfx-inspector.mjs:128"
     ],
     "context": "const row=`<div class=\"vfx-effect vfx-item${effect.enabled?'':' is-disabled'}${selected?' is-selected':''}\" data-section=\"vfx-${ownerIndex}-${effect.id}\" data-v"
   },
   "vfxInspector.add": {
     "locations": [
-      "src/vfx-inspector.mjs:122"
+      "src/vfx-inspector.mjs:121"
     ],
     "context": "+`<div class=\"vfx-list-head\"><h3 class=\"vfx-list-title\" data-i18n=\"vfxInspector.effects\">${messageHTML(\"vfxInspector.effects\", {})}</h3><select class=\"vfx-view\""
   },
   "vfxInspector.add2": {
     "locations": [
-      "src/vfx-inspector.mjs:219"
+      "src/vfx-inspector.mjs:218"
     ],
     "context": "const tile=(mode,key,label,art,category,meta,nameKey=mode==='add'?effectMessages[key]?.nameKey:mode==='presets'?presetMessages[key]?.nameKey:null)=>`<button typ"
   },
   "vfxInspector.addEffect": {
     "locations": [
-      "src/vfx-inspector.mjs:122",
-      "src/vfx-inspector.mjs:227"
+      "src/vfx-inspector.mjs:121",
+      "src/vfx-inspector.mjs:226"
     ],
     "context": "+`<div class=\"vfx-list-head\"><h3 class=\"vfx-list-title\" data-i18n=\"vfxInspector.effects\">${messageHTML(\"vfxInspector.effects\", {})}</h3><select class=\"vfx-view\""
   },
   "vfxInspector.addEffects": {
     "locations": [
-      "src/vfx-inspector.mjs:208"
+      "src/vfx-inspector.mjs:207"
     ],
     "context": "this.editor.movieclipBatch(interfaceText(\"vfxInspector.addEffects\"),()=>{if(this.addToGroup){this.editor.addVfxGroupEffect(this.addToGroup,key);}else for(const "
   },
   "vfxInspector.angle": {
     "locations": [
-      "src/vfx-inspector.mjs:137"
+      "src/vfx-inspector.mjs:136"
     ],
     "context": "const shadow=effect.type==='shadow'?['angle','distance'].map(param=>this.field(target,effect,param,{label:param==='angle'?interfaceText(\"vfxInspector.angle\"):in"
   },
   "vfxInspector.applyTo": {
     "locations": [
-      "src/vfx-inspector.mjs:121"
+      "src/vfx-inspector.mjs:120"
     ],
     "context": "const controls=!targets.length?'':`<div class=\"vfx-controls\"><label class=\"ui-field vfx-scope\" data-select data-size=\"sm\"><span class=\"ui-field-label\" data-i18n"
   },
   "vfxInspector.atThisFrame": {
     "locations": [
-      "src/vfx-inspector.mjs:119"
+      "src/vfx-inspector.mjs:118"
     ],
     "context": "const views=[messageTuple(['playhead',interfaceText(\"vfxInspector.atThisFrame\")], {1: {key: \"vfxInspector.atThisFrame\", params: {}}}),messageTuple(['selected',i"
   },
   "vfxInspector.catalogue": {
     "locations": [
-      "src/vfx-inspector.mjs:228"
+      "src/vfx-inspector.mjs:227"
     ],
     "context": "const tabs=this.addToGroup?'':`<div class=\"ui-segmented vfx-catalog-tabs\" data-size=\"sm\" data-fill role=\"tablist\" aria-label=\"Catalogue\" data-i18n-aria-label=\"v"
   },
   "vfxInspector.copyEffect": {
     "locations": [
-      "src/vfx-inspector.mjs:176"
+      "src/vfx-inspector.mjs:175"
     ],
     "context": "[{label:interfaceText(\"vfxInspector.copyEffect\"), labelKey: \"vfxInspector.copyEffect\",symbol:'duplicate',action:run('copy')},{label:interfaceText(\"common.duplic"
   },
   "vfxInspector.disable": {
     "locations": [
-      "src/vfx-inspector.mjs:129"
+      "src/vfx-inspector.mjs:128"
     ],
     "context": "const row=`<div class=\"vfx-effect vfx-item${effect.enabled?'':' is-disabled'}${selected?' is-selected':''}\" data-section=\"vfx-${ownerIndex}-${effect.id}\" data-v"
   },
   "vfxInspector.distance": {
     "locations": [
-      "src/vfx-inspector.mjs:137"
+      "src/vfx-inspector.mjs:136"
     ],
     "context": "const shadow=effect.type==='shadow'?['angle','distance'].map(param=>this.field(target,effect,param,{label:param==='angle'?interfaceText(\"vfxInspector.angle\"):in"
   },
   "vfxInspector.dragToReorderAlt": {
     "locations": [
-      "src/vfx-inspector.mjs:129"
+      "src/vfx-inspector.mjs:128"
     ],
     "context": "const row=`<div class=\"vfx-effect vfx-item${effect.enabled?'':' is-disabled'}${selected?' is-selected':''}\" data-section=\"vfx-${ownerIndex}-${effect.id}\" data-v"
   },
   "vfxInspector.effectParameterLabel": {
     "locations": [
-      "src/vfx-inspector.mjs:88",
+      "src/vfx-inspector.mjs:87",
+      "src/vfx-inspector.mjs:89",
       "src/vfx-inspector.mjs:90",
-      "src/vfx-inspector.mjs:91",
-      "src/vfx-inspector.mjs:95"
+      "src/vfx-inspector.mjs:94"
     ],
     "context": "return `<div class=\"vfx-row vfx-field\"><span class=\"vfx-label\"${descriptorAttributes(d, \"label\")}>${esc(d.label)}</span><button type=\"button\" class=\"ui-field vf"
   },
   "vfxInspector.effectParameterSlider": {
     "locations": [
-      "src/vfx-inspector.mjs:95"
+      "src/vfx-inspector.mjs:94"
     ],
     "context": "return `<div class=\"vfx-row vfx-parameter${slider?'':' is-number'}\" data-property-row=\"${key}\"><label class=\"vfx-label\" data-property-scrub=\"${key}\" for=\"vfx-fi"
   },
   "vfxInspector.effects": {
     "locations": [
-      "src/vfx-inspector.mjs:112",
-      "src/vfx-inspector.mjs:114",
-      "src/vfx-inspector.mjs:122",
-      "src/vfx-inspector.mjs:228"
+      "src/vfx-inspector.mjs:111",
+      "src/vfx-inspector.mjs:113",
+      "src/vfx-inspector.mjs:121",
+      "src/vfx-inspector.mjs:227"
     ],
     "context": "const body=!targets.length?this.noTargetHTML():list?`<div class=\"vfx-list\" role=\"list\" aria-label=\"Effects\" data-i18n-aria-label=\"vfxInspector.effects\">${list}<"
   },
   "vfxInspector.effectsAndReadyMadePresets": {
     "locations": [
-      "src/vfx-inspector.mjs:122"
+      "src/vfx-inspector.mjs:121"
     ],
     "context": "+`<div class=\"vfx-list-head\"><h3 class=\"vfx-list-title\" data-i18n=\"vfxInspector.effects\">${messageHTML(\"vfxInspector.effects\", {})}</h3><select class=\"vfx-view\""
   },
   "vfxInspector.effectsCurrentlyApplyToThisPartOnly": {
     "locations": [
-      "src/vfx-inspector.mjs:102"
+      "src/vfx-inspector.mjs:101"
     ],
     "context": "const warnings=stacks.map(({target})=>{if(target.kind!=='figure')return '';const enabled=Boolean(e.animationValue(target,'vfxScope'))||e.getVfxClips(target).som"
   },
   "vfxInspector.effectTarget": {
     "locations": [
-      "src/vfx-inspector.mjs:121"
+      "src/vfx-inspector.mjs:120"
     ],
     "context": "const controls=!targets.length?'':`<div class=\"vfx-controls\"><label class=\"ui-field vfx-scope\" data-select data-size=\"sm\"><span class=\"ui-field-label\" data-i18n"
   },
   "vfxInspector.enable": {
     "locations": [
-      "src/vfx-inspector.mjs:129"
+      "src/vfx-inspector.mjs:128"
     ],
     "context": "const row=`<div class=\"vfx-effect vfx-item${effect.enabled?'':' is-disabled'}${selected?' is-selected':''}\" data-section=\"vfx-${ownerIndex}-${effect.id}\" data-v"
   },
@@ -36783,233 +36771,233 @@
     "locations": [
       "src/builder-mode.mjs:172",
       "src/builder-mode.mjs:208",
-      "src/vfx-inspector.mjs:73"
+      "src/vfx-inspector.mjs:72"
     ],
     "context": "? {messageKey:'builderMode.buildingFigure',messageParams:{name:session.figure?.name||{messageKey:'vfxInspector.figure'}}}"
   },
   "vfxInspector.generated": {
     "locations": [
-      "src/vfx-inspector.mjs:220"
+      "src/vfx-inspector.mjs:219"
     ],
     "context": "const effect=type=>{const d=VFX_REGISTRY[type];return tile('add',type,d.name,d.icon,d.category,{messageKey:d.category==='Generate'?'vfxInspector.generated':cate"
   },
   "vfxInspector.gradient": {
     "locations": [
-      "src/vfx-inspector.mjs:87"
+      "src/vfx-inspector.mjs:86"
     ],
     "context": "const caption=solid?`${hex}${stop.opacity<1?` · ${Math.round(stop.opacity*100)}%`:''}`:interfaceText(\"vfxInspector.gradient\");"
   },
   "vfxInspector.lookSummary": {
     "locations": [
-      "src/vfx-inspector.mjs:224"
+      "src/vfx-inspector.mjs:223"
     ],
     "context": "return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\">${messageHTML(titleKey,titleParams)}</h3>${elsewhere?'':`<p class=\"ui-empty-text\" data-i18n=\""
   },
   "vfxInspector.more": {
     "locations": [
-      "src/vfx-inspector.mjs:138"
+      "src/vfx-inspector.mjs:137"
     ],
     "context": "return `<section class=\"vfx-detail${effect.enabled?'':' is-disabled'}\" data-section=\"vfx-detail-${ownerIndex}-${effect.id}\" data-vfx-id=\"${effect.id}\" data-vfx-"
   },
   "vfxInspector.moreOnOtherFrames": {
     "locations": [
-      "src/vfx-inspector.mjs:111"
+      "src/vfx-inspector.mjs:110"
     ],
     "context": "const more=view==='playhead'&&total>shown?`<button type=\"button\" class=\"vfx-show-all\" data-vfx-action=\"show-all\"><span ${messageAttributes(\"vfxInspector.moreOnO"
   },
   "vfxInspector.moveDown": {
     "locations": [
-      "src/vfx-inspector.mjs:175"
+      "src/vfx-inspector.mjs:174"
     ],
     "context": "[{label:interfaceText(\"vfxInspector.moveUp\"), labelKey: \"vfxInspector.moveUp\",symbol:'chevron-up',disabled:locked||index<=0,action:run('up')},{label:interfaceTe"
   },
   "vfxInspector.moveUp": {
     "locations": [
-      "src/vfx-inspector.mjs:175"
+      "src/vfx-inspector.mjs:174"
     ],
     "context": "[{label:interfaceText(\"vfxInspector.moveUp\"), labelKey: \"vfxInspector.moveUp\",symbol:'chevron-up',disabled:locked||index<=0,action:run('up')},{label:interfaceTe"
   },
   "vfxInspector.myPresetSummary": {
     "locations": [
-      "src/vfx-inspector.mjs:221"
+      "src/vfx-inspector.mjs:220"
     ],
     "context": "const mine=usablePresets(scene).slice(0,3).map(p=>tile('presets',MINE+p.id,p.name,p.effects.length===1?VFX_REGISTRY[p.effects[0].type]?.icon??'effects':'effects"
   },
   "vfxInspector.noEffectsAtThisFrame": {
     "locations": [
-      "src/vfx-inspector.mjs:223"
+      "src/vfx-inspector.mjs:222"
     ],
     "context": "const titleKey=elsewhere?\"vfxInspector.noEffectsAtThisFrame\":scene?\"vfxInspector.noEffectsOnTheScene\":targets.length===1?\"vfxInspector.noEffectsOnFigure\":\"vfxIn"
   },
   "vfxInspector.noEffectsOnFigure": {
     "locations": [
-      "src/vfx-inspector.mjs:223"
+      "src/vfx-inspector.mjs:222"
     ],
     "context": "const titleKey=elsewhere?\"vfxInspector.noEffectsAtThisFrame\":scene?\"vfxInspector.noEffectsOnTheScene\":targets.length===1?\"vfxInspector.noEffectsOnFigure\":\"vfxIn"
   },
   "vfxInspector.noEffectsOnTheScene": {
     "locations": [
-      "src/vfx-inspector.mjs:223"
+      "src/vfx-inspector.mjs:222"
     ],
     "context": "const titleKey=elsewhere?\"vfxInspector.noEffectsAtThisFrame\":scene?\"vfxInspector.noEffectsOnTheScene\":targets.length===1?\"vfxInspector.noEffectsOnFigure\":\"vfxIn"
   },
   "vfxInspector.noEffectsYet": {
     "locations": [
-      "src/vfx-inspector.mjs:223"
+      "src/vfx-inspector.mjs:222"
     ],
     "context": "const titleKey=elsewhere?\"vfxInspector.noEffectsAtThisFrame\":scene?\"vfxInspector.noEffectsOnTheScene\":targets.length===1?\"vfxInspector.noEffectsOnFigure\":\"vfxIn"
   },
   "vfxInspector.onlySelected": {
     "locations": [
-      "src/vfx-inspector.mjs:119"
+      "src/vfx-inspector.mjs:118"
     ],
     "context": "const views=[messageTuple(['playhead',interfaceText(\"vfxInspector.atThisFrame\")], {1: {key: \"vfxInspector.atThisFrame\", params: {}}}),messageTuple(['selected',i"
   },
   "vfxInspector.orGiveTheWholePictureALook": {
     "locations": [
-      "src/vfx-inspector.mjs:212"
+      "src/vfx-inspector.mjs:211"
     ],
     "context": "noTargetHTML(){return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\" data-i18n=\"vfxInspector.selectAFigureToAddEffects\">${messageHTML(\"vfxInspector"
   },
   "vfxInspector.pasteAnimation": {
     "locations": [
-      "src/vfx-inspector.mjs:118"
+      "src/vfx-inspector.mjs:117"
     ],
     "context": "const paste=(this.clipboard?`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-vfx-action=\"paste\" aria-label=\"Paste effect\" data-tooltip=\"Paste e"
   },
   "vfxInspector.pasteEffect": {
     "locations": [
-      "src/vfx-inspector.mjs:118"
+      "src/vfx-inspector.mjs:117"
     ],
     "context": "const paste=(this.clipboard?`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-vfx-action=\"paste\" aria-label=\"Paste effect\" data-tooltip=\"Paste e"
   },
   "vfxInspector.pasteEffectAnimation": {
     "locations": [
-      "src/vfx-inspector.mjs:118"
+      "src/vfx-inspector.mjs:117"
     ],
     "context": "const paste=(this.clipboard?`<button type=\"button\" class=\"ui-icon-button\" data-size=\"sm\" data-vfx-action=\"paste\" aria-label=\"Paste effect\" data-tooltip=\"Paste e"
   },
   "vfxInspector.poseEffects": {
     "locations": [
-      "src/vfx-inspector.mjs:109"
+      "src/vfx-inspector.mjs:108"
     ],
     "context": "const list=clips.html+(poses&&clips.html?`<div class=\"ui-group-label\">${messageHTML(\"vfxInspector.poseEffects\", {})}</div>`:'')+poses;"
   },
   "vfxInspector.presets": {
     "locations": [
-      "src/vfx-inspector.mjs:228",
-      "src/vfx-inspector.mjs:231"
+      "src/vfx-inspector.mjs:227",
+      "src/vfx-inspector.mjs:230"
     ],
     "context": "const tabs=this.addToGroup?'':`<div class=\"ui-segmented vfx-catalog-tabs\" data-size=\"sm\" data-fill role=\"tablist\" aria-label=\"Catalogue\" data-i18n-aria-label=\"v"
   },
   "vfxInspector.reorder": {
     "locations": [
-      "src/vfx-inspector.mjs:129"
+      "src/vfx-inspector.mjs:128"
     ],
     "context": "const row=`<div class=\"vfx-effect vfx-item${effect.enabled?'':' is-disabled'}${selected?' is-selected':''}\" data-section=\"vfx-${ownerIndex}-${effect.id}\" data-v"
   },
   "vfxInspector.scene": {
     "locations": [
-      "src/vfx-inspector.mjs:73",
-      "src/vfx-inspector.mjs:117"
+      "src/vfx-inspector.mjs:72",
+      "src/vfx-inspector.mjs:116"
     ],
     "context": "ownerNameMessage(target){if(target.kind==='scene')return {messageKey:'vfxInspector.scene'};const object=this.editor.evaluatedFrame.objects.find(o=>o.unique_id=="
   },
   "vfxInspector.sceneEffects": {
     "locations": [
-      "src/vfx-inspector.mjs:212"
+      "src/vfx-inspector.mjs:211"
     ],
     "context": "noTargetHTML(){return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\" data-i18n=\"vfxInspector.selectAFigureToAddEffects\">${messageHTML(\"vfxInspector"
   },
   "vfxInspector.searchEffectClips": {
     "locations": [
-      "src/vfx-inspector.mjs:123"
+      "src/vfx-inspector.mjs:122"
     ],
     "context": "const search=view==='all'&&targets.length?`<label class=\"ui-field vfx-search\" data-size=\"sm\">${icon('search','ui-icon')}<input class=\"ui-field-input\" type=\"sear"
   },
   "vfxInspector.searchEffects": {
     "locations": [
-      "src/vfx-inspector.mjs:123",
-      "src/vfx-inspector.mjs:229"
+      "src/vfx-inspector.mjs:122",
+      "src/vfx-inspector.mjs:228"
     ],
     "context": "const search=view==='all'&&targets.length?`<label class=\"ui-field vfx-search\" data-size=\"sm\">${icon('search','ui-icon')}<input class=\"ui-field-input\" type=\"sear"
   },
   "vfxInspector.searchPresets": {
     "locations": [
-      "src/vfx-inspector.mjs:229"
+      "src/vfx-inspector.mjs:228"
     ],
     "context": "const searchKey=mode==='presets'?'vfxInspector.searchPresets':'vfxInspector.searchEffects';"
   },
   "vfxInspector.segmentOwner": {
     "locations": [
-      "src/vfx-inspector.mjs:73"
+      "src/vfx-inspector.mjs:72"
     ],
     "context": "ownerNameMessage(target){if(target.kind==='scene')return {messageKey:'vfxInspector.scene'};const object=this.editor.evaluatedFrame.objects.find(o=>o.unique_id=="
   },
   "vfxInspector.selectAFigureToAddEffects": {
     "locations": [
-      "src/vfx-inspector.mjs:212"
+      "src/vfx-inspector.mjs:211"
     ],
     "context": "noTargetHTML(){return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\" data-i18n=\"vfxInspector.selectAFigureToAddEffects\">${messageHTML(\"vfxInspector"
   },
   "vfxInspector.selectedNode": {
     "locations": [
-      "src/vfx-inspector.mjs:117"
+      "src/vfx-inspector.mjs:116"
     ],
     "context": "const options=[...(e.selectedJoint>=0?[messageTuple(['selection',interfaceText(\"vfxInspector.selectedNode\")], {1: {key: \"vfxInspector.selectedNode\", params: {}}"
   },
   "vfxInspector.settings": {
     "locations": [
-      "src/vfx-inspector.mjs:138"
+      "src/vfx-inspector.mjs:137"
     ],
     "context": "return `<section class=\"vfx-detail${effect.enabled?'':' is-disabled'}\" data-section=\"vfx-detail-${ownerIndex}-${effect.id}\" data-vfx-id=\"${effect.id}\" data-vfx-"
   },
   "vfxInspector.showAll": {
     "locations": [
-      "src/vfx-inspector.mjs:111"
+      "src/vfx-inspector.mjs:110"
     ],
     "context": "const more=view==='playhead'&&total>shown?`<button type=\"button\" class=\"vfx-show-all\" data-vfx-action=\"show-all\"><span ${messageAttributes(\"vfxInspector.moreOnO"
   },
   "vfxInspector.showAll2": {
     "locations": [
-      "src/vfx-inspector.mjs:119",
-      "src/vfx-inspector.mjs:224"
+      "src/vfx-inspector.mjs:118",
+      "src/vfx-inspector.mjs:223"
     ],
     "context": "const views=[messageTuple(['playhead',interfaceText(\"vfxInspector.atThisFrame\")], {1: {key: \"vfxInspector.atThisFrame\", params: {}}}),messageTuple(['selected',i"
   },
   "vfxInspector.showEffects": {
     "locations": [
-      "src/vfx-inspector.mjs:122"
+      "src/vfx-inspector.mjs:121"
     ],
     "context": "+`<div class=\"vfx-list-head\"><h3 class=\"vfx-list-title\" data-i18n=\"vfxInspector.effects\">${messageHTML(\"vfxInspector.effects\", {})}</h3><select class=\"vfx-view\""
   },
   "vfxInspector.startWithOneOfTheseOrChooseAdd": {
     "locations": [
-      "src/vfx-inspector.mjs:224"
+      "src/vfx-inspector.mjs:223"
     ],
     "context": "return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\">${messageHTML(titleKey,titleParams)}</h3>${elsewhere?'':`<p class=\"ui-empty-text\" data-i18n=\""
   },
   "vfxInspector.suggestedEffects": {
     "locations": [
-      "src/vfx-inspector.mjs:224"
+      "src/vfx-inspector.mjs:223"
     ],
     "context": "return `<div class=\"ui-empty vfx-empty\"><h3 class=\"ui-empty-title\">${messageHTML(titleKey,titleParams)}</h3>${elsewhere?'':`<p class=\"ui-empty-text\" data-i18n=\""
   },
   "vfxInspector.thisPart": {
     "locations": [
-      "src/vfx-inspector.mjs:117"
+      "src/vfx-inspector.mjs:116"
     ],
     "context": "const options=[...(e.selectedJoint>=0?[messageTuple(['selection',interfaceText(\"vfxInspector.selectedNode\")], {1: {key: \"vfxInspector.selectedNode\", params: {}}"
   },
   "vfxInspector.vfxPresets": {
     "locations": [
-      "src/vfx-inspector.mjs:227"
+      "src/vfx-inspector.mjs:226"
     ],
     "context": "this.closePopup();const scene=this.targets()[0]?.kind==='scene',popup=this.popup=document.createElement('div');popup.className='vfx-catalog';popup.setAttribute("
   },
   "vfxInspector.wholeFigure": {
     "locations": [
-      "src/vfx-inspector.mjs:117",
+      "src/vfx-inspector.mjs:116",
       "src/vfx.mjs:25"
     ],
     "context": "const options=[...(e.selectedJoint>=0?[messageTuple(['selection',interfaceText(\"vfxInspector.selectedNode\")], {1: {key: \"vfxInspector.selectedNode\", params: {}}"
